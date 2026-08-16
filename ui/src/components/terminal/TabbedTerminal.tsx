@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { AgenticProcess, connectionManager, dataContext, Shell, Tab, toplog, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
@@ -14,10 +15,7 @@ import { useProcessSurface } from './interactive-terminal/use-process-surface';
 import { retryFailedStart, TerminalRuntimeErrorBanner } from './interactive-terminal/TerminalRuntimeErrorBanner';
 import { estimateCols, estimateRows } from './interactive-terminal/terminalConfig';
 import { allowRename, cleanTitle, isProgramIdentityTitle, shouldAutoSaveTitleForTarget } from './rename-rules';
-import {
-  classifyRuntimeFailure,
-  type ProcessLoadErrorKind,
-} from '@src/routes/loaders/load-process';
+import { classifyRuntimeFailure, type ProcessLoadErrorKind } from '@src/routes/loaders/load-process';
 
 interface TabbedTerminalProps {
   className?: string;
@@ -133,15 +131,14 @@ function startProcessRuntime(process: AgenticProcess, cols: number, rows: number
       await connectionManager.waitForConnected(5000);
     } catch {
       notify.error({
-        title: 'No realtime connection',
-        message: 'Terminal may be unresponsive until the connection recovers.',
+        title: t`No realtime connection`,
+        message: t`Terminal may be unresponsive until the connection recovers.`,
       });
     }
     await process.start({ visible: true, cols, rows });
-  })()
-    .finally(() => {
-      if (processStarts.get(process.id) === pending) processStarts.delete(process.id);
-    });
+  })().finally(() => {
+    if (processStarts.get(process.id) === pending) processStarts.delete(process.id);
+  });
   processStarts.set(process.id, pending);
   return pending;
 }
@@ -269,7 +266,10 @@ const TerminalPanel: React.FC<{
         // A headless chat legitimately has NO shell (see AgenticProcess.isHeadless)
         // — InteractiveTerminal renders SimpleChatPane without an xterm. Mount it
         // shell-less.
-        (isProcess && activeProcess && !activeProcess.isHeadless && (runtimeStatus === 'idle' || runtimeStatus === 'starting') ? (
+        (isProcess &&
+        activeProcess &&
+        !activeProcess.isHeadless &&
+        (runtimeStatus === 'idle' || runtimeStatus === 'starting') ? (
           <TerminalPanelStartingState />
         ) : transportShellId || (isProcess && activeProcess?.isHeadless) ? (
           <InteractiveTerminal
@@ -329,7 +329,10 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', scope =
     setMounted((prev) => {
       // Warm switch = the panel is already in the Set (visibility flip only);
       // cold = first visit mounts InteractiveTerminal (attach + replay).
-      toplog.log('process_load', `TabbedTerminal active flip → ${activeKey} (${prev.has(activeKey) ? 'warm' : 'cold mount'})`);
+      toplog.log(
+        'process_load',
+        `TabbedTerminal active flip → ${activeKey} (${prev.has(activeKey) ? 'warm' : 'cold mount'})`,
+      );
       if (prev.has(activeKey)) return prev;
       const next = new Set(prev);
       next.add(activeKey);

@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useRef } from 'react';
 import { AgenticProcess } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -22,7 +23,11 @@ export function useResumeInTerminal() {
         try {
           const p = await AgenticProcess.getByWorkerId(workerId, workerType ?? null);
           if (!p) {
-            notify.error({ title: 'Session not found', message: `Session ${workerId} is not in Claude, Codex, or Copilot history.`, id: `session-not-found:${workerId}` });
+            notify.error({
+              title: t`Session not found`,
+              message: t`Session ${workerId} is not in Claude, Codex, or Copilot history.`,
+              id: `session-not-found:${workerId}`,
+            });
             return;
           }
           // The bookmark/open-session UX wants the live PTY (the timestamp

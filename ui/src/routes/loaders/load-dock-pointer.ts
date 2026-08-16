@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import {
   AgenticProcess,
   dataContext,
@@ -69,8 +70,8 @@ async function loadPlanRoute(pointer: string | undefined): Promise<void> {
         'hard',
         {
           action: 'render_error',
-          title: 'Plan not found',
-          message: 'This plan no longer exists.',
+          title: t`Plan not found`,
+          message: t`This plan no longer exists.`,
         },
         'plan',
       );
@@ -97,8 +98,8 @@ async function loadAgenticProcessRoute(pointer: string | undefined): Promise<voi
       'hard',
       {
         action: 'render_error',
-        title: 'Session not found',
-        message: 'This session URL is malformed or unavailable.',
+        title: t`Session not found`,
+        message: t`This session URL is malformed or unavailable.`,
       },
       'agentic_process',
       error,
@@ -128,8 +129,8 @@ async function loadHelpdeskRoute(pointer: string | undefined): Promise<void> {
       'hard',
       {
         action: 'render_error',
-        title: 'Help desk unavailable',
-        message: 'The help desk files are missing. Open the help desk again to download them.',
+        title: t`Help desk unavailable`,
+        message: t`The help desk files are missing. Open the help desk again to download them.`,
         retryable: true,
       },
       'helpdesk',
@@ -151,8 +152,8 @@ function loadLiveSessionRoute(pointer: string | undefined): void {
       'hard',
       {
         action: 'render_error',
-        title: 'Live session not found',
-        message: 'This live-session URL is malformed or unavailable.',
+        title: t`Live session not found`,
+        message: t`This live-session URL is malformed or unavailable.`,
       },
       'live_session',
       error,
@@ -187,7 +188,7 @@ export async function loadGraphIdentityRoute(dock: DockPointer, surface: 'graph'
       {
         action: 'render_error',
         title: surface === 'worldview' ? 'WorldView not found' : 'Graph root not found',
-        message: `This ${surface === 'worldview' ? 'WorldView' : 'graph'} URL is malformed or unavailable.`,
+        message: t`This ${surface === 'worldview' ? 'WorldView' : 'graph'} URL is malformed or unavailable.`,
       },
       surface,
       error,
@@ -205,8 +206,8 @@ function loadTagRoute(dock: DockPointer): void {
       'hard',
       {
         action: 'render_error',
-        title: 'Tag view not found',
-        message: 'Expected /dock/tag/graph or /dock/tag/graph/<dot.tag.name>.',
+        title: t`Tag view not found`,
+        message: t`Expected /dock/tag/graph or /dock/tag/graph/<dot.tag.name>.`,
       },
       'tag',
     );
@@ -221,8 +222,8 @@ function loadSubgraphRoute(dock: DockPointer): void {
       'hard',
       {
         action: 'render_error',
-        title: 'Subgraph not found',
-        message: 'Expected /dock/subgraph/<projection>.',
+        title: t`Subgraph not found`,
+        message: t`Expected /dock/subgraph/<projection>.`,
       },
       'subgraph',
     );

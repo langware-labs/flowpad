@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import {
   APIEntity,
   Artifact,
@@ -84,7 +85,7 @@ export function DownloadAttachmentsButton({
       data-testid="download-attachments-button"
       title={labels.length ? labels.join('\n') : t('Download attachments')}
       className={cn(
-        'flex w-full max-w-[360px] items-center gap-3 rounded-lg border border-dashed px-3 py-2.5 text-left transition-colors',
+        'flex w-full max-w-[360px] items-center gap-3 rounded-lg border border-dashed px-3 py-2.5 text-start transition-colors',
         uploading
           ? 'cursor-not-allowed border-border bg-background opacity-50'
           : downloading
@@ -826,7 +827,7 @@ export function MessageEntityChip({
         if (!url) return;
         const targetProjectId = projectId ?? dataContext.project?.id ?? null;
         const result = await launchWizard('git-context-folder', {
-          title: `Pull ${attachment?.name ?? 'git folder'}`,
+          title: t`Pull ${attachment?.name ?? 'git folder'}`,
           targetTypeId: typeId.toString(),
           payload: { projectId: targetProjectId, scope: 'private', mode: 'existing', url },
         });
@@ -854,7 +855,7 @@ export function MessageEntityChip({
   const runButton = runnable ? (
     <button
       type="button"
-      title="Run skill"
+      title={t`Run skill`}
       data-testid="skill-run-icon"
       onClick={() => startSkillRun(attachment, projectId ?? null)}
       className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/50 bg-background text-primary transition-colors hover:bg-primary/10"

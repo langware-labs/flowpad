@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import {
   ActionInfo,
   ComputeNode,
@@ -113,6 +114,19 @@ function hasContextWork(setup: SandboxSetup): boolean {
  * list would show a "Cloning" row for a project with no repository, and every
  * new flow would hand-maintain its own copy.
  */
+/**
+ * The project half of a launch, for a box whose VM already exists.
+ *
+ * `launch` and `health` are deliberately absent: they have already succeeded, and
+ * showing them idle would report work that is not going to happen.
+ */
+function plannedProjectSteps(setup: SandboxSetup): Step[] {
+  const ids: StepId[] = setup.gitOrigin ? (['validate', 'clone', 'index'] as StepId[]) : (['init'] as StepId[]);
+  if (hasContextWork(setup)) ids.push('context');
+  ids.push('default', 'open');
+  return ids.map((id) => ({ id, label: STEP_LABELS[id], status: 'idle' }));
+}
+
 function plannedSteps(setup?: SandboxSetup): Step[] {
   const ids: StepId[] = ['launch', 'health'];
   if (setup) {
@@ -588,7 +602,7 @@ export function useSandboxes() {
           if (!result.logged_in) {
             notify.warning({
               id: 'sandbox-no-signin',
-              title: 'Sandbox started without cloud sign-in',
+              title: t`Sandbox started without cloud sign-in`,
               message:
                 "Couldn't reach the hub to sign this sandbox in — it may be down or unreachable. You can sign in from inside the sandbox.",
             });
@@ -626,6 +640,63 @@ export function useSandboxes() {
           await refetch();
         } catch {
           // The list is stale until the next refresh. The box is not.
+        }
+        return node;
+      } finally {
+        launchingRef.current = false;
+        setLaunchingId(null);
+      }
+    },
+    [patch, refetch],
+  );
+
+  /**
+   * Redo the PROJECT half of a launch on a box that is already up.
+   *
+   * `launchSandbox` provisions the VM and then sets its project up, and those two
+   * fail independently: `ops/setup` succeeding is what makes `isLaunched` true,
+   * so a clone that fails immediately after leaves a running box that no launch
+   * path will ever revisit — the entry page sees a provisioned node, calls it
+   * done, and opens a sandbox holding the box's own starter project instead of
+   * the one it was created for.
+   *
+   * That is exactly the shape of the credential failure: the clone is the FIRST
+   * step needing a GitHub token, and by the time the recipient connects one, the
+   * machine is already built. Re-running the whole launch is not an option (a
+   * second `ops/setup` overwrites `node_provider_id` and orphans the live VM), so
+   * the recoverable unit is the project work on its own.
+   *
+   * Same `provisionSandboxProject` the launch calls, so the two cannot drift.
+   * Returns null when there is nothing recorded to set up.
+   */
+  const provisionProject = useCallback(
+    async (node: ComputeNode) => {
+      const setup = pendingSetup(node);
+      if (!setup) return null;
+      if (launchingRef.current) return null;
+      launchingRef.current = true;
+      setLaunchingId(node.id);
+      setSteps(plannedProjectSteps(setup));
+
+      const run = async <T>(id: StepId, fn: () => Promise<T>): Promise<T> => {
+        patch(id, { status: 'loading', detail: undefined });
+        try {
+          const result = await fn();
+          patch(id, { status: 'success' });
+          return result;
+        } catch (e) {
+          patch(id, { status: 'error', detail: e instanceof Error ? e.message : String(e) });
+          throw e;
+        }
+      };
+
+      try {
+        await provisionSandboxProject(node, setup, run, patch);
+        await run('open', () => Promise.resolve(workspaceServiceUrl(node.id)));
+        try {
+          await refetch();
+        } catch {
+          // The list is stale until the next refresh. The project is not.
         }
         return node;
       } finally {
@@ -692,7 +763,7 @@ export function useSandboxes() {
       } catch (err) {
         notify.error({
           id: 'sandbox-logout',
-          title: 'Could not sign the sandbox out',
+          title: t`Could not sign the sandbox out`,
           message: errorMessage(err, 'The sandbox did not confirm the sign-out.'),
         });
       } finally {
@@ -763,6 +834,7 @@ export function useSandboxes() {
     createSandbox,
     creating,
     launchSandbox,
+    provisionProject,
     /** Id of the box being launched right now, or null. Per-id so one card's
      *  spinner cannot appear on another's. */
     launchingId,

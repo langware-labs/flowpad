@@ -5,11 +5,7 @@ import { useProject } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { HistoryModal } from '@src/components/terminal/HistoryModal';
 import { useChatHistory } from '@src/components/chats-navigator/useChatHistory';
-import {
-  WorkerIcon,
-  pickHistoryTitle,
-  timeAgo,
-} from '@src/components/entity-execution-panel/history-row';
+import { WorkerIcon, pickHistoryTitle, timeAgo } from '@src/components/entity-execution-panel/history-row';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { defaultScopeFilter } from '@src/lib/scope-filter';
@@ -68,17 +64,11 @@ export function VibeRecentSessions({ heading, className }: VibeRecentSessionsPro
   // Project scope pushes the id to the backend so the per-project cap is computed
   // there — an under-active project's sessions would otherwise never make it into
   // the response to be filtered client-side.
-  const filters = useMemo(
-    () => ({ scope: defaultScopeFilter(projectId), search: '' }),
-    [projectId],
-  );
+  const filters = useMemo(() => ({ scope: defaultScopeFilter(projectId), search: '' }), [projectId]);
   const { buckets } = useChatHistory(filters, FETCH_LIMIT);
   // The hook groups into time buckets for the Chats side-menu; the hero wants a
   // flat top-N, already recency-sorted across buckets.
-  const recent = useMemo(
-    () => buckets.flatMap((b) => b.entries).slice(0, RECENT_LIMIT),
-    [buckets],
-  );
+  const recent = useMemo(() => buckets.flatMap((b) => b.entries).slice(0, RECENT_LIMIT), [buckets]);
 
   const openRecent = useCallback(
     (entry: WorkerHistoryEntry) => {
@@ -131,32 +121,28 @@ export function VibeRecentSessions({ heading, className }: VibeRecentSessionsPro
             // Cached read only — never a fetch per row. The entity wins over the
             // history snapshot so a renamed session doesn't show a stale title.
             const proc = entry.agentic_process_id
-              ? AgenticProcess.getByIdFromCache<AgenticProcess>(entry.agentic_process_id) ?? null
+              ? (AgenticProcess.getByIdFromCache<AgenticProcess>(entry.agentic_process_id) ?? null)
               : null;
-            // `text-left` on the rows/footer is load-bearing: a button's UA
+            // `text-start` on the rows/footer is load-bearing: a button's UA
             // text-align is center, so it ignores the wrapper's alignment.
             return (
               <button
                 key={entry.worker_id}
                 type="button"
                 onClick={() => openRecent(entry)}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-accent"
+                className="flex w-full items-center gap-2 px-3 py-2 text-start text-xs transition-colors hover:bg-accent"
                 data-testid="vibe-recent-session"
               >
                 <WorkerIcon workerType={entry.worker_type} />
-                <span className="min-w-0 flex-1 truncate text-foreground">
-                  {pickHistoryTitle(proc, entry)}
-                </span>
-                <span className="shrink-0 text-[10px] text-muted-foreground">
-                  {timeAgo(entry.last_active_time)}
-                </span>
+                <span className="min-w-0 flex-1 truncate text-foreground">{pickHistoryTitle(proc, entry)}</span>
+                <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(entry.last_active_time)}</span>
               </button>
             );
           })}
           <button
             type="button"
             onClick={() => setHistoryOpen(true)}
-            className="flex w-full items-center gap-1 px-3 py-2 text-left text-xs font-medium text-primary transition-colors hover:bg-accent/50"
+            className="flex w-full items-center gap-1 px-3 py-2 text-start text-xs font-medium text-primary transition-colors hover:bg-accent/50"
             data-testid="vibe-recent-show-more"
           >
             <Trans>Show more</Trans>

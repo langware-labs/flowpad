@@ -1,13 +1,5 @@
-import {
-  dataContext,
-  FSRef,
-  Markdown,
-  PageId,
-  TypeId,
-  Whiteboard,
-  type APIEntity,
-  type WikiResolveResult,
-} from '@sdk';
+import { t } from '@lingui/core/macro';
+import { dataContext, FSRef, Markdown, PageId, TypeId, Whiteboard, type APIEntity, type WikiResolveResult } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -21,10 +13,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { DEFAULT_WIKI_SPACE, editorForType } from '@src/navigation/asset-doc-types';
-import {
-  clearWikiResolveResult,
-  useWikiResolveResult,
-} from '@src/routes/loaders/wiki-resolve-store';
+import { clearWikiResolveResult, useWikiResolveResult } from '@src/routes/loaders/wiki-resolve-store';
 import { resolveWikiWord } from '@src/components/wiki/resolve-wiki';
 import type { WikiAuthority } from '@src/components/wiki/resolve-wiki';
 import { useWikiModalStore } from '@src/components/wiki-tip/wiki-modal';
@@ -100,7 +89,7 @@ export function WikiResolveView({
       await queryClient.invalidateQueries({ queryKey });
     } catch (err) {
       notify.error({
-        title: `Could not create ${createAs}`,
+        title: t`Could not create ${createAs}`,
         message: err instanceof Error ? err.message : String(err),
       });
     } finally {
@@ -111,7 +100,7 @@ export function WikiResolveView({
   if (!result && isLoading) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+        <RefreshCw className="me-2 h-4 w-4 animate-spin" />
         <Trans>Resolving [[{name}]]…</Trans>
       </div>
     );
@@ -130,7 +119,9 @@ export function WikiResolveView({
       <div className="flex h-full items-center justify-center px-6">
         <div className="flex max-w-md flex-col items-center gap-3 text-center" data-testid="wiki-ambiguous">
           <AlertTriangle className="h-10 w-10 text-amber-500" />
-          <div className="text-lg font-semibold"><Trans>[[{name}]] is ambiguous</Trans></div>
+          <div className="text-lg font-semibold">
+            <Trans>[[{name}]] is ambiguous</Trans>
+          </div>
           <div className="text-sm text-muted-foreground">
             <Trans>More than one readable asset matches this word. Bind it to a specific asset.</Trans>
           </div>
@@ -146,7 +137,9 @@ export function WikiResolveView({
         <div className="flex max-w-md flex-col items-center gap-4 text-center" data-testid="wiki-not-found">
           <FileQuestion className="h-10 w-10 text-muted-foreground/60" />
           <div>
-            <div className="text-lg font-semibold"><Trans>[[{name}]] not found</Trans></div>
+            <div className="text-lg font-semibold">
+              <Trans>[[{name}]] not found</Trans>
+            </div>
             <div className="mt-1 text-sm text-muted-foreground">
               <Trans>No page exists with this name yet.</Trans>
             </div>
@@ -161,20 +154,26 @@ export function WikiResolveView({
               >
                 <div className="flex items-center gap-2">
                   <RadioGroupItem value="markdown" id="wiki-create-markdown" />
-                  <Label htmlFor="wiki-create-markdown"><Trans>Create as Markdown</Trans></Label>
+                  <Label htmlFor="wiki-create-markdown">
+                    <Trans>Create as Markdown</Trans>
+                  </Label>
                 </div>
                 <div className="flex items-center gap-2">
                   <RadioGroupItem value="whiteboard" id="wiki-create-whiteboard" />
-                  <Label htmlFor="wiki-create-whiteboard"><Trans>Create as Whiteboard</Trans></Label>
+                  <Label htmlFor="wiki-create-whiteboard">
+                    <Trans>Create as Whiteboard</Trans>
+                  </Label>
                 </div>
               </RadioGroup>
               <Button onClick={() => void handleCreate()} disabled={creating}>
                 {creating ? (
                   <>
-                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                    <RefreshCw className="me-2 h-4 w-4 animate-spin" />
                     <Trans>Creating…</Trans>
                   </>
-                ) : <Trans>Create it</Trans>}
+                ) : (
+                  <Trans>Create it</Trans>
+                )}
               </Button>
             </>
           ) : null}
@@ -204,14 +203,7 @@ interface ResolvedWikiAssetProps {
   authority: WikiAuthority;
 }
 
-function ResolvedWikiAsset({
-  target,
-  name,
-  wikiRef,
-  fragment,
-  variant,
-  authority,
-}: ResolvedWikiAssetProps) {
+function ResolvedWikiAsset({ target, name, wikiRef, fragment, variant, authority }: ResolvedWikiAssetProps) {
   const editor = editorForType(target.type);
   if (!editor) {
     return (
@@ -222,13 +214,7 @@ function ResolvedWikiAsset({
   }
   if (variant === 'plain') {
     return (
-      <WikiPlainRecordView
-        target={target}
-        name={name}
-        wikiRef={wikiRef}
-        fragment={fragment}
-        authority={authority}
-      />
+      <WikiPlainRecordView target={target} name={name} wikiRef={wikiRef} fragment={fragment} authority={authority} />
     );
   }
   return (
@@ -244,13 +230,7 @@ function ResolvedWikiAsset({
   );
 }
 
-function WikiPlainRecordView({
-  target,
-  name,
-  wikiRef,
-  fragment,
-  authority,
-}: Omit<ResolvedWikiAssetProps, 'variant'>) {
+function WikiPlainRecordView({ target, name, wikiRef, fragment, authority }: Omit<ResolvedWikiAssetProps, 'variant'>) {
   const { data: entity, isLoading: entityLoading, error: entityError } = useEntity(target);
   const {
     data: record,
@@ -265,7 +245,7 @@ function WikiPlainRecordView({
   if (entityLoading || recordLoading) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+        <RefreshCw className="me-2 h-4 w-4 animate-spin" />
         <Trans>Loading [[{name}]]…</Trans>
       </div>
     );
@@ -337,7 +317,7 @@ function WikiPlainMarkdown({
       plainHeaderActions={(share) => (
         <>
           {authority === 'local' ? (
-            <Button variant="ghost" size="sm" onClick={openFull} title="Open full page" className="gap-1.5">
+            <Button variant="ghost" size="sm" onClick={openFull} title={t`Open full page`} className="gap-1.5">
               <ExternalLink className="h-3.5 w-3.5" />
               Open
             </Button>

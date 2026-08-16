@@ -40,6 +40,7 @@ same-origin WS handshake, but nothing was there to check them.
 
 from __future__ import annotations
 
+import logging
 import secrets
 
 from starlette.requests import HTTPConnection
@@ -52,6 +53,8 @@ from flow_sdk.instance_settings.cookie_gate import get_cookie_gate
 COOKIE_NAME = "__Host-cookie-gate"
 HEADER_NAME = "x-cookie-gate"
 QUERY_NAME = "cookie-gate"
+
+logger = logging.getLogger(__name__)
 
 # Fully inline — static is gated too, so an external stylesheet here would itself
 # be Forbidden. The audience is a human who clicked a stale link, not a script
@@ -105,6 +108,21 @@ class CookieGateMiddleware:
         await self._deny(scope, receive, send)
 
     async def _deny(self, scope: Scope, receive: Receive, send: Send) -> None:
+        # Denials used to be silent, and that silence was expensive. Uvicorn's
+        # access logger sets ``propagate=False``, so its 403 lines never reach
+        # the root handler ``init_dev_file_logging`` installs -- meaning a gated
+        # instance refused every request with NO on-disk trace anywhere, and the
+        # only evidence of what was happening lived in the rejected caller. One
+        # line here is the difference between reading a log and reverse-engineering
+        # an HTML page out of a CLI error string.
+        #
+        # Type and path only. What the caller presented is a secret (or a guess
+        # at one) and does not belong in a log.
+        logger.warning(
+            "cookie-gate: refused %s %s (no valid secret presented)",
+            scope["type"],
+            scope.get("path", "?"),
+        )
         if scope["type"] == "websocket":
             # Closing before accept: the server turns this into an HTTP 403 on
             # the handshake, which is the correct rejection for a WS upgrade.

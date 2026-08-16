@@ -1,5 +1,14 @@
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { cloudManager } from '@sdk';
-import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from '@src/components/ui/alert-dialog';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@src/components/ui/alert-dialog';
 import { Button } from '@src/components/ui/button';
 import { AlertDialogFooter } from '@src/components/ui/alert-dialog';
 import { LogIn, Mail, PartyPopper, X } from 'lucide-react';
@@ -49,14 +58,14 @@ export const clearPendingAction = () => {
 
 const VARIANT_CONFIG = {
   require_login: {
-    title: 'Please sign in',
-    description: 'Sign in to access your flow and unlock Flowpad AI agent.',
+    title: msg`Please sign in`,
+    description: msg`Sign in to access your flow and unlock Flowpad AI agent.`,
     icon: LogIn,
     eventSource: 'require_login',
   },
   visitor_limit: {
     title: "You're doing great!",
-    description: 'Create a free account to continue your conversation and save your progress.',
+    description: msg`Create a free account to continue your conversation and save your progress.`,
     icon: PartyPopper,
     eventSource: 'visitor_limit',
   },
@@ -110,41 +119,51 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ open, onOpenChange, variant =
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
             <Icon className="h-7 w-7 text-primary" />
           </div>
-          <AlertDialogTitle>{config.title}</AlertDialogTitle>
-          <AlertDialogDescription>{config.description}</AlertDialogDescription>
+          <AlertDialogTitle>{i18n._(config.title)}</AlertDialogTitle>
+          <AlertDialogDescription>{i18n._(config.description)}</AlertDialogDescription>
         </AlertDialogHeader>
 
         <AlertDialogFooter className="flex-col items-stretch gap-2 space-x-0 sm:flex-col sm:space-x-0">
-          <Button onClick={handleLogin('google')} title={tooltip} className="w-full justify-center border border-primary">
+          <Button
+            onClick={handleLogin('google')}
+            title={tooltip}
+            className="w-full justify-center border border-primary"
+          >
             <GoogleIcon />
-            <span className="ml-2"><Trans>Continue with Google</Trans></span>
+            <span className="ms-2">
+              <Trans>Continue with Google</Trans>
+            </span>
           </Button>
 
           <Button variant="outline" onClick={handleLogin('email')} title={tooltip} className="w-full justify-center">
             <Mail className="h-5 w-5" />
-            <span className="ml-2"><Trans>Continue with Email</Trans></span>
+            <span className="ms-2">
+              <Trans>Continue with Email</Trans>
+            </span>
           </Button>
 
           <p className="text-center text-xs text-muted-foreground">
-            <Trans>By continuing, you agree to our{' '}
-            <a
-              href="https://flowpad.ai/terms-and-conditions"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-foreground"
-            >
-              Terms
-            </a>{' '}
-            and{' '}
-            <a
-              href="https://flowpad.ai/privacy-policy"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-foreground"
-            >
-              Privacy Policy
-            </a>
-            .</Trans>
+            <Trans>
+              By continuing, you agree to our{' '}
+              <a
+                href="https://flowpad.ai/terms-and-conditions"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-foreground"
+              >
+                Terms
+              </a>{' '}
+              and{' '}
+              <a
+                href="https://flowpad.ai/privacy-policy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-foreground"
+              >
+                Privacy Policy
+              </a>
+              .
+            </Trans>
           </p>
         </AlertDialogFooter>
       </AlertDialogContent>

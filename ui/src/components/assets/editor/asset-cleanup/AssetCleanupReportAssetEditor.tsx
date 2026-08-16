@@ -98,12 +98,22 @@ function FindingsTable({ title, rows, selected, onToggle, onToggleAll, showVerdi
       </h3>
       <table className="w-full text-xs">
         <thead>
-          <tr className="text-left text-muted-foreground">
+          <tr className="text-start text-muted-foreground">
             <th className="w-6" />
-            <th className="font-medium"><Trans>asset</Trans></th>
-            <th className="w-14 font-medium"><Trans>kind</Trans></th>
-            {showVerdict && <th className="w-16 font-medium"><Trans>verdict</Trans></th>}
-            <th className="font-medium"><Trans>reason</Trans></th>
+            <th className="font-medium">
+              <Trans>asset</Trans>
+            </th>
+            <th className="w-14 font-medium">
+              <Trans>kind</Trans>
+            </th>
+            {showVerdict && (
+              <th className="w-16 font-medium">
+                <Trans>verdict</Trans>
+              </th>
+            )}
+            <th className="font-medium">
+              <Trans>reason</Trans>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -116,10 +126,10 @@ function FindingsTable({ title, rows, selected, onToggle, onToggleAll, showVerdi
                   aria-label={`Select ${f.name}`}
                 />
               </td>
-              <td className="truncate py-1 pr-2 text-foreground">{f.name}</td>
-              <td className="py-1 pr-2 text-muted-foreground">{f.kind}</td>
+              <td className="truncate py-1 pe-2 text-foreground">{f.name}</td>
+              <td className="py-1 pe-2 text-muted-foreground">{f.kind}</td>
               {showVerdict && (
-                <td className={`py-1 pr-2 ${f.verdict === 'garbage' ? 'text-destructive' : 'text-muted-foreground'}`}>
+                <td className={`py-1 pe-2 ${f.verdict === 'garbage' ? 'text-destructive' : 'text-muted-foreground'}`}>
                   {f.verdict}
                 </td>
               )}
@@ -200,27 +210,24 @@ export function AssetCleanupReportAssetEditor({ fsRef, report }: AssetCleanupRep
           return `- remove ${f.name} (${f.kind}) from ${folder}`;
         })
         .join('\n');
-      const result = await launchWizard<{ removed?: string[]; failed?: string[] }>(
-        'asset-cleanup-wizard',
-        {
-          title: t`Asset cleanup`,
-          prompt:
-            `Remove the garbage assets the user selected in the asset-cleanup ` +
-            `report at ${fsRef.path}:\n\n${plan}\n\n` +
-            `Present this plan and wait for the user's confirmation before deleting.`,
-          payload: {
-            reportPath: fsRef.path,
-            items: items.map((f) => ({
-              name: f.name,
-              kind: f.kind,
-              path: f.path,
-              verdict: f.verdict,
-              ...(f.entity_id ? { entity_id: f.entity_id } : {}),
-            })),
-          },
-          targetTypeId: report.typeId?.toString(),
+      const result = await launchWizard<{ removed?: string[]; failed?: string[] }>('asset-cleanup-wizard', {
+        title: t`Asset cleanup`,
+        prompt:
+          `Remove the garbage assets the user selected in the asset-cleanup ` +
+          `report at ${fsRef.path}:\n\n${plan}\n\n` +
+          `Present this plan and wait for the user's confirmation before deleting.`,
+        payload: {
+          reportPath: fsRef.path,
+          items: items.map((f) => ({
+            name: f.name,
+            kind: f.kind,
+            path: f.path,
+            verdict: f.verdict,
+            ...(f.entity_id ? { entity_id: f.entity_id } : {}),
+          })),
         },
-      );
+        targetTypeId: report.typeId?.toString(),
+      });
       if (result.status === 'done') {
         const removed = result.data?.removed?.length ?? selected.size;
         notify.success({ title: t`Cleanup complete`, message: t`${removed} assets removed.` });
@@ -240,8 +247,16 @@ export function AssetCleanupReportAssetEditor({ fsRef, report }: AssetCleanupRep
       <AssetEditorHeader fileName={report.name || fileName} dirPath={dirPath} />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        {loading && <p className="text-sm text-muted-foreground"><Trans>Loading report…</Trans></p>}
-        {error && <p className="text-sm text-destructive"><Trans>Failed to load report: {error}</Trans></p>}
+        {loading && (
+          <p className="text-sm text-muted-foreground">
+            <Trans>Loading report…</Trans>
+          </p>
+        )}
+        {error && (
+          <p className="text-sm text-destructive">
+            <Trans>Failed to load report: {error}</Trans>
+          </p>
+        )}
         {doc && (
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between gap-2">
@@ -268,17 +283,19 @@ export function AssetCleanupReportAssetEditor({ fsRef, report }: AssetCleanupRep
                 </h3>
                 <ul className="space-y-0.5 text-xs text-muted-foreground">
                   {doc.roots.map((r) => (
-                    <li key={r} className="truncate font-mono" title={r}>{r}</li>
+                    <li key={r} className="truncate font-mono" title={r}>
+                      {r}
+                    </li>
                   ))}
                 </ul>
               </div>
             )}
 
-            {([
+            {[
               { title: t`Garbage`, rows: fileGroups.garbage },
               { title: t`Unsure`, rows: fileGroups.unsure },
               { title: t`Keep`, rows: fileGroups.keep },
-            ]).map(({ title, rows }) => (
+            ].map(({ title, rows }) => (
               <FindingsTable
                 key={title}
                 title={title}
@@ -293,9 +310,8 @@ export function AssetCleanupReportAssetEditor({ fsRef, report }: AssetCleanupRep
               <div data-testid="asset-cleanup-projects-section">
                 <div className="mb-2 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
                   <Trans>
-                    Deleting a project is permanent: it removes the project folder and every
-                    Flowpad record inside it. Projects are never pre-selected — check them
-                    deliberately.
+                    Deleting a project is permanent: it removes the project folder and every Flowpad record inside it.
+                    Projects are never pre-selected — check them deliberately.
                   </Trans>
                 </div>
                 <FindingsTable

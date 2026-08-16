@@ -98,7 +98,7 @@ function HubProjectAssets({ projectId }: { projectId: string }) {
               key={asset.typeId.toString()}
               type="button"
               onClick={() => navigation.openDock(hubProjectAssetDock(projectId, asset.typeId))}
-              className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:bg-accent"
+              className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-start transition-colors hover:bg-accent"
               data-testid={`hub-project-asset-${asset.typeId.toString()}`}
             >
               <AssetIcon className="h-4 w-4 shrink-0 text-muted-foreground" />

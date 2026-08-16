@@ -1,14 +1,5 @@
 import { useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
-import {
-  ExternalLink,
-  Eye,
-  FileText,
-  Lock,
-  Plus,
-  Sparkles,
-  Users,
-  type LucideIcon,
-} from 'lucide-react';
+import { ExternalLink, Eye, FileText, Lock, Plus, Sparkles, Users, type LucideIcon } from 'lucide-react';
 import { notify } from '@src/notifications';
 import type { APIEntity } from '@sdk';
 import { Skill, Spec, TypeId } from '@sdk';
@@ -84,14 +75,8 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
 
   // Two buckets, two sections — matches the conversation panel's Shared /
   // Private split exactly.
-  const sharedRows = useMemo(
-    () => entity.sharedContextEntities ?? [],
-    [entity.sharedContextEntities],
-  );
-  const privateRows = useMemo(
-    () => entity.privateContextEntities ?? [],
-    [entity.privateContextEntities],
-  );
+  const sharedRows = useMemo(() => entity.sharedContextEntities ?? [], [entity.sharedContextEntities]);
+  const privateRows = useMemo(() => entity.privateContextEntities ?? [], [entity.privateContextEntities]);
 
   const [menuOpen, setMenuOpen] = useState(false);
   // When a menu item is picked the header swaps into a tiny inline title
@@ -228,82 +213,82 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
           </ContextTable>
         )}
         <div className="relative mt-2">
-        {pending ? (
-          <form
-            className="flex items-center gap-1 rounded-md border border-border bg-background p-1"
-            onSubmit={handleSubmit}
-            data-testid="entity-context-panel-title-form"
-          >
-            <input
-              type="text"
-              autoFocus
-              value={titleDraft}
-              onChange={(e) => setTitleDraft(e.target.value)}
-              onKeyDown={onInputKey}
-              disabled={adding}
-              placeholder={pending === 'spec' ? t`Plan title…` : t`Skill name…`}
-              className="min-w-0 flex-1 rounded bg-background px-2 py-1 text-[11px] text-foreground outline-none"
-              data-testid="entity-context-panel-title-input"
-            />
-            <button
-              type="submit"
-              disabled={adding || !titleDraft.trim()}
-              className="rounded px-2 py-1 text-[11px] font-medium text-emerald-700 transition-colors hover:bg-emerald-500/10 disabled:opacity-50 dark:text-emerald-300"
-              data-testid="entity-context-panel-title-submit"
+          {pending ? (
+            <form
+              className="flex items-center gap-1 rounded-md border border-border bg-background p-1"
+              onSubmit={handleSubmit}
+              data-testid="entity-context-panel-title-form"
             >
-              {adding ? t`Adding…` : t`Add`}
-            </button>
-            <button
-              type="button"
-              onClick={cancelCreate}
-              disabled={adding}
-              className="rounded px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
-              data-testid="entity-context-panel-title-cancel"
-            >
-              <Trans>Cancel</Trans>
-            </button>
-          </form>
-        ) : (
-          <>
-            <button
-              type="button"
-              onClick={() => setMenuOpen((v) => !v)}
-              disabled={adding}
-              title={t`Attach a plan or skill`}
-              aria-label={t`Attach a plan or skill`}
-              className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border bg-background px-3 py-2 text-[11px] font-medium text-muted-foreground transition-colors hover:border-emerald-500/50 hover:bg-emerald-500/5 hover:text-emerald-700 disabled:opacity-50 dark:hover:text-emerald-300"
-              data-testid="entity-context-panel-add"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <Trans>Add</Trans>
-            </button>
-            {menuOpen && (
-              <div
-                className="absolute left-0 right-0 top-full z-10 mt-1 rounded-md border border-border bg-popover p-1 text-xs shadow-md"
-                data-testid="entity-context-panel-add-menu"
+              <input
+                type="text"
+                autoFocus
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onKeyDown={onInputKey}
+                disabled={adding}
+                placeholder={pending === 'spec' ? t`Plan title…` : t`Skill name…`}
+                className="min-w-0 flex-1 rounded bg-background px-2 py-1 text-[11px] text-foreground outline-none"
+                data-testid="entity-context-panel-title-input"
+              />
+              <button
+                type="submit"
+                disabled={adding || !titleDraft.trim()}
+                className="rounded px-2 py-1 text-[11px] font-medium text-emerald-700 transition-colors hover:bg-emerald-500/10 disabled:opacity-50 dark:text-emerald-300"
+                data-testid="entity-context-panel-title-submit"
               >
-                <button
-                  type="button"
-                  onClick={() => openCreate('spec')}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground transition-colors hover:bg-muted"
-                  data-testid="entity-context-panel-add-spec"
+                {adding ? t`Adding…` : t`Add`}
+              </button>
+              <button
+                type="button"
+                onClick={cancelCreate}
+                disabled={adding}
+                className="rounded px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                data-testid="entity-context-panel-title-cancel"
+              >
+                <Trans>Cancel</Trans>
+              </button>
+            </form>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => setMenuOpen((v) => !v)}
+                disabled={adding}
+                title={t`Attach a plan or skill`}
+                aria-label={t`Attach a plan or skill`}
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border bg-background px-3 py-2 text-[11px] font-medium text-muted-foreground transition-colors hover:border-emerald-500/50 hover:bg-emerald-500/5 hover:text-emerald-700 disabled:opacity-50 dark:hover:text-emerald-300"
+                data-testid="entity-context-panel-add"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <Trans>Add</Trans>
+              </button>
+              {menuOpen && (
+                <div
+                  className="absolute left-0 right-0 top-full z-10 mt-1 rounded-md border border-border bg-popover p-1 text-xs shadow-md"
+                  data-testid="entity-context-panel-add-menu"
                 >
-                  <FileText className="h-3 w-3 text-muted-foreground" />
-                  <Trans>Plan</Trans>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openCreate('skill')}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground transition-colors hover:bg-muted"
-                  data-testid="entity-context-panel-add-skill"
-                >
-                  <Sparkles className="h-3 w-3 text-muted-foreground" />
-                  <Trans>Skill</Trans>
-                </button>
-              </div>
-            )}
-          </>
-        )}
+                  <button
+                    type="button"
+                    onClick={() => openCreate('spec')}
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-foreground transition-colors hover:bg-muted"
+                    data-testid="entity-context-panel-add-spec"
+                  >
+                    <FileText className="h-3 w-3 text-muted-foreground" />
+                    <Trans>Plan</Trans>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openCreate('skill')}
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-foreground transition-colors hover:bg-muted"
+                    data-testid="entity-context-panel-add-skill"
+                  >
+                    <Sparkles className="h-3 w-3 text-muted-foreground" />
+                    <Trans>Skill</Trans>
+                  </button>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -321,19 +306,13 @@ function SectionHeader({ title, icon: Icon }: { title: string; icon?: LucideIcon
   return (
     <div className="mb-1.5 flex items-center gap-1.5">
       {Icon && <Icon className="h-3 w-3 text-foreground" aria-hidden="true" />}
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground">
-        {title}
-      </span>
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground">{title}</span>
     </div>
   );
 }
 
 function ContextTable({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="divide-y divide-border rounded border border-border bg-background">
-      {children}
-    </div>
-  );
+  return <div className="divide-y divide-border rounded border border-border bg-background">{children}</div>;
 }
 
 interface RowShellProps {
@@ -366,7 +345,7 @@ function RowShell({ icon: Icon, type, name, onFocus, focusTitle, children }: Row
           onClick={onFocus}
           title={focusTitle}
           aria-label={focusTitle ?? `Reveal ${type}: ${name}`}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded text-left transition-colors hover:bg-muted/40"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded text-start transition-colors hover:bg-muted/40"
         >
           {focusInner}
         </button>
@@ -378,15 +357,7 @@ function RowShell({ icon: Icon, type, name, onFocus, focusTitle, children }: Row
   );
 }
 
-function RowAction({
-  onClick,
-  title,
-  children,
-}: {
-  onClick: () => void;
-  title?: string;
-  children: React.ReactNode;
-}) {
+function RowAction({ onClick, title, children }: { onClick: () => void; title?: string; children: React.ReactNode }) {
   return (
     <button
       type="button"
@@ -412,13 +383,7 @@ function EmptyHint({ text }: { text: string }) {
 // the right icon by TypeId.type, and renders the "View / Open" action.
 // ─────────────────────────────────────────────────────────────────────────
 
-function ContextRow({
-  typeId,
-  onOpen,
-}: {
-  typeId: TypeId;
-  onOpen: (assetRef?: string | null) => void;
-}) {
+function ContextRow({ typeId, onOpen }: { typeId: TypeId; onOpen: (assetRef?: string | null) => void }) {
   const { t } = useLingui();
   const { data: entity } = useEntity(typeId);
   const name = entity?.displayName ?? typeId.id;

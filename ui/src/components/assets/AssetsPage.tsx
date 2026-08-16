@@ -1,7 +1,15 @@
+import { t } from '@lingui/core/macro';
+import { i18n } from '@lingui/core';
 import { AssetEditorRouter, hasEditor } from '@src/components/assets/editor/AssetEditorRouter';
 import { WikiResolveView } from '@src/components/assets/editor/WikiResolveView';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
-import { AssetEditor, AssetMode, AssetRoutingMethod, DEFAULT_WIKI_SPACE, WIKI_FRAGMENT_PARAM } from '@src/navigation/asset-doc-types';
+import {
+  AssetEditor,
+  AssetMode,
+  AssetRoutingMethod,
+  DEFAULT_WIKI_SPACE,
+  WIKI_FRAGMENT_PARAM,
+} from '@src/navigation/asset-doc-types';
 import { ProjectHome } from '@src/components/project-home/ProjectHome';
 import { ShareContextFolderButton } from '@src/components/assets/ShareContextFolderButton';
 import { useContextFolderForRel } from '@src/hooks/use-context-folder-for-rel';
@@ -229,7 +237,7 @@ function FolderBreadcrumb({
         title={t`Clear folder filter`}
         aria-label={t`Clear folder filter`}
         data-testid="asset-list-breadcrumb-clear"
-        className="ml-auto flex h-5 w-5 items-center justify-center rounded hover:bg-muted"
+        className="ms-auto flex h-5 w-5 items-center justify-center rounded hover:bg-muted"
       >
         <X className="h-3 w-3 text-muted-foreground" />
       </button>
@@ -300,7 +308,7 @@ export function AssetsPage() {
         await proj.deleteWithChildren();
       },
       onAfterDelete: () => {
-        notify.success({ title: 'Project deleted', message: name });
+        notify.success({ title: t`Project deleted`, message: name });
         navigation.closeDock();
       },
     });
@@ -429,7 +437,6 @@ export function AssetsPage() {
     scopedProjectId: isProjectView ? scopeProjectId : urlScopeProjectId,
   });
 
-
   // The folder the header's Share acts on: the context folder CONTAINING the
   // browsed path when there is one (only its root is a repo — an `fs/` pointer
   // addresses any depth), else the browsed directory itself. Same resolution the
@@ -475,13 +482,13 @@ export function AssetsPage() {
       if (!name.trim() || !newTypeTarget) return;
       const descriptor = getDescriptor(newTypeTarget);
       if (!descriptor) {
-        notify.error({ title: `Cannot create ${newTypeTarget}` });
+        notify.error({ title: t`Cannot create ${newTypeTarget}` });
         setNewTypeTarget(null);
         return;
       }
       try {
         const res = await descriptor.create({ project: dataContext.project ?? null, name });
-        notify.success({ title: res.toastTitle });
+        notify.success({ title: i18n._(res.toastTitle) });
         if (res.pointer) {
           navigateAsset(res.pointer);
           setNewTypeTarget(null);
@@ -509,7 +516,7 @@ export function AssetsPage() {
       if (!path || !path.startsWith('/')) {
         notify.error({
           title: t`Asset has no file on disk`,
-          message: `${result.name || result.record_id} is indexed without a valid source path and cannot be opened.`,
+          message: t`${result.name || result.record_id} is indexed without a valid source path and cannot be opened.`,
         });
         return;
       }
@@ -550,48 +557,45 @@ export function AssetsPage() {
           chrome — the Assets label, the folder share, the project delete —
           which the bar has no equivalent for. */}
       {!isEditorMode && (
-      <div
-        className="flex h-[52px] flex-shrink-0 items-center gap-1 border-b px-3"
-        data-testid="assets-page-header"
-      >
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <BookOpen className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-          <div className="min-w-0">
-            <div className="truncate text-sm font-medium">
-              {/* A context folder gets its own name as the pane title;
+        <div className="flex h-[52px] flex-shrink-0 items-center gap-1 border-b px-3" data-testid="assets-page-header">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <BookOpen className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium">
+                {/* A context folder gets its own name as the pane title;
                   everything else keeps Assets. */}
-              {isFsMode && fsRelPath ? (
-                fsRelPath.replace(/\/+$/, '').split('/').pop() || <Trans>Assets</Trans>
-              ) : isProjectView ? (
-                <Trans>Project assets</Trans>
-              ) : (
-                <Trans>Assets</Trans>
-              )}
+                {isFsMode && fsRelPath ? (
+                  fsRelPath.replace(/\/+$/, '').split('/').pop() || <Trans>Assets</Trans>
+                ) : isProjectView ? (
+                  <Trans>Project assets</Trans>
+                ) : (
+                  <Trans>Assets</Trans>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          {/* Share the folder this pane is browsing. Only an fs pointer has a
+          <div className="ms-auto flex items-center gap-2">
+            {/* Share the folder this pane is browsing. Only an fs pointer has a
               folder to share; the button hides itself for a legacy dir with no
               linked Folder entity. Search lives on the list's own bar below,
               and indexing is plumbing — neither belongs in the header. */}
-          {isFsMode && containingFolder && (
-            <ShareContextFolderButton folder={containingFolder} project={projectEntity} />
-          )}
-          {isProjectView && projectEntity && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-9 shrink-0 gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={handleDeleteProject}
-              data-testid="project-delete"
-            >
-              <Trash2 className="h-4 w-4" />
-              <Trans>Delete project</Trans>
-            </Button>
-          )}
+            {isFsMode && containingFolder && (
+              <ShareContextFolderButton folder={containingFolder} project={projectEntity} />
+            )}
+            {isProjectView && projectEntity && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 shrink-0 gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={handleDeleteProject}
+                data-testid="project-delete"
+              >
+                <Trash2 className="h-4 w-4" />
+                <Trans>Delete project</Trans>
+              </Button>
+            )}
+          </div>
         </div>
-      </div>
       )}
 
       <div className="flex min-h-0 flex-1">

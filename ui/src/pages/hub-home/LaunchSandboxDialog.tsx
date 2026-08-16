@@ -138,7 +138,7 @@ export function LaunchSandboxDialog({
                 <Trans>Cancel</Trans>
               </Button>
               <Button onClick={() => void handleLaunch()} disabled={phase === 'launching'} data-testid="launch-confirm">
-                {phase === 'launching' && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                {phase === 'launching' && <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />}
                 <Trans>Launch</Trans>
               </Button>
             </>

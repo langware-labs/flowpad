@@ -55,7 +55,7 @@ export const NodeSecrets: React.FC<NodeSecretsProps> = ({ computeNode, project }
         <Button
           size="sm"
           variant="outline"
-          className="ml-auto h-7 text-[11px]"
+          className="ms-auto h-7 text-[11px]"
           disabled={busy !== null || rows.length === 0}
           onClick={() => void run('__all__', attachAll)}
           data-testid="node-secrets-attach-all"

@@ -58,7 +58,7 @@ export default function LaunchLanding() {
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
       <div className="w-full max-w-md text-center">
         {started ? (
-          <div className="rounded-lg border border-border p-5 text-left">
+          <div className="rounded-lg border border-border p-5 text-start">
             <p className="mb-3 text-sm font-medium">
               {launchUrl ? (
                 <Trans>Your sandbox is ready</Trans>
@@ -80,11 +80,7 @@ export default function LaunchLanding() {
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            {declined ? (
-              <Trans>Nothing was launched. You can close this tab.</Trans>
-            ) : (
-              <Trans>Preparing…</Trans>
-            )}
+            {declined ? <Trans>Nothing was launched. You can close this tab.</Trans> : <Trans>Preparing…</Trans>}
           </p>
         )}
       </div>
@@ -111,17 +107,19 @@ export default function LaunchLanding() {
           </DialogHeader>
 
           {gitOrigin ? (
-            <div className="rounded-md border border-border bg-muted/40 px-3 py-2.5 text-left">
+            <div className="rounded-md border border-border bg-muted/40 px-3 py-2.5 text-start">
               <div className="flex items-center gap-1.5 text-sm font-medium">
                 <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate" data-testid="launch-repo">{formatGitOrigin(gitOrigin)}</span>
+                <span className="truncate" data-testid="launch-repo">
+                  {formatGitOrigin(gitOrigin)}
+                </span>
               </div>
               <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
                 {gitOriginCloneUrl(gitOrigin)}
               </p>
             </div>
           ) : (
-            <p className="break-all rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-left font-mono text-xs">
+            <p className="break-all rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-start font-mono text-xs">
               {repo || t`(no repo given)`}
             </p>
           )}

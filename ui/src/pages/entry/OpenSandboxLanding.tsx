@@ -3,14 +3,18 @@ import {
   cloudManager,
   ComputeNode,
   fetchPendingInvitations,
+  OAUTH_PROVIDERS,
+  OAuthStatus,
+  oauthService,
   navigator as sdkNavigator,
   TypeId,
 } from '@sdk';
+import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import { StepList } from '@src/components/ui/step-list';
 import { isLaunched, useSandboxes, workspaceServiceUrl } from '@src/hooks/use-sandboxes';
-import { errorMessage, errorStatus } from '@src/lib/error-message';
-import { ExternalLink } from 'lucide-react';
+import { errorMessage, errorStatus, isMissingGitCredential } from '@src/lib/error-message';
+import { ExternalLink, Github, Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useParams, useSearchParams } from 'react-router';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -134,6 +138,10 @@ export default function OpenSandboxLanding() {
   // screen because it is the one moment where something changes hands, and a
   // silent spinner through it reads as a stall.
   const [accepting, setAccepting] = useState(false);
+  // The one failure the RECIPIENT can fix, so it gets a screen instead of a
+  // sentence: the box loads a private repo and they have never connected GitHub.
+  const [needsGithub, setNeedsGithub] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   // StrictMode double-invokes effects; navigating twice would restart the box's
   // resume from scratch, and launching twice would orphan a VM.
   const started = useRef(false);
@@ -152,7 +160,10 @@ export default function OpenSandboxLanding() {
   // reading, redirected to `open-service`, and the recipient got the 409 this
   // page exists to prevent. Arriving straight from a sign-in round trip, which is
   // exactly what an invitation does, made that the COMMON path rather than a race.
-  const { launchSandbox, steps } = useSandboxes();
+  const { launchSandbox, provisionProject, steps } = useSandboxes();
+  // The box whose clone failed. Held so a completed GitHub grant can finish the
+  // job on the SAME node rather than starting the arrival over.
+  const pendingNode = useRef<ComputeNode | null>(null);
 
   useEffect(() => {
     if (started.current) return;
@@ -249,6 +260,16 @@ export default function OpenSandboxLanding() {
         window.location.assign(url);
       } catch (e) {
         setLaunching(false);
+        // THE CLONE HAD NO CREDENTIALS. Not an error to report — a thing to offer.
+        // The box loads a private repo and this person has no GitHub connected;
+        // the hub cannot borrow the sender's, because secrets are keyed to the
+        // principal making the request. So the only way in is their own account,
+        // and the raw `could not read Username` says none of that.
+        if (isMissingGitCredential(e)) {
+          pendingNode.current = node;
+          setNeedsGithub(true);
+          return;
+        }
         // 403 is the one failure with a person attached to it: they hold `admin`
         // from a plain share, which opens a running box but cannot build one.
         // Naming the fix beats echoing "Forbidden" at someone who did nothing wrong.
@@ -261,10 +282,83 @@ export default function OpenSandboxLanding() {
     })();
   }, [nodeId, alreadyReturned, here.pathname, here.search, launchSandbox, t]);
 
+  const connectGithub = () => {
+    setConnecting(true);
+    setError(null);
+    void oauthService.connect(OAUTH_PROVIDERS.GITHUB).catch((e: unknown) => {
+      setConnecting(false);
+      setError(errorMessage(e, t`Couldn't start the GitHub connection.`));
+    });
+  };
+
+  // A grant lands here, and what it unblocks is the PROJECT, not the machine.
+  //
+  // Reloading was the obvious answer and it is wrong: `ops/setup` has already
+  // succeeded by the time a clone fails, so `isLaunched` is true and a fresh
+  // arrival takes the "already launched" branch straight to `open-service` —
+  // opening a box that never got its project, forever. The VM is not the thing
+  // that failed and must not be rebuilt (a second setup orphans the live one);
+  // the clone is, and it is separately retryable.
+  useOAuthFlowComplete(OAUTH_PROVIDERS.GITHUB, (msg) => {
+    if (msg.status !== OAuthStatus.SUCCESS) {
+      setConnecting(false);
+      setError(t`The GitHub connection didn't complete.`);
+      return;
+    }
+    const node = pendingNode.current;
+    if (!node) {
+      window.location.reload();
+      return;
+    }
+    setNeedsGithub(false);
+    setConnecting(false);
+    setLaunching(true);
+    void (async () => {
+      try {
+        await provisionProject(node);
+        window.location.assign(workspaceServiceUrl(node.id));
+      } catch (e) {
+        setLaunching(false);
+        // Still no usable credential — the account they connected is not the one
+        // that can read this repo. Offering the same button again would loop, so
+        // this lands on the ordinary error with what the clone actually said.
+        setError(errorMessage(e, t`This sandbox could not be set up.`));
+      }
+    })();
+  });
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
       <div className="w-full max-w-md text-center">
-        {error ? (
+        {needsGithub ? (
+          <>
+            <Github className="mx-auto mb-4 h-8 w-8 text-muted-foreground" aria-hidden />
+            <p className="text-sm font-medium" data-testid="open-sandbox-needs-github">
+              <Trans>This sandbox loads code from a private repository.</Trans>
+            </p>
+            {/* Says whose account and why, because the obvious assumption — that the
+                person who shared it should fix this — is the one thing that cannot
+                work here. */}
+            <p className="mt-2 text-sm text-muted-foreground">
+              <Trans>Connect your GitHub account to open it. Whoever shared the sandbox can't do this for you.</Trans>
+            </p>
+            <Button
+              size="sm"
+              className="mt-5 gap-1.5"
+              onClick={connectGithub}
+              disabled={connecting}
+              data-testid="open-sandbox-connect-github"
+            >
+              {connecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Github className="h-3.5 w-3.5" />}
+              <Trans>Connect GitHub</Trans>
+            </Button>
+            {error && (
+              <p className="mt-3 text-sm text-destructive" role="alert">
+                {error}
+              </p>
+            )}
+          </>
+        ) : error ? (
           <>
             <p className="text-sm font-medium" data-testid="open-sandbox-error">
               {error}

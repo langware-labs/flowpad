@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { AgenticProcess } from '@sdk';
 import type { SearchResult } from '@src/hooks/use-record-search';
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
@@ -93,8 +94,8 @@ async function resolveProcessAndOpenTerminal(
   if (!process) {
     if (!hasFallback) {
       notify.error({
-        title: 'Session not found',
-        message: `Session ${workerId} is not in Claude, Codex, or Copilot history.`,
+        title: t`Session not found`,
+        message: t`Session ${workerId} is not in Claude, Codex, or Copilot history.`,
       });
     }
     return false;
@@ -141,7 +142,6 @@ export function workerHistoryToRow(e: WorkerHistoryEntry): SpotlightRow {
     title: historyDisplayName(e),
     subtitle: e.project_name ?? '',
     timestamp: e.last_active_time ?? null,
-    onActivate: (navigation) =>
-      resolveProcessAndOpenTerminal(navigation, e.worker_id, e.agentic_process_id),
+    onActivate: (navigation) => resolveProcessAndOpenTerminal(navigation, e.worker_id, e.agentic_process_id),
   };
 }

@@ -85,7 +85,7 @@ function machinePathOf(value: string): string {
 function ConnectingFallback() {
   return (
     <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+      <RefreshCw className="me-2 h-4 w-4 animate-spin" />
       Connecting…
     </div>
   );

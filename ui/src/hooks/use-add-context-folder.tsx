@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useState, type ReactNode } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { launchWizard, type Project, type ProjectListItem } from '@sdk';
@@ -52,7 +53,7 @@ export function useAddContextFolder({ project, onAdded }: UseAddContextFolderOpt
       setGitScope(null);
       try {
         const result = await launchWizard<{ path?: string; newProjectId?: string }>('git-context-folder', {
-          title: 'Add Git folder',
+          title: t`Add Git folder`,
           targetTypeId: projectTypeId?.toString(),
           payload: { projectId, scope, ...input },
           prompt:
@@ -61,7 +62,7 @@ export function useAddContextFolder({ project, onAdded }: UseAddContextFolderOpt
               : `Create a new git repository named "${input.name}" and set it up as a context folder on this project.`,
         });
         if (result.status === 'error') {
-          notify.error({ title: 'Failed to add Git folder', message: result.errorStr ?? undefined });
+          notify.error({ title: t`Failed to add Git folder`, message: result.errorStr ?? undefined });
         }
         if (result.status === 'done') {
           // The wizard mutated the project via its own HTTP calls — force a
@@ -71,7 +72,7 @@ export function useAddContextFolder({ project, onAdded }: UseAddContextFolderOpt
         }
       } catch (err) {
         notify.error({
-          title: 'Failed to add Git folder',
+          title: t`Failed to add Git folder`,
           message: err instanceof Error ? err.message : undefined,
         });
       }

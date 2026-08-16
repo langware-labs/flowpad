@@ -86,7 +86,7 @@ export function MessageChips({ flowMessageId, conversationId, messageText }: Mes
 
   return (
     <>
-      <span className="ml-1 flex items-center gap-0.5">
+      <span className="ms-1 flex items-center gap-0.5">
         {showDownload && (
           <a
             href={localBundleUrl(flowMessageId)}
@@ -113,7 +113,7 @@ export function MessageChips({ flowMessageId, conversationId, messageText }: Mes
           </AdvancedOnly>
         )}
       </span>
-      <span className="ml-auto flex items-center gap-0.5">
+      <span className="ms-auto flex items-center gap-0.5">
         <FavoriteStar
           entityType="flow_message"
           entityId={flowMessageId}

@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { ViewType } from '@sdk';
 import { isMarkdownDocumentPath } from '@src/lib/markdown-path';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
@@ -6,13 +7,7 @@ import { AssetEditor, AssetMode, AssetRoutingMethod } from '@src/navigation/asse
 
 export { isMarkdownDocumentPath } from '@src/lib/markdown-path';
 
-export type DisplayAnnotationKind =
-  | 'website'
-  | 'markdown-document'
-  | 'asset'
-  | 'file'
-  | 'diff'
-  | 'active-view';
+export type DisplayAnnotationKind = 'website' | 'markdown-document' | 'asset' | 'file' | 'diff' | 'active-view';
 
 export interface DisplayAnnotationContext {
   kind: DisplayAnnotationKind;
@@ -48,7 +43,6 @@ function slug(value: string): string {
     .slice(0, 48);
 }
 
-
 export function displayAnnotationContextForWebapp(
   host?: string | null,
   port?: string | number | null,
@@ -67,14 +61,14 @@ export function displayAnnotationContextForPath(path: string): DisplayAnnotation
   if (isMarkdownDocumentPath(path)) {
     return {
       kind: 'markdown-document',
-      title: 'Markdown document',
+      title: t`Markdown document`,
       path,
       viewType: ViewType.MARKDOWN,
     };
   }
   return {
     kind: 'file',
-    title: 'File',
+    title: t`File`,
     path,
     viewType: ViewType.EDITOR,
   };
@@ -106,14 +100,14 @@ export function displayAnnotationContextForShown(
 
   return {
     kind: 'active-view',
-    title: 'Active display',
+    title: t`Active display`,
     type: shown.type,
     typeid: shown.typeid,
   };
 }
 
 export function displayAnnotationContextForDock(dock?: DockPointer | null): DisplayAnnotationContext {
-  if (!dock) return { kind: 'active-view', title: 'Active display' };
+  if (!dock) return { kind: 'active-view', title: t`Active display` };
 
   if (dock.viewType === ViewType.WEB_APP) {
     return displayAnnotationContextForWebapp(null, null);
@@ -131,7 +125,7 @@ export function displayAnnotationContextForDock(dock?: DockPointer | null): Disp
   ) {
     return {
       kind: 'markdown-document',
-      title: 'Markdown document',
+      title: t`Markdown document`,
       path: dock.pointer,
       viewType: dock.viewType,
     };
@@ -140,7 +134,7 @@ export function displayAnnotationContextForDock(dock?: DockPointer | null): Disp
   if (dock.viewType === ViewType.DIFF) {
     return {
       kind: 'diff',
-      title: 'Diff',
+      title: t`Diff`,
       path: dock.pointer,
       viewType: dock.viewType,
     };
@@ -152,7 +146,7 @@ export function displayAnnotationContextForDock(dock?: DockPointer | null): Disp
       if (ptr.mode === AssetMode.WIKI) {
         return {
           kind: 'markdown-document',
-          title: 'Markdown document',
+          title: t`Markdown document`,
           path: ptr.wikiName,
           viewType: dock.viewType,
         };
@@ -178,7 +172,7 @@ export function displayAnnotationContextForDock(dock?: DockPointer | null): Disp
 
   return {
     kind: 'active-view',
-    title: 'Active display',
+    title: t`Active display`,
     path: dock.pointer,
     viewType: dock.viewType,
   };

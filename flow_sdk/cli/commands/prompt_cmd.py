@@ -5,8 +5,8 @@ Called by Claude Code hook on UserPromptSubmit events.
 """
 
 from flow_sdk.cli.cli_command import CLICommand
-from flow_sdk.cli.config_manager import get_config_value, set_config_value, setup_defaults
-import requests
+from flow_sdk.cli.commands._common import local_get as _local_get
+from flow_sdk.cli.config_manager import get_config_value, set_config_value
 from flow_sdk.instance_settings import get_instance_settings
 
 
@@ -14,14 +14,14 @@ def onboard():
     """
     Run first-time onboarding for Flow.
     """
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("🌊 WELCOME TO FLOW! 🌊")
-    print("="*60)
+    print("=" * 60)
     print("\nOnboarding...")
     print("✓ Flow is now tracking your coding sessions!")
     print("✓ You can use 'flow config list' to see your configuration")
     print("✓ Happy coding!")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
 
     # Clear the first-time flag
     set_config_value("first_time_prompt", "false")
@@ -52,7 +52,7 @@ def handle_prompt(user_prompt):
     try:
         port = get_instance_settings().port
         url = f"http://127.0.0.1:{port}/prompt"
-        requests.get(url, params={"prompt_text": user_prompt}, timeout=5)
+        _local_get(url, params={"prompt_text": user_prompt}, timeout=5)
     except Exception:
         # Silently fail if server is not available
         pass
