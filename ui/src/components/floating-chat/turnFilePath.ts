@@ -1,7 +1,7 @@
 import { isAbsoluteMachinePath, TypeId, VFSPath } from '@sdk';
 
 /**
- * Turn a transcript's raw write path into the VFS path a dock pointer can
+ * Turn a transcript's raw file path into the VFS path a dock pointer can
  * address — or null when it cannot be resolved.
  *
  * This conversion is NOT optional and NOT already done for us. A
@@ -19,7 +19,7 @@ import { isAbsoluteMachinePath, TypeId, VFSPath } from '@sdk';
  * Pure and React-free so the Windows/POSIX × absolute/relative matrix is
  * unit-testable without a DOM.
  */
-export function createdFileVfsPath(
+export function turnFileVfsPath(
   rawPath: string,
   ctx: { workdir?: string | null; locator: TypeId },
 ): string | null {
@@ -52,7 +52,7 @@ export function createdFileVfsPath(
   } catch (err) {
     // `fromMachinePath` throws on anything it can't call absolute. A malformed
     // path must leave the chip inert, never take the transcript down.
-    console.warn('[created-files] could not resolve a written path', rawPath, err);
+    console.warn('[turn-files] could not resolve a touched path', rawPath, err);
     return null;
   }
 }

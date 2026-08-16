@@ -7,9 +7,9 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { dockPointerForFile } from '@src/navigation/local-file-pointer';
 import { vfsLocatorForComputeNode } from '@src/navigation/vfs-locator';
 
-import { createdFileVfsPath } from './createdFilePath';
+import { turnFileVfsPath } from './turnFilePath';
 
-export interface CreatedFileOpener {
+export interface TurnFileOpener {
   /** The VFS path a chip would open, or null — drives its disabled state. */
   resolve: (rawPath: string) => string | null;
   /** Open the file in its own tab. No-op when the path can't be resolved. */
@@ -17,7 +17,7 @@ export interface CreatedFileOpener {
 }
 
 /**
- * Open a file the agent wrote, in a tab of its own.
+ * Open a file the agent wrote or edited, in a tab of its own.
  *
  * Deliberately NOT `useChipTarget`/`openDisplayTarget`: those hand the raw
  * transcript path to `navigation.openFile`, which skips the machine→VFS
@@ -25,14 +25,14 @@ export interface CreatedFileOpener {
  * pointer scope-keyed (so a `.md`/`.html` folds into the ONE Assets tab for the
  * scope and renames it instead of opening beside it). Both are fixed here:
  *
- *  1. resolve the vendor path to a VFS path (`createdFileVfsPath`);
+ *  1. resolve the vendor path to a VFS path (`turnFileVfsPath`);
  *  2. pick the viewer through the shared `dockPointerForFile` chokepoint;
  *  3. rebase an assets pointer onto the process's project so it gets its own
  *     tab — the same move, for the same reason, as `use-show-target-listener`.
  *
  * URL-first: the click handler only navigates. No optimistic context writes.
  */
-export function useOpenCreatedFile(process?: AgenticProcess | null): CreatedFileOpener {
+export function useOpenTurnFile(process?: AgenticProcess | null): TurnFileOpener {
   const { navigation } = useDockNavigation();
   const workdir = process?.workdir ?? null;
   const projectId = process?.project_id ?? null;
@@ -46,7 +46,7 @@ export function useOpenCreatedFile(process?: AgenticProcess | null): CreatedFile
   );
 
   const resolve = useCallback(
-    (rawPath: string) => createdFileVfsPath(rawPath, { workdir, locator }),
+    (rawPath: string) => turnFileVfsPath(rawPath, { workdir, locator }),
     [workdir, locator],
   );
 

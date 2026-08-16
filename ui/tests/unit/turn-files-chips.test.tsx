@@ -1,5 +1,5 @@
 /**
- * The per-turn "files created" chip row, as the transcript renders it.
+ * The per-turn "files touched" chip row, as the transcript renders it.
  *
  * Three things are load-bearing and all three are silent when broken:
  *
@@ -44,15 +44,19 @@ const processStub = (workdir: string | null = '/repo') =>
 
 let seq = 0;
 
-function wroteGroup(...paths: string[]): TurnGroup {
-  const events = paths.map((path) => {
+/** `'/a.ts'` = written; `'~/a.ts'` = edited. */
+function touchedGroup(...specs: string[]): TurnGroup {
+  const events = specs.map((spec) => {
+    const isEdit = spec.startsWith('~');
+    const path = isEdit ? spec.slice(1) : spec;
+    const kind = isEdit ? 'file_edit' : 'file_write';
     const fd = new FlowData(FlowElementTypes.TOOL_CALL, JSON.stringify({ tool_call_id: `tu-${seq++}`, args: {} }), {
       i: String(seq),
       t: '2026-08-01T10:00:00Z',
       'data-type': 'object',
-      subtype: 'file_write',
+      subtype: kind,
     });
-    fd.processEntry = { transcript_entry: { kind: 'file_write', path } };
+    fd.processEntry = { transcript_entry: { kind, path } };
     return fd;
   });
   return { kind: 'dense', index: seq++, events };
@@ -67,9 +71,9 @@ function message(content: string, role: 'user' | 'assistant'): TurnGroup {
   return { kind: 'message', index: seq, flowData: fd };
 }
 
-const oneTurn = (...paths: string[]): TurnGroup[] => [
+const oneTurn = (...specs: string[]): TurnGroup[] => [
   message('go', 'user'),
-  wroteGroup(...paths),
+  touchedGroup(...specs),
   message('done', 'assistant'),
 ];
 
@@ -100,11 +104,11 @@ afterEach(() => {
 });
 
 describe('isRenderedGroup — the one visibility rule', () => {
-  // The created-files plan has to agree with the render about which rows exist,
+  // The turn-files plan has to agree with the render about which rows exist,
   // so the filter was lifted out of TurnGroupsList's JSX into this predicate.
   // These lock the extraction: same three rules, unchanged.
   it('keeps dense groups only when "Show tool calls" is on', () => {
-    const group = wroteGroup('/repo/a.ts');
+    const group = touchedGroup('/repo/a.ts');
 
     expect(isRenderedGroup(group, false)).toBe(false);
     expect(isRenderedGroup(group, true)).toBe(true);
@@ -125,7 +129,7 @@ describe('isRenderedGroup — the one visibility rule', () => {
   });
 });
 
-describe('TurnGroupsList — created-files chip row', () => {
+describe('TurnGroupsList — turn-files chip row', () => {
   it('still shows dense tool rows when the pref is on', () => {
     instancePreferences.set(PrefKey.CHAT_SHOW_TOOLS, true);
     renderList({ groups: oneTurn('/repo/src/new.ts') });
@@ -137,33 +141,80 @@ describe('TurnGroupsList — created-files chip row', () => {
     // The floating assistant / vibe chat render shape. Must be untouched.
     renderList({ groups: oneTurn('/repo/src/new.ts') });
 
-    expect(screen.queryByTestId('turn-created-files')).toBeNull();
+    expect(screen.queryByTestId('turn-files')).toBeNull();
   });
 
   it('renders a chip per created file when enabled', () => {
-    renderList({ groups: oneTurn('/repo/src/new.ts', '/repo/README.md'), showCreatedFiles: true, process: processStub() });
+    renderList({ groups: oneTurn('/repo/src/new.ts', '/repo/README.md'), showTurnFiles: true, process: processStub() });
 
-    const chips = screen.getAllByTestId('turn-created-file-chip');
+    const chips = screen.getAllByTestId('turn-file-chip');
     expect(chips.map((c) => c.textContent)).toEqual(['new.ts', 'README.md']);
   });
 
+  it('groups creations and edits separately, creations first', () => {
+    renderList({
+      groups: oneTurn('~/repo/old.ts', '/repo/new.ts', '~/repo/other.ts'),
+      showTurnFiles: true,
+      process: processStub(),
+    });
+
+    const chips = screen.getAllByTestId('turn-file-chip');
+    expect(chips.map((c) => [c.getAttribute('data-change'), c.textContent])).toEqual([
+      ['create', 'new.ts'],
+      ['edit', 'old.ts'],
+      ['edit', 'other.ts'],
+    ]);
+    expect(screen.getByTestId('turn-files').textContent).toContain('Created');
+    expect(screen.getByTestId('turn-files').textContent).toContain('Edited');
+  });
+
+  it('chips a written-then-edited file once, as created', () => {
+    // `Write` then `Edit` is the commonest shape in a scaffolding turn. Two
+    // chips for one file would read as churn.
+    renderList({ groups: oneTurn('/repo/a.ts', '~/repo/a.ts'), showTurnFiles: true, process: processStub() });
+
+    const chips = screen.getAllByTestId('turn-file-chip');
+    expect(chips).toHaveLength(1);
+    expect(chips[0].getAttribute('data-change')).toBe('create');
+  });
+
+  it('omits the Created group entirely when the turn only edited', () => {
+    renderList({ groups: oneTurn('~/repo/a.ts'), showTurnFiles: true, process: processStub() });
+
+    const row = screen.getByTestId('turn-files');
+    expect(row.textContent).toContain('Edited');
+    expect(row.textContent).not.toContain('Created');
+  });
+
+  it('caps each group independently at four inline chips', () => {
+    renderList({
+      groups: oneTurn('/c1', '/c2', '/c3', '/c4', '/c5', '~/e1', '~/e2', '~/e3', '~/e4', '~/e5', '~/e6'),
+      showTurnFiles: true,
+      process: processStub(),
+    });
+
+    expect(screen.getAllByTestId('turn-file-chip')).toHaveLength(8);
+    expect(screen.getByTestId('turn-files-more-created').textContent).toBe('+1');
+    expect(screen.getByTestId('turn-files-more-edited').textContent).toBe('+2');
+  });
+
   it('renders with "Show tool calls" OFF — the state the row exists for', () => {
-    renderList({ groups: oneTurn('/repo/src/new.ts'), showCreatedFiles: true, process: processStub() });
+    renderList({ groups: oneTurn('/repo/src/new.ts'), showTurnFiles: true, process: processStub() });
 
     // No tool row at all, yet the created file is still reachable.
     expect(screen.queryByTestId('tool-entry-row')).toBeNull();
-    expect(screen.getByTestId('turn-created-file-chip').textContent).toBe('new.ts');
+    expect(screen.getByTestId('turn-file-chip').textContent).toBe('new.ts');
   });
 
   it('waits for the trailing turn to end', () => {
-    const groups = [message('go', 'user'), wroteGroup('/repo/src/new.ts')];
+    const groups = [message('go', 'user'), touchedGroup('/repo/src/new.ts')];
 
-    const { unmount } = renderList({ groups, showCreatedFiles: true, process: processStub(), turnActive: true });
-    expect(screen.queryByTestId('turn-created-files')).toBeNull();
+    const { unmount } = renderList({ groups, showTurnFiles: true, process: processStub(), turnActive: true });
+    expect(screen.queryByTestId('turn-files')).toBeNull();
     unmount();
 
-    renderList({ groups, showCreatedFiles: true, process: processStub(), turnActive: false });
-    expect(screen.queryByTestId('turn-created-files')).not.toBeNull();
+    renderList({ groups, showTurnFiles: true, process: processStub(), turnActive: false });
+    expect(screen.queryByTestId('turn-files')).not.toBeNull();
   });
 
   it('places the row inside its own turn, before the next turn divider', () => {
@@ -171,11 +222,11 @@ describe('TurnGroupsList — created-files chip row', () => {
     // NEXT turn — the chips would credit the wrong prompt.
     renderList({
       groups: [...oneTurn('/repo/a.ts'), ...oneTurn('/repo/b.ts')],
-      showCreatedFiles: true,
+      showTurnFiles: true,
       process: processStub(),
     });
 
-    const rows = screen.getAllByTestId('turn-created-files');
+    const rows = screen.getAllByTestId('turn-files');
     expect(rows).toHaveLength(2);
 
     const first = rows[0];
@@ -186,20 +237,20 @@ describe('TurnGroupsList — created-files chip row', () => {
   it('folds everything past the fourth file into a "+N" chip', () => {
     renderList({
       groups: oneTurn('/r/a.ts', '/r/b.ts', '/r/c.ts', '/r/d.ts', '/r/e.ts', '/r/f.ts'),
-      showCreatedFiles: true,
+      showTurnFiles: true,
       process: processStub(),
     });
 
-    expect(screen.getAllByTestId('turn-created-file-chip')).toHaveLength(4);
-    expect(screen.getByTestId('turn-created-files-more').textContent).toBe('+2');
+    expect(screen.getAllByTestId('turn-file-chip')).toHaveLength(4);
+    expect(screen.getByTestId('turn-files-more-created').textContent).toBe('+2');
   });
 });
 
-describe('created-file chip — what a click opens', () => {
+describe('turn-file chip — what a click opens', () => {
   it('opens a code file with its compute-node prefix, not a bare project-root path', () => {
-    renderList({ groups: oneTurn('/repo/src/new.ts'), showCreatedFiles: true, process: processStub() });
+    renderList({ groups: oneTurn('/repo/src/new.ts'), showTurnFiles: true, process: processStub() });
 
-    fireEvent.click(screen.getByTestId('turn-created-file-chip'));
+    fireEvent.click(screen.getByTestId('turn-file-chip'));
 
     // Without the machine→VFS conversion this is `/dock/editor/repo/src/new.ts`,
     // which the code editor resolves against the ambient project and 404s.
@@ -208,9 +259,9 @@ describe('created-file chip — what a click opens', () => {
   });
 
   it('opens a markdown file rebased onto the project, so it gets its own tab', () => {
-    renderList({ groups: oneTurn('/repo/NOTES.md'), showCreatedFiles: true, process: processStub() });
+    renderList({ groups: oneTurn('/repo/NOTES.md'), showTurnFiles: true, process: processStub() });
 
-    fireEvent.click(screen.getByTestId('turn-created-file-chip'));
+    fireEvent.click(screen.getByTestId('turn-file-chip'));
 
     // A bare `/dock/assets/…` pointer is SCOPE-keyed: it would fold into the
     // scope's single Assets tab and rename it. The project rebase is what mints
@@ -221,17 +272,17 @@ describe('created-file chip — what a click opens', () => {
   });
 
   it('anchors a Codex-relative path on the process workdir', () => {
-    renderList({ groups: oneTurn('docs/hello.md'), showCreatedFiles: true, process: processStub('/repo') });
+    renderList({ groups: oneTurn('docs/hello.md'), showTurnFiles: true, process: processStub('/repo') });
 
-    fireEvent.click(screen.getByTestId('turn-created-file-chip'));
+    fireEvent.click(screen.getByTestId('turn-file-chip'));
 
     expect(lastPath).toContain('compute_node-@local/repo/docs/hello.md');
   });
 
   it('leaves a chip inert rather than guessing when the path cannot be anchored', () => {
-    renderList({ groups: oneTurn('docs/hello.md'), showCreatedFiles: true, process: processStub(null) });
+    renderList({ groups: oneTurn('docs/hello.md'), showTurnFiles: true, process: processStub(null) });
 
-    const chip = screen.getByTestId('turn-created-file-chip');
+    const chip = screen.getByTestId('turn-file-chip');
     expect((chip as HTMLButtonElement).disabled).toBe(true);
 
     fireEvent.click(chip);

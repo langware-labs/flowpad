@@ -1,12 +1,12 @@
 import { AgenticProcess, FlowData, FlowElementTypes, PrefKey } from '@sdk';
 import { Fragment, memo, useMemo } from 'react';
 import { ToolEntryRow } from '@src/components/floating-chat/ToolEntryRow';
-import { planTurnCreatedFiles } from '@src/components/floating-chat/createdFiles';
+import { planTurnFiles } from '@src/components/floating-chat/turnFiles';
 import type { TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
 import { usePreference } from '@src/hooks/use-preference';
 import ExecutionMessage from './execution-message/execution-message';
 import { MetaMessageChip } from './MetaMessageChip';
-import { TurnCreatedFilesChips } from './TurnCreatedFilesChips';
+import { TurnFilesChips } from './TurnFilesChips';
 import { WorkerUnavailableNotice } from './WorkerUnavailableNotice';
 import type { WorkerType } from '@src/components/workers/worker-types';
 
@@ -35,7 +35,7 @@ function TurnDivider() {
  * down in the leaf renderers — so a silent group used to leave a hairline with
  * no message under it (FLOWPAD-1983).
  *
- * Exported because the per-turn files plan has to agree with the render about
+ * Exported because the turn-files plan has to agree with the render about
  * which rows exist — two copies of this rule would drift the first time either
  * is touched.
  */
@@ -59,14 +59,14 @@ export function isRenderedGroup(g: TurnGroup, showTools: boolean): boolean {
  * Assistant (via EntityExecutionPanel's dense layout) and the interactive
  * tab's Standard-mode SimpleChatPane so both render identical chat turns.
  *
- * Standard mode additionally opts into a per-turn "files created" chip row —
- * see `showCreatedFiles`.
+ * Standard mode additionally opts into a per-turn "files touched" chip row —
+ * see `showTurnFiles`.
  */
 export function TurnGroupsList({
   groups,
   worker,
   onWorkerChange,
-  showCreatedFiles = false,
+  showTurnFiles = false,
   process,
   turnActive = false,
 }: {
@@ -74,10 +74,10 @@ export function TurnGroupsList({
   worker?: string;
   onWorkerChange?: (worker: WorkerType) => void | Promise<void>;
   /**
-   * Opt-in: render a "files created" chip row under each ended turn. Off by
-   * default, so the floating-assistant / vibe consumer is unaffected.
+   * Opt-in: render a "files this turn touched" chip row under each ended turn.
+   * Off by default, so the floating-assistant / vibe consumer is unaffected.
    */
-  showCreatedFiles?: boolean;
+  showTurnFiles?: boolean;
   /** The session those chips resolve their paths against. */
   process?: AgenticProcess | null;
   /**
@@ -98,20 +98,20 @@ export function TurnGroupsList({
   // only the VIEW is gated, so toggling view mode never changes what the chat
   // computes. The plan reads every group — including the dense ones the
   // transcript is hiding — which is exactly the case this feature exists for.
-  const createdFiles = useMemo(
-    () => planTurnCreatedFiles(groups, rendered, { lastTurnEnded: !turnActive }),
+  const turnFiles = useMemo(
+    () => planTurnFiles(groups, rendered, { lastTurnEnded: !turnActive }),
     [groups, rendered, turnActive],
   );
 
   const chipsForRow = (row: number) => {
-    if (!showCreatedFiles) return null;
-    const files = createdFiles.byRow.get(row);
-    return files ? <TurnCreatedFilesChips files={files} process={process} /> : null;
+    if (!showTurnFiles) return null;
+    const files = turnFiles.byRow.get(row);
+    return files ? <TurnFilesChips files={files} process={process} /> : null;
   };
 
   return (
     <>
-      {/* A turn whose every group was filtered out still created files. */}
+      {/* A turn whose every group was filtered out still touched files. */}
       {chipsForRow(-1)}
       {visibleGroups.map((g, i) => {
         // Partition index `i` is the tiebreaker: two messages can share a
