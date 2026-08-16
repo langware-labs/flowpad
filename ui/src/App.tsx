@@ -6,12 +6,7 @@ import { useAuth, useGlobalEvents } from '@sdk/react/hooks';
 import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesContext';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import {
-  NotificationOutlet,
-  NotificationCommandBridge,
-  DiagnoseErrorModal,
-  initNotificationIngest,
-} from '@src/notifications';
+import { NotificationOutlet, NotificationCommandBridge, initNotificationIngest } from '@src/notifications';
 import { ActivityProgressModalRoot } from '@src/components/search-index/ActivityProgressModalRoot';
 import { WikiModalRoot } from '@src/components/wiki-tip/WikiModalRoot';
 import { RunPreviewRoot } from '@src/components/runs/RunPreviewRoot';
@@ -121,7 +116,9 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
       <TooltipProvider>
         <NotificationOutlet />
         <NotificationCommandBridge />
-        <DiagnoseErrorModal />
+        {/* `<DiagnoseErrorModal/>` is mounted in `main.tsx`, above the router:
+            the root error boundary replaces this whole tree, and the error
+            screen's diagnose button still needs a host. */}
         <CleanupModal />
         <DeleteAssetModal />
         <InputPromptModal />
