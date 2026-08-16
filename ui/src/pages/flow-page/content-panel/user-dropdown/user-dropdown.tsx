@@ -18,8 +18,29 @@ import { UserMenuHeader } from './user-menu-header';
 
 import { trackEvent } from '@src/utils/analytics';
 import { redirectToConsole } from '@src/utils/navigation';
-import { SubAgent, cloudManager, dataContext, ExpansionRequest, HubConnectionStatus, HubLoginStatus, navigator, Page, PAGE_TYPE, QueryFilter, QueryRequest, TypeId } from '@sdk';
-import { useAuth, useCloudStatus, useConnectionStatus, useContext, useEntitiesQuery, useEntity, useWatch } from '@sdk/react/hooks';
+import {
+  SubAgent,
+  cloudManager,
+  dataContext,
+  ExpansionRequest,
+  HubConnectionStatus,
+  HubLoginStatus,
+  navigator,
+  Page,
+  PAGE_TYPE,
+  QueryFilter,
+  QueryRequest,
+  TypeId,
+} from '@sdk';
+import {
+  useAuth,
+  useCloudStatus,
+  useConnectionStatus,
+  useContext,
+  useEntitiesQuery,
+  useEntity,
+  useWatch,
+} from '@sdk/react/hooks';
 import { isLucideName, renderIconValue } from '@src/lib/icon-value';
 import { usePrivacyMode } from '@src/hooks/use-privacy-mode';
 import { guardCloudAction } from '@src/services/privacy-guard';
@@ -112,12 +133,18 @@ const instructionsQueryFilter = new QueryFilter({
 
 function cloudConnectionLabel(status: HubConnectionStatus): string {
   switch (status) {
-    case 'verified':       return 'connection verified';
-    case 'connected':      return 'connected';
-    case 'connecting':     return 'connecting';
-    case 'auth_rejected':  return 'connection rejected';
-    case 'error':          return 'connection error';
-    case 'disconnected':   return 'not connected';
+    case 'verified':
+      return 'connection verified';
+    case 'connected':
+      return 'connected';
+    case 'connecting':
+      return 'connecting';
+    case 'auth_rejected':
+      return 'connection rejected';
+    case 'error':
+      return 'connection error';
+    case 'disconnected':
+      return 'not connected';
   }
 }
 
@@ -370,8 +397,12 @@ export function UserDropdown() {
       <Dialog open={isAccountDialogOpen} onOpenChange={setIsAccountDialogOpen}>
         <DialogContent className="flex h-[520px] max-w-lg flex-col">
           <DialogHeader className="shrink-0">
-            <DialogTitle><Trans>Settings</Trans></DialogTitle>
-            <DialogDescription><Trans>Configure your account, app preferences, and notifications</Trans></DialogDescription>
+            <DialogTitle>
+              <Trans>Settings</Trans>
+            </DialogTitle>
+            <DialogDescription>
+              <Trans>Configure your account, app preferences, and notifications</Trans>
+            </DialogDescription>
           </DialogHeader>
           {currentUser && <AccountInfo user={currentUser} />}
         </DialogContent>
@@ -385,116 +416,123 @@ export function UserDropdown() {
                 <DropdownMenu>
                   <TooltipTrigger asChild>
                     <DropdownMenuTrigger asChild>
-                <div className="relative cursor-pointer">
-                  <Avatar
-                    className={`h-8 w-8 transition-opacity hover:opacity-80${!isConnected ? ' ring-2 ring-orange-500 shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] animate-pulse' : ''}`}
-                    title={!isConnected ? t`Service unavailable` : undefined}
-                    data-testid="agent-page-user-avatar"
-                  >
-                    {cloudLoginAvailable && pictureIsUrl && (
-                      <AvatarImage src={currentUser!.picture} alt={currentUser?.name ?? currentUser?.email ?? ''} />
-                    )}
-                    <AvatarFallback>
-                      {pictureIcon ?? avatarInitials ?? <HelpCircle className="h-5 w-5 text-muted-foreground" />}
-                    </AvatarFallback>
-                  </Avatar>
-                  {dotClass && (
-                    <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-background ${dotClass}`} />
-                  )}
-                </div>
+                      <div className="relative cursor-pointer">
+                        <Avatar
+                          className={`h-8 w-8 transition-opacity hover:opacity-80${!isConnected ? 'animate-pulse shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] ring-2 ring-orange-500' : ''}`}
+                          title={!isConnected ? t`Service unavailable` : undefined}
+                          data-testid="agent-page-user-avatar"
+                        >
+                          {cloudLoginAvailable && pictureIsUrl && (
+                            <AvatarImage
+                              src={currentUser!.picture}
+                              alt={currentUser?.name ?? currentUser?.email ?? ''}
+                            />
+                          )}
+                          <AvatarFallback>
+                            {pictureIcon ?? avatarInitials ?? <HelpCircle className="h-5 w-5 text-muted-foreground" />}
+                          </AvatarFallback>
+                        </Avatar>
+                        {dotClass && (
+                          <span
+                            className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-background ${dotClass}`}
+                          />
+                        )}
+                      </div>
                     </DropdownMenuTrigger>
                   </TooltipTrigger>
-                  <TooltipContent side="top">{cloudLoginTooltip(login.status, connection.status, cloudUrl, currentUser?.email)}</TooltipContent>
+                  <TooltipContent side="top">
+                    {cloudLoginTooltip(login.status, connection.status, cloudUrl, currentUser?.email)}
+                  </TooltipContent>
                   <DropdownMenuContent align="end" className="w-64 p-0">
-                <UserMenuHeader
-                  name={currentUser?.name}
-                  title={profileTitle}
-                  email={currentUser?.email}
-                  pictureUrl={pictureIsUrl ? picture : null}
-                  pictureIcon={pictureIcon}
-                  initials={avatarInitials}
-                />
-                {/* Rule between who you are and what you can do. `mx-0` so it
+                    <UserMenuHeader
+                      name={currentUser?.name}
+                      title={profileTitle}
+                      email={currentUser?.email}
+                      pictureUrl={pictureIsUrl ? picture : null}
+                      pictureIcon={pictureIcon}
+                      initials={avatarInitials}
+                    />
+                    {/* Rule between who you are and what you can do. `mx-0` so it
                     spans the full menu width — the header block is full-bleed
                     (its backdrop reaches both edges) and an inset rule would
                     read as belonging to the items rather than closing the
                     identity block. */}
-                <DropdownMenuSeparator className="mx-0 my-0" />
-                <div className="p-1">
-                {isOwner && agentId && (
-                  <>
-                    <DropdownMenuItem onClick={() => setIsSettingsOpen(true)} className="cursor-pointer">
-                      <Settings className="mr-2 h-4 w-4" />
-                      <Trans>Settings</Trans>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => redirectToConsole(agentId)}
-                      onMouseDown={(e) => {
-                        if (e.button === 1) {
-                          e.preventDefault();
-                          redirectToConsole(agentId, true);
-                        }
-                      }}
-                      className="cursor-pointer"
-                    >
-                      <Wrench className="mr-2 h-4 w-4" />
-                      <Trans>Go to Console</Trans>
-                    </DropdownMenuItem>
-                  </>
-                )}
-                <DropdownMenuItem
-                  onClick={() => navigation.openPreferences()}
-                  className="cursor-pointer"
-                  data-testid="app-preferences-button"
-                >
-                  <Settings className="mr-2 h-4 w-4" />
-                  <Trans>Preferences</Trans>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => navigation.openCredentials()}
-                  className="cursor-pointer"
-                  data-testid="app-credentials-button"
-                >
-                  <KeyRound className="mr-2 h-4 w-4" />
-                  <Trans>Credentials</Trans>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setIsAccountDialogOpen(true)}
-                  className="cursor-pointer"
-                  data-testid="agent-page-account-details-button"
-                >
-                  <UserIcon className="mr-2 h-4 w-4" />
-                  <Trans>Settings</Trans>
-                </DropdownMenuItem>
-                {/* Logout below = *cloud* logout. A local-only user (no cloud
+                    <DropdownMenuSeparator className="mx-0 my-0" />
+                    <div className="p-1">
+                      {isOwner && agentId && (
+                        <>
+                          <DropdownMenuItem onClick={() => setIsSettingsOpen(true)} className="cursor-pointer">
+                            <Settings className="me-2 h-4 w-4" />
+                            <Trans>Settings</Trans>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => redirectToConsole(agentId)}
+                            onMouseDown={(e) => {
+                              if (e.button === 1) {
+                                e.preventDefault();
+                                redirectToConsole(agentId, true);
+                              }
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <Wrench className="me-2 h-4 w-4" />
+                            <Trans>Go to Console</Trans>
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                      <DropdownMenuItem
+                        onClick={() => navigation.openPreferences()}
+                        className="cursor-pointer"
+                        data-testid="app-preferences-button"
+                      >
+                        <Settings className="me-2 h-4 w-4" />
+                        <Trans>Preferences</Trans>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => navigation.openCredentials()}
+                        className="cursor-pointer"
+                        data-testid="app-credentials-button"
+                      >
+                        <KeyRound className="me-2 h-4 w-4" />
+                        <Trans>Credentials</Trans>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => setIsAccountDialogOpen(true)}
+                        className="cursor-pointer"
+                        data-testid="agent-page-account-details-button"
+                      >
+                        <UserIcon className="me-2 h-4 w-4" />
+                        <Trans>Settings</Trans>
+                      </DropdownMenuItem>
+                      {/* Logout below = *cloud* logout. A local-only user (no cloud
                     login) is anonymous — the Login branch should fire. If you
                     see Logout without being cloud-logged-in, cloudLoginAvailable
                     is stale (cloudManager state didn't match /cloud/status). */}
-                {cloudLoginAvailable ? (
-                  <>
-                    <DropdownMenuItem onClick={handleOpenFlowpadCloud} className="cursor-pointer">
-                      <Cloud className="mr-2 h-4 w-4" />
-                      <Trans>Flowpad Cloud</Trans>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => void handleLogout()}
-                      className="cursor-pointer text-red-500 focus:text-red-500"
-                    >
-                      <LogOut className="mr-2 h-4 w-4" />
-                      <Trans>Logout</Trans>
-                    </DropdownMenuItem>
-                  </>
-                ) : isLocal ? null : (
-                  <DropdownMenuItem
-                    onClick={() => void handleCloudLogin()}
-                    title={cloudManager.cloudUrl ? `Logging in to ${cloudManager.cloudUrl}` : undefined}
-                    className="cursor-pointer"
-                  >
-                    <LogIn className="mr-2 h-4 w-4" />
-                    <Trans>Login</Trans>
-                  </DropdownMenuItem>
-                )}
-                </div>
+                      {cloudLoginAvailable ? (
+                        <>
+                          <DropdownMenuItem onClick={handleOpenFlowpadCloud} className="cursor-pointer">
+                            <Cloud className="me-2 h-4 w-4" />
+                            <Trans>Flowpad Cloud</Trans>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => void handleLogout()}
+                            className="cursor-pointer text-red-500 focus:text-red-500"
+                          >
+                            <LogOut className="me-2 h-4 w-4" />
+                            <Trans>Logout</Trans>
+                          </DropdownMenuItem>
+                        </>
+                      ) : isLocal ? null : (
+                        <DropdownMenuItem
+                          onClick={() => void handleCloudLogin()}
+                          title={cloudManager.cloudUrl ? `Logging in to ${cloudManager.cloudUrl}` : undefined}
+                          className="cursor-pointer"
+                        >
+                          <LogIn className="me-2 h-4 w-4" />
+                          <Trans>Login</Trans>
+                        </DropdownMenuItem>
+                      )}
+                    </div>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </Tooltip>

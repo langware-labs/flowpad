@@ -79,7 +79,9 @@ function useModalState(): ModalState {
   useEffect(() => {
     const tick = () => forceTick((n) => n + 1);
     listeners.add(tick);
-    return () => { listeners.delete(tick); };
+    return () => {
+      listeners.delete(tick);
+    };
   }, []);
   return state;
 }
@@ -95,7 +97,9 @@ export function DeleteAssetModal() {
     >
       <AlertDialogContent data-testid="delete-asset-modal">
         <AlertDialogHeader>
-          <AlertDialogTitle><Trans>Delete {request?.name ?? 'asset'}?</Trans></AlertDialogTitle>
+          <AlertDialogTitle>
+            <Trans>Delete {request?.name ?? 'asset'}?</Trans>
+          </AlertDialogTitle>
           <AlertDialogDescription>
             {request?.description ?? <Trans>This permanently removes the file from disk. This cannot be undone.</Trans>}
           </AlertDialogDescription>
@@ -106,7 +110,9 @@ export function DeleteAssetModal() {
           </p>
         )}
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={busy}><Trans>Cancel</Trans></AlertDialogCancel>
+          <AlertDialogCancel disabled={busy}>
+            <Trans>Cancel</Trans>
+          </AlertDialogCancel>
           <AlertDialogAction
             onClick={(e) => {
               e.preventDefault();
@@ -116,7 +122,7 @@ export function DeleteAssetModal() {
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             data-testid="delete-asset-modal-confirm"
           >
-            {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+            {busy ? <Loader2 className="me-1 h-4 w-4 animate-spin" /> : null}
             <Trans>Delete</Trans>
           </AlertDialogAction>
         </AlertDialogFooter>

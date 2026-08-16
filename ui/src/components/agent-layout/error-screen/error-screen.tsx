@@ -104,7 +104,7 @@ const ErrorScreen = () => {
             </p>
           </div>
           <Button onClick={() => (window.location.href = '/')} className="w-full">
-            <Home className="mr-2 h-4 w-4" />
+            <Home className="me-2 h-4 w-4" />
             <Trans>Go to Homepage</Trans>
           </Button>
         </div>
@@ -165,7 +165,7 @@ const ErrorScreen = () => {
         </div>
 
         <Button onClick={handleGoHome} className="flex w-full items-center justify-center">
-          <Home className="mr-2 h-4 w-4" />
+          <Home className="me-2 h-4 w-4" />
           <Trans>Go to Homepage</Trans>
         </Button>
 
@@ -180,7 +180,7 @@ const ErrorScreen = () => {
         </div>
       </div>
       {showDetails && (
-        <div className="absolute left-1/2 top-[calc(50%+12rem)] w-[calc(100vw-2rem)] max-w-7xl -translate-x-1/2 rounded-md border bg-muted p-4 text-left">
+        <div className="absolute left-1/2 top-[calc(50%+12rem)] w-[calc(100vw-2rem)] max-w-7xl -translate-x-1/2 rounded-md border bg-muted p-4 text-start">
           <pre className="mb-4 overflow-auto whitespace-pre-wrap break-words text-xs text-foreground">
             {errorDetails}
           </pre>

@@ -7,7 +7,19 @@ import { useIndexStatus } from '@src/hooks/use-index-status';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { RefreshCw, ChevronDown, ChevronRight, Search, Database, FileSearch, Trash2, ScanSearch, Ghost, RotateCw, ListTree } from 'lucide-react';
+import {
+  RefreshCw,
+  ChevronDown,
+  ChevronRight,
+  Search,
+  Database,
+  FileSearch,
+  Trash2,
+  ScanSearch,
+  Ghost,
+  RotateCw,
+  ListTree,
+} from 'lucide-react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
@@ -16,7 +28,17 @@ import { EntitySearchModal } from '@src/components/search-index/EntitySearchModa
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@src/components/ui/alert-dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@src/components/ui/alert-dialog';
 import { SearchFilters, useRecordSearch } from '@src/hooks/use-record-search';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
@@ -150,44 +172,55 @@ function TypeRow({
         className={`group cursor-pointer border-b transition-colors hover:bg-accent/20 ${dimmed ? 'opacity-40' : ''} ${active ? 'bg-primary/5' : ''}`}
         onClick={() => row.count > 0 && onExpand(row.type)}
       >
-        <td className="w-6 py-2 pl-3 pr-2">
+        <td className="w-6 py-2 pe-2 ps-3">
           {row.count > 0 ? (
             expanded ? (
               <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
             ) : (
-              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground rtl:-scale-x-100" />
             )
           ) : null}
         </td>
-        <td className="py-2 pr-4 font-mono text-sm">{row.type}</td>
-        <td className="py-2 pr-4 text-right tabular-nums text-sm">{row.count}</td>
+        <td className="py-2 pe-4 font-mono text-sm">{row.type}</td>
+        <td className="py-2 pe-4 text-end text-sm tabular-nums">{row.count}</td>
         <td
-          className={`py-2 pr-4 text-right tabular-nums text-sm ${row.orphan_count > 0 ? 'text-amber-600 dark:text-amber-400 cursor-pointer hover:underline' : 'text-muted-foreground'}`}
+          className={`py-2 pe-4 text-end text-sm tabular-nums ${row.orphan_count > 0 ? 'cursor-pointer text-amber-600 hover:underline dark:text-amber-400' : 'text-muted-foreground'}`}
           onClick={(e) => {
             e.stopPropagation();
             if (row.orphan_count > 0) onSweepOrphans(row.type);
           }}
-          title={row.orphan_count > 0 ? `Click to sweep ${row.orphan_count} ${row.type} orphans` : 'No orphans for this type'}
+          title={
+            row.orphan_count > 0 ? `Click to sweep ${row.orphan_count} ${row.type} orphans` : 'No orphans for this type'
+          }
         >
           {row.orphan_count > 0 ? row.orphan_count : '—'}
         </td>
-        <td className="py-2 pr-4 text-right text-xs text-muted-foreground">
+        <td className="py-2 pe-4 text-end text-xs text-muted-foreground">
           {formatTimeAgo(row.last_indexed_at) ?? '—'}
         </td>
-        <td className="py-2 pr-3 text-right text-xs text-muted-foreground">
+        <td className="py-2 pe-3 text-end text-xs text-muted-foreground">
           {indexedCount !== null ? (
             <button
               type="button"
               className="text-emerald-600 hover:underline dark:text-emerald-400"
-              onClick={(e) => { e.stopPropagation(); onViewIndexed(row.type); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onViewIndexed(row.type);
+              }}
               title={`View the ${indexedCount} ${row.type} ${indexedCount === 1 ? 'entity' : 'entities'} indexed this run`}
             >
               <Trans>{indexedCount} indexed</Trans>
             </button>
           ) : row.error ? (
-            <span className="text-destructive"><Trans>error</Trans></span>
+            <span className="text-destructive">
+              <Trans>error</Trans>
+            </span>
           ) : row.orphan_count > 0 ? (
-            <span className="text-amber-600 dark:text-amber-400"><Trans id="orphan_count">{row.orphan_count} orphan{row.orphan_count === 1 ? '' : 's'}</Trans></span>
+            <span className="text-amber-600 dark:text-amber-400">
+              <Trans id="orphan_count">
+                {row.orphan_count} orphan{row.orphan_count === 1 ? '' : 's'}
+              </Trans>
+            </span>
           ) : row.stale && !(row.count === 0 && row.last_indexed_at === null) ? (
             <span
               className="text-amber-600 dark:text-amber-400"
@@ -199,7 +232,7 @@ function TypeRow({
             <span className="text-emerald-600 dark:text-emerald-400">✓</span>
           )}
         </td>
-        <td className="w-16 py-2 pr-2 text-right" onClick={(e) => e.stopPropagation()}>
+        <td className="w-16 py-2 pe-2 text-end" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-end gap-0.5">
             <Tooltip>
               <TooltipTrigger asChild>
@@ -214,9 +247,7 @@ function TypeRow({
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="left">
-                {indexedCount !== null
-                  ? t`Indexed ${indexedCount} records`
-                  : t`Sync ${row.type} changes`}
+                {indexedCount !== null ? t`Indexed ${indexedCount} records` : t`Sync ${row.type} changes`}
               </TooltipContent>
             </Tooltip>
             {row.count > 0 && (
@@ -225,16 +256,14 @@ function TypeRow({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-5 w-5 opacity-0 transition-opacity group-hover:opacity-100 text-destructive hover:text-destructive"
+                    className="h-5 w-5 text-destructive opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
                     disabled={indexing || clearing}
                     onClick={() => onClear(row.type)}
                   >
                     <Trash2 className={`h-3 w-3 ${clearing ? 'animate-pulse' : ''}`} />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="left">
-                  {t`Clear ${row.type} index`}
-                </TooltipContent>
+                <TooltipContent side="left">{t`Clear ${row.type} index`}</TooltipContent>
               </Tooltip>
             )}
           </div>
@@ -261,19 +290,19 @@ function TypeRow({
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="border-b bg-muted/50 text-muted-foreground">
-                        <th className="py-1 pl-3 pr-4 text-left font-medium">uid</th>
-                        <th className="py-1 pr-4 text-left font-medium">name</th>
-                        <th className="py-1 pr-4 text-right font-medium">size</th>
-                        <th className="py-1 pr-3 text-right font-medium">status</th>
+                        <th className="py-1 pe-4 ps-3 text-start font-medium">uid</th>
+                        <th className="py-1 pe-4 text-start font-medium">name</th>
+                        <th className="py-1 pe-4 text-end font-medium">size</th>
+                        <th className="py-1 pe-3 text-end font-medium">status</th>
                       </tr>
                     </thead>
                     <tbody>
                       {detail.records.map((r) => (
                         <tr key={r.id} className="border-b last:border-0 hover:bg-accent/20">
-                          <td className="max-w-[10rem] truncate py-1 pl-3 pr-4 font-mono">{r.id}</td>
-                          <td className="max-w-[14rem] truncate py-1 pr-4">{r.name || '(unnamed)'}</td>
-                          <td className="py-1 pr-4 text-right tabular-nums">{fmtBytes(r.size_bytes)}</td>
-                          <td className="py-1 pr-3 text-right text-muted-foreground">{r.status ?? '—'}</td>
+                          <td className="max-w-[10rem] truncate py-1 pe-4 ps-3 font-mono">{r.id}</td>
+                          <td className="max-w-[14rem] truncate py-1 pe-4">{r.name || '(unnamed)'}</td>
+                          <td className="py-1 pe-4 text-end tabular-nums">{fmtBytes(r.size_bytes)}</td>
+                          <td className="py-1 pe-3 text-end text-muted-foreground">{r.status ?? '—'}</td>
                         </tr>
                       ))}
                       {detail.records.length === 0 && (
@@ -328,9 +357,7 @@ export function FsRecordsScannerViewer() {
   useEffect(() => {
     if (scopeTouched.current || allProjectIds.length === 0) return;
     setScope((prev) =>
-      scopeFilterEqual(prev, filterScope(true, allProjectIds))
-        ? prev
-        : filterScope(true, allProjectIds),
+      scopeFilterEqual(prev, filterScope(true, allProjectIds)) ? prev : filterScope(true, allProjectIds),
     );
   }, [allProjectIds]);
 
@@ -339,11 +366,9 @@ export function FsRecordsScannerViewer() {
   const selectedProjectIds = scopeProjectIds(scope);
   const scopeHasUser = scopeIncludesUser(scope);
   const selectedProjectIdSet = new Set(selectedProjectIds);
-  const allProjectsSelected =
-    allProjectIds.length > 0 && allProjectIds.every((id) => selectedProjectIdSet.has(id));
-  const scopeIsDefault = allProjectIds.length === 0
-    ? scopeHasUser
-    : scopeFilterEqual(scope, filterScope(true, allProjectIds));
+  const allProjectsSelected = allProjectIds.length > 0 && allProjectIds.every((id) => selectedProjectIdSet.has(id));
+  const scopeIsDefault =
+    allProjectIds.length === 0 ? scopeHasUser : scopeFilterEqual(scope, filterScope(true, allProjectIds));
   const scopeQs = useCallback((): string => {
     const p = new URLSearchParams();
     applyScopeToParams(p, scope);
@@ -423,7 +448,12 @@ export function FsRecordsScannerViewer() {
   // Semantic search bar (in-page) state — unchanged from before.
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
-  const { results: searchResults, isLoading: searchLoading, error: searchError, indexerReady } = useRecordSearch(searchQuery, searchFilters);
+  const {
+    results: searchResults,
+    isLoading: searchLoading,
+    error: searchError,
+    indexerReady,
+  } = useRecordSearch(searchQuery, searchFilters);
   const searchActive = searchQuery.trim().length >= 2;
 
   // Type-table filter bar state.
@@ -515,9 +545,7 @@ export function FsRecordsScannerViewer() {
     async (typeName: string) => {
       setClearingTypes((prev) => new Set(prev).add(typeName));
       try {
-        await apiClient.delete(
-          `${BASE}/index?type=${encodeURIComponent(typeName)}&${scopeQs()}`,
-        );
+        await apiClient.delete(`${BASE}/index?type=${encodeURIComponent(typeName)}&${scopeQs()}`);
         setDetails((prev) => {
           const next = { ...prev };
           delete next[typeName];
@@ -625,9 +653,7 @@ export function FsRecordsScannerViewer() {
   const lastIndexedLabel = formatTimeAgo(lastIndexedAt);
   const currentActiveType = currentActivity ? (progressTable?.current ?? null) : null;
   const scanStatsProgress =
-    scanStatsLoading && currentActivity === 'scan' && progressTable?.job_name === 'scan'
-      ? progressTable
-      : null;
+    scanStatsLoading && currentActivity === 'scan' && progressTable?.job_name === 'scan' ? progressTable : null;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -640,12 +666,10 @@ export function FsRecordsScannerViewer() {
           Per-type Sync and Clear live as hover actions on each row. */}
       <div className="flex shrink-0 items-center justify-between border-b px-5 py-3">
         <div className="flex items-center gap-3">
-          <h1 className="text-sm font-semibold"><Trans>Records Scanner</Trans></h1>
-          <ScopeFilterBar
-            scope={scope}
-            currentProjectId={currentProjectId}
-            onScopeChange={handleScopeChange}
-          />
+          <h1 className="text-sm font-semibold">
+            <Trans>Records Scanner</Trans>
+          </h1>
+          <ScopeFilterBar scope={scope} currentProjectId={currentProjectId} onScopeChange={handleScopeChange} />
           <button
             type="button"
             onClick={() => handleScopeChange(filterScope(scopeIncludesUser(scope), allProjectIds))}
@@ -687,11 +711,18 @@ export function FsRecordsScannerViewer() {
               </Button>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs">
-              <p className="font-medium"><Trans>Fast — delta by hash</Trans></p>
-              <p className="mt-1 text-xs opacity-90">
-                <Trans>Walks the filesystem and re-indexes only entries whose source changed since last index (each record's <code>.hash</code> sentinel). Changes-pending drops to 0.</Trans>
+              <p className="font-medium">
+                <Trans>Fast — delta by hash</Trans>
               </p>
-              <p className="mt-1 text-xs opacity-70"><Trans>The default — what you want 99% of the time.</Trans></p>
+              <p className="mt-1 text-xs opacity-90">
+                <Trans>
+                  Walks the filesystem and re-indexes only entries whose source changed since last index (each record's{' '}
+                  <code>.hash</code> sentinel). Changes-pending drops to 0.
+                </Trans>
+              </p>
+              <p className="mt-1 text-xs opacity-70">
+                <Trans>The default — what you want 99% of the time.</Trans>
+              </p>
             </TooltipContent>
           </Tooltip>
           <Tooltip>
@@ -709,11 +740,18 @@ export function FsRecordsScannerViewer() {
               </Button>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs">
-              <p className="font-medium"><Trans>Full — complete rescan</Trans></p>
-              <p className="mt-1 text-xs opacity-90">
-                <Trans>Re-parses <em>every</em> entry, ignoring the <code>.hash</code> sentinel. Use after a parser or schema change, when stored content is wrong even though the source hasn't moved.</Trans>
+              <p className="font-medium">
+                <Trans>Full — complete rescan</Trans>
               </p>
-              <p className="mt-1 text-xs opacity-70"><Trans>Slower. To wipe rows first, use Clear Index then Full.</Trans></p>
+              <p className="mt-1 text-xs opacity-90">
+                <Trans>
+                  Re-parses <em>every</em> entry, ignoring the <code>.hash</code> sentinel. Use after a parser or schema
+                  change, when stored content is wrong even though the source hasn't moved.
+                </Trans>
+              </p>
+              <p className="mt-1 text-xs opacity-70">
+                <Trans>Slower. To wipe rows first, use Clear Index then Full.</Trans>
+              </p>
             </TooltipContent>
           </Tooltip>
           <Tooltip>
@@ -730,11 +768,18 @@ export function FsRecordsScannerViewer() {
               </Button>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs">
-              <p className="font-medium"><Trans>Scan Stats</Trans></p>
-              <p className="mt-1 text-xs opacity-90">
-                <Trans>Walks the filesystem and reports per-type counts and sizes (and, soon, the diff against the index). Read-only — no DB writes, no <code>last_indexed_at</code> bump.</Trans>
+              <p className="font-medium">
+                <Trans>Scan Stats</Trans>
               </p>
-              <p className="mt-1 text-xs opacity-70"><Trans>~2s. Use to check what's on disk without changing anything.</Trans></p>
+              <p className="mt-1 text-xs opacity-90">
+                <Trans>
+                  Walks the filesystem and reports per-type counts and sizes (and, soon, the diff against the index).
+                  Read-only — no DB writes, no <code>last_indexed_at</code> bump.
+                </Trans>
+              </p>
+              <p className="mt-1 text-xs opacity-70">
+                <Trans>~2s. Use to check what's on disk without changing anything.</Trans>
+              </p>
             </TooltipContent>
           </Tooltip>
           <Tooltip>
@@ -750,16 +795,21 @@ export function FsRecordsScannerViewer() {
                 <Ghost className="h-3.5 w-3.5" />
                 <Trans>Scan Orphans</Trans>
                 {totalOrphans > 0 && (
-                  <span className="ml-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                  <span className="ms-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
                     {totalOrphans}
                   </span>
                 )}
               </Button>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs">
-              <p className="font-medium"><Trans>Scan Orphans</Trans></p>
+              <p className="font-medium">
+                <Trans>Scan Orphans</Trans>
+              </p>
               <p className="mt-1 text-xs opacity-90">
-                <Trans>An orphan is a DB row (or shadow record dir) whose source file is gone from disk. The sweep dialog lets you remove just the DB row (IGNORE, keeps a forensic shadow dir) or both row + shadow (DELETE).</Trans>
+                <Trans>
+                  An orphan is a DB row (or shadow record dir) whose source file is gone from disk. The sweep dialog
+                  lets you remove just the DB row (IGNORE, keeps a forensic shadow dir) or both row + shadow (DELETE).
+                </Trans>
               </p>
               <p className="mt-1 text-xs opacity-70">
                 {totalOrphans > 0
@@ -782,11 +832,18 @@ export function FsRecordsScannerViewer() {
               </Button>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs">
-              <p className="font-medium"><Trans>LLM Indexers</Trans></p>
-              <p className="mt-1 text-xs opacity-90">
-                <Trans>Browse and run LLM-generated folder indexes (MarkdownIndex entities). Each indexer (re)builds a Merkle tree of <code>index.md</code> files over a docs root.</Trans>
+              <p className="font-medium">
+                <Trans>LLM Indexers</Trans>
               </p>
-              <p className="mt-1 text-xs opacity-70"><Trans>Runs as an AgenticProcess — see per-row status + transcript.</Trans></p>
+              <p className="mt-1 text-xs opacity-90">
+                <Trans>
+                  Browse and run LLM-generated folder indexes (MarkdownIndex entities). Each indexer (re)builds a Merkle
+                  tree of <code>index.md</code> files over a docs root.
+                </Trans>
+              </p>
+              <p className="mt-1 text-xs opacity-70">
+                <Trans>Runs as an AgenticProcess — see per-row status + transcript.</Trans>
+              </p>
             </TooltipContent>
           </Tooltip>
           <AlertDialog>
@@ -803,13 +860,21 @@ export function FsRecordsScannerViewer() {
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle><Trans>Clear search index?</Trans></AlertDialogTitle>
+                <AlertDialogTitle>
+                  <Trans>Clear search index?</Trans>
+                </AlertDialogTitle>
                 <AlertDialogDescription>
-                  <Trans>Wipes the DB rows + FTS entries for every indexable type. The index becomes empty until you re-populate it. Files on disk are <em>not</em> touched. After clearing, click <strong>Fast</strong> to re-index changed entries, or <strong>Full</strong> to re-index everything.</Trans>
+                  <Trans>
+                    Wipes the DB rows + FTS entries for every indexable type. The index becomes empty until you
+                    re-populate it. Files on disk are <em>not</em> touched. After clearing, click <strong>Fast</strong>{' '}
+                    to re-index changed entries, or <strong>Full</strong> to re-index everything.
+                  </Trans>
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel><Trans>Cancel</Trans></AlertDialogCancel>
+                <AlertDialogCancel>
+                  <Trans>Cancel</Trans>
+                </AlertDialogCancel>
                 <AlertDialogAction
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                   onClick={() => void handleClearIndex()}
@@ -827,192 +892,221 @@ export function FsRecordsScannerViewer() {
           type table would otherwise pile up alongside it into an unreadable mix —
           they all return the moment the run goes idle (currentActivity → null). */}
       {currentActivity ? (
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
           {/* Global progress bar on top — count-only while scanning (totals
               unknown), filling to a percentage once the index loop starts. */}
           <ActivityIndicator variant="bar" />
           <ActivityIndicator variant="list" className="flex flex-col gap-1.5" />
         </div>
       ) : (
-      <>
-      {/* Semantic search bar */}
-      <div className="shrink-0 border-b px-5 py-2">
-        <RecordSearchBar
-          compact
-          query={searchQuery}
-          filters={searchFilters}
-          onQueryChange={setSearchQuery}
-          onFiltersChange={setSearchFilters}
-        />
-      </div>
-
-      {/* Totals — sourced from index-status, available on mount. */}
-      {indexStatus.phase === 'ready' && (
-        <div className="shrink-0 border-b bg-muted/30 px-5 py-2 text-sm">
-          <span className="font-medium"><Trans id="records_count">{grandTotal.toLocaleString()} records</Trans></span>
-          {' · '}
-          <span className="text-muted-foreground"><Trans id="types_count">{typeRows.length} types</Trans></span>
-          {lastIndexedLabel && (
-            <>
-              {' · '}
-              <span className="text-muted-foreground"><Trans id="last_indexed_at">last indexed {lastIndexedLabel}</Trans></span>
-            </>
-          )}
-          {totalOrphans > 0 && (
-            <>
-              {' · '}
-              <button
-                type="button"
-                onClick={() => openSweepDialog(null)}
-                className="text-amber-600 hover:underline dark:text-amber-400"
-              >
-                <Trans id="orphans_count">{totalOrphans} orphan{totalOrphans === 1 ? '' : 's'}</Trans>
-              </button>
-            </>
-          )}
-          {!scopeIsDefault && (
-            <>
-              {' · '}
-              <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
-                {scopeHasUser && selectedProjectIds.length > 0
-                  ? t`scope: user + ${selectedProjectIds.length} project${selectedProjectIds.length === 1 ? '' : 's'}`
-                  : scopeHasUser
-                    ? t`scope: user only`
-                    : t`scope: ${selectedProjectIds.length} project${selectedProjectIds.length === 1 ? '' : 's'} only`}
-              </span>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Search results (when query active) OR type-stats table */}
-      {searchActive ? (
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
-          {!indexerReady && (
-            <div className="mb-3 flex items-start gap-2 rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
-              <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
-              <span><Trans>Search index is warming up. Run Refresh Index to populate it.</Trans></span>
-            </div>
-          )}
-          {searchLoading && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <RefreshCw className="h-4 w-4 animate-spin" />
-              <Trans>Searching…</Trans>
-            </div>
-          )}
-          {searchError && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-              {searchError}
-            </div>
-          )}
-          {!searchLoading && !searchError && searchResults.length > 0 && (
-            <div className="flex flex-col gap-2">
-              {searchResults.map((r) => (
-                <SearchResultCard key={r.record_id} result={r} />
-              ))}
-            </div>
-          )}
-          {!searchLoading && !searchError && indexerReady && searchResults.length === 0 && (
-            <div className="flex flex-col items-center gap-3 py-12 text-center text-muted-foreground">
-              <FileSearch className="h-10 w-10 opacity-40" />
-              <div>
-                <p className="font-medium"><Trans>No records found</Trans></p>
-                <p className="text-sm"><Trans id="no_results_for">No results for "{searchQuery}"</Trans></p>
-              </div>
-            </div>
-          )}
-        </div>
-      ) : (
         <>
-          {/* Filter bar */}
-          {indexStatus.phase === 'ready' && typeRows.length > 0 && (
-            <div className="shrink-0 flex items-center gap-2 border-b px-5 py-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={filterText}
-                  onChange={(e) => setFilterText(e.target.value)}
-                  placeholder={t`Filter types…`}
-                  className="h-7 pl-8 text-xs"
-                />
-              </div>
-              <Button
-                variant={showNonEmpty ? 'secondary' : 'ghost'}
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => setShowNonEmpty((v) => !v)}
-              >
-                <Trans>Non-empty</Trans>
-              </Button>
+          {/* Semantic search bar */}
+          <div className="shrink-0 border-b px-5 py-2">
+            <RecordSearchBar
+              compact
+              query={searchQuery}
+              filters={searchFilters}
+              onQueryChange={setSearchQuery}
+              onFiltersChange={setSearchFilters}
+            />
+          </div>
+
+          {/* Totals — sourced from index-status, available on mount. */}
+          {indexStatus.phase === 'ready' && (
+            <div className="shrink-0 border-b bg-muted/30 px-5 py-2 text-sm">
+              <span className="font-medium">
+                <Trans id="records_count">{grandTotal.toLocaleString()} records</Trans>
+              </span>
+              {' · '}
+              <span className="text-muted-foreground">
+                <Trans id="types_count">{typeRows.length} types</Trans>
+              </span>
+              {lastIndexedLabel && (
+                <>
+                  {' · '}
+                  <span className="text-muted-foreground">
+                    <Trans id="last_indexed_at">last indexed {lastIndexedLabel}</Trans>
+                  </span>
+                </>
+              )}
+              {totalOrphans > 0 && (
+                <>
+                  {' · '}
+                  <button
+                    type="button"
+                    onClick={() => openSweepDialog(null)}
+                    className="text-amber-600 hover:underline dark:text-amber-400"
+                  >
+                    <Trans id="orphans_count">
+                      {totalOrphans} orphan{totalOrphans === 1 ? '' : 's'}
+                    </Trans>
+                  </button>
+                </>
+              )}
+              {!scopeIsDefault && (
+                <>
+                  {' · '}
+                  <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
+                    {scopeHasUser && selectedProjectIds.length > 0
+                      ? t`scope: user + ${selectedProjectIds.length} project${selectedProjectIds.length === 1 ? '' : 's'}`
+                      : scopeHasUser
+                        ? t`scope: user only`
+                        : t`scope: ${selectedProjectIds.length} project${selectedProjectIds.length === 1 ? '' : 's'} only`}
+                  </span>
+                </>
+              )}
             </div>
           )}
 
-          {/* Type table */}
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {indexStatus.phase !== 'ready' && (
-              <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
-                <RefreshCw className="h-3.5 w-3.5 animate-spin" /> <Trans>Loading index status…</Trans>
-              </div>
-            )}
-            {indexStatus.phase === 'ready' && typeRows.length === 0 && (
-              <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted-foreground">
-                <p className="text-sm">
-                  <Trans>Nothing indexed yet. <button
-                    className="font-medium text-foreground underline-offset-2 hover:underline"
-                    onClick={() => void handleRefreshIndex()}
-                    disabled={refreshing}
-                  >
-                    Refresh Index
-                  </button> to populate.</Trans>
-                </p>
-              </div>
-            )}
-            {filteredRows.length > 0 && (
-              <table className="w-full">
-                <thead className="sticky top-0 z-10 border-b bg-card text-xs text-muted-foreground">
-                  <tr>
-                    <th className="w-6 py-2 pl-3 pr-2" />
-                    <th className="py-2 pr-4 text-left font-medium"><Trans>Type</Trans></th>
-                    <th className="py-2 pr-4 text-right font-medium"><Trans>Records</Trans></th>
-                    <th className="py-2 pr-4 text-right font-medium" title={t`DB rows whose source file is gone. Click a non-zero count to sweep.`}>
-                      <Trans>Orphans</Trans>
-                    </th>
-                    <th className="py-2 pr-4 text-right font-medium"><Trans>Last Indexed</Trans></th>
-                    <th className="py-2 pr-3 text-right font-medium"><Trans>Status</Trans></th>
-                    <th className="w-16 py-2 pr-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRows.map((r) => (
-                    <TypeRow
-                      key={r.type}
-                      row={r}
-                      expanded={expandedType === r.type}
-                      detail={details[r.type] ?? null}
-                      loadingDetail={loadingDetail === r.type}
-                      onExpand={handleExpand}
-                      onIndex={handleIndexType}
-                      onClear={handleClearType}
-                      onSweepOrphans={openSweepDialog}
-                      onViewIndexed={setViewIndexedType}
-                      indexing={indexingTypes.has(r.type)}
-                      clearing={clearingTypes.has(r.type)}
-                      indexedCount={indexedResults[r.type] ?? null}
-                      active={(refreshing || clearing) && currentActiveType === r.type}
-                    />
+          {/* Search results (when query active) OR type-stats table */}
+          {searchActive ? (
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
+              {!indexerReady && (
+                <div className="mb-3 flex items-start gap-2 rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+                  <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
+                  <span>
+                    <Trans>Search index is warming up. Run Refresh Index to populate it.</Trans>
+                  </span>
+                </div>
+              )}
+              {searchLoading && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  <Trans>Searching…</Trans>
+                </div>
+              )}
+              {searchError && (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                  {searchError}
+                </div>
+              )}
+              {!searchLoading && !searchError && searchResults.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {searchResults.map((r) => (
+                    <SearchResultCard key={r.record_id} result={r} />
                   ))}
-                </tbody>
-              </table>
-            )}
-            {indexStatus.phase === 'ready' && typeRows.length > 0 && filteredRows.length === 0 && (
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                <Trans>No types match filter</Trans>
+                </div>
+              )}
+              {!searchLoading && !searchError && indexerReady && searchResults.length === 0 && (
+                <div className="flex flex-col items-center gap-3 py-12 text-center text-muted-foreground">
+                  <FileSearch className="h-10 w-10 opacity-40" />
+                  <div>
+                    <p className="font-medium">
+                      <Trans>No records found</Trans>
+                    </p>
+                    <p className="text-sm">
+                      <Trans id="no_results_for">No results for "{searchQuery}"</Trans>
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* Filter bar */}
+              {indexStatus.phase === 'ready' && typeRows.length > 0 && (
+                <div className="flex shrink-0 items-center gap-2 border-b px-5 py-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={filterText}
+                      onChange={(e) => setFilterText(e.target.value)}
+                      placeholder={t`Filter types…`}
+                      className="h-7 ps-8 text-xs"
+                    />
+                  </div>
+                  <Button
+                    variant={showNonEmpty ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => setShowNonEmpty((v) => !v)}
+                  >
+                    <Trans>Non-empty</Trans>
+                  </Button>
+                </div>
+              )}
+
+              {/* Type table */}
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {indexStatus.phase !== 'ready' && (
+                  <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" /> <Trans>Loading index status…</Trans>
+                  </div>
+                )}
+                {indexStatus.phase === 'ready' && typeRows.length === 0 && (
+                  <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted-foreground">
+                    <p className="text-sm">
+                      <Trans>
+                        Nothing indexed yet.{' '}
+                        <button
+                          className="font-medium text-foreground underline-offset-2 hover:underline"
+                          onClick={() => void handleRefreshIndex()}
+                          disabled={refreshing}
+                        >
+                          Refresh Index
+                        </button>{' '}
+                        to populate.
+                      </Trans>
+                    </p>
+                  </div>
+                )}
+                {filteredRows.length > 0 && (
+                  <table className="w-full">
+                    <thead className="sticky top-0 z-10 border-b bg-card text-xs text-muted-foreground">
+                      <tr>
+                        <th className="w-6 py-2 pe-2 ps-3" />
+                        <th className="py-2 pe-4 text-start font-medium">
+                          <Trans>Type</Trans>
+                        </th>
+                        <th className="py-2 pe-4 text-end font-medium">
+                          <Trans>Records</Trans>
+                        </th>
+                        <th
+                          className="py-2 pe-4 text-end font-medium"
+                          title={t`DB rows whose source file is gone. Click a non-zero count to sweep.`}
+                        >
+                          <Trans>Orphans</Trans>
+                        </th>
+                        <th className="py-2 pe-4 text-end font-medium">
+                          <Trans>Last Indexed</Trans>
+                        </th>
+                        <th className="py-2 pe-3 text-end font-medium">
+                          <Trans>Status</Trans>
+                        </th>
+                        <th className="w-16 py-2 pe-2" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredRows.map((r) => (
+                        <TypeRow
+                          key={r.type}
+                          row={r}
+                          expanded={expandedType === r.type}
+                          detail={details[r.type] ?? null}
+                          loadingDetail={loadingDetail === r.type}
+                          onExpand={handleExpand}
+                          onIndex={handleIndexType}
+                          onClear={handleClearType}
+                          onSweepOrphans={openSweepDialog}
+                          onViewIndexed={setViewIndexedType}
+                          indexing={indexingTypes.has(r.type)}
+                          clearing={clearingTypes.has(r.type)}
+                          indexedCount={indexedResults[r.type] ?? null}
+                          active={(refreshing || clearing) && currentActiveType === r.type}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                {indexStatus.phase === 'ready' && typeRows.length > 0 && filteredRows.length === 0 && (
+                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                    <Trans>No types match filter</Trans>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </>
+          )}
         </>
-      )}
-      </>
       )}
 
       {/* Sweep Orphans dialog — explainer + per-type breakdown + sweep action.
@@ -1034,7 +1128,9 @@ export function FsRecordsScannerViewer() {
           walk), so scoping by the chip would hide the very rows we want. */}
       <EntitySearchModal
         open={viewIndexedType !== null}
-        onOpenChange={(o) => { if (!o) setViewIndexedType(null); }}
+        onOpenChange={(o) => {
+          if (!o) setViewIndexedType(null);
+        }}
         title={viewIndexedType ? `Recently indexed · ${viewIndexedType}` : 'Recently indexed'}
         recordType={viewIndexedType ?? undefined}
       />
@@ -1043,39 +1139,66 @@ export function FsRecordsScannerViewer() {
       <Dialog open={scanStatsOpen} onOpenChange={setScanStatsOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle><Trans>Scan Stats</Trans></DialogTitle>
+            <DialogTitle>
+              <Trans>Scan Stats</Trans>
+            </DialogTitle>
             <DialogDescription>
-              <Trans>Walked the filesystem without writing. Counts and sizes reflect what is on disk right now; compare against the per-type rows to see drift.</Trans>
+              <Trans>
+                Walked the filesystem without writing. Counts and sizes reflect what is on disk right now; compare
+                against the per-type rows to see drift.
+              </Trans>
             </DialogDescription>
           </DialogHeader>
           {scanStatsLoading ? (
             <div className="flex items-center gap-3 py-6 text-sm">
               <RefreshCw className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
               <div className="flex min-w-0 flex-col gap-0.5">
-                <span className="text-foreground"><Trans>Scanning filesystem…</Trans></span>
+                <span className="text-foreground">
+                  <Trans>Scanning filesystem…</Trans>
+                </span>
                 <span className="text-xs text-muted-foreground">
-                  {scanStatsProgress
-                    ? `${scanStatsProgress.done.toLocaleString()} found so far${
-                        scanStatsProgress.current ? ` · ${scanStatsProgress.current}` : ''
-                      }`
-                    : <Trans>Starting scan…</Trans>}
+                  {scanStatsProgress ? (
+                    `${scanStatsProgress.done.toLocaleString()} found so far${
+                      scanStatsProgress.current ? ` · ${scanStatsProgress.current}` : ''
+                    }`
+                  ) : (
+                    <Trans>Starting scan…</Trans>
+                  )}
                 </span>
               </div>
             </div>
           ) : scanStats ? (
             <div className="flex flex-col gap-2">
               <div className="text-sm">
-                <span className="font-medium"><Trans id="records_on_disk">{scanStats.grand_total.toLocaleString()} records on disk</Trans></span>
+                <span className="font-medium">
+                  <Trans id="records_on_disk">{scanStats.grand_total.toLocaleString()} records on disk</Trans>
+                </span>
                 {' · '}
-                <span className="text-muted-foreground"><Trans id="types_time">{scanStats.types.length} types · {fmtMs(scanStats.scan_ms)}</Trans></span>
+                <span className="text-muted-foreground">
+                  <Trans id="types_time">
+                    {scanStats.types.length} types · {fmtMs(scanStats.scan_ms)}
+                  </Trans>
+                </span>
                 {scanStats.diff_included && (
                   <>
                     {' · '}
-                    <span className={(scanStats.grand_pending ?? 0) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}>
+                    <span
+                      className={
+                        (scanStats.grand_pending ?? 0) > 0
+                          ? 'text-amber-600 dark:text-amber-400'
+                          : 'text-muted-foreground'
+                      }
+                    >
                       <Trans id="pending_count">Pending: {(scanStats.grand_pending ?? 0).toLocaleString()}</Trans>
                     </span>
                     {' · '}
-                    <span className={(scanStats.grand_orphan ?? 0) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}>
+                    <span
+                      className={
+                        (scanStats.grand_orphan ?? 0) > 0
+                          ? 'text-amber-600 dark:text-amber-400'
+                          : 'text-muted-foreground'
+                      }
+                    >
                       <Trans id="orphans_total">Orphans: {(scanStats.grand_orphan ?? 0).toLocaleString()}</Trans>
                     </span>
                   </>
@@ -1085,21 +1208,43 @@ export function FsRecordsScannerViewer() {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b bg-muted/50 text-muted-foreground">
-                      <th className="py-1 pl-3 pr-3 text-left font-medium"><Trans>Type</Trans></th>
-                      <th className="py-1 pr-3 text-right font-medium"><Trans>On Disk</Trans></th>
-                      <th className="py-1 pr-3 text-right font-medium"><Trans>In Index</Trans></th>
-                      <th className="py-1 pr-3 text-right font-medium" title={t`Files on disk not yet in the DB`}><Trans>New</Trans></th>
-                      <th className="py-1 pr-3 text-right font-medium" title={t`File mtime is newer than DB updated_date`}><Trans>Stale</Trans></th>
-                      <th className="py-1 pr-3 text-right font-medium" title={t`DB row's scope/project_id no longer matches walk`}><Trans>Mis-Sc</Trans></th>
-                      <th className="py-1 pr-3 text-right font-medium" title={t`DB row or shadow dir, file is gone`}><Trans>Orphan</Trans></th>
-                      <th className="py-1 pr-3 text-right font-medium"><Trans>Size</Trans></th>
-                      <th className="w-10 py-1 pr-3" />
+                      <th className="py-1 pe-3 ps-3 text-start font-medium">
+                        <Trans>Type</Trans>
+                      </th>
+                      <th className="py-1 pe-3 text-end font-medium">
+                        <Trans>On Disk</Trans>
+                      </th>
+                      <th className="py-1 pe-3 text-end font-medium">
+                        <Trans>In Index</Trans>
+                      </th>
+                      <th className="py-1 pe-3 text-end font-medium" title={t`Files on disk not yet in the DB`}>
+                        <Trans>New</Trans>
+                      </th>
+                      <th
+                        className="py-1 pe-3 text-end font-medium"
+                        title={t`File mtime is newer than DB updated_date`}
+                      >
+                        <Trans>Stale</Trans>
+                      </th>
+                      <th
+                        className="py-1 pe-3 text-end font-medium"
+                        title={t`DB row's scope/project_id no longer matches walk`}
+                      >
+                        <Trans>Mis-Sc</Trans>
+                      </th>
+                      <th className="py-1 pe-3 text-end font-medium" title={t`DB row or shadow dir, file is gone`}>
+                        <Trans>Orphan</Trans>
+                      </th>
+                      <th className="py-1 pe-3 text-end font-medium">
+                        <Trans>Size</Trans>
+                      </th>
+                      <th className="w-10 py-1 pe-3" />
                     </tr>
                   </thead>
                   <tbody>
                     {scanStats.types
                       .filter((t) => (t.count ?? 0) > 0 || (t.in_index ?? 0) > 0 || (t.orphan ?? 0) > 0)
-                      .sort((a, b) => (b.count + (b.orphan ?? 0)) - (a.count + (a.orphan ?? 0)))
+                      .sort((a, b) => b.count + (b.orphan ?? 0) - (a.count + (a.orphan ?? 0)))
                       .map((t) => {
                         const isIndexing = indexingTypes.has(t.type);
                         const amber = 'text-amber-600 dark:text-amber-400';
@@ -1111,15 +1256,23 @@ export function FsRecordsScannerViewer() {
                         const inIdx = t.in_index ?? 0;
                         return (
                           <tr key={t.type} className="group border-b last:border-0">
-                            <td className="py-1 pl-3 pr-3 font-mono">{t.type}</td>
-                            <td className="py-1 pr-3 text-right tabular-nums">{t.count}</td>
-                            <td className={`py-1 pr-3 text-right tabular-nums ${dim}`}>{inIdx}</td>
-                            <td className={`py-1 pr-3 text-right tabular-nums ${newN > 0 ? amber : dim}`}>{newN || '—'}</td>
-                            <td className={`py-1 pr-3 text-right tabular-nums ${staleN > 0 ? amber : dim}`}>{staleN || '—'}</td>
-                            <td className={`py-1 pr-3 text-right tabular-nums ${miscN > 0 ? amber : dim}`}>{miscN || '—'}</td>
-                            <td className={`py-1 pr-3 text-right tabular-nums ${orphN > 0 ? amber : dim}`}>{orphN || '—'}</td>
-                            <td className={`py-1 pr-3 text-right tabular-nums ${dim}`}>{fmtBytes(t.total_bytes)}</td>
-                            <td className="w-10 py-1 pr-3 text-right">
+                            <td className="py-1 pe-3 ps-3 font-mono">{t.type}</td>
+                            <td className="py-1 pe-3 text-end tabular-nums">{t.count}</td>
+                            <td className={`py-1 pe-3 text-end tabular-nums ${dim}`}>{inIdx}</td>
+                            <td className={`py-1 pe-3 text-end tabular-nums ${newN > 0 ? amber : dim}`}>
+                              {newN || '—'}
+                            </td>
+                            <td className={`py-1 pe-3 text-end tabular-nums ${staleN > 0 ? amber : dim}`}>
+                              {staleN || '—'}
+                            </td>
+                            <td className={`py-1 pe-3 text-end tabular-nums ${miscN > 0 ? amber : dim}`}>
+                              {miscN || '—'}
+                            </td>
+                            <td className={`py-1 pe-3 text-end tabular-nums ${orphN > 0 ? amber : dim}`}>
+                              {orphN || '—'}
+                            </td>
+                            <td className={`py-1 pe-3 text-end tabular-nums ${dim}`}>{fmtBytes(t.total_bytes)}</td>
+                            <td className="w-10 py-1 pe-3 text-end">
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <Button
@@ -1144,11 +1297,18 @@ export function FsRecordsScannerViewer() {
                 </table>
               </div>
               <p className="text-xs text-muted-foreground">
-                <Trans><span className="text-amber-600 dark:text-amber-400">New / Stale / Mis-Sc</span> sum to <strong>Pending</strong>: a Fast index drives them all to 0. <span className="text-amber-600 dark:text-amber-400">Orphan</span> rows persist until you Scan Orphans → sweep.</Trans>
+                <Trans>
+                  <span className="text-amber-600 dark:text-amber-400">New / Stale / Mis-Sc</span> sum to{' '}
+                  <strong>Pending</strong>: a Fast index drives them all to 0.{' '}
+                  <span className="text-amber-600 dark:text-amber-400">Orphan</span> rows persist until you Scan Orphans
+                  → sweep.
+                </Trans>
               </p>
             </div>
           ) : (
-            <div className="py-6 text-sm text-destructive"><Trans>Scan failed.</Trans></div>
+            <div className="py-6 text-sm text-destructive">
+              <Trans>Scan failed.</Trans>
+            </div>
           )}
         </DialogContent>
       </Dialog>

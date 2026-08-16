@@ -146,9 +146,9 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
         <div className="flex items-center gap-3">
           <Button size="sm" disabled={!agent.enabled || deploying} onClick={() => void deploy()}>
             {deploying ? (
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />
             ) : (
-              <Cloud className="mr-1.5 h-3.5 w-3.5" />
+              <Cloud className="me-1.5 h-3.5 w-3.5" />
             )}
             <Trans>Deploy</Trans>
           </Button>

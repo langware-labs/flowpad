@@ -85,7 +85,7 @@ export const VibeAgentsCard: React.FC<VibeAgentsCardProps> = ({ project }) => {
           trigger={
             <Button variant="outline" size="sm" data-testid="vibe-agents-add">
               <Plus className="h-3.5 w-3.5" />
-              <span className="ml-1.5">
+              <span className="ms-1.5">
                 <Trans>Add</Trans>
               </span>
             </Button>

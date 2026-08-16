@@ -60,10 +60,7 @@ export function HelpdeskMyItems() {
 function HelpdeskItemRow({ conv, onOpen }: { conv: Conversation; onOpen: () => void }) {
   const pointers = conv.conversationMessageIds ?? [];
   const last = latestPointer(pointers);
-  const latestTypeId = useMemo(
-    () => (last?.id ? new TypeId(FlowMessage.type, last.id) : null),
-    [last?.id],
-  );
+  const latestTypeId = useMemo(() => (last?.id ? new TypeId(FlowMessage.type, last.id) : null), [last?.id]);
   const { data: latest } = useEntity<FlowMessage>(latestTypeId);
   const { cloudUser, currentUser } = useAuth();
 
@@ -88,7 +85,7 @@ function HelpdeskItemRow({ conv, onOpen }: { conv: Conversation; onOpen: () => v
       <button
         type="button"
         onClick={onOpen}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50"
+        className="flex w-full items-center gap-3 px-4 py-3 text-start transition-colors hover:bg-accent/50"
         data-testid="helpdesk-my-item-row"
       >
         <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -98,18 +95,14 @@ function HelpdeskItemRow({ conv, onOpen }: { conv: Conversation; onOpen: () => v
               Without it these rows read "Untitled" while the same conversation
               is titled everywhere else in the app. */}
           <span className="block truncate text-sm">{deriveConversationTitle(conv)}</span>
-          {latest?.message && (
-            <span className="block truncate text-xs text-muted-foreground">{latest.message}</span>
-          )}
+          {latest?.message && <span className="block truncate text-xs text-muted-foreground">{latest.message}</span>}
         </span>
         {facets.isUnread && (
           <span className="shrink-0 rounded-full border border-[hsl(var(--brand))]/40 bg-[hsl(var(--brand))]/10 px-2 py-0.5 text-[10px] font-medium text-[hsl(var(--brand))]">
             <Trans>New reply</Trans>
           </span>
         )}
-        <span className="shrink-0 text-[11px] text-muted-foreground/70">
-          {formatTimeAgo(conv.updated_date)}
-        </span>
+        <span className="shrink-0 text-[11px] text-muted-foreground/70">{formatTimeAgo(conv.updated_date)}</span>
       </button>
     </li>
   );

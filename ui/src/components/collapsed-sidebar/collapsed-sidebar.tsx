@@ -56,7 +56,10 @@ import { useLocation, useNavigate } from 'react-router';
  *  listed, so a new RAIL_ITEMS entry is observable and highlightable the moment
  *  it exists — one less thing to remember. */
 export function railTag(id: string): string {
-  return `Rail${id.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('')}`;
+  return `Rail${id
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join('')}`;
 }
 
 /** Stable empty rail for desk renders, so the memo below doesn't hand React a
@@ -111,10 +114,7 @@ export function CollapsedSidebar() {
   const hubMode = currentDock?.page === PageId.HUB;
   // Built only in hub mode (desk is the common case — don't allocate/translate 7
   // unused entries every desk render).
-  const hubItems = useMemo(
-    () => (hubMode ? buildHubRailItems(t) : NO_HUB_ITEMS),
-    [hubMode, t],
-  );
+  const hubItems = useMemo(() => (hubMode ? buildHubRailItems(t) : NO_HUB_ITEMS), [hubMode, t]);
 
   // Content gates: an icon earns its slot only once the thing it opens exists.
   const gates: Record<RailGate, boolean> = {
@@ -270,7 +270,7 @@ export function CollapsedSidebar() {
           number that let the bookmarks flyout (z-40) emerge from behind it;
           that menu now hangs off the top bar's star and out-ranks the rail
           deliberately (z-[60]), since it opens on the far side of the window. */}
-      <Sidebar collapsible="none" className={`relative z-50 flex ${RAIL_WIDTH_CLASS} flex-col border-r`}>
+      <Sidebar collapsible="none" className={`relative z-50 flex ${RAIL_WIDTH_CLASS} flex-col border-e`}>
         <SidebarContent className="flex-1">
           <SidebarGroup className="px-0 py-2">
             <SidebarMenu>

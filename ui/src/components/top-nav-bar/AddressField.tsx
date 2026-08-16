@@ -1,8 +1,9 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
-import { ChevronRight, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import {
   Breadcrumb,
+  BreadcrumbChevron,
   BreadcrumbEllipsis,
   BreadcrumbItem,
   BreadcrumbLink,
@@ -123,11 +124,7 @@ export function AddressField({ crumbs, onSearch }: { crumbs: Crumb[]; onSearch: 
 
   return (
     <>
-      <div
-        ref={fieldRef}
-        data-testid="top-nav-address"
-        className={ADDRESS_PILL_CLASS}
-      >
+      <div ref={fieldRef} data-testid="top-nav-address" className={ADDRESS_PILL_CLASS}>
         <Breadcrumb className="min-w-0">
           <BreadcrumbList ref={listRef} className="flex-nowrap gap-1.5 text-sm sm:gap-1.5">
             {visible.map((crumb, i) => {
@@ -138,7 +135,7 @@ export function AddressField({ crumbs, onSearch }: { crumbs: Crumb[]; onSearch: 
                   {renderCrumb(crumb, isLast)}
                   {!isLast && (
                     <BreadcrumbSeparator className="shrink-0">
-                      <ChevronRight className="h-3.5 w-3.5" />
+                      <BreadcrumbChevron className="h-3.5 w-3.5" />
                     </BreadcrumbSeparator>
                   )}
                   {showEllipsis && (
@@ -166,7 +163,7 @@ export function AddressField({ crumbs, onSearch }: { crumbs: Crumb[]; onSearch: 
                                   type="button"
                                   disabled={!h.pointer}
                                   onClick={() => go(h)}
-                                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent disabled:cursor-default disabled:opacity-60"
+                                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-start text-sm hover:bg-accent disabled:cursor-default disabled:opacity-60"
                                 >
                                   <HIcon className="h-4 w-4 shrink-0 opacity-70" />
                                   <span className="truncate">{h.label}</span>
@@ -177,7 +174,7 @@ export function AddressField({ crumbs, onSearch }: { crumbs: Crumb[]; onSearch: 
                         </Popover>
                       </BreadcrumbItem>
                       <BreadcrumbSeparator className="shrink-0">
-                        <ChevronRight className="h-3.5 w-3.5" />
+                        <BreadcrumbChevron className="h-3.5 w-3.5" />
                       </BreadcrumbSeparator>
                     </>
                   )}
@@ -186,17 +183,20 @@ export function AddressField({ crumbs, onSearch }: { crumbs: Crumb[]; onSearch: 
             })}
           </BreadcrumbList>
         </Breadcrumb>
-        {/* Search lives INSIDE the field, pinned to its right edge — the pill
+        {/* Search lives INSIDE the field, pinned to its trailing edge — the pill
             is the thing that becomes the query box, so the control that turns
-            it into one belongs in it. `ml-auto` keeps it on the edge however
-            short the crumb trail is. */}
+            it into one belongs in it. `ms-auto` (margin-INLINE-start) keeps it
+            on that edge however short the crumb trail is, and follows the
+            reading direction: the right edge in English, the left edge in
+            Hebrew. The physical `ms-auto` it replaced parked the magnifier in
+            the middle of an RTL bar. */}
         <button
           type="button"
           onClick={onSearch}
           aria-label={t`Search`}
           title={t`Search`}
           data-testid="top-nav-search-open"
-          className="ml-auto flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          className="ms-auto flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-accent-foreground"
         >
           <Search className="h-4 w-4" />
         </button>

@@ -1,3 +1,6 @@
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { Button } from '@src/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@src/components/ui/card';
 import { Input } from '@src/components/ui/input';
@@ -9,21 +12,21 @@ import { Save, X } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 const HOOK_EVENTS = {
-  PreToolUse: { title: 'Pre Tool Use', supportsMatchers: true, icon: '⚡' },
-  PostToolUse: { title: 'Post Tool Use', supportsMatchers: true, icon: '✅' },
-  PermissionRequest: { title: 'Permission Request', supportsMatchers: true, icon: '🔐' },
-  UserPromptSubmit: { title: 'User Prompt Submit', supportsMatchers: false, icon: '💬' },
-  Stop: { title: 'Stop', supportsMatchers: false, icon: '🛑' },
-  SubagentStop: { title: 'Subagent Stop', supportsMatchers: false, icon: '🤖' },
-  SessionStart: { title: 'Session Start', supportsMatchers: true, icon: '🚀' },
-  SessionEnd: { title: 'Session End', supportsMatchers: false, icon: '🏁' },
-  Notification: { title: 'Notification', supportsMatchers: true, icon: '🔔' },
-  PreCompact: { title: 'Pre Compact', supportsMatchers: true, icon: '📦' },
+  PreToolUse: { title: msg`Pre Tool Use`, supportsMatchers: true, icon: '⚡' },
+  PostToolUse: { title: msg`Post Tool Use`, supportsMatchers: true, icon: '✅' },
+  PermissionRequest: { title: msg`Permission Request`, supportsMatchers: true, icon: '🔐' },
+  UserPromptSubmit: { title: msg`User Prompt Submit`, supportsMatchers: false, icon: '💬' },
+  Stop: { title: msg`Stop`, supportsMatchers: false, icon: '🛑' },
+  SubagentStop: { title: msg`Subagent Stop`, supportsMatchers: false, icon: '🤖' },
+  SessionStart: { title: msg`Session Start`, supportsMatchers: true, icon: '🚀' },
+  SessionEnd: { title: msg`Session End`, supportsMatchers: false, icon: '🏁' },
+  Notification: { title: msg`Notification`, supportsMatchers: true, icon: '🔔' },
+  PreCompact: { title: msg`Pre Compact`, supportsMatchers: true, icon: '📦' },
 } as const;
 
 const HOOK_EVENT_OPTIONS = Object.entries(HOOK_EVENTS).map(([key, meta]) => ({
   value: key,
-  label: `${meta.icon} ${meta.title}`,
+  label: `${meta.icon} ${i18n._(meta.title)}`,
 }));
 
 interface HookEditorProps {
@@ -76,11 +79,11 @@ export function HookEditor({
           <CardTitle>{isEditing ? <Trans>Edit Hook</Trans> : <Trans>Add New Hook</Trans>}</CardTitle>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={onCancel}>
-              <X className="mr-2 h-4 w-4" />
+              <X className="me-2 h-4 w-4" />
               <Trans>Cancel</Trans>
             </Button>
             <Button size="sm" onClick={onSave} disabled={isSaveDisabled}>
-              <Save className="mr-2 h-4 w-4" />
+              <Save className="me-2 h-4 w-4" />
               {isEditing ? <Trans>Update</Trans> : <Trans>Save</Trans>}
             </Button>
           </div>

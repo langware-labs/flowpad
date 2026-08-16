@@ -1,3 +1,6 @@
+import { i18n } from '@lingui/core';
+import { msg, t } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 /**
  * The ingest drivers, as a form.
  *
@@ -25,20 +28,20 @@ export type FieldKind = 'text' | 'password' | 'number' | 'lines' | 'csv';
 export interface ProviderField {
   /** Key inside `config`. */
   key: string;
-  label: string;
+  label: MessageDescriptor;
   kind: FieldKind;
   required?: boolean;
-  placeholder?: string;
+  placeholder?: MessageDescriptor;
   /** Shown under the input. Use it for the consequence, not the syntax. */
-  hint?: string;
+  hint?: MessageDescriptor;
   /** Collapsed behind "Advanced" — has a working default in the driver. */
   advanced?: boolean;
 }
 
 export interface ProviderSpec {
   id: string;
-  label: string;
-  blurb: string;
+  label: MessageDescriptor;
+  blurb: MessageDescriptor;
   fields: ProviderField[];
   /** The remote account this source names, derived from the entered fields.
    *  Descriptive only — `account_key` is the source's remote identity, not a
@@ -49,8 +52,8 @@ export interface ProviderSpec {
 export const PROVIDERS: readonly ProviderSpec[] = [
   {
     id: 'rss',
-    label: 'RSS / Atom',
-    blurb: 'One stream per feed URL. No credentials — the simplest source there is.',
+    label: msg`RSS / Atom`,
+    blurb: msg`One stream per feed URL. No credentials — the simplest source there is.`,
     // The FIRST feed URL, not the whole list: appending a feed must not silently
     // rename the account. NOT a uniqueness key — ids are uuid4 and two sources
     // on one feed are allowed, so this only has to be descriptive.
@@ -58,62 +61,62 @@ export const PROVIDERS: readonly ProviderSpec[] = [
     fields: [
       {
         key: 'feed_urls',
-        label: 'Feed URLs',
+        label: msg`Feed URLs`,
         kind: 'lines',
         required: true,
-        placeholder: 'https://example.com/feed.xml',
-        hint: 'One per line. Each URL becomes its own stream with its own cursor and health.',
+        placeholder: msg`https://example.com/feed.xml`,
+        hint: msg`One per line. Each URL becomes its own stream with its own cursor and health.`,
       },
     ],
   },
   {
     id: 'hackernews',
-    label: 'Hacker News',
-    blurb: 'The public firehose, filtered. No credentials.',
+    label: msg`Hacker News`,
+    blurb: msg`The public firehose, filtered. No credentials.`,
     accountKey: () => 'public',
     fields: [
       {
         key: 'types',
-        label: 'Item types',
+        label: msg`Item types`,
         kind: 'csv',
-        placeholder: 'story',
-        hint: 'Comma separated: story, comment, job, poll. Defaults to story.',
+        placeholder: msg`story`,
+        hint: msg`Comma separated: story, comment, job, poll. Defaults to story.`,
       },
-      { key: 'min_score', label: 'Minimum score', kind: 'number', placeholder: '0' },
-      { key: 'base_url', label: 'API base URL', kind: 'text', advanced: true },
+      { key: 'min_score', label: msg`Minimum score`, kind: 'number', placeholder: msg`0` },
+      { key: 'base_url', label: msg`API base URL`, kind: 'text', advanced: true },
     ],
   },
   {
     id: 'agent',
-    label: 'Agent transport',
-    blurb: 'Reaches a channel through a local agent harness — how Gmail is read today.',
+    label: msg`Agent transport`,
+    blurb: msg`Reaches a channel through a local agent harness — how Gmail is read today.`,
     accountKey: (f) => (f.connector ?? '').trim(),
     fields: [
       {
         key: 'connector',
-        label: 'Connector',
+        label: msg`Connector`,
         kind: 'text',
         required: true,
-        placeholder: 'gmail',
-        hint: 'This is the CHANNEL, and half of every thread key. Leaving it empty forks every thread in the mailbox — permanently.',
+        placeholder: msg`gmail`,
+        hint: msg`This is the CHANNEL, and half of every thread key. Leaving it empty forks every thread in the mailbox — permanently.`,
       },
       {
         key: 'harness',
-        label: 'Harness',
+        label: msg`Harness`,
         kind: 'text',
         required: true,
-        placeholder: 'claude',
-        hint: 'The worker CLI that runs the fetch. Without a launchable one the source parks on config_error.',
+        placeholder: msg`claude`,
+        hint: msg`The worker CLI that runs the fetch. Without a launchable one the source parks on config_error.`,
       },
-      { key: 'streams', label: 'Streams', kind: 'csv', placeholder: 'INBOX' },
-      { key: 'agent', label: 'Agent', kind: 'text', advanced: true },
-      { key: 'subagent', label: 'Subagent', kind: 'text', advanced: true },
-      { key: 'max_items', label: 'Max items per run', kind: 'number', advanced: true },
+      { key: 'streams', label: msg`Streams`, kind: 'csv', placeholder: msg`INBOX` },
+      { key: 'agent', label: msg`Agent`, kind: 'text', advanced: true },
+      { key: 'subagent', label: msg`Subagent`, kind: 'text', advanced: true },
+      { key: 'max_items', label: msg`Max items per run`, kind: 'number', advanced: true },
     ],
   },
   {
     id: 'slack',
-    label: 'Slack',
+    label: msg`Slack`,
     blurb:
       'Channels in a connected Slack workspace. Connect Slack first, then invite the bot to each channel and press Verify.',
     // The workspace is a property of the CONNECTION, not of this form — the
@@ -123,37 +126,36 @@ export const PROVIDERS: readonly ProviderSpec[] = [
     fields: [
       {
         key: 'channels',
-        label: 'Channel IDs',
+        label: msg`Channel IDs`,
         kind: 'lines',
         required: true,
-        placeholder: 'C0123456789',
-        hint:
-          'One per line, and the ID — not the name. Slack: open the channel → its name → the ID is at the bottom. A renamed channel keeps its ID; keying on the name would fork its history.',
+        placeholder: msg`C0123456789`,
+        hint: 'One per line, and the ID — not the name. Slack: open the channel → its name → the ID is at the bottom. A renamed channel keeps its ID; keying on the name would fork its history.',
       },
     ],
   },
   {
     id: 'agentmail',
-    label: 'AgentMail',
-    blurb: 'A hosted mailbox over its HTTP API.',
+    label: msg`AgentMail`,
+    blurb: msg`A hosted mailbox over its HTTP API.`,
     accountKey: (f) => (f.inbox ?? '').trim(),
     fields: [
       {
         key: 'inbox',
-        label: 'Inbox',
+        label: msg`Inbox`,
         kind: 'text',
         required: true,
-        placeholder: 'you@agentmail.to',
+        placeholder: msg`you@agentmail.to`,
       },
       {
         key: 'api_key',
-        label: 'API key',
+        label: msg`API key`,
         kind: 'password',
         required: true,
-        placeholder: 'am_…',
-        hint: 'Stored in this source’s config on this machine, including its metadata shadow on disk.',
+        placeholder: msg`am_…`,
+        hint: msg`Stored in this source’s config on this machine, including its metadata shadow on disk.`,
       },
-      { key: 'base_url', label: 'API base URL', kind: 'text', advanced: true },
+      { key: 'base_url', label: msg`API base URL`, kind: 'text', advanced: true },
     ],
   },
 ];
@@ -209,10 +211,16 @@ export function emptyDraft(provider = 'rss'): SourceDraft {
 }
 
 const splitLines = (raw: string): string[] =>
-  raw.split('\n').map((s) => s.trim()).filter(Boolean);
+  raw
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean);
 
 const splitCsv = (raw: string): string[] =>
-  raw.split(',').map((s) => s.trim()).filter(Boolean);
+  raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 
 function isHttpUrl(raw: string): boolean {
   try {
@@ -270,11 +278,14 @@ export function validateDraft(draft: SourceDraft): string[] {
   const spec = providerSpec(draft.provider);
 
   if (!draft.name.trim()) problems.push('Name is required.');
-  if (!spec) problems.push(`Unknown provider ${draft.provider}.`);
+  if (!spec) problems.push(t`Unknown provider ${draft.provider}.`);
 
   for (const field of spec?.fields ?? []) {
     const raw = (draft.fields[field.key] ?? '').trim();
-    if (field.required && !raw) problems.push(`${field.label} is required.`);
+    // The field's own name is a descriptor, so resolve it before it goes into
+    // the sentence — interpolating the descriptor itself would print [object Object].
+    const label = i18n._(field.label);
+    if (field.required && !raw) problems.push(t`${label} is required.`);
   }
 
   if (draft.provider === 'rss') {

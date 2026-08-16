@@ -68,14 +68,10 @@ export function CrumbDetailsPopover({
           title={t`Copy path`}
           aria-label={t`Copy path`}
           data-testid="top-nav-crumb-copy-path"
-          className="mt-1.5 flex w-full items-center gap-1.5 rounded-sm px-1 py-1 text-left font-mono text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="mt-1.5 flex w-full items-center gap-1.5 rounded-sm px-1 py-1 text-start font-mono text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
         >
           <span className="min-w-0 flex-1 truncate">{path}</span>
-          {copied ? (
-            <Check className="h-3 w-3 shrink-0 text-green-500" />
-          ) : (
-            <Copy className="h-3 w-3 shrink-0" />
-          )}
+          {copied ? <Check className="h-3 w-3 shrink-0 text-green-500" /> : <Copy className="h-3 w-3 shrink-0" />}
         </button>
 
         <div className="mt-2 flex items-center gap-1">

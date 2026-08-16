@@ -115,9 +115,14 @@ export function GitHubDeviceFlowModal() {
     <Dialog open onOpenChange={(o) => !o && handleClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle><Trans>Connect GitHub</Trans></DialogTitle>
+          <DialogTitle>
+            <Trans>Connect GitHub</Trans>
+          </DialogTitle>
           <DialogDescription>
-            <Trans>Your one-time code is below. Click <span className="font-medium">Copy code &amp; open GitHub</span> — we'll copy it to your clipboard and open the GitHub activation page so you can paste it there.</Trans>
+            <Trans>
+              Your one-time code is below. Click <span className="font-medium">Copy code &amp; open GitHub</span> —
+              we'll copy it to your clipboard and open the GitHub activation page so you can paste it there.
+            </Trans>
           </DialogDescription>
         </DialogHeader>
 
@@ -128,7 +133,7 @@ export function GitHubDeviceFlowModal() {
 
           <div className="flex items-center gap-2">
             <Button size="sm" onClick={() => void handleCopyAndOpen()}>
-              <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+              <ExternalLink className="me-1.5 h-3.5 w-3.5" />
               <Trans>Copy code &amp; open GitHub</Trans>
             </Button>
           </div>
@@ -144,7 +149,9 @@ export function GitHubDeviceFlowModal() {
           ) : (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <Trans>Waiting for authorization… (expires in {mm}:{ss})</Trans>
+              <Trans>
+                Waiting for authorization… (expires in {mm}:{ss})
+              </Trans>
             </div>
           )}
         </div>

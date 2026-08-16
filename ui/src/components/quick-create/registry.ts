@@ -11,6 +11,8 @@ import {
   Task,
   Whiteboard,
 } from '@sdk';
+import { t, msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { PromptEditDialog } from '@src/components/prompt-library/PromptEditDialog';
 import { DockPointer } from '@src/navigation/DockPointer';
 import type { ComponentType } from 'react';
@@ -24,7 +26,7 @@ import type { HarnessKind, ScopeKind } from './ScopeSelection';
  */
 export interface QuickCreateResult {
   pointer?: DockPointer;
-  toastTitle: string;
+  toastTitle: MessageDescriptor;
 }
 
 export interface QuickCreateCreateArgs {
@@ -52,8 +54,18 @@ export interface QuickCreateCreateArgs {
 export interface QuickCreateDescriptor {
   /** Matches server `AssetTypeInfo.type_name` so labels can be joined at render time. */
   type: string;
-  /** Fallback label when no server label is available (also used for display consistency). */
-  label: string;
+  /**
+   * The type's SINGULAR name, as the thing you are about to create one of.
+   *
+   * A lazy `MessageDescriptor` rather than a plain string because this table is
+   * module-level: an eager `t` here would be evaluated once at import, before
+   * the real locale is activated, and would then never re-render on a language
+   * switch. Callers translate it at render time.
+   *
+   * Deliberately NOT `labelForType`: the type registry names a COLLECTION
+   * ("Skills", "Documents"), which is the wrong number for a "New …" affordance.
+   */
+  label: MessageDescriptor;
   /** Title of the wiki page explaining this type, for the tile's WikiTip.
    *  Required: a wikiword resolves by page title at runtime, so a missing or
    *  wrong one silently shows a "create this page" prompt instead of help —
@@ -131,7 +143,7 @@ export function subFolderFor(descriptor: QuickCreateDescriptor, harness: Harness
 export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   {
     type: Agent.type,
-    label: 'Agent',
+    label: msg`Agent`,
     wikiword: 'Agent Management',
     fallbackSubFolder: 'agentic-assets/agent',
     allowedScopes: ['user', 'project'],
@@ -142,13 +154,13 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
       const saved = await Agent.createInProject(project, name, folderVfsPath);
       return {
         pointer: DockPointer.forAssetEditorByTypeId(Agent.type, saved.typeId),
-        toastTitle: 'Agent created',
+        toastTitle: msg`Agent created`,
       };
     },
   },
   {
     type: 'skill',
-    label: 'Skill',
+    label: msg`Skill`,
     wikiword: 'Skill assets',
     fallbackSubFolder: '.claude/skills',
     create: async ({ project, name, folderVfsPath }) => {
@@ -162,13 +174,13 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
               initialLine: '2',
             })
           : undefined,
-        toastTitle: 'Skill created',
+        toastTitle: msg`Skill created`,
       };
     },
   },
   {
     type: 'subagent',
-    label: 'Sub agent',
+    label: msg`Sub agent`,
     wikiword: 'Sub agents',
     fallbackSubFolder: '.claude/agents',
     create: async ({ project, name, folderVfsPath }) => {
@@ -182,65 +194,65 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
               initialLine: '2',
             })
           : undefined,
-        toastTitle: 'SubAgent created',
+        toastTitle: msg`SubAgent created`,
       };
     },
   },
   {
     type: 'dynamic_workflow',
-    label: 'Dynamic Workflow',
+    label: msg`Dynamic Workflow`,
     wikiword: 'Dynamic workflows',
     fallbackSubFolder: '.claude/workflows',
     create: async ({ project, name }) => {
       const saved = await DynamicWorkflow.createInProject(project, name);
       return {
         pointer: saved.asset_ref ? DockPointer.forAssetEditor('dynamic_workflow', saved.asset_ref) : undefined,
-        toastTitle: 'Dynamic workflow created',
+        toastTitle: msg`Dynamic workflow created`,
       };
     },
   },
   {
     type: 'task',
-    label: 'Task',
+    label: msg`Task`,
     wikiword: 'Task assets',
     fallbackSubFolder: 'agentic-assets/task',
     create: async ({ project, name }) => {
       const task = await Task.createInProject(project, name);
       return {
         pointer: DockPointer.forTasks(task.id),
-        toastTitle: 'Task created',
+        toastTitle: msg`Task created`,
       };
     },
   },
   {
     type: 'markdown',
-    label: 'Markdown',
+    label: msg`Markdown`,
     wikiword: 'Markdown documents',
     fallbackSubFolder: 'docs',
     create: async ({ project, name }) => {
       const md = await Markdown.createInProject(project, name);
       return {
         pointer: md.asset_ref ? DockPointer.forAssetEditor('markdown', md.asset_ref) : undefined,
-        toastTitle: 'Markdown created',
+        toastTitle: msg`Markdown created`,
       };
     },
   },
   {
     type: 'whiteboard',
-    label: 'Whiteboard',
+    label: msg`Whiteboard`,
     wikiword: 'Whiteboard assets',
     fallbackSubFolder: 'agentic-assets/whiteboard',
     create: async ({ project, name, folderVfsPath }) => {
       const saved = await Whiteboard.createInProject(project, name, folderVfsPath);
       return {
         pointer: saved.asset_ref ? DockPointer.forAssetEditor('whiteboard', saved.asset_ref) : undefined,
-        toastTitle: 'Whiteboard created',
+        toastTitle: msg`Whiteboard created`,
       };
     },
   },
   {
     type: 'prompt',
-    label: 'Prompt',
+    label: msg`Prompt`,
     wikiword: 'Prompt library',
     // `prompts/` is Flowpad's own convention, not a harness one — no variants.
     fallbackSubFolder: 'agentic-assets/prompt',
@@ -248,7 +260,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     Dialog: PromptEditDialog,
     create: async ({ project, name }) => {
       await Prompt.createInProject(project, name);
-      return { toastTitle: 'Prompt created' };
+      return { toastTitle: msg`Prompt created` };
     },
   },
 ];

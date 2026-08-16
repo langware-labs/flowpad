@@ -4,6 +4,7 @@
  * records, customBody list. Clicking a flow opens its per-flow dock tab
  * (`graph_workflow-<id>` pointer — URL-first; the view loads from the pointer).
  */
+import { t } from '@lingui/core/macro';
 import { useCallback, useMemo, useState } from 'react';
 import { GraphWorkflow, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
@@ -65,17 +66,14 @@ export function GraphWorkflowsNavigator() {
     }
   }, [newName, openFlow]);
 
-  const sorted = useMemo(
-    () => [...flows].sort((a, b) => (a.name || '').localeCompare(b.name || '')),
-    [flows],
-  );
+  const sorted = useMemo(() => [...flows].sort((a, b) => (a.name || '').localeCompare(b.name || '')), [flows]);
 
   const descriptor: NavigatorDescriptor = useMemo(
     () => ({
       id: 'graph-workflows',
-      search: { recordTypes: [GraphWorkflow.type], scope: urlScope, placeholder: 'Search flows…' },
+      search: { recordTypes: [GraphWorkflow.type], scope: urlScope, placeholder: t`Search flows…` },
       header: {
-        title: 'Graph Workflows',
+        title: t`Graph Workflows`,
         countBadge: flows.length,
         headerRight: (
           <ScopeFilterIconBar
@@ -124,11 +122,26 @@ export function GraphWorkflowsNavigator() {
               </button>
             );
           })}
-          {!sorted.length && <div className="afl-note" style={{ padding: 12 }}>No flows yet.</div>}
+          {!sorted.length && (
+            <div className="afl-note" style={{ padding: 12 }}>
+              No flows yet.
+            </div>
+          )}
         </div>
       ),
     }),
-    [flows.length, sorted, urlScope, project, handleScopeChange, creating, newName, createFlow, activePointer, openFlow],
+    [
+      flows.length,
+      sorted,
+      urlScope,
+      project,
+      handleScopeChange,
+      creating,
+      newName,
+      createFlow,
+      activePointer,
+      openFlow,
+    ],
   );
 
   return <NavigatorPanel descriptor={descriptor} />;

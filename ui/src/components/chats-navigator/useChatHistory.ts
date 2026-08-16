@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useEffect, useMemo, useRef } from 'react';
 import { AgenticProcess, QueryFilter, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
@@ -35,7 +36,7 @@ export interface ChatBucket {
 
 function processFor(entry: WorkerHistoryEntry): AgenticProcess | null {
   return entry.agentic_process_id
-    ? AgenticProcess.getByIdFromCache<AgenticProcess>(entry.agentic_process_id) ?? null
+    ? (AgenticProcess.getByIdFromCache<AgenticProcess>(entry.agentic_process_id) ?? null)
     : null;
 }
 
@@ -66,11 +67,7 @@ export const CHAT_SORT_STABILITY_MS = 60_000;
  *  field is the backend/live-query snapshot, while `processFor` reads the
  *  cache the WS merge keeps fresh for entries whose id was already known. */
 function tsOf(entry: WorkerHistoryEntry): number {
-  return Math.max(
-    toMs(entry.last_active_time),
-    toMs(entry.last_active_at),
-    toMs(processFor(entry)?.last_active_at),
-  );
+  return Math.max(toMs(entry.last_active_time), toMs(entry.last_active_at), toMs(processFor(entry)?.last_active_at));
 }
 
 /** Group a recency-sorted list into Today / Yesterday / Previous 7|30 days / Older. */
@@ -83,11 +80,11 @@ function bucketize(sorted: WorkerHistoryEntry[], ts: (e: WorkerHistoryEntry) => 
   const start30 = startToday - 30 * day;
 
   const buckets: ChatBucket[] = [
-    { label: 'Today', entries: [] },
-    { label: 'Yesterday', entries: [] },
-    { label: 'Previous 7 days', entries: [] },
-    { label: 'Previous 30 days', entries: [] },
-    { label: 'Older', entries: [] },
+    { label: t`Today`, entries: [] },
+    { label: t`Yesterday`, entries: [] },
+    { label: t`Previous 7 days`, entries: [] },
+    { label: t`Previous 30 days`, entries: [] },
+    { label: t`Older`, entries: [] },
   ];
   for (const entry of sorted) {
     const t = ts(entry);

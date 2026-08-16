@@ -1,3 +1,5 @@
+import { i18n } from '@lingui/core';
+import { t } from '@lingui/core/macro';
 import { Shell, timeAgo } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -62,10 +64,10 @@ import {
 } from './error-viewer-utils';
 
 const SNOOZE_OPTIONS = [
-  { label: '1 hour', ms: 3_600_000 },
-  { label: '4 hours', ms: 14_400_000 },
-  { label: '24 hours', ms: 86_400_000 },
-  { label: '1 week', ms: 604_800_000 },
+  { label: t`1 hour`, ms: 3_600_000 },
+  { label: t`4 hours`, ms: 14_400_000 },
+  { label: t`24 hours`, ms: 86_400_000 },
+  { label: t`1 week`, ms: 604_800_000 },
 ] as const;
 
 function statusBadge(status: ErrorStatus) {
@@ -75,21 +77,21 @@ function statusBadge(status: ErrorStatus) {
     case ErrorStatus.IGNORED:
       return (
         <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-          <EyeOff className="mr-0.5 inline h-2.5 w-2.5" />
+          <EyeOff className="me-0.5 inline h-2.5 w-2.5" />
           <Trans>Ignored</Trans>
         </span>
       );
     case ErrorStatus.IGNORED_UNTIL:
       return (
         <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-600">
-          <Clock className="mr-0.5 inline h-2.5 w-2.5" />
+          <Clock className="me-0.5 inline h-2.5 w-2.5" />
           <Trans>Snoozed</Trans>
         </span>
       );
     case ErrorStatus.TASK_CREATED:
       return (
         <span className="rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-600">
-          <ListTodo className="mr-0.5 inline h-2.5 w-2.5" />
+          <ListTodo className="me-0.5 inline h-2.5 w-2.5" />
           <Trans>Tasked</Trans>
         </span>
       );
@@ -163,7 +165,9 @@ function ErrorActions({
                 <Clock className="h-3.5 w-3.5" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="bottom"><Trans>Ignore till now</Trans></TooltipContent>
+            <TooltipContent side="bottom">
+              <Trans>Ignore till now</Trans>
+            </TooltipContent>
           </Tooltip>
           <Popover>
             <Tooltip>
@@ -174,16 +178,18 @@ function ErrorActions({
                   </button>
                 </PopoverTrigger>
               </TooltipTrigger>
-              <TooltipContent side="bottom"><Trans>Snooze</Trans></TooltipContent>
+              <TooltipContent side="bottom">
+                <Trans>Snooze</Trans>
+              </TooltipContent>
             </Tooltip>
             <PopoverContent side="bottom" align="end" className="w-28 p-1">
               {SNOOZE_OPTIONS.map((opt) => (
                 <button
-                  key={opt.label}
-                  className="w-full rounded px-2 py-1 text-left text-xs hover:bg-muted"
+                  key={opt.value}
+                  className="w-full rounded px-2 py-1 text-start text-xs hover:bg-muted"
                   onClick={() => onSnooze(fp, new Date(Date.now() + opt.ms))}
                 >
-                  {opt.label}
+                  {i18n._(opt.label)}
                 </button>
               ))}
             </PopoverContent>
@@ -194,7 +200,9 @@ function ErrorActions({
                 <EyeOff className="h-3.5 w-3.5" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="bottom"><Trans>Ignore permanently</Trans></TooltipContent>
+            <TooltipContent side="bottom">
+              <Trans>Ignore permanently</Trans>
+            </TooltipContent>
           </Tooltip>
         </>
       )}
@@ -205,7 +213,9 @@ function ErrorActions({
               <RotateCcw className="h-3.5 w-3.5" />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="bottom"><Trans>Reopen</Trans></TooltipContent>
+          <TooltipContent side="bottom">
+            <Trans>Reopen</Trans>
+          </TooltipContent>
         </Tooltip>
       )}
     </>
@@ -248,18 +258,21 @@ function ErrorCard({
     (error.traceback && error.traceback.length > 0);
   const trim = (s: string) => (!expanded && s.length > 120 ? s.slice(0, 120) + '...' : s);
 
-  const handleCardClick = useCallback((e: React.MouseEvent) => {
-    // Don't toggle if clicking a button, link, or interactive element
-    if ((e.target as HTMLElement).closest('button, a, [role="button"]')) return;
-    if (needsTruncation) setExpanded((v) => !v);
-  }, [needsTruncation]);
+  const handleCardClick = useCallback(
+    (e: React.MouseEvent) => {
+      // Don't toggle if clicking a button, link, or interactive element
+      if ((e.target as HTMLElement).closest('button, a, [role="button"]')) return;
+      if (needsTruncation) setExpanded((v) => !v);
+    },
+    [needsTruncation],
+  );
 
   return (
     <div
       className={cn(
         'rounded-md border border-border bg-card p-3',
-        'border-l-2',
-        isHook ? 'border-l-amber-500' : 'border-l-orange-500',
+        'border-s-2',
+        isHook ? 'border-s-amber-500' : 'border-s-orange-500',
         needsTruncation && 'cursor-pointer',
       )}
       onClick={handleCardClick}
@@ -275,10 +288,11 @@ function ErrorCard({
           </Tooltip>
           {needsTruncation && (
             <span className="text-muted-foreground/50">
-              {expanded
-                ? <ChevronDown className="h-3.5 w-3.5" />
-                : <ChevronRight className="h-3.5 w-3.5" />
-              }
+              {expanded ? (
+                <ChevronDown className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5 rtl:-scale-x-100" />
+              )}
             </span>
           )}
         </div>
@@ -315,13 +329,20 @@ function ErrorCard({
           )}
 
           {/* Error message (root cause) */}
-          <p className={cn('font-mono text-xs', isHook ? 'text-amber-400/90' : 'text-foreground/75', (isHook || statusBadge(error.error_status)) && 'mt-0.5')}>
+          <p
+            className={cn(
+              'font-mono text-xs',
+              isHook ? 'text-amber-400/90' : 'text-foreground/75',
+              (isHook || statusBadge(error.error_status)) && 'mt-0.5',
+            )}
+          >
             {trim(error.error_msg)}
           </p>
 
           {/* Occurrence info — compact single line */}
           <p className="text-[10px] text-muted-foreground">
-            {error.occurrence_count}× across {error.session_ids.length} session{error.session_ids.length !== 1 ? 's' : ''}
+            {error.occurrence_count}× across {error.session_ids.length} session
+            {error.session_ids.length !== 1 ? 's' : ''}
             {error.last_seen && error.last_seen !== UNKNOWN_TIMESTAMP && (
               <span className="text-muted-foreground/60"> · {timeAgo(new Date(error.last_seen))}</span>
             )}
@@ -331,31 +352,27 @@ function ErrorCard({
           {expanded && (
             <>
               {/* Hook events where this error occurs */}
-              {isHook && (() => {
-                const display: string[] =
-                  error.hooks?.length > 0
-                    ? error.hooks
-                    : error.hook
-                      ? [error.hook]
-                      : [];
-                return display.length > 0 ? (
-                  <div className="mt-1 flex flex-wrap items-center gap-1">
-                    <span className="text-[10px] text-muted-foreground"><Trans>Hooks:</Trans></span>
-                    {display.map((h) => (
-                      <span key={h} className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                        {h}
+              {isHook &&
+                (() => {
+                  const display: string[] = error.hooks?.length > 0 ? error.hooks : error.hook ? [error.hook] : [];
+                  return display.length > 0 ? (
+                    <div className="mt-1 flex flex-wrap items-center gap-1">
+                      <span className="text-[10px] text-muted-foreground">
+                        <Trans>Hooks:</Trans>
                       </span>
-                    ))}
-                  </div>
-                ) : null;
-              })()}
+                      {display.map((h) => (
+                        <span key={h} className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          {h}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null;
+                })()}
 
               {/* Fix message & instruction — full width, readable */}
               {error.error_status === ErrorStatus.OPEN && (error.fix.message || error.fix.instruction) && (
                 <div className="mt-1.5 rounded-md border border-blue-500/20 bg-blue-500/5 px-2.5 py-1.5">
-                  {error.fix.message && (
-                    <p className="text-xs font-medium text-blue-400">{error.fix.message}</p>
-                  )}
+                  {error.fix.message && <p className="text-xs font-medium text-blue-400">{error.fix.message}</p>}
                   {error.fix.instruction && (
                     <p className="mt-0.5 text-xs text-muted-foreground">{error.fix.instruction}</p>
                   )}
@@ -378,9 +395,7 @@ function ErrorCard({
 
           {/* Collapsed: show trimmed fix hint if available */}
           {!expanded && error.error_status === ErrorStatus.OPEN && (error.fix.message || error.fix.instruction) && (
-            <p className="text-[10px] text-blue-400/70">
-              {trim(error.fix.message || error.fix.instruction || '')}
-            </p>
+            <p className="text-[10px] text-blue-400/70">{trim(error.fix.message || error.fix.instruction || '')}</p>
           )}
         </div>
 
@@ -399,7 +414,9 @@ function ErrorCard({
                     <Webhook className="h-3.5 w-3.5" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom"><Trans>View hook config</Trans></TooltipContent>
+                <TooltipContent side="bottom">
+                  <Trans>View hook config</Trans>
+                </TooltipContent>
               </Tooltip>
             )}
             {error.error_status === ErrorStatus.TASK_CREATED && (
@@ -409,7 +426,9 @@ function ErrorCard({
                     <Terminal className="h-3.5 w-3.5" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom"><Trans>Go to session</Trans></TooltipContent>
+                <TooltipContent side="bottom">
+                  <Trans>Go to session</Trans>
+                </TooltipContent>
               </Tooltip>
             )}
             <ErrorActions
@@ -467,21 +486,23 @@ function OccurrenceCard({
   const Icon = isHook ? AlertTriangle : OctagonAlert;
   const iconColor = isHook ? 'text-amber-400' : 'text-orange-400';
   const needsTruncation =
-    occurrence.error_msg.length > 120 ||
-    (occurrence.traceback && occurrence.traceback.length > 0);
+    occurrence.error_msg.length > 120 || (occurrence.traceback && occurrence.traceback.length > 0);
   const trim = (s: string) => (!expanded && s.length > 120 ? s.slice(0, 120) + '...' : s);
 
-  const handleCardClick = useCallback((e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('button, a, [role="button"]')) return;
-    if (needsTruncation) setExpanded((v) => !v);
-  }, [needsTruncation]);
+  const handleCardClick = useCallback(
+    (e: React.MouseEvent) => {
+      if ((e.target as HTMLElement).closest('button, a, [role="button"]')) return;
+      if (needsTruncation) setExpanded((v) => !v);
+    },
+    [needsTruncation],
+  );
 
   return (
     <div
       className={cn(
         'rounded-md border border-border bg-card p-2.5',
-        'border-l-2',
-        isHook ? 'border-l-amber-500' : 'border-l-orange-500',
+        'border-s-2',
+        isHook ? 'border-s-amber-500' : 'border-s-orange-500',
         needsTruncation && 'cursor-pointer',
       )}
       onClick={handleCardClick}
@@ -497,10 +518,11 @@ function OccurrenceCard({
           </Tooltip>
           {needsTruncation && (
             <span className="text-muted-foreground/50">
-              {expanded
-                ? <ChevronDown className="h-3.5 w-3.5" />
-                : <ChevronRight className="h-3.5 w-3.5" />
-              }
+              {expanded ? (
+                <ChevronDown className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5 rtl:-scale-x-100" />
+              )}
             </span>
           )}
         </div>
@@ -519,9 +541,7 @@ function OccurrenceCard({
 
           {/* Timestamp — compact */}
           {occurrence.timestamp && occurrence.timestamp !== UNKNOWN_TIMESTAMP && (
-            <p className="text-[10px] text-muted-foreground/60">
-              {timeAgo(new Date(occurrence.timestamp))}
-            </p>
+            <p className="text-[10px] text-muted-foreground/60">{timeAgo(new Date(occurrence.timestamp))}</p>
           )}
 
           {/* Expanded-only details */}
@@ -566,7 +586,9 @@ function OccurrenceCard({
                     <Webhook className="h-3.5 w-3.5" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom"><Trans>View hook config</Trans></TooltipContent>
+                <TooltipContent side="bottom">
+                  <Trans>View hook config</Trans>
+                </TooltipContent>
               </Tooltip>
             )}
             {parentError.error_status === ErrorStatus.TASK_CREATED && (
@@ -576,7 +598,9 @@ function OccurrenceCard({
                     <Terminal className="h-3.5 w-3.5" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom"><Trans>Go to session</Trans></TooltipContent>
+                <TooltipContent side="bottom">
+                  <Trans>Go to session</Trans>
+                </TooltipContent>
               </Tooltip>
             )}
             <ErrorActions
@@ -677,25 +701,27 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
     try {
       const result = await clearAll();
       if (!result) {
-        notify.success({ title: 'Cleared' });
+        notify.success({ title: t`Cleared` });
         return;
       }
       const parts: string[] = [];
       const totalDeleted = result.deleted_debug_logs + result.truncated_debug_logs;
       if (totalDeleted > 0) parts.push(`${totalDeleted} debug log${totalDeleted !== 1 ? 's' : ''}`);
-      if (result.deleted_error_records > 0) parts.push(`${result.deleted_error_records} error record${result.deleted_error_records !== 1 ? 's' : ''}`);
+      if (result.deleted_error_records > 0)
+        parts.push(`${result.deleted_error_records} error record${result.deleted_error_records !== 1 ? 's' : ''}`);
       const msg = parts.length > 0 ? `Cleared ${parts.join(' and ')}` : 'Nothing to clear';
       const skipped = result.skipped_debug_logs.length;
       notify.success({
         title: msg,
-        message: result.truncated_debug_logs > 0
-          ? `${result.truncated_debug_logs} log${result.truncated_debug_logs !== 1 ? 's' : ''} from active sessions were emptied but not deleted. They will be removed after those sessions end.`
-          : skipped > 0
-            ? `${skipped} file${skipped !== 1 ? 's' : ''} could not be cleared. Retry after active sessions end.`
-            : undefined,
+        message:
+          result.truncated_debug_logs > 0
+            ? `${result.truncated_debug_logs} log${result.truncated_debug_logs !== 1 ? 's' : ''} from active sessions were emptied but not deleted. They will be removed after those sessions end.`
+            : skipped > 0
+              ? `${skipped} file${skipped !== 1 ? 's' : ''} could not be cleared. Retry after active sessions end.`
+              : undefined,
       });
     } catch (e) {
-      notify.error({ title: 'Failed to clear errors', message: String(e) });
+      notify.error({ title: t`Failed to clear errors`, message: String(e) });
     } finally {
       setIsClearing(false);
     }
@@ -731,10 +757,10 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
       void createTaskForError(error, instruction ? { instruction } : undefined).then(({ taskId, shellId }) => {
         if (taskId && shellId) {
           const description = instruction ? 'Claude is applying the fix.' : 'Claude is investigating the error.';
-          notify.success({ title: 'Session started', message: description });
+          notify.success({ title: t`Session started`, message: description });
           void navigation.openSession(shellId, { skipPermissions: true });
         } else {
-          notify.error({ title: 'Failed to start session' });
+          notify.error({ title: t`Failed to start session` });
         }
       });
     },
@@ -777,9 +803,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
       setShowLoginModal(true);
       return;
     }
-    const openFingerprints = allErrors
-      .filter((e) => e.error_status === ErrorStatus.OPEN)
-      .map((e) => e.fingerprint);
+    const openFingerprints = allErrors.filter((e) => e.error_status === ErrorStatus.OPEN).map((e) => e.fingerprint);
     if (openFingerprints.length === 0) return;
     setIsSearchingCloud(true);
     setCloudResultsModal(null);
@@ -790,7 +814,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
       const toAnalyse = results.filter((r) => r.action === 'analyse');
       setCloudResultsModal({ ignored: toIgnore.length, fixResults: toFix, remaining: toAnalyse.length });
     } catch (e) {
-      notify.error({ title: 'Cloud search failed', message: String(e) });
+      notify.error({ title: t`Cloud search failed`, message: String(e) });
     } finally {
       setIsSearchingCloud(false);
     }
@@ -814,7 +838,9 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-destructive" />
-            <h2 className="text-sm font-medium"><Trans>Session Errors</Trans></h2>
+            <h2 className="text-sm font-medium">
+              <Trans>Session Errors</Trans>
+            </h2>
             {openDisplayCount > 0 && (
               <>
                 <span className="rounded-full bg-destructive px-2 py-0.5 text-[10px] font-bold text-destructive-foreground">
@@ -838,12 +864,12 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
                         timeSpan === span.value
                           ? 'bg-primary text-primary-foreground'
                           : 'text-muted-foreground hover:text-foreground',
-                        i === 0 && 'rounded-l-[5px]',
-                        i === ERROR_TIME_SPANS.length - 1 && 'rounded-r-[5px]',
+                        i === 0 && 'rounded-s-[5px]',
+                        i === ERROR_TIME_SPANS.length - 1 && 'rounded-e-[5px]',
                       )}
                       onClick={() => setTimeSpan(span.value)}
                     >
-                      {span.label}
+                      {i18n._(span.label)}
                     </button>
                   </TooltipTrigger>
                   <TooltipContent>{span.tooltip}</TooltipContent>
@@ -857,10 +883,11 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
                 disabled={isSearchingCloud}
                 onClick={() => void handleSearchCloud()}
               >
-                {isSearchingCloud
-                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  : <Search className="h-3.5 w-3.5" />
-                }
+                {isSearchingCloud ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Search className="h-3.5 w-3.5" />
+                )}
                 <Trans>Search Flowpad</Trans>
               </Button>
             )}
@@ -876,14 +903,24 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle><Trans>Clear all debug data?</Trans></AlertDialogTitle>
+                  <AlertDialogTitle>
+                    <Trans>Clear all debug data?</Trans>
+                  </AlertDialogTitle>
                   <AlertDialogDescription>
-                    <Trans>This will delete all debug logs from <code className="rounded bg-muted px-1 text-xs">~/.claude/debug/</code> and all parsed error records.</Trans>
+                    <Trans>
+                      This will delete all debug logs from{' '}
+                      <code className="rounded bg-muted px-1 text-xs">~/.claude/debug/</code> and all parsed error
+                      records.
+                    </Trans>
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel><Trans>Cancel</Trans></AlertDialogCancel>
-                  <AlertDialogAction onClick={() => void handleClearAll()}><Trans>Clear All</Trans></AlertDialogAction>
+                  <AlertDialogCancel>
+                    <Trans>Cancel</Trans>
+                  </AlertDialogCancel>
+                  <AlertDialogAction onClick={() => void handleClearAll()}>
+                    <Trans>Clear All</Trans>
+                  </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
@@ -903,8 +940,8 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
                     statusFilter === sf.value
                       ? 'bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:text-foreground',
-                    i === 0 && 'rounded-l-[5px]',
-                    i === STATUS_SLUG_MAP.length - 1 && 'rounded-r-[5px]',
+                    i === 0 && 'rounded-s-[5px]',
+                    i === STATUS_SLUG_MAP.length - 1 && 'rounded-e-[5px]',
                   )}
                   onClick={() => handleStatusFilter(sf.value)}
                 >
@@ -927,7 +964,9 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
           </div>
           <label className="flex items-center gap-2">
             <Switch checked={deduplicate} onCheckedChange={setDeduplicate} />
-            <span className="text-xs font-medium text-muted-foreground"><Trans>Group Events</Trans></span>
+            <span className="text-xs font-medium text-muted-foreground">
+              <Trans>Group Events</Trans>
+            </span>
           </label>
         </div>
       </div>
@@ -936,13 +975,17 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
       <AlertDialog open={showLoginModal} onOpenChange={setShowLoginModal}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle><Trans>Login required</Trans></AlertDialogTitle>
+            <AlertDialogTitle>
+              <Trans>Login required</Trans>
+            </AlertDialogTitle>
             <AlertDialogDescription>
               <Trans>Login is required to search Flowpad database</Trans>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel><Trans>Cancel</Trans></AlertDialogCancel>
+            <AlertDialogCancel>
+              <Trans>Cancel</Trans>
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 setShowLoginModal(false);
@@ -965,9 +1008,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
           onClose={() => setCloudResultsModal(null)}
           ignored={cloudResultsModal.ignored}
           fixResults={cloudResultsModal.fixResults}
-          fixErrors={allErrors.filter((e) =>
-            cloudResultsModal.fixResults.some((r) => r.fingerprint === e.fingerprint),
-          )}
+          fixErrors={allErrors.filter((e) => cloudResultsModal.fixResults.some((r) => r.fingerprint === e.fingerprint))}
           remaining={cloudResultsModal.remaining}
           onFixAll={async (fps) => {
             await fixAllCloud(fps);
@@ -978,7 +1019,9 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
         {isLoading && (
-          <div className="flex items-center justify-center py-8 text-sm text-muted-foreground"><Trans>Loading errors...</Trans></div>
+          <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+            <Trans>Loading errors...</Trans>
+          </div>
         )}
 
         {!isLoading &&
@@ -1006,7 +1049,9 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
             return (
               <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                 <CheckCircle2 className="mb-2 h-8 w-8 opacity-30" />
-                <p className="text-sm font-medium"><Trans>No errors found</Trans></p>
+                <p className="text-sm font-medium">
+                  <Trans>No errors found</Trans>
+                </p>
                 <p className="mt-1 text-xs">
                   {statusFilter === ErrorStatus.OPEN && !widerSpan
                     ? 'All errors have been triaged.'
@@ -1054,7 +1099,11 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
                     const cutoff = Date.now() - spanMs;
                     return !occ.timestamp || new Date(occ.timestamp).getTime() >= cutoff;
                   })
-                  .map((occ, i) => ({ occ, error, key: `${error.fingerprint}-${occ.session_id}-${occ.timestamp}-${i}` })),
+                  .map((occ, i) => ({
+                    occ,
+                    error,
+                    key: `${error.fingerprint}-${occ.session_id}-${occ.timestamp}-${i}`,
+                  })),
               )
               .sort((a, b) => b.occ.timestamp.localeCompare(a.occ.timestamp))
               .map(({ occ, error, key }) => (

@@ -41,7 +41,15 @@ function ScopeBadge({ scope }: { scope: string }) {
   );
 }
 
-function FilterChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
     <button
       onClick={onClick}
@@ -93,14 +101,12 @@ function DetailPanel({ item, onClose }: { item: PackageItem; onClose: () => void
     <Sheet open onOpenChange={(o) => !o && onClose()}>
       <SheetContent side="right" className="flex w-full max-w-2xl flex-col gap-0 bg-card p-0 sm:max-w-2xl">
         {/* header */}
-        <div className="sticky top-0 z-10 flex items-center gap-3 border-b bg-card/85 px-6 py-4 pr-12 backdrop-blur-xl">
+        <div className="sticky top-0 z-10 flex items-center gap-3 border-b bg-card/85 px-6 py-4 pe-12 backdrop-blur-xl">
           <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-primary/80 to-primary/40 text-primary-foreground">
             <TypeGlyph type={item.type} className="h-5 w-5" />
           </span>
           <div className="min-w-0">
-            <SheetTitle className="truncate text-lg font-semibold leading-tight tracking-tight">
-              {item.name}
-            </SheetTitle>
+            <SheetTitle className="truncate text-lg font-semibold leading-tight tracking-tight">{item.name}</SheetTitle>
             <SheetDescription className="truncate text-xs text-muted-foreground">
               {labelForType(item.type)}
             </SheetDescription>
@@ -115,15 +121,25 @@ function DetailPanel({ item, onClose }: { item: PackageItem; onClose: () => void
 
           {/* DETAILS */}
           <section>
-            <h3 className={`mb-2 ${SECTION_TITLE}`}><Trans>Details</Trans></h3>
+            <h3 className={`mb-2 ${SECTION_TITLE}`}>
+              <Trans>Details</Trans>
+            </h3>
             <div className="space-y-3 rounded-xl border bg-card p-4 text-sm">
               <p className="leading-relaxed text-muted-foreground">
-                {item.description || <span className="italic opacity-60"><Trans>No description.</Trans></span>}
+                {item.description || (
+                  <span className="italic opacity-60">
+                    <Trans>No description.</Trans>
+                  </span>
+                )}
               </p>
               {item.path && (
                 <div className="flex items-start gap-2 border-t pt-3">
-                  <span className={SECTION_TITLE}><Trans>Path</Trans></span>
-                  <code className="ml-auto break-all text-right font-mono text-xs text-muted-foreground">{item.path}</code>
+                  <span className={SECTION_TITLE}>
+                    <Trans>Path</Trans>
+                  </span>
+                  <code className="ms-auto break-all text-end font-mono text-xs text-muted-foreground">
+                    {item.path}
+                  </code>
                 </div>
               )}
             </div>
@@ -180,7 +196,9 @@ export default function DiscoverPage() {
           <section className="relative overflow-hidden pb-8 pt-12">
             <div
               className="pointer-events-none absolute inset-0 opacity-60"
-              style={{ background: 'radial-gradient(600px 280px at 30% -20%, hsl(var(--primary) / 0.12), transparent 70%)' }}
+              style={{
+                background: 'radial-gradient(600px 280px at 30% -20%, hsl(var(--primary) / 0.12), transparent 70%)',
+              }}
             />
             <div className="relative">
               <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/5 px-3 py-1 text-xs text-muted-foreground">
@@ -212,7 +230,7 @@ export default function DiscoverPage() {
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
                       placeholder={t`Search this project…`}
-                      className="w-full rounded-lg border bg-background py-1.5 pl-8 pr-3 text-sm outline-none focus:border-primary"
+                      className="w-full rounded-lg border bg-background py-1.5 pe-3 ps-8 text-sm outline-none focus:border-primary"
                     />
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -227,7 +245,7 @@ export default function DiscoverPage() {
                       </FilterChip>
                     ))}
                   </div>
-                  <div className="ml-auto flex items-center gap-2">
+                  <div className="ms-auto flex items-center gap-2">
                     <span className="font-mono text-xs text-muted-foreground">
                       {list.length} {list.length === 1 ? t`asset` : t`assets`}
                     </span>
@@ -238,7 +256,10 @@ export default function DiscoverPage() {
               {/* ── grid ── */}
               <section className="pb-12">
                 {isLoading ? (
-                  <EmptyState icon={<Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin opacity-50" />} text={t`Loading…`} />
+                  <EmptyState
+                    icon={<Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin opacity-50" />}
+                    text={t`Loading…`}
+                  />
                 ) : list.length > 0 ? (
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
                     {list.map((i) => (
@@ -257,7 +278,9 @@ export default function DiscoverPage() {
 
           {/* ── footer note ── */}
           <footer className="flex flex-col items-center justify-between gap-3 border-t py-8 text-xs text-muted-foreground sm:flex-row">
-            <span><Trans>The assets published with this project — its skills, agents, specs, and docs.</Trans></span>
+            <span>
+              <Trans>The assets published with this project — its skills, agents, specs, and docs.</Trans>
+            </span>
             <span className="font-mono">{projectName ?? <Trans>discover</Trans>}</span>
           </footer>
         </div>

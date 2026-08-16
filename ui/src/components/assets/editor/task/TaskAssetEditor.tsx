@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { SharedTaskView } from '@src/components/task-bar/SharedTaskView';
 import { PRIORITY_CONFIG, STATUS_LABELS } from '@src/components/task-bar/constants';
 import { openArtifact } from '@src/components/task-bar/task-utils';
@@ -103,7 +104,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
       await t.save();
     } catch (e) {
       notify.error({
-        title: 'Could not save task',
+        title: t`Could not save task`,
         message: e instanceof Error ? e.message : 'Save failed.',
       });
     }
@@ -176,7 +177,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
     <button
       onClick={() => void save({ status: 'archived', archived_at: new Date().toISOString() })}
       className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-      title="Archive task"
+      title={t`Archive task`}
     >
       <Archive className="h-3.5 w-3.5" />
       Archive
@@ -223,7 +224,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
           {/* Parent's comments, read-only — collapsible and collapsed by
               default, always present as an affordance (even with no comments). */}
           <div className="shrink-0">
-            <TaskComments task={parent} readOnly collapsible title="Parent comments" />
+            <TaskComments task={parent} readOnly collapsible title={t`Parent comments`} />
           </div>
 
           {/* This task — only the child's OWN data, nothing repeated from above. */}
@@ -292,7 +293,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
             onKeyDown={(e) => {
               if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
             }}
-            placeholder="Untitled task"
+            placeholder={t`Untitled task`}
             size={Math.max((title || 'Untitled task').length, 1)}
             className="h-auto w-auto min-w-0 max-w-full border-0 bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
           />

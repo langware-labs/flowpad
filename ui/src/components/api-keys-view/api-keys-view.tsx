@@ -64,7 +64,7 @@ export const ApiKeysView: React.FC<ApiKeysViewProps> = ({ className, header = tr
                 <TableHead>
                   <Trans>Status</Trans>
                 </TableHead>
-                <TableHead className="text-right">
+                <TableHead className="text-end">
                   <Trans>Actions</Trans>
                 </TableHead>
               </TableRow>
@@ -82,7 +82,7 @@ export const ApiKeysView: React.FC<ApiKeysViewProps> = ({ className, header = tr
                       {apiKey.is_active ? <Trans>Active</Trans> : <Trans>Inactive</Trans>}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-end">
                     <Button
                       variant="ghost"
                       size="sm"

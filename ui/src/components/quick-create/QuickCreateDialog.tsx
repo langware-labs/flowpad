@@ -199,7 +199,7 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
         harness,
         folderVfsPath,
       });
-      notify.success({ title: res.toastTitle });
+      notify.success({ title: t(res.toastTitle) });
       commit();
       if (res.pointer) navigation.openDock(res.pointer);
       onOpenChange(false);
@@ -232,10 +232,10 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Icon className="h-4 w-4" />
-              <Trans>New {descriptor.label}</Trans>
+              <Trans>New {t(descriptor.label)}</Trans>
             </DialogTitle>
             <DialogDescription>
-              <Trans>Create a new {descriptor.label.toLowerCase()}.</Trans>
+              <Trans>Create a new {t(descriptor.label).toLowerCase()}.</Trans>
             </DialogDescription>
           </DialogHeader>
 
@@ -246,7 +246,7 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
                 ref={nameRef}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder={t`New ${descriptor.label.toLowerCase()} name`}
+                placeholder={t`New ${t(descriptor.label).toLowerCase()} name`}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && canCreate) void handleCreate();
                 }}
@@ -276,7 +276,7 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
               {t`Cancel`}
             </Button>
             <Button onClick={() => void handleCreate()} disabled={!canCreate}>
-              {isSubmitting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+              {isSubmitting ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" /> : null}
               {t`Create`}
             </Button>
           </DialogFooter>

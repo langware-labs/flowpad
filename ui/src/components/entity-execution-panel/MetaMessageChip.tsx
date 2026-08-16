@@ -2,13 +2,7 @@ import { FlowData } from '@sdk';
 import { basename } from '@src/components/asset-manager/asset-row-helpers';
 import { MarkdownView } from '@src/components/markdown-view';
 import { Button } from '@src/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@src/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { useLingui } from '@lingui/react/macro';
 import { Loader2, Pencil, Sparkles } from 'lucide-react';
 import { useState } from 'react';
@@ -75,7 +69,7 @@ export function MetaMessageChip({
                 {label}
               </DialogTitle>
             </DialogHeader>
-            <div className="min-h-0 flex-1 overflow-y-auto pr-1 text-[14px] leading-7">
+            <div className="min-h-0 flex-1 overflow-y-auto pe-1 text-[14px] leading-7">
               <MarkdownView value={skillBody(content)} compact />
             </div>
             <DialogFooter>

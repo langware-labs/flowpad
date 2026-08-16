@@ -46,12 +46,7 @@ function timeOf(at: number): string {
 function StatusPill({ row }: { row: EventRow }) {
   if (row.status === 'none' && row.kind === 'event') return null;
   return (
-    <span
-      className={cn(
-        'shrink-0 rounded px-1.5 py-px text-[9px] uppercase tracking-wider',
-        STATUS_CLASS[row.status],
-      )}
-    >
+    <span className={cn('shrink-0 rounded px-1.5 py-px text-[9px] uppercase tracking-wider', STATUS_CLASS[row.status])}>
       {STATUS_LABEL[row.status]}
     </span>
   );
@@ -60,13 +55,13 @@ function StatusPill({ row }: { row: EventRow }) {
 function ChildRow({ row }: { row: EventRow }) {
   const fire = row.fire;
   return (
-    <div className="flex items-baseline gap-2 py-0.5 pl-6 text-[11px] text-muted-foreground">
+    <div className="flex items-baseline gap-2 py-0.5 ps-6 text-[11px] text-muted-foreground">
       <span className="text-muted-foreground/60">└</span>
       <StatusPill row={row} />
       <span className="font-medium text-foreground">{row.ruleName}</span>
       {row.gist && <span className="truncate">{row.gist}</span>}
       {fire?.agentic_process_id && (
-        <Badge variant="outline" className="h-4 shrink-0 px-1 text-[9px] font-mono">
+        <Badge variant="outline" className="h-4 shrink-0 px-1 font-mono text-[9px]">
           {fire.agentic_process_id.slice(0, 8)}
         </Badge>
       )}
@@ -84,12 +79,10 @@ function FeedRow({ row }: { row: EventRow }) {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-baseline gap-2 px-3 py-1.5 text-left text-[11px] hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
+        className="flex w-full items-baseline gap-2 px-3 py-1.5 text-start text-[11px] hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
       >
         <Chevron className="h-3 w-3 shrink-0 self-center text-muted-foreground/60" />
-        <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
-          {timeOf(row.at)}
-        </span>
+        <span className="shrink-0 font-mono tabular-nums text-muted-foreground">{timeOf(row.at)}</span>
         {/* A top-level fire leads with the RULE — "which of my rules did this"
             is the question the row exists to answer. An envelope leads with its
             tag, because it has no rule of its own. */}
@@ -99,9 +92,9 @@ function FeedRow({ row }: { row: EventRow }) {
           <span className="shrink-0 font-mono font-medium">{row.label}</span>
         )}
         <span className="truncate font-mono text-muted-foreground">{row.subject}</span>
-        {/* One right-hand group, so `ml-auto` has a single home instead of
+        {/* One right-hand group, so `ms-auto` has a single home instead of
             hopping between two siblings depending on whether a gist exists. */}
-        <span className="ml-auto flex shrink-0 items-baseline gap-2">
+        <span className="ms-auto flex shrink-0 items-baseline gap-2">
           {row.gist && <span className="truncate text-muted-foreground/80">{row.gist}</span>}
           <StatusPill row={row} />
         </span>
@@ -192,14 +185,14 @@ export function EventFeed({
               type="button"
               onClick={onClearTarget}
               className="text-muted-foreground hover:text-foreground"
-              aria-label="Clear subject filter"
+              aria-label={t`Clear subject filter`}
             >
               <X className="size-3" />
             </button>
           </Badge>
         )}
-        <div className="ml-auto flex items-center gap-1">
-          <span className="mr-1 font-mono text-[10px] text-muted-foreground tabular-nums">
+        <div className="ms-auto flex items-center gap-1">
+          <span className="me-1 font-mono text-[10px] tabular-nums text-muted-foreground">
             {shown.length !== rows.length ? `${shown.length} / ${rows.length}` : rows.length}
             {totalEvents >= cap ? ` (capped ${cap})` : ''}
           </span>
@@ -218,8 +211,8 @@ export function EventFeed({
         <div className="flex flex-1 items-center justify-center p-6">
           <p className="max-w-md text-center text-xs text-muted-foreground">
             <Trans>
-              Nothing yet. Rule fires are read from each rule&apos;s log; live events show what the
-              backend has forwarded since it started — the bus keeps no history of its own.
+              Nothing yet. Rule fires are read from each rule&apos;s log; live events show what the backend has
+              forwarded since it started — the bus keeps no history of its own.
             </Trans>
           </p>
         </div>

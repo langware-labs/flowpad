@@ -3,7 +3,16 @@ import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-
 import { ChevronDown, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { AgentTrace, AssetCleanupReport, FlowMessage, Markdown, MessageSuggest, UsageReport, UserNote, type FeedEntry } from '@sdk';
+import {
+  AgentTrace,
+  AssetCleanupReport,
+  FlowMessage,
+  Markdown,
+  MessageSuggest,
+  UsageReport,
+  UserNote,
+  type FeedEntry,
+} from '@sdk';
 import { formatDuration } from '@src/components/lens-viewer/shared/format-utils';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -181,7 +190,7 @@ function FeedEntryFrame({
       ref={ref}
       data-highlighted={highlight || undefined}
       className={cn(
-        'relative flex max-h-96 flex-col rounded border border-border bg-muted/40 px-2.5 py-2 text-left transition-all duration-500',
+        'relative flex max-h-96 flex-col rounded border border-border bg-muted/40 px-2.5 py-2 text-start transition-all duration-500',
         highlight && 'border-primary bg-primary/5 ring-2 ring-primary ring-offset-1 ring-offset-background',
         pulsing && 'animate-pulse',
       )}
@@ -521,7 +530,7 @@ function AgentTraceFeedEntryCard({ entry, trace, busy, feedData, onDismiss }: Ag
     <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
       <button
         type="button"
-        className="block w-full rounded text-left outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="block w-full rounded text-start outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => navigation.openDock(trace.editorDockPointer)}
       >
         <p className="min-w-0 text-xs font-medium leading-snug text-foreground">
@@ -557,7 +566,7 @@ function AssetCleanupReportFeedEntryCard({
     <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
       <button
         type="button"
-        className="block w-full rounded text-left outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="block w-full rounded text-start outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => navigation.openDock(report.editorDockPointer)}
       >
         <p className="min-w-0 text-xs font-medium leading-snug text-foreground">
@@ -593,7 +602,7 @@ function UsageReportFeedEntryCard({ entry, report, busy, feedData, onDismiss }: 
     <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
       <button
         type="button"
-        className="block w-full rounded text-left outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="block w-full rounded text-start outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => navigation.openDock(report.editorDockPointer)}
       >
         <p className="min-w-0 text-xs font-medium leading-snug text-foreground">

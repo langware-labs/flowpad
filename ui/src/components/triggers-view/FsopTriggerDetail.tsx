@@ -56,34 +56,39 @@ export function FsopTriggerDetail({ trigger }: Props) {
 function Header({ trigger }: { trigger: ITrigger }) {
   return (
     <div className="flex items-center gap-2 border-b px-3 py-2">
-      <span className={cn(
-        'rounded px-1.5 py-0.5 text-[10px] font-medium',
-        scopeColor(trigger.scope),
-      )}>
+      <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-medium', scopeColor(trigger.scope))}>
         {trigger.scope || 'user'}
       </span>
       <span className="font-medium">{trigger.displayName}</span>
       {trigger.enabled === false && (
-        <Badge variant="secondary" className="h-4 px-1 text-[9px]"><Trans>disabled</Trans></Badge>
+        <Badge variant="secondary" className="h-4 px-1 text-[9px]">
+          <Trans>disabled</Trans>
+        </Badge>
       )}
-      <Badge variant="outline" className="h-4 px-1 text-[9px] font-mono">fsop</Badge>
+      <Badge variant="outline" className="h-4 px-1 font-mono text-[9px]">
+        fsop
+      </Badge>
       {trigger.description && (
-        <span className="ml-2 truncate text-xs text-muted-foreground">{trigger.description}</span>
+        <span className="ms-2 truncate text-xs text-muted-foreground">{trigger.description}</span>
       )}
     </div>
   );
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-      {children}
-    </div>
-  );
+  return <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{children}</div>;
 }
 
-function FieldRow({ label, value, mono = false, copyable = false }: {
-  label: string; value: React.ReactNode; mono?: boolean; copyable?: boolean;
+function FieldRow({
+  label,
+  value,
+  mono = false,
+  copyable = false,
+}: {
+  label: string;
+  value: React.ReactNode;
+  mono?: boolean;
+  copyable?: boolean;
 }) {
   const stringValue = typeof value === 'string' ? value : null;
   return (
@@ -102,7 +107,9 @@ function FieldRow({ label, value, mono = false, copyable = false }: {
               <Copy className="h-3 w-3" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent><Trans>Copy</Trans></TooltipContent>
+          <TooltipContent>
+            <Trans>Copy</Trans>
+          </TooltipContent>
         </Tooltip>
       )}
     </div>
@@ -123,7 +130,9 @@ function WatchSection({ trigger }: { trigger: ITrigger }) {
   const ignore = ext.ignore_patterns ?? [];
   return (
     <section className="space-y-1.5">
-      <SectionLabel><Trans>Watch</Trans></SectionLabel>
+      <SectionLabel>
+        <Trans>Watch</Trans>
+      </SectionLabel>
       <FieldRow label={t`path`} value={trigger.watch_path} mono copyable />
       <FieldRow label={t`recursive`} value={String(trigger.recursive ?? false)} />
       <FieldRow label={t`glob`} value={trigger.watch_glob || '—'} mono />
@@ -132,21 +141,22 @@ function WatchSection({ trigger }: { trigger: ITrigger }) {
         value={t`step: ${ext.step_ms ?? 50}ms · debounce: ${ext.debounce_ms ?? 1600}ms`}
         mono
       />
-      <FieldRow
-        label={t`gitignore`}
-        value={ext.respect_gitignore ? t`respected` : t`not respected`}
-      />
+      <FieldRow label={t`gitignore`} value={ext.respect_gitignore ? t`respected` : t`not respected`} />
       <FieldRow
         label={t`ignore patterns`}
-        value={ignore.length === 0
-          ? '—'
-          : (
+        value={
+          ignore.length === 0 ? (
+            '—'
+          ) : (
             <span className="flex flex-wrap gap-1">
               {ignore.map((p, i) => (
-                <Badge key={i} variant="outline" className="h-4 px-1 text-[9px] font-mono">{p}</Badge>
+                <Badge key={i} variant="outline" className="h-4 px-1 font-mono text-[9px]">
+                  {p}
+                </Badge>
               ))}
             </span>
-          )}
+          )
+        }
       />
     </section>
   );
@@ -157,23 +167,38 @@ function ActionsSection({ trigger }: { trigger: ITrigger }) {
   // plural list. The TS shape today exposes only `action` — fall back to
   // wrapping it as a 1-list. Future TS typing should mirror the Python
   // `actions: list[TriggerAction]`.
-  const actions: Array<{ action_type?: string; callback_name?: string; script_path?: string; script_filename?: string }> =
-    (trigger as ITrigger & { actions?: unknown[] }).actions
-      ? ((trigger as ITrigger & { actions?: unknown[] }).actions as Array<{
-          action_type?: string;
-          callback_name?: string;
-          script_path?: string;
-          script_filename?: string;
-        }>)
-      : trigger.action
-        ? [trigger.action as { action_type?: string; callback_name?: string; script_path?: string; script_filename?: string }]
-        : [];
+  const actions: Array<{
+    action_type?: string;
+    callback_name?: string;
+    script_path?: string;
+    script_filename?: string;
+  }> = (trigger as ITrigger & { actions?: unknown[] }).actions
+    ? ((trigger as ITrigger & { actions?: unknown[] }).actions as Array<{
+        action_type?: string;
+        callback_name?: string;
+        script_path?: string;
+        script_filename?: string;
+      }>)
+    : trigger.action
+      ? [
+          trigger.action as {
+            action_type?: string;
+            callback_name?: string;
+            script_path?: string;
+            script_filename?: string;
+          },
+        ]
+      : [];
 
   return (
     <section className="space-y-2">
-      <SectionLabel><Trans>Actions ({actions.length})</Trans></SectionLabel>
+      <SectionLabel>
+        <Trans>Actions ({actions.length})</Trans>
+      </SectionLabel>
       {actions.length === 0 && (
-        <div className="text-xs text-muted-foreground"><Trans>No actions configured.</Trans></div>
+        <div className="text-xs text-muted-foreground">
+          <Trans>No actions configured.</Trans>
+        </div>
       )}
       {actions.map((a, i) => (
         <ActionRow key={i} action={a} triggerId={trigger.id ?? null} />
@@ -182,7 +207,10 @@ function ActionsSection({ trigger }: { trigger: ITrigger }) {
   );
 }
 
-function ActionRow({ action, triggerId }: {
+function ActionRow({
+  action,
+  triggerId,
+}: {
   action: { action_type?: string; callback_name?: string; script_path?: string; script_filename?: string };
   triggerId: string | null;
 }) {
@@ -190,23 +218,15 @@ function ActionRow({ action, triggerId }: {
   return (
     <div className="rounded border bg-muted/30 px-2 py-1.5">
       <div className="flex items-center gap-2 text-xs">
-        <Badge variant="outline" className="h-4 px-1 text-[9px] font-mono">{kind}</Badge>
-        {action.callback_name && (
-          <span className="font-mono">{action.callback_name}</span>
-        )}
-        {action.script_path && (
-          <span className="font-mono text-muted-foreground">{action.script_path}</span>
-        )}
-        {action.script_filename && (
-          <span className="font-mono text-muted-foreground">{action.script_filename}</span>
-        )}
+        <Badge variant="outline" className="h-4 px-1 font-mono text-[9px]">
+          {kind}
+        </Badge>
+        {action.callback_name && <span className="font-mono">{action.callback_name}</span>}
+        {action.script_path && <span className="font-mono text-muted-foreground">{action.script_path}</span>}
+        {action.script_filename && <span className="font-mono text-muted-foreground">{action.script_filename}</span>}
       </div>
-      {action.callback_name && (
-        <CallbackMeaning name={action.callback_name} />
-      )}
-      {action.action_type === 'callback' && triggerId && (
-        <CallbackSourceCollapsible triggerId={triggerId} />
-      )}
+      {action.callback_name && <CallbackMeaning name={action.callback_name} />}
+      {action.action_type === 'callback' && triggerId && <CallbackSourceCollapsible triggerId={triggerId} />}
     </div>
   );
 }
@@ -223,15 +243,17 @@ function CallbackMeaning({ name }: { name: string }) {
         const entry = data.callbacks?.find((c) => c.name === name);
         setMeaning(entry?.meaning ?? null);
       })
-      .catch(() => { if (!cancelled) setMeaning(null); });
-    return () => { cancelled = true; };
+      .catch(() => {
+        if (!cancelled) setMeaning(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [name]);
 
   if (meaning === undefined) return null;
   if (!meaning) return null;
-  return (
-    <div className="mt-1 text-[11px] text-muted-foreground">{meaning}</div>
-  );
+  return <div className="mt-1 text-[11px] text-muted-foreground">{meaning}</div>;
 }
 
 function CallbackSourceCollapsible({ triggerId }: { triggerId: string }) {
@@ -245,7 +267,8 @@ function CallbackSourceCollapsible({ triggerId }: { triggerId: string }) {
   useEffect(() => {
     if (!open || loaded) return;
     const action = new ActionInfo('trigger-content', 'trigger', triggerId, 'GET');
-    dataManager.callAction<undefined, { content: string }>(action)
+    dataManager
+      .callAction<undefined, { content: string }>(action)
       .then((data) => {
         const c = (data as { content?: string } | null)?.content ?? '';
         setContent(c);
@@ -263,7 +286,9 @@ function CallbackSourceCollapsible({ triggerId }: { triggerId: string }) {
       <CollapsibleContent>
         <div className="mt-2 h-64 overflow-hidden rounded border">
           {error ? (
-            <div className="p-3 text-xs text-destructive"><Trans>Could not load source: {error}</Trans></div>
+            <div className="p-3 text-xs text-destructive">
+              <Trans>Could not load source: {error}</Trans>
+            </div>
           ) : !loaded ? (
             <div className="p-3 text-xs text-muted-foreground">{t`Loading…`}</div>
           ) : (
@@ -296,16 +321,13 @@ function StatsSection({ trigger }: { trigger: ITrigger }) {
   const { t } = useLingui();
   return (
     <section className="space-y-1.5">
-      <SectionLabel><Trans>Stats</Trans></SectionLabel>
-      <FieldRow
-        label={t`fires`}
-        value={<span className="font-mono">{trigger.counter ?? 0}</span>}
-      />
+      <SectionLabel>
+        <Trans>Stats</Trans>
+      </SectionLabel>
+      <FieldRow label={t`fires`} value={<span className="font-mono">{trigger.counter ?? 0}</span>} />
       <FieldRow
         label={t`last triggered`}
-        value={trigger.last_triggered
-          ? new Date(trigger.last_triggered).toLocaleString()
-          : '—'}
+        value={trigger.last_triggered ? new Date(trigger.last_triggered).toLocaleString() : '—'}
       />
       <FieldRow
         label={t`last_seen_mtime`}

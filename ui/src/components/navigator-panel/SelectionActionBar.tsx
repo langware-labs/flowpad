@@ -32,7 +32,7 @@ export function SelectionActionBar({
       <span className="text-xs font-medium text-muted-foreground" data-testid="navigator-selection-count">
         {t`${selection.count} selected`}
       </span>
-      <div className="ml-auto flex items-center gap-0.5">
+      <div className="ms-auto flex items-center gap-0.5">
         {actions.map((action) => (
           <SelectionActionButton key={action.id} action={action} selected={selected} ctx={ctx} />
         ))}
@@ -82,14 +82,21 @@ function SelectionActionButton({
       type="button"
       variant="ghost"
       size="sm"
-      className={cn('h-6 gap-1 px-1.5 text-xs', action.variant === 'destructive' && 'text-destructive hover:text-destructive')}
+      className={cn(
+        'h-6 gap-1 px-1.5 text-xs',
+        action.variant === 'destructive' && 'text-destructive hover:text-destructive',
+      )}
       onClick={() => void handleClick()}
       disabled={disabled}
       title={action.label}
       aria-label={action.label}
       data-testid={`navigator-selection-action-${action.id}`}
     >
-      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <span className="[&>svg]:h-3.5 [&>svg]:w-3.5">{action.icon}</span>}
+      {busy ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <span className="[&>svg]:h-3.5 [&>svg]:w-3.5">{action.icon}</span>
+      )}
       <span>{action.label}</span>
     </Button>
   );

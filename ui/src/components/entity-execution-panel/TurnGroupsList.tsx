@@ -1,4 +1,4 @@
-import { FlowElementTypes, PrefKey } from '@sdk';
+import { FlowData, FlowElementTypes, PrefKey } from '@sdk';
 import { Fragment, memo } from 'react';
 import { ToolEntryRow } from '@src/components/floating-chat/ToolEntryRow';
 import type { TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
@@ -40,10 +40,19 @@ export function TurnGroupsList({
   // When off, dense (non-message) groups are dropped so the transcript shows only
   // user/assistant text turns. Toggled from the composer's Tools menu or Preferences → Chat.
   const [showTools] = usePreference<boolean>(PrefKey.CHAT_SHOW_TOOLS);
+  // A group that paints nothing must not reach the divider loop below: the
+  // separator is decided here, per visible group, while the decision to render
+  // nothing happens two levels down in the leaf renderers — so a silent group
+  // used to leave a hairline with no message under it (FLOWPAD-1983).
   const visibleGroups = groups.filter((g) => {
     if (g.kind === 'worker-unavailable') return true;
-    if (g.kind === 'dense') return showTools;
-    if (g.flowData.attributes?.['is-meta'] !== 'true') return true;
+    // Mirrors ToolEntryRow's own `totalCount === 0 → null`: its `total` counts
+    // every event exactly once (a result either fills its call's pair or lands
+    // in `orphanResults`), so `total === 0` is precisely an empty run. A
+    // committed dense group can be emptied after the fact by the grouper's
+    // `retract`, when a refinement supersedes its only event.
+    if (g.kind === 'dense') return showTools && g.events.length > 0;
+    if (g.flowData.attributes?.['is-meta'] !== 'true') return paintsSomething(g.flowData);
     const content = g.flowData.content ?? '';
     return !isFlowpadPromptEnvelope(String(content));
   });
@@ -114,6 +123,22 @@ const TurnGroupRow = memo(function TurnGroupRow({
     node
   );
 });
+
+/**
+ * Will {@link ExecutionMessage} paint anything for this frame? It early-returns
+ * `null` on blank content, so without this the group still claimed a divider.
+ *
+ * `ready === false` means the frame is STILL STREAMING, and a streaming frame is
+ * legitimately blank between its start tag and its first chunk (`content` falls
+ * back to the accumulating `rawData`). Those chunks consolidate in place without
+ * re-emitting the stream's `data` event, so nothing would re-run this filter —
+ * dropping an in-flight frame here would hide the assistant's reply for the whole
+ * turn. Keep it mounted and let ExecutionMessage decide frame by frame.
+ */
+function paintsSomething(flowData: FlowData): boolean {
+  if (flowData.ready === false) return true;
+  return !!String(flowData.content ?? '').trim();
+}
 
 function isFlowpadPromptEnvelope(content: string): boolean {
   if (!content.includes('\n# User message\n')) return false;

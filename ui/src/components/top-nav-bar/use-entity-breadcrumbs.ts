@@ -1,3 +1,5 @@
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
 import { useEffect, useMemo, useState } from 'react';
 import { LayoutGrid, type LucideIcon } from 'lucide-react';
 import { APIEntity, dataManager, Project, Tab, TypeId, Wiki, WikiEntry } from '@sdk';
@@ -84,26 +86,53 @@ function entityLabel(entity: APIEntity<any> | null, typeId: TypeId | null): stri
   return typeId ? labelForType(typeId.type) : '';
 }
 
-/** What the last crumb says on the app root, which has no dock at all. Without
- *  it the address would read as just the project name and look truncated. */
-const HOME_CRUMB_LABEL = 'Start';
+/**
+ * The two crumb labels this module writes itself rather than reading off an
+ * entity or the type registry.
+ *
+ * Lazy `msg` descriptors, not `t`: this is module scope, so an eager macro would
+ * be evaluated once at import — before `initLocale` has activated the real
+ * catalog — and would then stay in that language for the life of the tab. They
+ * are resolved through `i18n._` at render instead, which is also what makes them
+ * re-translate when the locale changes.
+ */
+
+/**
+ * What the last crumb says on the app root, which has no dock at all. Without
+ * it the address would read as just the project name and look truncated.
+ *
+ * KNOWN NUANCE: this msgid is shared with the journey tray's "Start" BUTTON,
+ * and a gendered language wants different grammar for the two — a breadcrumb
+ * names a place ("התחלה"), a button commands ("התחילו"). The obvious fix, a
+ * Lingui `context` making this its own catalog entry, is not available: the
+ * locit tooling's `.po` reader (`.claude/skills/locit/_po.py`) does not support
+ * `msgctxt`, so its scanner sees both entries as the bare id "Start" and would
+ * write a future translation into whichever it hit first. Splitting this needs
+ * that reader taught about `msgctxt` first.
+ */
+const HOME_CRUMB_LABEL = msg`Start`;
 
 /** What the last crumb says on the project's own page, where the target IS the
  *  leading crumb and repeating the name would read "Acme › Acme". */
-const PROJECT_HOME_CRUMB_LABEL = 'Home';
+const PROJECT_HOME_CRUMB_LABEL = msg`Home`;
 
 /** Basename of an `asset_ref`, trailing separators ignored. */
 function basename(ref: string | null): string | null {
   if (!ref) return null;
-  return ref.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || null;
+  return (
+    ref
+      .replace(/[\\/]+$/, '')
+      .split(/[\\/]/)
+      .pop() || null
+  );
 }
 
 /** Human label for a dock with no target entity (assets list, settings, a bare
  *  shell). The open tab already carries the app's canonical name for it. */
 function viewLabel(dock: DockPointer | null): string {
-  if (!dock) return HOME_CRUMB_LABEL;
+  if (!dock) return i18n._(HOME_CRUMB_LABEL);
   const tab = getAllTabsSnapshot().find((t) => t.getKey() === dock.tabHash);
-  return tab?.name?.trim() || labelForType(dock.viewType ?? '') || HOME_CRUMB_LABEL;
+  return tab?.name?.trim() || labelForType(dock.viewType ?? '') || i18n._(HOME_CRUMB_LABEL);
 }
 
 export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumbs {
@@ -129,11 +158,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
   const wikiRef = useMemo(() => dock?.wikiRef ?? null, [dockKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // Authority from the PAGE, through the shared helper the loader uses — the
   // store is keyed by it, so assuming 'local' would miss every hub resolve.
-  const wikiResolve = useWikiResolveResult(
-    wikiRef?.space ?? '',
-    wikiRef?.name ?? '',
-    wikiAuthorityForPage(dock?.page),
-  );
+  const wikiResolve = useWikiResolveResult(wikiRef?.space ?? '', wikiRef?.name ?? '', wikiAuthorityForPage(dock?.page));
   const wikiPageTypeId = wikiResolve?.kind === 'resolved' ? wikiResolve.target_typeid : null;
   const [wikiCrumb, setWikiCrumb] = useState<{ typeId: TypeId; label: string } | null>(null);
 
@@ -287,8 +312,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     // entity, while a bare `/dock/project` has no target at all and would
     // otherwise fall back to the view's type label ("Project").
     const isProjectHome =
-      !!dock?.isProjectShell ||
-      (!!project && targetTypeId?.type === Project.type && targetTypeId.id === project.id);
+      !!dock?.isProjectShell || (!!project && targetTypeId?.type === Project.type && targetTypeId.id === project.id);
 
     // Same precedence the asset editor's header used before it was removed: the
     // route's own VFS path first (parsed, no fetch, right on the first frame),
@@ -301,7 +325,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
       targetTypeId
         ? {
             key: targetTypeId.toString(),
-            label: isProjectHome ? PROJECT_HOME_CRUMB_LABEL : targetTitle,
+            label: isProjectHome ? i18n._(PROJECT_HOME_CRUMB_LABEL) : targetTitle,
             Icon: iconForType(targetTypeId.type),
             pointer: null,
             kind: 'current',
@@ -310,15 +334,11 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
           }
         : {
             key: 'view',
-            label: isProjectHome ? PROJECT_HOME_CRUMB_LABEL : targetTitle,
+            label: isProjectHome ? i18n._(PROJECT_HOME_CRUMB_LABEL) : targetTitle,
             // A wiki word that hasn't resolved yet (or resolves to nothing) is
             // still a wiki word, not an unidentified view — the registry has a
             // glyph for exactly that. `iconForType`, so it moves with TypeInfo.
-            Icon: isProjectHome
-              ? iconForType(Project.type)
-              : wikiRef
-                ? iconForType(WikiEntry.type)
-                : VIEW_CRUMB_ICON,
+            Icon: isProjectHome ? iconForType(Project.type) : wikiRef ? iconForType(WikiEntry.type) : VIEW_CRUMB_ICON,
             pointer: null,
             kind: 'current',
             path,
@@ -327,7 +347,17 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     );
 
     return out;
-  }, [project, ancestors, wikiCrumb, wikiRef, targetTypeId, targetTitle, dock?.isProjectShell, dockKey, resolved.entity]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [
+    project,
+    ancestors,
+    wikiCrumb,
+    wikiRef,
+    targetTypeId,
+    targetTitle,
+    dock?.isProjectShell,
+    dockKey,
+    resolved.entity,
+  ]);
 
   return { crumbs, targetTypeId, targetTitle };
 }

@@ -11,16 +11,17 @@ import { notify } from '@src/notifications';
 import { Play } from 'lucide-react';
 
 /** Drawer-header Run trigger. Forwards the ref so the Radix popover can use it via `asChild`. */
-const RunButton = forwardRef<HTMLButtonElement, { label: string; onClick?: () => void }>(
-  function RunButton({ label, onClick }, ref) {
-    return (
-      <Button ref={ref} size="sm" onClick={onClick} title={label}>
-        <Play className="mr-1 h-4 w-4" />
-        {label}
-      </Button>
-    );
-  },
-);
+const RunButton = forwardRef<HTMLButtonElement, { label: string; onClick?: () => void }>(function RunButton(
+  { label, onClick },
+  ref,
+) {
+  return (
+    <Button ref={ref} size="sm" onClick={onClick} title={label}>
+      <Play className="me-1 h-4 w-4" />
+      {label}
+    </Button>
+  );
+});
 
 /**
  * "Run Automation" surface for a GraphContext: pick an agent or a skill, launch

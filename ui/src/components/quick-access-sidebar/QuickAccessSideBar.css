@@ -155,13 +155,13 @@
   width: 100%;
   min-width: 0;
   padding: 0.5rem 0.75rem;
-  padding-right: 5.5rem;
+  padding-inline-end: 5.5rem;
   border: none;
   background: transparent;
   border-radius: var(--radius);
   cursor: pointer;
   transition: background-color 0.15s ease;
-  text-align: left;
+  text-align: start;
 }
 
 .quick-access-sidebar-item:hover {
@@ -245,7 +245,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   direction: rtl;
-  text-align: left;
+  text-align: start;
 }
 
 .quick-access-check {
@@ -363,7 +363,7 @@
   background: transparent;
   border-radius: var(--radius);
   cursor: pointer;
-  text-align: left;
+  text-align: start;
   transition: background-color 0.15s ease;
 }
 
@@ -403,5 +403,5 @@
   font-weight: 600;
   line-height: 1;
   flex-shrink: 0;
-  margin-left: auto;
+  margin-inline-start: auto;
 }

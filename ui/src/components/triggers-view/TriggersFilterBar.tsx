@@ -16,11 +16,7 @@ interface Props {
  * scope filter (All/User/Project/Selected) lives in the title row itself
  * (`header.headerRight`), shared with every other navigator.
  */
-export function TriggersFilterBar({
-  includeSystem,
-  onIncludeSystemChange,
-  hiddenSystemCount,
-}: Props) {
+export function TriggersFilterBar({ includeSystem, onIncludeSystemChange, hiddenSystemCount }: Props) {
   return (
     <div className="flex items-center gap-1.5">
       <Checkbox
@@ -29,14 +25,9 @@ export function TriggersFilterBar({
         onCheckedChange={(v) => onIncludeSystemChange(v === true)}
         className="h-3 w-3"
       />
-      <label
-        htmlFor="triggers-include-system"
-        className="cursor-pointer select-none text-[10px] text-muted-foreground"
-      >
+      <label htmlFor="triggers-include-system" className="cursor-pointer select-none text-[10px] text-muted-foreground">
         Include system
-        {hiddenSystemCount > 0 && (
-          <span className="ml-1 text-muted-foreground/60">({hiddenSystemCount})</span>
-        )}
+        {hiddenSystemCount > 0 && <span className="ms-1 text-muted-foreground/60">({hiddenSystemCount})</span>}
       </label>
     </div>
   );

@@ -9,6 +9,7 @@
  * decides how to recover (redirect URL, recovery skips, etc).
  */
 
+import { t } from '@lingui/core/macro';
 import { AgenticProcess, ContextEntitiesEnum, dataContext, Project, Shell, systemTools, TypeId } from '@sdk';
 import { stampTabRecencyForTarget } from '@src/tabs/tab-recency';
 import { perfLog, perfTime } from './_perf';
@@ -94,16 +95,16 @@ export function classifyRuntimeFailure(processId: string, process: AgenticProces
 export function describeProcessStartError(error: unknown): { title: string; description: string } {
   const rawMessage = error instanceof Error ? error.message : String(error ?? '').trim();
   if (/PTY .* not found/i.test(rawMessage)) {
-    return { title: 'Terminal reattach failed', description: rawMessage };
+    return { title: t`Terminal reattach failed`, description: rawMessage };
   }
   if (/compute[_ -]?node/i.test(rawMessage) && /not found|missing|stale/i.test(rawMessage)) {
     return {
-      title: 'Session unavailable',
-      description: 'This session points to a stale compute node and could not be restored.',
+      title: t`Session unavailable`,
+      description: t`This session points to a stale compute node and could not be restored.`,
     };
   }
   return {
-    title: 'Session unavailable',
+    title: t`Session unavailable`,
     description: rawMessage || 'Failed to restore this session.',
   };
 }

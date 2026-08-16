@@ -20,15 +20,28 @@ Every command emits the standard parseable envelope (``ok``/``fail`` from
 from __future__ import annotations
 
 import os
-from typing import Any, Optional
+from typing import Optional
 
 import requests
 import typer
 from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
+    bad_response_message as _bad_response_message,
+)
+from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
+)
+from flow_sdk.cli.commands._common import (
     fail as _fail,
+)
+from flow_sdk.cli.commands._common import (
+    local_get as _local_get,
+)
+from flow_sdk.cli.commands._common import (
+    local_post as _local_post,
+)
+from flow_sdk.cli.commands._common import (
     ok as _ok,
 )
 
@@ -60,7 +73,7 @@ def _post_json(
     exits). A 404 maps to ``EXIT_NOT_FOUND`` with ``not_found_hint`` when given.
     """
     try:
-        resp = requests.post(url, json=payload or {}, timeout=timeout)
+        resp = _local_post(url, json=payload or {}, timeout=timeout)
     except requests.exceptions.RequestException as e:
         _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
         raise  # unreachable
@@ -72,7 +85,7 @@ def _envelope(resp: "requests.Response", *, not_found_hint: Optional[str] = None
     try:
         body = resp.json()
     except ValueError:
-        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Bad response: {resp.text[:200]}")
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", _bad_response_message(resp))
         raise  # unreachable
     if resp.status_code == 404 and not_found_hint is not None:
         _fail(EXIT_NOT_FOUND, "NOT_FOUND", not_found_hint)
@@ -133,18 +146,14 @@ def list_conversations() -> None:
     help="Print a plain-text summary (header + one line per message) of a conversation.",
 )
 def summary_conversation(
-    conversation_id: Annotated[
-        str, typer.Argument(help="Conversation id (the bare uuid, not a TypeId).")
-    ],
+    conversation_id: Annotated[str, typer.Argument(help="Conversation id (the bare uuid, not a TypeId).")],
 ) -> None:
     cid = (conversation_id or "").strip()
     if not cid:
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", "conversation_id is required")
     port = _discover_port()
     url = f"http://127.0.0.1:{port}/api/v1/graph/conversation-summary"
-    data = _post_json(
-        url, {"conversation_id": cid}, not_found_hint=f"Conversation not found: {cid}"
-    )
+    data = _post_json(url, {"conversation_id": cid}, not_found_hint=f"Conversation not found: {cid}")
     _ok({"conversation_id": cid, "summary": data.get("summary") or ""})
 
 
@@ -252,7 +261,7 @@ def attach_message(
         # Entity reference — validate it exists before referencing it.
         probe_url = f"http://127.0.0.1:{port}/api/v1/graph/{tid.type}/{tid.id}"
         try:
-            probe = requests.get(probe_url, timeout=15)
+            probe = _local_get(probe_url, timeout=15)
         except requests.exceptions.RequestException as e:
             _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {probe_url}: {e}")
             return
@@ -290,7 +299,7 @@ def attach_message(
     if session:
         form_fields["remote_worker_session_id"] = session.strip()
     try:
-        resp = requests.post(
+        resp = _local_post(
             url,
             data=form_fields,
             files={"files": (filename, content)},

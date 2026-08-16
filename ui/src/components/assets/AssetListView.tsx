@@ -19,7 +19,15 @@ interface Props {
   onProjectFilter?: (label: string) => void;
 }
 
-export function AssetListView({ recordType, onNew, refreshKey, onRowClick, filter, onFilterChange, onProjectFilter }: Props) {
+export function AssetListView({
+  recordType,
+  onNew,
+  refreshKey,
+  onRowClick,
+  filter,
+  onFilterChange,
+  onProjectFilter,
+}: Props) {
   const { t } = useLingui();
   const { results, total, isLoading, page, pageSize, setPage } = useAssetSearch({
     recordType,
@@ -55,7 +63,7 @@ export function AssetListView({ recordType, onNew, refreshKey, onRowClick, filte
               value={filter.query}
               onChange={(e) => handleQueryChange(e.target.value)}
               placeholder={t`Search…`}
-              className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
+              className="h-8 w-full rounded-md border border-input bg-background pe-3 ps-8 text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
             />
           </div>
           {onNew && (

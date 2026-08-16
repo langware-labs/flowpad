@@ -22,22 +22,22 @@ export const STATUS_STYLE: Record<SourceStatus, { label: string; chip: string; b
   new: {
     label: 'new',
     chip: 'bg-muted text-muted-foreground',
-    border: 'border-l-border',
+    border: 'border-s-border',
   },
   setup: {
     label: 'needs setup',
     chip: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-    border: 'border-l-amber-500/70',
+    border: 'border-s-amber-500/70',
   },
   active: {
     label: 'active',
     chip: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-    border: 'border-l-emerald-500/60',
+    border: 'border-s-emerald-500/60',
   },
   disabled: {
     label: 'paused',
     chip: 'bg-muted text-muted-foreground',
-    border: 'border-l-border',
+    border: 'border-s-border',
   },
 };
 

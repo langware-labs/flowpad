@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { OAUTH_PROVIDERS, OAuthStatus, cloudManager, launchWizard, oauthService, type Project } from '@sdk';
 import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
@@ -87,7 +88,7 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
     setGateOpen(false);
     try {
       const result = await launchWizard('git-context-folder', {
-        title: 'Set up Git for cloud linking',
+        title: t`Set up Git for cloud linking`,
         targetTypeId: project.typeId.toString(),
         payload: {
           projectId: project.id,

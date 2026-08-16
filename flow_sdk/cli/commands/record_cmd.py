@@ -24,10 +24,19 @@ import typer
 from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
+    bad_response_message as _bad_response_message,
+)
+from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
 )
 from flow_sdk.cli.commands._common import (
     fail as _fail,
+)
+from flow_sdk.cli.commands._common import (
+    local_get as _local_get,
+)
+from flow_sdk.cli.commands._common import (
+    local_post as _local_post,
 )
 from flow_sdk.cli.commands._common import (
     ok as _ok,
@@ -109,14 +118,14 @@ def index_record(
 
     for params in calls:
         try:
-            resp = requests.post(url, params=params, timeout=120)
+            resp = _local_post(url, params=params, timeout=120)
         except requests.exceptions.RequestException as e:
             _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
             return
         try:
             out = resp.json()
         except ValueError:
-            _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Bad response: {resp.text[:200]}")
+            _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", _bad_response_message(resp))
             return
 
         if resp.status_code != 200 or out.get("status") != "SUCCESS":
@@ -469,14 +478,14 @@ def search_record(
     params = {"q": query, "limit": fetch_limit}
 
     try:
-        resp = requests.get(url, params=params, timeout=15)
+        resp = _local_get(url, params=params, timeout=15)
     except requests.exceptions.RequestException as e:
         _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
         return
     try:
         body = resp.json()
     except ValueError:
-        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Bad response: {resp.text[:200]}")
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", _bad_response_message(resp))
         return
 
     if resp.status_code != 200 or body.get("status") != "SUCCESS":
@@ -593,8 +602,8 @@ def create_record(
         typer.Option(
             "--first-run",
             help="Declare this a backfill: saves quietly and emits one summary "
-                 "event instead of one per item (the storm caps make that the "
-                 "only safe shape for a large first sync).",
+            "event instead of one per item (the storm caps make that the "
+            "only safe shape for a large first sync).",
         ),
     ] = False,
 ) -> None:
@@ -626,12 +635,9 @@ def create_record(
     url = f"http://127.0.0.1:{_discover_port()}{route}"
 
     def _on_error(status_code: int, body: dict) -> None:
-        _fail(EXIT_ACTION_FAILED, "ACTION_FAILED",
-              body.get("message") or f"Create failed (HTTP {status_code})")
+        _fail(EXIT_ACTION_FAILED, "ACTION_FAILED", body.get("message") or f"Create failed (HTTP {status_code})")
 
-    data = _post_graph_json(
-        url, {"items": items, "first_run": first_run}, on_error=_on_error
-    )
+    data = _post_graph_json(url, {"items": items, "first_run": first_run}, on_error=_on_error)
     _ok({"type": type_name, **data})
 
 
@@ -782,14 +788,14 @@ def comment_list(
     # ``expand=blobs`` so the blob-excluded ``raw_content`` is served.
     url = f"http://127.0.0.1:{port}/api/v1/graph/{parent_type}/{parent_id}/comment"
     try:
-        resp = requests.get(url, params={"expand": "blobs"}, timeout=15)
+        resp = _local_get(url, params={"expand": "blobs"}, timeout=15)
     except requests.exceptions.RequestException as e:
         _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
         return
     try:
         body = resp.json()
     except ValueError:
-        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Bad response: {resp.text[:200]}")
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", _bad_response_message(resp))
         return
     if resp.status_code != 200 or body.get("status") != "SUCCESS":
         _fail(

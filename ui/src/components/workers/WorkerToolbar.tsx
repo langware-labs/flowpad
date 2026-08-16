@@ -23,7 +23,7 @@ export const WORKER_ICON_BUTTON_CLASS =
 /** Row style for the `menu-list` variant — shared by the vendor rows, the
  *  "More…" reveal, and the extra openers so they can't drift apart. */
 const MENU_ITEM_CLASS =
-  'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left transition-colors hover:bg-muted disabled:opacity-50';
+  'flex w-full items-center gap-2 rounded px-2 py-1.5 text-start transition-colors hover:bg-muted disabled:opacity-50';
 
 interface WorkerToolbarProps {
   /** Launch the chosen worker. The toolbar persists it as the last opener. */

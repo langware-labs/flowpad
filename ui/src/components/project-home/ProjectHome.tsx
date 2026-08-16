@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarStack';
 import { ProjectGitChecksDialog } from '@src/components/project-home/ProjectGitChecksDialog';
 import { ProjectGitChip, type GitCheck } from '@src/components/project-home/ProjectGitChip';
@@ -151,7 +152,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
       runSetup: async () => {
         if (!project?.fs_storage_mount_path) return;
         await launchWizard('git-context-folder', {
-          title: 'Set up Git for project sharing',
+          title: t`Set up Git for project sharing`,
           targetTypeId: project.typeId.toString(),
           payload: {
             projectId: project.id,

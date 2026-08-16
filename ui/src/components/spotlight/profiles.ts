@@ -1,10 +1,12 @@
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { ViewType } from '@sdk';
 import type { SpotlightProfile } from './types';
 
 const terminalProfile: SpotlightProfile = {
   id: 'terminal',
-  label: 'Search sessions',
-  placeholder: 'Search sessions…',
+  label: msg`Search sessions`,
+  placeholder: msg`Search sessions…`,
   // No `defaultEntityType` — the entity chip starts on "All" so the multi-type
   // fan-out hits each worker session type in parallel (matches the
   // behavior of the deleted SessionQuickSearchModal). Worker records are
@@ -16,8 +18,8 @@ const terminalProfile: SpotlightProfile = {
 
 const defaultProfile: SpotlightProfile = {
   id: 'default',
-  label: 'Search',
-  placeholder: 'Search…',
+  label: msg`Search`,
+  placeholder: msg`Search…`,
 };
 
 export function resolveProfile(viewType: ViewType | undefined): SpotlightProfile {

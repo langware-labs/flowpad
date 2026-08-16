@@ -17,6 +17,7 @@ import { API_PREFIX } from '../config/SDKConfig';
 import { isHubOnly } from '../utils/hub-runtime';
 import { User } from '../entities/user';
 import { createCloudLoginFailedWarning } from '../models/UserWarning';
+import { resolveLoginCallbackUrl } from './login_callback';
 import type { CloudConnectionStatusMessage, CloudLoginStatusMessage, OAuthMessage } from '../websocket';
 import { OAUTH_PROVIDERS } from './oauth/oauth-service';
 import { privacyManager } from './privacy_mode';
@@ -268,12 +269,22 @@ class CloudManager extends EventEmitter {
     }
   }
 
-  /** Hub-mode login URL. Carries the current SPA location as ``target_path``
-   *  so the provider round-trip lands the browser back where it was — the hub
-   *  validates the value against its open-redirect allowlist
-   *  (``AuthProvider.safe_target_path``) and falls back to `/` otherwise. */
+  /** Hub-mode login URL. Carries where to come back to as ``target_path`` so the
+   *  provider round-trip lands the browser back there — the hub validates the
+   *  value against its open-redirect allowlist (``AuthProvider.safe_target_path``)
+   *  and falls back to `/` otherwise.
+   *
+   *  That is usually the current SPA location, but NOT on the load that follows
+   *  an email verification: there the current location is the app root Auth0
+   *  returns every verified account to, and using it stranded a first-time
+   *  invitee on hub home holding a role nothing had told them about. Measured on
+   *  staging — the invitation's accept url rode `target_path` all the way to
+   *  `email-verification.html`, which stored it, and this line then replaced it
+   *  with `/?success=true&message=…`. `resolveLoginCallbackUrl` is what hands it
+   *  back. */
   private _hubLoginUrl(): string {
-    const target = `${window.location.pathname || ''}${window.location.search || ''}`;
+    const here = `${window.location.pathname || ''}${window.location.search || ''}`;
+    const target = resolveLoginCallbackUrl(here);
     if (!target || target === '/') return `${API_PREFIX}/login`;
     return `${API_PREFIX}/login?${new URLSearchParams({ target_path: target })}`;
   }

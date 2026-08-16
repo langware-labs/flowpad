@@ -50,6 +50,16 @@ plain-language "To Summarize:" line.
   looking for whether there IS an issue **and** when establishing the root cause — never conclude
   "healthy" from a live health check alone (the shell can be stuck even when the backend is up).
 
+* **Run Python as `"$FLOWPAD_PYTHON"` — always, and nothing else.** That variable is set for you
+  in every worker environment and names the one interpreter that can `import flow_sdk`. Do **not**
+  use `uv run`: it ignores PATH and resolves an environment by walking up from the working
+  directory, which is a user workspace with no Flowpad in it, so the import fails. Do **not** use
+  `python3` or bare `python`: a Windows venv ships `python.exe` and no `python3.exe`, and the name
+  can resolve to an unrelated interpreter that happens to sit earlier on PATH. **If any command
+  fails to import `flow_sdk`, you used the wrong interpreter — re-run the exact same command with
+  `"$FLOWPAD_PYTHON"` rather than hunting for another one, writing your own script, or improvising
+  the output it would have produced.**
+
 * Never raise or add any timeout/retry/backoff/poll budget to mask a symptom.
 
 ## Instructions
@@ -73,7 +83,7 @@ literals). Backend port: read it from the instance's `server.json`, falling back
 `$LOCAL_SERVER_PORT`, then the packaged-desktop default `9007`:
 
 ```bash
-PORT=$(python3 -c "import json,os,pathlib; inst=os.environ.get('FLOW_INSTANCE','prod'); p=pathlib.Path.home()/'.flow'/'instances'/inst/'server.json'; print(json.load(open(p))['port'] if p.exists() else os.environ.get('LOCAL_SERVER_PORT','9007'))")
+PORT=$("$FLOWPAD_PYTHON" -c "import json,os,pathlib; inst=os.environ.get('FLOW_INSTANCE','prod'); p=pathlib.Path.home()/'.flow'/'instances'/inst/'server.json'; print(json.load(open(p))['port'] if p.exists() else os.environ.get('LOCAL_SERVER_PORT','9007'))")
 ```
 
 Frontend dev-server port: `${VITE_PORT:-4097}`. Use `$PORT` / `$VITE_PORT` in every URL and port
@@ -453,7 +463,7 @@ After repairing, prove the **app actually works end-to-end** — not just that o
 this headlessly and autonomously (no questions):
 
 1. **Ensure the backend is up.** If your fix was meant to unblock startup, start it now
-   (`flow start`, or `uv run -m flow_sdk.server.run` in the background) and wait for
+   (`flow start`, or `"$FLOWPAD_PYTHON" -m flow_sdk.server.run` in the background) and wait for
    `curl -fsS http://localhost:$PORT/health/status` to return `{"data":true}` (`$PORT` resolved in
    Step 1).
 2. **Drive the UI with Playwright (headless, Chromium).** Use the copy already in `ui/`
@@ -524,7 +534,7 @@ is handled by the `flow diagnose` runner afterwards, not by you. The runner also
 diagnosis to this process for you — do **not** attempt the cross-link yourself.)
 
 ```bash
-uv run python "<this skill dir>/report.py" \
+"$FLOWPAD_PYTHON" "<this skill dir>/report.py" \
   --title "<short diagnosis title>" \
   --symptoms "<what was observed>" \
   --rca "<root cause, or 'none — healthy' if no issue>" \
@@ -538,6 +548,46 @@ uv run python "<this skill dir>/report.py" \
 `<this skill dir>` is the folder this SKILL.md is in — the same path you were given to read it from.
 Use `--status ok` when everything is healthy and no issue was found. It prints a JSON line including
 `diagnosis_id` (and the support `conversation_id` / `flow_message_id` when an issue was found).
+
+**Running Step 7 in PowerShell? `--details` needs a here-string AND escaped quotes — both, or it
+silently loses the report.** The Step 6 block is multi-line and full of raw JSON
+(`{"status":"SUCCESS","data":true}`). Windows PowerShell 5.1 does not escape embedded `"` when it
+hands an argument to a native executable, so it splits that one string into several arguments and
+strips the quotes on the way. The reporter then dies with:
+
+```
+report.py: error: unrecognized arguments: is up and running,data:true}
+```
+
+Two separate fixes are needed, and neither works alone:
+
+1. Build the block with a **single-quoted here-string** (`@'` … `'@`) so it stays one literal and `$`
+   / backticks inside it are not expanded. The closing `'@` must be at column 0 — indenting it is a
+   parse error.
+2. Escape the quotes **at the call site** with `-replace '"', '\"'`. This is the load-bearing half:
+   with it the reporter receives one argument with the quotes intact; without it, five arguments with
+   the quotes gone.
+
+```powershell
+$details = @'
+== Flowpad Diagnostic Report ==
+[OK] Backend health - {"status":"SUCCESS","message":"Flowpad is up and running","data":true}
+[OK] Disk space     - 776 GB free
+'@
+
+& "$env:FLOWPAD_PYTHON" "<this skill dir>/report.py" `
+  --title "Full diagnostic sweep - all systems healthy" `
+  --status ok `
+  --platform "Windows" `
+  --details ($details -replace '"', '\"')
+```
+
+(PowerShell spellings to note: `$env:FLOWPAD_PYTHON` for the interpreter, `` ` `` for line
+continuation, `&` to invoke a path.)
+
+**Simpler option: run Step 7 in bash**, using the block above this one. Bash passes the quoted
+string through unchanged, so none of this applies — if you have a choice of shell for this step,
+take bash.
 
 Do not end your turn before the reporter script has printed its JSON. Do **not** fail the whole run if
 this step errors; the console report from Step 6 still stands.

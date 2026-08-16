@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import React, { type ReactNode } from 'react';
 import { FolderPlus, Pencil, Trash2 } from 'lucide-react';
 import { Group, type GroupChildren, type IEntity } from '@sdk';
@@ -110,9 +111,9 @@ export function groupRoot(cfg: GroupRootConfig): GroupRootHandle {
       actions.push({
         id: `new-folder:${groupId ?? 'root'}`,
         icon: <FolderPlus />,
-        label: 'New folder',
+        label: t`New folder`,
         run: async () => {
-          const name = await cfg.requestName!('New folder', { placeholder: 'Folder name' });
+          const name = await cfg.requestName!('New folder', { placeholder: t`Folder name` });
           if (!name) return;
           await Group.create({ name, namespace: cfg.namespace, groupId, projectId: cfg.projectId ?? null });
           refresh();
@@ -123,7 +124,7 @@ export function groupRoot(cfg: GroupRootConfig): GroupRootHandle {
       actions.push({
         id: `rename:${group.id}`,
         icon: <Pencil />,
-        label: 'Rename folder',
+        label: t`Rename folder`,
         run: async () => {
           const name = await cfg.requestName!('Rename folder', { defaultValue: group.name });
           if (!name || name === group.name) return;
@@ -136,7 +137,7 @@ export function groupRoot(cfg: GroupRootConfig): GroupRootHandle {
       actions.push({
         id: `delete:${group.id}`,
         icon: <Trash2 />,
-        label: 'Delete folder (children move up)',
+        label: t`Delete folder (children move up)`,
         run: async () => {
           const ok = await cfg.confirm!(
             `Delete "${group.name}"?`,

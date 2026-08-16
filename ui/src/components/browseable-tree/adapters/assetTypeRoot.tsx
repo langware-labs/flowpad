@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import React from 'react';
 import { Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
@@ -147,7 +148,7 @@ export function buildAssetChild(
     toolbar.push({
       id: `delete:${typeName}:${result.record_id}`,
       icon: <Trash2 />,
-      label: `Delete ${label}`,
+      label: t`Delete ${label}`,
       run: () => showDeleteAssetModal({ name: label, onConfirm: deleteRun, onAfterDelete }),
       showBusyIndicator: false,
     });
@@ -156,14 +157,7 @@ export function buildAssetChild(
     id: assetNodeId(typeName, result.asset_ref),
     kind: 'asset',
     label,
-    icon: (
-      <EntityIcon
-        type={typeName}
-        remote={result.remote}
-        density="compact"
-        className="h-3.5 w-3.5 flex-shrink-0"
-      />
-    ),
+    icon: <EntityIcon type={typeName} remote={result.remote} density="compact" className="h-3.5 w-3.5 flex-shrink-0" />,
     hasChildren: false,
     pointer,
     // Stable typeid (`<type>-<uuid>`) so a typeid-form active pointer selects this
@@ -303,7 +297,7 @@ function buildRootToolbar(type: AssetTypeInfo, deps: AssetTypeRootDeps): Toolbar
     {
       id: `scan:${type.type_name}`,
       icon: <RefreshCw />,
-      label: 'Scan for changes',
+      label: t`Scan for changes`,
       run: async () => {
         // Reindex this type; the resulting data_ops flow back to the tree via
         // the useAssetTreeRefresh subscription, which re-fetches this root.
@@ -316,7 +310,7 @@ function buildRootToolbar(type: AssetTypeInfo, deps: AssetTypeRootDeps): Toolbar
     actions.push({
       id: `new:${type.type_name}`,
       icon: <Plus />,
-      label: `New ${type.label}`,
+      label: t`New ${type.label}`,
       run: () => deps.onNew?.(type.type_name),
       showBusyIndicator: false,
     });
@@ -411,13 +405,7 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
         id: assetNodeId(type.type_name, parsed.vfsPath),
         kind: 'asset',
         label: basename(parsed.vfsPath),
-        icon: (
-          <EntityIcon
-            type={type.type_name}
-            density="compact"
-            className="h-3.5 w-3.5 flex-shrink-0"
-          />
-        ),
+        icon: <EntityIcon type={type.type_name} density="compact" className="h-3.5 w-3.5 flex-shrink-0" />,
         hasChildren: false,
         pointer: DockPointer.forAssetEditor(type.type_name, parsed.vfsPath),
       };

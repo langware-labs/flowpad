@@ -71,9 +71,7 @@ export const HomeCustomizationCard: React.FC<HomeCustomizationCardProps> = ({ pr
       setSavingTitle,
       async (fs) => {
         const json = `${JSON.stringify({ home_title: title.trim() }, null, 2)}\n`;
-        await fs.upload(HOME_CUSTOMIZATION_DIR, [
-          new File([json], HOME_STRINGS_FILE, { type: 'application/json' }),
-        ]);
+        await fs.upload(HOME_CUSTOMIZATION_DIR, [new File([json], HOME_STRINGS_FILE, { type: 'application/json' })]);
       },
       t`Home title saved`,
       t`Failed to save title`,
@@ -88,45 +86,63 @@ export const HomeCustomizationCard: React.FC<HomeCustomizationCardProps> = ({ pr
       setBusyBg,
       // Store under the fixed `home.png` name regardless of the source filename.
       async (fs) =>
-        fs.upload(HOME_CUSTOMIZATION_DIR, [
-          new File([file], HOME_BACKGROUND_FILE, { type: file.type || 'image/png' }),
-        ]).then(() => undefined),
+        fs
+          .upload(HOME_CUSTOMIZATION_DIR, [new File([file], HOME_BACKGROUND_FILE, { type: file.type || 'image/png' })])
+          .then(() => undefined),
       t`Home background updated`,
       t`Failed to upload image`,
     );
   };
 
   const removeBackground = () =>
-    run(setBusyBg, (fs) => fs.delete(HOME_BACKGROUND_PATH).then(() => undefined), t`Home background removed`, t`Failed to remove image`);
+    run(
+      setBusyBg,
+      (fs) => fs.delete(HOME_BACKGROUND_PATH).then(() => undefined),
+      t`Home background removed`,
+      t`Failed to remove image`,
+    );
 
   return (
     <div className="rounded-lg border border-border p-4" data-testid="home-customization-card">
       <div className="mb-3 flex items-center gap-2">
         <ImageIcon className="h-4 w-4 text-muted-foreground" />
-        <h3 className="text-sm font-medium"><Trans>Home</Trans></h3>
+        <h3 className="text-sm font-medium">
+          <Trans>Home</Trans>
+        </h3>
       </div>
       <p className="mb-4 text-xs text-muted-foreground">
-        <Trans>Brand this project's home ({HOME_CUSTOMIZATION_DIR}). Applies on every home surface when this is the active project.</Trans>
+        <Trans>
+          Brand this project's home ({HOME_CUSTOMIZATION_DIR}). Applies on every home surface when this is the active
+          project.
+        </Trans>
       </p>
 
       {/* Home title */}
-      <label className="mb-1 block text-xs font-medium text-muted-foreground"><Trans>Home title</Trans></label>
+      <label className="mb-1 block text-xs font-medium text-muted-foreground">
+        <Trans>Home title</Trans>
+      </label>
       <div className="mb-4 flex gap-2">
         <Input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder={t`Keep the default greeting…`}
           className="text-sm"
-          onKeyDown={(e) => { if (e.key === 'Enter' && titleDirty) void saveTitle(); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && titleDirty) void saveTitle();
+          }}
         />
         <Button onClick={() => void saveTitle()} disabled={!titleDirty || savingTitle}>
           {savingTitle ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-          <span className="ml-1.5"><Trans>Save</Trans></span>
+          <span className="ms-1.5">
+            <Trans>Save</Trans>
+          </span>
         </Button>
       </div>
 
       {/* Background image */}
-      <label className="mb-1 block text-xs font-medium text-muted-foreground"><Trans>Background image</Trans></label>
+      <label className="mb-1 block text-xs font-medium text-muted-foreground">
+        <Trans>Background image</Trans>
+      </label>
       <div className="flex items-center gap-3">
         <div className="flex h-16 w-28 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
           {bgUrl ? (
@@ -138,12 +154,14 @@ export const HomeCustomizationCard: React.FC<HomeCustomizationCardProps> = ({ pr
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={busyBg}>
             {busyBg ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-            <span className="ml-1.5">{bgUrl ? <Trans>Replace</Trans> : <Trans>Upload</Trans>}</span>
+            <span className="ms-1.5">{bgUrl ? <Trans>Replace</Trans> : <Trans>Upload</Trans>}</span>
           </Button>
           {bgUrl && (
             <Button variant="ghost" size="sm" onClick={() => void removeBackground()} disabled={busyBg}>
               <Trash2 className="h-3.5 w-3.5" />
-              <span className="ml-1.5"><Trans>Remove</Trans></span>
+              <span className="ms-1.5">
+                <Trans>Remove</Trans>
+              </span>
             </Button>
           )}
         </div>

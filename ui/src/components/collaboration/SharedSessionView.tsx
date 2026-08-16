@@ -63,13 +63,8 @@ export function SharedSessionView({ sessionId }: Props) {
               <Trans>This session is running remotely by {guestName} on your machine.</Trans>
             </span>
           </div>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={handleDisconnect}
-            disabled={disconnecting || ended}
-          >
-            <PlugZap className="mr-1.5 h-4 w-4" />
+          <Button variant="destructive" size="sm" onClick={handleDisconnect} disabled={disconnecting || ended}>
+            <PlugZap className="me-1.5 h-4 w-4" />
             {ended ? <Trans>Disconnected</Trans> : <Trans>Disconnect</Trans>}
           </Button>
         </div>
