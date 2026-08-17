@@ -20,10 +20,7 @@ import { dataManager, Tab, tabManager, TypeId } from '@sdk';
 import { canonicalWikiWord } from '@src/navigation/asset-doc-pointer-grammar';
 import * as ancestors from '@src/navigation/entity-ancestors';
 import { useEntityBreadcrumbs } from '@src/components/top-nav-bar/use-entity-breadcrumbs';
-import {
-  resetWikiResolveResultsForTests,
-  setWikiResolveResult,
-} from '@src/routes/loaders/wiki-resolve-store';
+import { resetWikiResolveResultsForTests, setWikiResolveResult } from '@src/routes/loaders/wiki-resolve-store';
 
 const DOC = new TypeId('markdown', '11111111-1111-4111-8111-111111111111');
 const PROJECT_ID = '44444444-4444-4444-8444-444444444444';
@@ -135,7 +132,40 @@ describe('useEntityBreadcrumbs', () => {
     expect(result.current.crumbs[1].pointer).toBeNull();
   });
 
-  it('says Home on the project\'s own page rather than the name twice', async () => {
+  it('addresses the organization graph as Organization > Graph, and gets you back', async () => {
+    // The graph is a LENS on People & teams, not a separate place. Addressing it
+    // as "Worldview" named the widget instead of the subject and made it a dead
+    // end — the only way out was the back button.
+    vi.spyOn(Tab, 'resolveDockTarget').mockResolvedValue({
+      targetTypeId: null,
+      target: null,
+      projectId: null,
+    } as never);
+    ctx.project = null;
+
+    const orgGraph = {
+      pointer: 'organization',
+      tabHash: 'hub|worldview|organization',
+      targetTypeId: null,
+      viewType: 'worldview',
+      options: {},
+    } as never;
+
+    const { result } = renderHook(() => useEntityBreadcrumbs(orgGraph));
+
+    await waitFor(() => expect(result.current.crumbs).toHaveLength(2));
+    const [organization, current] = result.current.crumbs;
+
+    expect(organization.label).toBe('Organization');
+    // Navigable: this is the whole point — clicking it returns to the screen.
+    expect(organization.pointer).not.toBeNull();
+    expect(organization.pointer?.viewType).toBe('organization');
+
+    expect(current.label).toBe('Graph');
+    expect(current.pointer).toBeNull();
+  });
+
+  it("says Home on the project's own page rather than the name twice", async () => {
     ctx.project = { displayName: 'Acme', id: PROJECT_ID };
     const projectTypeId = new TypeId('project', PROJECT_ID);
     vi.spyOn(Tab, 'resolveDockTarget').mockResolvedValue({
@@ -294,11 +324,9 @@ describe('useEntityBreadcrumbs — wiki routes', () => {
 
     const { result } = renderHook(() => useEntityBreadcrumbs(wikiDock('@local', 'Runtime environments')));
 
-    await waitFor(() => expect(result.current.crumbs.map((c) => c.label)).toEqual([
-      'Acme',
-      'Project Wiki',
-      'Runtime environments',
-    ]));
+    await waitFor(() =>
+      expect(result.current.crumbs.map((c) => c.label)).toEqual(['Acme', 'Project Wiki', 'Runtime environments']),
+    );
     // `@local` is an alias, never a wiki id — looking it up as one would 404.
     expect(byTypeId).not.toHaveBeenCalled();
     expect(getDefaultWiki).toHaveBeenCalled();
