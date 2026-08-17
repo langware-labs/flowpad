@@ -13,10 +13,37 @@ from flow_sdk.tags import emit_tag, target_of
 from tests.conftest import async_context
 
 
+#: Drain rounds before we call it a runaway. Not a time budget — each round
+#: awaits real tasks to completion, so this only bounds handler-emits-handler
+#: recursion, and it FAILS rather than passing when it is hit.
+_MAX_DRAIN_ROUNDS = 50
+
+
 async def _settle():
-    # tag handlers are scheduled as loop tasks (law 3) — let them land.
-    for _ in range(20):
-        await asyncio.sleep(0.01)
+    """Await the tasks the bus scheduled, instead of sleeping a fixed budget.
+
+    ``TagBus._dispatch`` fires async handlers with ``asyncio.ensure_future``
+    (law 3: emit never awaits consumers), and ``async_context`` reuses ONE
+    event loop for the whole module. A fixed sleep that expires early therefore
+    doesn't merely under-count the current test — the handler lands inside the
+    NEXT one. That is why this file failed in both directions under CPU load
+    (too few fires here, too many there) while passing when the machine was
+    idle.
+
+    Awaiting the tasks themselves is exact: there is no budget to outgrow, and
+    it is faster, since a test that expects nothing to fire returns at once.
+    Handlers may emit again (``test_two_tag_triggers_cannot_ping_pong`` depends
+    on it), so drain in rounds until the loop is quiet.
+    """
+    current = asyncio.current_task()
+    for _ in range(_MAX_DRAIN_ROUNDS):
+        pending = [t for t in asyncio.all_tasks() if t is not current and not t.done()]
+        if not pending:
+            return
+        await asyncio.gather(*pending, return_exceptions=True)
+    raise AssertionError(
+        "tag handlers never went quiet — a handler is re-emitting without converging"
+    )
 
 
 def _tag_trigger(**kw) -> Trigger:
@@ -244,6 +271,42 @@ async def test_self_loop_brake_stops_a_trigger_firing_itself(tmp_path):
         row = await Trigger.get_by_id(trigger.id)
         assert row.counter == 1, "one external event, one fire — not a cascade"
     finally:
+        unregister_tag_trigger(trigger.id)
+
+
+@async_context
+async def test_self_loop_suppression_does_not_cascade(tmp_path):
+    """The brake stops the FIRE; this pins that it also stops the CASCADE.
+
+    ``trigger.suppressed`` is itself a ``trigger.*`` event carrying
+    ``trigger:<id>`` in its scope, so for a rule subscribed to ``trigger.*`` a
+    self-loop notice re-enters the bus, trips the brake, and emits another
+    notice — unbounded, while ``counter`` sits innocently at 1. Re-add the
+    emit for ``self_loop`` in ``_suppressed`` and this test hangs the drain
+    instead of counting to a small number.
+    """
+    from flow_sdk.tags import event_bus
+
+    emitted: list[str] = []
+    unsub = event_bus.on("trigger.*", lambda e: emitted.append(e.tag))
+    trigger = _tag_trigger(tag_pattern="trigger.*")
+    await trigger.save()
+    register_tag_trigger(trigger)
+    try:
+        emit_tag("trigger.fired", target_of("trigger", "other"), {},
+                 {"scope": [target_of("trigger", "other")]})
+        await _settle()
+        row = await Trigger.get_by_id(trigger.id)
+        assert row.counter == 1, "one external event, one fire"
+        # The rule's own fire notice re-enters once and is braked. Anything
+        # beyond a couple of events means the notice is feeding itself.
+        assert len(emitted) <= 3, f"self-loop cascade: {emitted}"
+        assert "trigger.suppressed" not in emitted, (
+            "a self-loop notice must not go back on the bus — it is the thing "
+            "that re-triggers the brake"
+        )
+    finally:
+        unsub()
         unregister_tag_trigger(trigger.id)
 
 
