@@ -11,9 +11,12 @@ commands take the direct path.
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 import platform
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 import httpx
@@ -46,6 +49,14 @@ class EnrollmentGrant:
     node_typeid: str
     node_name: str
     user_typeid: str
+
+
+def write_marker(path: Path, payload: dict[str, Any]) -> None:
+    """Atomically publish enrollment state for a supervising host process."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload), encoding="utf-8")
+    os.replace(tmp, path)
 
 
 async def start_enrollment(

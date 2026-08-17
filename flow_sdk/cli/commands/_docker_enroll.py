@@ -115,14 +115,6 @@ def parse_marker(text: str) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
-def write_marker(path: Path, payload: dict[str, Any]) -> None:
-    """Atomic JSON write so a reader never sees a half-written marker."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload), encoding="utf-8")
-    os.replace(tmp, path)
-
-
 # ------------------------------------------------------------------ wheel + install script (host side)
 
 
@@ -161,8 +153,8 @@ class Docker:
             raise DockerEnrollError("`docker` not found in PATH")
         return cls(binary, container)
 
-    def _run(self, *args: str, check: bool = False, **kwargs: Any) -> subprocess.CompletedProcess:
-        return subprocess.run([self.binary, *args], capture_output=True, text=True, check=check, **kwargs)
+    def _run(self, *args: str, **kwargs: Any) -> subprocess.CompletedProcess:
+        return subprocess.run([self.binary, *args], capture_output=True, text=True, **kwargs)
 
     def ensure_running(self) -> None:
         result = self._run("inspect", "-f", "{{.State.Running}}", self.container)
@@ -208,10 +200,6 @@ class Docker:
         result = self.exec("bash", "-c", detached_command(node_name), detach=True)
         if result.returncode != 0:
             raise DockerEnrollError(f"could not start flow connect in the container: {result.stderr}")
-
-    def read_marker(self, path: str) -> dict[str, Any] | None:
-        result = self.exec("cat", path)
-        return parse_marker(result.stdout) if result.returncode == 0 else None
 
     def read_markers(self) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
         """``(ready, code)`` in ONE exec — the poll loop runs every second."""

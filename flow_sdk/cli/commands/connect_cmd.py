@@ -23,7 +23,7 @@ from typing import Any, Optional
 
 import typer
 
-from flow_sdk.cli.commands._docker_enroll import write_marker
+from flow_sdk.cli.auth.device_enroll import write_marker
 
 WORKSPACE_FLAVOR = "workspace"
 
