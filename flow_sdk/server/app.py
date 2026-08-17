@@ -461,6 +461,13 @@ async def _shutdown_extras():
     """Clean up server.json and stop cron scheduler."""
     from flow_sdk.config import clear_server_info
 
+    try:
+        from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks
+
+        clear_process_hook_callbacks()
+    except Exception:
+        pass
+
     # Close the process-shared outbound hub HTTP client (kept alive across calls
     # so its TLS context isn't rebuilt per request — see hub_http._hub_client).
     try:

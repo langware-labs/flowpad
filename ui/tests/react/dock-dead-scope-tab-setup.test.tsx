@@ -47,7 +47,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Project, Tab, TypeId, dataManager } from '@sdk';
 import { DockPointer } from '@src/navigation';
 import { loadAgentApp } from '@src/routes/loaders/main-loader';
-import { resetTabLifecycleForTests } from '@src/tabs/tab-lifecycle';
+import { resetTabContentLifecycleForTests } from '@src/tabs/tab-content-lifecycle';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 
 const DOCK_PATH = '/dock/assets/project-home';
@@ -86,7 +86,7 @@ describe('react: dock URL scoped to a nonexistent project', () => {
 
   beforeEach(async (context: any) => {
     await apiTestSetup(info, context.task.name);
-    resetTabLifecycleForTests();
+    resetTabContentLifecycleForTests();
   });
 
   afterAll(async () => {

@@ -38,6 +38,14 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
     try {
       if (trigger?.id) {
         // Update existing
+        const changed =
+          trigger.name !== formData.name ||
+          trigger.description !== formData.description ||
+          trigger.expr !== formData.expr ||
+          trigger.sched_trigger_type !== formData.trigger_type ||
+          trigger.enabled !== (formData.enabled ?? true) ||
+          (trigger.instruction ?? '') !== instruction ||
+          (trigger.workdir ?? '') !== workdir;
         const action = new ActionInfo('update', 'trigger', trigger.id, 'PATCH');
         action.bodyParameters = {
           name: formData.name,
@@ -49,6 +57,7 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
           workdir: workdir || null,
         };
         const updated = await dataManager.callAction<unknown, ITrigger>(action);
+        if (changed) Trigger.markEditById(trigger.id);
         onSaved(updated as unknown as ITrigger);
       } else {
         // Create new

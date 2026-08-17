@@ -1,8 +1,7 @@
 import { DockPointer } from '@src/navigation/DockPointer';
 import { allScope, projectScope } from '@src/lib/scope-filter';
 import { VIEWER_REGISTRY, ViewType } from '@src/types/ViewType';
-import { refreshAllTabs } from '@src/tabs/all-tabs-store';
-import { resolveNextTab, tabHasRecency, tabInProject, tabIsProcess } from '@src/tabs/tab-candidates';
+import { tabHasRecency, tabInProject, tabIsProcess, tabManager } from '@sdk';
 
 /** Whether a view keeps one tab per scope (Assets, Explorer, Desktop) — the
  *  browse surfaces that translate across projects by swapping the scope. */
@@ -30,9 +29,9 @@ export async function dockForScopeEntry(
   projectId: string | null,
   currentDock?: DockPointer | null,
 ): Promise<DockPointer> {
-  const tabs = (await refreshAllTabs()).filter((t) => tabInProject(t, projectId));
+  const tabs = (await tabManager.refresh()).filter((t) => tabInProject(t, projectId));
   const known = tabs.filter(tabHasRecency);
-  const dock = resolveNextTab(known)?.dockPointer ?? null;
+  const dock = tabManager.resolveNext(known)?.dockPointer ?? null;
   if (dock) return dock as DockPointer;
 
   if (isScopeKeyedView(currentDock?.viewType)) {
@@ -53,8 +52,8 @@ export function dockForProjectEntry(projectId: string, currentDock?: DockPointer
  *  dockForProjectEntry because its fallback must be a Vibe empty state, never
  *  project home. */
 export async function agenticProcessIdForProjectEntry(projectId: string): Promise<string | null> {
-  const tabs = (await refreshAllTabs()).filter((t) => tabInProject(t, projectId) && tabIsProcess(t));
-  return resolveNextTab(tabs)?.target_id ?? null;
+  const tabs = (await tabManager.refresh()).filter((t) => tabInProject(t, projectId) && tabIsProcess(t));
+  return tabManager.resolveNext(tabs)?.target_id ?? null;
 }
 
 /** Enter the Global (projectless) scope. Thin alias of {@link dockForScopeEntry}. */

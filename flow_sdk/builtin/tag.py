@@ -86,7 +86,7 @@ class Tag(Entity):
         return await super().save(owner=owner, notify=notify)
 
     @classmethod
-    def allocate_id(cls, data: dict) -> str:
+    def _row_id_policy(cls, data: dict) -> str:
         """Name-derived uuid5 — the same name always mints the same id.
 
         A caller-supplied id never overrides the natural key. Hub/materialized

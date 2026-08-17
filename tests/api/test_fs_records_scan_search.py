@@ -12,13 +12,55 @@ Covers:
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
+from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store import get_default_records_root, set_default_records_root
-
-from flow_sdk.fs_store.indexer.functions.task import extract_task
 from flow_sdk.fs_store.fs_record import FSRecord
+from flow_sdk.fs_store.indexer.functions.task import extract_task  # noqa: F401
+from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
+
 TaskResource = FSRecord  # noqa: F401
+
+
+class _RecentActivityAlpha(Entity):
+    type: str = APIField(default="recent_activity_alpha")
+    scope: str = APIField(default="")
+    project_id: str | None = APIField(default=None)
+
+    _api_visible: ClassVar[bool] = True
+
+
+class _RecentActivityBeta(Entity):
+    type: str = APIField(default="recent_activity_beta")
+    scope: str = APIField(default="")
+    project_id: str | None = APIField(default=None)
+
+    _api_visible: ClassVar[bool] = True
+
+
+class _RecentActivityInfrastructure(Entity):
+    type: str = APIField(default="recent_activity_infrastructure")
+
+    _api_visible: ClassVar[bool] = True
+
+
+# The registry flag is the generic infrastructure signal consumed by the
+# recent-activity projection (the real built-ins using it are Tab and
+# DataSourceCursor). Registering a probe keeps this test independent of those
+# types' unrelated required fields.
+SchemaRegistry.register(
+    TypeInfo(
+        type_name=_RecentActivityInfrastructure.get_type(),
+        entity_cls=_RecentActivityInfrastructure,
+        api_visible=True,
+        db_only=True,
+    )
+)
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +251,56 @@ async def test_search_empty_query_no_filter_returns_empty(bootstrapped_client):
     data = resp.json()["data"]
     assert data["results"] == []
     assert data["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_recent_activity_mixed_browse_filters_then_pages(bootstrapped_client):
+    """Mixed edit recency is SQL-ordered, registry-filtered, then paged."""
+    boot = await _bootstrap(bootstrapped_client)
+
+    rows = [
+        _RecentActivityAlpha(id=mint_uuid(), name="older", last_edited_at=100),
+        _RecentActivityBeta(id=mint_uuid(), name="newer", last_edited_at=300),
+        _RecentActivityAlpha(id=mint_uuid(), name="unstamped"),
+        _RecentActivityAlpha(
+            id=mint_uuid(),
+            name="scope-filtered",
+            scope="user",
+            last_edited_at=400,
+        ),
+        _RecentActivityBeta(
+            id=mint_uuid(),
+            name="system-filtered",
+            system=True,
+            last_edited_at=500,
+        ),
+        _RecentActivityInfrastructure(
+            id=mint_uuid(),
+            name="infrastructure-filtered",
+            last_edited_at=600,
+        ),
+    ]
+    for row in rows:
+        await row.save()
+
+    base = _cn_url(boot, "search")
+    first = await bootstrapped_client.get(
+        base + "?sort_by=last_edited_at&limit=1&offset=0&user=false"
+    )
+    assert first.status_code == 200
+    first_data = first.json()["data"]
+    assert first_data["total"] == 2
+    assert [row["name"] for row in first_data["results"]] == ["newer"]
+    assert first_data["results"][0]["last_edited_at"] == 300
+
+    second = await bootstrapped_client.get(
+        base + "?sort_by=last_edited_at&limit=1&offset=1&user=false"
+    )
+    assert second.status_code == 200
+    second_data = second.json()["data"]
+    assert second_data["total"] == 2
+    assert [row["name"] for row in second_data["results"]] == ["older"]
+    assert second_data["results"][0]["last_edited_at"] == 100
 
 
 @pytest.mark.asyncio

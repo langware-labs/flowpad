@@ -51,6 +51,11 @@ export interface TabStripItem {
   statusReason?: string;
   /** Rename capability — present iff the tab has a target entity (Part 3 §3). */
   renameable?: boolean;
+  /** What this chip DISPLAYS while standing in for something else — the ancestor
+   *  chip showing the workspace child that fills the panel. `key` and `title`
+   *  keep meaning "the row I am", so select/close/rename stay pointed at this
+   *  tab; only the rendered icon and label defer. */
+  standsFor?: { icon?: React.ReactNode; title: string };
   /** Whether the chip can be closed (default true). A `closable: false` chip
    *  hides its X, is excluded from close-all/close-others/close-right, and shows
    *  no "Close" context item — for pinned fixtures like the vibe "Display" chip. */
@@ -419,7 +424,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
         data-active={isActive ? 'true' : undefined}
         {...(item.dataAttributes ?? {})}
       >
-        {item.icon}
+        {item.standsFor?.icon ?? item.icon}
         {!iconOnly && item.badge}
         {isEditing ? (
           <input
@@ -450,7 +455,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
                 startRename(key, item.title);
               }}
             >
-              {item.title}
+              {item.standsFor?.title ?? item.title}
             </span>
           )
         )}

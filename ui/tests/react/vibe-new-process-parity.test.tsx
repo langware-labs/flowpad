@@ -100,8 +100,10 @@ vi.mock('@src/hooks/use-agentic-process-stream', () => ({
   useAgenticProcessStream: () => [],
 }));
 vi.mock('@src/hooks/entity-hooks', () => ({ useEntity: () => ({ data: parentProcess }) }));
-vi.mock('@src/tabs/tab-parent-context', () => ({ setActiveTabParent: vi.fn() }));
-vi.mock('@src/tabs/setup-tab-and-adopt', () => ({ setupTabAndAdopt: vi.fn(async () => {}) }));
+vi.mock('@src/tabs/tab-content-lifecycle', async (orig) => ({
+  ...(await orig<typeof import('@src/tabs/tab-content-lifecycle')>()),
+  setupTabAndAdopt: vi.fn(async () => {}),
+}));
 
 // Heavy display children the empty-state path never mounts — stubbed so the
 // module graph stays light.

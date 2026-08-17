@@ -120,6 +120,7 @@ export function DataSourceCard({ source, onEdit, onReplay, onDelete }: Props) {
     try {
       source.status = next;
       await source.save();
+      source.markEdit();
       notify.success({
         title: next === 'disabled' ? t`Paused.` : t`Resumed — it polls on the next tick.`,
       });

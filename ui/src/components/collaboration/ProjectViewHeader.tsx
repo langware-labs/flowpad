@@ -60,6 +60,7 @@ export function ProjectViewHeader({ project, localMemberId }: Props) {
     try {
       project.name = next ?? undefined;
       await project.save();
+      project.markEdit();
       notify.success({ title: t`Project renamed`, message: trimmed || t`(cleared)` });
     } catch (err) {
       console.error('[ProjectViewHeader] rename failed', err);

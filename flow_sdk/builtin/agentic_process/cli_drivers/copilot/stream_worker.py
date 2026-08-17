@@ -39,9 +39,7 @@ CANCEL_GRACE_SECONDS = 5.0
 
 # stdout event types that prove the turn is CONTINUING past a held terminal
 # candidate (a new message, a new turn, or a tool round-trip).
-_CONTINUATION_EVENTS = frozenset(
-    {"user.message", "assistant.turn_start", "assistant.message_start"}
-)
+_CONTINUATION_EVENTS = frozenset({"user.message", "assistant.turn_start", "assistant.message_start"})
 
 
 class _TranscriptDurabilityGate(TranscriptDurabilityGate):
@@ -130,8 +128,7 @@ class CopilotCLIStreamWorker(AgenticWorker):
                 self._transcript_path.parent.mkdir(parents=True, exist_ok=True)
                 tee_fh = open(self._transcript_path, "ab", buffering=0)
             except OSError as exc:
-                logger.warning("CopilotCLIStreamWorker: transcript open failed %s: %s",
-                               self._transcript_path, exc)
+                logger.warning("CopilotCLIStreamWorker: transcript open failed %s: %s", self._transcript_path, exc)
 
         try:
             self._proc = await asyncio.create_subprocess_exec(
@@ -272,12 +269,11 @@ class CopilotCLIStreamWorker(AgenticWorker):
             allow_all=True,
             no_custom_instructions=not bool(context.custom_instruction_dirs),
             custom_instruction_dirs=list(context.custom_instruction_dirs or []),
+            plugin_dirs=list(context.plugin_dirs or []),
         )
         # Asset-backed system instructions ride COPILOT_CUSTOM_INSTRUCTIONS_DIRS;
         # the legacy system_prompt_append path remains unused for new launches.
-        argv, env_from_opts, stdin = opts.to_spawn(
-            instruction=prompt, system_prompt_append=context.instructions
-        )
+        argv, env_from_opts, stdin = opts.to_spawn(instruction=prompt, system_prompt_append=context.instructions)
         # Context env_vars win (except the discovered capability bin folder
         # stays first on PATH); argv[0] is pinned to the discovered absolute
         # executable so a stripped backend service PATH can't break the spawn.

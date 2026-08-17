@@ -58,7 +58,7 @@ def _assert_indexer_compatible(tpl_path: Path) -> DeckTemplate:
     ref = FSRef(tpl_path)
     # gen_id stamps the `.flow/id` capsule first — the production index order.
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
-    gen = SchemaRegistry.get("deck_template").mint_id(ref)
+    gen = SchemaRegistry.get("deck_template").mint_entity_id(ref, derive=True, overwrite=True)
     loaded = DeckTemplate.from_fs_ref(ref)
     assert loaded is not None, "from_fs_ref returned None for a real deck template"
     assert isinstance(loaded, DeckTemplate)

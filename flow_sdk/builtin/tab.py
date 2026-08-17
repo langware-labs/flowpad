@@ -185,6 +185,18 @@ def _pointer_is_adoptable_child(pointer: str | None) -> bool:
     if vt == 'project':
         # Project-rebased asset dock: ``<project-id>/<assetSubPointer>``.
         _, _, asset_sub = sub.partition('/')
+        # The vibe workspace HOST is spelled in the URL as
+        # ``<project-id>/process/<typeid>/display/<tail>`` but is carried to us in
+        # the client's URL options, never inside the stored pointer — that is what
+        # keeps tab identity (and this very check) unchanged. If one ever reaches
+        # here the client failed to lift it, and the row would be refused as a
+        # child SILENTLY: no error, the document just stops being part of its
+        # workspace on the next list read. Name it instead of swallowing it.
+        if asset_sub.startswith('process/'):
+            logger.error(
+                'Tab pointer carries a workspace host; the client should keep it in URL options: %s',
+                pointer,
+            )
         return asset_sub.startswith('editor/')
     if vt == 'shell':
         # A PLAIN terminal is workspace content. The process's own dock is the
@@ -1226,7 +1238,7 @@ async def _backfill_tab_projects(tabs: list[Tab]) -> None:
 
 async def _build_tab_list(project: str | None) -> list[Tab]:
     """The ordered, project-filtered list of Tabs with runtime status resolved.
-    Global order filtered to ``{project OR projectless}`` (decision 3), each Tab
+    Global order filtered to the exact project (or Global) scope, each Tab
     fully populated with status/is_disabled. The Tab objects are serialized
     directly for API responses — no separate projection."""
     tabs, target_map = await _visible_tabs_sorted_with_targets()
@@ -1343,7 +1355,7 @@ _action_registry.register(
 
 async def _http_list(cls, project: str | None = None):
     """GET /graph/tab/list?project=<id> — the deterministic, fully-resolved,
-    ordered render list for one project view (projectless tabs inline)."""
+    ordered render list for one exact project scope (empty project = Global)."""
     return await _list_response(project)
 
 
@@ -1360,8 +1372,8 @@ async def _http_list_all(cls):
     """GET /graph/tab/list_all — EVERY visible Tab (any kind, ALL projects), fully
     resolved, in global order.
 
-    The project-scoped ``list`` is ``{that project} + projectless`` and ``list(None)``
-    is projectless-only, so neither gives the global picture that the developer
+    A scoped ``list`` returns exactly one project or the Global scope, so neither
+    gives the global picture that the developer
     sessions view (``/dev``) and the footer projects-chip need. This is the single
     unscoped projection (via the ``tab`` action, refreshed on the ``tabs_changed``
     ping) that replaces the old reactive ``tab?visible=true`` entity query."""

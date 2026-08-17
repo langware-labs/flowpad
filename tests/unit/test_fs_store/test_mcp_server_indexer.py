@@ -23,7 +23,7 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.indexer.functions.mcp_server import (
     extract_mcp_server,
-    mcp_server_id,
+    mcp_server_identity_key,
     mcp_servers_in_file_fn,
     mcp_source_files_fn,
 )
@@ -36,7 +36,7 @@ PROJ_BETA = "/Users/alice/proj-beta"
 
 
 def _extract(ref: FSRef):
-    return extract_mcp_server(ref, SchemaRegistry.get("mcp_server").mint_id(ref))
+    return extract_mcp_server(ref, SchemaRegistry.get("mcp_server").mint_entity_id(ref, derive=True, overwrite=True))
 
 
 def _make_home(tmp_path: Path) -> Path:
@@ -205,7 +205,9 @@ def test_extract_claude_user_server(tmp_path: Path) -> None:
     # FTS feeds on description — searchable by command/package.
     assert "npx" in d["description"] and "@mcp/github" in d["description"]
     # The legacy natural key remains stable, but TypeInfo exposes its UUIDv5.
-    assert d["id"] == mcp_server_id(ref)
+    assert d["id"] == SchemaRegistry.get("mcp_server").mint_entity_id(
+        ref, derive=True, overwrite=True
+    )
 
 
 def test_extract_claude_local_servers_distinct_ids_and_project_path(tmp_path: Path) -> None:
@@ -261,7 +263,7 @@ def test_gen_uuid_matches_extracted_record_id(tmp_path: Path) -> None:
     home = _make_home(tmp_path)
     for ref in _scan(_home_root(home)):
         (rec,) = _extract(ref)
-        gen = mcp_server_id(ref)
+        gen = SchemaRegistry.get("mcp_server").mint_entity_id(ref, derive=True, overwrite=True)
         assert is_valid_entity_id(gen)
         assert not any(ch in gen for ch in ":/\\")
         assert gen == Entity.allocate_id(rec.to_dict())

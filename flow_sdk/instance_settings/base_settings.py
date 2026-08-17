@@ -34,6 +34,10 @@ ENV_FS_RECORD_PATH = "FS_RECORD_PATH"
 ENV_FLOWPAD_CLAUDE_HOME = "FLOWPAD_CLAUDE_HOME"
 ENV_CLAUDE_CONFIG_DIR = "CLAUDE_CONFIG_DIR"
 ENV_CODEX_HOME = "CODEX_HOME"
+# Copilot publishes no home env var of its own (unlike CLAUDE_CONFIG_DIR /
+# CODEX_HOME), so this is Flowpad's own override — used by test sandboxes and
+# isolated instances that must not read or write the real ``~/.copilot``.
+ENV_FLOWPAD_COPILOT_HOME = "FLOWPAD_COPILOT_HOME"
 ENV_FLOWPAD_HUB_URL = "FLOWPAD_HUB_URL"
 ENV_MINIHUB_HOST = "MINIHUB_HOST"
 ENV_MINIHUB_RELOAD = "MINIHUB_RELOAD"
@@ -148,6 +152,11 @@ class BaseInstanceSettings:
     codex_history_path: Path
     codex_session_index_path: Path
 
+    # Copilot (~/.copilot). User-level — shared across instances unless overridden.
+    copilot_home: Path
+    copilot_session_state_dir: Path
+    copilot_config_path: Path
+
     # ---- Defaults / runtime ----
     default_compute_provider: str = "local-machine"
     auth_provider: str = "custom"
@@ -230,6 +239,7 @@ class BaseInstanceSettings:
         flow_home = cls._resolve_flow_home()
         claude_home = cls._resolve_claude_home()
         codex_home = cls._resolve_codex_home()
+        copilot_home = cls._resolve_copilot_home()
         instance_dir = flow_home / "instances" / instance_name
         records_root = cls._resolve_records_root_in(instance_dir)
         db_path = cls._resolve_db_path_in(instance_dir)
@@ -288,6 +298,9 @@ class BaseInstanceSettings:
             codex_config_path=codex_home / "config.toml",
             codex_history_path=codex_home / "history.jsonl",
             codex_session_index_path=codex_home / "session_index.jsonl",
+            copilot_home=copilot_home,
+            copilot_session_state_dir=copilot_home / "session-state",
+            copilot_config_path=copilot_home / "config.json",
             cloud_user_email=os.environ.get("FLOWPAD_CLOUD_USER_EMAIL") or None,
             cloud_user_pass=os.environ.get("FLOWPAD_CLOUD_USER_PASSWORD") or None,
             cloud_login_timeout_seconds=cls._resolve_login_timeout(),
@@ -349,6 +362,11 @@ class BaseInstanceSettings:
     def _resolve_codex_home() -> Path:
         env = os.environ.get(ENV_CODEX_HOME)
         return Path(env) if env else Path.home() / ".codex"
+
+    @staticmethod
+    def _resolve_copilot_home() -> Path:
+        env = os.environ.get(ENV_FLOWPAD_COPILOT_HOME)
+        return Path(env) if env else Path.home() / ".copilot"
 
     @staticmethod
     def _resolve_records_root(flow_home: Path, default_subdir: str) -> Path:

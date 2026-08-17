@@ -27,7 +27,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import { projectScope } from '@src/lib/scope-filter';
-import { setupTab } from '@src/tabs/tab-lifecycle';
+import { setupTab } from '@src/tabs/tab-content-lifecycle';
 import { dockForProjectEntry } from '@src/tabs/project-entry';
 import { loadDockPointer } from '@src/routes/loaders/load-dock-pointer';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';

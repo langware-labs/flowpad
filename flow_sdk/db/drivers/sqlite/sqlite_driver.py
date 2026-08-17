@@ -11,7 +11,7 @@ from collections import defaultdict
 from contextlib import asynccontextmanager, nullcontext
 from contextvars import ContextVar
 from datetime import datetime
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, AsyncIterator, Callable, Dict, List, Literal, Optional, Sequence, Set, Tuple
 
 from fastapi import HTTPException
 from sqlalchemy import and_, asc, delete, desc, func, or_, select, text, update
@@ -476,6 +476,25 @@ class SQLiteDBDriver(DBDriver):
             )
         )
 
+        # "Who owns this path" — `Entity.get_by_asset_ref`, and now every
+        # identity resolution that recovers a wiped carrier instead of minting a
+        # fork. It ran as a full scan PER owner type, and the watcher path calls
+        # it on every file change.
+        #
+        # Deliberately NOT UNIQUE. The invariant IS one path = one live row, but
+        # enforcing it here would turn any residual duplicate into an
+        # IntegrityError on the user's hot path mid-index, and the collapse
+        # migration needs a window in which two rows briefly coexist. The
+        # constraint is the resolver; this index makes violations cheap to find
+        # (GROUP BY … HAVING COUNT(*) > 1).
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_entities_asset_ref "
+                "ON entities(json_extract(data, '$.asset_ref')) "
+                "WHERE json_extract(data, '$.asset_ref') IS NOT NULL"
+            )
+        )
+
     async def close(self):
         """Close database connection and ensure worker threads stop."""
         if self.engine:
@@ -691,18 +710,53 @@ class SQLiteDBDriver(DBDriver):
 
     async def browse_by_type(
         self,
-        entity_type: str,
-        limit: int = DEFAULT_BROWSE_LIMIT,
+        entity_type: str | None,
+        limit: int | None = DEFAULT_BROWSE_LIMIT,
         status: str | None = None,
+        *,
+        offset: int = 0,
+        sort_by: Literal["updated_date", "last_edited_at"] = "updated_date",
+        entity_types: Sequence[str] | None = None,
     ) -> list[Any]:
-        """Return entities of a type with FTS metadata, ordered by recency.
+        """Return browse entities with FTS metadata, ordered in SQLite.
 
         Unlike fts_search this does not require a query — it is used for
-        filter-only browsing (no search term, just a record_type filter).
+        filter-only browsing. ``entity_types`` is the server-computed eligibility
+        set for a mixed projection; it is never accepted directly from clients.
         Uses LEFT JOIN so entities without an FTS row are still returned.
         """
-        if not self.session_factory:
-            return []
+        entities, _ = await self.browse_page(
+            entity_type=entity_type,
+            limit=limit,
+            status=status,
+            offset=offset,
+            sort_by=sort_by,
+            entity_types=entity_types,
+        )
+        return entities
+
+    async def browse_page(
+        self,
+        entity_type: str | None,
+        limit: int | None = DEFAULT_BROWSE_LIMIT,
+        status: str | None = None,
+        *,
+        offset: int = 0,
+        sort_by: Literal["updated_date", "last_edited_at"] = "updated_date",
+        entity_types: Sequence[str] | None = None,
+        scope: object | None = None,
+        include_system: bool = True,
+    ) -> tuple[list[Any], int]:
+        """Return a SQL-paged browse projection and its pre-page total."""
+        if not self.session_factory or (entity_type is None and entity_types is None):
+            return [], 0
+        if sort_by not in ("updated_date", "last_edited_at"):
+            raise ValueError(f"Unsupported browse sort field: {sort_by!r}")
+
+        eligible_types = sorted({str(t).lower() for t in entity_types or () if t})
+        if entity_types is not None and not eligible_types:
+            return [], 0
+
         async with self._session_ctx(write=False) as session:
             # Apply LIMIT *before* joining entities_fts. FTS5 has no usable
             # B-tree index on plain columns like entity_id, so joining the
@@ -710,21 +764,81 @@ class SQLiteDBDriver(DBDriver):
             # O(matched_rows × fts_rows) — a 1346-row type took ~12s with a
             # 3812-row FTS table. Hoisting the LIMIT into a subquery caps
             # the join at LIMIT rows.
-            inner_sql = """
-                SELECT * FROM entities
-                WHERE type = :entity_type
-            """
-            params: dict[str, Any] = {"entity_type": entity_type, "limit": limit}
+            clauses: list[str] = []
+            params: dict[str, Any] = {}
+            if entity_type is not None:
+                clauses.append("type = :entity_type")
+                params["entity_type"] = entity_type.lower()
+            if entity_types is not None:
+                type_params = []
+                for index, eligible_type in enumerate(eligible_types):
+                    key = f"eligible_type_{index}"
+                    type_params.append(f":{key}")
+                    params[key] = eligible_type
+                clauses.append(f"type IN ({', '.join(type_params)})")
             if status:
-                inner_sql += " AND json_extract(data, '$.status') = :status"
+                clauses.append("json_extract(data, '$.status') = :status")
                 params["status"] = status
-            inner_sql += " ORDER BY updated_date DESC LIMIT :limit"
+            if sort_by == "last_edited_at":
+                clauses.extend(
+                    [
+                        "json_type(data, '$.last_edited_at') IN ('integer', 'real')",
+                        "json_extract(data, '$.last_edited_at') > 0",
+                    ]
+                )
+
+            where_sql = " AND ".join(clauses)
+            where_sql += self._scope_sql_clause(scope, params, entity_type)
+            if not include_system:
+                scope_project_ids = tuple(
+                    dict.fromkeys(
+                        (
+                            *(getattr(scope, "projects", ()) or ()),
+                            *(getattr(scope, "record_projects", ()) or ()),
+                        )
+                    )
+                )
+                system_clause = "COALESCE(json_extract(data, '$.system'), 0) = 0"
+                if scope_project_ids:
+                    project_params = []
+                    for index, project_id in enumerate(scope_project_ids):
+                        key = f"system_scope_project_{index}"
+                        project_params.append(f":{key}")
+                        params[key] = project_id
+                    system_clause = (
+                        f"({system_clause} OR json_extract(data, '$.project_id') "
+                        f"IN ({', '.join(project_params)}))"
+                    )
+                where_sql += f" AND ({system_clause})"
+
+            sort_expr = (
+                "json_extract(data, '$.last_edited_at')"
+                if sort_by == "last_edited_at"
+                else "updated_date"
+            )
+            count_result = await session.execute(
+                text(f"SELECT COUNT(*) FROM entities WHERE {where_sql}"),
+                params,
+            )
+            total = int(count_result.scalar() or 0)
+
+            inner_sql = f"SELECT * FROM entities WHERE {where_sql}"
+            inner_sql += f" ORDER BY {sort_expr} DESC, type ASC, id ASC"
+            if limit is not None:
+                inner_sql += " LIMIT :limit OFFSET :offset"
+                params["limit"] = limit
+                params["offset"] = offset
             sql = f"""
                 SELECT e.*,
                        fts.title AS _fts_title,
                        fts.description AS _fts_description
                 FROM ({inner_sql}) e
                 LEFT JOIN entities_fts fts ON e.id = fts.entity_id
+                ORDER BY {
+                    "json_extract(e.data, '$.last_edited_at')"
+                    if sort_by == "last_edited_at"
+                    else "e.updated_date"
+                } DESC, e.type ASC, e.id ASC
             """
             result = await session.execute(text(sql), params)
             rows = result.fetchall()
@@ -743,7 +857,7 @@ class SQLiteDBDriver(DBDriver):
                     entities.append(entity)
                 except Exception:
                     logger.warning("browse_by_type: failed to hydrate entity %s", row_dict.get("id"))
-            return entities
+            return entities, total
 
     async def fts_delete(self, entity_id: str) -> None:
         """Remove a row from ``entities_fts``."""

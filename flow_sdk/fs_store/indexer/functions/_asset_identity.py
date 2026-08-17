@@ -23,11 +23,6 @@ def _path(ref: Any) -> Path:
     return Path(getattr(ref, "_path", ref))
 
 
-def no_id(ref: Any) -> None:
-    """Reader for carrier-less deterministic assets."""
-    return None
-
-
 def frontmatter_id(ref: Any) -> object | None:
     """Return a valid frontmatter ID, or the first invalid candidate.
 
@@ -54,14 +49,6 @@ def folder_capsule_id(ref: Any) -> object | None:
         return (_path(ref) / ".flow" / "id").read_text(encoding="utf-8").strip()
     except OSError:
         return None
-
-
-def json_id(ref: Any) -> object | None:
-    try:
-        data = json.loads(_path(ref).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return data.get("id") if isinstance(data, dict) else None
 
 
 def resolved_path_key(ref: Any) -> str:

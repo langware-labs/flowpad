@@ -105,6 +105,11 @@ export interface IEntity extends Partial<IResource> {
    * still deliver an ISO string during the transition window.
    */
   last_active_at?: number | string | null;
+  /**
+   * Epoch-ms of this entity's last content edit. Edit flows stamp this after a
+   * successful mutation; ISO strings are accepted for tolerant wire loading.
+   */
+  last_edited_at?: number | string | null;
 }
 
 export const defaultEntityType = 'entity_base';
