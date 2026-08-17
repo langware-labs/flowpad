@@ -23,20 +23,18 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Passed to the child as argv, never embedded in its source: the driver stays pure
-# ASCII so the child's own source decoding can't become a second variable here.
 TITLE = "ניהול משימות"
 BODY = "אין משימות"  # leading alef is UTF-8 D7 90 — the byte cp1252 leaves undefined
 
 # Enters exactly where MicroApp.view enters it (micro_app.py:164) — same args,
 # same Request, one frame down from the route.
 DRIVER = r"""
-import asyncio, locale, sys
+import asyncio, locale, re, sys
 from pathlib import Path
 from starlette.requests import Request
 from flow_sdk.builtin.faas.serve_static import serve_app_bytes
 
-root, needle = Path(sys.argv[1]), sys.argv[2]
+root = Path(sys.argv[1])
 scope = {
     "type": "http", "http_version": "1.1", "method": "GET", "scheme": "http",
     "path": "/api/v1/graph/micro_app/app-1/view", "raw_path": b"/", "query_string": b"",
@@ -47,9 +45,18 @@ scope = {
 async def main():
     resp = await serve_app_bytes(root, None, Request(scope), api_url_scheme="http")
     body = resp.body.decode("utf-8")
+    # Expectations are derived HERE, from the file, with an explicit encoding.
+    # Nothing non-ASCII may cross into this process any other way: argv is
+    # decoded with the filesystem encoding, which under this test's whole
+    # premise (a non-UTF-8 ambient) is ASCII+surrogateescape on POSIX. Passing
+    # the needle in would fail the comparison for the wrong reason -- it did,
+    # on ubuntu CI, while the server had served the page perfectly.
+    src = (root / "index.html").read_text(encoding="utf-8")
+    needles = re.findall(r"<title>(.*?)</title>", src) + re.findall(r"<h1>(.*?)</h1>", src)
     print("AMBIENT:" + locale.getpreferredencoding(False))
     print("STATUS:%d" % resp.status_code)
-    print("INTACT:%s" % (needle in body))
+    print("NONASCII:%s" % any(ord(c) > 127 for n in needles for c in n))
+    print("INTACT:%s" % (bool(needles) and all(n in body for n in needles)))
 
 asyncio.run(main())
 """
@@ -68,7 +75,7 @@ def _child_env() -> dict[str, str]:
 
 def _run(app_root: Path) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [sys.executable, "-c", DRIVER, str(app_root), BODY],
+        [sys.executable, "-c", DRIVER, str(app_root)],
         cwd=REPO_ROOT,
         env=_child_env(),
         capture_output=True,
@@ -78,6 +85,13 @@ def _run(app_root: Path) -> subprocess.CompletedProcess:
     )
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.served_html_encoding.rules: FAILING? read this tag's rules before
+#       editing — a UTF-8 CI cannot see this bug, do not relax the assertion
+# flowpad:endcapsule tag
 def test_utf8_app_survives_a_non_utf8_host(tmp_path):
     dist = tmp_path / "tasks-app" / "dist"
     dist.mkdir(parents=True)
@@ -100,6 +114,9 @@ def test_utf8_app_survives_a_non_utf8_host(tmp_path):
         "serving a UTF-8 app died on a non-UTF-8 host:\n" + result.stderr[-2000:]
     )
     assert "STATUS:200" in result.stdout, result.stdout
+    # Guards against the test quietly becoming vacuous if the fixture ever loses
+    # its non-ASCII content: with nothing to mangle, INTACT is True for free.
+    assert "NONASCII:True" in result.stdout, result.stdout
     assert "INTACT:True" in result.stdout, (
         "served document was silently mangled (decoded with the host codepage):\n" + result.stdout
     )
