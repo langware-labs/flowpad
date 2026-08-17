@@ -52,8 +52,9 @@ class SubAgent(Entity):
         except ValueError:
             return ApiFailResponse(message=f"invalid kind: {kind!r}")
         ref = self.asset_ref or ""
-        # Stored refs are absolute (FSRef) — re-rooting broke Windows paths.
-        path = Path(ref) if ref else None
+        # `Path(ref).resolve()` — FSRef's own construction. Rooting it with
+        # `Path("/" + ref)` corrupted Windows refs (`C:\...` → `\C:\...`).
+        path = Path(ref).resolve() if ref else None
         if path is None or not path.exists():
             return ApiFailResponse(message="agent source file not found", status_code=404)
         rec = extract_subagent_from_path(path)
