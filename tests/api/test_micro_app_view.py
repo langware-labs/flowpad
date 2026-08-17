@@ -55,6 +55,13 @@ async def test_serves_index_with_api_origin_injected(bootstrapped_client, user, 
     assert "<base" in body
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.served_html_encoding.rules: FAILING? read this tag's rules before
+#       editing — a 200 is not a pass, assert the served text matches disk
+# flowpad:endcapsule tag
 @pytest.mark.asyncio
 async def test_non_ascii_index_is_served_intact(bootstrapped_client, user, tmp_path):
     """A UTF-8 document must survive being served, whatever the host's codepage.
