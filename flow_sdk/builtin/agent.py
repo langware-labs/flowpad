@@ -365,6 +365,32 @@ class Agent(Entity):
             }
         )
 
+    # ── the use verb (HTTP) ───────────────────────────────────────────────
+
+    @action.post(action_name="use")
+    async def use_action(self):
+        """Open a session as this agent. `POST /agent/<id>/use` → process id.
+
+        No prompt: the process is created and shown, and the human types the
+        first message. Local placement only — same routing rule as ``run``.
+        """
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if not self.enabled:
+            return ApiFailResponse(message=f"agent {self.name!r} is disabled")
+        deployment = await self.local_deployment()
+        try:
+            process = await deployment.use()
+        except Exception as exc:  # noqa: BLE001
+            return ApiFailResponse(message=f"use failed: {exc}")
+        return ApiSuccessResponse(
+            data={
+                "process_id": process.id,
+                "process_typeid": str(process.typeid),
+                "deployment_id": deployment.id,
+            }
+        )
+
     # ── projection into the launch bundle ─────────────────────────────────
 
     def to_agent_options(self, worker_type: Optional[str] = None) -> "AgentOptions":

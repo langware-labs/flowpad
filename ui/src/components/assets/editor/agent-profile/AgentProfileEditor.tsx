@@ -1,7 +1,7 @@
 import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, FSRef } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Loader2, Sparkles } from 'lucide-react';
 
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
@@ -19,7 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tab
 
 import { AgentDeploymentsSection } from './AgentDeploymentsSection';
 import { AgentListField, AgentSection, AgentSelectField } from './AgentProfileFields';
-import { AgentRunDialog } from './AgentRunDialog';
+import { useUseAgent } from './use-agent';
 import { AGENT_EFFORTS, AGENT_MODEL_TIERS, AGENT_PERMISSION_MODES, AGENT_WORKER_TYPES } from './agent-vocabularies';
 import { AgentDocumentPatch, patchAgentDocument } from './agent-document';
 
@@ -56,8 +56,8 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
   const [name, setName] = useState(agent?.name ?? '');
   const [description, setDescription] = useState(agent?.description ?? '');
   const [prompt, setPrompt] = useState(agent?.system_prompt ?? '');
-  const [runOpen, setRunOpen] = useState(false);
   const [avatarRevision, setAvatarRevision] = useState(0);
+  const { use, busy: using } = useUseAgent(agent);
 
   useEffect(() => {
     setTitle(agent?.title ?? '');
@@ -209,14 +209,12 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
               aria-label={t`Enabled`}
             />
           </div>
-          <Button size="sm" disabled={!agent.enabled} onClick={() => setRunOpen(true)} data-testid="agent-use">
-            <Sparkles className="me-1.5 h-3.5 w-3.5" />
+          <Button size="sm" disabled={!agent.enabled || using} onClick={() => void use()} data-testid="agent-use">
+            {using ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="me-1.5 h-3.5 w-3.5" />}
             <Trans>Use</Trans>
           </Button>
         </div>
       </div>
-
-      <AgentRunDialog agent={agent} open={runOpen} onOpenChange={setRunOpen} />
 
       {/* ── body: the prompt owns the left, settings sit in a tabbed rail ── */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 lg:grid-cols-[minmax(0,1fr)_22rem]">
