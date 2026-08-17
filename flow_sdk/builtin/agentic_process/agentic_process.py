@@ -4763,10 +4763,11 @@ class AgenticProcess(Entity):
         )
         if not asset_ref:
             return ApiFailResponse(message="asset_ref is required")
-        # Same construction as FSRef — a stored asset_ref is already absolute.
-        # Rooting it with `Path("/" + ref)` corrupted every Windows ref
-        # (`C:\...` → `\C:\...`)
-        abs_path = Path(asset_ref)
+        # `Path(ref).resolve()` — the same construction FSRef itself uses, and
+        # which `_agent_entity_ref` re-applies to this value downstream. Rooting
+        # it with `Path("/" + ref)` instead corrupted every Windows ref
+        # (`C:\...` → `\C:\...`), so the file never existed and the embed failed.
+        abs_path = Path(asset_ref).resolve()
         if not abs_path.exists():
             return ApiFailResponse(message=f"Agent file not found: {abs_path}")
         agent = extract_subagent_from_path(abs_path)
