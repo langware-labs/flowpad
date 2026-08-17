@@ -151,6 +151,17 @@ export class Agent extends APIEntity<Agent> {
   }
 
   /**
+   * Download URL of the uploaded avatar image, or null when the avatar is an
+   * emoji / icon name (render `avatar` through `AvatarValue` then). THE one
+   * predicate for "does this agent have a picture" — every surface that draws
+   * an agent avatar reads this, so they cannot disagree on it.
+   */
+  get avatarImageUrl(): string | null {
+    if (this.avatar !== AGENT_AVATAR_REF) return null;
+    return this.doc?.parent.child(AGENT_AVATAR_FILE).getDownloadUrl() ?? null;
+  }
+
+  /**
    * Create an Agent in the selected project, or in user scope when null.
    * Placement remains backend-owned; the optional folder is intentionally
    * reserved for compatibility with the shared Quick Create interface.

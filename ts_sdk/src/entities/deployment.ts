@@ -3,6 +3,7 @@ import type { IEntity } from '../IEntity';
 import { ActionInfo } from '../models';
 import { DockPointerData } from '../models/DockPointer';
 import { normalizeKind } from '../models/Kind';
+import { isTypeId, TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
 import { WorldViewProjection } from '../worldview/projection';
 
@@ -145,6 +146,14 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
       focus: `${Deployment.type}-${this.id}`,
       selected: `${Deployment.type}-${this.id}`,
     });
+  }
+
+  /** The Agent this places, or null when the deployed element is something else. */
+  get agentTypeId(): TypeId | null {
+    const parent = this.parent_type_id;
+    if (!parent || !isTypeId(parent)) return null;
+    const typeId = new TypeId(parent);
+    return typeId.type === 'agent' ? typeId : null;
   }
 
   /** The machine this runs on, or null when the placement is not node-backed. */
