@@ -33,6 +33,7 @@ Routing it through here would change every live claude frame.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Callable
 
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData, FlowDataType
@@ -76,3 +77,82 @@ def wrap_live(entry, element_type_for_kind: ElementTypeForKind) -> FlowData:
         },
         process_entry=process_entry.to_dict(),
     )
+
+
+def entry_to_replay_flow_data(
+    entry,
+    element_type_for_kind: ElementTypeForKind,
+) -> list[FlowData]:
+    """Wrap a parsed entry in the same envelope the live stream stamps.
+
+    Mirrors :func:`wrap_live` field for field, differing only in
+    ``observation_kind`` — so a reloaded session is row-for-row comparable with
+    what a live subscriber saw.
+
+    Without this a replayed frame carried no ``ProcessEntry``, no ``subtype``
+    and no ``observation-kind``, so every chip the UI builds off the typed entry
+    (a ``flow`` CLI call, a file write, a skill) silently degraded to a nameless
+    generic row after a page refresh.
+
+    Codex is deliberately NOT a caller: its replay path additionally refines the
+    subtype for SYSTEM entries, *assigns* rather than ``setdefault``s, and
+    stamps ``turn-terminated``, ``phase``, ``transcript-entry-id`` and
+    ``transcript-source-entry-id``. Six behaviour deltas — folding it in would
+    mean deciding which of them the other vendors should acquire.
+    """
+    process_entry = ProcessEntry(transcript_entry=entry, observation_kind="replay").to_dict()
+    frames = entry.to_flow_data()
+    if not frames:
+        # Entries whose ``to_flow_data()`` is deliberately empty still get one
+        # frame — ``wrap_live`` does the same, so the two paths stay aligned.
+        return [
+            FlowData(
+                flow_value={},
+                created_time=entry.timestamp or "",
+                attributes={
+                    "element-type": element_type_for_kind(entry.kind.value),
+                    "data-type": FlowDataType.OBJECT,
+                    "subtype": entry.kind.value,
+                    "observation-kind": "replay",
+                },
+                process_entry=process_entry,
+            )
+        ]
+
+    for frame in frames:
+        frame.process_entry = process_entry
+        frame.attributes.setdefault("element-type", element_type_for_kind(entry.kind.value))
+        frame.attributes.setdefault("data-type", FlowDataType.OBJECT)
+        frame.attributes.setdefault("subtype", entry.kind.value)
+        frame.attributes.setdefault("observation-kind", "replay")
+        if getattr(entry, "virtual", False):
+            frame.attributes["is-virtual"] = "true"
+    return frames
+
+
+def load_transcript_history(
+    worker: str,
+    transcript: Path,
+    element_type_for_kind: ElementTypeForKind,
+    *,
+    transcript_format=None,
+    logger=None,
+) -> list[FlowData]:
+    """Parse a transcript file and replay every entry through the envelope.
+
+    A parse failure returns ``[]`` — the caller shows an empty history rather
+    than an error row. Codex deliberately does the opposite (WARNING plus a
+    synthesised ERROR frame), which is why it is not a caller here.
+    """
+    from flow_sdk.transcript_analyzer import AgentTranscriptFile  # noqa: PLC0415
+
+    try:
+        parsed = AgentTranscriptFile(worker, transcript, transcript_format=transcript_format)
+    except Exception:
+        if logger is not None:
+            logger.debug("%s history parse failed for %s", worker, transcript, exc_info=True)
+        return []
+    history: list[FlowData] = []
+    for entry in parsed.entries:
+        history.extend(entry_to_replay_flow_data(entry, element_type_for_kind))
+    return history
