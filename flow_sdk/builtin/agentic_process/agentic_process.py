@@ -4786,6 +4786,7 @@ class AgenticProcess(Entity):
             extract_subagent_from_path,
             render_subagent_markdown,
         )
+
         if not asset_ref:
             return ApiFailResponse(message="asset_ref is required")
         # `Path(ref).resolve()` — the same construction FSRef itself uses, and
@@ -6475,6 +6476,10 @@ class AgenticProcess(Entity):
         # docs/agent/agentic_process_statuses.md for the model.
         computed = self.fetch_worker_status()
         data["worker_status"] = str(computed) if computed else None
+        # The CLI's own sentence behind a bare ERROR ("Not logged in · Please
+        # run /login"). Only resolved for the error status — it costs a second
+        # tail read, and there is nothing to say for any other state.
+        data["worker_status_detail"] = self._worker_status_detail(computed)
         data["status"] = self.status
         busy = is_turn_busy(self, computed)
         data["busy"] = busy
@@ -6538,6 +6543,24 @@ class AgenticProcess(Entity):
         if self.status == ProcessStatus.FAILED.value:
             return WorkerStatus.ERROR
         return self._discover_status_from_transcript()
+
+    def _worker_status_detail(self, worker_status: "WorkerStatus | None") -> str | None:
+        """The CLI's own error sentence, when the worker status is ERROR.
+
+        Best-effort and never raising: a missing transcript, an unreadable file
+        or a driver without a detail hook all yield ``None``, and the surface
+        falls back to the plain status label.
+        """
+        if worker_status != WorkerStatus.ERROR:
+            return None
+        try:
+            from flow_sdk.builtin.worker_status import tail_status_detail
+
+            path = self.driver.transcript_path(self)
+            return tail_status_detail(path) if path else None
+        except Exception:
+            logger.debug("worker_status_detail lookup failed", exc_info=True)
+            return None
 
     def _discover_status_from_transcript(self) -> WorkerStatus | None:
         """Derive the RAW worker status from the worker's transcript via the driver.
