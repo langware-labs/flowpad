@@ -78,6 +78,10 @@ export enum ViewType {
   APPS = 'apps', // Skill UI apps - /dock/apps/<uname>/<router> mounts AppHost
   GRAPH = 'graph', // Built-in dep-graph viewer - /dock/graph/<type>/<id>
   WORLDVIEW = 'worldview', // Shared projections - /dock[/hub]/worldview/<world|organization|deployment>
+  // People-and-teams admin: the plain master-detail screen (tree + member table).
+  // The org WORLDVIEW is the same data as a graph and stays the advanced view —
+  // this is the one a school administrator opens to add a class or change a role.
+  ORGANIZATION = 'organization', // /dock/hub/organization[/<type>/<id>]
   TAG = 'tag', // Tag taxonomy graph/tree - /dock/tag/graph[/<dot.name>]?view=tree
   SUBGRAPH = 'subgraph', // Generic entity-subgraph - /dock/subgraph/<projection>[/<focusKey>]
   K_BROWSER = 'k-browser', // Docs knowledge browser - /dock/k-browser/<vfs|typeid>/<value>

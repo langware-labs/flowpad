@@ -977,6 +977,31 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   }
 
   /**
+   * Grant a role to a GROUP principal (a Team or an Organization) on this entity —
+   * POST ``<type>/<id>/members`` with ``{principal, invitation_targets}``.
+   *
+   * The group counterpart of {@link inviteMember}, and deliberately a separate
+   * method: a person is *invited* (an Invitation is minted, an email goes out, the
+   * grant lands only on accept), whereas a group is *granted* immediately — it has
+   * no mailbox, no account to provision and nothing to accept. The hub refuses a
+   * body carrying both a `recipient_email` and a `principal` for exactly that
+   * reason, so the two paths never blur.
+   *
+   * Direction, since it is easy to get backwards: this makes `principal` a MEMBER
+   * OF this entity (a class inside a school), not the other way round.
+   */
+  public async addGroupMember(principal: TypeId, role: string = 'member'): Promise<void> {
+    const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
+    info.hubReflect = true; // membership change is hub-owned — reflect to the hub
+    info.bodyParameters = {
+      principal: `${principal.type}-${principal.id}`,
+      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }],
+    };
+    const res = await dataManager.callAction<unknown, EntityMember[]>(info);
+    this._membersCache = Array.isArray(res) ? res : undefined;
+  }
+
+  /**
    * Remove a member by user id — DELETE ``<type>/<id>/members``. OWNER ONLY:
    * the hub enforces the owner gate (``delete_membership`` → 403 for non-owners
    * / owner-self), so this surfaces that as a thrown error rather than

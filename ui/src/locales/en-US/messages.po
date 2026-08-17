@@ -13,7 +13,12 @@ msgstr ""
 "Language-Team: \n"
 "Plural-Forms: \n"
 
-#: src/components/account/organization-panel.tsx
+#. placeholder {0}: me.role
+#: src/components/organization/org-detail-panel.tsx
+msgid " · you are {0}"
+msgstr " · you are {0}"
+
+#: src/components/organization/member-list.tsx
 msgid " (you)"
 msgstr " (you)"
 
@@ -53,11 +58,6 @@ msgstr "· pick a branch"
 #: src/components/conversation/MessageComposer.tsx
 msgid "\"{0}\" is over {MAX_FILE_SIZE_LABEL} and was not attached."
 msgstr "\"{0}\" is over {MAX_FILE_SIZE_LABEL} and was not attached."
-
-#. placeholder {0}: confirmDeleteProject?.displayName ?? ''
-#: src/pages/hub-home/HubHome.tsx
-msgid "\"{0}\" will be deleted for everyone it is shared with. This cannot be undone."
-msgstr "\"{0}\" will be deleted for everyone it is shared with. This cannot be undone."
 
 #. placeholder {0}: deleting?.name || deleting?.provider || ''
 #: src/components/data-sources/DataSourcesView.tsx
@@ -161,10 +161,20 @@ msgstr "{0, plural, one {# item cut} other {# items cut}}"
 msgid "{0, plural, one {# item} other {# items}}"
 msgstr "{0, plural, one {# item} other {# items}}"
 
+#. placeholder {0}: people.length
+#: src/components/organization/org-detail-panel.tsx
+msgid "{0, plural, one {# person} other {# people}}"
+msgstr "{0, plural, one {# person} other {# people}}"
+
 #. placeholder {0}: source.stream_count
 #: src/components/data-sources/DataSourceCard.tsx
 msgid "{0, plural, one {# stream} other {# streams}}"
 msgstr "{0, plural, one {# stream} other {# streams}}"
+
+#. placeholder {0}: teams.length
+#: src/components/organization/org-detail-panel.tsx
+msgid "{0, plural, one {# team} other {# teams}}"
+msgstr "{0, plural, one {# team} other {# teams}}"
 
 #. placeholder {0}: progress.phase === 'upload' ? 'Uploading' : 'Downloading'
 #: src/components/conversation/FlowMessageBubble.tsx
@@ -464,6 +474,10 @@ msgstr "{label} records"
 msgid "{latchedReason} Auto-relaunch is paused — Retry to launch again."
 msgstr "{latchedReason} Auto-relaunch is paused — Retry to launch again."
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "{name} avatar"
+msgstr "{name} avatar"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
 msgstr "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
@@ -528,6 +542,10 @@ msgstr "{totalOrphans} orphan{0}"
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "{totalResolved} issue{0} matched — saving you the time to debug {1} manually."
 msgstr "{totalResolved} issue{0} matched — saving you the time to debug {1} manually."
+
+#: src/components/organization/use-create-child-team.ts
+msgid "{trimmed} was added to {parentLabel}."
+msgstr "{trimmed} was added to {parentLabel}."
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "{value}"
@@ -916,6 +934,10 @@ msgstr "Add a description…"
 msgid "Add a key in \"LLM API keys\" above to use it here"
 msgstr "Add a key in \"LLM API keys\" above to use it here"
 
+#: src/components/hub/AddMachineDialog.tsx
+msgid "Add a machine"
+msgstr "Add a machine"
+
 #: src/components/conversation/chips/MessageChips.tsx
 #: src/components/conversation/chips/MessageChips.tsx
 msgid "Add a note to the running session about this message"
@@ -1014,6 +1036,10 @@ msgstr "Add Hook"
 msgid "Add link"
 msgstr "Add link"
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Add Machine"
+msgstr "Add Machine"
+
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Add New Hook"
 msgstr "Add New Hook"
@@ -1105,6 +1131,7 @@ msgstr "Advanced"
 msgid "Advanced mode"
 msgstr "Advanced mode"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "agent"
@@ -1133,8 +1160,8 @@ msgid "Agent name"
 msgstr "Agent name"
 
 #: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
-msgid "Agent started"
-msgstr "Agent started"
+#~ msgid "Agent started"
+#~ msgstr "Agent started"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -1541,22 +1568,6 @@ msgstr "Anyone with the link can join as a member. It's on your clipboard — it
 msgid "Anyone you share with can open, use and delete this sandbox."
 msgstr "Anyone you share with can open, use and delete this sandbox."
 
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "API access denied (401 Unauthorized) - check API key and Machine ID"
-#~ msgstr "API access denied (401 Unauthorized) - check API key and Machine ID"
-
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "API access forbidden (403) - Machine ID may not be whitelisted for this API key"
-#~ msgstr "API access forbidden (403) - Machine ID may not be whitelisted for this API key"
-
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "API access test failed (HTTP {statusCode})"
-#~ msgstr "API access test failed (HTTP {statusCode})"
-
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "API access test passed (200 OK)"
-#~ msgstr "API access test passed (200 OK)"
-
 #: src/components/data-sources/provider-catalog.ts
 #: src/components/data-sources/provider-catalog.ts
 msgid "API base URL"
@@ -1602,11 +1613,6 @@ msgstr "API key has been removed successfully"
 msgid "API Key Helper"
 msgstr "API Key Helper"
 
-#: src/components/machine-overview/machine-overview.tsx
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "API Key, Backend URL, or Machine ID not configured"
-#~ msgstr "API Key, Backend URL, or Machine ID not configured"
-
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/credentials-view/CredentialsView.tsx
 msgid "API Keys"
@@ -1648,7 +1654,12 @@ msgstr "Appended to the current worker's prompt queue, tagged with this message.
 msgid "Apply"
 msgstr "Apply"
 
+#: src/components/hub/AddMachineDialog.tsx
+msgid "Approval failed"
+msgstr "Approval failed"
+
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/hub/AddMachineDialog.tsx
 msgid "Approve"
 msgstr "Approve"
 
@@ -1659,6 +1670,10 @@ msgstr "Approve and run this prompt in {sessionLabel}"
 #: src/components/conversation/attachment-actions/registry.ts
 msgid "Approve this prompt and run it"
 msgstr "Approve this prompt and run it"
+
+#: src/components/hub/AddMachineDialog.tsx
+msgid "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
+msgstr "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
 
 #: src/i18n/type-labels.ts
 msgid "Apps"
@@ -2050,10 +2065,6 @@ msgstr "Back to tasks"
 msgid "Backend server is not responding. Please try again later."
 msgstr "Backend server is not responding. Please try again later."
 
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "Backend URL not configured"
-#~ msgstr "Backend URL not configured"
-
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Background image"
 msgstr "Background image"
@@ -2346,10 +2357,14 @@ msgstr "Can’t find what you need? Send us a question and a person will get bac
 msgid "Can't open terminal"
 msgstr "Can't open terminal"
 
-#: src/components/account/organization-panel.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/organization/member-list.tsx
 msgid "Can't update — showing last synced"
 msgstr "Can't update — showing last synced"
+
+#: src/components/organization/org-detail-panel.tsx
+msgid "Can't update right now — showing the last synced list."
+msgstr "Can't update right now — showing the last synced list."
 
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
@@ -2358,7 +2373,6 @@ msgstr "Can't update — showing last synced"
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/AddGitFolderDialog.tsx
 #: src/components/assets/delete-asset-modal.tsx
-#: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/ProjectPickerModal.tsx
@@ -2462,12 +2476,6 @@ msgstr "Cannot improve asset"
 msgid "Cannot open"
 msgstr "Cannot open"
 
-#: src/components/machine-overview/machine-overview.tsx
-#: src/components/machine-overview/machine-overview.tsx
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "Cannot reach localhost from remote sandbox. Use ngrok or a public URL to expose your backend."
-#~ msgstr "Cannot reach localhost from remote sandbox. Use ngrok or a public URL to expose your backend."
-
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Cannot run rebuild"
 msgstr "Cannot run rebuild"
@@ -2476,7 +2484,6 @@ msgstr "Cannot run rebuild"
 msgid "Cannot translate"
 msgstr "Cannot translate"
 
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/types/ViewType.ts
@@ -2662,6 +2669,14 @@ msgstr "Chrome"
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Chrome browser"
 msgstr "Chrome browser"
+
+#: src/components/organization/org-node-management.tsx
+msgid "Class created"
+msgstr "Class created"
+
+#: src/components/organization/org-node-management.tsx
+msgid "Class name…"
+msgstr "Class name…"
 
 #: src/components/task-bar/task-utils.ts
 #: src/components/task-bar/task-utils.ts
@@ -3125,6 +3140,10 @@ msgstr "Co-author line for git commits"
 msgid "code"
 msgstr "code"
 
+#: src/components/hub/AddMachineDialog.tsx
+msgid "Code"
+msgstr "Code"
+
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Code block"
 msgstr "Code block"
@@ -3152,6 +3171,10 @@ msgstr "Code Editor"
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Code expired. Close and click Connect again to get a fresh code."
 msgstr "Code expired. Close and click Connect again to get a fresh code."
+
+#: src/components/hub/AddMachineDialog.tsx
+msgid "Code expires"
+msgstr "Code expires"
 
 #: src/i18n/type-labels.ts
 msgid "Code Ref"
@@ -3462,12 +3485,6 @@ msgstr "Connecting…"
 #: src/components/account/user-info.tsx
 msgid "Connection error"
 msgstr "Connection error"
-
-#: src/components/machine-overview/machine-overview.tsx
-#: src/components/machine-overview/machine-overview.tsx
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "Connection failed - server unreachable or not running"
-#~ msgstr "Connection failed - server unreachable or not running"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Connection ID"
@@ -3789,6 +3806,11 @@ msgstr "Could not attach {name}"
 msgid "Could not change privacy mode"
 msgstr "Could not change privacy mode"
 
+#: src/components/organization/org-detail-panel.tsx
+#: src/components/organization/org-node-management.tsx
+msgid "Could not change role"
+msgstr "Could not change role"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Could not change sign-in method"
 msgstr "Could not change sign-in method"
@@ -3811,6 +3833,10 @@ msgstr "Could not connect to {0}."
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Could not copy the code"
 msgstr "Could not copy the code"
+
+#: src/components/organization/use-create-child-team.ts
+msgid "Could not create"
+msgstr "Could not create"
 
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "Could not create {createAs}"
@@ -3838,6 +3864,10 @@ msgstr "Could not delete"
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "Could not delete {0}"
 msgstr "Could not delete {0}"
+
+#: src/components/hub/AddMachineDialog.tsx
+msgid "Could not deny"
+msgstr "Could not deny"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 #: src/components/webapp-viewer/webapp-deployments-tab.tsx
@@ -3963,12 +3993,17 @@ msgid "Could not recover this session’s project."
 msgstr "Could not recover this session’s project."
 
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
+#: src/components/organization/org-detail-panel.tsx
 msgid "Could not remove"
 msgstr "Could not remove"
 
 #: src/components/connections-manager.tsx
 msgid "Could not remove access"
 msgstr "Could not remove access"
+
+#: src/components/organization/org-node-management.tsx
+msgid "Could not remove member"
+msgstr "Could not remove member"
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "Could not remove the help desk files"
@@ -3999,10 +4034,6 @@ msgstr "Could not resolve home directory from bootstrap info"
 #: src/components/assets/ShareContextFolderButton.tsx
 msgid "Could not resolve this folder"
 msgstr "Could not resolve this folder"
-
-#: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
-msgid "Could not run agent"
-msgstr "Could not run agent"
 
 #: src/components/connections-manager.tsx
 msgid "Could not run the connection test."
@@ -4087,6 +4118,15 @@ msgstr "Could not update eval flag"
 msgid "Could not upload avatar"
 msgstr "Could not upload avatar"
 
+#. placeholder {0}: agent.displayName
+#: src/components/assets/editor/agent-profile/use-agent.ts
+msgid "Could not use {0}"
+msgstr "Could not use {0}"
+
+#: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
+#~ msgid "Could not use agent"
+#~ msgstr "Could not use agent"
+
 #. placeholder {0}: source.name || source.provider
 #: src/components/data-sources/DataSourceCard.tsx
 msgid "Could not verify {0}"
@@ -4095,10 +4135,6 @@ msgstr "Could not verify {0}"
 #: src/components/version-popover/version-popover.tsx
 msgid "Couldn't check for updates: {error}"
 msgstr "Couldn't check for updates: {error}"
-
-#: src/pages/hub-home/HubHome.tsx
-msgid "Couldn't delete the project."
-msgstr "Couldn't delete the project."
 
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Couldn't finish preparing your sandbox"
@@ -4204,6 +4240,8 @@ msgstr "CPU:"
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
+#: src/components/organization/org-detail-panel.tsx
+#: src/components/organization/org-node-management.tsx
 #: src/components/project-home/ProjectHome.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
@@ -4664,7 +4702,6 @@ msgstr "Delegating to"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
-#: src/pages/hub-home/HubHome.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Delete"
 msgstr "Delete"
@@ -4825,13 +4862,8 @@ msgid "Delete message"
 msgstr "Delete message"
 
 #: src/components/assets/AssetsPage.tsx
-#: src/pages/hub-home/HubHome.tsx
 msgid "Delete project"
 msgstr "Delete project"
-
-#: src/pages/hub-home/HubHome.tsx
-msgid "Delete project?"
-msgstr "Delete project?"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Delete sandbox"
@@ -4889,11 +4921,6 @@ msgstr "Delete this message?"
 msgid "Delete this new file — it isn't saved in git yet"
 msgstr "Delete this new file — it isn't saved in git yet"
 
-#. placeholder {0}: project.displayName
-#: src/pages/hub-home/HubHome.tsx
-msgid "Deleted {0}"
-msgstr "Deleted {0}"
-
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
 msgid "Deleted {ok} conversations"
@@ -4922,11 +4949,13 @@ msgstr "Deleting…"
 msgid "Delivered"
 msgstr "Delivered"
 
+#: src/components/hub/AddMachineDialog.tsx
 #: src/components/settings-view/settings-utils.ts
 msgid "Deny"
 msgstr "Deny"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Deploy"
 msgstr "Deploy"
 
@@ -4945,10 +4974,6 @@ msgstr "Deployed"
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deployed without its definition"
 msgstr "Deployed without its definition"
-
-#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
-msgid "Deployment"
-msgstr "Deployment"
 
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "Deployment details"
@@ -4991,8 +5016,8 @@ msgid "Describe the logical application, service, resource, or content and its o
 msgstr "Describe the logical application, service, resource, or content and its optional source."
 
 #: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
-msgid "Describe the task…"
-msgstr "Describe the task…"
+#~ msgid "Describe the task…"
+#~ msgstr "Describe the task…"
 
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 msgid "Describe what you need — what happened, what you expected, and anything you have already tried."
@@ -5001,6 +5026,10 @@ msgstr "Describe what you need — what happened, what you expected, and anythin
 #: src/components/conversation/PromptComposerDialog.tsx
 msgid "Describe what you'd like Claude to do…"
 msgstr "Describe what you'd like Claude to do…"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Describe who this agent is, what it does, and what it must never do…"
+msgstr "Describe who this agent is, what it does, and what it must never do…"
 
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/artifacts/artifact-form.tsx
@@ -5807,6 +5836,10 @@ msgstr "Enter hook description"
 #: src/components/hooks-manager/HookForm.tsx
 msgid "Enter hook name"
 msgstr "Enter hook name"
+
+#: src/components/hub/AddMachineDialog.tsx
+msgid "Enter the 8-character code shown by flow connect."
+msgstr "Enter the 8-character code shown by flow connect."
 
 #: src/journey/JourneyStepLive.tsx
 msgid "Enter the code here"
@@ -6721,6 +6754,10 @@ msgstr "Filter…"
 msgid "Filters"
 msgstr "Filters"
 
+#: src/components/hub/AddMachineDialog.tsx
+msgid "Find machine"
+msgstr "Find machine"
+
 #: src/components/data-sources/DataSourceCard.tsx
 msgid "Finish setup, then press Verify."
 msgstr "Finish setup, then press Verify."
@@ -6808,10 +6845,6 @@ msgstr "Fixing…"
 msgid "Flow Message"
 msgstr "Flow Message"
 
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "Flow or compute node not available"
-#~ msgstr "Flow or compute node not available"
-
 #: src/components/version-popover/version-popover.tsx
 #: src/pages/discover-page/discover-page.tsx
 msgid "Flowpad"
@@ -6840,10 +6873,6 @@ msgstr "Flowpad Assistant is mounted (its skills & agents are passed to the work
 msgid "Flowpad Assistant project not available."
 msgstr "Flowpad Assistant project not available."
 
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "FlowPad Backend URL"
-#~ msgstr "FlowPad Backend URL"
-
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Flowpad Cloud"
 msgstr "Flowpad Cloud"
@@ -6871,10 +6900,6 @@ msgstr "Flowpad Hub"
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "Flowpad initializes the repository, then proposes the install on a separate review branch."
-
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "FlowPad Server Status"
-#~ msgstr "FlowPad Server Status"
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -6990,6 +7015,10 @@ msgstr "Forwarded from another conversation"
 msgid "Free-form JSON for experimental feature toggles. Invalid JSON is not saved."
 msgstr "Free-form JSON for experimental feature toggles. Invalid JSON is not saved."
 
+#: src/components/hub/AddMachineDialog.tsx
+msgid "From"
+msgstr "From"
+
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "from .env.local"
 msgstr "from .env.local"
@@ -7070,10 +7099,6 @@ msgstr "garbage"
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "Garbage"
 msgstr "Garbage"
-
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "Gateway"
-#~ msgstr "Gateway"
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -7318,6 +7343,7 @@ msgstr "Graph presentation"
 
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
+#: src/components/organization/organization-page.tsx
 msgid "Graph view"
 msgstr "Graph view"
 
@@ -7462,14 +7488,6 @@ msgstr "Heading 3"
 #: src/components/machine-overview/logs-viewer.tsx
 msgid "Health"
 msgstr "Health"
-
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "Health check failed (HTTP {statusCode})"
-#~ msgstr "Health check failed (HTTP {statusCode})"
-
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "Health check passed (200 OK)"
-#~ msgstr "Health check passed (200 OK)"
 
 #: src/components/footer.tsx
 #: src/components/footer.tsx
@@ -8264,6 +8282,7 @@ msgid "Invitation no longer valid"
 msgstr "Invitation no longer valid"
 
 #: src/components/account/organization-panel.tsx
+#: src/components/organization/org-detail-panel.tsx
 msgid "Invitation sent"
 msgstr "Invitation sent"
 
@@ -8289,6 +8308,7 @@ msgid "Invite by name or email…"
 msgstr "Invite by name or email…"
 
 #: src/components/account/organization-panel.tsx
+#: src/components/organization/org-detail-panel.tsx
 msgid "Invite failed"
 msgstr "Invite failed"
 
@@ -8296,7 +8316,12 @@ msgstr "Invite failed"
 msgid "Invite members"
 msgstr "Invite members"
 
+#: src/components/organization/org-detail-panel.tsx
+msgid "Invite people"
+msgstr "Invite people"
+
 #: src/components/account/organization-panel.tsx
+#: src/components/organization/org-detail-panel.tsx
 msgid "Invited {trimmed}."
 msgstr "Invited {trimmed}."
 
@@ -8754,30 +8779,6 @@ msgstr "LLM Indexers"
 msgid "LLM key"
 msgstr "LLM key"
 
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "LM proxy access configured"
-#~ msgstr "LM proxy access configured"
-
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "LM Proxy Access Not Configured"
-#~ msgstr "LM Proxy Access Not Configured"
-
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "LM proxy denied (401 Unauthorized) - check API key"
-#~ msgstr "LM proxy denied (401 Unauthorized) - check API key"
-
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "LM proxy error (500) - check server logs for API key configuration"
-#~ msgstr "LM proxy error (500) - check server logs for API key configuration"
-
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "LM test failed (HTTP {statusCode})"
-#~ msgstr "LM test failed (HTTP {statusCode})"
-
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "LM test passed (200 OK)"
-#~ msgstr "LM test passed (200 OK)"
-
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Load Flowpad assistant"
@@ -8933,7 +8934,7 @@ msgstr "Loading logs..."
 msgid "Loading MCP UI component..."
 msgstr "Loading MCP UI component..."
 
-#: src/components/account/organization-panel.tsx
+#: src/components/organization/member-list.tsx
 msgid "Loading members…"
 msgstr "Loading members…"
 
@@ -8944,6 +8945,10 @@ msgstr "Loading message…"
 #: src/components/machine-overview/metrics-chart.tsx
 msgid "Loading metrics..."
 msgstr "Loading metrics..."
+
+#: src/components/organization/organization-page.tsx
+msgid "Loading organizations…"
+msgstr "Loading organizations…"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Loading project resources..."
@@ -9056,6 +9061,7 @@ msgstr "Loading..."
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/open-project-component/open-project-component.tsx
+#: src/components/organization/org-detail-panel.tsx
 #: src/components/project-selector/ProjectSelector.tsx
 #: src/components/search-index/EntitySearchModal.tsx
 #: src/components/terminal/HistoryModal.tsx
@@ -9171,13 +9177,19 @@ msgstr "Logs"
 msgid "Looking up project…"
 msgstr "Looking up project…"
 
+#: src/components/hub/AddMachineDialog.tsx
 #: src/types/ViewType.ts
 msgid "Machine"
 msgstr "Machine"
 
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "Machine ID"
-#~ msgstr "Machine ID"
+#. placeholder {0}: result.node_name
+#: src/components/hub/AddMachineDialog.tsx
+msgid "Machine {0} added — it is connecting now."
+msgstr "Machine {0} added — it is connecting now."
+
+#: src/components/hub/AddMachineDialog.tsx
+msgid "Machine denied"
+msgstr "Machine denied"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Machine secrets"
@@ -9402,10 +9414,13 @@ msgstr "members"
 
 #: src/components/account/organization-panel.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
+#: src/components/organization/org-node-management.tsx
+#: src/components/organization/org-node-management.tsx
 msgid "Members"
 msgstr "Members"
 
 #: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/organization/org-node-management.tsx
 msgid "Members are unavailable in Local mode."
 msgstr "Members are unavailable in Local mode."
 
@@ -9548,10 +9563,6 @@ msgstr "Model"
 msgid "Model & Performance"
 msgstr "Model & Performance"
 
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Model & runtime"
-msgstr "Model & runtime"
-
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Model mapping"
 msgstr "Model mapping"
@@ -9661,6 +9672,7 @@ msgstr "N/A"
 #: src/components/assets/AssetsPage.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
+#: src/components/hub/AddMachineDialog.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
@@ -9690,6 +9702,10 @@ msgstr "Name this entity"
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Name:"
 msgstr "Name:"
+
+#: src/components/organization/org-detail-panel.tsx
+msgid "name@example.com"
+msgstr "name@example.com"
 
 #: src/components/assets/editor/agent-trace/simple/report-language.ts
 msgid "Needs a look"
@@ -9773,6 +9789,10 @@ msgstr "New build"
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "New chat"
 msgstr "New chat"
+
+#: src/components/organization/org-node-management.tsx
+msgid "New class"
+msgstr "New class"
 
 #: src/tabs/useTerminalStripController.tsx
 msgid "New Claude Session"
@@ -9881,9 +9901,18 @@ msgstr "New Schedule Trigger"
 msgid "New session"
 msgstr "New session"
 
+#: src/components/organization/org-detail-panel.tsx
+#: src/components/organization/org-node-management.tsx
+msgid "New sub-team"
+msgstr "New sub-team"
+
 #: src/components/terminal/openers/TerminalOpenerToolbar.tsx
 msgid "New tab"
 msgstr "New tab"
+
+#: src/components/organization/org-detail-panel.tsx
+msgid "New team"
+msgstr "New team"
 
 #: src/tabs/useTerminalStripController.tsx
 msgid "New Terminal"
@@ -10241,6 +10270,10 @@ msgstr "No logs available"
 msgid "No machine data available"
 msgstr "No machine data available"
 
+#: src/components/hub/AddMachineDialog.tsx
+msgid "No machine is waiting on that code. Check the code, or run flow connect again — codes expire after 15 minutes."
+msgstr "No machine is waiting on that code. Check the code, or run flow connect again — codes expire after 15 minutes."
+
 #: src/components/markdown-viewer.tsx
 msgid "No markdown file selected"
 msgstr "No markdown file selected"
@@ -10292,7 +10325,7 @@ msgstr "No members"
 msgid "No members yet — invite someone below."
 msgstr "No members yet — invite someone below."
 
-#: src/components/account/organization-panel.tsx
+#: src/components/organization/member-list.tsx
 msgid "No members yet."
 msgstr "No members yet."
 
@@ -10320,6 +10353,10 @@ msgstr "No OAuth providers available"
 msgid "No Operation (Trace Only)"
 msgstr "No Operation (Trace Only)"
 
+#: src/components/organization/organization-page.tsx
+msgid "No organization yet"
+msgstr "No organization yet"
+
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "No orphans found."
 msgstr "No orphans found."
@@ -10343,6 +10380,10 @@ msgstr "No past chats"
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "No past sessions used \"{skillName}\"."
 msgstr "No past sessions used \"{skillName}\"."
+
+#: src/components/organization/org-detail-panel.tsx
+msgid "No people yet."
+msgstr "No people yet."
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No plugins installed"
@@ -10605,6 +10646,10 @@ msgstr "No spec specified."
 msgid "No streams yet — this source has not polled."
 msgstr "No streams yet — this source has not polled."
 
+#: src/components/organization/org-detail-panel.tsx
+msgid "No sub-teams yet."
+msgstr "No sub-teams yet."
+
 #: src/components/assets/MarkdownIndexPanel.tsx
 msgid "No subfolders"
 msgstr "No subfolders"
@@ -10632,6 +10677,10 @@ msgstr "No Task Selected"
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "No tasks found for this session."
 msgstr "No tasks found for this session."
+
+#: src/components/organization/org-detail-panel.tsx
+msgid "No teams yet."
+msgstr "No teams yet."
 
 #. placeholder {0}: trace.session_id
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
@@ -10748,15 +10797,13 @@ msgstr "Not a git repository"
 msgid "Not available"
 msgstr "Not available"
 
+#: src/components/organization/organization-page.tsx
+msgid "Not available in Local mode"
+msgstr "Not available in Local mode"
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Not checked"
 msgstr "Not checked"
-
-#: src/components/machine-overview/machine-overview.tsx
-#: src/components/machine-overview/machine-overview.tsx
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "Not configured"
-#~ msgstr "Not configured"
 
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager.tsx
@@ -11011,6 +11058,10 @@ msgstr "On schedule"
 msgid "On the cloud, click to open."
 msgstr "On the cloud, click to open."
 
+#: src/components/hub/AddMachineDialog.tsx
+msgid "On the machine run <0>flow connect</0>. If it is not signed in it shows a code — enter it here and confirm it is your machine."
+msgstr "On the machine run <0>flow connect</0>. If it is not signed in it shows a code — enter it here and confirm it is your machine."
+
 #: src/components/account/settings-section.tsx
 #: src/i18n/pref-labels.ts
 msgid "Onboarding"
@@ -11065,6 +11116,10 @@ msgstr "Open .env.local at this line"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Open {label}"
 msgstr "Open {label}"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Open {name}"
+msgstr "Open {name}"
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Open {title} install page"
@@ -11135,12 +11190,6 @@ msgstr "Open DB Folder"
 #: src/components/version-popover/diagnosis-report-modal.tsx
 msgid "Open diagnosis as a tab"
 msgstr "Open diagnosis as a tab"
-
-#: src/components/terminal/openers/TerminalOpenerToolbar.tsx
-#: src/components/terminal/openers/TerminalOpenerToolbar.tsx
-#: src/tabs/useTerminalStripController.tsx
-msgid "Open docker terminal"
-msgstr "Open docker terminal"
 
 #: src/components/artifacts/artifact-form.tsx
 msgid "Open dot-path ontology; custom descendants are welcome."
@@ -11532,8 +11581,11 @@ msgstr "Ordered list"
 
 #: src/components/account/account-info.tsx
 #: src/components/account/organization-panel.tsx
+#: src/components/organization/organization-page.tsx
+#: src/components/organization/organization-page.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/hub-home/HubHome.tsx
+#: src/types/ViewType.ts
 msgid "Organization"
 msgstr "Organization"
 
@@ -11544,6 +11596,14 @@ msgstr "Organization WorldView"
 #: src/components/account/user-info.tsx
 msgid "Organization:"
 msgstr "Organization:"
+
+#: src/components/organization/organization-page.tsx
+msgid "Organizations and teams live in the cloud. Switch out of Local mode to manage them."
+msgstr "Organizations and teams live in the cloud. Switch out of Local mode to manage them."
+
+#: src/components/organization/organization-page.tsx
+msgid "Organizations, the teams inside them, and who belongs to each."
+msgstr "Organizations, the teams inside them, and who belongs to each."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Orphan"
@@ -11762,7 +11822,7 @@ msgstr "peak"
 msgid "Peak spend rate"
 msgstr "Peak spend rate"
 
-#: src/components/account/organization-panel.tsx
+#: src/components/organization/member-list.tsx
 msgid "pending"
 msgstr "pending"
 
@@ -11777,6 +11837,14 @@ msgstr "Pending"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "pending_count"
 msgstr "Pending: {0}"
+
+#: src/components/organization/org-detail-panel.tsx
+msgid "People"
+msgstr "People"
+
+#: src/components/organization/organization-page.tsx
+msgid "People & teams"
+msgstr "People & teams"
 
 #: src/components/inbox-view/InboxView.tsx
 msgid "Permanently delete?"
@@ -12346,7 +12414,6 @@ msgstr "projected"
 msgid "Projects"
 msgstr "Projects"
 
-#: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/quick-create/registry.ts
 #: src/i18n/type-labels.ts
@@ -13030,6 +13097,10 @@ msgstr "Remove from vibe agents"
 msgid "Remove link"
 msgstr "Remove link"
 
+#: src/components/organization/member-list.tsx
+msgid "Remove member"
+msgstr "Remove member"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Remove option"
 msgstr "Remove option"
@@ -13213,6 +13284,10 @@ msgstr "Repository URL:"
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Request status"
 msgstr "Request status"
+
+#: src/components/hub/AddMachineDialog.tsx
+msgid "Requested"
+msgstr "Requested"
 
 #: src/components/account/secrets-section.tsx
 msgid "Requesting…"
@@ -13474,6 +13549,8 @@ msgid "Right-to-left paragraph"
 msgstr "Right-to-left paragraph"
 
 #: src/components/git/RepoPicker.tsx
+#: src/components/organization/member-list.tsx
+#: src/components/organization/org-detail-panel.tsx
 msgid "Role"
 msgstr "Role"
 
@@ -13534,8 +13611,6 @@ msgstr "rule: {ruleFilterName}"
 msgid "Rules"
 msgstr "Rules"
 
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-#: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/conversation/attachment-actions/registry.ts
 #: src/components/directory-tree/ItemHandler.tsx
@@ -13544,12 +13619,14 @@ msgstr "Rules"
 msgid "Run"
 msgstr "Run"
 
-#. placeholder {0}: agent.name
 #. placeholder {0}: selectedRunId?.slice(0, 8) ?? ''
-#: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
 #: src/components/graph-workflows/panels/RunsPanel.tsx
 msgid "Run {0}"
 msgstr "Run {0}"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Run `flow connect` on a machine and enter its code here"
+msgstr "Run `flow connect` on a machine and enter its code here"
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Run a new analysis of this session — adds another entry, previous analyses are kept"
@@ -13582,8 +13659,8 @@ msgid "Run failed"
 msgstr "Run failed"
 
 #: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
-msgid "Run failed."
-msgstr "Run failed."
+#~ msgid "Run failed."
+#~ msgstr "Run failed."
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Run from your terminal, then restart Flowpad:"
@@ -13673,6 +13750,10 @@ msgstr "Runs of this flow"
 #: src/components/assets/editor/markdown/PlainMarkdownAssetEditor.tsx
 msgid "Runs on this file"
 msgstr "Runs on this file"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Runtime"
+msgstr "Runtime"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "Sample prompts"
@@ -14307,6 +14388,7 @@ msgstr "Self-Summary"
 #: src/components/conversation/PromptComposerDialog.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
+#: src/components/organization/org-detail-panel.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Send"
 msgstr "Send"
@@ -14330,10 +14412,6 @@ msgstr "Send a PROMPT to the recipient asking for a status summary"
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 msgid "Send a question to the help desk. A new conversation will open with your message as the starting point."
 msgstr "Send a question to the help desk. A new conversation will open with your message as the starting point."
-
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "Send a simple prompt to verify the LM proxy is working"
-#~ msgstr "Send a simple prompt to verify the LM proxy is working"
 
 #: src/components/account/system-diagnoses.tsx
 msgid "Send failed."
@@ -14601,14 +14679,6 @@ msgstr "Setup failed"
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Setup git"
 msgstr "Setup git"
-
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "Setup LM Proxy Access"
-#~ msgstr "Setup LM Proxy Access"
-
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "Setup machine-restricted API access for this compute node"
-#~ msgstr "Setup machine-restricted API access for this compute node"
 
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/entity-actions/ShareButton.tsx
@@ -14947,6 +15017,10 @@ msgstr "Sign in"
 msgid "Sign in to access your flow and unlock Flowpad AI agent."
 msgstr "Sign in to access your flow and unlock Flowpad AI agent."
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Sign in to add machines"
+msgstr "Sign in to add machines"
+
 #: src/pages/entry/InstallLanding.tsx
 msgid "Sign in to choose one of your GitHub repositories."
 msgstr "Sign in to choose one of your GitHub repositories."
@@ -14958,6 +15032,22 @@ msgstr "Sign in to create sandboxes"
 #: src/pages/entry/InstallLanding.tsx
 msgid "Sign in to Flowpad"
 msgstr "Sign in to Flowpad"
+
+#: src/components/hub/AddMachineDialog.tsx
+msgid "Sign in to FlowPad Hub first — approving a machine binds it to your account."
+msgstr "Sign in to FlowPad Hub first — approving a machine binds it to your account."
+
+#: src/components/organization/org-node-management.tsx
+msgid "Sign in to manage members."
+msgstr "Sign in to manage members."
+
+#: src/components/organization/organization-page.tsx
+msgid "Sign in to manage people"
+msgstr "Sign in to manage people"
+
+#: src/components/organization/organization-page.tsx
+msgid "Sign in to see the people and teams you share work with."
+msgstr "Sign in to see the people and teams you share work with."
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Sign in to see who's a member"
@@ -15148,8 +15238,8 @@ msgid "Slower. To wipe rows first, use Clear Index then Full."
 msgstr "Slower. To wipe rows first, use Clear Index then Full."
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "sm / md / lg, or a model id"
-msgstr "sm / md / lg, or a model id"
+msgid "sm / md / lg"
+msgstr "sm / md / lg"
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -15447,6 +15537,10 @@ msgstr "Starting login…"
 msgid "Starting scan…"
 msgstr "Starting scan…"
 
+#: src/components/assets/editor/agent-profile/use-agent.ts
+msgid "Starting the session failed."
+msgstr "Starting the session failed."
+
 #: src/pages/flow-page/use-start-vibe-session.ts
 msgid "Starting the session without the attached files."
 msgstr "Starting the session without the attached files."
@@ -15460,7 +15554,6 @@ msgstr "Starting your app…"
 msgid "Starting your sandbox…"
 msgstr "Starting your sandbox…"
 
-#: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -15586,6 +15679,7 @@ msgid "Streams"
 msgstr "Streams"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
+#: src/components/organization/organization-page.tsx
 msgid "Structure"
 msgstr "Structure"
 
@@ -15603,6 +15697,15 @@ msgstr "sub-agent"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Sub-agents"
 msgstr "Sub-agents"
+
+#: src/components/organization/use-create-child-team.ts
+msgid "Sub-team created"
+msgstr "Sub-team created"
+
+#: src/components/organization/org-detail-panel.tsx
+#: src/components/organization/org-node-management.tsx
+msgid "Sub-team name…"
+msgstr "Sub-team name…"
 
 #: src/components/data-sources/provider-catalog.ts
 msgid "Subagent"
@@ -15780,6 +15883,10 @@ msgstr "sys"
 msgid "system"
 msgstr "system"
 
+#: src/components/hub/AddMachineDialog.tsx
+msgid "System"
+msgstr "System"
+
 #: src/components/account/system-diagnoses.tsx
 #: src/components/account/system-diagnoses.tsx
 msgid "System Diagnoses"
@@ -15902,6 +16009,14 @@ msgstr "Team"
 msgid "Team collaboration mode"
 msgstr "Team collaboration mode"
 
+#: src/components/organization/org-detail-panel.tsx
+msgid "Team created"
+msgstr "Team created"
+
+#: src/components/organization/org-detail-panel.tsx
+msgid "Team name…"
+msgstr "Team name…"
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Teammate Mode"
 msgstr "Teammate Mode"
@@ -15913,6 +16028,14 @@ msgstr "Teams"
 #: src/pages/hub-home/HubHome.tsx
 msgid "Teams and people across your org."
 msgstr "Teams and people across your org."
+
+#: src/components/organization/org-detail-panel.tsx
+msgid "Teams in this organization"
+msgstr "Teams in this organization"
+
+#: src/components/organization/org-detail-panel.tsx
+msgid "Teams inside this team"
+msgstr "Teams inside this team"
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -15955,26 +16078,9 @@ msgstr "Terminal Sessions"
 msgid "Test"
 msgstr "Test"
 
-#: src/components/machine-overview/machine-overview.tsx
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "Test API Access"
-#~ msgstr "Test API Access"
-
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Test failed"
 msgstr "Test failed"
-
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "Test LM"
-#~ msgstr "Test LM"
-
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "Test LM Proxy"
-#~ msgstr "Test LM Proxy"
-
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "Test Service"
-#~ msgstr "Test Service"
 
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Test trigger"
@@ -16704,6 +16810,10 @@ msgstr "Tokens"
 msgid "Tomorrow"
 msgstr "Tomorrow"
 
+#: src/components/hub/AddMachineDialog.tsx
+msgid "Too many attempts. Wait a few minutes and try again."
+msgstr "Too many attempts. Wait a few minutes and try again."
+
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "tool"
 msgstr "tool"
@@ -16995,6 +17105,12 @@ msgstr "Unknown error"
 
 #: src/components/account/organization-panel.tsx
 #: src/components/account/user-info.tsx
+#: src/components/organization/org-detail-panel.tsx
+#: src/components/organization/org-detail-panel.tsx
+#: src/components/organization/org-detail-panel.tsx
+#: src/components/organization/org-node-management.tsx
+#: src/components/organization/org-node-management.tsx
+#: src/components/organization/use-create-child-team.ts
 msgid "Unknown error."
 msgstr "Unknown error."
 
@@ -17070,10 +17186,6 @@ msgstr "unsure"
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "Unsure"
 msgstr "Unsure"
-
-#: src/pages/hub-home/HubHome.tsx
-msgid "Untitled project"
-msgstr "Untitled project"
 
 #: src/components/terminal/HistoryModal.tsx
 msgid "Untitled session"
@@ -17202,6 +17314,7 @@ msgstr "Usage scan failed"
 msgid "Usage unavailable"
 msgstr "Usage unavailable"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -17211,6 +17324,10 @@ msgstr "Use"
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "Use \"Send to Expert\" to create a task"
 msgstr "Use \"Send to Expert\" to create a task"
+
+#: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
+#~ msgid "Use {0}"
+#~ msgstr "Use {0}"
 
 #: src/components/assets/editor/subagent/SubAgentAssetEditor.tsx
 msgid "Use agent"
@@ -17337,10 +17454,6 @@ msgstr "Using skill: {skillName}"
 msgid "Valid"
 msgstr "Valid"
 
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "Validation error (422) - request format issue or entity not found"
-#~ msgstr "Validation error (422) - request format issue or entity not found"
-
 #: src/components/account/secrets-section.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
@@ -17392,10 +17505,6 @@ msgstr "Verified"
 #: src/components/data-sources/DataSourceCard.tsx
 msgid "Verify"
 msgstr "Verify"
-
-#: src/components/machine-overview/machine-overview.tsx
-#~ msgid "Verify the machine can authenticate with the FlowPad API"
-#~ msgstr "Verify the machine can authenticate with the FlowPad API"
 
 #: src/components/data-sources/DataSourceCard.tsx
 msgid "Verify the setup first."
@@ -17693,8 +17802,8 @@ msgid "What it worked on"
 msgstr "What it worked on"
 
 #: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
-msgid "What should it do? Its system prompt is already applied."
-msgstr "What should it do? Its system prompt is already applied."
+#~ msgid "What should it do? Its system prompt is already applied."
+#~ msgstr "What should it do? Its system prompt is already applied."
 
 #: src/components/conversation/chips/MessageChips.tsx
 msgid "What should the worker do with this message?"
@@ -17764,8 +17873,8 @@ msgid "Whiteboards"
 msgstr "Whiteboards"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Who this agent is. Becomes its system prompt."
-msgstr "Who this agent is. Becomes its system prompt."
+msgid "Who this agent is — its system prompt."
+msgstr "Who this agent is — its system prompt."
 
 #: src/components/explorer-view/ExplorerNavigator.tsx
 msgid "Whole computer"
@@ -17907,6 +18016,10 @@ msgstr "Yesterday"
 msgid "You"
 msgstr "You"
 
+#: src/components/organization/organization-page.tsx
+msgid "You are not part of an organization. Once you join or create one, its teams appear here."
+msgstr "You are not part of an organization. Once you join or create one, its teams appear here."
+
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "You become the host — you decide what gets shared into the room."
 msgstr "You become the host — you decide what gets shared into the room."
@@ -17922,10 +18035,6 @@ msgstr "You don’t belong to an organization yet. Organizations are set up in F
 #: src/notifications/ingest.ts
 msgid "You don't have permission for this action. Contact your admin if this seems wrong."
 msgstr "You don't have permission for this action. Contact your admin if this seems wrong."
-
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "You investigate a reported problem and prove the root cause…"
-msgstr "You investigate a reported problem and prove the root cause…"
 
 #: src/components/open-project-component/use-open-project.ts
 msgid "You must be logged in"

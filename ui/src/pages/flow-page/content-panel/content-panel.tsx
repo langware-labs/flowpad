@@ -52,6 +52,7 @@ import { TabLifecycleState } from '@sdk';
 import { DockLoadErrorView } from '@src/components/agent-layout/DockLoadErrorView';
 import { useDockLoadError } from '@src/routes/loaders/dock-load-error-store';
 import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
+import { OrganizationPage } from '@src/components/organization/organization-page';
 import { useIsVibe } from '@src/components/view-mode';
 import { AlertTriangle } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
@@ -239,6 +240,8 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
             <WorldView />
           </Suspense>
         );
+      case ViewType.ORGANIZATION:
+        return <OrganizationPage />;
       case ViewType.HUB_RECORDS:
         return <HubRecordsView type={currentDock?.pointer} />;
       case ViewType.HUB_ENTITY:
