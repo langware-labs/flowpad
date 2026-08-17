@@ -55,7 +55,7 @@ export function AgentRunDialog({ agent, open, onOpenChange }: AgentRunDialogProp
       if (result?.process_id) await navigation.openShellProcess(result.process_id);
     } catch (e) {
       notify.error({
-        title: t`Could not run agent`,
+        title: t`Could not use agent`,
         message: e instanceof Error ? e.message : t`Run failed.`,
       });
     } finally {
@@ -68,7 +68,7 @@ export function AgentRunDialog({ agent, open, onOpenChange }: AgentRunDialogProp
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            <Trans>Run {agent.name}</Trans>
+            <Trans>Use {agent.name}</Trans>
           </DialogTitle>
           <DialogDescription>
             <Trans>What should it do? Its system prompt is already applied.</Trans>
@@ -87,7 +87,7 @@ export function AgentRunDialog({ agent, open, onOpenChange }: AgentRunDialogProp
             <Trans>Cancel</Trans>
           </Button>
           <Button onClick={() => void run()} disabled={!prompt.trim() || running}>
-            {running ? <Trans>Starting…</Trans> : <Trans>Run</Trans>}
+            {running ? <Trans>Starting…</Trans> : <Trans>Use</Trans>}
           </Button>
         </DialogFooter>
       </DialogContent>
