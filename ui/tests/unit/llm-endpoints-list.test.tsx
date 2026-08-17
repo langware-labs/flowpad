@@ -115,7 +115,9 @@ describe('LlmEndpointsList', () => {
     expect(within(chainRow).getByTestId('kind-badge-chain')).toBeTruthy();
     expect(within(chainRow).queryByTestId('provider-badge')).toBeNull();
     expect(within(chainRow).getByTestId('enabled-dot-off')).toBeTruthy();
-    expect(chainRow.textContent).toContain('1 source(s)');
+    // The chain row links to its source; the root row links back to its consumer.
+    expect(within(chainRow).getByTestId(`llm-source-link-${ROOT}`).textContent).toBe('Anthropic prod');
+    expect(within(rootRow).getByTestId(`llm-consumer-link-${CHAIN}`).textContent).toBe('Team chain');
 
     // Today's usage arrives per row from the usage action.
     expect(await within(rootRow).findByText('1.5K · $0.420')).toBeTruthy();
@@ -148,6 +150,21 @@ describe('LlmEndpointsList', () => {
     renderView();
     await userEvent.click(screen.getByText('r'));
     expect(h.openPage).toHaveBeenCalledWith(PageId.HUB, ViewType.LLM_ENDPOINTS, ROOT);
+  });
+
+  it('a source link in a chain row opens the SOURCE, not the row', async () => {
+    h.endpoints.push(
+      entity({ id: ROOT, name: 'root', provider: 'openai' }, ['read']),
+      entity({ id: CHAIN, name: 'chain', sources: [`llm_endpoint-${ROOT}`] }, ['read']),
+    );
+    renderView();
+    await userEvent.click(screen.getByTestId(`llm-source-link-${ROOT}`));
+    expect(h.openPage).toHaveBeenCalledTimes(1);
+    expect(h.openPage).toHaveBeenCalledWith(PageId.HUB, ViewType.LLM_ENDPOINTS, ROOT);
+    h.openPage.mockClear();
+    await userEvent.click(screen.getByTestId(`llm-consumer-link-${CHAIN}`));
+    expect(h.openPage).toHaveBeenCalledTimes(1);
+    expect(h.openPage).toHaveBeenCalledWith(PageId.HUB, ViewType.LLM_ENDPOINTS, CHAIN);
   });
 
   it('asks before deleting, then issues the generic entity DELETE', async () => {

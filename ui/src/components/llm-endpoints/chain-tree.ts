@@ -11,6 +11,8 @@
  */
 import type { LLMChain, LLMChainHop } from '@sdk';
 
+import { endpointTypeId } from './llm-endpoints-pointer';
+
 export type HopHealth = 'ok' | 'disabled' | 'no_credential' | 'breaker_open' | 'missing';
 
 export interface ChainTreeNode {
@@ -111,4 +113,42 @@ export function buildChainTree(chain: LLMChain | null | undefined): ChainTreeNod
     });
   }
   return out;
+}
+
+/**
+ * The endpoints that name `id` as a source, in list order — the downward half
+ * of the graph. `sources` hold typeids, `id` is the bare uuid.
+ */
+export function consumersOf<T extends { id: string; sources: string[] }>(id: string, all: readonly T[]): T[] {
+  const tid = endpointTypeId(id);
+  return all.filter((e) => e.sources.includes(tid));
+}
+
+export interface ConsumerRow<T> {
+  endpoint: T;
+  depth: number;
+}
+
+/**
+ * Consumers of `id`, then their consumers, depth-first (an endpoint reached two
+ * ways is listed once, at its first depth). Bounded so a stale cycle cannot loop.
+ */
+export function consumerRows<T extends { id: string; sources: string[] }>(
+  id: string,
+  all: readonly T[],
+  maxDepth = 6,
+): ConsumerRow<T>[] {
+  const rows: ConsumerRow<T>[] = [];
+  const seen = new Set<string>([id]);
+  const walk = (parent: string, depth: number) => {
+    if (depth > maxDepth) return;
+    for (const child of consumersOf(parent, all)) {
+      if (seen.has(child.id)) continue;
+      seen.add(child.id);
+      rows.push({ endpoint: child, depth });
+      walk(child.id, depth + 1);
+    }
+  };
+  walk(id, 0);
+  return rows;
 }
