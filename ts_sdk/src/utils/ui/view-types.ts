@@ -143,7 +143,6 @@ export enum WebappSubview {
 export enum MachineSubview {
   PROCESSES = 'processes',
   NETWORK = 'network',
-  GATEWAY = 'gateway',
   METRICS = 'metrics', // E2B only - CPU/Memory charts
   LOGS = 'logs', // E2B only - sandbox logs
   SECRETS = 'secrets', // Which project secrets this node may see. NOT E2B-gated

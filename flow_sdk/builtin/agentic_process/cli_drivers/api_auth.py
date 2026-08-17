@@ -19,7 +19,7 @@ because ``ApiAuthSpec`` references :class:`LMApiProvider`.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from flow_sdk.builtin.agentic_process.model_tiers import resolve_model_tier
 from flow_sdk.cli.auth.lm_api_keys import get_lm_api
@@ -30,10 +30,24 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
+class ProviderBinding:
+    """What ONE provider contributes to a spawn: where the key goes, the
+    non-secret env around it, and (codex) the ``-c`` overrides."""
+
+    token_env_var: str
+    base_env: dict[str, str]
+    config_overrides: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True)
 class ApiAuthSpec:
     """Per-driver recipe for authenticating a worker against an LLM provider key.
 
-    All values are the ones verified against OpenRouter's protocol endpoints.
+    ``token_env_var`` / ``base_env`` / ``config_overrides`` are the OpenRouter
+    binding (the values verified against OpenRouter's protocol endpoints), kept
+    flat so the existing shape is unchanged. ``hub_endpoint_binding`` builds the
+    ``LMApiProvider.FLOWPAD`` binding from the hub endpoint's invoke URL at spawn
+    time -- the URL is not known statically. ``binding_for`` picks between them.
     ``base_env`` and ``model_env_vars`` are non-secret; the key itself is injected
     separately into ``token_env_var`` at spawn and never persisted.
     """
@@ -45,6 +59,23 @@ class ApiAuthSpec:
     default_provider: LMApiProvider
     config_overrides: tuple[tuple[str, str], ...] = ()  # codex `-c key=val` pairs
     model_env_vars: tuple[str, ...] = ()  # extra env vars that also carry the slug
+    # FLOWPAD: (invoke_url, no trailing slash) -> binding. None = unsupported.
+    hub_endpoint_binding: Callable[[str], ProviderBinding] | None = None
+
+    def binding_for(self, provider: LMApiProvider, *, hub_invoke_url: str | None) -> ProviderBinding:
+        """The binding to spawn with for *provider*.
+
+        OpenRouter (and any other statically-bound provider) returns the spec's
+        own fields byte-identical. FLOWPAD needs the hub endpoint URL and raises
+        ``ValueError`` when the driver has no hub binding or the box is unbound.
+        """
+        if provider is LMApiProvider.FLOWPAD:
+            if self.hub_endpoint_binding is None:
+                raise ValueError("this harness cannot route through the FlowPad hub endpoint")
+            if not hub_invoke_url:
+                raise ValueError("no FlowPad hub LLM endpoint is bound to this box")
+            return self.hub_endpoint_binding(hub_invoke_url.rstrip("/"))
+        return ProviderBinding(self.token_env_var, self.base_env, self.config_overrides)
 
 
 @dataclass
@@ -57,6 +88,55 @@ class WorkerApiAuth:
 
 
 # ── Per-driver specs (proven OpenRouter values) ──────────────────────────────
+#
+# The FLOWPAD bindings point the same CLIs at the hub's LLMEndpoint instead of
+# OpenRouter directly. The endpoint is a passthrough to OpenRouter, so the wire
+# quirks (blank ANTHROPIC_API_KEY, no thinking, `wire_api = responses`, alt
+# provider type "openai") and the OpenRouter model slugs are unchanged; only the
+# base URL and the token move. claude appends `/v1/messages` to its base itself;
+# codex and copilot expect the `/v1` root.
+
+
+def _claude_hub_binding(url: str) -> ProviderBinding:
+    return ProviderBinding(
+        token_env_var="ANTHROPIC_AUTH_TOKEN",
+        base_env={
+            "ANTHROPIC_BASE_URL": url,
+            "ANTHROPIC_API_KEY": "",
+            "MAX_THINKING_TOKENS": "0",
+            "DISABLE_INTERLEAVED_THINKING": "1",
+        },
+    )
+
+
+def _codex_hub_binding(url: str) -> ProviderBinding:
+    return ProviderBinding(
+        token_env_var="FLOWPAD_HUB_API_KEY",
+        base_env={},
+        config_overrides=(
+            ("model_provider", "flowpad"),
+            ("model_providers.flowpad.name", "FlowPad"),
+            ("model_providers.flowpad.base_url", f"{url}/v1"),
+            ("model_providers.flowpad.wire_api", "responses"),
+            ("model_providers.flowpad.env_key", "FLOWPAD_HUB_API_KEY"),
+            # OpenRouter slugs carry no codex model metadata, so codex falls back to
+            # "reasoning: none" -- which the Responses endpoint refuses for gpt-5
+            # ("Reasoning is mandatory for this endpoint"). Proven on a real box.
+            ("model_reasoning_effort", "low"),
+        ),
+    )
+
+
+def _copilot_hub_binding(url: str) -> ProviderBinding:
+    return ProviderBinding(
+        token_env_var="COPILOT_PROVIDER_API_KEY",
+        base_env={
+            "COPILOT_ENABLE_ALT_PROVIDERS": "1",
+            "COPILOT_PROVIDER_TYPE": "openai",
+            "COPILOT_PROVIDER_BASE_URL": f"{url}/v1",
+        },
+    )
+
 
 CLAUDE_API_AUTH_SPEC = ApiAuthSpec(
     token_env_var="ANTHROPIC_AUTH_TOKEN",
@@ -75,11 +155,12 @@ CLAUDE_API_AUTH_SPEC = ApiAuthSpec(
         "md": "anthropic/claude-sonnet-4.5",
         "lg": "anthropic/claude-opus-4.1",
     },
-    # Only OpenRouter routes today: base_env/token are provider-agnostic (fixed to
-    # OpenRouter), so selecting a direct vendor would post its key to OpenRouter.
-    # Add providers here only once ApiAuthSpec carries per-provider base_env.
-    supported_providers=(LMApiProvider.OPENROUTER,),
+    # OpenRouter directly, or the hub's LLMEndpoint (a passthrough to it). A
+    # direct vendor is NOT here: base_env is fixed to OpenRouter's URL, so
+    # selecting one would post its key to OpenRouter.
+    supported_providers=(LMApiProvider.OPENROUTER, LMApiProvider.FLOWPAD),
     default_provider=LMApiProvider.OPENROUTER,
+    hub_endpoint_binding=_claude_hub_binding,
 )
 
 CODEX_API_AUTH_SPEC = ApiAuthSpec(
@@ -90,7 +171,7 @@ CODEX_API_AUTH_SPEC = ApiAuthSpec(
         "md": "openai/gpt-5",
         "lg": "openai/gpt-5",
     },
-    supported_providers=(LMApiProvider.OPENROUTER,),
+    supported_providers=(LMApiProvider.OPENROUTER, LMApiProvider.FLOWPAD),
     default_provider=LMApiProvider.OPENROUTER,
     # OpenRouter serves an OpenAI Responses-compatible endpoint; codex 0.144
     # dropped the chat wire, so wire_api must be "responses".
@@ -101,6 +182,7 @@ CODEX_API_AUTH_SPEC = ApiAuthSpec(
         ("model_providers.openrouter.wire_api", "responses"),
         ("model_providers.openrouter.env_key", "OPENROUTER_API_KEY"),
     ),
+    hub_endpoint_binding=_codex_hub_binding,
 )
 
 COPILOT_API_AUTH_SPEC = ApiAuthSpec(
@@ -117,9 +199,10 @@ COPILOT_API_AUTH_SPEC = ApiAuthSpec(
         "md": "openai/gpt-5",
         "lg": "openai/gpt-5",
     },
-    supported_providers=(LMApiProvider.OPENROUTER,),
+    supported_providers=(LMApiProvider.OPENROUTER, LMApiProvider.FLOWPAD),
     default_provider=LMApiProvider.OPENROUTER,
     model_env_vars=("COPILOT_PROVIDER_MODEL_ID", "COPILOT_PROVIDER_WIRE_MODEL", "COPILOT_MODEL"),
+    hub_endpoint_binding=_copilot_hub_binding,
 )
 
 _SPECS: dict[str, ApiAuthSpec] = {
@@ -156,27 +239,48 @@ async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | 
     if cap is None or getattr(cap, "auth_mode", "device") != "api":
         return None
 
-    provider = cap.api_provider or spec.default_provider.value
+    provider_value = cap.api_provider or spec.default_provider.value
+    try:
+        provider = LMApiProvider(provider_value)
+    except ValueError as exc:
+        raise WorkerSpawnError(worker_type, f"{worker_type} is bound to unknown provider {provider_value!r}") from exc
+    if provider not in spec.supported_providers:
+        raise WorkerSpawnError(worker_type, f"{worker_type} cannot use provider {provider.value!r}")
     key = get_lm_api(provider)
     if not key:
+        if provider is LMApiProvider.FLOWPAD:
+            raise WorkerSpawnError(
+                worker_type,
+                f"{worker_type} is bound to the FlowPad hub LLM endpoint but this box is not logged in "
+                f"to the hub or no endpoint is bound (the hub binds one after login).",
+            )
         raise WorkerSpawnError(
             worker_type,
-            f"{worker_type} is set to API-key auth but no {provider} key is stored "
+            f"{worker_type} is set to API-key auth but no {provider.value} key is stored "
             f"(set one via set_lm_api / the harness modal).",
         )
+    hub_invoke_url = None
+    if provider is LMApiProvider.FLOWPAD:
+        from flow_sdk.instance_settings.llm_endpoint import hub_llm_endpoint_invoke_url  # noqa: PLC0415
+
+        hub_invoke_url = hub_llm_endpoint_invoke_url()
+    try:
+        binding = spec.binding_for(provider, hub_invoke_url=hub_invoke_url)
+    except ValueError as exc:
+        raise WorkerSpawnError(worker_type, str(exc)) from exc
 
     # Effective tier→slug map = code defaults ⊕ the harness's user overrides for
     # this provider (Capability.model_map). Custom option names resolve here too;
     # an unknown value still passes through as a literal slug.
-    overrides = (getattr(cap, "model_map", None) or {}).get(provider) or {}
+    overrides = (getattr(cap, "model_map", None) or {}).get(provider.value) or {}
     merged = {**spec.tier_models, **overrides}
     tier = (process.cli_config or {}).get("model")
     slug = resolve_model_tier(merged, tier or "sm")  # merged always has "sm"
-    env = {**spec.base_env, spec.token_env_var: key}
+    env = {**binding.base_env, binding.token_env_var: key}
     if slug:
         for var in spec.model_env_vars:
             env[var] = slug
-    return WorkerApiAuth(env=env, model_slug=slug, config_overrides=list(spec.config_overrides))
+    return WorkerApiAuth(env=env, model_slug=slug, config_overrides=list(binding.config_overrides))
 
 
 async def apply_api_model_to_options(cmd, process: "AgenticProcess") -> None:

@@ -1529,20 +1529,20 @@ msgid "Anyone you share with can open, use and delete this sandbox."
 msgstr "כל מי שתשתפו איתו יכול לפתוח, להשתמש ולמחוק את ה-sandbox הזה."
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "API access denied (401 Unauthorized) - check API key and Machine ID"
-msgstr "גישת API נדחתה (401 לא מורשה) - בדוק מפתח API ומזהה מכונה"
+#~ msgid "API access denied (401 Unauthorized) - check API key and Machine ID"
+#~ msgstr "גישת API נדחתה (401 לא מורשה) - בדוק מפתח API ומזהה מכונה"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "API access forbidden (403) - Machine ID may not be whitelisted for this API key"
-msgstr "גישת API אסורה (403) - ייתכן שמזהה מכונה לא ברשימה לבנה למפתח API זה"
+#~ msgid "API access forbidden (403) - Machine ID may not be whitelisted for this API key"
+#~ msgstr "גישת API אסורה (403) - ייתכן שמזהה מכונה לא ברשימה לבנה למפתח API זה"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "API access test failed (HTTP {statusCode})"
-msgstr "בדיקת גישת API נכשלה (HTTP {statusCode})"
+#~ msgid "API access test failed (HTTP {statusCode})"
+#~ msgstr "בדיקת גישת API נכשלה (HTTP {statusCode})"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "API access test passed (200 OK)"
-msgstr "בדיקת גישת API עברה בהצלחה (200 OK)"
+#~ msgid "API access test passed (200 OK)"
+#~ msgstr "בדיקת גישת API עברה בהצלחה (200 OK)"
 
 #: src/components/data-sources/provider-catalog.ts
 #: src/components/data-sources/provider-catalog.ts
@@ -1557,7 +1557,6 @@ msgstr "מפתח API"
 msgid "API key"
 msgstr "מפתח API"
 
-#: src/components/machine-overview/machine-overview.tsx
 #: src/components/settings-view/settings-utils.ts
 msgid "API Key"
 msgstr "מפתח API"
@@ -1592,8 +1591,8 @@ msgstr "עוזר מפתח API"
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
-msgid "API Key, Backend URL, or Machine ID not configured"
-msgstr "מפתח API, URL של Backend, או מזהה מכונה לא מוגדרים"
+#~ msgid "API Key, Backend URL, or Machine ID not configured"
+#~ msgstr "מפתח API, URL של Backend, או מזהה מכונה לא מוגדרים"
 
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/credentials-view/CredentialsView.tsx
@@ -2035,8 +2034,8 @@ msgid "Backend server is not responding. Please try again later."
 msgstr "שרת הסיוג לא מגיב. אנא נסה שוב מאוחר יותר."
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Backend URL not configured"
-msgstr "URL של Backend לא מוגדר"
+#~ msgid "Backend URL not configured"
+#~ msgstr "URL של Backend לא מוגדר"
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Background image"
@@ -2441,8 +2440,8 @@ msgstr "לא ניתן לפתוח"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Cannot reach localhost from remote sandbox. Use ngrok or a public URL to expose your backend."
-msgstr "לא ניתן להגיע ל-localhost מארגז חול מרחוק. השתמש ב-ngrok או בכתובת URL ציבורית כדי להחשיף את ה-backend שלך."
+#~ msgid "Cannot reach localhost from remote sandbox. Use ngrok or a public URL to expose your backend."
+#~ msgstr "לא ניתן להגיע ל-localhost מארגז חול מרחוק. השתמש ב-ngrok או בכתובת URL ציבורית כדי להחשיף את ה-backend שלך."
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Cannot run rebuild"
@@ -3425,8 +3424,8 @@ msgstr "מתחברת..."
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Connection failed - server unreachable or not running"
-msgstr "החיבור נכשל - השרת אינו נגיש או אינו פועל"
+#~ msgid "Connection failed - server unreachable or not running"
+#~ msgstr "החיבור נכשל - השרת אינו נגיש או אינו פועל"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Connection ID"
@@ -6726,8 +6725,8 @@ msgid "Flow Message"
 msgstr "הודעת זרימה"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Flow or compute node not available"
-msgstr "זרימה או צומת חישוב לא זמינים"
+#~ msgid "Flow or compute node not available"
+#~ msgstr "זרימה או צומת חישוב לא זמינים"
 
 #: src/components/version-popover/version-popover.tsx
 #: src/pages/discover-page/discover-page.tsx
@@ -6758,8 +6757,8 @@ msgid "Flowpad Assistant project not available."
 msgstr "פרויקט עוזר Flowpad אינו זמין."
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "FlowPad Backend URL"
-msgstr "URL של Backend של FlowPad"
+#~ msgid "FlowPad Backend URL"
+#~ msgstr "URL של Backend של FlowPad"
 
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Flowpad Cloud"
@@ -6790,8 +6789,8 @@ msgid "Flowpad initializes the repository, then proposes the install on a separa
 msgstr "Flowpad מאתחל את המאגר, ולאחר מכן מציע את ההתקנה בענף ביקורת נפרד."
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "FlowPad Server Status"
-msgstr "מצב שרת FlowPad"
+#~ msgid "FlowPad Server Status"
+#~ msgstr "מצב שרת FlowPad"
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -6984,8 +6983,8 @@ msgid "Garbage"
 msgstr "פסולת"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Gateway"
-msgstr "שער"
+#~ msgid "Gateway"
+#~ msgstr "שער"
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -7371,12 +7370,12 @@ msgid "Health"
 msgstr "בריאות"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Health check failed (HTTP {statusCode})"
-msgstr "בדיקת בריאות נכשלה (HTTP {statusCode})"
+#~ msgid "Health check failed (HTTP {statusCode})"
+#~ msgstr "בדיקת בריאות נכשלה (HTTP {statusCode})"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Health check passed (200 OK)"
-msgstr "בדיקת בריאות עברה בהצלחה (200 OK)"
+#~ msgid "Health check passed (200 OK)"
+#~ msgstr "בדיקת בריאות עברה בהצלחה (200 OK)"
 
 #: src/components/footer.tsx
 #: src/components/footer.tsx
@@ -7677,6 +7676,14 @@ msgstr "https://github.com/owner/repo.git"
 #: src/components/version-popover/version-popover.tsx
 msgid "Hub"
 msgstr "Hub"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Hub endpoint"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Hub endpoint unavailable"
+msgstr ""
 
 #: src/notifications/ingest.ts
 msgid "Hub errors suppressed"
@@ -8601,28 +8608,28 @@ msgid "LLM key"
 msgstr "מפתח LLM"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "LM proxy access configured"
-msgstr "גישת LM proxy מוגדרת"
+#~ msgid "LM proxy access configured"
+#~ msgstr "גישת LM proxy מוגדרת"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "LM Proxy Access Not Configured"
-msgstr "גישת LM Proxy לא מוגדרת"
+#~ msgid "LM Proxy Access Not Configured"
+#~ msgstr "גישת LM Proxy לא מוגדרת"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "LM proxy denied (401 Unauthorized) - check API key"
-msgstr "LM proxy נדחה (401 לא מורשה) - בדוק מפתח API"
+#~ msgid "LM proxy denied (401 Unauthorized) - check API key"
+#~ msgstr "LM proxy נדחה (401 לא מורשה) - בדוק מפתח API"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "LM proxy error (500) - check server logs for API key configuration"
-msgstr "שגיאת LM proxy (500) - בדוק יומני שרת להגדרת מפתח API"
+#~ msgid "LM proxy error (500) - check server logs for API key configuration"
+#~ msgstr "שגיאת LM proxy (500) - בדוק יומני שרת להגדרת מפתח API"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "LM test failed (HTTP {statusCode})"
-msgstr "בדיקת LM נכשלה (HTTP {statusCode})"
+#~ msgid "LM test failed (HTTP {statusCode})"
+#~ msgstr "בדיקת LM נכשלה (HTTP {statusCode})"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "LM test passed (200 OK)"
-msgstr "בדיקת LM עברה בהצלחה (200 OK)"
+#~ msgid "LM test passed (200 OK)"
+#~ msgstr "בדיקת LM עברה בהצלחה (200 OK)"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -9009,8 +9016,8 @@ msgid "Machine"
 msgstr "מכונה"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Machine ID"
-msgstr "מזהה מכונה"
+#~ msgid "Machine ID"
+#~ msgstr "מזהה מכונה"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Machine secrets"
@@ -10584,8 +10591,8 @@ msgstr "לא בדוק"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Not configured"
-msgstr "לא מוגדר"
+#~ msgid "Not configured"
+#~ msgstr "לא מוגדר"
 
 #: src/components/connections-manager.tsx
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
@@ -14105,8 +14112,8 @@ msgid "Send a question to the help desk. A new conversation will open with your 
 msgstr "ניתן לשלוח שאלה לשירות התמיכה. שיחה חדשה תיפתח עם ההודעה שלך כנקודת התחלה."
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Send a simple prompt to verify the LM proxy is working"
-msgstr "שלח הנמקה פשוטה כדי לאמת שה-LM Proxy פועל"
+#~ msgid "Send a simple prompt to verify the LM proxy is working"
+#~ msgstr "שלח הנמקה פשוטה כדי לאמת שה-LM Proxy פועל"
 
 #: src/components/account/system-diagnoses.tsx
 msgid "Send failed."
@@ -14376,12 +14383,12 @@ msgid "Setup git"
 msgstr "הגדרת Git"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Setup LM Proxy Access"
-msgstr "הגדר גישת LM Proxy"
+#~ msgid "Setup LM Proxy Access"
+#~ msgstr "הגדר גישת LM Proxy"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Setup machine-restricted API access for this compute node"
-msgstr "הגדר גישת API מוגבלת למכונה לצומת חישוב זה"
+#~ msgid "Setup machine-restricted API access for this compute node"
+#~ msgstr "הגדר גישת API מוגבלת למכונה לצומת חישוב זה"
 
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/entity-actions/ShareButton.tsx
@@ -15684,24 +15691,24 @@ msgstr "בדיקה"
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Test API Access"
-msgstr "בדוק גישת API"
+#~ msgid "Test API Access"
+#~ msgstr "בדוק גישת API"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Test failed"
 msgstr "בדיקה נכשלה"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Test LM"
-msgstr "בדוק LM"
+#~ msgid "Test LM"
+#~ msgstr "בדוק LM"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Test LM Proxy"
-msgstr "בדוק LM Proxy"
+#~ msgid "Test LM Proxy"
+#~ msgstr "בדוק LM Proxy"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Test Service"
-msgstr "שרות בדיקה"
+#~ msgid "Test Service"
+#~ msgstr "שרות בדיקה"
 
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Test trigger"
@@ -17011,6 +17018,11 @@ msgstr "בשימוש"
 
 #. placeholder {0}: providerLabel(activeProvider)
 #: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Using {0}"
+msgstr ""
+
+#. placeholder {0}: providerLabel(activeProvider)
+#: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Using {0} key"
 msgstr "מפתח {0} בשימוש"
 
@@ -17028,8 +17040,8 @@ msgid "Valid"
 msgstr "תקין"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Validation error (422) - request format issue or entity not found"
-msgstr "שגיאת אימות (422) - בעיית פורמט בקשה או ישות לא נמצאה"
+#~ msgid "Validation error (422) - request format issue or entity not found"
+#~ msgstr "שגיאת אימות (422) - בעיית פורמט בקשה או ישות לא נמצאה"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
@@ -17084,8 +17096,8 @@ msgid "Verify"
 msgstr "אימות"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Verify the machine can authenticate with the FlowPad API"
-msgstr "אמת שהמכונה יכולה להתחבר ל-API של FlowPad"
+#~ msgid "Verify the machine can authenticate with the FlowPad API"
+#~ msgstr "אמת שהמכונה יכולה להתחבר ל-API של FlowPad"
 
 #: src/components/data-sources/DataSourceCard.tsx
 msgid "Verify the setup first."
@@ -17106,6 +17118,10 @@ msgstr "מזהה פרויקט Vertex"
 #: src/components/settings-view/settings-utils.ts
 msgid "Vertex Region"
 msgstr "אזור Vertex"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "via hub login"
+msgstr ""
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Vibe agents"

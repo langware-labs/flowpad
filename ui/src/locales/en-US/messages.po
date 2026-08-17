@@ -1529,20 +1529,20 @@ msgid "Anyone you share with can open, use and delete this sandbox."
 msgstr "Anyone you share with can open, use and delete this sandbox."
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "API access denied (401 Unauthorized) - check API key and Machine ID"
-msgstr "API access denied (401 Unauthorized) - check API key and Machine ID"
+#~ msgid "API access denied (401 Unauthorized) - check API key and Machine ID"
+#~ msgstr "API access denied (401 Unauthorized) - check API key and Machine ID"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "API access forbidden (403) - Machine ID may not be whitelisted for this API key"
-msgstr "API access forbidden (403) - Machine ID may not be whitelisted for this API key"
+#~ msgid "API access forbidden (403) - Machine ID may not be whitelisted for this API key"
+#~ msgstr "API access forbidden (403) - Machine ID may not be whitelisted for this API key"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "API access test failed (HTTP {statusCode})"
-msgstr "API access test failed (HTTP {statusCode})"
+#~ msgid "API access test failed (HTTP {statusCode})"
+#~ msgstr "API access test failed (HTTP {statusCode})"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "API access test passed (200 OK)"
-msgstr "API access test passed (200 OK)"
+#~ msgid "API access test passed (200 OK)"
+#~ msgstr "API access test passed (200 OK)"
 
 #: src/components/data-sources/provider-catalog.ts
 #: src/components/data-sources/provider-catalog.ts
@@ -1557,7 +1557,6 @@ msgstr "Api Key"
 msgid "API key"
 msgstr "API key"
 
-#: src/components/machine-overview/machine-overview.tsx
 #: src/components/settings-view/settings-utils.ts
 msgid "API Key"
 msgstr "API Key"
@@ -1592,8 +1591,8 @@ msgstr "API Key Helper"
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
-msgid "API Key, Backend URL, or Machine ID not configured"
-msgstr "API Key, Backend URL, or Machine ID not configured"
+#~ msgid "API Key, Backend URL, or Machine ID not configured"
+#~ msgstr "API Key, Backend URL, or Machine ID not configured"
 
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/credentials-view/CredentialsView.tsx
@@ -2035,8 +2034,8 @@ msgid "Backend server is not responding. Please try again later."
 msgstr "Backend server is not responding. Please try again later."
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Backend URL not configured"
-msgstr "Backend URL not configured"
+#~ msgid "Backend URL not configured"
+#~ msgstr "Backend URL not configured"
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Background image"
@@ -2441,8 +2440,8 @@ msgstr "Cannot open"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Cannot reach localhost from remote sandbox. Use ngrok or a public URL to expose your backend."
-msgstr "Cannot reach localhost from remote sandbox. Use ngrok or a public URL to expose your backend."
+#~ msgid "Cannot reach localhost from remote sandbox. Use ngrok or a public URL to expose your backend."
+#~ msgstr "Cannot reach localhost from remote sandbox. Use ngrok or a public URL to expose your backend."
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Cannot run rebuild"
@@ -3425,8 +3424,8 @@ msgstr "Connecting…"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Connection failed - server unreachable or not running"
-msgstr "Connection failed - server unreachable or not running"
+#~ msgid "Connection failed - server unreachable or not running"
+#~ msgstr "Connection failed - server unreachable or not running"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Connection ID"
@@ -6726,8 +6725,8 @@ msgid "Flow Message"
 msgstr "Flow Message"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Flow or compute node not available"
-msgstr "Flow or compute node not available"
+#~ msgid "Flow or compute node not available"
+#~ msgstr "Flow or compute node not available"
 
 #: src/components/version-popover/version-popover.tsx
 #: src/pages/discover-page/discover-page.tsx
@@ -6758,8 +6757,8 @@ msgid "Flowpad Assistant project not available."
 msgstr "Flowpad Assistant project not available."
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "FlowPad Backend URL"
-msgstr "FlowPad Backend URL"
+#~ msgid "FlowPad Backend URL"
+#~ msgstr "FlowPad Backend URL"
 
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Flowpad Cloud"
@@ -6790,8 +6789,8 @@ msgid "Flowpad initializes the repository, then proposes the install on a separa
 msgstr "Flowpad initializes the repository, then proposes the install on a separate review branch."
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "FlowPad Server Status"
-msgstr "FlowPad Server Status"
+#~ msgid "FlowPad Server Status"
+#~ msgstr "FlowPad Server Status"
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -6984,8 +6983,8 @@ msgid "Garbage"
 msgstr "Garbage"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Gateway"
-msgstr "Gateway"
+#~ msgid "Gateway"
+#~ msgstr "Gateway"
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -7371,12 +7370,12 @@ msgid "Health"
 msgstr "Health"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Health check failed (HTTP {statusCode})"
-msgstr "Health check failed (HTTP {statusCode})"
+#~ msgid "Health check failed (HTTP {statusCode})"
+#~ msgstr "Health check failed (HTTP {statusCode})"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Health check passed (200 OK)"
-msgstr "Health check passed (200 OK)"
+#~ msgid "Health check passed (200 OK)"
+#~ msgstr "Health check passed (200 OK)"
 
 #: src/components/footer.tsx
 #: src/components/footer.tsx
@@ -7677,6 +7676,14 @@ msgstr "https://github.com/owner/repo.git"
 #: src/components/version-popover/version-popover.tsx
 msgid "Hub"
 msgstr "Hub"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Hub endpoint"
+msgstr "Hub endpoint"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Hub endpoint unavailable"
+msgstr "Hub endpoint unavailable"
 
 #: src/notifications/ingest.ts
 msgid "Hub errors suppressed"
@@ -8601,28 +8608,28 @@ msgid "LLM key"
 msgstr "LLM key"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "LM proxy access configured"
-msgstr "LM proxy access configured"
+#~ msgid "LM proxy access configured"
+#~ msgstr "LM proxy access configured"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "LM Proxy Access Not Configured"
-msgstr "LM Proxy Access Not Configured"
+#~ msgid "LM Proxy Access Not Configured"
+#~ msgstr "LM Proxy Access Not Configured"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "LM proxy denied (401 Unauthorized) - check API key"
-msgstr "LM proxy denied (401 Unauthorized) - check API key"
+#~ msgid "LM proxy denied (401 Unauthorized) - check API key"
+#~ msgstr "LM proxy denied (401 Unauthorized) - check API key"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "LM proxy error (500) - check server logs for API key configuration"
-msgstr "LM proxy error (500) - check server logs for API key configuration"
+#~ msgid "LM proxy error (500) - check server logs for API key configuration"
+#~ msgstr "LM proxy error (500) - check server logs for API key configuration"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "LM test failed (HTTP {statusCode})"
-msgstr "LM test failed (HTTP {statusCode})"
+#~ msgid "LM test failed (HTTP {statusCode})"
+#~ msgstr "LM test failed (HTTP {statusCode})"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "LM test passed (200 OK)"
-msgstr "LM test passed (200 OK)"
+#~ msgid "LM test passed (200 OK)"
+#~ msgstr "LM test passed (200 OK)"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -9009,8 +9016,8 @@ msgid "Machine"
 msgstr "Machine"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Machine ID"
-msgstr "Machine ID"
+#~ msgid "Machine ID"
+#~ msgstr "Machine ID"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Machine secrets"
@@ -10584,8 +10591,8 @@ msgstr "Not checked"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Not configured"
-msgstr "Not configured"
+#~ msgid "Not configured"
+#~ msgstr "Not configured"
 
 #: src/components/connections-manager.tsx
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
@@ -14105,8 +14112,8 @@ msgid "Send a question to the help desk. A new conversation will open with your 
 msgstr "Send a question to the help desk. A new conversation will open with your message as the starting point."
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Send a simple prompt to verify the LM proxy is working"
-msgstr "Send a simple prompt to verify the LM proxy is working"
+#~ msgid "Send a simple prompt to verify the LM proxy is working"
+#~ msgstr "Send a simple prompt to verify the LM proxy is working"
 
 #: src/components/account/system-diagnoses.tsx
 msgid "Send failed."
@@ -14376,12 +14383,12 @@ msgid "Setup git"
 msgstr "Setup git"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Setup LM Proxy Access"
-msgstr "Setup LM Proxy Access"
+#~ msgid "Setup LM Proxy Access"
+#~ msgstr "Setup LM Proxy Access"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Setup machine-restricted API access for this compute node"
-msgstr "Setup machine-restricted API access for this compute node"
+#~ msgid "Setup machine-restricted API access for this compute node"
+#~ msgstr "Setup machine-restricted API access for this compute node"
 
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/entity-actions/ShareButton.tsx
@@ -15684,24 +15691,24 @@ msgstr "Test"
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Test API Access"
-msgstr "Test API Access"
+#~ msgid "Test API Access"
+#~ msgstr "Test API Access"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Test failed"
 msgstr "Test failed"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Test LM"
-msgstr "Test LM"
+#~ msgid "Test LM"
+#~ msgstr "Test LM"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Test LM Proxy"
-msgstr "Test LM Proxy"
+#~ msgid "Test LM Proxy"
+#~ msgstr "Test LM Proxy"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Test Service"
-msgstr "Test Service"
+#~ msgid "Test Service"
+#~ msgstr "Test Service"
 
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Test trigger"
@@ -17011,6 +17018,11 @@ msgstr "Using"
 
 #. placeholder {0}: providerLabel(activeProvider)
 #: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Using {0}"
+msgstr "Using {0}"
+
+#. placeholder {0}: providerLabel(activeProvider)
+#: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Using {0} key"
 msgstr "Using {0} key"
 
@@ -17028,8 +17040,8 @@ msgid "Valid"
 msgstr "Valid"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Validation error (422) - request format issue or entity not found"
-msgstr "Validation error (422) - request format issue or entity not found"
+#~ msgid "Validation error (422) - request format issue or entity not found"
+#~ msgstr "Validation error (422) - request format issue or entity not found"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
@@ -17084,8 +17096,8 @@ msgid "Verify"
 msgstr "Verify"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Verify the machine can authenticate with the FlowPad API"
-msgstr "Verify the machine can authenticate with the FlowPad API"
+#~ msgid "Verify the machine can authenticate with the FlowPad API"
+#~ msgstr "Verify the machine can authenticate with the FlowPad API"
 
 #: src/components/data-sources/DataSourceCard.tsx
 msgid "Verify the setup first."
@@ -17106,6 +17118,10 @@ msgstr "Vertex Project ID"
 #: src/components/settings-view/settings-utils.ts
 msgid "Vertex Region"
 msgstr "Vertex Region"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "via hub login"
+msgstr "via hub login"
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Vibe agents"

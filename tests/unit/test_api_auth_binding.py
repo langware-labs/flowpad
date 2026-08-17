@@ -48,6 +48,31 @@ async def _reset_harness_auth_mode():
             cap.auth_mode = "device"
             cap.api_provider = None
             await cap.save(notify=False)
+    # And drop any hub LLMEndpoint binding a test left behind.
+    from flow_sdk.instance_settings import llm_endpoint
+
+    llm_endpoint.clear_hub_llm_endpoint()
+    llm_endpoint.reset_cache()
+
+
+HUB_INVOKE = "https://hub.test/api/v1/graph/llm_endpoint/ep1/invoke"
+
+
+def _bind_hub(monkeypatch: pytest.MonkeyPatch, *, login: bool = True) -> None:
+    """Put the box in the state the hub leaves it in after login + bind: a hub
+    login key in the credential store, ``FLOWPAD_HUB_URL`` pointing at the hub,
+    and the ``llm-endpoint`` binding persisted."""
+    from flow_sdk.cli.auth.hub_login import set_api_key
+    from flow_sdk.config import default_service_config
+    from flow_sdk.instance_settings import llm_endpoint
+
+    monkeypatch.setattr(default_service_config, "flowpad_hub_url", "https://hub.test")
+    if login:
+        set_api_key("fp-hub-key")
+    llm_endpoint.reset_cache()
+    llm_endpoint.set_hub_llm_endpoint(
+        "llm_endpoint:ep1", "/api/v1/graph/llm_endpoint/ep1/invoke", provider="openrouter", name="OpenRouter"
+    )
 
 
 def _fake_process(worker_type: str, *, model: str | None = "sm"):
@@ -172,3 +197,109 @@ async def test_api_auth_overrides_append_after_process_hook_overrides(monkeypatc
         ("features.hooks", True),
         ("model_provider", "openrouter"),
     ]
+
+
+# ── FlowPad hub endpoint bindings ────────────────────────────────────────────
+
+
+def test_binding_for_openrouter_is_the_static_spec() -> None:
+    """The OpenRouter path is byte-identical to the spec's flat fields."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import (
+        CLAUDE_API_AUTH_SPEC,
+        CODEX_API_AUTH_SPEC,
+        COPILOT_API_AUTH_SPEC,
+    )
+    from flow_sdk.lm_api import LMApiProvider
+
+    for spec in (CLAUDE_API_AUTH_SPEC, CODEX_API_AUTH_SPEC, COPILOT_API_AUTH_SPEC):
+        binding = spec.binding_for(LMApiProvider.OPENROUTER, hub_invoke_url=None)
+        assert binding.token_env_var == spec.token_env_var
+        assert binding.base_env == spec.base_env
+        assert binding.config_overrides == spec.config_overrides
+        assert LMApiProvider.FLOWPAD in spec.supported_providers
+
+
+def test_binding_for_flowpad_requires_an_invoke_url() -> None:
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import CLAUDE_API_AUTH_SPEC
+    from flow_sdk.lm_api import LMApiProvider
+
+    with pytest.raises(ValueError):
+        CLAUDE_API_AUTH_SPEC.binding_for(LMApiProvider.FLOWPAD, hub_invoke_url=None)
+
+
+async def test_claude_hub_endpoint_binding(env, monkeypatch) -> None:
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+
+    _bind_hub(monkeypatch)
+    await _set_harness_api("claude", provider="flowpad")
+
+    auth = await resolve_worker_api_auth(_fake_process("claude", model="sm"))
+    assert auth is not None
+    # claude appends /v1/messages itself; the base is the endpoint's invoke URL.
+    assert auth.env["ANTHROPIC_BASE_URL"] == HUB_INVOKE
+    assert auth.env["ANTHROPIC_AUTH_TOKEN"] == "fp-hub-key"  # the hub LOGIN key, not an lm_api secret
+    assert auth.env["ANTHROPIC_API_KEY"] == ""
+    assert auth.env["MAX_THINKING_TOKENS"] == "0"
+    assert auth.env["DISABLE_INTERLEAVED_THINKING"] == "1"
+    assert auth.model_slug == "anthropic/claude-haiku-4.5"  # OpenRouter slugs: the endpoint is a passthrough
+    assert auth.config_overrides == []
+
+
+async def test_codex_hub_endpoint_binding(env, monkeypatch) -> None:
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+
+    _bind_hub(monkeypatch)
+    await _set_harness_api("codex", provider="flowpad")
+
+    auth = await resolve_worker_api_auth(_fake_process("codex", model="sm"))
+    assert auth is not None
+    assert auth.env["FLOWPAD_HUB_API_KEY"] == "fp-hub-key"
+    assert "OPENROUTER_API_KEY" not in auth.env
+    ov = dict(auth.config_overrides)
+    assert ov["model_provider"] == "flowpad"
+    assert ov["model_providers.flowpad.base_url"] == f"{HUB_INVOKE}/v1"
+    assert ov["model_providers.flowpad.wire_api"] == "responses"
+    assert ov["model_reasoning_effort"] == "low"  # gpt-5 via OpenRouter refuses reasoning=none
+    assert ov["model_providers.flowpad.env_key"] == "FLOWPAD_HUB_API_KEY"
+    assert auth.model_slug == "openai/gpt-5-mini"
+
+
+async def test_copilot_hub_endpoint_binding(env, monkeypatch) -> None:
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+
+    _bind_hub(monkeypatch)
+    await _set_harness_api("copilot", provider="flowpad")
+
+    auth = await resolve_worker_api_auth(_fake_process("copilot", model="sm"))
+    assert auth is not None
+    assert auth.env["COPILOT_ENABLE_ALT_PROVIDERS"] == "1"
+    assert auth.env["COPILOT_PROVIDER_TYPE"] == "openai"
+    assert auth.env["COPILOT_PROVIDER_BASE_URL"] == f"{HUB_INVOKE}/v1"
+    assert auth.env["COPILOT_PROVIDER_API_KEY"] == "fp-hub-key"
+    for var in ("COPILOT_PROVIDER_MODEL_ID", "COPILOT_PROVIDER_WIRE_MODEL", "COPILOT_MODEL"):
+        assert auth.env[var] == "openai/gpt-5-mini"
+
+
+async def test_hub_endpoint_unbound_raises(env, monkeypatch) -> None:
+    """api/flowpad with no binding: loud failure, never a fall-through to device."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
+    from flow_sdk.cli.auth.hub_login import set_api_key
+
+    set_api_key("fp-hub-key")
+    await _set_harness_api("claude", provider="flowpad")
+    with pytest.raises(WorkerSpawnError):
+        await resolve_worker_api_auth(_fake_process("claude"))
+
+
+async def test_hub_endpoint_without_login_raises(env, monkeypatch) -> None:
+    """Bound but logged out: the "key" is the hub login, so there is none."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
+    from flow_sdk.cli.auth.hub_login import delete_api_key
+
+    _bind_hub(monkeypatch, login=False)
+    delete_api_key()
+    await _set_harness_api("claude", provider="flowpad")
+    with pytest.raises(WorkerSpawnError):
+        await resolve_worker_api_auth(_fake_process("claude"))
