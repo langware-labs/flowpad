@@ -42,9 +42,13 @@ import asyncio
 import json
 import logging
 import os
+import time
 from typing import AsyncIterator
 
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.credential import (
+    ensure_fresh_before_turn,
+)
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.event_to_flowdata import (
     convert_event,
     final_end_frame,
@@ -73,12 +77,21 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowDataType,
     FlowElementType,
 )
+from flow_sdk.instance_settings import get_instance_settings
 
 logger = logging.getLogger(__name__)
 
 # Grace period before escalating SIGTERM → SIGKILL. Keep under the UI's cancel
 # timeout (~10 s) so a stuck subprocess never wedges the chat.
 CANCEL_GRACE_SECONDS = 5.0
+
+# What a user sees in place of the CLI's raw auth 401. The raw text is always
+# logged first — see ``_humanize_auth_error``.
+_AUTH_ERROR_TEXT = (
+    "Couldn't verify this machine's Claude sign-in, so the message wasn't sent. "
+    "This usually clears on its own — try sending it again. "
+    "If it keeps happening, the machine needs to sign in to Claude again."
+)
 
 
 class _TranscriptDurabilityGate(TranscriptDurabilityGate):
@@ -158,6 +171,13 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         context: AgenticContext,
     ) -> AsyncIterator[FlowData]:
         self._process_run_id = None
+        # A turn must never start on a token we already know is dead — the CLI
+        # would renew it inside this request and, if that renewal is slow, give
+        # up and hand the user a raw 401. One file read on every healthy turn;
+        # yields a STATUS frame (so the chat shows the wait) only when it renews.
+        async for fd in ensure_fresh_before_turn():
+            yield fd
+        _maybe_prune_debug_logs()
         try:
             # stdin_payload is always a string in production (the stream-json
             # user message); test fakes may pass None to run stdin-less.
@@ -226,7 +246,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
                 if event is not None and event.get("type") == "result":
                     self._close_stdin()
                 for fd in durability_gate.feed(event, frames):
-                    yield fd
+                    yield self._humanize_auth_error(fd)
         except asyncio.CancelledError:
             # Caller cancelled the async iteration — propagate after cleanup.
             cancelled = True
@@ -255,7 +275,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
                     # A user-requested cancel is not an error: the CLI reports
                     # the interrupted turn's result as ``is_error``; reclassify
                     # so the chat renders an abort, not a crash.
-                    yield self._reclassify_cancelled(fd)
+                    yield self._reclassify_cancelled(self._humanize_auth_error(fd))
 
             # If Claude exited cleanly without emitting a ``result`` event (which
             # would have produced ``<flow-end>`` via the converter), emit our own
@@ -361,6 +381,16 @@ class ClaudeCLIStreamWorker(AgenticWorker):
             effort=context.effort,
             add_dirs=list(context.add_dirs),
             plugin_dirs=list(context.plugin_dirs),
+            # Debug is ALWAYS on for the headless per-turn spawn, redirected to
+            # a file we own. This is not a tuning knob: the CLI's own auth /
+            # token-refresh failures are only ever explained by this stream,
+            # and every incident so far has been diagnosed after the fact —
+            # when the CLI's own ``~/.claude/debug/`` copy had already been
+            # pruned by its ``.last-cleanup`` pass. The cost is a small file
+            # per turn; stderr stays empty (measured), so nothing extra is
+            # logged on the normal path.
+            debug=True,
+            debug_file=_turn_debug_file(opts_session_id),
             # verbose=True is auto-enabled by ClaudeAgentOptions when
             # output_format == "stream-json".
         )
@@ -451,6 +481,48 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         except Exception:
             logger.debug("claude stdin close failed", exc_info=True)
 
+    def _humanize_auth_error(self, fd: FlowData) -> FlowData:
+        """Replace the CLI's raw auth 401 with something a user can act on.
+
+        The CLI synthesizes this text itself (``model: "<synthetic>"``, no
+        request id) and it reads like a developer console line —
+        ``Failed to authenticate. API Error: 401 OAuth access token has expired.
+        Re-authenticate to continue.`` — which is what a Flowpad user saw when
+        this first happened. Rewriting it is the same move
+        ``_reclassify_cancelled`` makes for aborts: the CLI's own status text
+        translated into the surface's terms.
+
+        The raw text is logged verbatim, never swallowed. With the pre-flight in
+        place this path should be unreachable for plain expiry, so reaching it
+        means something ELSE rejected the credential (revoked, signed out
+        elsewhere, rotated on the shared account) — worth a WARNING every time.
+        """
+        # Two carriers, because the CLI reports the same failure twice: as the
+        # assistant CHAT text, and again inside the terminal RESULT frame's
+        # ``result`` field (``_convert_result`` keeps that one as a dict).
+        # Rewriting only the first would leave the raw string reachable.
+        if isinstance(fd.flow_value, str):
+            if "API Error: 401" not in fd.flow_value:
+                return fd
+            raw, carrier = fd.flow_value, "chat"
+        elif isinstance(fd.flow_value, dict) and isinstance(fd.flow_value.get("result"), str):
+            if "API Error: 401" not in fd.flow_value["result"]:
+                return fd
+            raw, carrier = fd.flow_value["result"], "result"
+        else:
+            return fd
+
+        logger.warning(
+            "claude auth error surfaced to the user (%s frame), raw text: %s",
+            carrier,
+            raw.strip(),
+        )
+        if carrier == "chat":
+            fd.flow_value = _AUTH_ERROR_TEXT
+        else:
+            fd.flow_value = {**fd.flow_value, "result": _AUTH_ERROR_TEXT}
+        return fd
+
     def _reclassify_cancelled(self, fd: FlowData) -> FlowData:
         """Downgrade an interrupted turn's error RESULT to ``outcome=aborted``.
 
@@ -469,6 +541,83 @@ class ClaudeCLIStreamWorker(AgenticWorker):
 
 
 # ── Module helpers ────────────────────────────────────────────────────────────
+
+
+DEBUG_LOG_RETENTION_SECONDS = 7 * 86400
+_DEBUG_PRUNE_INTERVAL_SECONDS = 3600.0
+_last_debug_prune = 0.0
+
+
+def _debug_dir():
+    return get_instance_settings().logs_dir / "claude-cli-debug"
+
+
+async def _prune_debug_logs() -> None:
+    """Drop per-turn debug logs older than the retention window.
+
+    We redirect the CLI's debug stream into a directory we own precisely so its
+    own ``.last-cleanup`` pass can't delete the log of the incident we're trying
+    to explain — which means retention is now ours to do. A tool-using turn
+    writes ~17 KB (measured), so this is not about disk pressure; it's about not
+    growing without bound on boxes that run for weeks.
+
+    Detached and off the turn's path: a spawn never waits on it.
+    """
+    try:
+        debug_dir = _debug_dir()
+        if not debug_dir.is_dir():
+            return
+        cutoff = time.time() - DEBUG_LOG_RETENTION_SECONDS
+        dropped = 0
+        for path in debug_dir.glob("*.txt"):
+            try:
+                if path.stat().st_mtime < cutoff:
+                    path.unlink()
+                    dropped += 1
+            except OSError:
+                continue
+        if dropped:
+            logger.info("claude debug-log retention: removed %d file(s)", dropped)
+    except Exception:
+        logger.warning("claude debug-log retention failed", exc_info=True)
+
+
+def _maybe_prune_debug_logs() -> None:
+    """Kick off a retention sweep at most hourly, riding the spawn path.
+
+    Deliberately not a scheduled job: the only time these files accumulate is
+    when turns run, so the turn is the natural trigger and nothing has to tick
+    in the background. ``abs`` so a backwards clock step (these sandboxes
+    suspend and resume) can't park the next sweep in the future forever.
+    """
+    global _last_debug_prune
+    now = time.time()
+    if abs(now - _last_debug_prune) < _DEBUG_PRUNE_INTERVAL_SECONDS:
+        return
+    _last_debug_prune = now
+    asyncio.create_task(_prune_debug_logs())
+
+
+def _turn_debug_file(session_id: str | None) -> str | None:
+    """Path for this turn's ``--debug-file``, under the instance logs dir.
+
+    One file per TURN, not per session: the failure worth capturing is the
+    first turn after an idle gap, and the recovery turn follows ~30s later —
+    a session-keyed name would let that second turn clobber the evidence.
+
+    Returns ``None`` if the logs dir can't be resolved, in which case the CLI
+    falls back to its own ``~/.claude/debug/`` (still better than nothing).
+    """
+    from datetime import datetime, timezone
+
+    try:
+        logs_dir = get_instance_settings().logs_dir / "claude-cli-debug"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        logger.warning("could not resolve claude debug dir", exc_info=True)
+        return None
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")[:-3]
+    return str(logs_dir / f"{session_id or 'nosession'}-{stamp}.txt")
 
 
 def _error(message: str) -> FlowData:

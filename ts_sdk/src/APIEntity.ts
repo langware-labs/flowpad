@@ -948,13 +948,27 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
       callbackOverride?: string;
       transfer?: boolean;
       roleToKeep?: string | null;
+      /**
+       * Entities to grant ALONGSIDE this one, in the same invitation.
+       *
+       * `invitation_targets` has always been a list the hub grants in full, and
+       * ONE invitation means one email landing on one place — which is why a
+       * thing that is only usable together with something else says so here
+       * rather than being chased with a second invitation.
+       *
+       * Safe to combine with `transfer`: the hub decides the grant kind per
+       * TARGET (the entity invited at `owner` is the one handed over), so a
+       * companion granted at a lower role rides along as an ordinary
+       * membership instead of being refused.
+       */
+      extraTargets?: { typeid: string; role: string }[];
     },
   ): Promise<void> {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
     info.hubReflect = true; // membership change is hub-owned — reflect to the hub
     info.bodyParameters = {
       recipient_email: normalizeEmail(email) ?? '',
-      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }],
+      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }, ...(opts?.extraTargets ?? [])],
       ...(opts?.callbackOverride ? { callback_override: opts.callbackOverride } : {}),
       ...(opts?.transfer ? { transfer: true, role_to_keep: opts.roleToKeep ?? null } : {}),
     };

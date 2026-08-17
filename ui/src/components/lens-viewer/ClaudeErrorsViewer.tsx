@@ -1,5 +1,5 @@
 import { i18n } from '@lingui/core';
-import { t } from '@lingui/core/macro';
+import { msg, t } from '@lingui/core/macro';
 import { Shell, timeAgo } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -63,11 +63,14 @@ import {
   statusFilterFromSlug,
 } from './error-viewer-utils';
 
+/** Lazy descriptors: a `t` macro in this module-level table would resolve once
+ *  at import, before a catalog is active, and freeze English into the menu. The
+ *  render site already resolves with `i18n._`. */
 const SNOOZE_OPTIONS = [
-  { label: t`1 hour`, ms: 3_600_000 },
-  { label: t`4 hours`, ms: 14_400_000 },
-  { label: t`24 hours`, ms: 86_400_000 },
-  { label: t`1 week`, ms: 604_800_000 },
+  { label: msg`1 hour`, ms: 3_600_000 },
+  { label: msg`4 hours`, ms: 14_400_000 },
+  { label: msg`24 hours`, ms: 86_400_000 },
+  { label: msg`1 week`, ms: 604_800_000 },
 ] as const;
 
 function statusBadge(status: ErrorStatus) {
@@ -185,7 +188,7 @@ function ErrorActions({
             <PopoverContent side="bottom" align="end" className="w-28 p-1">
               {SNOOZE_OPTIONS.map((opt) => (
                 <button
-                  key={opt.value}
+                  key={opt.ms}
                   className="w-full rounded px-2 py-1 text-start text-xs hover:bg-muted"
                   onClick={() => onSnooze(fp, new Date(Date.now() + opt.ms))}
                 >
