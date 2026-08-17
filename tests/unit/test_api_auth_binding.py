@@ -139,19 +139,29 @@ async def test_codex_api_binding_has_responses_provider(env) -> None:
 
 
 async def test_copilot_api_binding_model_env(env) -> None:
-    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import (
+        apply_api_model_to_options,
+        resolve_worker_api_auth,
+    )
+    from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotAgentOptions
     from flow_sdk.lm_api import LMApiProvider, set_lm_api
 
     set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
     await _set_harness_api("copilot")
 
-    auth = await resolve_worker_api_auth(_fake_process("copilot", model="sm"))
+    process = _fake_process("copilot", model="sm")
+    auth = await resolve_worker_api_auth(process)
     assert auth is not None
     assert auth.env["COPILOT_ENABLE_ALT_PROVIDERS"] == "1"
     assert auth.env["COPILOT_PROVIDER_API_KEY"] == "sk-or-test"
     # Model rides three env vars for copilot.
     for var in ("COPILOT_PROVIDER_MODEL_ID", "COPILOT_PROVIDER_WIRE_MODEL", "COPILOT_MODEL"):
         assert auth.env[var] == "openai/gpt-5-mini"
+
+    cmd = CopilotAgentOptions(model="sm")
+    await apply_api_model_to_options(cmd, process)
+    argv, _env = cmd.to_spawn_args()
+    assert argv[argv.index("--model") + 1] == "openai/gpt-5-mini"
 
 
 async def test_api_mode_missing_key_raises(env) -> None:

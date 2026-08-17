@@ -142,11 +142,16 @@ describe('factory()', () => {
     expect(cmd.toShellString()).toContain('-m gpt-5.4-mini')
   })
 
-  it('returns CopilotAgentOptions and resolves portable tiers for copilot', () => {
-    const cmd = factory({ worker_type: 'copilot', model: 'lg', workdir: '/proj' }, 'copilot')
+  it.each(['sm', 'md', 'lg'])('delegates portable Copilot tier %s to vendor auto', (tier) => {
+    const cmd = factory({ worker_type: 'copilot', model: tier, workdir: '/proj' }, 'copilot')
     expect(cmd).toBeInstanceOf(CopilotAgentOptions)
-    expect(cmd.toJson().model).toBe('lg')
-    expect(cmd.toShellString()).toContain('--model gpt-5.5')
+    expect(cmd.toJson().model).toBe(tier)
+    expect(cmd.toShellString()).not.toContain('--model')
+  })
+
+  it('passes concrete Copilot models through', () => {
+    const cmd = factory({ worker_type: 'copilot', model: 'claude-haiku-4.5', workdir: '/proj' }, 'copilot')
+    expect(cmd.toShellString()).toContain('--model claude-haiku-4.5')
   })
 
   it('throws for unknown worker_type', () => {
