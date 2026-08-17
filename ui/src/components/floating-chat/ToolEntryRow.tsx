@@ -325,8 +325,11 @@ const DENSE_OTHER = new Set<string>([FlowElementTypes.REASONING, FlowElementType
 function describeOther(event: FlowData): { icon: LucideIcon; label: string; isError?: boolean } {
   if (event.elementType === FlowElementTypes.REASONING) return { icon: Sparkles, label: 'thinking' };
   if (event.elementType === FlowElementTypes.ERROR) return { icon: AlertTriangle, label: 'error', isError: true };
-  // STATUS — surface the subtype if present (e.g. "PreToolUse")
+  // STATUS — surface the subtype if present (e.g. "PreToolUse"), except where
+  // the subtype names something the user is actively waiting on and deserves
+  // words rather than a machine token.
   const subtype = event.attributes['subtype'];
+  if (subtype === 'credential_refresh') return { icon: Activity, label: 'refreshing credentials' };
   return { icon: Activity, label: subtype || 'status' };
 }
 

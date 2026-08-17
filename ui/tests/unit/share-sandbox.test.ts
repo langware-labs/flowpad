@@ -141,9 +141,13 @@ describe('shareSandboxByEmail wire contract', () => {
   });
 
   it('does not lose the other grants when one address fails', async () => {
+    // The middle address fails for a REAL reason. It used to be a `change_role`
+    // 400, which now deliberately counts as granted -- see
+    // "already a member counts as granted" below -- so the fixture had to become
+    // a failure that still is one.
     callAction
       .mockResolvedValueOnce([] as never)
-      .mockRejectedValueOnce({ response: { status: 400, data: { detail: 'use change_role' } } } as never)
+      .mockRejectedValueOnce({ response: { status: 500, data: { detail: 'boom' } } } as never)
       .mockResolvedValueOnce([]);
 
     const outcome = await shareSandboxByEmail(node(), ['a@x.com', 'b@x.com', 'c@x.com']);
@@ -277,24 +281,22 @@ describe('sandboxShareLink', () => {
 });
 
 /**
- * The project is shared alongside the machine — as its own invitation.
+ * The project rides along with the machine, in ONE invitation.
  *
  * A sandbox is only useful as the project it opens, and the box fetches that
- * project from the hub AS the person who opened it, so a role on the machine
+ * project from the hub AS the person who opened it — so a role on the machine
  * alone gets a 401 there and the box keeps a bare row: right files, no language,
- * none of the author's settings. It fails silently and reads as "the sandbox
- * opened in the wrong language" rather than as a permission problem, which is why
- * it is asserted on the wire.
+ * none of the author's settings.
  *
- * TWO invitations rather than one, and that is load-bearing in both directions:
+ * ONE invitation, so one email, landing on the box. Splitting it sent two mails
+ * and the second one put the recipient on the PROJECT, where a "wrong account"
+ * screen was waiting.
  *
- *  - `transfer` is a property of the INVITATION. One `grant_kind` is chosen per
- *    request, so a handover judges every target as a transfer and the hub refuses
- *    anything but `owner`. A single invitation cannot say "hand over the box,
- *    share the project".
- *  - the emailed link lands on `non_workspace_targets[0]`. With two targets that
- *    order is whatever the round-trip returns, so the mail could open the PROJECT
- *    instead of the sandbox. One target per invitation makes it unambiguous.
+ * A handover rides here too. The hub used to judge every target in a transfer
+ * invitation as a transfer — and a transfer may only confer `owner` — so a
+ * `member` project target was refused outright. Accept had always decided per
+ * target (`invitation.transfer and rel.invited_to_role == owner`); the invite
+ * side now agrees, so only the box is handed over.
  */
 describe('sharing grants the project too', () => {
   const PROJECT_ID = '99999999-2222-4333-8444-555555555555';
@@ -307,71 +309,69 @@ describe('sharing grants the project too', () => {
     } as never);
   }
 
-  /** Every invitation sent, in order: `[targets, transfer?]` per call. */
-  function invitations(): { path: string; targets: { typeid: string; role: string }[]; transfer: unknown }[] {
-    return callAction.mock.calls.map((c) => {
-      const info = c[0] as { typeId?: { type: string }; bodyParameters?: Record<string, unknown> };
-      const body = info?.bodyParameters ?? {};
-      return {
-        path: (body.invitation_targets as { typeid: string }[])?.[0]?.typeid?.split('-')[0] ?? '',
-        targets: (body.invitation_targets ?? []) as { typeid: string; role: string }[],
-        transfer: body.transfer,
-      };
-    });
+  function targets(): { typeid: string; role: string }[] {
+    return (lastBody().invitation_targets ?? []) as { typeid: string; role: string }[];
   }
 
-  it('sends the machine and the project as SEPARATE invitations', async () => {
+  it('sends ONE invitation carrying both the machine and the project', async () => {
+    // One invitation = one email. Two emails is the bug this shape fixes.
     await shareSandboxByEmail(nodeWithProject(), ['someone@example.com']);
-    const sent = invitations();
-    expect(sent).toHaveLength(2);
-    // One target each: this is what makes the emailed link's destination
-    // unambiguous, since the hub lands on the first target it finds.
-    expect(sent[0].targets).toEqual([{ typeid: `compute_node-${NODE_ID}`, role: SANDBOX_SHARE_ROLE }]);
-    expect(sent[1].targets).toEqual([{ typeid: `project-${PROJECT_ID}`, role: SANDBOX_PROJECT_ROLE }]);
+    expect(callAction).toHaveBeenCalledTimes(1);
+    expect(targets()).toEqual([
+      { typeid: `compute_node-${NODE_ID}`, role: SANDBOX_SHARE_ROLE },
+      { typeid: `project-${PROJECT_ID}`, role: SANDBOX_PROJECT_ROLE },
+    ]);
   });
 
-  it('sends the box FIRST, so a failure there grants nothing on the project', async () => {
+  it('puts the machine FIRST, which is where the mail lands', async () => {
+    // The hub sends the recipient to the first non-workspace target.
     await shareSandboxByEmail(nodeWithProject(), ['someone@example.com']);
-    expect(invitations()[0].targets[0].typeid.startsWith('compute_node-')).toBe(true);
+    expect(targets()[0].typeid).toBe(`compute_node-${NODE_ID}`);
   });
 
   it('grants member on the project, not reader', async () => {
     // On `project`, reader also allows `secret`. Being handed a sandbox is not a
     // reason to reach its secrets.
     await shareSandboxByEmail(nodeWithProject(), ['someone@example.com']);
-    expect(invitations()[1].targets[0].role).toBe('member');
+    expect(targets()[1].role).toBe('member');
   });
 
-  it('keeps the transfer flag OFF the project invitation', async () => {
-    // The whole reason for splitting: a transfer confers `owner` and nothing
-    // else, so a `member` target inside it is refused outright.
+  it('carries BOTH in a handover, with the box at owner and the project at member', async () => {
+    // The case that forced the split before: a transfer invitation refused any
+    // target below `owner`. Owning the machine does not make someone the owner
+    // of the work it opens.
     await shareSandboxByEmail(nodeWithProject(), ['someone@example.com'], { transfer: true });
-    const sent = invitations();
-    expect(sent[0].targets).toEqual([{ typeid: `compute_node-${NODE_ID}`, role: 'owner' }]);
-    expect(sent[0].transfer).toBe(true);
-    expect(sent[1].targets).toEqual([{ typeid: `project-${PROJECT_ID}`, role: SANDBOX_PROJECT_ROLE }]);
-    expect(sent[1].transfer).toBeUndefined();
+    expect(callAction).toHaveBeenCalledTimes(1);
+    expect(targets()).toEqual([
+      { typeid: `compute_node-${NODE_ID}`, role: 'owner' },
+      { typeid: `project-${PROJECT_ID}`, role: SANDBOX_PROJECT_ROLE },
+    ]);
+    expect(lastBody().transfer).toBe(true);
   });
 
-  it('still shares the project at member on a handover', async () => {
-    // Owning the machine does not make someone the owner of the work it opens.
-    await shareSandboxByEmail(nodeWithProject(), ['someone@example.com'], { transfer: true });
-    expect(invitations()[1].targets[0].role).toBe('member');
-  });
-
-  it('sends one invitation when the box has no project', async () => {
+  it('sends the machine alone when the box has no project', async () => {
     // An empty sandbox is a machine and nothing else.
     await shareSandboxByEmail(node(), ['someone@example.com']);
-    const sent = invitations();
-    expect(sent).toHaveLength(1);
-    expect(sent[0].targets).toEqual([{ typeid: `compute_node-${NODE_ID}`, role: SANDBOX_SHARE_ROLE }]);
+    expect(targets()).toEqual([{ typeid: `compute_node-${NODE_ID}`, role: SANDBOX_SHARE_ROLE }]);
   });
 
-  it('does not grant the project when sharing the box failed', async () => {
-    // Nothing for the grant to accompany, and a role on work they cannot open.
-    callAction.mockRejectedValueOnce(new Error('nope') as never);
+  it('counts "already a member" as granted, not as a failed share', async () => {
+    // Sharing a SECOND box built on the same project hits this every time: the
+    // recipient still holds the project role from the first, the hub refuses a
+    // re-invite, and treating that as an error blocked the share of a box they
+    // do not have yet.
+    callAction.mockRejectedValueOnce({
+      response: { status: 400, data: { detail: 'existing member — use change_role' } },
+    } as never);
     const out = await shareSandboxByEmail(nodeWithProject(), ['someone@example.com']);
-    expect(invitations()).toHaveLength(1);
+    expect(out.granted).toEqual(['someone@example.com']);
+    expect(out.failed).toEqual([]);
+  });
+
+  it('still reports a genuine failure', async () => {
+    // The clause above must not swallow everything that goes wrong.
+    callAction.mockRejectedValueOnce({ response: { status: 500, data: { detail: 'boom' } } } as never);
+    const out = await shareSandboxByEmail(nodeWithProject(), ['someone@example.com']);
     expect(out.granted).toEqual([]);
     expect(out.failed).toHaveLength(1);
   });
