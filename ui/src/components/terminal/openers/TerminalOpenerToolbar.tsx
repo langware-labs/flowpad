@@ -1,12 +1,8 @@
-import type { ComputeNode } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
 import { ViewType } from '@sdk';
@@ -21,10 +17,6 @@ import { usePinnedOpeners } from './usePinnedOpeners';
 interface Props {
   openers: OpenerDescriptor[];
   isTabCreationPending: boolean;
-}
-
-function dockerNodeName(node: ComputeNode): string {
-  return (node as { uname?: string }).uname?.replace(/^docker-/, '') ?? node.id;
 }
 
 export function getInlineOpeners(
@@ -47,7 +39,7 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
   const inlineOpeners = getInlineOpeners(openers, pinned, lastOpened);
 
   const activate = useCallback(
-    (opener: OpenerDescriptor, dockerNode?: ComputeNode) => {
+    (opener: OpenerDescriptor) => {
       // A warned opener (capability check failed) can't launch — route to the
       // Capabilities screen (check/install) instead of creating a doomed tab.
       // Single enforcement point for inline buttons and menu rows alike.
@@ -61,11 +53,7 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
         return;
       }
       rememberOpened(opener.id);
-      if (opener.id === 'docker' && dockerNode && opener.onDockerNodeSelect) {
-        opener.onDockerNodeSelect(dockerNode);
-      } else {
-        opener.onActivate();
-      }
+      opener.onActivate();
     },
     [navigation, rememberOpened],
   );
@@ -83,53 +71,14 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
       </>
     );
 
-    if (opener.id === 'docker' && opener.dockerNodes && opener.dockerNodes.length > 1) {
-      return (
-        <DropdownMenu key={opener.id}>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="secondary"
-              size="icon"
-              className="h-7 w-7 rounded"
-              disabled={disabled}
-              aria-label={t`Open docker terminal`}
-              title={t`Open docker terminal`}
-              data-testid="open-docker-tab-button"
-            >
-              {iconNode}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {opener.dockerNodes.map((dn) => {
-              const name = dockerNodeName(dn);
-              return (
-                <DropdownMenuItem
-                  key={dn.id}
-                  onSelect={() => activate(opener, dn)}
-                  data-testid={`open-docker-tab-button-${name}`}
-                >
-                  {name}
-                </DropdownMenuItem>
-              );
-            })}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      );
-    }
-
-    const onClick =
-      opener.id === 'docker' && opener.dockerNodes && opener.dockerNodes.length === 1
-        ? () => activate(opener, opener.dockerNodes![0])
-        : () => activate(opener);
+    const onClick = () => activate(opener);
 
     const testId =
-      opener.id === 'docker' && opener.dockerNodes && opener.dockerNodes.length === 1
-        ? `open-docker-tab-button-${dockerNodeName(opener.dockerNodes[0])}`
-        : opener.id === 'sandbox'
-          ? 'open-sandbox-tab-button'
-          : opener.id === 'terminal'
-            ? 'open-terminal-tab-button'
-            : `opener-inline-${opener.id}`;
+      opener.id === 'sandbox'
+        ? 'open-sandbox-tab-button'
+        : opener.id === 'terminal'
+          ? 'open-terminal-tab-button'
+          : `opener-inline-${opener.id}`;
 
     const title = opener.warning ? `${opener.label} — ${opener.warning}` : opener.label;
 
@@ -173,36 +122,7 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
       </button>
     );
 
-    if (opener.id === 'docker' && opener.dockerNodes && opener.dockerNodes.length > 1) {
-      return (
-        <DropdownMenuSub key={opener.id}>
-          <DropdownMenuSubTrigger className="gap-2 pe-1" data-testid={`opener-menu-row-${opener.id}`}>
-            <Icon className={`h-4 w-4 ${opener.iconClassName ?? ''}`} />
-            <span>{opener.label}</span>
-            {pinButton}
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            {opener.dockerNodes.map((dn) => {
-              const name = dockerNodeName(dn);
-              return (
-                <DropdownMenuItem
-                  key={dn.id}
-                  onSelect={() => activate(opener, dn)}
-                  data-testid={`opener-menu-docker-${name}`}
-                >
-                  {name}
-                </DropdownMenuItem>
-              );
-            })}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-      );
-    }
-
-    const onSelect =
-      opener.id === 'docker' && opener.dockerNodes && opener.dockerNodes.length === 1
-        ? () => activate(opener, opener.dockerNodes![0])
-        : () => activate(opener);
+    const onSelect = () => activate(opener);
 
     return (
       <DropdownMenuItem

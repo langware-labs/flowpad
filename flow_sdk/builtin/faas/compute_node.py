@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, Literal, overload
 
 from fastapi import BackgroundTasks
+from pydantic import field_validator
 
 if TYPE_CHECKING:
     # Runtime imports of Project stay function-local (circular import); this is
@@ -97,6 +98,18 @@ class ComputeNode(
     template_version: str | None = APIField(default=None)
     # Track active PTY sessions for WebSocket notifications
     active_pty_sessions: list[str] = APIField(default_factory=list)
+
+    @field_validator("node_provider_type", mode="before")
+    @classmethod
+    def _tolerate_unknown_provider(cls, value: Any) -> Any:
+        """A provider this build no longer knows (e.g. the removed desktop ``docker``)
+        hydrates as ``None`` instead of failing every ``ComputeNode`` query. Using
+        such a node still raises a clear error in ``compute_provider``."""
+        if isinstance(value, str) and value not in {p.value for p in ComputeProviderType}:
+            logging.warning("compute node: unknown provider %r on hydration; treating as unset", value)
+            return None
+        return value
+
     # Which of a project's declared secrets this node may see, per project.
     #
     # Value-free by construction — the token IS the env var name and the project

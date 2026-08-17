@@ -220,7 +220,6 @@ class ComputeProviderType(StrEnum):
     GCP = "gcp"
     AWS = "aws"
     E2B = "e2b"
-    DOCKER = "docker"
     # This machine, enrolled on the hub with `flow connect` (hub-side provider name).
     USER_MACHINE = "user_machine"
 

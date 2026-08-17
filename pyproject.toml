@@ -22,6 +22,8 @@ dependencies = [
     # Installed transitively by typer, but `flow instance ctl` imports it
     # directly to render instance/group tables — declare what we import.
     "rich",
+    # Terminal QR for `flow connect` device-code enrollment (pure python).
+    "segno>=1.6",
     "python-dotenv",
     "keyring",
     "keyrings.alt",
