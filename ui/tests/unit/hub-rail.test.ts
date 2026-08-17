@@ -40,6 +40,7 @@ describe('buildHubRailItems', () => {
       'docs',
       'world',
       'organization',
+      'llm-endpoints',
       'credentials',
     ]);
   });
@@ -81,10 +82,20 @@ describe('buildHubRailItems', () => {
     expect(items.find((i) => i.id === 'organization')?.pointer).toBe(WorldViewProjection.ORGANIZATION);
   });
 
+  it('opens the LLM Endpoints view with no pointer, just before Credentials', () => {
+    const items = buildHubRailItems(t);
+    const idx = items.findIndex((i) => i.id === 'llm-endpoints');
+
+    expect(items[idx]?.viewType).toBe(ViewType.LLM_ENDPOINTS);
+    expect(items[idx]?.pointer).toBeUndefined();
+    expect(items[idx + 1]?.id).toBe('credentials');
+  });
+
   it('never leaks credentials into the desk rail', () => {
     // The two unions overlap where a destination genuinely exists on both rails
     // ('home'). Credentials is hub-only for now, and putting its id in
     // RAIL_ITEMS would render a silent `null` slot on the desk.
     expect(RAIL_ITEMS.map((i) => i.id as string)).not.toContain('credentials');
+    expect(RAIL_ITEMS.map((i) => i.id as string)).not.toContain('llm-endpoints');
   });
 });

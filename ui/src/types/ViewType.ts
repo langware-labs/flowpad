@@ -97,7 +97,8 @@ export interface ViewerMeta {
     | 'Mail'
     | 'Stethoscope'
     | 'Antenna'
-    | 'History';
+    | 'History'
+    | 'Waypoints';
   /** Where this viewer renders: 'overview' tab or dedicated tab */
   tabLocation: 'overview' | 'dedicated';
   /** Can this viewer be manually added as a tab? */
@@ -303,6 +304,15 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     // The pointer is internal tab + project selection, so every combination
     // folds into one chip rather than spawning a tab per tab (PREFERENCES
     // precedent).
+    foldsPointer: true,
+  },
+  // Hub LLM endpoints (page=hub). Pointer = `<id>[/<overview|usage|models>]`:
+  // in-view selection + tab, so it folds into one chip (CREDENTIALS precedent).
+  [ViewType.LLM_ENDPOINTS]: {
+    title: msg`LLM Endpoints`,
+    iconName: 'Waypoints',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
     foldsPointer: true,
   },
   [ViewType.SUBGRAPH]: {

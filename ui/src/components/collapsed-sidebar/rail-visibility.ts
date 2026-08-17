@@ -47,13 +47,7 @@ export type RailItemId =
  * different thing entirely — HUB_RECORDS with a `task` pointer. A shared union
  * would have made that removal look like a hub change.
  */
-export type HubRailItemId =
-  | 'world'
-  | 'organization'
-  | 'inbox'
-  | 'tasks'
-  | 'docs'
-  | 'credentials';
+export type HubRailItemId = 'world' | 'organization' | 'inbox' | 'tasks' | 'docs' | 'llm-endpoints' | 'credentials';
 
 export type RailPlacement =
   /** Rides the top rail. */
@@ -80,12 +74,7 @@ export type RailSpec = {
 };
 
 /** The mode hierarchy, simplest → fullest. Membership accumulates along it. */
-export const MODE_CHAIN = [
-  ViewMode.Vibe,
-  ViewMode.Standard,
-  ViewMode.Advanced,
-  ViewMode.Dev,
-] as const;
+export const MODE_CHAIN = [ViewMode.Vibe, ViewMode.Standard, ViewMode.Advanced, ViewMode.Dev] as const;
 
 /**
  * The rail, top to bottom.
@@ -133,7 +122,5 @@ export const NO_GATES: Record<RailGate, boolean> = {
  */
 export function resolveRail(mode: ViewMode, gates: Record<RailGate, boolean>): readonly RailSpec[] {
   const reach = MODE_CHAIN.indexOf(mode);
-  return RAIL_ITEMS.filter(
-    (item) => MODE_CHAIN.indexOf(item.from) <= reach && (!item.gate || gates[item.gate]),
-  );
+  return RAIL_ITEMS.filter((item) => MODE_CHAIN.indexOf(item.from) <= reach && (!item.gate || gates[item.gate]));
 }

@@ -15,7 +15,7 @@
     "graph-workflows", "signals", "data-sources", "process-runs", "plan", "cron",
     "assets", "project", "inbox", "conversation", "spec", "graph_context",
     "diagnosis", "desktop", "live_session", "helpdesk", "atlas", "records",
-    "entity", "credentials"
+    "entity", "credentials", "llm-endpoints"
   ],
 
   "subview_vocabularies": {
@@ -91,7 +91,8 @@
     "atlas":           { "addressable": false, "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
     "records":         { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
     "entity":          { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "credentials":     { "addressable": true,  "pointer": "optional", "folds_pointer": true,  "scope_keyed": false, "chrome": "workspace" }
+    "credentials":     { "addressable": true,  "pointer": "optional", "folds_pointer": true,  "scope_keyed": false, "chrome": "workspace" },
+    "llm-endpoints":   { "addressable": true,  "pointer": "optional", "folds_pointer": true,  "scope_keyed": false, "chrome": "workspace" }
   },
 
   "tab_identity_cases": [
@@ -105,7 +106,8 @@
     { "name": "tag folds its taxonomy pointer", "view_type": "tag", "pointer": "graph/eng.backend.db", "tab_hash": "tag|" },
     { "name": "unscoped assets keys on the scope, not the sub-pointer", "view_type": "assets", "pointer": "list/skill", "tab_hash": "assets|all" },
     { "name": "unscoped explorer likewise", "view_type": "explorer", "pointer": "src/components", "tab_hash": "explorer|all" },
-    { "name": "a non-desk page namespaces tab identity", "view_type": "worldview", "page": "hub", "pointer": "organization", "tab_hash": "hub|worldview|organization" }
+    { "name": "a non-desk page namespaces tab identity", "view_type": "worldview", "page": "hub", "pointer": "organization", "tab_hash": "hub|worldview|organization" },
+    { "name": "llm-endpoints folds endpoint + tab into one chip", "view_type": "llm-endpoints", "page": "hub", "pointer": "550e8400-e29b-41d4-a716-446655440000/usage", "tab_hash": "hub|llm-endpoints|" }
   ],
 
   "url_cases": [
@@ -131,6 +133,8 @@
     { "name": "hub records list", "view_type": "records", "page": "hub", "pointer": "markdown", "url": "/dock/hub/records/markdown" },
     { "name": "hub single entity", "view_type": "entity", "page": "hub", "pointer": "markdown/550e8400-e29b-41d4-a716-446655440000", "url": "/dock/hub/entity/markdown/550e8400-e29b-41d4-a716-446655440000" },
     { "name": "credentials subview with a project", "view_type": "credentials", "pointer": "environment/550e8400-e29b-41d4-a716-446655440000", "url": "/dock/credentials/environment/550e8400-e29b-41d4-a716-446655440000" },
+    { "name": "hub llm endpoints list", "view_type": "llm-endpoints", "page": "hub", "url": "/dock/hub/llm-endpoints" },
+    { "name": "hub llm endpoint usage tab", "view_type": "llm-endpoints", "page": "hub", "pointer": "550e8400-e29b-41d4-a716-446655440000/usage", "url": "/dock/hub/llm-endpoints/550e8400-e29b-41d4-a716-446655440000/usage" },
     { "name": "project collaboration room tab", "view_type": "project", "pointer": "550e8400-e29b-41d4-a716-446655440000/collaboration_room/6ba7b810-9dad-41d1-80b4-00c04fd430c8/tab/agentic_process-7c9e6679-7425-40de-944b-e07fc1f90ae7", "url": "/dock/project/550e8400-e29b-41d4-a716-446655440000/collaboration_room/6ba7b810-9dad-41d1-80b4-00c04fd430c8/tab/agentic_process-7c9e6679-7425-40de-944b-e07fc1f90ae7" },
     { "name": "assets sub-pointer rebased onto a project", "view_type": "project", "pointer": "550e8400-e29b-41d4-a716-446655440000/editor/markdown/typeid/markdown-6ba7b810-9dad-41d1-80b4-00c04fd430c8", "url": "/dock/project/550e8400-e29b-41d4-a716-446655440000/editor/markdown/typeid/markdown-6ba7b810-9dad-41d1-80b4-00c04fd430c8" },
     { "name": "plan by typeid", "view_type": "plan", "pointer": "typeid/plan-550e8400-e29b-41d4-a716-446655440000", "url": "/dock/plan/typeid/plan-550e8400-e29b-41d4-a716-446655440000" },

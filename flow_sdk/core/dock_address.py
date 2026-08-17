@@ -156,6 +156,7 @@ class ViewType(StrEnum):
     HUB_RECORDS = "records"  # Hub entity list by type (page=hub)
     HUB_ENTITY = "entity"  # Hub single-entity viewer (page=hub)
     CREDENTIALS = "credentials"  # Env vars + OAuth connections + API keys
+    LLM_ENDPOINTS = "llm-endpoints"  # Hub LLM endpoints (roots + chains) - /dock/hub/llm-endpoints[/<id>[/<tab>]]
 
 
 # ── pointer vocabularies for the views whose pointer is a closed set ───────
@@ -344,6 +345,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.HUB_RECORDS: _m(_REQ),
     ViewType.HUB_ENTITY: _m(_REQ),
     ViewType.CREDENTIALS: _m(_OPT, folds_pointer=True),
+    ViewType.LLM_ENDPOINTS: _m(_OPT, folds_pointer=True),
 }
 
 
