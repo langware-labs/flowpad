@@ -71,6 +71,7 @@ class ClaudeAgentOptions(AgentOptions):
         output_format: str | None = None,
         verbose: bool = False,
         effort: str | None = None,
+        plugin_dirs: list[str] | None = None,
     ) -> None:
         super().__init__(workdir=workdir, env_vars=env_vars)
         self.session_id = session_id
@@ -93,6 +94,9 @@ class ClaudeAgentOptions(AgentOptions):
         # the headless-orchestration path where the parent only needs to
         # dispatch to sub-agents and write a brief wrap-up.
         self.effort = effort
+        # Prepared process-local plugins. Launch-only: deliberately excluded
+        # from to_json()/from_json() and restart persistence.
+        self.plugin_dirs: list[str] = list(plugin_dirs or [])
 
         # Auto-inject CLAUDE_PROJECT_DIR from workdir
         if workdir:
@@ -148,6 +152,8 @@ class ClaudeAgentOptions(AgentOptions):
             flags.extend(["--effort", self.effort])
         if self.agents_json:
             flags.extend(["--agents", serialize_json_cli_value(self.agents_json)])
+        for directory in self.plugin_dirs:
+            flags.extend(["--plugin-dir", directory])
         if self.print_mode:
             flags.append("-p")
         for d in self.add_dirs:
@@ -171,7 +177,7 @@ class ClaudeAgentOptions(AgentOptions):
         i = 0
         while i < len(flags):
             if flags[i] == "--add-dir" and i + 1 < len(flags):
-                add_dir.extend(flags[i:i + 2])
+                add_dir.extend(flags[i : i + 2])
                 i += 2
             elif flags[i] == "-p":
                 p_flag.append("-p")
@@ -203,23 +209,25 @@ class ClaudeAgentOptions(AgentOptions):
 
     def to_json(self) -> dict[str, Any]:
         d = super().to_json()
-        d.update({
-            "worker_type": "claude",
-            "session_id": self.session_id,
-            "resume": self.resume,
-            "fork_session_id": self.fork_session_id,
-            "model": self.model,
-            "debug": self.debug,
-            "permission_mode": self.permission_mode,
-            "chrome": self.chrome,
-            "worktree": self.worktree,
-            "agents_json": self.agents_json,
-            "print_mode": self.print_mode,
-            "add_dirs": self.add_dirs,
-            "output_format": self.output_format,
-            "verbose": self.verbose,
-            "effort": self.effort,
-        })
+        d.update(
+            {
+                "worker_type": "claude",
+                "session_id": self.session_id,
+                "resume": self.resume,
+                "fork_session_id": self.fork_session_id,
+                "model": self.model,
+                "debug": self.debug,
+                "permission_mode": self.permission_mode,
+                "chrome": self.chrome,
+                "worktree": self.worktree,
+                "agents_json": self.agents_json,
+                "print_mode": self.print_mode,
+                "add_dirs": self.add_dirs,
+                "output_format": self.output_format,
+                "verbose": self.verbose,
+                "effort": self.effort,
+            }
+        )
         return d
 
     @classmethod

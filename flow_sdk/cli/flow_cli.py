@@ -717,6 +717,9 @@ def hooks_report(
     hook_entry_id: Annotated[
         Optional[str], typer.Option("--hook-entry-id", help="Hook entry ID for metadata lookup")
     ] = None,
+    process_id: Annotated[
+        Optional[str], typer.Option("--process-id", help="AgenticProcess ID for a process-local hook")
+    ] = None,
     name: Annotated[Optional[str], typer.Option("--name", help="Hook name (e.g. flowpad_sniffer)")] = None,
     wait_for_response: Annotated[
         bool, typer.Option("--wait-for-response", help="Wait synchronously for response (for PermissionRequest)")
@@ -735,6 +738,21 @@ def hooks_report(
     import json
     import sys
     from pathlib import Path
+
+    if process_id and hook_entry_id:
+        raise typer.BadParameter("--process-id and --hook-entry-id are mutually exclusive")
+    if process_id:
+        from flow_sdk.api.api_types.identifier import is_valid_entity_id
+
+        if not is_valid_entity_id(process_id):
+            raise typer.BadParameter("--process-id must be a canonical UUID v4 or v5")
+        last_resp = _report_process_hook(process_id)
+        if not wait_for_response:
+            raise typer.Exit(0)
+        data = (last_resp.json().get("data") or {}) if last_resp and last_resp.text else {}
+        if data:
+            typer.echo(json.dumps(data))
+        raise typer.Exit(0)
 
     def find_hook_metadata(
         entry_id: Optional[str], hook_name: Optional[str] = None
@@ -817,7 +835,7 @@ def hooks_report(
                 typer.echo(f"\nTarget: POST {report_url}")
                 typer.echo(f"\nPayload:\n{json.dumps(flow_data_payload, indent=2)}")
             try:
-                last_resp = requests.post(report_url, json=flow_data_payload, timeout=5)
+                last_resp = _post_hook_report(report_url, flow_data_payload)
                 if verbose:
                     typer.echo(f"\nResponse: {last_resp.status_code} {last_resp.text[:200]}")
             except requests.exceptions.RequestException as e:
@@ -851,7 +869,7 @@ def hooks_report(
                     if verbose:
                         typer.echo(f"\nReporting to server at port {s.port}")
                     try:
-                        last_resp = requests.post(s.url, json=fallback_payload, timeout=5)
+                        last_resp = _post_hook_report(s.url, fallback_payload)
                         if verbose:
                             typer.echo(f"  Response: {last_resp.status_code} {last_resp.text[:200]}")
                     except requests.exceptions.RequestException as e:
@@ -863,7 +881,7 @@ def hooks_report(
                 if verbose:
                     typer.echo(f"\nNo server.json found, using legacy fallback (port {port})")
                 try:
-                    last_resp = requests.post(fallback_url, json=report_payload, timeout=5)
+                    last_resp = _post_hook_report(fallback_url, report_payload)
                     if verbose:
                         typer.echo(f"\nResponse: {last_resp.status_code} {last_resp.text[:200]}")
                 except requests.exceptions.RequestException as e:
@@ -886,6 +904,51 @@ def hooks_report(
     if data:
         typer.echo(json.dumps(data))
     raise typer.Exit(0)
+
+
+def _post_hook_report(url: str, payload: dict):
+    """POST a hook report using the command's established request policy."""
+    return requests.post(url, json=payload, timeout=5)
+
+
+def _report_process_hook(process_id: str):
+    """Forward one native hook payload to its FLOW_INSTANCE-pinned backend.
+
+    This is deliberately separate from the legacy AgentHook transport above:
+    process-local hooks never inspect global hook metadata, an override URL, or
+    the all-instance discovery list.
+    """
+    import json
+    import sys
+
+    from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData, WebhookPayload
+    from flow_sdk.discovery.flowpad_discovery import resolve_cli_port
+
+    verbose = sys.stdin.isatty()
+    try:
+        input_data = {"hook_event_name": "test_ping", "source": "manual_cli"} if verbose else json.load(sys.stdin)
+        # The CLI owns transport, not vendor normalization.  Preserve Claude's
+        # native object exactly once; the selected process driver converts it
+        # into canonical AgentHookData at the listen boundary.
+        agent_hook = AgentHookData(
+            agentic_process_id=process_id,
+            hook_data={"raw_hook_data": input_data},
+        )
+        payload = WebhookPayload(
+            webhook_type="agent_hook",
+            webhook_payload=agent_hook.model_dump(mode="json"),
+        ).model_dump(mode="json")
+        url = f"http://127.0.0.1:{resolve_cli_port()}/api/v1/webhook/listen"
+        if verbose:
+            typer.echo(f"\nTarget: POST {url}")
+            typer.echo(f"\nPayload:\n{json.dumps(payload, indent=2)}")
+        return _post_hook_report(url, payload)
+    except json.JSONDecodeError:
+        return None
+    except Exception as exc:
+        if verbose:
+            typer.echo(f"Error: {exc}")
+        return None
 
 
 @hooks_app.command("list")

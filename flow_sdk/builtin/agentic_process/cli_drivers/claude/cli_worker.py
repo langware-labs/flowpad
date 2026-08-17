@@ -72,6 +72,8 @@ class ClaudeCLIWorker(AgenticWorker):
             args.extend(["--model", model])
         if agents_json:
             args.extend(["--agents", json.dumps(agents_json)])
+        for plugin_dir in context.plugin_dirs:
+            args.extend(["--plugin-dir", plugin_dir])
         args.extend(["-p", prompt])
         return args
 

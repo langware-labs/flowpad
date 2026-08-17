@@ -10,7 +10,7 @@ import json
 import math
 import re
 import shlex
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 _TOML_BARE_KEY = re.compile(r"[A-Za-z0-9_-]+\Z")
@@ -54,10 +54,7 @@ def serialize_toml_cli_value(value: Any) -> str:
     if isinstance(value, Mapping):
         if not all(isinstance(key, str) for key in value):
             raise TypeError("TOML CLI mapping keys must be strings")
-        entries = (
-            f"{_serialize_toml_key(key)}={serialize_toml_cli_value(item)}"
-            for key, item in value.items()
-        )
+        entries = (f"{_serialize_toml_key(key)}={serialize_toml_cli_value(item)}" for key, item in value.items())
         return "{" + ",".join(entries) + "}"
     raise TypeError(f"Unsupported TOML CLI value: {type(value).__name__}")
 
@@ -74,3 +71,12 @@ def quote_shell_arg(value: str, platform: str) -> str:
     if _POWERSHELL_SAFE_ARG.fullmatch(value):
         return value
     return quote_powershell_literal(value)
+
+
+def render_shell_command(argv: Sequence[str], platform: str) -> str:
+    """Render raw argv as one POSIX-shell or PowerShell command string.
+
+    Each item is quoted exactly once. Callers must pass the original argv,
+    never a command string that has already been shell-rendered.
+    """
+    return " ".join(quote_shell_arg(value, platform) for value in argv)

@@ -39,7 +39,7 @@ import sys
 import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Protocol
+from typing import TYPE_CHECKING, Any, AsyncIterator, Protocol, Sequence
 
 import psutil
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -60,9 +60,12 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
 from flow_sdk.transcript_analyzer import TranscriptDescriptor
 
 if TYPE_CHECKING:
+    from flow_sdk.builtin.agent_hook import HookEventType
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
     from flow_sdk.builtin.agentic_process.events import AgenticProcessEventName
     from flow_sdk.builtin.worker_status import WorkerStatus
+    from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
     from flow_sdk.responses.response import ApiResponse
 
 
@@ -550,8 +553,18 @@ def flow_cli_env_path(existing_path: str | None = None) -> str | None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# AgenticContext — execution context handed to workers
+# ProcessHookRuntime / AgenticContext — launch context handed to workers
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+class ProcessHookRuntime(BaseModel):
+    """Immutable, launch-only artifacts prepared from persisted hook intent."""
+
+    model_config = ConfigDict(frozen=True)
+
+    plugin_dirs: tuple[str, ...] = ()
+    config_overrides: tuple[tuple[str, Any], ...] = ()
+    bypass_hook_trust: bool = False
 
 
 class AgenticContext(BaseModel):
@@ -596,6 +609,8 @@ class AgenticContext(BaseModel):
     # Claude's ``--add-dir``). Drivers populate this from process configuration
     # so print-mode workers see the same skill/agent surface as PTY-mode runs.
     add_dirs: list[str] = Field(default_factory=list)
+    # Prepared process-local plugins. Runtime-only: never persisted or hashed.
+    plugin_dirs: list[str] = Field(default_factory=list)
     system_prompt_file: str | None = None
     developer_instructions: str | None = None
     custom_instruction_dirs: list[str] = Field(default_factory=list)
@@ -605,7 +620,10 @@ class AgenticContext(BaseModel):
     # so — like fork/resume — excluded from the restart hash. Same name as
     # CodexAgentOptions.extra_config_overrides so apply_api_model_to_options can
     # stamp either object.
-    extra_config_overrides: list[tuple[str, str]] = Field(default_factory=list)
+    extra_config_overrides: list[tuple[str, Any]] = Field(default_factory=list)
+    # One-launch acknowledgement for CLIs that gate dynamically supplied hooks
+    # behind an explicit trust flag (currently Codex). Never persisted.
+    bypass_hook_trust: bool = False
 
     @model_validator(mode="after")
     def set_defaults(self) -> "AgenticContext":
@@ -616,7 +634,15 @@ class AgenticContext(BaseModel):
         return self
 
     def to_persistable_dict(self) -> dict[str, Any]:
-        data = self.model_dump(exclude={"compute_node", "stack_frame"})
+        data = self.model_dump(
+            exclude={
+                "compute_node",
+                "stack_frame",
+                "plugin_dirs",
+                "extra_config_overrides",
+                "bypass_hook_trust",
+            }
+        )
         if self.compute_node is not None:
             data["compute_node_id"] = self.compute_node.id
         return data
@@ -926,7 +952,6 @@ def worker_capability_kind(worker_type: str) -> str:
     return harness_kind_for_worker_type(worker_type) or f"harness.{worker_type}.cli"
 
 
-
 def worker_bin_folder(worker_type: str) -> str | None:
     """The discovered bin FOLDER of this worker's CLI, or ``None`` ⇔ not installed.
 
@@ -1022,9 +1047,7 @@ async def run_worker_auth_probe(worker_type: str) -> WorkerAuthResult:
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
         copilot_home = get_instance_settings().copilot_home
-    return await asyncio.to_thread(
-        probe_worker_auth, worker_type, path, env, Path.home(), copilot_home
-    )
+    return await asyncio.to_thread(probe_worker_auth, worker_type, path, env, Path.home(), copilot_home)
 
 
 def build_worker_spawn_env(
@@ -1216,6 +1239,8 @@ class WorkerDriver(Protocol):
     """
 
     name: str  # wire id: "claude" | "codex" | "copilot"
+    supports_process_hooks: bool
+    process_hooks_use_assets: bool
     preassign_interactive_session_id: bool
     # True iff this vendor's interactive TUI submits a pasted prompt that ends
     # in ``\r`` (claude). False for TUIs that treat the trailing ``\r`` as
@@ -1251,6 +1276,27 @@ class WorkerDriver(Protocol):
         options: AgentOptions,
     ) -> dict[str, Any]:
         """Return this worker's canonical launch payload for restart hashing."""
+        ...
+
+    def process_hook_snapshot(self, events: Sequence["HookEventType"]) -> dict[str, Any]:
+        """Return a pure semantic snapshot for persisted process-hook intent."""
+        ...
+
+    def prepare_process_hooks(
+        self,
+        assets: "AssetDir",
+        process_id: str,
+        events: Sequence["HookEventType"],
+    ) -> ProcessHookRuntime:
+        """Materialize launch artifacts once and return their runtime inputs."""
+        ...
+
+    def normalize_process_hook_data(
+        self,
+        process_id: str,
+        raw_hook_data: dict[str, Any],
+    ) -> "AgentHookData":
+        """Normalize one vendor-native report into canonical hook data."""
         ...
 
     # ── Per-turn execution ───────────────────────────────────────────────────
@@ -1433,6 +1479,7 @@ __all__ = [
     "AgenticProcessContextKey",
     "AgenticWorker",
     "AgentOptions",
+    "ProcessHookRuntime",
     "WorkerExecutionInfo",
     "WorkerDriver",
     "WorkerSpawnError",
