@@ -25,7 +25,13 @@ import {
 } from '../../flow_processing';
 import { IEntity } from '../../IEntity';
 import { ActionInfo } from '../../models';
-import { ComputeProviderType, type NodeStatus, RuntimeEnvironment, type WorkspaceReady } from './compute-node-types';
+import {
+  ComputeProviderType,
+  type NodeStatus,
+  RuntimeEnvironment,
+  SANDBOX_PROVIDERS,
+  type WorkspaceReady,
+} from './compute-node-types';
 import type { MachineStatus, ProcessInfo } from './machine-status';
 import { ServiceControlError, type ServiceRuntimeDescriptor } from './service-control';
 import { Shell } from '../shell';
@@ -533,12 +539,12 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * `node_config` blob, so every surface that wanted the question had to know
    * that blob's shape. The rule is one thing; it belongs in one place.
    *
-   * The predicate is deliberately unchanged — this moves where the question is
-   * answered, not which boxes answer yes. Worth knowing before touching it: the
+   * Worth knowing before touching it: the
    * hub stopped reading `flavor` for TEMPLATE selection ("one family, one axis,
    * no client-derived input" — `setup_node`), which reads like the marker is
    * dead. It is not: the sandbox UI writes it at create time and nothing clears
-   * it, so it remains the only thing separating the two kinds of E2B box.
+   * it, so it remains the marker separating an interactive workspace from a
+   * provider's other compute nodes.
    *
    * The provider field is read tolerantly because the hub spells it
    * `node_provider` and this entity types it `node_provider_type`.
@@ -546,7 +552,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   get isSandbox(): boolean {
     const provider = (this as unknown as { node_provider?: string }).node_provider ?? this.node_provider_type;
     const flavor = (this.node_config as { flavor?: string } | undefined)?.flavor;
-    return provider === ComputeProviderType.E2B && flavor === WORKSPACE_FLAVOR;
+    return SANDBOX_PROVIDERS.has(provider ?? '') && flavor === WORKSPACE_FLAVOR;
   }
 
   // ── lifecycle ────────────────────────────────────────────────────────
