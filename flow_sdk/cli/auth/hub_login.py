@@ -27,6 +27,18 @@ def get_api_key() -> str | None:
     return creds.api_key if creds else None
 
 
+def resolve_hub_api_key() -> str | None:
+    """The key a hub request would carry, or ``None`` when logged out.
+
+    Same precedence as ``cloud_client.client_hooks._on_request``: the
+    ``cloud_api_key`` instance setting (CI/headless) wins over the file-based
+    login. This is the value a worker bound to the hub's LLMEndpoint spawns with.
+    """
+    from flow_sdk.instance_settings import get_instance_settings
+
+    return get_instance_settings().cloud_api_key or get_api_key()
+
+
 def delete_api_key() -> None:
     """Delete the API key from the system keyring (idempotent)."""
     clear_credentials()

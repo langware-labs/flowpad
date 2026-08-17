@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 from typing import Any
 
@@ -45,17 +44,12 @@ def _is_public_auth_path(path: str) -> bool:
 
 @lru_cache(maxsize=1)
 def _local_machine_id() -> str:
-    """This machine's id, derived exactly like the hub's probe derives it.
+    """This machine's id, a stable per-host fingerprint sent as ``X-Machine-ID``.
 
-    Must stay byte-identical to ComputeNode.get_machine_id's script on the hub:
-    the hub machine-binds the workspace sandbox's login key to the value ITS
-    probe computed, and the header we send is compared against that (hashed).
-    Computed locally rather than read from env because the hub's set_env lands
-    in ~/.bashrc, which the non-interactive service process never sources.
+    Sent on every hub call so a hub that chooses to machine-bind a key has
+    something to compare against; the workspace login key is not machine-bound
+    today, so a hub without an allowlist simply ignores it.
     """
-    machine_id = os.environ.get("FLOWPAD_MACHINE_ID")
-    if machine_id:
-        return machine_id
     import hashlib  # noqa: PLC0415
     import platform  # noqa: PLC0415
     import uuid  # noqa: PLC0415
@@ -84,9 +78,8 @@ def _local_machine_id() -> str:
 def attach_machine_id(headers) -> None:
     """Send this machine's id on every hub call.
 
-    The hub machine-binds the workspace sandbox's delegating login key; without
-    the X-Machine-ID header those requests fail closed. On machines whose keys
-    carry no machine allowlist (normal desktops) the header is simply ignored.
+    Harmless when the key carries no machine allowlist (the normal case): the hub
+    ignores the header. Kept so a machine-bound key can still be honoured.
     """
     try:
         headers["X-Machine-ID"] = _local_machine_id()
