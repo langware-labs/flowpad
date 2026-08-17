@@ -183,6 +183,45 @@ export const TabStrip: React.FC<TabStripProps> = ({
     return () => observer.disconnect();
   }, [items.length]);
 
+  // Keep the ACTIVE chip on screen.
+  //
+  // The Chrome model above shrinks every chip equally, so all of them stay
+  // visible right down to the 40px floor. Past that floor the row CLIPS
+  // (`overflow-hidden`), and because nothing ever scrolled it, a selected tab
+  // beyond the fold was invisible AND unreachable — no scrollbar to recover it,
+  // and the strip pinned at scrollLeft 0. Observed at 54 tabs: the active chip
+  // sat at x=2260 in an 815px row.
+  //
+  // Scrolls only when the chip is actually out of view, so the common
+  // (unclipped) case does no work and the row never jumps while you are reading
+  // it. `scrollLeft` is set directly rather than via `scrollIntoView`, which
+  // would also scroll ancestor containers and can yank the whole page.
+  useEffect(() => {
+    const container = tabContainerRef.current;
+    const chip = activeKey ? tabRefs.current[activeKey] : null;
+    if (!container || !chip) return;
+    if (container.scrollWidth <= container.clientWidth) return; // not clipped
+
+    // Measure the chip RELATIVE TO THE CONTAINER's content box. `offsetLeft` is
+    // relative to `offsetParent`, which is not this container (it is not
+    // positioned), so using it overshoots and pushes the chip off the other
+    // edge — rect deltas are correct regardless of the offset parent.
+    const containerRect = container.getBoundingClientRect();
+    const chipRect = chip.getBoundingClientRect();
+    const left = chipRect.left - containerRect.left + container.scrollLeft;
+    const right = left + chipRect.width;
+    const viewLeft = container.scrollLeft;
+    const viewRight = viewLeft + container.clientWidth;
+    // A little breathing room so the chip is not flush against the edge.
+    const pad = 24;
+
+    if (left < viewLeft + pad) {
+      container.scrollLeft = Math.max(0, left - pad);
+    } else if (right > viewRight - pad) {
+      container.scrollLeft = right - container.clientWidth + pad;
+    }
+  }, [activeKey, items.length, density]);
+
   // Rename editing — the strip owns the input UI; the owner owns validation
   // and the save (entity rename / PTY `/rename` are kind strategies).
   const startRename = (key: string, currentName: string) => {
