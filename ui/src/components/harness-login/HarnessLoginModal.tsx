@@ -1,4 +1,6 @@
-import { t } from '@lingui/core/macro';
+import { i18n } from '@lingui/core';
+import type { MessageDescriptor } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
 import {
   Capability,
   capabilityManager,
@@ -196,7 +198,7 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
   return {
     capability,
     status,
-    statusText: STATUS_TEXT[status],
+    statusText: statusTextFor(status),
     name,
     account: FRIENDLY[worker]?.account,
     Icon,
@@ -243,29 +245,44 @@ function AuthBadge({
   );
 }
 
-const STATUS_TEXT: Record<Status, { label: string; dot: string; tone: string }> = {
+/**
+ * `label` is a lazy {@link MessageDescriptor}, not a `t` string. This table is
+ * module-level, so a `t` macro here runs ONCE at import — before any catalog is
+ * activated — and freezes the boot locale's English into the badge for the rest
+ * of the session. That is why "Signed in" / "Not installed" stayed English on a
+ * Hebrew screen while every in-component string next to them translated fine.
+ * {@link statusTextFor} resolves the descriptor at render instead, which is also
+ * what re-reads it after a locale switch.
+ */
+const STATUS_TEXT: Record<Status, { label: MessageDescriptor; dot: string; tone: string }> = {
   signedin: {
-    label: t`Signed in`,
+    label: msg`Signed in`,
     dot: 'bg-emerald-400 shadow-[0_0_7px] shadow-emerald-400/60',
     tone: 'text-emerald-500',
   },
   awaiting: {
-    label: t`Waiting for you…`,
+    label: msg`Waiting for you…`,
     dot: 'bg-sky-400 shadow-[0_0_7px] shadow-sky-400/60 animate-pulse',
     tone: 'text-sky-500',
   },
   busy: {
-    label: t`Starting…`,
+    label: msg`Starting…`,
     dot: 'bg-sky-400 shadow-[0_0_7px] shadow-sky-400/60 animate-pulse',
     tone: 'text-sky-500',
   },
   signedout: {
-    label: t`Not signed in`,
+    label: msg`Not signed in`,
     dot: 'bg-amber-400 shadow-[0_0_7px] shadow-amber-400/60',
     tone: 'text-amber-500',
   },
-  unavailable: { label: t`Not installed`, dot: 'bg-muted-foreground/40', tone: 'text-muted-foreground' },
+  unavailable: { label: msg`Not installed`, dot: 'bg-muted-foreground/40', tone: 'text-muted-foreground' },
 };
+
+/** A status's visuals with its label resolved in the ACTIVE locale. */
+function statusTextFor(status: Status): { label: string; dot: string; tone: string } {
+  const entry = STATUS_TEXT[status];
+  return { ...entry, label: i18n._(entry.label) };
+}
 
 /** Master list: one big, tappable row per assistant. */
 function HarnessListRow({

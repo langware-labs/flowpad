@@ -1,4 +1,6 @@
-import { t } from '@lingui/core/macro';
+import { i18n } from '@lingui/core';
+import type { MessageDescriptor } from '@lingui/core';
+import { msg, t } from '@lingui/core/macro';
 import { cloudManager, HubConnectionStatus, HubLoginStatus, User } from '@sdk';
 import { useCloudStatus, useContext } from '@sdk/react/hooks';
 import { Badge } from '@src/components/ui/badge';
@@ -14,27 +16,35 @@ interface UserInfoProps {
   user: User;
 }
 
+/**
+ * `text` is a lazy {@link MessageDescriptor}, not a string: these maps are
+ * module-level, so a `t` macro here would freeze the boot locale's wording, and
+ * the previous `<Trans>{visual.text}</Trans>` extracted as the placeholder-only
+ * message `{0}` — the badge printed the raw English through a translated app.
+ * The descriptor is resolved at render (`i18n._`), which is also what re-reads
+ * it after a locale switch.
+ */
 type BadgeVisual = {
-  text: string;
+  text: MessageDescriptor;
   variant: 'destructive' | 'secondary' | 'outline';
   icon: typeof Loader2;
   iconClassName?: string;
 };
 
 const LOGIN_VISUAL: Record<HubLoginStatus, BadgeVisual> = {
-  logged_in: { text: 'Logged in', variant: 'secondary', icon: CheckCircle2 },
-  logging_in: { text: 'Signing in', variant: 'outline', icon: Loader2, iconClassName: 'animate-spin' },
-  login_failed: { text: 'Login failed', variant: 'destructive', icon: AlertCircle },
-  logged_out: { text: 'Logged out', variant: 'outline', icon: CloudOff },
+  logged_in: { text: msg`Logged in`, variant: 'secondary', icon: CheckCircle2 },
+  logging_in: { text: msg`Signing in`, variant: 'outline', icon: Loader2, iconClassName: 'animate-spin' },
+  login_failed: { text: msg`Login failed`, variant: 'destructive', icon: AlertCircle },
+  logged_out: { text: msg`Logged out`, variant: 'outline', icon: CloudOff },
 };
 
 const CONNECTION_VISUAL: Record<HubConnectionStatus, BadgeVisual> = {
-  verified: { text: 'Connection verified', variant: 'secondary', icon: CheckCircle2 },
-  connected: { text: 'Connected', variant: 'outline', icon: Cloud },
-  connecting: { text: 'Connecting', variant: 'outline', icon: Loader2, iconClassName: 'animate-spin' },
-  auth_rejected: { text: 'Connection rejected', variant: 'destructive', icon: AlertCircle },
-  error: { text: 'Connection error', variant: 'destructive', icon: AlertCircle },
-  disconnected: { text: 'Not connected', variant: 'outline', icon: CloudOff },
+  verified: { text: msg`Connection verified`, variant: 'secondary', icon: CheckCircle2 },
+  connected: { text: msg`Connected`, variant: 'outline', icon: Cloud },
+  connecting: { text: msg`Connecting`, variant: 'outline', icon: Loader2, iconClassName: 'animate-spin' },
+  auth_rejected: { text: msg`Connection rejected`, variant: 'destructive', icon: AlertCircle },
+  error: { text: msg`Connection error`, variant: 'destructive', icon: AlertCircle },
+  disconnected: { text: msg`Not connected`, variant: 'outline', icon: CloudOff },
 };
 
 type ButtonAction = 'sign_in' | 'reconnect' | 'verify' | 'disconnect' | null;
@@ -111,7 +121,7 @@ export function UserInfo({ user }: UserInfoProps) {
       }
     } catch (err) {
       notify.error({
-        title: button.label + ' failed',
+        title: t`${button.label} failed`,
         message: err instanceof Error ? err.message : t`Unknown error.`,
         id: 'cloud-conn-action',
       });
@@ -199,11 +209,11 @@ export function UserInfo({ user }: UserInfoProps) {
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <Badge variant={loginVisual.variant} className="gap-1">
                 <LoginIcon className={`h-3 w-3 ${loginVisual.iconClassName ?? ''}`.trim()} />
-                <Trans>{loginVisual.text}</Trans>
+                {i18n._(loginVisual.text)}
               </Badge>
               <Badge variant={connectionVisual.variant} className="gap-1">
                 <ConnectionIcon className={`h-3 w-3 ${connectionVisual.iconClassName ?? ''}`.trim()} />
-                <Trans>{connectionVisual.text}</Trans>
+                {i18n._(connectionVisual.text)}
               </Badge>
             </div>
             {cloudUrl && (
@@ -222,7 +232,8 @@ export function UserInfo({ user }: UserInfoProps) {
               }}
             >
               {buttonBusy && <Loader2 className="h-4 w-4 animate-spin" />}
-              <Trans>{button.label}</Trans>
+              {/* Already localized: `computeButton` resolves it with `t` at render time. */}
+              {button.label}
             </Button>
           )}
         </div>
