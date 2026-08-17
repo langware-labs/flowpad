@@ -1163,6 +1163,9 @@ log_app = typer.Typer(help="View and replay CLI invocation logs")
 app.add_typer(log_app, name="log")
 
 from flow_sdk.cli.commands.compute_cmd import compute_app
+from flow_sdk.cli.commands.connect_cmd import connect as _connect_command
+
+app.command("connect")(_connect_command)
 
 app.add_typer(compute_app, name="compute")
 

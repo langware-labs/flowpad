@@ -221,6 +221,8 @@ class ComputeProviderType(StrEnum):
     AWS = "aws"
     E2B = "e2b"
     DOCKER = "docker"
+    # This machine, enrolled on the hub with `flow connect` (hub-side provider name).
+    USER_MACHINE = "user_machine"
 
 
 class DBDriver(StrEnum):
