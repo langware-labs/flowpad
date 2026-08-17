@@ -4154,8 +4154,8 @@ msgstr "Couldn't read this folder's Git status."
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#~ msgid "Couldn’t resolve this process."
-#~ msgstr "Couldn’t resolve this process."
+msgid "Couldn’t resolve this process."
+msgstr "Couldn’t resolve this process."
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Couldn't set up the project"
@@ -12297,12 +12297,12 @@ msgid "Project not found."
 msgstr "Project not found."
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#~ msgid "Project not recoverable from this workdir."
-#~ msgstr "Project not recoverable from this workdir."
+msgid "Project not recoverable from this workdir."
+msgstr "Project not recoverable from this workdir."
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#~ msgid "Project recovered."
-#~ msgstr "Project recovered."
+msgid "Project recovered."
+msgstr "Project recovered."
 
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Project renamed"
@@ -12772,8 +12772,8 @@ msgid "Reconnected"
 msgstr "Reconnected"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#~ msgid "Reconnected."
-#~ msgstr "Reconnected."
+msgid "Reconnected."
+msgstr "Reconnected."
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
 msgid "Record where {lockedEnvVar} comes from"
@@ -12936,8 +12936,8 @@ msgid "Relative path"
 msgstr "Relative path"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#~ msgid "Relaunched."
-#~ msgstr "Relaunched."
+msgid "Relaunched."
+msgstr "Relaunched."
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx

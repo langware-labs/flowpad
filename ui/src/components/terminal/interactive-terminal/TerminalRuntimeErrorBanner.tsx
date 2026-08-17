@@ -48,7 +48,7 @@ async function loadProcessById(processId: string): Promise<AgenticProcess | null
 }
 
 /**
- * Retry ``process.start({visible:true})``. Used by both
+ * Retry `)`process.start({visible:true})``. Used by both
  * ``runtime_terminated`` (the process stopped) and ``pty_attach_failed``
  * (PTY died) — the same backend `open` action is idempotent and handles
  * both cases, so the recovery code path is shared.
@@ -56,12 +56,12 @@ async function loadProcessById(processId: string): Promise<AgenticProcess | null
 async function retryStart(processId: string): Promise<boolean> {
   const process = await loadProcessById(processId);
   if (!process) {
-    notify.error({ title: t`Couldn’t resolve this process.`, id: `terminal-recover:${processId}` });
+    notify.error({ title: i18n._(msg`Couldn’t resolve this process.`), id: `terminal-recover:${processId}` });
     return false;
   }
   try {
     await process.start({ visible: true });
-    notify.success({ title: t`Reconnected.`, id: `terminal-recover:${processId}` });
+    notify.success({ title: i18n._(msg`Reconnected.`), id: `terminal-recover:${processId}` });
     dataContext.setTerminalRuntimeError(null);
     return true;
   } catch (err) {
@@ -83,12 +83,12 @@ async function retryStart(processId: string): Promise<boolean> {
 export async function retryFailedStart(processId: string): Promise<boolean> {
   const process = await loadProcessById(processId);
   if (!process) {
-    notify.error({ title: t`Couldn’t resolve this process.`, id: `terminal-recover:${processId}` });
+    notify.error({ title: i18n._(msg`Couldn’t resolve this process.`), id: `terminal-recover:${processId}` });
     return false;
   }
   try {
     await process.start({ visible: true, retry: true });
-    notify.success({ title: t`Relaunched.`, id: `terminal-recover:${processId}` });
+    notify.success({ title: i18n._(msg`Relaunched.`), id: `terminal-recover:${processId}` });
     dataContext.setTerminalRuntimeError(null);
     return true;
   } catch (err) {
@@ -100,13 +100,16 @@ export async function retryFailedStart(processId: string): Promise<boolean> {
 async function recoverProject(processId: string): Promise<boolean> {
   const process = await loadProcessById(processId);
   if (!process) {
-    notify.error({ title: t`Couldn’t resolve this process.`, id: `terminal-recover:${processId}` });
+    notify.error({ title: i18n._(msg`Couldn’t resolve this process.`), id: `terminal-recover:${processId}` });
     return false;
   }
   try {
     const recovered = await process.recoverProject();
     if (!recovered) {
-      notify.error({ title: t`Project not recoverable from this workdir.`, id: `terminal-recover:${processId}` });
+      notify.error({
+        title: i18n._(msg`Project not recoverable from this workdir.`),
+        id: `terminal-recover:${processId}`,
+      });
       return false;
     }
     await dataContext.setContextEntityTypeId(
@@ -115,7 +118,7 @@ async function recoverProject(processId: string): Promise<boolean> {
       'CurrentProjectTypeId' as never,
       new TypeId(Project.type, recovered.id),
     );
-    notify.success({ title: t`Project recovered.`, id: `terminal-recover:${processId}` });
+    notify.success({ title: i18n._(msg`Project recovered.`), id: `terminal-recover:${processId}` });
     dataContext.setTerminalRuntimeError(null);
     return true;
   } catch (err) {

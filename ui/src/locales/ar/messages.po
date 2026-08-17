@@ -4154,8 +4154,8 @@ msgstr "تعذر قراءة حالة Git لهذا المجلد."
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#~ msgid "Couldn’t resolve this process."
-#~ msgstr "تعذر تحديد هذه العملية."
+msgid "Couldn’t resolve this process."
+msgstr "تعذر تحديد هذه العملية."
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Couldn't set up the project"
@@ -12297,12 +12297,12 @@ msgid "Project not found."
 msgstr "لم يتم العثور على المشروع."
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#~ msgid "Project not recoverable from this workdir."
-#~ msgstr "المشروع غير قابل للاسترجاع من مجلد العمل هذا."
+msgid "Project not recoverable from this workdir."
+msgstr "المشروع غير قابل للاسترجاع من مجلد العمل هذا."
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#~ msgid "Project recovered."
-#~ msgstr "تم استرجاع المشروع."
+msgid "Project recovered."
+msgstr "تم استرجاع المشروع."
 
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Project renamed"
@@ -12772,8 +12772,8 @@ msgid "Reconnected"
 msgstr "تم إعادة الاتصال"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#~ msgid "Reconnected."
-#~ msgstr "تم إعادة الاتصال."
+msgid "Reconnected."
+msgstr "تم إعادة الاتصال."
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
 msgid "Record where {lockedEnvVar} comes from"
@@ -12936,8 +12936,8 @@ msgid "Relative path"
 msgstr "المسار النسبي"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#~ msgid "Relaunched."
-#~ msgstr "تم إعادة الإطلاق."
+msgid "Relaunched."
+msgstr "تم إعادة الإطلاق."
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
