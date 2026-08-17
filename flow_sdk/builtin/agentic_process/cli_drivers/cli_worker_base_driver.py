@@ -636,6 +636,12 @@ class AgenticWorker(ABC):
     workers override what makes sense for their CLI.
     """
 
+    #: The process-local JSONL tee this worker writes, when it keeps one.
+    #: Declared here (not just on the workers that have one) so callers can ask
+    #: every worker without a hasattr dance — claude has no tee and leaves it
+    #: None, which is an answer, not a missing attribute.
+    transcript_path: Path | None = None
+
     @abstractmethod
     async def execute(
         self,

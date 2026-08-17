@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 from datetime import datetime, timezone
@@ -15,13 +14,12 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     AgentOptions,
     DeviceLoginSpec,
     WorkerAuthResult,
-    WorkerSpawnError,
     apply_worker_env,
     apply_worker_secret_env,
-    latch_spawn_failure,
     restart_payload_from_cli_options,
     run_worker_auth_probe,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.headless_turn import run_headless_turn
 from flow_sdk.builtin.agentic_process.cli_drivers.opencode.cli import OpenCodeAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.opencode.config_gen import (
     SKILLS_SUBDIR,
@@ -46,7 +44,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.opencode.stream_worker import 
 )
 from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.flowpad_types.enums import WorkerType
-from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from flow_sdk.responses.response import ApiFailResponse
 from flow_sdk.transcript_analyzer import (
     TranscriptDescriptor,
     TranscriptFormat,
@@ -166,72 +164,9 @@ class OpenCodeDriver:
             logger.debug("OpenCodeDriver.headless_prompt: api model override failed", exc_info=True)
 
         worker = OpenCodeCLIStreamWorker.for_process(process.id)
-        from flow_sdk.builtin.agentic_process.agentic_process import (
-            register_prompt_worker,
-            unregister_prompt_worker,
+        return await run_headless_turn(
+            self, process, worker, prompt=full_prompt, context=context, logger=logger
         )
-
-        register_prompt_worker(process.id, worker)
-        # Setup between registration and task scheduling can raise. Until
-        # _run_turn is scheduled (its ``finally`` owns unregister), THIS frame
-        # owns the worker slot: a raise here would leak it → prompt_worker_active
-        # pinned True forever (permanent 409 + busy). Hand ownership off on success.
-        try:
-            try:
-                transcript_path = worker.transcript_path
-                if transcript_path is not None and not transcript_path.exists():
-                    transcript_path.parent.mkdir(parents=True, exist_ok=True)
-                    transcript_path.touch()
-            except OSError:
-                logger.debug(
-                    "OpenCodeDriver.headless_prompt: transcript pre-touch failed", exc_info=True
-                )
-
-            from flow_sdk.builtin.process_lifecycle import ProcessStatus
-
-            if process.status != ProcessStatus.RUNNING.value:
-                process.status = ProcessStatus.RUNNING.value
-                try:
-                    await process.save()
-                except Exception:
-                    logger.debug(
-                        "OpenCodeDriver.headless_prompt: lifecycle save failed", exc_info=True
-                    )
-
-            process_ref = process
-            process_id = process.id
-            object.__setattr__(process_ref, "_turn_in_flight", True)
-            try:
-                await process_ref.notify_updated()
-            except Exception:
-                logger.exception("OpenCodeDriver.headless_prompt: start notify failed")
-
-            adopt_session = process_ref.make_turn_session_adopter("OpenCodeDriver.headless_prompt")
-
-            async def _run_turn() -> None:
-                try:
-                    async for fd in worker.execute(prompt=full_prompt, context=context):
-                        await adopt_session(worker.get_session_id())
-                        try:
-                            await process_ref.emit_flow_data(fd.model_dump())
-                        except Exception:
-                            logger.debug(
-                                "OpenCodeDriver.headless_prompt: emit_flow_data failed",
-                                exc_info=True,
-                            )
-                except WorkerSpawnError as e:
-                    await latch_spawn_failure(process_ref, e)
-                except Exception:
-                    logger.exception("OpenCodeDriver.headless_prompt: worker error")
-                finally:
-                    unregister_prompt_worker(process_id, worker)
-                    await process_ref.end_headless_turn("OpenCodeDriver.headless_prompt")
-
-            asyncio.create_task(_run_turn(), name=f"opencode-{process.id[:8]}")
-        except BaseException:
-            unregister_prompt_worker(process.id, worker)
-            raise
-        return ApiSuccessResponse(data={"status": "started", "worker": self.name})
 
     def stream_worker(self, process: "AgenticProcess") -> OpenCodeCLIStreamWorker:
         return OpenCodeCLIStreamWorker.for_process(process.id)
