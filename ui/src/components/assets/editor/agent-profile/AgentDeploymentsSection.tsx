@@ -99,10 +99,7 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
   );
 
   return (
-    <AgentSection
-      title={t`Deployment`}
-      hint={t`Publish this agent to the cloud and give it a machine that logs in as itself.`}
-    >
+    <AgentSection hint={t`Publish this agent to the cloud and give it a machine that logs in as itself.`}>
       <div className="flex flex-col gap-2">
         {deployments.map((deployment) => {
           const url = deployment.origin?.url || deployment.target.location;
