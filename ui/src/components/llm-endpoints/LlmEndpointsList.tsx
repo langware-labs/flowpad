@@ -1,0 +1,224 @@
+/**
+ * The endpoints table. Rows open the detail; the admin controls (edit/delete,
+ * New endpoint) show only when the hub's permission expansion allows them.
+ *
+ * Today's tokens/cost per row come from one `usage` call per visible endpoint
+ * (react-query dedupes and caches them; the same query feeds the detail's
+ * Today tab), so the list is a glance at spend without a second endpoint.
+ */
+import { llmEndpointsService, type LLMEndpoint, type LLMUsageReport } from '@sdk';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { useQueries } from '@tanstack/react-query';
+import { KeyRound, Pencil, Plus, Trash2 } from 'lucide-react';
+import { useMemo } from 'react';
+
+import { Badge } from '@src/components/ui/badge';
+import { Button } from '@src/components/ui/button';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
+import { formatValue } from '@src/components/cost-dashboard/constants';
+
+import { canConfigure, canRemove } from './endpoint-catalog';
+import { cohortRange, formatUsd } from './usage-math';
+
+export interface LlmEndpointsListProps {
+  endpoints: readonly LLMEndpoint[];
+  isLoading?: boolean;
+  onOpen: (endpoint: LLMEndpoint) => void;
+  onNew: () => void;
+  onEdit: (endpoint: LLMEndpoint) => void;
+  onDelete: (endpoint: LLMEndpoint) => void;
+  /** Whether the user may create — the list has no entity to ask, so the
+   *  caller decides (any configurable endpoint ⇒ show New; else hidden). */
+  canCreate: boolean;
+}
+
+export function KindBadge({ kind }: { kind: 'root' | 'chain' }) {
+  return (
+    <Badge
+      variant="outline"
+      data-testid={`kind-badge-${kind}`}
+      className={
+        kind === 'root'
+          ? 'border-sky-500/30 bg-sky-500/10 text-sky-500'
+          : 'border-violet-500/30 bg-violet-500/10 text-violet-500'
+      }
+    >
+      {kind === 'root' ? <Trans>root</Trans> : <Trans>chain</Trans>}
+    </Badge>
+  );
+}
+
+export function ProviderBadge({ provider }: { provider: string | null | undefined }) {
+  if (!provider) return null;
+  return (
+    <Badge variant="secondary" data-testid="provider-badge" className="font-mono text-[11px]">
+      {provider}
+    </Badge>
+  );
+}
+
+export function CredentialChip({ endpoint }: { endpoint: LLMEndpoint }) {
+  if (endpoint.kind !== 'root') return <span className="text-xs text-muted-foreground">—</span>;
+  return endpoint.hasCredential ? (
+    <span
+      className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[11px] text-emerald-500"
+      data-testid="credential-chip"
+    >
+      <KeyRound className="h-3 w-3" />
+      {endpoint.credential_hint}
+    </span>
+  ) : (
+    <span
+      className="inline-flex items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-500"
+      data-testid="credential-chip"
+    >
+      <KeyRound className="h-3 w-3" />
+      <Trans>no key</Trans>
+    </span>
+  );
+}
+
+/** Today's usage per endpoint id, one query each, batched by react-query. */
+export function useTodayUsage(ids: readonly string[]) {
+  // The range is computed once per mount-minute: a stable key keeps the queries
+  // from refetching on every render.
+  const range = useMemo(() => cohortRange('today'), []);
+  const results = useQueries({
+    queries: ids.map((id) => ({
+      queryKey: ['llm-endpoint', id, 'usage', range.from, range.to, range.granularity, ''],
+      queryFn: () =>
+        llmEndpointsService.getUsage(id, { from: range.from, to: range.to, granularity: range.granularity }),
+      staleTime: 30_000,
+    })),
+  });
+  const byId = new Map<string, LLMUsageReport | undefined>();
+  ids.forEach((id, i) => byId.set(id, results[i]?.data));
+  return byId;
+}
+
+export function LlmEndpointsList({
+  endpoints,
+  isLoading,
+  onOpen,
+  onNew,
+  onEdit,
+  onDelete,
+  canCreate,
+}: LlmEndpointsListProps) {
+  const { t } = useLingui();
+  const usage = useTodayUsage(endpoints.map((e) => e.id));
+
+  return (
+    <div className="space-y-3" data-testid="llm-endpoints-list">
+      <div className="flex items-center justify-end">
+        {canCreate && (
+          <Button size="sm" onClick={onNew} data-testid="llm-new-endpoint">
+            <Plus className="me-1 h-4 w-4" />
+            <Trans>New endpoint</Trans>
+          </Button>
+        )}
+      </div>
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>
+                <Trans>Name</Trans>
+              </TableHead>
+              <TableHead>
+                <Trans>Kind</Trans>
+              </TableHead>
+              <TableHead>
+                <Trans>Provider</Trans>
+              </TableHead>
+              <TableHead>
+                <Trans>Enabled</Trans>
+              </TableHead>
+              <TableHead>
+                <Trans>Credential</Trans>
+              </TableHead>
+              <TableHead className="text-end">
+                <Trans>Today</Trans>
+              </TableHead>
+              <TableHead className="w-24" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {endpoints.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
+                  {isLoading ? t`Loading…` : t`No endpoints yet.`}
+                </TableCell>
+              </TableRow>
+            )}
+            {endpoints.map((e) => {
+              const totals = usage.get(e.id)?.totals;
+              const configurable = canConfigure(e);
+              const removable = canRemove(e);
+              return (
+                <TableRow
+                  key={e.id}
+                  data-testid={`llm-row-${e.id}`}
+                  className="cursor-pointer"
+                  onClick={() => onOpen(e)}
+                >
+                  <TableCell className="font-medium">{e.name || e.id}</TableCell>
+                  <TableCell>
+                    <KindBadge kind={e.kind} />
+                  </TableCell>
+                  <TableCell>
+                    <ProviderBadge provider={e.kind === 'root' ? e.provider : null} />
+                    {e.kind === 'chain' && (
+                      <span className="text-xs text-muted-foreground">{t`${e.sources.length} source(s)`}</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <span
+                      className={`inline-block h-2 w-2 rounded-full ${e.enabled ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`}
+                      title={e.enabled ? t`Enabled` : t`Disabled`}
+                      data-testid={`enabled-dot-${e.enabled ? 'on' : 'off'}`}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <CredentialChip endpoint={e} />
+                  </TableCell>
+                  <TableCell className="text-end font-mono text-xs" data-testid="today-usage">
+                    {totals ? `${formatValue(totals.total_tokens, 'tokens')} · ${formatUsd(totals.cost_usd)}` : '…'}
+                  </TableCell>
+                  <TableCell className="text-end">
+                    <span className="inline-flex gap-1" onClick={(ev) => ev.stopPropagation()}>
+                      {configurable && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          aria-label={t`Edit`}
+                          data-testid={`llm-edit-${e.id}`}
+                          onClick={() => onEdit(e)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {removable && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          aria-label={t`Delete`}
+                          data-testid={`llm-delete-${e.id}`}
+                          onClick={() => onDelete(e)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}

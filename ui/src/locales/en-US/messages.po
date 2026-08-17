@@ -64,6 +64,11 @@ msgstr "\"{0}\" will be deleted for everyone it is shared with. This cannot be u
 msgid "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
 msgstr "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
 
+#. placeholder {0}: deleting?.name ?? ''
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+msgid "\"{0}\" will be removed. Chains that source it will lose that source; its stored key and usage history go with it. This cannot be undone."
+msgstr "\"{0}\" will be removed. Chains that source it will lose that source; its stored key and usage history go with it. This cannot be undone."
+
 #. placeholder {0}: pendingDelete?.title ?? ''
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "\"{0}\" will be removed. This cannot be undone."
@@ -235,6 +240,17 @@ msgstr "{0} deleted"
 msgid "{0} disconnect failed"
 msgstr "{0} disconnect failed"
 
+#. placeholder {0}: totals.estimated_requests
+#. placeholder {1}: totals.unpriced_requests
+#: src/components/llm-endpoints/UsagePanel.tsx
+msgid "{0} estimated · {1} unpriced"
+msgstr "{0} estimated · {1} unpriced"
+
+#. placeholder {0}: chain.data.paths.length
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+msgid "{0} fallback paths"
+msgstr "{0} fallback paths"
+
 #. placeholder {0}: tooBig.length
 #. placeholder {1}: tooBig.join(', ')
 #: src/components/conversation/MessageComposer.tsx
@@ -325,6 +341,12 @@ msgstr "{0} not tested"
 msgid "{0} now has \"{1}\"."
 msgstr "{0} now has \"{1}\"."
 
+#. placeholder {0}: rows.length
+#. placeholder {1}: data.length
+#: src/components/llm-endpoints/ModelsList.tsx
+msgid "{0} of {1}"
+msgstr "{0} of {1}"
+
 #. js-lingui-explicit-id
 #. placeholder {0}: row.orphan_count
 #. placeholder {1}: row.orphan_count === 1 ? '' : 's'
@@ -359,6 +381,11 @@ msgstr "{0} secret{1}"
 #: src/components/terminal/HistoryModal.tsx
 msgid "{0} selected"
 msgstr "{0} selected"
+
+#. placeholder {0}: e.sources.length
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
+msgid "{0} source(s)"
+msgstr "{0} source(s)"
 
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
@@ -731,6 +758,14 @@ msgstr "60"
 msgid "80% Alert Threshold"
 msgstr "80% Alert Threshold"
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "A chain is fed from other endpoints, in fallback order, and can only narrow what passes."
+msgstr "A chain is fed from other endpoints, in fallback order, and can only narrow what passes."
+
+#: src/components/llm-endpoints/endpoint-catalog.ts
+msgid "A chain needs at least one source."
+msgstr "A chain needs at least one source."
+
 #: src/components/data-sources/provider-catalog.ts
 msgid "A hosted mailbox over its HTTP API."
 msgstr "A hosted mailbox over its HTTP API."
@@ -742,6 +777,10 @@ msgstr "A live session is already running in this conversation"
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "A project with that name exists"
 msgstr "A project with that name exists"
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "A root talks to a provider with its own key."
+msgstr "A root talks to a provider with its own key."
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "A source is one remote account or feed set. The poller syncs it on the heartbeat."
@@ -880,6 +919,7 @@ msgstr "Activity"
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/llm-endpoints/SourcesPicker.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-home/SecretsCard.tsx
 #: src/components/project-home/VibeAgentsCard.tsx
@@ -924,6 +964,14 @@ msgstr "Add a personal note…"
 #: src/components/conversation/PromptComposerDialog.tsx
 msgid "Add a prompt to your reply"
 msgstr "Add a prompt to your reply"
+
+#: src/components/llm-endpoints/SourcesPicker.tsx
+msgid "Add a source"
+msgstr "Add a source"
+
+#: src/components/llm-endpoints/SourcesPicker.tsx
+msgid "Add a source…"
+msgstr "Add a source…"
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Add an agent…"
@@ -1010,6 +1058,10 @@ msgstr "Add link"
 msgid "Add New Hook"
 msgstr "Add New Hook"
 
+#: src/components/llm-endpoints/AliasesEditor.tsx
+msgid "Add row"
+msgstr "Add row"
+
 #: src/components/account/secrets-section.tsx
 #: src/components/account/secrets-section.tsx
 msgid "Add secret"
@@ -1053,10 +1105,22 @@ msgstr "Add to the running session"
 msgid "Add Trigger"
 msgstr "Add Trigger"
 
+#. placeholder {0}: draft.name.trim()
 #. placeholder {0}: source.name
 #: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Added {0}"
 msgstr "Added {0}"
+
+#. placeholder {0}: draft.name.trim()
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Added {0} and stored its key"
+msgstr "Added {0} and stored its key"
+
+#. placeholder {0}: draft.name.trim()
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Added {0}, but the key was not saved"
+msgstr "Added {0}, but the key was not saved"
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Added vibe agent"
@@ -1184,6 +1248,10 @@ msgstr "AI Prompt *"
 msgid "Alerts Only ({totalAlerts})"
 msgstr "Alerts Only ({totalAlerts})"
 
+#: src/components/llm-endpoints/FiltersEditor.tsx
+msgid "Aliases (client name → real model)"
+msgstr "Aliases (client name → real model)"
+
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Align center"
 msgstr "Align center"
@@ -1233,6 +1301,10 @@ msgstr "All changes"
 #: src/components/account/database-section.tsx
 msgid "All data cleared. Redirecting..."
 msgstr "All data cleared. Redirecting..."
+
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+msgid "All endpoints"
+msgstr "All endpoints"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "All entries"
@@ -1393,6 +1465,10 @@ msgstr "am_…"
 msgid "An <0>orphan</0> is a row in the search index whose source file is gone from disk. The indexer detects them on every run and marks them with <1>orphan_since</1>. The file is already gone; sweeping just removes the stale row from search so results stay clean."
 msgstr "An <0>orphan</0> is a row in the search index whose source file is gone from disk. The indexer detects them on every run and marks them with <1>orphan_since</1>. The file is already gone; sweeping just removes the stale row from search so results stay clean."
 
+#: src/components/llm-endpoints/endpoint-catalog.ts
+msgid "An endpoint cannot source itself."
+msgstr "An endpoint cannot source itself."
+
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/artifacts/artifacts-list.tsx
 msgid "An error occurred"
@@ -1507,6 +1583,10 @@ msgstr "Announcements shown at startup"
 #: src/components/assets/context-folder-sources.tsx
 msgid "Another Flowpad project — its folder becomes context for this one"
 msgstr "Another Flowpad project — its folder becomes context for this one"
+
+#: src/components/llm-endpoints/endpoint-catalog.ts
+msgid "Anthropic"
+msgstr "Anthropic"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Anthropic API key for direct API access"
@@ -2061,9 +2141,14 @@ msgstr "Balanced"
 msgid "Base path"
 msgstr "Base path"
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/settings-view/settings-utils.ts
 msgid "Base URL"
 msgstr "Base URL"
+
+#: src/components/llm-endpoints/endpoint-catalog.ts
+msgid "Base URL must be an http(s) URL."
+msgstr "Base URL must be an http(s) URL."
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Bash Command *"
@@ -2080,6 +2165,10 @@ msgstr "Bash Timeout (ms)"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Behaviour"
 msgstr "Behaviour"
+
+#: src/components/llm-endpoints/FiltersEditor.tsx
+msgid "Betas allowed"
+msgstr "Betas allowed"
 
 #: src/components/project-home/BindSecretDialog.tsx
 msgid "Bind"
@@ -2164,6 +2253,10 @@ msgstr "Brand this project's home ({HOME_CUSTOMIZATION_DIR}). Applies on every h
 msgid "breadcrumb"
 msgstr "breadcrumb"
 
+#: src/components/llm-endpoints/ChainTree.tsx
+msgid "breaker open"
+msgstr "breaker open"
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Bring back"
 msgstr "Bring back"
@@ -2234,9 +2327,17 @@ msgstr "Bullet list"
 msgid "Bundle ready — download started."
 msgstr "Bundle ready — download started."
 
+#: src/components/llm-endpoints/UsagePanel.tsx
+msgid "By child"
+msgstr "By child"
+
 #: src/components/login-required-dialog.tsx
 msgid "By continuing, you agree to our <0>Terms</0> and <1>Privacy Policy</1>."
 msgstr "By continuing, you agree to our <0>Terms</0> and <1>Privacy Policy</1>."
+
+#: src/components/llm-endpoints/UsagePanel.tsx
+msgid "By model"
+msgstr "By model"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "By name"
@@ -2359,6 +2460,7 @@ msgstr "Can't update — showing last synced"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
@@ -2461,6 +2563,17 @@ msgstr "Capabilities"
 #: src/i18n/type-labels.ts
 msgid "Capability"
 msgstr "Capability"
+
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/llm-endpoints/SourcesPicker.tsx
+#: src/components/llm-endpoints/SourcesPicker.tsx
+msgid "chain"
+msgstr "chain"
+
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Chain"
+msgstr "Chain"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Change"
@@ -3715,8 +3828,26 @@ msgstr "cost"
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 #: src/components/graph-view/ui/TopBar.tsx
+#: src/components/llm-endpoints/UsageByChildTable.tsx
+#: src/components/llm-endpoints/UsagePanel.tsx
 msgid "Cost"
 msgstr "Cost"
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Cost (USD) / day"
+msgstr "Cost (USD) / day"
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Cost (USD) / month"
+msgstr "Cost (USD) / month"
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Cost (USD) / week"
+msgstr "Cost (USD) / week"
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Cost (USD), total"
+msgstr "Cost (USD), total"
 
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Could not annotate view"
@@ -3783,9 +3914,11 @@ msgid "Could not delete"
 msgstr "Could not delete"
 
 #. placeholder {0}: connection.provider
+#. placeholder {0}: e.name
 #. placeholder {0}: source.name || source.provider
 #: src/components/connections-manager.tsx
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
 msgid "Could not delete {0}"
 msgstr "Could not delete {0}"
 
@@ -3862,6 +3995,10 @@ msgstr "Could not load collaboration room {0}. Try again in a moment."
 msgid "Could not load environment variables"
 msgstr "Could not load environment variables"
 
+#: src/components/llm-endpoints/ModelsList.tsx
+msgid "Could not load models."
+msgstr "Could not load models."
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "Could not load source: {error}"
 msgstr "Could not load source: {error}"
@@ -3877,6 +4014,10 @@ msgstr "Could not load this project. Try again in a moment."
 #: src/routes/loaders/load-tasks.ts
 msgid "Could not load this task. Try again in a moment."
 msgstr "Could not load this task. Try again in a moment."
+
+#: src/components/llm-endpoints/UsagePanel.tsx
+msgid "Could not load usage."
+msgstr "Could not load usage."
 
 #. placeholder {0}: a.label
 #: src/components/assets/editor/task/TaskAttachments.tsx
@@ -3924,6 +4065,10 @@ msgstr "Could not remove access"
 msgid "Could not remove the help desk files"
 msgstr "Could not remove the help desk files"
 
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "Could not remove the key"
+msgstr "Could not remove the key"
+
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Could not rename context"
 msgstr "Could not rename context"
@@ -3945,6 +4090,10 @@ msgstr "Could not resolve compute node or home directory"
 msgid "Could not resolve home directory from bootstrap info"
 msgstr "Could not resolve home directory from bootstrap info"
 
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+msgid "Could not resolve the chain."
+msgstr "Could not resolve the chain."
+
 #: src/components/assets/ShareContextFolderButton.tsx
 #: src/components/assets/ShareContextFolderButton.tsx
 msgid "Could not resolve this folder"
@@ -3961,6 +4110,14 @@ msgstr "Could not run the connection test."
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Could not save agent"
 msgstr "Could not save agent"
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Could not save the endpoint"
+msgstr "Could not save the endpoint"
+
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "Could not save the key"
+msgstr "Could not save the key"
 
 #: src/components/diagnose/use-diagnosis-report.ts
 msgid "Could not send report to the Flowpad team"
@@ -4153,6 +4310,7 @@ msgstr "CPU:"
 #: src/components/assets/AssetsPage.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/cron-view/CronForm.tsx
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/project-home/ProjectHome.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
@@ -4311,6 +4469,10 @@ msgstr "Creating..."
 #: src/pages/hub-home/HubHome.tsx
 msgid "Creating…"
 msgstr "Creating…"
+
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
+msgid "Credential"
+msgstr "Credential"
 
 #: src/components/credentials-view/CredentialsView.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
@@ -4600,6 +4762,10 @@ msgstr "Delegating to"
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
+#: src/components/llm-endpoints/CredentialField.tsx
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -4757,6 +4923,7 @@ msgid "Delete Item"
 msgstr "Delete Item"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/llm-endpoints/CredentialField.tsx
 msgid "Delete key"
 msgstr "Delete key"
 
@@ -4798,6 +4965,10 @@ msgstr "Delete the local help desk files (dev)"
 msgid "Delete the local help desk files?"
 msgstr "Delete the local help desk files?"
 
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "Delete the stored key?"
+msgstr "Delete the stored key?"
+
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 msgid "Delete this chat"
 msgstr "Delete this chat"
@@ -4817,6 +4988,10 @@ msgstr "Delete this data source?"
 #: src/components/account/system-diagnoses.tsx
 msgid "Delete this diagnosis? This cannot be undone."
 msgstr "Delete this diagnosis? This cannot be undone."
+
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+msgid "Delete this endpoint?"
+msgstr "Delete this endpoint?"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Delete this key?"
@@ -5106,6 +5281,10 @@ msgstr "dimension"
 msgid "Dir"
 msgstr "Dir"
 
+#: src/components/llm-endpoints/UsageByChildTable.tsx
+msgid "direct"
+msgstr "direct"
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Directories"
 msgstr "Directories"
@@ -5152,12 +5331,15 @@ msgstr "Disable sniffer"
 msgid "Disable telemetry and analytics"
 msgstr "Disable telemetry and analytics"
 
+#: src/components/llm-endpoints/ChainTree.tsx
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "disabled"
 msgstr "disabled"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "Disabled"
 msgstr "Disabled"
 
@@ -5485,6 +5667,10 @@ msgstr "e.g., /path/to/script.sh or if [[ \"$tool_input\" == *.md ]]; then echo 
 msgid "Each selected project's folder is added as a context folder."
 msgstr "Each selected project's folder is added as a context folder."
 
+#: src/components/llm-endpoints/endpoint-catalog.ts
+msgid "Each source may appear once."
+msgstr "Each source may appear once."
+
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "edges"
 msgstr "edges"
@@ -5501,6 +5687,8 @@ msgstr "Edges by kind"
 #: src/components/conversation/attachment-actions/registry.ts
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/data-sources/SourceMenu.tsx
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Edit"
 msgstr "Edit"
@@ -5520,6 +5708,10 @@ msgstr "Edit attached prompt"
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Edit data source"
 msgstr "Edit data source"
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Edit endpoint"
+msgstr "Edit endpoint"
 
 #: src/components/favorites/FavoriteStar.tsx
 msgid "Edit favorite"
@@ -5587,6 +5779,10 @@ msgstr "Editing"
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Editing system trigger"
 msgstr "Editing system trigger"
+
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+msgid "Effective filters at this endpoint"
+msgstr "Effective filters at this endpoint"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Effort"
@@ -5683,6 +5879,9 @@ msgstr "Enable/Disable hook"
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "Enabled"
 msgstr "Enabled"
 
@@ -5874,6 +6073,11 @@ msgstr "Error while displaying the suggestion, contact support"
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "errors"
 msgstr "errors"
+
+#: src/components/llm-endpoints/UsageByChildTable.tsx
+#: src/components/llm-endpoints/UsagePanel.tsx
+msgid "Errors"
+msgstr "Errors"
 
 #: src/components/assets/editor/agent-trace/CallTreeView.tsx
 #: src/components/assets/editor/skill/SkillAssetEditor.tsx
@@ -6459,6 +6663,15 @@ msgstr "Failed to update trigger"
 msgid "Failed to upload image"
 msgstr "Failed to upload image"
 
+#: src/components/llm-endpoints/ChainTree.tsx
+msgid "Fallback order under its parent"
+msgstr "Fallback order under its parent"
+
+#: src/components/llm-endpoints/UsageByChildTable.tsx
+#: src/components/llm-endpoints/UsagePanel.tsx
+msgid "Fallbacks"
+msgstr "Fallbacks"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
 msgid "Fast"
@@ -6589,6 +6802,10 @@ msgstr "Filter by session"
 msgid "Filter by tag, subject or rule…"
 msgstr "Filter by tag, subject or rule…"
 
+#: src/components/llm-endpoints/endpoint-catalog.ts
+msgid "Filter ceilings must be non-negative numbers."
+msgstr "Filter ceilings must be non-negative numbers."
+
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Filter files"
 msgstr "Filter files"
@@ -6596,6 +6813,10 @@ msgstr "Filter files"
 #: src/components/machine-overview/logs-viewer.tsx
 msgid "Filter logs..."
 msgstr "Filter logs..."
+
+#: src/components/llm-endpoints/ModelsList.tsx
+msgid "Filter models…"
+msgstr "Filter models…"
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Filter network..."
@@ -6638,8 +6859,13 @@ msgstr "Filter…"
 #: src/components/directory-tree/FilterDropdown.tsx
 #: src/components/directory-tree/FilterDropdown.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Filters"
 msgstr "Filters"
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Filters & limits"
+msgstr "Filters & limits"
 
 #: src/components/data-sources/DataSourceCard.tsx
 msgid "Finish setup, then press Verify."
@@ -6901,6 +7127,14 @@ msgstr "forwarded"
 #: src/components/conversation/MessageBubble.tsx
 msgid "Forwarded from another conversation"
 msgstr "Forwarded from another conversation"
+
+#: src/components/llm-endpoints/AliasesEditor.tsx
+msgid "from"
+msgstr "from"
+
+#: src/components/llm-endpoints/AliasesEditor.tsx
+msgid "From"
+msgstr "From"
 
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "from .env.local"
@@ -7456,6 +7690,10 @@ msgstr "Hide empty"
 msgid "Hide feed entry"
 msgstr "Hide feed entry"
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Hide filters & limits"
+msgstr "Hide filters & limits"
+
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Hide from Recent — still visible in Inbox; reappears when a new message arrives"
 msgstr "Hide from Recent — still visible in Inbox; reappears when a new message arrives"
@@ -7962,6 +8200,10 @@ msgstr "Input Files"
 msgid "Input files attached to this session"
 msgstr "Input files attached to this session"
 
+#: src/components/llm-endpoints/UsagePanel.tsx
+msgid "Input tokens"
+msgstr "Input tokens"
+
 #: src/components/cost-dashboard/constants.ts
 msgid "Input Tokens"
 msgstr "Input Tokens"
@@ -8055,6 +8297,11 @@ msgstr "Instructions"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Invalid"
 msgstr "Invalid"
+
+#. placeholder {0}: verdict.status
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "Invalid ({0})"
+msgstr "Invalid ({0})"
 
 #: src/components/app-host/AppHost.tsx
 msgid "Invalid App Path"
@@ -8250,6 +8497,14 @@ msgstr "kept current as a context folder"
 msgid "Key not set"
 msgstr "Key not set"
 
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "Key removed"
+msgstr "Key removed"
+
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "Key saved"
+msgstr "Key saved"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Key saved & valid"
 msgstr "Key saved & valid"
@@ -8271,6 +8526,8 @@ msgid "kind"
 msgstr "kind"
 
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "Kind"
 msgstr "Kind"
 
@@ -8471,6 +8728,22 @@ msgstr "Level"
 msgid "Limit"
 msgstr "Limit"
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Limits"
+msgstr "Limits"
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Limits are optimistic: usage already in flight can overshoot slightly. Windows are UTC."
+msgstr "Limits are optimistic: usage already in flight can overshoot slightly. Windows are UTC."
+
+#: src/components/llm-endpoints/endpoint-catalog.ts
+msgid "Limits must be non-negative numbers."
+msgstr "Limits must be non-negative numbers."
+
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+msgid "Limits remaining"
+msgstr "Limits remaining"
+
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "line"
 msgstr "line"
@@ -8591,6 +8864,15 @@ msgstr "LLM API keys"
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "LLM APIs"
 msgstr "LLM APIs"
+
+#: src/i18n/type-labels.ts
+msgid "LLM Endpoint"
+msgstr "LLM Endpoint"
+
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+#: src/types/ViewType.ts
+msgid "LLM Endpoints"
+msgstr "LLM Endpoints"
 
 #: src/components/assets/MarkdownIndexPanel.tsx
 msgid "LLM Index"
@@ -8908,6 +9190,7 @@ msgstr "Loading..."
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/project-selector/ProjectSelector.tsx
 #: src/components/search-index/EntitySearchModal.tsx
@@ -9138,6 +9421,10 @@ msgstr "Matcher (JSON)"
 msgid "Matcher Pattern (optional)"
 msgstr "Matcher Pattern (optional)"
 
+#: src/components/llm-endpoints/FiltersEditor.tsx
+msgid "Max input chars"
+msgstr "Max input chars"
+
 #: src/components/data-sources/provider-catalog.ts
 msgid "Max items per run"
 msgstr "Max items per run"
@@ -9149,6 +9436,10 @@ msgstr "Max Memory"
 #: src/components/settings-view/settings-utils.ts
 msgid "Max Output Tokens"
 msgstr "Max Output Tokens"
+
+#: src/components/llm-endpoints/FiltersEditor.tsx
+msgid "Max tokens"
+msgstr "Max tokens"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Max turns"
@@ -9373,6 +9664,7 @@ msgstr "model"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
+#: src/components/llm-endpoints/UsageByChildTable.tsx
 #: src/components/settings-view/settings-utils.ts
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
@@ -9387,6 +9679,10 @@ msgstr "Model & Performance"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Model & runtime"
 msgstr "Model & runtime"
+
+#: src/components/llm-endpoints/FiltersEditor.tsx
+msgid "Model map (rewrite before forwarding)"
+msgstr "Model map (rewrite before forwarding)"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Model mapping"
@@ -9406,8 +9702,17 @@ msgid "model slug"
 msgstr "model slug"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "Models"
 msgstr "Models"
+
+#: src/components/llm-endpoints/FiltersEditor.tsx
+msgid "Models allowed (globs)"
+msgstr "Models allowed (globs)"
+
+#: src/components/llm-endpoints/FiltersEditor.tsx
+msgid "Models denied (globs)"
+msgstr "Models denied (globs)"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Models Used"
@@ -9458,6 +9763,14 @@ msgstr "Mount the Flowpad Assistant so its skills & agents become discoverable. 
 msgid "mounted"
 msgstr "mounted"
 
+#: src/components/llm-endpoints/SourcesPicker.tsx
+msgid "Move down"
+msgstr "Move down"
+
+#: src/components/llm-endpoints/SourcesPicker.tsx
+msgid "Move up"
+msgstr "Move up"
+
 #: src/components/assets/useAssetsModel.tsx
 msgid "Moved"
 msgstr "Moved"
@@ -9498,6 +9811,8 @@ msgstr "N/A"
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -9517,6 +9832,10 @@ msgstr "Name *"
 #: src/components/artifacts/artifact-form.tsx
 msgid "Name is required"
 msgstr "Name is required"
+
+#: src/components/llm-endpoints/endpoint-catalog.ts
+msgid "Name is required."
+msgstr "Name is required."
 
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "Name this entity"
@@ -9617,6 +9936,11 @@ msgstr "New Claude Session"
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 msgid "New contacts group"
 msgstr "New contacts group"
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
+msgid "New endpoint"
+msgstr "New endpoint"
 
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 #: src/components/directory-tree/ItemHandler.tsx
@@ -9830,6 +10154,10 @@ msgstr "No bookmarks"
 msgid "No bookmarks yet"
 msgstr "No bookmarks yet"
 
+#: src/components/llm-endpoints/FiltersEditor.tsx
+msgid "no ceiling"
+msgstr "no ceiling"
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "No changes"
 msgstr "No changes"
@@ -9960,6 +10288,10 @@ msgstr "no edges"
 msgid "No emoji found"
 msgstr "No emoji found"
 
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
+msgid "No endpoints yet."
+msgstr "No endpoints yet."
+
 #: src/components/search-index/EntitySearchModal.tsx
 msgid "No entities."
 msgstr "No entities."
@@ -10037,6 +10369,15 @@ msgstr "No index.md to view"
 msgid "No items"
 msgstr "No items"
 
+#: src/components/llm-endpoints/ChainTree.tsx
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
+msgid "no key"
+msgstr "no key"
+
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "No key stored — this root cannot serve requests until one is saved."
+msgstr "No key stored — this root cannot serve requests until one is saved."
+
 #: src/components/project-home/EnvLocalCard.tsx
 msgid "No keys found in this project's .env.local."
 msgstr "No keys found in this project's .env.local."
@@ -10048,6 +10389,10 @@ msgstr "No known fix yet — use \"Fix It\" to start a session."
 #: src/components/locale/LocalePicker.tsx
 msgid "No languages found."
 msgstr "No languages found."
+
+#: src/components/llm-endpoints/LimitsRemaining.tsx
+msgid "No limits configured along this chain."
+msgstr "No limits configured along this chain."
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "No line changes vs the stamped baseline."
@@ -10148,6 +10493,14 @@ msgstr "No messages yet."
 msgid "No metrics data available"
 msgstr "No metrics data available"
 
+#: src/components/llm-endpoints/ModelsList.tsx
+msgid "No models."
+msgstr "No models."
+
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+msgid "No narrowing — everything the roots allow."
+msgstr "No narrowing — everything the roots allow."
+
 #: src/components/connections-manager.tsx
 msgid "No OAuth providers available"
 msgstr "No OAuth providers available"
@@ -10163,6 +10516,10 @@ msgstr "No orphans found."
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "No orphans right now. Click to re-scan and confirm."
 msgstr "No orphans right now. Click to re-scan and confirm."
+
+#: src/components/llm-endpoints/SourcesPicker.tsx
+msgid "No other endpoints"
+msgstr "No other endpoints"
 
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "No page exists with this name yet."
@@ -10530,6 +10887,10 @@ msgstr "No unread conversations"
 msgid "No unsaved changes"
 msgstr "No unsaved changes"
 
+#: src/components/llm-endpoints/UsageByChildTable.tsx
+msgid "No usage in this period."
+msgstr "No usage in this period."
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "No value discovered"
 msgstr "No value discovered"
@@ -10654,6 +11015,14 @@ msgstr "Not started — your first prompt will request access to {hostName}'s ma
 #: src/components/connections-manager/usage-cell.tsx
 msgid "Not used yet"
 msgstr "Not used yet"
+
+#: src/components/llm-endpoints/ChainTree.tsx
+msgid "not visible"
+msgstr "not visible"
+
+#: src/components/llm-endpoints/SourcesPicker.tsx
+msgid "not visible to you"
+msgstr "not visible to you"
 
 #: src/components/assets/editor/agent-trace/simple/report-language.ts
 msgid "Note"
@@ -10849,6 +11218,10 @@ msgstr "Onboarding reset"
 msgid "One per line. Each URL becomes its own stream with its own cursor and health."
 msgstr "One per line. Each URL becomes its own stream with its own cursor and health."
 
+#: src/components/llm-endpoints/FiltersEditor.tsx
+msgid "One per line. Empty means everything the sources allow."
+msgstr "One per line. Empty means everything the sources allow."
+
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records you can search, read and build flows on."
 msgstr "One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records you can search, read and build flows on."
@@ -10871,6 +11244,7 @@ msgstr "Only harness entries here — enable “Show all” to view them."
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
@@ -11293,6 +11667,10 @@ msgstr "Open transcript"
 msgid "Open worker session"
 msgstr "Open worker session"
 
+#: src/components/llm-endpoints/endpoint-catalog.ts
+msgid "OpenAI"
+msgstr "OpenAI"
+
 #: src/components/account/secrets-section.tsx
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
 msgid "OPENAI_API_KEY"
@@ -11326,6 +11704,10 @@ msgstr "Opening the help desk…"
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Opening your project…"
 msgstr "Opening your project…"
+
+#: src/components/llm-endpoints/endpoint-catalog.ts
+msgid "OpenRouter"
+msgstr "OpenRouter"
 
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Operation failed"
@@ -11420,6 +11802,10 @@ msgstr "Output"
 msgid "Output Style"
 msgstr "Output Style"
 
+#: src/components/llm-endpoints/UsagePanel.tsx
+msgid "Output tokens"
+msgstr "Output tokens"
+
 #: src/components/cost-dashboard/constants.ts
 msgid "Output Tokens"
 msgstr "Output Tokens"
@@ -11436,6 +11822,10 @@ msgstr "Overfetch"
 #: src/components/settings-view/settings-utils.ts
 msgid "Override the default model via environment"
 msgstr "Override the default model via environment"
+
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+msgid "Overview"
+msgstr "Overview"
 
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -11520,6 +11910,7 @@ msgid "Paste a session id (UUID) to restore it in a new tab."
 msgstr "Paste a session id (UUID) to restore it in a new tab."
 
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/llm-endpoints/CredentialField.tsx
 msgid "Paste API key"
 msgstr "Paste API key"
 
@@ -11550,6 +11941,10 @@ msgstr "Path"
 #: src/components/account/database-section.tsx
 msgid "Path copied to clipboard"
 msgstr "Path copied to clipboard"
+
+#: src/components/llm-endpoints/FiltersEditor.tsx
+msgid "Paths allowed (globs)"
+msgstr "Paths allowed (globs)"
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "pattern"
@@ -11648,6 +12043,10 @@ msgstr "Pick a person or type an email"
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Pick a project"
 msgstr "Pick a project"
+
+#: src/components/llm-endpoints/endpoint-catalog.ts
+msgid "Pick a provider."
+msgstr "Pick a provider."
 
 #: src/components/assets/context-folder-sources.tsx
 msgid "Pick any folder already on this machine"
@@ -12249,8 +12648,22 @@ msgstr "protected"
 #: src/components/connections-manager.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "Provider"
 msgstr "Provider"
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Provider + credential"
+msgstr "Provider + credential"
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Provider and base URL are fixed once created."
+msgstr "Provider and base URL are fixed once created."
+
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "Provider API key"
+msgstr "Provider API key"
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Provider ID:"
@@ -12640,6 +13053,7 @@ msgstr "referenced but not in entities table"
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/markdown-viewer.tsx
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
@@ -12827,6 +13241,14 @@ msgstr "Remove option"
 msgid "Remove queued prompt"
 msgstr "Remove queued prompt"
 
+#: src/components/llm-endpoints/AliasesEditor.tsx
+msgid "Remove row"
+msgstr "Remove row"
+
+#: src/components/llm-endpoints/SourcesPicker.tsx
+msgid "Remove source"
+msgstr "Remove source"
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Remove this file from the next commit (git restore --staged)"
 msgstr "Remove this file from the next commit (git restore --staged)"
@@ -12902,6 +13324,10 @@ msgstr "Reopen"
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Replace"
 msgstr "Replace"
+
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "Replace the stored key"
+msgstr "Replace the stored key"
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
@@ -13007,6 +13433,19 @@ msgstr "Request status"
 msgid "Requesting…"
 msgstr "Requesting…"
 
+#: src/components/llm-endpoints/UsageByChildTable.tsx
+#: src/components/llm-endpoints/UsagePanel.tsx
+msgid "Requests"
+msgstr "Requests"
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Requests / minute"
+msgstr "Requests / minute"
+
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "Requests through this root will fail until a new key is saved."
+msgstr "Requests through this root will fail until a new key is saved."
+
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 msgid "Requires a git repository with at least one commit"
 msgstr "Requires a git repository with at least one commit"
@@ -13035,6 +13474,10 @@ msgstr "Reset failed"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Reset to default"
 msgstr "Reset to default"
+
+#: src/components/llm-endpoints/LimitsRemaining.tsx
+msgid "resets {resets}"
+msgstr "resets {resets}"
 
 #: src/components/account/settings-section.tsx
 msgid "Resetting…"
@@ -13111,6 +13554,10 @@ msgstr "Restore this deleted file from the last commit"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Restore this file to the last saved version — your edits will be lost"
 msgstr "Restore this file to the last saved version — your edits will be lost"
+
+#: src/components/llm-endpoints/FiltersEditor.tsx
+msgid "Restrict beta headers"
+msgstr "Restrict beta headers"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Results"
@@ -13287,8 +13734,13 @@ msgid "Room unavailable"
 msgstr "Room unavailable"
 
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "root"
 msgstr "root"
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Root"
+msgstr "Root"
 
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "Root cause"
@@ -13297,6 +13749,10 @@ msgstr "Root cause"
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "roots"
 msgstr "roots"
+
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+msgid "Roots talk to a provider with a stored key; chains are fed from other endpoints in fallback order and narrow what passes with filters and limits. Usage is accumulated along the chain."
+msgstr "Roots talk to a provider with a stored key; chains are fed from other endpoints in fallback order and narrow what passes with filters and limits. Usage is accumulated along the chain."
 
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "Row range"
@@ -13515,6 +13971,8 @@ msgstr "Sandboxes"
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
+#: src/components/llm-endpoints/CredentialField.tsx
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/spec-editor/SpecEditor.tsx
@@ -13568,6 +14026,10 @@ msgstr "Saved"
 #: src/components/code-editor/AssetCompareView.tsx
 msgid "Saved {0} v{1}"
 msgstr "Saved {0} v{1}"
+
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "Saved after the endpoint is created. Never shown again."
+msgstr "Saved after the endpoint is created. Never shown again."
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Saved Contexts"
@@ -15003,6 +15465,14 @@ msgstr "Source kind"
 msgid "Source:"
 msgstr "Source:"
 
+#: src/components/llm-endpoints/SourcesPicker.tsx
+msgid "Sources (fallback order)"
+msgstr "Sources (fallback order)"
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Sources + filters + limits"
+msgstr "Sources + filters + limits"
+
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Spawn an AgenticProcess to (re)build this index."
 msgstr "Spawn an AgenticProcess to (re)build this index."
@@ -15275,6 +15745,10 @@ msgstr "step: {0}ms · debounce: {1}ms"
 msgid "Steps taken"
 msgstr "Steps taken"
 
+#: src/components/llm-endpoints/ChainTree.tsx
+msgid "sticky for you"
+msgstr "sticky for you"
+
 #: src/components/project-home/ProjectPublishButton.tsx
 msgid "Still can't link this project"
 msgstr "Still can't link this project"
@@ -15327,6 +15801,10 @@ msgstr "stored →"
 msgid "Stored in this source’s config on this machine, including its metadata shadow on disk."
 msgstr "Stored in this source’s config on this machine, including its metadata shadow on disk."
 
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "Stored key"
+msgstr "Stored key"
+
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "stored line"
@@ -15335,6 +15813,14 @@ msgstr "stored line"
 #: src/components/data-sources/provider-catalog.ts
 msgid "story"
 msgstr "story"
+
+#: src/components/llm-endpoints/FiltersEditor.tsx
+msgid "Streaming"
+msgstr "Streaming"
+
+#: src/components/llm-endpoints/endpoint-catalog.ts
+msgid "Streaming must be allow, require or deny."
+msgstr "Streaming must be allow, require or deny."
 
 #: src/components/data-sources/provider-catalog.ts
 msgid "Streams"
@@ -15653,6 +16139,10 @@ msgstr "Teams"
 msgid "Teams and people across your org."
 msgstr "Teams and people across your org."
 
+#: src/components/llm-endpoints/FiltersEditor.tsx
+msgid "Temperature ≤"
+msgstr "Temperature ≤"
+
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Template:"
@@ -15686,6 +16176,7 @@ msgstr "Terminal Sessions"
 #: src/components/connections-manager.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/llm-endpoints/CredentialField.tsx
 msgid "Test"
 msgstr "Test"
 
@@ -15695,6 +16186,7 @@ msgstr "Test"
 #~ msgstr "Test API Access"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/llm-endpoints/CredentialField.tsx
 msgid "Test failed"
 msgstr "Test failed"
 
@@ -15788,6 +16280,10 @@ msgstr "The credential was removed from your account."
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "The default — what you want 99% of the time."
 msgstr "The default — what you want 99% of the time."
+
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+msgid "The endpoint was not removed."
+msgstr "The endpoint was not removed."
 
 #: src/components/assets/editor/MissingAssetCard.tsx
 msgid "The file may have been deleted, moved, or doesn't match the {typeLabel} format."
@@ -15937,6 +16433,10 @@ msgstr "These agents are added on top of the standard vibe agent, in the order s
 #: src/components/inbox-view/InboxView.tsx
 msgid "These conversations exist only on this device."
 msgstr "These conversations exist only on this device."
+
+#: src/components/llm-endpoints/endpoint-catalog.ts
+msgid "These sources would form a cycle."
+msgstr "These sources would form a cycle."
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "They will be downloaded again the next time you open the help desk."
@@ -16333,7 +16833,12 @@ msgstr "Tip: connect GitHub to clone private repos."
 msgid "Title"
 msgstr "Title"
 
+#: src/components/llm-endpoints/AliasesEditor.tsx
+msgid "to"
+msgstr "to"
+
 #: src/components/assets/PushContextFolderDialog.tsx
+#: src/components/llm-endpoints/AliasesEditor.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "To"
 msgstr "To"
@@ -16341,6 +16846,7 @@ msgstr "To"
 #: src/components/chats-navigator/useChatHistory.ts
 #: src/components/cost-dashboard/constants.ts
 #: src/components/cron-view/CronForm.tsx
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "Today"
 msgstr "Today"
 
@@ -16406,9 +16912,27 @@ msgstr "tokens"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
+#: src/components/llm-endpoints/UsageByChildTable.tsx
+#: src/components/llm-endpoints/UsagePanel.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Tokens"
 msgstr "Tokens"
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Tokens / day"
+msgstr "Tokens / day"
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Tokens / month"
+msgstr "Tokens / month"
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Tokens / week"
+msgstr "Tokens / week"
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Tokens, total"
+msgstr "Tokens, total"
 
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Tomorrow"
@@ -16476,6 +17000,10 @@ msgstr "Top skills"
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "Top tools"
 msgstr "Top tools"
+
+#: src/components/llm-endpoints/FiltersEditor.tsx
+msgid "Top-p ≤"
+msgstr "Top-p ≤"
 
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "total"
@@ -16710,6 +17238,7 @@ msgid "Unknown provider {0}."
 msgstr "Unknown provider {0}."
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/llm-endpoints/LimitsEditor.tsx
 msgid "unlimited"
 msgstr "unlimited"
 
@@ -16812,8 +17341,10 @@ msgstr "Update Plan"
 msgid "Update plan based on <plan-note> sections"
 msgstr "Update plan based on <plan-note> sections"
 
+#. placeholder {0}: draft.name.trim()
 #. placeholder {0}: editing.name
 #: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Updated {0}"
 msgstr "Updated {0}"
 
@@ -16880,6 +17411,7 @@ msgid "URL"
 msgstr "URL"
 
 #: src/components/assets/editor/skill/SkillAssetEditor.tsx
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "Usage"
 msgstr "Usage"
 
@@ -17039,6 +17571,11 @@ msgstr "Using skill: {skillName}"
 msgid "Valid"
 msgstr "Valid"
 
+#. placeholder {0}: verdict.models_count
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "Valid ({0} models)"
+msgstr "Valid ({0} models)"
+
 #: src/components/machine-overview/machine-overview.tsx
 #~ msgid "Validation error (422) - request format issue or entity not found"
 #~ msgstr "Validation error (422) - request format issue or entity not found"
@@ -17118,6 +17655,10 @@ msgstr "Vertex Project ID"
 #: src/components/settings-view/settings-utils.ts
 msgid "Vertex Region"
 msgstr "Vertex Region"
+
+#: src/components/llm-endpoints/UsageByChildTable.tsx
+msgid "Via"
+msgstr "Via"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "via hub login"

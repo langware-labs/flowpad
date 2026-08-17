@@ -114,6 +114,7 @@ export enum ViewType {
   HUB_RECORDS = 'records', // Hub entity list by type (page=hub) - /dock/hub/records/<type>
   HUB_ENTITY = 'entity', // Hub single-entity viewer (page=hub) - /dock/hub/entity/<type>/<id>
   CREDENTIALS = 'credentials', // Env vars + OAuth connections + API keys - /dock/hub/credentials/<subview>[/<projectId>]
+  LLM_ENDPOINTS = 'llm-endpoints', // Hub LLM endpoints (roots + chains) - /dock/hub/llm-endpoints[/<id>[/overview|usage|models]]
 }
 
 /**

@@ -7,7 +7,9 @@ import {
   HARNESS_CAPABILITY_KINDS,
   LMApiProvider,
   lmKeysService,
+  PageId,
   TypeId,
+  ViewType,
   WorkerModelTier,
   type LmApiKeySummary,
   type LmApiKeyValidation,
@@ -28,6 +30,8 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { openExternal } from '@src/lib/open-external';
 import { openWikiModal } from '@src/components/wiki-tip/wiki-modal';
+import { endpointIdFromTypeId, llmEndpointsPointer } from '@src/components/llm-endpoints/llm-endpoints-pointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openHarnessLoginModal, useHarnessLoginStore } from './harness-login-store';
 
 const INSTALL_WIKI_PAGE = 'Install a harness';
@@ -329,6 +333,14 @@ function HarnessListRow({
  *  harnesses only consume these keys (they never enter them). */
 function LlmKeysSection({ keys, refreshKeys }: { keys: LmApiKeySummary[]; refreshKeys: () => Promise<void> }) {
   const { t } = useLingui();
+  const { navigation } = useDockNavigation();
+  const { setOpen } = useHarnessLoginStore();
+  // A managed row's `detail` is the hub endpoint typeid; Open lands on that
+  // endpoint's page (page=hub), where its chain, limits and usage live.
+  const openEndpoint = (detail: string) => {
+    setOpen(false);
+    navigation.openPage(PageId.HUB, ViewType.LLM_ENDPOINTS, llmEndpointsPointer(endpointIdFromTypeId(detail)));
+  };
   // Only providers a user can key by hand go in the paste-a-key select; managed
   // ones (the FlowPad hub endpoint) appear in the configured list when bound.
   const allProviders = Object.values(LMApiProvider).filter((p) => !MANAGED_PROVIDERS.has(p));
@@ -422,6 +434,11 @@ function LlmKeysSection({ keys, refreshKeys }: { keys: LmApiKeySummary[]; refres
               >
                 <span className="flex items-center gap-2">
                   {providerLabel(k.provider)}
+                  {k.managed && k.name && (
+                    <span className="text-muted-foreground" data-testid={`keys-endpoint-name-${k.provider}`}>
+                      {k.name}
+                    </span>
+                  )}
                   {k.managed && (
                     <Badge
                       variant="outline"
@@ -453,6 +470,17 @@ function LlmKeysSection({ keys, refreshKeys }: { keys: LmApiKeySummary[]; refres
                   >
                     {testing === k.provider ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trans>Test</Trans>}
                   </Button>
+                  {k.managed && k.detail && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7"
+                      data-testid={`keys-open-${k.provider}`}
+                      onClick={() => openEndpoint(k.detail as string)}
+                    >
+                      <Trans>Open</Trans>
+                    </Button>
+                  )}
                   {!k.managed && (
                     <button
                       type="button"
