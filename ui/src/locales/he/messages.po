@@ -4154,8 +4154,8 @@ msgstr "לא ניתן לקרוא את סטטוס ה-Git של תיקייה זו"
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#~ msgid "Couldn’t resolve this process."
-#~ msgstr "לא ניתן היה לזהות את התהליך הזה."
+msgid "Couldn’t resolve this process."
+msgstr "לא ניתן היה לזהות את התהליך הזה."
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Couldn't set up the project"
@@ -12297,12 +12297,12 @@ msgid "Project not found."
 msgstr "הפרויקט לא נמצא."
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#~ msgid "Project not recoverable from this workdir."
-#~ msgstr "לא ניתן לשחזר את הפרויקט מספריית העבודה הזו."
+msgid "Project not recoverable from this workdir."
+msgstr "לא ניתן לשחזר את הפרויקט מספריית העבודה הזו."
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#~ msgid "Project recovered."
-#~ msgstr "הפרויקט שוחזר."
+msgid "Project recovered."
+msgstr "הפרויקט שוחזר."
 
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Project renamed"
@@ -12772,8 +12772,8 @@ msgid "Reconnected"
 msgstr "התחברת מחדש"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#~ msgid "Reconnected."
-#~ msgstr "החיבור חודש."
+msgid "Reconnected."
+msgstr "החיבור חודש."
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
 msgid "Record where {lockedEnvVar} comes from"
@@ -12936,8 +12936,8 @@ msgid "Relative path"
 msgstr "נתיב יחסי"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#~ msgid "Relaunched."
-#~ msgstr "הופעל מחדש."
+msgid "Relaunched."
+msgstr "הופעל מחדש."
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
