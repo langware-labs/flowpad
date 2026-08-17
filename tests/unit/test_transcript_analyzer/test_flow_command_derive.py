@@ -105,6 +105,15 @@ def test_env_prefix_is_stripped(make):
 
 
 @WORKERS
+def test_connect_derives_for_every_worker(make):
+    derived = derive_entry(make("flow connect"))
+
+    assert isinstance(derived, FlowCommandEntry)
+    assert derived.verb == "connect"
+    assert derived.subverb is None and derived.target is None
+
+
+@WORKERS
 def test_option_before_verb_still_resolves(make):
     derived = derive_entry(make("flow --json navigate entity " + _TYPE_ID))
 
@@ -386,8 +395,8 @@ def test_flow_verbs_match_the_real_cli_registry():
     The set is a static copy so the transcript analyzer never imports the CLI
     (typer + its dependency tree) on a per-entry parse path. That copy is only
     safe if drift is caught here: adding a verb to ``flow_cli.py`` without
-    listing it makes its chip silently degrade to a generic shell row — a UI
-    regression with no error anywhere.
+    listing it makes its chip silently degrade to a generic shell row, while a
+    retired verb left behind makes an invalid call look real.
     """
     from flow_sdk.cli.flow_cli import app
     from flow_sdk.transcript_analyzer.derive import _FLOW_VERBS
@@ -396,6 +405,7 @@ def test_flow_verbs_match_the_real_cli_registry():
         group.name for group in app.registered_groups
     }
 
-    assert registered <= _FLOW_VERBS, (
-        f"new `flow` verbs are missing from _FLOW_VERBS: {sorted(registered - _FLOW_VERBS)}"
+    assert registered == _FLOW_VERBS, (
+        f"`flow` verb registry drift: missing={sorted(registered - _FLOW_VERBS)}, "
+        f"retired={sorted(_FLOW_VERBS - registered)}"
     )

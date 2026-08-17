@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.cli.auth.device_enroll import write_marker
 from flow_sdk.cli.commands import _docker_enroll as de
 
 
@@ -67,7 +68,7 @@ def test_ghost_kill_script_targets_flow_connect_and_clears_markers():
 def test_marker_round_trip_and_partial_reads(tmp_path):
     path = tmp_path / "m.json"
     assert de.parse_marker("") is None and de.parse_marker('{"user_code": ') is None
-    de.write_marker(path, {"user_code": "WDJB-MJHT", "expires_in": 900})
+    write_marker(path, {"user_code": "WDJB-MJHT", "expires_in": 900})
     assert de.parse_marker(path.read_text()) == {"user_code": "WDJB-MJHT", "expires_in": 900}
     assert not path.with_suffix(".json.tmp").exists()
 
