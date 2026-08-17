@@ -1,8 +1,8 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { AgenticProcess } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { useProject } from '@sdk/react/hooks';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Trans } from '@lingui/react/macro';
 import { WorkerIcon, pickHistoryTitle, timeAgo } from '@src/components/entity-execution-panel/history-row';
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
@@ -12,7 +12,7 @@ import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { ALL_SCOPE_FILTER, defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { notify } from '@src/notifications';
+import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
 import { useRecentActivity, type RecentActivityItem } from './use-recent-activity';
 
 interface VibeRecentSessionsProps {
@@ -162,38 +162,20 @@ function RecentActivityDialog({
 }
 
 function ProjectRecentActivity({ projectId, heading, className }: { projectId: string } & VibeRecentSessionsProps) {
-  const { t } = useLingui();
-  const { navigation } = useDockNavigation();
   const [moreOpen, setMoreOpen] = useState(false);
-  const busyRef = useRef(false);
   const scope = useMemo(() => defaultScopeFilter(projectId), [projectId]);
   const { items } = useRecentActivity(scope, COMPACT_FETCH_LIMIT);
   const recent = items.slice(0, RECENT_LIMIT);
 
+  // The shared resume path — same worker lookup, same re-entry latch, same
+  // not-found notification. This file used to carry its own copy, which meant
+  // two components emitting the same `session-not-found:<id>` toast id.
+  const { resumeInTerminal } = useResumeInTerminal();
   const openSession = useCallback(
     (entry: WorkerHistoryEntry) => {
-      if (!entry.worker_id || busyRef.current) return;
-      busyRef.current = true;
-      void (async () => {
-        try {
-          const proc = await AgenticProcess.getByWorkerId(entry.worker_id, entry.worker_type);
-          if (!proc) {
-            notify.error({
-              title: t`Session not found`,
-              message: t`This chat has no resumable session.`,
-              id: `session-not-found:${entry.worker_id}`,
-            });
-            return;
-          }
-          navigation.openDockPointer(proc.terminalDockPointer, { viewMode: ViewMode.Vibe });
-        } catch (error) {
-          console.error('[ProjectRecentActivity] Failed to open session:', error);
-        } finally {
-          busyRef.current = false;
-        }
-      })();
+      resumeInTerminal(entry.worker_id, undefined, undefined, entry.worker_type, { viewMode: ViewMode.Vibe });
     },
-    [navigation, t],
+    [resumeInTerminal],
   );
 
   if (recent.length === 0) return null;
