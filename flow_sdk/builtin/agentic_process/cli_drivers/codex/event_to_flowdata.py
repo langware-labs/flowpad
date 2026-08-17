@@ -22,7 +22,6 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
 )
 from flow_sdk.transcript_analyzer.entry import EntryKind
 from flow_sdk.transcript_analyzer.parsers.codex import CodexParser
-from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 
 logger = logging.getLogger(__name__)
 

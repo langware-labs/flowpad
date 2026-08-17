@@ -29,7 +29,6 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import (
-    entry_to_replay_flow_data,
     load_transcript_history as shared_load_transcript_history,
 )
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
@@ -339,10 +338,6 @@ def load_session_history(session_id: str, process_id: str | None = None) -> list
         return []
     return load_transcript_history(transcript)
 
-
-def _entry_to_replay_flow_data(entry) -> list[FlowData]:
-    """This vendor's element-type mapping over the shared replay envelope."""
-    return entry_to_replay_flow_data(entry, _element_type_for_kind)
 
 def _format_for_path(path: Path) -> TranscriptFormat:
     if path.name.startswith("session_"):

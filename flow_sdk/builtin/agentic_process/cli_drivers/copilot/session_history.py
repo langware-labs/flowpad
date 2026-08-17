@@ -8,7 +8,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import (
-    entry_to_replay_flow_data,
     load_transcript_history as shared_load_transcript_history,
 )
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
@@ -165,10 +164,6 @@ def load_transcript_history(
         transcript_format=transcript_format or _format_for_path(transcript),
         logger=logger,
     )
-
-def _entry_to_replay_flow_data(entry) -> list[FlowData]:
-    """This vendor's element-type mapping over the shared replay envelope."""
-    return entry_to_replay_flow_data(entry, _element_type_for_kind)
 
 def _format_for_path(path: Path) -> TranscriptFormat:
     if "session-state" in path.parts:

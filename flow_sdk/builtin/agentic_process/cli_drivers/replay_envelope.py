@@ -37,11 +37,26 @@ from pathlib import Path
 from typing import Callable
 
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData, FlowDataType
+from flow_sdk.transcript_analyzer import AgentTranscriptFile
 from flow_sdk.transcript_analyzer.derive import derive_entry
 from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 
 #: ``(entry_kind_value) -> FlowElementType``. Vendor-owned; see the module note.
 ElementTypeForKind = Callable[[str], str]
+
+
+def _envelope(entry, element_type_for_kind: ElementTypeForKind, kind: str) -> dict:
+    """The four attributes every vendor stamps, live or replay.
+
+    Spelled once so a typo in one of the four former copies cannot make a
+    replayed frame disagree with the live frame for the same entry.
+    """
+    return {
+        "element-type": element_type_for_kind(entry.kind.value),
+        "data-type": FlowDataType.OBJECT,
+        "subtype": entry.kind.value,
+        "observation-kind": kind,
+    }
 
 
 def wrap_live(entry, element_type_for_kind: ElementTypeForKind) -> FlowData:
@@ -55,27 +70,21 @@ def wrap_live(entry, element_type_for_kind: ElementTypeForKind) -> FlowData:
     a more specific choice keeps it.
     """
     entry = derive_entry(entry)
-    process_entry = ProcessEntry(transcript_entry=entry, observation_kind="live")
+    process_entry = ProcessEntry(transcript_entry=entry, observation_kind="live").to_dict()
+    envelope = _envelope(entry, element_type_for_kind, "live")
     frames = entry.to_flow_data()
     if frames:
         frame = frames[0]
-        frame.process_entry = process_entry.to_dict()
-        frame.attributes.setdefault("element-type", element_type_for_kind(entry.kind.value))
-        frame.attributes.setdefault("data-type", FlowDataType.OBJECT)
-        frame.attributes.setdefault("subtype", entry.kind.value)
-        frame.attributes.setdefault("observation-kind", "live")
+        frame.process_entry = process_entry
+        for key, value in envelope.items():
+            frame.attributes.setdefault(key, value)
         return frame
 
     return FlowData(
         flow_value={},
         created_time=entry.timestamp or "",
-        attributes={
-            "element-type": element_type_for_kind(entry.kind.value),
-            "data-type": FlowDataType.OBJECT,
-            "subtype": entry.kind.value,
-            "observation-kind": "live",
-        },
-        process_entry=process_entry.to_dict(),
+        attributes=dict(envelope),
+        process_entry=process_entry,
     )
 
 
@@ -101,6 +110,7 @@ def entry_to_replay_flow_data(
     mean deciding which of them the other vendors should acquire.
     """
     process_entry = ProcessEntry(transcript_entry=entry, observation_kind="replay").to_dict()
+    envelope = _envelope(entry, element_type_for_kind, "replay")
     frames = entry.to_flow_data()
     if not frames:
         # Entries whose ``to_flow_data()`` is deliberately empty still get one
@@ -109,23 +119,19 @@ def entry_to_replay_flow_data(
             FlowData(
                 flow_value={},
                 created_time=entry.timestamp or "",
-                attributes={
-                    "element-type": element_type_for_kind(entry.kind.value),
-                    "data-type": FlowDataType.OBJECT,
-                    "subtype": entry.kind.value,
-                    "observation-kind": "replay",
-                },
+                attributes=dict(envelope),
                 process_entry=process_entry,
             )
         ]
 
+    # `envelope` is loop-invariant and `setdefault` evaluates its default
+    # eagerly, so building it once keeps the vendor mapping off the frame path.
+    is_virtual = getattr(entry, "virtual", False)
     for frame in frames:
         frame.process_entry = process_entry
-        frame.attributes.setdefault("element-type", element_type_for_kind(entry.kind.value))
-        frame.attributes.setdefault("data-type", FlowDataType.OBJECT)
-        frame.attributes.setdefault("subtype", entry.kind.value)
-        frame.attributes.setdefault("observation-kind", "replay")
-        if getattr(entry, "virtual", False):
+        for key, value in envelope.items():
+            frame.attributes.setdefault(key, value)
+        if is_virtual:
             frame.attributes["is-virtual"] = "true"
     return frames
 
@@ -135,8 +141,8 @@ def load_transcript_history(
     transcript: Path,
     element_type_for_kind: ElementTypeForKind,
     *,
+    logger,
     transcript_format=None,
-    logger=None,
 ) -> list[FlowData]:
     """Parse a transcript file and replay every entry through the envelope.
 
@@ -144,13 +150,10 @@ def load_transcript_history(
     than an error row. Codex deliberately does the opposite (WARNING plus a
     synthesised ERROR frame), which is why it is not a caller here.
     """
-    from flow_sdk.transcript_analyzer import AgentTranscriptFile  # noqa: PLC0415
-
     try:
         parsed = AgentTranscriptFile(worker, transcript, transcript_format=transcript_format)
     except Exception:
-        if logger is not None:
-            logger.debug("%s history parse failed for %s", worker, transcript, exc_info=True)
+        logger.debug("%s history parse failed for %s", worker, transcript, exc_info=True)
         return []
     history: list[FlowData] = []
     for entry in parsed.entries:
