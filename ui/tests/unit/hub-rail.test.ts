@@ -74,11 +74,18 @@ describe('buildHubRailItems', () => {
     });
   });
 
-  it('distinguishes the two WorldView entries by pointer', () => {
+  it('sends Organization to the plain screen, not to a graph projection', () => {
+    // Both used to be WorldView entries separated only by their pointer, which put
+    // a force-directed graph in front of anyone who just wanted to add someone to a
+    // team. The graph is still there — reachable from inside the page — but the
+    // rail now opens the master-detail screen.
     const items = buildHubRailItems(t);
 
     expect(items.find((i) => i.id === 'world')?.pointer).toBe(WorldViewProjection.WORLD);
-    expect(items.find((i) => i.id === 'organization')?.pointer).toBe(WorldViewProjection.ORGANIZATION);
+
+    const organization = items.find((i) => i.id === 'organization');
+    expect(organization?.viewType).toBe(ViewType.ORGANIZATION);
+    expect(organization?.pointer).toBeUndefined();
   });
 
   it('never leaks credentials into the desk rail', () => {
