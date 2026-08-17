@@ -53,22 +53,6 @@ UTF-8 — the file's encoding is not consulted, and neither is its `<meta charse
 * `flow_sdk/utils/concurrency.py:89` — the correct shape to copy: `encoding` is a
   parameter threaded through to `anyio.open_file`.
 
-### The cp1252 detail that decides loud vs silent
-
-cp1252 maps 251 of 256 byte values. Exactly five are **undefined**:
-`0x81 0x8D 0x8F 0x90 0x9D`. Every other byte decodes to *something wrong* rather
-than raising.
-
-UTF-8 Hebrew is `D7 8x`–`D7 Ax`, so within one alphabet both outcomes occur:
-
-| Text | UTF-8 bytes | cp1252 result |
-|---|---|---|
-| `ניהול משימות` | `D7 A0 D7 99 …` | all defined → **200, mojibake** (`×\xa0×™×”×•×œ …`) |
-| `אין משימות` | `D7 90 …` | `0x90` undefined → **UnicodeDecodeError → 500** |
-
-`א` (U+05D0) and `ם` (U+05DD) are the common triggers; `ׁ`/`ׅ` account for the
-other two. This is why one Hebrew app 500s and its neighbour merely corrupts.
-
 ## Invariants
 
 1. **Never open a served document in text mode without `encoding=`.** The app's
@@ -103,19 +87,6 @@ other two. This is why one Hebrew app 500s and its neighbour merely corrupts.
   server and a red test*, for a reason that had nothing to do with the contract.
   Derive expected values inside the child, from the file, with an explicit
   `encoding=`; the same applies to env vars, filenames and stdin.
-* **`MINIHUB_RELOAD` does not reliably re-import.** During the RCA, watchfiles
-  logged "1 change detected" while the server kept serving the old module, so
-  the first post-fix request still 500'd. Verify a fix on this path with a
-  **full backend restart**, never by trusting the reloader; the same run also
-  showed reload forces uvicorn onto a `SelectorEventLoop`, which cannot spawn
-  subprocesses on Windows at all.
-* **Escaping the content is not a fix.** Replacing Hebrew with `&#x5e0;`
-  entities in an app's `index.html` makes the symptom disappear while leaving
-  the platform bug in place, and it silently constrains every future app author.
-* **The same defect class is repo-wide.** 124 further locale-dependent call
-  sites in shipping code are catalogued in FLOWPAD-2000 — including
-  `flow_sdk/actions/mcp_app_action.py:54`, which serves user-generated HTML and
-  is reachable by this exact scenario. Fixing this one line did not fix those.
 * **The proof lever is not the fix.** `PYTHONUTF8=1` toggles the symptom, which
   is what made it a clean on/off switch, but it is a process-level setting and
   does nothing for anyone importing `flow_sdk` into their own interpreter.
