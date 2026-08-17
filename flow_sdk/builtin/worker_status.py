@@ -170,7 +170,7 @@ def is_terminal(status: WorkerStatus) -> bool:
 # ---------------------------------------------------------------------------
 
 _TAIL_BYTES = 4096
-_ACTIVE_SECONDS = 300  # JSONL mtime within 5 min → session still being written
+ACTIVE_SECONDS = 300  # JSONL mtime within 5 min → session still being written
 
 # Upper bound for the expanding tail read. A transcript can accumulate a long
 # trailing run of content-free session-envelope lines (ai-title / agent-name /
@@ -460,7 +460,7 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
         # Transcript file doesn't exist yet — worker initialising.
         return WorkerStatus.INITIALIZING
 
-    is_active = (_time.time() - stat.st_mtime) <= _ACTIVE_SECONDS
+    is_active = (_time.time() - stat.st_mtime) <= ACTIVE_SECONDS
     sz = stat.st_size
 
     # Expanding tail read: start at 4 KB and widen (×16, clamped to

@@ -508,8 +508,8 @@ the durable citation.
 
 ### mtime-based INACTIVE rule
 - **Need:** Stale transcript (>5 min since mtime, no terminal signal) must collapse to INACTIVE so dead workers don't show RUNNING forever.
-- **Claude:** `_ACTIVE_SECONDS = 300` + `is_active` check (builtin/worker_status.py)
-- **Codex:** `_ACTIVE_SECONDS = 300` + `is_active` (codex/status.py:31, 85, 116-126)
+- **Claude:** `ACTIVE_SECONDS = 300` + `is_active` check (builtin/worker_status.py)
+- **Codex:** `ACTIVE_SECONDS = 300` + `is_active` (codex/status.py:31, 85, 116-126)
 - **Required:** Yes
 - **Vendor must expose:** Transcript file with reliable mtime on append
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A

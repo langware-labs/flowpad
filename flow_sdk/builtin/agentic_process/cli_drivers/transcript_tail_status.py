@@ -24,16 +24,19 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from flow_sdk.builtin.worker_status import WorkerStatus
+from flow_sdk.builtin.worker_status import ACTIVE_SECONDS, WorkerStatus
 
 #: How much of the file's tail to read. One window, not an expanding scan — a
 #: vendor status line is small and always near the end.
 TAIL_BYTES = 64 * 1024
 
-#: An mtime within this many seconds means the session is still being written.
-#: Past it, a non-terminal status is reported as INACTIVE rather than as
-#: whatever the last line happened to say.
-ACTIVE_SECONDS = 300
+#: ``ACTIVE_SECONDS`` (re-exported from ``worker_status``) — an mtime within
+#: that many seconds means the session is still being written. Past it, a
+#: non-terminal status is reported as INACTIVE rather than as whatever the last
+#: line happened to say. Deliberately the SAME threshold claude uses: two
+#: declarations would let the vendors disagree about when a worker goes stale.
+#: ``TAIL_BYTES`` is NOT shared — 64 KB here vs claude's 4 KB expanding scan is
+#: a real algorithmic difference.
 
 #: ``(parsed_line) -> (status, is_terminal)``. ``status is None`` means "this
 #: line says nothing about status, keep walking backwards". ``is_terminal``
