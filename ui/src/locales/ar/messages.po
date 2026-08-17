@@ -440,7 +440,7 @@ msgstr "{count} تغيير معلّق — لعرض الفرق"
 #. placeholder {0}: selected.displayName ?? selected.name
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 msgid "{created} member task(s) created for \"{0}\"."
-msgstr "נוצרו {created} משימות חברים עבור \"{0}\"."
+msgstr "تم إنشاء {created} مهمة للأعضاء من أجل \"{0}\"."
 
 #: src/components/execute-flow-view/worker-sessions-panel.tsx
 #~ msgid "{days}d ago"
@@ -2392,7 +2392,7 @@ msgstr "ربط السر"
 
 #: src/components/browseable-tree/adapters/tagRoot.tsx
 msgid "Bless \"{name}\" — create its Tag entity"
-msgstr "אישור \"{name}\" — יצירת ישות Tag"
+msgstr "اعتماد \"{name}\" — إنشاء كيان Tag الخاص به"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "blocked"
@@ -4427,7 +4427,7 @@ msgstr "تعذّر استرجاع مشروع هذه الجلسة."
 
 #: src/routes/loaders/load-next-process.ts
 msgid "Could not recover this session’s project."
-msgstr "לא ניתן היה לשחזר את הפרויקט של הפעילות הזו."
+msgstr "تعذّر استرجاع مشروع هذه الجلسة."
 
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "Could not remove"
@@ -4886,7 +4886,7 @@ msgstr "المجلد الحالي (انقر للتحديث)"
 
 #: src/components/record-search-bar/SearchScopeToggle.tsx
 msgid "Current project"
-msgstr "הפרויקט הנוכחי"
+msgstr "المشروع الحالي"
 
 #: src/components/status-bar.tsx
 msgid "Current project is on root folder, this is not recommended"
@@ -5130,7 +5130,7 @@ msgstr "تحديد الشروط التي يجب أن تتطابق لإطلاق �
 
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Delegating to"
-msgstr ""
+msgstr "يفوّض إلى"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/account/system-diagnoses.tsx
@@ -5849,7 +5849,7 @@ msgstr "نقاش"
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisContextButton.tsx
 msgid "Discuss analysis"
-msgstr "דיון בניתוח"
+msgstr "مناقشة التحليل"
 
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
@@ -6236,7 +6236,7 @@ msgstr "تعديل مسودتك…"
 
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Editing"
-msgstr ""
+msgstr "يحرّر"
 
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Editing system trigger"
@@ -6603,7 +6603,7 @@ msgstr "خطأ في تحميل النسخة"
 
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Error while displaying the suggestion, contact support"
-msgstr ""
+msgstr "خطأ أثناء عرض الاقتراح، يرجى التواصل مع الدعم"
 
 #: src/components/machine-overview/service-status-led.tsx
 #~ msgid "Error: {errorMessage}"
@@ -6776,7 +6776,7 @@ msgstr "توسيع الكل"
 
 #: src/components/conversation/ConversationPanel.tsx
 msgid "Expand drawer"
-msgstr "הרחבת מגירה"
+msgstr "توسيع الدرج"
 
 #: src/components/navigator-panel/NavigatorPanel.tsx
 msgid "Expand navigator"
@@ -7247,7 +7247,7 @@ msgstr "تعذر تعيين المشروع"
 
 #: src/hooks/useContextProcess.ts
 msgid "Failed to start context process"
-msgstr "כשל בהפעלת תהליך ההקשר"
+msgstr "فشل بدء عملية السياق"
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Failed to start GitHub connection"
@@ -7374,7 +7374,7 @@ msgstr "جلب الرسائل الجديدة من Hub"
 
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Fetching"
-msgstr ""
+msgstr "يجلب"
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "Fetching the latest"
@@ -8409,7 +8409,7 @@ msgstr "مرحباً <0>{firstName}</0>"
 
 #: src/components/simple-file-manager/filters.ts
 msgid "Hidden files"
-msgstr "קבצים מוסתרים"
+msgstr "الملفات المخفية"
 
 #: src/components/inbox-view/InboxView.tsx
 msgid "Hidden from your inbox"
@@ -9117,7 +9117,7 @@ msgstr "اسم المجلد غير صالح"
 
 #: src/pages/entry/InstallLanding.tsx
 msgid "Invalid install link"
-msgstr "קישור התקנה לא תקין"
+msgstr "رابط تثبيت غير صالح"
 
 #: src/components/hooks-view/hooks-view.tsx
 msgid "Invalid JSON"
@@ -10231,7 +10231,7 @@ msgstr "مستند Markdown"
 
 #: src/components/simple-file-manager/filters.ts
 msgid "Markdown files"
-msgstr "קבצי Markdown"
+msgstr "ملفات Markdown"
 
 #: src/i18n/type-labels.ts
 msgid "Markdown Index"
@@ -12866,7 +12866,7 @@ msgstr "فتح سجل حوار هذا الوكيل"
 
 #: src/pages/entry/InstallLanding.tsx
 msgid "Open this link on Flowpad Hub"
-msgstr "יש לפתוח קישור זה ב-Flowpad Hub"
+msgstr "افتح هذا الرابط في Flowpad Hub"
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Open this plan from its session to run it"
@@ -12950,7 +12950,7 @@ msgstr "رسالة اختيارية للأعضاء…"
 
 #: src/components/assets/editor/task/OwnerButton.tsx
 msgid "Optional message to the owner…"
-msgstr "הודעה לבעלים (אופציונלי)…"
+msgstr "رسالة إلى المالك (اختياري)…"
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Or send them this link"
@@ -13069,7 +13069,7 @@ msgstr "ترقيم الصفحات"
 
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
 msgid "Parent comments"
-msgstr "הערות הורה"
+msgstr "التعليقات الأصلية"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Parent directory"
@@ -14227,7 +14227,7 @@ msgstr "تم قراءتها"
 
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Reading"
-msgstr ""
+msgstr "يقرأ"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Reading…"
@@ -14957,7 +14957,7 @@ msgstr "استئناف السياق"
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisContextButton.tsx
 msgid "Resume discussion"
-msgstr "חידוש הדיון"
+msgstr "استئناف النقاش"
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Resume session by id"
@@ -15298,7 +15298,7 @@ msgstr "جارٍ تنفيذ /context…"
 
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Running command…"
-msgstr ""
+msgstr "ينفّذ الأمر…"
 
 #: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
 msgid "Running in the background."
@@ -15634,7 +15634,7 @@ msgstr "بحث"
 
 #: src/components/assets/editor/task/OwnerButton.tsx
 msgid "Search a contact or type an email"
-msgstr "חיפוש איש קשר או הקלדת דוא\"ל"
+msgstr "ابحث عن جهة اتصال أو اكتب بريداً إلكترونياً"
 
 #: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Search agents and skills…"
@@ -15642,7 +15642,7 @@ msgstr "البحث عن الوكلاء والمهارات…"
 
 #: src/components/record-search-bar/SearchScopeToggle.tsx
 msgid "Search all known projects"
-msgstr "חיפוש בכל הפרויקטים הידועים"
+msgstr "البحث في كل المشاريع المعروفة"
 
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "Search any entity. Selecting one inserts a [[wikilink]] at the cursor."
@@ -15820,7 +15820,7 @@ msgstr "بحث…"
 
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Searching"
-msgstr ""
+msgstr "يبحث"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
@@ -16992,7 +16992,7 @@ msgstr "المهارات والوكلاء الفرعيون الذين تم اس�
 
 #: src/components/simple-file-manager/filters.ts
 msgid "Skills folder only"
-msgstr "תיקיית Skills בלבד"
+msgstr "مجلد Skills فقط"
 
 #: src/pages/discover-page/discover-page.tsx
 #~ msgid "Skills, MCP servers, and agents — published by teams across your organization. Install into Claude Code, Codex, or Copilot <0>in one line.</0>"
@@ -17980,7 +17980,7 @@ msgstr "هذا الوكيل لم يعد موجودًا في مساحة عملك.
 
 #: src/hooks/useContextProcess.ts
 msgid "That project has no local workdir"
-msgstr "לפרויקט זה אין ספריית עבודה מקומית"
+msgstr "هذا المشروع ليس له مجلد عمل محلي"
 
 #: src/components/assets/editor/skill/skill-eval-analysis.ts
 msgid "The \"{attachSkillName}\" skill is not installed."
@@ -17988,7 +17988,7 @@ msgstr "المهارة \"{attachSkillName}\" غير مثبّتة."
 
 #: src/components/terminal/interactive-terminal/side-windows/useAnalysisImprovements.ts
 msgid "The \"{skillName}\" skill is not installed."
-msgstr "היכולת \"{skillName}\" אינה מותקנת."
+msgstr "المهارة \"{skillName}\" غير مثبَّتة."
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
 #~ msgid "The <0>flow-sdk-mcp</0> server is required to run with progress tracing. Enable it to continue."
@@ -18774,7 +18774,7 @@ msgstr "الأداة"
 
 #: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
 msgid "Tool calls"
-msgstr "קריאות כלים"
+msgstr "استدعاءات الأدوات"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Tool Calls"
@@ -19258,7 +19258,7 @@ msgstr "التحديثات والصيانة"
 
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Updating plan"
-msgstr ""
+msgstr "يحدّث الخطة"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Updating…"
@@ -19652,7 +19652,7 @@ msgstr "عرض إعدادات الخطاف"
 
 #: src/components/view-toggle/view-toggle.tsx
 msgid "View mode"
-msgstr "מצב תצוגה"
+msgstr "وضع العرض"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "View on GitHub"
@@ -20140,7 +20140,7 @@ msgstr "هل يمكن تشغيل صندوق رملي لهذا المستودع؟
 
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Writing"
-msgstr ""
+msgstr "يكتب"
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Written down, not started. Launching boots it and sets the project up."
