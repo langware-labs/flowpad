@@ -61,22 +61,6 @@ def _load_whiteboard_fm(whiteboard_dir: Path) -> dict[str, Any]:
     parsed = _yaml_load(fm)
     return parsed if isinstance(parsed, dict) else {}
 
-def whiteboard_id(ref: FSRef) -> str:
-    """Cheap id (no write): `.flow/id` capsule, else valid frontmatter id, else
-    the transitional uuid5(name) read fallback for legacy rows."""
-    path = ref._path
-    if path.is_dir():
-        cap = read_folder_capsule_id(path)
-        if cap:
-            return cap
-        fm = _load_whiteboard_fm(path)
-        fm_id = _read_frontmatter_id_from_yaml(fm)
-        if fm_id:
-            return fm_id
-        wb_name = _resolve_whiteboard_name(fm, path.name)
-        return _whiteboard_id_from_name(wb_name)
-    return path.name.split("-@", 1)[-1] if "-@" in path.name else path.name
-
 
 def whiteboard_id_from_folder(ref: FSRef | Path) -> object | None:
     path = Path(getattr(ref, "_path", ref))

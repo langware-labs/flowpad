@@ -128,11 +128,6 @@ def plugin_stable_key(ref: FSRef | Path) -> str:
     return f"{RecordType.PLUGIN}:{plugin_identity_key(ref)}"
 
 
-def plugin_id(ref: FSRef) -> str:
-    existing = plugin_id_from_file(ref)
-    return existing or mint_uuid(plugin_stable_key(ref), namespace=uuid.NAMESPACE_DNS)
-
-
 def extract_plugin(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse one PLUGIN FSRef into a record matching the legacy item shape."""
     path = Path(ref.path)

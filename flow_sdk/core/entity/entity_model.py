@@ -1004,7 +1004,7 @@ class Entity(DBEntity):
 
         # DB-FREE by contract, so no owner lookup: with no owning row to consult
         # this degrades to the historic carrier-or-mint.
-        resolved_id = info.resolve_id(ref)
+        resolved_id = info.mint_entity_id(ref, derive=True, overwrite=True)
         records = info.from_disk_fn(ref, resolved_id)
         if not records:
             return None

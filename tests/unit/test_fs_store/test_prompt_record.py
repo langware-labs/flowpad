@@ -24,7 +24,7 @@ V7_ID = "0190a0a0-aaaa-7bbb-8ccc-eeeeeeeeeeee"  # foreign version — must be re
 
 
 def _extract(ref: FSRef):
-    return extract_prompt(ref, SchemaRegistry.get("prompt").mint_id(ref))
+    return extract_prompt(ref, SchemaRegistry.get("prompt").mint_entity_id(ref, derive=True, overwrite=True))
 
 
 def _write_md(path: Path, body: str, frontmatter: str | None = None) -> Path:
@@ -91,8 +91,8 @@ def test_gen_id_idempotent_and_preserves_fields(tmp_path: Path):
         frontmatter='name: Keeper\nicon: "🚀"\n',
     )
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
-    first = SchemaRegistry.get("prompt").mint_id(FSRef(p))
-    second = SchemaRegistry.get("prompt").mint_id(FSRef(p))
+    first = SchemaRegistry.get("prompt").mint_entity_id(FSRef(p), derive=True, overwrite=True)
+    second = SchemaRegistry.get("prompt").mint_entity_id(FSRef(p), derive=True, overwrite=True)
     assert first == second
     assert _read_prompt_frontmatter_id(p) is None
     assert AssetCapsule.from_path(p).read("identity").data["id"] == first
