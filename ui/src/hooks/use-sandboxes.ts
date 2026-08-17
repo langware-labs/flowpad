@@ -155,9 +155,15 @@ export type SandboxDetails = NodeStatus;
  * ComputeNode field is `node_provider`, but the OSS entity types it
  * `node_provider_type` and drops the former on `toJSON()`. `readProvider`
  * tolerates both on read; `hubEntityJson` re-injects it on write. A fresh draft
- * uses the Hub's bootstrap-selected provider, with E2B only as compatibility
- * fallback for older Hubs that do not publish `default_compute_provider`, so
- * `ops/setup` never silently ignores an operator's provider selection.
+ * uses the Hub's bootstrap-selected provider so `ops/setup` never silently
+ * ignores an operator's provider selection.
+ *
+ * The E2B fallback is not just for older hubs: `default_compute_provider` is
+ * hub-only, so it is absent whenever these screens are served by a local or
+ * desktop backend rather than the hub — which they are, since the local server
+ * declares `supported_pages: ["desk","hub"]`. It is also what answers a hub
+ * whose default is `local_machine`, a provider that hosts compute nodes but
+ * never a sandbox.
  */
 function readProvider(node: ComputeNode): string | undefined {
   return (node as unknown as { node_provider?: string }).node_provider ?? node.node_provider_type;
