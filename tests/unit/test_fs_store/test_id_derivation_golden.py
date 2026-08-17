@@ -4,154 +4,33 @@ An entity id is a join key. Bookmarks, `last_shown`, `display_stack`, shares and
 relationships all name it, and none of them can be recovered once a derivation
 moves: the old rows orphan and every reference dangles. So any refactor of the
 identity seam has to prove it changed no VALUE, not merely that the tests still
-pass.
+pass. A diff in this file is a data migration and must be a deliberate,
+reviewed commit.
 
-This file is that proof. It records what every live formula produces today, for
-every registered type in every carrier state, and fails the build if a byte
-moves. It is permanent, not scaffolding — a diff here is a data migration and
-must be a deliberate, reviewed commit.
+Scope, deliberately narrow: the **per-type carrier matrix already has a home**
+in `test_asset_identity_matrix.py` (which asserts a superset — it also checks
+the capsule contents and that bytes are unchanged), so it is not restated here.
+What lives here is what has no other home:
 
-Derivations that key off an absolute path are recorded as the FORMULA
-(namespace + key shape) rather than a literal uuid, since `tmp_path` differs per
-run; the assertion is that the type still derives from that exact key under that
-exact namespace. Formulas that key off nothing path-dependent are pinned to
-literal uuids.
+* the namespace policy per type — a type gaining or losing an `id_namespace`
+  override silently moves every v5 it owns;
+* the formulas that live OUTSIDE the seam (`Project.derive_id_for_path`,
+  `Tag`, `content_fingerprint`, `markdown_id`, `secret_origin_id`) — the ones a
+  consolidation is most likely to "tidy" into a different value;
+* the deliberate DIVERGENCES, pinned so a future cleanup cannot quietly merge
+  two key spaces that must stay separate.
+
+Path-derived formulas are pinned as the formula (namespace + key shape) rather
+than a literal uuid, since `tmp_path` differs per run.
 """
 from __future__ import annotations
 
-import json
 import uuid
 from pathlib import Path
 
-import pytest
-
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from tests.unit.test_fs_store.test_asset_identity_matrix import (
-    FOLDER_PORTABLE,
-    FRONTMATTER_ALL,
-    FRONTMATTER_PORTABLE,
-    FRONTMATTER_STABLE,
-    JSON_STABLE,
-    V4,
-    V5,
-    V7,
-    _folder_with_legacy,
-    _frontmatter,
-    _info,
-)
-
-# ---------------------------------------------------------------------------
-# Carrier-state matrix: what the seam returns, per type, per state
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("type_name", FRONTMATTER_ALL)
-@pytest.mark.parametrize("existing", (V4, V5))
-def test_golden_file_valid_carrier_is_adopted_verbatim(
-    tmp_path: Path, type_name: str, existing: str
-) -> None:
-    """VALID carrier → adopted unchanged, nothing written. All 6 file types."""
-    path = tmp_path / "asset.md"
-    _frontmatter(path, canonical=existing)
-    before = path.read_bytes()
-    info = _info(type_name)
-
-    assert info.mint_entity_id(path) == existing
-    assert info.mint_entity_id(path, derive=True, overwrite=True) == existing
-    assert path.read_bytes() == before
-
-
-@pytest.mark.parametrize("type_name", FRONTMATTER_ALL)
-def test_golden_file_invalid_carrier_falls_to_legacy_without_rewrite(
-    tmp_path: Path, type_name: str
-) -> None:
-    """INVALID canonical + VALID legacy → legacy wins, bytes untouched."""
-    path = tmp_path / "asset.md"
-    _frontmatter(path, canonical=V7, legacy=V5)
-    before = path.read_bytes()
-
-    assert _info(type_name).mint_entity_id(path, derive=True, overwrite=True) == V5
-    assert path.read_bytes() == before
-
-
-@pytest.mark.parametrize("type_name", FRONTMATTER_STABLE)
-def test_golden_stable_file_derives_path_v5_under_namespace_url(
-    tmp_path: Path, type_name: str
-) -> None:
-    """ABSENT carrier, stable-key type → uuid5(NAMESPACE_URL, resolved path)."""
-    path = tmp_path / "asset.md"
-    path.write_text("body", encoding="utf-8")
-
-    expected = str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
-    assert _info(type_name).mint_entity_id(path, derive=True, overwrite=True) == expected
-
-
-@pytest.mark.parametrize("type_name", FRONTMATTER_PORTABLE)
-def test_golden_portable_file_mints_v4_and_commits_it(tmp_path: Path, type_name: str) -> None:
-    """ABSENT carrier, portable type → random v4, committed, then idempotent."""
-    path = tmp_path / "asset.md"
-    path.write_text("body", encoding="utf-8")
-    info = _info(type_name)
-
-    first = info.mint_entity_id(path, derive=True, overwrite=True)
-    assert uuid.UUID(first).version == 4
-    assert info.mint_entity_id(path, derive=True, overwrite=True) == first, "the committed carrier makes it idempotent"
-
-
-def test_golden_command_uses_scope_natural_key_under_namespace_dns(tmp_path: Path) -> None:
-    """`command` is the one file type keyed on a natural key, not a path."""
-    path = tmp_path / "deploy.md"
-    path.write_text("body", encoding="utf-8")
-
-    expected = str(uuid.uuid5(uuid.NAMESPACE_DNS, "command:project:deploy"))
-    assert _info("command").mint_entity_id(FSRef(path, scope="project"), derive=True, overwrite=True) == expected
-
-
-@pytest.mark.parametrize("type_name", FOLDER_PORTABLE)
-@pytest.mark.parametrize("existing", (V4, V5))
-def test_golden_folder_valid_capsule_is_adopted_verbatim(
-    tmp_path: Path, type_name: str, existing: str
-) -> None:
-    folder = tmp_path / type_name
-    (folder / ".flow").mkdir(parents=True)
-    (folder / ".flow" / "id").write_text(existing + "\n", encoding="utf-8")
-    info = _info(type_name)
-
-    assert info.mint_entity_id(folder) == existing
-    assert info.mint_entity_id(folder, derive=True, overwrite=True) == existing
-
-
-@pytest.mark.parametrize("type_name", FOLDER_PORTABLE)
-def test_golden_folder_invalid_capsule_falls_to_legacy(tmp_path: Path, type_name: str) -> None:
-    folder = _folder_with_legacy(tmp_path, type_name)
-    assert _info(type_name).mint_entity_id(folder, derive=True, overwrite=True) == V5
-
-
-@pytest.mark.parametrize("type_name", FOLDER_PORTABLE)
-def test_golden_folder_absent_capsule_mints_v4(tmp_path: Path, type_name: str) -> None:
-    folder = tmp_path / type_name
-    folder.mkdir()
-    info = _info(type_name)
-
-    first = info.mint_entity_id(folder, derive=True, overwrite=True)
-    assert uuid.UUID(first).version == 4
-    assert info.mint_entity_id(folder, derive=True, overwrite=True) == first
-
-
-@pytest.mark.parametrize("type_name", JSON_STABLE)
-def test_golden_native_json_carrier(tmp_path: Path, type_name: str) -> None:
-    """Native-JSON types read `$.id` and derive path-v5 on absence."""
-    path = tmp_path / "report.json"
-    path.write_text(json.dumps({"id": V4}), encoding="utf-8")
-    assert _info(type_name).mint_entity_id(path, derive=True, overwrite=True) == V4
-
-    bare = tmp_path / "bare.json"
-    bare.write_text(json.dumps({}), encoding="utf-8")
-    assert _info(type_name).mint_entity_id(bare, derive=True, overwrite=True) == str(
-        uuid.uuid5(uuid.NAMESPACE_URL, str(bare.resolve()))
-    )
-
+from tests.unit.test_fs_store.test_asset_identity_matrix import V4, V5, V7, _info
 
 # ---------------------------------------------------------------------------
 # The seam's namespace policy — a type gaining or losing an override moves

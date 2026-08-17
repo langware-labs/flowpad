@@ -219,8 +219,12 @@ def markdown_id(ref: FSRef) -> str:
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     info = SchemaRegistry.get(str(RecordType.MARKDOWN))
-    if info is None:  # registry not loaded (import-order edge) — historic derive
-        return read_frontmatter_id(ref._path) or _markdown_id_from_path(ref._path)
+    if info is None:
+        # Deliberately no fallback. The only fallback available is the
+        # frontmatter-only derive this function was rewired to eliminate, and
+        # its result flows into sync_to_db() — a crash during registry
+        # bootstrap is strictly better than a silently forked document.
+        raise RuntimeError("markdown TypeInfo is not registered; cannot resolve identity")
     return info.mint_entity_id(ref, derive=True, overwrite=False)
 
 
