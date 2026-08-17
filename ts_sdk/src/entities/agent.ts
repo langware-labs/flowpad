@@ -192,6 +192,16 @@ export class Agent extends APIEntity<Agent> {
   }
 
   /**
+   * Open a session AS this agent: a new, visible, headless Chat process built
+   * from the agent's local deployment, with no first turn — the human types it.
+   * `POST /agent/<id>/use`. The counterpart of `run` (one prompt, headless).
+   */
+  async use(): Promise<AgentUseResult> {
+    const action = new ActionInfo('use', Agent.type, this.id, 'POST');
+    return (await dataManager.callAction(action)) as AgentUseResult;
+  }
+
+  /**
    * Give this agent a machine of its own in the cloud.
    *
    * Publishing to the hub is implicit — the backend does it before deploying,
@@ -228,6 +238,13 @@ export interface AgentDeployResult {
 }
 
 /** What `POST /agent/<id>/run` hands back. */
+/** What `POST /agent/<id>/use` hands back — the session opened as the agent. */
+export interface AgentUseResult {
+  process_id: string;
+  process_typeid: string;
+  deployment_id: string;
+}
+
 export interface AgentRunResult {
   process_id: string;
   process_typeid: string;
