@@ -48,6 +48,18 @@ function statusCardClass(status?: ExecutionEnvironmentStatus): string {
   return (status && STATUS_STYLE[status]?.card) || 'border-border';
 }
 
+/**
+ * Did the status probe come back saying the machine cannot be reached?
+ *
+ * `ERROR` is the one status that means "there is a box and it did not answer" —
+ * the same state the card labels "Unreachable". Absent details are NOT this: a
+ * probe still in flight is unknown, not failed, and treating it as failed would
+ * blank the card's actions on every render before the first poll lands.
+ */
+function isUnreachable(info?: SandboxDetails): boolean {
+  return info?.status === ExecutionEnvironmentStatus.ERROR;
+}
+
 /** "12m", "1h 5m" — minutes granularity, clamped at 0. */
 function fmtDur(ms: number): string {
   const m = Math.max(0, Math.floor(ms / 60000));
@@ -535,18 +547,26 @@ export function HubHome() {
                       launched has no VM to open — the hub answers "this machine
                       has not been set up yet" — so offering "Open" would be a
                       button that 409s. Launch asks first; Open does not. */}
+                  {/* And nothing at all while the probe says the box is
+                      unreachable: there is a VM, so "Launch" is the wrong offer,
+                      but opening it can only fail. The status line beside it
+                      already says "Unreachable"; a button that reliably errors
+                      would just be a second way to learn that. The slot comes
+                      back on its own when the next poll finds the box. */}
                   {isLaunched(d) ? (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => openSandbox(d)}
-                      disabled={!sandboxesEnabled}
-                      aria-label={t`Open sandbox`}
-                      data-testid="sandbox-open"
-                      className="h-7 shrink-0 px-2.5 text-xs"
-                    >
-                      <Trans>Open</Trans>
-                    </Button>
+                    !isUnreachable(details[d.id]) && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => openSandbox(d)}
+                        disabled={!sandboxesEnabled}
+                        aria-label={t`Open sandbox`}
+                        data-testid="sandbox-open"
+                        className="h-7 shrink-0 px-2.5 text-xs"
+                      >
+                        <Trans>Open</Trans>
+                      </Button>
+                    )
                   ) : (
                     <Button
                       size="sm"
