@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActionInfo, dataManager, GitWorkdir, type GitAssetDiff, type GitStatusFile } from '@sdk';
 import { Trans } from '@lingui/react/macro';
@@ -32,7 +33,8 @@ function displayStatus(status: string): string {
 }
 
 function statusClass(status: string): string {
-  if (status === '?' || status === 'A') return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+  if (status === '?' || status === 'A')
+    return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
   if (status === 'D') return 'border-destructive/40 bg-destructive/10 text-destructive';
   return 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300';
 }
@@ -60,7 +62,10 @@ export function AssetCompareView({ pointer }: { pointer?: string | null }) {
 }
 
 function AssetCompare({ payload }: { payload: AssetComparePointerPayload }) {
-  const git = useMemo(() => new GitWorkdir(payload.workdir, payload.computeNodeId), [payload.computeNodeId, payload.workdir]);
+  const git = useMemo(
+    () => new GitWorkdir(payload.workdir, payload.computeNodeId),
+    [payload.computeNodeId, payload.workdir],
+  );
   const [assetDiff, setAssetDiff] = useState<GitAssetDiff | null>(null);
   const [selectedKey, setSelectedKey] = useState(ALL_CHANGES);
   const [fileCompare, setFileCompare] = useState<FileCompare | null>(null);
@@ -125,13 +130,13 @@ function AssetCompare({ payload }: { payload: AssetComparePointerPayload }) {
       const result = await dataManager.callAction<null, { committed: boolean; version?: number }>(action);
       invalidateGitStatus(payload.computeNodeId, payload.workdir);
       if (result?.committed) {
-        notify.success({ title: `Saved ${payload.assetLabel} v${result.version ?? ''}`.trim() });
+        notify.success({ title: t`Saved ${payload.assetLabel} v${result.version ?? ''}`.trim() });
       } else {
-        notify.info({ title: 'Nothing to save', message: 'The asset matches HEAD.' });
+        notify.info({ title: t`Nothing to save`, message: t`The asset matches HEAD.` });
       }
       await refresh();
     } catch (err) {
-      notify.error({ title: 'Save failed', message: err instanceof Error ? err.message : String(err) });
+      notify.error({ title: t`Save failed`, message: err instanceof Error ? err.message : String(err) });
     } finally {
       setSaving(false);
     }
@@ -163,17 +168,19 @@ function AssetCompare({ payload }: { payload: AssetComparePointerPayload }) {
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="min-h-0 overflow-y-auto border-r bg-muted/20 p-2">
+        <aside className="min-h-0 overflow-y-auto border-e bg-muted/20 p-2">
           <button
             type="button"
             className={cn(
-              'mb-1 flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs',
+              'mb-1 flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-xs',
               selectedKey === ALL_CHANGES ? 'bg-background shadow-sm' : 'hover:bg-background/70',
             )}
             onClick={() => setSelectedKey(ALL_CHANGES)}
           >
             <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate"><Trans>All changes</Trans></span>
+            <span className="min-w-0 flex-1 truncate">
+              <Trans>All changes</Trans>
+            </span>
             {assetDiff?.files.length ? (
               <span className="rounded border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                 {assetDiff.files.length}
@@ -185,7 +192,7 @@ function AssetCompare({ payload }: { payload: AssetComparePointerPayload }) {
               key={file.path}
               type="button"
               className={cn(
-                'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs',
+                'flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-xs',
                 selectedKey === file.path ? 'bg-background shadow-sm' : 'hover:bg-background/70',
               )}
               onClick={() => setSelectedKey(file.path)}

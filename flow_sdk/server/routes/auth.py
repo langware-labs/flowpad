@@ -154,10 +154,17 @@ async def login_callback(
         # request would let an anonymous caller lock the instance with a secret
         # only they hold.
         if cookie_gate:
-            from flow_sdk.instance_settings.cookie_gate import set_cookie_gate
+            from flow_sdk.instance_settings.cookie_gate import DesktopGateRefused, set_cookie_gate
 
-            set_cookie_gate(cookie_gate)
-            logger.info("login_callback: cookie-gate armed for this instance")
+            try:
+                set_cookie_gate(cookie_gate)
+                logger.info("login_callback: cookie-gate armed for this instance")
+            except DesktopGateRefused as e:
+                # Same posture as an unassignable runtime below: a login must not
+                # fail over this. Arming here would lock the desktop app out of
+                # its own health check, so dropping the secret is the outcome
+                # that leaves a working app.
+                logger.warning("login_callback: %s", e)
 
         # Same gate, same reason: an unvalidated caller must not be able to
         # relabel the instance. An unassignable or unknown value is logged and

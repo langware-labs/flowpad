@@ -205,7 +205,7 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
               />
             </div>
             <Button size="sm" disabled={!agent.enabled} onClick={() => setRunOpen(true)}>
-              <Play className="mr-1.5 h-3.5 w-3.5" />
+              <Play className="me-1.5 h-3.5 w-3.5" />
               <Trans>Run</Trans>
             </Button>
           </div>

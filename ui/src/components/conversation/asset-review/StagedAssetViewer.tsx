@@ -140,5 +140,5 @@ export function StagedAssetViewer({ attachment }: { attachment: MessageAttachmen
   // Single content pane only — the main file (task.md / SKILL.md / …). The old
   // multi-file path rail was removed: the review dialog shows the entity's own
   // viewer for installed assets, and a bare markdown preview for staged ones.
-  return <div className="max-h-[50vh] overflow-y-auto pr-1">{pane}</div>;
+  return <div className="max-h-[50vh] overflow-y-auto pe-1">{pane}</div>;
 }

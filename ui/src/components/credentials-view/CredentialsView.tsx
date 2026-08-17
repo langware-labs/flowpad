@@ -96,7 +96,7 @@ export const CredentialsView: React.FC = () => {
               <Button
                 variant="outline"
                 size="sm"
-                className="ml-auto h-7 gap-1 text-xs"
+                className="ms-auto h-7 gap-1 text-xs"
                 data-testid="credentials-project-picker"
               >
                 {selected?.name ?? t`Select a project`}
@@ -134,11 +134,7 @@ export const CredentialsView: React.FC = () => {
 
         <div className="min-h-0 flex-1 overflow-auto p-4">
           {tab === CredentialsSubview.ENVIRONMENT &&
-            (selected ? (
-              <ProjectEnvironmentTab project={selected} />
-            ) : (
-              <NoProjectPanel loading={isLoading} />
-            ))}
+            (selected ? <ProjectEnvironmentTab project={selected} /> : <NoProjectPanel loading={isLoading} />)}
 
           {tab === CredentialsSubview.CONNECTIONS && (
             <ConnectionsManager projectTypeId={selected?.typeId} header={false} />

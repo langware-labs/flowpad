@@ -18,6 +18,7 @@
  * entity wins over the embedded one).
  */
 
+import { t } from '@lingui/core/macro';
 import { ContextEntitiesEnum, dataContext, dataManager, Project, Task, TypeId } from '@sdk';
 import { DockLoadError } from './dock-load-error';
 import { loadConversation } from './load-conversation';
@@ -121,8 +122,8 @@ export async function loadTasksRoute(pointer: string | undefined): Promise<void>
         'soft',
         {
           action: 'render_error',
-          title: 'Task unavailable',
-          message: 'Could not load this task. Try again in a moment.',
+          title: t`Task unavailable`,
+          message: t`Could not load this task. Try again in a moment.`,
           retryable: true,
         },
         'tasks',
@@ -134,8 +135,8 @@ export async function loadTasksRoute(pointer: string | undefined): Promise<void>
       'hard',
       {
         action: 'render_error',
-        title: 'Task not found',
-        message: 'This task no longer exists or is unavailable.',
+        title: t`Task not found`,
+        message: t`This task no longer exists or is unavailable.`,
       },
       'tasks',
       e,

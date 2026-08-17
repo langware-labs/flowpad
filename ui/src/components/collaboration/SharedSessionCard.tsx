@@ -23,7 +23,7 @@ export function SharedSessionCard({ session, active, onClick }: Props) {
       type="button"
       onClick={onClick}
       className={cn(
-        'flex w-full flex-col gap-1 rounded-md border px-3 py-2 text-left transition-colors',
+        'flex w-full flex-col gap-1 rounded-md border px-3 py-2 text-start transition-colors',
         active ? 'border-primary bg-muted' : 'border-transparent hover:bg-muted',
       )}
     >
@@ -34,7 +34,7 @@ export function SharedSessionCard({ session, active, onClick }: Props) {
         <Monitor className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
         <span className="min-w-0 truncate text-muted-foreground">{session.hostName}</span>
       </div>
-      <div className="pl-4 text-xs capitalize text-muted-foreground">{session.status}</div>
+      <div className="ps-4 text-xs capitalize text-muted-foreground">{session.status}</div>
     </button>
   );
 }

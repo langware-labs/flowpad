@@ -1,3 +1,5 @@
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { FileItem } from './types';
 
 export enum FilterName {
@@ -23,17 +25,17 @@ const SKILLS_FOLDER_PATH = '.claude/skills';
 export const FILTER_DEFINITIONS: Record<FilterName, FilterDefinition> = {
   [FilterName.HIDDEN]: {
     name: FilterName.HIDDEN,
-    label: 'Hidden files',
+    label: msg`Hidden files`,
     filterFn: (item) => !item.name.startsWith('.'),
   },
   [FilterName.SKILLS_PATH]: {
     name: FilterName.SKILLS_PATH,
-    label: 'Skills folder only',
+    label: msg`Skills folder only`,
     filterFn: (item) => item.path.startsWith(SKILLS_FOLDER_PATH),
   },
   [FilterName.MARKDOWN_ONLY]: {
     name: FilterName.MARKDOWN_ONLY,
-    label: 'Markdown files',
+    label: msg`Markdown files`,
     filterFn: (item) => !item.name.startsWith('.') && (item.type === 'folder' || item.path.endsWith('.md')),
   },
 };

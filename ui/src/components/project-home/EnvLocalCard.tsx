@@ -96,19 +96,19 @@ export const EnvLocalCard: React.FC<EnvLocalCardProps> = ({ project }) => {
                 <Trans>line {row.line}</Trans>
               </span>
               {row.declared ? (
-                <span className="ml-auto text-[10px] text-muted-foreground">
+                <span className="ms-auto text-[10px] text-muted-foreground">
                   <Trans>Declared</Trans>
                 </span>
               ) : (
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="ml-auto h-6 text-[10px]"
+                  className="ms-auto h-6 text-[10px]"
                   disabled={busy === row.key || blocked}
                   onClick={() => void handleDeclare(row.key)}
                   data-testid={`env-local-declare-${row.key}`}
                 >
-                  <Plus className="mr-0.5 h-3 w-3" />
+                  <Plus className="me-0.5 h-3 w-3" />
                   <Trans>Declare</Trans>
                 </Button>
               )}

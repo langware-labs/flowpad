@@ -64,10 +64,7 @@ const PlanFileEditor: React.FC = () => {
   );
 
   // typeid form → resolve the PLAN entity (its asset_ref is the abs file path).
-  const planTypeId = useMemo(
-    () => (parsedRef?.kind === 'typeid' ? parsedRef.planTypeId : null),
-    [parsedRef],
-  );
+  const planTypeId = useMemo(() => (parsedRef?.kind === 'typeid' ? parsedRef.planTypeId : null), [parsedRef]);
   const { data: plan } = useEntity<Plan>(planTypeId);
 
   // Resolve the abs file path + the compute node that hosts it, from the ref:
@@ -124,10 +121,7 @@ const PlanFileEditor: React.FC = () => {
   // Share the plan like any other entity: the .md file rides as a FILE
   // attachment. No Spec/Task is minted. Stable while the dialog is open.
   const shareSource = useMemo(
-    () =>
-      computeNodeTypeId && filePath
-        ? fileShareSource({ computeNodeTypeId, absPath: filePath })
-        : null,
+    () => (computeNodeTypeId && filePath ? fileShareSource({ computeNodeTypeId, absPath: filePath }) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [showShareDialog, filePath, computeNodeTypeId?.id],
   );
@@ -233,7 +227,7 @@ const PlanFileEditor: React.FC = () => {
             path (stale bookmark / mis-minted vfs pointer with no sub-path) would
             otherwise strand the user on an infinite spinner with no close. */}
         <Button size="sm" variant="outline" onClick={handleCancel} title={t`Go back`}>
-          <X className="mr-2 h-4 w-4" />
+          <X className="me-2 h-4 w-4" />
           <Trans>Go back</Trans>
         </Button>
       </div>
@@ -282,7 +276,7 @@ const PlanFileEditor: React.FC = () => {
             title={executeTitle(true)}
             className={cn(executeDisabled && 'opacity-50')}
           >
-            <ShieldOff className="mr-2 h-4 w-4 text-amber-500" />
+            <ShieldOff className="me-2 h-4 w-4 text-amber-500" />
             <Trans>Execute Plan (clear context)</Trans>
           </Button>
 
@@ -295,7 +289,7 @@ const PlanFileEditor: React.FC = () => {
             title={executeTitle(false)}
             className={cn(executeDisabled && 'opacity-50')}
           >
-            <ShieldOff className="mr-2 h-4 w-4 text-amber-500" />
+            <ShieldOff className="me-2 h-4 w-4 text-amber-500" />
             <Trans>Execute Plan</Trans>
           </Button>
 
@@ -305,10 +299,14 @@ const PlanFileEditor: React.FC = () => {
             variant="outline"
             disabled={updateDisabled}
             onClick={() => saveAndRun(() => agenticProcess!.updatePlan(filePath))}
-            title={!canRunPlan ? t`Open this plan from its session to update it` : t`Update plan based on <plan-note> sections`}
+            title={
+              !canRunPlan
+                ? t`Open this plan from its session to update it`
+                : t`Update plan based on <plan-note> sections`
+            }
             className={cn(updateDisabled && 'opacity-50')}
           >
-            <StickyNote className="mr-2 h-4 w-4" />
+            <StickyNote className="me-2 h-4 w-4" />
             <Trans>Update Plan</Trans>
           </Button>
 
@@ -320,7 +318,7 @@ const PlanFileEditor: React.FC = () => {
             onClick={() => setShowShareDialog(true)}
             title={t`Share this plan with someone`}
           >
-            <Send className="mr-2 h-4 w-4" />
+            <Send className="me-2 h-4 w-4 rtl:-scale-x-100" />
             <Trans>Share</Trans>
           </Button>
 
@@ -332,7 +330,7 @@ const PlanFileEditor: React.FC = () => {
             onClick={handleCancel}
             title={t`Discard changes and go back`}
           >
-            <X className="mr-2 h-4 w-4" />
+            <X className="me-2 h-4 w-4" />
             <Trans>Cancel</Trans>
           </Button>
 
@@ -340,7 +338,7 @@ const PlanFileEditor: React.FC = () => {
           <Button
             size="sm"
             variant="ghost"
-            className="ml-auto h-8 w-8 p-0"
+            className="ms-auto h-8 w-8 p-0"
             onClick={() => void handleBookmarkToggle()}
             title={planBookmark ? t`Remove bookmark` : t`Bookmark this plan`}
           >
@@ -371,7 +369,9 @@ const PlanFileEditor: React.FC = () => {
             // The file couldn't be read (deleted on disk, unreadable). Clear
             // message instead of an infinite spinner.
             <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-muted-foreground">
-              <div className="text-base font-semibold text-foreground"><Trans>Plan file not found</Trans></div>
+              <div className="text-base font-semibold text-foreground">
+                <Trans>Plan file not found</Trans>
+              </div>
               <div className="font-mono text-xs">{filePath}</div>
             </div>
           ) : (
@@ -403,10 +403,7 @@ const SpecEntityEditor: React.FC = () => {
     return head || null;
   }, [currentDock?.pointer]);
 
-  const specTypeId = useMemo(
-    () => (specId ? new TypeId(Spec.type, specId) : null),
-    [specId],
-  );
+  const specTypeId = useMemo(() => (specId ? new TypeId(Spec.type, specId) : null), [specId]);
   const { data: spec } = useEntity<Spec>(specTypeId);
 
   const [localContent, setLocalContent] = useState<string | null>(null);
@@ -472,11 +469,11 @@ const SpecEntityEditor: React.FC = () => {
           <Button
             size="sm"
             variant="default"
-            onClick={handleSave}
+            onClick={() => void handleSave()}
             disabled={!isDirty || isSaving}
             title={isDirty ? t`Save changes` : t`No unsaved changes`}
           >
-            <Save className="mr-2 h-4 w-4" />
+            <Save className="me-2 h-4 w-4" />
             {isSaving ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
           </Button>
 
@@ -486,7 +483,7 @@ const SpecEntityEditor: React.FC = () => {
             onClick={() => setShowShareDialog(true)}
             title={t`Share this plan with someone`}
           >
-            <Send className="mr-2 h-4 w-4" />
+            <Send className="me-2 h-4 w-4 rtl:-scale-x-100" />
             <Trans>Share</Trans>
           </Button>
 
@@ -496,7 +493,7 @@ const SpecEntityEditor: React.FC = () => {
             onClick={() => navigation.openDock(DockPointer.forInbox())}
             title={isDirty ? t`Discard unsaved changes and go back to inbox` : t`Go back to inbox`}
           >
-            <X className="mr-2 h-4 w-4" />
+            <X className="me-2 h-4 w-4" />
             <Trans>Cancel</Trans>
           </Button>
         </div>
@@ -513,11 +510,7 @@ const SpecEntityEditor: React.FC = () => {
       <div className="min-h-0 flex-1">
         <EditorWithSidePanel target={chatTarget}>
           <div className="plan-milkdown-editor h-full overflow-auto">
-            <MilkdownEditor
-              content={localContent ?? ''}
-              onChange={handleContentChange}
-              editorMode="editor"
-            />
+            <MilkdownEditor content={localContent ?? ''} onChange={handleContentChange} editorMode="editor" />
           </div>
         </EditorWithSidePanel>
       </div>

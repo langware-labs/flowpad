@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { ViewType, WorldViewProjection } from '@sdk';
 import { Building2, Globe, KeyRound, Mail } from 'lucide-react';
 import type React from 'react';

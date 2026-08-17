@@ -88,7 +88,10 @@ describe('Agent Quick Create', () => {
 
     expect(descriptor.allowedScopes).toEqual(['user', 'project']);
     expect(create).toHaveBeenCalledWith(project, ' Q ', 'agentic-assets/agent');
-    expect(result.toastTitle).toBe('Agent created');
+    // `toastTitle` is a lazy Lingui descriptor, not a string — the create path
+    // runs at module scope where an eager `t` would freeze the pre-locale
+    // language. `.message` is its English source; callers render `i18n._(…)`.
+    expect(result.toastTitle.message).toBe('Agent created');
     expect(result.pointer?.toUrl()).toContain(`typeid/agent-${AGENT_ID}`);
   });
 

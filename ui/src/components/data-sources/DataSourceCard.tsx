@@ -145,7 +145,7 @@ export function DataSourceCard({ source, onEdit, onReplay, onDelete }: Props) {
   const wiki = setupWiki(source.provider);
 
   return (
-    <Card className={cn('flex flex-col border-l-[3px]', chip.border)}>
+    <Card className={cn('flex flex-col border-s-[3px]', chip.border)}>
       <CardHeader className="flex flex-row items-start gap-2 space-y-0 p-3 pb-1.5">
         <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
 
@@ -161,9 +161,7 @@ export function DataSourceCard({ source, onEdit, onReplay, onDelete }: Props) {
           </div>
         </div>
 
-        <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium', chip.chip)}>
-          {chip.label}
-        </span>
+        <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium', chip.chip)}>{chip.label}</span>
 
         <SourceMenu
           source={source}
@@ -187,9 +185,7 @@ export function DataSourceCard({ source, onEdit, onReplay, onDelete }: Props) {
         {source.needsSetup && (
           <div className="rounded bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-700 dark:text-amber-400">
             <div className="flex items-start gap-1.5">
-              <p className="flex-1">
-                {source.setup_detail || t`Finish setup, then press Verify.`}
-              </p>
+              <p className="flex-1">{source.setup_detail || t`Finish setup, then press Verify.`}</p>
               {/* The info affordance is a wiki page, not a tooltip: "invite the
                   bot" is a multi-step task performed in ANOTHER application, and
                   a hover card cannot be read while doing it. */}
@@ -212,8 +208,8 @@ export function DataSourceCard({ source, onEdit, onReplay, onDelete }: Props) {
         {parked && (
           <p className="rounded bg-destructive/10 px-2 py-1.5 text-[11px] leading-snug text-destructive">
             <Trans>
-              Parked — the scheduler skips a <code>config_error</code> source, so it will not poll
-              again on its own. <strong>Pull changes</strong> clears the latch.
+              Parked — the scheduler skips a <code>config_error</code> source, so it will not poll again on its own.{' '}
+              <strong>Pull changes</strong> clears the latch.
             </Trans>
             {source.error_detail ? ` (${source.error_detail})` : ''}
           </p>
@@ -236,7 +232,7 @@ export function DataSourceCard({ source, onEdit, onReplay, onDelete }: Props) {
 
           <button
             type="button"
-            className="ml-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            className="ms-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
             onClick={() => setOpen((o) => !o)}
           >
             {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}

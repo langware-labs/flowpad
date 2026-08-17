@@ -135,7 +135,7 @@ export function CreateContactsGroupDialog({ open, onOpenChange }: CreateContacts
             disabled={!canCreate}
             data-testid="contacts-group-create"
           >
-            {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            {busy ? <Loader2 className="me-2 h-4 w-4 animate-spin" /> : null}
             <Trans>Create</Trans>
           </Button>
         </DialogFooter>

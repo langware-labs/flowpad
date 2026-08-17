@@ -22,6 +22,9 @@ const h = vi.hoisted(() => ({
   // Resolves with a node, like the real `createSandbox`. Tests that care about
   // the failure path override it.
   onCreate: vi.fn(() => Promise.resolve({ id: 'node-created' })),
+  // The boot. Separate from the create because it is the expensive half — see
+  // the state-machine block below.
+  onLaunch: vi.fn(() => Promise.resolve({ id: 'node-created' })),
   onOpen: vi.fn(),
   githubStatus: vi.fn(() => Promise.resolve(true)),
   connect: vi.fn(() => Promise.resolve(undefined)),
@@ -78,6 +81,7 @@ function renderDialog(props: Record<string, unknown> = {}) {
       currentProject={withRepo}
       projects={[withRepo, desk, repoLess]}
       onCreate={h.onCreate}
+      onLaunch={h.onLaunch}
       onOpen={h.onOpen}
       steps={[]}
       {...props}
@@ -291,51 +295,127 @@ describe('new desktop: project + asset packages', () => {
 });
 
 /**
- * The three-state machine: idle -> creating -> created.
+ * The five-state machine: idle -> creating -> created -> launching -> launched.
+ *
+ * Create writes the box down and provisions NOTHING; Launch is what boots it.
+ * That split is the point: a box made now and opened on Thursday costs nothing
+ * in between, and the auto-login choice gets asked while it still means
+ * something — before anything has signed anyone in.
  *
  * The dialog used to close on click and fire the create at the page behind it,
  * which put progress and any failure somewhere the user was no longer looking.
  * Staying open is what makes the outcome visible — and it is what let the
- * popup-blocker placeholder tab go away, because the open is now its own click.
+ * popup-blocker placeholder tab go away, because the open is still its own click.
  */
 describe('create / launch state machine', () => {
-  it('creates without opening anything, then offers Launch and Done', async () => {
+  it('creates without booting or opening anything, then offers Launch and Done', async () => {
     renderDialog();
 
     await userEvent.click(screen.getByTestId('create-sandbox'));
 
-    // Creating must NOT open a tab — that is the user's next, separate gesture.
+    // THE property this split exists for: Create must not provision a VM, and
+    // must not open a tab. Both are the user's next, separate gestures.
     expect(h.onCreate).toHaveBeenCalledTimes(1);
+    expect(h.onLaunch).not.toHaveBeenCalled();
     expect(h.onOpen).not.toHaveBeenCalled();
 
     expect(await screen.findByTestId('launch-sandbox')).toBeInTheDocument();
     expect(screen.getByTestId('done-sandbox')).toBeInTheDocument();
+    expect(screen.getByTestId('sandbox-not-started')).toBeInTheDocument();
     expect(screen.queryByTestId('create-sandbox')).not.toBeInTheDocument();
   });
 
-  it('opens the created box exactly once on Launch', async () => {
+  it('launches on Launch, and opens only on the click after it', async () => {
     const onOpenChange = vi.fn();
     renderDialog({ onOpenChange });
 
     await userEvent.click(screen.getByTestId('create-sandbox'));
     await userEvent.click(await screen.findByTestId('launch-sandbox'));
 
+    expect(h.onLaunch).toHaveBeenCalledTimes(1);
+    expect(h.onLaunch.mock.calls[0][0]).toEqual({ id: 'node-created' });
+    // A minute of pipeline sits between Launch and the tab, so the open cannot
+    // ride the Launch gesture — a popup blocker would eat it. It gets its own
+    // button, which is also what keeps a failed launch visible.
+    expect(h.onOpen).not.toHaveBeenCalled();
+
+    await userEvent.click(await screen.findByTestId('open-sandbox'));
+
     expect(h.onOpen).toHaveBeenCalledTimes(1);
     expect(h.onOpen).toHaveBeenCalledWith({ id: 'node-created' });
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it('Done closes without opening the box', async () => {
+  it('asks about auto-login before the box exists, and passes the answer to the launch', async () => {
+    renderDialog();
+
+    await userEvent.click(screen.getByTestId('create-sandbox'));
+    // Ticked by default — the hub's own default for a fresh node.
+    const box = within(await screen.findByTestId('sandbox-auto-login')).getByRole('checkbox');
+    expect(box).toBeChecked();
+
+    await userEvent.click(box);
+    await userEvent.click(screen.getByTestId('launch-sandbox'));
+
+    // It has to reach the LAUNCH: after the box is up the session already
+    // exists, and turning it off then is a sign-out, not a setting.
+    expect(h.onLaunch.mock.calls[0][1]).toEqual({ autoLogin: false });
+  });
+
+  it('defaults auto-login on when the tick is left alone', async () => {
+    renderDialog();
+
+    await userEvent.click(screen.getByTestId('create-sandbox'));
+    await userEvent.click(await screen.findByTestId('launch-sandbox'));
+
+    expect(h.onLaunch.mock.calls[0][1]).toEqual({ autoLogin: true });
+  });
+
+  it('Done closes without booting or opening the box', async () => {
     const onOpenChange = vi.fn();
     renderDialog({ onOpenChange });
 
     await userEvent.click(screen.getByTestId('create-sandbox'));
     await userEvent.click(await screen.findByTestId('done-sandbox'));
 
-    // The box still exists — it is in the list on the page behind. Done means
-    // "I don't want to go in right now", not "undo".
+    // The box still exists — it is in the list on the page behind, waiting to be
+    // launched. Done means "not now", not "undo".
+    expect(h.onLaunch).not.toHaveBeenCalled();
     expect(h.onOpen).not.toHaveBeenCalled();
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('keeps the dialog open and offers Launch again when the launch fails', async () => {
+    const onOpenChange = vi.fn();
+    h.onLaunch.mockRejectedValueOnce(new Error('no e2b capacity'));
+    renderDialog({ onOpenChange });
+
+    await userEvent.click(screen.getByTestId('create-sandbox'));
+    await userEvent.click(await screen.findByTestId('launch-sandbox'));
+
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(await screen.findByText(/no e2b capacity/)).toBeInTheDocument();
+    // Back to `created`, not `idle`: the record exists either way, and offering
+    // Create again would make a second box for the same picks.
+    expect(screen.getByTestId('launch-sandbox')).toBeInTheDocument();
+    expect(screen.queryByTestId('create-sandbox')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('open-sandbox')).not.toBeInTheDocument();
+  });
+
+  it('a double-clicked Launch boots one box, not two', async () => {
+    let release: (v: { id: string }) => void = () => {};
+    h.onLaunch.mockImplementationOnce(() => new Promise((res) => (release = res)));
+    renderDialog();
+
+    await userEvent.click(screen.getByTestId('create-sandbox'));
+    const button = await screen.findByTestId('launch-sandbox');
+    await userEvent.click(button);
+    await userEvent.click(button);
+
+    // A second `ops/setup` on one node overwrites its provider id and orphans
+    // the first VM — a running machine nobody can reach or delete.
+    expect(h.onLaunch).toHaveBeenCalledTimes(1);
+    release({ id: 'node-created' });
   });
 
   it('keeps the dialog open and shows the error when the create fails', async () => {

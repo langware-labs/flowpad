@@ -3,14 +3,7 @@ import { CredentialsSubview, PageId, ViewType, type Project } from '@sdk';
 import { useAuth, useEntityEnv, useEntityEnvMutations } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@src/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
@@ -51,8 +44,7 @@ export const ProjectEnvironmentTab: React.FC<ProjectEnvironmentTabProps> = ({ pr
   const entityTypeId = project.typeId;
   const { table, isLoading, error } = useEntityEnv({ entityTypeId, enabled: !!user?.id });
   const envMutations = useEntityEnvMutations(entityTypeId);
-  const { secretOrigins, status, statusReady, add, provide, remove, refreshStatus } =
-    useProjectSecretOrigins(project);
+  const { secretOrigins, status, statusReady, add, provide, remove, refreshStatus } = useProjectSecretOrigins(project);
 
   // Null when closed — the same shape as `confirming` below, and it cannot
   // express a closed dialog that still remembers a locked variable.
@@ -137,13 +129,8 @@ export const ProjectEnvironmentTab: React.FC<ProjectEnvironmentTabProps> = ({ pr
         <p className="text-xs text-muted-foreground">
           <Trans>What this project needs, where each value comes from, and whether it is met here.</Trans>
         </p>
-        <Button
-          size="sm"
-          className="ml-auto"
-          onClick={() => setDeclaring({})}
-          data-testid="env-declare-open"
-        >
-          <Plus className="mr-1 h-4 w-4" />
+        <Button size="sm" className="ms-auto" onClick={() => setDeclaring({})} data-testid="env-declare-open">
+          <Plus className="me-1 h-4 w-4" />
           <Trans>Declare</Trans>
         </Button>
       </div>
@@ -165,12 +152,24 @@ export const ProjectEnvironmentTab: React.FC<ProjectEnvironmentTabProps> = ({ pr
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[220px]"><Trans>Variable</Trans></TableHead>
-              <TableHead className="w-[240px]"><Trans>Comes from</Trans></TableHead>
-              <TableHead className="w-[140px]"><Trans>Value</Trans></TableHead>
-              <TableHead className="w-[150px]"><Trans>Met</Trans></TableHead>
-              <TableHead><Trans>Description</Trans></TableHead>
-              <TableHead className="w-[200px] text-right"><Trans>Actions</Trans></TableHead>
+              <TableHead className="w-[220px]">
+                <Trans>Variable</Trans>
+              </TableHead>
+              <TableHead className="w-[240px]">
+                <Trans>Comes from</Trans>
+              </TableHead>
+              <TableHead className="w-[140px]">
+                <Trans>Value</Trans>
+              </TableHead>
+              <TableHead className="w-[150px]">
+                <Trans>Met</Trans>
+              </TableHead>
+              <TableHead>
+                <Trans>Description</Trans>
+              </TableHead>
+              <TableHead className="w-[200px] text-end">
+                <Trans>Actions</Trans>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -195,7 +194,7 @@ export const ProjectEnvironmentTab: React.FC<ProjectEnvironmentTabProps> = ({ pr
                   <TableCell className="max-w-[1px] truncate text-sm text-muted-foreground">
                     {row.description || '—'}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-end">
                     <RowActions
                       row={row}
                       onProvide={() => setProvidingFor(row.envVar)}
@@ -223,8 +222,8 @@ export const ProjectEnvironmentTab: React.FC<ProjectEnvironmentTabProps> = ({ pr
               <TableRow>
                 <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
                   <Trans>
-                    Nothing declared yet. Declare what this project needs — a declaration can sit
-                    unmet until someone provides the value.
+                    Nothing declared yet. Declare what this project needs — a declaration can sit unmet until someone
+                    provides the value.
                   </Trans>
                 </TableCell>
               </TableRow>
@@ -312,10 +311,7 @@ const MetCell: React.FC<{ row: ProjectEnvRow }> = ({ row }) => {
     'env-local': t`from .env.local`,
     sodot: t`from the keychain`,
   };
-  const detail =
-    row.met === 'met' && row.foundIn
-      ? (FOUND_IN_DETAIL[row.foundIn] ?? t`from the provider`)
-      : undefined;
+  const detail = row.met === 'met' && row.foundIn ? (FOUND_IN_DETAIL[row.foundIn] ?? t`from the provider`) : undefined;
 
   const chip = (
     <span className={cn('flex items-center gap-1 text-xs', className)} data-testid={`env-met-${row.envVar}`}>
@@ -348,7 +344,7 @@ const RowActions: React.FC<{
   if (row.rowKind === 'oauth') {
     return (
       <Button size="sm" variant="ghost" onClick={onOpenConnections} data-testid={`env-connections-${row.envVar}`}>
-        <ExternalLink className="mr-1 h-3.5 w-3.5" />
+        <ExternalLink className="me-1 h-3.5 w-3.5" />
         <Trans>Connections</Trans>
       </Button>
     );

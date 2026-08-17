@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useMemo, useState } from 'react';
 import { AgenticProcess, GraphContext, Project, TypeId } from '@sdk';
 import { notify } from '@src/notifications';
@@ -96,7 +97,7 @@ export function useContextProcess(opts: {
           if (!(await launchFor(launchProjectId))) onNoWorkdir();
         } catch (err) {
           console.error('[useContextProcess] launch failed', err);
-          notify.error({ title: 'Failed to start context process' });
+          notify.error({ title: t`Failed to start context process` });
         } finally {
           setBusy(false);
         }
@@ -118,7 +119,7 @@ export function useContextProcess(opts: {
   const launchWithProject = useCallback(
     (pickedProjectId: string) => {
       setNeedsProject(false);
-      runLaunch(pickedProjectId, () => notify.error({ title: 'That project has no local workdir' }));
+      runLaunch(pickedProjectId, () => notify.error({ title: t`That project has no local workdir` }));
     },
     [runLaunch],
   );

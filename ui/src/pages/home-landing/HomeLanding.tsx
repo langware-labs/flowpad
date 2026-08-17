@@ -243,7 +243,7 @@ export function HomeLanding() {
 
                     <ActivityIndicator
                       variant="strip"
-                      className="flex w-full max-w-3xl items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-left text-xs transition-colors hover:bg-muted/60"
+                      className="flex w-full max-w-3xl items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-start text-xs transition-colors hover:bg-muted/60"
                     />
                   </div>
 

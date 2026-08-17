@@ -63,9 +63,24 @@ const BreadcrumbPage = React.forwardRef<HTMLSpanElement, React.ComponentPropsWit
 );
 BreadcrumbPage.displayName = 'BreadcrumbPage';
 
+/**
+ * The trail's chevron. It points along the READING direction, so it has to
+ * mirror in RTL — a right-to-left trail under a right-pointing chevron reads as
+ * if it ran the other way, which is exactly how a correctly-ordered Hebrew
+ * breadcrumb gets reported as "backwards".
+ *
+ * Mirrored in CSS rather than swapped for `ChevronLeft`: one class, no branch on
+ * a hook, and it re-points the instant `<html dir>` changes with the locale.
+ * Exported so every trail (the address bar, the file manager's path) draws the
+ * same glyph instead of each re-deriving the flip.
+ */
+export const BreadcrumbChevron = ({ className }: { className?: string }) => (
+  <ChevronRight className={cn('rtl:-scale-x-100', className)} />
+);
+
 const BreadcrumbSeparator = ({ children, className, ...props }: React.ComponentProps<'li'>) => (
-  <li role="presentation" aria-hidden="true" className={cn('[&>svg]:w-3.5 [&>svg]:h-3.5', className)} {...props}>
-    {children ?? <ChevronRight />}
+  <li role="presentation" aria-hidden="true" className={cn('[&>svg]:h-3.5 [&>svg]:w-3.5', className)} {...props}>
+    {children ?? <BreadcrumbChevron />}
   </li>
 );
 BreadcrumbSeparator.displayName = 'BreadcrumbSeparator';
@@ -78,7 +93,9 @@ const BreadcrumbEllipsis = ({ className, ...props }: React.ComponentProps<'span'
     {...props}
   >
     <MoreHorizontal className="h-4 w-4" />
-    <span className="sr-only"><Trans>More</Trans></span>
+    <span className="sr-only">
+      <Trans>More</Trans>
+    </span>
   </span>
 );
 BreadcrumbEllipsis.displayName = 'BreadcrumbElipssis';

@@ -39,7 +39,7 @@ async function gotoAgenticProcess(page: Page): Promise<string> {
   if (cachedAgenticUrl) {
     await page.goto(cachedAgenticUrl);
     const ok = await activePanel(page)
-      .locator('.border-t .ml-auto')
+      .locator('.border-t .ms-auto')
       .isVisible({ timeout: 10_000 })
       .catch(() => false);
     if (ok) return cachedAgenticUrl;
@@ -60,7 +60,7 @@ async function gotoAgenticProcess(page: Page): Promise<string> {
     // The Dir side window is a ribbon panel — Advanced-view only; the backend
     // pref now wins over the localStorage seed, so flip to Advanced at runtime.
     await ensureAdvancedView(page);
-    await expect(activePanel(page).locator('.border-t .ml-auto')).toBeVisible({ timeout: 60_000 });
+    await expect(activePanel(page).locator('.border-t .ms-auto')).toBeVisible({ timeout: 60_000 });
   } catch (e) {
     await skipIfPtyExhausted(page);
     throw e;
@@ -93,7 +93,7 @@ test.describe('Dir side window scrolling', () => {
     // Advanced-only; gotoAgenticProcess already flipped to Advanced. Select it by
     // its FolderTree icon (index-independent — the ribbon gains/loses buttons).
     await ensureAdvancedView(page);
-    const dirButton = activePanel(page).locator('.border-t .ml-auto button:has(svg.lucide-folder-tree)');
+    const dirButton = activePanel(page).locator('.border-t .ms-auto button:has(svg.lucide-folder-tree)');
     await expect(dirButton).toBeVisible({ timeout: 15_000 });
     await dirButton.click();
 
@@ -110,9 +110,9 @@ test.describe('Dir side window scrolling', () => {
       const filterRow = f.parentElement;
       const dirRoot = filterRow?.parentElement; // SimpleDirTree root
       if (!dirRoot) return null;
-      const scroll = [...dirRoot.children].find(
-        (c) => getComputedStyle(c).overflowY === 'auto',
-      ) as HTMLElement | undefined;
+      const scroll = [...dirRoot.children].find((c) => getComputedStyle(c).overflowY === 'auto') as
+        | HTMLElement
+        | undefined;
       const wrapper = dirRoot.parentElement as HTMLElement; // TabbedSideDrawer content wrapper
       if (!scroll || !wrapper) return null;
       // Try to actually scroll the inner box to the bottom.

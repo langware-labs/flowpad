@@ -1,14 +1,5 @@
 import { useMemo, useState } from 'react';
-import {
-  Archive,
-  Bot,
-  ChevronRight,
-  FlaskConical,
-  Layers,
-  Sparkles,
-  Wrench,
-  type LucideIcon,
-} from 'lucide-react';
+import { Archive, Bot, ChevronRight, FlaskConical, Layers, Sparkles, Wrench, type LucideIcon } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { cn } from '@src/lib/utils';
 import { useSkillsByName } from '@src/hooks/useSkillsByName';
@@ -97,7 +88,9 @@ export function CallTreeView({ doc, selectedFrameId, onSelectFrame, onEvaluateSk
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="call-tree-view">
       <div className="flex flex-shrink-0 items-center gap-2 border-b px-3 py-1.5">
-        <span className="text-xs text-muted-foreground"><Trans>Drill by</Trans></span>
+        <span className="text-xs text-muted-foreground">
+          <Trans>Drill by</Trans>
+        </span>
         <div className="inline-flex rounded-md bg-muted p-0.5">
           {METRICS.map((m) => (
             <button
@@ -243,7 +236,7 @@ function FrameRow({
         </span>
 
         {/* Proportional metric bar */}
-        <div className="relative ml-1 h-2 min-w-[40px] flex-1">
+        <div className="relative ms-1 h-2 min-w-[40px] flex-1">
           <div className="absolute inset-y-0 left-0 rounded-sm bg-border" style={{ width: '100%' }} />
           <div
             className={cn(
@@ -254,15 +247,15 @@ function FrameRow({
           />
         </div>
 
-        <span className="w-12 flex-shrink-0 text-right text-muted-foreground">
+        <span className="w-12 flex-shrink-0 text-end text-muted-foreground">
           {fmtDuration(frame.total_duration_ms)}
         </span>
-        <span className="w-16 flex-shrink-0 text-right text-muted-foreground">
+        <span className="w-16 flex-shrink-0 text-end text-muted-foreground">
           {frame.total_cost_usd > 0 ? `$${frame.total_cost_usd.toFixed(2)}` : '—'}
         </span>
         <span
           className={cn(
-            'w-10 flex-shrink-0 text-right',
+            'w-10 flex-shrink-0 text-end',
             frame.issue_count > 0 ? 'text-red-500' : 'text-muted-foreground',
             inefficient && 'font-bold',
           )}

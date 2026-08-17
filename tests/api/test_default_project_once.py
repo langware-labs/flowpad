@@ -5,18 +5,26 @@ own remembered, so a value that stuck around would keep asserting itself on a
 box where the user has since chosen something else. Handing it out once makes it
 an opening instruction; everything after that belongs to the user's own picking.
 
+One-shot PER BOX, not per person, and that is a real limit rather than an
+oversight: every visitor reaches a sandbox through the same shared cookie-gate
+secret, so this side cannot tell a second person from a refresh. Serving a
+recipient is the hub's job — it re-arms this instruction before handing someone
+the machine (`ComputeNode._rearm_opening_project_for`), and its own tests cover
+who gets re-armed. What is pinned here is that the box honours an armed
+instruction exactly once, which is what makes that re-arm land.
+
 The bootstrap payload is cached for 30s, which is exactly why the instruction is
 stamped per-caller on the way out rather than baked into the cached object —
 these tests pin that, because through the cache it would either repeat for 30s
 or be skipped entirely.
 """
+
 import uuid
 from pathlib import Path
 
 import pytest
 
-from flow_sdk.server import state
-from flow_sdk.server.state import set_pending_default_project
+from flow_sdk.server.state import _read_opening_project, set_pending_default_project
 
 
 def _cn_id(bootstrap_payload: dict) -> str:
@@ -50,9 +58,7 @@ async def _materialize(client, cn_id: str, tmp_path: Path, name: str) -> str:
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_first_bootstrap_opens_the_provisioned_project_then_forgets_it(
-    bootstrapped_client, tmp_path
-):
+async def test_first_bootstrap_opens_the_provisioned_project_then_forgets_it(bootstrapped_client, tmp_path):
     first = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     cn_id = _cn_id(first.json())
     local_project_id = _default_project_id(first.json())
@@ -97,7 +103,7 @@ async def test_set_default_refuses_a_project_this_node_does_not_have(bootstrappe
     )
 
     assert r.json()["status"] == "FAIL"
-    assert state.pending_default_project_id is None
+    assert _read_opening_project().get("project_id") is None
 
 
 # do not increase timeout without approval
@@ -113,7 +119,7 @@ async def test_set_default_refuses_a_foreign_id(bootstrapped_client):
     )
 
     assert r.json()["status"] == "FAIL"
-    assert state.pending_default_project_id is None
+    assert _read_opening_project().get("project_id") is None
 
 
 # do not increase timeout without approval

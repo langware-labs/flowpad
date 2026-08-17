@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import {
   dataContext,
   Folder,
@@ -219,7 +220,7 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
           await fsManager.uploadFromBlob(task.typeId, '/', blob as Blob, name);
         } catch (e) {
           notify.error({
-            title: `Could not attach ${name}`,
+            title: t`Could not attach ${name}`,
             message: e instanceof Error ? e.message : 'Copy failed.',
           });
           continue;
@@ -257,7 +258,7 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
           await fsManager.uploadFile(task.typeId, '/', file);
         } catch (e) {
           notify.error({
-            title: `Could not attach ${file.name}`,
+            title: t`Could not attach ${file.name}`,
             message: e instanceof Error ? e.message : 'Copy failed.',
           });
           continue;
@@ -280,7 +281,7 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
       const url = a.git_origin ? gitOriginCloneUrl(a.git_origin) : '';
       if (!url) return null;
       return launchWizard('git-context-folder', {
-        title: `Pull ${a.label}`,
+        title: t`Pull ${a.label}`,
         payload: {
           projectId: scopeProjectId ?? dataContext.project?.id ?? null,
           scope: 'private',
@@ -340,7 +341,7 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
           openPathContent(local, false);
         } catch (e) {
           notify.error({
-            title: `Could not open ${a.label}`,
+            title: t`Could not open ${a.label}`,
             message: e instanceof Error ? e.message : 'File is not available yet.',
           });
         }
@@ -417,7 +418,7 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
               <button
                 type="button"
                 className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                title="Add file or folder"
+                title={t`Add file or folder`}
                 data-testid="task-attachments-add"
               >
                 <Plus className="h-3.5 w-3.5" />
@@ -427,14 +428,14 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
               <button
                 type="button"
                 onClick={() => void pickAndAdd('file')}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-sm hover:bg-muted"
               >
                 <FileIcon className="h-4 w-4 text-muted-foreground" /> File…
               </button>
               <button
                 type="button"
                 onClick={() => void pickAndAdd('folder')}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-sm hover:bg-muted"
               >
                 <FolderIcon className="h-4 w-4 text-muted-foreground" /> Folder…
               </button>
@@ -488,7 +489,7 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
                   <button
                     type="button"
                     onClick={() => void openEntry(a)}
-                    className="min-w-0 flex-1 truncate text-left hover:underline"
+                    className="min-w-0 flex-1 truncate text-start hover:underline"
                     title={a.path ?? (a.git_origin ? formatGitOrigin(a.git_origin) : a.label)}
                   >
                     {a.label}
@@ -498,7 +499,7 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
                       type="button"
                       onClick={() => removeEntry(key)}
                       className="hidden shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:block"
-                      title="Remove"
+                      title={t`Remove`}
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>

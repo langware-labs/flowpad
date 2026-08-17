@@ -58,7 +58,7 @@ export function MemberTasksSection({ task }: MemberTasksSectionProps) {
       <button
         type="button"
         onClick={toggle}
-        className="flex w-full items-center gap-1.5 px-6 py-1.5 text-left hover:bg-muted/40"
+        className="flex w-full items-center gap-1.5 px-6 py-1.5 text-start hover:bg-muted/40"
         data-testid="member-tasks-section-toggle"
       >
         {open ? (
@@ -83,7 +83,7 @@ export function MemberTasksSection({ task }: MemberTasksSectionProps) {
                 key={m.id}
                 type="button"
                 onClick={() => navigation.openDock(DockPointer.forAssetEditorByTypeId('task', m.typeId))}
-                className="flex items-center gap-2 px-6 py-1.5 text-left text-sm hover:bg-muted/50"
+                className="flex items-center gap-2 px-6 py-1.5 text-start text-sm hover:bg-muted/50"
                 data-testid="member-task-line"
               >
                 {m.status === 'done' ? (

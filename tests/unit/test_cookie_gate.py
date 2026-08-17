@@ -3,6 +3,7 @@ every-request check free."""
 
 from __future__ import annotations
 
+import os
 from unittest.mock import patch
 
 import pytest
@@ -111,6 +112,101 @@ def test_set_rejects_empty(sod_env):
     assert cookie_gate.is_gated() is False
 
 
+# ---------------------------------------------------------------------------
+# Desktop refusal
+# ---------------------------------------------------------------------------
+
+
+def test_set_refused_on_a_desktop_instance(sod_env):
+    """The gate exempts no path, so arming a desktop instance rejects the
+    Electron shell's own /health/status poll and the app never launches."""
+    sod_env.instance_dir.mkdir(parents=True, exist_ok=True)
+    sod_env.desktop_marker_path.touch()
+
+    with pytest.raises(cookie_gate.DesktopGateRefused):
+        cookie_gate.set_cookie_gate("s3cret")
+
+
+def test_desktop_refusal_leaves_the_instance_open(sod_env):
+    """Refusing must not half-arm: no marker, no secret, still serving."""
+    sod_env.instance_dir.mkdir(parents=True, exist_ok=True)
+    sod_env.desktop_marker_path.touch()
+
+    with pytest.raises(cookie_gate.DesktopGateRefused):
+        cookie_gate.set_cookie_gate("s3cret")
+
+    assert not sod_env.cookie_gate_marker_path.exists()
+    assert cookie_gate.get_cookie_gate() is None
+    assert cookie_gate.is_gated() is False
+
+
+def test_desktop_refusal_is_a_value_error(sod_env):
+    """The CLI reports it through its existing `except ValueError` handler."""
+    assert issubclass(cookie_gate.DesktopGateRefused, ValueError)
+
+
+def test_sandbox_without_a_desktop_marker_still_arms(sod_env):
+    """The refusal keys on positive desktop evidence, not on the absence of a
+    hub runtime assignment — a box that has not finished starting has neither."""
+    assert not sod_env.desktop_marker_path.exists()
+
+    cookie_gate.set_cookie_gate("s3cret")
+
+    assert cookie_gate.get_cookie_gate() == "s3cret"
+
+
+# ---------------------------------------------------------------------------
+# Recording the desktop fact — what makes the refusal above reachable from a
+# `flow` CLI process, which never sees FLOWPAD_DESKTOP itself.
+# ---------------------------------------------------------------------------
+
+
+def test_marks_desktop_instance_under_electron(sod_env, monkeypatch):
+    from flow_sdk.server.startup import mark_desktop_managed
+
+    monkeypatch.setenv("FLOWPAD_DESKTOP", "1")
+    mark_desktop_managed()
+
+    assert sod_env.desktop_marker_path.exists()
+
+
+def test_does_not_mark_without_electron(sod_env, monkeypatch):
+    """A sandbox or a plain CLI install must stay armable."""
+    from flow_sdk.server.startup import mark_desktop_managed
+
+    monkeypatch.delenv("FLOWPAD_DESKTOP", raising=False)
+    mark_desktop_managed()
+
+    assert not sod_env.desktop_marker_path.exists()
+    cookie_gate.set_cookie_gate("s3cret")
+    assert cookie_gate.is_gated() is True
+
+
+def test_marking_then_arming_is_refused(sod_env, monkeypatch):
+    """The end-to-end shape of the incident: desktop backend boots, then a CLI
+    call tries to arm the gate and is turned away."""
+    from flow_sdk.server.startup import mark_desktop_managed
+
+    monkeypatch.setenv("FLOWPAD_DESKTOP", "1")
+    mark_desktop_managed()
+
+    with pytest.raises(cookie_gate.DesktopGateRefused):
+        cookie_gate.set_cookie_gate("s3cret")
+
+    assert cookie_gate.is_gated() is False
+
+
+def test_marking_is_idempotent(sod_env, monkeypatch):
+    from flow_sdk.server.startup import mark_desktop_managed
+
+    monkeypatch.setenv("FLOWPAD_DESKTOP", "1")
+    mark_desktop_managed()
+    first = sod_env.desktop_marker_path.stat().st_mtime_ns
+    mark_desktop_managed()
+
+    assert sod_env.desktop_marker_path.stat().st_mtime_ns == first
+
+
 def test_armed_marker_alone_does_not_gate(sod_env):
     """Marker present but no secret in the sod → ungated. Never a gate with
     nothing to compare against."""
@@ -125,17 +221,110 @@ def test_armed_marker_alone_does_not_gate(sod_env):
 
 
 @pytest.mark.parametrize("stored", [None, "s3cret"])
-def test_value_is_cached(sod_env, stored):
-    """Absence is cached too — it is the common case (every desktop install), and
-    an uncached miss would pay a decrypt-and-fail on every request. Guards the
+def test_value_is_cached_while_the_marker_holds_still(sod_env, stored):
+    """A steady-state gated instance decrypts ONCE, not once per request.
+
+    Absence is cached too — a marker present with nothing behind it would
+    otherwise pay a decrypt-and-fail on every request. Guards the
     ``.get() is not None`` trap inherited from privacy_mode.py:46.
     """
+    _arm_marker(sod_env)
+
     with patch.object(cookie_gate, "_read", return_value=stored) as read:
         assert cookie_gate.get_cookie_gate() == stored
         assert cookie_gate.get_cookie_gate() == stored
         assert cookie_gate.get_cookie_gate() == stored
 
     assert read.call_count == 1
+
+
+def test_a_secret_rotated_by_another_process_is_seen_without_a_restart(sod_env):
+    """The load-bearing half of the mtime key.
+
+    The hub arms and rotates the gate with `flow auth set-cookie-gate`, which is
+    a DIFFERENT process. Caching the answer outright meant this one kept serving
+    a value the file no longer held — enforcing the wrong secret, or nothing at
+    all, until it restarted. That window is exactly the one the gate exists to
+    close.
+    """
+    cookie_gate.set_cookie_gate("first")
+    assert cookie_gate.get_cookie_gate() == "first"
+
+    # What the other process does: rewrite the secret, re-touch the marker.
+    # utime rather than a bare touch — the two writes can land inside one
+    # filesystem timestamp tick, and then the test proves nothing.
+    marker = sod_env.cookie_gate_marker_path
+    sod_env.sod.write("cookie_gate", "second")
+    bumped = marker.stat().st_mtime + 5
+    os.utime(marker, (bumped, bumped))
+
+    assert cookie_gate.get_cookie_gate() == "second"
+
+
+# ---------------------------------------------------------------------------
+# Clearing
+# ---------------------------------------------------------------------------
+
+
+def test_clear_disarms_the_instance(sod_env):
+    cookie_gate.set_cookie_gate("s3cret")
+    assert cookie_gate.is_gated() is True
+
+    assert cookie_gate.clear_cookie_gate() is True
+
+    assert cookie_gate.is_gated() is False
+    assert not sod_env.cookie_gate_marker_path.exists()
+
+
+def test_clear_takes_effect_in_this_process_immediately(sod_env):
+    """No restart, and no ``reset_cache`` — a server that kept enforcing a gate
+    whose marker is gone would be locked shut with no way back in."""
+    cookie_gate.set_cookie_gate("s3cret")
+    assert cookie_gate.get_cookie_gate() == "s3cret"
+
+    cookie_gate.clear_cookie_gate()
+
+    assert cookie_gate.get_cookie_gate() is None
+
+
+def test_clear_on_an_unarmed_instance_reports_nothing_changed(sod_env):
+    """So a caller can say "already open" instead of implying it did something."""
+    assert cookie_gate.clear_cookie_gate() is False
+    assert cookie_gate.is_gated() is False
+
+
+def test_clear_removes_the_marker_before_the_secret(sod_env):
+    """The EXACT reverse of arming, and for the same reason.
+
+    Deleting the secret first leaves a window where the marker still says
+    "armed" while the comparison value is gone — and ``_read`` resolves a
+    missing secret to ``None``, i.e. it fails OPEN. Same end state, reached
+    through a moment that looks locked and is not.
+    """
+    seen = {}
+
+    with patch.object(cookie_gate, "get_instance_settings") as settings:
+        _fake_settings(settings, sod_env, armed=True)
+        settings.return_value.sod.delete.side_effect = lambda _name: seen.setdefault(
+            "marker_still_there", sod_env.cookie_gate_marker_path.exists()
+        )
+
+        assert cookie_gate.clear_cookie_gate() is True
+
+    assert seen["marker_still_there"] is False
+
+
+def test_clear_leaves_the_instance_open_even_if_the_secret_will_not_delete(sod_env):
+    """The marker is already gone by then, so the instance is open — which is the
+    whole point of the call. An orphaned secret is inert: nothing reads it
+    without a marker, and re-arming overwrites it."""
+    with patch.object(cookie_gate, "get_instance_settings") as settings:
+        _fake_settings(settings, sod_env, armed=True)
+        settings.return_value.sod.delete.side_effect = RuntimeError("store is unwritable")
+
+        assert cookie_gate.clear_cookie_gate() is True
+
+    assert not sod_env.cookie_gate_marker_path.exists()
 
 
 def test_set_populates_cache_without_a_reread(sod_env):

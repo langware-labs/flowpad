@@ -108,7 +108,7 @@ export function EntityTypeBar({
           onClick={() => onChange([])}
           title={t`Show all types`}
           aria-label={t`Show all types`}
-          className="ml-0.5 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+          className="ms-0.5 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground"
           data-testid={`${testIdPrefix}-clear`}
         >
           <X className="h-3.5 w-3.5" />

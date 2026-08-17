@@ -18,6 +18,7 @@
  * Failure UI: 1 cleanup → toast; 2+ cleanups → modal counter.
  */
 
+import { t } from '@lingui/core/macro';
 import {
   AgenticProcess,
   connectionManager,
@@ -329,8 +330,8 @@ async function routeProcessPointer(
         ? (next.loaded.process.name ?? next.loaded.process.displayName ?? fallbackPointer)
         : (next.loaded.shell.name ?? fallbackPointer);
     notify.error({
-      title: `Terminal "${requestedName}" not found`,
-      message: `${directCleanup.title} — opened "${fallbackName}" instead.`,
+      title: t`Terminal "${requestedName}" not found`,
+      message: t`${directCleanup.title} — opened "${fallbackName}" instead.`,
     });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw replace(shellUrl(fallbackPointer));
@@ -391,8 +392,8 @@ async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder
     }
     const fallbackPointer = loadedToPointer(next.loaded);
     notify.error({
-      title: 'Opened a different terminal',
-      message: `Couldn't load ${shellId.slice(0, 8)}… (${directCleanup.title}) — opened ${fallbackPointer} instead.`,
+      title: t`Opened a different terminal`,
+      message: t`Couldn't load ${shellId.slice(0, 8)}… (${directCleanup.title}) — opened ${fallbackPointer} instead.`,
     });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw replace(shellUrl(fallbackPointer));
@@ -407,14 +408,14 @@ async function buildShellCleanupForRoute(e: ShellLoadError): Promise<CleanupReco
       return {
         kind: 'shell_not_found',
         shellId: e.shellId,
-        title: 'Shell not found',
-        description: 'This terminal no longer exists.',
+        title: t`Shell not found`,
+        description: t`This terminal no longer exists.`,
       };
     case 'error_status':
       return {
         kind: 'shell_error_status',
         shellId: e.shellId,
-        title: 'Shell unavailable',
+        title: t`Shell unavailable`,
         description: e.errorMessage ?? 'Shell error',
       };
     case 'start_failed': {
@@ -462,8 +463,8 @@ export async function loadShellRoute(
     await perfTime('connectionManager.waitForConnected', () => connectionManager.waitForConnected(5000));
   } catch {
     notify.error({
-      title: 'No realtime connection',
-      message: 'Terminal may be unresponsive until the connection recovers.',
+      title: t`No realtime connection`,
+      message: t`Terminal may be unresponsive until the connection recovers.`,
     });
   }
 

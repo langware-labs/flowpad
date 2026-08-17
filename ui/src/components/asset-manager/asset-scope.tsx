@@ -1,12 +1,5 @@
 import { Box, ExternalLink, FolderOpen, FolderTree, User, type LucideIcon } from 'lucide-react';
-import {
-  assetSourceLabel,
-  dataManager,
-  isReadOnlySource,
-  TypeId,
-  type AssetDescriptor,
-  type AssetSource,
-} from '@sdk';
+import { assetSourceLabel, dataManager, isReadOnlySource, TypeId, type AssetDescriptor, type AssetSource } from '@sdk';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { cn } from '@src/lib/utils';
@@ -96,22 +89,20 @@ export function assetScope(descriptor: AssetDescriptor): AssetScope {
   const fallback = assetSourceLabel(descriptor.source);
 
   const label =
-    kind === 'agent' ? 'this agent'
-    : kind === 'project' ? projectLabel(descriptor) ?? dir ?? fallback
-    : kind === 'context' || kind === 'folder' ? dir ?? fallback
-    : fallback;
+    kind === 'agent'
+      ? 'this agent'
+      : kind === 'project'
+        ? (projectLabel(descriptor) ?? dir ?? fallback)
+        : kind === 'context' || kind === 'folder'
+          ? (dir ?? fallback)
+          : fallback;
 
   const reason = isReadOnlySource(descriptor.source) ? READONLY_REASON[kind] : null;
   return {
     kind,
     label,
     revealPath: descriptor.posix_path ?? null,
-    tooltip: scopeTooltip(
-      label,
-      descriptor.source_dir,
-      descriptor.posix_path ?? '(no file — inline persona)',
-      reason,
-    ),
+    tooltip: scopeTooltip(label, descriptor.source_dir, descriptor.posix_path ?? '(no file — inline persona)', reason),
   };
 }
 
@@ -137,14 +128,7 @@ function scopeTooltip(
   posixPath: string | null | undefined,
   reason: string | null,
 ): string {
-  return [
-    label,
-    sourceDir ? `from: ${sourceDir}` : null,
-    posixPath ?? null,
-    reason,
-  ]
-    .filter(Boolean)
-    .join('\n');
+  return [label, sourceDir ? `from: ${sourceDir}` : null, posixPath ?? null, reason].filter(Boolean).join('\n');
 }
 
 const LUCIDE_BY_KIND: Record<Exclude<AssetScopeKind, 'project' | 'system'>, LucideIcon> = {
@@ -178,13 +162,13 @@ export function AssetScopeChip({ scope, testidSuffix }: { scope: AssetScope; tes
   const Cell = revealPath ? 'button' : 'span';
   return (
     <Cell
-      {...(revealPath ?
-        {
-          type: 'button' as const,
-          onClick: () => void openExternalFromComputeNode('@local', revealPath, { select: true }),
-          title: `${scope.tooltip}\n\nClick to reveal in the file browser`,
-        }
-      : { title: scope.tooltip })}
+      {...(revealPath
+        ? {
+            type: 'button' as const,
+            onClick: () => void openExternalFromComputeNode('@local', revealPath, { select: true }),
+            title: `${scope.tooltip}\n\nClick to reveal in the file browser`,
+          }
+        : { title: scope.tooltip })}
       className="contents"
       data-testid={`asset-manager-scope-${testidSuffix}`}
     >
@@ -193,7 +177,7 @@ export function AssetScopeChip({ scope, testidSuffix }: { scope: AssetScope; tes
       </span>
       <span
         className={cn(
-          'min-w-0 truncate rounded text-left text-[10px] uppercase tracking-wider text-muted-foreground',
+          'min-w-0 truncate rounded text-start text-[10px] uppercase tracking-wider text-muted-foreground',
           revealPath && 'hover:bg-muted hover:text-foreground',
         )}
       >

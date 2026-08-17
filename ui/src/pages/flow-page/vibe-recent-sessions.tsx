@@ -1,12 +1,9 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AgenticProcess } from '@sdk';
+import { cn } from '@src/lib/utils';
 import { useProject } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
-import {
-  WorkerIcon,
-  pickHistoryTitle,
-  timeAgo,
-} from '@src/components/entity-execution-panel/history-row';
+import { WorkerIcon, pickHistoryTitle, timeAgo } from '@src/components/entity-execution-panel/history-row';
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import {
   Dialog,
@@ -26,6 +23,15 @@ import {
   useRecentActivity,
   type RecentActivityItem,
 } from './use-recent-activity';
+
+interface VibeRecentSessionsProps {
+  /** Optional caption in place of the default "Recent activity" title — the
+   *  no-process workspace labels the list, because there it is the only content;
+   *  the hero passes none (the composer above it is context enough). */
+  heading?: ReactNode;
+  /** Extra classes for the list container (e.g. a max-width on a narrow pane). */
+  className?: string;
+}
 
 const RECENT_LIMIT = 5;
 const COMPACT_FETCH_LIMIT = 10;
@@ -52,7 +58,7 @@ function ActivityRows({
               key={item.key}
               type="button"
               onClick={() => openSession(item.entry)}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-accent"
+              className="flex w-full items-center gap-2 px-3 py-2 text-start text-xs transition-colors hover:bg-accent"
               data-testid="vibe-recent-session"
             >
               <WorkerIcon workerType={item.entry.worker_type} />
@@ -75,7 +81,7 @@ function ActivityRows({
             key={item.key}
             type="button"
             onClick={() => void navigateToResult(item.result, navigation)}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-accent"
+            className="flex w-full items-center gap-2 px-3 py-2 text-start text-xs transition-colors hover:bg-accent"
             data-testid="vibe-recent-entity"
           >
             <Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
@@ -162,7 +168,7 @@ function RecentActivityDialog({
   );
 }
 
-function ProjectRecentActivity({ projectId }: { projectId: string }) {
+function ProjectRecentActivity({ projectId, heading, className }: { projectId: string } & VibeRecentSessionsProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -202,13 +208,11 @@ function ProjectRecentActivity({ projectId }: { projectId: string }) {
   return (
     <>
       <section
-        className="w-full overflow-hidden rounded-lg border border-border/60 text-left"
+        className={cn('w-full overflow-hidden rounded-lg border border-border/60 text-start', className)}
         data-testid="vibe-recent-sessions"
       >
         <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
-          <h2 className="text-xs font-medium text-muted-foreground">
-            <Trans>Recent activity</Trans>
-          </h2>
+          <h2 className="text-xs font-medium text-muted-foreground">{heading ?? <Trans>Recent activity</Trans>}</h2>
           <button
             type="button"
             onClick={() => setMoreOpen(true)}
@@ -234,7 +238,9 @@ function ProjectRecentActivity({ projectId }: { projectId: string }) {
 
 /** Project-scoped mixed timeline for Vibe Home. Kept under its established
  * export name so callers do not need a parallel home-only activity surface. */
-export function VibeRecentSessions() {
+export function VibeRecentSessions({ heading, className }: VibeRecentSessionsProps = {}) {
   const { project } = useProject();
-  return project?.id ? <ProjectRecentActivity key={project.id} projectId={project.id} /> : null;
+  return project?.id ? (
+    <ProjectRecentActivity key={project.id} projectId={project.id} heading={heading} className={className} />
+  ) : null;
 }

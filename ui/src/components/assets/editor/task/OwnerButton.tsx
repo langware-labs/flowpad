@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { ConversationParticipant, Task, TaskKind } from '@sdk';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { Button } from '@src/components/ui/button';
@@ -60,12 +61,12 @@ export function OwnerButton({ task }: OwnerButtonProps) {
       await task.assign(person, { message, ensureCloudLogin });
       task.markEdit();
       notify.success({
-        title: 'Task assigned',
-        message: `${person.name || person.email} now has "${task.title}".`,
+        title: t`Task assigned`,
+        message: t`${person.name || person.email} now has "${task.title}".`,
       });
     } catch (e: unknown) {
       notify.error({
-        title: 'Could not assign',
+        title: t`Could not assign`,
         message: e instanceof Error ? e.message : String(e),
       });
     } finally {
@@ -118,7 +119,7 @@ export function OwnerButton({ task }: OwnerButtonProps) {
                 type="button"
                 onClick={openIndividual}
                 data-testid="task-owner-individual"
-                className="flex items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted"
+                className="flex items-center gap-2 rounded-md px-2 py-2 text-start text-sm hover:bg-muted"
               >
                 <UserIcon className="h-4 w-4 text-muted-foreground" />
                 <span>
@@ -130,7 +131,7 @@ export function OwnerButton({ task }: OwnerButtonProps) {
                 type="button"
                 onClick={openGroupFlow}
                 data-testid="task-owner-group"
-                className="flex items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted"
+                className="flex items-center gap-2 rounded-md px-2 py-2 text-start text-sm hover:bg-muted"
               >
                 <Users className="h-4 w-4 text-muted-foreground" />
                 <span>
@@ -151,12 +152,12 @@ export function OwnerButton({ task }: OwnerButtonProps) {
                 onChange={setPicked}
                 max={1}
                 includeGroups={false}
-                placeholder="Search a contact or type an email"
+                placeholder={t`Search a contact or type an email`}
               />
               <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                placeholder="Optional message to the owner…"
+                placeholder={t`Optional message to the owner…`}
                 rows={2}
                 data-testid="task-owner-message"
                 className="w-full resize-none rounded-md border bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"

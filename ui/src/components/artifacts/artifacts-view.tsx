@@ -25,14 +25,16 @@ export const ArtifactsView: React.FC<ArtifactsViewProps> = ({ className = '' }) 
       {/* Top Bar */}
       <div className="flex items-center justify-between border-b bg-background px-4 py-3">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold"><Trans>Project Artifacts</Trans></h2>
+          <h2 className="text-lg font-semibold">
+            <Trans>Project Artifacts</Trans>
+          </h2>
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
             {totalArtifacts} {totalArtifacts === 1 ? <Trans>artifact</Trans> : <Trans>artifacts</Trans>}
           </span>
         </div>
 
         <Button size="sm" onClick={() => setShowAddForm(true)}>
-          <Plus className="mr-1 h-4 w-4" />
+          <Plus className="me-1 h-4 w-4" />
           <Trans>Add Artifact</Trans>
         </Button>
       </div>

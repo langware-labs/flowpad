@@ -30,13 +30,7 @@ interface Props {
   onDelete: (source: DataSource) => void;
 }
 
-export function SourceMenu({
-  source,
-  onToggleEnabled,
-  onEdit,
-  onReplay,
-  onDelete,
-}: Props) {
+export function SourceMenu({ source, onToggleEnabled, onEdit, onReplay, onDelete }: Props) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
 
@@ -46,7 +40,7 @@ export function SourceMenu({
         <Button
           variant="ghost"
           size="sm"
-          className="-mr-1 size-7 shrink-0 p-0"
+          className="-me-1 size-7 shrink-0 p-0"
           data-testid={`source-more-${source.id}`}
         >
           <MoreHorizontal className="size-4" />
@@ -74,9 +68,7 @@ export function SourceMenu({
             `ingest.*.sync.*` already targets `data_source:<id>` — so this is a
             filter on the envelope, not a search over its text. */}
         <DropdownMenuItem
-          onSelect={() =>
-            navigation.openDock(DockPointer.forEvents(undefined, { target: `data_source:${source.id}` }))
-          }
+          onSelect={() => navigation.openDock(DockPointer.forEvents(undefined, { target: `data_source:${source.id}` }))}
         >
           <RadioTower className="size-3.5" /> {t`Events`}
         </DropdownMenuItem>

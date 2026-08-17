@@ -54,7 +54,7 @@ export const UsageCell: React.FC<{
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex max-w-full flex-wrap items-center gap-1 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-accent"
+          className="flex max-w-full flex-wrap items-center gap-1 rounded-md px-1 py-0.5 text-start transition-colors hover:bg-accent"
           data-testid="connection-usage-trigger"
         >
           {attached.length === 0 ? (
@@ -91,7 +91,7 @@ export const UsageCell: React.FC<{
                   type="button"
                   disabled={busy}
                   onClick={() => onToggle(p, !isAttached)}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-accent disabled:opacity-60"
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-start text-xs transition-colors hover:bg-accent disabled:opacity-60"
                   title={isAttached ? t`Remove access` : t`Give this project access`}
                 >
                   <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">

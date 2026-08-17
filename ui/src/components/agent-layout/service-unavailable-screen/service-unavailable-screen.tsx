@@ -27,11 +27,6 @@ const ServiceUnavailableScreen = ({ onClose }: ServiceUnavailableScreenProps) =>
           <h1 className="mb-2 text-2xl font-bold">
             <Trans>Service Unavailable</Trans>
           </h1>
-          {statusCode && (
-            <p className="mb-2 font-mono text-lg text-orange-600">
-              <Trans>Error: {statusCode}</Trans>
-            </p>
-          )}
           <p className="mb-2 text-muted-foreground">
             <Trans>The FlowPad backend server is not responding.</Trans>
           </p>

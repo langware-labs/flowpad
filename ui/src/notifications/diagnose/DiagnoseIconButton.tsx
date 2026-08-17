@@ -28,7 +28,17 @@ function subjectDetail(subject: DiagnoseSubject): string {
  * the subject's detail. Rendered only for the levels in `DIAGNOSABLE` —
  * info/success have nothing to diagnose.
  */
-export function DiagnoseIconButton({ subject, className }: { subject: DiagnoseSubject; className?: string }) {
+export function DiagnoseIconButton({
+  subject,
+  className,
+  iconClassName,
+}: {
+  subject: DiagnoseSubject;
+  className?: string;
+  /** Icon size — notification rows keep the default; a full-page surface (the
+      error screen) sizes it up to sit next to a regular button. */
+  iconClassName?: string;
+}) {
   const open = useDiagnoseErrorStore((s) => s.open);
   const { t } = useLingui();
   if (!DIAGNOSABLE.includes(subject.level)) return null;
@@ -50,7 +60,7 @@ export function DiagnoseIconButton({ subject, className }: { subject: DiagnoseSu
         'flex-shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40'
       }
     >
-      <Stethoscope className="h-3.5 w-3.5" />
+      <Stethoscope className={iconClassName ?? 'h-3.5 w-3.5'} />
     </button>
   );
 }

@@ -1,4 +1,5 @@
 """ScanActionsMixin — resource scanning & agentic process actions for ComputeNode."""
+
 from __future__ import annotations
 
 import logging
@@ -26,12 +27,14 @@ def _resolve_session_record(session_id: str, hint: str | None = None):
 
     if hint not in ("codex", "copilot"):
         from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
+
         rec = get_claude_session(session_id)
         if rec is not None:
             return rec, "claude"
 
     if hint not in ("claude", "copilot"):
         from flow_sdk.fs_store.indexer.functions.codex_sessions import get_codex_session
+
         rec = get_codex_session(session_id)
         if rec is not None:
             return rec, "codex"
@@ -57,15 +60,50 @@ def _resolve_session_record(session_id: str, hint: str | None = None):
     return None, None
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# launch pre-flight — a "needs a human" verdict is a 4xx, not a 500
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _start_failure_response(reason, worker_type: str, fallback: ApiFailResponse) -> ApiFailResponse:
+    """Classify a spawn failure that got past the pre-flight.
+
+    The pre-flight can still lose a race — a CLI deleted between the check and
+    the spawn. ``LaunchError.classify`` already recognises ``WorkerSpawnError``
+    and the "no … installation discovered" text, so a config verdict answers
+    4xx here instead of inheriting the 500 default (which ``response.py`` would
+    otherwise stamp on — the FLOWPAD-1971 symptom). Anything transient keeps the
+    caller's original response.
+    """
+    # Function-local, like every other capability/driver import in this module:
+    # a module-level import of either one is a circular import (scan_actions is
+    # reached while ComputeNode/AgenticProcess are still partially initialized).
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+        worker_capability_kind,
+    )
+    from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchHealth
+    from flow_sdk.core.capabilities.registry import get_capability_registry
+
+    exc = reason if isinstance(reason, BaseException) else RuntimeError(str(reason))
+    verdict = LaunchError.classify(exc, worker_type)
+    if verdict.health is not LaunchHealth.CONFIG_ERROR:
+        return fallback
+    # The capability spec is the SSOT for what a harness is *called*; the worker
+    # type (``claude_code``) is an internal token and reads like one in a toast.
+    name = get_capability_registry().get(worker_capability_kind(worker_type)).spec.name
+    return ApiFailResponse(
+        message=f"{name} is not available on this machine.",
+        status_code=400,
+    )
+
+
 class ScanActionsMixin:
     async def _scan_scoped_roots(self):
         """Full-coverage (user + all projects) indexer roots for resource scans."""
         from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter
 
         # Background resource scan — gate protected folders rather than prompting.
-        return await self._resolve_scoped_roots(
-            await get_all_scope_filter(create_missing=False), foreground=False
-        )
+        return await self._resolve_scoped_roots(await get_all_scope_filter(create_missing=False), foreground=False)
 
     async def _scan_resources(self) -> ApiResponse:
         """Scan specific resource type with optional time window filtering.
@@ -176,9 +214,7 @@ class ScanActionsMixin:
 
         try:
             scoped_roots = await self._scan_scoped_roots()
-            res = await scan_indexer.scan_resources_from_indexer(
-                resource, scoped_roots, limit=0
-            )
+            res = await scan_indexer.scan_resources_from_indexer(resource, scoped_roots, limit=0)
             return ApiSuccessResponse(data=res.get("items", []))
         except Exception as e:
             logging.exception(f"scan-item failed: {e}")
@@ -346,7 +382,41 @@ class ScanActionsMixin:
             try:
                 worker_type = WorkerType(worker_type_raw)
             except ValueError:
-                return ApiFailResponse(message=f"Unknown worker_type: {worker_type_raw!r}")
+                # A client naming a worker this backend doesn't have is a client
+                # error; without an explicit status_code it would answer 500.
+                return ApiFailResponse(message=f"Unknown worker_type: {worker_type_raw!r}", status_code=400)
+
+            # Pre-flight the harness BEFORE anything is persisted, so a provider
+            # the machine can't run is refused with a structured 400 instead of
+            # failing deep in the spawn (which reached HTTP as a bare 500) and
+            # leaving a FAILED row behind for every attempt.
+            #
+            # ``is_installed`` rather than ``ensure_launchable``: the latter also
+            # runs the login probe, which shells out to the vendor CLI uncached,
+            # and no subprocess belongs on a per-create request path. This is a
+            # lookup in the discovery dict — the same SSOT ``worker_path_env``
+            # reads at spawn, so it can never turn away a launch that would have
+            # worked. A logged-out harness still fails at launch, where it is
+            # latched and reported as it is today.
+            #
+            # Deliberately gates headless creates too. A standard-mode session
+            # with a missing CLI used to be born fine and only break on its first
+            # prompt, where the failure rides a 200 stream and no status code can
+            # reach the user.
+            if not await AgenticProcess.is_installed(worker_type.value):
+                from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+                    worker_capability_kind,
+                )
+                from flow_sdk.core.capabilities.registry import get_capability_registry
+
+                logging.info(f"ComputeNode {self.id} createProcess refused: {worker_type.value} is not installed")
+                # The capability spec's name, not the internal ``claude_code``
+                # token — this string is shown to the user verbatim.
+                harness_name = get_capability_registry().get(worker_capability_kind(worker_type.value)).spec.name
+                return ApiFailResponse(
+                    message=f"{harness_name} is not installed on this machine.",
+                    status_code=400,
+                )
 
             model = context_data.pop("model", None) or None
             permission_mode = context_data.pop("permission_mode", "bypassPermissions")
@@ -538,15 +608,19 @@ class ScanActionsMixin:
                 try:
                     start_resp = await process.start_pty(visible=visible)
                 except Exception as start_err:
-                    logging.exception(
-                        f"ComputeNode {self.id} createProcess start error for {process.id}: {start_err}"
-                    )
-                    return ApiFailResponse(
-                        message=f"Process {process.id} created but failed to start: {start_err}"
+                    logging.exception(f"ComputeNode {self.id} createProcess start error for {process.id}: {start_err}")
+                    return _start_failure_response(
+                        start_err,
+                        worker_type.value,
+                        ApiFailResponse(message=f"Process {process.id} created but failed to start: {start_err}"),
                     )
 
                 if isinstance(start_resp, ApiFailResponse):
-                    return start_resp
+                    # ``_perform_open`` returns its failure with no status_code
+                    # (⇒ 500). Classify the latched reason so a harness that
+                    # vanished between the pre-flight and the spawn still reads
+                    # as a client error the UI can act on.
+                    return _start_failure_response(start_resp.message or "", worker_type.value, start_resp)
             elif launch_prompt and str(launch_prompt).strip():
                 # Headless launch (visible=False) with a seeded first prompt: PTY
                 # drains the queue head via ``start_pty`` above, but headless has no
@@ -629,11 +703,7 @@ class ScanActionsMixin:
             is_codex = worker_type_raw in ("codex",)
             is_copilot = worker_type_raw in ("copilot",)
             cli_factory_key = "copilot" if is_copilot else ("codex" if is_codex else "claude")
-            wt_enum = (
-                WorkerType.COPILOT
-                if is_copilot
-                else (WorkerType.CODEX if is_codex else WorkerType.CLAUDE_CODE)
-            )
+            wt_enum = WorkerType.COPILOT if is_copilot else (WorkerType.CODEX if is_codex else WorkerType.CLAUDE_CODE)
 
             # Resolve workdir + project_id from the session record.
             # Transcript cwd is the authoritative restore location; project_id is
@@ -731,9 +801,7 @@ class ScanActionsMixin:
                         logging.exception(
                             f"ComputeNode {self.id} upsertSessionProcess heal-start error for {process.id}: {start_err}"
                         )
-                        return ApiFailResponse(
-                            message=f"Process {process.id} found but failed to start: {start_err}"
-                        )
+                        return ApiFailResponse(message=f"Process {process.id} found but failed to start: {start_err}")
                     if isinstance(start_resp, ApiFailResponse):
                         return start_resp
                     start_data = getattr(start_resp, "data", None)
@@ -823,6 +891,7 @@ class ScanActionsMixin:
                 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
                     factory as _cli_factory,
                 )
+
                 _cmd = _cli_factory(process.cli_config, worker_type=cli_factory_key)
                 _cmd.resume = True
                 # Codex/Copilot resume need the id passed as the cli session_id
@@ -845,9 +914,7 @@ class ScanActionsMixin:
                 logging.exception(
                     f"ComputeNode {self.id} upsertSessionProcess start error for {process.id}: {start_err}"
                 )
-                return ApiFailResponse(
-                    message=f"Process {process.id} created but failed to start: {start_err}"
-                )
+                return ApiFailResponse(message=f"Process {process.id} created but failed to start: {start_err}")
 
             if isinstance(start_resp, ApiFailResponse):
                 return start_resp
@@ -881,10 +948,10 @@ class ScanActionsMixin:
         """
         request_info = get_current_request_info()
         hint_raw = (
-            request_info.get_param("worker_type")
-            or request_info.get_param("workerType")
-            or ""
-        ) if request_info else ""
+            (request_info.get_param("worker_type") or request_info.get_param("workerType") or "")
+            if request_info
+            else ""
+        )
         hint = hint_raw.lower() or None
         if hint and hint not in ("claude", "codex", "copilot"):
             return ApiFailResponse(
@@ -945,11 +1012,7 @@ class ScanActionsMixin:
         if not session_id:
             return ApiFailResponse(message="session_id is required", status_code=400)
 
-        worker_hint_raw = (
-            request_info.get_param("worker_type")
-            or request_info.get_param("workerType")
-            or ""
-        )
+        worker_hint_raw = request_info.get_param("worker_type") or request_info.get_param("workerType") or ""
         worker_hint = worker_hint_raw.lower() or None
         if worker_hint and worker_hint not in ("claude", "codex", "copilot"):
             return ApiFailResponse(
@@ -967,14 +1030,8 @@ class ScanActionsMixin:
 
             cwd = getattr(rec, "cwd", None) or None
             rec_name = getattr(rec, "name", None) or None
-            session_name = (
-                rec_name if rec_name and rec_name != session_id else None
-            )
-            transcript_path = (
-                getattr(rec, "jsonl_path", None)
-                or getattr(rec, "source_file", None)
-                or None
-            )
+            session_name = rec_name if rec_name and rec_name != session_id else None
+            transcript_path = getattr(rec, "jsonl_path", None) or getattr(rec, "source_file", None) or None
 
             project_id: str | None = None
             if cwd:

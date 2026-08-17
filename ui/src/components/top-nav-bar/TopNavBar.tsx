@@ -3,6 +3,7 @@ import { useLingui } from '@lingui/react/macro';
 import { ArrowLeft, ArrowRight, FolderOpen, Home, RefreshCw, type LucideIcon } from 'lucide-react';
 import { chromeEntityActionClassName } from '@src/components/entity-actions/action-button-styles';
 import { Button } from '@src/components/ui/button';
+import { cn } from '@src/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useContext } from '@src/hooks/useContext';
 import { Project } from '@sdk';
@@ -47,12 +48,22 @@ export function TopNavBar() {
       data-runtime={runtimeKind}
       className="flex w-full shrink-0 items-center gap-2 border-b bg-muted/40 px-2.5 py-2"
     >
-      <NavIconButton icon={ArrowLeft} label={t`Back`} onClick={goBack} disabled={!canGoBack} testId="top-nav-back" />
+      {/* Back/forward are the only glyphs in this cluster that encode a
+          direction, so they are the only ones that mirror — see `mirrorInRtl`. */}
+      <NavIconButton
+        icon={ArrowLeft}
+        label={t`Back`}
+        onClick={goBack}
+        disabled={!canGoBack}
+        mirrorInRtl
+        testId="top-nav-back"
+      />
       <NavIconButton
         icon={ArrowRight}
         label={t`Forward`}
         onClick={goForward}
         disabled={!canGoForward}
+        mirrorInRtl
         testId="top-nav-forward"
       />
       <NavIconButton
@@ -112,6 +123,7 @@ function NavIconButton({
   onClick,
   disabled = false,
   spinning = false,
+  mirrorInRtl = false,
   testId,
 }: {
   icon: LucideIcon;
@@ -119,6 +131,11 @@ function NavIconButton({
   onClick: (e: React.MouseEvent) => void;
   disabled?: boolean;
   spinning?: boolean;
+  /** Mirror the glyph in RTL. For an arrow that means a DIRECTION rather than a
+   *  fixed shape: "back" points against the reading flow, so it faces left in
+   *  English and right in Hebrew. A house or a folder is the same shape in every
+   *  language and must NOT be flipped. */
+  mirrorInRtl?: boolean;
   testId: string;
 }) {
   return (
@@ -137,7 +154,7 @@ function NavIconButton({
             aria-label={label}
             data-testid={testId}
           >
-            <Icon className={spinning ? 'animate-spin' : undefined} />
+            <Icon className={cn(spinning && 'animate-spin', mirrorInRtl && 'rtl:-scale-x-100')} />
           </Button>
         </span>
       </TooltipTrigger>

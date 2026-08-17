@@ -19,22 +19,22 @@ export const HEALTH_STYLE: Record<SourceHealth, { label: string; chip: string; b
   ok: {
     label: 'ok',
     chip: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-    border: 'border-l-emerald-500/60',
+    border: 'border-s-emerald-500/60',
   },
   never_synced: {
     label: 'never synced',
     chip: 'bg-muted text-muted-foreground',
-    border: 'border-l-border',
+    border: 'border-s-border',
   },
   transient_error: {
     label: 'retrying',
     chip: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-    border: 'border-l-amber-500/70',
+    border: 'border-s-amber-500/70',
   },
   config_error: {
     label: 'needs attention',
     chip: 'bg-destructive/10 text-destructive',
-    border: 'border-l-destructive/70',
+    border: 'border-s-destructive/70',
   },
 };
 

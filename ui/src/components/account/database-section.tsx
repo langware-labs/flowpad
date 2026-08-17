@@ -18,7 +18,17 @@ interface DbPathSettings {
 
 export function DatabaseSection() {
   const { t } = useLingui();
-  const { currentActivity, backup, clearAllData, getPaths, getDbSettings, setDbPath, openBackupFolder, openDbFolder, openLogsFolder } = useSystemTools();
+  const {
+    currentActivity,
+    backup,
+    clearAllData,
+    getPaths,
+    getDbSettings,
+    setDbPath,
+    openBackupFolder,
+    openDbFolder,
+    openLogsFolder,
+  } = useSystemTools();
   const isClearing = currentActivity === 'clear';
   const isBackingUp = currentActivity === 'archive';
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -27,7 +37,9 @@ export function DatabaseSection() {
 
   const [dbPathState, setDbPathState] = useState<DbPathSettings>(() => {
     try {
-      return (JSON.parse(localStorage.getItem(LS_KEY) ?? 'null') as DbPathSettings | null) ?? { paths: [], selected: null };
+      return (
+        (JSON.parse(localStorage.getItem(LS_KEY) ?? 'null') as DbPathSettings | null) ?? { paths: [], selected: null }
+      );
     } catch {
       return { paths: [], selected: null };
     }
@@ -44,10 +56,12 @@ export function DatabaseSection() {
   }, [getPaths]);
 
   useEffect(() => {
-    void getDbSettings().then((result: DbSettings) => {
-      setActiveDbPath(result.db_path);
-      setDefaultDbPath(result.default_path);
-    }).catch(console.error);
+    void getDbSettings()
+      .then((result: DbSettings) => {
+        setActiveDbPath(result.db_path);
+        setDefaultDbPath(result.default_path);
+      })
+      .catch(console.error);
   }, [getDbSettings]);
 
   useEffect(() => {
@@ -57,7 +71,7 @@ export function DatabaseSection() {
       didRestoreRef.current = true;
       void applyPath(savedPath);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const applyPath = async (path: string) => {
@@ -74,7 +88,10 @@ export function DatabaseSection() {
   };
 
   const selectPath = async (value: string) => {
-    if (value === '__enter__') { setIsCustomInput(true); return; }
+    if (value === '__enter__') {
+      setIsCustomInput(true);
+      return;
+    }
     const newSelected = value === '__default__' ? null : value;
     const newState = { ...dbPathState, selected: newSelected };
     localStorage.setItem(LS_KEY, JSON.stringify(newState));
@@ -89,7 +106,7 @@ export function DatabaseSection() {
     try {
       const result = await setDbPath(trimmed);
       setActiveDbPath(result.db_path);
-      const newPaths = [trimmed, ...dbPathState.paths.filter(p => p !== trimmed)].slice(0, 10);
+      const newPaths = [trimmed, ...dbPathState.paths.filter((p) => p !== trimmed)].slice(0, 10);
       const newState: DbPathSettings = { paths: newPaths, selected: trimmed };
       localStorage.setItem(LS_KEY, JSON.stringify(newState));
       setDbPathState(newState);
@@ -108,7 +125,9 @@ export function DatabaseSection() {
     try {
       const result = await clearAllData();
       notify.success({ title: t`Database Cleared`, message: result.message || t`All data cleared. Redirecting...` });
-      setTimeout(() => { window.location.href = '/'; }, 1500);
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 1500);
     } catch (error) {
       notify.error({ title: t`Error`, message: error instanceof Error ? error.message : t`Failed to clear database` });
     }
@@ -129,7 +148,10 @@ export function DatabaseSection() {
       else if (folderType === 'db') await openDbFolder();
       else await openLogsFolder();
     } catch (error) {
-      notify.error({ title: t`Error`, message: error instanceof Error ? error.message : t`Failed to open ${folderType} folder` });
+      notify.error({
+        title: t`Error`,
+        message: error instanceof Error ? error.message : t`Failed to open ${folderType} folder`,
+      });
     }
   };
 
@@ -145,18 +167,26 @@ export function DatabaseSection() {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-medium text-muted-foreground"><Trans>Database Path</Trans></label>
+        <label className="text-xs font-medium text-muted-foreground">
+          <Trans>Database Path</Trans>
+        </label>
         <select
           value={dbPathState.selected ?? '__default__'}
-          onChange={e => void selectPath(e.target.value)}
+          onChange={(e) => void selectPath(e.target.value)}
           disabled={isSwitching}
           className="flex h-8 w-full rounded-md border border-input bg-background px-2 py-1 text-xs ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <option value="__default__"><Trans>Default ({defaultDbPath})</Trans></option>
-          {dbPathState.paths.map(p => (
-            <option key={p} value={p}>{p}</option>
+          <option value="__default__">
+            <Trans>Default ({defaultDbPath})</Trans>
+          </option>
+          {dbPathState.paths.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
           ))}
-          <option value="__enter__"><Trans>+ Enter path...</Trans></option>
+          <option value="__enter__">
+            <Trans>+ Enter path...</Trans>
+          </option>
         </select>
         {isCustomInput && (
           <div className="flex gap-2">
@@ -164,17 +194,32 @@ export function DatabaseSection() {
               type="text"
               placeholder={t`/path/to/db`}
               value={customInputValue}
-              onChange={e => setCustomInputValue(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') void applyCustomPath(); }}
+              onChange={(e) => setCustomInputValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void applyCustomPath();
+              }}
               autoFocus
               className="flex h-8 flex-1 rounded-md border border-input bg-background px-2 py-1 font-mono text-xs ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
-            <Button size="sm" disabled={isSwitching || !customInputValue.trim()} onClick={() => void applyCustomPath()}>Apply</Button>
-            <Button size="sm" variant="ghost" onClick={() => { setIsCustomInput(false); setCustomInputValue(''); }}>Cancel</Button>
+            <Button size="sm" disabled={isSwitching || !customInputValue.trim()} onClick={() => void applyCustomPath()}>
+              Apply
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setIsCustomInput(false);
+                setCustomInputValue('');
+              }}
+            >
+              Cancel
+            </Button>
           </div>
         )}
         {activeDbPath && (
-          <p className="truncate font-mono text-xs text-muted-foreground"><Trans>Active: {activeDbPath}</Trans></p>
+          <p className="truncate font-mono text-xs text-muted-foreground">
+            <Trans>Active: {activeDbPath}</Trans>
+          </p>
         )}
       </div>
       <div className="flex gap-2">
@@ -182,7 +227,7 @@ export function DatabaseSection() {
           {isBackingUp ? t`Backing up...` : t`Backup DB`}
         </Button>
         <Button variant="outline" onClick={() => setShowDbStats(true)} className="flex-1">
-          <BarChart3 className="mr-2 h-4 w-4" />
+          <BarChart3 className="me-2 h-4 w-4" />
           <Trans>DB Stats</Trans>
         </Button>
       </div>
@@ -191,16 +236,16 @@ export function DatabaseSection() {
       </Button>
       <div className="flex gap-2">
         <Button variant="outline" onClick={() => void handleOpenFolder('backup')} className="flex-1">
-          <FolderOpen className="mr-2 h-4 w-4" />
+          <FolderOpen className="me-2 h-4 w-4" />
           <Trans>Open Backup Folder</Trans>
         </Button>
         <Button variant="outline" onClick={() => void handleOpenFolder('db')} className="flex-1">
-          <FolderOpen className="mr-2 h-4 w-4" />
+          <FolderOpen className="me-2 h-4 w-4" />
           <Trans>Open DB Folder</Trans>
         </Button>
       </div>
       <Button variant="outline" onClick={() => void handleOpenFolder('logs')} className="w-full">
-        <FolderOpen className="mr-2 h-4 w-4" />
+        <FolderOpen className="me-2 h-4 w-4" />
         <Trans>Open Logs Folder</Trans>
       </Button>
       {paths?.logs_folder && (

@@ -944,7 +944,11 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   public async inviteMember(
     email: string,
     role: string = 'member',
-    opts?: { callbackOverride?: string; transfer?: boolean; roleToKeep?: string | null },
+    opts?: {
+      callbackOverride?: string;
+      transfer?: boolean;
+      roleToKeep?: string | null;
+    },
   ): Promise<void> {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
     info.hubReflect = true; // membership change is hub-owned — reflect to the hub

@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { Task } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
@@ -74,7 +75,7 @@ export function TaskDescription({ task, save, readOnly = false, heading }: TaskD
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) (e.target as HTMLTextAreaElement).blur();
             }}
-            placeholder="Add a description…"
+            placeholder={t`Add a description…`}
             rows={2}
             data-testid="task-description"
             className={cn(

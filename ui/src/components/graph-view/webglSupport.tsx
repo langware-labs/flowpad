@@ -41,7 +41,7 @@ export function WebglUnavailableView() {
           </p>
         </div>
         <Button size="sm" variant="outline" onClick={() => window.location.reload()}>
-          <RefreshCw className="mr-1 h-3.5 w-3.5" />
+          <RefreshCw className="me-1 h-3.5 w-3.5" />
           <Trans>Retry</Trans>
         </Button>
       </div>

@@ -1,13 +1,6 @@
 import { CUSTOM_VIEW, isCustomViewAvailable } from '@src/constants/editor';
 import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
-import {
-  copyToClipboard,
-  downloadFile,
-  EditorLanguage,
-  /* FSEntry, */ fsStore,
-  isImagePath,
-  VFSPath,
-} from '@sdk';
+import { copyToClipboard, downloadFile, EditorLanguage, /* FSEntry, */ fsStore, isImagePath, VFSPath } from '@sdk';
 import { useContext, useProject } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import { useFS } from '@src/hooks/useFS';
@@ -103,10 +96,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
 
   // Images are binary: render them inline via the backend download URL instead
   // of decoding the bytes as text into Monaco (which shows garbage).
-  const isImage = useMemo(
-    () => isImagePath(effectiveFilePath || file?.path || ''),
-    [effectiveFilePath, file?.path],
-  );
+  const isImage = useMemo(() => isImagePath(effectiveFilePath || file?.path || ''), [effectiveFilePath, file?.path]);
   const imageUrl = useMemo(
     () => (isImage && effectiveFilePath && fs ? fs.getDownloadUrl(effectiveFilePath) : null),
     [isImage, effectiveFilePath, fs],
@@ -496,7 +486,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
             variant="ghost"
             size="icon"
             onClick={handleExecuteFlow}
-            title="Execute in Flow"
+            title={t`Execute in Flow`}
             className="hover:bg-muted"
           >
             <PlayCircle className="h-4 w-4" />
