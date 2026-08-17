@@ -48,14 +48,24 @@ export const SANDBOX_TRANSFER_ROLE_TO_KEEP = 'reader';
  * Where the emailed invitation lands the recipient: `/compute_node/<id>`, the
  * page that says "Preparing your sandbox…" and then goes into the box.
  *
- * NO `callback_override` rides with the invite any more, and that is the point.
- * `_post_accept_landing_url` already ends in
- * `build_entity_url(chosen_target.typeid)` — the hub's own answer to "where do I
- * send someone who just accepted an invitation to this entity" — and for a
- * ComputeNode target that IS this URL. The override existed only because the app
- * had no page listening at the address the hub was already generating; now it
- * does, so a sandbox invitation lands correctly by the same route every other
- * entity's does, with nothing steering it.
+ * SENT AS `callback_override` ON THE INVITE, because the invitation now names TWO
+ * entities and the hub has to pick one to land on.
+ *
+ * It rode without an override for exactly as long as the box was the only target:
+ * `_post_accept_landing_url` ends in `build_entity_url(chosen_target.typeid)`,
+ * which for a lone ComputeNode target IS this URL, so steering it was redundant.
+ * Adding the project as a second target ended that. `choose_target_entity` takes
+ * `non_workspace_targets[0]`, and that list is NOT the `invitation_targets` array
+ * the client sent — accept rebuilds it from the graph
+ * (`_build_invitation_relationships` -> `get_incoming_relationships`), so the
+ * "first" target is whichever InvitedThrough edge the DB returns first. Both a
+ * box and a project are non-workspace, so the email landed on the project: the
+ * recipient was handed a machine and shown the work instead.
+ *
+ * Ordering the client array cannot fix that — there is no order left by the time
+ * accept reads it. `landing_url` prefers a `callback_override` that passes
+ * `is_safe_app_path` over `chosen_target` entirely, which makes the destination a
+ * property of the invitation rather than of row order.
  *
  * Kept as a function rather than inlined because {@link sandboxShareLink} builds
  * the pasteable copy of the same destination, and two spellings of one address
@@ -188,6 +198,11 @@ export async function shareSandboxByEmail(
   for (const email of emails) {
     try {
       await node.inviteMember(email, role, {
+        // LAND ON THE BOX, NOT ON THE PROJECT RIDING WITH IT. With two targets the
+        // hub picks `non_workspace_targets[0]` off a list it rebuilds from the
+        // graph, so the client's array order is gone by then and the project won.
+        // See `sandboxShareLandingPath`.
+        callbackOverride: sandboxShareLandingPath(node.id),
         ...(opts.transfer ? { transfer: true, roleToKeep: opts.roleToKeep ?? null } : {}),
         ...(projectTarget ? { extraTargets: [projectTarget] } : {}),
       });
