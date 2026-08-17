@@ -120,6 +120,7 @@ export function EditableConversationTitle({
     conv.title = next;
     try {
       await conv.save();
+      conv.markEdit();
     } catch {
       // best-effort; the optimistic title stays until the next sync
     }

@@ -31,6 +31,7 @@ from flow_sdk.fs_store.indexer.functions._folder_capsule import (
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.identifier import mint_uuid
 
 # The files whose presence makes a folder a skill; SKILL.md is the main doc.
 # Both cases of the doc are accepted (SKILL.md is canonical; skill.md tolerated).
@@ -145,7 +146,7 @@ def resolve_skill_name(yaml_fields: dict, folder_name: str) -> str:
 
 def skill_id_from_name(name: str) -> str:
     """Stable uuid5 derived from the skill name."""
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{RecordType.SKILL}:{name}"))
+    return mint_uuid(f"{RecordType.SKILL}:{name}", namespace=uuid.NAMESPACE_DNS)
 
 
 def parse_skill_yaml_from_dir(skill_dir: Path) -> dict[str, Any]:

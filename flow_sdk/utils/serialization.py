@@ -43,7 +43,7 @@ def iso_to_utc(iso: datetime | str | None) -> datetime | None:
 
 
 def now_epoch_ms() -> int:
-    """Current UTC time in epoch-milliseconds (the ``last_active_at`` wire format)."""
+    """Current UTC time in the entity activity fields' epoch-ms wire format."""
     return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 

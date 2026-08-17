@@ -103,6 +103,7 @@ export function SubAgentAssetEditor({
       <div className="min-h-0 flex-1" {...tagAttrs('AgentInstructions', 'input')}>
         <MarkdownEditor
           fsRef={editorRef}
+          editEntity={agent}
           chatTarget={chatTarget}
           onDelete={agent ? onDelete : undefined}
           deleteLabel={agent?.name ?? undefined}

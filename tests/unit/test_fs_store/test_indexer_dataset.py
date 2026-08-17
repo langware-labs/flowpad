@@ -31,7 +31,7 @@ from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 
 def _mint(ref: FSRef) -> str:
-    return SchemaRegistry.get("dataset").mint_id(ref)
+    return SchemaRegistry.get("dataset").mint_entity_id(ref, derive=True, overwrite=True)
 
 
 def _extract(ref: FSRef):

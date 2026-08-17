@@ -15,9 +15,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import { Project, Shell, Tab, type ITab } from '@sdk';
-import { applyAllTabs, getAllTabsSnapshot } from '@src/tabs/all-tabs-store';
-import { useTabProjectBuckets } from '@src/tabs/useTabs';
+import { Project, Shell, Tab, tabManager, type ITab } from '@sdk';
+import { useTabProjectBuckets } from '@src/tabs/use-tab-manager';
 
 // The unit tier has no backend, so the store's one-time `refreshAllTabs()` GET
 // would 503 and surface as an unhandled rejection. Pin the transport to return
@@ -25,7 +24,7 @@ import { useTabProjectBuckets } from '@src/tabs/useTabs';
 // the REAL bucket logic runs over the REAL data — the boundary being pinned is
 // the network fetch, never the bucketization under test.
 beforeEach(() => {
-  vi.spyOn(Tab, 'listAll').mockImplementation(async () => getAllTabsSnapshot());
+  vi.spyOn(Tab, 'listAll').mockImplementation(() => Promise.resolve([...tabManager.getSnapshot()]));
 });
 
 const PROJECT = '11111111-1111-4111-8111-111111111111';
@@ -58,7 +57,7 @@ const briefHostTab = () => tab('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', Project.t
 const terminalTab = () => tab('cccccccc-cccc-4ccc-8ccc-cccccccccccc', Shell.type);
 
 afterEach(() => {
-  applyAllTabs([]);
+  tabManager.adoptGlobal([]);
   vi.restoreAllMocks();
 });
 
@@ -66,7 +65,7 @@ describe('projects-chip buckets ignore the project-home host tab', () => {
   it('1. last real tab removed → chip does NOT list the project (only the brief host remains)', () => {
     // End-state after closing the last terminal tab and landing on the brief:
     // the only surviving visible tab for the project is its own brief/landing host.
-    applyAllTabs([briefHostTab()]);
+    tabManager.adoptGlobal([briefHostTab()]);
 
     const { result } = renderHook(() => useTabProjectBuckets());
 
@@ -76,7 +75,7 @@ describe('projects-chip buckets ignore the project-home host tab', () => {
 
   it('2. process started from the brief → project reappears, counted once (not double with the host)', () => {
     // Store now holds the brief host tab AND the freshly-started process tab.
-    applyAllTabs([briefHostTab(), terminalTab()]);
+    tabManager.adoptGlobal([briefHostTab(), terminalTab()]);
 
     const { result } = renderHook(() => useTabProjectBuckets());
     const bucket = result.current.buckets.find((b) => b.projectId === PROJECT);

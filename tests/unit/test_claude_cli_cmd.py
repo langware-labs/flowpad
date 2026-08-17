@@ -244,19 +244,37 @@ def test_to_json_roundtrip():
         agents_json={"k": "v"},
         workdir="/proj",
         env_vars={"X": "1"},
+        print_mode=True,
+        add_dirs=["/extra"],
+        output_format="json",
+        verbose=True,
+        effort="high",
     )
+    cmd.system_prompt_append = "launch derived"
+    cmd.system_prompt_file = "/tmp/system-prompt"
     d = cmd.to_json()
     loaded = ClaudeAgentOptions.from_json(d)
-    assert loaded.session_id == "abc"
-    assert loaded.resume is True
-    assert loaded.fork_session_id == "src"
-    assert loaded.model == "claude-opus-4-5"
-    assert loaded.debug is False
-    assert loaded.permission_mode == "default"
-    assert loaded.chrome is True
-    assert loaded.worktree is True
-    assert loaded.agents_json == {"k": "v"}
-    assert loaded.workdir == "/proj"
+    assert d == {
+        "workdir": "/proj",
+        "env_vars": {"X": "1", "CLAUDE_PROJECT_DIR": "/proj"},
+        "worker_type": "claude",
+        "session_id": "abc",
+        "resume": True,
+        "fork_session_id": "src",
+        "model": "claude-opus-4-5",
+        "debug": False,
+        "debug_file": None,
+        "permission_mode": "default",
+        "chrome": True,
+        "worktree": True,
+        "agents_json": {"k": "v"},
+        "print_mode": True,
+        "add_dirs": ["/extra"],
+        "output_format": "json",
+        "verbose": True,
+        "effort": "high",
+    }
+    assert loaded.to_json() == d
 
 
 def test_factory_returns_claude_cli_cmd():

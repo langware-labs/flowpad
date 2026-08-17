@@ -90,6 +90,8 @@ export interface WikiLinkTarget {
 interface MarkdownEditorProps {
   /** FSRef to the .md file — carries path + typeId + read/write. */
   fsRef: FSRef;
+  /** Existing entity whose durable content is edited by this surface. */
+  editEntity?: { markEdit(): void } | null;
   /**
    * Serialized TypeId of the entity this markdown belongs to (e.g. `"plan-<id>"`).
    * Keys Editor + Backlinks tabs. Null disables editor persistence on this file.
@@ -170,6 +172,7 @@ interface MarkdownEditorProps {
  */
 export function MarkdownEditor({
   fsRef,
+  editEntity,
   chatTarget,
   headerExtras,
   extraSideTabs,
@@ -188,6 +191,7 @@ export function MarkdownEditor({
     <MarkdownEditorContent
       fsRef={fsRef}
       sourcePath={fsRef.path}
+      editEntity={editEntity}
       chatTarget={chatTarget}
       headerExtras={headerExtras}
       extraSideTabs={extraSideTabs}
@@ -253,6 +257,7 @@ function goToSlug(slug: string, smooth = true): void {
 function MarkdownEditorContent({
   fsRef,
   sourcePath,
+  editEntity,
   chatTarget,
   headerExtras,
   extraSideTabs,
@@ -269,6 +274,7 @@ function MarkdownEditorContent({
 }: {
   fsRef: FSRef;
   sourcePath: string;
+  editEntity?: MarkdownEditorProps['editEntity'];
   chatTarget: string | null;
   headerExtras?: MarkdownEditorProps['headerExtras'];
   extraSideTabs?: ExtraSideTab[];
@@ -368,6 +374,11 @@ function MarkdownEditorContent({
     reload,
     lastSync,
   } = useMarkdownContent(fsRef, { autoSave: true, autoSaveMs: 2000, reloadKey, reindexOnSave });
+  const markEntityEdited = useCallback(() => editEntity?.markEdit(), [editEntity]);
+  const setEditedField = useCallback((key: string, value: string) => {
+    setField(key, value);
+    markEntityEdited();
+  }, [markEntityEdited, setField]);
 
   const [propsExpanded, setPropsExpanded] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -680,6 +691,7 @@ function MarkdownEditorContent({
     <MilkdownEditor
       content={body}
       onChange={handleBodyChange}
+      onUserEdit={markEntityEdited}
       onLinkClick={handleLinkClick}
       editorMode={mode === 'learning' ? 'view' : mode}
       editorRef={milkdownRef}
@@ -687,7 +699,11 @@ function MarkdownEditorContent({
       initialLine={initialBodyLine}
       direction={normalizeDirection(fields.direction)}
       toolbarPortalTarget={mode === 'editor' ? editorToolbarTarget : undefined}
-      toolbarRight={mode === 'editor' ? <WikiToolbar editorRef={milkdownRef} sourceTypeId={chatTarget} /> : undefined}
+      toolbarRight={
+        mode === 'editor' ? (
+          <WikiToolbar editorRef={milkdownRef} sourceTypeId={chatTarget} onUserEdit={markEntityEdited} />
+        ) : undefined
+      }
     />
   );
 
@@ -731,7 +747,7 @@ function MarkdownEditorContent({
         leadingActions={leadingActions}
         modeActions={viewMode === 'view' ? <CopyContentButton body={body} /> : null}
         editorToolbarHostRef={setEditorToolbarTarget}
-        nameExtras={headerExtras?.({ fields, setField })}
+        nameExtras={headerExtras?.({ fields, setField: setEditedField })}
         showLearningMode={showLearningMode}
       />
 
@@ -753,7 +769,10 @@ function MarkdownEditorContent({
                   <input
                     className="rounded-md border bg-background px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-ring"
                     value={value}
-                    onChange={(e) => setField(key, e.target.value)}
+                    onChange={(e) => {
+                      setField(key, e.target.value);
+                      if (e.nativeEvent.isTrusted) markEntityEdited();
+                    }}
                   />
                 </div>
               ))}
@@ -771,6 +790,7 @@ function MarkdownEditorContent({
               <MonacoMarkdownEditor
                 value={body}
                 onChange={handleBodyChange}
+                onUserEdit={markEntityEdited}
                 onCursorLineChange={handleEditorLineChange}
                 initialLine={initialBodyLine}
               />
@@ -826,11 +846,13 @@ function CopyContentButton({ body }: { body: string }) {
 function MonacoMarkdownEditor({
   value,
   onChange,
+  onUserEdit,
   onCursorLineChange,
   initialLine,
 }: {
   value: string;
   onChange: (v: string) => void;
+  onUserEdit?: () => void;
   onCursorLineChange?: (bodyLine: number) => void;
   initialLine?: number | null;
 }) {
@@ -871,7 +893,10 @@ function MonacoMarkdownEditor({
       height="100%"
       language="markdown"
       value={value}
-      onChange={(v) => onChange(v ?? '')}
+      onChange={(v, event) => {
+        onChange(v ?? '');
+        if (!event.isFlush) onUserEdit?.();
+      }}
       onMount={handleMount}
       theme={resolvedTheme === 'dark' ? 'vs-dark' : 'vs'}
       options={{

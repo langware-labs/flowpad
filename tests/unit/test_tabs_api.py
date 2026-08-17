@@ -11,18 +11,15 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from fastapi import BackgroundTasks
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.claude_memory_entities import Docs
-from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.shell import Shell
 from flow_sdk.builtin.tab import (
     Tab,
     _load_remote_targets,
     _populate_tab_target_remote,
     _serialize_row,
-    tab_id_for,
 )
 
 
@@ -32,15 +29,28 @@ def _no_reap():
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 @pytest.mark.asyncio
-async def test_last_active_at_iso_tolerant_epoch_ms():
+async def test_entity_activity_timestamps_are_iso_tolerant_epoch_ms():
     from datetime import datetime
 
     iso = "2026-06-11T10:00:00+00:00"
-    s = Shell(id=str(uuid.uuid4()), status="running", last_active_at=iso)
+    s = Shell(
+        id=str(uuid.uuid4()),
+        status="running",
+        last_active_at=iso,
+        last_edited_at=iso,
+    )
     assert isinstance(s.last_active_at, int)
-    assert s.last_active_at == int(datetime.fromisoformat(iso).timestamp() * 1000)
-    s2 = Shell(id=str(uuid.uuid4()), status="running", last_active_at=1781085600001)
+    expected = int(datetime.fromisoformat(iso).timestamp() * 1000)
+    assert s.last_active_at == expected
+    assert s.last_edited_at == expected
+    s2 = Shell(
+        id=str(uuid.uuid4()),
+        status="running",
+        last_active_at=1781085600001,
+        last_edited_at=1781085600002,
+    )
     assert s2.last_active_at == 1781085600001
+    assert s2.last_edited_at == 1781085600002
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval

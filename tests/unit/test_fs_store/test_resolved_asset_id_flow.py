@@ -27,7 +27,7 @@ LEGACY_ID = "a80e0616-ef1a-4dd7-a986-c7ce1ae18bdb"
 
 
 def _resolved_id(path: Path) -> str | None:
-    return SchemaRegistry.get("markdown").extract_id(FSRef(path))
+    return SchemaRegistry.get("markdown").mint_entity_id(FSRef(path))
 
 
 def _conflicting_markdown(tmp_path: Path) -> Path:

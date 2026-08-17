@@ -1,9 +1,8 @@
-import { AgenticProcess, dataManager, Tab, TypeId, type IEntity } from '@sdk';
+import { AgenticProcess, dataManager, tabForDockKey, tabManager, TypeId, type IEntity } from '@sdk';
 import { useEntityOps } from '@sdk/react/hooks';
 import { useIsVibe } from '@src/components/view-mode';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { dockForDisplayTarget, type DisplayTargetLike } from '@src/navigation/display-target-pointer';
-import { applyAllTabs } from '@src/tabs/all-tabs-store';
 import { useCallback, useEffect, useRef } from 'react';
 
 /**
@@ -68,14 +67,14 @@ export function useShowTargetListener(): void {
       return;
     }
 
-    const tabs = await Tab.listAll();
+    const tabs = await tabManager.listAll();
     // The anchor is the process's OWN tab. The frontend has no deterministic
     // tab-id helper (`tab_id_for` is uuid5, backend-only; the FE reconciles by
     // the `pointer` natural key), so match on the pointer hash. One canonical
     // process URL family serves every view mode, so this is the same row in
     // Standard, Advanced and Vibe.
     const processHash = DockPointer.forShell(`${AgenticProcess.type}-${processId}`).tabHash;
-    const anchor = tabs.find((tab) => tab.dockPointer?.tabHash === processHash) ?? null;
+    const anchor = tabForDockKey(tabs, processHash);
 
     // Rebase onto the process's project — load-bearing, not cosmetic.
     //
@@ -91,13 +90,13 @@ export function useShowTargetListener(): void {
     // non-ASSETS pointers through untouched.
     const placed = DockPointer.rebaseAssetsOntoProject(dock, anchor?.project_id ?? null);
 
-    // `getFromDockPointer`, not raw `newTab`: because nothing navigates, no
+    // `tabManager.ensureDock`, not raw `newTab`: because nothing navigates, no
     // route loader will ever fill in the chip's denormalized display fields.
     // This is what resolves the target, icon, name and project scope, so the
     // chip lands complete instead of as an unlabelled stub.
     //
     // Deliberately NOT `setupTab`/`setupTabAndAdopt` — those stamp
-    // `Tab.activateById`, which would mark a tab the user never opened as the
+    // `tabManager.activate`, which would mark a tab the user never opened as the
     // most-recently-active one and poison both scope-entry and the default
     // placement anchor for the next tab.
     //
@@ -108,11 +107,11 @@ export function useShowTargetListener(): void {
     // pinned deliverable instead of evicting it, and gives the screen full
     // width when its chip is clicked.
     const parentTabId = isVibe && target.kind === 'dock' ? (anchor?.id ?? null) : null;
-    await Tab.getFromDockPointer(placed, { afterTabId: anchor?.id ?? null, parentTabId });
+    await tabManager.ensureDock(placed, { afterTabId: anchor?.id ?? null, parentTabId });
     // `getFromDockPointer` returns the PROJECT-SCOPED list, which must never be
     // adopted globally (it would erase every other project's tabs). Re-read the
     // unscoped list for adoption, exactly as `materializeTab` does.
-    applyAllTabs(await Tab.listAll());
+    tabManager.adoptGlobal(await tabManager.listAll());
   }, [isVibe]);
 
   const handle = useCallback(

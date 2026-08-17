@@ -17,6 +17,7 @@ export function ProcessNameBar({ process }: { process: AgenticProcess }) {
   const label = resolveProcessDisplayName(process);
   const rename = useInlineRename(label, async (next) => {
     await AgenticProcess.renameById(process.id, next);
+    process.markEdit();
   });
 
   return (

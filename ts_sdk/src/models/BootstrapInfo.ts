@@ -1,6 +1,7 @@
 import { Project, User, Visitor, Workspace } from '../entities';
 import { JSONSchemaProperty, TypeInfo } from '../FlowSync/schema';
 import { ComputeNode } from '../entities/compute_node';
+import { ComputeProviderType } from '../entities/compute-node/compute-node-types';
 import { AgentHook } from '../entities/agent-hook';
 import { WebDomain } from '../entities/web-domain';
 import { CapabilitiesSummary } from '../capabilities/CapabilityManager';
@@ -122,6 +123,16 @@ export interface BootstrapInfo {
   default_project?: Project;
   default_workspace?: Workspace;
   default_compute_node?: ComputeNode;
+  /**
+   * The provider a hub mints new compute nodes on, from its own
+   * `FLOWPAD_DEFAULT_COMPUTE_PROVIDER`.
+   *
+   * HUB-ONLY: the OSS backend does not emit it, so it is absent whenever the
+   * SPA is served by a local/desktop backend rather than the hub. Consumers
+   * must carry their own fallback and validate it — the hub's default is
+   * `local_machine`, which can host compute nodes but never a sandbox.
+   */
+  default_compute_provider?: ComputeProviderType;
   /** True iff the backend has E2B configured and the @sandbox compute node is available. */
   sandbox_available?: boolean;
   /** Raw ComputeNode payload for the @sandbox node (E2B-backed). Hydrate via dataContext.sandboxComputeNode. */
