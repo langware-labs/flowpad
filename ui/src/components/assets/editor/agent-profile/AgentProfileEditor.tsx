@@ -1,4 +1,4 @@
-import { Agent, AGENT_AVATAR_REF, FSRef } from '@sdk';
+import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, FSRef } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Play } from 'lucide-react';
@@ -127,7 +127,10 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
   const identityKey = agent.name || agent.id;
   const ringColor = colorForIdentityKey(identityKey);
   const AgentIcon = iconForType(Agent.type);
-  const avatarImageUrl = agent.avatar === AGENT_AVATAR_REF ? mainRef.parent.child('avatar.png').getDownloadUrl() : null;
+  // Through `mainRef`, not `agent.avatarImageUrl`: the router hands the editor
+  // the authoritative ref (local mount OR hub entity storage), while the SDK
+  // getter resolves off `asset_ref` — same file here, but this one is exact.
+  const avatarImageUrl = agent.avatar === AGENT_AVATAR_REF ? mainRef.parent.child(AGENT_AVATAR_FILE).getDownloadUrl() : null;
 
   return (
     <div className="h-full overflow-y-auto">

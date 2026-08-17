@@ -307,6 +307,9 @@ export interface IAgenticProcess extends IEntity {
   asset_ref?: string;
   workdir?: string | null;
   context_data?: Record<string, unknown>;
+  /** The `Deployment` this run was launched through (`Deployment.launch`);
+   *  null for a process not spawned from an Agent. */
+  deployment_id?: string | null;
   // ``shared_context_entities`` is inherited from IEntity (wire shape).
   // ``privateContextEntities`` is exposed by the APIEntity getter — no
   // field is declared here for it (local-only, never on the wire).
@@ -896,6 +899,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /** Persisted context data for session restoration */
   context_data?: Record<string, unknown>;
+
+  /** The Deployment (→ Agent) this run was launched through, if any. */
+  deployment_id?: string | null;
 
   // TypeIds of entities this process is contextually about (task /
   // conversation / spec / project / …) now live on the base APIEntity as
@@ -1546,6 +1552,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.asset_ref = entity.asset_ref;
     this.context = entity.context;
     this.context_data = entity.context_data;
+    this.deployment_id = entity.deployment_id ?? null;
     this.favorite_index = entity.favorite_index;
     this.status = (entity.status as ProcessStatus) ?? ProcessStatus.NEW;
     this.busy = entity.busy ?? false;
