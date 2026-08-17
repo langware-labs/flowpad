@@ -120,7 +120,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     ],
   },
   agent: {
-    dockPointer: (r) => assetEditorPointer('subagent', r),
+    dockPointer: (r) => assetEditorPointer('agent', r),
   },
   annotation: {
     isNavigable: (r) => !!r.session_id,
@@ -172,6 +172,18 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     dockPointer: (r) => {
       const tid = resultTypeId(r);
       return tid ? DockPointer.forGraphContext(tid.id) : null;
+    },
+  },
+  trigger: {
+    dockPointer: (r) => {
+      const tid = resultTypeId(r);
+      return tid ? DockPointer.forEvents(tid.id) : null;
+    },
+  },
+  conversation: {
+    dockPointer: (r) => {
+      const tid = resultTypeId(r);
+      return tid ? DockPointer.forConversation(tid.id) : null;
     },
   },
   spec: {
