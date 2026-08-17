@@ -14238,7 +14238,6 @@ msgstr "Session is not running"
 #: src/navigation/record-type-nav.ts
 #: src/navigation/record-type-nav.ts
 #: src/navigation/record-type-nav.ts
-#: src/pages/flow-page/vibe-recent-sessions.tsx
 #: src/routes/loaders/load-dock-pointer.ts
 #: src/routes/loaders/load-next-process.ts
 #: src/routes/loaders/process-load-error-resolution.ts
@@ -15979,7 +15978,6 @@ msgid "This can take up to a minute if it was asleep."
 msgstr "This can take up to a minute if it was asleep."
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
-#: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "This chat has no resumable session."
 msgstr "This chat has no resumable session."
 
