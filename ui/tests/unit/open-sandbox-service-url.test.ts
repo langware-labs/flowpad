@@ -89,6 +89,10 @@ describe('isSandbox', () => {
     expect(isSandbox(node())).toBe(true);
   });
 
+  it('accepts a GCP VM node with the workspace flavor', () => {
+    expect(isSandbox(node({ node_provider_type: 'gcp_vm' }))).toBe(true);
+  });
+
   it('rejects anything else', () => {
     // Agent/exec-env nodes are ComputeNodes too and must never show up as the
     // user's sandboxes.

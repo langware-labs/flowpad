@@ -12,17 +12,18 @@ export { ComputeNode, vfsToOsPath, WORKSPACE_FLAVOR } from './compute-node';
 export type { FindSessionResult, IComputeNode, WorkerKind } from './compute-node';
 
 // Export compute node types (enums and interfaces)
-export { ComputeProviderType, ExecutionEnvironmentStatus, OSType, RuntimeType } from './compute-node-types';
+export {
+  ComputeProviderType,
+  ExecutionEnvironmentStatus,
+  OSType,
+  RuntimeType,
+  SANDBOX_PROVIDERS,
+} from './compute-node-types';
 export type { NodeStatus, RuntimeEnvironment, WorkspaceReady } from './compute-node-types';
 
 // Export machine status types for monitoring compute nodes
 export { ComputeNodeSize, ComputeNodeSizeLabels, MachineStatusUtils, ServiceStatusEnum } from './machine-status';
-export type {
-  ComputeNodeInfo,
-  MachineStatus,
-  NetworkConnection,
-  ProcessInfo,
-} from './machine-status';
+export type { ComputeNodeInfo, MachineStatus, NetworkConnection, ProcessInfo } from './machine-status';
 
 // Export service control utilities for managing artifact processes
 export { canStartService, isServiceRuntime, ServiceControlError } from './service-control';

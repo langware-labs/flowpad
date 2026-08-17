@@ -926,7 +926,6 @@ def hooks_report(
         }
 
         # Parse execution_scope from env (identifies which entity this hook belongs to)
-        from flow_sdk.cli.commands._common import local_post
         from flow_sdk.utils.environment import get_execution_scope
 
         _exec_scope = get_execution_scope()
