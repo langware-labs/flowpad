@@ -205,8 +205,23 @@ def _markdown_id_from_path(path: Path) -> str:
 
 
 def markdown_id(ref: FSRef) -> str:
-    """Cheap id: adopted frontmatter capsule id; else stable derived key (no write)."""
-    return read_frontmatter_id(ref._path) or _markdown_id_from_path(ref._path)
+    """The id the indexer would assign, derived WITHOUT writing.
+
+    Routes through the one seam. It used to read frontmatter only, while the
+    indexer's backend reads the identity CAPSULE first — so a capsule-stamped,
+    frontmatter-less doc got a different id here than from the walk, and this
+    value feeds straight into ``sync_to_db()`` (agentic_process, bootstrap).
+    That forked the document; delegating converges it.
+
+    ``overwrite=False`` keeps the no-write contract: these callers run in
+    request handlers and over read-only mounts.
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(str(RecordType.MARKDOWN))
+    if info is None:  # registry not loaded (import-order edge) — historic derive
+        return read_frontmatter_id(ref._path) or _markdown_id_from_path(ref._path)
+    return info.mint_entity_id(ref, derive=True, overwrite=False)
 
 
 def parse_markdown_text(text: str, path: Path | None = None) -> dict[str, Any]:

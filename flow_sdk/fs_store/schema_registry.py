@@ -742,6 +742,46 @@ class TypeInfo:
 class SchemaRegistry:
     """Unified type registry + scan/index orchestration."""
 
+    @classmethod
+    def mint_row_entity_id(cls, type_name: str, data: dict) -> str:
+        """Mint the id for a ROW-ONLY entity — one with no file behind it.
+
+        The other half of :meth:`mint_entity_id`, split out because it takes a
+        creation ``dict`` rather than an ``FSRef``, and because the types that
+        need it most (``flow_message``, ``conversation``) have no ``TypeInfo``
+        at all — so it cannot live on the instance.
+
+        Policy, all routed through ``mint_uuid`` so the v4/v5 rule stays in one
+        place:
+
+        * a conforming (v4/v5) ``data['id']`` is adopted;
+        * a non-conforming one (a slug, a foreign v7) is normalized to
+          ``uuid5(DNS, "<type>:<id>")`` — a hand-authored id never survives;
+        * absent → random v4.
+
+        A type may override the whole decision with a ``_row_id_policy``
+        classmethod on its entity class (``Project`` keeps ids opaque; ``Tag``
+        derives from its name and ignores caller ids).
+        """
+        import uuid as _uuid  # noqa: PLC0415
+
+        from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid  # noqa: PLC0415
+
+        entity_cls = cls.get_entity_cls(str(type_name)) if type_name else None
+        policy = getattr(entity_cls, "_row_id_policy", None)
+        if policy is not None:
+            decided = policy(data)
+            if decided:
+                return str(decided)
+
+        rid = data.get("id") or ""
+        if rid and is_valid_entity_id(rid):
+            return rid
+        if rid:
+            return mint_uuid(f"{type_name or 'record'}:{rid}", namespace=_uuid.NAMESPACE_DNS)
+        return mint_uuid()
+
+
     _types: ClassVar[dict[str, TypeInfo]] = {}
     _subtypes: ClassVar[dict[str, list[str]]] = {}
     _default_index_types: ClassVar[list[str]] = []

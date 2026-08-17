@@ -595,7 +595,7 @@ class Project(Entity):
         )
 
     @classmethod
-    def allocate_id(cls, data: dict) -> str:
+    def _row_id_policy(cls, data: dict) -> str:
         """Return an opaque uuid4 entity id for this Project.
 
         Project entity ids are random uuid4, like every other entity — so a
