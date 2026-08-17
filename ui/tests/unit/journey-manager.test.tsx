@@ -92,6 +92,24 @@ describe('useJourneyManager — the user is the only mover', () => {
     await waitFor(() => expect(wentTo()).toBe(2));
   });
 
+  it('a step returned to with Back can still move on', async () => {
+    // The landing guard is per VISIT, not per step number. Keyed by number and
+    // never reset, a step you came back to could never land again — Next would
+    // silently do nothing for the rest of the journey.
+    const state = makeState(1);
+    const { result } = renderHook(() => useJourneyManager(state));
+
+    act(() => result.current.next());
+    await waitFor(() => expect(wentTo()).toBe(2));
+
+    // Back to step 1 (the URL drives position, so the same state stands in for
+    // being on step 1 again), then forward once more.
+    openDock.mockClear();
+    const again = renderHook(() => useJourneyManager(makeState(1)));
+    act(() => again.result.current.next());
+    await waitFor(() => expect(wentTo()).toBe(2));
+  });
+
   it('Back loads the previous step, and stops at the first', () => {
     const atSecond = makeState(2);
     const { result: second } = renderHook(() => useJourneyManager(atSecond));
