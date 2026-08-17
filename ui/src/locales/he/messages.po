@@ -7325,6 +7325,7 @@ msgstr "Google Secret Manager"
 msgid "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
 msgstr "קיבלנו ref שנראה יחסי עם מקטעים מרובים: <0>{ref}</0>"
 
+#: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/types/ViewType.ts
 msgid "Graph"
 msgstr "גרף"
@@ -11583,6 +11584,7 @@ msgstr "רשימה ממוספרת"
 #: src/components/account/organization-panel.tsx
 #: src/components/organization/organization-page.tsx
 #: src/components/organization/organization-page.tsx
+#: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/i18n/type-labels.ts
 #: src/pages/hub-home/HubHome.tsx
 #: src/types/ViewType.ts
