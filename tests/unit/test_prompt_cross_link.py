@@ -19,7 +19,9 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 
 async def _save_prompt(text: str = "Do the thing.") -> Prompt:
-    return await Prompt(name="Pinned", text=text).save()
+    # Each test authors a fresh personal file-backed Prompt. Its name must own
+    # a distinct carrier now that create-time slug collisions are rejected.
+    return await Prompt(name=f"Pinned {text}", text=text).save()
 
 
 async def _save_ap() -> AgenticProcess:

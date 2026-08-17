@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { FlowDataFactory } from '../entities/flow/flow-data-factory';
+import { FlowDataFactory } from './flow-data-factory';
 import { FlowData, FlowDataSource, FlowDataType } from './flow-data';
 import { FlowError, FlowErrorEvent, FlowErrorUtils } from './flow-errors';
 import { FlowDataEvents, FlowEvents } from './flow-events';

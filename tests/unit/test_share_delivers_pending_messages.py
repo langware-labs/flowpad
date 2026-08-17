@@ -90,3 +90,47 @@ async def test_share_delivers_offline_composed_message_to_hub():
     header.assert_awaited_once()
     (_pushed_conv, pushed_fm), _ = header.call_args
     assert pushed_fm.id == msg.id, "share() must deliver the offline-composed message to the hub"
+
+
+@pytest.mark.asyncio
+async def test_share_joins_before_any_fallible_post_create_work():
+    """A created hub row must gain its deletable owner before local share work."""
+    from flow_sdk.builtin.conversation import Conversation
+    from flow_sdk.core import Entity
+
+    conv = Conversation.model_validate(
+        {"id": str(uuid.uuid4()), "title": "ownership ordering"},
+    )
+    events: list[str] = []
+    creds = MagicMock(api_key="k", user={})
+
+    @asynccontextmanager
+    async def _fake_client(*_a, **_k):
+        client = MagicMock()
+
+        async def _post(path, _body):
+            events.append(path)
+            return {}
+
+        client.post = AsyncMock(side_effect=_post)
+        yield client
+
+    async def _link():
+        events.append("link")
+
+    async def _deliver():
+        events.append("deliver")
+
+    with (
+        patch.object(Entity, "share", new=AsyncMock(return_value=None)),
+        patch.object(Conversation, "_link_context_to_conversation", side_effect=_link),
+        patch.object(Conversation, "_deliver_pending_messages", side_effect=_deliver),
+        patch.object(Conversation, "_share_hostable_assets", new=AsyncMock(return_value=[])),
+        patch("flow_sdk.cli.auth.credentials.load_credentials", return_value=creds),
+        patch("flow_sdk.cloud_client.client.FlowpadClient", side_effect=_fake_client),
+        patch("flow_sdk.cloud_client.client.ApiConfig", MagicMock()),
+    ):
+        await conv.share(recipients=["gadi@langware.ai"])
+
+    assert events[0] == f"/graph/conversation/{conv.id}/join"
+    assert events[1:3] == ["link", "deliver"]

@@ -8,9 +8,24 @@ import { KeyboardEvent, useCallback, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 export const RECORD_TYPES = [
-  'bookmark', 'claude_session', 'codex_session', 'copilot_session', RecordType.SKILL, RecordType.AGENT, 'claude_hook', RecordType.COMMAND,
-  RecordType.ANNOTATION, 'comment', RecordType.TASK, 'workflow', RecordType.MARKDOWN, RecordType.PLAN,
-  RecordType.CLAUDE_MD, 'claude_memory', 'claude_rules', RecordType.PROJECT, 'codex_project',
+  'bookmark',
+  'claude_session',
+  'codex_session',
+  'copilot_session',
+  RecordType.SKILL,
+  RecordType.SUBAGENT,
+  'claude_hook',
+  RecordType.COMMAND,
+  RecordType.ANNOTATION,
+  'comment',
+  RecordType.TASK,
+  RecordType.MARKDOWN,
+  RecordType.PLAN,
+  RecordType.CLAUDE_MD,
+  'claude_memory',
+  'claude_rules',
+  RecordType.PROJECT,
+  'codex_project',
 ];
 const TIME_PRESETS = [
   { value: '1h', label: '1h' },
@@ -41,7 +56,6 @@ export const TYPE_COLORS: Record<string, string> = {
   annotation: 'bg-sky-500/20 text-sky-700 dark:text-sky-300',
   comment: 'bg-teal-500/20 text-teal-700 dark:text-teal-300',
   task: 'bg-yellow-500/20 text-yellow-700 dark:text-yellow-300',
-  workflow: 'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
   docs: 'bg-cyan-500/20 text-cyan-700 dark:text-cyan-300',
   plan: 'bg-fuchsia-500/20 text-fuchsia-700 dark:text-fuchsia-300',
   claude_md: 'bg-lime-500/20 text-lime-700 dark:text-lime-300',
@@ -74,13 +88,18 @@ function CustomDateRangeInputs({
   filters: SearchFilters;
   onFiltersChange: (f: SearchFilters) => void;
 }) {
-  const toDateValue = (iso?: string) => iso ? iso.slice(0, 10) : '';
+  const toDateValue = (iso?: string) => (iso ? iso.slice(0, 10) : '');
   return (
     <>
       <input
         type="date"
         value={toDateValue(filters.time_start)}
-        onChange={(e) => onFiltersChange({ ...filters, time_start: e.target.value ? new Date(e.target.value).toISOString() : undefined })}
+        onChange={(e) =>
+          onFiltersChange({
+            ...filters,
+            time_start: e.target.value ? new Date(e.target.value).toISOString() : undefined,
+          })
+        }
         className="rounded border bg-background px-1.5 py-0.5 text-xs text-muted-foreground"
         placeholder="Start"
       />
@@ -88,7 +107,9 @@ function CustomDateRangeInputs({
       <input
         type="date"
         value={toDateValue(filters.time_end)}
-        onChange={(e) => onFiltersChange({ ...filters, time_end: e.target.value ? new Date(e.target.value).toISOString() : undefined })}
+        onChange={(e) =>
+          onFiltersChange({ ...filters, time_end: e.target.value ? new Date(e.target.value).toISOString() : undefined })
+        }
         className="rounded border bg-background px-1.5 py-0.5 text-xs text-muted-foreground"
         placeholder="End"
       />
@@ -140,7 +161,12 @@ export function RecordSearchBar({
     if (current === preset) {
       onFiltersChange({ ...filters, time_preset: undefined, time_start: undefined, time_end: undefined });
     } else {
-      onFiltersChange({ ...filters, time_preset: preset as SearchFilters['time_preset'], time_start: undefined, time_end: undefined });
+      onFiltersChange({
+        ...filters,
+        time_preset: preset as SearchFilters['time_preset'],
+        time_start: undefined,
+        time_end: undefined,
+      });
     }
   };
 
@@ -180,10 +206,7 @@ export function RecordSearchBar({
           <Button
             variant="ghost"
             size="sm"
-            className={cn(
-              'h-6 gap-1 px-2 text-xs text-muted-foreground',
-              showFilters && 'bg-muted text-foreground',
-            )}
+            className={cn('h-6 gap-1 px-2 text-xs text-muted-foreground', showFilters && 'bg-muted text-foreground')}
             onClick={() => setShowFilters((v) => !v)}
             data-testid="search-tools-btn"
           >
@@ -213,7 +236,7 @@ export function RecordSearchBar({
         >
           {/* Type row */}
           <div className="flex flex-wrap items-center gap-1">
-            <span className="mr-1 w-10 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">
+            <span className="me-1 w-10 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">
               <Trans>Type</Trans>
             </span>
             {RECORD_TYPES.map((t) => (
@@ -225,7 +248,7 @@ export function RecordSearchBar({
                   'rounded px-1.5 py-0.5 transition-colors',
                   filters.record_type === t
                     ? (TYPE_COLORS[t] ?? 'bg-primary/20 text-primary')
-                    : 'border border-border/50 bg-background text-muted-foreground hover:bg-muted hover:border-border',
+                    : 'border border-border/50 bg-background text-muted-foreground hover:border-border hover:bg-muted',
                 )}
               >
                 {TYPE_DISPLAY_NAMES[t] ?? t}
@@ -241,7 +264,7 @@ export function RecordSearchBar({
           <div className="flex flex-wrap items-center gap-3">
             {/* Status filter */}
             <div className="flex items-center gap-1">
-              <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">
+              <span className="me-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">
                 <Trans>Status</Trans>
               </span>
               {STATUSES.map((s) => (
@@ -253,7 +276,7 @@ export function RecordSearchBar({
                     'rounded px-1.5 py-0.5 transition-colors',
                     filters.status === s
                       ? 'bg-primary/20 text-primary'
-                      : 'border border-border/50 bg-background text-muted-foreground hover:bg-muted hover:border-border',
+                      : 'border border-border/50 bg-background text-muted-foreground hover:border-border hover:bg-muted',
                   )}
                 >
                   {s}
@@ -266,7 +289,7 @@ export function RecordSearchBar({
 
             {/* Time filter */}
             <div className="flex flex-wrap items-center gap-1">
-              <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">
+              <span className="me-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">
                 <Trans>Time</Trans>
               </span>
               {TIME_PRESETS.map(({ value, label }) => (
@@ -278,7 +301,7 @@ export function RecordSearchBar({
                     'rounded px-1.5 py-0.5 transition-colors',
                     filters.time_preset === value
                       ? 'bg-primary/20 text-primary'
-                      : 'border border-border/50 bg-background text-muted-foreground hover:bg-muted hover:border-border',
+                      : 'border border-border/50 bg-background text-muted-foreground hover:border-border hover:bg-muted',
                   )}
                 >
                   {label}

@@ -3,8 +3,6 @@ import type { NavigatorDescriptor } from '@src/components/navigator-panel/types'
 import { AssetTypeCountsContext } from '@src/components/browseable-tree/adapters/assetTypeRoot';
 import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
 import { InputDialog } from '@src/components/ui/input-dialog';
-import { AddContextFolderDialog } from './AddContextFolderDialog';
-import { AddGitFolderDialog } from './AddGitFolderDialog';
 import { useAssetsModel } from './useAssetsModel';
 import { useLingui } from '@lingui/react/macro';
 import { useMemo } from 'react';
@@ -30,6 +28,7 @@ export function AssetsNavigator() {
     roots: m.roots,
     isLoading: m.menuLoading,
     activePointer: m.treeActivePointer,
+    activeResourcePointer: m.treeActiveResourcePointer,
     activeKey: m.openAssetId,
     onNavigate: m.navigateAsset,
     bulkActions: m.bulkActions,
@@ -73,20 +72,7 @@ export function AssetsNavigator() {
         confirmLabel={t`Create`}
         onConfirm={(name) => void m.handleNewFolderConfirm(name)}
       />
-      <AddContextFolderDialog
-        open={m.addContextFolderDialogOpen}
-        onOpenChange={m.setAddContextFolderDialogOpen}
-        onAddPaths={m.handleAddContextPaths}
-        onBrowse={m.handleBrowseContextDir}
-        onAddGit={m.handleAddGitContextFolder}
-      />
-      <AddGitFolderDialog
-        open={m.addGitFolderDialogOpen}
-        onOpenChange={(next) => {
-          if (!next) m.closeAddGitFolderDialog();
-        }}
-        onSubmit={m.handleAddGitFolderSubmit}
-      />
+      {m.contextFolderDialogs}
     </>
   );
 }

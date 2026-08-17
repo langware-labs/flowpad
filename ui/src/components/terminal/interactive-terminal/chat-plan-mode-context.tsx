@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { AgenticProcess, type PermissionMode } from '@sdk';
 import { notify } from '@src/notifications/notify';
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
@@ -40,13 +41,7 @@ const FALLBACK: ChatPlanModeValue = {
 
 const Ctx = createContext<ChatPlanModeValue | null>(null);
 
-export function ChatPlanModeProvider({
-  process,
-  children,
-}: {
-  process: AgenticProcess | null;
-  children: ReactNode;
-}) {
+export function ChatPlanModeProvider({ process, children }: { process: AgenticProcess | null; children: ReactNode }) {
   const enabled = !!process && process.isHeadless && !!process.supports_plan_mode;
   const [planPending, setPlanPending] = useState(false);
   const [sending, setSending] = useState(false);
@@ -61,7 +56,7 @@ export function ChatPlanModeProvider({
         await process.prompt(text, undefined, permissionMode ? { permissionMode } : undefined);
       } catch (err) {
         console.error('[ChatPlanMode] send failed', err);
-        notify.error({ title: 'Message not sent', message: err instanceof Error ? err.message : String(err) });
+        notify.error({ title: t`Message not sent`, message: err instanceof Error ? err.message : String(err) });
       } finally {
         setSending(false);
       }

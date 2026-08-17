@@ -20,8 +20,6 @@ export interface HeaderSlots {
   restart: ReactNode;
   /** Entity title — absolutely centered in the row so it stays put across modes. */
   title: ReactNode;
-  /** Share + Bookmark (favorite) CTAs — right-aligned. */
-  actions: ReactNode;
   /** Export/download action. */
   download: ReactNode;
   /** Right toolbar (asset manager, commit/merge, terminal, fork, worktree,
@@ -40,8 +38,8 @@ function CenteredTitle({ title }: Pick<HeaderSlots, 'title'>) {
   );
 }
 
-/** Full toolbar: [debug][restart] — (centered title) — [download][right][actions]. */
-export function AdvancedInteractiveTabHeader({ debug, restart, title, actions, download, right }: HeaderSlots) {
+/** Full toolbar: [debug][restart] — (centered title) — [download][right]. */
+export function AdvancedInteractiveTabHeader({ debug, restart, title, download, right }: HeaderSlots) {
   return (
     <div data-testid="process-toolbar" className={`${ROW} relative`}>
       {debug}
@@ -50,17 +48,18 @@ export function AdvancedInteractiveTabHeader({ debug, restart, title, actions, d
       <div className="flex-1" />
       {download}
       {right}
-      {actions}
     </div>
   );
 }
 
-/** Minimal toolbar: centered title with only Share + Bookmark aligned right. */
-export function StandardInteractiveTabHeader({ title, actions }: Pick<HeaderSlots, 'title' | 'actions'>) {
+/** Minimal toolbar: the centered title alone. Share + Bookmark are deliberately
+ *  absent — the top navigation bar already carries them for whatever it is
+ *  addressing, and a second copy on the same screen is pure duplication. */
+export function StandardInteractiveTabHeader({ title }: Pick<HeaderSlots, 'title'>) {
   return (
-    <div data-testid="process-toolbar" className={`${ROW} relative justify-end`}>
+    <div data-testid="process-toolbar" className={`${ROW} relative`}>
       <CenteredTitle title={title} />
-      {actions}
+      <div className="flex-1" />
     </div>
   );
 }

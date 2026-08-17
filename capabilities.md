@@ -70,7 +70,11 @@ Each capability has a runner that implements:
   `process_id` immediately. The worker is selected by resolving the default
   `harness` capability to a concrete leaf such as `harness.claude.cli` or
   `harness.codex.cli`.
-- `test()`: validates that the installed capability actually works.
+- `test()`: validates that the installed capability actually works. For
+  harness CLI kinds the result's `details.auth` also carries the CLI's login
+  state (`logged_in` / `logged_out` / `unknown`, with `verified` true only
+  when the vendor CLI itself confirmed it), probed through the worker
+  driver's `auth_probe()`.
 
 The entity actions are exposed on `capability`:
 
@@ -79,6 +83,31 @@ POST /api/v1/graph/capability/<id>/check
 POST /api/v1/graph/capability/<id>/install
 POST /api/v1/graph/capability/<id>/test
 ```
+
+### Device login (harness CLIs)
+
+Harness CLI capabilities also drive their vendor's link(+code) sign-in flow
+through the entity. The vendor differences are a `DeviceLoginSpec` trait on
+each `WorkerDriver` (login argv, verification-URL / one-time-code regexes,
+whether the browser shows a code the user pastes back); a single generic
+engine (`cli_drivers/device_login.py`) runs the CLI under a PTY, scrapes the
+URL and code, and re-probes with `auth_probe()` on exit before declaring
+success. It never trusts process exit alone, and pre-probes so an
+already-authenticated CLI short-circuits without minting a fresh code.
+
+```http
+POST /api/v1/graph/capability/<id>/device-login        # start / restart the flow
+POST /api/v1/graph/capability/<id>/device-login-code    # {code} — paste-back vendors (claude)
+POST /api/v1/graph/capability/<id>/device-login-cancel
+GET  /api/v1/graph/capability/<id>/auth-status          # cheap login probe (no version run)
+```
+
+Live progress rides the entity's runtime-only `login_state` / `login_url` /
+`login_code` / `login_accepts_code` / `login_message` fields (`Persist.FALSE`,
+broadcast over WebSocket, never persisted). The frontend watches the entity and
+renders them — it never polls. `auth-status` is the startup gate's cheap check;
+`worker_type_for_kind(kind)` on the registry resolves a harness kind to its
+driver.
 
 `Capability` rows are seeded as system entities. Query them with:
 

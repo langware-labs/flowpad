@@ -47,19 +47,11 @@ def todo_fn(
     return out
 
 
-def todo_id(ref: FSRef) -> str:
-    """Stable, filesystem-safe **UUID** id derived from the legacy collector key
-    ``todo:<filename-stem>`` — hashed into a uuid5 with the same
-    ``f"{type}:{key}"`` formula ``Entity.allocate_id`` uses, so it matches the DB
-    id and is free of any path-illegal character.
-    """
-    return mint_uuid(
-        f"{RecordType.TODO_FILE}:todo:{Path(ref.path).stem}",
-        namespace=uuid.NAMESPACE_DNS,
-    )
+def todo_identity_key(ref: FSRef | Path) -> str:
+    return f"{RecordType.TODO_FILE}:todo:{Path(getattr(ref, 'path', ref)).stem}"
 
 
-def extract_todo(ref: FSRef) -> list[FSRecord]:
+def extract_todo(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse one todo file into a record matching the legacy item shape."""
     path = Path(ref.path)
     filename = path.stem
@@ -92,7 +84,7 @@ def extract_todo(ref: FSRef) -> list[FSRecord]:
 
     rec = FSRecord(
         type=RecordType.TODO_FILE,
-        id=f"todo:{filename}",
+        id=resolved_id,
         name=filename,
         scope="user",
         source_file=str(path),

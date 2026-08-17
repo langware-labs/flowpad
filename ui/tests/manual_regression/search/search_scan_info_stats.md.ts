@@ -6,12 +6,6 @@ const API_URL = apiBase();
 async function dismissSetupModal(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    // On a fresh (never_indexed) DB the search view opens a blocking
-    // "Make your records searchable" modal (guarded by this session flag) that
-    // intercepts the rebuild-index click, so resetAndRescan never fires. Pre-set
-    // the scan-dismissed flag the modal itself honours so the rebuild button is
-    // clickable.
-    sessionStorage.setItem('flowpad-scan-dismissed', '1');
   });
 }
 
@@ -67,13 +61,6 @@ test.describe('Search Scan Info Stats', () => {
     await page.goto('/dock/home');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
-    // Dismiss WelcomeModal if shown (appears after DB reset when scanInfo.never_indexed=true).
-    // When open, the AlertDialog sets aria-hidden on the rest of the page, blocking pointer events.
-    const skipForNow = page.getByRole('button', { name: 'Skip for now' });
-    if (await skipForNow.isVisible({ timeout: 12_000 }).catch(() => false)) {
-      await skipForNow.click();
-    }
-
     const input = page.locator('[data-testid="search-input"]').first();
     await expect(input).toBeVisible({ timeout: 10_000 });
     await input.click();
@@ -112,34 +99,14 @@ test.describe('Search Scan Info Stats', () => {
     expect(Array.isArray(data.per_type)).toBe(true);
   });
 
-  // ── Test 6: Rebuild-index button runs archive→clear→scan→index and refreshes the indexed badge ──
-  test('rebuild-index button archives, clears, scans, indexes and refreshes indexed badge', async ({ page }) => {
-    // USER-APPROVED timeout exception (per the no-timeout-raise non-negotiable):
-    // a full rebuild reindexes the whole workspace, and on a heavily-used host
-    // (real ~/.claude with thousands of sessions) the index phase legitimately
-    // takes ~130s of linear work — the rebuild button stays busy until it
-    // completes. On a normal install this finishes in seconds. Budget raised to
-    // 180s with explicit user approval so the test can observe real completion.
-    test.setTimeout(180_000);
+  // ── Test 6: Rebuild-index button wires archive→clear→scan→index in order ───
+  test('rebuild-index button orchestrates archive, clear, scan and index in order', async ({ page }) => {
     await dismissSetupModal(page);
     await page.goto('/dock/search');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
     const searchView = page.locator('[data-testid="search-view"]');
     await expect(searchView).toBeVisible({ timeout: 10_000 });
-
-    // WelcomeModal ("Make your records searchable") may appear when never_indexed=true.
-    // When open it sets aria-hidden on the rest of the page, which intercepts clicks.
-    const dismissWelcomeModal = async () => {
-      for (const name of ['Not Now', 'Skip for now']) {
-        const btn = page.getByRole('button', { name });
-        if (await btn.isVisible({ timeout: 1_500 }).catch(() => false)) {
-          await btn.click().catch(() => {});
-          break;
-        }
-      }
-    };
-    await dismissWelcomeModal();
 
     const readIndexedCount = async (): Promise<number> => {
       const badge = page.locator('text=/\\d+ indexed/').first();
@@ -157,39 +124,58 @@ test.describe('Search Scan Info Stats', () => {
     await expect(rebuildButton).toBeVisible({ timeout: 5_000 });
     await expect(rebuildButton).toBeEnabled({ timeout: 5_000 });
 
-    // resetAndRescan fans out to two compute nodes:
+    // Keep this UI contract bounded and side-effect-free: the backend endpoints
+    // have their own integration coverage, while this browser test proves the
+    // real button → SystemToolsService orchestration without launching a
+    // workspace-wide indexer that outlives the per-file Phase 11 inventory.
+    //
+    // resetAndRescan fans out to:
     //   1. desktop-db/archive        (POST)
     //   2. desktop-db/clear-index    (POST)
     //   3. fs-records/scan?trigger=manual  (GET)
     //   4. fs-records/index          (POST)
-    const seen = { archive: false, clear: false, scan: false, index: false };
-    const allSeen = () => seen.archive && seen.clear && seen.scan && seen.index;
-    page.on('response', (r) => {
-      const u = r.url();
-      const m = r.request().method();
-      if (r.status() !== 200) return;
-      if (m === 'POST' && u.includes('/archive')) seen.archive = true;
-      else if (m === 'POST' && u.includes('/clear-index')) seen.clear = true;
-      else if (m === 'GET' && u.includes('fs-records/scan') && u.includes('trigger=manual')) seen.scan = true;
-      else if (
-        m === 'POST' &&
-        /fs-records\/index(\?|$)/.test(u) &&
-        !u.includes('index-status')
-      ) {
-        seen.index = true;
-      }
+    const calls: Array<{ phase: string; method: string; query: string }> = [];
+    let resolveIndex!: () => void;
+    const indexDispatched = new Promise<void>((resolve) => {
+      resolveIndex = resolve;
     });
+    await page.route(
+      /\/api\/v1\/graph\/compute_node\/@local\/(?:desktop-db\/(?:archive|clear-index)|fs-records\/(?:scan|index))(?:\?.*)?$/,
+      async (route) => {
+        const request = route.request();
+        const url = new URL(request.url());
+        const phase = url.pathname.endsWith('/archive')
+          ? 'archive'
+          : url.pathname.endsWith('/clear-index')
+            ? 'clear'
+            : url.pathname.endsWith('/scan')
+              ? 'scan'
+              : 'index';
+        calls.push({ phase, method: request.method(), query: url.search });
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            status: 'SUCCESS',
+            data: phase === 'scan' ? { types: [] } : {},
+          }),
+        });
+        if (phase === 'index') resolveIndex();
+      },
+    );
 
     await rebuildButton.click();
+    await indexDispatched;
 
-    // The rebuild runs archive→clear→scan→index sequentially (~6+5+17+116 ≈
-    // 145s cumulative on a real ~/.claude); seen.index lands only after the
-    // full reindex completes. Poll ceiling sits under the user-approved 180s
-    // test budget with margin for load variance.
-    await expect.poll(() => allSeen(), { timeout: 165_000, intervals: [500] }).toBe(true);
+    expect(calls).toEqual([
+      { phase: 'archive', method: 'POST', query: '' },
+      { phase: 'clear', method: 'POST', query: '' },
+      { phase: 'scan', method: 'GET', query: '?trigger=manual' },
+      { phase: 'index', method: 'POST', query: '?_=1' },
+    ]);
 
     // Button returns to the enabled state once the orchestration finishes (busy=false).
-    await expect(rebuildButton).toBeEnabled({ timeout: 30_000 });
+    await expect(rebuildButton).toBeEnabled({ timeout: 5_000 });
 
     const indexedAfter = await readIndexedCount();
     expect(indexedAfter).toBeGreaterThanOrEqual(0);

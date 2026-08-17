@@ -45,6 +45,15 @@ const navMocks = vi.hoisted(() => ({
 // loadEmbeddedAgent would need a live server; the shared helper is the
 // deterministic seam. Kept a spy so we can assert the host invokes it.
 const embedMock = vi.hoisted(() => vi.fn(async () => {}));
+const parentProcess = vi.hoisted(() => ({
+  id: '5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  target_typeid_str: 'project-proj-1',
+  typeId: null,
+  context_data: {},
+  displayStack: [],
+  onShow: vi.fn(() => () => {}),
+  on: vi.fn(() => () => {}),
+}));
 vi.mock('@src/pages/flow-page/use-start-vibe-session', async (orig) => ({
   ...(await orig<typeof import('@src/pages/flow-page/use-start-vibe-session')>()),
   embedVibeAgent: embedMock,
@@ -59,9 +68,7 @@ vi.mock('@src/components/entity-execution-panel', () => ({
   }) => {
     panelProps.onProcessCreated = props.onProcessCreated;
     const slot =
-      typeof props.leadingSlot === 'function'
-        ? props.leadingSlot({ startNewSession: () => {} })
-        : props.leadingSlot;
+      typeof props.leadingSlot === 'function' ? props.leadingSlot({ startNewSession: () => {} }) : props.leadingSlot;
     return <div data-testid="exec-panel-stub">{slot}</div>;
   },
 }));
@@ -74,19 +81,29 @@ vi.mock('@src/contexts/agent-context', () => ({
   }),
 }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
+  useCurrentDock: () => null,
   useDockNavigation: () => ({ navigation: navMocks, currentDock: null }),
 }));
 vi.mock('@src/hooks/flow-hooks', () => ({
-  useViewerStore: (sel: (s: { setCurrentContext: () => void }) => unknown) =>
-    sel({ setCurrentContext: () => {} }),
+  useViewerStore: (sel: (s: { setCurrentContext: () => void }) => unknown) => sel({ setCurrentContext: () => {} }),
   useProcessWebApp: () => ({ host: null }),
+  useAppDisplay: () => ({
+    runtime: null,
+    available: [],
+    src: '',
+    port: null,
+    microApp: null,
+    setRuntime: vi.fn(),
+  }),
 }));
 vi.mock('@src/hooks/use-agentic-process-stream', () => ({
   useAgenticProcessStream: () => [],
 }));
-vi.mock('@src/hooks/entity-hooks', () => ({ useEntity: () => ({ data: undefined }) }));
-vi.mock('@src/tabs/tab-parent-context', () => ({ setActiveTabParent: vi.fn() }));
-vi.mock('@src/tabs/setup-tab-and-adopt', () => ({ setupTabAndAdopt: vi.fn(async () => {}) }));
+vi.mock('@src/hooks/entity-hooks', () => ({ useEntity: () => ({ data: parentProcess }) }));
+vi.mock('@src/tabs/tab-content-lifecycle', async (orig) => ({
+  ...(await orig<typeof import('@src/tabs/tab-content-lifecycle')>()),
+  setupTabAndAdopt: vi.fn(async () => {}),
+}));
 
 // Heavy display children the empty-state path never mounts — stubbed so the
 // module graph stays light.
@@ -127,7 +144,7 @@ describe('VIBE-006 — New must reach parity with the vibe-home creation path', 
     const session = {
       processTab: null,
       processDock: {} as never,
-      processId: 'P0',
+      processId: parentProcess.id,
       onProcessUrl: true,
     };
     render(<VibeWorkspace session={session} />);
@@ -150,10 +167,9 @@ describe('VIBE-006 — New must reach parity with the vibe-home creation path', 
     // Facet 2 — attachment parity: the new process must be routed through the
     // shared vibe-persona embed, exactly like createVibeProcessForProject.
     // Currently the host hook only enables the assistant, so this is absent.
-    expect(
-      embedMock,
-      'New-path process must embed the vibe persona agent (attachment parity)',
-    ).toHaveBeenCalledWith(created);
+    expect(embedMock, 'New-path process must embed the vibe persona agent (attachment parity)').toHaveBeenCalledWith(
+      created,
+    );
 
     // Facet 1 — URL rebind: the workspace must navigate to the new process id
     // so the URL-derived Display binds to P1 and a reload preserves it.

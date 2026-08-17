@@ -41,10 +41,7 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
   const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
 
-  const typeId = useMemo(
-    () => (pointer ? new TypeId(GraphContext.type, pointer) : null),
-    [pointer],
-  );
+  const typeId = useMemo(() => (pointer ? new TypeId(GraphContext.type, pointer) : null), [pointer]);
   const { data: ctx, isLoading } = useEntity<GraphContext>(typeId, { enabled: !!typeId });
 
   // Per-type icon from the backend registry (TypeInfo.icon) — never hardcoded.
@@ -80,6 +77,7 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
       try {
         c.name = name;
         await c.save();
+        c.markEdit();
       } catch (e) {
         notify.error({
           title: t`Could not rename context`,
@@ -146,13 +144,13 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
   return (
     <div className="flex h-full w-full">
       {/* Sidebar — all saved contexts */}
-      <aside className="flex w-64 shrink-0 flex-col border-r bg-muted/20">
+      <aside className="flex w-64 shrink-0 flex-col border-e bg-muted/20">
         <div className="flex items-center gap-2 border-b px-3 py-2 text-sm font-medium">
           <ContextIcon className="h-4 w-4" />
           <Trans>Saved Contexts</Trans>
           <DropdownMenu>
             <DropdownMenuTrigger
-              className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="ms-auto inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
               aria-label={t`Context list actions`}
               disabled={contexts.length === 0}
             >
@@ -186,7 +184,9 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
         {/* Bulk-action bar — only when something is selected */}
         {selected.size > 0 && (
           <div className="flex items-center justify-between border-b px-3 py-1.5 text-xs">
-            <span className="text-muted-foreground"><Trans>{selected.size} selected</Trans></span>
+            <span className="text-muted-foreground">
+              <Trans>{selected.size} selected</Trans>
+            </span>
             <div className="flex items-center gap-2">
               <button className="hover:text-foreground" onClick={clearAll}>
                 <Trans>Clear</Trans>
@@ -204,7 +204,9 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
 
         <div className="flex-1 overflow-y-auto py-1">
           {contexts.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-muted-foreground"><Trans>No saved contexts yet.</Trans></div>
+            <div className="px-3 py-2 text-xs text-muted-foreground">
+              <Trans>No saved contexts yet.</Trans>
+            </div>
           ) : (
             contexts.map((c) => {
               const isActive = currentDock?.pointer === c.id;
@@ -244,11 +246,11 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
                   ) : (
                     <button
                       onClick={() => navigation.openDock(DockPointer.forGraphContext(c.id))}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      className="flex min-w-0 flex-1 items-center gap-2 text-start"
                     >
                       <ContextIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       <span className="truncate">{c.displayName}</span>
-                      <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                      <span className="ms-auto shrink-0 text-xs text-muted-foreground">
                         {c.context_typeids?.length ?? 0}
                       </span>
                     </button>
@@ -285,7 +287,9 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
             <Trans>Select a context.</Trans>
           </div>
         ) : isLoading || !ctx ? (
-          <div className="flex h-full items-center justify-center text-muted-foreground"><Trans>Loading…</Trans></div>
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            <Trans>Loading…</Trans>
+          </div>
         ) : (
           <>
             {/* Maps-style mode toggle (graph ⟷ list) */}
@@ -304,7 +308,7 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
               <button
                 onClick={() => setMode('list')}
                 className={cn(
-                  'flex h-7 w-8 items-center justify-center border-l text-muted-foreground hover:bg-muted',
+                  'flex h-7 w-8 items-center justify-center border-s text-muted-foreground hover:bg-muted',
                   mode === 'list' && 'bg-muted text-foreground',
                 )}
                 aria-label={t`List view`}
@@ -332,7 +336,9 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
                     {rows.length} {rows.length === 1 ? 'entity' : 'entities'} in this context
                   </div>
                   {rows.length === 0 ? (
-                    <div className="text-sm text-muted-foreground"><Trans>This context is empty.</Trans></div>
+                    <div className="text-sm text-muted-foreground">
+                      <Trans>This context is empty.</Trans>
+                    </div>
                   ) : (
                     <div className="divide-y rounded-md border">
                       {rows.map(({ tid, slot }) => (
@@ -354,9 +360,7 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
         open={pendingDelete !== null}
         onOpenChange={(open) => !open && setPendingDelete(null)}
         title={
-          pendingDelete && pendingDelete.length > 1
-            ? t`Delete ${pendingDelete.length} contexts?`
-            : t`Delete context?`
+          pendingDelete && pendingDelete.length > 1 ? t`Delete ${pendingDelete.length} contexts?` : t`Delete context?`
         }
         description={t`This permanently removes the saved context snapshot. This cannot be undone.`}
         confirmLabel={t`Delete`}

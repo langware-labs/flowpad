@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useEffect, useState } from 'react';
 import { DynamicWorkflow, FSRef, ProcessKind } from '@sdk';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
@@ -40,7 +41,7 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
     return () => {
       alive = false;
     };
-  }, [fsRef.path]);
+  }, [fsRef]);
 
   const save = async () => {
     if (script === null) return;
@@ -48,9 +49,9 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
     try {
       await fsRef.write(script);
       setDirty(false);
-      notify.success({ title: 'Workflow saved' });
+      notify.success({ title: t`Workflow saved` });
     } catch (err) {
-      notify.error({ title: 'Save failed', message: err instanceof Error ? err.message : String(err) });
+      notify.error({ title: t`Save failed`, message: err instanceof Error ? err.message : String(err) });
     } finally {
       setBusy(false);
     }
@@ -61,9 +62,9 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
     try {
       if (dirty) await fsRef.write(script ?? '').then(() => setDirty(false));
       await workflow.run(undefined, { ptyMode });
-      if (!ptyMode) notify.success({ title: 'Workflow launched', message: 'Running in the background.' });
+      if (!ptyMode) notify.success({ title: t`Workflow launched`, message: t`Running in the background.` });
     } catch (err) {
-      notify.error({ title: 'Failed to launch', message: err instanceof Error ? err.message : String(err) });
+      notify.error({ title: t`Failed to launch`, message: err instanceof Error ? err.message : String(err) });
     } finally {
       setBusy(false);
     }
@@ -77,16 +78,28 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
         dirty={dirty}
         actions={
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" disabled={busy || !dirty} onClick={save} data-testid="dw-save">
-              <Save className="mr-1 h-4 w-4" />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy || !dirty}
+              onClick={() => void save()}
+              data-testid="dw-save"
+            >
+              <Save className="me-1 h-4 w-4" />
               Save
             </Button>
-            <Button size="sm" variant="default" disabled={busy} onClick={() => run(true)} data-testid="dw-run">
-              <Play className="mr-1 h-4 w-4" />
+            <Button size="sm" variant="default" disabled={busy} onClick={() => void run(true)} data-testid="dw-run">
+              <Play className="me-1 h-4 w-4" />
               Run
             </Button>
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => run(false)} data-testid="dw-run-headless">
-              <Zap className="mr-1 h-4 w-4" />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => void run(false)}
+              data-testid="dw-run-headless"
+            >
+              <Zap className="me-1 h-4 w-4" />
               Run headless
             </Button>
           </div>
@@ -109,11 +122,12 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
           onChange={(e) => {
             setScript(e.target.value);
             setDirty(true);
+            workflow.markEdit();
           }}
         />
       </div>
 
-      {/* "Runs of this workflow" — the same EntityExecutionPanel the Agent/Skill
+      {/* "Runs of this workflow" — the same EntityExecutionPanel the SubAgent/Skill
           editors mount, keyed by this workflow's typeId. Runs launched via the
           Run buttons are tagged target_typeid_str=Execution, so they appear here. */}
       <div className="h-[280px] flex-shrink-0 border-t" data-testid="dw-runs">

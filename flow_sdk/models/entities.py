@@ -24,6 +24,11 @@ except ImportError as e:
     print(f"[WARN] Failed to import Project: {e}")
 
 try:
+    from flow_sdk.builtin.wiki import Wiki, WikiEntry  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Wiki entities: {e}")
+
+try:
     from flow_sdk.builtin.secret_origin import SecretOrigin  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import SecretOrigin: {e}")
@@ -45,8 +50,9 @@ except ImportError as e:
 
 try:
     from flow_sdk.builtin.agent import Agent  # noqa: F401
+    from flow_sdk.builtin.subagent import SubAgent  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import Agent: {e}")
+    print(f"[WARN] Failed to import SubAgent: {e}")
 
 try:
     from flow_sdk.builtin.api_key import ApiKey  # noqa: F401
@@ -64,11 +70,6 @@ except ImportError as e:
     print(f"[WARN] Failed to import Capability: {e}")
 
 # Flow entity
-try:
-    from flow_sdk.builtin.process import Flow  # noqa: F401
-except ImportError as e:
-    print(f"[WARN] Failed to import Flow: {e}")
-
 # Agentic process entity
 try:
     from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: F401
@@ -111,19 +112,14 @@ except ImportError as e:
     print(f"[WARN] Failed to import RemoteWorkerSession: {e}")
 
 try:
-    from flow_sdk.builtin.prompt_result import PromptResult  # noqa: F401
+    from flow_sdk.builtin.prompt_completion import PromptCompletion  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import PromptResult: {e}")
+    print(f"[WARN] Failed to import PromptCompletion: {e}")
 
 try:
     from flow_sdk.builtin.cron_event import CronEvent  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import CronEvent: {e}")
-
-try:
-    from flow_sdk.builtin.workflow import Workflow  # noqa: F401
-except ImportError as e:
-    print(f"[WARN] Failed to import Workflow: {e}")
 
 try:
     from flow_sdk.builtin.skill import Skill  # noqa: F401
@@ -161,6 +157,11 @@ except ImportError as e:
     print(f"[WARN] Failed to import ContactsGroup: {e}")
 
 try:
+    from flow_sdk.builtin.tag import Tag  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Tag: {e}")
+
+try:
     from flow_sdk.builtin.prompt import Prompt  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Prompt: {e}")
@@ -174,6 +175,21 @@ try:
     from flow_sdk.builtin.feed_entry import FeedEntry  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import FeedEntry: {e}")
+
+try:
+    from flow_sdk.builtin.graph_workflow_node import GraphWorkflowNode  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import GraphWorkflowNode: {e}")
+
+try:
+    from flow_sdk.builtin.graph_workflow import GraphWorkflow  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import GraphWorkflow: {e}")
+
+try:
+    from flow_sdk.builtin.graph_workflow_run import GraphWorkflowRun  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import GraphWorkflowRun: {e}")
 
 try:
     from flow_sdk.builtin.message_attachment import MessageAttachment  # noqa: F401
@@ -252,9 +268,10 @@ except ImportError as e:
     print(f"[WARN] Failed to import DynamicWorkflow: {e}")
 
 try:
-    from flow_sdk.builtin.artifact import Artifact, ArtifactRelation, CodeRef  # noqa: F401
+    from flow_sdk.builtin.artifact import Artifact  # noqa: F401
+    from flow_sdk.builtin.deployment import Deployment  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import Artifact entities: {e}")
+    print(f"[WARN] Failed to import Artifact/Deployment entities: {e}")
 
 try:
     from flow_sdk.builtin.markdown_index import MarkdownIndex  # noqa: F401
@@ -270,5 +287,10 @@ try:
     from flow_sdk.builtin.tab import Tab  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Tab: {e}")
+
+try:
+    from flow_sdk.builtin.inbox_manager import InboxManager  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import InboxManager: {e}")
 
 __all__ = []

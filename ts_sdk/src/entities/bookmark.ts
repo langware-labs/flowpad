@@ -33,6 +33,13 @@ export interface IBookmark extends IEntity {
    *  (sorts at the END of a stamped container, newest first); stamped values
    *  are contiguous from 1 via the `bookmark.order` action. */
   order?: number;
+  /** Times this favorite has been opened. 0/unset = never opened — what the
+   *  desktop's unread badges count (see `isUnopened` in use-favorites.ts). */
+  counter?: number;
+  /** Looked at without being opened — a rest of the pointer on the row in the
+   *  favorites menu. Clears the unread badge alongside `counter`, but stays a
+   *  separate flag so a hover never inflates the open count. */
+  seen?: boolean;
   /** Owning project id, stamped at favorite-creation time from the current
    *  project context. Carried as a plain field (the record still saves under
    *  the unscoped @local desktop so webhook-created favorites stay visible);
@@ -54,6 +61,8 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
   remind_at?: string;
   parent_id?: string;
   order?: number;
+  counter?: number;
+  seen?: boolean;
   project_id?: string | null;
   static type: string = 'bookmark';
 
@@ -71,7 +80,39 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
     this.remind_at = entity.remind_at;
     this.parent_id = entity.parent_id;
     this.order = entity.order;
+    this.counter = entity.counter;
+    this.seen = entity.seen;
     this.project_id = entity.project_id ?? null;
+  }
+
+  /** Record one open — bump `counter` and persist. Mirrors Prompt.enqueueTo's
+   *  `use_count` bump: stamp in place, then save.
+   *
+   *  The in-place bump + `notifyEntityChanged` is what re-renders the unread
+   *  badges, with zero network, so they tick before the save lands. The save's
+   *  own WS echo can't do it: an `update` DataOp arriving while this entity's
+   *  `saveInFlight` is set gets buffered, and the flush never notifies query
+   *  watchers. Deliberately no refetch — this fires on every favorite click.
+   *
+   *  Callers `void` it (a click path must never block navigation on a usage
+   *  stamp); the save promise is returned so tests can await the write. */
+  async markOpened(): Promise<void> {
+    this.counter = (this.counter ?? 0) + 1;
+    dataManager.notifyEntityChanged(this);
+    return this.save([]);
+  }
+
+  /** Record that the user has LOOKED at this favorite without opening it — a
+   *  rest of the pointer on its row in the favorites menu is enough to stop it
+   *  reading as new. Sets its own flag rather than touching `counter`, so a
+   *  hover never claims an open that didn't happen. Idempotent: a favorite
+   *  already seen (or already opened) writes nothing, so sweeping the same
+   *  menu twice is free. Reactivity contract as {@link markOpened}. */
+  async markSeen(): Promise<void> {
+    if (this.seen || (this.counter ?? 0) > 0) return;
+    this.seen = true;
+    dataManager.notifyEntityChanged(this);
+    return this.save([]);
   }
 
   /** Desktop drag-drop commit — splice a bookmark into the drop gap within

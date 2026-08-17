@@ -5,6 +5,7 @@ cause found after debugging, and the fix that resolved it. App-created (not
 walked from arbitrary user files), so no ``from_disk_fn`` — it is persisted
 via ``FSRecord.save``/``sync_to_db`` into ``metadata.json`` + the DB.
 """
+
 from typing import Optional
 
 from pydantic import Field
@@ -54,6 +55,30 @@ class FlowpadDiagnosisMetadata(BaseMeta):
             "``symptoms``. Empty when the user asked for a full sweep."
         ),
     )
+    reported_by: Optional[str] = Field(
+        default=None,
+        description=(
+            "Who hit the issue — ``Name <email>`` as resolved on the machine that "
+            "recorded the diagnosis. Captured at record time so it survives a "
+            "forward to a helper on another machine."
+        ),
+    )
+    occurred_at: Optional[str] = Field(
+        default=None,
+        description=(
+            "ISO timestamp of when the diagnosis was recorded, on the reporting "
+            "machine. Distinct from the inherited ``created_date`` (storage-level, "
+            "re-stamped by a receiver at install time) — this one travels verbatim."
+        ),
+    )
+    os: Optional[str] = Field(
+        default=None,
+        description=("``platform.platform()`` of the machine the issue happened on, captured at record time."),
+    )
+    app_version: Optional[str] = Field(
+        default=None,
+        description="Flowpad version running on the machine the issue happened on.",
+    )
     origin_project_id: Optional[str] = Field(
         default=None,
         description=(
@@ -82,4 +107,7 @@ FLOWPAD_DIAGNOSIS = TypeMetadata(
     api_visible=True,
     index_fields=["title", "symptoms"],
     meta_model=FlowpadDiagnosisMetadata,
+    # Metadata-only diagnosis: row-only passive payload — staged like every
+    # bundle entry, then auto-installed (no review gate). The header IS the record.
+    receive_policy="auto",
 )

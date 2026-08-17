@@ -36,7 +36,6 @@ interface ParsedCommand {
   flags: { key: string; value: string | true }[];
 }
 
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -127,10 +126,15 @@ function CopyButton({ value }: { value: string }) {
 
   const copy = (e?: React.MouseEvent) => {
     e?.stopPropagation();
-    void navigator.clipboard.writeText(value).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    }).catch(() => {/* ignore */});
+    void navigator.clipboard
+      .writeText(value)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => {
+        /* ignore */
+      });
   };
 
   return (
@@ -240,9 +244,7 @@ export function CliLogViewer() {
   );
 
   if (loading && entries.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading...</div>
-    );
+    return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading...</div>;
   }
 
   return (
@@ -254,7 +256,7 @@ export function CliLogViewer() {
           {entries.length}
         </Badge>
 
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ms-auto flex items-center gap-1">
           {/* Level toggle */}
           {(['info', 'debug'] as const).map((lvl) => (
             <button
@@ -344,12 +346,12 @@ function EntryRow({
       onClick={onClick}
     >
       {/* Index */}
-      <span className="w-5 shrink-0 text-right font-mono text-[10px] text-muted-foreground/50">{index + 1}</span>
+      <span className="w-5 shrink-0 text-end font-mono text-[10px] text-muted-foreground/50">{index + 1}</span>
 
       {isSelected ? (
         <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
       ) : (
-        <ChevronRight className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+        <ChevronRight className="h-3 w-3 flex-shrink-0 text-muted-foreground rtl:-scale-x-100" />
       )}
 
       {/* Binary name */}
@@ -382,23 +384,16 @@ function EntryRow({
       )}
 
       {/* Hook event summary */}
-      {hookSummary && (
-        <span className="max-w-[180px] truncate text-[10px] text-muted-foreground">{hookSummary}</span>
-      )}
+      {hookSummary && <span className="max-w-[180px] truncate text-[10px] text-muted-foreground">{hookSummary}</span>}
 
       <span className="flex-1" />
 
       {/* Exit code badge */}
-      <Badge
-        variant={entry.exit_code === 0 ? 'secondary' : 'destructive'}
-        className="text-[10px]"
-      >
+      <Badge variant={entry.exit_code === 0 ? 'secondary' : 'destructive'} className="text-[10px]">
         {entry.exit_code}
       </Badge>
 
-      {entry.level === 'debug' && (
-        <span className="text-[10px] text-muted-foreground">debug</span>
-      )}
+      {entry.level === 'debug' && <span className="text-[10px] text-muted-foreground">debug</span>}
 
       <span className="text-[10px] text-muted-foreground">{entry.duration_ms}ms</span>
 
@@ -422,21 +417,22 @@ function WorkdirTooltip({ workdir }: { workdir: string }) {
 
   const copy = (e: React.MouseEvent) => {
     e.stopPropagation();
-    void navigator.clipboard.writeText(workdir).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    }).catch(() => {/* ignore */});
+    void navigator.clipboard
+      .writeText(workdir)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => {
+        /* ignore */
+      });
   };
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button onClick={copy} className="flex-shrink-0 text-muted-foreground hover:text-foreground">
-          {copied ? (
-            <Check className="h-3 w-3 text-green-500" />
-          ) : (
-            <FolderOpen className="h-3 w-3" />
-          )}
+          {copied ? <Check className="h-3 w-3 text-green-500" /> : <FolderOpen className="h-3 w-3" />}
         </button>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs">
@@ -450,13 +446,7 @@ function WorkdirTooltip({ workdir }: { workdir: string }) {
 // EntryDetail — expanded view with parsed command & structured stdin
 // ---------------------------------------------------------------------------
 
-function EntryDetail({
-  entry,
-  onReplay,
-}: {
-  entry: CliLogEntry;
-  onReplay: (entry: CliLogEntry) => Promise<void>;
-}) {
+function EntryDetail({ entry, onReplay }: { entry: CliLogEntry; onReplay: (entry: CliLogEntry) => Promise<void> }) {
   const parsed = useMemo(() => parseCommand(entry.command), [entry.command]);
   const hookData = useMemo(() => tryParseHookData(entry.stdin), [entry.stdin]);
 
@@ -471,13 +461,11 @@ function EntryDetail({
           </div>
 
           {/* Binary path */}
-          <div className="ml-3 flex items-center gap-1">
+          <div className="ms-3 flex items-center gap-1">
             <span className="text-[10px] text-muted-foreground">bin:</span>
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="cursor-help font-mono text-muted-foreground">
-                  {shortenBinary(parsed.binary)}
-                </span>
+                <span className="cursor-help font-mono text-muted-foreground">{shortenBinary(parsed.binary)}</span>
               </TooltipTrigger>
               <TooltipContent side="top">
                 <span className="font-mono text-xs">{parsed.binary}</span>
@@ -487,7 +475,7 @@ function EntryDetail({
 
           {/* Flags as structured key-value badges */}
           {parsed.flags.length > 0 && (
-            <div className="ml-3 flex flex-wrap items-center gap-1">
+            <div className="ms-3 flex flex-wrap items-center gap-1">
               {parsed.flags.map((flag, i) => (
                 <Badge key={i} variant="outline" className="text-[10px]">
                   {flag.value === true ? (
@@ -495,7 +483,7 @@ function EntryDetail({
                   ) : (
                     <>
                       <span className="font-mono text-muted-foreground">{flag.key}:</span>
-                      <span className="ml-1 font-mono">{truncate(flag.value, 40)}</span>
+                      <span className="ms-1 font-mono">{truncate(flag.value, 40)}</span>
                     </>
                   )}
                 </Badge>
@@ -512,24 +500,18 @@ function EntryDetail({
         </div>
 
         {/* Stdin — structured hook data or raw */}
-        {entry.stdin && (
-          hookData ? (
+        {entry.stdin &&
+          (hookData ? (
             <HookDataView hookData={hookData} rawStdin={entry.stdin} />
           ) : (
             <CollapsibleOutput label="stdin" value={entry.stdin} />
-          )
-        )}
+          ))}
 
         {entry.stdout && <CollapsibleOutput label="stdout" value={entry.stdout} />}
         {entry.stderr && <CollapsibleOutput label="stderr" value={entry.stderr} />}
 
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-1 w-fit"
-          onClick={() => void onReplay(entry)}
-        >
-          <Play className="mr-1 h-3 w-3" />
+        <Button variant="outline" size="sm" className="mt-1 w-fit" onClick={() => void onReplay(entry)}>
+          <Play className="me-1 h-3 w-3" />
           Re-invoke
         </Button>
       </div>
@@ -544,9 +526,7 @@ function EntryDetail({
 function HookDataView({ hookData, rawStdin }: { hookData: HookEventData; rawStdin: string }) {
   const [showRaw, setShowRaw] = useState(false);
 
-  const eventColor = hookData.hook_event_name
-    ? EVENT_TYPE_COLORS[hookData.hook_event_name] || ''
-    : '';
+  const eventColor = hookData.hook_event_name ? EVENT_TYPE_COLORS[hookData.hook_event_name] || '' : '';
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -564,7 +544,7 @@ function HookDataView({ hookData, rawStdin }: { hookData: HookEventData; rawStdi
       {showRaw ? (
         <pre className="max-h-48 overflow-auto rounded bg-muted p-2 font-mono text-[11px]">{rawStdin}</pre>
       ) : (
-        <div className="ml-3 flex flex-col gap-1.5">
+        <div className="ms-3 flex flex-col gap-1.5">
           {/* Event + tool badges */}
           <div className="flex flex-wrap items-center gap-1">
             {hookData.hook_event_name && (
@@ -584,12 +564,8 @@ function HookDataView({ hookData, rawStdin }: { hookData: HookEventData; rawStdi
             )}
           </div>
 
-          {hookData.session_id && (
-            <CopyableField label="session" value={hookData.session_id} />
-          )}
-          {hookData.cwd && (
-            <CopyableField label="cwd" value={hookData.cwd} />
-          )}
+          {hookData.session_id && <CopyableField label="session" value={hookData.session_id} />}
+          {hookData.cwd && <CopyableField label="cwd" value={hookData.cwd} />}
           {hookData.transcript_path && (
             <div className="flex items-center gap-2">
               <span className="font-medium text-muted-foreground">transcript:</span>
@@ -636,7 +612,7 @@ function CollapsibleJson({ label, data }: { label: string; data: Record<string, 
           onClick={() => setOpen(!open)}
           className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
         >
-          {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3 rtl:-scale-x-100" />}
           <span className="font-medium">{label}</span>
           <span className="text-[10px]">({keys.length} keys)</span>
         </button>
@@ -646,14 +622,15 @@ function CollapsibleJson({ label, data }: { label: string; data: Record<string, 
       {open ? (
         <pre className="max-h-48 overflow-auto rounded bg-muted p-2 font-mono text-[11px]">{jsonStr}</pre>
       ) : (
-        <div className="ml-4 flex flex-wrap items-center gap-1">
+        <div className="ms-4 flex flex-wrap items-center gap-1">
           {keys.slice(0, 6).map((key) => {
             const val = data[key];
-            const display = typeof val === 'string'
-              ? truncate(val, 30)
-              : typeof val === 'number' || typeof val === 'boolean'
-                ? String(val)
-                : null;
+            const display =
+              typeof val === 'string'
+                ? truncate(val, 30)
+                : typeof val === 'number' || typeof val === 'boolean'
+                  ? String(val)
+                  : null;
 
             if (display === null) {
               return (
@@ -665,13 +642,11 @@ function CollapsibleJson({ label, data }: { label: string; data: Record<string, 
             return (
               <Badge key={key} variant="outline" className="text-[10px]">
                 <span className="text-muted-foreground">{key}:</span>
-                <span className="ml-1">{display}</span>
+                <span className="ms-1">{display}</span>
               </Badge>
             );
           })}
-          {keys.length > 6 && (
-            <span className="text-[10px] text-muted-foreground">+{keys.length - 6} more</span>
-          )}
+          {keys.length > 6 && <span className="text-[10px] text-muted-foreground">+{keys.length - 6} more</span>}
         </div>
       )}
     </div>
@@ -691,16 +666,16 @@ function CollapsibleOutput({ label, value }: { label: string; value: string }) {
     }
     return count;
   }, [value]);
-  const preview = useMemo(
-    () => value.length > 120 ? value.slice(0, 120) + '...' : value,
-    [value],
-  );
+  const preview = useMemo(() => (value.length > 120 ? value.slice(0, 120) + '...' : value), [value]);
 
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2">
-        <button onClick={() => setOpen(!open)} className="flex items-center gap-1 text-muted-foreground hover:text-foreground">
-          {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        <button
+          onClick={() => setOpen(!open)}
+          className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
+        >
+          {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3 rtl:-scale-x-100" />}
           <span className="font-medium">{label}</span>
           <span className="text-[10px]">({lineCount} lines)</span>
         </button>

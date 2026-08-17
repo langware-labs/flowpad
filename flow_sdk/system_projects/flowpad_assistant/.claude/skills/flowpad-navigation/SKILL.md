@@ -1,10 +1,10 @@
 ---
 id: 0d9157ba-e30c-5da0-a42f-87b215d6a4ab
 name: flowpad-navigation
-description: Drive the Flowpad UI to a specific entity. Use this whenever the user
-  asks to open, show, navigate to, or jump to an entity identified by a TypeId (e.g.
-  "shell-<uuid>", "markdown-<uuid>", "project-<uuid>", "agentic_process-<uuid>").
-  The TypeId may be given as a bare string or embedded inside the request.
+description: Drive the Flowpad UI to an entity or file. Use whenever the user asks
+  to open, show, navigate to, or jump to a TypeId or file path, including follow-ups
+  such as "open it" or "show it" after creating a file. TypeIds may be bare or
+  embedded in the request.
 ---
 
 # flowpad-navigation
@@ -14,11 +14,16 @@ other skill files, never `ls` the skills dir, never write a report.** Navigation
 is one side-effect that the user sees in their browser; it is a few commands, not
 an investigation.
 
-> **Display sessions use `flow show`, not `flow navigate`.** Everything below
-> `flow navigate`s the user's browser tab. If you are in a vibe/creator session
-> with a display pane (asked to open/show something "in the display"), use
-> `flow show file <path>` / `flow show entity <typeid>` instead — see the
-> decision rule at the bottom.
+> **Presenting a deliverable uses `flow show`, not `flow navigate`.** Everything
+> below `flow navigate`s the user's browser tab, which interrupts them. `flow show`
+> works in EVERY mode — it pins the vibe display pane if there is one, and
+> otherwise opens the target as a tab beside your process without navigating. Use
+> `flow show file <path>` / `flow show entity <typeid>` whenever you are handing
+> over something you made — see the decision rule at the bottom.
+>
+> **Screens are addressable too.** `flow show view <address>` /
+> `flow navigate view <address>` open Events, Assets, Preferences, Files,
+> Search, the Inbox, Data Sources, Runs and the rest — see "A screen" below.
 
 ## You already have a TypeId
 
@@ -59,6 +64,24 @@ flow navigate entity <data.typeid>
 (e.g. `markdown-<uuid>`) — pass that straight to `flow navigate`. No search, no
 guessing. Do not read the file, do not open it with the OS, do not summarize.
 
+## A screen (Events, Preferences, Assets, Files, …)
+
+Screens are addressed by **view name**, optionally plus `/pointer` and `?opts`
+— not by TypeId. One command, then stop:
+
+```bash
+flow show view events                       # presenting it — the default
+flow navigate view preferences/appearance   # only if they said "take me there"
+```
+
+More examples: `assets/list/skill`, `explorer/src`, `search?q=widget`,
+`process-runs`, `data-sources`, `capabilities`, `inbox`, `desktop`,
+`lens/claude/transcript/<id>`. Quote anything containing `?`.
+
+Don't guess a view name — `flow schema views` lists every one with whether it
+needs a pointer. Exit `2` means the view is unknown or its pointer is missing;
+exit `4` means the pointer named an entity that doesn't exist.
+
 ## "the current X" (no path, no id)
 
 Resolve via context, then navigate (Display session → `flow show entity` instead
@@ -71,15 +94,19 @@ flow navigate entity <that-typeid>     # if the value is null, tell the user and
 
 ## Presenting into a Display vs. moving the browser: `flow show` vs `flow navigate`
 
-Decision rule — key on the **target**, not on who authored the file:
+Decision rule — key on the **intent**, not on the mode and not on who authored
+the file:
 
-- **The active process Display** (a vibe/creator session with a display pane, or
-  the user says "in the display / on screen") → **always `flow show`**, whether
-  you created the file/entity or it already existed. `show` never moves the
-  user's browser; it sets the display focus for whoever is watching this session.
-- **The user's own browser tab** ("jump to", "take me to" an entity, standard
-  assistant with no Display) → `flow navigate`. It hijacks the visible tab, so
-  never use it to present something on a Display.
+- **"Here is the thing I made"** → **always `flow show`**, in every mode. It never
+  navigates: in a vibe session it pins the display pane; in any other mode it
+  opens the target as a tab right after your process and marks your chip. A
+  background agent therefore cannot interrupt anyone.
+- **"Take me there"** — the user explicitly asks to jump to / open / go to an
+  entity → `flow navigate`. It hijacks the tab the user is looking at, so use it
+  only when being moved is what they asked for.
+
+When in doubt, `flow show` — the failure mode of showing is a tab the user
+ignores; the failure mode of navigating is yanking them out of their work.
 
 Exit 0 = recorded, done — even if nothing is visibly open.
 

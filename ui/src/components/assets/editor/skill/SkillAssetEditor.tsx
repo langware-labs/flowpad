@@ -1,4 +1,9 @@
-import { MarkdownEditor, type MarkdownHeaderExtrasCtx } from '@src/components/assets/editor/markdown/MarkdownEditor';
+import { t } from '@lingui/core/macro';
+import {
+  MarkdownEditor,
+  type MarkdownHeaderExtrasCtx,
+  type WikiLinkTarget,
+} from '@src/components/assets/editor/markdown/MarkdownEditor';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
@@ -11,8 +16,6 @@ import { notify } from '@src/notifications';
 import { FlaskConical, History } from 'lucide-react';
 import { useCallback, useMemo, useRef } from 'react';
 import { UsagePanel } from './UsagePanel';
-import { launchSkillTest } from './skill-eval-analysis';
-import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
 
 interface SkillAssetEditorProps {
   /** FSRef to the skill folder. SKILL.md is resolved via child(). */
@@ -23,6 +26,8 @@ interface SkillAssetEditorProps {
    * falls back to `useEntityByPath` for backwards compatibility.
    */
   skill?: Skill;
+  /** Wiki page/namespace to retain for links when this asset is Wiki-rendered. */
+  wikiLinkTarget?: WikiLinkTarget;
 }
 
 /**
@@ -32,7 +37,7 @@ interface SkillAssetEditorProps {
  * into its folder tree (see the `skillFolder` adapter) — there is no second
  * tree here.
  */
-export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEditorProps) {
+export function SkillAssetEditor({ fsRef, skill: providedSkill, wikiLinkTarget }: SkillAssetEditorProps) {
   const { entity: discoveredSkill } = useEntityByPath<Skill>(
     providedSkill ? null : Skill.type,
     providedSkill ? null : fsRef,
@@ -64,9 +69,7 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
   const editorRef = useMemo(
     // Same guard as Skill.doc: a file-valued ref (already .../SKILL.md) must not
     // get the main file appended again, or the download 404s on SKILL.md/SKILL.md.
-    () =>
-      skillRef.current?.doc ??
-      (fsRef.path.endsWith('/SKILL.md') ? fsRef : fsRef.child('SKILL.md')),
+    () => skillRef.current?.doc ?? (fsRef.path.endsWith('/SKILL.md') ? fsRef : fsRef.child('SKILL.md')),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [skillKey],
   );
@@ -98,40 +101,28 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
         s.metadata = { ...(s.metadata ?? {}), eval: next };
         void s.save().catch((e) => {
           notify.error({
-            title: 'Could not update eval flag',
+            title: t`Could not update eval flag`,
             message: e instanceof Error ? e.message : 'Save failed.',
           });
         });
       }
     };
     return (
-      <>
-        <button
-          type="button"
-          onClick={toggle}
-          aria-pressed={isEval}
-          title={isEval ? 'Under eval — click to stop evaluating' : 'Mark skill for eval'}
-          data-testid="skill-eval-toggle"
-          className={cn(
-            'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors',
-            isEval
-              ? 'bg-accent text-accent-foreground'
-              : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
-          )}
-        >
-          <FlaskConical className="h-3.5 w-3.5" />
-        </button>
-        {/* Quick-start testing toolbar: spin up an interactive worker with this
-            skill, pre-filled (queue) but not auto-submitted. Shared WorkerToolbar
-            so it matches every other worker-launch surface. */}
-        <span className="mx-0.5 h-4 w-px flex-shrink-0 bg-border" aria-hidden />
-        <WorkerToolbar
-          onLaunch={(worker) => {
-            if (skillRef.current) void launchSkillTest(skillRef.current, worker);
-          }}
-          testIdPrefix="skill-test"
-        />
-      </>
+      <button
+        type="button"
+        onClick={toggle}
+        aria-pressed={isEval}
+        title={isEval ? 'Under eval — click to stop evaluating' : 'Mark skill for eval'}
+        data-testid="skill-eval-toggle"
+        className={cn(
+          'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors',
+          isEval
+            ? 'bg-accent text-accent-foreground'
+            : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+        )}
+      >
+        <FlaskConical className="h-3.5 w-3.5" />
+      </button>
     );
     // Stable identity: reads the live skill via `skillRef`, so it never rebuilds
     // on a skill ref change (only `fields`/`setField` from the editor drive it).
@@ -153,16 +144,16 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
     return [
       {
         id: 'usage',
-        label: 'Usage',
+        label: t`Usage`,
         icon: History,
-        description: 'Sessions that used this skill — analyze, improve, commit',
+        description: t`Sessions that used this skill — analyze, improve, commit`,
         panel: <UsagePanel skill={skillRef.current} skillFile={editorRef} />,
       },
       {
         id: 'eval',
-        label: 'Eval',
+        label: t`Eval`,
         icon: FlaskConical,
-        description: 'Skill evaluations',
+        description: t`Skill evaluations`,
         panel: (
           <EntityExecutionPanel
             target={skillKey}
@@ -183,12 +174,14 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
   return (
     <MarkdownEditor
       fsRef={editorRef}
+      editEntity={skill}
       chatTarget={skillKey}
       headerExtras={headerExtras}
       extraSideTabs={extraSideTabs}
       onDelete={skillKey ? onDelete : undefined}
       deleteLabel={skill?.name ?? undefined}
       reloadKey={reloadKey}
+      wikiLinkTarget={wikiLinkTarget}
     />
   );
 }

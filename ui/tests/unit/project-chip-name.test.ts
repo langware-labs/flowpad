@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { resolveProjectChipName } from '@src/components/terminal/ProjectsCounterChip';
-import type { TabProjectBucket } from '@src/tabs/useTabs';
+import type { TabProjectBucket } from '@src/tabs/use-tab-manager';
 
 // Minimal bucket shapes — resolveProjectChipName only reads projectId + project.
 const bucket = (projectId: string, name: string | null): TabProjectBucket =>

@@ -52,7 +52,7 @@ class Recipe:
     """
 
     script_path: Path | None = None  # <version>/scripts/migrate.py
-    skill_dir: Path | None = None    # <version>/skill/ (contains SKILL.md)
+    skill_dir: Path | None = None  # <version>/skill/ (contains SKILL.md)
 
 
 def _is_process_alive(pid: int | None) -> bool:
@@ -61,14 +61,14 @@ def _is_process_alive(pid: int | None) -> bool:
         return False
     try:
         from flow_sdk.server.launch import is_process_alive
+
         return is_process_alive(pid)
     except Exception:
-        # Fallback to os.kill(pid, 0)
-        try:
-            os.kill(pid, 0)
-            return True
-        except (OSError, ProcessLookupError):
-            return False
+        # Fallback: pid_probe, never os.kill(pid, 0) — signal 0 is CTRL_C_EVENT
+        # on Windows, so the "probe" would Ctrl-C this process's console group.
+        from flow_sdk.pid_probe import pid_is_alive
+
+        return pid_is_alive(pid)
 
 
 def _resolve_recipe(version: str) -> Recipe | None:
@@ -92,6 +92,7 @@ def _resolve_recipe(version: str) -> Recipe | None:
         migrations_root = Path(override)
     else:
         from flow_sdk.config import flowpad_assistant_project_root
+
         migrations_root = flowpad_assistant_project_root() / "migrations"
 
     base = migrations_root / version
@@ -123,6 +124,7 @@ def _resolve_status_dir() -> Path:
     latent SoT violation.
     """
     from flow_sdk.instance_settings import get_instance_settings
+
     return get_instance_settings().migrations_status_dir
 
 
@@ -165,6 +167,7 @@ async def _bootstrap_local() -> Any:
         get_or_create_local_project,
         get_or_create_local_user,
     )
+
     await init_db()
     user = await get_or_create_local_user()
     project = await get_or_create_local_project(desktop_user=user)
@@ -245,7 +248,7 @@ async def _drive_migration(
     ``started`` record. We update it to ``running`` once the agent first
     writes its transcript, then to ``completed``/``error``.
     """
-    from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agent_registry import get_agent_local_deployment
     from flow_sdk.core.capabilities.discovery import ensure_discovered
 
     cn = await _bootstrap_local()
@@ -266,16 +269,18 @@ async def _drive_migration(
         f"--- BEGIN RECIPE ---\n{skill_md}\n--- END RECIPE ---"
     )
 
-    ap = AgenticProcess(
+    # The `migration-runner` Agent owns the bundle (bypassPermissions, model);
+    # only the compute node and workdir are per-run.
+    deployment = await get_agent_local_deployment("migration-runner")
+    ap = await deployment.build(
+        prompt_text,
         compute_node_id=f"compute_node-{cn.id}",
-        cli_config={"permission_mode": "bypassPermissions"},
         workdir=str(Path.cwd()),
-        visible=False,
         name=f"Migration: {version}",
     )
-    # Note: NOT calling ap.save([]) — the exist_in_db gate at
-    # agentic_process.py:1088-1097 was dropped for visible=False precisely
-    # so the migration runner can spawn without a pre-saved record.
+    # NOT saved: the exist_in_db gate at agentic_process.py:1088-1097 was
+    # dropped for visible=False precisely so the migration runner can spawn
+    # without a pre-saved record.
 
     await ap.prompt(prompt_text)
 
@@ -337,6 +342,7 @@ async def _run_if_needed_async(
 ) -> int:
     if version is None:
         from flow_sdk._version import __version__
+
         version = __version__
 
     recipe = _resolve_recipe(version)
@@ -352,18 +358,12 @@ async def _run_if_needed_async(
     try:
         lock.acquire(timeout=0)
     except Timeout:
-        typer.echo(
-            f"Migration {version} already in progress on this machine "
-            "(another process holds the lock)."
-        )
+        typer.echo(f"Migration {version} already in progress on this machine (another process holds the lock).")
         return 0
 
     try:
         existing = migration_status.read(status_dir, version)
-        pid_alive = (
-            existing is not None
-            and _is_process_alive(existing.pid)
-        )
+        pid_alive = existing is not None and _is_process_alive(existing.pid)
         decision = migration_status.decide_action(existing, pid_alive=pid_alive)
 
         if decision == Decision.SKIP_COMPLETED:
@@ -371,17 +371,13 @@ async def _run_if_needed_async(
             return 0
         if decision == Decision.SKIP_IN_FLIGHT:
             assert existing is not None
-            typer.echo(
-                f"Migration {version} already running "
-                f"(pid {existing.pid}, started {existing.started_at})."
-            )
+            typer.echo(f"Migration {version} already running (pid {existing.pid}, started {existing.started_at}).")
             return 0
 
         # decision == Decision.RUN (first run, error retry, or orphan retry).
         if existing is not None and existing.status == MigrationStatus.ERROR.value:
             typer.echo(
-                f"Previous attempt at migration {version} errored "
-                f"({existing.error_msg!r}); retrying best-effort."
+                f"Previous attempt at migration {version} errored ({existing.error_msg!r}); retrying best-effort."
             )
         elif existing is not None:
             typer.echo(
@@ -451,8 +447,7 @@ def run_if_needed(
 
     # We're inside a loop already — bounce to a worker thread.
     from concurrent.futures import ThreadPoolExecutor
+
     with ThreadPoolExecutor(max_workers=1) as pool:
-        fut = pool.submit(
-            lambda: asyncio.run(_run_if_needed_async(version, transcript_timeout))
-        )
+        fut = pool.submit(lambda: asyncio.run(_run_if_needed_async(version, transcript_timeout)))
         return fut.result()

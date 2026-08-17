@@ -67,7 +67,7 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
     expect(page.url()).toContain('/dock/assets/editor/whiteboard/');
   });
 
-  test('C2–C3: files on disk + frontmatter id stamped (after first save)', async ({ page, request }) => {
+  test('C2–C3: files on disk + capsule id present (after first save)', async ({ page, request }) => {
     test.setTimeout(60_000);
     await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
     const { id, assetRef } = await createWhiteboard(request, `c2-board-${Date.now() % 10000}`);
@@ -85,25 +85,26 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
     expect(fs.existsSync(`${assetRef}/board.json`), 'board.json exists after save').toBe(true);
 
     // C3a: right after save, autosave has only spliced the mermaid block — the
-    // frontmatter id is NOT stamped on save (it is indexer-managed via
-    // whiteboard_gen_id). Markers must already be present, though.
+    // id is NOT written into the markdown frontmatter. Since the named-asset-
+    // capsule refactor (4f94fb92 / b4295a7a), a whiteboard's identity lives in
+    // the folder capsule `.flow/capsules/identity.json`, not in WHITE_BOARD.md.
+    // The mermaid markers must already be present, though.
     const mdPreIndex = fs.readFileSync(`${assetRef}/WHITE_BOARD.md`, 'utf8');
     expect(mdPreIndex).toContain('<!-- BEGIN whiteboard:auto -->');
     expect(mdPreIndex).toContain('<!-- END whiteboard:auto -->');
 
-    // C3b: an index pass stamps a valid UUID id into the frontmatter and
-    // preserves the auto-managed mermaid block.
-    const idxRes = await request.post(`${API}/api/v1/graph/compute_node/@local/fs-records/index?type=whiteboard`);
-    expect(idxRes.status()).toBe(200);
-    let md = '';
-    for (let i = 0; i < 6; i++) {
-      await page.waitForTimeout(500);
-      md = fs.readFileSync(`${assetRef}/WHITE_BOARD.md`, 'utf8');
-      if (/^---[\s\S]*?\bid:\s*[0-9a-fA-F-]{36}/m.test(md)) break;
-    }
-    // Frontmatter id (a valid v4/v5 UUID — version digit is 4 or 5).
-    expect(md).toMatch(/^---[\s\S]*?\bid:\s*[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[45][0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/m);
-    // BEGIN/END mermaid markers survive the frontmatter stamp.
+    // C3b: the identity capsule holds a valid UUID id (minted at create, so it
+    // is present without a corpus-wide index pass).
+    const capsulePath = `${assetRef}/.flow/capsules/identity.json`;
+    expect(fs.existsSync(capsulePath), 'identity capsule exists').toBe(true);
+    const capsule = JSON.parse(fs.readFileSync(capsulePath, 'utf8'));
+    // Capsule id (a valid v4/v5 UUID — version digit is 4 or 5).
+    expect(String(capsule.data?.id)).toMatch(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[45][0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/);
+    // The capsule id matches the entity id assigned at create.
+    expect(String(capsule.data?.id)).toBe(id);
+    // BEGIN/END mermaid markers coexist with capsule identity; there is no
+    // frontmatter id.
+    const md = fs.readFileSync(`${assetRef}/WHITE_BOARD.md`, 'utf8');
     expect(md).toContain('<!-- BEGIN whiteboard:auto -->');
     expect(md).toContain('<!-- END whiteboard:auto -->');
 

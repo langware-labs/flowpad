@@ -67,7 +67,7 @@ async def prompt(prompt_text: str):
     }
 
     # Store the prompt result
-    state.prompt_results.append(result)
+    state.prompt_completions.append(result)
 
     # Signal that prompt was received
     state.prompt_received.set()
@@ -83,4 +83,4 @@ async def get_prompts():
     Returns:
         JSON response with all prompt results
     """
-    return JSONResponse(content={"prompts": state.prompt_results})
+    return JSONResponse(content={"prompts": state.prompt_completions})

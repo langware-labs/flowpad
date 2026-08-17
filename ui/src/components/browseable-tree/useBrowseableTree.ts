@@ -5,7 +5,14 @@ import type { Browseable, BrowseableRoot } from './types';
 export type LoadState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'ready'; children: Browseable[] }
+  /**
+   * `refreshing` = an `invalidate` re-fetch is in flight over children we
+   * already have. The previous children stay rendered until the fresh list
+   * lands, so a burst of entity ops (e.g. create-group-task writing one member
+   * task per member) repaints the rows once instead of flashing "Loading…"
+   * between every op. `loading` is reserved for a genuine first load.
+   */
+  | { status: 'ready'; children: Browseable[]; refreshing?: boolean }
   | { status: 'error'; message: string };
 
 export interface BrowseableTreeState {
@@ -50,7 +57,7 @@ function readPersistedExpandedIds(persistKey: string): Set<string> | null {
  *    pass `persistKey` to restore/persist via localStorage, and
  *    `defaultExpandedIds` to seed first-open expansion).
  *  - `loadStates` tracks per-node children fetches (idle / loading / ready / error).
- *  - `expandParentsForPointer(p)` walks the owning root's pathFor() and
+ *  - `expandParentsForPointer(p)` walks every owning root's pathFor() and
  *    expands every ancestor, priming the cache for each along the way.
  */
 export function useBrowseableTree(roots: BrowseableRoot[], options: BrowseableTreeOptions = {}) {
@@ -83,6 +90,11 @@ export function useBrowseableTree(roots: BrowseableRoot[], options: BrowseableTr
 
   // Track in-flight fetches to prevent duplicate work on quick toggles.
   const inflight = useRef(new Map<string, Promise<Browseable[]>>());
+
+  // Per-node invalidate generation. A burst of entity ops fires overlapping
+  // `invalidate`s, and their fetches can resolve out of order — an older
+  // response must never overwrite a newer one's children.
+  const refreshSeq = useRef(new Map<string, number>());
 
   const getLoadState = useCallback(
     (id: string): LoadState => state.loadStates.get(id) ?? { status: 'idle' },
@@ -209,15 +221,29 @@ export function useBrowseableTree(roots: BrowseableRoot[], options: BrowseableTr
       }
       inflight.current.delete(nodeId);
       if (node && node.listChildren && state.expandedIds.has(nodeId)) {
-        setLoadState(nodeId, { status: 'loading' });
+        const seq = (refreshSeq.current.get(nodeId) ?? 0) + 1;
+        refreshSeq.current.set(nodeId, seq);
+        // Keep the rows we already have on screen while the re-fetch runs;
+        // only a node with nothing cached shows the "Loading…" placeholder.
+        const cached = loadStatesRef.current.get(nodeId);
+        setLoadState(
+          nodeId,
+          cached?.status === 'ready'
+            ? { status: 'ready', children: cached.children, refreshing: true }
+            : { status: 'loading' },
+        );
         try {
           // `{ refresh: true }` so adapters that own a cache (e.g. the skill /
           // markdown folder adapters' fsStore browseCache) bypass it — an
           // invalidate's whole purpose is to reflect fresh on-disk state (e.g.
           // after a delete). Adapters that always fetch (asset /search) ignore it.
           const children = await node.listChildren({ refresh: true });
+          // A newer invalidate started while this fetch was in flight — its
+          // result is the fresh one; drop ours rather than clobber it.
+          if (refreshSeq.current.get(nodeId) !== seq) return;
           setLoadState(nodeId, { status: 'ready', children });
         } catch (err) {
+          if (refreshSeq.current.get(nodeId) !== seq) return;
           const message = err instanceof Error ? err.message : String(err);
           setLoadState(nodeId, { status: 'error', message });
         }
@@ -230,66 +256,70 @@ export function useBrowseableTree(roots: BrowseableRoot[], options: BrowseableTr
   );
 
   /**
-   * Expand every ancestor of the node addressed by `pointer`. The first
-   * root whose `ownsPointer` returns true is used; its `pathFor` is walked
-   * and each non-leaf ancestor is added to `expandedIds`. Cached results
-   * are primed from the returned chain so the rendered tree doesn't need
-   * to refetch.
+   * Expand every ancestor of every node addressed by `pointer`. All roots
+   * whose `ownsPointer` returns true participate; this lets one canonical VFS
+   * resource expand in multiple presentations (for example Markdown + Files).
+   * Leaves are returned in root order so the renderer can scroll the first
+   * visible match deterministically.
    */
   const expandParentsForPointer = useCallback(
-    async (pointer: DockPointer | null): Promise<Browseable | null> => {
-      if (!pointer) return null;
-      const owner = roots.find((r) => r.ownsPointer(pointer));
-      if (!owner) return null;
+    async (pointer: DockPointer | null): Promise<Browseable[]> => {
+      if (!pointer) return [];
+      const owners = roots.filter((r) => r.ownsPointer(pointer));
+      if (owners.length === 0) return [];
 
-      let chain: Browseable[];
-      try {
-        chain = await owner.pathFor(pointer);
-      } catch {
-        return null;
-      }
-      if (chain.length === 0) return null;
+      const leaves: Browseable[] = [];
+      for (const owner of owners) {
+        let chain: Browseable[];
+        try {
+          chain = await owner.pathFor(pointer);
+        } catch {
+          continue;
+        }
+        if (chain.length === 0) continue;
 
-      // Expand every node in the chain whose `hasChildren !== false`.
-      // This keeps editor-file leaves (hasChildren: false) untouched while
-      // ensuring folder leaves auto-expand themselves on deep-link.
-      const nodesToExpand = chain.filter((n) => n.hasChildren !== false);
-      setState((prev) => {
-        const expandedIds = new Set(prev.expandedIds);
-        for (const n of nodesToExpand) expandedIds.add(n.id);
-        return { ...prev, expandedIds };
-      });
+        // Expand every node in the chain whose `hasChildren !== false`.
+        // This keeps editor-file leaves (hasChildren: false) untouched while
+        // ensuring folder leaves auto-expand themselves on deep-link.
+        const nodesToExpand = chain.filter((n) => n.hasChildren !== false);
+        setState((prev) => {
+          const expandedIds = new Set(prev.expandedIds);
+          for (const n of nodesToExpand) expandedIds.add(n.id);
+          return { ...prev, expandedIds };
+        });
 
-      // Load each expandable node; capture the parent-of-leaf's children so
-      // the freshness check below sees them without a stale closure read.
-      const leaf = chain[chain.length - 1];
-      const parent = chain.length >= 2 ? chain[chain.length - 2] : null;
-      let parentChildren: Browseable[] | null = null;
-      for (const node of nodesToExpand) {
-        if (!node.listChildren) continue;
-        const existing = loadStatesRef.current.get(node.id);
-        const children = existing?.status === 'ready' ? existing.children : await loadChildren(node);
-        if (parent && node.id === parent.id) parentChildren = children;
-      }
+        // Load each expandable node; capture the parent-of-leaf's children so
+        // the freshness check below sees them without a stale closure read.
+        const leaf = chain[chain.length - 1];
+        leaves.push(leaf);
+        const parent = chain.length >= 2 ? chain[chain.length - 2] : null;
+        let parentChildren: Browseable[] | null = null;
+        for (const node of nodesToExpand) {
+          if (!node.listChildren) continue;
+          const existing = loadStatesRef.current.get(node.id);
+          const children = existing?.status === 'ready' ? existing.children : await loadChildren(node);
+          if (parent && node.id === parent.id) parentChildren = children;
+        }
 
-      // Deep-link freshness: leaf missing from parent's listing → just-created
-      // file the cached listing pre-dates. Force-refresh past both caches.
-      if (parent && parent.listChildren && parentChildren) {
-        const leafPresent = parentChildren.some((c) => c.id === leaf.id);
-        if (!leafPresent) {
-          inflight.current.delete(parent.id);
-          setLoadState(parent.id, { status: 'loading' });
-          try {
-            const refreshed = await parent.listChildren({ refresh: true });
-            setLoadState(parent.id, { status: 'ready', children: refreshed });
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            setLoadState(parent.id, { status: 'error', message });
+        // Deep-link freshness: leaf missing from parent's listing → just-created
+        // file the cached listing pre-dates. Force-refresh past both caches.
+        if (parent && parent.listChildren && parentChildren) {
+          const leafPresent = parentChildren.some((c) => c.id === leaf.id);
+          if (!leafPresent) {
+            inflight.current.delete(parent.id);
+            setLoadState(parent.id, { status: 'loading' });
+            try {
+              const refreshed = await parent.listChildren({ refresh: true });
+              setLoadState(parent.id, { status: 'ready', children: refreshed });
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              setLoadState(parent.id, { status: 'error', message });
+            }
           }
         }
       }
 
-      return leaf;
+      return leaves;
     },
     // `setLoadState` is stable (useCallback []), so listing it doesn't
     // reintroduce identity churn. `state.loadStates` is deliberately read via

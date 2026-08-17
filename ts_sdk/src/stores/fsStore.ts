@@ -1,7 +1,7 @@
 import { enableMapSet } from 'immer';
 import { immer } from 'zustand/middleware/immer';
 import { createStore } from 'zustand/vanilla';
-import type { FileUpload, FSItem, TypeId } from '../index';
+import type { FileUpload, FSEntry, TypeId } from '../index';
 import { fsManager } from '../services/fsService';
 import { dataContext } from '../FlowSync/context';
 
@@ -24,7 +24,7 @@ export interface ContentCache {
 }
 
 export interface BrowseCache {
-  items: FSItem[];
+  items: FSEntry[];
   path: string;
   totalSize: number;
   itemCount: number;
@@ -41,6 +41,10 @@ export interface FSStoreState {
   contentCache: Map<string, ContentCache>;
   existsCache: Map<string, boolean>;
   browseCache: Map<string, BrowseCache>;
+  /** Monotonic invalidation revision per compute-node/path. Ancestor paths are
+   * bumped with their changed child so folder-backed viewers can subscribe to
+   * one subtree token without owning a second watcher. */
+  pathRevisions: Map<string, number>;
 
   // Operation states (loading/error per operation)
   operations: Map<string, OperationState>;
@@ -68,6 +72,9 @@ export interface FSStoreState {
    * Get content from cache only (no fetch)
    */
   getContentFromCache: (typeid: TypeId, path: string) => ContentCache | null;
+
+  /** Current invalidation revision for a file or folder path. */
+  getRevision: (typeid: TypeId, path: string) => number;
 
   /**
    * List directory contents (cached)
@@ -173,6 +180,11 @@ function getCacheKey(typeid: TypeId, path: string): string {
   return `${typeid.toString()}:${normalizePath(path)}`;
 }
 
+function getRevisionKey(typeid: TypeId, path: string): string {
+  const normalized = normalizePath(path).replace(/^\/+/, '') || '/';
+  return `${typeid.toString()}:${normalized}`;
+}
+
 function normalizePath(path: string): string {
   // Treat empty, '.', and '/' all as root
   if (!path || path === '.') return '/';
@@ -196,6 +208,7 @@ export const fsStore = createStore<FSStoreState>()(
     contentCache: new Map(),
     existsCache: new Map(),
     browseCache: new Map(),
+    pathRevisions: new Map(),
     operations: new Map(),
 
     // ============================================================
@@ -273,6 +286,9 @@ export const fsStore = createStore<FSStoreState>()(
       // Try both text and blob variants
       return get().contentCache.get(`${cacheKey}:text`) || get().contentCache.get(`${cacheKey}:blob`) || null;
     },
+
+    getRevision: (typeid: TypeId, path: string) =>
+      get().pathRevisions.get(getRevisionKey(typeid, path)) ?? 0,
 
     listDirectory: async (typeid: TypeId, path: string) => {
       const cacheKey = getCacheKey(typeid, path);
@@ -633,10 +649,24 @@ export const fsStore = createStore<FSStoreState>()(
       const cacheKey = getCacheKey(typeid, path);
 
       set((state) => {
+        // One invalidation signal drives both exact-file and folder-backed
+        // viewers. Bump the changed path and each ancestor through root.
+        let revisionPath = normalizePath(path).replace(/^\/+/, '') || '/';
+        while (true) {
+          const revisionKey = getRevisionKey(typeid, revisionPath);
+          state.pathRevisions.set(revisionKey, (state.pathRevisions.get(revisionKey) ?? 0) + 1);
+          if (revisionPath === '/') break;
+          revisionPath = getParentPath(revisionPath);
+        }
         if (cacheType === 'content' || cacheType === 'all') {
-          // Remove both text and blob variants
-          state.contentCache.delete(`${cacheKey}:text`);
-          state.contentCache.delete(`${cacheKey}:blob`);
+          // A remote write may arrive while Monaco still owns an unsaved
+          // buffer. Invalidating that dirty cache silently discards the user's
+          // bytes. Clean entries are refetched; dirty entries remain the local
+          // source until the user saves or discards them.
+          const textKey = `${cacheKey}:text`;
+          const blobKey = `${cacheKey}:blob`;
+          if (!state.contentCache.get(textKey)?.isDirty) state.contentCache.delete(textKey);
+          if (!state.contentCache.get(blobKey)?.isDirty) state.contentCache.delete(blobKey);
         }
         if (cacheType === 'exists' || cacheType === 'all') {
           state.existsCache.delete(cacheKey);
@@ -655,10 +685,12 @@ export const fsStore = createStore<FSStoreState>()(
       const prefix = typeid.toString();
 
       set((state) => {
+        const rootKey = getRevisionKey(typeid, '/');
+        state.pathRevisions.set(rootKey, (state.pathRevisions.get(rootKey) ?? 0) + 1);
         // Remove all cache entries for this entity
-        for (const key of state.contentCache.keys()) {
+        for (const [key, cache] of state.contentCache.entries()) {
           if (key.startsWith(prefix)) {
-            state.contentCache.delete(key);
+            if (!cache.isDirty) state.contentCache.delete(key);
           }
         }
         for (const key of state.existsCache.keys()) {
@@ -679,6 +711,7 @@ export const fsStore = createStore<FSStoreState>()(
         state.contentCache.clear();
         state.existsCache.clear();
         state.browseCache.clear();
+        state.pathRevisions.clear();
         state.operations.clear();
       });
     },

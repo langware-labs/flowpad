@@ -45,7 +45,7 @@ export class SkillManager {
       return result.items
         .filter((item) => item.is_dir)
         .map((item) => {
-          // FSItem.name returns full relative path, extract just the folder name
+          // FSEntry.name returns full relative path, extract just the folder name
           const folderName = item.name.split('/').pop() || item.name;
           return {
             name: folderName,

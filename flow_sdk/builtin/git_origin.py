@@ -16,9 +16,10 @@ from __future__ import annotations
 
 import os
 import uuid
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Literal, Optional
 
+from flow_sdk.assets.git_origin import PortableGitOrigin as PortableGitOrigin
 from flow_sdk.builtin.fs_origin import FSOrigin
 from flow_sdk.builtin.fs_origin import is_safe_rel_path as is_safe_rel_path  # canonical home; re-exported
 from flow_sdk.fs_store.identifier import mint_uuid
@@ -103,6 +104,33 @@ class GitOrigin(FSOrigin):
             return True, None
         except Exception:
             return False, "Repository origin does not match"
+
+    def matches_checkout(self, repo_path, *, require_branch: bool = False) -> bool:
+        """``matches_repo`` without the reason half — the common predicate form."""
+        return self.matches_repo(repo_path, require_branch=require_branch)[0]
+
+    def next_clone_target(self) -> Path:
+        """Where a fresh checkout of this origin belongs in the local workspace.
+
+        Single owner of recipient-side placement: derives the folder leaf from
+        the clone URL, sanitizes it, and suffixes on collision — reusing an
+        already-matching ``<leaf>-N`` rather than cloning a duplicate.
+        """
+        from flow_sdk.config import AGENT_MOUNT_FOLDER  # noqa: PLC0415
+        from flow_sdk.utils.git import derive_repo_leaf_from_url  # noqa: PLC0415
+
+        base = Path(AGENT_MOUNT_FOLDER)
+        base.mkdir(parents=True, exist_ok=True)
+        leaf = derive_repo_leaf_from_url(self.clone_url()) or (self.name or "repo").removesuffix(".git")
+        leaf = "".join(c if c.isalnum() or c in ("-", "_", ".") else "-" for c in leaf).strip("-") or "repo"
+        candidate = base / leaf
+        n = 2
+        while candidate.exists():
+            if self.matches_checkout(candidate, require_branch=True):
+                return candidate
+            candidate = base / f"{leaf}-{n}"
+            n += 1
+        return candidate
 
     @classmethod
     def for_asset_path(cls, asset_root: str, repo_cache: Optional[dict] = None) -> Optional["GitOrigin"]:

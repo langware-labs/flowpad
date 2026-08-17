@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { Layout, TypeId, ViewType } from '@sdk';
+import { Layout, PageId, TypeId, ViewType } from '@sdk';
 import { projectScope } from '@src/lib/scope-filter';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { CAPABILITY_PARAM, DockPointer } from '@src/navigation/DockPointer';
+import { ViewMode } from '@src/contexts/view-mode-context';
 
 const LAYOUTS = [Layout.DOCK, Layout.DEV, Layout.WIN] as const;
 const BASE_PATHS = [
@@ -25,10 +26,7 @@ function expectRootUrlRoundTrip(pointer: DockPointer): void {
 function expectBaseUrlRoundTrip(pointer: DockPointer, currentPath: string): void {
   const url = pointer.toUrl(currentPath);
   const rebuiltUrl = DockPointer.fromUrl(url).toUrl(url);
-  expect(
-    rebuiltUrl,
-    `Expected ${pointer.toString()} to round-trip under base path ${currentPath}`,
-  ).toBe(url);
+  expect(rebuiltUrl, `Expected ${pointer.toString()} to round-trip under base path ${currentPath}`).toBe(url);
 }
 
 function seededRandom(seed: number): () => number {
@@ -126,6 +124,16 @@ function representativePointers(): DockPointer[] {
     DockPointer.forWiki('Plan A / Research? yes', Layout.DEV, '@local'),
     DockPointer.forProject(project, { roomId: U('5678'), tab: agenticProcess }),
     DockPointer.forProject(project, { conversationId: conversation }, Layout.WIN),
+    // A vibe-hosted document: the host is stored as an option but SERIALIZED as
+    // `/process/<typeid>/display/` path segments, so the codec is asymmetric by
+    // construction — exactly what this round-trip exists to catch.
+    DockPointer.rebaseAssetsOntoProject(
+      DockPointer.forAssetEditor('markdown', `/Users/me/docs/hosted note.md`),
+      project,
+    ).withHost(`agentic_process-${U('h057')}`),
+    DockPointer.forProject(project)
+      .withHost(`agentic_process-${U('h058')}`)
+      .withViewMode(ViewMode.Vibe),
     DockPointer.forInbox({ conversationId: conversation, messageId: U('feed') }),
     DockPointer.forConversation(conversation, { messageId: U('babe') }, Layout.WIN),
     DockPointer.forTasks(U('a1fa'), { conversationId: conversation, layout: Layout.DEV }),
@@ -150,6 +158,10 @@ function representativePointers(): DockPointer[] {
     new DockPointer(ViewType.MACHINE, 'processes'),
     new DockPointer(ViewType.TRIGGERS, 'trigger/set?name=a+b'),
     new DockPointer(ViewType.CRON, 'cron-job-1'),
+    // Page dimension: an explicit desk page (never emits the segment) and a
+    // non-desk hub page (emits /dock/hub/…) both round-trip through the URL.
+    new DockPointer(ViewType.CONVERSATION, conversation, {}, Layout.DOCK, PageId.DESK),
+    new DockPointer(ViewType.CONVERSATION, conversation, {}, Layout.WIN, PageId.HUB),
   ];
 }
 
@@ -179,5 +191,26 @@ describe('DockPointer URL round trip', () => {
       expectRootUrlRoundTrip(pointer);
       expectBaseUrlRoundTrip(pointer, pick(rand, BASE_PATHS));
     }
+  });
+});
+
+describe('Capabilities dock carries the capability the user asked for', () => {
+  const codexDock = () => DockPointer.forTab(ViewType.CAPABILITIES, { [CAPABILITY_PARAM]: 'harness.codex.cli' });
+
+  it('reads the intent back off the URL so the view can re-probe that kind', () => {
+    const rebuilt = DockPointer.fromUrl(codexDock().toUrl());
+
+    expect(rebuilt.capabilityKind).toBe('harness.codex.cli');
+    expectRootUrlRoundTrip(codexDock());
+  });
+
+  it('reports no intent when the param is absent', () => {
+    expect(DockPointer.forTab(ViewType.CAPABILITIES).capabilityKind).toBeNull();
+  });
+
+  it('keeps one Capabilities tab regardless of the intent', () => {
+    // The param is transient state, not tab identity — arriving from "Start
+    // Codex" must reuse the Capabilities tab rather than mint a second one.
+    expect(codexDock().tabHash).toBe(DockPointer.forTab(ViewType.CAPABILITIES).tabHash);
   });
 });

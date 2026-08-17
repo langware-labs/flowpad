@@ -3,12 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useLingui } from '@lingui/react/macro';
 import { useRecordSearch } from '@src/hooks/use-record-search';
 import { useMultiTypeSearch } from '@src/components/spotlight/useMultiTypeSearch';
+import { activateSearchRow } from '@src/components/spotlight/activate-row';
 import { searchResultToRow, searchResultToTerminalRow } from '@src/components/spotlight/adapters';
 import { SpotlightResultRowContent } from '@src/components/spotlight/SpotlightResultRow';
 import { EntityTypePopover } from '@src/components/spotlight/EntityTypePopover';
 import { ScopeFilterPopover } from '@src/components/spotlight/ScopeFilterPopover';
 import type { SpotlightRow } from '@src/components/spotlight/types';
-import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useDefaultScopeFilter } from '@src/hooks/use-default-scope-filter';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -98,11 +98,7 @@ export function useNavigatorSearch(config: NavigatorSearchConfig | null | undefi
     async (row: SpotlightRow) => {
       setOpening(row.key);
       try {
-        // Prefer the row's own activator (e.g. terminal-profile rows resume the
-        // live PTY); fall back to the shared record-type-nav router (transcript
-        // lens etc.) when it signals it didn't handle the click.
-        const handled = row.onActivate ? await row.onActivate(navigation) : false;
-        if (!handled && row.searchResult) await navigateToResult(row.searchResult, navigation);
+        await activateSearchRow(row, navigation);
         close();
       } finally {
         setOpening(null);
@@ -128,7 +124,7 @@ export function useNavigatorSearch(config: NavigatorSearchConfig | null | undefi
 
   const headerRow = (
     <>
-      <Search className="ml-0.5 h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+      <Search className="ms-0.5 h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
       <input
         ref={inputRef}
         value={query}
@@ -159,9 +155,7 @@ export function useNavigatorSearch(config: NavigatorSearchConfig | null | undefi
         </PopoverTrigger>
         <PopoverContent align="end" className="w-64 space-y-2 p-2" onOpenAutoFocus={(e) => e.preventDefault()}>
           <div>
-            <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              {t`Type`}
-            </div>
+            <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{t`Type`}</div>
             <EntityTypePopover value={entityType} onChange={setEntityType} allowedEntityTypes={recordTypes} />
           </div>
           <div>
@@ -201,7 +195,7 @@ export function useNavigatorSearch(config: NavigatorSearchConfig | null | undefi
             key={row.key}
             type="button"
             onClick={() => void handleSelect(row)}
-            className="flex w-full items-center gap-2 px-2 py-1.5 text-left hover:bg-muted"
+            className="flex w-full items-center gap-2 px-2 py-1.5 text-start hover:bg-muted"
             data-testid="navigator-search-result"
             data-record-type={row.recordType}
           >

@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { APIEntity, getMembers, type Participant, type TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
+import {
+  useMembershipAvailability,
+  type MembershipReason,
+} from '@src/hooks/use-membership-availability';
 
 /** Module-level stable empty result so callers' equality checks (and any
  *  downstream useMemo deps) don't churn while the entity is still loading. */
@@ -24,20 +28,35 @@ function _sharedGetMembers(typeId: TypeId): Promise<Participant[]> {
 }
 
 export interface UseMembersResult {
+  /** The entity itself, already resolved here for the roster — exposed so
+   *  callers needing it (e.g. to publish before minting an invite link) don't
+   *  mount a second ``useEntity`` for the same typeId. */
+  entity: APIEntity<any> | null | undefined;
   /** Members + roles. Sourced from the local entity cache, then refreshed
    *  on mount via the generic ``members`` action (which the local server
    *  reflects to the hub when ``entity.remote=true``). */
   members: Participant[];
-  /** True while the on-mount refresh is in flight. */
-  loading: boolean;
   /** True once the hub fetch has resolved at least once for this typeId
    *  (success OR failure — both leave `loading=false` and prove the roster
-   *  is no longer "unknown"). Distinct from `members.length > 0` which
-   *  can't tell "empty roster" from "fetch hasn't returned yet". */
+   *  is no longer "unknown"), OR membership is unavailable (nothing to wait
+   *  for). Distinct from `members.length > 0` which can't tell "empty roster"
+   *  from "fetch hasn't returned yet". */
   ready: boolean;
   /** Last fetch error, or null. ``members`` still falls through to the
    *  entity cache on failure so the UI degrades gracefully. */
   error: Error | null;
+  /** True while a refresh is in flight over an already-shown cache — the header
+   *  shows "updating…". */
+  updating: boolean;
+  /** True when signed in but the last refresh FAILED (hub unreachable): the UI
+   *  shows the cached roster + "can't update — showing last synced". Never a
+   *  sign-in prompt (the user is already authenticated). */
+  stale: boolean;
+  /** False when membership can't be used on this client (not signed in, or Local
+   *  mode). Surfaces such that every members surface can disable + branch. */
+  available: boolean;
+  /** Why membership is/ isn't available — drives sign-in vs Local-mode copy. */
+  reason: MembershipReason;
   /** Re-fetch via ``getMembers``. Caller uses this after actions that may
    *  have changed membership (invite, leave, role change). */
   refresh: () => Promise<void>;
@@ -67,12 +86,14 @@ export interface UseMembersResult {
  */
 export function useMembers(typeId: TypeId | null): UseMembersResult {
   const { data: entity } = useEntity<APIEntity<any>>(typeId);
+  const { available, reason } = useMembershipAvailability();
   const [refreshed, setRefreshed] = useState<Participant[] | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<Error | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!typeId) return;
+    // Membership is 100% hub-driven — with no hub there is nothing to refresh.
+    if (!typeId || !available) return;
     setLoading(true);
     try {
       const fresh = await _sharedGetMembers(typeId);
@@ -83,16 +104,20 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
     } finally {
       setLoading(false);
     }
-  }, [typeId]);
+  }, [typeId, available]);
 
   // Cancel-on-unmount + cancel-on-typeId-change: a late-arriving response
   // for typeId A must NOT call setRefreshed against typeId B (cross-tenant
   // roster bleed). The cancelled flag closes over the effect run, so the
   // setter no-ops once the cleanup ran.
   useEffect(() => {
-    if (!typeId) {
+    // Skip the fetch entirely when there's no typeId or no hub — don't even
+    // touch the shared in-flight map. An unavailable state clears any prior
+    // fetch so a sign-out immediately drops to the disabled surface.
+    if (!typeId || !available) {
       setRefreshed(null);
       setError(null);
+      setLoading(false);
       return;
     }
     let cancelled = false;
@@ -114,7 +139,7 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
     return () => {
       cancelled = true;
     };
-  }, [typeId]);
+  }, [typeId, available]);
 
   const addMembers = useCallback(
     async (emails: string[]) => {
@@ -158,21 +183,40 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
     [entity, refresh],
   );
 
-  // Live entity roster wins once it exists — the entity cache is kept fresh
-  // by data_ops (membership-change fanout frames and list-refresh upserts now
-  // carry ``participants``), so it updates on every membership change without
-  // a refetch. The one-shot hub fetch covers the cold cache and roster-less
-  // entity types (org/team keep no local participants). Entities without a
-  // ``participants`` field surface as the shared EMPTY_MEMBERS constant so
-  // the array identity is stable.
-  const cached = (entity as any)?.participants as Participant[] | undefined;
-  const members: Participant[] =
-    Array.isArray(cached) && cached.length > 0 ? cached : (refreshed ?? (EMPTY_MEMBERS as Participant[]));
-  // `ready` is "the hub has answered for this typeId at least once" — both
-  // success and explicit failure count, so a sustained outage still unblocks
-  // UI that gates on rosterReady (e.g. the unresolved-sender alert label)
-  // instead of stalling on loading forever.
-  const ready = useMemo(() => refreshed !== null || error !== null, [refreshed, error]);
+  // Stale-while-revalidate: the HUB answer wins the moment it arrives. Until
+  // then, paint the locally-cached roster (``Entity.members``, kept warm by the
+  // fanout for conversations and by the last reflect for everything else) so the
+  // list shows instantly. On a refresh failure we keep the cache (stale) rather
+  // than blanking. This is the inverse of the old "cache wins when non-empty"
+  // rule — a roster the hub has since emptied now correctly clears.
+  const cached = (entity as any)?.members as Participant[] | undefined;
+  const cachedMembers = Array.isArray(cached) ? cached : null;
+  const members: Participant[] = refreshed ?? cachedMembers ?? (EMPTY_MEMBERS as Participant[]);
+  // "updating…" while a refresh runs over an already-shown cache (the internal
+  // ``loading`` state is exposed under the SWR-flavored name).
+  const updating = loading;
+  // Signed in but the refresh failed → show cached + "can't update".
+  const stale = available && error !== null;
+  // `ready` is "the hub has answered at least once" (success OR failure), OR
+  // membership is unavailable (nothing to wait for) — so UI gating on
+  // rosterReady never stalls on a logged-out / offline surface.
+  const ready = useMemo(
+    () => refreshed !== null || error !== null || !available,
+    [refreshed, error, available],
+  );
 
-  return { members, loading, ready, error, refresh, addMembers, removeMember, setRole };
+  return {
+    entity,
+    members,
+    ready,
+    error,
+    updating,
+    stale,
+    available,
+    reason,
+    refresh,
+    addMembers,
+    removeMember,
+    setRole,
+  };
 }

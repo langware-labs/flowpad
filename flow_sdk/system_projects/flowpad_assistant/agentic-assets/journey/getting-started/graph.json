@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "id": "5eaa7e57-1111-4222-8333-444455556666",
+  "name": "Getting started",
+  "description": "Build your first vibe agent: a shopping master that finds the best deals — created, instructed, and put to work, step by step.",
+  "enabled": true,
+  "auto_launch": false,
+  "config": {
+    "deadline_s": 2592000,
+    "retention_runs": 3
+  },
+  "nodes": [
+    {
+      "id": "step0",
+      "node_type": "guided_step",
+      "name": "Open your project page",
+      "node_data": {
+        "status_line": "Click your highlighted project name in the footer to open its page.",
+        "present": {
+          "dock": {
+            "kind": "root"
+          },
+          "highlight": "ProjectPage"
+        },
+        "waitFor": [
+          {
+            "click": "ProjectPage"
+          }
+        ]
+      }
+    },
+    {
+      "id": "step2",
+      "node_type": "guided_step",
+      "name": "Create a sub agent",
+      "node_data": {
+        "group": "Create your vibe agent",
+        "status_line": "Click the highlighted Sub agent tile and name it \"shopping-master\".",
+        "present": {
+          "dock": {
+            "kind": "root"
+          },
+          "highlight": "Sub agents"
+        },
+        "waitFor": [
+          {
+            "click": "Sub agents"
+          }
+        ]
+      }
+    },
+    {
+      "id": "step3",
+      "node_type": "guided_step",
+      "name": "Write the instructions",
+      "node_data": {
+        "group": "Create your vibe agent",
+        "status_line": "Click \"Fill text\" to write the instructions, then Next.",
+        "present": {
+          "dock": {
+            "kind": "root"
+          },
+          "highlight": "AgentInstructions"
+        },
+        "act": {
+          "kind": "fill",
+          "target": "AgentInstructions",
+          "text": "You are shopping master, find the best deal, always show product name and price"
+        },
+        "waitFor": [
+          {
+            "event": {
+              "tag": "app.journey.act.done",
+              "target": "fill:AgentInstructions"
+            }
+          },
+          {
+            "manual": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "step3b",
+      "node_type": "guided_step",
+      "name": "Use your agent",
+      "node_data": {
+        "status_line": "Click the highlighted Use agent button — it loads your agent into a live vibe workspace.",
+        "present": {
+          "dock": {
+            "kind": "root"
+          },
+          "highlight": "UseAgent"
+        },
+        "group": "Use your vibe agent",
+        "waitFor": [
+          {
+            "click": "UseAgent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "step5",
+      "node_type": "guided_step",
+      "name": "Ask it to find a smartphone",
+      "node_data": {
+        "group": "Use your vibe agent",
+        "status_line": "Ask your shopping master to search for a smartphone.",
+        "present": {
+          "dock": {
+            "kind": "root"
+          }
+        },
+        "waitFor": [
+          {
+            "entity": {
+              "type": "agentic_process",
+              "match": {
+                "status": "running"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "from": {
+        "node": "step0",
+        "event": "done"
+      },
+      "to": {
+        "node": "step2"
+      }
+    },
+    {
+      "id": "e2",
+      "from": {
+        "node": "step2",
+        "event": "done"
+      },
+      "to": {
+        "node": "step3"
+      }
+    },
+    {
+      "id": "e3",
+      "from": {
+        "node": "step3",
+        "event": "done"
+      },
+      "to": {
+        "node": "step3b"
+      }
+    },
+    {
+      "id": "e3b5",
+      "from": {
+        "node": "step3b",
+        "event": "done"
+      },
+      "to": {
+        "node": "step5"
+      }
+    }
+  ],
+  "start": {
+    "kind": "root"
+  }
+}

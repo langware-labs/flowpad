@@ -12,8 +12,12 @@
 
 import { EventEmitter } from 'events';
 import apiClient from '../client';
+import { sdkConfig } from '../config/index';
+import { API_PREFIX } from '../config/SDKConfig';
+import { isHubOnly } from '../utils/hub-runtime';
 import { User } from '../entities/user';
 import { createCloudLoginFailedWarning } from '../models/UserWarning';
+import { resolveLoginCallbackUrl } from './login_callback';
 import type { CloudConnectionStatusMessage, CloudLoginStatusMessage, OAuthMessage } from '../websocket';
 import { OAUTH_PROVIDERS } from './oauth/oauth-service';
 import { privacyManager } from './privacy_mode';
@@ -23,6 +27,7 @@ import {
   ConnectionSlot,
   HubConnectionStatus,
   HubLoginStatus,
+  LocalConnectionStatus,
   LoginSlot,
   isHubConnected,
   makeConnectionSlot,
@@ -61,6 +66,7 @@ export type HubWsStatus = HubConnectionStatus;
 interface DesktopInfoSeed {
   cloud_login_available?: boolean;
   cloud_url?: string | null;
+  cloud_app_url?: string | null;
   // New nested shape (preferred).
   login?: { status: HubLoginStatus; user: Record<string, unknown> | null; reason: string | null };
   connection?: { status: HubConnectionStatus; error: string | null };
@@ -69,6 +75,12 @@ interface DesktopInfoSeed {
   hub_ws_verified?: boolean;
   hub_ws_status?: HubConnectionStatus;
   hub_ws_error?: string | null;
+}
+
+/** The cloud-relevant slice of the graph bootstrap response. */
+export interface CloudBootstrapSeed {
+  user?: User | Record<string, unknown> | null;
+  desktop_info?: DesktopInfoSeed | null;
 }
 
 export interface CloudStatusData extends DesktopInfoSeed {
@@ -107,6 +119,12 @@ export interface CloudWsControlResult {
   };
 }
 
+/** Convert the SDK API base to the browser-app origin used for dock links. */
+export function hubAppUrlFromApiUrl(apiUrl: string | null | undefined): string {
+  const normalized = (apiUrl ?? '').replace(/\/+$/, '');
+  return normalized.endsWith(API_PREFIX) ? normalized.slice(0, -API_PREFIX.length) : normalized;
+}
+
 function legacyConnectionStatus(d: Partial<DesktopInfoSeed | CloudWsControlResult>): HubConnectionStatus | null {
   if (d.hub_ws_status) return d.hub_ws_status as HubConnectionStatus;
   if (d.hub_ws_verified) return 'verified';
@@ -118,20 +136,63 @@ class CloudManager extends EventEmitter {
   private _login: LoginSlot<HubLoginStatus> = makeLoginSlot<HubLoginStatus>('logged_out');
   private _currentUser: User | null = null;
   private _cloudUrl = '';
+  private _cloudAppUrl = '';
   private _connection: ConnectionSlot<HubConnectionStatus> = makeConnectionSlot<HubConnectionStatus>('disconnected');
   private _lastHubError: HubClientErrorInfo | null = null;
-  private _pending: { resolve: (r: CloudLoginResult) => void; reject: (e: Error) => void; off: () => void } | null = null;
+  private _pending: { resolve: (r: CloudLoginResult) => void; reject: (e: Error) => void; off: () => void } | null =
+    null;
   private _initialized = false;
 
-  /** Seed initial state from bootstrapInfo.desktop_info. Called once from main.ts. */
-  async bootstrap(seed: DesktopInfoSeed | null | undefined) {
+  /** Seed initial state from the graph bootstrap response. Called once from main.ts. */
+  async bootstrap(bootstrap: CloudBootstrapSeed) {
     if (this._initialized) return;
     this._initialized = true;
+
+    if (isHubOnly()) {
+      // Hub-mode API traffic uses the configured hub origin directly. Keep the
+      // status tooltip truthful when the UI is served by a separate Vite port.
+      this._cloudUrl = sdkConfig.apiUrl;
+      // In Hub mode the browser is already on the application origin. This is
+      // also correct for the mandated split local harness (UI :4098, API
+      // :8093), where deriving an app URL from the API origin would be wrong.
+      this._cloudAppUrl = window.location.origin;
+
+      const { ConnectionManager } = await import('../websocket');
+      const cm = ConnectionManager.getInstance();
+      cm.on('connection_status_changed', (slot: ConnectionSlot<LocalConnectionStatus>) => {
+        this._applyConnectionStatus(slot.status, slot.error);
+      });
+      const localConnection = cm.connectionSlot;
+      this._applyConnectionStatus(localConnection.status, localConnection.error, false);
+
+      if (bootstrap.user) {
+        await this._setLoggedIn(bootstrap.user as unknown as Record<string, unknown>);
+      } else {
+        await this._setLoggedOut();
+        // The hub surface has no anonymous mode: a session-less load (first
+        // visit, expired or cleared cookie, post-logout reload) goes straight
+        // to the provider login instead of rendering a signed-out shell.
+        window.location.assign(this._hubLoginUrl());
+      }
+      return;
+    }
+
+    const seed = bootstrap.desktop_info;
     this._cloudUrl = seed?.cloud_url ?? '';
+    this._cloudAppUrl = seed?.cloud_app_url ?? hubAppUrlFromApiUrl(this._cloudUrl);
 
     if (seed?.login) {
-      this._applyLoginStatus(seed.login.status, seed.login.user, seed.login.reason, false);
+      // Adopt the identity at FIRST PAINT, not one round trip later. This branch
+      // used to call `_applyLoginStatus` directly, which records a status and
+      // leaves `dataContext.cloudUser` null — and the UI renders
+      // `cloudUser ?? localUser`, so a cloud sandbox painted the template's own
+      // "E2B Local" account until an async /cloud/status corrected it. On a cold
+      // resume that call loses the race against a still-waking backend.
+      await this._applyLoginBlock(seed.login, false);
     } else if (seed?.cloud_login_available) {
+      // No identity to adopt: an older server that only answers "could you log
+      // in from here". Status only, user null — the shape that caused the bug
+      // above, kept solely so a new client still works against an old server.
       this._applyLoginStatus('logged_in', null, null, false);
     }
     if (seed?.connection) {
@@ -171,12 +232,69 @@ class CloudManager extends EventEmitter {
     // Resync after a local-WS reconnect: connection-status broadcasts that
     // landed while the socket was down would otherwise be lost forever,
     // leaving the avatar stuck on whatever state we saw last.
-    cm.on('on_reconnected', () => { void this._refreshFromStatus(); });
+    cm.on('on_reconnected', () => {
+      void this._refreshFromStatus();
+    });
 
-    if (this.isLoggedIn) await this._refreshFromStatus();
+    // Always verify login on load, even when the bootstrap seed says logged-out:
+    // a freshly-booted sandbox whose auto-login failed seeds logged-out and would
+    // otherwise never run a check, so the footer cloud-disconnected warning (with
+    // its sign-in action) wouldn't surface. This IS the "login check first" on open.
+    await this._refreshFromStatus();
   }
 
-  async login(): Promise<CloudLoginResult> {
+  /**
+   * Adopt a `{status, user, reason}` login block — the shape both the graph
+   * bootstrap seed and `GET /cloud/status` carry, from the same server builder.
+   *
+   * One handler for both, because the alternative is what caused the bug this
+   * exists to fix: two places deciding "who am I" drift, and the one that drifted
+   * only applied a STATUS while leaving `dataContext.cloudUser` empty — so the UI
+   * fell back to the box's own local account.
+   *
+   * `_setLoggedIn` is the load-bearing call: `_applyLoginStatus` sets the login
+   * slot and nothing else, so a `logged_in` block WITH a user must not go through
+   * it alone.
+   */
+  private async _applyLoginBlock(
+    login: { status: HubLoginStatus; user: Record<string, unknown> | null; reason: string | null },
+    emit = true,
+  ): Promise<void> {
+    if (login.status === 'logged_in' && login.user) {
+      await this._setLoggedIn(login.user);
+    } else if (login.status === 'logged_out') {
+      await this._setLoggedOut();
+    } else {
+      this._applyLoginStatus(login.status, login.user, login.reason, emit);
+    }
+  }
+
+  /** Hub-mode login URL. Carries where to come back to as ``target_path`` so the
+   *  provider round-trip lands the browser back there — the hub validates the
+   *  value against its open-redirect allowlist (``AuthProvider.safe_target_path``)
+   *  and falls back to `/` otherwise.
+   *
+   *  That is usually the current SPA location, but NOT on the load that follows
+   *  an email verification: there the current location is the app root Auth0
+   *  returns every verified account to, and using it stranded a first-time
+   *  invitee on hub home holding a role nothing had told them about. Measured on
+   *  staging — the invitation's accept url rode `target_path` all the way to
+   *  `email-verification.html`, which stored it, and this line then replaced it
+   *  with `/?success=true&message=…`. `resolveLoginCallbackUrl` is what hands it
+   *  back. */
+  private _hubLoginUrl(): string {
+    const here = `${window.location.pathname || ''}${window.location.search || ''}`;
+    const target = resolveLoginCallbackUrl(here);
+    if (!target || target === '/') return `${API_PREFIX}/login`;
+    return `${API_PREFIX}/login?${new URLSearchParams({ target_path: target })}`;
+  }
+
+  async login(): Promise<CloudLoginResult | void> {
+    if (isHubOnly()) {
+      window.location.assign(this._hubLoginUrl());
+      return;
+    }
+
     // Hard gate: in Local (private) data-privacy mode the cloud is off-limits.
     // The UI guard + hidden login button handle the user-facing copy; this is
     // the defensive SDK-side check (the backend 403s independently).
@@ -221,7 +339,30 @@ class CloudManager extends EventEmitter {
     return promise;
   }
 
-  async logout(): Promise<void> {
+  /**
+   * @param returnTo Hub mode only: where the provider sends the browser after
+   *   logout (e.g. a login-with-callback URL so an invitee can re-auth as the
+   *   correct account and land back on the accept flow). The hub validates it
+   *   server-side. Ignored on the desktop path.
+   */
+  async logout(returnTo?: string): Promise<void> {
+    if (isHubOnly()) {
+      // Hub server: logout MUST be a top-level navigation through the hub's
+      // redirect chain, not an XHR. The chain is hub /logout (clears the hub
+      // cookies) → Auth0 /v2/logout (ends the IdP SSO session) → returnTo.
+      // An XHR can't ride the cross-origin Auth0 hop — the browser won't
+      // send Auth0's cookies on it — so the SSO session survived and the
+      // very next /login silently re-authenticated the same account: logout
+      // appeared to do nothing (landed back on home, no login form), and the
+      // wrong-account re-auth flow could never switch users. Custom-JWT hubs
+      // ride the same chain, just without the IdP hop. `returnTo` goes to
+      // the hub as a query param — the server owns its validation/wrapping.
+      await this._setLoggedOut();
+      const qs = returnTo ? `?${new URLSearchParams({ returnTo })}` : '';
+      window.location.assign(`${API_PREFIX}/logout${qs}`);
+      return;
+    }
+
     const data = await apiClient.post<{ cloud_logout_url: string }>('/cloud/logout');
     // Server broadcasts LOGGED_OUT + DISCONNECTED; mirror immediately for snappy UI.
     await this._setLoggedOut();
@@ -303,6 +444,13 @@ class CloudManager extends EventEmitter {
   get cloudUrl() {
     return this._cloudUrl;
   }
+  get cloudAppUrl() {
+    return this._cloudAppUrl;
+  }
+  /** Manual bridge controls exist only on the desktop backend. */
+  get connectionControlsAvailable() {
+    return !isHubOnly();
+  }
 
   // New canonical getters
   get loginStatus(): HubLoginStatus {
@@ -336,6 +484,7 @@ class CloudManager extends EventEmitter {
       logged_in: this.isLoggedIn,
       user: this._currentUser ? (this._currentUser as unknown as Record<string, unknown>) : null,
       cloud_url: this._cloudUrl,
+      cloud_app_url: this._cloudAppUrl,
       // new nested
       login: { status: this._login.status, user: this._login.user, reason: this._login.reason },
       connection: { status: this._connection.status, error: this._connection.error },
@@ -396,7 +545,13 @@ class CloudManager extends EventEmitter {
 
   private async _setLoggedIn(userDict: Record<string, unknown>): Promise<User> {
     const dm = await _dataManager();
-    const cloudUser = dm.updateEntityFromJson<User>({ type: User.type, ...userDict });
+    // `type` LAST, deliberately. The hub answers /current-user with the principal
+    // it actually authenticated, which for a deployed agent is `"type": "identity"`
+    // — a type `EntityFactory` has no constructor for, so a spread landing after
+    // `type` makes this throw and the sandbox silently falls back to its own local
+    // user. The cloud principal is always modelled here as a User; only its FIELDS
+    // (name, avatar, id) vary by principal kind.
+    const cloudUser = dm.updateEntityFromJson<User>({ ...userDict, type: User.type });
     if (this.isLoggedIn && this._currentUser?.typeId?.toString() === cloudUser.typeId?.toString()) {
       return this._currentUser;
     }
@@ -438,11 +593,7 @@ class CloudManager extends EventEmitter {
   }
 
   /** Apply a new connection slot value. Emits connection_status_changed + cloud_status_changed. */
-  private _applyConnectionStatus(
-    status: HubConnectionStatus,
-    error: string | null,
-    emit = true,
-  ) {
+  private _applyConnectionStatus(status: HubConnectionStatus, error: string | null, emit = true) {
     const prev = this._connection.status;
     const prevError = this._connection.error;
     this._connection = { status, error };
@@ -469,9 +620,17 @@ class CloudManager extends EventEmitter {
   }
 
   private async _refreshFromStatus(): Promise<CloudStatusData | null> {
+    // No cloud layer to refresh in these modes, so don't hit `/cloud/status`:
+    //  - Hub mode: the hub backend has no such route (404).
+    //  - Local (private) data-privacy mode: the cloud is off-limits by contract
+    //    (see login()'s hard gate). Gating here — not just at the callers — keeps
+    //    bootstrap's unconditional on-load refresh and on_reconnected both correct.
+    if (isHubOnly() || privacyManager.isLocal) return null;
     try {
       const data = await apiClient.get<CloudStatusData>('/cloud/status');
       if (data?.cloud_url) this._cloudUrl = data.cloud_url;
+      if (data?.cloud_app_url) this._cloudAppUrl = data.cloud_app_url;
+      else if (data?.cloud_url) this._cloudAppUrl = hubAppUrlFromApiUrl(data.cloud_url);
 
       // Prefer nested shape; fall back to legacy aliases.
       if (data?.connection) {
@@ -482,13 +641,7 @@ class CloudManager extends EventEmitter {
       }
 
       if (data?.login) {
-        if (data.login.status === 'logged_in' && data.login.user) {
-          await this._setLoggedIn(data.login.user);
-        } else if (data.login.status === 'logged_out') {
-          await this._setLoggedOut();
-        } else {
-          this._applyLoginStatus(data.login.status, data.login.user, data.login.reason);
-        }
+        await this._applyLoginBlock(data.login);
       } else if (data?.logged_in && data.user) {
         await this._setLoggedIn(data.user);
       } else if (data?.logged_in === false) {
@@ -562,6 +715,8 @@ class CloudManager extends EventEmitter {
 export const cloudManager = new CloudManager();
 export const cloudLogin = () => cloudManager.login();
 export const cloudLogout = () => cloudManager.logout();
-export const getCloudStatus = () => apiClient.get<CloudStatusData>('/cloud/status');
+export const getCloudStatus = (): Promise<CloudStatusData | null> =>
+  // Hub mode: `/cloud/status` is not implemented on the hub backend (404).
+  isHubOnly() ? Promise.resolve(null) : apiClient.get<CloudStatusData>('/cloud/status');
 
 export default cloudManager;

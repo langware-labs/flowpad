@@ -80,7 +80,6 @@ export async function openInstance(browser: Browser, inst: InstanceConfig): Prom
   await page.addInitScript(() => {
     // Suppress one-time onboarding modals so home-landing buttons are pointer-clickable.
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    localStorage.setItem('flowpad-index-approved', '1');
   });
   return { ctx, page };
 }

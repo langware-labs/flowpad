@@ -7,18 +7,31 @@ import { WizardHost } from '@src/components/wizard/WizardHost';
 import { HooksView } from '@src/components/hooks-view/hooks-view';
 import { SessionsView } from '@src/components/sessions-view/sessions-view';
 // `WorkflowTracePreviewPage` was a dev-only standalone preview that bypassed
-// the entity layer. The workflow-runner refactor (May 2026) routes everything
-// through the main /dock/assets/editor/workflow URL. Removed.
+// the entity layer. Removed.
 import { BASE_PATH } from '@src/constants/basePath';
-import AgentRedirect from '@src/pages/agent-redirect';
 import DiscoverPage from '@src/pages/discover-page/discover-page';
 import FlowPage from '@src/pages/flow-page/flow-page';
 import FocusLayout from '@src/pages/flow-page/FocusLayout';
 import KeychainApproval from '@src/pages/keychain-approval';
-import LandingPage from '@src/pages/landing-page/landing-page';
+import InvitePage from '@src/pages/entry/InvitePage';
+import WrongAccountPage from '@src/pages/entry/WrongAccountPage';
+import MessageLanding from '@src/pages/entry/MessageLanding';
+import LaunchLanding from '@src/pages/entry/LaunchLanding';
+import OpenSandboxLanding from '@src/pages/entry/OpenSandboxLanding';
+import InstallLanding from '@src/pages/entry/InstallLanding';
 import NotFound from '@src/pages/NotFound';
 import App from '@src/App';
-import { createBrowserRouter, createRoutesFromElements, Navigate, Outlet, Route, useLocation, type ShouldRevalidateFunctionArgs } from 'react-router';
+import { devToDockPath } from '@src/navigation/url-builder';
+import {
+  createBrowserRouter,
+  createRoutesFromElements,
+  Navigate,
+  Outlet,
+  Route,
+  useLocation,
+  type ShouldRevalidateFunctionArgs,
+} from 'react-router';
+import { bindHistoryPosition } from '@src/navigation/history-position-store';
 
 /**
  * Root-level `/dev/<anything-not-main-or-hooks>` URLs forward to `/dock/<same>`.
@@ -30,8 +43,7 @@ import { createBrowserRouter, createRoutesFromElements, Navigate, Outlet, Route,
  */
 function DevToDockRedirect() {
   const location = useLocation();
-  const rest = location.pathname.replace(/^\/dev\/?/, '');
-  const target = `/dock/${rest}${location.search}${location.hash}`;
+  const target = `${devToDockPath(location.pathname)}${location.search}${location.hash}`;
   return <Navigate to={target} replace />;
 }
 
@@ -60,11 +72,7 @@ import { loadHomePage } from './routes/loaders/home-loader';
 import { loadAgentApp } from './routes/loaders/main-loader';
 import { loadRoot } from './routes/loaders/root-loader';
 
-function shouldRevalidateDock({
-  currentUrl,
-  nextUrl,
-  defaultShouldRevalidate,
-}: ShouldRevalidateFunctionArgs): boolean {
+function shouldRevalidateDock({ currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs): boolean {
   if (
     // The dock loader (`loadAgentApp` → `loadDockPointer`) is the single writer
     // of URL-derived context — project, process, conversation, asset, … — and
@@ -99,13 +107,41 @@ export const router = createBrowserRouter(
       {/* Root and /main routes use DeveloperLayout */}
 
       <Route index element={<FlowPage />} loader={loadHomePage} />
+      {/* Legacy hub-console deep links → the hub page's dock URLs, so old
+          bookmarks/links keep working after the console is retired. (On a
+          desk-only server these targets get bounced back to /dock/home by the
+          main-loader supported_pages guard, so they're harmless there.) */}
+      <Route path="organization" element={<Navigate to="/dock/hub/worldview/organization" replace />} />
+      <Route path="org-graph" element={<Navigate to="/dock/hub/worldview/world" replace />} />
       {/* Discover — full-page asset marketplace. Sits inside RootLayout (so
           loadRoot/auth/theme gate it) but OUTSIDE AgentLayout/FlowPage, so it
           renders full-screen with its own chrome (no sidebar/tab strip). */}
       <Route path="discover" element={<DiscoverPage />} />
-      <Route path="agent" element={<AgentRedirect />} loader={loadAgentApp} />
+      {/* Entry journeys — full-screen pages the hub BACKEND sends users to
+          (invite emails, accept-flow redirects, post-accept landings). Inside
+          RootLayout so initSdk/bootstrap has run, outside the dock subtrees so
+          loadAgentApp's supported_pages redirect never touches them. */}
+      <Route path="invite/:token" element={<InvitePage />} />
+      <Route path="wrong_account" element={<WrongAccountPage />} />
+      <Route path="flow_message/:messageId" element={<MessageLanding />} />
+      {/* One-click "try this repo": /launch?repo=<git url> asks before it
+          launches anything (the link came from outside the app). */}
+      {/* Where a sandbox share invitation lands: says "preparing" and then
+          goes, instead of a blank tab or a hunt for the card.
+          Addressed `<entity type>/<id>` like `flow_message/:messageId` above —
+          and it is the URL the hub's own `build_entity_url` already emits as the
+          post-accept landing, so nothing has to steer the invitation here. */}
+      <Route path="compute_node/:nodeId" element={<OpenSandboxLanding />} />
+      <Route path="launch" element={<LaunchLanding />} />
+      <Route path="install" element={<InstallLanding />} />
       {/* Root dock routes - use default agent from bootstrap */}
-      <Route path="dock" element={<AgentLayout />} loader={loadAgentApp} shouldRevalidate={shouldRevalidateDock} errorElement={<ErrorScreen />}>
+      <Route
+        path="dock"
+        element={<AgentLayout />}
+        loader={loadAgentApp}
+        shouldRevalidate={shouldRevalidateDock}
+        errorElement={<ErrorScreen />}
+      >
         <Route index element={<Navigate to="/" replace />} />
         <Route path=":viewType" element={<FlowPage />} />
         <Route path=":viewType/*" element={<FlowPage />} />
@@ -118,41 +154,19 @@ export const router = createBrowserRouter(
         <Route path=":viewType" element={<FocusLayout />} />
         <Route path=":viewType/*" element={<FocusLayout />} />
       </Route>
-      <Route
-        path="agent/:agentId"
-        element={<AgentLayout />}
-        loader={loadAgentApp}
-        shouldRevalidate={shouldRevalidateDock}
-      >
-        {/* /agent/:agentId */}
-        <Route index element={<LandingPage />} />
-        {/* Dock routes WITHOUT processId - for agent-level views (skills, settings, etc.) */}
-        <Route path="dock/:viewType" element={<FlowPage />} />
-        <Route path="dock/:viewType/*" element={<FlowPage />} />
-        {/* win/ focus-window mirrors (Part 3 §7) — same loaders, chrome-less host */}
-        <Route path="win/:viewType" element={<FocusLayout />} />
-        <Route path="win/:viewType/*" element={<FocusLayout />} />
-        {/* ✅ Validate ONLY the /dock/:viewType route */}
-        <Route path="flow/:processId/dock/:viewType" element={<FlowPage />} />
-        {/* Leave pointer route untouched (no validation) - use wildcard for multi-segment paths */}
-        <Route path="flow/:processId/dock/:viewType/*" element={<FlowPage />} />
-        {/* Dev layout routes (parallel to dock routes) */}
-        <Route path="flow/:processId/dev/:viewType" element={<FlowPage />} />
-        <Route path="flow/:processId/dev/:viewType/*" element={<FlowPage />} />
-        {/* win/ focus-window mirrors for the combined namespace (Part 3 §7) */}
-        <Route path="flow/:processId/win/:viewType" element={<FocusLayout />} />
-        <Route path="flow/:processId/win/:viewType/*" element={<FocusLayout />} />
-        {/* Keep the general flow route as-is */}
-        <Route path="flow/:processId" element={<FlowPage />} loader={loadAgentApp} />
-      </Route>
       <Route path="dev" element={<DeveloperLayout />} loader={loadAgentApp}>
         <Route index element={<SessionsView />} />
         <Route path="main" element={<SessionsView />} />
-        <Route path="main/api-keys" element={<ApiKeysView />} />
+        <Route
+          path="main/api-keys"
+          element={
+            <div className="h-full overflow-auto p-4">
+              <ApiKeysView className="max-w-4xl" />
+            </div>
+          }
+        />
         {/* Connections route hidden until OAuth flow is fully implemented */}
         <Route path="hooks" element={<HooksView />} />
-        {/* /dev/trace/:runId removed by the workflow-runner refactor.
-            Use /dock/assets/editor/workflow/<asset_ref> instead. */}
         <Route path="*" element={<DevToDockRedirect />} />
       </Route>
 
@@ -169,3 +183,12 @@ export const router = createBrowserRouter(
     basename: BASE_PATH,
   },
 );
+
+/**
+ * The router is the sole event source for "where am I in history", which the
+ * nav bar's Back/Forward buttons read. Bound here, at module scope, because by
+ * this point `createBrowserHistory` has already stamped its initial `idx` — and
+ * because subscribing here catches pops the app never initiated (browser chrome
+ * buttons, the macOS swipe, the Electron mouse buttons) for free.
+ */
+bindHistoryPosition(router);

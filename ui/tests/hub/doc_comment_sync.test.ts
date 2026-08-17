@@ -31,9 +31,9 @@ import { testEntityName } from '../_cleanup';
 import {
   HUB_INST_1 as INST_1,
   HUB_INST_2 as INST_2,
-  findPendingInvitation,
   getInstance,
   instanceAvailable,
+  syncAssignedConversation,
   type ResolvedInstance,
 } from './_instances';
 
@@ -47,7 +47,7 @@ let convId: string;
 /** Trigger the receiver's catch-up subtree sync (pulls the conversation's hub
  * children), then read the comment (blob-expanded). The conversation is plain (no
  * shared doc) so the sync does no bundle/index work — it's a fast comment pull. */
-async function commentOn(inst: ResolvedInstance, id: string): Promise<any | null> {
+async function commentOn(inst: ResolvedInstance, id: string): Promise<any> {
   await fetch(`${inst.apiUrl}/api/v1/graph/conversation-message-sync`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -59,7 +59,7 @@ async function commentOn(inst: ResolvedInstance, id: string): Promise<any | null
   return r?.status === 'SUCCESS' && r?.data?.id === id ? r.data : null;
 }
 
-async function waitText(inst: ResolvedInstance, id: string, text: string): Promise<any | null> {
+async function waitText(inst: ResolvedInstance, id: string, text: string): Promise<any> {
   return pollUntil(async () => {
     const d = await commentOn(inst, id);
     return d && d.raw_content === text ? d : null;
@@ -70,7 +70,7 @@ async function waitText(inst: ResolvedInstance, id: string, text: string): Promi
  * role-walk query (`QueryRequest({type:'comment', scope:[parent]})`) resolves to
  * (`GET /graph/<parent>/<id>/comment`). Edge-backed: a bare row copy (pre-fix
  * receiver) passes the by-id read yet returns [] here — the live-bug assertion. */
-async function waitScoped(inst: ResolvedInstance, id: string, text: string): Promise<any | null> {
+async function waitScoped(inst: ResolvedInstance, id: string, text: string): Promise<any> {
   return pollUntil(async () => {
     await fetch(`${inst.apiUrl}/api/v1/graph/conversation-message-sync`, {
       method: 'POST',
@@ -134,22 +134,9 @@ beforeAll(async () => {
   expect(conv.remote).toBe(true);
   convId = conv.id!;
 
-  // Bob accepts via his BACKEND's invitation-accept, then the conversation-list
-  // pipeline UPSERTS the conversation into bob's LOCAL DB. The per-conversation
-  // catch-up sync 404s until that local row exists — so gate on the sync returning
-  // 200 (a GET reflects to the hub and would lie; the sync needs the local row).
-  const invitation = await pollUntil(() => findPendingInvitation(bob, convId), 20_000, 'pending invitation');
-  await fetch(`${bob.apiUrl}/api/v1/graph/invitation-accept`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ invitation_id: invitation.id! }),
-  });
-  await pollUntil(async () => {
-    const status = await fetch(`${bob.apiUrl}/api/v1/graph/conversation-message-sync`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conversation_id: convId }),
-    }).then((r) => r.status).catch(() => 0);
-    return status === 200 ? true : null;
-  }, 25_000, 'bob local conversation row materialized (sync 200)');
+  // Immediate assignment makes Bob a member at share time. The exact sync
+  // materializes only this conversation and its children in Bob's local DB.
+  await syncAssignedConversation(bob, convId);
 }, 30_000); // do not increase timeout without approval
 
 beforeEach((context: any) => {
@@ -171,38 +158,38 @@ afterAll(async () => {
 describe('doc comment child sync (Alice ↔ Bob)', () => {
   it('create — a comment by either peer reaches the other [doc_comment_create_sync]', async () => {
     const a = await mkComment(alice, 'conversation', convId, `alice-create-${convId.slice(0, 6)}`, 3);
-    expect(await waitText(bob, a.id!, a.raw_content!), 'create A→B: bob receives alice comment').toBeTruthy();
+    expect(await waitText(bob, a.id, a.raw_content), 'create A→B: bob receives alice comment').toBeTruthy();
     // Receiver contract: also visible via the UI's scoped (edge-backed) query, body included.
-    expect(await waitScoped(bob, a.id!, a.raw_content!), 'create A→B: comment scope-visible on bob').toBeTruthy();
+    expect(await waitScoped(bob, a.id, a.raw_content), 'create A→B: comment scope-visible on bob').toBeTruthy();
 
     const b = await mkComment(bob, 'conversation', convId, `bob-create-${convId.slice(0, 6)}`, 4);
-    expect(await waitText(alice, b.id!, b.raw_content!), 'create B→A: alice receives bob comment').toBeTruthy();
-    expect(await waitScoped(alice, b.id!, b.raw_content!), 'create B→A: comment scope-visible on alice').toBeTruthy();
+    expect(await waitText(alice, b.id, b.raw_content), 'create B→A: alice receives bob comment').toBeTruthy();
+    expect(await waitScoped(alice, b.id, b.raw_content), 'create B→A: comment scope-visible on alice').toBeTruthy();
   }, 30_000); // do not increase timeout without approval
 
   it('update — editing a comment syncs the new text [doc_comment_update_sync]', async () => {
     const a = await mkComment(alice, 'conversation', convId, 'u1', 3);
-    expect(await waitText(bob, a.id!, 'u1'), 'update setup: bob sees u1').toBeTruthy();
-    await editComment(alice, a.id!, 'edited-by-alice');
-    expect(await waitText(bob, a.id!, 'edited-by-alice'), 'update A→B: edit reaches bob').toBeTruthy();
+    expect(await waitText(bob, a.id, 'u1'), 'update setup: bob sees u1').toBeTruthy();
+    await editComment(alice, a.id, 'edited-by-alice');
+    expect(await waitText(bob, a.id, 'edited-by-alice'), 'update A→B: edit reaches bob').toBeTruthy();
 
     const b = await mkComment(bob, 'conversation', convId, 'u1', 4);
-    expect(await waitText(alice, b.id!, 'u1'), 'update setup: alice sees u1').toBeTruthy();
-    await editComment(bob, b.id!, 'edited-by-bob');
-    expect(await waitText(alice, b.id!, 'edited-by-bob'), 'update B→A: edit reaches alice').toBeTruthy();
+    expect(await waitText(alice, b.id, 'u1'), 'update setup: alice sees u1').toBeTruthy();
+    await editComment(bob, b.id, 'edited-by-bob');
+    expect(await waitText(alice, b.id, 'edited-by-bob'), 'update B→A: edit reaches alice').toBeTruthy();
   }, 30_000); // do not increase timeout without approval
 
   it('delete — present on BOTH sides, then removed for the peer [doc_comment_delete_sync]', async () => {
     const a = await mkComment(alice, 'conversation', convId, 'to-delete-a', 3);
-    expect(await waitText(alice, a.id!, 'to-delete-a'), 'delete setup: present on alice').toBeTruthy();
-    expect(await waitText(bob, a.id!, 'to-delete-a'), 'delete setup: present on bob').toBeTruthy();
-    await rmComment(alice, a.id!); // server auto-propagates child_deleted (no Hub-Reflect)
-    expect(await waitAbsent(bob, a.id!), 'delete A→B: comment disappears for bob').toBe(true);
+    expect(await waitText(alice, a.id, 'to-delete-a'), 'delete setup: present on alice').toBeTruthy();
+    expect(await waitText(bob, a.id, 'to-delete-a'), 'delete setup: present on bob').toBeTruthy();
+    await rmComment(alice, a.id); // server auto-propagates child_deleted (no Hub-Reflect)
+    expect(await waitAbsent(bob, a.id), 'delete A→B: comment disappears for bob').toBe(true);
 
     const b = await mkComment(bob, 'conversation', convId, 'to-delete-b', 4);
-    expect(await waitText(bob, b.id!, 'to-delete-b'), 'delete setup: present on bob').toBeTruthy();
-    expect(await waitText(alice, b.id!, 'to-delete-b'), 'delete setup: present on alice').toBeTruthy();
-    await rmComment(bob, b.id!);
-    expect(await waitAbsent(alice, b.id!), 'delete B→A: comment disappears for alice').toBe(true);
+    expect(await waitText(bob, b.id, 'to-delete-b'), 'delete setup: present on bob').toBeTruthy();
+    expect(await waitText(alice, b.id, 'to-delete-b'), 'delete setup: present on alice').toBeTruthy();
+    await rmComment(bob, b.id);
+    expect(await waitAbsent(alice, b.id), 'delete B→A: comment disappears for alice').toBe(true);
   }, 30_000); // do not increase timeout without approval
 });

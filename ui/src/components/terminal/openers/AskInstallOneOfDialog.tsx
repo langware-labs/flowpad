@@ -1,13 +1,7 @@
 import { capabilityManager, CapabilityKinds } from '@sdk';
 import { useCapability } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@src/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { CheckCircle2, ExternalLink, Loader2, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -41,7 +35,7 @@ function CapabilityHarnessRow({
   selected: boolean;
   onSelected: () => void;
 }) {
-  const { capability, available, result, isLoading, check } = useCapability(kind);
+  const { capability, available, result, isLoading, test } = useCapability(kind);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const { t } = useLingui();
@@ -64,10 +58,7 @@ function CapabilityHarnessRow({
   };
 
   return (
-    <div
-      className="flex items-start gap-3 rounded-md border p-3"
-      data-testid={`install-one-of-row-${kind}`}
-    >
+    <div className="flex items-start gap-3 rounded-md border p-3" data-testid={`install-one-of-row-${kind}`}>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
           <div className="truncate text-sm font-medium">{title}</div>
@@ -81,9 +72,7 @@ function CapabilityHarnessRow({
         <div className="truncate text-xs text-muted-foreground">{kind}</div>
         {description && <div className="mt-1 text-xs text-muted-foreground">{description}</div>}
         {(message ?? result?.message) && (
-          <div className="mt-1 text-xs text-amber-600 dark:text-amber-500">
-            {message ?? result?.message}
-          </div>
+          <div className="mt-1 text-xs text-amber-600 dark:text-amber-500">{message ?? result?.message}</div>
         )}
       </div>
       <div className="flex shrink-0 items-center gap-1">
@@ -92,7 +81,7 @@ function CapabilityHarnessRow({
           variant="ghost"
           className="h-8 w-8"
           disabled={isLoading}
-          onClick={() => void check()}
+          onClick={() => void test()}
           aria-label={t`Re-check ${title}`}
           data-testid={`install-one-of-check-${kind}`}
         >
@@ -129,26 +118,26 @@ function CapabilityHarnessRow({
 }
 
 export function AskInstallOneOfDialog({ kinds, onClose }: Props) {
-  const defaultHarness = useCapability(CapabilityKinds.Harness);
+  // The controller keeps this dialog mounted while it is closed. Read the
+  // persisted reference only: an executable harness probe belongs to the
+  // launch/setup seam or an explicit row re-check, never cold app startup.
+  const defaultHarness = useCapability(CapabilityKinds.Harness, { autoCheck: false });
   const selectedKind = defaultHarness.resolvedKind;
 
   return (
     <Dialog open={!!kinds?.length} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md" data-testid="install-one-of-dialog">
         <DialogHeader>
-          <DialogTitle><Trans>Harness is required</Trans></DialogTitle>
+          <DialogTitle>
+            <Trans>Harness is required</Trans>
+          </DialogTitle>
           <DialogDescription>
             <Trans>Select an available harness, or install one from its homepage and re-check it.</Trans>
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-2">
           {(kinds ?? []).map((kind) => (
-            <CapabilityHarnessRow
-              key={kind}
-              kind={kind}
-              selected={selectedKind === kind}
-              onSelected={onClose}
-            />
+            <CapabilityHarnessRow key={kind} kind={kind} selected={selectedKind === kind} onSelected={onClose} />
           ))}
         </div>
       </DialogContent>

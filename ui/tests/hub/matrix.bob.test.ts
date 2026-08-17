@@ -3,12 +3,11 @@
  *
  * Runs as its own vitest process against bob's own local backend (:9007).
  * Bob drives the real production SDK — no simulation: he lists his real
- * invitations, accepts through the real accept-flow, loads the materialized
- * conversation, and exchanges messages + a skill bundle with alice.
+ * assigned conversation, and exchanges messages + a skill bundle with alice.
  *
  * Scenario (bob's half):
  *   1. Read the conv id alice published to the rendezvous file.
- *   2. Find the matching pending invitation; accept it (auto-joins).
+ *   2. Materialize the immediately assigned conversation.
  *   3. Load the Conversation; send "bob-joined" handshake.
  *   4. Wait for alice's "hi-from-alice"; mark it received; reply "hi-from-bob".
  *   5. Wait for alice's skill message; download + validate the bundle;
@@ -19,7 +18,7 @@
  *   cd <bob-repo>/ui && npm run test:vitest:hub -- matrix.bob
  */
 import { config, dataContext } from '@sdk';
-import { Conversation, acceptInvitation, fetchConversations } from '@sdk/entities/conversation';
+import { Conversation } from '@sdk/entities/conversation';
 import {
   BodyStatus,
   ConversationEvents,
@@ -27,11 +26,16 @@ import {
   markFlowMessagesReceived,
   type IFlowMessage,
 } from '@sdk/entities/flow-message';
-import { Invitation } from '@sdk/entities/invitation';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
-import { pickPendingInvitation, pollUntil, probeHub, probeLocalBackendLoggedIn, readRendezvous } from './_matrix';
+import {
+  pollUntil,
+  probeHub,
+  probeLocalBackendLoggedIn,
+  readRendezvous,
+  syncAssignedConversation,
+} from './_matrix';
 
 let skipReason: string | null = null;
 let bobEmail: string | null = null;
@@ -64,52 +68,20 @@ beforeEach(async (context: any) => {
   await apiTestSetup(signupInfo, context.task.name);
 });
 
-// Find the pending invitation for ``convId``. Bob's backend mirrors his
-// invitations from the hub via its bridge; the invitation may not have
-// arrived the instant we look, so this is polled by the caller.
-async function findPendingInvitation(convId: string): Promise<Invitation | null> {
-  // fetchConversations() is the production hub catch-up: it pulls bob's
-  // conversation + invitation lists from the hub and upserts them into his
-  // local DB. Without this, Invitation.query only sees stale local rows.
-  await fetchConversations();
-
-  // Now query bob's (freshly-synced) invitation entities.
-  const all = await Invitation.query<Invitation>({ query: {} }, true);
-
-  return pickPendingInvitation(all, convId);
-}
-
 describe('hub: matrix two-process — BOB', () => {
-  it('accepts the invite, exchanges messages, downloads + validates the skill', async () => {
+  it('receives the assignment, exchanges messages, downloads + validates the skill', async () => {
     // ── Step 1: learn which conversation to join. ─────────────────────────
     // Alice publishes the conv id after she shares; poll for it.
     const convId = await readRendezvous(25_000);
     console.log(`[matrix.bob] conv id from rendezvous: ${convId.slice(0, 8)}`);
 
-    // ── Step 2: find + accept the invitation. ─────────────────────────────
-    // The invitation has to sync down to bob's backend first — poll for it.
-    const invitation = await pollUntil(
-      () => findPendingInvitation(convId),
-      20_000,
-      'pending invitation for conv',
-    );
-    // acceptInvitation hits the real accept-flow: claims the invitation and
-    // auto-joins the conversation (the backend POSTs /join for us).
-    const accepted = await acceptInvitation({ invitation_id: invitation.id! });
-    expect(accepted.invitation_id).toBe(invitation.id);
-    // Sanity: the accepted invitation must point at the conv alice published.
-    if (accepted.conversation_id) {
-      expect(accepted.conversation_id).toBe(convId);
-    }
-    console.log('[matrix.bob] invitation accepted + joined');
+    // ── Step 2: materialize the immediate assignment. ────────────────────
+    await syncAssignedConversation(config.SERVER_URL, convId);
+    console.log('[matrix.bob] assigned conversation synchronized');
 
     // ── Step 3: load the conversation, install the message tap. ───────────
-    // Post-accept the conv is materialized on bob's backend; load it via SDK.
-    const conv = await pollUntil(
-      () => Conversation.getById<Conversation>(convId),
-      10_000,
-      'conversation materialized',
-    );
+    // The assigned conversation is materialized on bob's backend; load it via SDK.
+    const conv = await pollUntil(() => Conversation.getById<Conversation>(convId), 10_000, 'conversation materialized');
 
     const inbox: IFlowMessage[] = [];
     const offMessage = conv.on(ConversationEvents.MESSAGE, (m: IFlowMessage) => {

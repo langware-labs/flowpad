@@ -78,10 +78,11 @@ export function ContactPicker({
     setListOpen(false);
   };
 
-  // Bulk-add a group's members (deduped); the group itself is never a chip.
+  // Bulk-add a group's members (deduped, self excluded); the group itself is
+  // never a chip.
   const addGroup = (group: ContactsGroup) => {
     if (isFull) return;
-    const next = mergeGroupMembers(value, group);
+    const next = mergeGroupMembers(value, group.contacts ?? [], excludeUserId);
     const capped = typeof max === 'number' ? next.slice(0, max) : next;
     if (capped.length === value.length) return;
     onChange(capped);
@@ -157,7 +158,7 @@ export function ContactPicker({
             <button
               key={g.id}
               type="button"
-              className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-sm hover:bg-muted disabled:opacity-50"
+              className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-start text-sm hover:bg-muted disabled:opacity-50"
               onClick={() => addGroup(g)}
               disabled={disabled}
               data-testid={`contact-group-option-${g.id}`}
@@ -165,6 +166,7 @@ export function ContactPicker({
               <span className="flex min-w-0 items-center gap-1.5">
                 <UsersRound className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
                 <span className="truncate">{g.displayName}</span>
+                {g.computed && <span className="shrink-0 text-[10px] uppercase text-muted-foreground/70">auto</span>}
               </span>
               <span className="shrink-0 text-xs text-muted-foreground">{(g.contacts ?? []).length} members</span>
             </button>
@@ -173,7 +175,7 @@ export function ContactPicker({
             <button
               key={u.id}
               type="button"
-              className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-sm hover:bg-muted disabled:opacity-50"
+              className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-start text-sm hover:bg-muted disabled:opacity-50"
               onClick={() => addContact(u)}
               disabled={alreadyAdded(participantFromContact(u)) || disabled}
             >
@@ -191,7 +193,7 @@ export function ContactPicker({
         !alreadyAdded({ email: filterText.trim() }) && (
           <button
             type="button"
-            className="rounded-md border border-dashed border-border px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted disabled:opacity-50"
+            className="rounded-md border border-dashed border-border px-2 py-1.5 text-start text-sm text-muted-foreground hover:bg-muted disabled:opacity-50"
             onClick={addFreeFormEmail}
             disabled={disabled}
           >

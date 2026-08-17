@@ -20,6 +20,7 @@ not row existence).
 
 # do not increase timeout without approval
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
@@ -27,8 +28,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from flow_sdk.app.actions import flow_message_action as fma
-from flow_sdk.builtin.flow_message import FlowMessage
-
+from flow_sdk.builtin.flow_message import BodyStatus, FlowMessage
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -106,3 +106,43 @@ async def test_artifact_success_does_not_double_persist(initialize_test_db) -> N
     assert result == _FM_ID
     # unpack owns the row on the success path — no second header save here.
     assert save_spy.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_successful_existing_body_refreshes_before_metadata_merge(initialize_test_db) -> None:
+    """A READY unpack must not be overwritten by the pre-download row.
+
+    The receiver can already hold the bridge CREATE at UPLOADING when exact
+    catch-up downloads the now-READY body. The unpacker stamps the durable row
+    READY; the following metadata merge must use that refreshed row, not the
+    stale object captured before download.
+    """
+    initial = FlowMessage.model_validate(
+        {
+            **_artifact_hub_payload(),
+            "text": "stale local header",
+            "body_status": BodyStatus.UPLOADING,
+            "remote": True,
+        }
+    )
+    refreshed = initial.model_copy(update={"body_status": BodyStatus.READY})
+    get_one = AsyncMock(side_effect=[initial, refreshed])
+    saved: dict[str, FlowMessage] = {}
+
+    async def _fake_save(self: FlowMessage, *args, **kwargs) -> FlowMessage:
+        saved["fm"] = self
+        return self
+
+    with (
+        patch.object(fma.FlowMessage, "get_one", new=get_one),
+        patch.object(fma, "_download_and_unpack_bundle", new=AsyncMock(return_value=True)),
+        patch.object(fma.FlowMessage, "is_stale", return_value=True),
+        patch.object(fma.FlowMessage, "save", new=_fake_save),
+        patch.object(fma, "from_jsonl", side_effect=RuntimeError("no conv file in unit test")),
+    ):
+        result = await fma._process_single_hub_message(_artifact_hub_payload())
+
+    assert result == _FM_ID
+    assert get_one.await_count == 2, "successful unpack must refresh the durable row"
+    assert saved["fm"].body_status == BodyStatus.READY
+    assert saved["fm"].text == "shared a workflow"

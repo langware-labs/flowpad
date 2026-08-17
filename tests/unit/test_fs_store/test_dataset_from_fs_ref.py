@@ -25,13 +25,17 @@ from flow_sdk.builtin.dataset import (
 )
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions.dataset import (
-    dataset_gen_id,
     extract_dataset,
     iter_examples,
 )
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 # do not increase timeout without approval — these are pure-sync parses (<1s).
 pytestmark = pytest.mark.timeout(5)
+
+
+def _extract(ref: FSRef):
+    return extract_dataset(ref, SchemaRegistry.get("dataset").mint_entity_id(ref, derive=True, overwrite=True))
 
 # A real v4 uuid for manifest-id adoption tests.
 VALID_V4 = "a3f1c2d4-5b6e-4f7a-8c9d-0e1f2a3b4c5d"
@@ -104,14 +108,15 @@ def _assert_indexer_compatible(ds_path: Path) -> Dataset:
     """Load via from_fs_ref and assert it equals the indexer cold path."""
     ref = FSRef(ds_path)
     # gen_id stamps the `.flow/id` capsule first — the production index order
-    # (gen_uuid_fn runs before the extractor). The loader + cold-path extractor
+    # (TypeInfo resolves identity before the extractor). The loader + cold-path extractor
     # then adopt that same capsule id (a fresh v4 when the dataset carries no id).
-    gen = dataset_gen_id(ref)
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+    gen = SchemaRegistry.get("dataset").mint_entity_id(ref, derive=True, overwrite=True)
     loaded = Dataset.from_fs_ref(ref)
     assert loaded is not None, "from_fs_ref returned None for a real dataset"
     assert isinstance(loaded, Dataset)
 
-    rec = extract_dataset(ref)[0]
+    rec = _extract(ref)[0]
     meta = rec.meta_dict()["metadata"]
 
     # id: loader == gen_id == cold-path record id
@@ -252,7 +257,7 @@ def test_io_input_binary_pdf(tmp_path: Path) -> None:
     assert ex.input == ""  # binary ⇒ no scalar text
     assert ex.input_slot.primary.kind == ArtifactKind.FILE
     assert ex.input_slot.primary.text is None
-    rec_meta = extract_dataset(FSRef(ds))[0].meta_dict()["metadata"]
+    rec_meta = _extract(FSRef(ds))[0].meta_dict()["metadata"]
     assert rec_meta["num_binary_inputs"] == 1
 
 
@@ -284,7 +289,7 @@ def test_io_output_numbered_multi(tmp_path: Path) -> None:
     assert [a.index for a in ex.output_slot.artifacts] == [1, 2, 3]
     assert len({a.id for a in ex.output_slot.artifacts}) == 3  # distinct ids
     assert ex.expected is None  # output never feeds the gold
-    rec_meta = extract_dataset(FSRef(ds))[0].meta_dict()["metadata"]
+    rec_meta = _extract(FSRef(ds))[0].meta_dict()["metadata"]
     assert rec_meta["num_multi_output"] == 1
 
 
@@ -483,7 +488,7 @@ def test_comprehensive_all_fields(tmp_path: Path) -> None:
     assert ex.ground_truth_slot.primary.text == "gold"
 
     # all five denormalized counts vs the cold-path record
-    meta = extract_dataset(FSRef(ds))[0].meta_dict()["metadata"]
+    meta = _extract(FSRef(ds))[0].meta_dict()["metadata"]
     assert meta["num_examples"] == 1
     assert meta["kind_counts"] == {"eval": 1}
     assert meta["num_annotated"] == 1

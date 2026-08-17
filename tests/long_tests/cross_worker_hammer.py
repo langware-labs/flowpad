@@ -26,17 +26,20 @@ import uuid
 
 import httpx
 
+from tests.long_tests._model_tier import small_model_for
+
 BASE = os.environ.get("FLOWPAD_HAMMER_URL", "http://localhost:9008").rstrip("/") + "/api/v1"
 ITER = 10
 DETECT_BUDGET = 8.0   # user-msg lands early; >8s = broken
 TURN_BUDGET = 25.0    # serialize: wait out the turn (codex/copilot run ~15s) before next
 AP = "/graph/agentic_process"
 RUNNING = "running"
-# worker_type → (CLI binary, model). Tier `sm` maps only for claude.
+# worker_type → (CLI binary, model). The model is the cheapest tier each worker can
+# resolve (see ``_model_tier.small_model_for`` — Copilot must stay unset).
 WORKERS = {
-    "claude_code": ("claude", "sm"),
-    "codex": ("codex", None),
-    "copilot": ("copilot", None),
+    "claude_code": ("claude", small_model_for("claude_code")),
+    "codex": ("codex", small_model_for("codex")),
+    "copilot": ("copilot", small_model_for("copilot")),
 }
 
 

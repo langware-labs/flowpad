@@ -9,42 +9,44 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from flow_sdk.fs_store.indexer.functions.codex_projects import _read_codex_projects_from_config
-from flow_sdk.fs_store.indexer.functions._claude_projects import decode_claude_project_dir
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
+from flow_sdk.fs_store.indexer import FSIndexer
 from flow_sdk.fs_store.indexer.functions.claude_projects import (
-    _is_claude_encoded_ref as _is_claude_project_ref_fn,
-    _is_valid_cwd as _is_valid_project_cwd,
+    _is_claude_encoded_ref,
     claude_projects_fn,
 )
-from flow_sdk.fs_store.indexer.functions.codex_projects import codex_projects_fn
-from flow_sdk.fs_store.path_utils import canonical_posix_path
+from flow_sdk.fs_store.indexer.functions.codex_projects import (
+    _read_codex_projects_from_config,
+    codex_projects_fn,
+)
+from flow_sdk.fs_store.path_utils import canonical_posix_path, is_valid_project_cwd
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.scope import Scope
-from flow_sdk.utils.serialization import iso_to_datetime
 from flow_sdk.instance_settings import get_instance_settings
-
+from flow_sdk.utils.serialization import iso_to_datetime
+from flow_sdk.fs_store.identifier import mint_uuid
 
 PROJECT_RESOURCE_TYPE = "system_resource_claude_project"
 
 
 def _project_indexer() -> FSIndexer:
     """Build the project-only slice of the canonical FS indexer."""
-    idx = FSIndexer(roots=[
-        FSRef(
-            get_instance_settings().user_home,
-            record_type=RecordType.USER_HOME_FOLDER,
-            scope=Scope.USER.value,
-        )
-    ])
+    idx = FSIndexer(
+        roots=[
+            FSRef(
+                get_instance_settings().user_home,
+                record_type=RecordType.USER_HOME_FOLDER,
+                scope=Scope.USER.value,
+            )
+        ]
+    )
     idx.add_function(RecordType.USER_HOME_FOLDER, claude_projects_fn)
     idx.add_function(RecordType.USER_HOME_FOLDER, codex_projects_fn)
     return idx
 
 
 def _is_claude_project_ref(path: Path) -> bool:
-    return _is_claude_project_ref_fn(path)
+    return _is_claude_encoded_ref(path)
 
 
 def _iso_from_mtime(ts: float | None) -> str | None:
@@ -69,7 +71,10 @@ def _int_field(value: Any) -> int:
 
 
 def _project_id_for_cwd(cwd: str) -> str:
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{canonical_posix_path(cwd)}"))
+    # Same key + namespace as ``Project.derive_id_for_path`` (project.py). Kept as
+    # its own function because that one returns None for a non-project cwd,
+    # which this caller does not want — the FORMULA is what must not drift.
+    return mint_uuid(f"project:{canonical_posix_path(cwd)}", namespace=uuid.NAMESPACE_DNS)
 
 
 def _index_claude_dirs_by_cwd(claude_root: Path) -> dict[str, Path]:
@@ -81,6 +86,7 @@ def _index_claude_dirs_by_cwd(claude_root: Path) -> dict[str, Path]:
     ``decode_claude_project_dir`` already exposes.
     """
     from flow_sdk.fs_store.indexer.functions._claude_projects import decode_claude_project_dir
+
     out: dict[str, Path] = {}
     if not claude_root.is_dir():
         return out
@@ -88,7 +94,7 @@ def _index_claude_dirs_by_cwd(claude_root: Path) -> dict[str, Path]:
         if not child.is_dir():
             continue
         real = decode_claude_project_dir(child)
-        if real is None:
+        if real is None or not is_valid_project_cwd(real):
             continue
         try:
             out[str(real.resolve())] = child
@@ -168,7 +174,7 @@ def _copilot_activity_by_cwd() -> dict[str, dict[str, Any]]:
         return activity
     for workspace in root.glob("*/workspace.yaml"):
         cwd = _read_copilot_workspace_cwd(workspace)
-        if not cwd or not _is_valid_project_cwd(cwd):
+        if not cwd or not is_valid_project_cwd(cwd):
             continue
         canonical = canonical_posix_path(cwd)
         item = activity.setdefault(
@@ -200,9 +206,7 @@ def _read_copilot_workspace_cwd(path: Path) -> str | None:
         if not stripped.startswith("cwd:"):
             continue
         value = stripped.split(":", 1)[1].strip()
-        if (value.startswith('"') and value.endswith('"')) or (
-            value.startswith("'") and value.endswith("'")
-        ):
+        if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
             value = value[1:-1]
         return value or None
     return None
@@ -225,7 +229,7 @@ def _read_codex_session_cwd(path: Path) -> str | None:
         if raw.get("type") == "session_meta":
             payload = raw.get("payload") or {}
             cwd = payload.get("cwd")
-            if isinstance(cwd, str) and _is_valid_project_cwd(cwd):
+            if isinstance(cwd, str) and is_valid_project_cwd(cwd):
                 return cwd
             return None
     return None
@@ -280,19 +284,13 @@ def _merge_project(
         item["encoded_name"] = claude_dir_name
     if claude:
         item["claude"] = True
-        item["claude_session_count"] = (
-            _int_field(item.get("claude_session_count")) + session_count
-        )
+        item["claude_session_count"] = _int_field(item.get("claude_session_count")) + session_count
     if codex:
         item["codex"] = True
-        item["codex_session_count"] = (
-            _int_field(item.get("codex_session_count")) + session_count
-        )
+        item["codex_session_count"] = _int_field(item.get("codex_session_count")) + session_count
     if copilot:
         item["copilot"] = True
-        item["copilot_session_count"] = (
-            _int_field(item.get("copilot_session_count")) + session_count
-        )
+        item["copilot_session_count"] = _int_field(item.get("copilot_session_count")) + session_count
     item["session_count"] = (
         _int_field(item.get("claude_session_count"))
         + _int_field(item.get("codex_session_count"))
@@ -330,14 +328,16 @@ async def list_projects_from_indexer() -> dict[str, Any]:
     """Return one project row per canonical cwd.
 
     Single source of truth: ``get_all_projects()`` (Claude scan ∪ Codex scan ∪
-    Project entity table, deduped + creates missing Project entities). This
-    function then enriches each row with per-worker session counts read off
-    disk — same shape the UI expected from the legacy implementation.
+    Project entity table, deduped). Listing is deliberately read-only: a picker
+    may discover hundreds of historical worker cwds, but only the path the user
+    selects is materialized by ``useEnsureProject``. This function then enriches
+    each row with per-worker session counts read off disk — same shape the UI
+    expected from the legacy implementation.
     """
     from flow_sdk.fs_store.indexer.functions._claude_projects import _claude_projects_dir
     from flow_sdk.fs_store.operations.all_projects import get_all_projects
 
-    all_projects = await get_all_projects(create_missing=True)
+    all_projects = await get_all_projects(create_missing=False)
     codex_activity = _codex_activity_by_cwd()
     copilot_activity = _copilot_activity_by_cwd()
     # One pass over claude_root → cwd lookup; otherwise the per-project search
@@ -348,23 +348,27 @@ async def list_projects_from_indexer() -> dict[str, Any]:
     projects_by_cwd: dict[str, dict[str, Any]] = {}
     for info in all_projects:
         canonical = info.cwd
-        if not _is_valid_project_cwd(canonical):
+        if not is_valid_project_cwd(canonical):
             continue
         if "claude" in info.worker_types:
             claude_dir = claude_dirs.get(str(Path(canonical).resolve()))
             if claude_dir is not None:
                 session_count, modified_at = _claude_session_stats(claude_dir)
                 _merge_project(
-                    projects_by_cwd, canonical,
-                    claude=True, claude_dir_name=claude_dir.name,
-                    session_count=session_count, modified_at=modified_at,
+                    projects_by_cwd,
+                    canonical,
+                    claude=True,
+                    claude_dir_name=claude_dir.name,
+                    session_count=session_count,
+                    modified_at=modified_at,
                 )
             else:
                 _merge_project(projects_by_cwd, canonical, claude=True)
         if "codex" in info.worker_types:
             activity = codex_activity.get(canonical, {})
             _merge_project(
-                projects_by_cwd, canonical,
+                projects_by_cwd,
+                canonical,
                 codex=True,
                 session_count=_int_field(activity.get("session_count")),
                 modified_at=activity.get("modified_at"),
@@ -372,7 +376,8 @@ async def list_projects_from_indexer() -> dict[str, Any]:
         if "copilot" in info.worker_types or canonical in copilot_activity:
             activity = copilot_activity.get(canonical, {})
             _merge_project(
-                projects_by_cwd, canonical,
+                projects_by_cwd,
+                canonical,
                 copilot=True,
                 session_count=_int_field(activity.get("session_count")),
                 modified_at=activity.get("modified_at"),
@@ -380,7 +385,8 @@ async def list_projects_from_indexer() -> dict[str, Any]:
         if canonical not in projects_by_cwd:
             # Entity-only project (no Claude/Codex worker history yet)
             _merge_project(
-                projects_by_cwd, canonical,
+                projects_by_cwd,
+                canonical,
                 modified_at=str(info.modified_at) if info.modified_at else None,
             )
         # Override id / name with the canonical entity values. Keep the legacy
@@ -393,6 +399,9 @@ async def list_projects_from_indexer() -> dict[str, Any]:
         # ``activate`` action on project/asset open). Wins the recency sort
         # below; ``modified_at`` (session-file mtimes) is the fallback.
         row["last_active_at"] = info.last_active_at
+        # Declared by `ProjectListItem.system`; the picker's `includeSystem:false`
+        # filter compares against it, so an absent key silently disables it.
+        row["system"] = info.system
 
     projects = list(projects_by_cwd.values())
     projects.sort(key=_recency_ms, reverse=True)

@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
@@ -30,14 +31,16 @@ import {
   declineInvitation,
   deleteArchivedConversations,
   deleteConversation,
+  dataContext,
   dismissConversation,
   fetchConversations,
   isInvitationGoneError,
   leaveConversation,
-  listCommunityTickets,
+  listHelpdeskTickets,
   pickupConversation,
   unarchiveConversation,
-  type CommunityTicket,
+  type HelpdeskTicket,
+  latestPointer,
 } from '@sdk';
 import { useAuth, useCloudStatus } from '@sdk/react/hooks';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
@@ -48,13 +51,13 @@ import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
-import { useInboxStore } from '@src/store/use-inbox-store';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
+import { updateMessage, bulkUpdateMessages } from './inbox-api';
 import {
-  updateMessage,
-  bulkUpdateMessages,
-} from './inbox-api';
-import { conversationFacets, actionsFor, compareConversationsByRecency } from '@src/components/conversation/conversation-category';
+  conversationFacets,
+  actionsFor,
+  compareConversationsByRecency,
+} from '@src/components/conversation/conversation-category';
 import { CategoryChips } from '@src/components/conversation/CategoryChips';
 import { MembershipInvitations } from './MembershipInvitations';
 import { RowActions } from '@src/components/conversation/RowActions';
@@ -86,7 +89,7 @@ function formatGmailTime(iso?: string | null): string {
 // Single line: [sender(s)] [subject — snippet…] [time]
 // Click anywhere on the row opens the conversation via its dockPointer.
 
-type InboxViewMode = 'inbox' | 'unread' | 'archived' | 'community';
+type InboxViewMode = 'inbox' | 'unread' | 'archived' | 'helpdesk';
 
 interface ConversationListRowProps {
   conv: Conversation;
@@ -132,7 +135,22 @@ interface ConversationListRowProps {
   refSetter: (el: HTMLDivElement | null) => void;
 }
 
-export function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchive, onUnarchive, onToggleRead, selected, onToggleSelect, selectMode, onRequestDelete, cloudUserId, onVisibilityChange, refSetter }: ConversationListRowProps) {
+export function ConversationListRow({
+  conv,
+  isFocused,
+  viewMode,
+  searchActive,
+  onArchive,
+  onUnarchive,
+  onToggleRead,
+  selected,
+  onToggleSelect,
+  selectMode,
+  onRequestDelete,
+  cloudUserId,
+  onVisibilityChange,
+  refSetter,
+}: ConversationListRowProps) {
   const { navigation } = useDockNavigation();
 
   // For invitation rows the first message IS the only message; for regular
@@ -140,7 +158,9 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
   // first to detect ``kind === 'invitation'``.
   const pointers = conv.conversationMessageIds ?? [];
   const firstPtr = pointers[0];
-  const lastPtr = pointers[pointers.length - 1];
+  // Newest by ts, not last-appended — an ingested mailbox backfills
+  // newest-first, so the last pointer there is the OLDEST mail.
+  const lastPtr = latestPointer(pointers);
   const firstTypeId = useMemo(() => (firstPtr?.id ? new TypeId(FlowMessage.type, firstPtr.id) : null), [firstPtr?.id]);
   const latestTypeId = useMemo(() => (lastPtr?.id ? new TypeId(FlowMessage.type, lastPtr.id) : null), [lastPtr?.id]);
   const { data: firstMessage } = useEntity<FlowMessage>(firstTypeId);
@@ -158,7 +178,7 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
   const myEmail = (cloudUser?.email || currentUser?.email || '').trim().toLowerCase();
   const [accepting, setAccepting] = useState(false);
 
-  // Single source of truth for the row's category (invitation / community /
+  // Single source of truth for the row's category (invitation / help desk /
   // archived / unread / active). Replaces the previously-scattered booleans and
   // is shared with RecentConversationsStrip. Viewer-relative facts (invitation,
   // unread) are resolved against the local user here. ``archived`` compares the
@@ -246,11 +266,11 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
       seen.add(key);
     };
     pushName(latestMessage?.sender_name);
-    for (const p of conv.participants ?? []) {
+    for (const p of conv.members ?? []) {
       pushName(p?.name || (p?.email ? p.email.split('@')[0] : ''));
     }
     return names.length > 0 ? names : [t`Unknown`];
-  }, [isInvitationRow, firstMessage?.sender_name, latestMessage?.sender_name, conv.participants, t]);
+  }, [isInvitationRow, firstMessage?.sender_name, latestMessage?.sender_name, conv.members, t]);
 
   if (isHidden) return null;
 
@@ -288,13 +308,10 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
     }
     if (isInvitationRow) return; // primary action is Accept
     if (!conv.id) return;
-    // Auto-mark the latest message as read on open — Gmail behavior. Without
-    // this the row stays bold until the user clicks the explicit
-    // mark-read button, which makes the "is it read?" cue useless. Fire and
-    // forget; refetch in the handler will flip ``isUnread`` for the row.
-    if (latestMessage?.id && !latestMessage.is_read) {
-      void onToggleRead(latestMessage.id, true);
-    }
+    // URL-first: the click ONLY navigates. The Gmail-style auto-mark-read
+    // moved to the mounted ConversationView (open-to-read effect), so direct
+    // links, banner clicks, and Inbox clicks all behave identically and the
+    // backend reconciles InboxManager.unread after the mutation.
     navigation.openDock(DockPointer.forConversation(conv.id));
   };
 
@@ -305,7 +322,7 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
       await acceptInvitation({ invitation_id: invitationId });
     } catch (e) {
       if (isInvitationGoneError(e)) {
-        notify.warning({ title: 'Invitation no longer valid', id: 'membership-invite' });
+        notify.warning({ title: t`Invitation no longer valid`, id: 'membership-invite' });
       } else {
         console.error('[InboxView] acceptInvitation failed', e);
       }
@@ -328,7 +345,7 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
         isInvitationRow && !selectMode ? 'cursor-default' : 'cursor-pointer'
       } items-center gap-3 border-b border-border/40 px-3 text-sm transition-colors hover:bg-accent/40 hover:shadow-sm ${
         selected ? 'bg-primary/10' : isFocused ? 'bg-primary/10' : ''
-      } ${isUnread ? 'bg-background' : 'bg-muted/20'} ${isInvitationRow ? 'border-l-2 border-l-violet-500/60' : ''}`}
+      } ${isUnread ? 'bg-background' : 'bg-muted/20'} ${isInvitationRow ? 'border-l-2 border-s-violet-500/60' : ''}`}
     >
       {/* Multi-select tick. Stops propagation so ticking a row never opens it.
           Always visible per line but faded (light border, dimmed) so it doesn't
@@ -354,11 +371,11 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
         {isInvitationRow && <MailPlus className="h-3.5 w-3.5 flex-shrink-0 text-violet-500" aria-label="invitation" />}
         <span className="min-w-0 flex-1 truncate">{senderLabel}</span>
         {!isInvitationRow && count > 1 && (
-          <span className="ml-1 shrink-0 font-normal text-muted-foreground">({count})</span>
+          <span className="ms-1 shrink-0 font-normal text-muted-foreground">({count})</span>
         )}
       </span>
       <span className="min-w-0 flex-1 truncate" data-testid="inbox-row-subject-line">
-        <CategoryChips facets={facets} className="mr-1" />
+        <CategoryChips facets={facets} className="me-1" />
         <span className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>{subject}</span>
         {snippet && (
           <>
@@ -369,7 +386,7 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
       </span>
       <span className="shrink-0 text-xs text-muted-foreground transition-opacity group-hover:opacity-0">
         {time}
-        {ago && <span className="ml-1.5 text-muted-foreground/70">· {ago}</span>}
+        {ago && <span className="ms-1.5 text-muted-foreground/70">· {ago}</span>}
       </span>
       <RowActions
         specs={actionsFor(facets, {
@@ -416,9 +433,11 @@ export function InboxView() {
   // reflect exactly what the user sees (rows hide themselves when their latest
   // FlowMessage is archived or hasn't materialised yet).
   const [visibleIds, setVisibleIds] = useState<Set<string>>(new Set());
+  // Rendered pending membership-invite rows (reported by MembershipInvitations)
+  // — only gates the empty state; the unread NUMBER is backend-owned.
+  const [membershipPendingCount, setMembershipPendingCount] = useState(0);
   const rowRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
-  const { navigation, currentDock } = useDockNavigation();
-  const { setUnreadCount } = useInboxStore();
+  const { navigation } = useDockNavigation();
   const { cloudUser } = useAuth();
   const cloudUserId = cloudUser?.id ?? null;
   const { connection } = useCloudStatus();
@@ -439,7 +458,7 @@ export function InboxView() {
   const { data: conversations = [], refetch, isLoading, isSuccess } = useEntitiesQuery<Conversation>(request);
 
   // Only the FIRST load gets the full-screen "Loading…" state. Every
-  // ``refetch()`` (mount hub-pull, mark-read, archive, …) flips ``isLoading``
+  // ``refetch()`` (manual hub-pull, mark-read, archive, …) flips ``isLoading``
   // back to true while KEEPING the previous ``data`` — so gating the row list
   // on raw ``isLoading`` blanks the whole list to the spinner and back on every
   // refetch, which is the on-open flicker. Once we've loaded successfully once,
@@ -481,9 +500,7 @@ export function InboxView() {
   }, [matchedMessages]);
 
   const sorted = useMemo(() => {
-    const list = searchActive
-      ? conversations.filter((c) => c.id && matchIds.has(c.id))
-      : [...conversations];
+    const list = searchActive ? conversations.filter((c) => c.id && matchIds.has(c.id)) : [...conversations];
     list.sort(compareConversationsByRecency);
     return list;
   }, [conversations, searchActive, matchIds]);
@@ -501,38 +518,8 @@ export function InboxView() {
 
   const visibleCount = visibleIds.size;
 
-  // Unread badge for the sidebar pip is driven server-side (`inbox-list`
-  // returns received non-archived FMs only). Decoupled from the visible-row
-  // count above because that one needs to follow self-sent rows the server
-  // filter excludes.
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const { listInboxMessages } = await import('./inbox-api');
-        const msgs = await listInboxMessages();
-        if (cancelled) return;
-        setUnreadCount(msgs.filter((m) => !m.is_read).length);
-      } catch {
-        // non-fatal — leave the badge as-is.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [setUnreadCount, conversations.length]);
-
-  // On inbox mount: pull any pending bundles from the hub so conversations
-  // whose pointer-list references not-yet-materialised FlowMessages don't
-  // 404 in the rendered rows. Fire-and-forget — the entity-update channel
-  // will refresh rows once the FMs land locally.
-  useEffect(() => {
-    void fetchConversations()
-      .then(() => refetch())
-      .catch(() => {});
-    // Run once per mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Unread pip/badge: backend-owned (InboxManager.unread, reflected live via
+  // the entity channel) — no client-side recount here anymore.
 
   const handleRefresh = useCallback(async () => {
     setFetching(true);
@@ -569,10 +556,11 @@ export function InboxView() {
   );
 
   const handleMarkAllRead = useCallback(async () => {
+    // No optimistic zero: the backend reconciles InboxManager.unread after the
+    // bulk update (pending invitations legitimately keep it > 0).
     await bulkUpdateMessages({ is_read: true });
-    setUnreadCount(0);
     void refetch();
-  }, [refetch, setUnreadCount]);
+  }, [refetch]);
 
   const handleArchiveAll = useCallback(async () => {
     // Conversation-level archive — O(threads), not O(messages). Includes
@@ -654,8 +642,7 @@ export function InboxView() {
   // FlowMessage id of a conversation's latest message — the read/unread flag
   // lives on the message, so bulk read toggles patch the last pointer's FM.
   const latestMessageId = (c: Conversation): string | null => {
-    const pointers = c.conversationMessageIds ?? [];
-    return pointers[pointers.length - 1]?.id ?? null;
+    return latestPointer(c.conversationMessageIds)?.id ?? null;
   };
 
   const handleBulkMarkRead = useCallback(
@@ -842,34 +829,34 @@ export function InboxView() {
 
   const inArchivedView = viewMode === 'archived';
   const inUnreadView = viewMode === 'unread';
-  const inCommunityView = viewMode === 'community';
+  const inHelpdeskView = viewMode === 'helpdesk';
 
-  // Staff community-ticket queue. Sourced from the hub (not local entities)
+  // Staff helpdesk ticket queue. Sourced from the hub (not local entities)
   // because unpicked tickets don't fan out to non-participants — see
-  // listCommunityTickets / hub Project.community_conversations.
-  const [communityTickets, setCommunityTickets] = useState<CommunityTicket[]>([]);
-  const [communityLoading, setCommunityLoading] = useState(false);
+  // listHelpdeskTickets / hub Project.helpdesk_conversations.
+  const [helpdeskTickets, setHelpdeskTickets] = useState<HelpdeskTicket[]>([]);
+  const [helpdeskLoading, setHelpdeskLoading] = useState(false);
   const [pickingUpId, setPickingUpId] = useState<string | null>(null);
-  const loadCommunityTickets = useCallback(async () => {
-    setCommunityLoading(true);
+  const loadHelpdeskTickets = useCallback(async () => {
+    setHelpdeskLoading(true);
     try {
-      const res = await listCommunityTickets();
-      setCommunityTickets(res.tickets ?? []);
+      const res = await listHelpdeskTickets(dataContext.project?.id);
+      setHelpdeskTickets(res.tickets ?? []);
     } catch (err) {
-      console.error('[inbox] failed to load community tickets', err);
-      setCommunityTickets([]);
+      console.error('[inbox] failed to load help desk tickets', err);
+      setHelpdeskTickets([]);
     } finally {
-      setCommunityLoading(false);
+      setHelpdeskLoading(false);
     }
   }, []);
   useEffect(() => {
-    if (inCommunityView) void loadCommunityTickets();
-  }, [inCommunityView, loadCommunityTickets]);
+    if (inHelpdeskView) void loadHelpdeskTickets();
+  }, [inHelpdeskView, loadHelpdeskTickets]);
 
   // Open a queued ticket: pick it up first (joins the roster so the caller can
   // read + reply) unless already joined, then navigate to it.
   const handleOpenTicket = useCallback(
-    async (ticket: CommunityTicket) => {
+    async (ticket: HelpdeskTicket) => {
       if (!ticket.picked_up) {
         setPickingUpId(ticket.conversation_id);
         try {
@@ -904,7 +891,12 @@ export function InboxView() {
         <Icon className="h-3.5 w-3.5" />
         <span>{label}</span>
         {active && visibleCount > 0 && (
-          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{visibleCount}</span>
+          // Fixed min-width + tabular figures: the badge keeps the same box up
+          // to three digits, so a growing count doesn't reflow the search input
+          // and the buttons to its right.
+          <span className="inline-block min-w-[30px] rounded bg-muted px-1.5 py-0.5 text-center text-[10px] tabular-nums text-muted-foreground">
+            {visibleCount}
+          </span>
         )}
       </button>
     );
@@ -930,20 +922,20 @@ export function InboxView() {
             {renderViewPill('inbox', t`Inbox`, InboxIcon)}
             {renderViewPill('unread', t`Unread`, MailPlus)}
             {renderViewPill('archived', t`Archived`, Archive)}
-            {renderViewPill('community', t`Community`, LifeBuoy)}
+            {renderViewPill('helpdesk', t`Help Desk`, LifeBuoy)}
           </div>
           {/* Text search — filters the list below to conversations whose
               messages contain the query, spanning archived rows. Hidden in
-              the Community view (hub-sourced tickets, not local messages). */}
-          {!inCommunityView && (
-            <div className="relative ml-2 flex items-center">
+              the Help Desk view (hub-sourced tickets, not local messages). */}
+          {!inHelpdeskView && (
+            <div className="relative ms-2 flex items-center">
               <Search className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={t`Search messages`}
-                className="h-7 w-44 rounded-md border border-border/60 bg-background pl-7 pr-6 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                className="h-7 w-44 rounded-md border border-border/60 bg-background pe-6 ps-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                 data-testid="inbox-search-input"
                 aria-label={t`Search messages`}
               />
@@ -971,7 +963,7 @@ export function InboxView() {
             data-testid="inbox-new-conversation-button"
             title={t`Start a new conversation`}
           >
-            <SquarePen className="mr-1 h-3.5 w-3.5" />
+            <SquarePen className="me-1 h-3.5 w-3.5" />
             <Trans>New</Trans>
           </Button>
           <Button
@@ -982,15 +974,15 @@ export function InboxView() {
             data-testid="inbox-new-contacts-group-button"
             title={t`Create a contacts group — add its members to any conversation in one click`}
           >
-            <UsersRound className="mr-1 h-3.5 w-3.5" />
+            <UsersRound className="me-1 h-3.5 w-3.5" />
             <Trans>New group</Trans>
           </Button>
         </div>
         {/* RIGHT — actions for the current view */}
         <div className="flex flex-1 items-center justify-end gap-1" data-testid="inbox-action-bar">
-          {selectedCount > 0 && !inCommunityView ? (
+          {selectedCount > 0 && !inHelpdeskView ? (
             <div className="flex items-center gap-1" data-testid="inbox-selection-bar">
-              <span className="mr-1 text-xs text-muted-foreground" data-testid="inbox-selection-count">
+              <span className="me-1 text-xs text-muted-foreground" data-testid="inbox-selection-count">
                 <Trans>{selectedCount} selected</Trans>
               </span>
               <Button
@@ -1000,7 +992,7 @@ export function InboxView() {
                 onClick={() => void handleBulkMarkRead(true)}
                 data-testid="inbox-selection-mark-read"
               >
-                <MailOpen className="mr-1 h-3.5 w-3.5" />
+                <MailOpen className="me-1 h-3.5 w-3.5" />
                 <Trans>Read</Trans>
               </Button>
               <Button
@@ -1010,7 +1002,7 @@ export function InboxView() {
                 onClick={() => void handleBulkMarkRead(false)}
                 data-testid="inbox-selection-mark-unread"
               >
-                <Mail className="mr-1 h-3.5 w-3.5" />
+                <Mail className="me-1 h-3.5 w-3.5" />
                 <Trans>Unread</Trans>
               </Button>
               {!inArchivedView && (
@@ -1021,7 +1013,7 @@ export function InboxView() {
                   onClick={() => void handleBulkArchive()}
                   data-testid="inbox-selection-archive"
                 >
-                  <Archive className="mr-1 h-3.5 w-3.5" />
+                  <Archive className="me-1 h-3.5 w-3.5" />
                   <Trans>Archive</Trans>
                 </Button>
               )}
@@ -1032,7 +1024,7 @@ export function InboxView() {
                 onClick={() => void handleBulkDelete()}
                 data-testid="inbox-selection-delete"
               >
-                <Trash2 className="mr-1 h-3.5 w-3.5" />
+                <Trash2 className="me-1 h-3.5 w-3.5" />
                 <Trans>Delete</Trans>
               </Button>
               <Button
@@ -1048,20 +1040,20 @@ export function InboxView() {
             </div>
           ) : (
             <>
-              {inCommunityView && (
+              {inHelpdeskView && (
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7"
-                  onClick={() => void loadCommunityTickets()}
-                  disabled={communityLoading}
-                  title={t`Refresh community tickets`}
-                  data-testid="inbox-community-refresh-button"
+                  onClick={() => void loadHelpdeskTickets()}
+                  disabled={helpdeskLoading}
+                  title={t`Refresh help desk tickets`}
+                  data-testid="inbox-helpdesk-refresh-button"
                 >
-                  <RefreshCw className={`h-3.5 w-3.5 ${communityLoading ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`h-3.5 w-3.5 ${helpdeskLoading ? 'animate-spin' : ''}`} />
                 </Button>
               )}
-              {!inArchivedView && !inCommunityView && (
+              {!inArchivedView && !inHelpdeskView && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -1074,7 +1066,7 @@ export function InboxView() {
               )}
               {/* Archive all archives every conversation regardless of read state;
               hide it in the Archived view where it makes no sense. */}
-              {!inArchivedView && !inUnreadView && !inCommunityView && (
+              {!inArchivedView && !inUnreadView && !inHelpdeskView && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -1095,11 +1087,11 @@ export function InboxView() {
                   disabled={isLoading || visibleCount === 0}
                   data-testid="inbox-delete-archived-button"
                 >
-                  <Trash2 className="mr-1 h-3.5 w-3.5" />
+                  <Trash2 className="me-1 h-3.5 w-3.5" />
                   <Trans>Delete all</Trans>
                 </Button>
               )}
-              {!inCommunityView && (
+              {!inHelpdeskView && (
                 <Button
                   variant="ghost"
                   size="icon"
@@ -1117,30 +1109,30 @@ export function InboxView() {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {/* Community staff queue — hub-sourced tickets, including unpicked ones
+        {/* Help-desk staff queue — hub-sourced tickets, including unpicked ones
             that don't appear in the local conversation list. */}
-        {inCommunityView && communityLoading && communityTickets.length === 0 && (
+        {inHelpdeskView && helpdeskLoading && helpdeskTickets.length === 0 && (
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
             <Trans>Loading…</Trans>
           </div>
         )}
-        {inCommunityView && !communityLoading && communityTickets.length === 0 && (
+        {inHelpdeskView && !helpdeskLoading && helpdeskTickets.length === 0 && (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
             <span className="text-sm">
-              <Trans>No community tickets</Trans>
+              <Trans>No help desk tickets</Trans>
             </span>
-            <Button variant="outline" size="sm" onClick={() => void loadCommunityTickets()} disabled={communityLoading}>
-              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${communityLoading ? 'animate-spin' : ''}`} />
+            <Button variant="outline" size="sm" onClick={() => void loadHelpdeskTickets()} disabled={helpdeskLoading}>
+              <RefreshCw className={`me-1.5 h-3.5 w-3.5 ${helpdeskLoading ? 'animate-spin' : ''}`} />
               <Trans>Refresh</Trans>
             </Button>
           </div>
         )}
-        {inCommunityView &&
-          communityTickets.map((ticket) => (
+        {inHelpdeskView &&
+          helpdeskTickets.map((ticket) => (
             <div
               key={ticket.conversation_id}
               className="group flex items-center gap-2 border-b px-3 py-2 hover:bg-muted/40"
-              data-testid="community-ticket-row"
+              data-testid="helpdesk-ticket-row"
               data-conversation-id={ticket.conversation_id}
             >
               <LifeBuoy className="h-3.5 w-3.5 shrink-0 text-violet-500" />
@@ -1165,20 +1157,20 @@ export function InboxView() {
                 onClick={() => void handleOpenTicket(ticket)}
                 disabled={pickingUpId === ticket.conversation_id}
                 className="shrink-0 rounded bg-violet-600 px-2 py-0.5 text-[11px] font-medium text-white hover:bg-violet-700 disabled:opacity-50"
-                data-testid="community-ticket-pickup-button"
+                data-testid="helpdesk-ticket-pickup-button"
               >
                 {pickingUpId === ticket.conversation_id ? t`Picking up…` : ticket.picked_up ? t`Open` : t`Pick up`}
               </button>
             </div>
           ))}
 
-        {!inCommunityView && initialLoading && (
+        {!inHelpdeskView && initialLoading && (
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
             <Trans>Loading…</Trans>
           </div>
         )}
 
-        {!inCommunityView && !initialLoading && visibleCount === 0 && (
+        {!inHelpdeskView && !initialLoading && visibleCount === 0 && membershipPendingCount === 0 && (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
             <span className="text-sm">
               {searchActive
@@ -1191,14 +1183,14 @@ export function InboxView() {
             </span>
             {!inArchivedView && !searchActive && (
               <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>
-                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`me-1.5 h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
                 <Trans>Check for new messages</Trans>
               </Button>
             )}
           </div>
         )}
 
-        {!inCommunityView && !initialLoading && visibleCount > 0 && (
+        {!inHelpdeskView && !initialLoading && visibleCount > 0 && (
           <div
             className="flex h-7 items-center gap-3 border-b border-border/40 bg-muted/10 px-3"
             data-testid="inbox-select-all-row"
@@ -1216,9 +1208,11 @@ export function InboxView() {
           </div>
         )}
 
-        {!inCommunityView && !initialLoading && <MembershipInvitations recipientEmail={cloudUser?.email ?? null} />}
+        {!inHelpdeskView && !inArchivedView && !initialLoading && (
+          <MembershipInvitations recipientEmail={cloudUser?.email ?? null} onPendingCount={setMembershipPendingCount} />
+        )}
 
-        {!inCommunityView &&
+        {!inHelpdeskView &&
           !initialLoading &&
           sorted.map((conv) => (
             <ConversationListRow

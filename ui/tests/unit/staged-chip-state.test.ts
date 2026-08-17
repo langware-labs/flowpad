@@ -35,6 +35,34 @@ describe('chipStateFor', () => {
 });
 
 /**
+ * TASK rows: unpack materializes a slim Task row immediately (the conversation
+ * branch needs it for its perm-dir slug), so entity resolution would mark a
+ * staged task installed before the user ever reviewed it. Installed-ness must
+ * come from the MA row, like raw files.
+ */
+describe('chipStateFor — task rows', () => {
+  const taskStaged = new MessageAttachment({
+    id: 'aaaaaaa1-1111-4111-8111-111111111111', asset_type: 'task', scope: null,
+  });
+  const taskInstalled = new MessageAttachment({
+    id: 'aaaaaaa2-2222-4222-8222-222222222222', asset_type: 'task', scope: 'project',
+  });
+
+  it('stays staged while the slim row already resolves', () => {
+    expect(chipStateFor(true, taskStaged, true)).toBe('staged');
+  });
+
+  it('installed follows the MA scope', () => {
+    expect(chipStateFor(true, taskInstalled, true)).toBe('installed');
+    expect(chipStateFor(false, taskInstalled, true)).toBe('installed');
+  });
+
+  it('no MA row keeps the plain-share behavior (entity resolution wins)', () => {
+    expect(chipStateFor(true, undefined, true)).toBe('installed');
+  });
+});
+
+/**
  * Raw FILE rows (asset_type='file' — the OS-file-picker lane) never resolve as
  * entities: installed-ness comes from the MA row itself (`ma.installed`), not
  * entity resolution. Regression for the SAPAK-DEMO-SPEC.md case where a

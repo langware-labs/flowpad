@@ -1,5 +1,6 @@
+import { t } from '@lingui/core/macro';
 import type { ReactNode } from 'react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import { Link2, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { TabbedSideDrawer, type TabDescriptor } from '@src/components/ui/side-drawer';
@@ -10,15 +11,20 @@ import { BacklinksTab } from './side-windows';
 // The one built-in side window; asset editors append extras via `extraTabs`.
 const BACKLINKS_TAB: TabDescriptor = {
   id: 'backlinks',
-  label: 'Backlinks',
+  label: t`Backlinks`,
   icon: Link2,
-  description: 'Documents that link here',
+  description: t`Documents that link here`,
 };
 
 // Vibe/Standard keep the markdown rail deliberately small. Context is supplied
 // only by surfaces that support it; Revisions is supplied by MarkdownEditor.
-// Everything else (Backlinks and asset-specific tools such as Runs/Eval) is a
-// power-user option and remains available in Advanced/Dev.
+// Translations is a first-class doc affordance (read a doc in another language),
+// so it stays available in every mode. Everything else (Backlinks and other
+// asset-specific tools such as Runs/Eval) is a power-user option and remains
+// available in Advanced/Dev only.
+// Built-in tabs that stay available in Vibe/Standard. Caller-injected extras
+// declare their own non-Advanced visibility via `ExtraSideTab.availableInNonAdvanced`
+// (mode-visibility is a property of the tab, not a registry the shell owns).
 const NON_ADVANCED_SIDE_TAB_IDS = new Set(['context', 'revisions']);
 
 /**
@@ -32,6 +38,12 @@ export interface ExtraSideTab {
   icon: TabDescriptor['icon'];
   description?: string;
   panel: ReactNode;
+  /**
+   * Keep this tab visible in Vibe/Standard (not just Advanced/Dev). Default
+   * false — an extra tab is a power-user affordance unless it opts in. Set for
+   * first-class doc affordances (e.g. Translations).
+   */
+  availableInNonAdvanced?: boolean;
 }
 
 interface EditorWithSidePanelProps {
@@ -59,28 +71,9 @@ interface EditorWithSidePanelProps {
  * caller calls `useSideWindows().open(id)` directly — there is no controlled
  * active-tab prop, because the URL is the single source of truth.
  */
-export function EditorWithSidePanel({
-  children,
-  target,
-  extraTabs,
-}: EditorWithSidePanelProps) {
+export function EditorWithSidePanel({ children, target, extraTabs }: EditorWithSidePanelProps) {
   const { windows, active, open, close, closeAll, select } = useSideWindows();
   const advanced = useIsAdvanced();
-
-  // Standard mode: the side window is closed by default — collapse any
-  // persisted/shared-open windows once on entry (and again whenever the user
-  // drops from Advanced back to Standard) so a Standard user lands on the rail.
-  // The rail stays, so they can still open a window for the session.
-  const didStandardCollapse = useRef(false);
-  useEffect(() => {
-    if (advanced) {
-      didStandardCollapse.current = false;
-      return;
-    }
-    if (didStandardCollapse.current) return;
-    didStandardCollapse.current = true;
-    if (windows.length > 0) closeAll();
-  }, [advanced, windows, closeAll]);
 
   // Registry of openable windows (Backlinks + caller extras), in display order.
   // Filtering here covers both the open drawer tabs and the collapsed rail, so
@@ -93,9 +86,22 @@ export function EditorWithSidePanel({
       description,
     }));
     const all = [BACKLINKS_TAB, ...extras];
-    return advanced ? all : all.filter((tab) => NON_ADVANCED_SIDE_TAB_IDS.has(tab.id));
+    if (advanced) return all;
+    // Non-Advanced: built-in always-on ids, plus any extra tab that opted in.
+    const nonAdvancedExtraIds = new Set((extraTabs ?? []).filter((t) => t.availableInNonAdvanced).map((t) => t.id));
+    return all.filter((tab) => NON_ADVANCED_SIDE_TAB_IDS.has(tab.id) || nonAdvancedExtraIds.has(tab.id));
   }, [advanced, extraTabs]);
 
+  // A window this mode cannot show is IGNORED, never deleted from the URL.
+  // Rendering already filters by `registry` (see `openTabs` below), so an
+  // Advanced-only id in a Standard URL shows nothing — the leak this used to
+  // "prune" was already impossible. Writing the URL to tidy it up was actively
+  // harmful: the tab set grows as async data lands (a Duplicates tab only
+  // exists once `duplicate_count` loads), so the pruner read "not declared
+  // yet" as "not allowed here" and dropped a legitimate window — via a
+  // history PUSH, which navigated the user off the entry Back had just
+  // correctly restored. A view ignores state it cannot use; deleting it
+  // requires an authority a mid-load render does not have.
   const panels = useMemo<Record<string, ReactNode>>(() => {
     const map: Record<string, ReactNode> = {
       backlinks: <BacklinksTab target={target} />,
@@ -145,7 +151,7 @@ export function EditorWithSidePanel({
           {advanced && openTabs.length === 0 && (
             <SideRailButton
               icon={PanelRightOpen}
-              label="Expand side window"
+              label={t`Expand side window`}
               onClick={() => open(registry[0].id)}
               testId="md-side-window-expand"
             />

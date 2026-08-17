@@ -23,6 +23,7 @@ from typing import Optional, Tuple
 from pydantic import ValidationError
 from starlette.requests import ClientDisconnect
 
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.builtin.agent_hook import HookEventType
 from flow_sdk.core.flow.models.hook_op import (
     HookOpPayload,
@@ -200,7 +201,7 @@ async def _create_prompt_annotation(content: str, session_id: str) -> None:
             iso_timestamp=now_iso,
             data={},
         )
-        await annotation.save([])
+        await annotation.save()
     except Exception as exc:
         logger.debug("_create_prompt_annotation failed (non-critical): %s", exc)
 
@@ -314,8 +315,13 @@ async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse |
         logger.debug("AgentHook not found: %s — skipping entity-specific handling", agent_hook_id)
         return ApiSuccessResponse(data={})
 
-    # Use the refactored handle_webhook method
-    result = await agent_hook.handle_webhook(webhook_data)
+    # Use the refactored handle_webhook method. `actor` is resolved HERE because
+    # the execution scope only exists at this door — handle_webhook emits the
+    # hook.* / trigger.fired envelopes and cannot see who caused them.
+    result = await agent_hook.handle_webhook(
+        webhook_data,
+        actor=f"agentic_process:{agentic_process_id}" if agentic_process_id else None,
+    )
 
     # Emit FlowData for live sniffer/watchers. Route through the canonical
     # ``convert_hook_event`` translator so the global sniffer view receives
@@ -363,6 +369,31 @@ async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse |
         logger.debug("Sniffer fan-out skipped (non-critical): %s", exc)
 
     return ApiSuccessResponse(data=result.model_dump())
+
+
+async def handle_process_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse | ApiFailResponse:
+    """Deliver a direct process hook without entering global AgentHook routing."""
+    process_id = webhook_data.agentic_process_id
+    if not is_valid_entity_id(process_id):
+        return ApiFailResponse(message="agentic_process_id must be a UUID v4/v5", status_code=400)
+
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+
+    process = await AgenticProcess.get_by_id(process_id)
+    if process is None:
+        return ApiFailResponse(message=f"AgenticProcess not found: {process_id}", status_code=404)
+    normalize = getattr(process.driver, "normalize_process_hook_data", None)
+    if normalize is None:
+        return ApiFailResponse(message="process hooks are unsupported by this worker", status_code=400)
+    try:
+        wrapped = webhook_data.hook_data
+        raw_hook_data = wrapped.get("raw_hook_data") if isinstance(wrapped, dict) else None
+        native = raw_hook_data if isinstance(raw_hook_data, dict) else wrapped
+        canonical = normalize(process_id, native)
+        await process.on_hook(canonical)
+    except (TypeError, ValueError, ValidationError) as exc:
+        return ApiFailResponse(message=str(exc), status_code=400)
+    return ApiSuccessResponse(data={"received": True})
 
 
 # ---------------------------------------------------------------------------
@@ -841,6 +872,11 @@ async def listen_action(request):
 
         # AGENT_HOOK -- parse and dispatch
         if webhook_type == WebhookType.AGENT_HOOK:
+            # Direct process hooks are isolated from global AgentHook/sniffer
+            # behavior. Branch before any legacy enrichment or fan-out.
+            if raw_payload.get("agentic_process_id") is not None:
+                return await handle_process_agent_hook(AgentHookData(**raw_payload))
+
             # Enrich hook_data with absolute skill usage count from ~/.claude.json.
             # Mutate raw_payload["hook_data"] so both _broadcast_to_sniffer AND
             # handle_agent_hook (which re-reads webhook_data.hook_data) see the count.

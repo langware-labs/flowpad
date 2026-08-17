@@ -7,7 +7,7 @@ id: 10f4e57c-07b4-5272-9750-0fd51154d0c1
 Complete interface reference for the objects that run agents and terminals: what
 exists on each side (Python backend / TypeScript SDK), every backend action and
 the Python method it calls, and the canonical flows as the tests drive them.
-Every topic file uses the same skeleton: **Python object & API → Backend
+Every reference page uses the same skeleton: **Python object & API → Backend
 actions → Frontend TS interface → Flows**.
 
 These pages are the *API surface*; the narrative story (why, lifecycle
@@ -22,7 +22,7 @@ cross-referenced, never duplicated.
 | [shell.md](./shell.md) | `Shell` entity (4 actions) + TS `Shell`/`PtyConnection`; shell_mode vs direct spawn |
 | [pty-layer.md](./pty-layer.md) | Internal PTY layer: `PtyRegistry`/`PtyState`, `PtyStreamFile`, provider PTY surface, WS lifecycle + `GET /shell/{id}/pty-stream` replay route |
 | [compute-node.md](./compute-node.md) | `ComputeNode` — 44 actions grouped by mixin; `createProcess`/`upsertSessionProcess` factories; TS class |
-| [cli-drivers.md](./cli-drivers.md) | `WorkerDriver` 14-method contract, `WorkerCLIOptions`, per-CLI matrix (claude/codex/copilot) |
+| [cli-drivers.md](./cli-drivers.md) | `WorkerDriver` 14-method contract, `AgentOptions`, per-CLI matrix (claude/codex/copilot) |
 | [status-model.md](./status-model.md) | Paired status enums/predicates backend↔TS, parity table, serialization path |
 | [flows.md](./flows.md) | Test-derived canonical flows + critique (non-slick flows, coverage gaps) |
 

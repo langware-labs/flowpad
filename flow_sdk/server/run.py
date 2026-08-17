@@ -58,12 +58,16 @@ def _raise_nofile_soft_limit(min_soft: int = 4096) -> None:
 
 
 def _pid_alive(pid: int) -> bool:
-    """Return True if the process with the given PID is still running."""
-    try:
-        os.kill(pid, 0)
-        return True
-    except (ProcessLookupError, PermissionError):
-        return False
+    """Return True if the process with the given PID is still running.
+
+    Delegates to ``pid_probe`` (stdlib-only, safe to import this early). Do not
+    inline ``os.kill(pid, 0)`` here: on Windows that delivers a console Ctrl-C
+    rather than probing, so the stale-lock check would signal the very backend
+    it is asking about — or this process.
+    """
+    from flow_sdk.pid_probe import pid_is_alive
+
+    return pid_is_alive(pid)
 
 
 def _acquire_singleton_lock() -> bool:
@@ -131,6 +135,23 @@ def _acquire_singleton_lock() -> bool:
 def _release_singleton_lock() -> None:
     if _lock and _lock.is_locked:
         _lock.release()
+        # Deliberately does NOT unlink server.lock. Deleting a lock file after
+        # releasing it is the classic filelock footgun: between release() and
+        # unlink() another backend can acquire the same inode, we then delete
+        # the file it holds, a third creates a fresh file and acquires that —
+        # and two backends are both "the singleton". `restart-backend` (old
+        # backend exiting while the new one starts) is exactly that window.
+        #
+        # Leftover lock/pid files are harmless: _acquire_singleton_lock already
+        # treats them as stale by checking the recorded pid, and
+        # `flow instance ctl reconcile` removes them, gated on no live process
+        # holding them. Hygiene belongs in the layer whose job is clearing
+        # control-plane facts that are provably false — not in a shutdown path
+        # that cannot know whether someone has already taken over.
+        from flow_sdk.config import get_port_file_path
+
+        pid_path = get_port_file_path().with_suffix(".pid")
+        pid_path.unlink(missing_ok=True)
         logging.info("[singleton] Lock released: pid=%d", os.getpid())
 
 

@@ -28,6 +28,23 @@ const FAVORITE_EDIT_WINDOW_MS = 5000;
 interface FavoriteStarProps extends FavoriteRef {
   className?: string;
   size?: number;
+  /**
+   * Which HOVER surface the star owns.
+   *
+   * `'card'` (default) is the historical behaviour: a tooltip when unfavorited,
+   * an interactive rename card when favorited.
+   *
+   * `'none'` gives the hover back to the HOST, for a star whose hover already
+   * means something else — the navigation bar's, which opens the bookmarks
+   * menu. Both of the default surfaces would otherwise fire first (300ms and
+   * instantly, against the menu's 500ms dwell) and sit on top of it. Right-click
+   * Rename/Remove is untouched, so nothing becomes unreachable.
+   *
+   * It also turns OFF the post-creation edit window: the star stays a star and
+   * a second click un-bookmarks, rather than the glyph becoming a pencil that
+   * opens a dialog. A host that owns the hover already offers editing there.
+   */
+  hoverSurface?: 'card' | 'none';
 }
 
 /**
@@ -47,6 +64,7 @@ export function FavoriteStar({
   nav,
   className,
   size = 16,
+  hoverSurface = 'card',
 }: FavoriteStarProps) {
   const { t } = useLingui();
   const { isFavorited, toggleFavorite, renameFavorite } = useFavorites();
@@ -62,6 +80,13 @@ export function FavoriteStar({
   // Post-creation "edit window": for FAVORITE_EDIT_WINDOW_MS after a favorite is
   // created, the star shows an edit glyph and a click opens the edit dialog
   // (pre-selecting the new favorite) instead of un-favoriting.
+  // ...but only where the star owns its own surfaces. When a HOST owns the
+  // hover (the navigation bar, whose hover opens the bookmarks menu), the morph
+  // is a second, silent mode on a glyph that already has two gestures: the star
+  // would turn into a pencil for five seconds and the next click would open a
+  // dialog instead of un-bookmarking. Rename and Remove are on right-click and
+  // in the menu, so nothing is lost by leaving the star a star.
+  const editWindowEnabled = hoverSurface !== 'none';
   const [editWindowActive, setEditWindowActive] = useState(false);
   const [newFavId, setNewFavId] = useState<string | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -120,13 +145,25 @@ export function FavoriteStar({
       // Creating a new favorite → open the 5s edit window on the just-created id.
       if (!favorited) {
         const created = await toggleFavorite({ entityType, entityId, title, icon, nav });
-        if (created?.id) armEditWindow(created.id);
+        if (created?.id && editWindowEnabled) armEditWindow(created.id);
         return;
       }
       // Already favorited (no active window) → remove, as before.
       void toggleFavorite({ entityType, entityId, title, icon, nav });
     },
-    [editWindowActive, favorited, clearEditWindow, armEditWindow, toggleFavorite, entityType, entityId, title, icon, nav],
+    [
+      editWindowActive,
+      editWindowEnabled,
+      favorited,
+      clearEditWindow,
+      armEditWindow,
+      toggleFavorite,
+      entityType,
+      entityId,
+      title,
+      icon,
+      nav,
+    ],
   );
 
   const startEditing = useCallback(() => {
@@ -177,20 +214,40 @@ export function FavoriteStar({
     />
   );
 
-  // Unfavorited: lightweight tooltip — nothing to rename. Favorited: interactive
-  // HoverCard with inline rename plus right-click menu. The edit dialog is shared
-  // by both and only mounted while open.
-  const content = !favorited ? (
+  /** Rename / Remove — and the ONLY route to them once a host takes the hover
+   *  (`hoverSurface="none"`), which is why the card below stays mounted. */
+  const favoriteContextMenu = (
+    <ContextMenuContent>
+      <ContextMenuItem onSelect={() => setTimeout(startEditing, 0)}><Trans>Rename</Trans></ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem onSelect={() => void toggleFavorite({ entityType, entityId, title, icon, nav })}>
+        <Trans>Remove favorite</Trans>
+      </ContextMenuItem>
+    </ContextMenuContent>
+  );
+
+  // Unfavorited with the host owning hover: a bare button. No tooltip (it would
+  // land on top of whatever the host opens), and no context menu — Rename and
+  // Remove have no subject until there IS a favorite.
+  const content = hoverSurface === 'none' && !favorited ? (
+    starButton
+  ) : !favorited ? (
     <Tooltip>
       <TooltipTrigger asChild>{starButton}</TooltipTrigger>
       <TooltipContent side="bottom"><Trans>Add to favorites</Trans></TooltipContent>
     </Tooltip>
   ) : (
     <ContextMenu>
+      {/* The card is MOUNTED in both modes, because it hosts the rename input
+          that right-click Rename opens (`startEditing` sets `editing`). When the
+          host owns the hover it is driven by `editing` alone — hover never opens
+          it, but Rename still does. Removing the card outright would leave
+          Rename firing state nothing renders. */}
       <HoverCard
-        open={cardOpen || editing}
+        open={hoverSurface === 'none' ? editing : cardOpen || editing}
         onOpenChange={(open) => {
           if (editing) return; // don't auto-close while editing
+          if (hoverSurface === 'none') return; // hover is the host's
           setCardOpen(open);
         }}
         openDelay={300}
@@ -271,15 +328,7 @@ export function FavoriteStar({
           )}
         </HoverCardContent>
       </HoverCard>
-      <ContextMenuContent>
-        <ContextMenuItem onSelect={() => setTimeout(startEditing, 0)}><Trans>Rename</Trans></ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem
-          onSelect={() => void toggleFavorite({ entityType, entityId, title, icon, nav })}
-        >
-          <Trans>Remove favorite</Trans>
-        </ContextMenuItem>
-      </ContextMenuContent>
+      {favoriteContextMenu}
     </ContextMenu>
   );
 

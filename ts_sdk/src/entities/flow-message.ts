@@ -1,6 +1,7 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
+import { ICloudOrigin } from '../models/CloudOrigin';
 import { Callable } from '../types';
 import { ConnectionManager, DataOp } from '../websocket';
 
@@ -141,7 +142,7 @@ export interface IFlowMessage extends IEntity {
   /** Receipt state — orthogonal to the local-only `is_read` flag. Set only
    *  by the hub via mark_delivered / mark_received actions; flows back to
    *  the sender as a data_op_msg(update) frame, subject to the parent
-   *  conversation's `message_status_visible` gate. */
+   *  reporting user's message-status sharing preference. */
   delivery_status?: DeliveryStatus;
   delivered_at?: string | null;
   received_at?: string | null;
@@ -161,7 +162,7 @@ export interface IFlowMessage extends IEntity {
    *  Receivers gate downloads on READY. */
   body_status?: BodyStatus;
   /** Live-session grouping key. Stamped at send time by the guest (who mints
-   *  the session id) and on PromptResult replies by the host; receivers
+   *  the session id) and on PromptCompletion replies by the host; receivers
    *  re-derive it from the `remote_worker_session-<id>` TYPE_ID attachment
    *  when the hub stripped the header field. */
   remote_worker_session_id?: string | null;
@@ -181,6 +182,16 @@ export interface IFlowMessage extends IEntity {
   cloned_from_id?: string | null;
   /** Original sender of the source message (for the "forwarded" chip). */
   cloned_from_sender_id?: string | null;
+  /** Where the real record lives when this message CACHES a cloud one (a Gmail
+   *  message, a Slack post). Null/absent means the message is ours — which is
+   *  exactly the badge rule: no origin, no channel mark. */
+  origin?: ICloudOrigin | null;
+  /** The MessageThread this belongs to. Null = ungrouped, i.e. flat rendering
+   *  (every message that predates threading). */
+  thread_id?: string | null;
+  /** Local id of the message this replies to — provenance for quoting, NOT how
+   *  threading is decided. */
+  reply_to_id?: string | null;
 }
 
 @registerEntity
@@ -207,6 +218,9 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   cloned_from_id?: string | null;
   cloned_from_sender_id?: string | null;
   remote_worker_session_id?: string | null;
+  origin?: ICloudOrigin | null;
+  thread_id?: string | null;
+  reply_to_id?: string | null;
   static type: string = 'flow_message';
 
   constructor(entity: Partial<IFlowMessage> = {}) {
@@ -233,6 +247,9 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.cloned_from_id = entity.cloned_from_id ?? null;
     this.cloned_from_sender_id = entity.cloned_from_sender_id ?? null;
     this.remote_worker_session_id = entity.remote_worker_session_id ?? null;
+    this.origin = entity.origin ?? null;
+    this.thread_id = entity.thread_id ?? null;
+    this.reply_to_id = entity.reply_to_id ?? null;
   }
 
   /** Promote a draft message to a real reply: flips is_draft=false, appends to conversation.jsonl, pushes to hub. */
@@ -452,6 +469,26 @@ export async function createTaskBundle(params: CreateTaskBundleParams): Promise<
   return res!;
 }
 
+/** URL for downloading a local FlowMessage as a `.flowmsg` bundle. */
+export function localFlowMessageBundleUrl(flowMessageId: string): string {
+  return new ActionInfo(
+    'create-and-download-local-flowmsg',
+    FlowMessage.type,
+    flowMessageId,
+    'GET',
+  ).fullActionUrl;
+}
+
+/** URL for streaming one file from a FlowMessage's embedded VFS storage. */
+export function flowMessageAttachmentDownloadUrl(
+  flowMessageId: string,
+  vfsPath: string,
+): string {
+  const action = new ActionInfo('fs', FlowMessage.type, flowMessageId, 'GET');
+  action.subpath = `download/${vfsPath}`;
+  return action.fullActionUrl;
+}
+
 export interface MarkResult {
   updated?: string[];
   skipped?: Array<{ id: string; reason: string; current?: string }>;
@@ -485,7 +522,7 @@ export async function forwardMessage(
  * Batch read-ack: tells the local server (which forwards to the hub) that
  * the listed FlowMessages have been seen by the current user. Hub flips
  * their `delivery_status` to "received" and fans an UPDATE frame back to
- * the sender (subject to the parent conversation's `message_status_visible`).
+ * the sender when the reporting user shares message status.
  */
 export async function markFlowMessagesReceived(flow_message_ids: string[]): Promise<MarkResult | null> {
   if (flow_message_ids.length === 0) return null;

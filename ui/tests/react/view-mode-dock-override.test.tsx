@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createMemoryRouter, RouterProvider, useLocation } from 'react-router';
 
 import { PrefKey, instancePreferences } from '@sdk';
-import { ViewToggle } from '@src/components/view-toggle/view-toggle';
+import { resetRevealedModes, ViewToggle } from '@src/components/view-toggle/view-toggle';
 import {
   setViewMode,
   useDockViewModeOverrideSync,
@@ -21,6 +21,18 @@ function Probe({ toggle = false }: { toggle?: boolean }) {
       <div data-testid="effective-mode">{mode}</div>
       <div data-testid="location">{location.pathname}{location.search}</div>
       {toggle && <ViewToggle />}
+    </div>
+  );
+}
+
+function UrlOwnedToggleProbe() {
+  const location = useLocation();
+  const mode = useViewMode();
+  return (
+    <div>
+      <div data-testid="location">{location.pathname}{location.search}</div>
+      <div data-testid="effective-mode">{mode}</div>
+      <ViewToggle />
     </div>
   );
 }
@@ -43,6 +55,7 @@ describe('DockPointer viewMode override', () => {
     localStorage.clear();
     document.documentElement.classList.remove('view-mode-glow-flicker');
     setViewMode(ViewMode.Standard);
+    resetRevealedModes();
   });
 
   afterEach(() => {
@@ -75,6 +88,9 @@ describe('DockPointer viewMode override', () => {
 
     await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('standard'));
 
+    // Advanced is hidden by default — double-click the selected Standard
+    // button to reveal it first.
+    fireEvent.doubleClick(screen.getByTestId('view-toggle-standard'));
     fireEvent.click(screen.getByTestId('view-toggle-advanced'));
 
     // The click itself only navigates; the mode then lands via the load-time sync.
@@ -97,5 +113,27 @@ describe('DockPointer viewMode override', () => {
     expect(screen.getByTestId('location').textContent).toContain('viewMode=vibe');
     expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('vibe');
     expect(document.documentElement.classList.contains('view-mode-glow-flicker')).toBe(true);
+  });
+
+  it('uses the dock URL for selection and click dedupe before preference adoption', async () => {
+    const router = createMemoryRouter(
+      [
+        { path: '/dock/:viewType', element: <UrlOwnedToggleProbe /> },
+        { path: '/dock/:viewType/*', element: <UrlOwnedToggleProbe /> },
+      ],
+      { initialEntries: ['/dock/settings?viewMode=advanced'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    // Persisted mode is deliberately still Standard: the URL must win in the
+    // first committed render, before useDockViewModeOverrideSync can adopt it.
+    expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('standard');
+    expect(screen.getByTestId('effective-mode').textContent).toBe('advanced');
+    expect(screen.getByTestId('view-toggle-advanced').getAttribute('aria-checked')).toBe('true');
+
+    fireEvent.click(screen.getByTestId('view-toggle-standard'));
+    await waitFor(() =>
+      expect(screen.getByTestId('location').textContent).toContain('viewMode=standard'),
+    );
   });
 });

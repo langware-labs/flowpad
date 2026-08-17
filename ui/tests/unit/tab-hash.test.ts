@@ -6,7 +6,7 @@
  */
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
-import { Layout, Tab } from '@sdk';
+import { Layout, PageId, Tab } from '@sdk';
 import { describe, expect, it } from 'vitest';
 
 describe('DockPointer.tabHash', () => {
@@ -46,10 +46,47 @@ describe('DockPointer.tabHash', () => {
     expect(dock.tabHash).toBe(win.tabHash);
   });
 
+  it('excludes the desk page — desk tabHash is byte-identical to the un-paged form', () => {
+    const noPage = new DockPointer(ViewType.CONVERSATION, 'abc123');
+    const desk = new DockPointer(ViewType.CONVERSATION, 'abc123', {}, Layout.DOCK, PageId.DESK);
+    expect(desk.tabHash).toBe('conversation|abc123');
+    expect(desk.tabHash).toBe(noPage.tabHash);
+  });
+
+  it('namespaces a non-desk page — hub and desk tabs with the same viewType/pointer never collide', () => {
+    const desk = new DockPointer(ViewType.CONVERSATION, 'abc123');
+    const hub = new DockPointer(ViewType.CONVERSATION, 'abc123', {}, Layout.DOCK, PageId.HUB);
+    expect(hub.tabHash).toBe('hub|conversation|abc123');
+    expect(hub.tabHash).not.toBe(desk.tabHash);
+  });
+
   it('excludes transient options (query params / slot)', () => {
     const plain = new DockPointer(ViewType.SEARCH, 'q').tabHash;
     const withOpts = new DockPointer(ViewType.SEARCH, 'q', { slot: 'activeView', x: '1' }).tabHash;
     expect(plain).toBe(withOpts);
+  });
+
+  it('excludes the workspace host — one document is one tab, whoever displays it', () => {
+    // The load-bearing claim of the hosted-display URL. The host rides in
+    // `options` precisely so identity is untouched: existing stored rows keep
+    // working with no migration, the same doc shown by two agents shares one
+    // tab, and the backend (which stores this string) never sees the host.
+    const url = '/dock/project/proj-1/editor/markdown/typeid/markdown-9';
+    const plain = DockPointer.fromUrl(url);
+    const hosted = DockPointer.fromUrl(
+      '/dock/project/proj-1/process/agentic_process-abc/display/editor/markdown/typeid/markdown-9',
+    );
+
+    expect(hosted.hostProcessId).toBe('agentic_process-abc');
+    expect(plain.hostProcessId).toBeNull();
+    // …yet identity and the stored form are byte-identical.
+    expect(hosted.tabHash).toBe(plain.tabHash);
+    expect(hosted.toJSON()).toBe(plain.toJSON());
+    // Two different hosts showing the same document also collapse to one tab.
+    expect(hosted.withHost('agentic_process-zzz').tabHash).toBe(plain.tabHash);
+    // The URL still SPELLS the host as path segments (never `?host=`).
+    expect(hosted.toUrl()).toContain('/process/agentic_process-abc/display/');
+    expect(hosted.toUrl()).not.toContain('host=');
   });
 
   it('round-trips through the strip split: `viewType|pointer`', () => {
@@ -107,9 +144,72 @@ describe('DockPointer.toJSON / fromJSON', () => {
     const roundtrip = DockPointer.fromJSON(json!);
     expect(roundtrip?.tabHash).toBe(origHash);
   });
+
+  it('normalizes an entity-rooted WorldView pointer through the shared SDK decoder', () => {
+    const artifactId = 'a7d50eb3-d7a7-4c06-9ee2-a8787ae2f843';
+    const dock = DockPointer.fromJSON(
+      JSON.stringify({
+        viewType: 'worldview',
+        pointer: `artifact/${artifactId}`,
+        options: { color: 'cost', selected: `artifact-${artifactId}` },
+      }),
+    );
+
+    expect(dock).toEqual(
+      expect.objectContaining({
+        viewType: ViewType.WORLDVIEW,
+        pointer: 'deployment',
+        page: PageId.DESK,
+        options: {
+          focus: `artifact-${artifactId}`,
+          selected: `artifact-${artifactId}`,
+          signal: 'cost',
+        },
+      }),
+    );
+    expect(dock?.tabHash).toBe('worldview|deployment');
+  });
 });
 
 describe('Tab.dockPointer legacy pointer compatibility', () => {
+  it('normalizes a persisted Atlas tab to the Hub organization WorldView', () => {
+    const tab = new Tab({
+      id: '7f0e48ac-c169-4ba7-a606-837916a2c927',
+      pointer: JSON.stringify({ viewType: 'atlas', pointer: 'organization', options: { color: 'cost' } }),
+    });
+
+    expect(tab.dockPointer).toEqual(
+      expect.objectContaining({
+        viewType: ViewType.WORLDVIEW,
+        pointer: 'organization',
+        page: PageId.HUB,
+        tabHash: 'hub|worldview|organization',
+        options: undefined,
+      }),
+    );
+  });
+
+  it('normalizes a persisted entity-rooted WorldView tab before tab-key comparison', () => {
+    const deploymentId = '90f0adcf-d2f5-49a2-8dcc-9ef42701cd07';
+    const tab = new Tab({
+      id: 'ba88f66c-02f0-4f62-9784-44b57a5f57a5',
+      pointer: `worldview|deployment/${deploymentId}`,
+      target_type: 'deployment',
+      target_id: deploymentId,
+    });
+
+    expect(tab.dockPointer).toEqual(
+      expect.objectContaining({
+        viewType: ViewType.WORLDVIEW,
+        pointer: 'deployment',
+        options: { focus: `deployment-${deploymentId}` },
+        page: PageId.DESK,
+        tabHash: 'worldview|deployment',
+      }),
+    );
+    expect(tab.getKey()).toBe('worldview|deployment');
+  });
+
   it('normalizes stale dock/shell-<id> rows to /dock/shell/shell-<id>', () => {
     const shellId = '8fc3bec4-0f33-4333-8b2b-c95a8f0ae194';
     const tab = new Tab({
@@ -162,5 +262,26 @@ describe('Tab.dockPointer legacy pointer compatibility', () => {
         tabHash: `conversation|${conversationId}`,
       }),
     );
+  });
+});
+
+describe('Tab.fromResponse target_remote compatibility', () => {
+  it('preserves booleans and clears a cached value when an old server omits it', () => {
+    const id = 'ded5ca0c-cf9b-4c21-a012-a772a9fd28ee';
+    const base = {
+      id,
+      pointer: '{"viewType":"conversation","pointer":"remote-test"}',
+    };
+
+    const cloud = Tab.fromResponse([{ ...base, target_remote: true }])[0];
+    expect(cloud.target_remote).toBe(true);
+
+    const local = Tab.fromResponse([{ ...base, target_remote: false }])[0];
+    expect(local).toBe(cloud);
+    expect(local.target_remote).toBe(false);
+
+    const legacy = Tab.fromResponse([base])[0];
+    expect(legacy).toBe(cloud);
+    expect(legacy.target_remote).toBeUndefined();
   });
 });

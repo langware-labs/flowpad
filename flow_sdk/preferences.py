@@ -13,6 +13,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
+PREF_SHARE_MESSAGE_STATUS = "preferences.notifications.share_message_status"
+DEFAULT_SHARE_MESSAGE_STATUS = True
+
 
 def read_instance_pref(key: str, default: Any) -> Any:
     """Read one dotted PrefKey from the instance preferences.json.
@@ -32,6 +35,31 @@ def read_instance_pref(key: str, default: Any) -> Any:
     if not isinstance(prefs, dict) or key not in prefs:
         return default
     return prefs[key]
+
+
+def read_instance_prefs(defaults: dict[str, Any]) -> dict[str, Any]:
+    """Read several dotted PrefKeys in ONE file read.
+
+    ``read_instance_pref`` re-stats, re-opens and re-parses ``preferences.json``
+    per key, so reading a block of N keys costs N of each. Callers on a hot path
+    (project activation reads four) should use this instead. Same never-raises
+    contract: any unreadable file yields ``defaults`` verbatim.
+    """
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    path = get_instance_settings().instance_dir / "preferences.json"
+    try:
+        prefs = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return dict(defaults)
+    if not isinstance(prefs, dict):
+        return dict(defaults)
+    return {key: prefs.get(key, fallback) for key, fallback in defaults.items()}
+
+
+def message_status_sharing_enabled() -> bool:
+    """Whether this instance reports delivered/read status to other users."""
+    return bool(read_instance_pref(PREF_SHARE_MESSAGE_STATUS, DEFAULT_SHARE_MESSAGE_STATUS))
 
 
 def write_instance_pref(key: str, value: Any) -> bool:

@@ -11,6 +11,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent
 UI_DIR = REPO_ROOT / "ui"
+SDK_DIR = REPO_ROOT / "ts_sdk"
 SYSTEM_PROJECTS_DIR = REPO_ROOT / "flow_sdk" / "system_projects"
 _IS_WINDOWS = platform.system() == "Windows"
 
@@ -103,6 +104,47 @@ def build_skill_uis():
         subprocess.run(["npm", "run", "build"], cwd=ui_dir, check=True, shell=_IS_WINDOWS)
 
 
+def build_sdk():
+    """Build the ts_sdk library and place it at ``server/static/sdk/``.
+
+    ``app.py`` has always mounted ``/sdk`` from that directory, but nothing ever
+    populated it, so the mount was dead and apps had no way to import the SDK
+    from the host. ts_sdk's own vite config already emits the lib bundle
+    (``flowpad-sdk.*`` plus rolled-up types) — this just runs it and puts the
+    output where the mount looks.
+
+    Serving the SDK rather than having each app bundle its own copy is what
+    keeps a served app in step with the backend that serves it.
+    """
+    if not (SDK_DIR / "src" / "index.ts").exists():
+        print(f"No ts_sdk at {SDK_DIR}; skipping SDK build.")
+        return
+    print("Building ts_sdk library...")
+    # Built with ui's toolchain (see ui/vite.sdk.config.ts): ts_sdk declares no
+    # build script and no devDependencies of its own.
+    subprocess.run(
+        ["npx", "vite", "build", "--config", "vite.sdk.config.ts"],
+        cwd=UI_DIR,
+        check=True,
+        env={**os.environ, "DEPLOY_ENV": "desktop", "IS_PACKAGE": "true"},
+        shell=_IS_WINDOWS,
+    )
+
+    src = UI_DIR / "sdk-dist"
+    if not src.exists():
+        print(f"ERROR: SDK build output not found at {src}", file=sys.stderr)
+        sys.exit(1)
+    dest = get_dist_dir() / "sdk"
+    dest.mkdir(parents=True, exist_ok=True)
+    for item in src.iterdir():
+        target = dest / item.name
+        if item.is_dir():
+            shutil.copytree(item, target, dirs_exist_ok=True)
+        else:
+            shutil.copy2(item, target)
+    print(f"Copied SDK bundle to {dest}")
+
+
 def build():
     """Full pipeline: clean → install → build skill UIs → build main UI → copy."""
     clean_dist()
@@ -110,6 +152,10 @@ def build():
     build_skill_uis()
     build_ui()
     copy_to_dist()
+    # After copy_to_dist: clean_dist() wipes server/static wholesale, and
+    # copy_to_dist writes into it, so the SDK has to land last or it would be
+    # deleted by the very next build step.
+    build_sdk()
     print("Build complete.")
 
 

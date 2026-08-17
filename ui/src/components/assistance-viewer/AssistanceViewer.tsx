@@ -46,24 +46,34 @@ export function AssistanceViewer() {
 
   // Render sidebar with task list
   const renderSidebar = () => (
-    <div className="flex h-full w-80 flex-col border-r bg-background">
+    <div className="flex h-full w-80 flex-col border-e bg-background">
       <div className="flex h-[52px] items-center justify-between border-b bg-muted/50 px-3">
-        <h2 className="text-sm font-semibold"><Trans>Expert Assistance</Trans></h2>
+        <h2 className="text-sm font-semibold">
+          <Trans>Expert Assistance</Trans>
+        </h2>
       </div>
 
       <ScrollArea className="flex-1">
         {isLoading ? (
-          <div className="p-4 text-center text-xs text-muted-foreground"><Trans>Loading tasks...</Trans></div>
+          <div className="p-4 text-center text-xs text-muted-foreground">
+            <Trans>Loading tasks...</Trans>
+          </div>
         ) : error ? (
           <div className="p-4 text-center">
             <Hand className="mx-auto h-8 w-8 text-muted-foreground/50" />
-            <p className="mt-2 text-xs text-muted-foreground"><Trans>Failed to load tasks</Trans></p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              <Trans>Failed to load tasks</Trans>
+            </p>
           </div>
         ) : !tasks || tasks.length === 0 ? (
           <div className="p-4 text-center">
             <Hand className="mx-auto h-8 w-8 text-muted-foreground/50" />
-            <p className="mt-2 text-xs text-muted-foreground"><Trans>No assistance requests yet</Trans></p>
-            <p className="mt-1 text-xs text-muted-foreground/70"><Trans>Use "Send to Expert" to create a task</Trans></p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              <Trans>No assistance requests yet</Trans>
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground/70">
+              <Trans>Use "Send to Expert" to create a task</Trans>
+            </p>
           </div>
         ) : (
           <div className="space-y-2 p-2">
@@ -81,9 +91,7 @@ export function AssistanceViewer() {
                     <CardTitle className="line-clamp-2 text-sm font-medium">{task.displayName}</CardTitle>
                     {task.status && (
                       <CardDescription className="text-xs">
-                        <span
-                          className={`inline-block rounded-full px-2 py-0.5 ${getStatusBadgeClass(task.status)}`}
-                        >
+                        <span className={`inline-block rounded-full px-2 py-0.5 ${getStatusBadgeClass(task.status)}`}>
                           {task.status}
                         </span>
                       </CardDescription>
@@ -105,13 +113,19 @@ export function AssistanceViewer() {
         <div className="flex h-full flex-1 flex-col bg-background">
           <div className="flex h-[52px] items-center border-b bg-muted/50 px-3">
             <div className="flex-1">
-              <h3 className="text-sm font-medium text-muted-foreground"><Trans>No Task Selected</Trans></h3>
+              <h3 className="text-sm font-medium text-muted-foreground">
+                <Trans>No Task Selected</Trans>
+              </h3>
             </div>
           </div>
           <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
             <Hand className="h-16 w-16 text-muted-foreground/50" />
-            <p className="mt-4 text-lg text-muted-foreground"><Trans>Select a task</Trans></p>
-            <p className="mt-2 text-sm text-muted-foreground"><Trans>Choose a task from the sidebar to view details</Trans></p>
+            <p className="mt-4 text-lg text-muted-foreground">
+              <Trans>Select a task</Trans>
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              <Trans>Choose a task from the sidebar to view details</Trans>
+            </p>
           </div>
         </div>
       );
@@ -121,7 +135,9 @@ export function AssistanceViewer() {
     if (!selectedTask) {
       return (
         <div className="flex h-full flex-1 items-center justify-center">
-          <p className="text-sm text-muted-foreground"><Trans>Task not found</Trans></p>
+          <p className="text-sm text-muted-foreground">
+            <Trans>Task not found</Trans>
+          </p>
         </div>
       );
     }

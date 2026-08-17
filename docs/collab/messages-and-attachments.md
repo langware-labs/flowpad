@@ -184,14 +184,26 @@ retry. An optional `on_progress(done, total)` drives the sender's progress bar.
 
 ### Body transfer modes
 
+Transfer mode governs only the **body** axis (how the bytes travel). The **metadata
+axis** is separate and transport-independent: every bundle carries `entities.json`, a
+`{ "<type>-<id>": <portable entity JSON> }` map produced by `Entity.to_common_json()`
+(a model dump minus the sender-local set — scope, project_id, asset_ref, git_origin, …)
+for each file-backed/repo attachment and its nested descendants. On receive the
+unpacker overlays each envelope onto the materialized row by id, so metadata-only
+fields (`parent_type_id`, labels, status, semantic_lock) survive even a bytes-only
+`copy` share; the receiver re-derives the stripped placement fields locally. The five
+header-serialized DB-record types (conversation, flow_message, claude_session,
+flowpad_diagnosis, remote_worker_session) keep their own per-attachment `header.json`
+carrier and are excluded from `entities.json`.
+
 The body upload contract has two transfer modes:
 
 - **`copy`** (default) — file-backed TYPE_ID attachments copy their source file or
   folder into the bundle. If the source lives in git, the bundle also records a
   `GitOrigin` so the receiver can preserve repo-relative placement, but the bytes
   still ride inside the `.flowmsg`.
-- **`git`** — git-backed attachments are metadata-only. The bundle carries
-  `git_origins.json`, `git_transfers.json`, and
+- **`git`** — git-backed attachments are metadata-only on the body axis. The bundle
+  carries `git_origins.json`, `git_transfers.json`, and
   `metadata/<type>-@<id>/metadata.json`; it does not carry the git-backed file
   bytes. On receive, the unpacker resolves a matching local checkout, pulls the
   branch when possible, or clones the remote, then indexes the entity from the
@@ -204,6 +216,13 @@ mode means "restore the record from the checkout and sender metadata", not
 "copy a file out of the bundle." For graph artifacts, git mode carries only the
 artifact declaration and `GitOrigin`; the sender's absolute path is deliberately
 cleared on receive and resolved later when the receiver opens the artifact.
+
+Copy-mode file-backed assets carry named capsules with their source bytes:
+Markdown identity remains in its comment block and folder identity remains in
+`.flow/capsules/identity.json`. Packing and restoring existing sources never
+injects, rewrites, or repairs an id; duplicate/conflicting copied identities are
+left to the indexer's warn-and-skip rule. Only a source-less rendered fallback
+mints its proposed bundle id through `TypeInfo` after the path exists.
 
 ### Download (receiver)
 
@@ -254,15 +273,20 @@ reached the hub.
 CREATED    local create        (model default; hub never stores it)
 SENT       hub on accept/persist (stamped on add_message, returned in the ACK)
 DELIVERED  recipient client pulled it  -> auto-ack mark_delivered
-RECEIVED   recipient READ it    -> mark_received, fanned to ALL participants
+RECEIVED   recipient READ it    -> mark_received, shared through auto-watch
 ```
 
 The receiver's bridge auto-acks delivery on inbound CREATE: it fires the
-`mark_delivered` action (`flow_sdk/cloud_client/hub_bridge.py:559`) — skipping
+`mark_delivered` action from `HubWsBridge._handle_flow_message_op` — skipping
 when the local user is the sender — which is the only signal that ticks the
-sender's UI from ✓ to ✓✓. The read receipt goes through the `mark_received`
-action (`flow_sdk/cloud_client/hub_bridge.py:829`); the hub fans the resulting
-UPDATE to every participant so all copies tick to ✓✓ blue.
+sender's UI from ✓ to ✓✓. Read receipts go through
+`HubWsBridge.mark_received`; the hub fans the resulting UPDATE through
+role-based auto-watch so accessible copies tick to ✓✓ blue.
+
+Both recipient acknowledgements are gated by the reporting installation's
+`preferences.notifications.share_message_status` preference. Disabling it
+does not hide receipt data other participants already shared and does not
+affect the sender's initial `SENT` acknowledgement.
 
 ### Inbound monotonicity guard
 
@@ -292,10 +316,12 @@ checks for a materialized record folder
 - **Structural / row-only types always count as present**
   (`_NON_MATERIALIZING_TYPE_IDS`, `flow_sdk/builtin/flow_message.py:149`):
   `conversation`, `flow_message`, `task`, `claude_session`. These never create
-  a standard records folder (conversation plumbing, or an indexer/row-only
-  unpack), so gating on a folder would strand the message behind Download
-  forever. Git provenance is carried as `GitOrigin` bundle metadata, not as a
-  `TYPE_ID` attachment.
+  a standard records folder — `conversation`/`flow_message` are transport,
+  `claude_session` is a `receive_policy='auto'` row-only payload installed at
+  unpack, and `task` materializes a slim row (its *chip* state still follows
+  the MessageAttachment, see §6) — so gating on a folder would strand the
+  message behind Download forever. Git provenance is carried as `GitOrigin`
+  bundle metadata, not as a `TYPE_ID` attachment.
 - **Body-bearing types additionally require their source file**
   (`_BODY_BEARING_TYPE_IDS = {spec, markdown, plan}`,
   `flow_sdk/builtin/flow_message.py:161`): a record folder with only
@@ -319,6 +345,64 @@ share state.
 twin for backend callers (e.g. the catch-up loop deciding whether to re-pull a
 bundle) that need the same signal without paying for a full `model_dump` — keep
 the two in sync.
+
+## 6. Reception phase model
+
+The receive pipeline for a message's **payload** is one five-phase flow; every
+attachment kind rides it, differing only in *who* pulls the trigger at each
+gate:
+
+```
+Phase 1  RECEIVED    header + conversation rows indexed (pre-body).
+                     → download: automatic for asset-entity TYPE_ID messages
+                       (_maybe_eager_pull_bundle on body_status READY, retried
+                       by notification_scanner); manual Download otherwise.
+Phase 2  DOWNLOADED  bundle in the FM's staging (download/ + unpacked/); every
+                     payload entry has a MessageAttachment row. Unbound
+                     conversations leave copy-mode entries at scope=None;
+                     bound conversations proceed directly to installation.
+Phase 3  REVIEWED    dashed chip → AssetReviewDialog (content + source:
+                     embedded / git / cloud). receive_policy='auto' types
+                     WAIVE this gate — see below.
+Phase 4  INSTALLED   the ONE install action: copy/clone + reindex with the
+                     chosen scope/project stamped (or row materialization for
+                     row-only types). project_id=null ⇒ scope inherits live
+                     from the parent conversation (Entity.effective_project_id).
+Phase 5  SETUP/OPEN  TypeInfo.setup_skill spawns the Vibe setup session;
+                     solid chip opens the entity (or the review modal, for
+                     installable types where uninstall lives).
+```
+
+**Transport vs payload.** The conversation row, its inner flow_messages,
+`conversation.jsonl`, and `remote_worker_session` snapshots are TRANSPORT —
+the message plumbing itself — and always materialize at unpack; they are not
+reviewable attachments. Everything else is PAYLOAD and stages.
+
+**Conversation project binding is durable install consent.** Selecting a
+project for an attachment binds the conversation to that project, fans the
+choice out to every existing staged copy-mode attachment, and auto-installs
+future copy-mode arrivals there. An unbound conversation keeps those
+attachments staged for review and explicit installation. Git transfers are
+repository-determined rather than copied into the selected project, so the
+fan-out skips them.
+
+**`TypeInfo.receive_policy`.** The per-type gate declaration:
+`None` (default) ⇒ an unbound conversation follows staged → review → explicit
+install — the consent boundary for anything agent-executable or byte-copying;
+a bound conversation uses its durable project consent. `"auto"` ⇒ row-only
+passive payload (claude_session transcripts, flowpad_diagnosis): unpack stages
+the MA and installs it immediately through the same action — no review dialog,
+chip navigates directly, and `receive_row_overrides` stamp local state (e.g.
+`received=True`). Auto-policy entries install into the bound project when one
+is present; otherwise they install at user scope and inherit effective project
+context through the parent chain.
+
+Coverage: `tests/unit/test_receive_policy_auto_install.py` (pipeline contract),
+`tests/unit/test_conversation_project_binding.py` (project fan-out and future
+arrival auto-install),
+`ui/tests/unit/staged-chip-state.test.ts` (chip truth table incl. task), and
+`ui/tests/hub/transcript_share_two_client.test.ts` (live two-instance e2e over
+the hub: share → accept → download → auto-installed MA + received row).
 
 ## Invariants (summary)
 

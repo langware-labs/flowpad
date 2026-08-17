@@ -6,7 +6,7 @@
 
 import React from 'react';
 import '@testing-library/jest-dom/vitest';
-import { ComputeNode, FSItem, fsManager } from '@sdk';
+import { ComputeNode, FSEntry, fsManager } from '@sdk';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -81,7 +81,7 @@ describe('DirectoryTree - React API Tests', () => {
     it('should render empty state when no files exist', async () => {
       if (!computeNode) return;
 
-      const rootFolder = new FSItem({
+      const rootFolder = new FSEntry({
         vfs_abs_path: `${computeNode.typeId.type}-${computeNode.typeId.id}/.`,
         is_dir: true,
         size: 0,
@@ -104,7 +104,7 @@ describe('DirectoryTree - React API Tests', () => {
       await fsManager.writeFile(computeNode, '/test-file.md', '# Test');
       await fsManager.mkdir(computeNode, '/test-folder');
 
-      const rootFolder = new FSItem({
+      const rootFolder = new FSEntry({
         vfs_abs_path: `${computeNode.typeId.type}-${computeNode.typeId.id}/.`,
         is_dir: true,
         size: 0,
@@ -131,7 +131,7 @@ describe('DirectoryTree - React API Tests', () => {
       render(
         <DirectoryTree
           rootFolders={[
-            new FSItem({
+            new FSEntry({
               vfs_abs_path: `${computeNode.typeId.type}-${computeNode.typeId.id}/.`,
               is_dir: true,
               size: 0,
@@ -172,7 +172,7 @@ describe('DirectoryTree - React API Tests', () => {
       render(
         <DirectoryTree
           rootFolders={[
-            new FSItem({
+            new FSEntry({
               vfs_abs_path: `${computeNode.typeId.type}-${computeNode.typeId.id}/.`,
               is_dir: true,
               size: 0,
@@ -210,7 +210,7 @@ describe('DirectoryTree - React API Tests', () => {
       render(
         <DirectoryTree
           rootFolders={[
-            new FSItem({
+            new FSEntry({
               vfs_abs_path: `${computeNode.typeId.type}-${computeNode.typeId.id}/.`,
               is_dir: true,
               size: 0,
@@ -251,7 +251,7 @@ describe('DirectoryTree - React API Tests', () => {
       render(
         <DirectoryTree
           rootFolders={[
-            new FSItem({
+            new FSEntry({
               vfs_abs_path: `${computeNode.typeId.type}-${computeNode.typeId.id}/.`,
               is_dir: true,
               size: 0,
@@ -289,7 +289,7 @@ describe('DirectoryTree - React API Tests', () => {
       render(
         <DirectoryTree
           rootFolders={[
-            new FSItem({
+            new FSEntry({
               vfs_abs_path: `${computeNode.typeId.type}-${computeNode.typeId.id}/.`,
               is_dir: true,
               size: 0,
@@ -323,7 +323,7 @@ describe('DirectoryTree - React API Tests', () => {
       render(
         <DirectoryTree
           rootFolders={[
-            new FSItem({
+            new FSEntry({
               vfs_abs_path: `${computeNode.typeId.type}-${computeNode.typeId.id}/.`,
               is_dir: true,
               size: 0,
@@ -363,7 +363,7 @@ describe('DirectoryTree - React API Tests', () => {
       render(
         <DirectoryTree
           rootFolders={[
-            new FSItem({
+            new FSEntry({
               vfs_abs_path: `${computeNode.typeId.type}-${computeNode.typeId.id}/.`,
               is_dir: true,
               size: 0,
@@ -416,7 +416,7 @@ describe('DirectoryTree - React API Tests', () => {
       render(
         <DirectoryTree
           rootFolders={[
-            new FSItem({
+            new FSEntry({
               vfs_abs_path: `${computeNode.typeId.type}-${computeNode.typeId.id}/.`,
               is_dir: true,
               size: 0,
@@ -459,11 +459,11 @@ describe('DirectoryTree - React API Tests', () => {
   describe('Feature 4: Hover shows action icons (create file, create folder, open, delete)', () => {
     // Create test itemHandler with all actions
     const createTestHandler = (handlers?: {
-      onCreateFile?: (item: FSItem, e: React.MouseEvent) => void | Promise<void>;
-      onCreateFolder?: (item: FSItem, e: React.MouseEvent) => void | Promise<void>;
-      onOpen?: (item: FSItem, e: React.MouseEvent) => void | Promise<void>;
-      onRefresh?: (item: FSItem, e: React.MouseEvent) => void | Promise<void>;
-      onDelete?: (item: FSItem, e: React.MouseEvent) => void | Promise<void>;
+      onCreateFile?: (item: FSEntry, e: React.MouseEvent) => void | Promise<void>;
+      onCreateFolder?: (item: FSEntry, e: React.MouseEvent) => void | Promise<void>;
+      onOpen?: (item: FSEntry, e: React.MouseEvent) => void | Promise<void>;
+      onRefresh?: (item: FSEntry, e: React.MouseEvent) => void | Promise<void>;
+      onDelete?: (item: FSEntry, e: React.MouseEvent) => void | Promise<void>;
     }) =>
       new ItemHandler({
         actions: [
@@ -483,7 +483,7 @@ describe('DirectoryTree - React API Tests', () => {
       render(
         <DirectoryTree
           rootFolders={[
-            new FSItem({
+            new FSEntry({
               vfs_abs_path: `${computeNode.typeId.type}-${computeNode.typeId.id}/.`,
               is_dir: true,
               size: 0,
@@ -524,7 +524,7 @@ describe('DirectoryTree - React API Tests', () => {
       if (!computeNode) return;
 
       await fsManager.mkdir(computeNode, '/create-file-here');
-      const onCreateFile = vi.fn(async (item: FSItem) => {
+      const onCreateFile = vi.fn(async (item: FSEntry) => {
         const folderPath = item.relativePath || item.name;
         await fsManager.writeFile(computeNode!, `/${folderPath}/new-file.md`, '# New file');
       });
@@ -532,7 +532,7 @@ describe('DirectoryTree - React API Tests', () => {
       render(
         <DirectoryTree
           rootFolders={[
-            new FSItem({
+            new FSEntry({
               vfs_abs_path: `${computeNode.typeId.type}-${computeNode.typeId.id}/.`,
               is_dir: true,
               size: 0,
@@ -572,7 +572,7 @@ describe('DirectoryTree - React API Tests', () => {
       if (!computeNode) return;
 
       await fsManager.mkdir(computeNode, '/create-folder-here');
-      const onCreateFolder = vi.fn(async (item: FSItem) => {
+      const onCreateFolder = vi.fn(async (item: FSEntry) => {
         const folderPath = item.relativePath || item.name;
         await fsManager.mkdir(computeNode!, `/${folderPath}/new-folder`);
       });
@@ -580,7 +580,7 @@ describe('DirectoryTree - React API Tests', () => {
       render(
         <DirectoryTree
           rootFolders={[
-            new FSItem({
+            new FSEntry({
               vfs_abs_path: `${computeNode.typeId.type}-${computeNode.typeId.id}/.`,
               is_dir: true,
               size: 0,
@@ -619,7 +619,7 @@ describe('DirectoryTree - React API Tests', () => {
 
   describe('Feature 5: Refresh icon on folders', () => {
     // Create test itemHandler with refresh action
-    const createRefreshHandler = (onRefresh?: (item: FSItem, e: React.MouseEvent) => void | Promise<void>) =>
+    const createRefreshHandler = (onRefresh?: (item: FSEntry, e: React.MouseEvent) => void | Promise<void>) =>
       new ItemHandler({
         actions: [ItemHandler.refreshAction(onRefresh ?? (() => {}))],
       });
@@ -632,7 +632,7 @@ describe('DirectoryTree - React API Tests', () => {
       render(
         <DirectoryTree
           rootFolders={[
-            new FSItem({
+            new FSEntry({
               vfs_abs_path: `${computeNode.typeId.type}-${computeNode.typeId.id}/.`,
               is_dir: true,
               size: 0,
@@ -664,7 +664,7 @@ describe('DirectoryTree - React API Tests', () => {
       render(
         <DirectoryTree
           rootFolders={[
-            new FSItem({
+            new FSEntry({
               vfs_abs_path: `${computeNode.typeId.type}-${computeNode.typeId.id}/.`,
               is_dir: true,
               size: 0,
@@ -720,7 +720,7 @@ describe('DirectoryTree - React API Tests', () => {
       render(
         <DirectoryTree
           rootFolders={[
-            new FSItem({
+            new FSEntry({
               vfs_abs_path: `${computeNode.typeId.type}-${computeNode.typeId.id}/.`,
               is_dir: true,
               size: 0,
@@ -760,7 +760,7 @@ describe('DirectoryTree - React API Tests', () => {
       render(
         <DirectoryTree
           rootFolders={[
-            new FSItem({
+            new FSEntry({
               vfs_abs_path: `${computeNode.typeId.type}-${computeNode.typeId.id}/.`,
               is_dir: true,
               size: 0,
@@ -806,7 +806,7 @@ describe('DirectoryTree - React API Tests', () => {
       render(
         <DirectoryTree
           rootFolders={[
-            new FSItem({
+            new FSEntry({
               vfs_abs_path: `${computeNode.typeId.type}-${computeNode.typeId.id}/.`,
               is_dir: true,
               size: 0,

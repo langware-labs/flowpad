@@ -1,39 +1,38 @@
-"""Type metadata for AGENT."""
-from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
+"""Type metadata for AGENT — the launchable agent (identity + launch bundle).
+
+A flowpad-native REPO asset at ``agentic-assets/agent/<name>/agent.md``, found
+by the shared ``repo_assets_fn`` walker via ``main_file`` — no bespoke walker.
+Distinct from SUBAGENT, which is the provider-owned ``.claude/agents/*.md``.
+"""
+from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, frontmatter_id
+from flow_sdk.fs_store.indexer.functions.agent import agent_default_body, extract_agent
+from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
-from flow_sdk.fs_store.indexer.functions.agent import (
-    agent_gen_id,
-    extract_agent,
-)
-
-
-def _agent_default_body(entity) -> str:
-    """Agent .md written to the agent's main_ref on create.
-
-    Mirrors Skill/Workflow/Spec: without a default-body writer, create persists
-    the entity + asset_ref but never materializes the backing .md, leaving a
-    dangling pointer the editor reports as "file not found". Frontmatter shape
-    (name/description) is what ``parse_agent_markdown`` reads back; the body is
-    the agent's system prompt.
-    """
-    name = (getattr(entity, "name", None) or "Untitled Agent").strip()
-    desc = (getattr(entity, "description", None) or "").strip()
-    prompt = (getattr(entity, "prompt", None) or "").strip()
-    return render_entity_frontmatter(entity, {"name": name, "description": desc}) + f"\n\n{prompt}\n"
-
 
 AGENT = TypeMetadata(
     type=EntityType.AGENT,
     displayName="Agents",
-    from_disk_fn=extract_agent,
-    gen_uuid_fn=agent_gen_id,
-    indexed_by_default=True,
+    # Not Bot — that is SUBAGENT's; Brain/BrainCircuit are claude_memory/graph_context.
+    icon="BrainCog",
     browseable_by=ViewMode.STANDARD,
     creatable=True,
+    indexed_by_default=True,
     api_visible=True,
-    icon="Bot",
+    cloud_file_transport="git",
     index_fields=["description"],
-    main_subdir=".claude/agents",
-    default_body_fn=_agent_default_body,
+    asset_class="repo",
+    family="agent",
+    main_layout="folder",
+    main_file="agent.md",
+    # asset_ref IS agent/<name>/agent.md (the walker emits the inner file), so
+    # create and rescan agree on the same path.
+    main_file_is_asset_ref=True,
+    from_disk_fn=extract_agent,
+    capsules=(IDENTITY_CAPSULE,),
+    identity_backend=capsule_identity(frontmatter_id),
+    default_body_fn=agent_default_body,
+    # The entity is the authoring surface for system_prompt, so it re-renders
+    # the file on every save rather than writing once.
+    owns_main_ref=True,
 )

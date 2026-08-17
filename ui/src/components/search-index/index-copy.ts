@@ -1,9 +1,9 @@
 /**
  * Single source of truth for the "your records aren't indexed yet" copy.
  *
- * Every surface that prompts the user to build the index — the IndexNowModal
- * notification and the assets empty-state prompt — pulls its title/description/
- * action label from here, so improving the wording in one place updates them all.
+ * Every surface that prompts the user to build the index pulls its title /
+ * description / action label from here, so improving the wording in one place
+ * updates them all.
  */
 export const INDEX_PROMPT_TITLE = 'Make your records searchable';
 

@@ -1,14 +1,15 @@
 """Type metadata for WORKFLOW_RUN."""
 from typing import Optional
 
+from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
+from flow_sdk.fs_store.indexer.functions.workflow_run import (
+    extract_workflow_run,
+    workflow_run_identity_key,
+)
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
-from flow_sdk.fs_store.indexer.functions.workflow_run import (
-    extract_workflow_run,
-    workflow_run_id,
-)
 
 
 class WorkflowRunMeta(BaseMeta):
@@ -28,7 +29,8 @@ class WorkflowRunMeta(BaseMeta):
 WORKFLOW_RUN = TypeMetadata(
     type=EntityType.WORKFLOW_RUN,
     from_disk_fn=extract_workflow_run,
-    gen_uuid_fn=workflow_run_id,
+    identity_backend=derived_identity(),
+    id_stable_key_fn=workflow_run_identity_key,
     indexed_by_default=True,
     browseable_by=ViewMode.ADVANCED,
     creatable=False,

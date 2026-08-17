@@ -1,4 +1,4 @@
-"""Phase 2 traffic: the RemoteWorkerSession binding + PromptResult emission that
+"""Phase 2 traffic: the RemoteWorkerSession binding + PromptCompletion emission that
 ``execute_prompt_from_message`` performs around the worker run. Drives the real
 helpers against the real DB (no worker, no mocks) — the worker orchestration
 itself is covered by ``test_execute_prompt_capture``.
@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.app.actions.execute_prompt import _emit_prompt_result, _reuse_or_bind_session
-from flow_sdk.builtin.prompt_result import PromptResult
+from flow_sdk.app.actions.execute_prompt import _emit_prompt_completion, _reuse_or_bind_session
+from flow_sdk.builtin.prompt_completion import PromptCompletion
 from flow_sdk.builtin.remote_worker_session import RemoteWorkerSessionStatus
 
 pytestmark = pytest.mark.asyncio
@@ -36,15 +36,15 @@ async def test_reuse_or_bind_session(bootstrapped_client, user):
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_emit_prompt_result(bootstrapped_client, user):
-    att = await _emit_prompt_result(
+async def test_emit_prompt_completion(bootstrapped_client, user):
+    att = await _emit_prompt_completion(
         "BANANA", prompt_id="p1", session_id="rws1", host_process_id="ap1", source_session_id="sess1",
     )
     assert att["attachment_type"] == "type_id"
-    assert att["data"].startswith("prompt_result-")
+    assert att["data"].startswith("prompt_completion-")
     assert att["prompt_preview"] == "BANANA"
 
-    pr = await PromptResult.get_one({"id": att["data"].split("-", 1)[1]})
+    pr = await PromptCompletion.get_one({"id": att["data"].split("-", 1)[1]})
     assert pr is not None
     assert pr.text == "BANANA"
     assert pr.remote_worker_session_id == "rws1"

@@ -4,25 +4,42 @@ import { Button } from '@src/components/ui/button';
 import { ChevronDown, ChevronUp, Home } from 'lucide-react';
 import { useState } from 'react';
 import { useRouteError } from 'react-router';
+import { isBackendUnreachable } from '@sdk';
+import { DiagnoseIconButton } from '@src/notifications/diagnose/DiagnoseIconButton';
 import { Trans, useLingui } from '@lingui/react/macro';
+
+/** The loosely-typed shape this screen reads off an unknown route error. */
+interface ErrorLike {
+  status?: number;
+  message?: string;
+  response?: { status?: number; data?: { message?: string } };
+}
 
 const ErrorScreen = () => {
   const { t } = useLingui();
   const error = useRouteError();
   const [showDetails, setShowDetails] = useState(false);
 
+  // `useRouteError` is `unknown`; the 404 and message branches below read it
+  // structurally. This declaration was MISSING — every render that reached
+  // those branches threw `ReferenceError: errorAny is not defined`, so the
+  // error boundary itself crashed and a failed route showed a blank page
+  // instead of this screen. Found by the dock sweep, which navigates to docks
+  // whose target does not exist.
+  const errorAny = (error ?? null) as ErrorLike | null;
+
   // ERROR HIERARCHY (check in this exact order):
 
-  // 1. Check if service is unavailable (backend not responding)
-  const errorAny = error as any;
-  const errorStatus = errorAny?.status ?? errorAny?.response?.status;
-  const isServiceUnavailable =
-    errorAny?.isServiceUnavailable ||
-    (typeof errorStatus === 'number' && errorStatus >= 500) ||
-    errorAny?.code === 'ERR_NETWORK' ||
-    errorAny?.code === 'ERR_CONNECTION_REFUSED' ||
-    errorAny?.message?.includes('Failed to fetch') ||
-    errorAny?.message?.includes('Network request failed');
+  // 1. Is the BACKEND actually unreachable?
+  //
+  // Only a connectivity failure earns this screen. It used to treat any status
+  // >= 500 as "backend not responding", so a single unsupported action — a hub
+  // answering 500 "Action list is not allowed" to one repo call — blanked the
+  // whole app and told the user to check whether their server was running,
+  // while every other request on the page was succeeding. A 5xx means one
+  // request failed; it does not mean the server is gone. The classification
+  // lives with the interceptor that makes it (ts_sdk/client.ts).
+  const isServiceUnavailable = isBackendUnreachable(error);
 
   const [dismissed, setDismissed] = useState(false);
 
@@ -41,8 +58,12 @@ const ErrorScreen = () => {
                 />
               </svg>
             </div>
-            <h1 className="mb-2 text-2xl font-bold"><Trans>Service Unavailable</Trans></h1>
-            <p className="text-muted-foreground"><Trans>Backend server is not responding. Please try again later.</Trans></p>
+            <h1 className="mb-2 text-2xl font-bold">
+              <Trans>Service Unavailable</Trans>
+            </h1>
+            <p className="text-muted-foreground">
+              <Trans>Backend server is not responding. Please try again later.</Trans>
+            </p>
           </div>
           <Button onClick={() => setDismissed(true)} className="w-full" variant="outline">
             <Trans>OK</Trans>
@@ -76,13 +97,15 @@ const ErrorScreen = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </div>
-            <h1 className="mb-2 text-2xl font-bold text-foreground"><Trans>Agent not found</Trans></h1>
+            <h1 className="mb-2 text-2xl font-bold text-foreground">
+              <Trans>SubAgent not found</Trans>
+            </h1>
             <p className="text-muted-foreground">
               {errorAny?.response?.data?.message || errorAny?.message || t`The requested agent could not be found.`}
             </p>
           </div>
           <Button onClick={() => (window.location.href = '/')} className="w-full">
-            <Home className="mr-2 h-4 w-4" />
+            <Home className="me-2 h-4 w-4" />
             <Trans>Go to Homepage</Trans>
           </Button>
         </div>
@@ -136,14 +159,26 @@ const ErrorScreen = () => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </div>
-          <h1 className="mb-2 text-2xl font-bold text-foreground"><Trans>Error</Trans></h1>
+          <h1 className="mb-2 text-2xl font-bold text-foreground">
+            <Trans>Error</Trans>
+          </h1>
           <p className="text-muted-foreground">{errorMessage}</p>
         </div>
 
-        <Button onClick={handleGoHome} className="flex w-full items-center justify-center">
-          <Home className="mr-2 h-4 w-4" />
-          <Trans>Go to Homepage</Trans>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={handleGoHome} className="flex flex-1 items-center justify-center">
+            <Home className="me-2 h-4 w-4" />
+            <Trans>Go to Homepage</Trans>
+          </Button>
+          {/* Same stethoscope, same confirm-then-stream modal as an error row in
+              the warnings popover — the crash IS the subject, so it is seeded
+              with the message plus the stack shown under "Details". */}
+          <DiagnoseIconButton
+            subject={{ level: 'error', title: errorMessage, message: errorDetails }}
+            iconClassName="h-4 w-4"
+            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md border border-input bg-background text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+          />
+        </div>
 
         <div className="mb-6 mt-4">
           <button
@@ -156,7 +191,7 @@ const ErrorScreen = () => {
         </div>
       </div>
       {showDetails && (
-        <div className="absolute left-1/2 top-[calc(50%+12rem)] w-[calc(100vw-2rem)] max-w-7xl -translate-x-1/2 rounded-md border bg-muted p-4 text-left">
+        <div className="absolute left-1/2 top-[calc(50%+12rem)] w-[calc(100vw-2rem)] max-w-7xl -translate-x-1/2 rounded-md border bg-muted p-4 text-start">
           <pre className="mb-4 overflow-auto whitespace-pre-wrap break-words text-xs text-foreground">
             {errorDetails}
           </pre>

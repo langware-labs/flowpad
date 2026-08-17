@@ -1,5 +1,5 @@
 /**
- * Agent → `flow show` → AgenticProcess.on_show → entity_event('on_show') → TS 'show' event.
+ * SubAgent → `flow show` → AgenticProcess.on_show → entity_event('on_show') → TS 'show' event.
  *
  * End-to-end, no mocks: a real Claude worker is created with standing
  * instructions (context_data.instructions → system-prompt append) telling it to
@@ -19,12 +19,32 @@
  * restarted with the `show` action + instructions-merge backend changes.
  */
 
-import { AgenticProcess, FlowData, FlowElementTypes } from '@sdk';
+import { AgenticProcess, apiClient, FlowData, FlowElementTypes } from '@sdk';
 import { afterEach, describe, expect, it } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+
+/** Resolve a show target's `typeid` the way a display surface does: fetch it. */
+async function resolveTypeId(typeid: string): Promise<Record<string, unknown> | null> {
+  const [type, ...rest] = typeid.split('-');
+  const id = rest.join('-');
+  try {
+    const res = await apiClient.get<unknown>(`/graph/${type}/${id}`);
+    const data = ((res as { data?: unknown })?.data ?? res) as Record<string, unknown>;
+    return data && data.id ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The id that currently owns `path`, per a fresh `flow show` resolution. */
+async function showOwnerId(proc: AgenticProcess, target: string): Promise<string | null> {
+  const res = await apiClient.post<unknown>(`/graph/agentic_process/${proc.id}/show`, { path: target });
+  const data = ((res as { data?: unknown })?.data ?? res) as { id?: string };
+  return data?.id ?? null;
+}
 
 const SHOW_INSTRUCTIONS = [
   'Work fast, no explanations, no preamble text.',
@@ -115,7 +135,7 @@ describe('flow show — agent-declared display focus reaches proc.onShow', () =>
     const outputs: FlowData[] = [];
     void (async () => {
       try {
-        for await (const item of proc!.output()) {
+        for await (const item of proc.output()) {
           outputs.push(item);
           if (outputs.length > 200) outputs.shift();
         }
@@ -160,6 +180,69 @@ describe('flow show — agent-declared display focus reaches proc.onShow', () =>
       // entity | vfs — the target must be addressable: a typeid or a path.
       expect(payload.typeid ?? payload.path, 'show target (typeid or path)').toBeTruthy();
     }
+
+    // Entity validation: an `entity` target is opened BY ID — the display
+    // surface routes `typeid` through AssetDocPointer.forTypeId and never
+    // re-resolves the payload's `path`. So a typeid that doesn't resolve is a
+    // "Missing asset" card, not a document. Addressable is not enough.
+    if (payload.kind === 'entity') {
+      const entity = await resolveTypeId(String(payload.typeid));
+      expect(entity, `show pinned ${String(payload.typeid)} but it does not resolve`).not.toBeNull();
+    }
   }, 60_000); // user-approved 60s exception 2026-07-03 (claude CLI boot alone is 15-18s;
   // the agent's flow show landed T+30-48s across runs) — do not increase further
+
+  /**
+   * Regression: a show-pinned entity target must survive the agent editing the
+   * SAME document again.
+   *
+   * `flow show file <docs/*.md>` resolves to an `entity` target and stamps the
+   * minted id into the file as an identity capsule. A full-content rewrite —
+   * what an agent does on every revision — WIPES that capsule. The next index
+   * walk resolves identity from the file alone
+   * (index_function.py:739 `extract_id(ref) or mint_id(ref)` — no asset_ref
+   * lookup, no proposed_id), so it mints a FRESH uuid4 and forks a new entity
+   * for the same path; the same-path duplicate sweep then reaps the old row.
+   * Everything pinned to the first id — `context_data.last_shown`,
+   * `display_stack`, auto-bookmarks — is left pointing at a dead entity.
+   *
+   * No Claude worker here: the LLM is not part of the mechanism. This drives
+   * the same real server calls the worker's CLI makes — the `show` action, a
+   * real file rewrite, and a real (path-bounded) index walk.
+   */
+  it('a show-pinned entity target survives the agent rewriting the same doc', async (context: any) => {
+    await apiTestSetup(getTestSignupInfo(), context.task.name);
+
+    workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-show-pin-'));
+    const docs = path.join(workdir, 'docs');
+    fs.mkdirSync(docs, { recursive: true });
+    // Under a `docs/` root so `flow show file` takes the entity branch
+    // (display_target.py `_is_docs_markdown_path`) rather than a raw vfs path.
+    const doc = path.join(docs, 'deliverable.md');
+    fs.writeFileSync(doc, '# Deliverable\n\nfirst revision.\n');
+
+    proc = await new AgenticProcess({ workdir, pty_mode: false, load_flowpad_assistant: false }).save([]);
+
+    // 1. The agent presents its deliverable — the real `flow show` action.
+    const pinned = await showOwnerId(proc, doc);
+    expect(pinned, 'flow show resolved an entity id for the doc').toBeTruthy();
+    expect(await resolveTypeId(`markdown-${pinned}`), 'pinned target resolves right after show').not.toBeNull();
+
+    // 2. The agent revises the deliverable: a full-content overwrite, which
+    //    wipes the identity capsule `show` just stamped into the file.
+    fs.writeFileSync(doc, '# Deliverable\n\nsecond revision — rewritten by the agent.\n');
+    expect(fs.readFileSync(doc, 'utf8'), 'rewrite wiped the identity capsule').not.toContain('flowpad:capsule');
+
+    // 3. The index walk picks the rewritten file up (path-bounded — the same
+    //    endpoint the post-write "open it" flow uses).
+    await apiClient.post<unknown>(
+      `/graph/compute_node/@local/fs-records/index?type=markdown&path=${encodeURIComponent(docs)}`,
+      {},
+    );
+
+    // 4. The pinned target must still be THIS document's entity. A fork here
+    //    is what strands last_shown / display_stack / bookmarks on a dead id.
+    expect(await showOwnerId(proc, doc), `the doc forked to a new entity; ${pinned} no longer owns it`).toBe(pinned);
+    expect(await resolveTypeId(`markdown-${pinned}`), `pinned target ${pinned} was reaped`).not.toBeNull();
+  });
 });

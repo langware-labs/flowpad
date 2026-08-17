@@ -1,5 +1,13 @@
-import { dataContext, instancePreferences, onPreferenceChange, PrefKey, type Project } from '@sdk';
-import { usePreference } from '@src/hooks/use-preference';
+import {
+  dataContext,
+  instancePreferences,
+  isHubOnly,
+  onPreferenceChange,
+  PREF_REGISTRY,
+  PrefKey,
+  type Project,
+} from '@sdk';
+import { usePreference, usePreferenceResolved } from '@src/hooks/use-preference';
 import { defineGlobal } from '@sdk/utils';
 import { useEffect, useSyncExternalStore } from 'react';
 import { useCurrentDock } from '@src/navigation/useDockNavigation';
@@ -13,6 +21,16 @@ declare global {
   }
 }
 
+/**
+ * View mode fuses TWO axes on purpose, so one control picks both:
+ *  - the session SURFACE — read with `surfaceForViewMode` (vibe workspace / chat
+ *    pane / xterm);
+ *  - the chrome TIER — read with `isAdvancedMode` (debug toolbars, trace
+ *    gutters, `AdvancedOnly`).
+ * So `Advanced` means "a terminal AND the full chrome", not just a terminal.
+ * Keep that in mind before gating anything new on `isAdvancedMode`: you are
+ * attaching it to a surface choice as well as a complexity preference.
+ */
 export enum ViewMode {
   // Hierarchy (simplest → fullest): Vibe ⊂ Standard ⊂ Advanced ⊂ Dev.
   Vibe = 'vibe',
@@ -24,14 +42,14 @@ export enum ViewMode {
 // View mode is a *user* preference, now owned by prefMan (`preferences.ui.view_mode`,
 // a boot key mirrored to localStorage for instant first paint). It is reflected as a
 // `data-view` attribute on the document root so CSS / other surfaces can react app-wide.
-// Default is Standard (the calm/minimal app); Vibe (super-simple, Lovable-style
-// creator UI) is opt-in via the footer View toggle; opt up to Advanced; Dev for
-// developers. The default lives in `preferences.ui.view_mode` (prefRegistry.ts,
-// defaultValue 'standard') — `toViewMode` below falls back to Standard for any
-// unset/unknown value. Toggle with window.setView() or the footer pill.
+// The default mode lives in ONE place: `preferences.ui.view_mode`'s defaultValue
+// in prefRegistry.ts. `instancePreferences.get` already resolves an unset key to
+// it, and `toViewMode` below derives the same value for unknown/garbage reads —
+// so neither restates the product decision. Toggle with window.setView() or the
+// footer pill.
 
 // Strict validator: unknown/garbage reads as *unset* (null). Used directly for
-// values adopted from a Project's stored `last_mode`, where a Standard fallback
+// values adopted from a Project's stored `last_mode`, where a default fallback
 // would silently launder bad data into a remembered preference.
 function toViewModeOrNull(v: unknown): ViewMode | null {
   return v === ViewMode.Standard || v === ViewMode.Advanced || v === ViewMode.Dev || v === ViewMode.Vibe
@@ -40,7 +58,68 @@ function toViewModeOrNull(v: unknown): ViewMode | null {
 }
 
 function toViewMode(v: unknown): ViewMode {
-  return toViewModeOrNull(v) ?? ViewMode.Standard;
+  return toViewModeOrNull(v) ?? toViewModeOrNull(PREF_REGISTRY[PrefKey.VIEW_MODE].defaultValue) ?? ViewMode.Standard;
+}
+
+/**
+ * The "advanced-or-fuller" threshold from the mode hierarchy (Advanced ⊂ Dev),
+ * as a plain predicate so both the `useIsAdvanced` hook and non-hook callers
+ * (e.g. syncDesktopMenu) share one definition of where "advanced" begins.
+ */
+export function isAdvancedMode(mode: ViewMode): boolean {
+  return mode === ViewMode.Advanced || mode === ViewMode.Dev;
+}
+
+/**
+ * The SURFACE a view mode shows an agent session in — the single mapping that
+ * makes View mode the one mode selector. Vibe is the vibe workspace, Standard is
+ * the chat pane, Advanced/Dev is the raw terminal.
+ *
+ * This used to be a second preference (`chat mode`), which could and did drift
+ * out of sync with View mode — both carried a `vibe` and each control wrote only
+ * its own. One enum, one preference, one control.
+ */
+export type SessionSurface = 'vibe' | 'chat' | 'terminal';
+
+export function surfaceForViewMode(mode: ViewMode): SessionSurface {
+  if (mode === ViewMode.Vibe) return 'vibe';
+  return isAdvancedMode(mode) ? 'terminal' : 'chat';
+}
+
+/** Transport for a mode: only the terminal surface runs an interactive PTY. */
+export function viewModePtyMode(mode: ViewMode): boolean {
+  return surfaceForViewMode(mode) === 'terminal';
+}
+
+/**
+ * Reactive surface, or `null` for NOT KNOWN YET.
+ *
+ * On the first load in a browser profile there is no localStorage boot seed for
+ * `preferences.ui.view_mode`, so `get()` serves the registry default and the
+ * session would paint that surface for ~1s until `preferences.json` lands, then
+ * repaint into the user's real one. Callers hold the arrangement while this is
+ * null instead of painting a guess. After that first load the boot seed makes it
+ * true synchronously, so the wait is a first-run cost only.
+ *
+ * `useViewMode()` deliberately keeps its non-null contract — chrome (isAdvanced
+ * &c.) can render against the default and correct itself invisibly. Only the
+ * session SURFACE is expensive to get wrong, because it mounts a whole pane.
+ */
+export function useSessionSurface(): SessionSurface | null {
+  const mode = useViewMode();
+  const resolved = usePreferenceResolved(PrefKey.VIEW_MODE);
+  const currentDock = useCurrentDock();
+  const override = useSyncExternalStore(
+    subscribeViewModeOverride,
+    getViewModeOverrideSnapshot,
+    getViewModeOverrideSnapshot,
+  );
+  // URL-first: after navigation commits, the new dock mode must outrank the
+  // passive override left by the previous URL. `useViewMode()` already returns
+  // that effective mode synchronously; these two values only certify that it is
+  // known even when the persisted preference has not resolved yet.
+  if (currentDock?.viewMode || override) return surfaceForViewMode(mode);
+  return resolved ? surfaceForViewMode(mode) : null;
 }
 
 const viewModeOverrideListeners = new Set<() => void>();
@@ -61,14 +140,22 @@ function getViewModeOverrideSnapshot(): ViewMode | null {
   return dockViewModeOverride;
 }
 
-function getEffectiveViewMode(): ViewMode {
+/**
+ * The active mode for non-React callers — the same value `useViewMode()`
+ * resolves to, without the hook. Non-component modules (e.g. the `notify()`
+ * dispatcher, which gates alert toasts on Dev) must read it through here so
+ * they see a dock-URL override, not just the persisted preference.
+ */
+export function getEffectiveViewMode(): ViewMode {
   return dockViewModeOverride ?? getViewMode();
 }
 
-// Vibe's display font (Plus Jakarta Sans) is loaded lazily — and only the first
-// time Vibe is actually active — so Standard/Advanced/Dev users (the majority,
-// who never see it) don't pay a render-blocking cross-origin font fetch on boot.
-// A global CSS @import would block first paint for everyone.
+// Vibe's display font (Plus Jakarta Sans) is injected only when Vibe is actually
+// active, so Standard/Advanced/Dev users never fetch it. NOTE: Vibe is now the
+// default mode, so the common path DOES take this on boot — `applyAttribute` runs
+// at module load below, and a <link rel="stylesheet"> in <head> is render-blocking
+// on a cross-origin round-trip. Self-hosting or preconnecting the font would get
+// that off first paint; lazy injection alone no longer buys what it used to.
 let vibeFontInjected = false;
 function ensureVibeFont(): void {
   if (vibeFontInjected || typeof document === 'undefined') return;
@@ -81,8 +168,27 @@ function ensureVibeFont(): void {
   document.head.appendChild(link);
 }
 
+// Mirror the effective view mode to the Electron application menu: it is shown
+// only in Advanced/Dev (see electron/main.js `set-menu-visible`). A no-op in the
+// browser build (no electronAPI). Keyed on the advanced boolean, not the exact
+// mode, so Advanced↔Dev and Vibe↔Standard transitions don't re-send.
+let lastMenuVisibleSent: boolean | null = null;
+function syncDesktopMenu(val: ViewMode): void {
+  const visible = isAdvancedMode(val);
+  if (visible === lastMenuVisibleSent) return;
+  const setMenuVisible = (
+    window as unknown as {
+      electronAPI?: { setMenuVisible?: (visible: boolean) => void };
+    }
+  ).electronAPI?.setMenuVisible;
+  if (typeof setMenuVisible !== 'function') return;
+  lastMenuVisibleSent = visible;
+  setMenuVisible(visible);
+}
+
 function applyAttribute(val: ViewMode, animate = true): void {
   if (val === ViewMode.Vibe) ensureVibeFont();
+  syncDesktopMenu(val);
   const prev = document.documentElement.getAttribute('data-view');
   // Guard: prefMan fires on EVERY pref change, but only a view-mode change need
   // touch the DOM. Skip the write when the attribute already matches.
@@ -129,6 +235,14 @@ export function getViewMode(): ViewMode {
 // lands here with an already-matching value and no-ops.
 function stampProjectViewMode(project: Project | null | undefined, val: ViewMode): void {
   if (!project || project.last_mode === val) return;
+  // Hub: view mode is a desk concept — the hub serves one page and its project
+  // schema has no `last_mode` to store, so this stamp can only ever be a
+  // no-op write. And it isn't harmless: `toJSON` emits only fields the SERVER's
+  // schema declares, and the hub publishes just the project-specific delta
+  // (artifacts/helpdesk/…) — so the resulting full-row PUT ships without
+  // `name` and wipes the name off every project the hub loads, including the
+  // one just created. Don't write projects from here on the hub.
+  if (isHubOnly()) return;
   project.last_mode = val;
   void project.save().catch((err) => {
     console.warn('[view-mode] failed to record last_mode on project', err);
@@ -151,7 +265,26 @@ export function applyProjectViewMode(project: Project): void {
   }
 }
 
+// The last mode that wasn't Vibe. Entering Vibe ADOPTS it as the persisted
+// preference (useDockViewModeOverrideSync), which overwrites whatever the user
+// had — so without this latch, an Advanced user who visits Vibe and leaves is
+// silently and unrecoverably dropped to Standard (ViewToggle only renders modes
+// at or below the current rank, so the Advanced button isn't even on screen).
+// Module-scope, session-lived, deliberately not persisted.
+let lastNonVibeViewMode: ViewMode | null = null;
+
+function recordNonVibe(val: ViewMode): void {
+  if (val !== ViewMode.Vibe) lastNonVibeViewMode = val;
+}
+recordNonVibe(getViewMode());
+
+/** Where an "exit vibe" affordance should land: the mode in use before Vibe. */
+export function previousNonVibeViewMode(): ViewMode {
+  return lastNonVibeViewMode ?? ViewMode.Standard;
+}
+
 export function setViewMode(val: ViewMode): void {
+  recordNonVibe(val);
   instancePreferences.set(PrefKey.VIEW_MODE, val);
   applyAttribute(getEffectiveViewMode());
   stampProjectViewMode(dataContext.project, val);
@@ -186,13 +319,18 @@ defineGlobal('setDev', setDev);
 defineGlobal('getDev', getDev);
 
 export function useViewMode(): ViewMode {
+  const currentDock = useCurrentDock();
   const [value] = usePreference<string>(PrefKey.VIEW_MODE);
   const override = useSyncExternalStore(
     subscribeViewModeOverride,
     getViewModeOverrideSnapshot,
     getViewModeOverrideSnapshot,
   );
-  const mode = override ?? toViewMode(value);
+  // URL-first: a committed dock URL is authoritative immediately. The
+  // transient override and persisted preference are projections adopted by a
+  // later effect; using them first creates a render where the toggle, session
+  // skin, and transport reconciler can all observe the previous mode.
+  const mode = currentDock?.viewMode ?? override ?? toViewMode(value);
   useEffect(() => applyAttribute(mode), [mode]);
   return mode;
 }
@@ -219,8 +357,7 @@ export function useDockViewModeOverrideSync(): void {
 
 /** Semantic boolean accessor — true if Advanced or Dev (hierarchy). */
 export function useIsAdvanced(): boolean {
-  const mode = useViewMode();
-  return mode === ViewMode.Advanced || mode === ViewMode.Dev;
+  return isAdvancedMode(useViewMode());
 }
 
 /** Semantic boolean accessor — true only in Dev mode. */

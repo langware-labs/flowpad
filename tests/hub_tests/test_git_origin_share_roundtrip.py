@@ -18,12 +18,11 @@ import pytest
 
 # Wire the full entity registry. Pytest does not run the server startup path.
 import flow_sdk.models.entities  # noqa: F401
-
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import (
-    AttachmentType,
     BODY_FILENAME,
+    AttachmentType,
     BodyStatus,
     FlowMessage,
 )
@@ -31,7 +30,6 @@ from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.skill import Skill
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
-
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]
 
@@ -132,13 +130,14 @@ async def test_git_origin_asset_body_round_trips_through_live_hub(
     receiver_project_root.mkdir()
     project = Project(name="hub-git-receiver", fs_storage_mount_path=str(receiver_project_root))
     await project.save(notify=False)
-    conv.project_id = project.id
-    await conv.save(notify=False)
 
     await sender_skill.delete()
 
+    # Keep the conversation unbound so this test exercises the explicit
+    # staged -> project-install path. Bound conversations intentionally
+    # auto-install future copy-mode attachments during download.
     await fm.download_body()
-    await _install_staged(fm.id, f"{EntityType.SKILL.value}-@{skill_id}", project_id=project.id)
+    await _install_staged(fm.id, f"{EntityType.SKILL.value}-{skill_id}", project_id=project.id)
 
     expected = receiver_project_root / REL_PATH / "SKILL.md"
     assert expected.exists(), (
@@ -242,7 +241,7 @@ async def test_git_origin_markdown_body_round_trips_through_live_hub_and_search(
     await sender_doc_entity.delete()
 
     await fm.download_body()
-    await _install_staged(fm.id, f"{EntityType.MARKDOWN.value}-@{doc_id}", project_id=project.id)
+    await _install_staged(fm.id, f"{EntityType.MARKDOWN.value}-{doc_id}", project_id=project.id)
 
     expected = receiver_repo / rel_path
     assert expected.exists(), (

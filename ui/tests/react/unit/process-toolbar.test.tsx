@@ -10,6 +10,7 @@ import { ProcessToolbar } from '@src/components/terminal/interactive-terminal/Pr
 const mockOpenNewShell = vi.fn();
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
+  useCurrentDock: () => null,
   useDockNavigation: () => ({
     navigation: { openNewShell: mockOpenNewShell, openShell: vi.fn(), openShellProcess: vi.fn() },
   }),
@@ -34,10 +35,19 @@ function makeProcess(overrides: Partial<AgenticProcess> = {}): AgenticProcess {
 function getOpenTerminalButton(container: HTMLElement): HTMLButtonElement {
   const toolbar = container.querySelector('[data-testid="process-toolbar"]')!;
   const terminalIcon = toolbar.querySelector('.lucide-square-terminal')!;
-  return terminalIcon.closest('button')! as HTMLButtonElement;
+  return terminalIcon.closest('button')!;
 }
 
-const defaultTraceFilters: TraceFilters = { events: true, time: false, index: false, line: false, absLine: false, debugTime: false, refTime: false, promptAnnotations: false };
+const defaultTraceFilters: TraceFilters = {
+  events: true,
+  time: false,
+  index: false,
+  line: false,
+  absLine: false,
+  debugTime: false,
+  refTime: false,
+  promptAnnotations: false,
+};
 const defaultColVis: ColVisibility = { trace: true, time: true, annotations: true };
 
 describe('ProcessToolbar "Open terminal" button', () => {
@@ -62,7 +72,7 @@ describe('ProcessToolbar "Open terminal" button', () => {
         onTraceFiltersChange={vi.fn()}
         colVis={defaultColVis}
         onColVisChange={vi.fn()}
-      />
+      />,
     );
 
     fireEvent.click(getOpenTerminalButton(container));
@@ -79,7 +89,7 @@ describe('ProcessToolbar "Open terminal" button', () => {
         onTraceFiltersChange={vi.fn()}
         colVis={defaultColVis}
         onColVisChange={vi.fn()}
-      />
+      />,
     );
 
     fireEvent.click(getOpenTerminalButton(container));

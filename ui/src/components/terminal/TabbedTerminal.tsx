@@ -1,21 +1,26 @@
-import { AgenticProcess, Shell, Tab, toplog, TypeId } from '@sdk';
+import { t } from '@lingui/core/macro';
+import { AgenticProcess, connectionManager, dataContext, Shell, tabKey, tabManager, Tab, toplog, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ProjectHome } from '@src/components/project-home/ProjectHome';
 import { Button } from '@src/components/ui/button';
 import { DockPointer } from '@src/navigation';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { tabKey, useTerminalTabs } from '@src/tabs/useTabs';
-import { AlertTriangle, PlayCircle, RefreshCw } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import { useTerminalTabs } from '@src/tabs/use-tab-manager';
+import { notify } from '@src/notifications';
+import { AlertTriangle, LoaderCircle, PlayCircle, RefreshCw } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 import InteractiveTerminal from './interactive-terminal';
+import { useProcessSurface } from './interactive-terminal/use-process-surface';
 import { retryFailedStart, TerminalRuntimeErrorBanner } from './interactive-terminal/TerminalRuntimeErrorBanner';
+import { estimateCols, estimateRows } from './interactive-terminal/terminalConfig';
 import { allowRename, cleanTitle, isProgramIdentityTitle, shouldAutoSaveTitleForTarget } from './rename-rules';
+import { classifyRuntimeFailure, type ProcessLoadErrorKind } from '@src/routes/loaders/load-process';
 
 interface TabbedTerminalProps {
   className?: string;
-  /** Which terminals the body keeps warm-mounted: the active project +
-   *  projectless (`'project'`, default) or every project (`'all'`, the dev
+  /** Which terminals the body keeps warm-mounted: the active project's exact
+   *  scope (`'project'`, default) or every scope (`'all'`, the dev
    *  sessions view). Matches the `scope` passed to the host's `UnifiedTabStrip`. */
   scope?: 'project' | 'all';
   /** Pin spawned shells/processes to this project (CollaborationSpace / dev view);
@@ -97,6 +102,47 @@ const TerminalPanelErrorState: React.FC<{
   );
 };
 
+const TerminalPanelStartingState: React.FC = () => (
+  <div
+    className="flex h-full w-full items-center justify-center gap-2 text-sm text-muted-foreground"
+    data-testid="terminal-panel-starting"
+  >
+    <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+    Starting session…
+  </div>
+);
+
+type ProcessRuntimeStatus = 'idle' | 'starting' | 'ready' | 'failed';
+
+// React StrictMode remounts effects, and the same process can be projected in
+// more than one terminal surface. Backend `open` is a mutation, so share one
+// in-flight start per entity instead of launching concurrent workers/attaches.
+const processStarts = new Map<string, Promise<void>>();
+
+function startProcessRuntime(process: AgenticProcess, cols: number, rows: number): Promise<void> {
+  const existing = processStarts.get(process.id);
+  if (existing) return existing;
+
+  const pending = (async () => {
+    // initSdk connects FlowSync asynchronously. Preserve the former readiness
+    // budget, but wait here after route commit so a cold socket cannot either
+    // block the URL or make attach race the connection startup.
+    try {
+      await connectionManager.waitForConnected(5000);
+    } catch {
+      notify.error({
+        title: t`No realtime connection`,
+        message: t`Terminal may be unresponsive until the connection recovers.`,
+      });
+    }
+    await process.start({ visible: true, cols, rows });
+  })().finally(() => {
+    if (processStarts.get(process.id) === pending) processStarts.delete(process.id);
+  });
+  processStarts.set(process.id, pending);
+  return pending;
+}
+
 /**
  * One warm-mounted terminal panel. Renders from a `Tab` plus its OWN live
  * entity (URL-first corollary: the view hydrates + attaches on mount, not via a
@@ -117,12 +163,79 @@ const TerminalPanel: React.FC<{
     isProcess && targetId ? new TypeId(AgenticProcess.type, targetId) : null,
   );
   const { data: shell } = useEntity<Shell>(!isProcess && targetId ? new TypeId(Shell.type, targetId) : null);
-  const transportShellId = isProcess ? (process?.shell_id ?? '') : targetId;
-  const source = isProcess ? process : shell;
+  const [runtimeStatus, setRuntimeStatus] = useState<ProcessRuntimeStatus>('idle');
+  const getSurfaceDims = React.useCallback(
+    () => ({ cols: estimateCols(window.innerWidth), rows: estimateRows(window.innerHeight) }),
+    [],
+  );
+  // Transport reconciliation belongs to the always-mounted panel, not the
+  // InteractiveTerminal child hidden by the startup gate. This records the
+  // opening mode during `/open`, retains any URL mode change made meanwhile,
+  // and performs it only after the startup mutation is ready.
+  const reconciledProcess = useProcessSurface({
+    process: isActive ? process : null,
+    getDims: getSurfaceDims,
+    canSwitch: runtimeStatus === 'ready',
+    subscribeToProcess: false,
+  });
+  const activeProcess = reconciledProcess ?? process;
+  const transportShellId = isProcess ? (activeProcess?.shell_id ?? '') : targetId;
+  const source = isProcess ? activeProcess : shell;
+  const processRef = useRef(activeProcess);
+  processRef.current = activeProcess;
+  const processReady = activeProcess != null;
+
+  // A route loader resolves only URL identity + project context. The mounted,
+  // URL-active panel owns the worker/PTY side effect so a slow `open` action
+  // cannot hold React Router on the previous URL. The stale guard prevents a
+  // completion from a panel the user already left from clearing or replacing
+  // the active panel's runtime error.
+  //
+  // Deliberately do not depend on `process.pty_mode`: an already-mounted
+  // headless→PTY transition is owned by useProcessSurface.switchMode(), which
+  // starts the PTY itself. Re-entering this activation effect on that update
+  // creates a second `/open` and replaces the live surface with the startup
+  // spinner mid-switch.
+  useEffect(() => {
+    const activeProcess = processRef.current;
+    if (!isProcess || !isMounted || !isActive || !activeProcess) {
+      setRuntimeStatus('idle');
+      return;
+    }
+    if (activeProcess.pty_mode === false) {
+      setRuntimeStatus('ready');
+      return;
+    }
+
+    let stale = false;
+    setRuntimeStatus('starting');
+    const cols = estimateCols(window.innerWidth);
+    const rows = estimateRows(window.innerHeight);
+    void startProcessRuntime(activeProcess, cols, rows)
+      .then(() => {
+        if (stale) return;
+        setRuntimeStatus('ready');
+        dataContext.setTerminalRuntimeError(null);
+      })
+      .catch((cause) => {
+        if (stale) return;
+        const error = classifyRuntimeFailure(activeProcess.id, activeProcess, cause);
+        setRuntimeStatus('failed');
+        dataContext.setTerminalRuntimeError({
+          kind: error.kind as Exclude<ProcessLoadErrorKind, 'entity_not_found'>,
+          processId: activeProcess.id,
+          shellId: error.shellId ?? null,
+        });
+      });
+
+    return () => {
+      stale = true;
+    };
+  }, [isActive, isMounted, isProcess, processReady, targetId]);
 
   const handleTitleChange = (title: string): void => {
     if (tab.is_disabled) return;
-    if (!shouldAutoSaveTitleForTarget(tab.target_type, isProcess ? process : null)) return;
+    if (!shouldAutoSaveTitleForTarget(tab.target_type, isProcess ? activeProcess : null)) return;
     if (!source || !source.auto_rename) return; // user pinned this tab
     // Clean spinner frames / icons / ANSI off the raw OSC title, then gate on
     // real text and dedupe against the CLEANED name — so animation ticks that
@@ -130,21 +243,21 @@ const TerminalPanel: React.FC<{
     const clean = cleanTitle(title);
     if (!allowRename(clean) || source.name === clean) return;
     // A restarting worker re-announces itself (title `claude` / the exe path)
-    // before any topic title exists — never let that clobber the stored name.
-    if (isProgramIdentityTitle(clean, isProcess ? process : null)) return;
+    // before any tag title exists — never let that clobber the stored name.
+    if (isProgramIdentityTitle(clean, isProcess ? activeProcess : null)) return;
     source.name = clean;
     void source.save().catch(() => {});
     // Mirror onto the durable Tab label so the chip stays right once inactive —
     // set_name, NOT rename (which would pin auto_rename off).
-    void Tab.setNameById(tab.id, clean).catch(() => {});
+    void tabManager.setName(tab.id, clean).catch(() => {});
   };
 
   return (
     <div
       data-testid="terminal-panel"
       data-session-id={tab.dockPointer?.pointer ?? ''}
-      data-worker-session-id={isProcess ? (process?.session_id ?? '') : undefined}
-      data-pty-mode={isProcess ? String(process?.pty_mode ?? '') : undefined}
+      data-worker-session-id={isProcess ? (activeProcess?.session_id ?? '') : undefined}
+      data-pty-mode={isProcess ? String(activeProcess?.pty_mode ?? '') : undefined}
       data-active={isActive ? 'true' : 'false'}
       className="absolute inset-0 min-h-0 overflow-hidden"
       style={isActive ? { zIndex: 1 } : { visibility: 'hidden', zIndex: 0 }}
@@ -153,20 +266,25 @@ const TerminalPanel: React.FC<{
         // A headless chat legitimately has NO shell (see AgenticProcess.isHeadless)
         // — InteractiveTerminal renders SimpleChatPane without an xterm. Mount it
         // shell-less.
-        (transportShellId || (isProcess && process?.isHeadless) ? (
+        (isProcess &&
+        activeProcess &&
+        !activeProcess.isHeadless &&
+        (runtimeStatus === 'idle' || runtimeStatus === 'starting') ? (
+          <TerminalPanelStartingState />
+        ) : transportShellId || (isProcess && activeProcess?.isHeadless) ? (
           <InteractiveTerminal
             sessionId={transportShellId}
             flow={flow}
             className="h-full"
             active={isActive}
-            process={isProcess ? (process ?? undefined) : undefined}
+            process={isProcess ? (activeProcess ?? undefined) : undefined}
             onTitleChange={handleTitleChange}
           />
-        ) : isProcess && !process ? null /* process entity still hydrating */ : (
+        ) : isProcess && !activeProcess ? null /* process entity still hydrating */ : (
           // Process loaded but has no shell and isn't headless (worker binary
           // missing / start_failure latch / drift): an unconditional visible
           // error + recovery instead of a silent blank panel.
-          <TerminalPanelErrorState processId={targetId} process={process} />
+          <TerminalPanelErrorState processId={targetId} process={activeProcess} />
         ))}
     </div>
   );
@@ -211,7 +329,10 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', scope =
     setMounted((prev) => {
       // Warm switch = the panel is already in the Set (visibility flip only);
       // cold = first visit mounts InteractiveTerminal (attach + replay).
-      toplog.log('process_load', `TabbedTerminal active flip → ${activeKey} (${prev.has(activeKey) ? 'warm' : 'cold mount'})`);
+      toplog.log(
+        'process_load',
+        `TabbedTerminal active flip → ${activeKey} (${prev.has(activeKey) ? 'warm' : 'cold mount'})`,
+      );
       if (prev.has(activeKey)) return prev;
       const next = new Set(prev);
       next.add(activeKey);
@@ -224,7 +345,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', scope =
       <div className="flex h-full w-full flex-col">
         <div className="relative flex-1 overflow-hidden" data-testid="terminal-panels">
           {tabs.length === 0 ? (
-            <ProjectHome spawnProjectId={spawnProjectId} showSessionStarters />
+            <ProjectHome spawnProjectId={spawnProjectId} createOnly />
           ) : (
             tabs.map((tab) => {
               const tabHash = tabKey(tab);

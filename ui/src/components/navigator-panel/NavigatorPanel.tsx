@@ -154,6 +154,7 @@ export function NavigatorPanel({
     <BrowseableTree
       roots={descriptor.roots ?? []}
       activePointer={descriptor.activePointer ?? null}
+      activeResourcePointer={descriptor.activeResourcePointer ?? null}
       activeKey={descriptor.activeKey}
       isLoading={descriptor.isLoading}
       onNavigate={descriptor.onNavigate}
@@ -163,7 +164,7 @@ export function NavigatorPanel({
 
   if (collapsed) {
     return (
-      <div className="flex w-9 flex-shrink-0 flex-col items-center border-r py-1.5">
+      <div className="flex w-9 flex-shrink-0 flex-col items-center border-e py-1.5">
         <button
           type="button"
           onClick={() => setCollapsed(false)}
@@ -186,7 +187,7 @@ export function NavigatorPanel({
     <TreeSelectionContext.Provider value={selectionEnabled ? selection : null}>
       <div
         ref={panelRef}
-        className="flex-shrink-0 overflow-hidden border-r"
+        className="flex-shrink-0 overflow-hidden border-e"
         style={{ width }}
         data-testid={`navigator-panel-${id}`}
       >
@@ -216,7 +217,7 @@ export function NavigatorPanel({
                     </span>
                   )}
                   {(header.headerRight || (header.toolbar && header.toolbar.length > 0) || search.searchIcon) && (
-                    <div className="ml-auto flex flex-shrink-0 items-center gap-0.5">
+                    <div className="ms-auto flex flex-shrink-0 items-center gap-0.5">
                       {search.searchIcon}
                       {header.headerRight}
                       {header.toolbar?.map((a) => (

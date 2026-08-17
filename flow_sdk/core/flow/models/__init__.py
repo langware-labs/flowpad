@@ -2,5 +2,4 @@
 
 Import models directly from submodules:
 - from .flow_data import FlowData, FlowDataType, FlowElementType, ViewType
-- from .state import FlowState, FlowMode
 """

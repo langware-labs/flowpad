@@ -1,5 +1,6 @@
-import { Trans, useLingui } from '@lingui/react/macro';
-import { FSItem, fsManager, fsStore, TypeId } from '@sdk';
+import { Plural, Trans, useLingui } from '@lingui/react/macro';
+import { FSEntry, fsManager, fsStore, TypeId } from '@sdk';
+import { BreadcrumbChevron } from '@src/components/ui/breadcrumb';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { ScrollArea } from '@src/components/ui/scroll-area';
@@ -16,7 +17,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useFS } from '@src/hooks/useFS';
 import {
   ArrowUp,
-  ChevronRight,
   ClipboardPaste,
   Copy,
   Download,
@@ -234,7 +234,7 @@ function formatFsErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function fsItemToFileItem(fsItem: FSItem, currentPath: string): FileItem {
+function fsItemToFileItem(fsItem: FSEntry, currentPath: string): FileItem {
   const name = fsItem.relativePath?.split('/').pop() || fsItem.name || '';
   // Use relativePath for the full path, fallback to constructed path if relativePath is not available
   const itemPath = fsItem.relativePath || (currentPath === '/' ? `/${name}` : `${currentPath}/${name}`);
@@ -651,7 +651,7 @@ export function SimpleFileManager({
       crumbs.push({ name: part, path });
     }
     return crumbs;
-  }, [currentPath]);
+  }, [currentPath, t]);
 
   const startRename = useCallback((item: FileItem) => {
     setRenameItem(item);
@@ -882,7 +882,9 @@ export function SimpleFileManager({
         <TooltipProvider>
           {breadcrumbs.map((crumb, idx) => (
             <span key={crumb.path} className="flex items-center gap-1">
-              {idx > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
+              {/* Shares the address bar's chevron so the path trail mirrors in
+                  RTL exactly as the breadcrumb above it does. */}
+              {idx > 0 && <BreadcrumbChevron className="h-3 w-3 text-muted-foreground" />}
               <button
                 data-testid={idx === 0 ? 'file-manager-home-button' : `file-manager-breadcrumb-${idx}`}
                 onClick={() => navigateToPath(crumb.path)}
@@ -899,7 +901,7 @@ export function SimpleFileManager({
       {error && (
         <div className="border-b border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-yellow-900/50 dark:bg-yellow-950/30 dark:text-yellow-500">
           {error}
-          <button onClick={() => setError(null)} className="ml-2 underline hover:no-underline">
+          <button onClick={() => setError(null)} className="ms-2 underline hover:no-underline">
             <Trans>Dismiss</Trans>
           </button>
         </div>
@@ -1062,12 +1064,25 @@ export function SimpleFileManager({
 
       {/* Status bar */}
       <div className="flex items-center justify-between border-t bg-muted/30 px-3 py-1 text-xs text-muted-foreground">
+        {/* Counted with `plural`, not "N item(s)": the count and its noun have to
+            agree, and a language picks the form — so the number cannot be glued
+            to an English word here and still read correctly once translated. */}
         <span>
-          {sortedFiles.length} items{hasSelection && ` (${selectedCount} selected)`}
+          <Plural value={sortedFiles.length} one="# item" other="# items" />
+          {hasSelection && (
+            <>
+              {' '}
+              <Trans>({selectedCount} selected)</Trans>
+            </>
+          )}
         </span>
         {clipboard && (
           <span className="text-primary">
-            {clipboard.items.length} item(s) in clipboard ({clipboard.operation})
+            {clipboard.operation === 'copy' ? (
+              <Plural value={clipboard.items.length} one="# item copied" other="# items copied" />
+            ) : (
+              <Plural value={clipboard.items.length} one="# item cut" other="# items cut" />
+            )}
           </span>
         )}
       </div>

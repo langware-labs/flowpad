@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, List, Optional
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.builtin.git_origin import GitOrigin
 from flow_sdk.core import Entity
 
@@ -34,7 +34,7 @@ class Task(Entity):
     title: str = APIField("")
     # Task is a folder-backed markdown asset (see task_type_info): asset_ref is
     # the ``tasks/<name>/`` folder holding ``task.md`` + inner ``spec.md``.
-    asset_ref: Optional[str] = APIField(None)
+    asset_ref: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     description: Optional[str] = APIField(None, blob=True)
     status: str = APIField(TaskStatus.TO_DO)
     last_viewed_at: Optional[datetime] = APIField(None)
@@ -47,20 +47,31 @@ class Task(Entity):
     reporter: Optional[str] = APIField(None)
     workspace_id: Optional[str] = APIField(None)  # Should be a reference to organisation entity
     task_type: str = APIField(TaskType.TASK)
-    # Group tasks: ``group`` = the overview task that owns one child ("member
-    # task") per contacts-group member; children stay ``standard``.
+    # GROUP-ONLY (``create_group_task`` is the sole writer of both): ``group`` =
+    # the overview task that owns one child ("member task") per contacts-group
+    # member; children stay ``standard``. Handing a task to ONE person does NOT
+    # touch these — that is a plain share (``task_assign_action``), one row, no
+    # flip. Anything reading them is rendering the group surface.
     kind: str = APIField(TaskKind.STANDARD)
-    # Group-task parent pointer; "" = top-level. Children own only their
+    # Name of the contacts group a ``group`` task was fanned out to — shown as
+    # "Owner: <group_name>" on the overview task. Stamped by create-group-task.
+    group_name: Optional[str] = APIField(None)
+    # Generic sub-task pointer; "" = top-level. NOT group vocabulary: the asset
+    # tree nests any task under any task with it, and ``search.py`` exports it for
+    # that. A group's member task is one USE of it, and such a child owns only its
     # status — every display field resolves from the parent at render time.
     parent_id: str = APIField("")
-    # The member's deliverable (repo / PR / doc / app URL). Unlike
-    # ``git_origin`` this rides hub reflection, so it reaches the owner.
-    submission_url: Optional[str] = APIField(None)
+    # The member's deliverable (repo / PR / doc / app URL) is NOT a field — a
+    # member records it as a standard ``Comment`` on their member task ("The
+    # task is done. Submission url is: <url>", with the url also in the
+    # comment's ``data``). A comment on a hub-remote member task auto-shares to
+    # the hub, and the owner (authorized on the child) pulls it during
+    # ``sync-group`` — see ``group_task_action._sync_group_owner``.
     priority: Optional[str] = APIField(None)
-    tags: List[str] = APIField([])
+    tags: List[str] = APIField([], sharing=Sharing.PRIVATE)
     shared_by_id: Optional[str] = APIField(None)
     spec_type: Optional[str] = APIField(None)
-    my_process_id: Optional[str] = APIField(None)
+    my_process_id: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     shared_process_id: Optional[str] = APIField(None)
     # NOTE: spec_id, conversation_id, links — moved into the unified
     # ``context_entities`` list on the base ``Entity``. Read via
@@ -82,9 +93,9 @@ class Task(Entity):
     folder_name: Optional[str] = APIField(None)
     output_dir: Optional[str] = APIField(None)
     process_id: Optional[str] = APIField(None)
-    project_name: Optional[str] = APIField(None)
-    project_root: Optional[str] = APIField(None)
-    git_origin: Optional[GitOrigin] = APIField(None)
+    project_name: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
+    project_root: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
+    git_origin: Optional[GitOrigin] = APIField(None, sharing=Sharing.PRIVATE)
     recipient_email: Optional[str] = APIField(None)
     result_uname: Optional[str] = APIField(None)
     sender_email: Optional[str] = APIField(None)

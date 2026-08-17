@@ -1,43 +1,20 @@
-import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { CollapsedSidebar } from '@src/components/collapsed-sidebar';
+import { TopNavBar } from '@src/components/top-nav-bar/TopNavBar';
 import { Footer } from '@src/components/footer';
-import { EnvVar, useEnvVarsStore } from '@src/hooks/use-env-vars-store';
-import { EnvVarType } from '@src/types/envVarTypes';
-import { useEntityEnv } from '@sdk/react/hooks';
 import { SidebarProvider } from '@src/components/ui/sidebar';
 import { useIsVibe } from '@src/components/view-mode';
-import { useDockNavigation, useIsVibeHome } from '@src/navigation/useDockNavigation';
+import { useDockNavigation, useIsHomeSurface } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
-import { useEffect, useMemo } from 'react';
+import { PageId } from '@sdk';
 import { ContentPanel } from './content-panel/content-panel';
 import { VibeWorkspace } from './vibe-workspace';
 import { VibeNewChat } from './vibe-new-chat';
 import { VibeNoProcessWorkspace } from './vibe-no-process-workspace';
 import { useVibeWorkspaceSession } from './use-vibe-workspace-session';
+import { isContentAssetDock } from '@src/navigation/content-asset-dock';
+import { AssetVibeWorkspace } from './asset-vibe-workspace';
 
 export default function FlowPage() {
-  const { flow } = useAgentContext();
-
-  // Memoize the flow object to prevent unnecessary re-renders
-  const memoizedFlow = useMemo(() => flow, [flow]);
-  const { setEnvVars } = useEnvVarsStore();
-  // Use the unified hook to fetch environment variables - only for logged-in users
-  const { table } = useEntityEnv({
-    entityTypeId: memoizedFlow?.projectTypeId,
-  });
-
-  // Convert table data to EnvVar[] for backward compatibility and set in store
-  useEffect(() => {
-    if (table?.values) {
-      const envVars: EnvVar[] = table.values.map((row) => ({
-        name: row.name,
-        var_type: row.var_type as EnvVarType, // Type will be validated by EnvVarType
-        description: row.description || '',
-      }));
-      setEnvVars(envVars);
-    }
-  }, [table, setEnvVars]);
-
   const isVibe = useIsVibe();
   // A Vibe "session" = a workspace surface: the process's own dock (its ONE
   // shell URL — vibe is a view mode, not a URL family) OR a child tab opened
@@ -54,44 +31,28 @@ export default function FlowPage() {
   // (→ /dock/project/<id>) fell through to VibeNewChat and the project home
   // never opened.
   const { currentDock } = useDockNavigation();
-  const isVibeHome = useIsVibeHome();
+  const isHomeSurface = useIsHomeSurface();
   const isVibeNoProcess = currentDock?.viewType === ViewType.HOME && currentDock.options?.vibeNoProcess === 'true';
+  // The hub page is its own SPA-surface — vibe skinning (a desk view-mode) does
+  // not apply. Route it through the standard layout so ContentPanel's page=hub
+  // dispatch renders HubHome / WorldView instead of the desk VibeNewChat hero.
+  const hubMode = currentDock?.page === PageId.HUB;
+  const isAssetContent = !!currentDock && !hubMode && isContentAssetDock(currentDock);
 
-  // Vibe mode: a stripped Lovable-style skin that still carries the left rail in
-  // its already-reserved footprint. CollapsedSidebar renders a minimal rail in
-  // Vibe — top navigation (back/refresh) + a Home button, and the shared bottom
-  // cluster (search / assistant / theme / user login) — with the middle nav
-  // (Chats, Inbox, Assets, …) dropped. Same width as Standard/Advanced, so the
-  // content column and footer controls don't shift when the view mode changes.
-  if (isVibe) {
-    return (
-      <SidebarProvider defaultOpen={false} className="h-full !min-h-0">
-        <div data-testid="flow-page" className="flex h-full w-full overflow-hidden bg-background">
-          <CollapsedSidebar />
-
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex-1 overflow-hidden">
-              {vibeSession ? (
-                <VibeWorkspace session={vibeSession} />
-              ) : isVibeNoProcess ? (
-                <VibeNoProcessWorkspace />
-              ) : isVibeHome ? (
-                <VibeNewChat />
-              ) : (
-                <ContentPanel />
-              )}
-            </div>
-            <Footer />
-          </div>
-        </div>
-      </SidebarProvider>
-    );
-  }
-
-  // New layout with collapsed sidebar and bottom terminal
+  // One common tree keeps asset/file ContentPanel ancestry stable while the URL
+  // changes only its view mode. Non-asset Vibe destinations retain the existing
+  // process-display/new-chat dispatch.
   return (
-    <SidebarProvider defaultOpen={false} className="h-full !min-h-0">
-      <div data-testid="flow-page" className="flex h-full w-full overflow-hidden bg-background">
+    /* `flex-col` on the provider's own root (it appends className to a flex div)
+       rather than a wrapper of our own: that makes the navigation bar the app's
+       REAL top — full window width, above the rail as well as the content. Its
+       predecessor was rendered inside each home page, which put it below the
+       rail's top edge and made it vanish on every non-home route. Neither the
+       runtime signal nor the back button may depend on where you navigated.
+       One mount, one place. */
+    <SidebarProvider defaultOpen={false} className="h-full !min-h-0 flex-col overflow-hidden bg-background">
+      <TopNavBar />
+      <div data-testid="flow-page" className="flex min-h-0 w-full flex-1 overflow-hidden">
         {/* Collapsed Icon Sidebar (~50px wide) */}
         <CollapsedSidebar />
 
@@ -100,9 +61,22 @@ export default function FlowPage() {
             (dozens of chips) blows the column out to thousands of px,
             pushing the right arrow / close-all / opener toolbar off-screen. */}
         <div className="flex min-w-0 flex-1 flex-col">
-          {/* Content Panel (full width) */}
           <div className="flex-1 overflow-hidden">
-            <ContentPanel />
+            {isAssetContent ? (
+              <AssetVibeWorkspace isVibe={isVibe} session={vibeSession} />
+            ) : isVibe && !hubMode ? (
+              vibeSession ? (
+                <VibeWorkspace session={vibeSession} />
+              ) : isVibeNoProcess ? (
+                <VibeNoProcessWorkspace />
+              ) : isHomeSurface ? (
+                <VibeNewChat />
+              ) : (
+                <ContentPanel />
+              )
+            ) : (
+              <ContentPanel />
+            )}
           </div>
 
           <Footer />

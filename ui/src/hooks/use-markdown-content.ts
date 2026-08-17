@@ -78,7 +78,7 @@ export function normalizeMarkdownForCompare(raw: string): string {
 
 export function useMarkdownContent(
   fsRef: FsRef | null,
-  options?: { autoSave?: boolean; autoSaveMs?: number; reloadKey?: string | number },
+  options?: { autoSave?: boolean; autoSaveMs?: number; reloadKey?: string | number; reindexOnSave?: boolean },
 ): MarkdownContentState {
   const { content, setContent, ...rest } = useFSRefContent(fsRef, {
     ...options,

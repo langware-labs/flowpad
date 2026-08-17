@@ -1,4 +1,4 @@
-import { FSItem, TypeId } from '@sdk';
+import { FSEntry, TypeId } from '@sdk';
 import { FilterDefinition, FilterName } from './filters';
 
 export interface FileItem {
@@ -8,7 +8,7 @@ export interface FileItem {
   size: number;
   modifiedAt: Date;
   path: string;
-  fsItem?: FSItem;
+  fsItem?: FSEntry;
 }
 
 export interface FilterConfig {

@@ -11,16 +11,7 @@
  * semantic entry, and this component just reads the typed fields.
  */
 
-import {
-  ArrowUpRight,
-  Bot,
-  FileText,
-  Globe,
-  ListChecks,
-  Pencil,
-  Search,
-  Terminal,
-} from 'lucide-react';
+import { ArrowUpRight, Bot, FileText, Globe, ListChecks, Pencil, Search, Sparkles, Terminal } from 'lucide-react';
 import type { ComponentType } from 'react';
 
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -51,8 +42,8 @@ interface KindMeta {
   Icon: ComponentType<{ className?: string }>;
   iconClassName: string;
   label: string;
-  primary: string;        // path / command preview / query / etc.
-  chips: string[];        // additional chips (line counts, exit code, …)
+  primary: string; // path / command preview / query / etc.
+  chips: string[]; // additional chips (line counts, exit code, …)
 }
 
 function basename(p: string): string {
@@ -61,7 +52,12 @@ function basename(p: string): string {
 }
 
 function firstLine(text: string): string {
-  return text.split('\n').find((l) => l.trim())?.trim() ?? '';
+  return (
+    text
+      .split('\n')
+      .find((l) => l.trim())
+      ?.trim() ?? ''
+  );
 }
 
 function kindMeta(op: GenericEntry, t: any): KindMeta | null {
@@ -100,12 +96,22 @@ function kindMeta(op: GenericEntry, t: any): KindMeta | null {
       const chips: string[] = [];
       if (op.match_count != null) chips.push(`${op.match_count} matches`);
       if (op.path) chips.push(basename(op.path));
-      return { Icon: Search, iconClassName: 'text-purple-500', label: op.search_kind || t`Search`, primary: op.query, chips };
+      return {
+        Icon: Search,
+        iconClassName: 'text-purple-500',
+        label: op.search_kind || t`Search`,
+        primary: op.query,
+        chips,
+      };
     }
     case 'web_fetch': {
       let host = '';
       if (op.url) {
-        try { host = new URL(op.url).host; } catch { host = op.url; }
+        try {
+          host = new URL(op.url).host;
+        } catch {
+          host = op.url;
+        }
       }
       return {
         Icon: Globe,
@@ -127,12 +133,26 @@ function kindMeta(op: GenericEntry, t: any): KindMeta | null {
       return {
         Icon: Bot,
         iconClassName: 'text-fuchsia-500',
-        label: op.agent_type || t`Agent`,
+        label: op.agent_type || t`SubAgent`,
         primary: op.description || firstLine(op.prompt ?? ''),
         chips: [],
       };
+    case 'skill_call':
+      return {
+        Icon: Sparkles,
+        iconClassName: 'text-purple-500',
+        label: t`Skill`,
+        primary: op.skill_name,
+        chips: op.invocation_kind ? [op.invocation_kind.replaceAll('_', ' ')] : [],
+      };
     case 'tool_use':
-      return { Icon: Terminal, iconClassName: 'text-orange-400', label: op.tool_name || t`tool`, primary: '', chips: [] };
+      return {
+        Icon: Terminal,
+        iconClassName: 'text-orange-400',
+        label: op.tool_name || t`tool`,
+        primary: '',
+        chips: [],
+      };
     default:
       return null;
   }
@@ -148,15 +168,12 @@ export function OperationOneLiner({ operation, usage }: OperationOneLinerProps) 
   const costLabel = formatCost(usage?.costUsd);
   // Workflow spawns carry the path to the spawned agent's own transcript — let
   // the user drill into it (opened as a claude transcript by absolute path).
-  const childPath =
-    operation.kind === 'agent_spawn' ? operation.child_transcript_path ?? null : null;
+  const childPath = operation.kind === 'agent_spawn' ? (operation.child_transcript_path ?? null) : null;
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
       <Icon className={`h-3.5 w-3.5 shrink-0 ${iconClassName}`} />
       <span className="shrink-0 font-mono text-[11px] font-medium text-foreground/80">{label}</span>
-      {primary && (
-        <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">{primary}</span>
-      )}
+      {primary && <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">{primary}</span>}
       {chips.map((c, i) => (
         <span key={i} className="shrink-0 rounded bg-muted px-1 font-mono text-[10px] text-muted-foreground">
           {c}
@@ -164,7 +181,7 @@ export function OperationOneLiner({ operation, usage }: OperationOneLinerProps) 
       ))}
       {costLabel && (
         <span
-          className="shrink-0 tabular-nums text-[10px] font-medium text-foreground/80"
+          className="shrink-0 text-[10px] font-medium tabular-nums text-foreground/80"
           data-testid="turn-cost-usd"
           title={`${usage?.model ?? 'unknown model'} · cost for this turn`}
         >
@@ -182,7 +199,7 @@ export function OperationOneLiner({ operation, usage }: OperationOneLinerProps) 
             // decode twice back to the absolute path. Mirrors codex/copilot.
             navigation.openDockPointer(DockPointer.forLensTranscript('claude', encodeURIComponent(childPath)));
           }}
-          className="ml-auto inline-flex h-5 shrink-0 items-center gap-1 rounded px-1.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="ms-auto inline-flex h-5 shrink-0 items-center gap-1 rounded px-1.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
           title={t`Open this agent's transcript`}
           data-testid="open-subagent-transcript"
         >
@@ -215,9 +232,13 @@ export function OperationExpandedDetail({ operation }: OperationOneLinerProps) {
       const err = operation.stderr_preview ?? '';
       return (
         <div className="space-y-1">
-          <pre className="overflow-auto whitespace-pre-wrap font-mono text-[10px] text-foreground/80">$ {operation.command ?? ''}</pre>
+          <pre className="overflow-auto whitespace-pre-wrap font-mono text-[10px] text-foreground/80">
+            $ {operation.command ?? ''}
+          </pre>
           {out && <PreBlock>{out}</PreBlock>}
-          {err && <pre className="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-red-500">{err}</pre>}
+          {err && (
+            <pre className="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-red-500">{err}</pre>
+          )}
         </div>
       );
     }
@@ -228,7 +249,9 @@ export function OperationExpandedDetail({ operation }: OperationOneLinerProps) {
       if (!operation.result_preview && !operation.prompt) return null;
       return (
         <div className="space-y-1">
-          {operation.prompt && <pre className="whitespace-pre-wrap font-mono text-[10px] text-foreground/70">{operation.prompt}</pre>}
+          {operation.prompt && (
+            <pre className="whitespace-pre-wrap font-mono text-[10px] text-foreground/70">{operation.prompt}</pre>
+          )}
           {operation.result_preview && <PreBlock>{operation.result_preview}</PreBlock>}
         </div>
       );

@@ -103,8 +103,15 @@ export interface NavigatorDescriptor {
    *  in the header and owns the inline search experience. */
   search?: NavigatorSearchConfig;
 
-  /** Active pointer (from currentDock/URL) — drives selection + auto-expand. */
+  /** Active pointer (from currentDock/URL) — the navigation cursor and exact
+   *  row identity. Resource-based reveal may use `activeResourcePointer`. */
   activePointer?: DockPointer | null;
+
+  /** Optional entity-resolved resource identity for trees whose rows are
+   *  filesystem-addressed while the canonical URL is TypeId-addressed. This
+   *  only drives resource matching/reveal; `activePointer` remains the URL and
+   *  navigation cursor. */
+  activeResourcePointer?: DockPointer | null;
 
   /** Optional URL-derived alternate selection key (typeid form). */
   activeKey?: string | null;

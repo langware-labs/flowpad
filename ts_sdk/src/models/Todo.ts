@@ -44,9 +44,8 @@ export interface Todo {
   // Semantic context
   expected_artifacts: string[];
 
-  // Artifacts and relations
+  // Artifacts referenced by this todo
   artifacts: Record<string, any>;
-  artifact_relations: any[];
 }
 
 /**

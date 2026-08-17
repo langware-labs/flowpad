@@ -16,7 +16,6 @@ import pytest
 from flow_sdk.builtin.deck_template import DeckTemplate
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions.deck_template import (
-    deck_template_gen_id,
     extract_deck_template,
 )
 
@@ -58,12 +57,13 @@ def _assert_indexer_compatible(tpl_path: Path) -> DeckTemplate:
     """Load via from_fs_ref and assert it equals the indexer cold path."""
     ref = FSRef(tpl_path)
     # gen_id stamps the `.flow/id` capsule first — the production index order.
-    gen = deck_template_gen_id(ref)
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+    gen = SchemaRegistry.get("deck_template").mint_entity_id(ref, derive=True, overwrite=True)
     loaded = DeckTemplate.from_fs_ref(ref)
     assert loaded is not None, "from_fs_ref returned None for a real deck template"
     assert isinstance(loaded, DeckTemplate)
 
-    rec = extract_deck_template(ref)[0]
+    rec = extract_deck_template(ref, gen)[0]
     meta = rec.meta_dict()["metadata"]
 
     assert loaded.id == gen == rec.id

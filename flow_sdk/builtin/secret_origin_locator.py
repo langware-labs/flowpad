@@ -20,9 +20,11 @@ def resolve_secret_origin_kind(value: Any) -> str:
 
 
 class SecretOriginLocator(BaseModel):
+    """Where a declared secret's value is fetched from — declaration detail.
+
+    Deliberately has no ``key()``: a locator is NOT an identity. A secret is
+    identified by ``(project_id, env_var)`` (see ``secret_origin_identity``),
+    which is what lets it move between stores while staying the same secret.
+    """
+
     kind: str = DEFAULT_SECRET_ORIGIN_KIND
-
-    def key(self) -> str:
-        from flow_sdk.builtin.secret_origin_driver import get_secret_origin_driver  # noqa: PLC0415
-
-        return get_secret_origin_driver(self.kind).key(self)

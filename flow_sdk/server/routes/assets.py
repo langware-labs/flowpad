@@ -27,7 +27,7 @@ async def _markdown_vaults() -> list[dict]:
     project, NOT just its ``docs/`` subfolder — so the menu walks every ``.md``
     in the project (gitignore-aware, via ``walk_markdown_files``). This is why a
     project-root file like ``streams_sdk.md`` shows up alongside ``docs/`` files.
-    The single **user** vault stays the user-level ``.claude/docs`` knowledge dir.
+    The single **user** vault is the user-level ``docs/`` knowledge dir.
     """
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
@@ -54,8 +54,8 @@ async def _markdown_vaults() -> list[dict]:
             "record_project_id": record_project_id,
         })
 
-    # User vault — the user-level knowledge dir (~/.claude/docs).
-    user_docs = get_instance_settings().claude_docs_dir
+    # User vault — the user-level knowledge dir (~/docs).
+    user_docs = get_instance_settings().user_docs_dir
     _add(str(user_docs), scope="user", project_id=None,
          record_project_id=None, label="User docs")
 
@@ -163,6 +163,7 @@ async def list_entities_by_path(
             "name": getattr(e, "name", "") or getattr(e, "uname", "") or "",
             "asset_ref": getattr(e, "asset_ref", "") or "",
             "scope": getattr(e, "scope", "") or "",
+            "remote": bool(getattr(e, "remote", False)),
             "modified_at": str(getattr(e, "updated_date", "") or ""),
         } for e in entities],
         "limit": limit,

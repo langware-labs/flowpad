@@ -8,29 +8,73 @@
 
 import {
   AgenticProcess,
+  cloudManager,
   ContextEntitiesEnum,
   dataContext,
   initSdk,
+  isBackendUnreachable,
   Project,
   systemTools,
   TypeId,
 } from '@sdk';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DockPointer } from '@src/navigation';
 import { canonicalProcessDockPath } from '@src/navigation/process-dock-canonicalization';
-import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
+import { canonicalWorkspaceDisplayPath } from '@src/navigation/workspace-display-canonicalization';
+import { canonicalCredentialsDockPath } from '@src/navigation/credentials-dock-canonicalization';
+import { canonicalWorldViewDockPath } from '@src/navigation/worldview-dock-canonicalization';
+import { pageRedirectUrl } from '@src/navigation/supported-pages';
+import { setupTabAndAdopt } from '@src/tabs/tab-content-lifecycle';
 import { ViewType } from '@src/types/ViewType';
 import { TimeIt } from '@src/utils/timeit';
-import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
-import { getBrokenViewUrl, loadFlowFromParams } from './loaders';
-import { loadProject } from './load-project';
+import { redirect, replace, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
+import { ProjectLoadError, loadProject } from './load-project';
 import { describeProcessStartError } from './load-process';
 import { markPerfT0, perfLog, perfTime } from './_perf';
 import { loadDockPointer } from './load-dock-pointer';
+import { runLoadRedirects } from './load-redirects';
+// Side-effect import: feature-owned redirect resolvers register themselves.
+import '@src/journey/journey-load-redirect';
 
 // Re-export kept for existing consumers (unit tests import from here).
 export { describeProcessStartError };
 
-const ALLOWED_VIEWS = new Set(Object.values(ViewType));
+/**
+ * Drop a dock's scope when the project it pins does not exist, by redirecting to
+ * the SAME pointer with no scope keys.
+ *
+ * This runs before tab materialization on purpose, and only for a SCOPE-KEYED
+ * dock (Assets, Explorer), whose tab identity IS its scope
+ * (`tabHash` = `<viewType>|project:<id>`). Such a tab cannot be minted for a
+ * project that isn't there — `setupTab` throws "Tab could not be materialized
+ * for this URL.", records OpenFailed and returns, so NOTHING downstream runs:
+ * not the dock loader, not scope adoption, not any error surface. The dock is
+ * abandoned and the browse views render the dead scope's zero rows as an
+ * ordinary empty list. Any repair placed after this point is unreachable, which
+ * is what makes this the right seam. Docks whose identity ignores scope are
+ * unaffected and are left to resolve their own project (a shell derives it from
+ * its process), so they pay no extra fetch here.
+ *
+ * Only a resolved 404/403 (`ProjectLoadError`) strips the scope. A transient
+ * failure (offline, 5xx) leaves the URL alone — the project probably exists, and
+ * a network blip must not silently rewrite where the user is. Ids are per
+ * instance, so a dead scope is usually a stale tab/bookmark or a URL carried in
+ * from another instance.
+ */
+async function repairUnsatisfiableScope(dock: DockPointer, requestPath: string): Promise<void> {
+  if (!dock.scopeKeyed) return;
+  const projectId = dock.scopeProjectId;
+  if (!projectId || dataContext.project?.id === projectId) return;
+  try {
+    // Also warms the entity cache + context, so the dock loader's own scope
+    // adoption downstream is a cache hit rather than a second round trip.
+    await loadProject(new TypeId(Project.type, projectId));
+  } catch (cause) {
+    if (!(cause instanceof ProjectLoadError)) return;
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw replace(dock.withoutScopeFilter().toUrl(requestPath));
+  }
+}
 
 /**
  * Ensure compute node is loaded for the current project.
@@ -52,18 +96,17 @@ async function ensureComputeNodeLoaded(): Promise<void> {
   }
 }
 
-function isValidViewType(args: LoaderArgs): boolean {
-  const { viewType } = args.params;
-  if (!viewType) return false;
-  const v = String(viewType ?? '').toLowerCase();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return ALLOWED_VIEWS.has(v as any);
-}
-
-function getDockViewType(args: LoaderArgs): ViewType | undefined {
-  if (!isValidViewType(args)) return undefined;
-  const v = String(args.params.viewType ?? '').toLowerCase();
-  return v as ViewType;
+/**
+ * Heal the pre-VFS Assets Files route (`fs/<relative>`) at the loader seam.
+ * The replacement happens only after compute-node setup and before tab
+ * materialization, so neither a tab nor UI context can adopt the legacy
+ * identity. DockPointer owns the grammar conversion; React Router owns history.
+ */
+export function redirectLegacyAssetFsDock(dock: DockPointer, requestPath: string): void {
+  const canonical = dock.canonicalLegacyAssetFsDock();
+  if (!canonical) return;
+  // eslint-disable-next-line @typescript-eslint/only-throw-error
+  throw replace(canonical.toUrl(requestPath));
 }
 
 export async function loadAgentApp(args: LoaderArgs) {
@@ -101,9 +144,22 @@ export async function loadAgentApp(args: LoaderArgs) {
   // Check if service is unavailable - throw error so ErrorBoundary catches it.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const bootstrapError = dataContext.bootstrapError as any;
-  if (bootstrapError?.isServiceUnavailable || bootstrapError?.type === 'network') {
+  if (isBackendUnreachable(bootstrapError)) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw dataContext.bootstrapError;
+  }
+
+  // Hub server + anonymous visitor: the hub app is account-scoped, so an
+  // unauthenticated open goes to the login flow instead of the visitor home
+  // (custom-JWT hubs auto-sign-in the local dev user; Auth0 shows the
+  // universal login). Full browser navigation — the login route lives on the
+  // backend, not in the SPA. Entry routes (/entry/* invite & landing pages)
+  // run their own loaders and stay reachable anonymously.
+  if (isHubOnly() && !dataContext.bootstrapInfo?.user) {
+    t.done(slowThresholdSeconds);
+    void cloudManager.login();
+    // Halt this load — the browser is navigating away.
+    return await new Promise<never>(() => {});
   }
 
   const { processId, viewType } = params;
@@ -120,6 +176,32 @@ export async function loadAgentApp(args: LoaderArgs) {
     throw redirect(canonical);
   }
 
+  // The workspace host is only meaningful with the display pane on screen: in
+  // standard mode a shown document falls back to its natural asset address.
+  const canonicalDisplay = canonicalWorkspaceDisplayPath(requestUrl.pathname, requestUrl.search);
+  if (canonicalDisplay) {
+    t.done(slowThresholdSeconds);
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw redirect(canonicalDisplay);
+  }
+
+  const canonicalWorldView = canonicalWorldViewDockPath(requestUrl.pathname, requestUrl.search);
+  if (canonicalWorldView) {
+    t.done(slowThresholdSeconds);
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw redirect(canonicalWorldView);
+  }
+
+  // Same shape, for the three retired credential views (environment /
+  // connections / api-keys → credentials/<subview>). Before the pointer is
+  // parsed, so nothing downstream ever sees a retired viewType.
+  const canonicalCredentials = canonicalCredentialsDockPath(requestUrl.pathname, requestUrl.search);
+  if (canonicalCredentials) {
+    t.done(slowThresholdSeconds);
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw redirect(canonicalCredentials);
+  }
+
   let dockForSetup: DockPointer | null = null;
 
   // URL-first tab materialization: the loader is the single writer, but it now
@@ -131,6 +213,27 @@ export async function loadAgentApp(args: LoaderArgs) {
     } catch {
       /* not a valid dock view — no tab */
     }
+  }
+
+  // The server declares which pages it serves (bootstrap `supported_pages`; the
+  // local desktop server sends `["desk"]`). A dock URL naming an unsupported
+  // page redirects to the first supported page's home. Placed before the branch
+  // split so it covers both the root-dock and process-scoped paths; reads the
+  // parsed pointer's `page` (NOT `params.viewType`, which binds a non-desk page
+  // segment as the viewType). `bootstrapInfo` is ready — initSdk is awaited above.
+  if (dockForSetup) {
+    const pageRedirect = pageRedirectUrl(dockForSetup, dataContext.bootstrapInfo?.supported_pages, requestUrl.pathname);
+    if (pageRedirect) {
+      t.done(slowThresholdSeconds);
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      throw redirect(pageRedirect);
+    }
+  }
+
+  // A dock whose scope pins a project that no longer exists is repaired here —
+  // BEFORE setupTab tries (and fails) to materialize a tab keyed by that scope.
+  if (dockForSetup) {
+    await repairUnsatisfiableScope(dockForSetup, requestUrl.pathname);
   }
 
   if (!processId && !viewType && /^\/dock\/?$/.test(requestUrl.pathname)) {
@@ -152,7 +255,9 @@ export async function loadAgentApp(args: LoaderArgs) {
       await dataContext.setActiveEntityTypeId(new TypeId(AgenticProcess.type, sessionProcessId));
       const process = await AgenticProcess.getById(sessionProcessId).catch(() => null);
       if (process?.project_id) {
-        await loadProject(new TypeId(Project.type, process.project_id)).catch(() => systemTools.resolveProjectContext(process.workdir, process));
+        await loadProject(new TypeId(Project.type, process.project_id)).catch(() =>
+          systemTools.resolveProjectContext(process.workdir, process),
+        );
       } else {
         // Global (projectless) session — a workdir match adopts it into a project;
         // otherwise resolveProjectContext clears the active project to null (the
@@ -173,6 +278,9 @@ export async function loadAgentApp(args: LoaderArgs) {
     // Project is already loaded by initSdk -> setupProject, just ensure compute node.
     await ensureComputeNodeLoaded();
     t.time('ensureComputeNode');
+    if (dockForSetup) {
+      redirectLegacyAssetFsDock(dockForSetup, requestUrl.pathname);
+    }
     let setupHandled = false;
 
     const runSetup = async (setupContent: () => Promise<string>) => {
@@ -181,7 +289,10 @@ export async function loadAgentApp(args: LoaderArgs) {
       const wrappedSetup = async () => {
         label = await setupContent();
       };
-      if (dockForSetup) await setupTabAndAdopt(dockForSetup, { setupContent: wrappedSetup });
+      // Timed: tab materialization gates the URL commit, so a slow ensure-tab
+      // is felt as a slow navigation.
+      if (dockForSetup)
+        await perfTime('setupTabAndAdopt', () => setupTabAndAdopt(dockForSetup, { setupContent: wrappedSetup }));
       else await wrappedSetup();
       t.time(label);
     };
@@ -189,6 +300,13 @@ export async function loadAgentApp(args: LoaderArgs) {
     if (dockForSetup) {
       const dock = dockForSetup;
       await runSetup(() => loadDockPointer(dock, { requestPath: requestUrl.pathname }));
+      if (dock.viewType === ViewType.PROJECT) {
+        const loadRedirect = await runLoadRedirects(args.request);
+        if (loadRedirect) {
+          // eslint-disable-next-line @typescript-eslint/only-throw-error
+          throw loadRedirect;
+        }
+      }
     }
 
     if (dockForSetup && !setupHandled) {
@@ -199,18 +317,7 @@ export async function loadAgentApp(args: LoaderArgs) {
     return;
   }
 
-  const dockViewType = getDockViewType(args);
-  if (!dockViewType) {
-    t.done(slowThresholdSeconds);
-    return loadFlowFromParams(args);
-  }
-  if (!isValidViewType(args)) {
-    const brokenViewUrl = getBrokenViewUrl(args);
-    console.error(`[LOADER] Invalid view type(${dockViewType}). Redirecting to default view URL:`, brokenViewUrl);
-    t.done(slowThresholdSeconds);
-    // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw redirect(brokenViewUrl);
-  }
+  // The legacy /agent/:agentId/flow/:processId family is gone — every live
+  // route returns inside the !processId branch above. Defensive no-op.
   t.done(slowThresholdSeconds);
-  return loadFlowFromParams(args);
 }

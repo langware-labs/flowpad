@@ -8,14 +8,8 @@ import type {
   WorkerStatus,
 } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@src/components/ui/select';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ProcessStatusLine } from '@src/components/agentic-progress/shared/process-status-line';
 import { processStatusConfig, workerStatusConfig } from '@src/components/agentic-progress/shared/status-indicator';
@@ -28,6 +22,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { cn } from '@src/lib/utils';
 import { useFlowDataTrace } from '@src/hooks/use-flow-data-trace';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { SETUP_GITHUB_JOURNEY_ID, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
 import type { TraceEvent } from '@src/types/trace-event';
 import {
   BadgeCheck,
@@ -115,7 +110,11 @@ function StatusBadge({ access, loading }: { access: CapabilityAccess; loading: b
 /** Dependency chips, colored by the dependency's RESOLVED availability. */
 function DependencyChips({ dependencies }: { dependencies: CapabilityDependency[] }) {
   if (dependencies.length === 0) {
-    return <span className="text-xs text-muted-foreground"><Trans>None</Trans></span>;
+    return (
+      <span className="text-xs text-muted-foreground">
+        <Trans>None</Trans>
+      </span>
+    );
   }
   return (
     <div className="flex flex-wrap gap-1">
@@ -125,9 +124,7 @@ function DependencyChips({ dependencies }: { dependencies: CapabilityDependency[
           variant="outline"
           className={cn(
             'max-w-[200px] truncate font-normal',
-            dep.available
-              ? 'border-emerald-200 text-emerald-700'
-              : 'border-destructive/30 text-destructive',
+            dep.available ? 'border-emerald-200 text-emerald-700' : 'border-destructive/30 text-destructive',
           )}
           title={dep.available ? `${dep.kind} (available)` : `${dep.kind} (missing)`}
         >
@@ -208,7 +205,10 @@ function CapabilityProcessRun({
   return (
     <div className="min-w-0 space-y-0.5">
       <ProcessStatusLine process={process} size="sm" onOpenInTerminal={onOpenInTerminal} className="min-w-0" />
-      <div className="min-w-0 truncate text-[11px] leading-4 text-muted-foreground" data-testid="capability-process-one-liner">
+      <div
+        className="min-w-0 truncate text-[11px] leading-4 text-muted-foreground"
+        data-testid="capability-process-one-liner"
+      >
         <span className="font-medium text-foreground/80">{statusLabel}:</span> <span>{oneLiner}</span>
       </div>
     </div>
@@ -216,7 +216,7 @@ function CapabilityProcessRun({
 }
 
 /** Lazily tail a capability's last/active install process by id. */
-function RowProcess({ processId }: { processId: string }) {
+export function RowProcess({ processId }: { processId: string }) {
   const { navigation } = useDockNavigation();
   const typeId = useMemo(() => {
     try {
@@ -228,10 +228,7 @@ function RowProcess({ processId }: { processId: string }) {
   const { data: process } = useEntity<AgenticProcess>(typeId, { enabled: !!typeId, watch: true });
   if (!process) return null;
   return (
-    <CapabilityProcessRun
-      process={process}
-      onOpenInTerminal={() => navigation.openDock(process.terminalDockPointer)}
-    />
+    <CapabilityProcessRun process={process} onOpenInTerminal={() => navigation.openDock(process.terminalDockPointer)} />
   );
 }
 
@@ -239,20 +236,33 @@ function CapabilityAccessRow({
   access,
   siblings,
   onRefresh,
+  intent,
+  probing,
 }: {
   access: CapabilityAccess;
   siblings: CapabilityAccess[];
   onRefresh: () => Promise<unknown>;
+  /** This is the capability the user was reaching for when they landed here. */
+  intent?: boolean;
+  /** Its arrival re-probe is still in flight. */
+  probing?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const Icon = capabilityIcon(access.icon);
+  const rowRef = useRef<HTMLDivElement | null>(null);
+
+  // Bring the asked-for row into view — the table is long enough that landing
+  // on it with no cue leaves the user hunting for the row they came for.
+  useEffect(() => {
+    if (intent) rowRef.current?.scrollIntoView({ block: 'center' });
+  }, [intent]);
 
   const runAction = useCallback(
-    async (action: 'check' | 'install') => {
+    async (action: 'test' | 'setup') => {
       setBusy(true);
       try {
-        if (action === 'check') await capabilityManager.check(access.kind);
-        else await capabilityManager.install(access.kind);
+        if (action === 'test') await capabilityManager.test(access.kind);
+        else await capabilityManager.setup(access.kind);
         await onRefresh();
       } finally {
         setBusy(false);
@@ -262,7 +272,14 @@ function CapabilityAccessRow({
   );
 
   return (
-    <div className="grid grid-cols-12 items-start gap-3 border-b px-3 py-3 last:border-b-0">
+    <div
+      ref={rowRef}
+      className={cn(
+        'grid grid-cols-12 items-start gap-3 border-b px-3 py-3 last:border-b-0',
+        intent && 'bg-amber-50/60 dark:bg-amber-500/10',
+      )}
+      data-testid={intent ? `capability-row-intent-${access.kind}` : undefined}
+    >
       <div className="col-span-5 flex min-w-0 items-start gap-3">
         <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-muted/40">
           <Icon className="h-4 w-4 text-muted-foreground" />
@@ -285,7 +302,7 @@ function CapabilityAccessRow({
       </div>
 
       <div className="col-span-2">
-        <StatusBadge access={access} loading={busy} />
+        <StatusBadge access={access} loading={busy || !!probing} />
       </div>
 
       <div className="col-span-2">
@@ -314,20 +331,36 @@ function CapabilityAccessRow({
           <div className="flex justify-end gap-1">
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7" disabled={busy} onClick={() => void runAction('check')}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  disabled={busy}
+                  onClick={() => void runAction('test')}
+                >
                   <RefreshCw className={cn('h-3.5 w-3.5', busy && 'animate-spin')} />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent><Trans>Refresh status</Trans></TooltipContent>
+              <TooltipContent>
+                <Trans>Refresh status</Trans>
+              </TooltipContent>
             </Tooltip>
             {access.installable && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" disabled={busy} onClick={() => void runAction('install')}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    disabled={busy}
+                    onClick={() => void runAction('setup')}
+                  >
                     <Download className="h-3.5 w-3.5" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent><Trans>Set up (runs an agentic process)</Trans></TooltipContent>
+                <TooltipContent>
+                  <Trans>Set up (runs an agentic process)</Trans>
+                </TooltipContent>
               </Tooltip>
             )}
             {access.last_process_id && (
@@ -335,7 +368,9 @@ function CapabilityAccessRow({
                 <TooltipTrigger asChild>
                   <OpenProcessButton processId={access.last_process_id} />
                 </TooltipTrigger>
-                <TooltipContent><Trans>Open process</Trans></TooltipContent>
+                <TooltipContent>
+                  <Trans>Open process</Trans>
+                </TooltipContent>
               </Tooltip>
             )}
           </div>
@@ -371,9 +406,15 @@ function OpenProcessButton({ processId }: { processId: string }) {
 function IntentSection({
   intent,
   onRefresh,
+  intentKind,
+  probingKind,
 }: {
   intent: CapabilityIntent;
   onRefresh: () => Promise<unknown>;
+  /** Capability kind the user was reaching for (URL-carried), or null. */
+  intentKind: string | null;
+  /** Kind whose arrival re-probe is still running, or null. */
+  probingKind: string | null;
 }) {
   const [open, setOpen] = useState(true);
   const Chevron = open ? ChevronDown : ChevronRight;
@@ -381,12 +422,14 @@ function IntentSection({
     <div className="overflow-hidden rounded-lg border">
       <button
         type="button"
-        className="flex w-full items-center justify-between gap-2 bg-muted/40 px-3 py-2 text-left hover:bg-muted/60"
+        className="flex w-full items-center justify-between gap-2 bg-muted/40 px-3 py-2 text-start hover:bg-muted/60"
         onClick={() => setOpen((v) => !v)}
         data-testid={`intent-section-${intent.intent}`}
       >
         <div className="flex items-center gap-2">
-          <Chevron className="h-4 w-4 text-muted-foreground" />
+          {/* Only the COLLAPSED caret points along the reading direction,
+              so only it mirrors in RTL; the open one points down. */}
+          <Chevron className={cn('h-4 w-4 text-muted-foreground', !open && 'rtl:-scale-x-100')} />
           <span className="text-sm font-medium">{intent.label}</span>
           <span className="text-xs text-muted-foreground">({intent.capabilities.length})</span>
         </div>
@@ -403,12 +446,24 @@ function IntentSection({
       </button>
       {open && (
         <div>
+          {intent.intent === 'source_control' && !intent.available && (
+            <div className="flex items-center justify-between gap-2 border-b bg-muted/20 px-3 py-2">
+              <span className="text-xs text-muted-foreground">
+                <Trans>Connect GitHub and the gh CLI with a guided setup.</Trans>
+              </span>
+              <SetupJourneyButton journeyId={SETUP_GITHUB_JOURNEY_ID}>
+                <Trans>Set up GitHub</Trans>
+              </SetupJourneyButton>
+            </div>
+          )}
           {intent.capabilities.map((access) => (
             <CapabilityAccessRow
               key={access.kind}
               access={access}
               siblings={intent.capabilities}
               onRefresh={onRefresh}
+              intent={access.kind === intentKind}
+              probing={access.kind === probingKind}
             />
           ))}
         </div>
@@ -427,7 +482,7 @@ function IntentInstaller({ onLaunched }: { onLaunched: () => Promise<unknown> })
     if (!value || busy) return;
     setBusy(true);
     try {
-      await capabilityManager.installIntent(value);
+      await capabilityManager.setupIntent(value);
       setText('');
       await onLaunched();
     } finally {
@@ -457,9 +512,12 @@ function IntentInstaller({ onLaunched }: { onLaunched: () => Promise<unknown> })
 }
 
 export function CapabilitiesView() {
-  const [summary, setSummary] = useState<CapabilitiesSummary | null>(() =>
-    capabilityManager.getCachedSummary(),
-  );
+  const [summary, setSummary] = useState<CapabilitiesSummary | null>(() => capabilityManager.getCachedSummary());
+  // URL-first: the capability the user was reaching for is read off the dock,
+  // never handed over by the click that navigated here.
+  const { currentDock } = useDockNavigation();
+  const intentKind = currentDock?.capabilityKind ?? null;
+  const [probingKind, setProbingKind] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const next = await capabilityManager.getSummary(true);
@@ -472,6 +530,32 @@ export function CapabilitiesView() {
     return capabilityManager.subscribe(sync);
   }, []);
 
+  // Arrival re-probe. Capability discovery only sweeps at backend start, so a
+  // CLI installed since then still reads as missing — which is exactly why the
+  // user was routed here. `test` re-runs discovery for this ONE kind (scoped:
+  // one executable, not the full sweep), so the answer reflects the machine at
+  // the moment they asked. No intent in the URL → probe nothing, just render.
+  useEffect(() => {
+    if (!intentKind) return;
+    let cancelled = false;
+    setProbingKind(intentKind);
+    void (async () => {
+      try {
+        await capabilityManager.test(intentKind);
+        const next = await capabilityManager.getSummary(true);
+        if (!cancelled) setSummary(next);
+      } catch {
+        // A failed probe is not fatal here: the row keeps its last known state
+        // and its own Refresh button stays available.
+      } finally {
+        if (!cancelled) setProbingKind(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [intentKind]);
+
   const intents = summary?.intents ?? [];
 
   return (
@@ -479,7 +563,9 @@ export function CapabilitiesView() {
       <div className="flex h-[52px] shrink-0 items-center justify-between border-b px-4">
         <div className="flex min-w-0 items-center gap-2">
           <BadgeCheck className="h-4 w-4 text-muted-foreground" />
-          <div className="truncate text-sm font-medium"><Trans>Capabilities</Trans></div>
+          <div className="truncate text-sm font-medium">
+            <Trans>Capabilities</Trans>
+          </div>
         </div>
         <Button variant="ghost" size="sm" className="h-8 gap-1.5" onClick={() => void refresh()}>
           <RefreshCw className="h-3.5 w-3.5" />
@@ -498,7 +584,13 @@ export function CapabilitiesView() {
             </div>
           ) : (
             intents.map((intent) => (
-              <IntentSection key={intent.intent} intent={intent} onRefresh={refresh} />
+              <IntentSection
+                key={intent.intent}
+                intent={intent}
+                onRefresh={refresh}
+                intentKind={intentKind}
+                probingKind={probingKind}
+              />
             ))
           )}
         </div>

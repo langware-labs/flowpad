@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import ClassVar, Optional
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.core import Entity
@@ -29,18 +29,6 @@ class AttachmentScope(StrEnum):
 class TransferMode(StrEnum):
     COPY = "copy"   # bytes ride in the bundle; install = copy from staging
     GIT = "git"     # git-transfer entry; install = clone/pull via metadata
-
-
-def user_scope_allowed_for(main_subdir: str | None, transfer_mode: str = TransferMode.COPY.value) -> bool:
-    """SINGLE owner of the user-scope install policy: "Install global" needs an
-    FS-rooted (``.claude/…``) home layout — project-anchored types (specs/,
-    docs/, plans…) have none — except in git mode, where the checkout resolves
-    its own location. Stamped on the row at stage time and re-enforced by the
-    install action through this same predicate.
-    """
-    if transfer_mode == TransferMode.GIT.value:
-        return True
-    return str(main_subdir or "").replace("\\", "/").startswith(".claude")
 
 
 class MessageAttachment(Entity):
@@ -68,7 +56,7 @@ class MessageAttachment(Entity):
 
     transfer_mode: str = APIField(default=TransferMode.COPY.value)
     # Provenance recorded at unpack, applied (stamped) at install.
-    git_origin: Optional[dict] = APIField(default=None)
+    git_origin: Optional[dict] = APIField(default=None, sharing=Sharing.PRIVATE)
     # The git_transfers.json entry for TransferMode.GIT attachments.
     git_transfer: Optional[dict] = APIField(default=None)
 
@@ -80,10 +68,10 @@ class MessageAttachment(Entity):
     # Falsy (None or "") = staged only; "user" | "project" = installed there.
     # "" is the CLEARED form — entity save is exclude-none and the DB merge
     # never removes fields, so uninstall resets with "" rather than None.
-    scope: Optional[str] = APIField(default=None)
-    project_id: Optional[str] = APIField(default=None)
+    scope: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
+    project_id: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
     # Absolute root the files were copied under — the uninstall anchor.
-    installed_root: Optional[str] = APIField(default=None)
+    installed_root: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
     installed_at: Optional[datetime] = APIField(default=None)
 
     _api_visible: ClassVar[bool] = True

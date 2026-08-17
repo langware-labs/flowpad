@@ -27,7 +27,6 @@ test.describe('Project view = asset browser', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('llm-setup-modal-seen', 'true');
-      localStorage.setItem('flowpad-index-approved', 'true');
     });
   });
 
@@ -41,10 +40,10 @@ test.describe('Project view = asset browser', () => {
     await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
     expect(page.url()).toMatch(/\/dock\/project\/[0-9a-f-]{36}/);
     await expect(page.locator('body')).not.toContainText('No editor for type: project');
-    // Project view header renders "Project assets"; the project scope indicator
-    // is the project-name chip (data-testid="project-name-chip"), not a "Project:" label.
+    // Project identity is URL-owned and projected by the pressed scope control;
+    // ProjectChip is a content-header component, not a ProjectHome affordance.
     await expect(page.getByText('Project assets').first()).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId('project-name-chip').first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: /^Current project/ }).first()).toHaveAttribute('aria-pressed', 'true');
 
     const offending = errors.filter((e) => !/ResizeObserver|favicon/.test(e) && !/user-/.test(e) && !/agent_hook/.test(e) && !/\b404\b/.test(e));
     expect(offending, `Console errors: ${offending.join(', ')}`).toHaveLength(0);
@@ -61,12 +60,13 @@ test.describe('Project view = asset browser', () => {
     // (its title) is "Current project: <name>" when a project is active.
     await expect(page.getByRole('button', { name: /Current project/i }).first()).toBeVisible({ timeout: 20_000 });
 
-    // The tree groups assets by type (e.g. Markdown or Agent node present).
+    // Type roots with zero rows are omitted after a database clear. Project
+    // home is the stable structural root regardless of corpus size.
     const tree = page.getByRole('tree');
     await expect(tree).toBeVisible({ timeout: 15_000 });
-    await expect(tree.getByRole('treeitem').filter({ hasText: /Markdown|Agent|Skill/ }).first()).toBeVisible({ timeout: 15_000 });
-    // No "Project" type node in the tree.
-    await expect(tree.getByRole('treeitem').filter({ hasText: /^(?:Expand |Collapse )?Project\b/ })).toHaveCount(0);
+    await expect(tree.getByRole('treeitem', { name: 'Project home' })).toBeVisible();
+    // No Project entity-type root; "Project home" is navigation, not a type.
+    await expect(page.locator('[data-testid^="browseable-chevron-asset-type:project:"]')).toHaveCount(0);
   });
 
   test('test 3: Project rows in /dock/assets/list/project are NOT row-click targets', async ({ page }) => {

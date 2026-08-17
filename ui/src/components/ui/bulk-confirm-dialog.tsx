@@ -74,29 +74,27 @@ export function BulkConfirmDialog({
         </AlertDialogHeader>
         <ul className="my-2 space-y-1 rounded-md border bg-muted/30 p-3 text-sm">
           {visible.length === 0 && (
-            <li className="text-muted-foreground"><Trans>Nothing to do.</Trans></li>
+            <li className="text-muted-foreground">
+              <Trans>Nothing to do.</Trans>
+            </li>
           )}
           {visible.map((b) => (
             <li
               key={b.label}
-              className={`flex items-baseline justify-between gap-3 ${
-                TONE_CLASS[b.tone ?? 'default']
-              }`}
+              className={`flex items-baseline justify-between gap-3 ${TONE_CLASS[b.tone ?? 'default']}`}
             >
               <span>
                 {b.label}
-                {b.description && (
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    {b.description}
-                  </span>
-                )}
+                {b.description && <span className="ms-2 text-xs text-muted-foreground">{b.description}</span>}
               </span>
               <span className="font-mono tabular-nums">{b.count}</span>
             </li>
           ))}
           {visible.length > 1 && (
             <li className="mt-2 flex items-baseline justify-between gap-3 border-t pt-2 text-sm font-semibold">
-              <span><Trans>Total</Trans></span>
+              <span>
+                <Trans>Total</Trans>
+              </span>
               <span className="font-mono tabular-nums">{total}</span>
             </li>
           )}
@@ -107,9 +105,7 @@ export function BulkConfirmDialog({
             onClick={handleConfirm}
             disabled={total === 0}
             className={
-              variant === 'destructive'
-                ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-                : ''
+              variant === 'destructive' ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90' : ''
             }
           >
             {confirmLabel}

@@ -12,7 +12,6 @@ import { AgenticProcess, copyToClipboard, dataContext, dataManager, openTerminal
 import { hasWorkerStarted, isProcessRunning, WorkerStatus } from '@sdk/process/agentic-types.js';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import { CommitMergeButton, OpenInWorktreeButton } from './WorktreeButtons';
-import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
 import { ExportEntityButton } from '@src/components/entity-actions/ExportEntityButton';
 import { AssetManagerButton } from '@src/components/asset-manager';
 import { ViewSwap } from '@src/components/view-mode';
@@ -49,7 +48,6 @@ import { PTYViewer } from './pty-viewer';
 import { PTYEventsViewer } from './pty-events-viewer';
 import { CommandStatusViewer } from './command-status-viewer';
 import type { ColVisibility, TraceFilters } from './InteractiveTerminal';
-import { setChatUiOverride, useChatUiOverride } from '@src/contexts/chat-ui-mode-context';
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 import {
   buildSessionResumeCommand,
@@ -88,7 +86,6 @@ export function ProcessToolbar({
   const { t, i18n } = useLingui();
   const handleInjectPrompt = useCallback((text: string) => void shell?.sendInput(text + '\r'), [shell]);
   const { navigation } = useDockNavigation();
-  const chatOverride = useChatUiOverride();
   const [showPtyViewer, setShowPtyViewer] = useState(false);
   const [showPtyEventsViewer, setShowPtyEventsViewer] = useState(false);
   const [showCommandStatus, setShowCommandStatus] = useState(false);
@@ -147,7 +144,7 @@ export function ProcessToolbar({
   useEffect(() => {
     if (process.workerStatus === WorkerStatus.API_TIMEOUT) {
       console.warn(
-        `[ProcessToolbar] Agent ${String(process.typeId)} is taking a long time to respond — the Anthropic API may be slow or unresponsive.`,
+        `[ProcessToolbar] SubAgent ${String(process.typeId)} is taking a long time to respond — the Anthropic API may be slow or unresponsive.`,
       );
     }
   }, [process.workerStatus, process.typeId]);
@@ -272,7 +269,7 @@ export function ProcessToolbar({
               <span className="font-medium">
                 <Trans>Trace events</Trans>
               </span>
-              <span className="ml-1 text-muted-foreground">
+              <span className="ms-1 text-muted-foreground">
                 <Trans>— show trace event gutter</Trans>
               </span>
             </span>
@@ -286,7 +283,7 @@ export function ProcessToolbar({
               <span className="font-medium">
                 <Trans>Time gutter</Trans>
               </span>
-              <span className="ml-1 text-muted-foreground">
+              <span className="ms-1 text-muted-foreground">
                 <Trans>— show time/index gutter</Trans>
               </span>
             </span>
@@ -300,7 +297,7 @@ export function ProcessToolbar({
               <span className="font-medium">
                 <Trans>Annotations</Trans>
               </span>
-              <span className="ml-1 text-muted-foreground">
+              <span className="ms-1 text-muted-foreground">
                 <Trans>— show annotation gutter</Trans>
               </span>
             </span>
@@ -314,7 +311,7 @@ export function ProcessToolbar({
               <span className="font-medium">
                 <Trans>Prompt annotations</Trans>
               </span>
-              <span className="ml-1 text-muted-foreground">
+              <span className="ms-1 text-muted-foreground">
                 <Trans>— show prompt anchors in gutter</Trans>
               </span>
             </span>
@@ -384,25 +381,6 @@ export function ProcessToolbar({
               <Trans>Command Status</Trans>
             </span>
           </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuLabel className="text-xs text-muted-foreground">
-            <Trans>Chat mode</Trans>
-          </DropdownMenuLabel>
-          {/* The bottom-ribbon toggle is the primary control; this mirrors it.
-                Checked = force the chat ("ui") view; unchecked = follow View mode
-                (Standard ⇒ chat, Advanced ⇒ terminal). See chat-ui-mode-context. */}
-          <DropdownMenuCheckboxItem
-            checked={chatOverride === 'chat'}
-            onSelect={(e) => e.preventDefault()}
-            onCheckedChange={(v) => setChatUiOverride(v ? 'chat' : null)}
-          >
-            <span className="text-xs">
-              <span className="font-medium">
-                <Trans>Force chat UI</Trans>
-              </span>
-              <span className="ml-1 text-muted-foreground">— {chatOverride ?? t`auto`}</span>
-            </span>
-          </DropdownMenuCheckboxItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </>
@@ -454,16 +432,10 @@ export function ProcessToolbar({
     </span>
   );
 
-  // Primary CTAs — Share + Bookmark (favorite), right-aligned in both layouts.
-  const actionsSlot = !embedded && (
-    <EntityActionsToolbar
-      typeId={process.typeId}
-      favoriteTitle={processDisplayName}
-      favoriteIcon="agentic_process"
-      variant="prominent"
-    />
-  );
-
+  // Share + Bookmark are NOT here: the top navigation bar carries them for
+  // whatever it is addressing, this session included, and a second copy of the
+  // same cluster on the same screen is the duplication that removed it from the
+  // asset editor too. Export stays — the bar has no equivalent for it.
   const downloadSlot = !embedded && <ExportEntityButton typeId={process.typeId} defaultTitle={processDisplayName} />;
 
   const rightSlot = (
@@ -556,7 +528,6 @@ export function ProcessToolbar({
       debug={debugSlot}
       restart={restartSlot}
       title={titleSlot}
-      actions={actionsSlot}
       download={downloadSlot}
       right={rightSlot}
     />
@@ -569,10 +540,7 @@ export function ProcessToolbar({
       {embedded ? (
         advancedHeader
       ) : (
-        <ViewSwap
-          advanced={advancedHeader}
-          standard={<StandardInteractiveTabHeader title={titleSlot} actions={actionsSlot} />}
-        />
+        <ViewSwap advanced={advancedHeader} standard={<StandardInteractiveTabHeader title={titleSlot} />} />
       )}
 
       <PTYViewer open={showPtyViewer} onClose={() => setShowPtyViewer(false)} shell={shell ?? null} />
@@ -619,7 +587,7 @@ function RichCheckboxItem({
               href={docsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="ml-auto text-muted-foreground hover:text-foreground"
+              className="ms-auto text-muted-foreground hover:text-foreground"
               onClick={(e) => e.stopPropagation()}
               aria-label={t`${label} docs`}
             >

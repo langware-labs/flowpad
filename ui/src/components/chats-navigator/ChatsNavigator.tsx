@@ -5,8 +5,10 @@ import { NavigatorPanel } from '@src/components/navigator-panel/NavigatorPanel';
 import type { NavigatorDescriptor } from '@src/components/navigator-panel/types';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { openNewChat } from '@src/navigation/open-new-chat';
+import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useOpenTabTargetIds } from '@src/tabs/useTabs';
+import { useOpenTabTargetIds } from '@src/tabs/use-tab-manager';
 import { useProject } from '@src/hooks/useProject';
 import { useContext } from '@src/hooks/useContext';
 import { notify } from '@src/notifications';
@@ -14,7 +16,6 @@ import { defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
 import type { WorkerHistoryEntry, WorkerType } from '@src/hooks/useWorkerHistory';
 import { pickHistoryTitle } from '@src/components/entity-execution-panel/history-row';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
-import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
 import { terminalProfile } from '@src/components/spotlight/profiles';
 import { InputDialog } from '@src/components/ui/input-dialog';
@@ -35,7 +36,6 @@ export function ChatsNavigator() {
   const { project } = useProject();
   const { activeTerminalTargetTypeId } = useContext();
   const { resumeInTerminal } = useResumeInTerminal();
-  const isAdvanced = useIsAdvanced();
   const { t } = useLingui();
 
   const [pendingDelete, setPendingDelete] = useState<{
@@ -130,7 +130,7 @@ export function ChatsNavigator() {
         (await AgenticProcess.getByWorkerId(workerId, workerType));
       if (!process) return;
       await process.delete();
-      refetch();
+      void refetch();
     } catch (err) {
       console.error('[ChatsNavigator] delete failed', err);
       notify.error({ title: t`Could not delete`, message: err instanceof Error ? err.message : String(err) });
@@ -141,13 +141,15 @@ export function ChatsNavigator() {
     (worker: WorkerType) => {
       // `claude` is the `claude_code` harness; codex/copilot map 1:1.
       const workerType = worker === 'claude' ? 'claude_code' : worker;
-      // Standard → headless chat (no PTY); Advanced → interactive PTY terminal.
-      void AgenticProcess.openTab(workerType, undefined, null, { ptyMode: isAdvanced }).catch((err) => {
+      // Opens in the user's chat mode (their last pick), like every other
+      // front-face open-chat action. This used to key on the View mode alone,
+      // so a Standard user who had chosen `terminal` still got a chat pane.
+      void openNewChat(navigation, { workerType }).catch((err) => {
         console.error('[ChatsNavigator] new chat failed', err);
-        notify.error({ title: t`Could not start chat`, message: err instanceof Error ? err.message : String(err) });
+        openCapabilitiesForWorker(navigation, workerType);
       });
     },
-    [isAdvanced],
+    [navigation],
   );
 
   const descriptor: NavigatorDescriptor = useMemo(

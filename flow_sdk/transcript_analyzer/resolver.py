@@ -19,10 +19,12 @@ from pathlib import Path
 
 
 def _claude_projects_dir() -> Path:
-    # FLOWPAD_CLAUDE_HOME/CLAUDE_CONFIG_DIR are instance configuration, not
-    # necessarily ``~/.claude`` (isolated app/test instances deliberately point
-    # them elsewhere). Keep this resolver on the same source of truth as the
-    # transcript watcher and history indexer — see ``_codex_sessions_dir``.
+    # FLOWPAD_CLAUDE_HOME / CLAUDE_CONFIG_DIR redirects Claude's home (test
+    # isolation, isolated app instances). Resolve through instance settings —
+    # the same source of truth the transcript watcher and history indexer use —
+    # instead of hardcoding ``~/.claude``, or a redirected home's transcripts
+    # are invisible to every resolver consumer (agent-trace, /transcript route).
+    # Mirrors ``_codex_sessions_dir`` below.
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
     return get_instance_settings().claude_projects_dir
@@ -39,7 +41,12 @@ def _codex_sessions_dir() -> Path:
 
 
 def _copilot_session_state_dir() -> Path:
-    return Path.home() / ".copilot" / "session-state"
+    # Same reasoning as ``_codex_sessions_dir`` — copilot has no home env var
+    # of its own, so FLOWPAD_COPILOT_HOME is the redirect and instance settings
+    # are where it lands.
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    return get_instance_settings().copilot_session_state_dir
 
 
 class TranscriptNotFoundError(LookupError):
@@ -60,19 +67,34 @@ def _validate_path_component(value: str, field: str) -> None:
         raise ValueError(f"Invalid {field}: expected one filename-safe component")
 
 
+# Worker key → the entity type that records that worker's sessions. THE map for
+# this direction — anything needing "which entity type is a <worker> transcript"
+# reads it here rather than re-listing the three types. ``workflow`` has no
+# session entity (its journals are run artifacts), hence its absence.
+SESSION_TYPE_BY_WORKER: dict[str, str] = {
+    "claude": "claude_session",
+    "codex": "codex_session",
+    "copilot": "copilot_session",
+}
+
+
 def resolve_session_jsonl(worker_type: str, session_id: str) -> Path:
     """Return the absolute Path to the JSONL file for this session.
 
-    Tries the worker's local CLI dir first; if that misses, falls back to the
-    instance's received-transcripts store (a session shared from another
-    machine never ran here, so the CLI dir is empty — the transcript rode in
-    with the share). Worker-generic across claude/codex/copilot.
+    Resolves against the worker's LOCAL CLI dir only — this answers "which
+    transcript did this machine record for this id". Worker-generic across
+    claude/codex/copilot.
+
+    Deliberately has no cross-machine fallback: a RECEIVED transcript is an
+    ordinary installed asset and is addressed by its ``asset_ref`` path, not by
+    session id. Searching a shared id-space for a foreign session is what let a
+    receiver resolve the *sender's* file (and treat their live session as
+    resumable) when both users' transcripts sat under the same home dir.
 
     Raises ``TranscriptNotFoundError`` when no match is found, ``ValueError``
     on unsupported worker types or a ``session_id`` that is not one
     filename-safe path component (ids are interpolated into glob patterns
-    below, so a raw ``*``/``../`` must be a hard caller error here — unlike
-    ``received_transcript_dest``, which treats it as a non-match).
+    below, so a raw ``*``/``../`` must be a hard caller error here).
     """
     wt = worker_type.lower().strip()
     _resolvers = {
@@ -85,29 +107,16 @@ def resolve_session_jsonl(worker_type: str, session_id: str) -> Path:
     if resolver is None:
         raise ValueError(f"Unsupported worker_type: {worker_type!r}")
     _validate_path_component(session_id, "session_id")
-    try:
-        return resolver(session_id)
-    except TranscriptNotFoundError:
-        # Cross-machine share fallback: the transcript was materialized under
-        # the instance's received-transcripts store on unpack. See
-        # ``flow_message_bundle._materialize_received_transcripts``.
-        received = _received_transcript(wt, session_id)
-        if received is not None:
-            return received
-        raise
+    return resolver(session_id)
 
 
 def _resolve_claude(session_id: str) -> Path:
     projects = _claude_projects_dir()
     if not projects.is_dir():
-        raise TranscriptNotFoundError(
-            f"~/.claude/projects/ not found; cannot resolve session {session_id}"
-        )
+        raise TranscriptNotFoundError(f"~/.claude/projects/ not found; cannot resolve session {session_id}")
     matches = list(projects.glob(f"*/{session_id}.jsonl"))
     if not matches:
-        raise TranscriptNotFoundError(
-            f"No claude transcript JSONL found for session_id={session_id}"
-        )
+        raise TranscriptNotFoundError(f"No claude transcript JSONL found for session_id={session_id}")
     if len(matches) > 1:
         # UUIDs are globally unique; multiple matches would imply user-level
         # filesystem corruption. Pick the most-recently-modified to be defensive.
@@ -118,14 +127,10 @@ def _resolve_claude(session_id: str) -> Path:
 def _resolve_codex(session_id: str) -> Path:
     sessions = _codex_sessions_dir()
     if not sessions.is_dir():
-        raise TranscriptNotFoundError(
-            f"~/.codex/sessions/ not found; cannot resolve session {session_id}"
-        )
+        raise TranscriptNotFoundError(f"~/.codex/sessions/ not found; cannot resolve session {session_id}")
     matches = list(sessions.glob(f"**/rollout-*-{session_id}.jsonl"))
     if not matches:
-        raise TranscriptNotFoundError(
-            f"No codex rollout JSONL found for session_id={session_id}"
-        )
+        raise TranscriptNotFoundError(f"No codex rollout JSONL found for session_id={session_id}")
     if len(matches) > 1:
         matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     return matches[0]
@@ -136,14 +141,10 @@ def _resolve_workflow(run_id: str) -> Path:
     # ``~/.claude/projects/<slug>/<sessionId>/workflows/wf_<runId>.json``.
     projects = _claude_projects_dir()
     if not projects.is_dir():
-        raise TranscriptNotFoundError(
-            f"~/.claude/projects/ not found; cannot resolve workflow run {run_id}"
-        )
+        raise TranscriptNotFoundError(f"~/.claude/projects/ not found; cannot resolve workflow run {run_id}")
     matches = list(projects.glob(f"*/*/workflows/{run_id}.json"))
     if not matches:
-        raise TranscriptNotFoundError(
-            f"No workflow run journal found for run_id={run_id}"
-        )
+        raise TranscriptNotFoundError(f"No workflow run journal found for run_id={run_id}")
     if len(matches) > 1:
         matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     return matches[0]
@@ -152,56 +153,8 @@ def _resolve_workflow(run_id: str) -> Path:
 def _resolve_copilot(session_id: str) -> Path:
     sessions = _copilot_session_state_dir()
     if not sessions.is_dir():
-        raise TranscriptNotFoundError(
-            f"~/.copilot/session-state/ not found; cannot resolve session {session_id}"
-        )
+        raise TranscriptNotFoundError(f"~/.copilot/session-state/ not found; cannot resolve session {session_id}")
     path = sessions / session_id / "events.jsonl"
     if not path.exists():
-        raise TranscriptNotFoundError(
-            f"No copilot events JSONL found for session_id={session_id}"
-        )
+        raise TranscriptNotFoundError(f"No copilot events JSONL found for session_id={session_id}")
     return path
-
-
-# ---------------------------------------------------------------------------
-# Received (shared) transcripts — sessions that arrived via a shared message
-# rather than a local CLI run. Worker-uniform store so the by-session-id open
-# path works on a machine that never ran the session.
-# ---------------------------------------------------------------------------
-
-
-def _received_transcripts_dir() -> Path | None:
-    """``<instance_dir>/received_transcripts`` — instance-local store for
-    transcripts that arrived via a shared message. ``None`` when the instance
-    dir can't be resolved (e.g. an out-of-server context); callers treat that
-    as a miss."""
-    try:
-        from flow_sdk.instance_settings import get_instance_settings
-        return get_instance_settings().instance_dir / "received_transcripts"
-    except Exception:
-        return None
-
-
-def received_transcript_dest(worker_type: str, session_id: str) -> Path | None:
-    """Canonical path for a received (shared) transcript:
-    ``<instance_dir>/received_transcripts/<worker>/<session_id>.jsonl``.
-
-    The layout is worker-uniform — the parser keys off ``worker_type``, not the
-    filename, so one shape serves every worker. ``None`` when no safe
-    destination or instance dir is available. The single source of truth for
-    the path, shared by the unpack writer and the resolver fallback."""
-    try:
-        _validate_path_component(worker_type, "worker_type")
-        _validate_path_component(session_id, "session_id")
-    except ValueError:
-        # This helper is also used while inspecting arbitrary transcript/share
-        # metadata. An unsafe id is a non-match, not a reason to fail the whole
-        # parse or bundle import.
-        return None
-    base = _received_transcripts_dir()
-    return None if base is None else base / worker_type / f"{session_id}.jsonl"
-
-
-def _received_transcript(worker_type: str, session_id: str) -> Path | None:
-    dest = received_transcript_dest(worker_type, session_id)
-    return dest if (dest is not None and dest.exists()) else None

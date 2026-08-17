@@ -1,4 +1,4 @@
-import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, registerEntity, type EntityMember } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
@@ -20,6 +20,31 @@ export interface ConversationMessage {
  * {typeid: "flow_message-<uuid>", ts: "<ISO>"} on disk, but call sites want
  * the bare id + type + ts triple — that's what this getter returns.
  */
+/**
+ * The newest pointer by `ts`, or null for an empty list. Exported so the
+ * surfaces that hold a raw pointer array (the inbox list, the recent strip)
+ * all share one rule — there must be exactly one definition of "latest" in
+ * the app, and it must agree with `Conversation.latest_message_ref()` on the
+ * backend, which computes the unread BADGE while this computes the unread ROW.
+ *
+ * Unparseable timestamps sort oldest, so a corrupt entry can never win.
+ */
+export function latestPointer(
+  pointers: readonly ConversationMessagePointer[] | undefined | null,
+): ConversationMessagePointer | null {
+  let best: ConversationMessagePointer | null = null;
+  let bestAt = -Infinity;
+  for (const p of pointers ?? []) {
+    const at = Date.parse(p.ts);
+    const rank = Number.isNaN(at) ? -Infinity : at;
+    if (best === null || rank > bestAt) {
+      best = p;
+      bestAt = rank;
+    }
+  }
+  return best;
+}
+
 export interface ConversationMessagePointer {
   /** Entity id (uuid). */
   id: string;
@@ -42,17 +67,22 @@ export interface ConversationParticipant {
 }
 
 /** Mirrors ``flow_sdk.builtin.conversation.ConversationKind`` exactly.
- *  ``community`` marks a support-center ticket whose responder identity is
- *  masked behind the project's ``community.display_name``. Hub-authoritative —
- *  never set client-side. */
+ *  ``helpdesk`` marks a support ticket whose responder identity is masked
+ *  behind the project's ``helpdesk.display_name``. Hub-authoritative — never
+ *  set client-side. */
 export enum ConversationKind {
   DIRECT = 'direct',
-  COMMUNITY = 'community',
+  HELPDESK = 'helpdesk',
+}
+
+/** True when `kind` denotes a helpdesk ticket. */
+export function isHelpdeskKind(kind?: ConversationKind | string | null): boolean {
+  return kind === ConversationKind.HELPDESK;
 }
 
 export interface IConversation extends IEntity {
   /** How this conversation is interpreted. Defaults to ``direct``; the hub sets
-   *  ``community`` for guest-opened support tickets. */
+   *  ``helpdesk`` for guest-opened support tickets. */
   kind?: ConversationKind;
   /** Local Project FK — receiver picks via the mapping dialog; sender's own
    *  project at send time. Null until the receiver maps. */
@@ -64,16 +94,12 @@ export interface IConversation extends IEntity {
   remote_project_name?: string | null;
   message_count?: number;
   message_ids?: string | null;  // JSON-encoded RawConversationPointer[]
-  participants?: ConversationParticipant[];
+  /** Hub role roster — inherited from the Entity base as ``members``. The wire
+   *  key on the conversation fanout is ``participants`` (hub contract), adapted
+   *  in ``onEntityUpdate``. */
   /** User-set display title. Set at creation in NewConversationDialog and
    *  shipped through the bundle on cross-user send. */
   title?: string | null;
-  /**
-   * Per-conversation read-receipt visibility. When false, the hub suppresses
-   * `delivered` / `received` UPDATE frames to the original sender (co-recipients
-   * still see them). Mirrors the hub-side flag added in Phase 1.
-   */
-  message_status_visible?: boolean;
   /**
    * Conversation-scoped default transfer mode for asset shares. When true, asset
    * shares into this conversation ride as Git-origin metadata (the receiver
@@ -100,9 +126,8 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   remote_project_name?: string | null;
   message_count?: number;
   message_ids?: string | null;
-  participants?: ConversationParticipant[];
+  // ``members`` (the hub role roster) is inherited from the Entity base.
   title?: string | null;
-  message_status_visible?: boolean;
   git_sharing_enabled?: boolean;
   dismissed_at?: string | Date | null;
   archived_at?: string | Date | null;
@@ -116,9 +141,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.remote_project_name = entity.remote_project_name;
     this.message_count = entity.message_count;
     this.message_ids = entity.message_ids;
-    this.participants = entity.participants;
     this.title = entity.title;
-    this.message_status_visible = entity.message_status_visible ?? true;
     this.git_sharing_enabled = entity.git_sharing_enabled ?? false;
     this.dismissed_at = entity.dismissed_at ?? null;
     this.archived_at = entity.archived_at ?? null;
@@ -141,19 +164,26 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
    * Called by the store when the backend pushes an entity update
    * (castAndDeepAssign runs this hook, then deepAssign on what's left).
    *
-   * A wire ``participants`` roster is a full server-authoritative snapshot —
-   * it must REPLACE, not merge. ``deepAssign`` recurses into arrays and merges
-   * them by index, never shrinking the target, so a member leaving would leave
-   * a stale tail entry ([A,B] + wire [B] → [B,B]). Assign the wire value
-   * wholesale here and strip it from the payload so the following deepAssign
-   * skips it. (Same pattern AgenticProcess uses for ``queue``.)
+   * The roster (``members``) is a full server-authoritative snapshot — it must
+   * REPLACE, not merge. ``deepAssign`` recurses into arrays and merges them by
+   * index, never shrinking the target, so a member leaving would leave a stale
+   * tail entry ([A,B] + wire [B] → [B,B]). Assign the wire value wholesale here
+   * and strip it from the payload so the following deepAssign skips it. (Same
+   * pattern AgenticProcess uses for ``queue``.)
+   *
+   * Wire adapter: the local backend serializes the roster as ``members``; the
+   * hub conversation fanout uses ``participants`` (hub contract). Accept either
+   * key and land it on ``members``.
    * @internal
    */
-  protected onEntityUpdate(data: Partial<IConversation>): void {
-    if ('participants' in data) {
-      const roster = data.participants;
-      this.participants = Array.isArray(roster) ? roster.map((p) => ({ ...p })) : roster;
-      delete data.participants;
+  protected onEntityUpdate(data: Partial<IConversation> & { participants?: unknown }): void {
+    const key = 'members' in data ? 'members' : 'participants' in data ? 'participants' : null;
+    if (key) {
+      const roster = (data as Record<string, unknown>)[key];
+      this.members = Array.isArray(roster)
+        ? roster.map((p) => ({ ...(p as EntityMember) }))
+        : (roster as EntityMember[] | undefined);
+      delete (data as Record<string, unknown>)[key];
     }
   }
 
@@ -257,6 +287,29 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   }
 
   /**
+   * Fan out an "install in project" pick to the whole conversation: install
+   * EVERY attachment of this conversation into ``projectId``. Backs binding a
+   * conversation to a project so all its current assets (and, via the reception
+   * path, future arrivals) become project assets. Receiver-local — no
+   * hub-reflect. Returns the per-attachment outcome buckets.
+   */
+  async installAttachmentsIntoProject(
+    projectId: string,
+  ): Promise<{ installed: string[]; skipped: string[]; failed: string[] }> {
+    const action = new ActionInfo('install-attachments', this.typeId.type, this.typeId.id, 'POST');
+    action.bodyParameters = { project_id: projectId };
+    const res = await dataManager.callAction<
+      unknown,
+      { installed: string[]; skipped: string[]; failed: string[] }
+    >(action);
+    return {
+      installed: res?.installed ?? [],
+      skipped: res?.skipped ?? [],
+      failed: res?.failed ?? [],
+    };
+  }
+
+  /**
    * Reactive subscription to FlowMessage activity on this conversation.
    *
    * Wraps APIEntity's event emitter so callers can write
@@ -294,7 +347,19 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   private _ensureMessageTap(): void {
     if (this._msgTapOff) return;
     const cm = ConnectionManager.getInstance();
-    const handler = (typeIdStr: string, op: string, data: any) => {
+    const handler = (typeIdStr: string, op: string, data: any, fromEntityStr?: string | null) => {
+      // child_created addressed to THIS conversation: the envelope is inverted,
+      // so the type check below would reject it (typeIdStr is the conversation,
+      // not the message). A synced message arrives this way — the local
+      // catch-up announces it as a child of its parent — so without this branch
+      // `conv.on('message')` never fires for anything pulled in a sync.
+      if (op === DataOp.CHILD_CREATED) {
+        if (typeIdStr !== this.typeId.toString()) return;
+        const childType = (fromEntityStr ?? '').split('-')[0];
+        if (childType && childType !== FlowMessage.type) return;
+        if (data) this.emit(ConversationEvents.MESSAGE, data as IFlowMessage);
+        return;
+      }
       const dash = typeIdStr.indexOf('-');
       if (dash <= 0) return;
       if (typeIdStr.slice(0, dash) !== FlowMessage.type) return;
@@ -349,23 +414,29 @@ export async function createProjectConversation(
   return res!;
 }
 
-export interface StartCommunityTicketResult {
+export interface StartHelpdeskTicketResult {
   conversation_id: string;
   project_id: string;
 }
 
-/** Open a support ticket: a guest-authored ``community`` conversation under the
- *  hub's fixed community project (resolved server-side from ``/version``). The
+/** Open a support ticket: a guest-authored ``helpdesk`` conversation under the
+ *  resolved helpdesk project (resolved server-side from ``/version``). The
  *  backend routes through the hub and materializes the conversation locally,
  *  then returns its id for navigation. Requires cloud login. */
-export async function startCommunityTicket(text: string): Promise<StartCommunityTicketResult> {
-  const action = new ActionInfo('community-start-ticket', null, null, 'POST');
-  action.bodyParameters = { text };
-  const res = await dataManager.callAction<{ text: string }, StartCommunityTicketResult>(action);
+export async function startHelpdeskTicket(
+  text: string,
+  projectId?: string | null,
+): Promise<StartHelpdeskTicketResult> {
+  const action = new ActionInfo('helpdesk-start-ticket', null, null, 'POST');
+  action.bodyParameters = { text, project_id: projectId ?? '' };
+  const res = await dataManager.callAction<
+    { text: string; project_id: string },
+    StartHelpdeskTicketResult
+  >(action);
   return res!;
 }
 
-/** Staff-side: pick up (join) a community ticket so the caller receives its
+/** Staff-side: pick up (join) a helpdesk ticket so the caller receives its
  *  messages and can reply. Proxies to the hub ``pickup`` action and syncs the
  *  conversation locally. */
 export async function pickupConversation(conversationId: string): Promise<{ conversation_id: string }> {
@@ -375,9 +446,9 @@ export async function pickupConversation(conversationId: string): Promise<{ conv
   return res!;
 }
 
-/** One row in the staff community-ticket triage queue (lightweight; not a full
- *  Conversation entity). Sourced from the hub via the community project. */
-export interface CommunityTicket {
+/** One row in the staff helpdesk triage queue (lightweight; not a full
+ *  Conversation entity). Sourced from the hub via the helpdesk project. */
+export interface HelpdeskTicket {
   conversation_id: string;
   title?: string | null;
   /** First-message text, truncated. */
@@ -392,18 +463,38 @@ export interface CommunityTicket {
   updated_at?: string | null;
 }
 
-export interface ListCommunityTicketsResult {
-  tickets: CommunityTicket[];
+export interface ListHelpdeskTicketsResult {
+  tickets: HelpdeskTicket[];
   project_id: string;
 }
 
-/** Staff triage queue: list the community project's tickets, including ones the
+/** Staff triage queue: list the helpdesk project's tickets, including ones the
  *  caller hasn't picked up (which don't otherwise appear in their inbox).
  *  Members-only on the hub. */
-export async function listCommunityTickets(): Promise<ListCommunityTicketsResult> {
-  const action = new ActionInfo('community-tickets-list', null, null, 'POST');
-  action.bodyParameters = {};
-  const res = await dataManager.callAction<Record<string, never>, ListCommunityTicketsResult>(action);
+/**
+ * Tickets for a desk. Two callers, opposite questions:
+ *
+ * - a REQUESTER passes `projectId` — "which desk serves the project I'm in?"
+ * - STAFF pass `deskProjectId` — "what is queued on MY desk?" — and it is used
+ *   verbatim.
+ *
+ * Staff need the second form: a desk owner's own project has no desk of its
+ * own, so resolving from it walks past their queue to whatever desk serves
+ * *them*, and the hub rejects them as a guest on someone else's desk.
+ */
+export async function listHelpdeskTickets(
+  projectId?: string | null,
+  deskProjectId?: string | null,
+): Promise<ListHelpdeskTicketsResult> {
+  const action = new ActionInfo('helpdesk-tickets-list', null, null, 'POST');
+  action.bodyParameters = {
+    project_id: projectId ?? '',
+    desk_project_id: deskProjectId ?? '',
+  };
+  const res = await dataManager.callAction<
+    { project_id: string; desk_project_id: string },
+    ListHelpdeskTicketsResult
+  >(action);
   return res ?? { tickets: [], project_id: '' };
 }
 

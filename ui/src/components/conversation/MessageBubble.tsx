@@ -13,6 +13,7 @@ import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useLingui } from '@lingui/react/macro';
+import { ChannelBadge } from './ChannelBadge';
 import { Trans } from '@lingui/react/macro';
 
 interface MessageBubbleProps {
@@ -59,12 +60,6 @@ interface MessageBubbleProps {
   isSelected?: boolean;
   /** Click on the bubble fires this so the parent can mark it selected. */
   onSelect?: () => void;
-  /**
-   * Parent conversation's `message_status_visible` flag. When false, the
-   * receipt indicator is hidden on the sender side regardless of the
-   * underlying ``delivery_status``. Defaults to true.
-   */
-  conversationStatusVisible?: boolean;
 }
 
 /**
@@ -73,8 +68,7 @@ interface MessageBubbleProps {
  *   delivered → ✓✓       double check, muted
  *   received  → ✓✓ blue  double check, accent color
  *
- * Renders nothing for incoming messages or when the parent conversation's
- * `message_status_visible` flag is false.
+ * Renders nothing for incoming messages.
  */
 function DeliveryReceipt({ status }: { status: DeliveryStatus | undefined }) {
   const { t } = useLingui();
@@ -169,7 +163,6 @@ export function MessageBubble({
   message,
   flowMessageId,
   flowMessage,
-  task,
   senderName,
   onEditName,
   onDeleteMessage,
@@ -184,7 +177,6 @@ export function MessageBubble({
   footer,
   isSelected,
   onSelect,
-  conversationStatusVisible = true,
 }: MessageBubbleProps) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
@@ -194,7 +186,7 @@ export function MessageBubble({
 
   const isFromOther = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id !== localUser.id);
   const isOutgoing = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id === localUser.id);
-  const showReceipt = isOutgoing && conversationStatusVisible && !flowMessage?.is_draft;
+  const showReceipt = isOutgoing && !flowMessage?.is_draft;
 
   // Attachment-action pairs: every CTA (Approve & Execute, View/Implement
   // Plan, …) comes from the registry — the bubble only assembles the context.
@@ -309,6 +301,9 @@ export function MessageBubble({
               <Forward className="h-2.5 w-2.5" />
             </button>
           )}
+          {/* Channel mark — nothing at all when the message is ours
+              (`origin === null`), which is the whole badge rule. */}
+          <ChannelBadge origin={flowMessage?.origin} />
           {flowMessage?.cloned_from_id && (
             <span
               className="inline-flex items-center gap-0.5 text-[10px] italic text-muted-foreground"
@@ -322,7 +317,7 @@ export function MessageBubble({
           {time && (
             <span className="text-[10px] text-muted-foreground">
               {time}
-              {ago && <span className="ml-1 opacity-70">· {ago}</span>}
+              {ago && <span className="ms-1 opacity-70">· {ago}</span>}
             </span>
           )}
           {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} />}

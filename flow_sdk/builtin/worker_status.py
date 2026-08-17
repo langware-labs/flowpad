@@ -25,6 +25,7 @@ import json
 import time as _time
 from datetime import datetime as _datetime
 from pathlib import Path as _Path
+
 from flow_sdk._compat import StrEnum
 
 
@@ -313,52 +314,6 @@ def _has_pending_tool_use(chunk: str) -> bool:
     return pending
 
 
-def _has_completed_assistant(chunk: str) -> bool:
-    """True when at least one ``assistant`` entry has appeared in the chunk.
-
-    Claude 2.x can write ``last-prompt`` as a queue/ack marker BEFORE the
-    assistant turn starts (right after ``user`` + ``attachment`` events).
-    Treating that early ``last-prompt`` as terminal causes the test to exit
-    before Claude has actually thought about the prompt. Requiring at least
-    one assistant entry guarantees Claude has begun (and typically finished)
-    generating output before we consider the turn complete.
-    """
-    for line in chunk.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            entry = json.loads(line)
-        except Exception:
-            continue
-        if entry.get("type") == "assistant":
-            return True
-    return False
-
-
-def _last_assistant_stop_reason(chunk: str) -> str | None:
-    """Return the ``stop_reason`` of the most recent ``assistant`` entry, or None.
-
-    Used by ``stream_transcript`` to distinguish "model just used a tool and is
-    planning the next call" (``stop_reason=tool_use``, more work expected) from
-    "model finished its turn" (``stop_reason=end_turn``). Treating both as
-    soft-terminal exits before the next tool call lands.
-    """
-    for line in reversed(chunk.splitlines()):
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            entry = json.loads(line)
-        except Exception:
-            continue
-        if entry.get("type") != "assistant":
-            continue
-        msg = entry.get("message", {}) if isinstance(entry.get("message"), dict) else {}
-        return msg.get("stop_reason")
-    return None
-
-
 def _last_user_is_tool_result(chunk: str) -> bool:
     """True when the most recent ``user`` entry carries a ``tool_result`` block.
 
@@ -420,21 +375,26 @@ class ApiErrorTimeoutError(TimeoutError):
 
 def _scan_reversed(
     chunk: str,
-) -> tuple[str | None, str | None, str | None, float | None]:
+) -> tuple[str | None, str | None, str | None, float | None, bool]:
     """Walk a JSONL chunk newest→oldest and return the classification inputs for
     the last *meaningful* entry: ``(last_type, last_subtype, last_stop_reason,
-    last_user_ts)``.
+    last_user_ts, reached_user_boundary)``.
 
     Content-free session-envelope lines (``_IGNORED_TYPES``) are skipped so the
     trailing ai-title / agent-name / mode / bridge-session run that Claude Code
     writes as a session prologue/epilogue doesn't mask the real terminal/active
     signal. ``last_type`` is None when the chunk holds no non-ignored, parseable
     entry — the caller uses that to decide whether to widen the tail read.
+
+    Assistant terminal evidence is scoped to the newest user turn. Once the
+    reverse scan reaches that user entry it stops, so an ``end_turn`` from the
+    previous turn cannot make a fresh prompt look already complete.
     """
     last_type: str | None = None
     last_subtype: str | None = None
     last_stop_reason: str | None = None
     last_user_ts: float | None = None
+    reached_user_boundary = False
     for line in reversed(chunk.splitlines()):
         line = line.strip()
         if not line:
@@ -450,7 +410,9 @@ def _scan_reversed(
             last_type = t
             if t == "system":
                 last_subtype = entry.get("subtype")
-            if t == "user":
+        if t == "user":
+            reached_user_boundary = True
+            if last_user_ts is None:
                 ts_str = entry.get("timestamp", "")
                 if ts_str:
                     try:
@@ -459,11 +421,18 @@ def _scan_reversed(
                         ).timestamp()
                     except Exception:
                         pass
+            break
         if t == "assistant" and last_stop_reason is None:
             last_stop_reason = entry.get("message", {}).get("stop_reason")
         if last_type and last_stop_reason is not None:
             break
-    return last_type, last_subtype, last_stop_reason, last_user_ts
+    return (
+        last_type,
+        last_subtype,
+        last_stop_reason,
+        last_user_ts,
+        reached_user_boundary,
+    )
 
 
 def _tail_status(path: "str | _Path") -> WorkerStatus:
@@ -502,18 +471,15 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
     # read never exceeds ``_TAIL_MAX_BYTES``.
     #
     # ALSO widen when the tail ends in a ``last-prompt`` idle marker but the
-    # window doesn't yet contain a completed assistant turn: the ``last-prompt``
-    # branch below classifies COMPLETE vs WORKING from the ``end_turn`` of the
-    # last assistant entry, and a single oversized tool_use line just ahead of
-    # the trailing ``last-prompt``/``system``/envelope run can strand that
-    # ``end_turn`` past the 4 KB window — making ``_has_completed_assistant``
-    # falsely return False and pinning a genuinely-finished worker at WORKING
-    # forever (never projected to PENDING_USER). Widen until the assistant turn
-    # is in-window (or we hit the file start / ``_TAIL_MAX_BYTES``).
+    # window doesn't yet contain current-turn assistant evidence or the newest
+    # user boundary. A single oversized assistant line can strand both beyond
+    # the 4 KB window. Widen until either signal is found (or the read reaches
+    # the file start / ``_TAIL_MAX_BYTES``).
     last_type: str | None = None
     last_subtype: str | None = None
     last_stop_reason: str | None = None
     last_user_ts: float | None = None
+    reached_user_boundary = False
     read_bytes = _TAIL_BYTES
     while True:
         window = min(read_bytes, sz)
@@ -524,11 +490,19 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
                 chunk = f.read().decode("utf-8", errors="replace")
         except OSError:
             return WorkerStatus.INITIALIZING
-        last_type, last_subtype, last_stop_reason, last_user_ts = _scan_reversed(chunk)
+        (
+            last_type,
+            last_subtype,
+            last_stop_reason,
+            last_user_ts,
+            reached_user_boundary,
+        ) = _scan_reversed(chunk)
         if window >= sz or read_bytes >= _TAIL_MAX_BYTES:
             break
         need_wider = last_type is None or (
-            last_type == "last-prompt" and not _has_completed_assistant(chunk)
+            last_type == "last-prompt"
+            and last_stop_reason is None
+            and not reached_user_boundary
         )
         if not need_wider:
             break
@@ -573,9 +547,9 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
     if last_type == "last-prompt":
         # ``last-prompt`` can appear *before* any assistant message — Claude
         # writes a queue/ack marker right after ``user`` + ``attachment`` and
-        # only then starts thinking. Don't declare COMPLETE until there's at
-        # least one assistant entry AND no pending tool execution.
-        if not _has_completed_assistant(chunk):
+        # only then starts thinking. Don't declare COMPLETE until this turn has
+        # terminal assistant evidence and no pending tool execution.
+        if last_stop_reason is None:
             return WorkerStatus.WORKING
         if _has_pending_tool_use(chunk):
             return WorkerStatus.TOOL_RUNNING
@@ -589,13 +563,12 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
         # and falsely reports "not recorded". A ``stop_sequence`` error is also
         # terminal; Claude may append ``last-prompt`` after synthetic API/limit
         # errors, and treating that as WORKING pins the UI forever.
-        assistant_stop = _last_assistant_stop_reason(chunk)
-        if assistant_stop == "stop_sequence":
+        if last_stop_reason == "stop_sequence":
             return WorkerStatus.ERROR
         # Only a genuine ``end_turn`` is success-terminal; otherwise stay
         # WORKING and keep reading. (Mirrors the ``stop_reason=="end_turn"``
         # guard on the ``_post_tool_idle`` path.)
-        if assistant_stop != "end_turn":
+        if last_stop_reason != "end_turn":
             return WorkerStatus.WORKING
         return WorkerStatus.COMPLETE
     # (A user interrupt is caught by the priority ``_last_user_is_interrupt`` check

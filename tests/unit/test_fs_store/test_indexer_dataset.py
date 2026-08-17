@@ -2,10 +2,10 @@
 
 Covers both physical layouts (``CSV`` and ``IO_FOLDER``) end-to-end through the
 slot functions:
-- ``dataset_fn`` walker emits one FSRef per ``assets/datasets/<slug>/`` folder.
+- ``repo_assets_fn`` emits one FSRef per ``agentic-assets/dataset/<slug>/`` folder.
 - ``extract_dataset`` parses the manifest + rows into one FSRecord with counts.
 - ``iter_examples`` normalizes both layouts into the shared ``Example`` shape.
-- ``dataset_gen_id`` adopts a valid manifest id else mints a stable uuid5.
+- ``TypeInfo.mint_id`` adopts a valid manifest id else mints a capsule v4.
 
 Pure-sync (no scan needed): the walker is called directly with a project node.
 """
@@ -22,12 +22,20 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.indexer.functions.dataset import (
     dataset_asset_hash,
-    dataset_fn,
-    dataset_gen_id,
     extract_dataset,
     iter_examples,
 )
+from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+
+def _mint(ref: FSRef) -> str:
+    return SchemaRegistry.get("dataset").mint_entity_id(ref, derive=True, overwrite=True)
+
+
+def _extract(ref: FSRef):
+    return extract_dataset(ref, _mint(ref))
 
 # do not increase timeout without approval — these are pure-sync parses (<1s).
 pytestmark = pytest.mark.timeout(5)
@@ -47,7 +55,7 @@ def _seed_csv_dataset(
     manifest: dict,
     csv_text: str,
 ) -> Path:
-    ds = project / "assets" / "datasets" / slug
+    ds = project / "agentic-assets" / "dataset" / slug
     ds.mkdir(parents=True)
     (ds / "dataset.json").write_text(_doc(metadata=manifest), encoding="utf-8")
     (ds / "data.csv").write_text(csv_text, encoding="utf-8")
@@ -71,7 +79,7 @@ def _seed_io_dataset(
       - ``files`` — ``{relpath: str | bytes}`` written verbatim (bytes → binary)
       - ``dirs`` — ``{dirname: {fname: str | bytes}}`` for folder artifacts
     """
-    ds = project / "assets" / "datasets" / slug
+    ds = project / "agentic-assets" / "dataset" / slug
     (ds / "examples").mkdir(parents=True)
     (ds / "dataset.json").write_text(
         _doc(metadata=manifest or {"data_layout": "io_folder"}, data=manifest_data),
@@ -116,7 +124,7 @@ def test_csv_happy_path(tmp_path: Path) -> None:
             "eval,9+1,10\n"
         ),
     )
-    records = extract_dataset(FSRef(ds))
+    records = _extract(FSRef(ds))
     assert len(records) == 1
     rec = records[0]
     assert rec.type == RecordType.DATASET
@@ -166,7 +174,7 @@ def test_io_folder_happy_path(tmp_path: Path) -> None:
             "0002": {"input": "foo", "expected": "bar"},
         },
     )
-    records = extract_dataset(FSRef(ds))
+    records = _extract(FSRef(ds))
     assert len(records) == 1
     meta = records[0].meta_dict()["metadata"]
     assert meta["num_examples"] == 2
@@ -193,14 +201,14 @@ def test_io_folder_missing_expected_is_none(tmp_path: Path) -> None:
 
 # ── walker ────────────────────────────────────────────────────────────────────
 
-def test_dataset_fn_emits_one_ref_per_folder(tmp_path: Path) -> None:
+def test_repo_walker_emits_one_ref_per_dataset(tmp_path: Path) -> None:
     _seed_csv_dataset(tmp_path, "A", manifest={"data_layout": "csv"}, csv_text="input\nx\n")
     _seed_csv_dataset(tmp_path, "B", manifest={"data_layout": "csv"}, csv_text="input\ny\n")
     # A folder without dataset.json must be skipped.
-    (tmp_path / "assets" / "datasets" / "no-manifest").mkdir(parents=True)
+    (tmp_path / "agentic-assets" / "dataset" / "no-manifest").mkdir(parents=True)
 
     node = FSRef(tmp_path, record_type=RecordType.REAL_PROJECT_CWD)
-    refs = dataset_fn([node], IndexerOptions(verbose=False))
+    refs = repo_assets_fn([node], IndexerOptions(verbose=False))
 
     assert len(refs) == 2
     assert all(r.record_type == RecordType.DATASET for r in refs)
@@ -208,9 +216,9 @@ def test_dataset_fn_emits_one_ref_per_folder(tmp_path: Path) -> None:
     assert names == ["A", "B"]
 
 
-def test_dataset_fn_no_datasets_dir(tmp_path: Path) -> None:
+def test_repo_walker_no_dataset_dir(tmp_path: Path) -> None:
     node = FSRef(tmp_path, record_type=RecordType.REAL_PROJECT_CWD)
-    assert dataset_fn([node], IndexerOptions(verbose=False)) == []
+    assert repo_assets_fn([node], IndexerOptions(verbose=False)) == []
 
 
 # ── id minting ────────────────────────────────────────────────────────────────
@@ -220,13 +228,13 @@ def test_gen_id_adopts_valid_manifest_id(tmp_path: Path) -> None:
     ds = _seed_csv_dataset(
         tmp_path, "adopt", manifest={"id": valid, "data_layout": "csv"}, csv_text="input\nx\n"
     )
-    assert dataset_gen_id(FSRef(ds)) == valid
+    assert _mint(FSRef(ds)) == valid
 
 
 def test_gen_id_mints_v4_capsule_when_absent(tmp_path: Path) -> None:
     ds = _seed_csv_dataset(tmp_path, "derive", manifest={"data_layout": "csv"}, csv_text="input\nx\n")
-    first = dataset_gen_id(FSRef(ds))
-    second = dataset_gen_id(FSRef(ds))
+    first = _mint(FSRef(ds))
+    second = _mint(FSRef(ds))
     assert first == second  # idempotent (adopted from the .flow/id capsule)
     assert uuid.UUID(first).version == 4  # capsule-v4: a fresh random id, not uuid5(path)
 
@@ -237,7 +245,7 @@ def test_gen_id_ignores_foreign_id_version(tmp_path: Path) -> None:
     ds = _seed_csv_dataset(
         tmp_path, "v7", manifest={"id": v7, "data_layout": "csv"}, csv_text="input\nx\n"
     )
-    minted = dataset_gen_id(FSRef(ds))
+    minted = _mint(FSRef(ds))
     assert minted != v7
     assert uuid.UUID(minted).version == 4  # foreign id rejected → fresh v4 into the capsule
 
@@ -587,7 +595,7 @@ def test_dataset_json_extra_keys_preserved_in_record(tmp_path: Path) -> None:
         manifest={"data_layout": "io_folder"},
         manifest_data={"owner": "eran"},
     )
-    rec = extract_dataset(FSRef(ds))[0]
+    rec = _extract(FSRef(ds))[0]
     assert rec.meta_dict()["metadata"]["data"]["owner"] == "eran"  # free dataset data section
 
 
@@ -616,7 +624,7 @@ def test_extract_surfaces_new_counts(tmp_path: Path) -> None:
             "0003": {"input": "i", "files": {"ground_truth.txt": "g"}},       # annotated
         },
     )
-    meta = extract_dataset(FSRef(ds))[0].meta_dict()["metadata"]
+    meta = _extract(FSRef(ds))[0].meta_dict()["metadata"]
     assert meta["num_examples"] == 3
     assert meta["num_binary_inputs"] == 1
     assert meta["num_multi_output"] == 1
@@ -672,7 +680,7 @@ def test_mixed_dataset_endtoend(tmp_path: Path) -> None:
     assert [a.index for a in rich.ground_truth_slot.artifacts] == [None, 2]
     assert rich.layout == "pages"
 
-    meta = extract_dataset(FSRef(ds))[0].meta_dict()["metadata"]
+    meta = _extract(FSRef(ds))[0].meta_dict()["metadata"]
     assert meta["num_examples"] == 2
     assert meta["num_multi_output"] == 1
     assert meta["num_annotated"] == 2  # both examples have a ground_truth slot
@@ -738,7 +746,7 @@ def test_dataset_json_two_section(tmp_path: Path) -> None:
         manifest={"data_layout": "io_folder", "title": "T"},
         manifest_data={"owner": "eran", "team": "ml"},
     )
-    meta = extract_dataset(FSRef(ds))[0].meta_dict()["metadata"]
+    meta = _extract(FSRef(ds))[0].meta_dict()["metadata"]
     assert meta["data_layout"] == "io_folder"          # known field from metadata section
     assert meta["data"] == {"owner": "eran", "team": "ml"}  # free dataset data section
 
@@ -750,5 +758,5 @@ def test_dataset_schema_passthrough(tmp_path: Path) -> None:
         examples={"0001": {"input": "i"}},
         manifest={"data_layout": "io_folder", "schema": schema},
     )
-    meta = extract_dataset(FSRef(ds))[0].meta_dict()["metadata"]
+    meta = _extract(FSRef(ds))[0].meta_dict()["metadata"]
     assert meta["schema"] == schema  # opaque known field, surfaced verbatim

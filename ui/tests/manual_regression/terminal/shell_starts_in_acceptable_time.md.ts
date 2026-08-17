@@ -20,11 +20,7 @@ test.describe('Shell starts in acceptable time', () => {
     const start = Date.now();
     await page.goto('/dock/shell/new_terminal');
 
-    // Dismiss any setup/welcome modal that could block readiness.
-    const skipForNow = page.getByRole('button', { name: 'Skip for now' });
-    if (await skipForNow.isVisible({ timeout: 2_000 }).catch(() => false)) {
-      await skipForNow.click();
-    }
+    // Dismiss the setup modal if it could block readiness.
     const skip = page.getByRole('button', { name: 'Skip' });
     if (await skip.isVisible({ timeout: 1_000 }).catch(() => false)) {
       await skip.click();

@@ -28,6 +28,7 @@
  */
 import {
   type UrlObjectCodec,
+  clearUrlObject,
   decodeUrlObject,
   encodeUrlObject,
   mergeUrlObject,
@@ -97,6 +98,16 @@ export function scopeIncludesUser(sf: ScopeFilter): boolean {
     case 'filter':
       return !!sf.user;
   }
+}
+
+/**
+ * The ONE project this scope pins as an active-project context — `activeProjectId`
+ * in `project` mode, `null` in every other mode. Distinct from
+ * {@link scopeProjectIds}: a one-element `filter` selects the same rows but pins
+ * nothing, so only this answers "which project is this dock working in".
+ */
+export function pinnedProjectId(sf: ScopeFilter | null | undefined): string | null {
+  return sf?.mode === 'project' ? (sf.activeProjectId ?? null) : null;
 }
 
 /**
@@ -304,6 +315,19 @@ export function withScopeFilterOptions(
   scope: ScopeFilter,
 ): Record<string, string> {
   return mergeUrlObject(SCOPE_CODEC, options, scope);
+}
+
+/**
+ * Strip the scope from dock options entirely — the URL then carries NO scope and
+ * every reader falls back to its own default. For a scope that cannot be
+ * satisfied (a project id that resolves to nothing), this is the correct
+ * cleanup: an absent scope means "browse the default", while a present-but-dead
+ * one filters everything to zero and reads as "empty".
+ */
+export function withoutScopeFilterOptions(
+  options: Record<string, string> | undefined,
+): Record<string, string> {
+  return clearUrlObject(SCOPE_CODEC, options);
 }
 
 /** Parse dock options back into a ScopeFilter, or null when no `scope-*` key is set. */

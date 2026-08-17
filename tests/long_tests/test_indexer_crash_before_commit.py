@@ -45,7 +45,7 @@ def _spawn(db: Path, root: Path, records: Path, role: str) -> subprocess.Popen:
 def test_crash_before_commit_does_not_strand_records(tmp_path: Path) -> None:
     db = tmp_path / "crash.db"
     records = tmp_path / "records"
-    docs = tmp_path / "proj" / ".claude" / "docs"
+    docs = tmp_path / "proj" / "docs"
     docs.mkdir(parents=True)
     for i in range(N_FILES):
         (docs / f"d{i:03d}.md").write_text(f"# doc {i}\n", encoding="utf-8")

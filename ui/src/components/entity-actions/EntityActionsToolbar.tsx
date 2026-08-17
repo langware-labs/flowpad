@@ -1,14 +1,13 @@
 import { useMemo, useState } from 'react';
 import { TypeId } from '@sdk';
+import { compactEntityActionClassName } from '@src/components/entity-actions/action-button-styles';
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
 import { ShareButton } from '@src/components/entity-actions/ShareButton';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
-import {
-  agenticProcessShareSource,
-  genericEntityShareSource,
-} from '@src/hooks/share-sources';
+import { agenticProcessShareSource, genericEntityShareSource } from '@src/hooks/share-sources';
 import { useEntityShare } from '@src/hooks/use-entity-share';
 import { cn } from '@src/lib/utils';
+import { CloudAssetPublishButton } from './CloudAssetPublishButton';
 
 type Variant = 'prominent' | 'compact';
 
@@ -19,12 +18,18 @@ export interface EntityActionsToolbarProps {
   /** Optional icon key persisted on the bookmark.data; the home desktop grid uses it. */
   favoriteIcon?: string;
   /**
-   * 'prominent' (default for header surfaces) renders Share as a labeled pill.
-   * 'compact' renders Share as an icon-only button.
+   * 'prominent' renders Share as a labeled pill.
+   * 'compact' (default) renders every action as a same-sized icon button.
    */
   variant?: Variant;
   /** Slot for caller-supplied extra trailing actions (e.g. <ExportEntityButton>). */
   trailing?: React.ReactNode;
+  /**
+   * Drop the favorite star. For a host that renders its OWN star because it
+   * needs to wrap it — the navigation bar hangs the bookmarks menu off it — so
+   * that there is exactly one star rather than two side by side.
+   */
+  hideFavorite?: boolean;
   onShared?: () => void;
   className?: string;
 }
@@ -44,6 +49,7 @@ export function EntityActionsToolbar({
   favoriteIcon,
   variant = 'compact',
   trailing,
+  hideFavorite = false,
   onShared,
   className,
 }: EntityActionsToolbarProps) {
@@ -70,6 +76,7 @@ export function EntityActionsToolbar({
 
   return (
     <div className={cn('flex items-center gap-0.5', className)}>
+      <CloudAssetPublishButton typeId={typeId} variant={variant} />
       <ShareButton
         variant={variant}
         onClick={() => setShareOpen(true)}
@@ -78,23 +85,20 @@ export function EntityActionsToolbar({
         testId="entity-actions-share"
       />
 
-      <FavoriteStar
-        entityType={typeId.type}
-        entityId={typeId.id}
-        title={favoriteTitle}
-        icon={favoriteIcon}
-        size={variant === 'prominent' ? 16 : 14}
-      />
+      {!hideFavorite && (
+        <FavoriteStar
+          entityType={typeId.type}
+          entityId={typeId.id}
+          title={favoriteTitle}
+          icon={favoriteIcon}
+          size={variant === 'prominent' ? 16 : 14}
+          className={variant === 'compact' ? `${compactEntityActionClassName} p-0` : undefined}
+        />
+      )}
 
       {trailing}
 
-      {shareOpen && (
-        <ShareToConversationDialog
-          open={shareOpen}
-          onClose={handleClose}
-          source={shareSource}
-        />
-      )}
+      {shareOpen && <ShareToConversationDialog open={shareOpen} onClose={handleClose} source={shareSource} />}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { dataContext, type Task, VFSPath } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import type { NavigationActions } from '@src/navigation/NavigationActions';
@@ -115,35 +116,35 @@ export function getArtifactPaths(task: Task): ArtifactInfo[] {
 
   // SKILL.md -- explicit path or derived from output_dir + folder_name
   if (typeof skillPath === 'string') {
-    artifacts.push({ path: skillPath, label: 'SKILL.md', skillDockPath });
+    artifacts.push({ path: skillPath, label: t`SKILL.md`, skillDockPath });
   } else if (typeof outputDir === 'string' && typeof effectiveFolder === 'string' && effectiveFolder) {
     const normalized = outputDir.replace(/\\/g, '/');
-    artifacts.push({ path: `${normalized}/${effectiveFolder}/SKILL.md`, label: 'SKILL.md', skillDockPath });
+    artifacts.push({ path: `${normalized}/${effectiveFolder}/SKILL.md`, label: t`SKILL.md`, skillDockPath });
   }
 
-  // analysis.md — in references subfolder
+  // analysis report (analysis.html) — in references subfolder
   if (typeof analysisPath === 'string') {
-    artifacts.push({ path: analysisPath, label: 'analysis.md' });
+    artifacts.push({ path: analysisPath, label: analysisPath.split('/').pop() || 'analysis' });
   } else if (typeof outputDir === 'string') {
     const normalized = outputDir.replace(/\\/g, '/');
-    artifacts.push({ path: `${normalized}/analysis.md`, label: 'analysis.md' });
+    artifacts.push({ path: `${normalized}/analysis.html`, label: t`analysis.html` });
   }
 
   // analysis.json — in references subfolder
   if (typeof analysisJsonPath === 'string') {
-    artifacts.push({ path: analysisJsonPath, label: 'analysis.json' });
+    artifacts.push({ path: analysisJsonPath, label: t`analysis.json` });
   } else if (typeof outputDir === 'string') {
     const normalized = outputDir.replace(/\\/g, '/');
-    artifacts.push({ path: `${normalized}/analysis.json`, label: 'analysis.json' });
+    artifacts.push({ path: `${normalized}/analysis.json`, label: t`analysis.json` });
   }
 
   // classification.json for classification tasks
   const classificationPath = task.classification_path;
   if (typeof classificationPath === 'string') {
-    artifacts.push({ path: classificationPath, label: 'classification.json' });
+    artifacts.push({ path: classificationPath, label: t`classification.json` });
   } else if (task.task_type === TaskType.CLASSIFICATION && typeof outputDir === 'string') {
     const normalized = outputDir.replace(/\\/g, '/');
-    artifacts.push({ path: `${normalized}/classification.json`, label: 'classification.json' });
+    artifacts.push({ path: `${normalized}/classification.json`, label: t`classification.json` });
   }
 
   // Generic artifacts from task.artifacts array
@@ -168,7 +169,7 @@ export function getArtifactPaths(task: Task): ArtifactInfo[] {
   return artifacts;
 }
 
-/** Open an analysis report in its type-appropriate viewer (reports are .md). */
+/** Open an analysis report in its type-appropriate viewer (reports are .html). */
 export function openAnalysisReport(analysisPath: string, navigation: NavigationActions): void {
   const computeNodeTypeId = dataContext.computeNode?.typeId;
   const path = computeNodeTypeId ? VFSPath.fromMachinePath(analysisPath, computeNodeTypeId).absVfsPath : analysisPath;

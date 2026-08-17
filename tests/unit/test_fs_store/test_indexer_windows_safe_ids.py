@@ -2,8 +2,9 @@
 shadow home at a filesystem-unsafe path.
 
 Proven root cause this session: the indexer's skip-fresh probe built each
-record's shadow home (``<records_root>/<type>/<type>-@<id>/``) from the **raw**
-``gen_uuid_fn`` id. For an MCP server that id is ``<source_file>:<json_path>`` —
+record's shadow home (``<records_root>/<type>/<id>/``) from the **raw**
+``TypeInfo.mint_id`` result. For an MCP server the natural key is
+``<source_file>:<json_path>`` —
 e.g. the claude.ai cloud connector
 ``…/.claude.json:/claudeAiMcpEverConnected/claude.ai Google Drive``. A ``:`` is
 illegal in a Windows folder name, so writing that shadow home throws
@@ -18,10 +19,10 @@ at a temp HOME holding only the cloud connector and asserts that every shadow
 home the indexer actually creates is filesystem-safe — i.e. no path component
 anywhere under the mcp_server records subtree contains a ``:`` (the exact char
 that crashes the write on Windows), and the record home is a flat
-``mcp_server-@<uuid>``.
+bare ``<uuid>``.
 
 On/off switch: with the ``normalize_entity_id`` wrap in ``_probe_chunk`` the
-shadow home is ``mcp_server-@<uuid>`` (passes); reverting that one line restores
+shadow home is a bare ``<uuid>`` (passes); reverting that one line restores
 the raw ``…:…`` shadow home (fails — a ``:``-bearing component reappears).
 """
 
@@ -82,11 +83,9 @@ async def test_index_cloud_connector_creates_filesystem_safe_shadow_home(tmp_pat
     colon_components = [p.name for p in mcp_dir.rglob("*") if ":" in p.name]
     assert not colon_components, f"unsafe shadow-home path component(s): {colon_components}"
 
-    # And the record home is a single flat ``mcp_server-@<uuid>`` (not a nested
+    # And the record home is a single flat bare ``<uuid>`` (not a nested
     # path-derived tree), with a conforming entity id.
-    sep = "-@"
-    homes = [d.name for d in mcp_dir.iterdir() if d.is_dir() and sep in d.name]
+    homes = [d.name for d in mcp_dir.iterdir() if d.is_dir() and (d / "metadata.json").exists()]
     assert homes, f"no mcp_server shadow home created under {mcp_dir}"
-    for stem in homes:
-        uid = stem.split(sep, 1)[1]
+    for uid in homes:
         assert is_valid_entity_id(uid), f"shadow-home id is not a conforming UUID: {uid!r}"

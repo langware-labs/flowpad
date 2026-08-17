@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 from typing import Optional
 
-from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField
+from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
 
@@ -34,7 +34,7 @@ class AssetCleanupReport(Entity):
     unsure_count: int = APIField(0)
     session_id: Optional[str] = APIField(None, description="Worker session that produced the scan")
 
-    asset_ref: Optional[str] = APIField(None)
+    asset_ref: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     # Create-time ferry only: JSON text consumed by default_body_fn (which
     # materializes report.json at asset_ref). Never persisted to DB/blob.
     report: Optional[str] = NoDBAPIField(default=None)

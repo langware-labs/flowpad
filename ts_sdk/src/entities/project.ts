@@ -1,16 +1,20 @@
 import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
+import type { IEntity } from '../IEntity';
 import apiClient from '../client';
 import { QueryRequest } from '../FlowSync/query';
 import { ActionInfo, TypeId, gitOriginFromUrl, type GitOrigin } from '../models';
 import { DockPointerData } from '../models/DockPointer';
-import type { AssetDescriptor } from '../process/asset-descriptor';
+import type { AssetDescriptor, AssetSource } from '../process/asset-descriptor';
+import { isHubOnly } from '../utils/hub-runtime';
 import { ViewType } from '../utils/ui/view-types';
-import { Agent } from './agent';
+import { SubAgent } from './subagent';
 import { Artifact, IArtifact } from './artifact';
+import type { IDeployment } from './deployment';
 import { type ConversationParticipant } from './conversation';
 import { ComputeNode } from './compute_node';
 import { GitWorkdir } from './git-workdir';
 import { Workspace } from './workspace';
+import { Wiki } from './wiki';
 
 export interface ProjectMember {
   member_id: string;
@@ -27,6 +31,33 @@ export interface ResolveProjectResult {
   members_count: number;
 }
 
+export interface InstalledContentProject {
+  url: string;
+  branch: string;
+  content_project_id: string | null;
+  folder_id: string | null;
+  path: string;
+  scope: 'private' | 'shared';
+  status: 'installed' | 'already_installed';
+}
+
+export interface ReconcileBootstrapResult {
+  target_project_id: string;
+  content_projects: InstalledContentProject[];
+  status: 'installed' | 'already_installed';
+  helpdesk_id: string | null;
+  journey_ids: string[];
+  skill_ids: string[];
+  auto_launch_journey_id: string | null;
+  failed: Array<{
+    error: string;
+    url?: string;
+    branch?: string;
+    scope?: 'private' | 'shared';
+    path?: string;
+  }>;
+}
+
 export type SecretPointerScope = 'private' | 'shared';
 
 export interface LocalSecretRef {
@@ -34,20 +65,109 @@ export interface LocalSecretRef {
   sod_name: string;
 }
 
+export interface EnvLocalSecretRef {
+  kind: 'env-local';
+  env_key: string;
+}
+
 export interface HubSecretRef {
   kind: 'flowpad-hub';
   secret_id: string;
 }
 
-export type SecretOriginLocator = LocalSecretRef | HubSecretRef;
+export interface GcpSecretRef {
+  kind: 'gcp';
+  gcp_project: string;
+  secret: string;
+  version?: string;
+}
+
+export interface OnePasswordSecretRef {
+  kind: '1password';
+  vault: string;
+  item: string;
+  field?: string;
+}
+
+export type SecretOriginLocator =
+  | LocalSecretRef
+  | EnvLocalSecretRef
+  | HubSecretRef
+  | GcpSecretRef
+  | OnePasswordSecretRef;
+
+/** Which local SOD store the wizard caches a provided value into. */
+export type SodStore = 'sodot' | 'env-local';
 
 export interface ProjectSecretOriginSummary {
   typeid: string;
   name: string;
+  /** Half of the identity — `(project_id, env_var)` is what names a secret. */
+  project_id?: string;
   env_var: string;
+  /** Where to FETCH from. Declaration detail, not identity: it may change
+   *  without the secret becoming a different secret. */
   kind: SecretOriginLocator['kind'] | string;
   locator: Partial<SecretOriginLocator>;
   scope: SecretPointerScope | string;
+  /** Which local store the wizard caches a provided value into. The backend has
+   *  always emitted this; the type omitted it. */
+  sod_store?: SodStore | string;
+  /** What the secret is for, in the declarer's words. Lives on the declaration
+   *  rather than the EnvVar row because a declaration may have no value yet, and
+   *  an EnvVar cannot exist without one. */
+  description?: string;
+}
+
+/** One row of the value-free resolve-status the Secrets card / wizard reads. */
+export interface SecretResolveStatus {
+  typeid: string;
+  name: string;
+  env_var: string;
+  kind: string;
+  scope: string;
+  sod_store: SodStore | string;
+  description?: string;
+  status: 'available' | 'missing';
+  /** Which store on THIS machine can satisfy the declaration, if any. */
+  found_in?: 'env-local' | 'sodot' | 'provider' | null;
+  /** `missing-value` when nothing here can satisfy it — what a receiver of a
+   *  shared project sees for every secret they have not provided. */
+  warning?: 'missing-value' | null;
+  setup_hint: {
+    kind: string;
+    sod_store: SodStore | string;
+    provider_label: string;
+    prompt: string;
+    coming_soon?: boolean;
+    coord_fields?: string[];
+  };
+}
+
+/** One `.env.local` key. Names and line numbers only — never a value. */
+export interface EnvLocalKey {
+  key: string;
+  /** 1-indexed line of the effective (last) definition, for the editor jump. */
+  line: number;
+  declared: boolean;
+}
+
+export interface EnvLocalStatus {
+  path: string | null;
+  exists: boolean;
+  gitignore: { in_repo: boolean; ignored: boolean; tracked?: boolean; code: string; reason: string };
+  /** A hard block: the file is committable, so no value may be written to it. */
+  blocked: boolean;
+  block_code: string | null;
+  block_reason: string | null;
+  keys: EnvLocalKey[];
+}
+
+/** One row of the opt-in drift check. */
+export interface SecretDriftStatus {
+  typeid: string;
+  env_var: string;
+  warning: 'value-changed' | null;
 }
 
 export interface ProjectContextFolderResolveResult {
@@ -66,6 +186,103 @@ export interface ProjectContextDirInfo {
   /** The linked Folder entity's typeid (e.g. "folder-<uuid>") — referenced by
    *  UI surfaces like the push-notify message chip. Empty for legacy dirs. */
   typeid?: string;
+}
+
+/** A project's visual identity, from the `brand` block of
+ *  `.flow/customization/string.json`. Every field is optional; the block itself
+ *  is null unless at least one survived validation.
+ *
+ *  `logo` / `logo_dark` are REPO-RELATIVE paths the backend has already
+ *  confirmed exist and are inside the project root — hand them straight to
+ *  `useFS(projectTypeId).getDownloadUrl(path)`, no probe needed. */
+export interface ProjectBrand {
+  name?: string | null;
+  tagline?: string | null;
+  /** CSS colour for the accent. Apply it SCOPED to the branded container, never
+   *  to `documentElement` — see `useHelpdeskBrand`. */
+  accent?: string | null;
+  logo?: string | null;
+  logo_dark?: string | null;
+}
+
+/** Optional per-project branding read from `.flow/customization/`.
+ *  Mirrors the backend `Project.customization` computed field. Image bytes are
+ *  fetched on demand via the `fs` download action; here only a flag (home
+ *  background) or a relative path (brand logos). */
+export interface ProjectCustomization {
+  /** From `.flow/customization/string.json` — overrides the home greeting. */
+  home_title?: string | null;
+  /** True when `.flow/customization/home.png` exists → render it as background. */
+  has_home_background?: boolean;
+  /** Null when the project ships no usable brand block. */
+  brand?: ProjectBrand | null;
+}
+
+// ---------------------------------------------------------------------------
+// Asset menu — 1:1 mirror of `flow_sdk/builtin/asset_menu.py`. Snake_case is the
+// wire's and is kept verbatim: new fields land on the backend model first, this
+// file only reflects them.
+//
+// The menu is STRUCTURE + COUNTS, never leaves. Type rows still load their
+// entities lazily from `/search` on expand, and the filesystem subtree under a
+// folder row stays lazy DFS browsing — nothing that is lazy today becomes eager
+// because of this payload.
+// ---------------------------------------------------------------------------
+
+/** One per-type row of a node's menu. Counts only — icon, label, and view-mode
+ *  tier are looked up from the bootstrap type registry the client already
+ *  holds, never re-sent per response. */
+export interface ProjectMenuGroup {
+  type_name: string;
+  /** Assets under THIS node's own directory. */
+  own_count: number;
+  /** Accumulated: own plus every descendant's, so a collapsed row tells the
+   *  truth about what is under it. */
+  count: number;
+}
+
+/** One directory in the menu: the project's own mount, or a context folder.
+ *  Recursive by construction — a context folder that is itself a Project
+ *  carries that Project's own context folders, 3+ levels deep. */
+export interface ProjectMenuNode {
+  /** Canonical POSIX path — the node's identity. */
+  path: string;
+  name: string;
+  /** 'project_dir' for the root, 'context_dir' for every descendant. */
+  source: AssetSource;
+  /** Distance from the root project (root = 0). */
+  depth: number;
+  /** Null when this folder is not a Project (then `children` is always empty —
+   *  only a Project has context folders of its own). */
+  project_id: string | null;
+  is_project: boolean;
+  /** The linked Folder entity, from `context_dir_infos`. */
+  folder_typeid: string | null;
+  /** "git" | "local" — git-backed folders render distinctly. */
+  origin_kind: string | null;
+  /** Null for non-project nodes. True when the project has no index sentinel,
+   *  so its zero counts mean "never scanned", not "empty". */
+  never_indexed: boolean | null;
+  groups: ProjectMenuGroup[];
+  children: ProjectMenuNode[];
+}
+
+export interface ProjectAssetMenu {
+  root: ProjectMenuNode;
+  truncated: boolean;
+}
+
+export interface ProjectAssetMenuOptions {
+  /** Narrow to these record types. Default: every browseable scannable type. */
+  types?: string[];
+  /** Recurse into context folders that are themselves Projects. Default true. */
+  recursive?: boolean;
+  /** Hard cap on DFS depth (root = 0). Backend clamps to 1..16. */
+  maxDepth?: number;
+}
+
+interface ProjectAssetMenuResponse {
+  menu?: ProjectAssetMenu;
 }
 
 interface ProjectContextFolderResolveResponse {
@@ -103,18 +320,28 @@ export class Project extends APIEntity<Project> {
   static type: string = 'project';
   computeNode?: ComputeNode | null = null;
   // ── Hub collaboration (Project as a shared unit — mirrors Conversation) ──
-  /** Hub role roster [{user_id, email, name, role}] — mirrors backend
-   *  Project.participants. This is what the Members UI (`useMembers`) reads;
-   *  distinct from the local presence `members` overlay below. The project's
-   *  own (uuid4) id is the shared hub identity — no separate cloud id. */
-  participants: ConversationParticipant[] = [];
+  /** Hub role roster [{user_id, email, name, role}] — the generic ``members``
+   *  cache from the Entity base (redeclared with a default so readers get an
+   *  array). This is what the Members UI (`useMembers`) reads; distinct from the
+   *  local presence `presence` overlay below. The project's own (uuid4) id is the
+   *  shared hub identity — no separate cloud id. */
+  members: ConversationParticipant[] = [];
+  /** Portable repository identity received with a shared project. */
+  git_origin: GitOrigin | null = null;
+  /** When this desktop instance successfully published the Project to Hub. */
+  hub_published_at: string | null = null;
   /** Last UI view mode used in this project (vibe|standard|advanced|dev);
    *  applied on project load so the mode is remembered per project. */
   last_mode: string | null = null;
+  /** UI language for this project, as a supported locale code (en-US|he|ar);
+   *  applied on project load so entering the project switches the app language. */
+  locale: string | null = null;
   // ── Collaboration overlay (merged from the former CollaborationSpace) ──
   session_code: string | null = null;
   host_member_id: string | null = null;
-  members: ProjectMember[] = [];
+  /** Local collaboration presence (session-code join, no roles). Renamed from
+   *  `members` so that name is free for the hub role roster. */
+  presence: ProjectMember[] = [];
   /** Context folders: extra directories auto-added to every agentic worker's
    *  --add-dir set and browseable in the Explorer as their own root. Mirrors
    *  the backend Project.include_dirs. */
@@ -125,17 +352,24 @@ export class Project extends APIEntity<Project> {
   /** Project secret pointers. Value-free metadata only; values are never
    *  exposed through the SDK and resolve only inside worker launch. */
   secret_origins: ProjectSecretOriginSummary[] = [];
+  /** Optional per-project home branding from `.flow/customization/`. Mirrors the
+   *  backend computed `Project.customization`. Read-only. */
+  customization: ProjectCustomization = {};
 
   constructor(entity: Partial<Project> = {}) {
     super(entity);
-    this.participants = (entity.participants as ConversationParticipant[] | undefined) ?? [];
+    this.members = (entity.members as ConversationParticipant[] | undefined) ?? [];
+    this.git_origin = (entity.git_origin as GitOrigin | null | undefined) ?? null;
+    this.hub_published_at = (entity.hub_published_at as string | null | undefined) ?? null;
     this.last_mode = (entity.last_mode as string | null | undefined) ?? null;
+    this.locale = (entity.locale as string | null | undefined) ?? null;
     this.session_code = (entity.session_code as string | null | undefined) ?? null;
     this.host_member_id = (entity.host_member_id as string | null | undefined) ?? null;
-    this.members = (entity.members as ProjectMember[] | undefined) ?? [];
+    this.presence = (entity.presence as ProjectMember[] | undefined) ?? [];
     this.include_dirs = (entity.include_dirs as string[] | undefined) ?? [];
     this.context_dir_infos = (entity.context_dir_infos as ProjectContextDirInfo[] | undefined) ?? [];
     this.secret_origins = (entity.secret_origins as ProjectSecretOriginSummary[] | undefined) ?? [];
+    this.customization = (entity.customization as ProjectCustomization | undefined) ?? {};
   }
 
   // Land on the project's collaboration/home view at /dock/project/<id>
@@ -172,6 +406,9 @@ export class Project extends APIEntity<Project> {
     if (this.computeNode) {
       return this.computeNode;
     }
+    // Hub mode: the hub backend has no local compute node (`get-compute-node`
+    // 401s). No node here — callers already treat null as "no compute node".
+    if (isHubOnly()) return null;
     const actionInfo = new ActionInfo('get-compute-node', Project.type, this.typeId.id, 'GET');
     const responseComputeNode = await dataManager.callAction<void, { compute_node: any }>(actionInfo);
 
@@ -181,6 +418,32 @@ export class Project extends APIEntity<Project> {
     const computeNode = dataManager.updateEntityFromJson<ComputeNode>(responseComputeNode.compute_node);
     this.computeNode = computeNode;
     return computeNode;
+  }
+
+  /**
+   * Run this project's app on a machine of its own in the cloud.
+   *
+   * The web half of deployment — a micro app is deployed by deploying the
+   * project that holds it, because the project is what has the repository the
+   * sandbox materializes. Sharing to the hub is implicit, so there is no order
+   * for a caller to get wrong.
+   *
+   * Slow by nature (create + boot + health on a real sandbox); callers should
+   * show progress rather than assume a snappy round trip.
+   */
+  async deploy(): Promise<ProjectDeployResult> {
+    const action = new ActionInfo('deploy', Project.type, this.id, 'POST');
+    return (await dataManager.callAction(action)) as ProjectDeployResult;
+  }
+
+  /**
+   * Return this Project's stable default Wiki, lazily creating it server-side
+   * for Projects that predate the Wiki invariant.
+   */
+  async getDefaultWiki(): Promise<Wiki> {
+    const action = new ActionInfo('default-wiki', Project.type, this.id, 'GET');
+    const result = await dataManager.callAction<void, IEntity>(action);
+    return dataManager.updateEntityFromJson<Wiki>(result);
   }
 
   /**
@@ -210,6 +473,45 @@ export class Project extends APIEntity<Project> {
   }
 
   /**
+   * The Assets menu for this project: per-type groups with counts, and the same
+   * nested under each context folder — recursively, because a context folder
+   * that is itself a Project has its own context folders. Counts accumulate, so
+   * a collapsed row already reports its whole subtree.
+   *
+   * Same action as {@link getAssets} (`project/{id}/get-assets`), menu mode —
+   * a sibling method rather than an option, because `getAssets`' flat
+   * `AssetDescriptor[]` return is consumed directly by the asset-manager
+   * surfaces and must not become a union.
+   *
+   * READ-ONLY: mints nothing, indexes nothing. A folder whose assets were never
+   * indexed counts zero (and its node flags `never_indexed`). Carries no leaves —
+   * type rows still load their entities from `/search` on expand.
+   *
+   * Returns null on a backend that predates menu mode, so callers can fall back.
+   */
+  async getAssetMenu(options?: ProjectAssetMenuOptions): Promise<ProjectAssetMenu | null> {
+    return Project.getAssetMenuById(this.typeId.id, options);
+  }
+
+  /** Static form for callers without a Project instance (mirrors `getAssetsById`). */
+  static async getAssetMenuById(
+    projectId: string,
+    options?: ProjectAssetMenuOptions,
+  ): Promise<ProjectAssetMenu | null> {
+    const actionInfo = new ActionInfo('get-assets', Project.type, projectId, 'GET');
+    // Backend kwarg names on the wire (`max_depth`); the SDK option stays
+    // camelCase. Arrays are pre-joined — query values are stringified one by one.
+    // `assets=false` skips the flat descriptor scan this caller would discard.
+    const queryParameters: Record<string, string | number> = { menu: 'true', assets: 'false' };
+    if (options?.types?.length) queryParameters.types = options.types.join(',');
+    if (options?.recursive === false) queryParameters.recursive = 'false';
+    if (options?.maxDepth != null) queryParameters.max_depth = options.maxDepth;
+    actionInfo.queryParameters = queryParameters;
+    const response = await dataManager.callAction<void, ProjectAssetMenuResponse>(actionInfo);
+    return response?.menu ?? null;
+  }
+
+  /**
    * `GitWorkdir` bound to this project's working tree, or null when the
    * project has no working directory or compute node. Null does NOT mean
    * "not a git repo" — that stays the async `isInit()` probe on the result.
@@ -221,6 +523,13 @@ export class Project extends APIEntity<Project> {
     const computeNode = await this.getComputeNode();
     if (!computeNode) return null;
     return new GitWorkdir(this.fs_storage_mount_path, computeNode.id);
+  }
+
+  /** Clone/materialize the shared project's portable GitOrigin locally. */
+  async setupFromGitOrigin(): Promise<Project> {
+    const action = new ActionInfo('setup-from-git', Project.type, this.id, 'POST');
+    const response = await dataManager.callAction<void, Project>(action);
+    return dataManager.updateEntityFromJson<Project>(response as unknown as Record<string, unknown>);
   }
 
   /** Adopt the server-computed `include_dirs` off a context-dir action
@@ -260,6 +569,26 @@ export class Project extends APIEntity<Project> {
     this.adoptContextDirs(await dataManager.callAction(actionInfo));
   }
 
+  /** Converge the live content dependencies declared by this Project's
+   * `.flowpad/bootstrap.json`. The backend owns clone/link/index idempotency. */
+  async reconcileBootstrap(): Promise<ReconcileBootstrapResult> {
+    const actionInfo = new ActionInfo('reconcile-bootstrap', Project.type, this.typeId.id, 'POST');
+    return dataManager.callAction<Record<string, never>, ReconcileBootstrapResult>(actionInfo);
+  }
+
+  /** Get-or-create the `Folder` entity for a directory, WITHOUT attaching it as
+   *  a context folder. Folder ids are deterministic (a Folder's id is its origin
+   *  key), so this is a safe get-or-create: it never links, never indexes, and
+   *  returns the same typeid for the same directory forever. Use it when a
+   *  surface needs an entity for a directory the user is merely browsing (e.g.
+   *  the Assets header's Share); use `addContextDir` when the folder should
+   *  actually join the project's context. */
+  async folderForPath(path: string): Promise<{ typeid: string; path: string; origin_kind: string | null }> {
+    const actionInfo = new ActionInfo('folder-for-path', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { path };
+    return dataManager.callAction(actionInfo);
+  }
+
   /** Detach a context folder. No-op if not attached. */
   async removeContextDir(path: string): Promise<void> {
     const actionInfo = new ActionInfo('remove-context-dir', Project.type, this.typeId.id, 'POST');
@@ -270,17 +599,26 @@ export class Project extends APIEntity<Project> {
   async addSecretPointer(
     name: string,
     envVar: string,
-    options: { locator: SecretOriginLocator; scope?: SecretPointerScope },
+    options: {
+      locator: SecretOriginLocator;
+      scope?: SecretPointerScope;
+      sodStore?: SodStore;
+      /** Omit to leave an existing description untouched — re-declaring from a
+       *  surface that carries none must not wipe one someone already wrote. */
+      description?: string;
+    },
   ): Promise<void> {
     const actionInfo = new ActionInfo('add-secret-pointer', Project.type, this.typeId.id, 'POST');
+    // The backend builds the value-free locator from the generic ``locator`` dict
+    // (any provider kind); ``sod_store`` is where the wizard caches a value.
     actionInfo.bodyParameters = {
       name,
       env_var: envVar,
       scope: options.scope ?? 'private',
       kind: options.locator.kind,
       locator: options.locator,
-      ...(options.locator.kind === 'local' ? { sod_name: options.locator.sod_name } : {}),
-      ...(options.locator.kind === 'flowpad-hub' ? { secret_id: options.locator.secret_id } : {}),
+      ...(options.sodStore ? { sod_store: options.sodStore } : {}),
+      ...(options.description !== undefined ? { description: options.description } : {}),
     };
     this.adoptSecretOrigins(await dataManager.callAction(actionInfo));
   }
@@ -289,6 +627,61 @@ export class Project extends APIEntity<Project> {
     const actionInfo = new ActionInfo('remove-secret-pointer', Project.type, this.typeId.id, 'POST');
     actionInfo.bodyParameters = { typeid };
     this.adoptSecretOrigins(await dataManager.callAction(actionInfo));
+  }
+
+  /** Value-free per-secret resolve status (available/missing) for the Secrets
+   *  card + setup wizard. Never fetches a value. */
+  async secretResolveStatus(): Promise<SecretResolveStatus[]> {
+    const actionInfo = new ActionInfo('secret-resolve-status', Project.type, this.typeId.id, 'POST');
+    const res = await dataManager.callAction<undefined, { secrets?: SecretResolveStatus[] }>(actionInfo);
+    return Array.isArray(res?.secrets) ? res!.secrets : [];
+  }
+
+  /** What is in the project's `.env.local`, and may we write to it?
+   *  Names and line numbers only — a value cannot cross this boundary. */
+  async envLocalStatus(): Promise<EnvLocalStatus | null> {
+    const actionInfo = new ActionInfo('env-local-status', Project.type, this.typeId.id, 'POST');
+    return (await dataManager.callAction<undefined, EnvLocalStatus>(actionInfo)) ?? null;
+  }
+
+  /** Which declared secrets hold a different value than when last provided.
+   *  Separate from resolveStatus because answering it requires fetching values,
+   *  so it runs only when someone is looking at the Secrets tab. */
+  async secretDriftStatus(): Promise<SecretDriftStatus[]> {
+    const actionInfo = new ActionInfo('secret-drift-status', Project.type, this.typeId.id, 'POST');
+    const res = await dataManager.callAction<undefined, { secrets?: SecretDriftStatus[] }>(actionInfo);
+    return Array.isArray(res?.secrets) ? res!.secrets : [];
+  }
+
+  /** Store a secret on the hub, which is the system of record.
+   *
+   *  Fails with `project_not_published` when the project has no hub row yet —
+   *  the caller offers to publish rather than parsing the message. */
+  async pushSecretToCloud(envVar: string, value: string): Promise<void> {
+    const actionInfo = new ActionInfo('push-secret-to-cloud', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { env_var: envVar, value };
+    await dataManager.callAction(actionInfo);
+  }
+
+  /** Delete a secret from the hub — CLOUD ONLY. The local declaration, the
+   *  sodot entry and `.env.local` are all deliberately left alone. */
+  async deleteSecretFromCloud(envVar: string): Promise<void> {
+    const actionInfo = new ActionInfo('delete-secret-from-cloud', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { env_var: envVar };
+    await dataManager.callAction(actionInfo);
+  }
+
+  /** Setup wizard: store a user-provided value in the secret's designated SOD
+   *  store (sodot or the project .env.local). The value never touches the
+   *  reference json or any hub payload. */
+  async provideSecret(params: { typeid?: string; envVar?: string; value: string }): Promise<void> {
+    const actionInfo = new ActionInfo('provide-secret', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = {
+      ...(params.typeid ? { typeid: params.typeid } : {}),
+      ...(params.envVar ? { env_var: params.envVar } : {}),
+      value: params.value,
+    };
+    await dataManager.callAction(actionInfo);
   }
 
   /** Resolve received shared context folders into receiver-local paths. */
@@ -373,15 +766,22 @@ export class Project extends APIEntity<Project> {
    */
   async setupForDesktop(): Promise<{
     workspace: Workspace | null;
-    agent: Agent | null;
+    agent: SubAgent | null;
     compute_node: ComputeNode | null;
   }> {
+    // Hub mode: there is no desktop to wire to — no @local workspace, no
+    // @local compute node — and the hub backend doesn't serve the action at
+    // all (`project/<id>/setup-for-desktop` → 400 "Post not supported for this
+    // path"), which used to make every create-project flow throw after the
+    // project was already saved. Same shape as `activateById`/`getComputeNode`:
+    // a desk-only step is a no-op on the hub, not an error.
+    if (isHubOnly()) return { workspace: null, agent: null, compute_node: null };
     const actionInfo = new ActionInfo('setup-for-desktop', Project.type, this.typeId.id, 'POST');
     const response = await dataManager.callAction<
       void,
       {
         workspace: Workspace | null;
-        agent: Agent | null;
+        agent: SubAgent | null;
         compute_node: ComputeNode | null;
       }
     >(actionInfo);
@@ -396,6 +796,9 @@ export class Project extends APIEntity<Project> {
    *  through); the project pickers sort by it (recency wins over session
    *  `modified_at`). Static form mirrors `Tab.activateById`. */
   static async activateById(id: string): Promise<void> {
+    // Hub mode: `project/<id>/activate` 401s on the hub backend. This is a
+    // fire-and-forget recency stamp — safely a no-op when unavailable.
+    if (isHubOnly()) return;
     const info = new ActionInfo('activate', Project.type, id, 'POST');
     await dataManager.callAction<undefined, unknown>(info);
   }
@@ -410,7 +813,7 @@ export class Project extends APIEntity<Project> {
 
   /** True when the member's last_seen_at is within `windowMs` of now. */
   isMemberOnline(memberId: string, windowMs: number = 30_000): boolean {
-    const m = this.members.find((x) => x.member_id === memberId);
+    const m = this.presence.find((x) => x.member_id === memberId);
     if (!m || !m.last_seen_at) return false;
     const t = Date.parse(m.last_seen_at);
     if (Number.isNaN(t)) return false;
@@ -439,7 +842,7 @@ export class Project extends APIEntity<Project> {
     if (result) {
       if (result.session_code !== undefined) this.session_code = result.session_code ?? null;
       if (result.host_member_id !== undefined) this.host_member_id = result.host_member_id ?? null;
-      if (Array.isArray(result.members)) this.members = result.members as ProjectMember[];
+      if (Array.isArray(result.presence)) this.presence = result.presence as ProjectMember[];
     }
     return this;
   }
@@ -452,10 +855,10 @@ export class Project extends APIEntity<Project> {
       { member_id: string; name: string },
       Partial<Project>
     >(info);
-    if (result && Array.isArray(result.members)) {
-      this.members = result.members as ProjectMember[];
+    if (result && Array.isArray(result.presence)) {
+      this.presence = result.presence as ProjectMember[];
     }
-    return this.members.find((m) => m.member_id === memberId) ?? null;
+    return this.presence.find((m) => m.member_id === memberId) ?? null;
   }
 
   /** Presence ping — bumps last_seen_at on the backend. */
@@ -464,11 +867,11 @@ export class Project extends APIEntity<Project> {
     info.bodyParameters = { member_id: memberId };
     const result = await dataManager.callAction<
       { member_id: string },
-      { ok: boolean; members: ProjectMember[] }
+      { ok: boolean; presence: ProjectMember[] }
     >(info);
-    if (result && Array.isArray(result.members)) {
-      this.members = result.members;
-      return result.members;
+    if (result && Array.isArray(result.presence)) {
+      this.presence = result.presence;
+      return result.presence;
     }
     return null;
   }
@@ -598,4 +1001,20 @@ export class Project extends APIEntity<Project> {
     if (!response?.project) return null;
     return dataManager.updateEntityFromJson<Project>(response.project as Record<string, unknown>);
   }
+}
+
+/**
+ * What `POST /project/<id>/deploy` hands back.
+ *
+ * `deployment` is the placement ROW — the same entity, at the same id, that the
+ * local backend has already adopted by the time this resolves. Callers render
+ * the persisted Deployment rather than this response: it is a receipt, not the
+ * state. Same shape as `AgentDeployResult`, because it is the same verb.
+ */
+export interface ProjectDeployResult {
+  project_id: string;
+  deployment?: IDeployment;
+  node_typeid?: string;
+  host_url?: string;
+  reused?: boolean;
 }

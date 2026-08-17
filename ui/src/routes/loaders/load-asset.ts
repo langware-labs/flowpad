@@ -13,29 +13,12 @@
  * resting URL. Best-effort: a miss/parse-failure is non-fatal (the view renders
  * its own missing/error state); never throws into the parent dock loader.
  */
-import { ContextEntitiesEnum, Project, TypeId, VFSPath, apiClient, dataContext, dataManager } from '@sdk';
+import { ContextEntitiesEnum, Project, TypeId, VFSPath, dataContext, dataManager } from '@sdk';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetMode, AssetRoutingMethod, isBrowseListPointer, isFileOnlyEditor } from '@src/navigation/asset-doc-types';
-
-interface WikiResolveResult {
-  type: string;
-  id: string;
-  asset_ref?: string;
-}
-
-/** Resolve a wiki name within a space to an entity ref. Mirrors WikiResolveView. */
-async function wikiResolve(name: string, space: string): Promise<WikiResolveResult | null> {
-  try {
-    const body = (await apiClient.get<WikiResolveResult | null>('/wiki/resolve', {
-      params: { name, space },
-      transformResponse: (raw: string) => ({ data: JSON.parse(raw) }),
-    })) as WikiResolveResult | null;
-    if (!body || typeof body !== 'object' || !('type' in body) || !('id' in body)) return null;
-    return body;
-  } catch {
-    return null;
-  }
-}
+import { resolveWikiWord } from '@src/components/wiki/resolve-wiki';
+import type { WikiAuthority } from '@src/components/wiki/resolve-wiki';
+import { clearWikiResolveResult, setWikiResolveResult } from './wiki-resolve-store';
 
 // The fields the loader derives context from. `project_id` is a backend
 // projection, not a typed field on the base entity, so resolved entities are
@@ -81,7 +64,13 @@ async function ensureInContext(typeId: TypeId): Promise<void> {
   await setEntityContext((entity as ContextEntity | null) ?? { typeId });
 }
 
-export async function loadAssetRoute(pointer: string | undefined): Promise<void> {
+export async function loadAssetRoute(
+  pointer: string | undefined,
+  options: {
+    allowLocalWikiAlias?: boolean;
+    wikiAuthority?: WikiAuthority;
+  } = {},
+): Promise<void> {
   if (!pointer) return; // assets list / no editor open — nothing to resolve.
 
   // `list/<typeName>`, `folder/<...>`, and `project-home` are browser views,
@@ -102,8 +91,14 @@ export async function loadAssetRoute(pointer: string | undefined): Promise<void>
 
   try {
     if (ptr.mode === AssetMode.WIKI) {
-      const hit = await wikiResolve(ptr.wikiName, ptr.space);
-      if (hit) await ensureInContext(new TypeId(hit.type, hit.id));
+      const authority = options.wikiAuthority ?? 'local';
+      clearWikiResolveResult(ptr.space, ptr.wikiName, authority);
+      const result = await resolveWikiWord(ptr.space, ptr.wikiName, {
+        allowLocalAlias: options.allowLocalWikiAlias,
+        authority,
+      });
+      setWikiResolveResult(ptr.space, ptr.wikiName, result, authority);
+      if (result.kind === 'resolved') await ensureInContext(result.target_typeid);
       return;
     }
 

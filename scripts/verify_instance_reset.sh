@@ -20,7 +20,11 @@ health(){ curl -s -m5 "http://localhost:$1/api/v1/graph/bootstrap" -o /dev/null 
 pid_of(){ python3 -c "import json;print(json.load(open('$FLOW_HOME_DIR/instances/$1/launcher.json')).get('backend_pid',''))" 2>/dev/null; }
 
 echo "== setup: launch BYSTANDER=$BYST and TARGET=$TARGET =="
-scripts/instance_ctl.sh status 2>/dev/null | grep -q "^  $BYST .*UP" || scripts/instance_ctl.sh launch "$BYST" >/dev/null 2>&1
+# `is-up` instead of grepping `status` for "UP": the old text form reported a
+# port that merely had *a* listener, so a stale registry sharing a recycled port
+# could make a dead bystander look alive and skip the launch below. `is-up`
+# exits 0 only when every role is live AND ownership-verified.
+uv run flow instance ctl is-up "$BYST" 2>/dev/null || scripts/instance_ctl.sh launch "$BYST" >/dev/null 2>&1
 scripts/instance_ctl.sh launch "$TARGET" >/dev/null 2>&1
 sleep 2
 B_PORT=$(port_of "$BYST"); B_PID=$(pid_of "$BYST"); T_PORT=$(port_of "$TARGET")

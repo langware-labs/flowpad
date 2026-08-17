@@ -1,233 +1,97 @@
-"""Walker + extractor + helpers for AGENT records.
+"""Extractor + default body for AGENT records.
 
-An agent is a flat ``.md`` file under ``<root>/.claude/agents/`` (or a folder
-of the same shape for legacy installs). YAML frontmatter carries the
-``--agents`` CLI spec; the markdown body is the system prompt.
+An Agent is a folder asset at ``agentic-assets/agent/<name>/agent.md``:
+YAML frontmatter carries the launch bundle, the markdown body IS the
+``system_prompt``. Discovery is the generic ``repo_assets_fn`` walk (gated on
+``main_file``) — this module owns only the parse and the render.
 
-Replaces the parse/extract behaviour of the deleted ``AgentRecord`` subclass.
-Operations (``load_agent``, ``load_system_agent``, ``agent_to_cli_json``,
-markdown rendering) live in ``flow_sdk/fs_store/operations/agent.py``.
-
-Public helpers used outside the indexer:
-  - ``parse_agent_markdown(text, name)`` — pure frontmatter+body parse
-  - ``extract_agent(ref)`` — parser_fn entry
-  - ``agent_id(ref)`` / ``agent_gen_id(ref)`` — id helpers
-  - ``AGENTS_SPEC_FIELDS`` / ``KEY_TO_JSON`` / ``JSON_TO_KEY`` — spec mapping
+The entity owns the file (``owns_main_ref``), so ``agent_default_body``
+re-renders frontmatter + body on every save. ``content`` therefore holds the
+BODY ONLY: if it still carried the frontmatter, each save would append a
+duplicate block — the same round-trip rule ``extract_spec`` documents.
 """
-
 from __future__ import annotations
 
-import uuid
-from pathlib import Path
 from typing import Any
 
+from flow_sdk.capsules import strip_capsule_blocks
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identifier import mint_uuid
-from flow_sdk.fs_store.indexer._frontmatter import (
-    _extract_body,
-    _extract_frontmatter,
-    _yaml_load,
-    adopt_or_mint_id,
-)
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
+from flow_sdk.fs_store.indexer._frontmatter import _extract_body, _extract_frontmatter, _yaml_load
 from flow_sdk.fs_store.record_types import RecordType
 
-# Fields stored in _data that map to the Claude Code --agents JSON spec
-AGENTS_SPEC_FIELDS = (
+#: Frontmatter keys that round-trip onto the entity. Mirrors the Agent fields;
+#: `name` comes from the folder so a rename can't desync the two.
+AGENT_SPEC_FIELDS = (
+    "title",
     "description",
+    "avatar",
+    "worker_type",
+    "model",
+    "permission_mode",
+    "effort",
+    "max_turns",
     "tools",
     "disallowed_tools",
-    "model",
-    "color",
-    "permission_mode",
-    "max_turns",
     "skills",
     "mcp_servers",
-    "hooks",
-    "memory",
-    "background",
-    "isolation",
+    "subagents",
+    "additional_dirs",
+    "load_flowpad_assistant",
+    "cli_options",
+    "enabled",
 )
 
-# Mapping from snake_case _data keys to camelCase --agents JSON keys
-KEY_TO_JSON = {
-    "disallowed_tools": "disallowedTools",
-    "permission_mode": "permissionMode",
-    "max_turns": "maxTurns",
-    "mcp_servers": "mcpServers",
-}
-JSON_TO_KEY = {v: k for k, v in KEY_TO_JSON.items()}
 
-
-# ── Walker ───────────────────────────────────────────────────────────────────
-
-
-def agent_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
-) -> list[FSRef]:
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        agents = Path(node.path) / ".claude" / "agents"
-        if not agents.is_dir():
-            continue
-        for md in sorted(agents.glob("*.md")):
-            key = str(md.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(md, record_type=RecordType.AGENT, parent=node))
+def parse_agent_markdown(text: str, name: str) -> dict[str, Any]:
+    """Pure parse: frontmatter -> fields, body -> system_prompt."""
+    fm = _extract_frontmatter(text)
+    fields = (_yaml_load(fm) if fm else None) or {}
+    out: dict[str, Any] = {"name": fields.get("name") or name}
+    for key in AGENT_SPEC_FIELDS:
+        if key in fields and fields[key] is not None:
+            out[key] = fields[key]
+    # Strip capsules as well as frontmatter, like every sibling extractor
+    # (spec, subagent, prompt, markdown…). The body IS the system prompt and is
+    # shipped to the worker as context_data.instructions, so a leftover
+    # `<!-- flowpad:capsule identity … -->` block would be re-rendered on every
+    # owns_main_ref save AND sent to the model on every run.
+    out["system_prompt"] = strip_capsule_blocks(_extract_body(text) or "").strip()
     return out
 
 
-# ── id helpers ───────────────────────────────────────────────────────────────
-
-
-def _read_frontmatter_id(path: Path) -> str | None:
-    """Return frontmatter `id` (or legacy `asset_id`), or None."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    fm = _extract_frontmatter(text)
-    if not fm:
-        return None
-    fields = _yaml_load(fm) or {}
-    raw = fields.get("id") or fields.get("asset_id")
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
-    return adopt_entity_id(raw)  # validate-on-adopt (v4/v5) → else caller derives
-
-
-def _read_frontmatter_name(path: Path) -> str | None:
-    """Return frontmatter `name`, or None."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    fm = _extract_frontmatter(text)
-    if not fm:
-        return None
-    fields = _yaml_load(fm) or {}
-    name = fields.get("name")
-    return str(name).strip() if isinstance(name, str) and name.strip() else None
-
-
-def agent_id(ref: FSRef) -> str:
-    """Cheap id: frontmatter `id` (or `asset_id`); else frontmatter `name`;
-    else filename stem."""
-    existing = _read_frontmatter_id(ref._path)
-    if existing:
-        return existing
-    name = _read_frontmatter_name(ref._path)
-    if name:
-        return name
-    return ref._path.stem
-
-
-def agent_peek_entity_id(ref: FSRef) -> str:
-    """Entity UUID for an agent .md WITHOUT writing frontmatter back.
-
-    Strictly read-only, so it is safe to call from request handlers
-    (``agent_gen_id`` rewrites the source file, which would dirty read-only
-    mounts and trip the dev reload watcher). Single file read.
-
-    Reads the adopted frontmatter UUID capsule when present. On a miss it returns
-    the stable ``mint_uuid(f"{RecordType.AGENT}:{name-or-stem}")`` derive — it
-    CANNOT predict the random v4 that ``agent_gen_id`` will mint into a
-    not-yet-stamped agent (the documented capsule-v4 asymmetry); once gen_id has
-    stamped the capsule, this peek reads and returns that same v4.
-    """
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
-    try:
-        text = ref._path.read_text(encoding="utf-8")
-    except OSError:
-        key = ref._path.stem
-    else:
-        fm = _extract_frontmatter(text)
-        fields = (_yaml_load(fm) if fm else None) or {}
-        adopted = adopt_entity_id(fields.get("id") or fields.get("asset_id"))
-        if adopted:
-            return adopted
-        name = fields.get("name")
-        key = name.strip() if isinstance(name, str) and name.strip() else ref._path.stem
-    return mint_uuid(f"{RecordType.AGENT}:{key}", namespace=uuid.NAMESPACE_DNS)
-
-
-def agent_gen_id(ref: FSRef) -> str:
-    """Adopt the frontmatter capsule id, else mint a fresh v4 and write it.
-
-    Fixes the prior bug where the raw NAME/stem (not a UUID) was written into
-    ``id:`` — the adopt-on-next-index gate rejected it, so agents never
-    self-healed and re-derived ``uuid5("agent:name")`` (a cross-machine collision
-    source) every pass. Now a random **v4** is minted into the ``id:`` capsule;
-    a stable uuid5(path) survives only as the read-only-file fallback.
-    """
-    return adopt_or_mint_id(ref._path, write_back=True)
-
-
-# ── Parse + extract ──────────────────────────────────────────────────────────
-
-
-def parse_agent_markdown(text: str, name: str | None = None) -> dict[str, Any]:
-    """Parse YAML frontmatter + markdown body into a fields dict.
-
-    Returns id/name/spec fields + 'prompt' (the body). Used by both the
-    indexer extractor and ``operations/agent.py`` helpers.
-    """
-    fm_text = _extract_frontmatter(text)
-    fields = _yaml_load(fm_text) if fm_text else {}
-    body = _extract_body(text)
-
-    agent_name = name or fields.pop("name", None) or "unnamed"
-    raw_id = fields.pop("id", None) or fields.pop("asset_id", None)
-    rec_id = raw_id.strip() if isinstance(raw_id, str) and raw_id.strip() else agent_name
-
-    data: dict[str, Any] = {"id": rec_id, "name": agent_name}
-    for key in AGENTS_SPEC_FIELDS:
-        if key in fields:
-            data[key] = fields[key]
-    if body:
-        data["prompt"] = body
-    return data
-
-
-def extract_agent(ref: FSRef) -> list[FSRecord]:
-    """Parse an agent .md into a Record. Replaces ``AgentRecord._from_fsref_sync``.
-
-    Eagerly populates: id, name, description, prompt, content (for FTS body =
-    name + description + prompt), spec fields. Sets _asset_ref to a
-    FrontMatterFsRef on the source .md so callers that need the FM API can
-    read/write it.
-    """
+def extract_agent(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     path = ref._path
+    name = path.parent.name
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
-        return []
-    data = parse_agent_markdown(text, name=path.stem)
-    data["type"] = RecordType.AGENT
-    data["status"] = "active"
-    # prompt is stored under 'prompt_text' on the shim subclass; for parser_fn-
-    # built generic Records, we store it under both 'prompt' and 'prompt_text'
-    # so search_content + AGENT-aware callers both see it.
-    prompt = data.pop("prompt", None)
-    if prompt:
-        data["prompt_text"] = prompt
-    # Composite FTS body: name + description + prompt body.
-    parts: list[str] = []
-    if data.get("name"):
-        parts.append(str(data["name"]))
-    desc = data.get("description")
-    if desc:
-        parts.append(str(desc))
-    if prompt:
-        parts.append(prompt)
-    data["content"] = "\n".join(parts) if parts else ""
-    data["body"] = prompt or ""
-
-    rec = FSRecord(**data)
-    from flow_sdk.fs_store.fs_ref import FrontMatterFsRef  # noqa: PLC0415
-    object.__setattr__(rec, "_asset_ref", FrontMatterFsRef(path))
+        text = ""
+    parsed = parse_agent_markdown(text, name)
+    prompt = parsed.pop("system_prompt", "")
+    rec = FSRecord(
+        type=RecordType.AGENT,
+        id=resolved_id,
+        asset_ref=ref,
+        system_prompt=prompt,
+        # mirrored for FTS, like every other prose-bearing asset
+        content=prompt,
+        **parsed,
+    )
     return [rec]
+
+
+def agent_default_body(entity) -> str:
+    """Render frontmatter + system prompt. Called on EVERY save (owns_main_ref)."""
+    from flow_sdk.schema.type_info import render_entity_frontmatter  # noqa: PLC0415
+
+    fm: dict[str, Any] = {"name": getattr(entity, "name", None) or "agent"}
+    for key in AGENT_SPEC_FIELDS:
+        value = getattr(entity, key, None)
+        # `None` means "inherit"; an empty list is a real, different statement,
+        # so only None is dropped.
+        if value is None:
+            continue
+        fm[key] = value
+    body = (getattr(entity, "system_prompt", "") or "").strip()
+    return render_entity_frontmatter(entity, fm) + f"\n\n{body}\n"

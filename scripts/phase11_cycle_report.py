@@ -388,12 +388,53 @@ def preflight(args: argparse.Namespace) -> None:
 
 def validate_runtime(args: argparse.Namespace) -> None:
     _request_bytes(args.app_url)
+    # A backend reset necessarily destroys the process-local verified socket
+    # established by preflight. Re-establish that required runtime dependency
+    # exactly once before reading status; do not poll or widen any wait budget.
+    hub_ws_connect = _connect_and_validate_hub_ws(
+        args.api_url,
+        args.expected_user_id,
+    )
     payload = {
         "status": "ready",
         "bootstrap_type_count": _validate_bootstrap(args.api_url),
-        "cloud": _validate_cloud_status(args.api_url, args.email, args.hub_url),
+        "hub_ws_connect": hub_ws_connect,
+        "cloud": _validate_cloud_status(
+            args.api_url,
+            args.email,
+            args.hub_url,
+            args.expected_user_id,
+        ),
     }
     _atomic_json(Path(args.output), payload)
+
+
+def validate_providers(args: argparse.Namespace) -> None:
+    bootstrap = _response_data(
+        _request_json(f"{_normalize_url(args.api_url)}/api/v1/graph/bootstrap"),
+        "bootstrap",
+    )
+    sandbox_node = bootstrap.get("sandbox_compute_node")
+    docker_nodes = bootstrap.get("docker_compute_nodes")
+    sandbox_ready = bootstrap.get("sandbox_available") is True and isinstance(sandbox_node, dict)
+    docker_ready = (
+        bootstrap.get("docker_available") is True
+        and isinstance(docker_nodes, list)
+        and any(isinstance(node, dict) for node in docker_nodes)
+    )
+    if args.require_sandbox and not sandbox_ready:
+        raise Phase11Error("bootstrap did not expose a live sandbox compute node")
+    if args.require_docker and not docker_ready:
+        raise Phase11Error("bootstrap did not expose a live Docker compute node")
+    _atomic_json(
+        Path(args.output),
+        {
+            "status": "ready",
+            "sandbox_ready": sandbox_ready,
+            "docker_ready": docker_ready,
+            "docker_node_count": len(docker_nodes) if isinstance(docker_nodes, list) else 0,
+        },
+    )
 
 
 def clear_for_file(args: argparse.Namespace) -> None:
@@ -425,10 +466,12 @@ def _manifest_entries(repo: Path, root: Path) -> list[dict[str, str]]:
         relative_root = source.relative_to(root)
         if "_results" in relative_root.parts:
             continue
-        if len(relative_root.parts) < 2:
-            raise Phase11Error(f"scenario has no category directory: {relative_root.as_posix()}")
-        category = relative_root.parts[0]
-        config = root / category / "playwright.config.ts"
+        if len(relative_root.parts) == 1:
+            category = "__root__"
+            config = root / "playwright.config.ts"
+        else:
+            category = relative_root.parts[0]
+            config = root / category / "playwright.config.ts"
         if not config.is_file():
             raise Phase11Error(f"category {category} has .md.ts scenarios but no playwright.config.ts")
         entries.append(
@@ -590,11 +633,12 @@ def _source_matches(repo: Path, expected_file: str, reported: str | None) -> boo
     expected = (repo / expected_file).resolve()
     value = Path(reported)
     # With a category-local Playwright ``testDir``, the JSON reporter emits a
-    # basename (for example ``doc_chat_per_type.md.ts``).  The exit capture is
-    # already bound to the manifest's source+config hashes, so matching that
-    # basename is unambiguous within the required category config.
-    if len(value.parts) == 1:
-        return value.name == expected.name
+    # path relative to that directory: either a basename or a nested suffix
+    # such as ``v0.28_scenarios/LLM_comfigure.md.ts``. The exit capture is
+    # already bound to the manifest's source+config hashes, so a complete
+    # reported suffix is unambiguous within the required category config.
+    if not value.is_absolute() and tuple(expected.parts[-len(value.parts) :]) == value.parts:
+        return True
     candidates = [value.resolve()] if value.is_absolute() else [(repo / value).resolve(), (repo / "ui" / value).resolve()]
     return expected in candidates
 
@@ -918,8 +962,16 @@ def build_parser() -> argparse.ArgumentParser:
     cmd.add_argument("--app-url", required=True)
     cmd.add_argument("--email", required=True)
     cmd.add_argument("--hub-url", required=True)
+    cmd.add_argument("--expected-user-id", required=True)
     cmd.add_argument("--output", required=True)
     cmd.set_defaults(func=validate_runtime)
+
+    cmd = sub.add_parser("providers")
+    cmd.add_argument("--api-url", required=True)
+    cmd.add_argument("--require-sandbox", action="store_true")
+    cmd.add_argument("--require-docker", action="store_true")
+    cmd.add_argument("--output", required=True)
+    cmd.set_defaults(func=validate_providers)
 
     cmd = sub.add_parser("clear")
     cmd.add_argument("--api-url", required=True)

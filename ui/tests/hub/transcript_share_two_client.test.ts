@@ -1,0 +1,313 @@
+/**
+ * Two-instance e2e for the normal staged → review → project-install contract
+ * used by shared Claude transcripts.
+ *
+ * Sender (INST_1) shares a real on-disk claude session into a conversation via
+ * the production send path (`add_message` + `asset_references`, then
+ * `upload_body`). Receiver (INST_2) receives the assignment, downloads the
+ * bundle, and the assertions below pin the explicit project-install contract.
+ *
+ * Requires the local hub (8093) + two instances launched via instance_ctl and
+ * named through SHARE_INST_1/SHARE_INST_2 (+ ALICE/BOB creds). Skips otherwise.
+ */
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import type { IWorkerSession } from '@sdk';
+import { buildDockPointer } from '@src/components/conversation/EntityChip';
+import { hubAvailable } from './_hub';
+import { pollUntil } from './_matrix';
+import { testEntityName, trackForCleanup } from '../_cleanup';
+import {
+  HUB_INST_1 as INST_1,
+  HUB_INST_2 as INST_2,
+  getInstance,
+  instanceAvailable,
+  postApi,
+  queryMessageAttachments,
+  syncAssignedConversation,
+  type ResolvedInstance,
+} from './_instances';
+
+let skipReason: string | null = null;
+let snd: ResolvedInstance;
+let rcv: ResolvedInstance;
+const receiverProjects: Array<{ id: string; dir: string }> = [];
+const receiverSessionIds = new Set<string>();
+const senderSessions: Array<{ id: string; dir: string }> = [];
+
+beforeAll(async () => {
+  const hub = await hubAvailable();
+  if (!hub.ok) {
+    skipReason = hub.reason ?? 'hub unreachable';
+    return;
+  }
+  if (!instanceAvailable(INST_1) || !instanceAvailable(INST_2)) {
+    skipReason = `launch ${INST_1} + ${INST_2} via scripts/instance_ctl.sh`;
+    return;
+  }
+  snd = await getInstance(INST_1);
+  rcv = await getInstance(INST_2);
+}, 30_000);
+
+beforeEach((context: any) => {
+  if (skipReason) context.skip();
+});
+
+afterAll(async () => {
+  for (const source of senderSessions) {
+    rmSync(source.dir, { recursive: true, force: true });
+  }
+  if (snd) {
+    for (const source of senderSessions) {
+      await purgeSession(snd, source.id);
+    }
+  }
+  if (rcv) {
+    for (const id of receiverSessionIds) {
+      await purgeSession(rcv, id);
+    }
+    for (const project of receiverProjects) {
+      await fetch(`${rcv.apiUrl}/api/v1/graph/project/${project.id}`, { method: 'DELETE' }).catch(() => null);
+    }
+  }
+  for (const project of receiverProjects) {
+    rmSync(project.dir, { recursive: true, force: true });
+  }
+});
+
+async function purgeSession(inst: ResolvedInstance, id: string): Promise<void> {
+  const fsRecordUrl =
+    `${inst.apiUrl}/api/v1/graph/${inst.sdk.ComputeNode.type}/` +
+    `@local/fs-records/claude_session/${id}`;
+  const purged = await fetch(fsRecordUrl, { method: 'DELETE' }).catch(() => null);
+  if (!purged?.ok) {
+    await fetch(`${inst.apiUrl}/api/v1/graph/claude_session/${id}`, { method: 'DELETE' }).catch(() => null);
+  }
+}
+
+/** Sender-only transcript fixture. A fresh SDK-minted UUID means the receiver
+ * cannot recover the same id from the two instances' shared host CLI store. */
+async function createSenderSession(kind: string): Promise<string> {
+  const session = new snd.sdk.ClaudeSession({ name: testEntityName(kind) });
+  const sourceDir = mkdtempSync(path.join(tmpdir(), 'flowpad-e2e-transcript-source-'));
+  const sourcePath = path.join(sourceDir, `${session.id}.jsonl`);
+  const timestamp = new Date().toISOString();
+  const entries = [
+    {
+      type: 'user',
+      uuid: session.id,
+      timestamp,
+      sessionId: session.id,
+      cwd: sourceDir,
+      message: { role: 'user', content: 'shared transcript fixture' },
+    },
+    {
+      type: 'assistant',
+      uuid: session.id,
+      timestamp,
+      sessionId: session.id,
+      cwd: sourceDir,
+      message: { role: 'assistant', content: [{ type: 'text', text: 'fixture response' }] },
+    },
+  ];
+  writeFileSync(sourcePath, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`, 'utf8');
+  session.asset_ref = sourcePath;
+  session.cwd = sourceDir;
+  await session.save();
+  senderSessions.push({ id: session.id, dir: sourceDir });
+  receiverSessionIds.add(session.id);
+  return session.id;
+}
+
+async function createReceiverProject(kind: string): Promise<{ id: string; dir: string }> {
+  const projectDir = realpathSync
+    .native(mkdtempSync(path.join(tmpdir(), 'flowpad-e2e-transcript-project-')))
+    .replace(/\\/g, '/');
+  const project = new rcv.sdk.Project({
+    name: testEntityName(kind),
+    fs_storage_mount_path: projectDir,
+  } as any);
+  await project.save();
+  const tracked = { id: project.id, dir: projectDir };
+  receiverProjects.push(tracked);
+  return tracked;
+}
+
+async function receiverSession(id: string): Promise<IWorkerSession | null> {
+  const response = await fetch(`${rcv.apiUrl}/api/v1/graph/claude_session/${id}`);
+  const body = await response.json().catch(() => null);
+  return response.ok && body?.status === 'SUCCESS' ? body.data : null;
+}
+
+describe('transcript share — staged project-install pipeline across two instances', () => {
+  it('receiver stages, reviews, and installs the claude_session into a project', async () => {
+    const sessionId = await createSenderSession('transcript-source');
+
+    // ── Sender: share a conversation carrying the transcript ref. ──
+    const conv = trackForCleanup(new snd.sdk.Conversation({ title: testEntityName('transcript-conv') }));
+    await conv.save();
+    await conv.share([rcv.email]);
+    expect(conv.remote).toBe(true);
+
+    const fmId = (
+      await postApi(snd.apiUrl, `/graph/conversation/${conv.id}/add_message`, {
+        message: 'a transcript for you',
+        asset_references: [`claude_session-${sessionId}`],
+      })
+    ).data.flow_message_id as string;
+    const upload = await postApi(snd.apiUrl, `/graph/flow_message/${fmId}/upload_body`, {});
+    expect(upload.data?.body_status).toBe('ready');
+
+    // ── Receiver: sync assignment, wait for READY, download the bundle. ──
+    await syncAssignedConversation(rcv, conv.id);
+    const receivedFm = await pollUntil(
+      async () => {
+        const fm = (await rcv.sdk.FlowMessage.getById(fmId).catch(() => null)) as any;
+        return fm && fm.body_status === 'ready' ? fm : null;
+      },
+      20_000,
+      'shared message READY on receiver',
+    );
+    await postApi(rcv.apiUrl, `/graph/flow_message/${receivedFm.id}/download_body`, {});
+
+    // Download only stages the attachment. Claude sessions have no
+    // receive_policy='auto', so the review gate must choose a project before
+    // the entity is materialized.
+    const ma = await pollUntil(
+      async () => {
+        const rows = await queryMessageAttachments(rcv, fmId);
+        return rows.find((r) => r.asset_type === 'claude_session' && r.asset_id === sessionId) ?? null;
+      },
+      10_000,
+      'staged MessageAttachment on receiver',
+    );
+    expect(ma.scope || null).toBeNull();
+    expect(ma.project_id || null).toBeNull();
+    expect(ma.installed_at || null).toBeNull();
+    expect(await receiverSession(sessionId)).toBeNull();
+
+    const project = await createReceiverProject('transcript-project');
+
+    const install = await postApi(rcv.apiUrl, `/graph/message_attachment/${ma.id}/install`, {
+      scope: 'project',
+      project_id: project.id,
+    });
+    expect(install.status).toBe('SUCCESS');
+
+    const sess = await pollUntil(
+      () => receiverSession(sessionId),
+      10_000,
+      'claude_session row on receiver after explicit install',
+    );
+    const installedMa = await pollUntil(
+      async () => {
+        const rows = await queryMessageAttachments(rcv, fmId);
+        const row = rows.find((r) => r.id === ma.id);
+        return row?.scope === 'project' ? row : null;
+      },
+      10_000,
+      'installed MessageAttachment on receiver',
+    );
+
+    expect(installedMa.project_id).toBe(project.id);
+    expect(installedMa.installed_at).toBeTruthy();
+    expect(sess.received).toBe(true);
+    expect(sess.remote).toBe(false);
+    expect(sess.project_id).toBe(project.id);
+    const mainSubdir = rcv.sdk.dataManager.getTypeInfo('claude_session')?.main_subdir;
+    if (!mainSubdir) throw new Error('claude_session TypeInfo must declare a placement subdirectory');
+    const installedPath = path.posix.join(project.dir, mainSubdir, `${sessionId}.jsonl`);
+    expect(sess.asset_ref).toBe(installedPath);
+    expect(existsSync(installedPath)).toBe(true);
+  });
+
+  it('the receiver opens the transcript by ITS OWN file, never by session id', async () => {
+    // The cross-machine failure, end to end. A received transcript is the one
+    // asset type addressed by LOCATION rather than TypeId — it has no
+    // `EDITOR_TYPES` entry and opens through the lens, which takes a worker plus
+    // a file. Address it by session id instead and the receiver runs
+    // `resolve_session_jsonl`, which searches only ITS OWN CLI dir, so a session
+    // it never ran yields:
+    //
+    //     NOT_FOUND: No claude transcript JSONL found for session_id=<id>
+    //
+    // On one machine that failure hides: both instances share ~/.claude/, so an
+    // id lookup finds the SENDER's copy and everything looks fine. This asserts
+    // the receiver addresses the copy IT installed, which is what makes the open
+    // survive a second machine or a container.
+    const sessionId = await createSenderSession('transcript-open-source');
+
+    const conv = trackForCleanup(new snd.sdk.Conversation({ title: testEntityName('transcript-open-conv') }));
+    await conv.save();
+    await conv.share([rcv.email]);
+
+    const fmId = (
+      await postApi(snd.apiUrl, `/graph/conversation/${conv.id}/add_message`, {
+        message: 'open this transcript',
+        asset_references: [`claude_session-${sessionId}`],
+      })
+    ).data.flow_message_id as string;
+    await postApi(snd.apiUrl, `/graph/flow_message/${fmId}/upload_body`, {});
+
+    await syncAssignedConversation(rcv, conv.id);
+    const receivedFm = await pollUntil(
+      async () => {
+        const fm = (await rcv.sdk.FlowMessage.getById(fmId).catch(() => null)) as any;
+        return fm && fm.body_status === 'ready' ? fm : null;
+      },
+      20_000,
+      'shared message READY on receiver',
+    );
+    await postApi(rcv.apiUrl, `/graph/flow_message/${receivedFm.id}/download_body`, {});
+
+    // Install explicitly — `claude_session` declares no `receive_policy`, so a
+    // transcript stages and waits for the review → install gate like any other
+    // attachment. This is the click under test: the copy it makes is the file
+    // the receiver must then open.
+    const staged = await pollUntil(
+      async () => {
+        const rows = await queryMessageAttachments(rcv, fmId);
+        return rows.find((r) => r.asset_type === 'claude_session' && r.asset_id === sessionId) ?? null;
+      },
+      15_000,
+      'staged MessageAttachment on receiver',
+    );
+    const project = await createReceiverProject('transcript-open-project');
+    if (!staged.scope) {
+      await postApi(rcv.apiUrl, `/graph/message_attachment/${staged.id}/install`, {
+        scope: 'project',
+        project_id: project.id,
+      });
+    }
+
+    const sess = (await pollUntil(
+      async () =>
+        (await rcv.sdk.dataManager
+          .getByTypeId(new rcv.sdk.TypeId('claude_session', sessionId))
+          .catch(() => null)) as any,
+      15_000,
+      'claude_session row on receiver',
+    )) as { id: string; asset_ref?: string | null; received?: boolean; type: string };
+
+    // The installed copy exists and is addressed — this is what the install-
+    // location indexer produces. Without it there is no path at all and the open
+    // has nothing but the id to fall back to.
+    expect(sess.asset_ref, 'installed transcript must carry the path it landed at').toBeTruthy();
+    expect(sess.asset_ref!.endsWith(`${sessionId}.jsonl`)).toBe(true);
+
+    // The pointer the UI actually builds. `null` would mean the chip correctly
+    // refused to guess; a non-null pointer must address the FILE.
+    const pointer = buildDockPointer(sess, undefined);
+    expect(pointer, 'a resolved transcript must produce a pointer').not.toBeNull();
+    const url = pointer!.toString();
+    expect(url).toContain(encodeURIComponent(sess.asset_ref!));
+
+    // The regression this pins: the id form is `…/transcript/<sessionId>` with
+    // nothing else in the segment. Asserting on the whole segment rather than
+    // "does not contain the id" on purpose — the filename IS `<id>.jsonl`, so a
+    // correct path-form URL contains the id too.
+    expect(url.endsWith(`/transcript/${sessionId}`)).toBe(false);
+  });
+});

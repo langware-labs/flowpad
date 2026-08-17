@@ -18,13 +18,18 @@ rewrite semantics:
 
 from __future__ import annotations
 
+import asyncio
 import os
-import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from flow_sdk.app.actions.flow_message_action import _fetch_conversation_messages
+from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.app.actions.flow_message_action import (
+    _conv_fetch_inflight,
+    _drain_conversation_message_fetches,
+    _fetch_conversation_messages,
+)
 from flow_sdk.builtin.conversation import _PROJECTION_SENTINEL
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.fs_store.operations.conversation import default_jsonl_path
@@ -92,6 +97,46 @@ async def _run(conv_id: str, hub_children, fm_by_id: dict[str, FlowMessage | Exc
     return project_mock
 
 
+@pytest.mark.asyncio
+async def test_overlapping_drains_claim_each_conversation_once():
+    """StrictMode can dispatch two list reconciles in the same event-loop
+    turn. The detached drains must atomically claim an id before their first
+    await; checking ``Lock.locked()`` before the semaphore let both copies
+    queue and fetch the same conversation serially."""
+    conv_id = "aaaa0010-1111-4111-8111-000000000010"
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+
+    async def fake_fetch(_conv_id, _someone_typeid):
+        nonlocal calls
+        calls += 1
+        started.set()
+        await release.wait()
+
+    _conv_fetch_inflight.clear()
+    with patch(
+        "flow_sdk.app.actions.flow_message_action._fetch_conversation_messages",
+        new=fake_fetch,
+    ):
+        first = asyncio.create_task(
+            _drain_conversation_message_fetches([conv_id], "user-x"),
+        )
+        await started.wait()
+        second = asyncio.create_task(
+            _drain_conversation_message_fetches([conv_id], "user-x"),
+        )
+        try:
+            # The overlapping drain observes the existing atomic claim and
+            # finishes without entering fake_fetch.
+            await second
+            assert calls == 1
+        finally:
+            release.set()
+            await asyncio.gather(first, second)
+            _conv_fetch_inflight.clear()
+
+
 @pytest.fixture(autouse=True)
 def _records_root(monkeypatch, tmp_path):
     monkeypatch.setattr(
@@ -136,6 +181,51 @@ async def test_in_sync_reconcile_leaves_jsonl_untouched():
 
     assert path.stat().st_mtime_ns == before  # file not rewritten
     assert _pointer_ids(conv) == ids  # and still holds the same set
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_ready_body_reconciles_even_when_metadata_is_current():
+    """Hub READY is pull-correctness work even with equal metadata clocks.
+
+    A receiver that missed the best-effort READY bridge frame can have the
+    exact current header at UPLOADING. Exact conversation sync must still route
+    that row through body recovery instead of letting the LWW skip hide it.
+    """
+    conv = "aaaa0011-1111-4111-8111-000000000011"
+    fm_id = "bbbb0011-1111-4111-8111-000000000011"
+    _write_jsonl(conv, [fm_id])
+    local = _fm(
+        fm_id,
+        updated_date=_TS,
+        body_status="uploading",
+        attachment_filename="body.flowmsg",
+    )
+    hub_child = {
+        **_hub_child(fm_id),
+        "body_status": "ready",
+        "attachment_filename": "body.flowmsg",
+    }
+    process = AsyncMock(return_value=fm_id)
+
+    with (
+        patch(
+            "flow_sdk.app.actions.flow_message_action.hub_get",
+            new=AsyncMock(return_value=[hub_child]),
+        ),
+        patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=local)),
+        patch(
+            "flow_sdk.app.actions.flow_message_action._process_single_hub_message",
+            new=process,
+        ),
+        patch(
+            "flow_sdk.app.actions.flow_message_action.project_pointers_to_entity",
+            new=AsyncMock(return_value=None),
+        ),
+    ):
+        await _fetch_conversation_messages(conv, someone_typeid="user-x")
+
+    process.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -256,16 +346,27 @@ async def test_hub_unavailable_leaves_local_state_untouched():
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_should_fetch_rule():
-    """The dispatch gate: updated_date LWW OR bidirectional count mismatch;
-    hub count None ⇒ date-only (old-hub compatible)."""
+    """The dispatch gate: hub-clock watermark OR bidirectional count mismatch;
+    hub count None ⇒ watermark-only (old-hub compatible).
+
+    The watermark is ``hub_updated_date`` (the hub revision we last reconciled),
+    NOT the local ``updated_date``. The two are different quantities: local
+    recency is rewritten from the messages' clocks and therefore sits
+    permanently behind the hub's parent stamp, so gating on it never converged
+    and re-dispatched a full hub fan-out on every call forever."""
     from flow_sdk.app.actions.flow_message_action import _should_fetch_messages
     from flow_sdk.builtin.conversation import Conversation
 
     ts = "2026-06-01T10:00:00+00:00"
     later = "2026-06-01T11:00:00+00:00"
+    # Local recency always trails the hub parent stamp — the real steady state,
+    # baked into the fixture so a gate that reads updated_date can't pass.
+    local_recency = "2026-06-01T09:59:59+00:00"
 
-    def conv(count: int) -> Conversation:
-        c = Conversation.model_validate({"id": str(uuid.uuid4()), "updated_date": ts})
+    def conv(count: int, *, watermark: str | None = ts) -> Conversation:
+        c = Conversation.model_validate(
+            {"id": mint_uuid(), "updated_date": local_recency, "hub_updated_date": watermark}
+        )
         c._set_projection("message_count", count, _PROJECTION_SENTINEL)
         if count:
             c._set_projection(
@@ -277,10 +378,14 @@ def test_should_fetch_rule():
 
     # No local row → fetch.
     assert _should_fetch_messages(None, {"updated_date": ts, "message_count": 1})
-    # Hub newer → fetch, regardless of count.
+    # Hub moved past our watermark → fetch, regardless of count.
     assert _should_fetch_messages(conv(3), {"updated_date": later, "message_count": 3})
-    # Equal date, equal count → in sync, no fetch.
+    # Watermark matches, equal count → in sync, no fetch. THE CONVERGENCE CASE:
+    # local updated_date (09:59:59) is behind the hub's (10:00:00) and always
+    # will be — that must not, on its own, mean "fetch".
     assert not _should_fetch_messages(conv(3), {"updated_date": ts, "message_count": 3})
+    # Never reconciled (pre-field row) → fetch once, then the watermark lands.
+    assert _should_fetch_messages(conv(3, watermark=None), {"updated_date": ts, "message_count": 3})
     # THE INCIDENT SHAPE: equal date, bare local (0) vs hub N → fetch.
     assert _should_fetch_messages(conv(0), {"updated_date": ts, "message_count": 3})
     # Reverse drift: local has a stale extra after a missed delete → fetch.

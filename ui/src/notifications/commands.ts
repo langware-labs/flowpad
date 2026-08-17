@@ -1,8 +1,6 @@
-import { toast as sonnerToast } from 'sonner';
-import { oauthService, OAUTH_PROVIDERS, copyToClipboard, AgenticProcess } from '@sdk';
+import { t } from '@lingui/core/macro';
+import { oauthService, OAUTH_PROVIDERS, copyToClipboard, AgenticProcess, snifferManager, tabManager } from '@sdk';
 import { gitResolvePrompt } from '@src/components/status-bar/gitResolvePrompt';
-import { closeTerminalTab } from '@src/tabs/useTabs';
-import { useBadgeStore } from './store';
 import { notify } from './notify';
 import type { NotificationAction } from './types';
 
@@ -52,7 +50,7 @@ registerCommand('cloud.signin', () => {
 });
 
 registerCommand('terminal.terminate', (args) => {
-  if (args.typeId) void closeTerminalTab(String(args.typeId));
+  if (args.typeId) void tabManager.closeTarget(String(args.typeId));
 });
 
 // `Resolve` on a failed-push toast: launch an agentic process in the current
@@ -61,13 +59,31 @@ registerCommand('terminal.terminate', (args) => {
 registerCommand('git.resolve-conflict', (args) => {
   const branch = String(args.branch ?? '');
   void AgenticProcess.openTab('claude_code', gitResolvePrompt(branch)).catch((e: unknown) => {
-    notify.error({ title: 'Could not start resolver', message: String(e) });
+    notify.error({ title: t`Could not start resolver`, message: String(e) });
   });
 });
 
+// `Disable` on the startup "hook sniffer is on" toast: clear the harness hooks
+// (whichever instance installed them) and record the opt-out so a boot doesn't
+// silently put them back.
+registerCommand('sniffer.disable', (_args, ctx) => {
+  void snifferManager
+    .disable()
+    .then(() => {
+      notify.dismiss(ctx.id);
+      notify.success({
+        title: t`Hook sniffer disabled`,
+        message: t`Claude Code hooks were removed from your settings.`,
+      });
+    })
+    .catch((e: unknown) => {
+      notify.error({ title: t`Could not disable the sniffer`, message: String(e) });
+    });
+});
+
 registerCommand('notification.dismiss', (_args, ctx) => {
-  sonnerToast.dismiss(ctx.id);
-  useBadgeStore.getState().remove(ctx.id);
+  // One dismiss path for all three surfaces — toast, sidebar badge, alert log.
+  notify.dismiss(ctx.id);
 });
 
 // `Detail` on a cloud-error toast. Surfaces the raw transport detail the
@@ -85,7 +101,7 @@ registerCommand('debug.logHubError', (args) => {
 
   notify.info({
     id: 'cloud-error-detail',
-    title: 'Cloud error detail (copied to clipboard)',
+    title: t`Cloud error detail (copied to clipboard)`,
     message: detail || 'No additional detail was provided.',
     durationMs: 15000,
   });

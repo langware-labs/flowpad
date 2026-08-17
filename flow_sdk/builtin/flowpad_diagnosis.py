@@ -7,6 +7,7 @@ surfaced in the account-settings "System Diagnoses" table. The FS↔disk metadat
 schema lives in ``flow_sdk/schema/type_info/flowpad_diagnosis_type_info.py``
 (``FlowpadDiagnosisMetadata``); this class is its DB/API entity counterpart.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -26,9 +27,7 @@ class FlowpadDiagnosis(Entity):
     )
     rca: Optional[str] = APIField(None, description="Root cause found after debugging.")
     fix: Optional[str] = APIField(None, description="What was done to resolve it.")
-    summary: Optional[str] = APIField(
-        None, description="One-paragraph plain-language summary of the diagnosis."
-    )
+    summary: Optional[str] = APIField(None, description="One-paragraph plain-language summary of the diagnosis.")
     user_report: Optional[str] = APIField(
         None,
         description=(
@@ -36,6 +35,34 @@ class FlowpadDiagnosis(Entity):
             "the diagnosis (empty for a full sweep). Distinct from ``symptoms``, "
             "which is what the agent observed — this is the raw text the user wrote."
         ),
+    )
+    reported_by: Optional[str] = APIField(
+        None,
+        description=(
+            "Who hit the issue — ``Name <email>`` as resolved on the machine that "
+            "recorded the diagnosis. Captured at record time (not at read time) so "
+            "it stays the reporter's identity after the diagnosis is forwarded to a "
+            "helper on another machine."
+        ),
+    )
+    occurred_at: Optional[str] = APIField(
+        None,
+        description=(
+            "ISO timestamp of when the diagnosis was recorded, on the reporting "
+            "machine. Distinct from the storage-level ``created_date``, which the "
+            "receiver re-stamps at install time — this one travels verbatim."
+        ),
+    )
+    os: Optional[str] = APIField(
+        None,
+        description=(
+            "``platform.platform()`` of the machine the issue happened on, captured "
+            "at record time — a receiver's own OS says nothing about the issue."
+        ),
+    )
+    app_version: Optional[str] = APIField(
+        None,
+        description="Flowpad version running on the machine the issue happened on.",
     )
     origin_project_id: Optional[str] = APIField(
         None,

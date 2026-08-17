@@ -50,7 +50,7 @@ def _resolve_local_path(fm_id: str, vfs_subpath: str) -> Optional[str]:
 def _context_entity_lines(typeids) -> list[str]:
     """`- <Type>: <type>/<id>, read: <record-folder>` lines for shared context —
     Python port of ``buildContextEntityLines``."""
-    from flow_sdk.fs_store.record_paths import get_default_records_root, record_stem
+    from flow_sdk.fs_store.record_paths import get_default_records_root
     root = get_default_records_root()
     out: list[str] = []
     for tid in typeids or []:
@@ -58,7 +58,7 @@ def _context_entity_lines(typeids) -> list[str]:
         if not t or not i or t == "flow_message":
             continue
         label = t[:1].upper() + t[1:].replace("_", " ")
-        out.append(f"- {label}: {t}/{i}, read: {root}/{t}/{record_stem(t, i)}")
+        out.append(f"- {label}: {t}/{i}, read: {root}/{t}/{i}")
     return out
 
 
@@ -188,6 +188,32 @@ _SESSION_EVENT_TEXTS = {
 }
 
 
+def _session_context_block(conversation_id: str, session_id: str) -> str:
+    """Per-turn preamble telling the worker WHERE it runs and HOW to send
+    files back to the requester.
+
+    The delivery machinery (``flow conversation attach`` → add_message →
+    FILE attachment → body bundle → hub → receiver's staged file chips) is
+    fully wired; the one thing the worker lacks is its own coordinates —
+    ``build_merged_prompt`` never includes the conversation/session ids, so
+    without this block a "bring me file.ext" request has no way to comply.
+    ``--session`` groups the message into the live-session exchange and makes
+    the receiver eager-pull the bundle (files clickable on arrival)."""
+    return (
+        "\n\n---\n"
+        f"Live-session context: you are answering inside live session {session_id} "
+        f"of conversation {conversation_id}, running on the host's machine.\n"
+        "If the request asks you to send back / bring / attach files (logs, "
+        "reports, any artifact), return each one with:\n"
+        f"  flow conversation attach {conversation_id} <absolute-file-path> "
+        f"\"<one-line note>\" --session {session_id}\n"
+        "Run it once per file, then summarize in your reply what you attached. "
+        "Only attach files the request asks for; zip or trim very large files "
+        "first (uploads are capped at 100MB). If no files were requested, do "
+        "not attach anything."
+    )
+
+
 async def emit_session_event(
     session: "RemoteWorkerSession", event: str, someone_typeid: str,
     *, text: Optional[str] = None,
@@ -202,6 +228,7 @@ async def emit_session_event(
     survives the hub's unknown-field drop). No-op when the session has no
     bound conversation yet (guest DRAFT)."""
     import json as _json  # noqa: PLC0415
+
     from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import (  # noqa: PLC0415
         LIVE_SESSION_EVENT_MARKER_KEY,
@@ -274,7 +301,7 @@ async def redrive_session_prompts(session: "RemoteWorkerSession") -> None:
         )
 
 
-# ── RemoteWorkerSession binding + PromptResult emission ─────────────────────
+# ── RemoteWorkerSession binding + PromptCompletion emission ─────────────────────
 
 def _first_prompt_id(fm: "FlowMessage") -> Optional[str]:
     """Id of the first entity-backed (``prompt-<id>``) prompt attachment, if any.
@@ -403,17 +430,17 @@ async def _reuse_or_create_room(
         return None
 
 
-async def _emit_prompt_result(
+async def _emit_prompt_completion(
     reply: str, *, prompt_id: Optional[str], session_id: str, host_process_id: str,
     source_session_id: Optional[str],
 ) -> dict:
-    """Mint a PromptResult entity for this turn and return the TYPE_ID attachment
-    dict (``prompt_result-<id>`` + inline ``result_preview``) to ride the reply."""
+    """Mint a PromptCompletion entity for this turn and return the TYPE_ID attachment
+    dict (``prompt_completion-<id>`` + inline ``result_preview``) to ride the reply."""
     from flow_sdk.builtin.flow_message import AttachmentType
-    from flow_sdk.builtin.prompt_result import PromptResult
+    from flow_sdk.builtin.prompt_completion import PromptCompletion
     from flow_sdk.schema.types import EntityType
 
-    pr = PromptResult(
+    pr = PromptCompletion(
         prompt_id=prompt_id,
         remote_worker_session_id=session_id,
         text=reply,
@@ -424,7 +451,7 @@ async def _emit_prompt_result(
     await pr.save()
     return {
         "attachment_type": AttachmentType.TYPE_ID.value,
-        "data": str(TypeId(type=EntityType.PROMPT_RESULT.value, id=pr.id)),
+        "data": str(TypeId(type=EntityType.PROMPT_COMPLETION.value, id=pr.id)),
         "prompt_preview": reply,
     }
 
@@ -465,17 +492,20 @@ async def _capture_assistant_reply(ap: "AgenticProcess") -> str:
 
     ``stream_transcript`` replays the whole JSONL from the top, and a resumed
     Claude session re-emits every prior turn — so a fixed line offset can't
-    isolate the new turn (it leaks every earlier reply). Instead we drop the
-    collected text every time a genuine user prompt appears, so only the
-    assistant text following the LAST user prompt (this turn's reply) survives.
+    isolate the new turn. We drop the collected text every time a genuine user
+    prompt appears, so only the assistant text following the LAST user prompt
+    (this turn's reply) survives. ``stream_transcript`` itself is resume-aware
+    (it won't end on the prior turn's terminal marker while this turn's worker
+    is live), so by the time it returns the transcript holds THIS turn and the
+    turn-slicing yields the correct reply — no baseline bookkeeping needed.
 
     Claude can also write an assistant message more than once (streaming +
     finalized snapshot share ``message.id``); we key on the id with last-write-
     wins so a repeated snapshot can't duplicate the text within a turn.
     """
-    from collections import OrderedDict
-
-    turn: "OrderedDict[str, str]" = OrderedDict()
+    # dict preserves insertion order (py3.7+); last-write-wins keying dedups a
+    # repeated streaming/finalized snapshot that shares message.id.
+    turn: "dict[str, str]" = {}
     noid = 0
     async for entry in ap.stream_transcript():
         msg = entry.get("message") if isinstance(entry, dict) else None
@@ -662,6 +692,14 @@ async def execute_prompt_from_message(
             except Exception as e:  # noqa: BLE001
                 logger.warning("[execute_prompt] approved event emit failed: %s", e)
 
+        # Live-session file-return contract: appended AFTER build_merged_prompt
+        # (the merged prompt is the user's request; this is runtime context) and
+        # after the session bind so rws.id is the adopted, shared identity.
+        prompt_text += _session_context_block(conversation.id, rws.id)
+
+        # stream_transcript is resume-aware (waits out the live turn worker), so
+        # the capture yields THIS turn's reply even on a resumed multi-turn
+        # session — no pre-prompt snapshot needed here.
         await ap.prompt(prompt_text)
         reply = await _capture_assistant_reply(ap)
 
@@ -671,14 +709,14 @@ async def execute_prompt_from_message(
         if not reply:
             return ApiSuccessResponse(data={"executed": True, "reply": None, "process_id": ap.id, "session_id": rws.id, "collaboration_room_id": (room.id if room else None)})
 
-        # The reply carries a structured PromptResult attachment (text + preview,
+        # The reply carries a structured PromptCompletion attachment (text + preview,
         # extensible to produced files/assets) — the turn-grained result the
         # RemoteWorkerSession viewer reconstructs. The wrapped-quote text stays as
-        # the human-readable body. A prompt_result attachment never re-triggers a
+        # the human-readable body. A prompt_completion attachment never re-triggers a
         # run (the inbound gate matches only `prompt-<id>`), so no Claude↔Claude loop.
         from flow_sdk.app.actions.flow_message_action import _wrap_as_claude_quote
         from flow_sdk.app.actions.notification_action import handle_add_message
-        result_att = await _emit_prompt_result(
+        result_att = await _emit_prompt_completion(
             reply,
             prompt_id=_first_prompt_id(fm),
             session_id=rws.id,
@@ -768,11 +806,11 @@ async def process_inbound_message(fm_id: str, conversation_id: str) -> None:
     granted ``execute_prompt`` to, auto-run it (and auto-send the reply when
     ``auto_reply`` is also granted). Failure-isolated — logs and dies."""
     try:
+        from flow_sdk.app.actions.notification_action import _is_prompt_attachment
         from flow_sdk.builtin.contact_permission import ContactPermission, PermissionAction
         from flow_sdk.builtin.conversation import Conversation
         from flow_sdk.builtin.flow_message import FlowMessage
         from flow_sdk.builtin.user import User
-        from flow_sdk.app.actions.notification_action import _is_prompt_attachment
 
         fm = await FlowMessage.get_one({"id": fm_id})
         if not fm or fm.is_draft:
@@ -838,7 +876,7 @@ async def process_inbound_message(fm_id: str, conversation_id: str) -> None:
 
         # Resolve the contact identity for the permission lookup.
         contact_email = None
-        for p in (conv.participants or []):
+        for p in (conv.members or []):
             if p.get("user_id") == fm.sender_id:
                 contact_email = p.get("email")
                 break

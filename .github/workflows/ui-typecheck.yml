@@ -1,0 +1,57 @@
+name: UI Type Check
+
+# Type-checks the frontend on every PR that touches ui/**.
+#
+# Why this exists: nothing else in CI type-checks the frontend. `vite build`
+# and vitest both transform TS with esbuild, which STRIPS types without
+# checking them, so scope/type errors (e.g. a component using the Lingui `t`
+# macro with no `useLingui()` binding -> runtime "t is not defined") sail
+# through every other gate and only crash at runtime.
+#
+# This job used to run a bare `tsc --noEmit`, which checked NOTHING: the root
+# ui/tsconfig.json is a solution-style config ("files": [] + "references"), and
+# without --build tsc ignores project references and compiles the empty file
+# list. It exited 0 in ~0.1s and reported success on every PR from the day it
+# was added, including #296 which shipped the exact crash it was written for.
+#
+# The blocking gate is now `type-check:names`, which runs tsc against the REAL
+# project config (tsconfig.app.json) and fails on TS2304/TS2552 — a name that
+# cannot be resolved is a ReferenceError at runtime, always. The full check
+# (`npm run type-check`) is reported non-blocking because that config still has
+# ~1.7k pre-existing errors; it is the burn-down target, not yet a gate.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'ui/**'
+
+concurrency:
+  group: ui-typecheck-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  type-check:
+    name: ui type-check (undefined names)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: No undefined names in shipping code (blocking)
+        run: npm run type-check:names
+
+      - name: Full type-check debt (informational)
+        if: always()
+        run: npm run type-check || true

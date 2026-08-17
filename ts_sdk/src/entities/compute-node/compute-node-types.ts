@@ -9,7 +9,25 @@
 export enum ComputeProviderType {
   LOCAL_MACHINE = 'local_machine',
   E2B = 'e2b',
+  GCP_VM = 'gcp_vm',
 }
+
+/**
+ * The providers that can host a cloud SANDBOX — a box a person opens and works
+ * in. Every other provider (today only the local machine) can hold compute
+ * nodes, but never one of these.
+ *
+ * An allow-list rather than `!== LOCAL_MACHINE`, because the provider is read
+ * tolerantly off the wire and may be absent or unrecognized; "not local" would
+ * answer YES to those, and a node with no provider at all would classify as a
+ * sandbox. Adding a provider means adding it here — one edit, and both the
+ * read side (`ComputeNode.isSandbox`) and the write side (the sandbox hook's
+ * default) follow.
+ */
+export const SANDBOX_PROVIDERS: ReadonlySet<string> = new Set<string>([
+  ComputeProviderType.E2B,
+  ComputeProviderType.GCP_VM,
+]);
 
 /**
  * Runtime types for compute environments.
@@ -52,4 +70,42 @@ export interface RuntimeEnvironment {
   description?: string;
   os_type?: OSType;
   os_version?: string;
+}
+
+/**
+ * What a node's backing machine is doing — the answer to `ops/status`.
+ *
+ * Normalized SERVER-side (`NodeStatus` in the hub) rather than being whatever
+ * dict the provider happened to return. Before that, this type was by
+ * construction one provider's field set unioned with another's: the hub's own
+ * docstring said "and for E2B also started_at/end_at/cpu_count/memory_mb", and
+ * the browser consumed it untyped.
+ *
+ * The optional fields are optional because a provider that cannot answer
+ * cheaply must be allowed to say nothing — `undefined` means unknown, never zero.
+ */
+export interface NodeStatus {
+  status: ExecutionEnvironmentStatus;
+  /** Start of the CURRENT run. Resets on resume. */
+  started_at?: string | null;
+  /** When the machine auto-pauses or expires. */
+  end_at?: string | null;
+  cpu_count?: number;
+  memory_mb?: number;
+}
+
+/**
+ * The answer to `ops/workspace-ready`: the app inside the box is up, and who it
+ * is signed in as.
+ *
+ * `login_detail` is read back FROM the box, not the identity the hub asked for —
+ * the two used to be the same value, which is how a box signed in as the wrong
+ * person went unnoticed.
+ */
+export interface WorkspaceReady {
+  healthy: boolean;
+  started_fallback?: boolean;
+  port?: number;
+  logged_in: boolean;
+  login_detail: string;
 }

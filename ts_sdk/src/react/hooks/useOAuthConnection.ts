@@ -8,16 +8,20 @@ import {
   dataContext,
   dataManager,
   oauthService,
+  type EntityEnvVars,
   type EnvVarStatus,
   type OAuthDetachResult,
+  type OAuthFlowCompletePayload,
   type OAuthProvider,
+  type OAuthTestResult,
 } from '@sdk';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useEntityEnv } from './useEntityEnv';
+import { iconAssetUrl, isIconPath } from '../../utils/icon-asset';
+import { entityEnvQueryKey, entityEnvQueryKeyRoot, useEntityEnv } from './useEntityEnv';
 
 interface UseOAuthConnectionOptions {
-  currentProject?: TypeId;
+  projectTypeId?: TypeId;
   onConnectionConnect?: (connectionId: string) => void; // For backward compatibility
   onConnectionDisconnect?: (connectionId: string, detachResult?: OAuthDetachResult) => void;
   // New specific callbacks for different operations
@@ -26,28 +30,140 @@ interface UseOAuthConnectionOptions {
 }
 
 interface UseOAuthConnectionReturn {
-  isConnecting: boolean;
   connectingConnectionId: string | null; // ID of the connection currently being processed
   currentOAuthFlow: { connectionId: string; provider: string } | null;
+  /** The user's env table, already fetched here to derive providers and grants.
+   *  Returned so callers that need the same rows (the usage fan-out) share this
+   *  observer instead of opening a second one on the identical query key. */
+  userTable: EntityEnvVars | undefined;
   availableProviders: OAuthProvider[];
+  /** Per-(user, project) status — what the SELECTED project sees. Drives the
+   *  Status column; `CONNECTED` means "attached to that project". */
   connectionStatuses: Record<string, ConnectionStatus>;
+  /** Per-user status — does the user hold a usable credential AT ALL, ignoring
+   *  every project. A grant and a placement are different things (see
+   *  `deriveGrantStatus`), and only this one is answerable with no project
+   *  selected. Decides which actions a row offers. */
+  grantStatuses: Record<string, GrantStatus>;
   connect: (connectionId: string, provider: string, sharedEntityVarName?: string) => Promise<void>;
-  attach: (connectionId: string, provider: string, sharedEntityVarName?: string) => Promise<void>;
-  detach: (connectionId: string, provider: string) => Promise<void>;
+  /** `targetEntity` defaults to the hook's project. Pass it to attach a project
+   *  that is NOT the selected one — the usage popover grants access without
+   *  making the user switch projects first. */
+  attach: (
+    connectionId: string,
+    provider: string,
+    sharedEntityVarName?: string,
+    targetEntity?: TypeId,
+  ) => Promise<void>;
+  detach: (connectionId: string, provider: string, targetEntity?: TypeId) => Promise<void>;
+  /** Call the provider with the stored token — the only way to tell a live
+   *  connection from one revoked at the provider. */
+  testConnection: (provider: string) => Promise<OAuthTestResult>;
   disconnect: (connectionId: string, provider: string) => Promise<void>;
-  delete: (connectionId: string, provider: string) => Promise<void>;
   getConnectionStatus: (provider: string) => Promise<ConnectionStatus>;
   getProviderName: (provider: string) => string;
 }
 
+/**
+ * A provider's icon, as something the browser can actually load.
+ *
+ * The one provider-specific bit on top of `iconAssetUrl`: a hub plugin manifest
+ * states its icon RELATIVE TO THE PLUGIN FOLDER ("public/github-icon.svg"), and
+ * the hub serves those at `/plugins/<provider>/<manifest path>`.
+ */
+export function providerIconUrl(providerName: string, icon?: string | null): string | undefined {
+  if (!icon) return undefined;
+  // A bare word is a lucide export name, not a file — passed through for
+  // `lucideByName` downstream.
+  if (!isIconPath(icon)) return icon;
+  return iconAssetUrl(icon, `plugins/${providerName}`);
+}
+
+/** Stable empty table — also a fresh `{values: []}` per render would break the
+ *  status memo. */
+const EMPTY_ENV_TABLE: EntityEnvVars = { values: [] };
+
+/**
+ * Whether the USER holds a credential for a provider, independent of any
+ * project. Three states, not four: attachment is not part of this question.
+ */
+export enum GrantStatus {
+  /** No token at all — the row needs the full OAuth flow. */
+  NONE = 'none',
+  /** Held and usable. */
+  HELD = 'held',
+  /** Held but dead — the grant has to be made again. */
+  NEEDS_REAUTH = 'needs_reauth',
+}
+
+/** A provider's grant state, from the user's table alone.
+ *
+ *  Deliberately a MAPPING over `deriveConnectionStatus` rather than a second
+ *  walk of the same rows: against an empty project table that function already
+ *  answers exactly this question (`CONNECTED` is unreachable with no
+ *  placements), so the credential hierarchy — no token, dead token, usable
+ *  token — is stated once. A second implementation would drift the moment a
+ *  new state is added to it. */
+export function deriveGrantStatus(providerName: string, userTable: EntityEnvVars): GrantStatus {
+  switch (deriveConnectionStatus(providerName, userTable, EMPTY_ENV_TABLE)) {
+    case ConnectionStatus.NEEDS_REAUTH:
+      return GrantStatus.NEEDS_REAUTH;
+    case ConnectionStatus.AVAILABLE:
+    case ConnectionStatus.CONNECTED:
+      return GrantStatus.HELD;
+    default:
+      return GrantStatus.NONE;
+  }
+}
+
+/** One provider's connection status, from the two tables it is derived from. */
+export function deriveConnectionStatus(
+  providerName: string,
+  userTable: EntityEnvVars,
+  projectTable: EntityEnvVars,
+): ConnectionStatus {
+  const userProviderVar = userTable.values.find(
+    (envVar: EnvVarStatus) => envVar.var_type === EnvVarType.OAUTH_PROVIDER_ID && envVar.name === providerName,
+  );
+
+  // No OAuth token exists at all — needs the full flow.
+  if (!userProviderVar || !userProviderVar.ref_name) {
+    return ConnectionStatus.DISCONNECTED;
+  }
+
+  // A credential the hub could not refresh is held but dead, and that outranks
+  // everything below: "attached to this project" stays true and stops meaning
+  // anything once the token behind it no longer works. Answering CONNECTED here
+  // is how a row claims success while every call using it fails.
+  if (userProviderVar.needs_reauth) {
+    return ConnectionStatus.NEEDS_REAUTH;
+  }
+
+  // Match: project env var whose ref_name is the user's token name, ref_type USER.
+  const projectEnvVar = projectTable.values.find(
+    (envVar: EnvVarStatus) => envVar.ref_name === userProviderVar.ref_name && envVar.ref_type === ('user' as string),
+  );
+
+  // Not attached to this project — fall back to whether the user holds it at all.
+  if (!projectEnvVar) {
+    return userProviderVar.var_status === EnvStatusEnum.AVAILABLE
+      ? ConnectionStatus.AVAILABLE
+      : ConnectionStatus.DISCONNECTED;
+  }
+
+  if (projectEnvVar.var_status === EnvStatusEnum.AVAILABLE) return ConnectionStatus.CONNECTED;
+  // Held, but this project has not been granted it yet — ready to attach.
+  if (projectEnvVar.var_status === EnvStatusEnum.CONSENT_REQUIRED) return ConnectionStatus.AVAILABLE;
+  return ConnectionStatus.DISCONNECTED;
+}
+
 export const useOAuthConnection = ({
-  currentProject,
+  projectTypeId,
   onConnectionConnect,
   onConnectionDisconnect,
   onOAuthAuthSuccess,
   onAttachSuccess,
 }: UseOAuthConnectionOptions): UseOAuthConnectionReturn => {
-  const [isConnecting, setIsConnecting] = useState(false);
   const [connectingConnectionId, setConnectingConnectionId] = useState<string | null>(null);
   const [currentOAuthFlow, setCurrentOAuthFlow] = useState<{ connectionId: string; provider: string } | null>(null);
   const queryClient = useQueryClient();
@@ -60,7 +176,7 @@ export const useOAuthConnection = ({
 
   // Use the unified hook to get project's env vars table data for status determination
   const { table: projectTable } = useEntityEnv({
-    entityTypeId: currentProject || undefined,
+    entityTypeId: projectTypeId || undefined,
     enabled: !!userTypeId,
   });
 
@@ -85,150 +201,63 @@ export const useOAuthConnection = ({
         providers.push({
           name: envVar.name,
           display_name: displayName,
-          // Icon is stored in icon field
-          icon: envVar.icon || undefined,
+          icon: providerIconUrl(envVar.name, envVar.icon),
+          kind: (envVar.oauth_kind as OAuthProvider['kind']) || undefined,
+          scopes: envVar.oauth_scopes?.length ? envVar.oauth_scopes : undefined,
         });
       });
 
     return providers;
   }, [userTable]);
 
-  // State to store connection statuses (will be updated asynchronously)
-  const [connectionStatuses, setConnectionStatuses] = useState<Record<string, ConnectionStatus>>(() => {
-    // Initialize with cached data to prevent blinking
-    if (!userTable || !projectTable || !availableProviders.length) {
-      return {};
+  // Purely derived from the two tables, so it is computed, not stored. Holding it
+  // in state meant an initializer and an effect that computed the same map — the
+  // effect always setState'd a freshly-allocated object, so React could never
+  // bail out and every table read re-rendered the whole connections table twice.
+  // The initializer existed only to hide the blink that arrangement caused.
+  const connectionStatuses = useMemo<Record<string, ConnectionStatus>>(() => {
+    // Only the USER table gates readiness. This used to require the project
+    // table too, so with no project selected (the hub, where a user may hold
+    // zero projects) every row rendered "Not connected" — the table claimed the
+    // user held nothing while their credentials sat right there. An absent
+    // project is not an unknown project: it is a project that attaches nothing,
+    // which is exactly what an empty table means to `deriveConnectionStatus`.
+    if (!userTable) {
+      return Object.fromEntries(availableProviders.map((provider) => [provider.name, ConnectionStatus.DISCONNECTED]));
     }
-
-    const statuses: Record<string, ConnectionStatus> = {};
-
-    // Process each provider using cached data
-    for (const provider of availableProviders) {
-      // Find the user's OAuth token name for this provider
-      const userProviderVar = userTable.values.find(
-        (envVar: EnvVarStatus) => envVar.var_type === EnvVarType.OAUTH_PROVIDER_ID && envVar.name === provider.name,
-      );
-
-      if (!userProviderVar || !userProviderVar.ref_name) {
-        // No OAuth token exists at all - need full OAuth flow
-        statuses[provider.name] = ConnectionStatus.DISCONNECTED;
-        continue;
-      }
-
-      // Look for matching env var in project table
-      const projectEnvVar = projectTable.values.find(
-        (envVar: EnvVarStatus) =>
-          envVar.ref_name === userProviderVar.ref_name && envVar.ref_type === ('user' as string),
-      );
-
-      if (!projectEnvVar) {
-        // No project env var - check user's OAuth token status directly
-        const userTokenStatus = userProviderVar.var_status;
-        if (userTokenStatus === EnvStatusEnum.AVAILABLE) {
-          statuses[provider.name] = ConnectionStatus.AVAILABLE;
-        } else {
-          statuses[provider.name] = ConnectionStatus.DISCONNECTED;
-        }
-      } else {
-        // Found matching project env var, check its status
-        const projectVarStatus = projectEnvVar.var_status;
-        if (projectVarStatus === EnvStatusEnum.AVAILABLE) {
-          statuses[provider.name] = ConnectionStatus.CONNECTED;
-        } else if (projectVarStatus === EnvStatusEnum.CONSENT_REQUIRED) {
-          statuses[provider.name] = ConnectionStatus.AVAILABLE;
-        } else {
-          statuses[provider.name] = ConnectionStatus.DISCONNECTED;
-        }
-      }
-    }
-
-    return statuses;
-  });
-
-  // Effect to determine connection statuses by matching providers to project env vars
-  useEffect(() => {
-    const determineStatuses = () => {
-      if (!userTable || !projectTable || !availableProviders.length) {
-        // Default all providers to DISCONNECTED if no project table
-        const statuses: Record<string, ConnectionStatus> = {};
-        availableProviders.forEach((provider) => {
-          statuses[provider.name] = ConnectionStatus.DISCONNECTED;
-        });
-        setConnectionStatuses(statuses);
-        return;
-      }
-
-      const statuses: Record<string, ConnectionStatus> = {};
-
-      // Process each provider
-      for (const provider of availableProviders) {
-        // Find the user's OAuth token name for this provider
-        const userProviderVar = userTable.values.find(
-          (envVar: EnvVarStatus) => envVar.var_type === EnvVarType.OAUTH_PROVIDER_ID && envVar.name === provider.name,
-        );
-
-        if (!userProviderVar || !userProviderVar.ref_name) {
-          // No OAuth token exists at all - need full OAuth flow
-          statuses[provider.name] = ConnectionStatus.DISCONNECTED;
-          continue;
-        }
-
-        // Look for matching env var in project table
-        // Match: project env var where ref_name matches user's OAuth token name AND ref_type is USER
-        const projectEnvVar = projectTable.values.find(
-          (envVar: EnvVarStatus) =>
-            envVar.ref_name === userProviderVar.ref_name && envVar.ref_type === ('user' as string), // BuiltinEntityType.USER
-        );
-
-        if (!projectEnvVar) {
-          // No project env var - check user's OAuth token status directly
-          const userTokenStatus = userProviderVar.var_status;
-          if (userTokenStatus === EnvStatusEnum.AVAILABLE) {
-            // OAuth token exists and is available but not attached to this project - ready to attach
-            statuses[provider.name] = ConnectionStatus.AVAILABLE;
-          } else {
-            // User's OAuth token is not available (expired, revoked, missing, etc.)
-            statuses[provider.name] = ConnectionStatus.DISCONNECTED;
-          }
-        } else {
-          // Found matching project env var, check its status
-          // Project env var status already reflects the user token validity
-          const projectVarStatus = projectEnvVar.var_status;
-          if (projectVarStatus === EnvStatusEnum.AVAILABLE) {
-            // Token is attached and available
-            statuses[provider.name] = ConnectionStatus.CONNECTED;
-          } else if (projectVarStatus === EnvStatusEnum.CONSENT_REQUIRED) {
-            // Token exists but needs consent (ready to attach)
-            statuses[provider.name] = ConnectionStatus.AVAILABLE;
-          } else {
-            // MISSING or other status
-            statuses[provider.name] = ConnectionStatus.DISCONNECTED;
-          }
-        }
-      }
-
-      setConnectionStatuses(statuses);
-    };
-
-    void determineStatuses();
+    const table = projectTable ?? EMPTY_ENV_TABLE;
+    return Object.fromEntries(
+      availableProviders.map((provider) => [provider.name, deriveConnectionStatus(provider.name, userTable, table)]),
+    );
   }, [userTable, projectTable, availableProviders]);
+
+  const grantStatuses = useMemo<Record<string, GrantStatus>>(
+    () =>
+      Object.fromEntries(
+        availableProviders.map((provider) => [
+          provider.name,
+          userTable ? deriveGrantStatus(provider.name, userTable) : GrantStatus.NONE,
+        ]),
+      ),
+    [userTable, availableProviders],
+  );
 
   // Listen for OAuth flow completion (auth + attach) via custom event
   useEffect(() => {
-    const handleOAuthFlowComplete = (data: { status: OAuthStatus; attachSuccess?: boolean }) => {
+    const handleOAuthFlowComplete = (data: OAuthFlowCompletePayload) => {
       if (data.status === OAuthStatus.SUCCESS && currentOAuthFlow) {
         // Store connection ID before clearing the flow
         const connectionId = currentOAuthFlow.connectionId;
 
         // Clear the current OAuth flow
         setCurrentOAuthFlow(null);
-        setIsConnecting(false);
         setConnectingConnectionId(null);
 
-        // Invalidate queries to get updated statuses
-        void queryClient.invalidateQueries({
-          queryKey: ['entity-env-table', currentProject?.toString()],
-        });
+        // The grant lands on the USER's table, which every status here is
+        // derived from — invalidating only the project key left it cached, so a
+        // provider read "Not connected" until a reload, and with no project
+        // selected the key holds nothing at all and the refresh was a no-op.
+        void queryClient.invalidateQueries({ queryKey: entityEnvQueryKeyRoot });
 
         // Call the appropriate callback based on the operation result
         if (data.attachSuccess === true) {
@@ -242,7 +271,6 @@ export const useOAuthConnection = ({
         console.error('[useOAuthConnection] OAuth error:', data);
         // Clear the current OAuth flow on error
         setCurrentOAuthFlow(null);
-        setIsConnecting(false);
         setConnectingConnectionId(null);
       }
     };
@@ -253,7 +281,7 @@ export const useOAuthConnection = ({
     return () => {
       dataManager.off(OAuthEventType.OAUTH_FLOW_COMPLETE, handleOAuthFlowComplete);
     };
-  }, [currentOAuthFlow, onConnectionConnect, onOAuthAuthSuccess, onAttachSuccess, queryClient, currentProject]);
+  }, [currentOAuthFlow, onConnectionConnect, onOAuthAuthSuccess, onAttachSuccess, queryClient, projectTypeId]);
 
   const getProviderName = useCallback(
     (provider: string): string => {
@@ -266,7 +294,6 @@ export const useOAuthConnection = ({
   const connect = useCallback(
     async (connectionId: string, provider: string, sharedEntityVarName?: string) => {
       try {
-        setIsConnecting(true);
         setConnectingConnectionId(connectionId);
 
         // Find the provider in available providers to get the correct name
@@ -276,41 +303,48 @@ export const useOAuthConnection = ({
         setCurrentOAuthFlow({ connectionId, provider });
 
         // Use OAuth service to connect - this starts the OAuth flow
-        await oauthService.connect(providerName, currentProject, sharedEntityVarName);
+        await oauthService.connect(providerName, projectTypeId, sharedEntityVarName);
 
         // Note: Don't call onConnectionConnect here - it will be called when OAuth completes
       } catch (error) {
         console.error(`Failed to connect to ${provider}:`, error);
         // Clear the current OAuth flow on error
         setCurrentOAuthFlow(null);
-        setIsConnecting(false);
         setConnectingConnectionId(null);
         throw error;
       }
     },
-    [currentProject, getProviderName],
+    [projectTypeId, getProviderName],
+  );
+
+  const testConnection = useCallback(
+    async (provider: string) => oauthService.test(getProviderName(provider), projectTypeId),
+    [projectTypeId, getProviderName],
   );
 
   const attach = useCallback(
-    async (connectionId: string, provider: string, sharedEntityVarName?: string) => {
+    async (connectionId: string, provider: string, sharedEntityVarName?: string, targetEntity?: TypeId) => {
+      // The caller may name the project (the usage popover attaches one that is
+      // not the selected one); otherwise it is the hook's project.
+      const target = targetEntity ?? projectTypeId;
       try {
-        setIsConnecting(true);
         setConnectingConnectionId(connectionId);
 
         // Find the provider in available providers to get the correct name
         const providerName = getProviderName(provider);
 
-        if (!currentProject) {
-          console.error('[useOAuthConnection] ERROR - No current project available for attach operation');
-          throw new Error('No current project available for attach operation');
+        if (!target) {
+          console.error('[useOAuthConnection] ERROR - No target project for attach operation');
+          throw new Error('No project available for attach operation');
         }
 
-        // Use OAuth service to attach current project to existing token
-        await oauthService.attach(providerName, currentProject, sharedEntityVarName);
+        // Use OAuth service to attach the target project to the existing token
+        await oauthService.attach(providerName, target, sharedEntityVarName);
 
-        // Invalidate queries to get updated statuses
+        // Invalidate the table that actually changed — not the selected
+        // project's, which may be a different one entirely.
         await queryClient.invalidateQueries({
-          queryKey: ['entity-env-table', currentProject?.toString()],
+          queryKey: entityEnvQueryKey(target),
         });
 
         // Call the attach success callback (status: CONNECTED)
@@ -319,69 +353,46 @@ export const useOAuthConnection = ({
         console.error(`Failed to attach ${provider}:`, error);
         throw error;
       } finally {
-        setIsConnecting(false);
         setConnectingConnectionId(null);
       }
     },
-    [currentProject, getProviderName, queryClient, onAttachSuccess],
+    [projectTypeId, getProviderName, queryClient, onAttachSuccess],
   );
 
   const detach = useCallback(
-    async (connectionId: string, provider: string) => {
+    async (connectionId: string, provider: string, targetEntity?: TypeId) => {
+      const target = targetEntity ?? projectTypeId;
       try {
         // Find the provider in available providers to get the correct name
         const providerName = getProviderName(provider);
 
-        if (!currentProject) {
-          throw new Error('No current project available for detach operation');
+        if (!target) {
+          throw new Error('No project available for detach operation');
         }
 
-        // Use OAuth service to detach current project
-        const detachResult = await oauthService.detach(providerName, currentProject);
+        // Use OAuth service to detach the target project
+        const detachResult = await oauthService.detach(providerName, target);
 
         // Invalidate queries to get updated statuses
         await queryClient.invalidateQueries({
-          queryKey: ['entity-env-table', currentProject?.toString()],
+          queryKey: entityEnvQueryKey(target),
         });
 
-        // If no more attachments remain, automatically disconnect to remove OAuth credentials
-        if (detachResult && detachResult.remaining_attachment_count === 0) {
-          try {
-            // Call disconnect to remove OAuth credentials
-            await oauthService.disconnect(providerName);
-            // Invalidate both user and project queries after disconnect
-            await Promise.all([
-              queryClient.invalidateQueries({
-                queryKey: ['entity-env-table', currentProject?.toString()],
-              }),
-              queryClient.invalidateQueries({
-                queryKey: ['entity-env-table', userTypeId?.toString()],
-              }),
-            ]);
-
-            // Update the detach result to indicate full disconnection
-            const disconnectResult = {
-              ...detachResult,
-              remaining_attachment_count: 0,
-              fully_disconnected: true,
-            };
-
-            onConnectionDisconnect?.(connectionId, disconnectResult);
-          } catch (disconnectError) {
-            console.error(`[useOAuthConnection] Failed to auto-disconnect ${provider}:`, disconnectError);
-            // Still call the disconnect callback with original detach result
-            onConnectionDisconnect?.(connectionId, detachResult);
-          }
-        } else {
-          // Normal detach - still has other attachments
-          onConnectionDisconnect?.(connectionId, detachResult);
-        }
+        // Detaching the LAST project does not destroy the credential. This used
+        // to chain into `oauthService.disconnect()` whenever
+        // `remaining_attachment_count` hit 0 — silently escalating "stop using
+        // this here" into "revoke my token", which both backends explicitly
+        // refuse to do on their own (flow_sdk oauth_attachment.detach_action,
+        // hub likewise: "not auto-disconnecting. Use disconnect action"). The
+        // client was overriding the server's invariant. Deleting a credential is
+        // now its own confirmed act; the count is reported so callers can say so.
+        onConnectionDisconnect?.(connectionId, detachResult);
       } catch (error) {
         console.error(`Failed to detach ${provider}:`, error);
         throw error;
       }
     },
-    [currentProject, getProviderName, onConnectionDisconnect, queryClient, userTypeId],
+    [projectTypeId, getProviderName, onConnectionDisconnect, queryClient],
   );
 
   const disconnect = useCallback(
@@ -393,15 +404,10 @@ export const useOAuthConnection = ({
         // Use OAuth service to disconnect (remove OAuth token completely)
         const disconnectResult = await oauthService.disconnect(providerName);
 
-        // Invalidate both user and project queries to get updated statuses
-        await Promise.all([
-          queryClient.invalidateQueries({
-            queryKey: ['entity-env-table', currentProject?.toString()],
-          }),
-          queryClient.invalidateQueries({
-            queryKey: ['entity-env-table', userTypeId?.toString()],
-          }),
-        ]);
+        // Every project that borrowed this credential now resolves differently,
+        // and the caller does not know which those are — invalidate the whole
+        // env-table family by prefix rather than the two keys we happen to hold.
+        await queryClient.invalidateQueries({ queryKey: entityEnvQueryKeyRoot });
 
         // Call the callback to update the connection status
         // Disconnect always results in 0 remaining attachments
@@ -411,30 +417,7 @@ export const useOAuthConnection = ({
         throw error;
       }
     },
-    [getProviderName, onConnectionDisconnect, queryClient, currentProject, userTypeId],
-  );
-
-  const deleteConnection = useCallback(
-    async (connectionId: string, provider: string) => {
-      try {
-        // Find the provider in available providers to get the correct name
-        const providerName = getProviderName(provider);
-
-        if (!currentProject) {
-          throw new Error('No current project available for delete operation');
-        }
-
-        // Use OAuth service to delete the connection entirely
-        await oauthService.delete(providerName, currentProject);
-
-        // Call the callback to update the connection status
-        onConnectionDisconnect?.(connectionId);
-      } catch (error) {
-        console.error(`Failed to delete ${provider}:`, error);
-        throw error;
-      }
-    },
-    [currentProject, getProviderName, onConnectionDisconnect],
+    [getProviderName, onConnectionDisconnect, queryClient],
   );
 
   const getConnectionStatus = useCallback(
@@ -443,33 +426,34 @@ export const useOAuthConnection = ({
         // Find the provider in available providers to get the correct name
         const providerName = getProviderName(provider);
 
-        if (!currentProject) {
+        if (!projectTypeId) {
           console.warn('No current project available for getConnectionStatus operation');
           return ConnectionStatus.DISCONNECTED;
         }
 
         // Use OAuth service to get connection status
-        return await oauthService.getConnectionStatus(providerName, currentProject);
+        return await oauthService.getConnectionStatus(providerName, projectTypeId);
       } catch (error) {
         console.error(`Failed to get connection status for ${provider}:`, error);
         // Return DISCONNECTED as fallback
         return ConnectionStatus.DISCONNECTED;
       }
     },
-    [currentProject, getProviderName],
+    [projectTypeId, getProviderName],
   );
 
   return {
-    isConnecting,
     connectingConnectionId,
+    userTable,
     currentOAuthFlow,
     availableProviders,
     connectionStatuses,
+    grantStatuses,
     connect,
     attach,
     detach,
+    testConnection,
     disconnect,
-    delete: deleteConnection,
     getConnectionStatus,
     getProviderName,
   };

@@ -48,7 +48,7 @@ class Ids:
         self.fm = str(uuid.uuid4())
         self.skill = str(uuid.uuid4())
         self.spec = str(uuid.uuid4())
-        self.skill_key = f"skill-@{self.skill}"
+        self.skill_key = f"skill-{self.skill}"
         # Unique leaf name too — skill ids are also derivable from the name.
         self.leaf = f"staged-skill-{self.skill[:8]}"
 
@@ -86,7 +86,7 @@ def _write_bundle(tmp_path: Path, ids: Ids, *, body: str = SENTINEL) -> Path:
             "print('helper')\n",
         )
         zf.writestr(
-            f"attachment/spec-@{ids.spec}/specs/staged-spec/spec.md",
+            f"attachment/spec-{ids.spec}/agentic-assets/spec/staged-spec/spec.md",
             f"---\nid: {ids.spec}\ntitle: staged spec\nspec_type: plan\n---\n\n# spec\n",
         )
     return zip_path
@@ -166,14 +166,21 @@ async def test_install_user_scope_lands_under_claude_home_root(tmp_path, ids, mo
     assert skill is not None, "user-scope install did not index the skill"
 
 
-async def test_install_user_scope_rejected_for_project_anchored_type(tmp_path, ids):
+async def test_install_user_scope_allowed_for_repo_type(tmp_path, ids, monkeypatch):
+    # spec is a REPO type (agentic-assets/spec) — user+project scope, so a
+    # user-scope install is NOT rejected (the old project-anchored 400 applied
+    # when spec was INTERNAL). The user-scope policy itself is unit-covered in
+    # test_placement_matrix's support cross-product.
+    import flow_sdk.app.actions.message_attachment_action as ma_action
+
+    monkeypatch.setattr(ma_action, "_user_scope_root", lambda: tmp_path / "home")
     await _stage(tmp_path, ids)
     spec_ma = await MessageAttachment.get_one(
-        {"id": MessageAttachment.allocate_deterministic_id(ids.fm, f"spec-@{ids.spec}")}
+        {"id": MessageAttachment.allocate_deterministic_id(ids.fm, f"spec-{ids.spec}")}
     )
     assert spec_ma is not None
     res = await handle_attachment_install(spec_ma.id, "user", None)
-    assert isinstance(res, ApiFailResponse) and res.status_code == 400
+    assert not (isinstance(res, ApiFailResponse) and res.status_code == 400)
 
 
 async def test_install_conflict_409_then_overwrite_replaces(tmp_path, ids):
@@ -239,7 +246,7 @@ async def _stage_raw_file(tmp_path: Path, fm_id: str, fname: str, body: str) -> 
     await unpack_bundle(_write_raw_file_bundle(tmp_path, fm_id, fname, body), "local-user-id")
     asset_id = mint_uuid(f"flow_message_file:{fm_id}:{fname}")
     ma = await MessageAttachment.get_one(
-        {"id": MessageAttachment.allocate_deterministic_id(fm_id, f"file-@{asset_id}")}
+        {"id": MessageAttachment.allocate_deterministic_id(fm_id, f"file-{asset_id}")}
     )
     assert ma is not None, "unpack did not stage the raw file"
     return ma
@@ -247,8 +254,8 @@ async def _stage_raw_file(tmp_path: Path, fm_id: str, fname: str, body: str) -> 
 
 async def test_raw_file_install_project_then_user_then_uninstall(tmp_path, monkeypatch):
     """A raw markdown file rides the full staged→install→uninstall lifecycle:
-    project scope copies to <project>/.claude/docs/<name> and indexes it as a
-    MARKDOWN record; user scope copies to <home>/.claude/docs/<name>; uninstall
+    project scope copies to <project>/docs/<name> and indexes it as a
+    MARKDOWN record; user scope copies to <home>/docs/<name>; uninstall
     removes the file and reverts to staged. Regression for SAPAK-DEMO-SPEC.md."""
     import uuid
 
@@ -269,9 +276,9 @@ async def test_raw_file_install_project_then_user_then_uninstall(tmp_path, monke
 
     res = await handle_attachment_install(ma.id, "project", project.id)
     assert isinstance(res, ApiSuccessResponse), getattr(res, "message", res)
-    installed = project_root / ".claude" / "docs" / fname
+    installed = project_root / "docs" / fname
     assert installed.exists() and "Staged raw-file body." in installed.read_text(encoding="utf-8")
-    # Markdown record materialized under the project (the .claude/docs walker
+    # Markdown record materialized under the project (the docs walker
     # emits it as a Docs/Markdown row stamped with the project).
     md_rows = await Markdown.get_all({"project_id": project.id})
     stem = fname.rsplit(".", 1)[0]
@@ -296,7 +303,7 @@ async def test_raw_file_install_project_then_user_then_uninstall(tmp_path, monke
     monkeypatch.setattr(ma_action, "_user_scope_root", lambda: user_root)
     res3 = await handle_attachment_install(ma.id, "user", None)
     assert isinstance(res3, ApiSuccessResponse), getattr(res3, "message", res3)
-    assert (user_root / ".claude" / "docs" / fname).exists()
+    assert (user_root / "docs" / fname).exists()
     again = await MessageAttachment.get_one({"id": ma.id})
     assert again.scope == "user" and again.installed_root == str(user_root)
 

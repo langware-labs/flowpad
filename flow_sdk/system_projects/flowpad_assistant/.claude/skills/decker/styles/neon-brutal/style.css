@@ -1,0 +1,59 @@
+/* neon-brutal — personality layer */
+.reveal h1, .reveal h2, .reveal h3 {
+  font-family: var(--font-display);
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.035em;
+  text-transform: uppercase;
+}
+/* the kicker is a stamped chip, not a line of text */
+.kicker {
+  display: inline-block;
+  background: var(--accent); color: var(--accent-contrast);
+  padding: var(--sp-2) var(--sp-4);
+  font-weight: var(--fw-bold);
+  border: 3px solid var(--text);
+  box-shadow: 5px 5px 0 var(--text);
+  margin-bottom: var(--sp-5);
+}
+.accent-rule {
+  width: 100%; height: 10px; background: var(--accent);
+  border-top: 3px solid var(--text); border-bottom: 3px solid var(--text);
+  margin: 0 0 var(--sp-5) 0;
+}
+.card {
+  background: var(--surface);
+  border: 3px solid var(--text);
+  border-radius: 0;
+  box-shadow: 9px 9px 0 var(--accent);
+  padding: var(--sp-5);
+}
+.metric-value {
+  font-family: var(--font-display); color: var(--text);
+  font-size: 78px; font-weight: var(--fw-bold); letter-spacing: -0.05em;
+}
+.metric-label { color: var(--text); font-weight: var(--fw-bold); font-size: 14px; }
+.metric-delta {
+  color: var(--accent-contrast); background: var(--text);
+  display: inline-block; padding: 2px var(--sp-2);
+  font-size: 14px; font-weight: var(--fw-bold);
+}
+.layout-agenda-list li { border-bottom: 3px solid var(--text); padding: var(--sp-4) 0; }
+.layout-agenda-list li::before {
+  background: var(--text); color: var(--bg); font-weight: var(--fw-bold);
+  font-size: 24px; padding: var(--sp-1) var(--sp-3); min-width: 0;
+}
+.layout-agenda-list .agenda-label {
+  font-weight: var(--fw-bold); text-transform: uppercase; letter-spacing: -0.02em;
+}
+.layout-agenda-list .agenda-detail {
+  background: var(--accent); color: var(--accent-contrast);
+  padding: 2px var(--sp-3); font-weight: var(--fw-bold); font-size: 15px;
+}
+.subtitle { max-width: 26ch; font-weight: var(--fw-medium); }
+.layout-cover-centered .cover-meta {
+  font-weight: var(--fw-bold); text-transform: uppercase; letter-spacing: 0.06em;
+}
+.layout-closing-centered .closing-contact {
+  background: var(--text); color: var(--bg);
+  padding: var(--sp-2) var(--sp-4); display: inline-block; font-weight: var(--fw-bold);
+}

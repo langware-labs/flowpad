@@ -79,11 +79,14 @@ Rules (the assembler `tools/build_deck.py` depends on each of these):
    (or `video`). The assembler replaces the content with an `<img>`/`<video>`
    whose `src` is a base64 data URI — never a file path (see the sandbox rule
    in SKILL.md).
-6. **Styling comes from tokens.** Use `common/theme.css` classes and
-   `var(--…)` tokens. Layout-specific CSS is allowed as one `<style>` block at
-   the top of the fragment, scoped under `.layout-<name>` — no hardcoded
-   colors/sizes that bypass the token system, or re-skinning via `tokens.css`
-   stops working.
+6. **Styling comes from tokens and theme classes.** Use `common/theme.css`
+   classes (`.kicker`, `.card`, `.metric-value`, `.grid`) and `var(--…)` tokens.
+   Layout-specific CSS is allowed as one `<style>` block at the top of the
+   fragment, scoped under `.layout-<name>` — no hardcoded colors/sizes that
+   bypass the token system, or styles stop being able to re-skin the layout.
+   Keep that block **structural** (what goes where); leave what things *look
+   like* to the style. A style must be able to restyle your layout without
+   editing it — see [styles.md](styles.md).
 
 ## Per-layout slot inventories
 
@@ -139,5 +142,12 @@ the slot set, and preview it by building a one-slide deck.
   shrink the type.
 - One idea per slide; the layout taxonomy exists so density lives in layouts,
   not in font-size hacks.
-- Re-skinning a template = editing `common/tokens.css` only. If a re-skin
-  needs to touch a layout file, the layout has hardcoded style — fix that.
+- **Re-skinning a template = applying a style** (`common/tokens.css` +
+  `common/style.css`, both overwritten from `styles/<slug>/`). See
+  [styles.md](styles.md). If a re-skin needs to touch a layout file, the layout
+  has hardcoded design — fix that.
+- Content sits on the **optical centre** of the 720px canvas; `theme.css`'s
+  `decker:structural-fix` block handles that for every layout. A layout that
+  genuinely wants top alignment overrides `justify-content` under its own
+  `.layout-<name>` block. Roughly 40% canvas fill with generous margins is
+  correct — a slide is not a form to be filled.

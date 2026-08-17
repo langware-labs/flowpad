@@ -11,6 +11,7 @@ import {
   fetchConversations,
   isInvitationGoneError,
   isTypeId,
+  latestPointer,
 } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { uploadFlowMessage, type UploadConflict } from '@sdk/entities/flow-message';
@@ -117,10 +118,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
 
   // Filter live conversations against hiddenIds so stale ids (from removed
   // conversations) don't skew the count.
-  const liveVisibleCount = sorted.reduce(
-    (acc, c) => acc + (c.id && hiddenIds.has(c.id) ? 0 : 1),
-    0,
-  );
+  const liveVisibleCount = sorted.reduce((acc, c) => acc + (c.id && hiddenIds.has(c.id) ? 0 : 1), 0);
   const visibleCountActual = liveVisibleCount;
   const visible = sorted.slice(0, visibleCount);
   const hasMore = visibleCountActual > visibleCount;
@@ -144,7 +142,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
     try {
       try {
         await fetchConversations();
-      } catch (e) {
+      } catch {
         // hub may be unavailable / not configured — local refetch still works
       }
       await refetch();
@@ -160,7 +158,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
       // hides it from this list but keeps it in the full Inbox and lets it
       // reappear when a new message arrives, matching the per-row EyeOff action.
       const targets = sorted.filter((c) => c.id && !hiddenIds.has(c.id));
-      await Promise.all(targets.map((c) => dismissConversation({ conversation_id: c.id! })));
+      await Promise.all(targets.map((c) => dismissConversation({ conversation_id: c.id })));
       void refetch();
     } finally {
       setDismissingAll(false);
@@ -246,7 +244,9 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-1.5">
           <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-xs font-medium"><Trans>Inbox</Trans></span>
+          <span className="text-xs font-medium">
+            <Trans>Inbox</Trans>
+          </span>
           {visibleCountActual > 0 && (
             <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
               {visibleCountActual}
@@ -301,7 +301,9 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
       {uploadError && <p className="px-3 pb-2 text-xs text-destructive">{uploadError}</p>}
       {uploadConflicts && (
         <div className="mx-3 mb-2 space-y-1 rounded-md border border-border bg-muted/40 p-2 text-xs">
-          <p className="font-medium text-foreground"><Trans>Entities already exist:</Trans></p>
+          <p className="font-medium text-foreground">
+            <Trans>Entities already exist:</Trans>
+          </p>
           <p className="text-muted-foreground">{uploadConflicts.map((c) => `${c.type}:${c.id}`).join(', ')}</p>
           <div className="flex gap-1.5 pt-0.5">
             <button
@@ -313,7 +315,10 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
             </button>
             <button
               type="button"
-              onClick={() => { setPendingFile(null); setUploadConflicts(null); }}
+              onClick={() => {
+                setPendingFile(null);
+                setUploadConflicts(null);
+              }}
               className="rounded border border-border px-2 py-1 text-xs font-medium hover:bg-muted"
             >
               <Trans>Cancel</Trans>
@@ -324,7 +329,9 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
 
       <div className="pb-1">
         {visibleCountActual === 0 ? (
-          <div className="px-3 pb-3 text-xs text-muted-foreground"><Trans>No conversations</Trans></div>
+          <div className="px-3 pb-3 text-xs text-muted-foreground">
+            <Trans>No conversations</Trans>
+          </div>
         ) : (
           visible.map((conv) => (
             <ConversationRow
@@ -332,8 +339,8 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
               conv={conv}
               acceptingId={acceptingId}
               dismissingId={dismissingId}
-              onAcceptInvitation={handleAcceptInvitation}
-              onDismiss={handleDismissConversation}
+              onAcceptInvitation={(id) => void handleAcceptInvitation(id)}
+              onDismiss={(id) => void handleDismissConversation(id)}
               onHiddenChange={handleHiddenChange}
             />
           ))
@@ -355,12 +362,13 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
         {visibleCountActual > 0 && (
           <button
             type="button"
-            className="flex flex-1 items-center justify-center gap-1.5 border-l px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="flex flex-1 items-center justify-center gap-1.5 border-s px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             onClick={() => navigation.openDock(DockPointer.forInbox())}
             data-testid="open-all-conversations"
           >
             <MessageSquare className="h-3.5 w-3.5" />
-            <Trans>All</Trans>{hasMore ? ` (${visibleCountActual})` : ''}
+            <Trans>All</Trans>
+            {hasMore ? ` (${visibleCountActual})` : ''}
           </button>
         )}
       </div>
@@ -403,10 +411,7 @@ function ConversationRow({
   );
   const { data: project } = useEntity<Project>(projectTypeId);
 
-  const taskTypeId = useMemo(
-    () => conv.firstContextOfType?.('task') ?? null,
-    [conv],
-  );
+  const taskTypeId = useMemo(() => conv.firstContextOfType?.('task') ?? null, [conv]);
   const { data: task } = useEntity<Task>(taskTypeId);
 
   // Pull both first and last message: invitation-kind rows always have one
@@ -414,23 +419,14 @@ function ConversationRow({
   // latest message preview but still need the first to detect invitation kind.
   const pointers = conv.conversationMessageIds ?? [];
   const firstPtr = pointers[0];
-  const lastPtr = pointers[pointers.length - 1];
+  const lastPtr = latestPointer(pointers);
 
-  const firstTypeId = useMemo(
-    () => (firstPtr ? new TypeId(FlowMessage.type, firstPtr.id) : null),
-    [firstPtr?.id],
-  );
-  const lastTypeId = useMemo(
-    () => (lastPtr ? new TypeId(FlowMessage.type, lastPtr.id) : null),
-    [lastPtr?.id],
-  );
+  const firstTypeId = useMemo(() => (firstPtr ? new TypeId(FlowMessage.type, firstPtr.id) : null), [firstPtr?.id]);
+  const lastTypeId = useMemo(() => (lastPtr ? new TypeId(FlowMessage.type, lastPtr.id) : null), [lastPtr?.id]);
   const { data: firstMessage } = useEntity<FlowMessage>(firstTypeId);
   const { data: latestMessage } = useEntity<FlowMessage>(lastTypeId);
 
-  const invitationTypeId = useMemo(
-    () => firstMessage?.firstContextOfType?.('invitation') ?? null,
-    [firstMessage],
-  );
+  const invitationTypeId = useMemo(() => firstMessage?.firstContextOfType?.('invitation') ?? null, [firstMessage]);
   const invitationId = invitationTypeId?.id ?? null;
   const { data: invitation } = useEntity<Invitation>(invitationTypeId);
 
@@ -438,7 +434,7 @@ function ConversationRow({
   const myEmail = (cloudUser?.email || currentUser?.email || '').trim().toLowerCase();
 
   // Shared category classifier — single source of truth for invitation /
-  // community / archived (replacing the per-strip copies). Invitation is
+  // helpdesk / archived (replacing the per-strip copies). Invitation is
   // viewer-relative: matched on the Invitation's ``recipient_email`` so "I was
   // invited" stays distinct from "I sent this". Archived compares the latest
   // pointer ``ts`` so it auto-revives without racing the async FlowMessage fetch.
@@ -461,8 +457,7 @@ function ConversationRow({
   // the stamp against the latest pointer ``ts`` to avoid flicker during the fetch.
   const latestMessageTime = lastPtr?.ts ? new Date(lastPtr.ts).getTime() : 0;
   const dismissedAt = conv.dismissed_at ? new Date(conv.dismissed_at).getTime() : null;
-  const dismissedHidden =
-    dismissedAt !== null && !Number.isNaN(dismissedAt) && latestMessageTime <= dismissedAt;
+  const dismissedHidden = dismissedAt !== null && !Number.isNaN(dismissedAt) && latestMessageTime <= dismissedAt;
 
   const hidden = dismissedHidden || facets.isArchived;
   const convIdStr = conv.id ?? '';
@@ -486,19 +481,22 @@ function ConversationRow({
   // shared context is NOT a title source — it surfaces only as the amber task
   // chip below. Mirrors the inbox row fix.
   const derivedTitle = deriveConversationTitle(conv);
-  const title = isInvitationRow
-    ? t`Invitation`
-    : (isTypeId(derivedTitle) ? t`Conversation` : derivedTitle);
+  const title = isInvitationRow ? t`Invitation` : isTypeId(derivedTitle) ? t`Conversation` : derivedTitle;
   const taskFirstWord = taskTitle ? taskTitle.split(/\s+/)[0] : null;
   // Preview text: an invitation preview's body is often just the raw
   // ``conversation-<uuid>`` typeid — never surface that; use a friendly
   // fallback instead.
   const rawPreview = isInvitationRow
     ? firstMessage?.text?.trim()
-    : latestMessage?.text?.trim().split('\n').find((l) => l.trim());
+    : latestMessage?.text
+        ?.trim()
+        .split('\n')
+        .find((l) => l.trim());
   const previewText = isTypeId(rawPreview)
-    ? (isInvitationRow ? t`You've been invited to a conversation` : null)
-    : (rawPreview || (isInvitationRow ? t`You've been invited to a conversation` : null));
+    ? isInvitationRow
+      ? t`You've been invited to a conversation`
+      : null
+    : rawPreview || (isInvitationRow ? t`You've been invited to a conversation` : null);
   // Row label. A pending invitation shows "from <sender>" so the recipient
   // sees who invited them. An accepted / ongoing conversation instead lists
   // the participants ("Alice, bob@local.test"). Both are carried by the
@@ -511,12 +509,14 @@ function ConversationRow({
   const wireSender = firstMessage?.sender_name?.trim() || null;
   const rosterSender = (() => {
     const me = { id: cloudUser?.id ?? currentUser?.id ?? null, email: myEmail || null };
-    const other = (conv.participants ?? []).find((p) => p && !participantIsUser(p, me));
+    const other = (conv.members ?? []).find((p) => p && !participantIsUser(p, me));
     return other ? participantName(other) : null;
   })();
   const inviterName = titleSender || wireSender || rosterSender;
   const fromName = isInvitationRow
-    ? (inviterName ? `from ${inviterName}` : null)
+    ? inviterName
+      ? `from ${inviterName}`
+      : null
     : parseParticipantsFromTitle(conv.title);
 
   const handleClick = () => {
@@ -568,30 +568,26 @@ function ConversationRow({
           </div>
         </div>
         {previewText && (
-          <div
-            className="mt-0.5 truncate text-[11px] text-muted-foreground"
-            data-testid="conversation-preview"
-          >
+          <div className="mt-0.5 truncate text-[11px] text-muted-foreground" data-testid="conversation-preview">
             {previewText}
           </div>
         )}
         <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
           <span>{formatTimeAgo(conv.updated_date)}</span>
           {!isInvitationRow && messageCount > 0 && (
-            <span>· {messageCount} msg{messageCount === 1 ? '' : 's'}</span>
+            <span>
+              · {messageCount} msg{messageCount === 1 ? '' : 's'}
+            </span>
           )}
-          {!isInvitationRow && (conv.participants?.length ?? 0) > 0 && (
+          {!isInvitationRow && (conv.members?.length ?? 0) > 0 && (
             <>
               <span>·</span>
-              <ConversationParticipants participants={conv.participants!} kind={conv.kind} />
+              <ConversationParticipants participants={conv.members!} kind={conv.kind} />
             </>
           )}
         </div>
       </div>
-      <div
-        className="flex flex-shrink-0 items-center gap-1"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="flex flex-shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
         {isInvitationRow && invitationId && (
           <button
             type="button"
@@ -606,9 +602,9 @@ function ConversationRow({
         {conv.id && (
           <button
             type="button"
-            onClick={() => onDismiss(conv.id!)}
+            onClick={() => onDismiss(conv.id)}
             disabled={dismissingId === conv.id}
-            className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 disabled:opacity-40"
+            className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground disabled:opacity-40 group-hover:opacity-100"
             title={t`Hide from Recent — still visible in Inbox; reappears when a new message arrives`}
             aria-label={t`Hide from Recent conversations`}
             data-testid="dismiss-conversation-button"

@@ -6,17 +6,21 @@ import {
   Conversation,
   fetchConversations,
   FlowMessage,
+  MessageThread,
   pickupConversation,
   QueryFilter,
   QueryRequest,
   RemoteWorkerSession,
   RemoteWorkerSessionStatus,
   TypeId,
+  latestPointer,
 } from '@sdk';
 import { useAuth, useEntitiesQuery, useEntity, useProject } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
-import { ConversationKind } from '@sdk/entities/conversation';
-import { syncConversationMessages } from '@src/components/inbox-view/inbox-api';
+import { isHelpdeskKind } from '@sdk/entities/conversation';
+import { ThreadStack } from './ThreadStack';
+import { channelLabel } from './ChannelBadge';
+import { syncConversationMessages, updateMessage } from '@src/components/inbox-view/inbox-api';
 import { FlowMessageKind, markFlowMessagesReceived } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
 import { LiveSessionGroup, SessionEventLine } from './LiveSessionGroup';
@@ -28,6 +32,8 @@ import { useLocalUser } from './useLocalUser';
 import { useMembers } from '@src/hooks/use-members';
 import {
   buildConversationItems,
+  groupThreadItems,
+  itemThreadId,
   ConversationItemKind,
   groupConversationItems,
   shouldShowSoloSendNotice,
@@ -65,6 +71,12 @@ interface ConversationViewProps {
   /** Open an executed message's run in the drawer's Runs tab, focused on it.
    *  Fired by the per-message run-status one-liner (not by executing). */
   onOpenRun?: (processId: string) => void;
+  /** URL-carried thread filter: show only this thread's messages, unpacked.
+   *  Null = every thread, each packed into one row. */
+  threadId?: string | null;
+  /** Open a thread (id) or return to the packed list (null). URL-first — the
+   *  view never filters itself, it asks the host to navigate. */
+  onThreadNavigate?: (threadId: string | null) => void;
 }
 
 export function ConversationView({
@@ -75,6 +87,8 @@ export function ConversationView({
   onSelectMessage,
   onMostRecentMessageChange,
   onOpenRun,
+  threadId,
+  onThreadNavigate,
 }: ConversationViewProps) {
   const { t } = useLingui();
   const conversationTypeId = useMemo(() => new TypeId(Conversation.type, conversationId), [conversationId]);
@@ -272,13 +286,77 @@ export function ConversationView({
 
   const orderedItems = useMemo(() => buildConversationItems(pointers, draftMessages), [pointers, draftMessages]);
 
-  // Consecutive live-session runs collapse into indented SESSION_GROUP rows
-  // (keyed by fm.remote_worker_session_id). Bodies come from the live query —
-  // messages outside the query window degrade to flat rendering.
-  const groupedItems = useMemo(
-    () => groupConversationItems(orderedItems, (id) => messagesById.get(id) ?? null),
-    [orderedItems, messagesById],
+  // The cloud thread this conversation caches, if any — the first message that
+  // carries an `origin`. Every message in a source-backed conversation shares a
+  // channel, so the first one found answers for the conversation.
+  const channelOrigin = useMemo(() => {
+    for (const fm of messagesById.values()) {
+      if (fm.origin?.kind) return fm.origin;
+    }
+    return null;
+  }, [messagesById]);
+
+  // What is in flight. Local state, because the line must appear the instant
+  // the user hits Send — the worker's process does not exist yet. Cleared when
+  // the reply lands, which is the only honest signal it is no longer sending.
+  const [sendingText, setSendingText] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (sendingText) setSendingText(null);
+    // Intentionally keyed on the pointer count alone: a new message in this
+    // conversation IS the arrival, whichever direction it came from.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pointers.length]);
+
+  // Authoritative per-thread sizes. The feed query is windowed, so counting
+  // the loaded messages would undercount a long thread; MessageThread carries
+  // the real number and this is the only reason the entity is fetched here.
+  const threadsRequest = useMemo(
+    () => new QueryRequest({
+      type: MessageThread.type,
+      name: `threads:${conversationId}`,
+      query: new QueryFilter({
+        match: { op: '$EQ', operands: ['conversation_id', conversationId] },
+      }),
+    }),
+    [conversationId],
   );
+  // Only the packed view reads these counts, so a thread-filtered view opens
+  // no subscription at all.
+  const { data: threads = [] } = useEntitiesQuery<MessageThread>(threadsRequest, {
+    enabled: !!conversationId && !threadId,
+  });
+  const threadCounts = useMemo(
+    () => new Map(threads.map((th) => [th.id ?? '', th.message_count ?? 0])),
+    [threads],
+  );
+
+  // Two views of one feed, chosen by the URL:
+  //   ?thread=<id> → only that thread's messages, unpacked
+  //   (absent)     → every thread packed into one row, internal chat flat
+  //
+  // Threaded and session messages are disjoint — an ingested email never has a
+  // `remote_worker_session_id` — so each grouper gets its own slice and ONE
+  // call. Feeding non-thread rows through `groupConversationItems` one at a
+  // time (the obvious composition) would silently defeat it: it collapses
+  // CONSECUTIVE runs, and a one-element array can never form a run, so two
+  // adjacent session messages would render as two separate groups.
+  const groupedItems = useMemo(() => {
+    const getFm = (id: string) => messagesById.get(id) ?? null;
+    if (threadId) {
+      const inThread = orderedItems.filter((it) => itemThreadId(it, getFm) === threadId);
+      return groupConversationItems(inThread, getFm);
+    }
+    const threaded: ConversationItem[] = [];
+    const plain: ConversationItem[] = [];
+    for (const item of orderedItems) {
+      (itemThreadId(item, getFm) ? threaded : plain).push(item);
+    }
+    return [
+      ...groupThreadItems(threaded, getFm, threadCounts),
+      ...groupConversationItems(plain, getFm),
+    ].sort((a, b) => a.sortAt - b.sortAt);
+  }, [orderedItems, messagesById, threadId, threadCounts]);
 
   // One row of the feed — a normal bubble, a draft bubble, or (for
   // kind=session_event messages) a slim centered system line. Shared by the
@@ -318,8 +396,7 @@ export function ConversationView({
           onSelect={onSelectMessage ? () => onSelectMessage(id) : undefined}
           isConversationOwner={isConversationOwner}
           onDeleteMessage={handleDeleteMessage}
-          conversationStatusVisible={conversationStatusVisible}
-          isCommunity={isCommunityConversation}
+          isHelpdesk={isHelpdeskConversation}
           attachmentProjectId={attachmentProjectId}
           messageAttachments={attachmentsByMessage.get(id)}
         />
@@ -343,7 +420,6 @@ export function ConversationView({
         onDraftSent={() => void refetch()}
         isSelected={!!id && (selectedMessageIds ?? []).includes(id)}
         onSelect={onSelectMessage && id ? () => onSelectMessage(id) : undefined}
-        conversationStatusVisible={conversationStatusVisible}
         attachmentProjectId={attachmentProjectId}
       />
     );
@@ -424,12 +500,11 @@ export function ConversationView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pointers.map((p) => p.id).join(',')]);
 
-  const conversationStatusVisible = conversation?.message_status_visible !== false;
-  // Community (support-center) ticket: replies are masked to a single brand
+  // Help-desk (support) ticket: replies are masked to a single brand
   // identity, and the real responder's sender_id is intentionally absent from
   // the guest's (redacted) roster — so the bubble must not flag it as an
-  // unknown sender. See CommunityConfig / the hub sender_name masking.
-  const isCommunityConversation = conversation?.kind === ConversationKind.COMMUNITY;
+  // unknown sender. See HelpdeskConfig / the hub sender_name masking.
+  const isHelpdeskConversation = isHelpdeskKind(conversation?.kind);
   const { project: currentProject } = useProject();
   const attachmentProjectId = resolveAttachmentProjectId(task, conversation, currentProject?.id);
   // Staged bundle attachments (one query for the whole panel). Drives the
@@ -449,6 +524,34 @@ export function ConversationView({
     !!cloudUserId &&
     ((!!conversation?.created_by && conversation.created_by === cloudUserId) ||
       (participants ?? []).some((p) => p.user_id === cloudUserId && (p.role ?? '').toLowerCase() === 'owner'));
+
+  // Open-to-read (URL-first): viewing a conversation marks its latest received
+  // message read — the mutation lives HERE, on the mounted view, so the Inbox
+  // row click / banner click / direct link only navigate (single writer:
+  // navigation → view → action; the backend then reconciles
+  // InboxManager.unread). Focus-gated: a message arriving while the window is
+  // backgrounded must stay unread (it drives the badge) until the user
+  // actually returns — hence the re-run on window focus.
+  const readMarkedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const markLatestRead = () => {
+      if (!document.hasFocus()) return;
+      const latestId = latestPointer(pointers)?.id;
+      const latest = latestId ? messagesById.get(latestId) : undefined;
+      if (!latest?.id || latest.is_read) return;
+      const senderId = latest.sender_id ?? null;
+      if (senderId && (senderId === cloudUserId || senderId === localUser?.id)) return;
+      const key = `${conversationId}:${latest.id}`;
+      if (readMarkedRef.current === key) return;
+      readMarkedRef.current = key;
+      void updateMessage(latest.id, { is_read: true }).catch(() => {
+        readMarkedRef.current = null; // transient failure — retry on next tick/focus
+      });
+    };
+    markLatestRead();
+    window.addEventListener('focus', markLatestRead);
+    return () => window.removeEventListener('focus', markLatestRead);
+  }, [conversationId, pointers, messagesById, cloudUserId, localUser?.id]);
 
   // Delete a message everywhere. The loader/live-query owns the list, so we
   // only fire the SDK action and let the resulting data-op re-render the view
@@ -476,17 +579,17 @@ export function ConversationView({
     }
   }, [refetch, refreshMembers, conversationId]);
 
-  // Staff "pick up" affordance for a community ticket: shown only on a
-  // community conversation the local cloud user hasn't joined and didn't open
+  // Staff "pick up" affordance for a helpdesk ticket: shown only on a
+  // helpdesk conversation the local cloud user hasn't joined and didn't open
   // (the guest initiator is the owner). Joining adds them to the roster so they
   // receive messages and can reply. See pickupConversation / hub Conversation.pickup.
   const [pickingUp, setPickingUp] = useState(false);
   const isParticipant = !!cloudUserId && (participants ?? []).some((p) => p.user_id === cloudUserId);
-  const canPickup = isCommunityConversation && !!cloudUserId && !isConversationOwner && !isParticipant;
+  const canPickup = isHelpdeskConversation && !!cloudUserId && !isConversationOwner && !isParticipant;
 
   const showSoloNotice = shouldShowSoloSendNotice({
     remote: conversation?.remote === true,
-    community: isCommunityConversation,
+    helpdesk: isHelpdeskConversation,
     rosterReady,
     participants: participants ?? [],
     cloudUserId,
@@ -508,7 +611,12 @@ export function ConversationView({
     rosterReady &&
     (participants ?? []).length === 2 &&
     !!cloudUserId &&
-    !!otherParticipant &&
+    // The peer's user_id must be RESOLVED, not just the participant row
+    // present: an unresolved roster row (user_id null) passes the
+    // `p.user_id !== cloudUserId` filter and would mint a session draft with
+    // host_user_id=null — the host then materializes a row without its own
+    // identity and never shows the Approve bar (see apply_snapshot heal).
+    !!otherParticipant?.user_id &&
     !workerSession.hasLiveSession;
   const liveSessionDisabledReason = !conversation?.remote
     ? t`Live sessions need a shared conversation`
@@ -516,7 +624,9 @@ export function ConversationView({
       ? t`Live sessions are 1:1 — available in two-person conversations`
       : workerSession.hasLiveSession
         ? t`A live session is already running in this conversation`
-        : null;
+        : otherParticipant && !otherParticipant.user_id
+          ? t`Waiting for the other participant's identity to sync…`
+          : null;
   const [startingSession, setStartingSession] = useState(false);
   const handleStartLiveSession = useCallback(async () => {
     if (!canStartLiveSession || startingSession) return;
@@ -627,6 +737,18 @@ export function ConversationView({
       ) : (
         <div className="flex flex-col gap-3">
           {groupedItems.map((item) => {
+            if (item.kind === ConversationItemKind.THREAD_GROUP) {
+              return (
+                <ThreadStack
+                  key={item.key}
+                  threadId={item.threadId}
+                  messageCount={item.messageCount}
+                  onOpenThread={onThreadNavigate ? () => onThreadNavigate(item.threadId) : undefined}
+                >
+                  {renderConversationItem(item.head)}
+                </ThreadStack>
+              );
+            }
             if (item.kind === ConversationItemKind.SESSION_GROUP) {
               return (
                 <LiveSessionGroup
@@ -656,7 +778,25 @@ export function ConversationView({
           bubble with Send/Discard — but it must not block composing a fresh reply.
           The plain composer never auto-creates a draft, so there's no duplication
           loop. */}
-      <MessageComposer conversationId={conversationId} onSent={() => void refetch()} />
+      {/* Deliberately does NOT name the outcome. Whether a reply is delivered
+          or parked as a draft is the transport's business — Agentmail sends,
+          the Gmail connector can only draft — and the composer learns which
+          only when the send resolves. Copy that promised "drafted" was simply
+          wrong half the time. The reply itself arrives in the feed by the
+          ordinary ingest route once it exists. */}
+      {sendingText && (
+        <SessionEventLine
+          text={t`Sending in ${channelLabel(channelOrigin?.kind)}: “${sendingText}”`}
+        />
+      )}
+      <MessageComposer
+        conversationId={conversationId}
+        onSent={() => void refetch()}
+        // A source-backed conversation replies into its channel, not the hub.
+        channel={channelOrigin?.kind}
+        onChannelSent={setSendingText}
+        placeholder={channelOrigin ? t`Reply in ${channelLabel(channelOrigin.kind)}` : undefined}
+      />
 
       {executeTarget && (
         <ExecutePromptDialog

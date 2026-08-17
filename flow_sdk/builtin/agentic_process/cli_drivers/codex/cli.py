@@ -1,6 +1,6 @@
-"""CodexCliOptions — builds OpenAI Codex CLI shell command strings.
+"""CodexAgentOptions — builds OpenAI Codex CLI shell command strings.
 
-Mirrors the shape of ``ClaudeCliOptions`` for the ``codex exec`` non-interactive
+Mirrors the shape of ``ClaudeAgentOptions`` for the ``codex exec`` non-interactive
 path. The codex worker runs ``codex exec --json`` per turn; the JSON event
 stream is what gets converted to FlowData.
 
@@ -20,21 +20,21 @@ lines are easy to filter independently of the Claude CLI lines.
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import serialize_toml_cli_value
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
 from flow_sdk.builtin.agentic_process.model_tiers import CODEX_MODEL_TIERS
 
 logger = logging.getLogger(__name__)
 
 
-class CodexCliOptions(WorkerCLIOptions):
+class CodexAgentOptions(AgentOptions):
     """Builds a ``codex exec`` shell command string.
 
-    The intent is parity with ``ClaudeCliOptions`` so that the ``cmd_line``
+    The intent is parity with ``ClaudeAgentOptions`` so that the ``cmd_line``
     property on AgenticProcess returns something inspectable for codex too
     (the ``test_agentic_process_clock_agent`` test asserts on ``cmd_line``).
     """
@@ -54,6 +54,7 @@ class CodexCliOptions(WorkerCLIOptions):
         add_dirs: list[str] | None = None,
         json_stream: bool = True,
         ephemeral: bool = True,
+        bypass_hook_trust: bool = False,
     ) -> None:
         super().__init__(workdir=workdir, env_vars=env_vars)
         self.session_id = session_id
@@ -68,11 +69,16 @@ class CodexCliOptions(WorkerCLIOptions):
         self.json_stream = json_stream
         self.ephemeral = ephemeral
         self.developer_instructions: str | None = None
+        # `-c key=val` overrides for API-key auth (the OpenRouter provider block).
+        # Derived per-spawn from the harness Capability — excluded from to_json /
+        # the restart hash, same as fork/resume.
+        self.extra_config_overrides: list[tuple[str, Any]] = []
+        # Allows process-scoped command hooks for this launch only. Deliberately
+        # absent from ``to_json`` / ``from_json`` so trust is never persisted.
+        self.bypass_hook_trust = bypass_hook_trust
 
-    # Default reasoning effort overridden in ``_emit_flags`` so user's global
-    # ``model_reasoning_effort = "xhigh"`` from ~/.codex/config.toml doesn't make
-    # every flowpad turn 60+ seconds. Tests run within a 30s global timeout —
-    # keep this in sync if that limit is relaxed.
+    # Overridden per-process in ``_reasoning_effort_flags`` (see there for why).
+    # Chosen to stay under the 30s test timeout — keep in sync if that's relaxed.
     DEFAULT_REASONING_EFFORT = "low"
 
     EXECUTABLE = "codex"
@@ -95,7 +101,8 @@ class CodexCliOptions(WorkerCLIOptions):
     def _developer_instruction_flags(self) -> list[str]:
         if not self.developer_instructions:
             return []
-        return ["-c", f"developer_instructions={json.dumps(self.developer_instructions)}"]
+        value = serialize_toml_cli_value(self.developer_instructions)
+        return ["-c", f"developer_instructions={value}"]
 
     def _interactive_trust_flags(self) -> list[str]:
         """Trust the injected-input target only when full access was requested."""
@@ -113,12 +120,8 @@ class CodexCliOptions(WorkerCLIOptions):
             workdir = str(Path(self.workdir).resolve(strict=True))
         except OSError:
             workdir = self.workdir
-        # JSON and TOML basic strings share the escapes used here. JSON leaves
-        # DEL (U+007F) raw, though TOML forbids it, so escape that one extra
-        # codepoint while preserving non-BMP Unicode as real UTF-8.
-        project = json.dumps(workdir, ensure_ascii=False).replace("\x7f", "\\u007f")
-        trusted = json.dumps("trusted")
-        return ["-c", f"projects={{{project}={{trust_level={trusted}}}}}"]
+        projects = {workdir: {"trust_level": "trusted"}}
+        return ["-c", f"projects={serialize_toml_cli_value(projects)}"]
 
     def _interactive_update_flags(self) -> list[str]:
         """Keep Codex's startup updater out of automation-owned PTYs.
@@ -130,6 +133,28 @@ class CodexCliOptions(WorkerCLIOptions):
         """
         return ["-c", "check_for_update_on_startup=false"]
 
+    def _reasoning_effort_flags(self) -> list[str]:
+        """Process-local reasoning-effort override — required on BOTH transports.
+
+        Without it the turn inherits ``model_reasoning_effort`` from the user's
+        global ~/.codex/config.toml. That is not merely slow: codex maps some
+        values to an effort the API rejects outright (``ultra`` → ``max`` →
+        HTTP 400 ``Invalid value: 'max'``), which fails the turn with no
+        assistant message. A ``-c`` override is process-local, so the user's
+        global config is never mutated (same technique as
+        :meth:`_interactive_update_flags`).
+        """
+        return ["-c", f"model_reasoning_effort={self.DEFAULT_REASONING_EFFORT}"]
+
+    def _extra_config_override_flags(self) -> list[str]:
+        """API-key auth provider block: process-local ``-c key=val`` overrides
+        (e.g. the OpenRouter model_providers config). TOML-quoted like the other
+        ``-c`` helpers; empty in device mode."""
+        flags: list[str] = []
+        for key, value in self.extra_config_overrides:
+            flags.extend(["-c", f"{key}={serialize_toml_cli_value(value)}"])
+        return flags
+
     def _emit_flags(self) -> list[str]:
         """argv after ``codex``. Two shapes keyed on ``json_stream``:
           * True (default) → ``exec … --json … -`` headless, prompt over stdin;
@@ -137,40 +162,48 @@ class CodexCliOptions(WorkerCLIOptions):
         Both end with the shared :meth:`_common_tail`.
         """
         bypass = ["--dangerously-bypass-approvals-and-sandbox"] if self.permission_mode == "bypassPermissions" else []
+        hook_trust = ["--dangerously-bypass-hook-trust"] if self.bypass_hook_trust else []
         dev_flags = self._developer_instruction_flags()
+        extra_cfg = self._extra_config_override_flags()
         if not self.json_stream:
             return (
-                bypass
+                hook_trust
+                + bypass
                 + self._interactive_update_flags()
                 + self._interactive_trust_flags()
+                + self._reasoning_effort_flags()
+                + extra_cfg
                 + dev_flags
                 + self._common_tail()
             )
 
-        head = ["exec", "--skip-git-repo-check", *bypass]
+        head = ["exec", "--skip-git-repo-check", *hook_trust, *bypass]
         if self.ephemeral:
             head.append("--ephemeral")
         head.append("--json")
-        head.extend(["-c", f"model_reasoning_effort={self.DEFAULT_REASONING_EFFORT}"])
+        head.extend(self._reasoning_effort_flags())
+        head.extend(extra_cfg)
         return head + dev_flags + self._common_tail() + ["-"]  # trailing "-" → codex reads prompt from stdin
 
     def to_json(self) -> dict[str, Any]:
         d = super().to_json()
-        d.update({
-            "worker_type": "codex",
-            "session_id": self.session_id,
-            "resume": self.resume,
-            "model": self.model,
-            "permission_mode": self.permission_mode,
-            "skill_names": self.skill_names,
-            "add_dirs": self.add_dirs,
-            "json_stream": self.json_stream,
-            "ephemeral": self.ephemeral,
-        })
+        d.update(
+            {
+                "worker_type": "codex",
+                "session_id": self.session_id,
+                "resume": self.resume,
+                "model": self.model,
+                "permission_mode": self.permission_mode,
+                "skill_names": self.skill_names,
+                "add_dirs": self.add_dirs,
+                "json_stream": self.json_stream,
+                "ephemeral": self.ephemeral,
+            }
+        )
         return d
 
     @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "CodexCliOptions":
+    def from_json(cls, data: dict[str, Any]) -> "CodexAgentOptions":
         return cls(
             session_id=data.get("session_id"),
             resume=bool(data.get("resume", False)),

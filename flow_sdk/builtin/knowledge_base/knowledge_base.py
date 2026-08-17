@@ -13,8 +13,7 @@ from usearch.index import Index
 from flow_sdk.config import default_service_config
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.api.type_id import TypeId
-from flow_sdk.builtin.fs_entities import FSItem
-from flow_sdk.builtin.knowledge_base.knowledge_data import KeyedEmbeddings, KnowledgeData
+from flow_sdk.builtin.knowledge_base.knowledge_data import KeyedEmbeddings, KnowledgeData, KnowledgeItem
 from flow_sdk.core import action
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.request_context.methods import get_current_request_info
@@ -118,7 +117,7 @@ class OntologyManager:
         return self.data is not None and len(self.data.labels) > 0
 
 
-async def _apply_token_budget(results: list[tuple[FSItem, float]], token_budget: int):
+async def _apply_token_budget(results: list[tuple[KnowledgeItem, float]], token_budget: int):
     # First, compute the approximate total tokens of the results using binary search
     left = 0
     right = len(results)
@@ -234,7 +233,7 @@ class KnowledgeBase(Entity):
         ]
         return await _apply_token_budget(results, token_budget)
 
-    async def invalidate_items(self, items: list[FSItem]):
+    async def invalidate_items(self, items: list[KnowledgeItem]):
         await self._remove_items([item.typeid for item in items if item.typeid in self.knowledge_data.items])
         await self._add_items_to_knowledge(items)
         await self._build_index_from_items()
@@ -258,11 +257,11 @@ class KnowledgeBase(Entity):
 
         self.raw_knowledge = self.knowledge_data.model_dump_json()
 
-    async def add_items_to_knowledge(self, items: list[FSItem]):
+    async def add_items_to_knowledge(self, items: list[KnowledgeItem]):
         await self._add_items_to_knowledge(items)
         await self._build_index_from_items()
 
-    async def _add_items_to_knowledge(self, items: list[FSItem]):
+    async def _add_items_to_knowledge(self, items: list[KnowledgeItem]):
         contents = [item.content for item in items]
         # keywords = [await get_top_words(content) for content in contents]
         embeddings = await generate_embeddings(contents)
@@ -439,4 +438,4 @@ class KnowledgeBase(Entity):
     async def view(self):
         await self.expand_blobs()
         items = list(self.knowledge_data.items.values())
-        return ApiSuccessResponse[list[FSItem]](data=items)
+        return ApiSuccessResponse[list[KnowledgeItem]](data=items)

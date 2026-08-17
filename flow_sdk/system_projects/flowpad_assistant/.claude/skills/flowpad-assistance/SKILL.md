@@ -24,11 +24,12 @@ description: |
       (kills + re-spawns the worker, resuming the session). Use after installing an
       MCP server so the new config loads, or when the user says "restart this
       session / process / agent". Defaults to the current process. See ``process.md``.
-    • message — send a message (optionally with file attachments) into a
-      conversation via the backend's ``add_message`` HTTP action (there is no
-      ``flow`` CLI command for this). Triggered by "send X to my conversation
-      with Y", "attach this doc to the Z conversation", "message Y the report".
-      See ``message.md``.
+    • message — send a message into a conversation, optionally carrying file
+      attachments, entity references, or a runnable prompt for the recipient,
+      via the backend's ``add_message`` HTTP action (``flow conversation send``
+      covers text-only sends and nothing richer). Triggered by "send X to my
+      conversation with Y", "attach this doc to the Z conversation", "message Y
+      the report", "send them a prompt to run". See ``message.md``.
   NOT handled here: building a website / web app / SaaS / dashboard — even when
   phrased as "using flowpad assistant". That is the separate ``web-app-builder``
   skill (copy-as-is template + setup); invoke it instead of the records action.
@@ -107,7 +108,6 @@ Success — exit 0, one JSON line on stdout:
     "CurrentDomainTypeId": "...",
     "CurrentVisitorTypeId": null,
     "CurrentAgentTypeId": null,
-    "CurrentWorkflowTypeId": null,
     "CurrentFlowTypeId": null
   }
 }
@@ -125,7 +125,6 @@ Each value is a TypeId string (`<type>-<id>`) or `null` if not set. The exit cod
 | "current compute node" / "this machine" | `CurrentComputeNodeTypeId` |
 | "current user" / "me" | `CurrentUserTypeId` |
 | "current agent" | `CurrentAgentTypeId` |
-| "current workflow" | `CurrentWorkflowTypeId` |
 | "current flow" | `CurrentFlowTypeId` |
 | "active entity" / "what I'm focused on" | `CurrentActiveEntityTypeId` |
 

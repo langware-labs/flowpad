@@ -5,18 +5,19 @@
  * the process dock (the workspace home), never an arbitrary sibling.
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { Tab, type ITab } from '@sdk';
+import { Tab, tabManager, type ITab } from '@sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import React from 'react';
 
 import { DockPointer } from '@src/navigation/DockPointer';
-import { applyAllTabs, getAllTabsSnapshot } from '@src/tabs/all-tabs-store';
 import { ViewType } from '@src/types/ViewType';
+import { TooltipProvider } from '@src/components/ui/tooltip';
 
 const openDock = vi.fn();
 let currentDock: DockPointer | null = null;
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ currentDock, navigation: { openDock } }),
+  useCurrentDock: () => currentDock,
 }));
 
 import { WorkspaceChildStrip } from '@src/pages/flow-page/workspace-child-strip';
@@ -58,14 +59,14 @@ function processTab(): Tab {
 const processDock = () => new DockPointer(ViewType.SHELL, `agentic_process-${AP}`);
 
 beforeEach(() => {
-  vi.spyOn(Tab, 'listAll').mockImplementation(async () => getAllTabsSnapshot());
+  vi.spyOn(Tab, 'listAll').mockImplementation(() => Promise.resolve([...tabManager.getSnapshot()]));
 });
 
 afterEach(() => {
   cleanup();
   openDock.mockReset();
   currentDock = null;
-  applyAllTabs([]);
+  tabManager.adoptGlobal([]);
   vi.restoreAllMocks();
 });
 
@@ -76,9 +77,16 @@ describe('WorkspaceChildStrip', () => {
       parent_tab_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
     });
     const topLevel = row('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', { parent_tab_id: null });
-    applyAllTabs([processTab(), child, foreign, topLevel]);
+    tabManager.adoptGlobal([processTab(), child, foreign, topLevel]);
 
-    render(<WorkspaceChildStrip processTab={processTab()} processDock={processDock()} />);
+    render(
+      // The Close-workspace control renders a radix Tooltip, which needs an
+      // ambient TooltipProvider — the real app supplies one at its root
+      // (App.tsx). Mirror that here.
+      <TooltipProvider>
+        <WorkspaceChildStrip processTab={processTab()} processDock={processDock()} />
+      </TooltipProvider>,
+    );
 
     expect(screen.getByTestId('workspace-display-tab')).toBeTruthy();
     expect(screen.getByText('child bbbb')).toBeTruthy();
@@ -87,8 +95,15 @@ describe('WorkspaceChildStrip', () => {
   });
 
   it('clicking the Display header navigates to the process dock', () => {
-    applyAllTabs([processTab()]);
-    render(<WorkspaceChildStrip processTab={processTab()} processDock={processDock()} />);
+    tabManager.adoptGlobal([processTab()]);
+    render(
+      // The Close-workspace control renders a radix Tooltip, which needs an
+      // ambient TooltipProvider — the real app supplies one at its root
+      // (App.tsx). Mirror that here.
+      <TooltipProvider>
+        <WorkspaceChildStrip processTab={processTab()} processDock={processDock()} />
+      </TooltipProvider>,
+    );
 
     fireEvent.click(screen.getByTestId('workspace-display-tab'));
     expect(openDock).toHaveBeenCalledTimes(1);
@@ -97,12 +112,19 @@ describe('WorkspaceChildStrip', () => {
 
   it('closing the ACTIVE child returns to the process dock', () => {
     const child = row('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
-    applyAllTabs([processTab(), child]);
+    tabManager.adoptGlobal([processTab(), child]);
     // Make the child the active dock so close must bounce home.
     currentDock = new DockPointer(new Tab(child).dockPointer!);
     vi.spyOn(Tab, 'closeById').mockResolvedValue([]);
 
-    render(<WorkspaceChildStrip processTab={processTab()} processDock={processDock()} />);
+    render(
+      // The Close-workspace control renders a radix Tooltip, which needs an
+      // ambient TooltipProvider — the real app supplies one at its root
+      // (App.tsx). Mirror that here.
+      <TooltipProvider>
+        <WorkspaceChildStrip processTab={processTab()} processDock={processDock()} />
+      </TooltipProvider>,
+    );
     fireEvent.click(screen.getAllByLabelText('Close tab')[0]);
 
     expect(openDock).toHaveBeenCalled();

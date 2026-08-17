@@ -3,16 +3,18 @@ from json import JSONDecodeError
 from fastapi import HTTPException, Request
 from pydantic import ValidationError
 
-from flow_sdk.flowpad_types.enums.auth_enums import AuthRole
 from flow_sdk import service_log
+from flow_sdk.actions import action
 from flow_sdk.builtin.user import User
 from flow_sdk.builtin.visitor import Visitor
 from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.db.drivers.query import QueryFilter
-from flow_sdk.actions import action
+from flow_sdk.flowpad_types.enums.auth_enums import AuthRole
+from flow_sdk.fs_store.fs_record import AssetPathCollisionError
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.request_context.methods import get_current_request_info
-from flow_sdk.responses.response import ApiSuccessResponse, ApiFailResponse
+from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.server.routes.graph import get_by_id, get_entity_model_from_registry
 
 
@@ -80,6 +82,7 @@ def _request_wants_system(request_info, filter_params) -> bool:
     Checked in three places (any one wins): ?include_system=1 query string,
     include_system key inside filter JSON body, or X-Include-System header.
     """
+
     def _truthy(v) -> bool:
         if isinstance(v, bool):
             return v
@@ -90,9 +93,7 @@ def _request_wants_system(request_info, filter_params) -> bool:
     params = getattr(request_info, "request_parameters", {}) or {}
     if _truthy(params.get("include_system")):
         return True
-    if isinstance(filter_params, dict) and _truthy(filter_params.get("include_system")):
-        return True
-    return False
+    return isinstance(filter_params, dict) and _truthy(filter_params.get("include_system"))
 
 
 async def handle_get_by_id():
@@ -103,8 +104,9 @@ async def handle_get_by_id():
         raise HTTPException(status_code=400, detail="target not available")
     entity_model, entity = await get_by_id(request_info.target_entity_typeid)
     # Schedule background record refresh (non-blocking)
-    if entity is not None and hasattr(entity, 'check_and_refresh_record'):
+    if entity is not None and hasattr(entity, "check_and_refresh_record"):
         import asyncio
+
         asyncio.create_task(entity.check_and_refresh_record())
     return ApiSuccessResponse[entity_model](data=entity)
 
@@ -138,6 +140,14 @@ async def handle_delete_by_id():
             detail=f"Delete error: Unknown entity type: {target_typeid.type}",
         )
 
+    # A Hub message materializer runs detached from the HTTP request and may
+    # already be in flight. Tombstone a Conversation before deleting its row so
+    # that task cannot recreate the parent after this action returns.
+    if target_typeid.type == BuiltinEntityType.CONVERSATION.value:
+        from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
+
+        hub_ws_bridge.suppress_conversation_materialization(target_typeid.id)
+
     # Auto-propagate removal — symmetric with ``handle_create_entity``'s auto-share.
     # Create makes a ``remote`` child a hub ``is_child`` (the hub fans
     # ``child_created`` to the parent's watchers); delete must do the inverse:
@@ -152,9 +162,7 @@ async def handle_delete_by_id():
         try:
             await entity.unshare(recursive=False)
         except Exception as e:  # noqa: BLE001
-            service_log.warn(
-                f"[delete] auto-unshare {target_typeid} failed (non-fatal): {e}"
-            )
+            service_log.warn(f"[delete] auto-unshare {target_typeid} failed (non-fatal): {e}")
 
     is_deleted = await entity_model.delete_by_id(target_typeid.id)
     if not is_deleted:
@@ -227,20 +235,67 @@ async def handle_record_action():
         raise HTTPException(status_code=404, detail="Entity not found")
 
     rec = await entity.get_record()
-    if rec is None:
+    if rec is None and getattr(entity, "uname", None):
         # Try by uname as well
-        if getattr(entity, "uname", None):
-            from flow_sdk.fs_store.fs_record import FSRecord
-            rec = FSRecord.load_or_none(entity.type, entity.uname)
+        from flow_sdk.fs_store.fs_record import FSRecord
+
+        rec = FSRecord.load_or_none(entity.type, entity.uname)
     if rec is None:
         return ApiFailResponse(message="Record not found", status_code=404)
 
-    type_id_str = str(request_info.target_entity_typeid)
+    from flow_sdk.assets.entity_vfs import local_asset_vfs_binding
 
-    record_folder_ref_dict = rec.record_folder_ref.to_dict(type_id_str) if rec.record_folder_ref is not None else None
-    main_ref_dict = rec.main_ref.to_dict(type_id_str) if rec.main_ref is not None else None
+    asset_binding = local_asset_vfs_binding(entity)
+    if asset_binding is not None:
+        type_id = str(entity.typeid)
+        return ApiSuccessResponse(
+            data={
+                "record_folder_ref": {
+                    "path": "/",
+                    "ref_type": "folder",
+                    "read_only": False,
+                    "type_id": type_id,
+                },
+                "main_ref": {
+                    "path": asset_binding.main_ref,
+                    "ref_type": "file",
+                    "read_only": False,
+                    "type_id": type_id,
+                },
+            }
+        )
+
+    # Other local records retain their filesystem provider (normally
+    # compute_node-@local); their refs are not entity-VFS assets.
+    record_folder_ref_dict = rec.record_folder_ref.to_dict() if rec.record_folder_ref is not None else None
+    main_ref_dict = rec.main_ref.to_dict() if rec.main_ref is not None else None
 
     return ApiSuccessResponse(data={"record_folder_ref": record_folder_ref_dict, "main_ref": main_ref_dict})
+
+
+#: Types whose birth path is not "POST the fields". The value is the verb that
+#: IS correct, so the refusal tells the caller where to go instead of just no.
+_ALTERNATE_BIRTH_PATH: dict[str, str] = {
+    "source_item": "POST /api/v1/ingest/items (or `flow record create source_item`) — "
+    "the ingestor owns this type's identity resolution and content digest",
+}
+
+
+def _uncreatable_reason(type_name: str | None) -> str | None:
+    """``None`` when the generic create may proceed, else why it may not.
+
+    Deliberately keyed on an explicit map rather than ``TypeInfo.creatable``:
+    77 of 93 shipped types are ``creatable=False``, including ``agentic_process``,
+    ``comment``, ``project`` and ``shell``, all of which are created through this
+    route in normal operation. ``creatable`` is a UI affordance hint ("offer a
+    New button"), not an API authorization flag — reading it here would break
+    most of the app. Only types with a genuinely different birth path belong in
+    the map above.
+    """
+    if not type_name:
+        return None
+    alternate = _ALTERNATE_BIRTH_PATH.get(type_name)
+    return f"{type_name} cannot be created directly — use {alternate}" if alternate else None
 
 
 @action.all(action_name="create", methods="post", types="all")
@@ -259,11 +314,32 @@ async def handle_create_entity(request: Request):
         service_log.highlighted_error(err_msg)
         raise HTTPException(status_code=400, detail=err_msg)
 
+    # Some types have a different birth path — SourceItem is minted by the
+    # ingestor, which resolves it against its natural key and computes the
+    # digest. Without this gate a caller can POST one here and get a row with an
+    # empty digest and no stream/external id: it looks real, is FTS-indexed, and
+    # never converges with what the poller writes. Permanent duplicates.
+    problem = _uncreatable_reason(request_info.direct_resource_type)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+
     # Get the entity model using the new helper function
     entity_model = get_entity_model_from_registry(request_info.direct_resource_type)
+    type_info = SchemaRegistry.get(request_info.direct_resource_type)
     try:
         sanitized_data = {}
         for key, value in data.items():
+            # Fresh user-authorable owned assets always derive placement fields
+            # from the addressed scope + TypeInfo. They are returned to clients
+            # for navigation/filtering, but accepting them on create would let
+            # a caller author outside (or mislabel) the selected Project/User.
+            if (
+                key in {"asset_ref", "parent_path", "project_id", "scope"}
+                and type_info is not None
+                and type_info.creatable
+                and type_info.owns_main_ref
+            ):
+                continue
             if not entity_model.is_api_field(key):
                 service_log.highlighted_error(
                     f"None API field !!!: {key} for entity type: {request_info.direct_resource_type}"
@@ -280,13 +356,31 @@ async def handle_create_entity(request: Request):
         raise HTTPException(status_code=400, detail=err_msg)
 
     # Reject agent creation without a name
-    if request_info.direct_resource_type == "agent" and not getattr(entity, "name", None):
+    if request_info.direct_resource_type == "subagent" and not getattr(entity, "name", None):
         raise HTTPException(status_code=400, detail="Agent must have a name")
 
     someone_typeid = request_info.someone_typeid
     if not someone_typeid:
         raise HTTPException(status_code=400, detail="invalid auth result")
 
+    # Entity-level save validation (a `save()` raising ValueError, e.g. Tag's
+    # reserved-root gate) is a client error, not a server fault — mapped once
+    # around the whole branch dispatch so every create path agrees.
+    try:
+        entity = await _dispatch_create_save(entity, request_info, someone_typeid)
+    except AssetPathCollisionError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    # TODO Turn off expand_permissions upon entity creation
+    await entity.expand_permissions()
+
+    return ApiSuccessResponse[Entity](data=entity)
+
+
+async def _dispatch_create_save(entity: Entity, request_info, someone_typeid) -> Entity:
+    """The three create arms (standalone / visitor / parented), extracted so
+    handle_create_entity can wrap them under one ValueError→400 mapping."""
     if not request_info.target_entity_typeid or request_info.target_entity_typeid.type == User.get_type():
         entity = await entity.save(someone_typeid)
     elif request_info.target_entity_typeid.type == Visitor.get_type():
@@ -325,7 +419,4 @@ async def handle_create_entity(request: Request):
             service_log.warn(
                 f"[create] auto-share child {entity.typeid} under {target_entity.typeid} failed (non-fatal): {e}"
             )
-    # TODO Turn off expand_permissions upon entity creation
-    await entity.expand_permissions()
-
-    return ApiSuccessResponse[Entity](data=entity)
+    return entity

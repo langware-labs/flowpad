@@ -20,7 +20,7 @@ module only, and ``AgenticProcess`` imports the driver factory plus the
 Public exports:
 - ``AgenticContext`` — per-turn execution context passed to workers.
 - ``AgenticWorker`` — minimal ABC for execute()/inject()/close_session().
-- ``WorkerCLIOptions`` — base CLI command builder (cd + env + worker_args).
+- ``AgentOptions`` — base CLI command builder (cd + env + worker_args).
 - ``WorkerExecutionInfo`` — Pydantic model returned by Shell.launch().
 - ``WorkerDriver`` — Protocol vendors implement; ``AgenticProcess`` calls it.
 - ``factory(cli_json, worker_type)`` — legacy CLI-options factory.
@@ -33,28 +33,39 @@ import asyncio
 import logging
 import os
 import re
-import shlex
 import shutil
 import signal
 import sys
 import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Protocol
+from typing import TYPE_CHECKING, Any, AsyncIterator, Protocol, Sequence
 
 import psutil
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 from flow_sdk._compat import StrEnum
+from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import (
+    DeviceLoginSpec,
+    WorkerAuthResult,
+    probe_worker_auth,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import (
+    quote_powershell_literal,
+    quote_shell_arg,
+)
 from flow_sdk.builtin.compute_node import ComputeNode
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
 from flow_sdk.transcript_analyzer import TranscriptDescriptor
 
 if TYPE_CHECKING:
+    from flow_sdk.builtin.agent_hook import HookEventType
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
     from flow_sdk.builtin.agentic_process.events import AgenticProcessEventName
     from flow_sdk.builtin.worker_status import WorkerStatus
+    from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
     from flow_sdk.responses.response import ApiResponse
 
 
@@ -417,6 +428,17 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
 
     * ``FLOWPAD_EXECUTION_SCOPE`` — process identity, so worker `flow`
       commands (show/record/context/…) resolve their calling process.
+    * ``FLOWPAD_PYTHON`` — the interpreter that can ``import flow_sdk``, named
+      outright so a worker never has to resolve one. Skills that run Flowpad's
+      own Python (e.g. flow-diagnose's ``report.py``) cannot use ``uv run``:
+      uv ignores PATH and resolves an environment by walking up from the
+      working directory, which for a worker is a user workspace with no
+      Flowpad in it. Nor can they use bare ``python``/``python3`` — the
+      capability bin folder is prepended AFTER our PATH pin at spawn time
+      (see :meth:`AgenticProcess.start_pty` and
+      :func:`build_worker_spawn_env`), so the name can resolve to an unrelated
+      interpreter, and a Windows venv ships no ``python3.exe`` at all. An
+      absolute path is the only form immune to both.
     * ``PATH`` — pinned to this backend's `flow` CLI (version-skew guard,
       see :func:`flow_cli_env_path`).
     * ``CLAUDE_CONFIG_DIR`` — for explicitly configured Claude roots, pinned
@@ -426,6 +448,13 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
 
     ``setdefault`` semantics for the scope (an explicit override wins);
     mutates and returns ``env``.
+
+    The interpreter is assigned rather than ``setdefault``-ed on purpose: it is
+    derived machine state, not launch config, and its value moves whenever the
+    install does (upgrade, reinstall). A stale one persisted in a process's
+    ``cli_config["env_vars"]`` would silently point workers at an interpreter
+    that no longer exists — the same failure this var was added to remove. Same
+    reasoning as ``FLOW_INSTANCE`` in ``ClaudeCLIWorker.build_env``.
     """
     import json as _json  # noqa: PLC0415
 
@@ -433,6 +462,7 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
         "FLOWPAD_EXECUTION_SCOPE",
         _json.dumps([{"type": process.get_type(), "id": process.id}]),
     )
+    env["FLOWPAD_PYTHON"] = sys.executable
     if process.driver.name == "claude":
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         from flow_sdk.instance_settings.base_settings import (  # noqa: PLC0415
@@ -450,12 +480,21 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
                     f"Claude worker {ENV_CLAUDE_CONFIG_DIR} must match Flowpad's configured Claude home "
                     f"(got {worker_home} and {claude_home})"
                 )
+        # Only pin CLAUDE_CONFIG_DIR for a genuinely NON-default Claude root. When
+        # the root resolves to the native ~/.claude — even via an explicit
+        # FLOWPAD_CLAUDE_HOME/CLAUDE_CONFIG_DIR that points there — it must stay
+        # UNSET. Claude keeps its account/config in ``~/.claude.json`` *beside*
+        # the default ``~/.claude/`` dir; setting CLAUDE_CONFIG_DIR=~/.claude makes
+        # Claude read ``~/.claude/.claude.json`` (a different, usually stale file),
+        # lose the OAuth account, and fall back to the "Select login method"
+        # picker — which silently breaks every real-Claude worker turn.
+        native_home = _canonical_lexical_path(Path.home() / ".claude")
         root_is_explicit = bool(
             os.environ.get(ENV_FLOWPAD_CLAUDE_HOME)
             or os.environ.get(ENV_CLAUDE_CONFIG_DIR)
             or worker_override is not None
         )
-        if root_is_explicit:
+        if root_is_explicit and claude_home != native_home:
             env[ENV_CLAUDE_CONFIG_DIR] = str(claude_home)
         else:
             env.pop(ENV_CLAUDE_CONFIG_DIR, None)
@@ -469,11 +508,13 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
     """Resolve project SecretOrigin pointers into this transient worker env.
 
     This must only be called on spawn-time env dicts. It must not mutate
-    WorkerCLIOptions.env_vars because those are persisted and rendered.
+    AgentOptions.env_vars because those are persisted and rendered.
     """
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.builtin.secret_origin import SecretOrigin  # noqa: PLC0415
-    from flow_sdk.builtin.secret_origin_driver import get_secret_origin_driver  # noqa: PLC0415
+    from flow_sdk.builtin.secret_origin_resolver import (  # noqa: PLC0415
+        attached_env_vars_for,
+        resolve_project_secrets,
+    )
 
     project = None
     project_id = getattr(process, "project_id", None)
@@ -487,33 +528,24 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
     if project is None:
         return env
 
-    seen: set[str] = set()
-    for bucket in ("private", "shared"):
-        for tid in project.context_of_type("secret_origin", bucket=bucket):
-            if str(tid) in seen:
-                continue
-            seen.add(str(tid))
-            entry = project.get_context_entry_data(tid) or {}
-            env_var = (entry.get("env_var") or "").strip()
-            if env_var and env_var in env:
-                continue
-            secret = await SecretOrigin.get_by_id(tid.id)
-            if secret is None:
-                continue
-            env_var = env_var or (secret.env_var or "").strip()
-            if not env_var or env_var in env:
-                continue
-            try:
-                resolved = await get_secret_origin_driver(secret.locator.kind).resolve(
-                    secret.locator,
-                    project=project,
-                    process=process,
-                    secret_origin=secret,
-                )
-            except Exception:
-                continue
-            if resolved is not None:
-                env.setdefault(env_var, resolved.get_secret_value())
+    # Node attachment gates the worker too, not only the connector's commands.
+    # None = nothing curated on this node, i.e. every declared secret, so an
+    # untouched setup behaves exactly as it did before attachment existed.
+    only = await attached_env_vars_for(project)
+    resolved = await resolve_project_secrets(project, only=only, process=process)
+    for env_var, value in resolved.items():
+        # setdefault, not assignment: an explicitly-set env var wins.
+        env.setdefault(env_var, value.get_secret_value())
+
+    # API-key auth (harness in "api" mode): inject the provider env block + key.
+    # Lazy import avoids a cycle with the driver registry. This wins over device
+    # creds by design; the key lands only in this transient spawn env.
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+
+    api_auth = await resolve_worker_api_auth(process)
+    if api_auth is not None:
+        for key, value in api_auth.env.items():
+            env[key] = value
     return env
 
 
@@ -540,8 +572,18 @@ def flow_cli_env_path(existing_path: str | None = None) -> str | None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# AgenticContext — execution context handed to workers
+# ProcessHookRuntime / AgenticContext — launch context handed to workers
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+class ProcessHookRuntime(BaseModel):
+    """Immutable, launch-only artifacts prepared from persisted hook intent."""
+
+    model_config = ConfigDict(frozen=True)
+
+    plugin_dirs: tuple[str, ...] = ()
+    config_overrides: tuple[tuple[str, Any], ...] = ()
+    bypass_hook_trust: bool = False
 
 
 class AgenticContext(BaseModel):
@@ -586,9 +628,21 @@ class AgenticContext(BaseModel):
     # Claude's ``--add-dir``). Drivers populate this from process configuration
     # so print-mode workers see the same skill/agent surface as PTY-mode runs.
     add_dirs: list[str] = Field(default_factory=list)
+    # Prepared process-local plugins. Runtime-only: never persisted or hashed.
+    plugin_dirs: list[str] = Field(default_factory=list)
     system_prompt_file: str | None = None
     developer_instructions: str | None = None
     custom_instruction_dirs: list[str] = Field(default_factory=list)
+
+    # Extra `-c key=val` config overrides for API-key auth (currently codex's
+    # OpenRouter provider block). Derived per-spawn from the harness Capability,
+    # so — like fork/resume — excluded from the restart hash. Same name as
+    # CodexAgentOptions.extra_config_overrides so apply_api_model_to_options can
+    # stamp either object.
+    extra_config_overrides: list[tuple[str, Any]] = Field(default_factory=list)
+    # One-launch acknowledgement for CLIs that gate dynamically supplied hooks
+    # behind an explicit trust flag (currently Codex). Never persisted.
+    bypass_hook_trust: bool = False
 
     @model_validator(mode="after")
     def set_defaults(self) -> "AgenticContext":
@@ -599,7 +653,15 @@ class AgenticContext(BaseModel):
         return self
 
     def to_persistable_dict(self) -> dict[str, Any]:
-        data = self.model_dump(exclude={"compute_node", "stack_frame"})
+        data = self.model_dump(
+            exclude={
+                "compute_node",
+                "stack_frame",
+                "plugin_dirs",
+                "extra_config_overrides",
+                "bypass_hook_trust",
+            }
+        )
         if self.compute_node is not None:
             data["compute_node_id"] = self.compute_node.id
         return data
@@ -663,16 +725,16 @@ class AgenticWorker(ABC):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# WorkerCLIOptions — cross-platform shell command builder
+# AgentOptions — cross-platform shell command builder
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class WorkerCLIOptions:
+class AgentOptions:
     """Base class for worker CLI commands.
 
     Converts a structured configuration into a shell command string suitable
-    for PTY injection. Subclasses override ``_build_worker_args()`` to provide
-    the actual executable and its flags.
+    for PTY injection. Subclasses declare ``EXECUTABLE`` and override
+    ``_emit_flags()`` to provide their raw CLI arguments.
 
     Model **tier** resolution lives here, once: ``self.model`` keeps the raw
     persisted intent (``sm``/``md``/``lg`` or a concrete model), while
@@ -794,10 +856,7 @@ class WorkerCLIOptions:
         return self.cli_cmd(instruction=instruction), dict(self.env_vars)
 
     def to_shell_string(self, instruction: str | None = None) -> str:
-        args = self._build_worker_args()
-        if sys.platform == "win32":
-            return self._build_win32(args, instruction)
-        return self._build_posix(args, instruction)
+        return self._render_shell_string(sys.platform, instruction)
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -806,34 +865,38 @@ class WorkerCLIOptions:
         }
 
     @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "WorkerCLIOptions":
+    def from_json(cls, data: dict[str, Any]) -> "AgentOptions":
         return cls(
             workdir=data.get("workdir"),
             env_vars=data.get("env_vars") or {},
         )
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, WorkerCLIOptions):
+        if not isinstance(other, AgentOptions):
             return NotImplemented
         return self.to_json() == other.to_json()
 
     def _build_worker_args(self) -> list[str]:
-        """Shell-token form of the argv (sans instruction — appended by
-        ``_build_posix``/``_build_win32``). Built from ``_emit_flags`` so the
-        shell string can never drift from argv; ``args[0]`` stays the bare binary
-        name (``Shell`` reads it as the worker name, and we skip resolving the
-        real path here since callers only want the name). Vendors that track
-        ``skill_names`` get cosmetic ``# skill=<name>`` suffixes so ``cmd_line``
-        reflects materialized skills (they aren't real CLI args)."""
-        args = [self.EXECUTABLE, *[shlex.quote(a) for a in self._emit_flags()]]
+        """Raw worker argv without the instruction or resolved binary path.
+
+        ``Shell`` reads ``args[0]`` as the worker name. Shell quoting happens
+        later in :meth:`_render_shell_string`, exactly once per argv value.
+        """
+        return [self.EXECUTABLE, *self._emit_flags()]
+
+    def _render_shell_string(self, platform: str, instruction: str | None) -> str:
+        """Render raw worker argv for the target shell platform."""
+        args = [quote_shell_arg(arg, platform) for arg in self._build_worker_args()]
         for sk in getattr(self, "skill_names", []):
-            args.append(f"# skill={shlex.quote(sk)}")
-        return args
+            args.append(f"# skill={quote_shell_arg(sk, platform)}")
+        if platform == "win32":
+            return self._build_win32(args, instruction)
+        return self._build_posix(args, instruction)
 
     def _build_posix(self, args: list[str], instruction: str | None) -> str:
         workdir = self.workdir or "."
-        cd_part = f"cd {shlex.quote(workdir)}"
-        env_part = " ".join(f"{k}={shlex.quote(v)}" for k, v in self.env_vars.items())
+        cd_part = f"cd {quote_shell_arg(workdir, 'linux')}"
+        env_part = " ".join(f"{k}={quote_shell_arg(v, 'linux')}" for k, v in self.env_vars.items())
         cmd = f"{cd_part} && {env_part} {' '.join(args)}" if env_part else f"{cd_part} && {' '.join(args)}"
         if instruction:
             escaped = instruction.replace("\\", "\\\\").replace("'", "\\'").replace("\r", "").replace("\n", "\\n")
@@ -843,12 +906,9 @@ class WorkerCLIOptions:
     def _build_win32(self, args: list[str], instruction: str | None) -> str:
         import base64 as _b64
 
-        def _ps_quote(s: str) -> str:
-            return "'" + s.replace("'", "''") + "'"
-
         workdir = self.workdir or "."
-        cd_part = f"cd {_ps_quote(workdir)}"
-        env_commands = [f"$env:{k} = {_ps_quote(v)}" for k, v in self.env_vars.items()]
+        cd_part = f"cd {quote_powershell_literal(workdir)}"
+        env_commands = [f"$env:{k} = {quote_powershell_literal(v)}" for k, v in self.env_vars.items()]
         env_part = "; ".join(env_commands) + "; " if env_commands else ""
         cmd_part = " ".join(args)
         if instruction:
@@ -858,11 +918,14 @@ class WorkerCLIOptions:
         return f"{cd_part}; {env_part}{cmd_part}"
 
 
-def restart_payload_from_cli_options(options: WorkerCLIOptions) -> dict[str, Any]:
+def restart_payload_from_cli_options(options: AgentOptions) -> dict[str, Any]:
     """Return the worker CLI payload relevant for restart detection.
 
     Runtime-only env vars are injected after the process identity is known but
     are not user launch config, so they must not force a restart prompt.
+    ``FLOWPAD_PYTHON`` is stripped for the same reason and one of its own: it is
+    derived from this backend's ``sys.executable``, so it changes on every
+    reinstall/upgrade and would light a phantom restart glow on every process.
 
     ``resume`` is derived from (session_id, transcript-on-disk) by the driver's
     ``cli_options`` and flips False→True as soon as the worker writes its first
@@ -881,6 +944,7 @@ def restart_payload_from_cli_options(options: WorkerCLIOptions) -> dict[str, Any
     data = dict(options.to_json())
     env_vars = dict(data.get("env_vars") or {})
     env_vars.pop("FLOWPAD_EXECUTION_SCOPE", None)
+    env_vars.pop("FLOWPAD_PYTHON", None)
     data["env_vars"] = env_vars
     data.pop("resume", None)
     data.pop("fork_session_id", None)
@@ -893,8 +957,22 @@ def restart_payload_from_cli_options(options: WorkerCLIOptions) -> dict[str, Any
 
 
 def worker_capability_kind(worker_type: str) -> str:
-    """The capability kind whose discovered value provides this worker's CLI."""
-    return f"harness.{worker_type}.cli"
+    """The capability kind whose discovered value provides this worker's CLI.
+
+    Looked up FIRST, interpolated only as a fallback, because the worker type and
+    the kind segment are not always the same token. Claude registers
+    ``worker_type="claude_code"`` against kind ``harness.claude.cli``
+    (registry.py), so plain interpolation produced ``harness.claude_code.cli`` --
+    a kind nothing registers -- and every lookup keyed by the capability's
+    worker_type came back "not installed" for a CLI that was installed and
+    working. Codex and copilot escaped it only because their two names coincide.
+
+    The fallback still carries the driver names (``claude``/``codex``/``copilot``),
+    which are not in the map and for which interpolation is correct.
+    """
+    from flow_sdk.core.capabilities.mcp import harness_kind_for_worker_type
+
+    return harness_kind_for_worker_type(worker_type) or f"harness.{worker_type}.cli"
 
 
 def worker_bin_folder(worker_type: str) -> str | None:
@@ -937,6 +1015,62 @@ def prepend_path_dir(folder: str, path: str | None) -> str:
     if base.split(os.pathsep, 1)[0] == folder:
         return base
     return f"{folder}{os.pathsep}{base}" if base else folder
+
+
+def resolve_worker_probe_context(worker_type: str) -> tuple[str, dict[str, str]] | None:
+    """(abs executable path, probe env) for a short vendor-CLI probe, or
+    ``None`` ⇔ not installed. The executable name IS the worker type
+    (claude/codex/copilot) -- callers must pass the DRIVER name, which
+    ``run_worker_auth_probe`` guarantees.
+
+    Resolution is disk-verified against the DISCOVERED bin folder (same shape
+    as ``CliCapabilityRunner.test``): a stale discovered folder — CLI
+    uninstalled after discovery — surfaces as not-installed here rather than
+    as a spawn error. The env pins the folder first on PATH so the CLI's
+    ``#!/usr/bin/env node`` shebang resolves regardless of how the backend
+    was launched.
+    """
+    folder = worker_bin_folder(worker_type)
+    if folder is None:
+        return None
+    path = shutil.which(worker_type, path=folder)
+    if path is None:
+        return None
+    return path, {**os.environ, **(worker_path_env(worker_type) or {})}
+
+
+async def run_worker_auth_probe(worker_type: str) -> WorkerAuthResult:
+    """Shared body for the drivers' ``auth_probe`` implementations.
+
+    Resolves the executable against the discovered bin folder (None ⇒
+    NOT_INSTALLED — the install gate also applies to copilot, whose probe is
+    a pure heuristic that must not claim logged-in for an uninstalled CLI),
+    then runs the vendor probe off-loop.
+
+    Canonicalizes the worker type FIRST, and that is the whole fix for a bug that
+    made Claude device login report "claude_code CLI is not installed" for a working
+    CLI. Every other caller arrives via ``get_driver(...).auth_probe()`` and so passes
+    the driver name (``claude``); device login alone keys off the CAPABILITY's
+    worker_type (``claude_code``) and reached here un-normalized, where both the
+    binary lookup and the vendor dispatch then missed. ``get_driver``'s alias table is
+    the one canonicalizer in the tree — use it rather than teaching this layer, or the
+    import-free ``auth_probe``, a fourth set of aliases.
+    """
+    try:
+        worker_type = get_driver(worker_type).name
+    except ValueError:
+        pass  # unregistered worker: fall through and report NOT_INSTALLED as before
+    ctx = resolve_worker_probe_context(worker_type)
+    path, env = ctx if ctx is not None else (None, {})  # env unread on the NOT_INSTALLED path
+    # Copilot's heuristic reads its instance-redirectable config dir. Avoid
+    # resolving unrelated settings for the executable probes used by the other
+    # vendors.
+    copilot_home = None
+    if worker_type == "copilot":
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+        copilot_home = get_instance_settings().copilot_home
+    return await asyncio.to_thread(probe_worker_auth, worker_type, path, env, Path.home(), copilot_home)
 
 
 def build_worker_spawn_env(
@@ -1018,25 +1152,25 @@ async def latch_spawn_failure(process: "AgenticProcess", error: WorkerSpawnError
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def factory(cli_json: dict, worker_type: str) -> WorkerCLIOptions:
-    """Return the correct WorkerCLIOptions subclass for the given worker_type.
+def factory(cli_json: dict, worker_type: str) -> AgentOptions:
+    """Return the correct AgentOptions subclass for the given worker_type.
 
     String keys (``"claude"``, ``"codex"``, ``"copilot"``) are the wire form used by
     serialised ``AgenticProcess.cli_config`` — kept stable across enum
     renames. Local imports break the cli_drivers/<vendor> → base cycle.
     """
     if worker_type == "claude":
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
 
-        return ClaudeCliOptions.from_json(cli_json)
+        return ClaudeAgentOptions.from_json(cli_json)
     if worker_type == "codex":
-        from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexAgentOptions
 
-        return CodexCliOptions.from_json(cli_json)
+        return CodexAgentOptions.from_json(cli_json)
     if worker_type == "copilot":
-        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotAgentOptions
 
-        return CopilotCliOptions.from_json(cli_json)
+        return CopilotAgentOptions.from_json(cli_json)
     raise ValueError(f"Unknown worker_type: {worker_type!r}")
 
 
@@ -1128,6 +1262,8 @@ class WorkerDriver(Protocol):
     """
 
     name: str  # wire id: "claude" | "codex" | "copilot"
+    supports_process_hooks: bool
+    process_hooks_use_assets: bool
     preassign_interactive_session_id: bool
     # True iff this vendor's interactive TUI submits a pasted prompt that ends
     # in ``\r`` (claude). False for TUIs that treat the trailing ``\r`` as
@@ -1151,7 +1287,7 @@ class WorkerDriver(Protocol):
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
-    def cli_options(self, process: "AgenticProcess") -> WorkerCLIOptions:
+    def cli_options(self, process: "AgenticProcess") -> AgentOptions:
         """Return a fully-configured options object (model, session_id,
         workdir, add_dirs, agents/skills) for this process — used by
         ``AgenticProcess.cmd_line`` and the spawn paths."""
@@ -1160,9 +1296,30 @@ class WorkerDriver(Protocol):
     def restart_snapshot(
         self,
         process: "AgenticProcess",
-        options: WorkerCLIOptions,
+        options: AgentOptions,
     ) -> dict[str, Any]:
         """Return this worker's canonical launch payload for restart hashing."""
+        ...
+
+    def process_hook_snapshot(self, events: Sequence["HookEventType"]) -> dict[str, Any]:
+        """Return a pure semantic snapshot for persisted process-hook intent."""
+        ...
+
+    def prepare_process_hooks(
+        self,
+        assets: "AssetDir",
+        process_id: str,
+        events: Sequence["HookEventType"],
+    ) -> ProcessHookRuntime:
+        """Materialize launch artifacts once and return their runtime inputs."""
+        ...
+
+    def normalize_process_hook_data(
+        self,
+        process_id: str,
+        raw_hook_data: dict[str, Any],
+    ) -> "AgentHookData":
+        """Normalize one vendor-native report into canonical hook data."""
         ...
 
     # ── Per-turn execution ───────────────────────────────────────────────────
@@ -1198,6 +1355,24 @@ class WorkerDriver(Protocol):
         should return a debug payload rather than raising.
         """
         ...
+
+    # ── Auth ─────────────────────────────────────────────────────────────────
+
+    async def auth_probe(self) -> WorkerAuthResult:
+        """Probe this vendor CLI's login state (≤5s, never raises).
+
+        NOT_INSTALLED when discovery has no bin folder (or it went stale);
+        UNKNOWN when the probe couldn't decide (timeout, exec error,
+        unparseable output) — implementations must never conflate that with
+        LOGGED_OUT. ``verified`` is True only when the vendor CLI itself
+        confirmed the state (copilot's heuristic never is).
+        """
+        ...
+
+    # How this vendor's CLI runs its link(+code) login flow — consumed by the
+    # generic engine in ``device_login.py``; no orchestration code branches
+    # on vendor (same trait style as ``pty_submits_on_paste``).
+    device_login_spec: DeviceLoginSpec
 
     # ── Transcript discovery ─────────────────────────────────────────────────
 
@@ -1326,7 +1501,8 @@ __all__ = [
     "AgenticContext",
     "AgenticProcessContextKey",
     "AgenticWorker",
-    "WorkerCLIOptions",
+    "AgentOptions",
+    "ProcessHookRuntime",
     "WorkerExecutionInfo",
     "WorkerDriver",
     "WorkerSpawnError",

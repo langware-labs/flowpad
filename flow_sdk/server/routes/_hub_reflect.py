@@ -16,17 +16,80 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from starlette.requests import Request
+from starlette.responses import Response
+
 from flow_sdk.actions.action_registry import Action
 from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.instance_settings.privacy_mode import is_local_mode
-from flow_sdk.utils.hub import HubError, hub_delete, hub_get, hub_post, hub_put
+from flow_sdk.utils.hub import HubError, hub_delete, hub_get, hub_post, hub_put, hub_upload_entity_file
 
 logger = logging.getLogger(__name__)
 
 
-def should_reflect_to_hub(entity: Entity | None, hub_reflect: bool) -> bool:
+def scope_body_to_assignee_fields(entity: Entity, body: dict[str, Any]) -> dict[str, Any]:
+    """Narrow an outbound entity update to what the ASSIGNEE is allowed to change.
+
+    A shared entity is ONE hub row, and ``Entity.is_stale`` is whole-row LWW —
+    while the client PUTs its entire snapshot (``FlowSync/store.ts``). So the
+    assignee flipping a status ships their whole (possibly stale) copy, and the
+    hub row — then the owner's row, then the owner's ``task.md`` via
+    ``owns_main_ref`` — takes the assignee's title and body. Measured live
+    2026-07-28: the owner's rename and rewrite were both reverted by a status
+    click.
+
+    Declared per type as ``TypeInfo.assignee_owned_fields``; types that declare
+    nothing are untouched. Self-assignment is not narrowed — reporter and
+    assignee being the same person means there is only one author.
+
+    This is the single chokepoint, deliberately: filtering here means the bad
+    values never reach the hub, so no inbound guard has to guess which peer
+    authored an op (hub payloads carry no author).
+    """
+    if not body:
+        return body
+    from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    owned = tuple(getattr(SchemaRegistry.get(entity.get_type()), "assignee_owned_fields", ()) or ())
+    if not owned:
+        return body
+    assignee = normalize_email(getattr(entity, "assignee", None) or "")
+    if not assignee:
+        return body
+    reporter = normalize_email(getattr(entity, "reporter", None) or "")
+    if reporter and reporter == assignee:
+        return body
+
+    # The CLOUD identity, not ``User.get_local()`` — that one is the desktop user
+    # (whoever owns the machine), and on any instance the two differ. Read from
+    # the plaintext instance config rather than ``load_credentials()``: this runs
+    # on every reflected PUT (i.e. every debounced editor save of an assigned
+    # task), and the credential store costs ~5 file reads + 4 Fernet decrypts per
+    # call, blocking the event loop. ``cloud_login`` writes the same user record
+    # to both.
+    from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
+
+    me = normalize_email((get_user() or {}).get("email"))
+    if not me or me != assignee:
+        return body
+
+    scoped = {k: v for k, v in body.items() if k in owned}
+    dropped = sorted(set(body) - set(scoped))
+    if dropped:
+        logger.info(
+            "[hub-reflect] %s-%s: assignee update scoped to %s (dropped %s)",
+            entity.get_type(),
+            entity.id,
+            list(scoped),
+            dropped,
+        )
+    return scoped
+
+
+def should_reflect_to_hub(entity: Entity | None, hub_reflect: bool, action_name: str | None = None) -> bool:
     """True iff this action call should be forwarded to the hub instead of run locally.
 
     Reflection is **opt-in per call** via ``hub_reflect`` (the ``Hub-Reflect`` header,
@@ -35,9 +98,18 @@ def should_reflect_to_hub(entity: Entity | None, hub_reflect: bool) -> bool:
     are unchanged: the entity must have a hub counterpart and the user must be logged
     in. (Type eligibility is enforced downstream by ``reflect_to_hub`` →
     ``_entity_type_enum`` → ``HubError`` → quiet local fallback.)
+
+    ``fs`` is the one action that reflects on ``remote`` ALONE, without the opt-in.
+    Entity FILES must be on the hub by the time any other member asks for them —
+    the writer may be offline by then, and unlike a field there is no other copy
+    to fall back to. Making it a per-caller courtesy would mean a caller that
+    forgets the header (the TS ``fsService`` does not set it, nor do agents or
+    the CLI) silently strands the bytes on one machine. Entity FIELD writes stay
+    opt-in and already get it automatically — ``FlowSync/store.ts`` sends the
+    header whenever ``entity.remote``.
     """
     return (
-        bool(hub_reflect)
+        (bool(hub_reflect) or action_name == "fs")
         and entity is not None
         and getattr(entity, "remote", False) is True
         and is_logged_in()
@@ -57,7 +129,115 @@ def _entity_type_enum(entity: Entity) -> BuiltinEntityType | None:
         return None
 
 
-async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method: str) -> Any:
+# Sentinel: the hub side is done, but the LOCAL handler must STILL run. Every
+# other action reflects as a *replacement* (the hub's response is the answer);
+# entity files are the write-through case — the bytes go to the hub AND stay in
+# local storage, which is the cache the headless agent reads by local path.
+REFLECT_CONTINUE_LOCAL = object()
+
+
+def _hub_serves_git_bytes(entity: Entity) -> bool:
+    """Whether Hub can serve this entity's bytes from Git at all.
+
+    Only a git-publishable type (``cloud_file_transport == "git"``) gets a Git
+    mount in Hub's storage resolver. A ``project`` carries a ``git_origin`` too
+    — the repo its folder was cloned from — but Hub has no Git storage for it,
+    so forwarding its VFS reads there answers every browse with a bare
+    "Invalid file system operation" while the authoritative checkout is sitting
+    on this machine.
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(getattr(entity, "type", None) or "")
+    return info is not None and info.git_publishable
+
+
+def is_git_backed_remote_fs(entity: Entity | None, action_name: str | None) -> bool:
+    """Whether an entity FS request must be replaced by a Hub request.
+
+    Git is authoritative for a published asset, so falling through to a local
+    cache after a rejected/offline Hub call would report a false success and
+    fork the asset. That authority is what the type gate encodes: it holds only
+    where Hub actually mounts the asset's Git tree — everywhere else the local
+    checkout IS the authority and the read stays here. This gate intentionally
+    does not require the caller to be logged in: an unauthenticated proxy
+    attempt must fail at Hub, never mutate local state.
+    """
+
+    return bool(
+        action_name == "fs"
+        and entity is not None
+        and getattr(entity, "remote", False) is True
+        and getattr(entity, "git_origin", None) is not None
+        and _hub_serves_git_bytes(entity)
+        and not is_local_mode()
+    )
+
+
+async def proxy_git_backed_remote_fs(request: Request) -> Response:
+    """Forward one standard entity-VFS request to Hub with full HTTP fidelity."""
+
+    from flow_sdk.cloud_client import CloudProxy  # noqa: PLC0415
+
+    try:
+        return await CloudProxy()(request)
+    except HubError as exc:
+        # Missing Hub configuration/transport is a gateway failure. A concrete
+        # Hub rejection keeps its status. Either way this remains a replacement
+        # response; callers never fall through to local asset storage.
+        status = exc.status_code if exc.status_code >= 400 else 502
+        return Response(exc.reason.encode(), status_code=status, media_type="text/plain")
+
+
+async def _reflect_fs_to_hub(et, hub_id: str, sub_path: str | None) -> Any:
+    """Mirror an entity-VFS upload to the hub, then let the local write proceed.
+
+    Files on a shared entity are hub-authoritative; this machine's storage is a
+    cache. Only ``upload`` needs mirroring — reads are served locally and fill
+    from the hub on a miss (``fs_actions.fetch_remote_entity_file``), so browse
+    / download / delete pass straight through untouched.
+    """
+    if not (sub_path or "").lower().startswith("upload"):
+        return REFLECT_CONTINUE_LOCAL
+
+    from starlette.datastructures import UploadFile  # noqa: PLC0415
+
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    if request_info is None:
+        return REFLECT_CONTINUE_LOCAL
+    try:
+        post_data = await request_info.get_post_data()
+    except Exception:  # noqa: BLE001
+        return REFLECT_CONTINUE_LOCAL
+
+    files: list[UploadFile] = []
+    if isinstance(post_data, dict):
+        for value in post_data.values():
+            if isinstance(value, UploadFile):
+                files.append(value)
+            elif isinstance(value, list):
+                files.extend(v for v in value if isinstance(v, UploadFile))
+
+    for f in files:
+        if not f.filename:
+            continue
+        content = await f.read()
+        # The local handler reads these same objects afterwards — rewind, or it
+        # writes an empty file into the cache.
+        await f.seek(0)
+        await hub_upload_entity_file(et, hub_id, f.filename, content, sub_path)
+    return REFLECT_CONTINUE_LOCAL
+
+
+async def reflect_to_hub(
+    a: Action,
+    entity: Entity,
+    body: dict[str, Any],
+    method: str,
+    sub_path: str | None = None,
+) -> Any:
     """Forward the action call to the hub and mirror the response into the local row.
 
     ``method`` is the **actual incoming HTTP method** (e.g. from
@@ -68,6 +248,12 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method
     DELETE-registered ``Action`` and reflect a destructive hub DELETE with an empty
     body → hub 400 → the "Cloud request rejected" toast. The request method never
     lies; ``a.methods`` does.
+
+    ``sub_path`` is the segment after the action (``members/link`` → ``"link"``),
+    forwarded verbatim so one action name can front several hub endpoints. It also
+    *disqualifies* the roster-shaped post-processing below: ``members`` returns a
+    participant list, but ``members/link`` returns ``{id, url, …}``, and mirroring
+    that onto ``participants`` would corrupt the roster.
 
     Returns the hub's response payload (the unwrapped ``data`` dict/list),
     after normalizing per-action shapes (e.g. ``members`` field rename).
@@ -80,8 +266,15 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method
 
     hub_id = entity.id
     verb = (method or "").lower()
+    # Entity files ride the same reflection as entity fields, but write-through
+    # rather than replace — see ``_reflect_fs_to_hub``.
+    if a.action_name == "fs":
+        return await _reflect_fs_to_hub(et, hub_id, sub_path)
+    # Roster-shaped handling applies to the bare ``members`` action only — a
+    # sub-path (``members/link``) is a different hub endpoint with its own shape.
+    is_roster = a.action_name == "members" and not sub_path
     if verb == "get":
-        hub_resp = await hub_get(et, hub_id, action=a.action_name)
+        hub_resp = await hub_get(et, hub_id, action=a.action_name, sub_path=sub_path)
         # hub_get returns None on transport/HTTP failure (does not raise);
         # treat that as "fall through to local" via HubError.
         if hub_resp is None:
@@ -91,8 +284,8 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method
         # MembershipMethod {member_through, value}); hub_delete sends it as
         # the JSON body and raises HubError on non-200 (e.g. 403 owner-only),
         # which propagates to the caller verbatim.
-        hub_resp = await hub_delete(et, hub_id, action=a.action_name, payload=body or {})
-    elif verb in ("put", "patch") and a.action_name == "members":
+        hub_resp = await hub_delete(et, hub_id, action=a.action_name, sub_path=sub_path, payload=body or {})
+    elif verb in ("put", "patch") and is_roster:
         # Role change — PUT ``/<type>/<id>/members`` with ``{user_id|user_email|
         # invitation_id, role}``. Without this branch the generic PUT below would
         # reflect the body as a bare entity update onto ``/<type>/<id>``, silently
@@ -107,25 +300,24 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method
         # broadcast, then return the MERGED LOCAL entity — the same shape a normal
         # (non-reflected) update returns, so the local cache and the client stay
         # consistent (the hub is the source of truth for every differing scalar).
-        hub_resp = await hub_put(et, hub_id, body or {})
+        hub_resp = await hub_put(et, hub_id, scope_body_to_assignee_fields(entity, body or {}))
         updates = _merge_hub_entity_into_local(entity, hub_resp)
-        # A reflected PUT REPLACES the local update — so body fields the hub
-        # doesn't model (absent from its response, e.g. a task's local-only
-        # ``artifacts`` attachments) would be silently dropped. Apply those
-        # from the incoming body, with hub-returned fields staying
-        # authoritative (they overwrite on key collision below).
-        updates = {**_hub_unknown_updates_from_body(entity, body, hub_resp), **updates}
         if updates:
             entity.apply_field_updates(updates)
             await entity.save(notify=True)  # local row + data_op broadcast to watchers
         return entity.model_dump()
     else:
-        hub_resp = await hub_post(et, body or {}, hub_id, action=a.action_name)
+        hub_resp = await hub_post(et, body or {}, hub_id, action=a.action_name, sub_path=sub_path)
+
+    # A sub-path'd call (e.g. ``members/link`` → {id, url, …}) is not a roster:
+    # return the hub's payload verbatim, with no re-fetch, rename, or mirror.
+    if sub_path:
+        return hub_resp
 
     # After a successful members mutation (remove / role change) the hub returns
     # a message, not a roster — so re-fetch the canonical roster to mirror
     # locally (keeps participants in sync without a second client round-trip).
-    if verb in ("delete", "put", "patch") and a.action_name == "members":
+    if verb in ("delete", "put", "patch") and is_roster:
         refreshed = await hub_get(et, hub_id, action=a.action_name)
         if refreshed is not None:
             hub_resp = refreshed
@@ -139,7 +331,7 @@ def _normalize_hub_response(action_name: str, hub_resp: Any) -> Any:
     """Translate hub field names into the canonical client shape.
 
     The hub's ``Membership`` response uses ``user_email`` / ``user_name`` /
-    ``user_picture``; the client and ``Conversation.participants`` cache
+    ``user_picture``; the client and the ``Entity.members`` roster cache
     expect ``email`` / ``name`` / ``picture``. Normalizing here means
     callers (TS SDK, local mirror, downstream UI) all see one shape.
 
@@ -177,20 +369,31 @@ def _normalize_hub_response(action_name: str, hub_resp: Any) -> Any:
 
 _MISSING = object()
 
+# Collection fields that carry their OWN dedicated sync path and must never be
+# overwritten by a bare entity PUT response: the roster (``participants`` /
+# ``members`` — owned by the ``members`` reflect, and echoed in the hub's
+# ``{user_id,…}`` shape rather than the local normalized ``{email,name}``) and
+# the conversation message projections (rebuilt from the pointer log, guarded
+# again downstream by ``apply_field_updates``). Every OTHER hub-modeled field —
+# scalars AND collections the hub genuinely owns (a task's ``artifacts``,
+# ``tags``, ``links``, ``metadata``) — is hub-authoritative and merges.
+_MERGE_SKIP_FIELDS = frozenset({"participants", "members", "message_ids", "message_count"})
+
 
 def _merge_hub_entity_into_local(entity: Entity, hub_resp: Any) -> dict[str, Any]:
-    """Select the hub-authoritative SCALAR fields to merge onto the local entity.
+    """Select the hub-authoritative fields to merge onto the local entity.
 
-    A reflected ``update`` returns the hub's view of the entity. We apply each API
-    field whose hub value is a scalar (``str`` / ``int`` / ``float`` / ``bool`` /
-    ``None``) and differs from the local value — which carries the renamed field plus
-    server-set timestamps, and deliberately SKIPS list/dict fields. ``participants``
-    (a list) is the important skip: its local shape is the normalized ``{email,name}``
-    from the members reflect and must not be clobbered by the hub's ``{user_id,…}``
-    shape (it has its own sync path). Projection-guarded fields are dropped downstream
-    by the entity's ``apply_field_updates`` (e.g. Conversation strips
-    ``message_count`` / ``message_ids``). Local-only fields (``project_id``,
-    ``dismissed_at``, ``archived_at``) are absent from the hub response → preserved.
+    A reflected ``update`` returns the hub's view of the entity, and the hub is
+    the source of truth: every API field the hub echoes (scalar OR collection)
+    that differs from the local value is applied, so a remote entity reflects
+    IMMEDIATELY into the local row — including hub-modeled collections like a
+    task's ``artifacts``. The only exclusions are ``_MERGE_SKIP_FIELDS`` (the
+    roster + message projections, which own their own sync and carry a divergent
+    hub shape). Local-only fields (``project_id``, ``dismissed_at``,
+    ``archived_at``, a task's ``session_id`` …) are absent from the hub response
+    → preserved untouched. Anything the hub doesn't model doesn't reflect — the
+    fix for a field that SHOULD travel is to model it on the hub, not to
+    re-apply it locally from the request body.
 
     Returns the dict of fields to apply, empty when nothing changed (so the caller
     skips the save+broadcast entirely).
@@ -199,27 +402,7 @@ def _merge_hub_entity_into_local(entity: Entity, hub_resp: Any) -> dict[str, Any
         return {}
     updates: dict[str, Any] = {}
     for k, v in hub_resp.items():
-        if not entity.is_api_field(k):
-            continue
-        if v is not None and not isinstance(v, (str, int, float, bool)):
-            continue  # skip list/dict (participants, nested objects, projections-as-list)
-        if getattr(entity, k, _MISSING) != v:
-            updates[k] = v
-    return updates
-
-
-def _hub_unknown_updates_from_body(entity: Entity, body: dict[str, Any] | None, hub_resp: Any) -> dict[str, Any]:
-    """The incoming update's LOCAL-ONLY field changes — API fields the hub's
-    response doesn't carry (the hub doesn't model them), which a plain local
-    update would have applied. Restores those semantics for reflected PUTs so
-    a remote entity can still persist its hub-unknown fields locally.
-    """
-    if not isinstance(body, dict):
-        return {}
-    hub_keys = set(hub_resp.keys()) if isinstance(hub_resp, dict) else set()
-    updates: dict[str, Any] = {}
-    for k, v in body.items():
-        if k in ("id", "type") or k in hub_keys:
+        if k in _MERGE_SKIP_FIELDS:
             continue
         if not entity.is_api_field(k):
             continue
@@ -238,10 +421,12 @@ async def mirror_hub_response_into_local(entity: Entity, action_name: str, hub_r
     if hub_resp is None:
         return
 
-    # Generic shape: action returns a list whose entries look like
-    # participants → mirror onto ``entity.participants`` if the field exists.
+    # Generic shape: the ``members`` action returns the roster list → mirror it
+    # onto ``entity.members`` (the roster cache, now on the Entity base so this
+    # fires for every remote type — org/team included, not just conversation/
+    # project which previously declared their own field).
     if action_name == "members" and isinstance(hub_resp, list):
-        if hasattr(entity, "participants"):
+        if hasattr(entity, "members"):
             try:
                 new_participants = list(hub_resp)
                 # EQUALITY GUARD — only assign+save when the roster actually
@@ -257,10 +442,10 @@ async def mirror_hub_response_into_local(entity: Entity, action_name: str, hub_r
                 # the already-normalized stored value against the new normalized
                 # value (both went through ``_normalize_hub_response``), so the
                 # check isn't defeated by raw-vs-normalized key differences.
-                current = list(getattr(entity, "participants", None) or [])
+                current = list(getattr(entity, "members", None) or [])
                 if current == new_participants:
                     return
-                entity.participants = new_participants
+                entity.members = new_participants
                 # Best-effort save; never blow up the action if persistence fails.
                 save = getattr(entity, "save", None)
                 if callable(save):

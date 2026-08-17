@@ -4,11 +4,11 @@ import { FavoritesMenu } from '@src/components/favorites/FavoritesMenu';
 import { useCloseOnNavigate } from '@src/hooks/use-close-on-navigate';
 
 /**
- * FavoritesEditDialog — the second container for the shared FavoritesMenu, as a
+ * FavoritesEditDialog — the home of the favorites GRID (FavoritesMenu), as a
  * centered modal dialog for editing/rearranging favorites (drag-and-drop, folder
  * creation via the grid's "+" tile). Opens with a favorite pre-SELECTED by id
  * (`selectedFavoriteId`), reusable across all favorite types (assets, sessions,
- * …). Unlike the LeftSlider flyout it does NOT auto-close on idle — it closes
+ * …). Unlike the AnchoredMenu flyout it does NOT auto-close on idle — it closes
  * only on the X / outside-click / Escape (Radix Dialog), or when a favorite is
  * clicked (useCloseOnNavigate).
  */

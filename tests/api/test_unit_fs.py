@@ -11,6 +11,7 @@ from io import BytesIO
 
 import pytest
 
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.api.fs.fs_api import VFSPath
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.storage import LocalStorageDriver, StoragePermissionError
@@ -79,6 +80,29 @@ class TestVFSPathBasic:
 
 class TestLocalStorageDriver:
     """Tests for LocalStorageDriver basic operations."""
+
+    @pytest.mark.parametrize("subfolder", [None, "user-email.foo"], ids=["root", "typed-subfolder"])
+    @pytest.mark.asyncio
+    async def test_typed_filename_siblings_stay_under_mount(self, tmp_path, subfolder):
+        mount = tmp_path / "mount"
+        driver = LocalStorageDriver(str(mount))
+        if subfolder:
+            driver = driver.subfolder_storage(subfolder)
+        typeid = TypeId(type="compute_node", id=mint_uuid())
+        file_vpath = VFSPath.from_entity_path(typeid, "test-file.md").abs_vfspath
+        folder_vpath = VFSPath.from_entity_path(typeid, "test-folder").abs_vfspath
+
+        await driver.upload(BytesIO(b"# Test"), file_vpath)
+        await driver.create_folder(folder_vpath)
+        items = await driver.list_dir(VFSPath.from_entity_path(typeid).abs_vfspath)
+
+        storage_root = mount / subfolder if subfolder else mount
+        assert (storage_root / "test-file.md").read_bytes() == b"# Test"
+        assert (storage_root / "test-folder").is_dir()
+        assert {(item.display_name, item.is_dir) for item in items} == {
+            ("test-file.md", False),
+            ("test-folder", True),
+        }
 
     @pytest.mark.asyncio
     async def test_authenticate(self, storage):

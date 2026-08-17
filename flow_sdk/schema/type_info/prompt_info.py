@@ -1,14 +1,19 @@
 """Type metadata for PROMPT (docs/prompt-library.md)."""
 from typing import Optional
 
+from flow_sdk.fs_store.indexer.functions._asset_identity import (
+    IDENTITY_CAPSULE,
+    capsule_identity,
+    frontmatter_id,
+    resolved_path_key,
+)
+from flow_sdk.fs_store.indexer.functions.prompt import (
+    extract_prompt,
+)
 from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
-from flow_sdk.fs_store.indexer.functions.prompt import (
-    extract_prompt,
-    prompt_gen_id,
-)
 
 
 class PromptMeta(BaseMeta):
@@ -47,17 +52,21 @@ def _prompt_default_body(entity) -> str:
 PROMPT = TypeMetadata(
     type=EntityType.PROMPT,
     from_disk_fn=extract_prompt,
-    gen_uuid_fn=prompt_gen_id,
+    capsules=(IDENTITY_CAPSULE,),
+    identity_backend=capsule_identity(frontmatter_id),
+    id_stable_key_fn=resolved_path_key,
     indexed_by_default=True,
-    browseable_by=ViewMode.ADVANCED,
-    # v1: creation lives in the Prompt Library menu (PromptEditDialog with the
-    # generic pickers); the AssetsPage quick-create path needs a descriptor in
-    # quick-create/registry.ts before this flips on.
-    creatable=False,
+    browseable_by=ViewMode.STANDARD,
+    # quick-create/registry.ts carries the `prompt` descriptor. Quick-create opens
+    # PromptEditDialog (a prompt needs its text at create time, and `main_subdir`
+    # already fixes the location, so the generic name+path form has nothing to
+    # ask); the AssetsPage "+" is name-only and creates an empty-text prompt.
+    creatable=True,
     icon="BookMarked",
     api_visible=True,
     index_fields=["name", "group_id"],
-    main_subdir="prompts",
+    asset_class="repo",
+    family="prompt",
     default_body_fn=_prompt_default_body,
     # The edit dialog is the prompt's only editor in v1 — entity saves
     # re-render the .md so frontmatter/body never diverge from the entity.

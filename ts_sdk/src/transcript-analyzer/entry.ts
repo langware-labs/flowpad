@@ -18,6 +18,7 @@ export enum EntryKind {
   SUMMARY = 'summary',
   META = 'meta',
   TOKEN_USAGE = 'token_usage',
+  WORKER_UNAVAILABLE = 'worker_unavailable',
   UNKNOWN = 'unknown',
 }
 

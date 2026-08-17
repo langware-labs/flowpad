@@ -8,7 +8,7 @@
  */
 import { Tab } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { resetTabLifecycleForTests, setupTab } from '@src/tabs/tab-lifecycle';
+import { resetTabContentLifecycleForTests, setupTab } from '@src/tabs/tab-content-lifecycle';
 import { projectScope, type ScopeFilter } from '@src/lib/scope-filter';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -40,7 +40,7 @@ function mockTabStore() {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  resetTabLifecycleForTests();
+  resetTabContentLifecycleForTests();
 });
 
 describe('assets tab dedup by scope', () => {

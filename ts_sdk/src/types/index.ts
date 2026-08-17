@@ -18,17 +18,13 @@ export type {
   MachineStatus,
   NetworkConnection,
   ProcessInfo,
-  ServiceStatusInfo,
-  ServicesStatus,
 } from '../entities/compute-node/machine-status';
 
 // System profile types are in entities/compute-node/system-profile.ts
 // Re-export for backwards compatibility
 export {
-  fetchSystemProfile,
   fetchSystemProfileFromComputeNode,
   ItemType,
-  refreshSystemProfileItem,
   Scope,
   SystemProfileUtils,
 } from '../entities/compute-node/system-profile';

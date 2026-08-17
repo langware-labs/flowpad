@@ -42,6 +42,7 @@ async def test_message_id_echoed_from_context(tmp_path, monkeypatch):
     from flow_sdk.core.capabilities.discovery import ensure_discovered
     from flow_sdk.migrations.runner import _bootstrap_local
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
     from flow_sdk.builtin.flow_message import FlowMessage
     from flow_sdk.builtin.graph_context import GraphContext
 
@@ -51,7 +52,7 @@ async def test_message_id_echoed_from_context(tmp_path, monkeypatch):
     msg = await FlowMessage(id=MSG_ID, text="hello there").save()
     gc = await GraphContext(context_typeids=[str(msg.typeid)]).save()
     ap = AgenticProcess(
-        cli_config={"permission_mode": "bypassPermissions", "model": "sm"},
+        cli_config={"permission_mode": "bypassPermissions", "model": ModelTier.SM.value},
         workdir=str(tmp_path), visible=False, pty_mode=False,
     )
     ap.set_graph_context(gc)

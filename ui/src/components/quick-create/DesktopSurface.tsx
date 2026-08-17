@@ -6,8 +6,10 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { QuickCreateDialog } from './QuickCreateDialog';
+import { showInputPrompt } from '@src/components/ui/input-prompt-modal';
+import { useFavorites } from '@src/hooks/use-favorites';
 import { QuickCreateModal } from './QuickCreateModal';
+import { useQuickCreatePick } from './QuickCreatePanel';
 
 /**
  * DesktopSurface — the favorites desktop as one reusable unit: a
@@ -32,14 +34,30 @@ export function DesktopSurface({
   const { t } = useLingui();
   const { currentDock } = useDockNavigation();
   const [modalOpen, setModalOpen] = useState(false);
-  const [activeType, setActiveType] = useState<string | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
   const { roots, onDropToBackground, onReorderRoot } = useFavoritesRoots({ filter });
+  // This surface hosts the quick-create dialog set itself. No page mounts it
+  // beside another host's instance (the project home renders its own tiles
+  // without this surface), so the host-supplied-panelProps branch is gone.
+  const { panelProps, dialogs } = useQuickCreatePick();
+  const { createFolder } = useFavorites();
 
-  const handlePick = (type: string) => {
-    setActiveType(type);
-    setDialogOpen(true);
-  };
+  // Creating a bookmark folder belongs to the desktop that holds the folders,
+  // not to the "create new" launcher — same place an OS puts it, and the only
+  // way to make one (the grid offers rename/move/delete but no create).
+  const backgroundActions = [
+    {
+      id: 'new-folder',
+      label: t`New folder`,
+      run: () =>
+        showInputPrompt({
+          title: t`New bookmark folder`,
+          placeholder: t`Folder name`,
+          onConfirm: async (name) => {
+            await createFolder(name);
+          },
+        }),
+    },
+  ];
 
   const tileSize = size === 'large' ? 'h-20 w-20' : 'h-16 w-16';
   const plusTile = (
@@ -67,19 +85,13 @@ export function DesktopSurface({
         size={size}
         leadingChrome={plusTile}
         onDropToBackground={onDropToBackground}
+        backgroundActions={backgroundActions}
         onReorder={onReorderRoot}
         className={className}
       />
 
-      <QuickCreateModal open={modalOpen} onOpenChange={setModalOpen} onPick={handlePick} />
-      <QuickCreateDialog
-        open={dialogOpen}
-        onOpenChange={(next) => {
-          setDialogOpen(next);
-          if (!next) setActiveType(null);
-        }}
-        type={activeType}
-      />
+      <QuickCreateModal open={modalOpen} onOpenChange={setModalOpen} panelProps={panelProps} />
+      {dialogs}
     </>
   );
 }

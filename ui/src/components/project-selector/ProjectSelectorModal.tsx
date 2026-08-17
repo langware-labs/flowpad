@@ -40,7 +40,7 @@ export function ProjectSelectorModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <div className="flex items-center justify-between gap-2 pr-8">
+          <div className="flex items-center justify-between gap-2 pe-8">
             <DialogTitle>{displayTitle}</DialogTitle>
             {onCreateNew && (
               <Button

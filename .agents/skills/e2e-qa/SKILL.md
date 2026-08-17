@@ -44,13 +44,13 @@ When passing the environment to teammates or tasks, pass these resolved URLs —
 
 ### Startup: clean old (mandatory, every job)
 
-**Before any test runs — immediately after identifying the job type — wipe accumulated test-instance scratch.** The pytest suite routes every test through a shared sandbox HOME at `<os-tempdir>/flowpad_test_home` (`tests/conftest.py:_TEST_HOME`). Across runs it accumulates hundreds of `.flow/instances/test-*` dirs and polluted shared singleton DBs (`oss`/`test`/`prod`), which manufacture **non-deterministic, false failures** that masquerade as code bugs — "Multiple rows were found" on @local singletons, empty-scan/orphaned-skill regressions, bootstrap failures. Always start pristine:
+**Before any test runs — immediately after identifying the job type — wipe legacy test-instance scratch.** Current pytest processes use isolated `<FLOWPAD_TEMP_DIR>/pytest-*/home` sandboxes and remove their own run roots on exit. The retired shared HOME at `<os-tempdir>/flowpad_test_home` may still contain polluted singleton DBs and stale artifacts from older runs, which manufacture **non-deterministic, false failures** that masquerade as code bugs. Always remove that legacy residue before starting:
 
 ```bash
 python .claude/skills/e2e-qa/e2e_qa_cleanup.py
 ```
 
-This is filesystem-only and safe: it only ever touches a dir literally named `flowpad_test_home` under the OS temp dir, never the real `~/.flow` / `~/.claude` or any launched instance, and never kills a process. Run it once at startup before Phase 1 (and again any time you suspect cross-run contamination, e.g. the same suite yields different failures on re-run). Use `--dry-run` to preview.
+This is filesystem-only and safe: it only ever touches the retired directory literally named `flowpad_test_home` under the OS temp dir plus unambiguous `e2etest-*` skill artifacts. Apart from those reserved-name artifacts, it never touches real user data, launched instances, or live per-process `pytest-*` roots, and never kills a process. Run it once at startup before Phase 1. Use `--dry-run` to preview.
 
 Backend start command:
 ```bash

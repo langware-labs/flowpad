@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import shlex
+import subprocess
 import sys
 import time
 import uuid
@@ -27,6 +28,59 @@ CLAUDE_SID = "11111111-1111-4111-8111-111111111111"
 
 
 # ---------------------------------------------------------------------------
+# Shared git fixtures
+# ---------------------------------------------------------------------------
+#
+# ~20 test files grew their own copy of these two helpers. New git tests use
+# these; the existing copies are left alone rather than churned. They are here
+# because the setup carries two non-obvious requirements a copy gets wrong:
+#
+#   * ``tests/conftest.py`` sandboxes HOME, so ``~/.gitconfig`` is invisible:
+#     ``user.name``/``user.email`` MUST be set per repo or every commit fails.
+#   * ``init.defaultBranch`` is likewise unset, so ``-b main`` MUST be explicit
+#     or a machine defaulting to ``master`` silently breaks the fixture.
+
+
+def git_cmd(path: Path, *args: str) -> str:
+    """Run git in ``path`` and return trimmed stdout; raises on failure."""
+    result = subprocess.run(["git", *args], cwd=path, capture_output=True, text=True, check=True)
+    return result.stdout.strip()
+
+
+@pytest.fixture
+def git_remote(tmp_path: Path):
+    """A bare repo plus a factory for checkouts wired to it.
+
+    ``make_checkout()`` returns a working clone whose ``origin`` is the bare
+    repo. Pass ``github_url=...`` to additionally install an ``insteadOf``
+    rewrite, so code that insists on a canonical GitHub remote (the publish
+    path) can be exercised without touching the network.
+    """
+    remote = tmp_path / "remote.git"
+    remote.mkdir()
+    git_cmd(remote, "init", "--bare", "-q", "-b", "main")
+
+    def make_checkout(name: str = "repo", *, github_url: str | None = None, seed: bool = True) -> Path:
+        repo = tmp_path / name
+        repo.mkdir()
+        git_cmd(repo, "init", "-q", "-b", "main")
+        git_cmd(repo, "config", "user.name", "Test User")
+        git_cmd(repo, "config", "user.email", "test@example.com")
+        origin = github_url or remote.as_uri()
+        if github_url:
+            git_cmd(repo, "config", f"url.{remote.as_uri()}.insteadOf", github_url)
+        git_cmd(repo, "remote", "add", "origin", origin)
+        if seed:
+            (repo / "README.md").write_text("seed\n", encoding="utf-8")
+            git_cmd(repo, "add", ".")
+            git_cmd(repo, "commit", "-q", "-m", "initial")
+            git_cmd(repo, "push", "-q", "-u", "origin", "main")
+        return repo
+
+    return SimpleNamespace(path=remote, uri=remote.as_uri(), make_checkout=make_checkout)
+
+
+# ---------------------------------------------------------------------------
 # Shared LocalComputeProvider helpers (compute streaming + env tests)
 # ---------------------------------------------------------------------------
 
@@ -41,6 +95,64 @@ async def node():
         yield provider, node_id
     finally:
         await provider.shutdown(node_id)
+
+
+@pytest.fixture(params=["local", "e2b"])
+def compute_provider_kind(request):
+    """Parameterizes a test across both providers we ship a node for.
+
+    Mirrors the hub's ``test_compute_provider_type`` fixture, minus the
+    credentials: the hub boots a real E2B sandbox, which we cannot do in the
+    unit tier.
+    """
+    return request.param
+
+
+@pytest.fixture
+async def any_provider(compute_provider_kind):
+    """``(provider, node_id)`` for the local provider AND for E2B.
+
+    The E2B leg is a real ``E2BComputeProvider`` with one seam replaced —
+    ``_get_or_boot_sandbox`` returns a :class:`FakeSandbox` instead of calling
+    the E2B API. Everything the provider does with the command (prefix
+    construction, quoting, ``background``, ``CLICommand`` wiring) still runs.
+    What is NOT covered here: sandbox boot, pause/resume, PTY, and filesystem
+    ops — those live in ``tests/long_tests`` behind the ``E2B_KEY`` gate.
+
+    ``provider.fake_sandbox`` is attached so a test can inspect the exact
+    command string that reached the shell.
+    """
+    if compute_provider_kind == "local":
+        provider = LocalComputeProvider()
+        node_id = await provider.create_node("unit-test-node", RuntimeEnvironment(name="unit-test"))
+        await provider.startup(node_id)
+        try:
+            yield provider, node_id
+        finally:
+            await provider.shutdown(node_id)
+        return
+
+    from flow_sdk.compute.providers.e2b import provider as e2b_module
+    from tests.unit.fakes.fake_e2b_sandbox import FakeSandbox
+
+    # The provider's __init__ refuses to construct without the e2b SDK. The
+    # module imports fine without it (AsyncSandbox is None), so bypass only
+    # that guard — the class under test is otherwise untouched.
+    provider = object.__new__(e2b_module.E2BComputeProvider)
+    ComputeProviderBase = type(provider).__mro__[1]
+    ComputeProviderBase.__init__(provider)
+    provider._sandboxes = {}
+    provider._pty_processes = {}
+    provider._keepalive_tasks = {}
+
+    sandbox = FakeSandbox()
+    provider.fake_sandbox = sandbox
+
+    async def _fake_boot(_provider_node_id):
+        return sandbox
+
+    provider._get_or_boot_sandbox = _fake_boot
+    yield provider, "fake-sandbox"
 
 
 def py_command(script: str, *, unbuffered: bool = False) -> str:

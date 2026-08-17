@@ -26,23 +26,38 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
   const [instruction, setInstruction] = useState(trigger?.instruction ?? '');
   const [workdir, setWorkdir] = useState(trigger?.workdir ?? project?.fs_storage_mount_path ?? '');
 
-  const handleSubmit = async (formData: { name?: string; description?: string; expr?: string; trigger_type?: string; enabled?: boolean }) => {
+  const handleSubmit = async (formData: {
+    name?: string;
+    description?: string;
+    expr?: string;
+    trigger_type?: string;
+    enabled?: boolean;
+  }) => {
     setSaving(true);
     setError(null);
     try {
       if (trigger?.id) {
         // Update existing
+        const changed =
+          trigger.name !== formData.name ||
+          trigger.description !== formData.description ||
+          trigger.expr !== formData.expr ||
+          trigger.sched_trigger_type !== formData.trigger_type ||
+          trigger.enabled !== (formData.enabled ?? true) ||
+          (trigger.instruction ?? '') !== instruction ||
+          (trigger.workdir ?? '') !== workdir;
         const action = new ActionInfo('update', 'trigger', trigger.id, 'PATCH');
         action.bodyParameters = {
           name: formData.name,
           description: formData.description,
           expr: formData.expr,
-          sched_trigger_type: formData.trigger_type,  // CronForm returns trigger_type as 'cron'|'interval'|'date'
+          sched_trigger_type: formData.trigger_type, // CronForm returns trigger_type as 'cron'|'interval'|'date'
           enabled: formData.enabled ?? true,
           instruction: instruction || null,
           workdir: workdir || null,
         };
         const updated = await dataManager.callAction<unknown, ITrigger>(action);
+        if (changed) Trigger.markEditById(trigger.id);
         onSaved(updated as unknown as ITrigger);
       } else {
         // Create new
@@ -52,7 +67,7 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
           description: formData.description,
           trigger_type: 'schedule',
           expr: formData.expr,
-          sched_trigger_type: formData.trigger_type,  // cron|interval|date
+          sched_trigger_type: formData.trigger_type, // cron|interval|date
           scope: project?.id ? 'project' : 'user',
           project_id: project?.id ?? null,
           enabled: formData.enabled ?? true,
@@ -92,19 +107,23 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
               {trigger.scope || 'user'}
             </span>
             <span className="font-mono text-sm font-medium">{trigger.displayName}</span>
-            <Badge variant="outline" className="h-4 px-1 text-[9px]"><Trans>schedule</Trans></Badge>
+            <Badge variant="outline" className="h-4 px-1 text-[9px]">
+              <Trans>schedule</Trans>
+            </Badge>
             {trigger.next_run && (
               <span className="text-[10px] text-muted-foreground">
                 <Trans>next: {new Date(trigger.next_run).toLocaleString()}</Trans>
               </span>
             )}
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ms-auto flex items-center gap-2">
               {error && <span className="text-[10px] text-destructive">{error}</span>}
               <Button
                 variant="outline"
                 size="sm"
                 className="h-7 gap-1.5 text-xs"
-                onClick={() => { void handleRunNow(); }}
+                onClick={() => {
+                  void handleRunNow();
+                }}
                 disabled={running || saving || !trigger.id}
                 title={t`Fire this trigger immediately`}
               >
@@ -115,8 +134,10 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
           </>
         ) : (
           <>
-            <span className="text-sm font-medium"><Trans>New Schedule Trigger</Trans></span>
-            {error && <span className="ml-auto text-[10px] text-destructive">{error}</span>}
+            <span className="text-sm font-medium">
+              <Trans>New Schedule Trigger</Trans>
+            </span>
+            {error && <span className="ms-auto text-[10px] text-destructive">{error}</span>}
           </>
         )}
       </div>
@@ -125,7 +146,9 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
       <div className="flex-1 overflow-auto">
         {/* Instruction + workdir */}
         <div className="flex flex-col gap-2 border-b px-4 py-3">
-          <label className="text-[11px] font-medium text-muted-foreground"><Trans>Instruction</Trans></label>
+          <label className="text-[11px] font-medium text-muted-foreground">
+            <Trans>Instruction</Trans>
+          </label>
           <textarea
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
@@ -133,7 +156,9 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
             rows={4}
             className="w-full resize-y rounded border bg-background px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
-          <label className="text-[11px] font-medium text-muted-foreground"><Trans>Working directory</Trans></label>
+          <label className="text-[11px] font-medium text-muted-foreground">
+            <Trans>Working directory</Trans>
+          </label>
           <Input
             value={workdir}
             onChange={(e) => setWorkdir(e.target.value)}
@@ -144,12 +169,16 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
 
         {/* Cron schedule */}
         <CronForm
-          initial={trigger ? {
-            name: trigger.name,
-            description: trigger.description,
-            expr: trigger.expr ?? '',
-            trigger_type: trigger.sched_trigger_type ?? 'cron',
-          } : {}}
+          initial={
+            trigger
+              ? {
+                  name: trigger.name,
+                  description: trigger.description,
+                  expr: trigger.expr ?? '',
+                  trigger_type: trigger.sched_trigger_type ?? 'cron',
+                }
+              : {}
+          }
           defaultName={t`My Schedule`}
           onSubmit={handleSubmit}
           onCancel={onCancel ?? (() => {})}

@@ -1,15 +1,13 @@
 import { type Page } from '@playwright/test';
+import { apiOrigin } from '../_shared/api';
 
 /**
  * Dismiss the DesktopSetupModal if it appears.
  */
 export async function dismissSetupModal(page: Page) {
-  // Pre-set localStorage to suppress the LLM setup modal AND the
-  // discover/index Welcome modal — its Radix overlay otherwise intercepts
-  // pointer events on home/landing buttons after a fresh DB clear.
+  // Pre-set localStorage to suppress the LLM setup modal before the page loads.
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    localStorage.setItem('flowpad-index-approved', '1');
   });
 }
 
@@ -32,12 +30,9 @@ export async function gotoTriggers(page: Page) {
  * Delete all schedule triggers created during tests by calling the API directly.
  */
 export async function cleanupScheduleTriggers(page: Page, triggerIds: string[]) {
+  void page;
+  const api = apiOrigin();
   for (const id of triggerIds) {
-    await page.evaluate(async (triggerId) => {
-      // Relative URL: same-origin in-page fetch, proxied by Vite to the app's backend.
-      await fetch(`/api/v1/graph/trigger/${triggerId}`, {
-        method: 'DELETE',
-      });
-    }, id);
+    await fetch(`${api}/api/v1/graph/trigger/${id}`, { method: 'DELETE' });
   }
 }

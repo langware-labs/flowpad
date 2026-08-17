@@ -41,6 +41,7 @@ pytestmark = [
 ]
 
 from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: E402
+from flow_sdk.builtin.agentic_process.model_tiers import ModelTier  # noqa: E402
 from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: E402
 from flow_sdk.builtin.shell import Shell  # noqa: E402
 
@@ -77,11 +78,11 @@ async def test_relaunch_kills_session_orphan(bootstrapped_client, tmp_path):
 
     process = AgenticProcess(
         compute_node_id=f"compute_node-{cn.id}",
-        cli_config={"permission_mode": "bypassPermissions"},
+        cli_config={"permission_mode": "bypassPermissions", "model": ModelTier.SM.value},
         workdir=str(tmp_path),
         visible=True,
     )
-    await process.save([])
+    await process.save()
 
     orphan = None
     master = slave = None

@@ -22,8 +22,8 @@ interface EntityTypeBarProps {
   iconForType: (type: string) => LucideIcon;
   /** Optional label resolver. Defaults to the built-in asset-type ``LABELS`` map. */
   labelForType?: (type: string) => string;
-  /** Optional ``data-testid`` prefix. Defaults to ``asset-picker-type`` for back-compat. */
-  testIdPrefix?: string;
+  /** ``data-testid`` prefix for the toggles (``<prefix>-<type>``, ``<prefix>-clear``). */
+  testIdPrefix: string;
 }
 
 /**
@@ -40,12 +40,12 @@ export function EntityTypeBar({
   allowed,
   iconForType,
   labelForType,
-  testIdPrefix = 'asset-picker-type',
+  testIdPrefix,
 }: EntityTypeBarProps): React.ReactElement {
   const { t } = useLingui();
 
   const LABELS: Record<string, string> = {
-    agent: t`Agent`,
+    agent: t`SubAgent`,
     skill: t`Skill`,
     markdown: t`Document`,
     spec: t`Spec`,
@@ -57,8 +57,10 @@ export function EntityTypeBar({
 
   const toggle = (t: string) => {
     let next: string[];
-    if (allShown) next = allowed.filter((x) => x !== t); // all → all-but-t
-    else if (selected.includes(t)) next = selected.filter((x) => x !== t); // hide t
+    if (allShown)
+      next = allowed.filter((x) => x !== t); // all → all-but-t
+    else if (selected.includes(t))
+      next = selected.filter((x) => x !== t); // hide t
     else next = [...selected, t]; // show t
     onChange(next.length === allowed.length ? [] : next); // full set ⇒ "all"
   };
@@ -70,7 +72,7 @@ export function EntityTypeBar({
         const active = isActive(t);
         const count = counts?.[t];
         const showCount = typeof count === 'number' && count > 0;
-        const label = labelForType ? labelForType(t) : LABELS[t] ?? t;
+        const label = labelForType ? labelForType(t) : (LABELS[t] ?? t);
         return (
           <button
             key={t}
@@ -106,7 +108,7 @@ export function EntityTypeBar({
           onClick={() => onChange([])}
           title={t`Show all types`}
           aria-label={t`Show all types`}
-          className="ml-0.5 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+          className="ms-0.5 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground"
           data-testid={`${testIdPrefix}-clear`}
         >
           <X className="h-3.5 w-3.5" />

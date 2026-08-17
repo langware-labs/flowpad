@@ -28,7 +28,7 @@ import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Browser } from 'playwright';
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { HUB_URL, getAliceCreds, hubAvailable, hubLogin } from './_hub';
 import { pollUntil } from './_matrix';
 import {
@@ -41,11 +41,9 @@ import {
   type ResolvedInstance,
 } from './_instances';
 import {
-  dismissWelcomeModal,
   launchBrowser,
-  openConversation,
+  openAssignedConversationInUI,
   openInstancePage,
-  realConsoleErrors,
   resetConsoleErrors,
   type InstancePage,
 } from './_browser';
@@ -57,6 +55,10 @@ let alice: ResolvedInstance;
 let bob: ResolvedInstance;
 const tempRoots: string[] = [];
 const createdProjects: Array<{ apiUrl: string; id: string }> = [];
+const createdConversations: Array<{ apiUrl: string; id: string }> = [];
+const createdArtifacts: Array<{ apiUrl: string; id: string }> = [];
+const createdProcesses: Array<{ apiUrl: string; id: string }> = [];
+const createdAttachments: Array<{ apiUrl: string; id: string }> = [];
 const startedPids: number[] = [];
 
 function pythonBin(): string {
@@ -74,8 +76,10 @@ function api(apiUrl: string, method: string, p: string, body?: unknown) {
 const post = (apiUrl: string, p: string, body?: unknown) => api(apiUrl, 'POST', p, body);
 const put = (apiUrl: string, p: string, body?: unknown) => api(apiUrl, 'PUT', p, body);
 
-async function backendGet(inst: ResolvedInstance, type: string, id: string): Promise<any | null> {
-  const r = await fetch(`${inst.apiUrl}/api/v1/graph/${type}/${id}`).then((x) => x.json()).catch(() => null);
+async function backendGet(inst: ResolvedInstance, type: string, id: string): Promise<any> {
+  const r = await fetch(`${inst.apiUrl}/api/v1/graph/${type}/${id}`)
+    .then((x) => x.json())
+    .catch(() => null);
   return r?.status === 'SUCCESS' ? r.data : null;
 }
 
@@ -119,14 +123,18 @@ async function downloadHubBundle(fmId: string, zipPath: string): Promise<void> {
 }
 
 async function waitForHubBundle(fmId: string, zipPath: string): Promise<void> {
-  await pollUntil(async () => {
-    try {
-      await downloadHubBundle(fmId, zipPath);
-      return true;
-    } catch {
-      return null;
-    }
-  }, 30_000, 'hub body bundle upload');
+  await pollUntil(
+    async () => {
+      try {
+        await downloadHubBundle(fmId, zipPath);
+        return true;
+      } catch {
+        return null;
+      }
+    },
+    30_000,
+    'hub body bundle upload',
+  );
 }
 
 function bundleNames(zipPath: string): string[] {
@@ -139,16 +147,26 @@ function bundleNames(zipPath: string): string[] {
 }
 
 async function findReadyMessage(convId: string): Promise<string> {
-  const fm = await pollUntil(async () => {
-    await bob.sdk.fetchConversations();
-    const c = await bob.sdk.Conversation.getById(convId).catch(() => null);
-    for (const p of (c?.conversationMessageIds ?? []) as any[]) {
-      if (p.type !== 'flow_message') continue;
-      const full = await bob.sdk.FlowMessage.getById(p.id).catch(() => null);
-      if (full && full.body_status === 'ready') return full;
-    }
-    return null;
-  }, 20_000, 'shared spora message READY');
+  // The assigned UI conversation already identifies one conversation. Pull only that
+  // conversation's messages; a global fetchConversations() leaves a long-lived
+  // staff account reconciling historical bundles after this test has moved on.
+  const sync = await post(bob.apiUrl, '/graph/conversation-message-sync', {
+    conversation_id: convId,
+  });
+  expect(sync.status, JSON.stringify(sync.body)).toBeLessThan(400);
+  const fm = await pollUntil(
+    async () => {
+      const c = await bob.sdk.Conversation.getById(convId).catch(() => null);
+      for (const p of (c?.conversationMessageIds ?? []) as any[]) {
+        if (p.type !== 'flow_message') continue;
+        const full = await bob.sdk.FlowMessage.getById(p.id).catch(() => null);
+        if (full && String(full.body_status) === 'ready') return full;
+      }
+      return null;
+    },
+    20_000,
+    'shared spora message READY',
+  );
   return fm.id;
 }
 
@@ -163,13 +181,21 @@ async function createBobProject(): Promise<{ id: string; dir: string }> {
 }
 
 async function stagedAttachmentId(fmId: string, artifactId: string): Promise<string> {
-  const staged = await pollUntil(async () => {
-    const rows = (await bob.sdk.MessageAttachment.query(
-      new bob.sdk.QueryRequest({ type: 'message_attachment', query: { flow_message_id: fmId }, name: 'staged (test)' }),
-      true,
-    ).catch(() => [])) as any[];
-    return rows.find((r) => r.asset_id === artifactId) ?? null;
-  }, 10_000, 'staged spora artifact MessageAttachment');
+  const staged = await pollUntil(
+    async () => {
+      const rows = (await bob.sdk.MessageAttachment.query(
+        new bob.sdk.QueryRequest({
+          type: 'message_attachment',
+          query: { flow_message_id: fmId },
+          name: 'staged (test)',
+        }),
+        true,
+      ).catch(() => [])) as any[];
+      return rows.find((r) => r.asset_id === artifactId) ?? null;
+    },
+    10_000,
+    'staged spora artifact MessageAttachment',
+  );
   return staged.id as string;
 }
 
@@ -189,39 +215,6 @@ async function flowCliAsync(inst: ResolvedInstance, args: string[], cwd: string)
   });
 }
 
-async function acceptConversationInvitationInUI(inst: InstancePage, conversationId: string): Promise<void> {
-  const { page } = inst;
-  const rowSelector = `[data-testid="inbox-conversation-row"][data-conversation-id="${conversationId}"]`;
-  const deadline = Date.now() + 35_000;
-  for (;;) {
-    await fetch(`${inst.apiUrl}/api/v1/graph/conversation-list`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
-    }).catch(() => undefined);
-    await page.goto(`${inst.feUrl}/dock/inbox?viewMode=advanced`, { waitUntil: 'domcontentloaded' });
-    await dismissWelcomeModal(page);
-    const row = page.locator(rowSelector).first();
-    if (await row.isVisible({ timeout: 2_000 }).catch(() => false)) {
-      const kind = await row.getAttribute('data-kind').catch(() => null);
-      if (kind !== 'invitation') return;
-      const accept = row.getByTestId('inbox-accept-invitation-button');
-      if (await accept.isVisible({ timeout: 2_000 }).catch(() => false)) {
-        await accept.click({ timeout: 5_000 });
-        await pollUntil(async () => {
-          const invitations = await fetch(`${inst.apiUrl}/api/v1/graph/invitation`).then((x) => x.json()).catch(() => null);
-          const rows = (invitations?.data ?? []) as any[];
-          const inv = rows.find((i) => i?.target_url_path === `/conversation/${conversationId}`);
-          return inv?.accepted === true ? true : null;
-        }, 20_000, `conversation ${conversationId} invitation accepted`);
-        return;
-      }
-    }
-    if (Date.now() > deadline) throw new Error(`invitation row not accept-ready for ${conversationId}`);
-    await page.waitForTimeout(1_000);
-  }
-}
-
 beforeAll(async () => {
   const hub = await hubAvailable();
   if (!hub.ok) return void (skipReason = hub.reason ?? 'hub unreachable');
@@ -236,9 +229,51 @@ beforeEach((context: any) => {
   if (skipReason) context.skip();
 });
 
-afterAll(() => {
-  for (const pid of startedPids) { try { process.kill(pid); } catch { /* gone */ } }
-  for (const root of tempRoots) { try { rmSync(root, { recursive: true, force: true }); } catch { /* gone */ } }
+afterAll(async () => {
+  for (const pid of startedPids) {
+    try {
+      process.kill(pid);
+    } catch {
+      /* gone */
+    }
+  }
+  for (const createdProcess of createdProcesses) {
+    await post(createdProcess.apiUrl, `/graph/agentic_process/${createdProcess.id}/close`, {}).catch(() => undefined);
+    await fetch(`${createdProcess.apiUrl}/api/v1/graph/agentic_process/${createdProcess.id}`, {
+      method: 'DELETE',
+    }).catch(() => undefined);
+  }
+  for (const attachment of createdAttachments) {
+    await fetch(`${attachment.apiUrl}/api/v1/graph/message_attachment/${attachment.id}`, {
+      method: 'DELETE',
+    }).catch(() => undefined);
+  }
+  for (const conversation of createdConversations) {
+    await fetch(`${conversation.apiUrl}/api/v1/graph/conversation/${conversation.id}`, {
+      method: 'DELETE',
+    }).catch(() => undefined);
+  }
+  for (const artifact of createdArtifacts) {
+    const purged = await fetch(
+      `${artifact.apiUrl}/api/v1/graph/compute_node/@local/fs-records/artifact/${artifact.id}`,
+      { method: 'DELETE' },
+    ).catch(() => null);
+    if (!purged?.ok) {
+      await fetch(`${artifact.apiUrl}/api/v1/graph/artifact/${artifact.id}`, {
+        method: 'DELETE',
+      }).catch(() => undefined);
+    }
+  }
+  for (const project of createdProjects) {
+    await fetch(`${project.apiUrl}/api/v1/graph/project/${project.id}`, { method: 'DELETE' }).catch(() => undefined);
+  }
+  for (const root of tempRoots) {
+    try {
+      rmSync(root, { recursive: true, force: true });
+    } catch {
+      /* gone */
+    }
+  }
 });
 
 describe('spora copy-share → Vibe setup', () => {
@@ -252,17 +287,19 @@ describe('spora copy-share → Vibe setup', () => {
     const created = await post(alice.apiUrl, '/graph/artifact', {
       id: artifactId,
       name: artifactName,
-      ref_type: 'FOLDER',
-      path: fixture.appDir,
-      artifact_type: 'WEBAPP',
-      port: String(appPort),
-      start_cmd: `python3 -m http.server ${appPort}`,
-      health: '/',
+      kind: 'application.web',
+      origin: {
+        kind: 'local',
+        base: path.dirname(fixture.appDir),
+        rel_path: path.basename(fixture.appDir),
+      },
     });
     expect(created.status, JSON.stringify(created.body)).toBeLessThan(400);
+    createdArtifacts.push({ apiUrl: alice.apiUrl, id: artifactId });
 
     const conv = new alice.sdk.Conversation({ title: `e2etest-spora-${Date.now()}` });
     await conv.save();
+    createdConversations.push({ apiUrl: alice.apiUrl, id: conv.id });
     await conv.share([bob.email]);
     expect(conv.remote).toBe(true);
 
@@ -288,8 +325,9 @@ describe('spora copy-share → Vibe setup', () => {
       browser = await launchBrowser();
       bobPage = await openInstancePage(browser, INST_2);
 
-      await acceptConversationInvitationInUI(bobPage, conv.id!);
-      const bobFmId = await findReadyMessage(conv.id!);
+      await openAssignedConversationInUI(bobPage, conv.id);
+      createdConversations.push({ apiUrl: bob.apiUrl, id: conv.id });
+      const bobFmId = await findReadyMessage(conv.id);
       const download = await post(bob.apiUrl, `/graph/flow_message/${bobFmId}/download_body`, {});
       expect(download.status, JSON.stringify(download.body)).toBeLessThan(400);
 
@@ -299,32 +337,51 @@ describe('spora copy-share → Vibe setup', () => {
       expect(mapped.status, JSON.stringify(mapped.body)).toBeLessThan(400);
 
       const maId = await stagedAttachmentId(bobFmId, artifactId);
+      createdAttachments.push({ apiUrl: bob.apiUrl, id: maId });
       const install = await post(bob.apiUrl, `/graph/message_attachment/${maId}/install`, {
         scope: 'project',
         project_id: project.id,
       });
       expect(install.status, JSON.stringify(install.body)).toBeLessThan(400);
 
-      // Install materialized the artifact row pointing at the copied served folder.
+      // Install materialized the artifact row with a receiver-local origin
+      // pointing at the copied served folder.
       const row = await pollUntil(() => backendGet(bob, 'artifact', artifactId), 10_000, 'spora artifact materialized');
-      expect(String(row.path)).toContain(path.join(project.dir, 'webapps'));
+      createdArtifacts.push({ apiUrl: bob.apiUrl, id: artifactId });
+      expect(row.origin?.kind).toBe('local');
+      const served = path.join(String(row.origin.base), String(row.origin.rel_path));
+      expect(served).toContain(path.join(project.dir, 'webapps'));
 
       // …and returned a DisplayTarget for the spawned Vibe setup process.
       const show = install.body?.data?.show;
       expect(show?.type, JSON.stringify(install.body?.data)).toBe('agentic_process');
       const vibeProcId = show.id as string;
+      createdProcesses.push({ apiUrl: bob.apiUrl, id: vibeProcId });
       const proc = await pollUntil(() => backendGet(bob, 'agentic_process', vibeProcId), 10_000, 'vibe setup process');
       expect(proc.context_data?.launched_from).toBe('artifact_setup');
       expect(proc.context_data?.source_artifact_id).toBe(artifactId);
 
       // Serve + show the app on the setup process (deterministic stand-in for the
       // seeded artifact-setup agent run), then assert it renders in the Vibe pane.
-      const served = path.join(row.path);
-      const appOpen = JSON.parse(await flowCliAsync(
-        bob,
-        ['app', 'open', artifactName, '--root', served, '--process', `agentic_process-${vibeProcId}`, '--port', String(appPort), '--timeout', '25'],
-        served,
-      ));
+      const appOpen = JSON.parse(
+        await flowCliAsync(
+          bob,
+          [
+            'app',
+            'open',
+            artifactName,
+            '--root',
+            served,
+            '--process',
+            `agentic_process-${vibeProcId}`,
+            '--port',
+            String(appPort),
+            '--timeout',
+            '25',
+          ],
+          served,
+        ),
+      );
       expect(appOpen.ok, JSON.stringify(appOpen)).toBe(true);
       if (typeof appOpen.pid === 'number') startedPids.push(appOpen.pid);
 
@@ -332,15 +389,28 @@ describe('spora copy-share → Vibe setup', () => {
       await bobPage.page.goto(`${bobPage.feUrl}/dock/shell/agentic_process-${vibeProcId}?viewMode=vibe`, {
         waitUntil: 'domcontentloaded',
       });
-      await dismissWelcomeModal(bobPage.page);
 
-      const frame = bobPage.page.locator('iframe[data-testid="vibe-webapp-frame"]').first();
+      // `flow app open` persists a first-class `kind: "app"` display target
+      // (artifact + runtime identity), so Vibe renders the app branch. The
+      // `vibe-webapp-frame` selector belongs only to the legacy port-only
+      // `flow show webapp` target.
+      const frame = bobPage.page.locator('iframe[data-testid="vibe-app-frame"]').first();
       await frame.waitFor({ state: 'attached', timeout: 30_000 });
-      await expect.poll(async () => {
-        const handle = await frame.elementHandle();
-        const content = await handle?.contentFrame();
-        return (await content?.locator('body').innerText({ timeout: 2_000 }).catch(() => '')) ?? '';
-      }, { timeout: 30_000 }).toContain(fixture.token);
+      await expect
+        .poll(
+          async () => {
+            const handle = await frame.elementHandle();
+            const content = await handle?.contentFrame();
+            return (
+              (await content
+                ?.locator('body')
+                .innerText({ timeout: 2_000 })
+                .catch(() => '')) ?? ''
+            );
+          },
+          { timeout: 30_000 },
+        )
+        .toContain(fixture.token);
     } finally {
       await browser?.close();
     }

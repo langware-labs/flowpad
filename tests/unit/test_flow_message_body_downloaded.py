@@ -9,6 +9,7 @@ Contract (docs/conversation/attachments.md §4.3 / §8):
     claude_session) never gate it.
   * It is API-only: never emitted under ``skip_api_serializer``.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -33,7 +34,8 @@ def records_root(tmp_path, monkeypatch):
 
 
 def _materialize(root, etype: str, eid: str) -> None:
-    folder = root / etype / record_paths.record_stem(etype, eid)
+    # Shadow store: bare id under a <type>/ parent (records/<type>/<id>/).
+    folder = root / etype / eid
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "metadata.json").write_text("{}")
 
@@ -80,7 +82,7 @@ def test_entity_attachment_staged_counts_as_downloaded(records_root, tmp_path, m
     # Stage the entry (what unpack_bundle persists) — no record folder minted.
     fm_data_ops.unpacked_dir(fm_id).mkdir(parents=True)
     (fm_data_ops.unpacked_dir(fm_id) / "header.json").write_text("{}")
-    entry = fm_data_ops.staged_entry_dir(fm_id, f"skill-@{eid}")
+    entry = fm_data_ops.staged_entry_dir(fm_id, f"skill-{eid}")
     entry.mkdir(parents=True)
     (entry / "SKILL.md").write_text("# staged")
 
@@ -101,7 +103,7 @@ def test_one_unmaterialized_entity_pegs_message_not_downloaded(records_root):
     assert fm.model_dump()["body_downloaded"] is False
 
 
-@pytest.mark.parametrize("etype", ["task", "conversation", "flow_message", "claude_session"])
+@pytest.mark.parametrize("etype", ["task", "conversation", "flow_message"])
 def test_non_materializing_type_ids_do_not_gate(records_root, etype):
     """A message whose only TYPE_ID is structural plumbing is "downloaded"
     immediately — there is no file-backed asset to pull for those."""
@@ -111,6 +113,29 @@ def test_non_materializing_type_ids_do_not_gate(records_root, etype):
         attachment=[Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"{etype}-{uuid.uuid4()}")],
     )
     assert fm.model_dump()["body_downloaded"] is True
+
+
+@pytest.mark.parametrize("etype", ["claude_session", "codex_session", "copilot_session"])
+def test_worker_session_gates_download_until_its_transcript_lands(records_root, etype):
+    """A worker session IS its transcript file, so it is body-bearing: nothing
+    on disk ⇒ NOT downloaded.
+
+    It used to sit in ``_NON_MATERIALIZING_TYPE_IDS``, which made a message
+    report ``body_downloaded=true`` with no transcript anywhere — hiding the
+    Download affordance and telling the catch-up loop there was nothing left to
+    pull. A bare row (metadata.json, no source file) is a stub and must not
+    count either — same contract as spec/markdown/plan."""
+    eid = str(uuid.uuid4())
+    fm = FlowMessage(
+        id=str(uuid.uuid4()),
+        text="here",
+        attachment=[Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"{etype}-{eid}")],
+    )
+    assert fm.model_dump()["body_downloaded"] is False
+
+    # A stub record folder (no backing transcript) still does not count.
+    _materialize(records_root, etype, eid)
+    assert fm.model_dump()["body_downloaded"] is False
 
 
 def test_body_downloaded_is_not_emitted_for_db_storage(records_root):
@@ -127,9 +152,7 @@ def test_session_carrier_attachment_never_gates_download(records_root):
     not peg the message behind the Download button, alone or alongside a
     materialized asset."""
     sid = str(uuid.uuid4())
-    carrier = Attachment(
-        attachment_type=AttachmentType.TYPE_ID, data=f"remote_worker_session-{sid}"
-    )
+    carrier = Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"remote_worker_session-{sid}")
     fm = FlowMessage(id=str(uuid.uuid4()), text="turn", attachment=[carrier])
     assert fm.model_dump()["body_downloaded"] is True
 
@@ -137,7 +160,8 @@ def test_session_carrier_attachment_never_gates_download(records_root):
     eid = str(uuid.uuid4())
     _materialize(records_root, "skill", eid)
     fm2 = FlowMessage(
-        id=str(uuid.uuid4()), text="turn",
+        id=str(uuid.uuid4()),
+        text="turn",
         attachment=[carrier, _skill_attachment(eid)],
     )
     assert fm2.model_dump()["body_downloaded"] is True

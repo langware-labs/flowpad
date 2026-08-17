@@ -27,7 +27,7 @@ links are untouched (zero migration).
 
 from typing import Optional
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.builtin.fs_origin import FSOrigin, is_safe_rel_path
 from flow_sdk.builtin.fs_origin_field import FSOriginField
 from flow_sdk.builtin.local_origin import LocalOrigin
@@ -50,7 +50,7 @@ class Folder(Entity):
 
     # LOCAL resolved-path cache on THIS machine (see module docstring). Not the
     # transportable identity; set at add time (sender) or on resolve (receiver).
-    path: Optional[str] = APIField(default=None, description="Local resolved path of the directory (per-machine cache)")
+    path: Optional[str] = APIField(default=None, description="Local resolved path of the directory (per-machine cache)", sharing=Sharing.PRIVATE)
 
     def __init__(self, **data):
         # Tolerant backfill: an old row / bundle may carry a legacy ``path`` or
@@ -68,15 +68,18 @@ class Folder(Entity):
         super().__init__(**data)
 
     def _hub_body(self) -> dict:
-        """Folder hub payload: never leak the local resolved path.
+        """Folder hub payload: strip non-transportable origins.
 
         Folders normally travel as project context refs plus
-        ``shared_context_origins``. This guard keeps direct Folder share/create
-        paths from exposing a machine-local cache, and strips non-transportable
-        origins entirely.
+        ``shared_context_origins``. The local resolved ``path`` is withheld by
+        the field declaration itself (``Sharing.PRIVATE``); what remains here is
+        the runtime check that an origin is transportable, which no per-field
+        policy can express.
         """
         body = super()._hub_body()
-        body.pop("path", None)
+        # `path` is withheld by the base seam now (declared PRIVATE); this
+        # override is left with the one thing that is NOT per-field policy — a
+        # runtime predicate on the origin's transportability.
         origin = self.origin
         if origin is None or not origin.transportable:
             body.pop("origin", None)
@@ -173,11 +176,49 @@ class Folder(Entity):
         origin = await cls.detect_origin(canonical)
         return await cls.mint_for_origin(origin, local_path=canonical)
 
+    @classmethod
+    async def borrowed_checkout_paths(cls) -> set:
+        """Canonical paths of every directory we materialized from a TRANSPORTABLE
+        origin — i.e. every checkout of somebody else's repo.
+
+        These are bytes we clone but do not author, and indexing must never
+        write into them: identity backends normally COMMIT the id they mint
+        back into the source (markdown gets a ``flowpad:capsule`` block
+        appended), which dirties every tracked file and makes the vendor's next
+        ``git pull`` abort on "local changes would be overwritten" — silently,
+        until somebody tries to update the folder.
+
+        Answered from the Folder rows rather than by a per-path probe because
+        the Folder IS the record of "this directory came from elsewhere". A
+        caller that has a root and wants to know whether it may write asks
+        here; it does not need to know how the directory was attached, which is
+        the whole reason this lives on the entity and not at the call sites
+        (there are at least three: context-folder add, folder resolve, and the
+        project walk that owns a checkout it did not attach).
+        """
+        paths = set()
+        for folder in await cls.get_all():
+            origin = folder.origin
+            if origin is None or not origin.transportable or not folder.path:
+                continue
+            paths.add(canonical_posix_path(folder.path))
+        return paths
+
     # ── Materialize ──────────────────────────────────────────────────────────
 
     @action.post(action_name="resolve-location")
-    async def resolve_location(self) -> "object":
+    async def resolve_location(
+        self,
+        *,
+        preferred_root=None,
+        strict_index: bool = False,
+    ) -> "object":
         """Materialize this folder's origin into a local path on THIS machine.
+
+        ``preferred_root`` directs where a fresh checkout lands. Callers that
+        manage a folder on the user's behalf (a helpdesk portal, say) pass a
+        root outside the visible workspace; ordinary context folders pass
+        nothing and take the driver's default placement.
 
         For a ``local`` origin: verify base+rel exist, set ``path``. For a
         transportable origin (git/…): clone/pull via the kind's driver, join the
@@ -198,7 +239,9 @@ class Folder(Entity):
         if rel and not is_safe_rel_path(rel):
             return ApiSuccessResponse(data={"kind": "error", "message": "origin has an unsafe rel_path"})
         try:
-            local_root, _project_id = await get_origin_driver(origin.kind).materialize(origin)
+            local_root, _project_id = await get_origin_driver(origin.kind).materialize(
+                origin, preferred_root=preferred_root
+            )
         except FileNotFoundError as exc:
             return ApiSuccessResponse(data={"kind": "error", "message": f"not present: {exc}"})
         except Exception as exc:  # driver/materialize failure (clone error, etc.)
@@ -222,7 +265,22 @@ class Folder(Entity):
                 _index_additional_dir,
             )
 
-            await _index_additional_dir(self.path)
-        except Exception:
-            pass
+            # A transportable origin means these bytes came from somewhere else
+            # — a repo we clone but do not author. Indexing normally COMMITS the
+            # id it mints back into the source (markdown gets a
+            # ``flowpad:capsule`` block appended), which dirties the whole
+            # checkout and makes the next ``git pull`` abort on "local changes
+            # would be overwritten". Owning the distinction here, at the one
+            # place that knows the origin, keeps every caller of
+            # ``resolve_location`` from having to remember it.
+            await _index_additional_dir(
+                self.path,
+                read_only=origin.transportable,
+                strict=strict_index,
+            )
+        except Exception as exc:
+            if strict_index:
+                return ApiSuccessResponse(
+                    data={"kind": "error", "message": f"Could not index content project: {exc}"}
+                )
         return ApiSuccessResponse(data={"kind": "ready", "path": self.path})

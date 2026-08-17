@@ -1,213 +1,139 @@
-import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../../APIEntity';
-import { ActionInfo } from '../../models/ActionInfo';
-import type { GitOrigin } from '../../models/GitOrigin';
-import { isCompleteGitOrigin } from '../../models/GitOrigin';
-import type { Project } from '../project';
-import { ArtifactTypeInfo, ArtifactTypeMetadata } from './artifact-type-info';
-import { ArtifactReferenceType, ArtifactRelationType, ArtifactType, CodebaseReferenceType } from './artifact-types';
+import { APIEntity, isNonEmptyString, registerEntity } from '../../APIEntity';
+import type { IEntity } from '../../IEntity';
+import { DockPointerData } from '../../models/DockPointer';
+import type { FSOriginField, FSOriginInput } from '../../models/FSOrigin';
+import { normalizeFSOrigin } from '../../models/FSOrigin';
+import { ARTIFACT_KINDS, normalizeKind } from '../../models/Kind';
+import { ViewType } from '../../utils/ui/view-types';
+import { WorldViewProjection } from '../../worldview/projection';
 
-// Re-export for backward compatibility
-export { ArtifactReferenceType, ArtifactRelationType, ArtifactType, CodebaseReferenceType };
-
-export interface ICodeRef {
-  id?: string;
+/** The clean logical/source-plane Artifact contract. Kinds remain open strings. */
+export interface IArtifact extends IEntity {
   name: string;
-  ref_type: CodebaseReferenceType;
-  path: string;
+  kind: string;
   description?: string;
-  metadata?: Record<string, unknown>;
+  origin?: FSOriginField | null;
+  project_id?: string | null;
+  /** Path of the asset this artifact REFERENCES. It never owns the path. */
+  asset_ref?: string;
+  /**
+   * TypeId of the entity this artifact references, e.g. `source_item-<uuid>`.
+   * `asset_ref` addresses a deliverable that is a file; this addresses one that
+   * is a row — a sent message, a created record — which has no path at all.
+   */
+  target_type_id?: string | null;
+  /** TypeId of the run that produced it, e.g. `agentic_process-<uuid>`. */
+  generated_by?: string | null;
+}
+
+/** Private compatibility input for rows received before the Artifact migration. */
+interface LegacyArtifactInput {
+  artifact_type?: string | null;
+  ref_type?: string | null;
+  path?: string | null;
+  metadata?: Record<string, unknown> | null;
+  generating_flow_id?: string | null;
+  git_origin?: FSOriginInput | null;
+  port?: string | number | null;
+  start_cmd?: string | null;
+  health?: string | null;
+}
+
+const LEGACY_KIND_MAP: Readonly<Record<string, string>> = {
+  WEBAPP: ARTIFACT_KINDS.APPLICATION_WEB,
+  WEBPAGE: 'content.web.page',
+  APP_SERVICE: 'workload.service',
+  CLOUD_SERVICE: 'resource.infrastructure',
+  FUNCTION: 'workload.function',
+  FILE: ARTIFACT_KINDS.CONTENT_FILE,
+  TEXT_FILE: 'content.file.text',
+  DATA: ARTIFACT_KINDS.CONTENT_DATA,
+};
+
+const RETIRED_ARTIFACT_KEYS = [
+  'artifact_type',
+  'ref_type',
+  'path',
+  'metadata',
+  'generating_flow_id',
+  'git_origin',
+  'port',
+  'start_cmd',
+  'health',
+] as const;
+
+function kindFromLegacy(type: string | null | undefined): string {
+  return LEGACY_KIND_MAP[String(type || 'FILE').toUpperCase()] ?? ARTIFACT_KINDS.CONTENT_FILE;
 }
 
 /**
- * Reference to a piece of code - can be file, folder, glob pattern, or external reference.
+ * Artifact describes what something is, how it composes through canonical
+ * parentage, and where its source lives. Runtime/provider state belongs only
+ * to Deployment.
  */
 @registerEntity
-export class CodeRef extends APIEntity<CodeRef> implements ICodeRef {
-  static type: string = 'code_ref';
-  name: string;
-  ref_type: CodebaseReferenceType;
-  path: string;
-  description?: string;
-  metadata?: Record<string, unknown>;
-
-  constructor(entity: Partial<ICodeRef> = {}) {
-    super(entity);
-    this.name = entity.name || '';
-    this.ref_type = entity.ref_type || CodebaseReferenceType.FILE;
-    this.path = entity.path || '';
-    this.description = entity.description;
-    this.metadata = entity.metadata;
-  }
-
-  protected validateStructure(): void {
-    const errors: string[] = [];
-
-    if (!isNonEmptyString(this.name)) {
-      errors.push('name is required');
-    }
-
-    if (errors.length > 0) {
-      throw new Error(`Invalid CodeRef structure: ${errors.join(', ')}`);
-    }
-  }
-
-  get fileType(): string | null {
-    if (this.ref_type !== CodebaseReferenceType.FILE) {
-      return null;
-    }
-
-    const lastDot = this.path.lastIndexOf('.');
-    if (lastDot === -1) return null;
-
-    return this.path.slice(lastDot + 1);
-  }
-}
-
-export interface IArtifact extends ICodeRef {
-  artifact_type?: ArtifactType;
-  project_id?: string;
-  generating_flow_id?: string;
-  git_origin?: GitOrigin | null;
-  metadata?: Record<string, unknown>;
-  // Service control fields (for WEBAPP and APP_SERVICE types)
-  /** Port number for services */
-  port?: string;
-  /** Command to start/restart the service */
-  start_cmd?: string;
-  /** Health check endpoint path */
-  health?: string;
-}
-
-export type ArtifactGitResolveResult =
-  | { kind: 'ready'; artifact: Artifact; project: Project | null; localPath: string }
-  | { kind: 'needs_wizard'; artifact: Artifact; gitOrigin: GitOrigin; reason: string }
-  | { kind: 'error'; message: string };
-
-/**
- * Artifact - extends CodeRef with artifact-specific metadata.
- * Represents a filesystem entity or reference created during execution.
- */
-@registerEntity
-export class Artifact extends CodeRef implements IArtifact {
+export class Artifact extends APIEntity<Artifact> implements IArtifact {
   static type: string = 'artifact';
-  artifact_type?: ArtifactType;
-  project_id?: string;
-  generating_flow_id?: string;
-  git_origin?: GitOrigin | null;
-  metadata?: Record<string, unknown>;
-  // Service control fields
-  port?: string;
-  start_cmd?: string;
-  health?: string;
 
-  constructor(entity: Partial<IArtifact> = {}) {
+  name: string;
+  kind: string;
+  description?: string;
+  origin: FSOriginField | null;
+  project_id: string | null;
+  asset_ref: string;
+  target_type_id: string | null;
+  /**
+   * Provenance. Deliberately NOT a revival of the retired `generating_flow_id`
+   * (which stays in RETIRED_ARTIFACT_KEYS and is deleted, never aliased):
+   * dropped provenance stays dropped rather than reappearing with new meaning.
+   */
+  generated_by: string | null;
+
+  constructor(entity: Partial<IArtifact> | (Partial<IArtifact> & LegacyArtifactInput) = {}) {
     super(entity);
-    this.artifact_type = entity.artifact_type;
-    this.project_id = entity.project_id;
-    this.generating_flow_id = entity.generating_flow_id;
-    this.metadata = entity.metadata;
-    const metadataOrigin = entity.metadata?.git_origin as GitOrigin | undefined;
-    this.git_origin = entity.git_origin ?? (isCompleteGitOrigin(metadataOrigin) ? metadataOrigin : null);
-    // Extract service fields from entity or metadata (check both underscore and hyphen keys)
-    this.port = entity.port ?? (entity.metadata?.port as string | undefined);
-    this.start_cmd =
-      entity.start_cmd ??
-      (entity.metadata?.start_cmd as string | undefined) ??
-      (entity.metadata?.['start-cmd'] as string | undefined);
-    this.health = entity.health ?? (entity.metadata?.health as string | undefined);
+    const legacy = entity as Partial<IArtifact> & LegacyArtifactInput;
+    const metadataOrigin = legacy.metadata?.git_origin as FSOriginInput | undefined;
 
-    // Validate required fields
+    this.name = entity.name ?? '';
+    this.kind = normalizeKind(entity.kind ?? kindFromLegacy(legacy.artifact_type));
+    this.description = entity.description;
+    this.origin = normalizeFSOrigin((entity.origin ?? legacy.git_origin ?? metadataOrigin) as FSOriginInput | null);
+    this.project_id = entity.project_id ?? null;
+    this.asset_ref = entity.asset_ref ?? '';
+    this.target_type_id = entity.target_type_id ?? null;
+    this.generated_by = entity.generated_by ?? null;
+
+    // APIEntity.deepAssign intentionally accepts open wire payloads. Remove
+    // legacy keys it copied before they can become a public runtime/write
+    // surface; the canonical values above are the only retained projection.
+    for (const key of RETIRED_ARTIFACT_KEYS) {
+      delete (this as unknown as Record<string, unknown>)[key];
+    }
+
     this.validateStructure();
   }
 
-  /**
-   * Service-style artifacts often have no ``name`` but DO have a ``port`` —
-   * showing ``Port 3000`` is more useful to the user than the default
-   * ``artifact-04…2b`` id-tail. Defers to the chain when ``name`` is set.
-   */
-  override getDisplayName(): string | null {
-    if (isNonEmptyString(this.name)) return null;
-    if (this.port) return `Port ${this.port}`;
-    return null;
+  override get dockPointer(): DockPointerData {
+    return new DockPointerData(ViewType.WORLDVIEW, WorldViewProjection.DEPLOYMENT, {
+      focus: `${Artifact.type}-${this.id}`,
+      selected: `${Artifact.type}-${this.id}`,
+    });
   }
 
-  get typeInfo(): ArtifactTypeInfo {
-    const artifactType = this.artifact_type || ArtifactType.FILE;
-    return ArtifactTypeMetadata.fromArtifactType(artifactType);
+  override toJSON(): Record<string, unknown> {
+    const json = super.toJSON() as Record<string, unknown>;
+    for (const key of RETIRED_ARTIFACT_KEYS) delete json[key];
+    json.kind = this.kind;
+    json.origin = this.origin;
+    json.asset_ref = this.asset_ref;
+    json.target_type_id = this.target_type_id;
+    json.generated_by = this.generated_by;
+    return json;
   }
 
-  async resolveGitLocation(options?: {
-    currentProjectId?: string | null;
-    localPath?: string | null;
-    projectId?: string | null;
-  }): Promise<ArtifactGitResolveResult> {
-    const action = new ActionInfo('resolve-git-location', Artifact.type, this.id ?? '', 'POST');
-    action.bodyParameters = {
-      ...(options?.currentProjectId ? { current_project_id: options.currentProjectId } : {}),
-      ...(options?.localPath ? { local_path: options.localPath } : {}),
-      ...(options?.projectId ? { project_id: options.projectId } : {}),
-    };
-    const raw = await dataManager.callAction<
-      { current_project_id?: string },
-      | { kind: 'ready'; artifact?: unknown; project?: unknown; localPath?: string }
-      | { kind: 'needs_wizard'; artifact?: unknown; gitOrigin?: GitOrigin; reason?: string }
-      | { kind: 'error'; message?: string }
-    >(action);
-    if (!raw) return { kind: 'error', message: 'No response returned' };
-    if (raw.kind === 'ready') {
-      const artifact = raw.artifact
-        ? dataManager.updateEntityFromJson<Artifact>(raw.artifact as Record<string, unknown>)
-        : this;
-      const project = raw.project
-        ? dataManager.updateEntityFromJson<Project>(raw.project as Record<string, unknown>)
-        : null;
-      return {
-        kind: 'ready',
-        artifact,
-        project,
-        localPath: raw.localPath ?? artifact.path,
-      };
+  protected validateStructure(): void {
+    if (!isNonEmptyString(this.name)) {
+      throw new Error('Invalid Artifact structure: name is required');
     }
-    if (raw.kind === 'needs_wizard') {
-      const artifact = raw.artifact
-        ? dataManager.updateEntityFromJson<Artifact>(raw.artifact as Record<string, unknown>)
-        : this;
-      const gitOrigin = raw.gitOrigin ?? artifact.git_origin ?? null;
-      if (!isCompleteGitOrigin(gitOrigin)) {
-        return { kind: 'error', message: 'Artifact git origin is incomplete' };
-      }
-      return {
-        kind: 'needs_wizard',
-        artifact,
-        gitOrigin,
-        reason: raw.reason ?? 'Git setup is required',
-      };
-    }
-    return { kind: 'error', message: raw.message ?? 'Could not resolve artifact git location' };
-  }
-}
-
-export interface IArtifactRelation {
-  id?: string;
-  source_artifact_id: string;
-  target_artifact_id: string;
-  relation_type: ArtifactRelationType;
-  metadata?: Record<string, unknown>;
-}
-
-@registerEntity
-export class ArtifactRelation extends APIEntity<ArtifactRelation> implements IArtifactRelation {
-  static type: string = 'artifact_relation';
-  source_artifact_id: string;
-  target_artifact_id: string;
-  relation_type: ArtifactRelationType;
-  metadata: Record<string, unknown>;
-
-  constructor(entity: Partial<IArtifactRelation> = {}) {
-    super(entity);
-    this.source_artifact_id = entity.source_artifact_id || '';
-    this.target_artifact_id = entity.target_artifact_id || '';
-    this.relation_type = entity.relation_type || ArtifactRelationType.REFERENCES;
-    this.metadata = entity.metadata || {};
   }
 }

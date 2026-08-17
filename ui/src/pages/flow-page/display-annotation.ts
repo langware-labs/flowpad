@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { ViewType } from '@sdk';
 import { isMarkdownDocumentPath } from '@src/lib/markdown-path';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
@@ -6,13 +7,7 @@ import { AssetEditor, AssetMode, AssetRoutingMethod } from '@src/navigation/asse
 
 export { isMarkdownDocumentPath } from '@src/lib/markdown-path';
 
-export type DisplayAnnotationKind =
-  | 'website'
-  | 'markdown-document'
-  | 'asset'
-  | 'file'
-  | 'diff'
-  | 'active-view';
+export type DisplayAnnotationKind = 'website' | 'markdown-document' | 'asset' | 'file' | 'diff' | 'active-view';
 
 export interface DisplayAnnotationContext {
   kind: DisplayAnnotationKind;
@@ -26,12 +21,18 @@ export interface DisplayAnnotationContext {
 }
 
 export interface DisplayShowTarget {
+  /** Mirrors python `DisplayTargetKind`: entity | vfs | webapp | app | shell. */
   kind?: string;
   typeid?: string;
   type?: string;
   id?: string;
   path?: string;
   port?: number | string;
+  /** kind: 'app' — the Artifact is the address; runtime is derived, not pinned. */
+  artifact_id?: string;
+  runtime?: 'dev' | 'served' | 'unbuilt';
+  micro_app_id?: string;
+  name?: string;
 }
 
 function slug(value: string): string {
@@ -41,7 +42,6 @@ function slug(value: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 48);
 }
-
 
 export function displayAnnotationContextForWebapp(
   host?: string | null,
@@ -61,14 +61,14 @@ export function displayAnnotationContextForPath(path: string): DisplayAnnotation
   if (isMarkdownDocumentPath(path)) {
     return {
       kind: 'markdown-document',
-      title: 'Markdown document',
+      title: t`Markdown document`,
       path,
       viewType: ViewType.MARKDOWN,
     };
   }
   return {
     kind: 'file',
-    title: 'File',
+    title: t`File`,
     path,
     viewType: ViewType.EDITOR,
   };
@@ -79,8 +79,9 @@ export function displayAnnotationContextForShown(
   host?: string | null,
   port?: string | number | null,
 ): DisplayAnnotationContext {
-  if (shown.kind === 'webapp') {
-    return displayAnnotationContextForWebapp(host, shown.port ?? port);
+  if (shown.kind === 'webapp' || shown.kind === 'app') {
+    const context = displayAnnotationContextForWebapp(host, shown.port ?? port);
+    return shown.name ? { ...context, title: shown.name } : context;
   }
 
   if (shown.path) {
@@ -99,14 +100,14 @@ export function displayAnnotationContextForShown(
 
   return {
     kind: 'active-view',
-    title: 'Active display',
+    title: t`Active display`,
     type: shown.type,
     typeid: shown.typeid,
   };
 }
 
 export function displayAnnotationContextForDock(dock?: DockPointer | null): DisplayAnnotationContext {
-  if (!dock) return { kind: 'active-view', title: 'Active display' };
+  if (!dock) return { kind: 'active-view', title: t`Active display` };
 
   if (dock.viewType === ViewType.WEB_APP) {
     return displayAnnotationContextForWebapp(null, null);
@@ -124,7 +125,7 @@ export function displayAnnotationContextForDock(dock?: DockPointer | null): Disp
   ) {
     return {
       kind: 'markdown-document',
-      title: 'Markdown document',
+      title: t`Markdown document`,
       path: dock.pointer,
       viewType: dock.viewType,
     };
@@ -133,7 +134,7 @@ export function displayAnnotationContextForDock(dock?: DockPointer | null): Disp
   if (dock.viewType === ViewType.DIFF) {
     return {
       kind: 'diff',
-      title: 'Diff',
+      title: t`Diff`,
       path: dock.pointer,
       viewType: dock.viewType,
     };
@@ -145,7 +146,7 @@ export function displayAnnotationContextForDock(dock?: DockPointer | null): Disp
       if (ptr.mode === AssetMode.WIKI) {
         return {
           kind: 'markdown-document',
-          title: 'Markdown document',
+          title: t`Markdown document`,
           path: ptr.wikiName,
           viewType: dock.viewType,
         };
@@ -171,7 +172,7 @@ export function displayAnnotationContextForDock(dock?: DockPointer | null): Disp
 
   return {
     kind: 'active-view',
-    title: 'Active display',
+    title: t`Active display`,
     path: dock.pointer,
     viewType: dock.viewType,
   };

@@ -8,10 +8,22 @@ import numpy as np
 from pydantic import BaseModel, Field, PrivateAttr, model_serializer, model_validator
 
 from flow_sdk.api.type_id import TypeId
-from flow_sdk.builtin.fs_entities import FSItem
 from flow_sdk.builtin.knowledge_base.knowledge_entries import KnowledgeEntry
 from flow_sdk.builtin.knowledge_base.Knowledge_types import KnowledgeEntryType
 from .knowledge_engine.ontology import Ontology
+
+
+class KnowledgeItem(BaseModel):
+    """A content-carrying item in the legacy (v1) knowledge index.
+
+    Formerly the ``FSItem`` entity; decoupled into a plain KB-local value so the
+    filesystem listing type (now ``FSEntry``) and the persisted file entity
+    (``File``) do not have to double as a knowledge item. Carries only what the
+    v1 retrieval path reads: a typeid and text content.
+    """
+
+    typeid: TypeId
+    content: str = ""
 
 
 class ItemKeyed(BaseModel):
@@ -28,7 +40,7 @@ class KeyedEmbeddings(ItemKeyed):
 
 class KnowledgeData(BaseModel):
     # Legacy fields for backward compatibility (version 1)
-    items: dict[TypeId, FSItem] = Field(default_factory=dict)
+    items: dict[TypeId, KnowledgeItem] = Field(default_factory=dict)
     keyed_embeddings: list[KeyedEmbeddings] = Field(default_factory=list)
 
     # New fields (version 2)
@@ -102,9 +114,9 @@ class KnowledgeData(BaseModel):
     @model_serializer(mode="wrap")
     def knowledge_data_serializer(self, nxt):
         data = nxt(self)
-        if self.items:
-            for item in self.items.values():
-                data["items"][item.typeid.model_dump()]["content"] = item.content
+        # ``KnowledgeItem.content`` is a real field, so default serialization
+        # already carries it — no special-casing needed (it used to be a
+        # property on the FSItem entity that the dump would otherwise drop).
 
         if self.entries:
             data["entries"] = [entry.model_dump() for entry in self.entries]

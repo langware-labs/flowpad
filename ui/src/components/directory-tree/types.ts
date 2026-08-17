@@ -1,9 +1,9 @@
-import type { FSItem, TypeId } from '@sdk';
+import type { FSEntry, TypeId } from '@sdk';
 import type { ItemHandler } from './ItemHandler';
 
 /**
  * Represents a root entity in the directory tree (legacy, kept for ProjectsDirectoryTree)
- * @deprecated Use rootFolders with FSItem[] instead
+ * @deprecated Use rootFolders with FSEntry[] instead
  */
 export interface RootEntity {
   /** Entity TypeId to browse */
@@ -18,12 +18,12 @@ export interface RootEntity {
  * Tree node with expansion state
  */
 export interface TreeNode {
-  /** The FSItem entity */
-  item: FSItem;
+  /** The FSEntry entity */
+  item: FSEntry;
   /** Whether the node is expanded (folders only) */
   isExpanded: boolean;
   /** Child nodes (loaded lazily) */
-  children: FSItem[];
+  children: FSEntry[];
   /** Whether children are being loaded */
   isLoading: boolean;
 }
@@ -44,7 +44,7 @@ export type TreeAction =
 /**
  * Action handler function type
  */
-export type TreeActionHandler = (action: TreeAction, item: FSItem, data?: unknown) => void | Promise<void>;
+export type TreeActionHandler = (action: TreeAction, item: FSEntry, data?: unknown) => void | Promise<void>;
 
 /**
  * Filter definition for directory tree items
@@ -55,7 +55,7 @@ export interface FilterDefinition {
   /** Display label */
   label: string;
   /** Filter function to test items */
-  filterFn: (item: FSItem) => boolean;
+  filterFn: (item: FSEntry) => boolean;
 }
 
 /**
@@ -63,13 +63,13 @@ export interface FilterDefinition {
  */
 export interface DirectoryTreeEvents {
   /** Callback when an item is clicked */
-  onItemClick?: (item: FSItem) => void;
+  onItemClick?: (item: FSEntry) => void;
 
   /** Callback when an item is double-clicked */
-  onItemDoubleClick?: (item: FSItem) => void;
+  onItemDoubleClick?: (item: FSEntry) => void;
 
   /** Callback when an item is selected */
-  onSelect?: (item: FSItem | null) => void;
+  onSelect?: (item: FSEntry | null) => void;
 
   /** Callback when Home button is clicked */
   onNavigateHome?: () => void;
@@ -81,15 +81,15 @@ export interface DirectoryTreeEvents {
   onEnabledFiltersChange?: (filters: string[]) => void;
 
   /** Callback after an item is successfully deleted (built-in delete handling) */
-  onItemDeleted?: (item: FSItem) => void;
+  onItemDeleted?: (item: FSEntry) => void;
 }
 
 /**
  * Props for the DirectoryTree component
  */
 export interface DirectoryTreeProps {
-  /** Array of root folder FSItems to display in the tree (must be folders) */
-  rootFolders?: FSItem[];
+  /** Array of root folder FSEntrys to display in the tree (must be folders) */
+  rootFolders?: FSEntry[];
 
   /** Currently selected item path */
   selectedPath?: string | null;
@@ -164,7 +164,7 @@ export interface DirectoryTreeState {
   /** Set of expanded folder paths (use vfs_abs_path as key) */
   expandedPaths: Set<string>;
   /** Map of folder path to its contents (key: vfs_abs_path) */
-  folderContents: Map<string, FSItem[]>;
+  folderContents: Map<string, FSEntry[]>;
   /** Currently selected item path (vfs_abs_path or null) */
   selectedPath: string | null;
   /** Item being renamed (vfs_abs_path or null) */

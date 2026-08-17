@@ -1,5 +1,5 @@
 import { useAgentContext } from '@src/contexts/agent-context';
-import { ActionInfo } from '@sdk';
+import { ActionInfo, dataManager } from '@sdk';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
@@ -52,22 +52,8 @@ export const MetricsChart = forwardRef<MetricsChartHandle, MetricsChartProps>(
 
       try {
         const actionInfo = new ActionInfo('ops/metrics', 'compute_node', computeNode.id, 'POST');
-        const response = await fetch(actionInfo.fullActionUrl, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to fetch metrics: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        if (data.data) {
-          setMetrics(data.data);
-        } else if (data.message) {
-          setError(data.message);
-        }
+        const data = await dataManager.callAction<undefined, MetricEntry[]>(actionInfo);
+        setMetrics(data || []);
       } catch (err) {
         setError(err instanceof Error ? err.message : t`Failed to fetch metrics`);
       } finally {

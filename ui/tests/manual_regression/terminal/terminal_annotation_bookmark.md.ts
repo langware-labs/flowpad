@@ -26,7 +26,7 @@ async function gotoAgenticProcessWithSession(page: import('@playwright/test').Pa
 
     // Wait for the process ribbon (indicates worker_session_id is set)
     const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-    const ribbon = activePanel.locator('.border-t .ml-auto');
+    const ribbon = activePanel.locator('.border-t .ms-auto');
     await expect(ribbon).toBeVisible({ timeout: 60_000 });
   } catch (e) {
     await skipIfPtyExhausted(page);
@@ -76,11 +76,8 @@ test.describe('terminal_annotation_bookmark', () => {
     // Navigate to an agentic process and capture its ID
     const processUrl = await gotoAgenticProcessWithSession(page);
     const processIdMatch = processUrl.match(/agentic_process-[a-f0-9-]+/);
-    if (!processIdMatch) {
-      test.skip(true, 'Could not determine agentic process ID from URL');
-      return;
-    }
-    const processId = processIdMatch[0];
+    expect(processIdMatch, `agentic-process navigation must resolve an entity URL, got ${processUrl}`).not.toBeNull();
+    const processId = processIdMatch![0];
 
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
 

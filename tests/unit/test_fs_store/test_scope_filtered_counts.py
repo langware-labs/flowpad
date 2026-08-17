@@ -26,17 +26,17 @@ async def _seed_scoped_markdowns(tmp_path: Path) -> tuple[str, str]:
     """Index 4 markdown rows: 2 user-scope, 2 project-scope split across two
     project ids. Returns the two project ids for assertions."""
     user_root = tmp_path / "user_home"
-    (user_root / ".claude" / "docs").mkdir(parents=True)
-    (user_root / ".claude" / "docs" / "u1.md").write_text("# u1\n")
-    (user_root / ".claude" / "docs" / "u2.md").write_text("# u2\n")
+    (user_root / "docs").mkdir(parents=True)
+    (user_root / "docs" / "u1.md").write_text("# u1\n")
+    (user_root / "docs" / "u2.md").write_text("# u2\n")
 
     proj_a_root = tmp_path / "projA"
-    (proj_a_root / ".claude" / "docs").mkdir(parents=True)
-    (proj_a_root / ".claude" / "docs" / "a1.md").write_text("# a1\n")
+    (proj_a_root / "docs").mkdir(parents=True)
+    (proj_a_root / "docs" / "a1.md").write_text("# a1\n")
 
     proj_b_root = tmp_path / "projB"
-    (proj_b_root / ".claude" / "docs").mkdir(parents=True)
-    (proj_b_root / ".claude" / "docs" / "b1.md").write_text("# b1\n")
+    (proj_b_root / "docs").mkdir(parents=True)
+    (proj_b_root / "docs" / "b1.md").write_text("# b1\n")
 
     driver = get_db_driver()
     await driver.delete_entities_by_type(str(RecordType.MARKDOWN))

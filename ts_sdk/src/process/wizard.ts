@@ -14,6 +14,17 @@ export interface WizardData {
   prompt?: string;
   payload?: Record<string, unknown>;
   targetTypeId?: string;
+  /** Shape of the `data` this wizard is expected to close with, rendered into
+   *  the close command the agent is shown. Without it the example carries no
+   *  `data` at all — never an empty `{}`, which agents run verbatim and so
+   *  report nothing back to the caller. Values are placeholders describing the
+   *  field (e.g. `{ readyForDone: '<true|false>' }`), not real results. */
+  resultShape?: Record<string, unknown>;
+  /** Model for the run: a `WorkerModelTier` (`sm`/`md`/`lg`) or a concrete name.
+   *  Omitted means the worker's default. A narrow, mechanical wizard should ask
+   *  for `sm` — it is markedly cheaper and faster, and the tier resolves per
+   *  worker so it still means "the small model" on codex/copilot. */
+  model?: string;
 }
 
 export interface WizardLaunchRequest {
@@ -103,15 +114,35 @@ export async function completeWizard<T = unknown>(
 export function buildWizardPrompt(
   processId: string,
   request: WizardLaunchRequest,
+  opts?: { headless?: boolean },
 ): string {
   const prompt = request.wizardData?.prompt?.trim() || `Help me complete the ${request.wizardName} setup.`;
   const payload = request.wizardData?.payload
     ? `\n\nWizard data:\n${JSON.stringify(request.wizardData.payload, null, 2)}`
     : '';
+  // Tell the agent how it is being presented so it can decide whether to close
+  // itself. Headless (WizardButton) has no UI to close it, so the agent MUST
+  // close; an interactive popup lets the user close it, so a wait-for-user
+  // agent may defer. Agents that always self-close ignore this line.
+  const presentation = opts?.headless
+    ? `\n\nPresentation: headless — no wizard UI is shown, so you MUST close the wizard yourself when done (do not wait for a user to close it).`
+    : `\n\nPresentation: interactive popup — a wizard UI is shown; if your instructions say to let the user close it, wait for them instead of closing yourself.`;
+  // The close command is an EXAMPLE, but it is also runnable — so it must never
+  // be runnable-as-is with an empty result. With a resultShape we show the
+  // caller's expected fields as placeholders (the agent has to replace them);
+  // without one we omit `data` entirely rather than emit `"data":{}`, which
+  // agents paste verbatim and thereby report nothing back.
+  const shape = request.wizardData?.resultShape;
+  const closeExample = shape
+    ? `flow wizard ${processId} close '${JSON.stringify({ status: 'done', data: shape })}'
+Replace every <…> placeholder above with your actual result — do not close with an empty or unedited \`data\`.
+Write any path with forward slashes (C:/Users/… not C:\\Users\\…) — a backslash is a JSON escape and corrupts the value.`
+    : `flow wizard ${processId} close '{"status":"done"}'
+If your instructions define a result payload, add it as \`"data": {…}\`.`;
   return `${prompt}${payload}
 
 When the wizard is complete, close it by running:
-flow wizard ${processId} close '{"status":"done","data":{}}'
+${closeExample}
 
-If the user cancels or the setup cannot complete, run the same command with status "cancel" or "error".`;
+If the user cancels or the setup cannot complete, run the same command with status "cancel" or "error".${presentation}`;
 }

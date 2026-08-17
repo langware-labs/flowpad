@@ -335,20 +335,13 @@ def _record_id(source_file: str, json_path: str) -> str:
     return f"{source_file}:{json_path}"
 
 
-def mcp_server_id(ref: FSRef) -> str:
-    """Stable, filesystem-safe **UUID** id — pure string work over the FSRef's
-    pointer (no file read). The natural key ``<source_file>:<pointer>`` carries a
-    ``:`` (illegal in a Windows folder name); hashing it into a uuid5 — with the
-    same ``f"{type}:{key}"`` formula ``Entity.allocate_id`` uses — yields a
-    path-safe id identical to the one the DB row gets.
-    """
-    return mint_uuid(
-        f"{RecordType.MCP_SERVER}:{_record_id(str(ref.path), ref.json_path or '')}",
-        namespace=uuid.NAMESPACE_DNS,
-    )
+def mcp_server_identity_key(ref: FSRef | Path) -> str:
+    path = Path(getattr(ref, "path", ref))
+    json_path = getattr(ref, "json_path", None) or ""
+    return f"{RecordType.MCP_SERVER}:{_record_id(str(path), json_path)}"
 
 
-def extract_mcp_server(ref: FSRef) -> list[FSRecord]:
+def extract_mcp_server(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse one MCP_SERVER FSRef into the agent-neutral server record.
 
     Persists the full definition site (``source_file`` + ``json_path`` +
@@ -395,7 +388,7 @@ def extract_mcp_server(ref: FSRef) -> list[FSRecord]:
 
     rec = FSRecord(
         type=RecordType.MCP_SERVER,
-        id=_record_id(source_file, json_path),
+        id=resolved_id,
         name=name,
         scope=ref.scope or "user",
         source_file=source_file,

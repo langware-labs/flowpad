@@ -1,12 +1,12 @@
 """Type metadata for MARKDOWN."""
-from flow_sdk.schema.type_info import TypeMetadata
-from flow_sdk.schema.types import EntityType
-from flow_sdk.schema.view_mode import ViewMode
+from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, frontmatter_id
 from flow_sdk.fs_store.indexer.functions.markdown import (
     extract_markdown,
-    markdown_gen_id,
 )
 from flow_sdk.fs_store.operations.markdown import reconcile_folder_doc_edges
+from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
+from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.view_mode import ViewMode
 
 
 def _markdown_default_body(entity) -> str:
@@ -19,21 +19,24 @@ def _markdown_default_body(entity) -> str:
     is carried by the filename stem, so a bare heading round-trips cleanly.
     """
     name = (getattr(entity, "title", None) or getattr(entity, "name", None) or "Untitled").strip()
-    return f"# {name}\n"
+    return render_entity_frontmatter(entity, {}) + f"\n\n# {name}\n"
 
 
 MARKDOWN = TypeMetadata(
     type=EntityType.MARKDOWN,
-    icon="WikiW",
+    icon="FileText",
     displayName="Documents",
     browseable_by=ViewMode.STANDARD,
     creatable=True,
     indexed_by_default=True,
     api_visible=True,
+    cloud_file_transport="git",
     index_fields=["title", "tags", "links"],
-    main_subdir="docs",
+    asset_class="docs",
+    family="docs",
     from_disk_fn=extract_markdown,
-    gen_uuid_fn=markdown_gen_id,
+    capsules=(IDENTITY_CAPSULE,),
+    identity_backend=capsule_identity(frontmatter_id),
     post_sync_fn=reconcile_folder_doc_edges,
     default_body_fn=_markdown_default_body,
     # On receive, a note has no setup agent — it just opens (setup_skill=None).

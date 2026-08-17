@@ -23,15 +23,20 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.indexer.functions.mcp_server import (
     extract_mcp_server,
-    mcp_server_id,
+    mcp_server_identity_key,
     mcp_servers_in_file_fn,
     mcp_source_files_fn,
 )
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 
 PROJ_ALPHA = "/Users/alice/proj-alpha"
 PROJ_BETA = "/Users/alice/proj-beta"
+
+
+def _extract(ref: FSRef):
+    return extract_mcp_server(ref, SchemaRegistry.get("mcp_server").mint_entity_id(ref, derive=True, overwrite=True))
 
 
 def _make_home(tmp_path: Path) -> Path:
@@ -178,13 +183,15 @@ def test_stage2_malformed_files_yield_nothing(tmp_path: Path) -> None:
 
 def _extract_one(refs: list[FSRef], pointer: str):
     (ref,) = [r for r in refs if r.json_path == pointer]
-    (rec,) = extract_mcp_server(ref)
+    (rec,) = _extract(ref)
     return rec
 
 
 def test_extract_claude_user_server(tmp_path: Path) -> None:
     home = _make_home(tmp_path)
-    rec = _extract_one(_scan(_home_root(home)), "/mcpServers/github")
+    refs = _scan(_home_root(home))
+    (ref,) = [item for item in refs if item.json_path == "/mcpServers/github"]
+    (rec,) = _extract(ref)
     d = rec.to_dict()
     assert d["name"] == "github"
     assert d["command"] == "npx"
@@ -197,15 +204,17 @@ def test_extract_claude_user_server(tmp_path: Path) -> None:
     assert d["project_path"] == ""
     # FTS feeds on description — searchable by command/package.
     assert "npx" in d["description"] and "@mcp/github" in d["description"]
-    # Legacy id shape preserved for top-level entries.
-    assert d["id"] == f"{d['source_file']}:github"
+    # The legacy natural key remains stable, but TypeInfo exposes its UUIDv5.
+    assert d["id"] == SchemaRegistry.get("mcp_server").mint_entity_id(
+        ref, derive=True, overwrite=True
+    )
 
 
 def test_extract_claude_local_servers_distinct_ids_and_project_path(tmp_path: Path) -> None:
     home = _make_home(tmp_path)
     refs = _scan(_home_root(home))
     local = sorted(
-        (extract_mcp_server(r)[0] for r in refs if (r.json_path or "").startswith("/projects/")),
+        (_extract(r)[0] for r in refs if (r.json_path or "").startswith("/projects/")),
         key=lambda rec: rec.to_dict()["project_path"],
     )
     assert len(local) == 2
@@ -243,7 +252,7 @@ def test_extract_remote_url_server(tmp_path: Path) -> None:
 
 
 def test_gen_uuid_matches_extracted_record_id(tmp_path: Path) -> None:
-    """The probe's ``gen_uuid_fn`` id must equal the id the extracted record
+    """The probe's ``TypeInfo.mint_id`` must equal the id the extracted record
     ends up with after ``Entity.allocate_id`` normalizes its natural key — so
     the probe's shadow home and the DB row address the same record — and it must
     be a filesystem-safe UUID (no ``:`` that would crash the Windows write).
@@ -253,8 +262,8 @@ def test_gen_uuid_matches_extracted_record_id(tmp_path: Path) -> None:
 
     home = _make_home(tmp_path)
     for ref in _scan(_home_root(home)):
-        (rec,) = extract_mcp_server(ref)
-        gen = mcp_server_id(ref)
+        (rec,) = _extract(ref)
+        gen = SchemaRegistry.get("mcp_server").mint_entity_id(ref, derive=True, overwrite=True)
         assert is_valid_entity_id(gen)
         assert not any(ch in gen for ch in ":/\\")
         assert gen == Entity.allocate_id(rec.to_dict())
@@ -265,7 +274,7 @@ def test_extract_vanished_entry_returns_empty(tmp_path: Path) -> None:
     (ref,) = [r for r in _scan(_home_root(home)) if r.json_path == "/mcpServers/github"]
     # Entry removed between scan and parse — extractor must fail soft.
     (home / ".claude.json").write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
-    assert extract_mcp_server(ref) == []
+    assert _extract(ref) == []
 
 
 # ── All-systems coverage: worker_type / connector_type / cloud connectors ────
@@ -307,7 +316,7 @@ def test_vscode_servers_key_parsed(tmp_path: Path) -> None:
     )
     refs = _scan(_home_root(home))
     assert {r.json_path for r in refs} == {"/servers/foo"}
-    (rec,) = extract_mcp_server(refs[0])
+    (rec,) = _extract(refs[0])
     d = rec.to_dict()
     assert d["name"] == "foo"
     assert d["worker_type"] == "vscode"
@@ -329,7 +338,7 @@ def test_worker_type_and_connector_type_stamped(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     by_name = {
-        extract_mcp_server(r)[0].to_dict()["name"]: extract_mcp_server(r)[0].to_dict()
+        _extract(r)[0].to_dict()["name"]: _extract(r)[0].to_dict()
         for r in _scan(_home_root(home))
     }
     assert by_name["local-tool"]["worker_type"] == "cursor"
@@ -352,7 +361,7 @@ def test_cloud_connector_stubs(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     refs = _scan(_home_root(home))
-    recs = {r.json_path: extract_mcp_server(r)[0].to_dict() for r in refs}
+    recs = {r.json_path: _extract(r)[0].to_dict() for r in refs}
 
     gmail = recs["/claudeAiMcpEverConnected/claude.ai Gmail"]
     assert gmail["name"] == "claude.ai Gmail"
@@ -381,7 +390,7 @@ def test_cloud_connector_vanished_returns_empty(tmp_path: Path) -> None:
     (home / ".claude.json").write_text(
         json.dumps({"claudeAiMcpEverConnected": []}), encoding="utf-8"
     )
-    assert extract_mcp_server(ref) == []
+    assert _extract(ref) == []
 
 
 # ── Regression — settings-API per-server fragment type ───────────────────────

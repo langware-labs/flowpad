@@ -3,7 +3,7 @@
  * to per-record-type subscribers.
  *
  * After save/delete the backend broadcasts:
- *   DataOpMessage(to_entity=`{type}-@{uid}`, op="update"|"create"|"delete", data={...})
+ *   DataOpMessage(to_entity=`{type}-{uid}`, op="update"|"create"|"delete", data={...})
  *
  * This module matches the `type` portion against the RecordTypeRegistry
  * and dispatches to any registered callbacks.
@@ -39,9 +39,16 @@ let _attached = false;
 
 /**
  * Handle an incoming data_op_msg and dispatch to subscribers.
- * Expected `to_entity` format: `{recordType}-@{uid}` or `{recordType}-{uuid}`.
+ * Expected `to_entity` format: `{recordType}-{uuid}` (canonical TypeId).
  */
 function handleDataOp(toEntity: string, op: string, data?: Record<string, unknown>): void {
+  // child_* ops are NOT about the addressed record. Their envelope is inverted:
+  // `to_entity` is the parent and `data` is the child. `conversation` is a
+  // registered fs-record type, so without this guard a parent-addressed
+  // child_created would be dispatched to conversation subscribers as "this
+  // record changed", carrying an unrelated child as its payload.
+  if (op === 'child_created' || op === 'child_updated' || op === 'child_deleted') return;
+
   // Parse record type from the entity identifier
   const dashIdx = toEntity.indexOf('-');
   if (dashIdx < 0) return;

@@ -1,7 +1,7 @@
 /**
  * Preference registry — single source of truth for user-editable UI preferences.
  *
- * Mirrors the backend TypeInfo pattern: every preference ("topic") is enumed in
+ * Mirrors the backend TypeInfo pattern: every preference ("tag") is enumed in
  * {@link PrefKey} and declared once as a {@link PrefInfo} in {@link PREF_REGISTRY}.
  * A preference is identified by the dotted string key `preferences.<category>.<name>`;
  * its {@link PrefInfo.dataType} drives how the stored value ("data") is rendered into a
@@ -20,7 +20,7 @@ export enum PrefDataType {
 }
 
 /**
- * Every preference topic. The value IS the persisted key:
+ * Every preference tag. The value IS the persisted key:
  * `preferences.<category>.<name>`. Keep this enum in sync with {@link PREF_REGISTRY}
  * (the registry-integrity test enforces a 1:1 mapping).
  */
@@ -30,19 +30,28 @@ export enum PrefKey {
   BUFFER_SYNC_UPDATES = 'preferences.terminal.buffer_sync_updates',
   SOUND_ENABLED = 'preferences.notifications.sound_enabled',
   SOUND_KEY = 'preferences.notifications.sound_key',
+  SHARE_MESSAGE_STATUS = 'preferences.notifications.share_message_status',
   SCROLLBACK_LINES = 'preferences.advanced.scrollback_lines',
   EXPERIMENTAL_FLAGS = 'preferences.advanced.experimental_flags',
   INDEXER_BACKEND = 'preferences.advanced.indexer_backend',
+
+  // --- Auto-index a project on selection (the "Auto Index" tab) ---
+  // Read backend-side via flow_sdk/fs_store/indexer/auto_index.py, which owns
+  // the matching key constants and defaults. `AUTO_INDEX_ENABLED` gates the
+  // other three in the UI (visibleWhen) — but that is presentation only; the
+  // backend re-reads `enabled` itself and never infers it from visibility.
+  AUTO_INDEX_ENABLED = 'preferences.auto_index.enabled',
+  AUTO_INDEX_TYPE = 'preferences.auto_index.index_type',
+  AUTO_INDEX_TRIGGER = 'preferences.auto_index.index_trigger',
+  AUTO_INDEX_FUNCTION = 'preferences.auto_index.index_function',
 
   // --- Migrated from localStorage (see prefRegistry plan) ---
   // i18n / ui (boot keys read at module load, gate first paint)
   LOCALE = 'preferences.i18n.locale',
   VIEW_MODE = 'preferences.ui.view_mode',
-  CHAT_UI_MODE = 'preferences.ui.chat_ui_mode',
   CHAT_SHOW_TOOLS = 'preferences.chat.show_tools',
   ONBOARDING_DISMISSED = 'preferences.ui.onboarding_dismissed',
   SHOW_SYSTEM_PROJECTS = 'preferences.ui.show_system_projects',
-  INDEXING_APPROVED = 'preferences.indexing.approved',
   // Per-folder indexing consent (macOS-TCC / cross-OS special folders):
   // 'ask' | 'skip' | 'allow' | 'denied'. Mirrors flow_sdk special_folders.py.
   INDEX_FOLDER_DOCUMENTS = 'preferences.indexing.folders.documents',
@@ -65,6 +74,11 @@ export enum PrefKey {
   ERROR_TIME_SPAN = 'preferences.errors.time_span',
   ERROR_STATUS_FILTER = 'preferences.errors.status_filter',
   ERROR_DEDUPLICATE = 'preferences.errors.deduplicate',
+  // debug
+  // Dev-only: which SPA page the local desktop server serves — 'desk' (default)
+  // or 'hub'. Toggled from the version modal; read by the backend at bootstrap
+  // to set supported_pages. Must match flow_sdk/server/routes/bootstrap.py.
+  APP_PAGE = 'preferences.dev.app_page',
   // debug (sniffer)
   SNIFFER_MAX_EVENTS = 'preferences.debug.sniffer_max_events',
   SNIFFER_TIME_SPAN = 'preferences.debug.sniffer_time_span',
@@ -79,6 +93,24 @@ export interface PrefOption {
   label: string;
   /** When present, the control renders a preview button that plays this audio URL. */
   previewUrl?: string;
+}
+
+/** Value shapes a visibility rule can compare. JSON prefs can't be controllers. */
+export type PrefScalar = string | number | boolean | null;
+
+/**
+ * Dependency rule: this pref only means anything while another pref holds a
+ * given value — a master toggle gating its sub-options.
+ *
+ * One level only: the controller must not itself declare a `visibleWhen` (the
+ * registry-integrity test asserts this), so evaluation is a single comparison
+ * and a cycle is impossible.
+ */
+export interface PrefVisibility {
+  /** The controlling pref. Same category, surfaced, and never `self`. */
+  key: PrefKey;
+  /** Show when the controller equals this value. */
+  equals: PrefScalar;
 }
 
 export interface PrefInfo {
@@ -120,6 +152,17 @@ export interface PrefInfo {
    * Defaults to the dotted PrefKey when omitted.
    */
   legacyLocalStorageKey?: string;
+  /**
+   * Show this pref in the Preferences screen only while its controller matches.
+   * `PreferencesView` filters the row out entirely (it never mounts) rather than
+   * disabling it, so a hidden pref also stops subscribing.
+   *
+   * Two properties worth knowing: hiding does **not** reset the stored value —
+   * re-enabling the controller restores the user's previous choices; and
+   * visibility is **not a gate**. Any runtime consumer must still check the
+   * controller's own value. "The user can't see it" never implies "it's off".
+   */
+  visibleWhen?: PrefVisibility;
 }
 
 /** Default notification sound — stable key from the ui sound manifest (DEFAULT_SOUND_KEY). */
@@ -135,6 +178,34 @@ export const INDEX_FOLDER_OPTIONS: PrefOption[] = [
   { value: 'allow', label: 'Always index' },
   { value: 'skip', label: 'Never index' },
   { value: 'denied', label: 'Blocked by system' },
+];
+
+/**
+ * Category id for the auto-index-on-selection prefs — also the Preferences tab
+ * id, so `humanizeType` renders it as "Auto Index".
+ *
+ * Deliberately NOT `indexing`: that category holds only the hidden per-folder
+ * consent prefs, and `preferences.test.tsx` asserts it never becomes a tab.
+ */
+export const CATEGORY_AUTO_INDEX = 'auto_index';
+
+/** Depth of an auto-index run. Mirrors IndexType in auto_index.py. */
+export const AUTO_INDEX_TYPE_OPTIONS: PrefOption[] = [
+  { value: 'fast', label: 'Fast' },
+  { value: 'full', label: 'Full' },
+];
+
+/** When the auto-index fires. Mirrors IndexTrigger in auto_index.py. */
+export const AUTO_INDEX_TRIGGER_OPTIONS: PrefOption[] = [
+  { value: 'project_create', label: 'Project create' },
+  { value: 'first_selection', label: 'First selection' },
+  { value: 'every_selection', label: 'Every selection' },
+];
+
+/** Where the walk executes on the server. Mirrors ScanMode in indexer/builtin.py. */
+export const AUTO_INDEX_FUNCTION_OPTIONS: PrefOption[] = [
+  { value: 'subprocess', label: 'Subprocess' },
+  { value: 'thread', label: 'Thread' },
 ];
 
 /** One PrefInfo for a per-folder indexing-consent pref (Documents/Desktop/…). */
@@ -201,6 +272,15 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     defaultValue: DEFAULT_SOUND_KEY,
     optionsSource: 'notification_sounds',
   },
+  [PrefKey.SHARE_MESSAGE_STATUS]: {
+    key: PrefKey.SHARE_MESSAGE_STATUS,
+    surfaced: true,
+    category: 'notifications',
+    label: 'Share message status',
+    description: 'Let other participants see when messages are delivered or read.',
+    dataType: PrefDataType.BOOL,
+    defaultValue: true,
+  },
   [PrefKey.SCROLLBACK_LINES]: {
     key: PrefKey.SCROLLBACK_LINES,
     surfaced: true,
@@ -234,8 +314,61 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     ],
   },
 
+  // ===== Auto Index (project selection) =====
+  // The BACKEND owns the trigger: it hooks the project `activate` action and
+  // project create, and reads these keys with read_instance_pref. The frontend
+  // only edits them — there is no client-side index call. Defaults here must stay
+  // identical to auto_index.py's, because `default_prefs` is only written for a
+  // missing/stub preferences.json, so upgraders fall back to the in-code default.
+  [PrefKey.AUTO_INDEX_ENABLED]: {
+    key: PrefKey.AUTO_INDEX_ENABLED,
+    surfaced: true,
+    category: CATEGORY_AUTO_INDEX,
+    label: 'Index project on selection',
+    description:
+      'Index a project’s files when you open it, so its assets and search are ready without a manual index run.',
+    dataType: PrefDataType.BOOL,
+    defaultValue: true,
+  },
+  [PrefKey.AUTO_INDEX_TYPE]: {
+    key: PrefKey.AUTO_INDEX_TYPE,
+    surfaced: true,
+    category: CATEGORY_AUTO_INDEX,
+    visibleWhen: { key: PrefKey.AUTO_INDEX_ENABLED, equals: true },
+    label: 'Index depth',
+    description:
+      'Fast re-reads only the files that changed since the last index. Full re-reads every file in the project.',
+    dataType: PrefDataType.STRING,
+    defaultValue: 'fast',
+    options: AUTO_INDEX_TYPE_OPTIONS,
+  },
+  [PrefKey.AUTO_INDEX_TRIGGER]: {
+    key: PrefKey.AUTO_INDEX_TRIGGER,
+    surfaced: true,
+    category: CATEGORY_AUTO_INDEX,
+    visibleWhen: { key: PrefKey.AUTO_INDEX_ENABLED, equals: true },
+    label: 'Index when',
+    description:
+      'Project create indexes once, as the project is created. First selection indexes the first time you open a project. Every selection re-indexes on each switch into it — note that even a Fast run still walks the whole project, so this is the expensive option on large trees.',
+    dataType: PrefDataType.STRING,
+    defaultValue: 'first_selection',
+    options: AUTO_INDEX_TRIGGER_OPTIONS,
+  },
+  [PrefKey.AUTO_INDEX_FUNCTION]: {
+    key: PrefKey.AUTO_INDEX_FUNCTION,
+    surfaced: true,
+    category: CATEGORY_AUTO_INDEX,
+    visibleWhen: { key: PrefKey.AUTO_INDEX_ENABLED, equals: true },
+    label: 'Run the walk in',
+    description:
+      'Subprocess runs the file walk in a separate process, so a large or slow tree can’t stall the server (database writes stay in the server either way). Thread runs it in-process — lower startup cost, better for small projects. No effect when the Rust indexer backend is selected.',
+    dataType: PrefDataType.STRING,
+    defaultValue: 'subprocess',
+    options: AUTO_INDEX_FUNCTION_OPTIONS,
+  },
+
   // ===== Migrated from localStorage =====
-  // Boot keys (i18n.locale, ui.view_mode, ui.chat_ui_mode) are seeded synchronously
+  // Boot keys (i18n.locale, ui.view_mode) are seeded synchronously
   // from localStorage at construction and mirrored back on set, so first paint is
   // correct before the backend loads.
   [PrefKey.LOCALE]: {
@@ -258,8 +391,8 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     label: 'View mode',
     description: 'Surface complexity: Vibe (simplest, creator), Standard (minimal), Advanced, or Dev.',
     dataType: PrefDataType.STRING,
-    // Standard is the default; Vibe is opt-in via the footer View toggle.
-    defaultValue: 'standard',
+    // Vibe is the default; opt up to Standard/Advanced/Dev via the footer View toggle.
+    defaultValue: 'vibe',
     options: [
       { value: 'vibe', label: 'Vibe' },
       { value: 'standard', label: 'Standard' },
@@ -267,15 +400,20 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
       { value: 'dev', label: 'Dev' },
     ],
   },
-  [PrefKey.CHAT_UI_MODE]: {
-    key: PrefKey.CHAT_UI_MODE,
-    boot: true,
-    legacyLocalStorageKey: 'chatUiOverride',
-    category: 'ui',
-    label: 'Chat UI override',
-    description: "Preferred interactive-tab UI ('chat' | 'terminal'); empty = auto.",
+  [PrefKey.APP_PAGE]: {
+    key: PrefKey.APP_PAGE,
+    // Not surfaced in the Preferences screen: it's a dev-only debug toggle that
+    // lives in the version modal. Not a boot key: the backend drives the actual
+    // page selection via supported_pages at bootstrap, so no first-paint seed.
+    category: 'debug',
+    label: 'App page (dev)',
+    description: "Which page the local server renders: 'desk' (default) or 'hub'. Dev-only.",
     dataType: PrefDataType.STRING,
-    defaultValue: '',
+    defaultValue: 'desk',
+    options: [
+      { value: 'desk', label: 'Desktop' },
+      { value: 'hub', label: 'Hub' },
+    ],
   },
   [PrefKey.CHAT_SHOW_TOOLS]: {
     key: PrefKey.CHAT_SHOW_TOOLS,
@@ -301,14 +439,6 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     category: 'ui',
     label: 'Show system projects',
     description: 'Include built-in system projects in the project picker.',
-    dataType: PrefDataType.BOOL,
-    defaultValue: false,
-  },
-  [PrefKey.INDEXING_APPROVED]: {
-    key: PrefKey.INDEXING_APPROVED,
-    legacyLocalStorageKey: 'flowpad-index-approved',
-    category: 'indexing',
-    label: 'Indexing approved',
     dataType: PrefDataType.BOOL,
     defaultValue: false,
   },
@@ -515,8 +645,46 @@ export const PREF_CATEGORIES: string[] = (() => {
 })();
 
 /** Surfaced preferences belonging to a category, in registry order. */
+/**
+ * Surfaced prefs bucketed by category, computed once at module load.
+ *
+ * `prefsForCategory` used to re-scan the whole registry on every call, and the
+ * Preferences screen calls it per category on every store change — so a single
+ * unrelated `set()` re-filtered ~60 entries eight times over.
+ */
+const PREFS_BY_CATEGORY: Record<string, PrefInfo[]> = (() => {
+  const out: Record<string, PrefInfo[]> = {};
+  for (const info of getSurfacedPrefInfos()) {
+    (out[info.category] ??= []).push(info);
+  }
+  return out;
+})();
+
 export function prefsForCategory(category: string): PrefInfo[] {
-  return getSurfacedPrefInfos().filter((info) => info.category === category);
+  return PREFS_BY_CATEGORY[category] ?? [];
+}
+
+/**
+ * Is `info` visible, given a reader for other prefs' current values?
+ *
+ * True whenever the pref declares no `visibleWhen`. The reader is injected so
+ * this module stays free of any store import (it currently imports nothing but
+ * `builtInShells`) and so the rule is trivially testable with a plain lookup.
+ *
+ * Strict equality is enough: `visibleWhen` controllers are BOOL/STRING/NUMBER
+ * prefs, never JSON, so there is no structural compare to do.
+ */
+export function isPrefVisible(info: PrefInfo, read: (key: PrefKey) => unknown): boolean {
+  const rule = info.visibleWhen;
+  return !rule || read(rule.key) === rule.equals;
+}
+
+/** Surfaced prefs for a category, minus rows hidden by an unmet `visibleWhen`. */
+export function visiblePrefsForCategory(
+  category: string,
+  read: (key: PrefKey) => unknown,
+): PrefInfo[] {
+  return prefsForCategory(category).filter((info) => isPrefVisible(info, read));
 }
 
 /** Default-value map keyed by dotted PrefKey — seeds the store. */

@@ -1,164 +1,9 @@
-import logging
-import re
-
 from pydantic import BaseModel, ConfigDict
 
-from flow_sdk.api.identifier import type_uuid_pattern, named_id_pattern
-from flow_sdk.api.type_id import TypeId
-from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.api.api_types.vfs_path import VFSPath, parse_custom_uri
 from flow_sdk.request_context import get_current_request_info
 from flow_sdk.request_context.request_info import RequestInfo
 from flow_sdk.responses import ApiFailResponse
-from flow_sdk.settings import is_desktop
-
-logger = logging.getLogger(__name__)
-
-
-class VFSPath:
-    VFS_PATH_PROTOCOL = "vfs"
-
-    def __init__(self, vfs_path: str | None = None) -> None:
-        self._raw_path = vfs_path
-        parsed = parse_custom_uri(vfs_path)
-        self.protocol = parsed.get("protocol", None)
-        if self.protocol and self.protocol != self.VFS_PATH_PROTOCOL:
-            raise ValueError(f"Unsupported protocol: {self.protocol}")
-        self.type = parsed.get("type", None)
-        self.uuid = parsed.get("uuid", None)
-        self.entity_sub_path = parsed.get("path", None)
-        if self.entity_sub_path:
-            self.entity_sub_path = self.entity_sub_path.lstrip("/")
-        else:
-            self.entity_sub_path = ""
-        self.query = parsed.get("query", None)
-        self.fragment = parsed.get("fragment", None)
-        if vfs_path is not None and vfs_path.startswith("/") and not self.typeid:
-            request_info = get_current_request_info()
-            if request_info and request_info.user:
-                # Use user from request context
-                self.typeid = request_info.user.typeid
-            elif is_desktop():
-                # In desktop mode, default to local compute node
-                logger.debug("No request context in desktop mode, defaulting to local compute node")
-                self.type = RecordType.COMPUTE_NODE
-                self.uuid = "@local"
-            else:
-                # Not in desktop mode and no request context - error
-                logger.error("Virtual path requires user in context")
-                raise ValueError("Absolute path is invalid, No request info found")
-
-    def is_absolute(self) -> bool:
-        return self.typeid is not None
-
-    @staticmethod
-    def from_entity_path(typeid: TypeId, entity_vfs_path="/") -> "VFSPath":
-        return VFSPath(f"{typeid}/{entity_vfs_path.lstrip('/')}")
-
-    @property
-    def typeid(self) -> TypeId | None:
-        if not self.type:
-            return None
-        if not self.uuid:
-            return None
-        return TypeId(type=self.type, id=self.uuid)
-
-    @typeid.setter
-    def typeid(self, value: TypeId):
-        self.type = value.type
-        self.uuid = value.id
-
-    @property
-    def entity_subpath(self) -> str:
-        return f"{self.entity_sub_path}"
-
-    @property
-    def abs_vfspath(self):
-        if not self.typeid:
-            return ""
-        if not self.entity_sub_path:
-            typeid_uri = f"{self.typeid}/"
-        else:
-            typeid_uri = f"{self.typeid}/{self.entity_sub_path}"
-        return typeid_uri
-
-    @property
-    def uri(self) -> str:
-        return f"{VFSPath.VFS_PATH_PROTOCOL}://{self.abs_vfspath}"
-
-    @property
-    def filename(self) -> str:
-        if not self.entity_sub_path:
-            return ""
-        return self.entity_sub_path.split("/")[-1]
-
-
-protocol_pattern = re.compile(r"^(?P<protocol>[a-zA-Z][a-zA-Z0-9+.-]*)://")
-path_pattern = re.compile(r"^(?P<path>/?[^?#]*)")
-query_pattern = re.compile(r"^\?(?P<query>[^#]*)")
-fragment_pattern = re.compile(r"^#(?P<fragment>.*)")
-
-
-# noinspection PyUnresolvedReferences
-def parse_custom_uri(uri):
-    parsed: dict[str, str | None] = {
-        "protocol": None,
-        "type": None,
-        "uuid": None,
-        "path": None,
-        "query": None,
-        "fragment": None,
-    }
-    if not uri:
-        return parsed
-    # Check for protocol
-    match = protocol_pattern.match(uri)
-    if match:
-        parsed["protocol"] = match.group("protocol")
-        uri = uri[match.end() :]  # Remove the matched protocol part
-
-    # Check for type and UUID (supports both UUID and named identifiers)
-    # First, try UUID format: type-{UUID}
-    type_uuid_matcher = re.compile(type_uuid_pattern)
-    match = type_uuid_matcher.match(uri)
-    if match:
-        if len(match.groups()) != 2:
-            msg = f"Invalid TypeId, expecting only two match groups: {uri}"
-            logger.error(msg)
-            raise ValueError(msg)
-        parsed["type"] = match.group(1)
-        parsed["uuid"] = match.group(2)
-        uri = uri[match.end() :]  # Remove the matched type and UUID part
-    else:
-        # Try named identifier format: type-@name
-        # Pattern: (word characters)-(@ followed by name)
-        named_type_id_pattern = r"(\w+)-(@[a-zA-Z][a-zA-Z0-9_-]*)"
-        named_matcher = re.compile(named_type_id_pattern)
-        match = named_matcher.match(uri)
-        if match:
-            parsed["type"] = match.group(1)
-            parsed["uuid"] = match.group(2)
-            uri = uri[match.end() :]  # Remove the matched type and named ID part
-
-    # Check for path
-    match = path_pattern.match(uri)
-    if match:
-        parsed["path"] = match.group("path")
-        uri = uri[match.end() :]  # Remove the matched path part
-
-    # Check for query
-    match = query_pattern.match(uri)
-    if match:
-        parsed["query"] = match.group("query")
-        uri = uri[match.end() :]  # Remove the matched query part
-
-    # Check for fragment
-    match = fragment_pattern.match(uri)
-    if match:
-        parsed["fragment"] = match.group("fragment")
-        # uri = uri[match.end():]  # Remove the matched fragment part
-
-    return parsed
-
 
 class EntityFSReqInfo(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -180,9 +25,7 @@ class EntityFSReqInfo(BaseModel):
             entity_tid = request_info.user.typeid
         if not entity_app_subpath:
             entity_app_subpath = "/"
-        vfs_path: VFSPath = VFSPath()
-        vfs_path.typeid = entity_tid
-        vfs_path.entity_sub_path = entity_app_subpath
+        vfs_path = VFSPath.from_entity_path(entity_tid, entity_app_subpath)
         return EntityFSReqInfo(fs_action=fs_action, vpath=vfs_path)
 
     def __str__(self):
@@ -190,7 +33,7 @@ class EntityFSReqInfo(BaseModel):
 
     @property
     def abs_path(self):
-        return self.vpath.abs_vfspath
+        return self.vpath.abs_path
 
 
 def get_request_fs_info() -> EntityFSReqInfo:

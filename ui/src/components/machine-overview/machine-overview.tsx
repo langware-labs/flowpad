@@ -7,6 +7,7 @@ import {
   MachineSubview,
   ShellInputFlowData,
   ViewType,
+  dataManager,
 } from '@sdk';
 import { LogsViewer, LogsViewerHandle } from './logs-viewer';
 import { MetricsChart, MetricsChartHandle } from './metrics-chart';
@@ -16,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { NodeSecrets } from '@src/components/machine-overview/node-secrets';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
@@ -27,6 +29,7 @@ import {
   Copy,
   FileText,
   Key,
+  KeyRound,
   Network,
   Pause,
   Play,
@@ -48,9 +51,9 @@ interface SortState<T> {
 }
 
 function SortIcon({ direction }: { direction: SortDirection }) {
-  if (direction === 'asc') return <ArrowUp className="ml-1 inline h-3 w-3" />;
-  if (direction === 'desc') return <ArrowDown className="ml-1 inline h-3 w-3" />;
-  return <ArrowUpDown className="ml-1 inline h-3 w-3 opacity-30" />;
+  if (direction === 'asc') return <ArrowUp className="ms-1 inline h-3 w-3" />;
+  if (direction === 'desc') return <ArrowDown className="ms-1 inline h-3 w-3" />;
+  return <ArrowUpDown className="ms-1 inline h-3 w-3 opacity-30" />;
 }
 
 function SortableHeader<T extends string>({
@@ -87,7 +90,7 @@ interface ConfigStatus {
 type TestResult = 'idle' | 'loading' | 'success' | 'error';
 
 export const MachineOverview: React.FC = () => {
-  const { flow, computeNode } = useAgentContext();
+  const { flow, computeNode, project } = useAgentContext();
   const { navigation, currentDock } = useDockNavigation();
   const { t } = useLingui();
   const [machineStatus, setMachineStatus] = useState<MachineStatus | null>(null);
@@ -258,34 +261,19 @@ export const MachineOverview: React.FC = () => {
   }, [machineStatus?.network, networkFilter, networkSort]);
 
   const fetchMachineStatus = useCallback(async () => {
-    if (!flow?.id) return;
+    if (!computeNode?.id) return;
 
     setIsLoading(true);
     setError(null);
 
     try {
-      // Call the status operation on the compute node via the flow
-      const actionInfo = new ActionInfo('get-machine-status', 'flow', flow.id, 'GET');
-      const response = await fetch(actionInfo.fullActionUrl, {
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch machine status: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      if (data.data) {
-        setMachineStatus(data.data);
-      } else if (data.message) {
-        setError(data.message);
-      }
+      setMachineStatus(await computeNode.getMachineStatus());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch machine status');
     } finally {
       setIsLoading(false);
     }
-  }, [flow?.id]);
+  }, [computeNode]);
 
   useEffect(() => {
     void fetchMachineStatus();
@@ -302,18 +290,8 @@ export const MachineOverview: React.FC = () => {
     setIsPauseResumeLoading(true);
     try {
       const actionInfo = new ActionInfo(`ops/${operation}`, 'compute_node', computeNode.id, 'POST');
-      const response = await fetch(actionInfo.fullActionUrl, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (response.ok) {
-        // Refresh status after pause/resume
-        await fetchMachineStatus();
-      } else {
-        console.error(`[MachineOverview] ${operation} failed:`, response.status);
-      }
+      await dataManager.callAction<undefined, unknown>(actionInfo);
+      await fetchMachineStatus();
     } catch (err) {
       console.error(`Failed to ${operation} compute node:`, err);
     } finally {
@@ -579,22 +557,11 @@ export const MachineOverview: React.FC = () => {
 
     try {
       const actionInfo = new ActionInfo('ops/setup-lm-proxy', 'compute_node', computeNode.id, 'POST');
-      const response = await fetch(actionInfo.fullActionUrl, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      const data = await response.json();
-      if (response.ok && data.data) {
-        setSetupLmProxyResult('success');
-        setSetupLmProxyMessage(data.data.message || t`LM proxy access configured`);
-        // Refresh config to show the new values
-        await fetchConfigFromMachine();
-      } else {
-        setSetupLmProxyResult('error');
-        setSetupLmProxyMessage(data.message || t`Failed to setup LM proxy`);
-      }
+      const data = await dataManager.callAction<undefined, { message?: string }>(actionInfo);
+      setSetupLmProxyResult('success');
+      setSetupLmProxyMessage(data?.message || t`LM proxy access configured`);
+      // Refresh config to show the new values
+      await fetchConfigFromMachine();
     } catch (err) {
       setSetupLmProxyResult('error');
       setSetupLmProxyMessage(err instanceof Error ? err.message : 'Failed to setup LM proxy');
@@ -657,7 +624,7 @@ export const MachineOverview: React.FC = () => {
                         <Trans>Sandbox</Trans>
                         {machineStatus && (
                           <span
-                            className={`ml-1 ${
+                            className={`ms-1 ${
                               machineStatus.node_provider_status === ExecutionEnvironmentStatus.READY
                                 ? 'text-green-600'
                                 : machineStatus.node_provider_status === ExecutionEnvironmentStatus.PAUSED
@@ -686,12 +653,14 @@ export const MachineOverview: React.FC = () => {
               >
                 <div className="space-y-1">
                   <div className="flex items-center gap-1">
-                    <span className="font-medium"><Trans>Compute Node ID:</Trans></span>{' '}
+                    <span className="font-medium">
+                      <Trans>Compute Node ID:</Trans>
+                    </span>{' '}
                     <span className="font-mono">{computeNode?.id || 'N/A'}</span>
                     {computeNode?.id && (
                       <button
                         onClick={handleCopyComputeNodeId}
-                        className="ml-1 rounded p-0.5 hover:bg-muted"
+                        className="ms-1 rounded p-0.5 hover:bg-muted"
                         title={t`Copy Compute Node ID`}
                       >
                         <Copy className="h-3 w-3" />
@@ -699,15 +668,20 @@ export const MachineOverview: React.FC = () => {
                     )}
                   </div>
                   <div>
-                    <span className="font-medium"><Trans>Provider:</Trans></span> {computeNode?.node_provider_type || 'N/A'}
+                    <span className="font-medium">
+                      <Trans>Provider:</Trans>
+                    </span>{' '}
+                    {computeNode?.node_provider_type || 'N/A'}
                   </div>
                   <div className="flex items-center gap-1">
-                    <span className="font-medium"><Trans>Provider ID:</Trans></span>{' '}
+                    <span className="font-medium">
+                      <Trans>Provider ID:</Trans>
+                    </span>{' '}
                     <span className="font-mono">{computeNode?.node_provider_id || 'N/A'}</span>
                     {computeNode?.node_provider_id && (
                       <button
                         onClick={handleCopyProviderId}
-                        className="ml-1 rounded p-0.5 hover:bg-muted"
+                        className="ms-1 rounded p-0.5 hover:bg-muted"
                         title={t`Copy Provider ID`}
                       >
                         <Copy className="h-3 w-3" />
@@ -718,25 +692,35 @@ export const MachineOverview: React.FC = () => {
                     <>
                       {machineStatus.node_info && (
                         <div className="border-t pt-1">
-                          <span className="font-medium"><Trans>Size:</Trans></span>{' '}
-                          {machineStatus.node_info.size === 'sm'
-                            ? <Trans>Small</Trans>
-                            : machineStatus.node_info.size === 'md'
-                              ? <Trans>Medium</Trans>
-                              : machineStatus.node_info.size === 'lg'
-                                ? <Trans>Large</Trans>
-                                : machineStatus.node_info.size}{' '}
-                          ({machineStatus.node_info.cpu_count} <Trans>CPU</Trans>, {machineStatus.node_info.memory_gb}<Trans>GB</Trans>)
+                          <span className="font-medium">
+                            <Trans>Size:</Trans>
+                          </span>{' '}
+                          {machineStatus.node_info.size === 'sm' ? (
+                            <Trans>Small</Trans>
+                          ) : machineStatus.node_info.size === 'md' ? (
+                            <Trans>Medium</Trans>
+                          ) : machineStatus.node_info.size === 'lg' ? (
+                            <Trans>Large</Trans>
+                          ) : (
+                            machineStatus.node_info.size
+                          )}{' '}
+                          ({machineStatus.node_info.cpu_count} <Trans>CPU</Trans>, {machineStatus.node_info.memory_gb}
+                          <Trans>GB</Trans>)
                           {machineStatus.node_info.template_version && (
                             <>
                               <br />
-                              <span className="font-medium"><Trans>Template:</Trans></span> {machineStatus.node_info.template_version}
+                              <span className="font-medium">
+                                <Trans>Template:</Trans>
+                              </span>{' '}
+                              {machineStatus.node_info.template_version}
                             </>
                           )}
                         </div>
                       )}
                       <div className={machineStatus.node_info ? '' : 'border-t pt-1'}>
-                        <span className="font-medium"><Trans>Status:</Trans></span>{' '}
+                        <span className="font-medium">
+                          <Trans>Status:</Trans>
+                        </span>{' '}
                         <span
                           className={
                             machineStatus.node_provider_status === ExecutionEnvironmentStatus.READY
@@ -751,7 +735,10 @@ export const MachineOverview: React.FC = () => {
                       </div>
                       {machineStatus.status_msg && (
                         <div className="text-yellow-500">
-                          <span className="font-medium"><Trans>Status:</Trans></span> {machineStatus.status_msg}
+                          <span className="font-medium">
+                            <Trans>Status:</Trans>
+                          </span>{' '}
+                          {machineStatus.status_msg}
                         </div>
                       )}
                     </>
@@ -768,41 +755,60 @@ export const MachineOverview: React.FC = () => {
                 <TooltipProvider delayDuration={300}>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <span className="cursor-help border-r border-border pr-3">
-                        {machineStatus.node_info.size === 'sm'
-                          ? <Trans>Small</Trans>
-                          : machineStatus.node_info.size === 'md'
-                            ? <Trans>Medium</Trans>
-                            : machineStatus.node_info.size === 'lg'
-                              ? <Trans>Large</Trans>
-                              : machineStatus.node_info.size}{' '}
-                        ({machineStatus.node_info.cpu_count} <Trans>CPU</Trans>, {machineStatus.node_info.memory_gb}<Trans>GB</Trans>)
+                      <span className="cursor-help border-e border-border pe-3">
+                        {machineStatus.node_info.size === 'sm' ? (
+                          <Trans>Small</Trans>
+                        ) : machineStatus.node_info.size === 'md' ? (
+                          <Trans>Medium</Trans>
+                        ) : machineStatus.node_info.size === 'lg' ? (
+                          <Trans>Large</Trans>
+                        ) : (
+                          machineStatus.node_info.size
+                        )}{' '}
+                        ({machineStatus.node_info.cpu_count} <Trans>CPU</Trans>, {machineStatus.node_info.memory_gb}
+                        <Trans>GB</Trans>)
                       </span>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" className="text-xs">
                       <div className="space-y-1">
                         <div>
-                          <span className="font-medium"><Trans>Size:</Trans></span>{' '}
-                          {machineStatus.node_info.size === 'sm'
-                            ? <Trans>Small</Trans>
-                            : machineStatus.node_info.size === 'md'
-                              ? <Trans>Medium</Trans>
-                              : machineStatus.node_info.size === 'lg'
-                                ? <Trans>Large</Trans>
-                                : machineStatus.node_info.size}
+                          <span className="font-medium">
+                            <Trans>Size:</Trans>
+                          </span>{' '}
+                          {machineStatus.node_info.size === 'sm' ? (
+                            <Trans>Small</Trans>
+                          ) : machineStatus.node_info.size === 'md' ? (
+                            <Trans>Medium</Trans>
+                          ) : machineStatus.node_info.size === 'lg' ? (
+                            <Trans>Large</Trans>
+                          ) : (
+                            machineStatus.node_info.size
+                          )}
                         </div>
                         <div>
-                          <span className="font-medium"><Trans>CPU:</Trans></span> {machineStatus.node_info.cpu_count} cores
+                          <span className="font-medium">
+                            <Trans>CPU:</Trans>
+                          </span>{' '}
+                          {machineStatus.node_info.cpu_count} cores
                         </div>
                         <div>
-                          <span className="font-medium"><Trans>Memory:</Trans></span> {machineStatus.node_info.memory_gb} GB
+                          <span className="font-medium">
+                            <Trans>Memory:</Trans>
+                          </span>{' '}
+                          {machineStatus.node_info.memory_gb} GB
                         </div>
                         <div>
-                          <span className="font-medium"><Trans>OS:</Trans></span> {machineStatus.node_info.os_type}
+                          <span className="font-medium">
+                            <Trans>OS:</Trans>
+                          </span>{' '}
+                          {machineStatus.node_info.os_type}
                         </div>
                         {machineStatus.node_info.template_version && (
                           <div>
-                            <span className="font-medium"><Trans>Template:</Trans></span> {machineStatus.node_info.template_version}
+                            <span className="font-medium">
+                              <Trans>Template:</Trans>
+                            </span>{' '}
+                            {machineStatus.node_info.template_version}
                           </div>
                         )}
                       </div>
@@ -810,8 +816,12 @@ export const MachineOverview: React.FC = () => {
                   </Tooltip>
                 </TooltipProvider>
               )}
-              <span><Trans>CPU:</Trans> {machineStatus.cpu_percent.toFixed(1)}%</span>
-              <span><Trans>RAM:</Trans> {machineStatus.memory_percent.toFixed(1)}%</span>
+              <span>
+                <Trans>CPU:</Trans> {machineStatus.cpu_percent.toFixed(1)}%
+              </span>
+              <span>
+                <Trans>RAM:</Trans> {machineStatus.memory_percent.toFixed(1)}%
+              </span>
             </div>
           )}
         </div>
@@ -840,7 +850,11 @@ export const MachineOverview: React.FC = () => {
                   </TooltipTrigger>
                   <TooltipContent side="bottom">
                     <p>
-                      {machineStatus.node_provider_status === ExecutionEnvironmentStatus.PAUSED ? <Trans>Resume</Trans> : <Trans>Pause</Trans>}
+                      {machineStatus.node_provider_status === ExecutionEnvironmentStatus.PAUSED ? (
+                        <Trans>Resume</Trans>
+                      ) : (
+                        <Trans>Pause</Trans>
+                      )}
                     </p>
                   </TooltipContent>
                 </Tooltip>
@@ -862,7 +876,9 @@ export const MachineOverview: React.FC = () => {
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
-                <p><Trans>Refresh</Trans></p>
+                <p>
+                  <Trans>Refresh</Trans>
+                </p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -889,27 +905,31 @@ export const MachineOverview: React.FC = () => {
             <div className="border-b px-2">
               <TabsList className="h-8">
                 <TabsTrigger value={MachineSubview.PROCESSES} className="h-7 text-xs">
-                  <Server className="mr-1.5 h-3.5 w-3.5" />
+                  <Server className="me-1.5 h-3.5 w-3.5" />
                   Processes ({sortedProcesses.length}
                   {processFilter ? `/${machineStatus.processes.length}` : ''})
                 </TabsTrigger>
                 <TabsTrigger value={MachineSubview.NETWORK} className="h-7 text-xs">
-                  <Network className="mr-1.5 h-3.5 w-3.5" />
+                  <Network className="me-1.5 h-3.5 w-3.5" />
                   Network ({sortedNetwork.length}
                   {networkFilter ? `/${machineStatus.network.length}` : ''})
                 </TabsTrigger>
                 <TabsTrigger value={MachineSubview.GATEWAY} className="h-7 text-xs">
-                  <Settings className="mr-1.5 h-3.5 w-3.5" />
+                  <Settings className="me-1.5 h-3.5 w-3.5" />
                   <Trans>Gateway</Trans>
+                </TabsTrigger>
+                <TabsTrigger value={MachineSubview.SECRETS} className="h-7 text-xs">
+                  <KeyRound className="me-1.5 h-3.5 w-3.5" />
+                  <Trans>Secrets</Trans>
                 </TabsTrigger>
                 {computeNode?.node_provider_type === ComputeProviderType.E2B && (
                   <>
                     <TabsTrigger value={MachineSubview.METRICS} className="h-7 text-xs">
-                      <Activity className="mr-1.5 h-3.5 w-3.5" />
+                      <Activity className="me-1.5 h-3.5 w-3.5" />
                       <Trans>Metrics</Trans>
                     </TabsTrigger>
                     <TabsTrigger value={MachineSubview.LOGS} className="h-7 text-xs">
-                      <FileText className="mr-1.5 h-3.5 w-3.5" />
+                      <FileText className="me-1.5 h-3.5 w-3.5" />
                       <Trans>Logs</Trans>
                     </TabsTrigger>
                   </>
@@ -934,37 +954,39 @@ export const MachineOverview: React.FC = () => {
                       sortKey="pid"
                       currentSort={processSort}
                       onSort={handleProcessSort}
-                      className="text-left"
+                      className="text-start"
                     />
                     <SortableHeader
                       label={t`Name`}
                       sortKey="name"
                       currentSort={processSort}
                       onSort={handleProcessSort}
-                      className="text-left"
+                      className="text-start"
                     />
                     <SortableHeader
                       label={t`CPU %`}
                       sortKey="cpu_percent"
                       currentSort={processSort}
                       onSort={handleProcessSort}
-                      className="text-right"
+                      className="text-end"
                     />
                     <SortableHeader
                       label={t`RAM (MB)`}
                       sortKey="memory_mb"
                       currentSort={processSort}
                       onSort={handleProcessSort}
-                      className="text-right"
+                      className="text-end"
                     />
                     <SortableHeader
                       label={t`Status`}
                       sortKey="status"
                       currentSort={processSort}
                       onSort={handleProcessSort}
-                      className="text-left"
+                      className="text-start"
                     />
-                    <th className="px-2 py-1.5 text-left font-medium"><Trans>Path</Trans></th>
+                    <th className="px-2 py-1.5 text-start font-medium">
+                      <Trans>Path</Trans>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -974,8 +996,8 @@ export const MachineOverview: React.FC = () => {
                       <td className="max-w-[150px] truncate px-2 py-1" title={proc.name}>
                         {proc.name}
                       </td>
-                      <td className="px-2 py-1 text-right font-mono">{proc.cpu_percent.toFixed(1)}</td>
-                      <td className="px-2 py-1 text-right font-mono">{proc.memory_mb.toFixed(1)}</td>
+                      <td className="px-2 py-1 text-end font-mono">{proc.cpu_percent.toFixed(1)}</td>
+                      <td className="px-2 py-1 text-end font-mono">{proc.memory_mb.toFixed(1)}</td>
                       <td className="px-2 py-1">
                         <span
                           className={`rounded px-1 py-0.5 ${
@@ -1016,37 +1038,39 @@ export const MachineOverview: React.FC = () => {
                       sortKey="port"
                       currentSort={networkSort}
                       onSort={handleNetworkSort}
-                      className="text-left"
+                      className="text-start"
                     />
                     <SortableHeader
                       label={t`Type`}
                       sortKey="type"
                       currentSort={networkSort}
                       onSort={handleNetworkSort}
-                      className="text-left"
+                      className="text-start"
                     />
                     <SortableHeader
                       label={t`PID`}
                       sortKey="pid"
                       currentSort={networkSort}
                       onSort={handleNetworkSort}
-                      className="text-left"
+                      className="text-start"
                     />
                     <SortableHeader
                       label={t`Process`}
                       sortKey="process_name"
                       currentSort={networkSort}
                       onSort={handleNetworkSort}
-                      className="text-left"
+                      className="text-start"
                     />
                     <SortableHeader
                       label={t`Status`}
                       sortKey="status"
                       currentSort={networkSort}
                       onSort={handleNetworkSort}
-                      className="text-left"
+                      className="text-start"
                     />
-                    <th className="px-2 py-1.5 text-left font-medium"><Trans>Path</Trans></th>
+                    <th className="px-2 py-1.5 text-start font-medium">
+                      <Trans>Path</Trans>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1083,6 +1107,10 @@ export const MachineOverview: React.FC = () => {
               </table>
             </TabsContent>
 
+            <TabsContent value={MachineSubview.SECRETS} className="mt-0 h-[calc(100%-40px)] overflow-auto">
+              <NodeSecrets computeNode={computeNode} project={project} />
+            </TabsContent>
+
             <TabsContent value={MachineSubview.GATEWAY} className="mt-0 h-[calc(100%-40px)] overflow-auto p-4">
               <div className="space-y-6">
                 {/* Setup LM Proxy Section - show prominently when not configured */}
@@ -1106,9 +1134,9 @@ export const MachineOverview: React.FC = () => {
                         disabled={true}
                       >
                         {setupLmProxyResult === 'loading' ? (
-                          <RefreshCw className="mr-1.5 h-4 w-4 animate-spin" />
+                          <RefreshCw className="me-1.5 h-4 w-4 animate-spin" />
                         ) : (
-                          <Key className="mr-1.5 h-4 w-4" />
+                          <Key className="me-1.5 h-4 w-4" />
                         )}
                         <Trans>Setup LM Proxy Access</Trans>
                       </Button>
@@ -1139,10 +1167,16 @@ export const MachineOverview: React.FC = () => {
                   <div className="space-y-4">
                     {/* API Key */}
                     <div className="space-y-2">
-                      <label className="text-xs font-medium text-muted-foreground"><Trans>API Key</Trans></label>
+                      <label className="text-xs font-medium text-muted-foreground">
+                        <Trans>API Key</Trans>
+                      </label>
                       <div className="flex items-center gap-2 rounded border bg-muted/30 px-3 py-2">
                         <span className="flex-1 truncate font-mono text-xs">
-                          {configStatus.apiKey ? `${configStatus.apiKey.slice(0, 20)}...` : <Trans>Not configured</Trans>}
+                          {configStatus.apiKey ? (
+                            `${configStatus.apiKey.slice(0, 20)}...`
+                          ) : (
+                            <Trans>Not configured</Trans>
+                          )}
                         </span>
                         {configStatus.apiKey ? (
                           <CheckCircle className="h-4 w-4 text-green-500" />
@@ -1154,10 +1188,16 @@ export const MachineOverview: React.FC = () => {
 
                     {/* Machine ID */}
                     <div className="space-y-2">
-                      <label className="text-xs font-medium text-muted-foreground"><Trans>Machine ID</Trans></label>
+                      <label className="text-xs font-medium text-muted-foreground">
+                        <Trans>Machine ID</Trans>
+                      </label>
                       <div className="flex items-center gap-2 rounded border bg-muted/30 px-3 py-2">
                         <span className="flex-1 truncate font-mono text-xs">
-                          {configStatus.machineId ? `${configStatus.machineId.slice(0, 20)}...` : <Trans>Not configured</Trans>}
+                          {configStatus.machineId ? (
+                            `${configStatus.machineId.slice(0, 20)}...`
+                          ) : (
+                            <Trans>Not configured</Trans>
+                          )}
                         </span>
                         {configStatus.machineId ? (
                           <CheckCircle className="h-4 w-4 text-green-500" />
@@ -1170,7 +1210,9 @@ export const MachineOverview: React.FC = () => {
                     {/* Backend URL */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <label className="text-xs font-medium text-muted-foreground"><Trans>FlowPad Backend URL</Trans></label>
+                        <label className="text-xs font-medium text-muted-foreground">
+                          <Trans>FlowPad Backend URL</Trans>
+                        </label>
                         <Button
                           variant="outline"
                           size="sm"
@@ -1179,9 +1221,9 @@ export const MachineOverview: React.FC = () => {
                           disabled={healthTestResult === 'loading' || !configStatus.backendUrl}
                         >
                           {healthTestResult === 'loading' ? (
-                            <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+                            <RefreshCw className="me-1 h-3 w-3 animate-spin" />
                           ) : (
-                            <Server className="mr-1 h-3 w-3" />
+                            <Server className="me-1 h-3 w-3" />
                           )}
                           <Trans>Test Service</Trans>
                         </Button>
@@ -1216,7 +1258,9 @@ export const MachineOverview: React.FC = () => {
                     <div className="space-y-2 border-t pt-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <label className="text-xs font-medium"><Trans>Test API Access</Trans></label>
+                          <label className="text-xs font-medium">
+                            <Trans>Test API Access</Trans>
+                          </label>
                           <p className="text-xs text-muted-foreground">
                             <Trans>Verify the machine can authenticate with the FlowPad API</Trans>
                           </p>
@@ -1234,9 +1278,9 @@ export const MachineOverview: React.FC = () => {
                           }
                         >
                           {apiTestResult === 'loading' ? (
-                            <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+                            <RefreshCw className="me-1 h-3 w-3 animate-spin" />
                           ) : (
-                            <Key className="mr-1 h-3 w-3" />
+                            <Key className="me-1 h-3 w-3" />
                           )}
                           <Trans>Test API Access</Trans>
                         </Button>
@@ -1261,7 +1305,9 @@ export const MachineOverview: React.FC = () => {
                     <div className="space-y-2 border-t pt-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <label className="text-xs font-medium"><Trans>Test LM Proxy</Trans></label>
+                          <label className="text-xs font-medium">
+                            <Trans>Test LM Proxy</Trans>
+                          </label>
                           <p className="text-xs text-muted-foreground">
                             <Trans>Send a simple prompt to verify the LM proxy is working</Trans>
                           </p>
@@ -1279,9 +1325,9 @@ export const MachineOverview: React.FC = () => {
                           }
                         >
                           {lmTestResult === 'loading' ? (
-                            <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+                            <RefreshCw className="me-1 h-3 w-3 animate-spin" />
                           ) : (
-                            <Zap className="mr-1 h-3 w-3" />
+                            <Zap className="me-1 h-3 w-3" />
                           )}
                           <Trans>Test LM</Trans>
                         </Button>

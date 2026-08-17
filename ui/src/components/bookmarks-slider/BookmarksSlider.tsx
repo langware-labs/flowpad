@@ -1,25 +1,58 @@
 import { useLingui } from '@lingui/react/macro';
-import { FavoritesMenu } from '@src/components/favorites/FavoritesMenu';
-import { LeftSlider } from '@src/components/ui/left-slider';
+import { FavoritesTreeMenu } from '@src/components/favorites/FavoritesTreeMenu';
+import { useFavoritesScope } from '@src/components/favorites/use-favorites-scope';
+import { AnchoredMenu } from '@src/components/ui/anchored-menu';
 import { useCloseOnNavigate } from '@src/hooks/use-close-on-navigate';
-import { useEffect } from 'react';
+import { useFavorites } from '@src/hooks/use-favorites';
+import { useEffect, type PointerEventHandler } from 'react';
 
 /**
- * BookmarksSlider — the rail flyout container for the shared FavoritesMenu (the
- * ONE favorites menu, also hosted by FavoritesEditDialog). LeftSlider provides
- * the rail-anchored chrome + idle auto-close; FavoritesMenu provides the scope
- * filter + favorites grid. Clicking a bookmark navigates and closes the slider
- * (useCloseOnNavigate covers both the pointer and imperative activate arms).
+ * BookmarksSlider — a fast, hover-driven bookmarks MENU. AnchoredMenu provides the
+ * anchored chrome, FavoritesTreeMenu the rows. Its host decides which edge it
+ * grows from (`side`); today that is the navigation bar's star, expanding
+ * leftward from the top right.
+ *
+ * Dismissal is fully owned by hover (`hoverProps`, shared with the rail button
+ * that opens it) plus Escape / outside pointer-down / close-on-navigate / window
+ * blur — so the idle auto-close is switched OFF (`idleMs={null}`). Those two are
+ * genuinely opposed: idle-close listens on the window, so a pointer parked
+ * inside the panel to read it emits no movement and would have the panel yanked
+ * away at 5s, by the very pointer holding it open.
+ *
+ * Clicking a bookmark navigates and closes (useCloseOnNavigate covers both the
+ * pointer and imperative activate arms).
  */
 export function BookmarksSlider({
   open,
   onOpenChange,
+  hoverProps,
+  anchorTop,
+  anchorRight,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Viewport y the menu's top edge aligns to, so it reads as belonging to the
+   *  control that opened it. */
+  anchorTop?: number;
+  /** Distance from the viewport's right edge — see AnchoredMenu. */
+  anchorRight?: number;
+  /** The SAME hover intent as the trigger's, so travelling from the button
+   *  into the panel cancels the pending close instead of dismissing. Required,
+   *  not optional: this component turns the idle auto-close OFF, so hover IS
+   *  the close. Omitting it wouldn't degrade gracefully — the panel would
+   *  simply never close on leave. */
+  hoverProps: { onPointerEnter: PointerEventHandler; onPointerLeave: PointerEventHandler };
 }) {
   const { t } = useLingui();
+  const { filter, scopeKey, scopeBar } = useFavoritesScope();
+  const { reapDead } = useFavorites();
   useCloseOnNavigate(open, () => onOpenChange(false));
+  // Opening the bookmarks menu is when we clean house: hard-delete any dead
+  // ("ghost") favorites whose target no longer resolves, so they neither linger
+  // in the store nor flash on screen. Idempotent — a no-op once none are left.
+  useEffect(() => {
+    if (open) void reapDead();
+  }, [open, reapDead]);
   useEffect(() => {
     if (!open) return;
     const close = () => onOpenChange(false);
@@ -35,8 +68,22 @@ export function BookmarksSlider({
   }, [open, onOpenChange]);
 
   return (
-    <LeftSlider open={open} onOpenChange={onOpenChange} title={t`Bookmarks`}>
-      <FavoritesMenu />
-    </LeftSlider>
+    <AnchoredMenu
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t`Bookmarks`}
+      // AnchoredMenu documents headerRight as the canonical scope-filter home;
+      // the menu body is rows only.
+      headerRight={scopeBar}
+      anchorTop={anchorTop}
+      anchorRight={anchorRight}
+      idleMs={null}
+      onPointerEnter={hoverProps.onPointerEnter}
+      onPointerLeave={hoverProps.onPointerLeave}
+    >
+      {/* The panel grows leftward, so the tree does too: glyphs on the trailing
+          side, previews opening into the screen rather than off it. */}
+      <FavoritesTreeMenu key={scopeKey} filter={filter} mirrored />
+    </AnchoredMenu>
   );
 }

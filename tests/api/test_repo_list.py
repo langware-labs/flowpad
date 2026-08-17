@@ -123,7 +123,7 @@ async def test_repo_list_page1_returns_summaries(bootstrapped_client, github_use
         "html_url": "https://github.com/langware-labs/flowpad",
         "description": "Flowpad",
         "fork": False,
-        "git_origin": _git_origin(),
+        "git_origin": {**_git_origin(), "project_id": ""},
     }
     # role mapping: admin=False, push=True → "write"
     assert data["repos"][1]["role"] == "write"
@@ -149,6 +149,49 @@ async def test_repo_list_parses_next_page_from_link_header(bootstrapped_client, 
         )
     assert r.status_code == 200
     assert r.json()["data"]["next_page"] == 2
+
+
+@pytest.mark.asyncio
+async def test_repo_create_is_private_initialized_and_returns_picker_contract(
+    bootstrapped_client,
+    github_user_with_token,
+):
+    user = github_user_with_token
+    created = {
+        "name": "support-demo",
+        "full_name": "cloudnsite/support-demo",
+        "owner": {"login": "cloudnsite"},
+        "private": True,
+        "default_branch": "main",
+        "html_url": "https://github.com/cloudnsite/support-demo",
+    }
+    with patch.object(ra.requests, "post", return_value=_mock_response(201, json_body=created)) as create:
+        response = await bootstrapped_client.post(
+            f"/api/v1/graph/user/{user.id}/repo/create",
+            json={"provider": "github", "name": "support-demo"},
+        )
+
+    assert response.status_code == 200, response.text
+    assert create.call_args.kwargs["json"] == {
+        "name": "support-demo",
+        "private": True,
+        "auto_init": True,
+    }
+    repo = response.json()["data"]["repo"]
+    assert repo["role"] == "admin"
+    assert repo["git_origin"]["branch"] == "main"
+
+
+@pytest.mark.asyncio
+async def test_repo_create_rejects_unsafe_name_before_github(bootstrapped_client, github_user_with_token):
+    user = github_user_with_token
+    with patch.object(ra.requests, "post", side_effect=AssertionError("should not reach GitHub")):
+        response = await bootstrapped_client.post(
+            f"/api/v1/graph/user/{user.id}/repo/create",
+            json={"provider": "github", "name": "owner/repo"},
+        )
+
+    assert response.status_code == 400
 
 
 # do not increase timeout without approval

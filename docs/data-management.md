@@ -1,6 +1,6 @@
 ---
 id: b67adcb2-5fd1-52b8-9ae2-21dabce099fc
-version: 2
+version: 3
 ---
 
 # Data Management
@@ -11,7 +11,7 @@ This document provides an overview of the data management architecture in flow-c
 
 Flow-cli uses a two-layer data model:
 
-* **Filesystem Records** (`flow_sdk/fs_store/`) -- the source of truth for all domain data. The base class is `FSRecord` (`flow_sdk/fs_store/fs_record.py`), a lean on-disk manifest (the old `Record` class and `record.py` were removed). Each record lives at `<records_root>/<type>/<type>-@<id>/metadata.json`, holding an `asset_ref` (`FSRef` to the user-facing source file) plus free-form meta fields stored as direct instance attributes (per-type typed metadata models are opt-in via `TypeInfo.meta_model`). They are the canonical store for things like Claude sessions, settings, MCP configs, and agent-created entities. The `fs_store` package is a collection of modules (there is no single `FsStore` class). `FSRecord` itself knows nothing about types — all per-type behavior lives in free functions registered on `TypeInfo` (`from_disk_fn`, `gen_uuid_fn`, `asset_hash_fn`, `post_sync_fn`, etc.). The old single `_data` dict / `_META_FIELDS` frozenset / `state.json`/`RecordState` machinery were removed.
+* **Filesystem Records** (`flow_sdk/fs_store/`) -- the source of truth for all domain data. The base class is `FSRecord` (`flow_sdk/fs_store/fs_record.py`), a lean on-disk manifest (the old `Record` class and `record.py` were removed). Each record lives at `<records_root>/<type>/<type>-@<id>/metadata.json`, holding an `asset_ref` (`FSRef` to the user-facing source file) plus free-form meta fields stored as direct instance attributes (per-type typed metadata models are opt-in via `TypeInfo.meta_model`). They are the canonical store for things like Claude sessions, settings, MCP configs, and agent-created entities. `FSRecord` itself knows nothing about types — per-type parsing and identity policy are registered on `TypeInfo`; portable named metadata is stored through the independent `flow_sdk/capsules/` package. `TypeInfo.mint_entity_id()` owns filesystem identity resolution — carrier → owning row → derive — and passes the result into `from_disk_fn(ref, resolved_id)`. See [Asset capsules](data-management/asset-capsules.md).
 
 * **Database Entities** (`flow_sdk/core/entity/`) -- SQLite-backed, queryable indexes that mirror key metadata from Records. Entities support fast filtered queries (by status, date, project) that would require O(N) filesystem scans if done directly against Records. The FTS5 virtual table (`entities_fts`) provides full-text search over records that opt in via the `content` property.
 
@@ -194,9 +194,9 @@ The LLMIndexer → `index.md` → MarkdownIndex-entity pipeline — a separate s
 
 ### [Wiki Link Graph](llm_wiki.md)
 
-The `[[wiki-link]]` edge graph: link parsing, edge extraction inside every `sync_to_db()`, the `AsyncLinkStore` edge table, name resolution, backlinks, and cleanup on delete/orphan sweep.
+Project-scoped Wiki namespaces plus the `[[wiki-link]]` occurrence graph: `Wiki`/`WikiEntry`, default-Wiki resolution, local and Hub URL/API contracts, link parsing, edge extraction inside every `sync_to_db()`, backlinks, and cleanup on delete/orphan sweep.
 
-**Key source files:** `flow_sdk/wiki/`, `flow_sdk/fs_store/fs_record.py` (`sync_to_db`, `get_links`/`get_backlinks`)
+**Key source files:** `flow_sdk/builtin/wiki.py`, `flow_sdk/wiki/`, `flow_sdk/app/actions/wiki_action.py`, `flow_sdk/fs_store/fs_record.py` (`sync_to_db`, `get_links`/`get_backlinks`)
 
 ***
 
@@ -225,15 +225,16 @@ How SQLite Entities stay in sync with filesystem Records. Covers the "index" nam
 ***
 
 ### [Content Invalidation](data-management/invalidation.md)
+
 The generic `file change → re-index → entity change → refresh` loop that keeps an open asset editor in sync when its backing file is written out-of-band (an agent turn, an external editor, or an explicit push). Covers the three re-index triggers (GET-time `check_and_refresh_record`, the `POST /fs-records/invalidate` push endpoint → `reindex_paths`, and the agentic turn-end seam fired from all three transports), inner-file→owning-folder resolution + forced fresh re-parse via `discover_record_by_path(..., notify=True)`, the `updated_date = max(folder mtime, inner-file mtime)` change token, and the frontend `useFSRefContent` `reloadKey` body re-read with its unsaved-edits dirty guard. The middle (sync + broadcast) is [Entity-Index Sync](data-management/entity-index-sync.md).
 
 **Key source files:** `flow_sdk/fs_store/reindex.py`, `flow_sdk/builtin/faas/fs_records_actions.py` (`_handle_fs_records_invalidate`, `discover_record_by_path`), `flow_sdk/builtin/agentic_process/agentic_process.py` (turn-end seams), `flow_sdk/core/entity/entity_model.py` (`_asset_updated_epoch`), `ui/src/hooks/use-fs-ref-content.ts`, `ui/src/utils/entity-reload-key.ts`
 
----
+***
 
 ### [Schema Registry](data-management/schema-registry.md)
 
-Unified type system for Record + Entity layers. `TypeInfo` per type (structural fields + hash + runtime refs + `locations`), `SchemaRegistry` class with O(1) registration/lookup, entity-side auto-registration via `DBBaseRecord.__init_subclass__` with merge semantics (record-side per-type behavior registered via `register_all` in `schema/type_info/`), per-type `type_info.json` hash-gated persistence, `TypeInfo.scans`/`append_scan`/`append_index` JSONL readers/writers, inheritance index for subtype discovery, convenience methods (`get_entity_cls`, `is_entity_type`, `get_all_entity_types`, `is_api_visible`, `is_creatable`, etc. — note there is no `get_record_cls`), duplicate entity registration guard (`ValueError` on `entity_cls` conflict, schema\_registry.py:389), and index orchestration (`clear_index`, `get_index_status`). The Entity `type_registry` (`schema/entity_factory.py`) remains a backward-compat shim that delegates to SchemaRegistry. (The `fs_store/factory/type_registry.py` shim and the `SchemaRecord` class no longer exist.)
+Unified type system for Record + Entity layers. `TypeInfo` per type (structural fields + hash + runtime refs + `locations`), `SchemaRegistry` class with O(1) registration/lookup, entity-side auto-registration via `DBBaseRecord.__init_subclass__` with merge semantics (record-side per-type behavior registered via `register_all` in `schema/type_info/`), centralized filesystem identity through `TypeInfo.mint_entity_id`, `TypeInfo.scans`/`append_scan`/`append_index` JSONL readers/writers, inheritance index for subtype discovery, convenience methods (`get_entity_cls`, `is_entity_type`, `get_all_entity_types`, `is_api_visible`, `is_creatable`, etc. — note there is no `get_record_cls`), duplicate entity registration guard (`ValueError` on `entity_cls` conflict), and index orchestration (`clear_index`, `get_index_status`). The Entity `type_registry` (`schema/entity_factory.py`) remains a backward-compat shim that delegates to SchemaRegistry. (The `fs_store/factory/type_registry.py` shim and the `SchemaRecord` class no longer exist.)
 
 **Key source files:** `flow_sdk/fs_store/schema_registry.py`, `flow_sdk/db/drivers/db_base_record.py` (`DBBaseRecord.__init_subclass__`), `flow_sdk/schema/type_info/` (`register_all`), `flow_sdk/schema/entity_factory.py` (backward-compat shim, delegates to SchemaRegistry)
 
@@ -265,28 +266,28 @@ The webhook listener (`POST /api/v1/webhook/listen`) that drives real-time entit
 
 ## Quick Reference
 
-| Question | Where to look |
-|---|---|
-| What fields does a Record have? | [Record Model](data-management/record-model.md) |
-| Where are files stored on disk? | [Folder Layout](data-management/folder-layout.md) |
-| How do I lay out a dataset (examples, gold, multiple annotations)? | [Dataset Layout (Authoring Guide)](data-management/datasets.md) |
-| How do I list all Claude sessions? | [Scan and Discovery](data-management/scan-and-discovery.md) |
-| How do I search records by text? | [Record Search](data-management/record-search.md) |
-| How do I find all entities under a filesystem folder? | `Entity.assets_by_path(PathQueryOptions)` / `GET /api/v1/assets/by-path`. See [Record Model](data-management/record-model.md#asset_ref-and-folder-queries). |
-| How do I read/write Records via HTTP? | [ComputeNode fs-records Action](data-management/compute-node-fs-records.md) |
-| How does the DB stay in sync with disk? | [Entity-Index Sync](data-management/entity-index-sync.md) |
-| How does an open editor refresh when its file changes on disk? | [Content Invalidation](data-management/invalidation.md) |
-| How do I push a changed-file set to re-index (invalidate)? | `POST /fs-records/invalidate` — [Content Invalidation](data-management/invalidation.md#edge-1--the-trigger-what-causes-a-re-index) |
-| How does Claude Code write entity data? | [MCP Operations](data-management/mcp-operations.md) |
-| What types are registered and what are their schemas? | [Schema Registry](data-management/schema-registry.md) |
-| How do I scan or index all records? | [Scan and Discovery](data-management/scan-and-discovery.md) + [Schema Registry](data-management/schema-registry.md) |
-| When does indexing run (triggers)? | [Scan and Discovery](data-management/scan-and-discovery.md#when-does-indexing-run) |
-| Which files/folders does the walk skip? | [Gitignore-Aware Walk](data-management/gitignore-walk.md) |
-| How do session transcripts get indexed? | [Transcript Indexing](data-management/transcript-indexing.md) |
-| What builds the `index.md` docs indexes? | [LLM Index](data-management/llm-index.md) |
-| How do `[[wiki links]]` and backlinks work? | [Wiki Link Graph](llm_wiki.md) |
-| How do frontend components get live updates? | [Listen Action and CRUD Event Pipeline](data-management/listen-action.md) |
-| What are the three "index" systems? | [Entity-Index Sync](data-management/entity-index-sync.md) |
-| Why don't webhook entities appear in search? | [Entity-Index Sync](data-management/entity-index-sync.md) / [Record Search](data-management/record-search.md) |
-| How do I trigger backup/clear/scan/index from the UI? | [System Tools (Frontend)](data-management/system-tools.md) |
-| How does the search refresh button work? | [System Tools (Frontend)](data-management/system-tools.md) |
+| Question                                                                  | Where to look                                                                                                                                               |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| What fields does a Record have?                                           | [Record Model](data-management/record-model.md)                                                                                                             |
+| Where are files stored on disk?                                           | [Folder Layout](data-management/folder-layout.md)                                                                                                           |
+| How do I lay out a dataset (examples, gold, multiple annotations)?        | [Dataset Layout (Authoring Guide)](data-management/datasets.md)                                                                                             |
+| How do I list all Claude sessions?                                        | [Scan and Discovery](data-management/scan-and-discovery.md)                                                                                                 |
+| How do I search records by text?                                          | [Record Search](data-management/record-search.md)                                                                                                           |
+| How do I find all entities under a filesystem folder?                     | `Entity.assets_by_path(PathQueryOptions)` / `GET /api/v1/assets/by-path`. See [Record Model](data-management/record-model.md#asset_ref-and-folder-queries). |
+| How do I read/write Records via HTTP?                                     | [ComputeNode fs-records Action](data-management/compute-node-fs-records.md)                                                                                 |
+| How does the DB stay in sync with disk?                                   | [Entity-Index Sync](data-management/entity-index-sync.md)                                                                                                   |
+| How does an open editor refresh when its file changes on disk?            | [Content Invalidation](data-management/invalidation.md)                                                                                                     |
+| How do I push a changed-file set to re-index (invalidate)?                | `POST /fs-records/invalidate` — [Content Invalidation](data-management/invalidation.md#edge-1--the-trigger-what-causes-a-re-index)                          |
+| How does Claude Code write entity data?                                   | [MCP Operations](data-management/mcp-operations.md)                                                                                                         |
+| What types are registered and what are their schemas?                     | [Schema Registry](data-management/schema-registry.md)                                                                                                       |
+| How do I scan or index all records?                                       | [Scan and Discovery](data-management/scan-and-discovery.md) + [Schema Registry](data-management/schema-registry.md)                                         |
+| When does indexing run (triggers)?                                        | [Scan and Discovery](data-management/scan-and-discovery.md#when-does-indexing-run)                                                                          |
+| Which files/folders does the walk skip?                                   | [Gitignore-Aware Walk](data-management/gitignore-walk.md)                                                                                                   |
+| How do session transcripts get indexed?                                   | [Transcript Indexing](data-management/transcript-indexing.md)                                                                                               |
+| What builds the `index.md` docs indexes?                                  | [LLM Index](data-management/llm-index.md)                                                                                                                   |
+| How do `[[wiki links]]` and backlinks work? | [Wiki Link Graph](llm_wiki.md)                                                                                                                              |
+| How do frontend components get live updates?                              | [Listen Action and CRUD Event Pipeline](data-management/listen-action.md)                                                                                   |
+| What are the three "index" systems?                                       | [Entity-Index Sync](data-management/entity-index-sync.md)                                                                                                   |
+| Why don't webhook entities appear in search?                              | [Entity-Index Sync](data-management/entity-index-sync.md) / [Record Search](data-management/record-search.md)                                               |
+| How do I trigger backup/clear/scan/index from the UI?                     | [System Tools (Frontend)](data-management/system-tools.md)                                                                                                  |
+| How does the search refresh button work?                                  | [System Tools (Frontend)](data-management/system-tools.md)                                                                                                  |

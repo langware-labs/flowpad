@@ -9,9 +9,7 @@ The server picks the single "active" browser tab via
 and performs the actual in-app navigation.
 """
 
-import json
 from typing import Optional, Union
-from uuid import uuid4
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -21,11 +19,12 @@ from flow_sdk.core.display_target import DisplayTargetKind, resolve_display_targ
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store.type_id import TypeId, is_named_id
 
+from flow_sdk.notifications import send_ui_command
+
 from .websocket import (
     get_active_connection,
     get_active_connection_info,
     get_connection_infos,
-    send_personal_message,
 )
 
 router = APIRouter()
@@ -73,14 +72,9 @@ def _pick_target(connection_id: Optional[str]) -> Union[tuple, JSONResponse]:
     return active
 
 
-async def _send_ui_command(ws, kind: str, **fields) -> None:
-    """Send a targeted ``ui_command`` WS frame (adds ``message_type`` + id)."""
-    await send_personal_message(
-        json.dumps(
-            {"message_type": "ui_command", "message_id": str(uuid4()), "kind": kind, **fields}
-        ),
-        ws,
-    )
+# Targeted ``ui_command`` sender — the shared builder in flow_sdk.notifications.
+# navigate/* is one consumer of the envelope; it does not own the frame shape.
+_send_ui_command = send_ui_command
 
 
 async def _lookup_entity(type_name: str, entity_id: str) -> Optional[Entity]:
@@ -207,7 +201,9 @@ async def navigate_file(req: NavigateFileRequest):
     # Shared resolution policy with `flow show` (resolve_display_target):
     # entity-backed asset when the path is indexed, else a raw VFS open — the
     # client builds the asset-editor dock pointer (editor chosen by extension).
-    resolved = await resolve_display_target(path=raw)
+    # `discover=True`: navigating to a file the agent just wrote must land on
+    # its bespoke editor, so the not-yet-indexed recovery is wanted here.
+    resolved = await resolve_display_target(path=raw, discover=True)
     if resolved["kind"] == DisplayTargetKind.ENTITY:
         await _send_ui_command(ws, "navigate_entity", type=resolved["type"], id=resolved["id"])
         return {
@@ -220,6 +216,67 @@ async def navigate_file(req: NavigateFileRequest):
         }
     await _send_ui_command(ws, "navigate_vfs", path=resolved["path"])
     return {"ok": True, "connection_id": connection_id, "mode": "vfs", "path": resolved["path"]}
+
+
+class NavigateViewRequest(BaseModel):
+    """Body for POST /api/v1/agent/navigate/view.
+
+    ``view`` is a dock address — ``<viewType>[/<pointer>][?<opts>]``, e.g.
+    ``events``, ``assets/list/skill``, ``preferences/appearance``. This is the
+    only navigate form that reaches a SCREEN rather than an entity or a file.
+    """
+
+    view: str
+    connection_id: Optional[str] = None
+
+
+@router.post("/api/v1/agent/navigate/view")
+async def navigate_view(req: NavigateViewRequest):
+    """Navigate the active browser tab to a dock address (a screen).
+
+    The address is validated against the ``dock_address`` table BEFORE the UI is
+    touched — an unknown view or a missing required pointer is a clean 400 the
+    agent can act on, not a silent no-op in the browser. Entity-shaped pointers
+    are looked up too, so ``conversation/<bogus>`` 404s here rather than opening
+    a dock that renders a load error.
+    """
+    from flow_sdk.core.display_target import (  # noqa: PLC0415
+        DisplayTargetNotFound,
+        InvalidDisplayTarget,
+        resolve_display_target,
+    )
+
+    raw = (req.view or "").strip()
+    if not raw:
+        return _error(400, "INVALID_VIEW", "Missing view")
+
+    try:
+        resolved = await resolve_display_target(dock=raw)
+    except InvalidDisplayTarget as e:
+        return _error(400, "INVALID_VIEW", str(e))
+    except DisplayTargetNotFound as e:
+        return _error(404, "ENTITY_NOT_FOUND", str(e))
+
+    target = _pick_target(req.connection_id)
+    if isinstance(target, JSONResponse):
+        return target
+    connection_id, ws = target
+
+    await _send_ui_command(
+        ws,
+        "navigate_dock",
+        view_type=resolved["view_type"],
+        pointer=resolved.get("pointer"),
+        options=resolved.get("options"),
+        page=resolved.get("page"),
+    )
+    return {
+        "ok": True,
+        "connection_id": connection_id,
+        "mode": "dock",
+        "view_type": resolved["view_type"],
+        "pointer": resolved.get("pointer"),
+    }
 
 
 @router.get("/api/v1/agent/context")

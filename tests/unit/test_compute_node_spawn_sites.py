@@ -37,6 +37,25 @@ def _make_request_info(body: dict):
 _PATCH_REQ_SCAN = "flow_sdk.builtin.faas.scan_actions.get_current_request_info"
 
 
+class _InstalledHarness:
+    """Base for the ``AgenticProcess`` stand-ins used in ``createProcess`` cases.
+
+    ``_scan_create_process`` refuses before persisting anything when the chosen
+    harness isn't installed, and it asks the class itself
+    (``AgenticProcess.is_installed``). A fake standing in for AgenticProcess
+    there must answer that call, or the pre-flight refuses first and the case
+    under test never runs.
+
+    The ``upsertSessionProcess`` fakes below deliberately do NOT inherit it:
+    that path has no pre-flight, so requiring the attribute there would assert
+    a coupling that doesn't exist.
+    """
+
+    @staticmethod
+    async def is_installed(worker_type=None) -> bool:
+        return True
+
+
 # ─── createProcess fresh path ────────────────────────────────────────────────
 
 
@@ -45,20 +64,24 @@ async def test_scan_create_process_fresh_path_constructs_with_post_refactor_fiel
     """_scan_create_process must construct AgenticProcess with the field set
     declared at scan_actions.py:318-328 — and never source_vfs_path."""
     node = _make_compute_node()
-    info = _make_request_info({
-        "context": {
-            "workdir": "/tmp/proj",
-            "permission_mode": "bypassPermissions",
-            "model": "md",
-        },
-        "visible": True,
-    })
+    info = _make_request_info(
+        {
+            "context": {
+                "workdir": "/tmp/proj",
+                "permission_mode": "bypassPermissions",
+                "model": "md",
+                "worker_type": "claude_code",
+            },
+            "visible": True,
+        }
+    )
 
     captured: dict = {}
 
-    class FakeProc:
+    class FakeProc(_InstalledHarness):
         def __init__(self, **kwargs):
             captured.update(kwargs)
+            self._data = kwargs
             self.id = "fresh-1"
             self.type = "agentic_process"
             self.shell_id = None
@@ -70,16 +93,25 @@ async def test_scan_create_process_fresh_path_constructs_with_post_refactor_fiel
             captured["__started_visible"] = visible
             return ApiSuccessResponse(data={"id": self.id})
 
-    with patch(_PATCH_REQ_SCAN, return_value=info), \
-         patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
+        def model_dump(self, mode=None):
+            return {"id": self.id, "type": self.type, "shell_id": self.shell_id, **self._data}
+
+    with patch(_PATCH_REQ_SCAN, return_value=info), patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
         resp = await node._scan_create_process()
 
     assert resp.status == "SUCCESS", resp.message if hasattr(resp, "message") else resp
     assert resp.data["id"] == "fresh-1"
     # Validate post-refactor field set
     expected = {
-        "worker_type", "instruction_content", "cli_config", "context_data",
-        "workdir", "visible", "additional_dirs", "project_id", "target_typeid_str",
+        "worker_type",
+        "instruction_content",
+        "cli_config",
+        "context_data",
+        "workdir",
+        "visible",
+        "additional_dirs",
+        "project_id",
+        "target_typeid_str",
     }
     assert expected.issubset(captured.keys()), captured.keys()
     assert captured["workdir"] == "/tmp/proj"
@@ -98,16 +130,19 @@ async def test_scan_create_process_headless_does_not_eagerly_start():
     session_id without ever writing a JSONL, which then makes the next
     ``/prompt`` land on a stale session and emit no assistant turn."""
     node = _make_compute_node()
-    info = _make_request_info({
-        "context": {"workdir": "/tmp/proj"},
-        "visible": False,
-    })
+    info = _make_request_info(
+        {
+            "context": {"workdir": "/tmp/proj", "worker_type": "claude_code"},
+            "visible": False,
+        }
+    )
 
     captured: dict = {}
 
-    class FakeProc:
+    class FakeProc(_InstalledHarness):
         def __init__(self, **kwargs):
             captured.update(kwargs)
+            self._data = kwargs
             self.id = "headless-1"
             self.type = "agentic_process"
             self.shell_id = None
@@ -119,8 +154,10 @@ async def test_scan_create_process_headless_does_not_eagerly_start():
             captured["__started_visible"] = visible
             return ApiSuccessResponse(data={"id": self.id})
 
-    with patch(_PATCH_REQ_SCAN, return_value=info), \
-         patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
+        def model_dump(self, mode=None):
+            return {"id": self.id, "type": self.type, "shell_id": self.shell_id, **self._data}
+
+    with patch(_PATCH_REQ_SCAN, return_value=info), patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
         resp = await node._scan_create_process()
 
     assert resp.status == "SUCCESS"
@@ -128,6 +165,121 @@ async def test_scan_create_process_headless_does_not_eagerly_start():
     assert captured["visible"] is False
     # Critical: start_pty() must NOT be called for headless processes.
     assert "__started_visible" not in captured
+
+
+@pytest.mark.asyncio
+async def test_scan_create_process_uses_capability_default_without_overriding_explicit_worker():
+    node = _make_compute_node()
+    captured: list[dict] = []
+
+    class FakeProc(_InstalledHarness):
+        def __init__(self, **kwargs):
+            captured.append(kwargs)
+            self._data = kwargs
+            self.id = f"proc-{len(captured)}"
+            self.type = "agentic_process"
+            self.shell_id = None
+
+        async def save(self, owner=None):
+            return None
+
+        def model_dump(self, mode=None):
+            return {"id": self.id, "type": self.type, "shell_id": self.shell_id, **self._data}
+
+    default_info = _make_request_info(
+        {
+            "context": {"workdir": "/tmp/proj", "env_vars": {"FLOWPAD_TEST_MARKER": "1"}},
+            "visible": False,
+        }
+    )
+    explicit_info = _make_request_info(
+        {
+            "context": {"workdir": "/tmp/proj", "worker_type": "claude_code"},
+            "visible": False,
+        }
+    )
+
+    with (
+        patch(
+            "flow_sdk.core.capabilities.registry.resolve_default_worker_type",
+            AsyncMock(return_value="codex"),
+        ),
+        patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc),
+    ):
+        with patch(_PATCH_REQ_SCAN, return_value=default_info):
+            assert (await node._scan_create_process()).status == "SUCCESS"
+        with patch(_PATCH_REQ_SCAN, return_value=explicit_info):
+            assert (await node._scan_create_process()).status == "SUCCESS"
+
+    assert captured[0]["worker_type"] == "codex"
+    assert captured[0]["cli_config"]["worker_type"] == "codex"
+    assert captured[0]["cli_config"]["env_vars"]["FLOWPAD_TEST_MARKER"] == "1"
+    assert captured[1]["worker_type"] == "claude_code"
+    assert captured[1]["cli_config"]["worker_type"] == "claude"
+
+
+# ─── createProcess harness pre-flight (FLOWPAD-1971) ─────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_scan_create_process_refuses_missing_harness_with_400_and_creates_nothing():
+    """A harness this machine can't run is a 400 — and nothing is persisted.
+
+    The bug: the missing CLI only blew up deep in the spawn, which reached HTTP
+    as a bare 500 and left a FAILED row behind for every attempt. Both halves
+    are asserted here — the status code the UI keys on, and the absence of any
+    construct/save.
+    """
+    node = _make_compute_node()
+    info = _make_request_info(
+        {
+            "context": {"workdir": "/tmp/proj", "worker_type": "claude_code"},
+            "visible": True,
+        }
+    )
+
+    class FakeProc:
+        constructed = False
+        saved = False
+
+        @staticmethod
+        async def is_installed(worker_type=None) -> bool:
+            return False
+
+        def __init__(self, **kwargs):
+            FakeProc.constructed = True
+
+        async def save(self, owner=None):
+            FakeProc.saved = True
+
+    with patch(_PATCH_REQ_SCAN, return_value=info), patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
+        resp = await node._scan_create_process()
+
+    assert resp.status == "FAIL", resp
+    assert resp.status_code == 400, "a machine-config verdict must not answer 500"
+    # The harness's display name, not the internal ``claude_code`` token.
+    assert "Claude CLI" in resp.message, resp.message
+    assert FakeProc.constructed is False, "refusal must precede any entity construction"
+    assert FakeProc.saved is False, "refusal must leave no FAILED row behind"
+
+
+@pytest.mark.asyncio
+async def test_scan_create_process_rejects_unknown_worker_type_with_400():
+    """A worker_type this backend doesn't define is a client error, not a 500."""
+    node = _make_compute_node()
+    info = _make_request_info(
+        {
+            "context": {"workdir": "/tmp/proj", "worker_type": "not_a_harness"},
+            "visible": True,
+        }
+    )
+
+    with patch(_PATCH_REQ_SCAN, return_value=info):
+        resp = await node._scan_create_process()
+
+    assert resp.status == "FAIL", resp
+    assert resp.status_code == 400
+    assert "not_a_harness" in resp.message
 
 
 # ─── upsertSessionProcess resume path ────────────────────────────────────────
@@ -139,10 +291,12 @@ async def test_scan_upsert_session_process_creates_fresh_when_no_existing():
     with session_id, use_worker_history=True, context_data, project_id —
     no source_vfs_path."""
     node = _make_compute_node()
-    info = _make_request_info({
-        "sessionId": "sess-new-1",
-        "workdir": "/tmp/wd",
-    })
+    info = _make_request_info(
+        {
+            "sessionId": "sess-new-1",
+            "workdir": "/tmp/wd",
+        }
+    )
 
     captured: dict = {}
 
@@ -183,8 +337,7 @@ async def test_scan_upsert_session_process_creates_fresh_when_no_existing():
                 "worker_type": self.worker_type,
             }
 
-    with patch(_PATCH_REQ_SCAN, return_value=info), \
-         patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
+    with patch(_PATCH_REQ_SCAN, return_value=info), patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
         resp = await node._scan_upsert_session_process()
 
     assert resp.status == "SUCCESS", resp
@@ -237,8 +390,7 @@ async def test_scan_upsert_session_process_returns_existing_on_resume():
         def __init__(self, **kwargs):
             FakeProc.constructed = True
 
-    with patch(_PATCH_REQ_SCAN, return_value=info), \
-         patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
+    with patch(_PATCH_REQ_SCAN, return_value=info), patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
         resp = await node._scan_upsert_session_process()
 
     assert resp.status == "SUCCESS"

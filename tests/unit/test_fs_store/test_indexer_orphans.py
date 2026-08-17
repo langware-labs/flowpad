@@ -5,7 +5,7 @@ Verifies the three things the scanner-page "perfect ground truth" relies on:
 1. `get_index_status().per_type[*].orphan_count` and `total_orphans` reflect
    live DB state after the indexer marks a row's source as gone.
 2. Re-indexing with `orphan_action=IGNORE` removes the orphan DB row but
-   leaves the shadow record dir under `<records_root>/<type>/<type>-@<id>/`
+   leaves the shadow record dir under `<records_root>/<type>/<id>/`
    intact.
 3. Re-indexing with `orphan_action=DELETE` removes both DB row and shadow
    dir.
@@ -18,12 +18,12 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.db import get_db_driver
-from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions, OrphanAction
 from flow_sdk.fs_store.indexer.functions.markdown import markdown_flat_fn
 from flow_sdk.fs_store.record_paths import get_default_records_root
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 
 def _build_indexer(root: Path) -> FSIndexer:
@@ -44,7 +44,7 @@ async def _markdown_status() -> tuple[int, int, int]:
 @pytest.mark.asyncio
 async def test_orphan_count_zero_on_fresh_index(tmp_path: Path) -> None:
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     (docs / "a.md").write_text("# a\n", encoding="utf-8")
 
@@ -63,7 +63,7 @@ async def test_orphan_count_zero_on_fresh_index(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_orphan_appears_after_source_delete(tmp_path: Path) -> None:
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     md = docs / "a.md"
     md.write_text("# a\n", encoding="utf-8")
@@ -87,7 +87,7 @@ async def test_orphan_appears_after_source_delete(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_orphan_clears_when_source_returns(tmp_path: Path) -> None:
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     md = docs / "a.md"
     md.write_text("# a\n", encoding="utf-8")
@@ -115,7 +115,7 @@ async def test_orphan_clears_when_source_returns(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_orphan_action_ignore_removes_db_row_keeps_shadow_dir(tmp_path: Path) -> None:
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     md = docs / "a.md"
     md.write_text("# a\n", encoding="utf-8")
@@ -128,16 +128,12 @@ async def test_orphan_action_ignore_removes_db_row_keeps_shadow_dir(tmp_path: Pa
 
     # Capture the shadow dir for this record so we can assert it survives.
     records_root = get_default_records_root() / "markdown"
-    shadow_dirs_before = (
-        sorted(p.name for p in records_root.iterdir()) if records_root.is_dir() else []
-    )
+    shadow_dirs_before = sorted(p.name for p in records_root.iterdir()) if records_root.is_dir() else []
     assert shadow_dirs_before, "expected at least one markdown shadow dir on disk"
 
     md.unlink()
     result = await idx.index(
-        IndexerOptions(
-            verbose=False, types=[RecordType.MARKDOWN], orphan_action=OrphanAction.IGNORE
-        )
+        IndexerOptions(verbose=False, types=[RecordType.MARKDOWN], orphan_action=OrphanAction.IGNORE)
     )
 
     pt = result.per_type[RecordType.MARKDOWN]
@@ -149,9 +145,7 @@ async def test_orphan_action_ignore_removes_db_row_keeps_shadow_dir(tmp_path: Pa
     assert orphans_after == 0, "ignore action should drop the orphan DB row"
 
     # Shadow dir for the cleared record must still be on disk.
-    shadow_dirs_after = (
-        sorted(p.name for p in records_root.iterdir()) if records_root.is_dir() else []
-    )
+    shadow_dirs_after = sorted(p.name for p in records_root.iterdir()) if records_root.is_dir() else []
     assert set(shadow_dirs_before).issubset(set(shadow_dirs_after))
 
 
@@ -165,7 +159,7 @@ async def test_db_only_orphan_without_shadow_dir_is_swept(tmp_path: Path) -> Non
     import shutil
 
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     md = docs / "a.md"
     md.write_text("# a\n", encoding="utf-8")
@@ -184,9 +178,7 @@ async def test_db_only_orphan_without_shadow_dir_is_swept(tmp_path: Path) -> Non
     shutil.rmtree(records_root, ignore_errors=True)
 
     result = await idx.index(
-        IndexerOptions(
-            verbose=False, types=[RecordType.MARKDOWN], orphan_action=OrphanAction.IGNORE
-        )
+        IndexerOptions(verbose=False, types=[RecordType.MARKDOWN], orphan_action=OrphanAction.IGNORE)
     )
 
     pt = result.per_type[RecordType.MARKDOWN]
@@ -209,7 +201,7 @@ async def test_db_only_row_with_live_source_is_not_swept(tmp_path: Path) -> None
     from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
 
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     md = docs / "a.md"
     md.write_text("# a\n", encoding="utf-8")
@@ -226,16 +218,13 @@ async def test_db_only_row_with_live_source_is_not_swept(tmp_path: Path) -> None
     object.__setattr__(twin, "asset_ref", _FSRef(md))
     await twin.sync_to_db()
     # Drop the twin's shadow dir so it is a DB-only row.
-    from flow_sdk.fs_store.record_paths import record_stem
     shutil.rmtree(
-        get_default_records_root() / "markdown" / record_stem("markdown", twin_id),
+        get_default_records_root() / "markdown" / str(twin_id),
         ignore_errors=True,
     )
 
     result = await idx.index(
-        IndexerOptions(
-            verbose=False, types=[RecordType.MARKDOWN], orphan_action=OrphanAction.DELETE
-        )
+        IndexerOptions(verbose=False, types=[RecordType.MARKDOWN], orphan_action=OrphanAction.DELETE)
     )
 
     pt = result.per_type.get(RecordType.MARKDOWN)
@@ -248,7 +237,7 @@ async def test_db_only_row_with_live_source_is_not_swept(tmp_path: Path) -> None
 @pytest.mark.asyncio
 async def test_orphan_action_delete_removes_db_row_and_shadow_dir(tmp_path: Path) -> None:
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     md = docs / "a.md"
     md.write_text("# a\n", encoding="utf-8")
@@ -260,16 +249,12 @@ async def test_orphan_action_delete_removes_db_row_and_shadow_dir(tmp_path: Path
     await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
 
     records_root = get_default_records_root() / "markdown"
-    shadow_dirs_before = (
-        {p.name for p in records_root.iterdir()} if records_root.is_dir() else set()
-    )
+    shadow_dirs_before = {p.name for p in records_root.iterdir()} if records_root.is_dir() else set()
     assert shadow_dirs_before, "expected shadow dir to exist after index"
 
     md.unlink()
     result = await idx.index(
-        IndexerOptions(
-            verbose=False, types=[RecordType.MARKDOWN], orphan_action=OrphanAction.DELETE
-        )
+        IndexerOptions(verbose=False, types=[RecordType.MARKDOWN], orphan_action=OrphanAction.DELETE)
     )
 
     pt = result.per_type[RecordType.MARKDOWN]
@@ -277,10 +262,62 @@ async def test_orphan_action_delete_removes_db_row_and_shadow_dir(tmp_path: Path
     assert pt.orphans_db_removed >= 1
     assert pt.orphans_disk_removed >= 1
 
-    shadow_dirs_after = (
-        {p.name for p in records_root.iterdir()} if records_root.is_dir() else set()
-    )
+    shadow_dirs_after = {p.name for p in records_root.iterdir()} if records_root.is_dir() else set()
     # At least one shadow dir we observed before must be gone now.
     assert shadow_dirs_before - shadow_dirs_after, (
         f"DELETE should remove the orphan shadow dir; before={shadow_dirs_before} after={shadow_dirs_after}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_scoped_index_survives_a_db_only_orphan(tmp_path: Path) -> None:
+    """A scoped index run must not blow up on a DB-only orphan.
+
+    The scope filter narrows orphan candidates; for a DB-only row (no shadow
+    dir to read provenance from) it reads that provenance off the row the
+    driver returns. ``list_entity_sources_by_type`` returns FIVE columns
+    (asset_ref, scope, project_id, asset_occurrences, created_date) since
+    duplicate-occurrence detection landed, but the predicate unpacked exactly
+    three — so the whole run died with ``too many values to unpack``, not just
+    the orphan check. Every edit the pass would have persisted (an agent's
+    task status / process_id / analysis paths) was silently lost with it.
+    """
+    import shutil
+
+    from flow_sdk.server.search_filters import ScopeFilter
+
+    root = tmp_path / "proj"
+    docs = root / "docs"
+    docs.mkdir(parents=True)
+    md = docs / "a.md"
+    md.write_text("# a\n", encoding="utf-8")
+
+    driver = get_db_driver()
+    await driver.delete_entities_by_type(str(RecordType.MARKDOWN))
+
+    idx = _build_indexer(root)
+    await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
+
+    # Strand the row: source and shadow dir both gone (a deleted task folder),
+    # leaving a real DB-only orphan for the scoped pass to classify.
+    md.unlink()
+    shutil.rmtree(get_default_records_root() / "markdown", ignore_errors=True)
+
+    # A live doc the pass must still persist — the collateral damage the crash
+    # caused, since one bad row aborted the ENTIRE run.
+    (docs / "b.md").write_text("# b\n", encoding="utf-8")
+
+    result = await idx.index(
+        IndexerOptions(
+            verbose=False,
+            types=[RecordType.MARKDOWN],
+            scope_filter=ScopeFilter(user=True),
+            orphan_action=OrphanAction.IGNORE,
+        )
+    )
+
+    assert result.per_type[RecordType.MARKDOWN].orphans_found >= 1
+    rows = await driver.list_entity_sources_by_type(str(RecordType.MARKDOWN))
+    assert any(str(r[0] or "").endswith("b.md") for r in rows.values()), (
+        "the scoped run must still index live files alongside the orphan"
     )

@@ -23,17 +23,18 @@ Tests SKIP rather than fail when the hub returns 404, so this file
 documents what the hub still needs to expose without blocking CI on the
 out-of-tree hub work.
 """
+
 from __future__ import annotations
 
 import asyncio
 import os
 import time
-import uuid
 from pathlib import Path
 
 import httpx
 import pytest
 
+from tests.hub_tests._assignment import assert_auto_assigned
 
 REPO_APP = Path(__file__).resolve().parents[2].parent / "flowpad-app"
 
@@ -89,48 +90,23 @@ async def _alice_and_bob(hub_base_url: str, hub_login_payload: dict):
     }
 
 
-async def _bob_accept_and_join(hub_base_url: str, bob_token: str, bob_email: str, conv_id: str) -> None:
-    """Bob walks the canonical invite→accept→join chain over raw HTTP."""
+async def _bob_assert_assigned_and_join(
+    hub_base_url: str,
+    bob_token: str,
+    bob_id: str,
+    conv_id: str,
+) -> None:
+    """Prove Bob received the assignment, then idempotently join the thread."""
     headers_b = {"Authorization": f"Bearer {bob_token}", "Content-Type": "application/json"}
+    await assert_auto_assigned(
+        hub_base_url,
+        bob_token,
+        entity_type="conversation",
+        entity_id=conv_id,
+        user_id=bob_id,
+        expected_role="member",
+    )
     async with httpx.AsyncClient(timeout=5.0) as h:
-        r = await h.get(f"{hub_base_url}/api/v1/graph/invitation/pending", headers=headers_b)
-        r.raise_for_status()
-        pending = r.json()["data"] or []
-        matching = [inv for inv in pending if inv.get("recipient_email") == bob_email and not inv.get("accepted")]
-        assert matching, f"bob has no pending invitation; got {pending}"
-        matching.sort(key=lambda x: x.get("created_date") or "", reverse=True)
-        invitation_id = matching[0]["id"]
-
-        # The hub's members/accept is a browser-oriented endpoint: it ALWAYS
-        # returns a 302 — to /login when unauthenticated (the accept did NOT
-        # run), or to the landing /conversation/<id> (or /flow_message/<id>)
-        # on a SUCCESSFUL authenticated accept (the role IS granted
-        # server-side before the redirect). Mirror the production SDK's
-        # handle_invitation_accept (flow_sdk/app/actions/flow_message_action.py
-        # :2589-2619): do NOT follow the redirect (a second authed hop can
-        # itself 302); read the Location and treat 200/409 or a redirect to
-        # the conversation/flow_message landing as success, only a redirect to
-        # login as failure. The old `raise_for_status()` rejected the
-        # by-design 302 and failed every accept.
-        r = await h.get(
-            f"{hub_base_url}/api/v1/graph/members/accept",
-            headers=headers_b,
-            params={"invitation-id": invitation_id},
-        )
-        if r.status_code not in (200, 409):
-            if r.status_code in (301, 302, 303, 307, 308):
-                location = (r.headers.get("location") or r.headers.get("Location") or "")
-                low = location.lower()
-                assert "login" not in low, (
-                    f"accept redirected to login (request was unauthenticated); "
-                    f"accept did not run. location={location[:200]}"
-                )
-                assert ("/conversation/" in location) or ("/flow_message/" in location), (
-                    f"accept returned an unexpected redirect location={location[:200]}"
-                )
-            else:
-                r.raise_for_status()
-
         r = await h.post(
             f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/join",
             headers=headers_b,
@@ -142,10 +118,8 @@ async def _bob_accept_and_join(hub_base_url: str, bob_token: str, bob_email: str
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_members_after_share_lists_both_with_roles(
-    hub_base_url, hub_login_payload, isolated_hub_keyring
-):
-    """alice.share(recipients=[bob]) → bob accepts+joins → GET members returns both with roles."""
+async def test_members_after_share_lists_both_with_roles(hub_base_url, hub_login_payload, isolated_hub_keyring):
+    """alice.share(recipients=[bob]) assigns Bob; GET members returns both roles."""
     from flow_sdk.builtin.conversation import Conversation
 
     actors = await _alice_and_bob(hub_base_url, hub_login_payload)
@@ -158,7 +132,7 @@ async def test_members_after_share_lists_both_with_roles(
     await conv.share(recipients=[bob_email])
     assert conv.remote is True
 
-    await _bob_accept_and_join(hub_base_url, actors["bob_token"], bob_email, conv.id)
+    await _bob_assert_assigned_and_join(hub_base_url, actors["bob_token"], bob_id, conv.id)
 
     # GET members directly against the hub — the same path the local-server
     # dispatcher would hit when reflecting the ``members`` action.
@@ -199,9 +173,7 @@ async def test_members_after_share_lists_both_with_roles(
     ),
     strict=True,
 )
-async def test_members_after_leave_excludes_leaver(
-    hub_base_url, hub_login_payload, isolated_hub_keyring
-):
+async def test_members_after_leave_excludes_leaver(hub_base_url, hub_login_payload, isolated_hub_keyring):
     """After bob leaves the shared conversation, members no longer includes him."""
     from flow_sdk.builtin.conversation import Conversation
 
@@ -213,7 +185,7 @@ async def test_members_after_leave_excludes_leaver(
     title = f"members-after-leave-{int(time.time())}"
     conv = Conversation(title=title)
     await conv.share(recipients=[bob_email])
-    await _bob_accept_and_join(hub_base_url, actors["bob_token"], bob_email, conv.id)
+    await _bob_assert_assigned_and_join(hub_base_url, actors["bob_token"], bob_id, conv.id)
 
     members_url = f"{hub_base_url}/api/v1/graph/conversation/{conv.id}/members"
     headers_a = {"Authorization": f"Bearer {actors['alice_token']}", "Accept": "application/json"}
@@ -250,9 +222,7 @@ async def test_members_after_leave_excludes_leaver(
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_members_action_returns_role_per_participant(
-    hub_base_url, hub_login_payload, isolated_hub_keyring
-):
+async def test_members_action_returns_role_per_participant(hub_base_url, hub_login_payload, isolated_hub_keyring):
     """Every entry in the members list must carry the four canonical keys
     {user_id, email, name, role}. Future entity types reusing the same
     action depend on this shape."""
@@ -264,7 +234,12 @@ async def test_members_action_returns_role_per_participant(
     title = f"members-shape-{int(time.time())}"
     conv = Conversation(title=title)
     await conv.share(recipients=[bob_email])
-    await _bob_accept_and_join(hub_base_url, actors["bob_token"], bob_email, conv.id)
+    await _bob_assert_assigned_and_join(
+        hub_base_url,
+        actors["bob_token"],
+        actors["bob_id"],
+        conv.id,
+    )
 
     members_url = f"{hub_base_url}/api/v1/graph/conversation/{conv.id}/members"
     headers_a = {"Authorization": f"Bearer {actors['alice_token']}", "Accept": "application/json"}

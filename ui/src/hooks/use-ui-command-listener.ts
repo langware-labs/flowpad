@@ -1,7 +1,29 @@
-import { editorForPath, ConnectionManager, DockPointerData, dataManager, TypeId, ViewType, type IDockPointer, type UiCommandMessage } from '@sdk';
+import {
+  editorForPath,
+  ConnectionManager,
+  DockPointerData,
+  dataManager,
+  PageId,
+  TypeId,
+  ViewType,
+  type IDockPointer,
+  type UiCommandMessage,
+} from '@sdk';
 import { useEffect } from 'react';
+import { NavigationActions } from '@src/navigation/NavigationActions';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
+import {
+  dockPointerForClickTarget,
+  renderDesktopNotification,
+  type NotificationClickTarget,
+  type NotificationPayload,
+} from '@src/notifications/renderDesktopNotification';
+
+/** The subset of the Electron preload bridge this hook uses. */
+interface NotifyBridge {
+  onNotificationClick?: (cb: (data: { clickTarget?: NotificationClickTarget }) => void) => void;
+}
 
 /**
  * Listen for server-side `ui_command` WS messages and execute them.
@@ -20,14 +42,10 @@ export function useUiCommandListener(): void {
   useEffect(() => {
     const cm = ConnectionManager.getInstance();
 
-    // Rewrite the URL to a dock pointer — react-router's createBrowserRouter
-    // listens for popstate. Shared by every ui_command handler.
-    const navigateTo = (pointer: IDockPointer) => {
-      const fullUrl = new DockPointer(pointer).toUrl(window.location.pathname);
-      if (fullUrl === window.location.pathname + window.location.search) return;
-      window.history.pushState(null, '', fullUrl);
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    };
+    // Rewrite the URL to a dock pointer. This listener is mounted above the
+    // router, so it commits through the detached entry point rather than
+    // keeping its own copy of the push-and-popstate idiom.
+    const navigateTo = (pointer: IDockPointer) => NavigationActions.commitDetached(pointer);
 
     const handleNavigateEntity = async (msg: UiCommandMessage) => {
       if (!msg.type || !msg.id) {
@@ -78,13 +96,41 @@ export function useUiCommandListener(): void {
       navigateTo(AssetDocPointer.forVfs(editor, msg.path).toDockPointer());
     };
 
+    // `navigate_dock`: go to a SCREEN. Unlike the two above there is nothing to
+    // resolve — the backend validated the view and its pointer requirement
+    // against the dock-address table, and sends the frontend's own field names,
+    // so this is a construction.
+    const handleNavigateDock = (msg: UiCommandMessage) => {
+      if (!msg.view_type) {
+        console.warn('[ui_command] navigate_dock missing view_type', msg);
+        return;
+      }
+      navigateTo(
+        new DockPointer(
+          msg.view_type as ViewType,
+          msg.pointer ?? undefined,
+          msg.options ?? undefined,
+          undefined,
+          msg.page as PageId | undefined,
+        ),
+      );
+    };
+
     const onUiCommand = (msg: UiCommandMessage) => {
       if (msg.kind === 'navigate_entity') {
         void handleNavigateEntity(msg);
         return;
       }
+      if (msg.kind === 'navigate_dock') {
+        handleNavigateDock(msg);
+        return;
+      }
       if (msg.kind === 'navigate_vfs') {
         handleNavigateVfs(msg);
+        return;
+      }
+      if (msg.kind === 'desktop_notify') {
+        renderDesktopNotification((msg.info ?? {}) as NotificationPayload);
         return;
       }
       // Forward-compat: log unknown kinds but don't crash.
@@ -92,6 +138,16 @@ export function useUiCommandListener(): void {
     };
 
     cm.on('on_ui_command', onUiCommand);
+
+    // Banner click (from main process) → navigate to the payload's generic
+    // click target (URL-first, works for any notify_type — the OS badge is
+    // handled separately by useSyncOsBadge, driven by InboxManager.unread).
+    const bridge = (window as unknown as { electronAPI?: NotifyBridge }).electronAPI;
+    bridge?.onNotificationClick?.(({ clickTarget }) => {
+      const pointer = dockPointerForClickTarget(clickTarget);
+      if (pointer) navigateTo(pointer);
+    });
+
     return () => {
       cm.off('on_ui_command', onUiCommand);
     };

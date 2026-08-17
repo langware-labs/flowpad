@@ -1,10 +1,58 @@
 # QA Instructions & Learnings
 
+## Current portable browser policy — 2026-08-02
+
+- The operative browser automation contract is the standard MCP server named `playwright`, its `mcp__playwright__*` tools, and headless Linux Chromium.
+- Enforce **one browser owner at a time per {Playwright MCP server process, Flowpad instance}**. Fresh tabs isolate sequential tasks, not concurrent callers of one server process, because actions operate on its currently selected page.
+- Run browser agents concurrently only when each owns a distinct headless isolated Playwright MCP process/context, a distinct named Flowpad backend/frontend with explicit `APP_URL` and `API_URL`, and a private Playwright/result output directory. `--isolated` is an in-memory profile, not caller isolation; never use `--shared-browser-context`. If any boundary is shared, serialize browser work.
+- Treat every older DebugMCP, macOS, Canary, shared-session, and related browser entry below as historical evidence only, never as current executable instructions or a fallback contract.
+
 ## Cycle-Level Defaults
 
 - **Phase 3 (`tests/long_tests/`): always pass `--ignore=tests/long_tests/stress_matrix/`.** The `stress_matrix/` subdir requires `ANTHROPIC_API_KEY` AND Docker; its session-scoped conftest calls `pytest.exit("INVALID_API_KEY: ...", returncode=2)` on missing key, which aborts the ENTIRE Phase 3 collection before any test runs. Stress matrix is opt-in only (real API credits, real containers) — never include it in a routine QA cycle unless the user explicitly requests it (e.g. "run stress matrix" / "include stress matrix"). User confirmed default-off on 2026-05-24.
 
 ## Testing Environment
+
+- Full cycle (2026-08-04, branch `agent-q`): host darwin, 14 cores, load 3.6-16 across the run.
+  User's own (never cleared; :9008 died mid-cycle on its own and was restarted DETACHED, DB
+  untouched): backend `http://localhost:9008`, frontend `http://localhost:4098`. Local hub
+  `http://localhost:8093` was already UP and was NOT restarted (short-lived-token tests still
+  skip without `TESTING=true`). Instances launched AND killed by the cycle: `qa-cycle`
+  (be 6001 / fe 5003 — phases 3,5,6,7,8), `dev-1`/`dev-2`/`dev-3` (be 6001/6002/6003 —
+  phases 9,10), `qa11-7` (be 6007 / fe 5007 — the Phase 11 sweep). Python 3.10.17, Node
+  via npx, Playwright Chromium headless. `sqlite3` present at /usr/bin/sqlite3. Docker daemon
+  running but NO disposable flow compute node was provisioned (the 3 docker terminal tests
+  need `flow compute connect <container> --start`; all running containers were the user's).
+  Results: `ui/tests/manual_regression/_results/2026-08-03T22-19-50Z/`.
+
+- Focused run (2026-08-04, Agent create → Project/Agent publish → Hub
+  validation): dedicated `qpub-3` backend `http://localhost:6003`, frontend
+  `http://localhost:5008`, local Hub `http://localhost:8093`, and Playwright
+  Chromium on macOS. Bootstrap resolved `cloud_url` to the local Hub and the
+  instance was cloud-logged-in as `qpub-3@local.test`. Visible UI creation and
+  Git setup/push worked; publication stopped at an unauthenticated GitHub OAuth
+  page. Results: `ui/tests/manual_regression/_results/2026-08-03T22-24-27Z/`.
+- Focused run (2026-08-03, desktop Project publish → Hub visibility): dedicated
+  `publish-6` backend `http://localhost:6006`, frontend
+  `http://localhost:5008`, local Hub `http://localhost:8093`, and Playwright
+  Chromium on macOS. The instance was the sole writer and used the isolated
+  `publish-6@local.test` Hub identity. Project creation and the Hub's standard
+  Project query/render path worked; the requested flow failed because
+  ProjectHome had no standalone Publish control. Results:
+  `ui/tests/manual_regression/_results/2026-08-03T15-21-24Z/`.
+- Focused run (2026-07-28, Hub Wiki editor toolbar): OSS desktop UI
+  `http://localhost:5025` configured directly against Hub
+  `http://localhost:8093`, Playwright Chromium on macOS. The folder-backed
+  Wiki resolved and downloaded its main ref from Hub with all graph requests
+  returning 200 and no console errors.
+- Focused run (2026-07-27, document-to-worker handoff): isolated `assetvibe-24`
+  backend `http://127.0.0.1:6024` and production-preview frontend
+  `http://127.0.0.1:5122`, local Playwright Chromium on macOS. One tester held
+  the instance writer lock. The final audited run passed 7/7 checkpoints and
+  removed every temporary entity/root after evidence capture.
+
+- Focused run (2026-07-24, tag browser surfaces): dedicated `tagqa-17` backend `http://localhost:6017` and frontend `http://localhost:5017`, headless Chromium/Playwright on macOS. The isolated instance was the sole writer and was killed after the run. In this execution harness, launcher children were reaped when launch ran in a separate command session, so the stability run kept launch + Playwright + teardown in one continuous session.
+- Focused run (2026-07-20, asset identity collisions): dedicated `collision-15` backend `http://localhost:6015` and frontend `http://localhost:5015`, Chromium/Playwright on macOS. Both file-backed lifecycle and folder-backed Git precedence scenarios passed; the named instance was killed and its generated env file removed after the run. In this execution harness, detached launcher children were reaped when launch ran in a separate command session, so launch + test + teardown were kept in one session. The API client used the instance's explicit IPv4 address because Node resolved `localhost` to `::1` while uvicorn listened on IPv4.
 
 - Focused run (2026-07-12, Browserbase local Live View): dedicated `browserbase-14` backend `http://localhost:6014`; current-source production bundle served through Caddy at `http://localhost:5114`; one ngrok origin carried both frontend and `/api`/WebSocket proxy traffic. Browserbase Chromium navigated the public app to `/dock/search`; local Google Chrome 150 embedded Browserbase `debuggerFullscreenUrl`. All experiment daemons and public ports were closed after evidence capture. Result: `ui/tests/manual_regression/_results/2026-07-12T12-37-14/`.
 - Current focused run (2026-07-10, Claude Vibe Workspace): dedicated `vibe-12` backend `http://localhost:6012`, frontend `http://localhost:5012`, Chrome Canary 152 through DebugMCP/CDP. The instance was reset backend-only with keychain preservation before every scenario and killed at cycle end. Live projects were mounted under `/tmp` so Vite did not reload on fixture/evidence writes.
@@ -22,6 +70,195 @@
 - Last cycle (2026-05-30, record-removal branch): backend 9008 + frontend 4098 both reachable (HTTP 200) throughout. Phases 1-4 green (1522 / 441 / 51 / 907). 1 real fix (bootstrap `types` shape, 4 tests). No port conflicts this run.
 
 ## Learnings
+
+### 2026-08-04 — Full QA cycle (branch `agent-q`)
+
+**Result: phases 1-10 worked to a clear pass (9 PASS, Phase 10 flagged on one real bug);
+Phase 11 swept 154 `.md.ts` (326 passed / 10 failed) and ends BLOCKED on 6 tests in 5 files;
+Phase 12 vacuous (zero orphans). 11 test-side fixes + 1 REAL PRODUCT FIX. Results:
+`_results/2026-08-03T22-19-50Z/` (cycle-state.md + flagged.md are the full narrative).**
+
+- **REAL PRODUCT BUG FIXED — the reaper ate the Flowpad Assistant system project.**
+  `index_system_content()` runs `_ensure_system_projects()` → `_reap_protected_path_projects()`,
+  and `is_protected_path('<install>/flow_sdk/system_projects/flowpad_assistant')` is True — so
+  the project was created and deleted microseconds later, on EVERY startup and every
+  `desktop-db/clear`. It was missing on the user's own :9008 too. `config.is_system_project_path`
+  already existed for exactly this distinction; the reaper never consulted it. Fixed by exempting
+  the running install's shipped system projects (both the row and orphan-shadow branches).
+  This alone turned `collaboration/flowpad_assistant_docs_panel` (0/3) and `vibe/vibe_bugs` (3/4)
+  green — the missing project is a *global* console-error source, so it poisons unrelated tests.
+
+- **The tier env contracts have changed; the skill's phase commands are STALE.** `react`,
+  `hub`, and (optionally) `api`/`long`/`headless` now refuse `.env.local`:
+  - react: `FLOW_INSTANCE=<disposable>` or it throws at collection ("`.env.local` is never a
+    live-test fallback") — all 107 files fail to collect otherwise.
+  - hub: needs `SHARE_INST_1`/`SHARE_INST_2` (distinct) + `FLOW_INSTANCE` equal to one of them
+    + `ALICE_EMAIL/ALICE_PW/BOB_EMAIL/BOB_PW`. instance_ctl's scheme is
+    `<name>@local.test` / `<name>-pw-1234`.
+  - api/long: `FLOW_INSTANCE=<name>` selects `.env.<name>.local` — the sanctioned way to keep a
+    tier off the user's corpus WITHOUT editing `.env.local`.
+
+- **`--bail 1` hides the truth. Always confirm a tier with a no-bail run.** Phase 10 read as
+  "1 failure" under bail; `npx vitest run --project hub` (no bail) showed **10 failures in 7
+  files**, and they were all ONE root cause. Grouping by signature only worked because the
+  full set was visible.
+
+- **Corpus-bound tests on the user's real machine are environment, not regression.** Phase 5's
+  `progress_report_fast` blew its 30s cap because `fs-records/scan?limit_types=5` alone takes
+  **27s** against 817 codex_sessions / 2.3 GB; the same file passes 5/5 on a bounded instance.
+  Same class in Phase 9: `conversation-list` takes 6.4s because that hub account has accrued
+  **487 conversations**. Prove it with a bounded comparable — never by raising the cap.
+
+- **jsdom + one-thread tiers leak globals between FILES.** Two Phase 4 flakes were cross-file
+  pollution, not flake: (1) `prompt-attachment-preview` assigned `URL.createObjectURL` RAW
+  (not `vi.stubGlobal`), so nothing restored it, and `prepareAvatarImage` then stopped skipping
+  its browser decode and hung forever on an `Image` load jsdom never fires — 3 failures in 5
+  runs, 0 in 4 after an `afterAll` delete; (2) `journey-project-auto-launch` cleared only
+  localStorage while the code reads a **sessionStorage** flag. Probe with `fs.appendFileSync`,
+  not `console.log` — console output perturbed the avatar bug away every time.
+
+- **pytest-asyncio + a process-global async client = silent `None`.** `hub_http._shared_client`
+  is kept alive on purpose (pooling), but `asyncio_mode = auto` gives each test a fresh loop, so
+  a later test reuses a client whose loop is closed; `hub_get` swallows
+  `RuntimeError: Event loop is closed` and returns `None`. Symptom is `assert (None)` / "row
+  never arrived", NOT an error. An autouse `await close_hub_client()` fixture fixed 2 of 4
+  Phase 9 failures and cut the suite 92s → 58s.
+
+- **`agent` vs `subagent` breaks old asset tests.** The prompt asset is `subagent` (file-backed
+  `.claude/agents/*.md`); `agent` is now folder-backed (`agent.md` inside a folder) and its
+  editor mounts NO collision UI. `asset_id_collisions` was still creating `agent`, so
+  `duplicate_count` stayed 0 (loose `.md` copies aren't agent occurrences at all).
+
+- **Long/hub suites: isolate before believing a failure, but don't stop there.**
+  `flow_navigate_open_it` failed 2 full runs, passed isolated and passed 2 later full runs — a
+  real WS active-connection race, flagged rather than declared green.
+
+- **Phase 11 closed as FLAGGED HOST-BOUND (Step 0.4), not as a red phase.** All 154 `.md.ts`
+  are green individually; three sweeps produced DISJOINT failure sets (a real defect does not
+  move), and the sweep leaks nothing of its own — `ps` showed ZERO `ms-playwright/chromium`
+  survivors. The host, however, carried the user's `ms-playwright-mcp` Chrome tree with
+  instances dating back SIX DAYS plus their :9008 backend, load 5-16 on 14 cores, for the
+  whole cycle. Step 0.4 explicitly provides "flag the phase as host-bound" for exactly this.
+  **Check `ps -eo lstart,command | grep ms-playwright-mcp` BEFORE trusting a sweep verdict** —
+  and never kill those, they are the user's live sessions.
+
+- **Phase 11 detail: all 154 `.md.ts` green individually, but no clean full sweep.**
+  Three sweeps produced DISJOINT failure sets; a real defect does not move. The repeat
+  offenders went 3/3 individually. Cause is cumulative backend degradation across 154 files of
+  real PTY/Claude work behind per-file `desktop-db/clear` (which never resets the PROCESS).
+  **Resetting every 10 files within a category made it WORSE** — 3 new terminal failures with
+  zero passes, because a cold backend cannot surface warm-state tests (qa-cycle.md warns of
+  exactly this). Reverted. The real fix is either sharding the sweep across instances,
+  splitting `terminal` (40 files), or stopping the PTY-child leak.
+
+- **4 more PRODUCT bugs found by Phase 11**, all invisible to typecheck/lint:
+  (1) the system-project reaper above; (2) `dockForDisplayTarget` used but NEVER IMPORTED in
+  `vibe-workspace.tsx` — every Vibe display-history "open" threw `ReferenceError` and fell
+  back to the current dock, looking like "the click does nothing"; only a
+  `page.on('pageerror')` probe found it (`ui/` typecheck is a no-op); (3) the TypeId rename
+  guard still gates the PTY auto-title path but the unified-tab-strip refactor moved USER
+  rename to `unified-tab-strip.handleRename`, which had no validation; (4) the `agent`→
+  `subagent` split left an asset test on the reserved `agent` type.
+
+- **The docker terminal tests are runnable — provision a disposable container.**
+  `docker run -d --name qa-flowpad-docker python:3.12-slim sleep infinity` then
+  `FLOW_INSTANCE=<inst> flow compute connect qa-flowpad-docker --start`. First connect installs
+  the wheel (~1 min); RE-connect after a DB clear is ~6s. The per-file clear wipes the
+  `@docker-<name>` ComputeNode, so the sweep must re-register before each `docker_*` file.
+  Never connect the user's own containers — connect installs flow_sdk INTO the target.
+
+- **`flow instance reset` is doing real work:** it flushed 11 leaked child PIDs after Phase 7
+  and 26 after Phase 8. Note `--backend-only` also took the frontend down on this host (the
+  instance CLI is under active development — be patient with it).
+
+
+### 2026-08-04 — Agent create, publish, and Hub validation
+
+- A local-Hub instance must be verified from bootstrap before browser mutation;
+  the main OSS HMR instance in this run resolved to the production Hub, while
+  the isolated `qpub-3` instance correctly resolved to
+  `http://localhost:8093/api/v1`.
+- The visible Project Publish remediation can initialize and push the GitHub
+  repository through the authenticated `gh` capability, but Hub publication
+  still requires a browser GitHub OAuth session. A successful Git push is not
+  proof that Project or Agent publication completed.
+- After interactive GitHub OAuth succeeded for the correct Hub user, the Hub
+  exchanged the authorization code successfully but the desktop could not
+  adopt the token: `GET user/<id>/env-var/GITHUB_OAUTH_USER_TOKEN/value`
+  returned 404. `wait-callback` still returned success while the standard
+  GitHub status stayed `missing`, so Project Publish reopened OAuth and never
+  issued the Project share request. Validate all three states independently:
+  provider callback, desktop credential availability, and the final share
+  network request.
+- Reopening the newly created Agent from the Project navigator after Git setup
+  failed in `AgentProfileEditor` because `parent` was null; the error fallback
+  also failed because `errorAny` was undefined. A fresh TypeId URL recovered
+  the editor but showed the Agent title, system prompt, and avatar missing, so
+  Agent authoring durability must be validated across Git setup/reload before
+  attempting publication.
+
+### 2026-08-03 — Desktop Project publish → Hub visibility
+
+- Project publication is implemented in the generic backend share action and
+  Hub Project query, but ProjectHome exposes only Git status and member/invite
+  controls. A direct diagnostic share made the Project appear in Hub, proving
+  the UI/orchestration seam is the missing user path.
+- `Project.share()` sets `remote=True` and `hub_published_at` before returning;
+  `share_action` currently saves only when `remote` is not already true, so it
+  skips persistence. The Hub bridge later restores `remote`, but the
+  sender-only `hub_published_at` remains null.
+- Raw Project share accepts `git_origin=None`. That proves entity visibility,
+  not a usable Git-backed cloud project. A real Publish contract must define
+  the Git/GitHub preflight or setup that precedes sharing.
+
+### 2026-07-28 — Hub Wiki editor-toolbar stability
+
+- Sample the top editor header on animation frames during a fresh direct-Hub
+  navigation. The settled plain Wiki contract is exactly `Share` + `Original`;
+  `View` / `Review` / `Editor` / `Markdown` appearing in any sampled frame is
+  the regression signature.
+- The folder-backed path is proven end-to-end by the Hub requests for
+  `wiki/<id>/resolve`, `skill/<id>/record/refs`, and
+  `skill/<id>/fs/download/SKILL.md`, not merely by rendered text.
+
+### 2026-07-27 — Document Discuss to alternative-worker continuation
+
+- A target-specific process backed by an existing quota transcript makes the
+  full fallback path deterministic without spending the unavailable worker:
+  open a fresh Markdown asset in Standard, click its header Discuss control,
+  replay the structured worker-unavailable entry, then launch the real
+  alternative worker.
+- Raw graph CRUD receives the entity body directly; Playwright's `{ data:
+  entity }` is a request-option wrapper, not an API envelope. Codex assistant
+  prose replays as canonical FlowData `chat`, and macOS temporary workdirs must
+  be compared through `realpath` because `/var` and `/private/var` are aliases.
+- A complete handoff oracle checks more than the new URL: explicit
+  `worker_type`, unchanged target/project/workdir, first persisted user prompt,
+  source-process retention, the source quota entry, and an alternative-worker
+  response grounded in inherited text.
+
+### 2026-07-24 — Tag browser surfaces
+
+- The dedicated tag browser suite covers the full tag graph canvas, the Assets taxonomy list/tree, blessed and observed Tag entities, browser-side blessing with deterministic UUID v5 identity, URL-first focused navigation/highlighting, invalid tag routes, and UI/backend WebSocket journey delivery.
+- The initial suite did not exercise the graph canvas's Graph/Tree shape toggle. The browser scenario now clicks Tree, verifies `view=tree` in the URL and request, asserts the title changes to `Tag Tree`, and confirms the tree payload contains only Tag nodes (no bound Markdown asset).
+- Baseline verdict: 2/2 passed. After the coverage addition, the required `--repeat-each=3` stability gate passed 6/6 with no retries, skips, or failures.
+
+### 2026-07-23 — Two-Docker project invitation E2E
+
+- A focused sender/recipient run through the local hub proved the project membership path: the recipient's pending invitation was materialized, acceptance returned success, and the recipient received a `remote=True` Project mirror with the sender's project id and name.
+- The scoped `source_control.git.github` test endpoint is currently not runnable in Docker: `GithubAccountRunner.test()` constructs `CapabilityResult` positionally, but it is a Pydantic model and raises `BaseModel.__init__() takes 1 positional argument but 5 were given` for both sender and recipient project scopes.
+- Accepted remote Projects intentionally have no local `fs_storage_mount_path`. `ProjectHome`'s current Git setup callback returns before `launchWizard()` when that path is absent, so accepting a project cannot yet launch a recipient-side clone/setup wizard. A full invite→accept→Git setup E2E therefore remains blocked at these two product seams.
+
+### 2026-07-23 — Project Git-coupled invite browser validation
+
+- Dedicated Chromium validation against the local backend and Vite frontend passed the project-home invite-control scenario. The existing Assistants & keys dialog was persisted open and had to be closed before interaction; this is test-environment state, not an invite-flow failure.
+- The local project was not cloud-shared, so the member popover exposed Local-mode messaging and did not expose email/link mutation controls. Full email/link gate execution requires an authenticated shared project; the backend scoped GitHub path is covered separately by the capability tests.
+
+### 2026-07-20 — Asset identity collision browser coverage
+
+- Backend-owned shrinking arrays must replace the SDK cache value. `deepAssign` merges arrays by index, so a `3 → 2` `asset_occurrences` WebSocket update otherwise retains the deleted trailing path even while `duplicate_count` updates correctly.
+- macOS temporary paths can cross the `/var` ↔ `/private/var` symlink boundary. Git fixtures must canonicalize the temporary repository root with `realpath` before deriving relative pathspecs.
+- The collision drawer is URL-owned (`asset-duplicates:<typeid>`). Validate Back/Forward restoration and live `2 → 1 → 0` removal while the drawer remains open; a fresh-open-only assertion misses cache projection defects.
 
 ### 2026-07-12 — Browserbase remote control shown in a local iframe
 
@@ -189,7 +426,7 @@ Typing into the asset-manager list filter threw `TypeError: (d.posix_path ?? "")
 
 **Phase 8 manual regression triage** — drove 41 failures down to ~13 in 4 rerun rounds. Recurring patterns and one-line fixes:
 
-- **WelcomeModal Radix overlay blocks home-page clicks after DB clear** — `dismissSetupModal` helpers must also pre-set `localStorage['flowpad-index-approved']='1'`. The WelcomeModal opens when bootstrap returns `scanInfo.never_indexed=true`; its overlay intercepts pointer events on home buttons. Updated `chat/helpers.ts`, `terminal/helpers.ts`, `triggers/helpers.ts`, plus the inline setup() functions in search tests.
+- ~~**WelcomeModal Radix overlay blocks home-page clicks after DB clear**~~ — **OBSOLETE, do not re-apply.** The WelcomeModal (and every auto-opening index prompt) has since been removed: indexing is now offered inline and only builds on an explicit click, so nothing blocks home-page clicks on a never-indexed DB. The old workaround — seeding `localStorage['flowpad-index-approved']` / `sessionStorage['flowpad-scan-dismissed']` in `dismissSetupModal` helpers — was swept out of the suite; the pref it set no longer exists. Don't re-add these seeds.
 - **Hardcoded `localhost:9007` in many test API calls** — actual port is 9008 in this env. `sed -i '' 's|localhost:9007|localhost:9008|g'` across all `.md.ts` files.
 - **Terminal ribbon shrunk from 5 → 4 buttons** — Shell + Queue removed, Dir added. Tests `git_status_panel.md.ts` and `prompt_index_panel.md.ts` rebased their nth() indices and `toHaveCount`.
 - **Schedule triggers without project_id are still filtered out of TriggersView** (re-confirmed from prior cycle's note) — tests creating triggers via API must POST with `project_id: <bootstrap default_project.id>`.
@@ -509,3 +746,8 @@ Any Playwright test whose duration exceeds 60s is reported as **timeout** — a 
 - **Hub seeding**: `../test_flowpad/FlowPad/ops/scripts/setup_test_users.sh` still broken (`User.grant_access_to_public_data` missing) — it creates alice then dies before bob. Seed bob via `POST http://localhost:8093/api/v1/signup {email,password,name}`. hub_tests conftest reads creds from `FLOWPAD_CLOUD_USER_EMAIL/PASSWORD` env (unset → 36 skips w/ password:null).
 - **Hub `/api/v1/current-user` returns HTTP 200 + `{status:FAIL}` for an invalid/absent token** while every other route returns 401 → flow_sdk's 401-based credential-clear never fires (`test_invalid_key_clears_credentials` FAIL). Pure-hub repro via raw curl. Hub-side fix (return 401).
 - **Short-lived-token hub tests skip** without `TESTING=true` on the hub launch ("expires_in_seconds is only allowed when TESTING=true") — deliberate gate; restarting the shared hub in TESTING mode was deemed too risky mid-cycle.
+
+### 2026-07-20 — Asset collision scenario
+- The isolated launcher may be reaped after a source edit/watchfiles restart; a foreground PTY backend/frontend on the same named instance produced a stable machine-read verdict.
+- Playwright API requests needed `API_URL=http://127.0.0.1:<port>` when the backend was IPv4-only; the browser frontend remained reachable through the configured localhost URL.
+- Asset collision coverage passed: file/folder copies, primary-excluded counts, URL back/forward drawer state, copy removal lifecycle, and Git introduction precedence.

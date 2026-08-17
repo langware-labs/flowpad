@@ -43,11 +43,11 @@ def _make_conversation_bundle_bytes(msg_data: dict, conv_id: str, participants: 
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("header.json", json.dumps(msg_data, ensure_ascii=False))
         zf.writestr(
-            f"attachment/conversation-@{conv_id}/header.json",
+            f"attachment/conversation-{conv_id}/header.json",
             json.dumps({"type": "conversation", "id": conv_id, "participants": participants}, ensure_ascii=False),
         )
         zf.writestr(
-            f"attachment/conversation-@{conv_id}/conversation.jsonl",
+            f"attachment/conversation-{conv_id}/conversation.jsonl",
             json.dumps(pointer, ensure_ascii=False) + "\n",
         )
     return buf.getvalue()
@@ -108,7 +108,7 @@ def _make_flowmsg_bytes_with_attachment(msg_data: dict, inner_fm_id: str) -> byt
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("header.json", json.dumps(msg_data, ensure_ascii=False))
         zf.writestr(
-            f"attachment/flow_message-@{inner_fm_id}/message.json",
+            f"attachment/flow_message-{inner_fm_id}/message.json",
             json.dumps(inner_fm_data, ensure_ascii=False),
         )
     return buf.getvalue()
@@ -215,7 +215,7 @@ async def test_upload_flow_message_preserves_bundle_participants(
 
     conv = await Conversation.get_one({"id": conv_id})
     assert conv is not None
-    assert conv.participants == participants
+    assert conv.members == participants
 
 
 @pytest.mark.asyncio
@@ -303,7 +303,20 @@ async def test_download_flow_message_returns_zip(bootstrapped_client):
     buf = io.BytesIO(download_resp.content)
     with zipfile.ZipFile(buf, "r") as zf:
         names = zf.namelist()
-    assert "header.json" in names, f"header.json missing from zip. Files: {names}"
+        # The top-level FlowMessage envelope was renamed header.json ->
+        # flow_message.json in the entities.json metadata-transport refactor
+        # (readers still accept the legacy name). Assert the envelope is present
+        # AND carries this message's identity — not just that some filename exists.
+        envelope_name = next(
+            (n for n in ("flow_message.json", "header.json") if n in names), None
+        )
+        assert envelope_name is not None, (
+            f"top-level FlowMessage envelope (flow_message.json) missing from zip. Files: {names}"
+        )
+        envelope = json.loads(zf.read(envelope_name))
+    assert envelope.get("id") == message_id, (
+        f"envelope {envelope_name} does not carry the message id: {envelope}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -319,7 +332,7 @@ async def test_download_flow_message_returns_zip(bootstrapped_client):
 
 _SPEC_TITLE = "My Spec"
 # default_body_fn / _safe_entity_name turn "My Spec" into this leaf folder.
-_SPEC_LEAF_REL = Path("specs") / "My_Spec" / "spec.md"
+_SPEC_LEAF_REL = Path("agentic-assets") / "spec" / "My_Spec" / "spec.md"
 
 
 @pytest.fixture
@@ -350,10 +363,8 @@ def _spec_blob_storage(tmp_path):
 async def _setup_mapped_conversation(tmp_path: Path, subdir: str = "proj"):
     """Create a real Project (on-disk mount) + a Conversation pointed at it.
 
-    Returns ``(conv_id, project_id, project_root)``. The mapped project is a
-    negative control during staging and the explicit destination during install.
-    ``project_root`` is read back from the saved Project so it matches entity
-    canonicalization."""
+    Returns ``(conv_id, project_id, project_root)``. ``project_root`` is read
+    back from the saved Project so it matches entity canonicalization."""
     from flow_sdk.builtin.user import User
     from flow_sdk.builtin.project import Project
     from flow_sdk.builtin.conversation import Conversation
@@ -410,20 +421,20 @@ async def _build_spec_bundle(
     # Confirm the packer actually placed the file-backed asset (else the rest
     # of the test would be vacuous).
     with zipfile.ZipFile(zip_path, "r") as zf:
-        arc = f"attachment/spec-@{spec_id}/specs/My_Spec/spec.md"
+        arc = f"attachment/spec-{spec_id}/agentic-assets/spec/My_Spec/spec.md"
         assert arc in zf.namelist(), f"spec not packed: {zf.namelist()}"
     return zip_path.read_bytes()
 
 
 @pytest.mark.asyncio
-async def test_upload_file_backed_asset_stages_without_materializing_in_mapped_project(
+async def test_upload_file_backed_asset_auto_installs_in_mapped_project(
     bootstrapped_client, tmp_path, _spec_blob_storage,
 ):
-    """[UNPACK-FB-STAGE] Reception stages a file-backed spec but does not copy
-    or index it before the user explicitly installs it."""
+    """[UNPACK-FB-AUTO-INSTALL] A bound conversation installs a received
+    file-backed spec into its project while retaining the staged source."""
     from flow_sdk.builtin.spec import Spec
 
-    conv_id, _project_id, project_root = await _setup_mapped_conversation(tmp_path)
+    conv_id, project_id, project_root = await _setup_mapped_conversation(tmp_path)
     spec_id = _new_id()
     fm_id = _new_id()
     sentinel = "RESTORE-SENTINEL-body-line"
@@ -438,7 +449,7 @@ async def test_upload_file_backed_asset_stages_without_materializing_in_mapped_p
     assert response.status_code == 200, f"upload failed: {response.text}"
     assert response.json().get("status") == "SUCCESS"
 
-    entry_key = f"spec-@{spec_id}"
+    entry_key = f"spec-{spec_id}"
     ma = await MessageAttachment.get_one({
         "id": MessageAttachment.allocate_deterministic_id(fm_id, entry_key),
     })
@@ -446,17 +457,22 @@ async def test_upload_file_backed_asset_stages_without_materializing_in_mapped_p
     assert ma.flow_message_id == fm_id
     assert ma.conversation_id == conv_id
     assert ma.asset_type == "spec" and ma.asset_id == spec_id
-    assert not ma.scope
+    assert ma.scope == "project"
+    assert ma.project_id == project_id
     assert ma.unpacked_path == f"unpacked/attachment/{entry_key}"
 
     staged = fm_data_ops.staged_entry_dir(fm_id, entry_key) / _SPEC_LEAF_REL
     assert staged.exists(), f"staged spec missing: {staged}"
     assert sentinel in staged.read_text(encoding="utf-8")
 
-    # Even a mapped conversation does not grant install consent.
     dest = project_root / _SPEC_LEAF_REL
-    assert not dest.exists(), f"staging copied into the project without consent: {dest}"
-    assert await Spec.get_one({"id": spec_id}) is None, "staging indexed the spec prematurely"
+    assert dest.exists(), f"bound conversation did not materialize the spec: {dest}"
+    assert sentinel in dest.read_text(encoding="utf-8")
+
+    spec = await Spec.get_one({"id": spec_id})
+    assert spec is not None, "auto-install did not index the spec"
+    assert spec.project_id == project_id
+    assert spec.content and sentinel in spec.content
 
 
 @pytest.mark.asyncio
@@ -486,7 +502,7 @@ async def test_install_file_backed_asset_collision_different_bytes_returns_409(
     assert response.status_code == 200, f"staging failed: {response.text}"
     assert response.json().get("status") == "SUCCESS"
 
-    entry_key = f"spec-@{spec_id}"
+    entry_key = f"spec-{spec_id}"
     ma = await MessageAttachment.get_one({
         "id": MessageAttachment.allocate_deterministic_id(fm_id, entry_key),
     })
@@ -553,7 +569,7 @@ async def test_install_overwrite_replaces_on_disk_file_backed_asset(
     assert response.status_code == 200, f"staging failed: {response.text}"
     assert response.json().get("status") == "SUCCESS"
 
-    entry_key = f"spec-@{spec_id}"
+    entry_key = f"spec-{spec_id}"
     ma = await MessageAttachment.get_one({
         "id": MessageAttachment.allocate_deterministic_id(fm_id, entry_key),
     })

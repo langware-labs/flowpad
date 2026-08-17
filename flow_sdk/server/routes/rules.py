@@ -106,8 +106,8 @@ async def test_rule(name: str):
 
         # Log as test entry
         try:
-            from flow_sdk.fs_records.trigger_log import TriggerLogRecord
-            TriggerLogRecord.append_entry(rule.name, {
+            from flow_sdk.fs_store.operations.trigger_log import append_entry
+            append_entry(rule.name, {
                 "hook_event": "UserPromptSubmit",
                 "trigger": result.trigger,
                 "reason": result.reason or "",
@@ -127,8 +127,8 @@ async def test_rule(name: str):
 async def get_log(name: str, limit: int = 500, triggered_only: bool = False):
     """Return trigger log entries for a rule."""
     try:
-        from flow_sdk.fs_records.trigger_log import TriggerLogRecord
-        entries = TriggerLogRecord.discover(name, limit=limit)
+        from flow_sdk.fs_store.operations.trigger_log import discover
+        entries = discover(name, limit=limit)
         if triggered_only:
             entries = [e for e in entries if e.get("trigger")]
         return JSONResponse(content={"status": "OK", "data": entries})

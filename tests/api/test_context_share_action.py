@@ -19,13 +19,13 @@ def _new_id() -> str:
     return str(uuid.uuid4())
 
 
-async def _make_task(bootstrapped_client) -> dict:
+async def _make_task(bootstrapped_client, title: str) -> dict:
     """Create a Task via the standard graph CRUD POST so the HTTP request
     context (with its embedded_storage) is established for the save path.
     Returns the persisted Task dict (with id populated)."""
     resp = await bootstrapped_client.post(
         "/api/v1/graph/task",
-        json={"title": "ctx-share-test"},
+        json={"title": title},
     )
     assert resp.status_code == 200, resp.text
     return resp.json()["data"]
@@ -33,7 +33,7 @@ async def _make_task(bootstrapped_client) -> dict:
 
 @pytest.mark.asyncio
 async def test_share_context_appends_single_typeid(bootstrapped_client):
-    task = await _make_task(bootstrapped_client)
+    task = await _make_task(bootstrapped_client, "ctx-share-single")
     conv_id = _new_id()
 
     resp = await bootstrapped_client.post(
@@ -56,7 +56,7 @@ async def test_share_context_appends_single_typeid(bootstrapped_client):
 async def test_share_context_round_trips_data(bootstrapped_client):
     """POST with ``data: {path: ...}`` should persist into the sidecar and
     survive a re-read. This is what powers the chip 404 self-heal."""
-    task = await _make_task(bootstrapped_client)
+    task = await _make_task(bootstrapped_client, "ctx-share-data")
     plan_id = _new_id()
     plan_path = "/Users/alice/.claude/plans/some-plan.md"
 
@@ -83,7 +83,7 @@ async def test_share_context_round_trips_data(bootstrapped_client):
 
 @pytest.mark.asyncio
 async def test_share_context_batch_typeids(bootstrapped_client):
-    task = await _make_task(bootstrapped_client)
+    task = await _make_task(bootstrapped_client, "ctx-share-batch")
     a, b = _new_id(), _new_id()
 
     resp = await bootstrapped_client.post(
@@ -99,7 +99,7 @@ async def test_share_context_batch_typeids(bootstrapped_client):
 
 @pytest.mark.asyncio
 async def test_share_context_is_idempotent(bootstrapped_client):
-    task = await _make_task(bootstrapped_client)
+    task = await _make_task(bootstrapped_client, "ctx-share-idempotent")
     conv_id = _new_id()
 
     first = await bootstrapped_client.post(
@@ -121,7 +121,7 @@ async def test_share_context_is_idempotent(bootstrapped_client):
 
 @pytest.mark.asyncio
 async def test_unshare_context_removes_typeid(bootstrapped_client):
-    task = await _make_task(bootstrapped_client)
+    task = await _make_task(bootstrapped_client, "ctx-unshare")
     conv_id = _new_id()
 
     # seed via share-context
@@ -142,7 +142,7 @@ async def test_unshare_context_removes_typeid(bootstrapped_client):
 
 @pytest.mark.asyncio
 async def test_share_context_malformed_typeid_returns_400(bootstrapped_client):
-    task = await _make_task(bootstrapped_client)
+    task = await _make_task(bootstrapped_client, "ctx-share-malformed")
     resp = await bootstrapped_client.post(
         f"/api/v1/graph/task/{task['id']}/share-context",
         json={"typeid": "not-a-uuid"},
@@ -152,7 +152,7 @@ async def test_share_context_malformed_typeid_returns_400(bootstrapped_client):
 
 @pytest.mark.asyncio
 async def test_share_context_missing_body_returns_400(bootstrapped_client):
-    task = await _make_task(bootstrapped_client)
+    task = await _make_task(bootstrapped_client, "ctx-share-missing-body")
     resp = await bootstrapped_client.post(
         f"/api/v1/graph/task/{task['id']}/share-context",
         json={},

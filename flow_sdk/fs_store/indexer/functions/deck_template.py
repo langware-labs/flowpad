@@ -1,9 +1,9 @@
-"""Walker + extractor + id mint for DECK_TEMPLATE records.
+"""Extractor + id mint for DECK_TEMPLATE records.
 
-A deck template is a folder under ``assets/deck-templates/`` containing a
+A deck template is a folder under ``agentic-assets/deck_template/`` containing a
 ``template.json`` manifest (which is also the walker's marker file):
 
-    assets/deck-templates/<slug>/
+    agentic-assets/deck_template/<slug>/
       template.json                # {"metadata": {id?, title, description, page_types, …}, "data": {…}}
       layouts/<layout name>.html   # one isolated <section> component per layout
       common/…                     # tokens.css / theme.css / deck.js shared by all layouts
@@ -15,7 +15,7 @@ A deck template is a folder under ``assets/deck-templates/`` containing a
 fields; ``data`` is a free, use-case-owned object.
 
 Type metadata lives in ``flow_sdk/schema/type_info/deck_template_type_info.py``;
-this module provides the walker + slot functions only. Modeled on
+this module provides the slot functions only. Modeled on
 ``functions/dataset.py``.
 """
 from __future__ import annotations
@@ -29,10 +29,8 @@ from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identifier import adopt_entity_id, mint_uuid
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
-    folder_capsule_gen_id,
     read_folder_capsule_id,
 )
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 MANIFEST = "template.json"
@@ -41,34 +39,7 @@ COMMON_DIR = "common"
 MEDIA_DIR = "media"
 
 
-# ── walker ────────────────────────────────────────────────────────────────────
-
-def deck_template_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
-) -> list[FSRef]:
-    """Emit one DECK_TEMPLATE FSRef per ``assets/deck-templates/<slug>/`` folder
-    containing a ``template.json`` manifest."""
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        root = Path(node.path) / "assets" / "deck-templates"
-        if not root.is_dir():
-            continue
-        for entry in sorted(root.iterdir()):
-            if not entry.is_dir():
-                continue
-            if not (entry / MANIFEST).is_file():
-                continue
-            key = str(entry.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(entry, record_type=RecordType.DECK_TEMPLATE, parent=node))
-    return out
-
-
-# ── id helpers ────────────────────────────────────────────────────────────────
+# ── manifest + id helpers ──────────────────────────────────────────────────────
 
 def _load_manifest(template_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     """Read template.json as ``(metadata, data)``; both ``{}`` when absent,
@@ -93,18 +64,14 @@ def _deck_template_id_from_path(path: Path) -> str:
     )
 
 
-def deck_template_gen_id(ref: FSRef) -> str:
-    """Resolve a deck template's id. Idempotent.
-
-    Precedence: the `.flow/id` capsule → a VALID `template.json` `id` (adopted +
-    backfilled into the capsule) → a fresh random **v4** into the capsule. The
-    uuid5(path) derive survives only as a read-only / transitional fallback.
-    """
-    path = ref._path
-    if not path.is_dir():
-        return _deck_template_id_from_path(path)
+def deck_template_id_from_folder(ref: FSRef | Path) -> object | None:
+    path = Path(getattr(ref, "_path", ref))
+    cap = read_folder_capsule_id(path)
+    if cap:
+        return cap
     meta, _ = _load_manifest(path)
-    return folder_capsule_gen_id(path, meta.get("id"))
+
+    return adopt_entity_id(meta.get("id"))
 
 
 # ── extractor ─────────────────────────────────────────────────────────────────
@@ -119,7 +86,7 @@ def _scan_layouts(path: Path) -> list[str]:
     )
 
 
-def extract_deck_template(ref: FSRef) -> list[FSRecord]:
+def extract_deck_template(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a deck-template folder into a single FSRecord with denormalized
     layout data. The layouts on disk are the truth; the manifest's declared
     ``page_types`` ride along as semantic metadata."""
@@ -129,13 +96,7 @@ def extract_deck_template(ref: FSRef) -> list[FSRecord]:
     tpl_meta, tpl_data = _load_manifest(path)
 
     # Capsule wins (gen_id stamped it), else manifest id, else uuid5(path) — the
-    # same precedence deck_template_gen_id uses, so extract and gen agree.
-    tpl_id = (
-        read_folder_capsule_id(path)
-        or adopt_entity_id(tpl_meta.get("id"))
-        or _deck_template_id_from_path(path)
-    )
-
+    # same precedence as the TypeInfo reader, so direct extraction agrees.
     layouts = _scan_layouts(path)
     raw_page_types = tpl_meta.get("page_types")
     page_types = (
@@ -163,7 +124,7 @@ def extract_deck_template(ref: FSRef) -> list[FSRecord]:
 
     rec_kwargs: dict[str, Any] = {
         "type": RecordType.DECK_TEMPLATE,
-        "id": tpl_id,
+        "id": resolved_id,
         "name": name,
         "status": "active",
         "content": content,

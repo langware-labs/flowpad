@@ -19,10 +19,7 @@ from flow_sdk.fs_store.record_paths import get_default_records_root, set_default
 from flow_sdk.instance_settings import get_instance_settings, reset_instance_settings
 from flow_sdk.server.routes.transcripts import get_worker_session_transcript
 from flow_sdk.transcript_analyzer import TranscriptFormat, TranscriptSource
-from flow_sdk.transcript_analyzer.resolver import (
-    received_transcript_dest,
-    resolve_session_jsonl,
-)
+from flow_sdk.transcript_analyzer.resolver import resolve_session_jsonl
 
 
 @pytest.fixture()
@@ -61,21 +58,26 @@ def _write_rollout(
     path = sessions_root / "2026" / "05" / "06" / f"rollout-2026-05-06T21-39-48-{thread_id}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        "\n".join([
-            (
-                '{"timestamp":"%s","type":"session_meta","payload":'
-                '{"id":"%s","timestamp":"%s","cwd":"%s","cli_version":"0.101.0"}}'
-            ) % (timestamp, thread_id, timestamp, cwd),
-            (
-                '{"timestamp":"%s","type":"response_item","payload":'
-                '{"type":"message","role":"user","content":[{"type":"input_text","text":"%s"}]}}'
-            ) % (timestamp, prompt),
-            (
-                '{"timestamp":"%s","type":"response_item","payload":'
-                '{"type":"message","role":"assistant","phase":"final_answer",'
-                '"content":[{"type":"output_text","text":"Done."}]}}'
-            ) % timestamp,
-        ])
+        "\n".join(
+            [
+                (
+                    '{"timestamp":"%s","type":"session_meta","payload":'
+                    '{"id":"%s","timestamp":"%s","cwd":"%s","cli_version":"0.101.0"}}'
+                )
+                % (timestamp, thread_id, timestamp, cwd),
+                (
+                    '{"timestamp":"%s","type":"response_item","payload":'
+                    '{"type":"message","role":"user","content":[{"type":"input_text","text":"%s"}]}}'
+                )
+                % (timestamp, prompt),
+                (
+                    '{"timestamp":"%s","type":"response_item","payload":'
+                    '{"type":"message","role":"assistant","phase":"final_answer",'
+                    '"content":[{"type":"output_text","text":"Done."}]}}'
+                )
+                % timestamp,
+            ]
+        )
         + "\n",
         encoding="utf-8",
     )
@@ -153,10 +155,7 @@ def test_codex_history_replays_all_durable_typed_entries(tmp_path):
                 "type": "function_call_output",
                 "id": "result-entry-1",
                 "call_id": "call-1",
-                "output": (
-                    "Wall time: 0.01 seconds\nProcess exited with code 0\n"
-                    "Output:\nok"
-                ),
+                "output": ("Wall time: 0.01 seconds\nProcess exited with code 0\nOutput:\nok"),
             },
         },
         {
@@ -205,7 +204,11 @@ def test_codex_history_replays_all_durable_typed_entries(tmp_path):
     history = load_transcript_history(rollout)
     transcript_entries = [item.process_entry["transcript_entry"] for item in history]
 
-    assert len(history) == 14
+    # 14 physical frames, plus one refinement the derivation layer appends: codex
+    # hands us a generic tool-use for its shell, which becomes a shell_command.
+    # Claude and copilot always had that entry; codex did not, and this is it.
+    assert len(history) == 15
+    assert sum(1 for e in transcript_entries if e.get("virtual")) == 1
     assert {entry["kind"] for entry in transcript_entries} == {
         "assistant_message",
         "system",
@@ -213,6 +216,7 @@ def test_codex_history_replays_all_durable_typed_entries(tmp_path):
         "tool_result",
         "tool_use",
         "user_message",
+        "shell_command",  # the derived refinement of codex's generic shell tool-use
     }
     assert "meta" not in {entry["kind"] for entry in transcript_entries}
     assert all(item.process_entry["observation_kind"] == "replay" for item in history)
@@ -225,30 +229,19 @@ def test_codex_history_replays_all_durable_typed_entries(tmp_path):
         "event_msg.task_complete",
         "turn_context",
     } <= subtypes
-    developer = next(
-        item
-        for item in history
-        if item.attributes["subtype"] == "developer_message"
-    )
+    developer = next(item for item in history if item.attributes["subtype"] == "developer_message")
     assert developer.attributes["element-type"] == "status"
 
-    assert [
-        item.attributes.get("phase")
-        for item in history
-        if item.attributes.get("phase")
-    ] == ["commentary", "final_answer"]
+    assert [item.attributes.get("phase") for item in history if item.attributes.get("phase")] == [
+        "commentary",
+        "final_answer",
+    ]
     tool_call = next(item for item in history if item.attributes["subtype"] == "tool_use")
-    tool_result = next(
-        item for item in history if item.attributes["subtype"] == "tool_result"
-    )
+    tool_result = next(item for item in history if item.attributes["subtype"] == "tool_result")
     assert tool_call.flow_value["tool_call_id"] == "call-1"
     assert tool_result.attributes["tool-use-id"] == "call-1"
     assert tool_result.attributes["tool-name"] == "exec_command"
-    usage = [
-        entry
-        for entry in transcript_entries
-        if entry["kind"] == "token_usage"
-    ]
+    usage = [entry for entry in transcript_entries if entry["kind"] == "token_usage"]
     assert [entry["count"] for entry in usage] == [60, 20, 40, 0]
 
 
@@ -269,9 +262,7 @@ def test_codex_history_system_and_usage_rows_replay_as_status(tmp_path):
         },
     ]
     rollout = tmp_path / "rollout-status.jsonl"
-    rollout.write_text(
-        "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
-    )
+    rollout.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
 
     history = load_transcript_history(rollout)
 
@@ -286,9 +277,7 @@ def test_codex_history_system_and_usage_rows_replay_as_status(tmp_path):
     assert all(item.process_entry["observation_kind"] == "replay" for item in history)
 
 
-def test_codex_history_parse_failure_warns_and_surfaces_error_frame(
-    tmp_path, monkeypatch, caplog
-):
+def test_codex_history_parse_failure_warns_and_surfaces_error_frame(tmp_path, monkeypatch, caplog):
     """A rollout the typed parser cannot open at all is not silently-empty
     history: WARNING with the path, plus one structured ERROR frame."""
     import flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history as sh
@@ -308,11 +297,7 @@ def test_codex_history_parse_failure_warns_and_surfaces_error_frame(
     assert frame.attributes["element-type"] == "error"
     assert frame.attributes["subtype"] == "history-parse-error"
     assert str(rollout) in frame.flow_value
-    assert any(
-        str(rollout) in record.getMessage()
-        for record in caplog.records
-        if record.levelname == "WARNING"
-    )
+    assert any(str(rollout) in record.getMessage() for record in caplog.records if record.levelname == "WARNING")
 
 
 def test_codex_visible_resolves_rollout_by_session_id(isolated_codex_home):
@@ -357,9 +342,7 @@ def test_codex_visible_discovers_rollout_by_cwd_and_launch_time(isolated_codex_h
     assert descriptor.session_id == thread_id
 
 
-def test_codex_headless_prefers_rollout_over_process_local_stream(
-    isolated_codex_home, isolated_records_root
-):
+def test_codex_headless_prefers_rollout_over_process_local_stream(isolated_codex_home, isolated_records_root):
     # New contract (commit 624ddb89): the rollout is the canonical record for BOTH
     # transports — headless no longer prefers the process-local stdout tee (that tee
     # carries assistant output only, no user-message entry, so transcript/prompts
@@ -371,8 +354,7 @@ def test_codex_headless_prefers_rollout_over_process_local_stream(
     proc = _process(visible=False, session_id=thread_id)
     local = codex_transcript_path_for_process(proc.id)
     local.write_text(
-        '{"type":"thread.started","thread_id":"%s","timestamp":"2026-05-06T21:39:48.000Z"}\n'
-        % thread_id,
+        '{"type":"thread.started","thread_id":"%s","timestamp":"2026-05-06T21:39:48.000Z"}\n' % thread_id,
         encoding="utf-8",
     )
 
@@ -398,9 +380,12 @@ async def test_transcript_prompts_uses_visible_codex_rollout(isolated_codex_home
     req = MagicMock()
     req.sub_path = "prompts"
     save_mock = AsyncMock()
-    with patch.object(AgenticProcess, "save", save_mock), patch(
-        "flow_sdk.builtin.agentic_process.agentic_process.get_current_request_info",
-        return_value=req,
+    with (
+        patch.object(AgenticProcess, "save", save_mock),
+        patch(
+            "flow_sdk.builtin.agentic_process.agentic_process.get_current_request_info",
+            return_value=req,
+        ),
     ):
         result = await proc.transcript_action()
 
@@ -431,9 +416,7 @@ async def test_transcript_full_returns_descriptor_metadata(isolated_codex_home):
 
 
 @pytest.mark.asyncio
-async def test_worker_transcript_route_uses_configured_codex_home(
-    tmp_path, monkeypatch
-):
+async def test_worker_transcript_route_uses_configured_codex_home(tmp_path, monkeypatch):
     thread_id = "019dfe96-cc36-7d80-a907-de19575a6ea4"
     configured_home = tmp_path / "configured-codex"
     ambient_home = tmp_path / "ambient-home"
@@ -460,18 +443,12 @@ async def test_worker_transcript_route_uses_configured_codex_home(
         assert response["ok"] is True
         assert response["path"] == str(configured)
         assert response["header"]["cwd"] == "/configured"
-        assert any(
-            entry.get("text") == "Configured-home prompt."
-            for entry in response["entries"]
-        )
+        assert any(entry.get("text") == "Configured-home prompt." for entry in response["entries"])
     finally:
         reset_instance_settings()
 
 
 @pytest.mark.parametrize("session_id", ["*", "../outside", "nested/session", "bad\\id"])
-def test_session_resolution_rejects_unsafe_path_components(
-    isolated_codex_home, session_id
-):
+def test_session_resolution_rejects_unsafe_path_components(isolated_codex_home, session_id):
     with pytest.raises(ValueError, match="filename-safe component"):
         resolve_session_jsonl("codex", session_id)
-    assert received_transcript_dest("codex", session_id) is None

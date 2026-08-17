@@ -6,6 +6,7 @@ import type {
   GenericEntry,
   SearchEntry,
   ShellCommandEntry,
+  SkillCallEntry,
   TodoUpdateEntry,
   WebFetchEntry,
 } from '@sdk';
@@ -329,6 +330,10 @@ function operationHaystack(op: GenericEntry): string {
     case 'agent_spawn': {
       const e = op as AgentSpawnEntry;
       return `agent ${e.agent_type} ${e.description ?? ''} ${e.prompt ?? ''}`.toLowerCase();
+    }
+    case 'skill_call': {
+      const e = op as SkillCallEntry;
+      return `skill ${e.skill_name} ${e.invocation_kind} ${e.tool_name}`.toLowerCase();
     }
     case 'tool_use':
       return `${op.tool_name} ${stableStringify(op.tool_input)}`.toLowerCase();

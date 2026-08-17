@@ -1,5 +1,6 @@
 import { FLOWPAD_ASSISTANT_PROJECT_UNAME, Project, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useMemo } from 'react';
 
 interface UseFlowpadAssistantProjectResult {
@@ -22,7 +23,9 @@ export function useFlowpadAssistantProject(): UseFlowpadAssistantProjectResult {
     () => new TypeId(Project.type, `@${FLOWPAD_ASSISTANT_PROJECT_UNAME}`),
     [],
   );
-  const { data: project, isLoading } = useEntity<Project>(typeId);
+  // Hub mode: `@flowpad_assistant` is a local-only default system project that
+  // the hub backend doesn't have (the lookup would 404). Disable the fetch.
+  const { data: project, isLoading } = useEntity<Project>(typeId, { enabled: !isHubOnly() });
 
   const target = useMemo(
     () => (project?.id ? new TypeId(Project.type, project.id).toString() : null),

@@ -49,6 +49,29 @@ def _isolate_cli_side_effects():
 # --------------------------------------------------------------------------- #
 
 
+def _diagnosis_type_only(stand_in):
+    """A ``get_entity_cls`` patch scoped to the diagnosis type.
+
+    These tests want to control how the FlowpadDiagnosis lookup behaves. A
+    blanket ``lambda _t: <stand_in>`` used to be harmless, but diagnose now
+    builds its process from the named `diagnose` Agent — so the runner resolves
+    Agent and Deployment through the registry too, and a blanket fake hands
+    those the stand-in as well (which then persists a half-built Deployment row
+    that poisons later tests in this file).
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+    from flow_sdk.schema.types import EntityType
+
+    real = SchemaRegistry.get_entity_cls
+
+    def _patched(type_name):
+        if type_name == EntityType.FLOWPAD_DIAGNOSIS:
+            return stand_in
+        return real(type_name)
+
+    return _patched
+
+
 def test_diagnose_reads_message_from_stdin():
     with patch(_RUN, new=AsyncMock(return_value=0)) as mock_run:
         result = runner.invoke(app, ["diagnose"], input="backend keeps crashing\n")
@@ -141,14 +164,62 @@ def test_renderer_ignores_non_message_entries(capsys):
 # --------------------------------------------------------------------------- #
 
 
+_DIAG_ID = "94c12421-2e7c-5240-a4ac-82d014eec1e6"  # v5
+_CONV_ID = "4f6f6b1c-9f0e-4a3b-9a1d-6d1a9c2b7e10"  # v4
+_MSG_ID = "b2a1c8de-5f4b-4c2a-8e77-3d9f0a1b2c3d"  # v4
+
+
 def test_extract_report_result_parses_json_from_text():
-    text = 'log line\n```json\n{"diagnosis_id": "abc", "feed_posted": false}\n```\n'
-    assert _extract_report_result(text) == {"diagnosis_id": "abc", "feed_posted": False}
+    text = f'log line\n```json\n{{"diagnosis_id": "{_DIAG_ID}", "feed_posted": false}}\n```\n'
+    assert _extract_report_result(text) == {"diagnosis_id": _DIAG_ID, "feed_posted": False}
 
 
 def test_extract_report_result_none_when_absent_or_no_id():
     assert _extract_report_result("nothing to see") is None
     assert _extract_report_result('{"feed_posted": false}') is None  # no diagnosis_id
+
+
+def test_extract_report_result_accepts_the_support_id_pair():
+    text = (
+        f'{{"diagnosis_id": "{_DIAG_ID}", "conversation_id": "{_CONV_ID}", '
+        f'"flow_message_id": "{_MSG_ID}", "has_issue": true}}'
+    )
+    assert _extract_report_result(text) == {
+        "diagnosis_id": _DIAG_ID,
+        "conversation_id": _CONV_ID,
+        "flow_message_id": _MSG_ID,
+        "has_issue": True,
+    }
+
+
+def test_extract_report_result_rejects_a_hallucinated_id():
+    """A JSON-shaped blob the agent composed itself is not report.py's stdout.
+
+    Accepting it stamps a phantom id onto the Feed card, and every UI surface that
+    renders it dies on ``new TypeId('flowpad_diagnosis', <phantom>)``.
+    """
+    text = '{"diagnosis_id": "flowpad_diagnostic_20260810_201342", "has_issue": true}'
+    assert _extract_report_result(text) is None
+
+
+def test_extract_report_result_rejects_a_foreign_uuid_version():
+    # v7 — a real UUID, but never a minted entity id.
+    text = '{"diagnosis_id": "01912d3f-8a4b-7c2d-9e1f-0a1b2c3d4e5f"}'
+    assert _extract_report_result(text) is None
+
+
+def test_extract_report_result_rejects_a_malformed_support_id():
+    text = f'{{"diagnosis_id": "{_DIAG_ID}", "conversation_id": "conv-123", "flow_message_id": null}}'
+    assert _extract_report_result(text) is None
+
+
+def test_extract_report_result_skips_a_hallucinated_blob_for_the_real_one():
+    """The agent narrating a fake result before running the reporter must not win."""
+    text = (
+        'I recorded it: {"diagnosis_id": "flowpad_diagnostic_20260810_201342"}\n'
+        f'…then the tool printed {{"diagnosis_id": "{_DIAG_ID}", "has_issue": false}}\n'
+    )
+    assert _extract_report_result(text) == {"diagnosis_id": _DIAG_ID, "has_issue": False}
 
 
 # --------------------------------------------------------------------------- #
@@ -232,7 +303,9 @@ async def test_run_diagnose_exits_when_recorded_even_if_stream_never_ends():
                     "content": [
                         {
                             "type": "tool_result",
-                            "content": '{"diagnosis_id": "d1", "conversation_id": null, "flow_message_id": null, "has_issue": false}',
+                            "content": '{"diagnosis_id": "'
+                            + _DIAG_ID
+                            + '", "conversation_id": null, "flow_message_id": null, "has_issue": false}',
                         }
                     ],
                 }
@@ -251,7 +324,7 @@ async def test_run_diagnose_exits_when_recorded_even_if_stream_never_ends():
         ),
         patch(
             "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
-            lambda _t: None,
+            _diagnosis_type_only(None),
         ),
         patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
         # This test is about prompt completion, not feed posting. Stub the always-on
@@ -307,7 +380,9 @@ async def test_run_diagnose_posts_loaded_diagnosis_summary_when_cross_link_fails
                     "content": [
                         {
                             "type": "tool_result",
-                            "content": '{"diagnosis_id": "d1", "conversation_id": null, "flow_message_id": null}',
+                            "content": '{"diagnosis_id": "'
+                            + _DIAG_ID
+                            + '", "conversation_id": null, "flow_message_id": null}',
                         }
                     ],
                 }
@@ -332,7 +407,7 @@ async def test_run_diagnose_posts_loaded_diagnosis_summary_when_cross_link_fails
         ),
         patch(
             "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
-            lambda _t: _FakeDiagnosis,
+            _diagnosis_type_only(_FakeDiagnosis),
         ),
         patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
         patch("flow_sdk.cli.commands.diagnose_cmd._post_home_feed_entry", new=post_feed),
@@ -395,7 +470,7 @@ async def test_run_diagnose_fails_fast_when_worker_dies_without_transcript():
         ),
         patch(
             "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
-            lambda _t: None,
+            _diagnosis_type_only(None),
         ),
         patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
     ):
@@ -450,7 +525,9 @@ async def test_run_diagnose_waits_for_slow_but_alive_worker():
                     "content": [
                         {
                             "type": "tool_result",
-                            "content": '{"diagnosis_id": "d1", "conversation_id": null, "flow_message_id": null, "has_issue": false}',
+                            "content": '{"diagnosis_id": "'
+                            + _DIAG_ID
+                            + '", "conversation_id": null, "flow_message_id": null, "has_issue": false}',
                         }
                     ],
                 }
@@ -472,7 +549,7 @@ async def test_run_diagnose_waits_for_slow_but_alive_worker():
             ),
             patch(
                 "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
-                lambda _t: None,
+                _diagnosis_type_only(None),
             ),
             patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
             # This test is about warmup/start detection, not feed posting. Stub the
@@ -516,7 +593,7 @@ async def test_diagnose_process_prompt_routes_headless_not_pty():
     from flow_sdk.cli.commands.diagnose_cmd import _build_diagnose_process
     from flow_sdk.responses.response import ApiFailResponse
 
-    ap = _build_diagnose_process()
+    ap = await _build_diagnose_process()
     try:
         resp = await ap.prompt("routing probe — end the turn immediately")
         assert not isinstance(resp, ApiFailResponse), (
@@ -692,7 +769,7 @@ async def test_feed_card_always_appears(label, has_issue, expect_conversation):
         ),
         patch(
             "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
-            lambda _t: None,
+            _diagnosis_type_only(None),
         ),
         patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
         patch(

@@ -1,21 +1,35 @@
-import hashlib
-import mimetypes
+"""MicroApp — the *delivery* plane of an app.
+
+Three planes describe one app, each an entity that can exist without the others:
+
+    Artifact (kind: application.web)   source   — what it is, where the code lives
+      ├── Deployment  (artifact_id)    runtime  — a dev server on a port
+      └── MicroApp    (artifact_id)    delivery — built output served over HTTP
+
+``Deployment.artifact_id`` established this companion shape; MicroApp is the same
+pattern for the half Deployment deliberately does not cover. A MicroApp with an
+``artifact_id`` is an app's built output; one without is a standalone folder or
+builtin bundle (how the console itself is served in cloud), which is why the FK
+is optional rather than required.
+"""
+
 import os
 from flow_sdk._compat import StrEnum
 from pathlib import Path
 from typing import ClassVar, List, Optional
 
-import anyio
-from bs4 import BeautifulSoup
 from fastapi import HTTPException
+from pydantic import field_validator
 from starlette.requests import Request
-from starlette.responses import FileResponse, HTMLResponse, Response, StreamingResponse
+from starlette.responses import Response
 
 from flow_sdk.config import default_service_config
 import logging as service_log
-from flow_sdk.api.api_types.api_field import APIField, NoDbBField
+from flow_sdk.api.api_types.api_field import APIField, EntityField, NoDbBField, Sharing
 from flow_sdk.api.api_request import APIRequest
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.builtin.faas.codebase import AppCodebase
+from flow_sdk.builtin.faas.serve_static import AppNotBuilt, serve_app_bytes
 from flow_sdk.core import Entity, action
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.request_context.methods import get_current_request_info
@@ -26,222 +40,150 @@ class AppLocationType(StrEnum):
     Folder = "Folder"
     Builtin = "Builtin"
     GCPBucket = "GCPBucket"
-
-
-# --- Utility: Calculate ETag for cache headers ---
-def generate_etag(file_path: Path):
-    with open(file_path, "rb") as f:
-        content = f.read()
-    return hashlib.md5(content).hexdigest()
-
-
-async def async_file_iterator(file_path: str, chunk_size: int = 8192):
-    async with await anyio.open_file(file_path, "rb") as f:
-        while True:
-            chunk = await f.read(chunk_size)
-            if not chunk:
-                break
-            yield chunk
-
-
-async def file_response(request: Request, requested_file: Path) -> FileResponse | Response:
-    mime_type, _ = mimetypes.guess_type(str(requested_file))
-    mime_type = mime_type or "application/octet-stream"
-
-    # 🔁 Cache handling: basic ETag support
-    etag = generate_etag(requested_file)
-    if_none_match = request.headers.get("if-none-match")
-    if if_none_match == etag:
-        return Response(status_code=304)
-
-    response = StreamingResponse(content=async_file_iterator(str(requested_file)), media_type=mime_type)
-    response.headers["ETag"] = etag
-    response.headers["Cache-Control"] = "public, max-age=3600"
-    return response
+    # Built output of an Artifact. ``location_root`` still carries the concrete
+    # absolute directory (resolved once, at registration) so serving stays a
+    # synchronous path join — resolving a GitOrigin per request would put a
+    # checkout lookup in front of every asset fetch.
+    Artifact = "Artifact"
 
 
 def get_micro_apps_root() -> Path:
-    root_path_folder = Path(ROOT_FOLDER)
-    return root_path_folder / "micro_apps"
+    return Path(ROOT_FOLDER) / "micro_apps"
 
 
-def get_micro_app_folder(app_name: str):
-    micro_apps_root = get_micro_apps_root()
-    builtin_app_path = micro_apps_root / app_name
-    if not builtin_app_path.exists():
-        raise ValueError(f"App {app_name} does not exist")
-    if not builtin_app_path.is_dir():
-        raise ValueError(f"App {app_name} is not a directory")
-    return str(builtin_app_path)
-
-
-def inject_base_tag(html: str, base_url: str) -> str:
-    """
-    Injects a <base> tag into the <head> of an HTML document.
-    Creates the <head> if it does not exist.
-
-    :param html: The original HTML content as a string.
-    :param base_url: The href value to set in the base tag.
-    :return: Modified, tidied HTML with the base tag injected.
-    """
-    soup = BeautifulSoup(html, "html.parser")
-
-    # Find or create <head>
-    head = soup.head
-    if not head:
-        head = soup.new_tag("head")
-        if soup.html:
-            soup.html.insert(0, head)
-        else:
-            # Create <html> if not present
-            html_tag = soup.new_tag("html")
-            soup.insert(0, html_tag)
-            html_tag.insert(0, head)
-
-    # Check for existing <base> tag
-    if not head.find("base"):
-        # Create and insert the <base> tag
-        base_tag = soup.new_tag("base", href=base_url)
-        head.insert(0, base_tag)
-
-    # Return tidied HTML (pretty print)
-    return str(soup.prettify())
+def get_micro_app_folder(app_name: str) -> str:
+    """Path of a builtin micro-app bundle. Existence is checked at serve time."""
+    return str(get_micro_apps_root() / app_name)
 
 
 class MicroApp(Entity):
     type: str = APIField(default=BuiltinEntityType.MICRO_APP.value)
     code_base: Optional[AppCodebase] = NoDbBField(None)
-    location_type: AppLocationType
-    location_root: Optional[str] = None
-    domains: Optional[List[str]] = None
+    # Declared as APIFields so the delivery row is legible over the API. They
+    # were plain fields, which persist (``skip_api_serializer``) but never
+    # serialize outbound — leaving a row whose whole purpose is "where does this
+    # app serve from" unable to answer that question to any client.
+    location_type: AppLocationType = APIField(description="How this app's files are located")
+    location_root: Optional[str] = APIField(default=None, description="Absolute directory the files are served from")
+    domains: Optional[List[str]] = APIField(default=None, description="Custom domains routed to this app")
     default_agent_id: Optional[str] = APIField(default=None, description="Default agent ID for this micro app")
+    artifact_id: Optional[str] = APIField(
+        default=None,
+        description="Artifact this delivers (the source plane); None for standalone folder/builtin apps",
+    )
+    project_id: Optional[str] = APIField(default=None, description="Owning project, mirroring the Artifact's", sharing=Sharing.PRIVATE)
 
-    name: str
-    _unique: ClassVar[List[str]] = ["name"]
+    name: str = EntityField(sharing=Sharing.SHARED)
+    # NOT unique. It was, from when a micro-app name WAS its hostname and the
+    # namespace was global. Host routing resolves by id (``request_info.
+    # parse_micro_app_request``) and nothing reads ``get_by_name``, so the
+    # constraint protected nothing while making the second app anyone names
+    # "frontend" fail to save with a 409. Per-type global uniqueness is the
+    # wrong shape for project-scoped apps; identity is ``id``, name is a label.
+    _unique: ClassVar[List[str]] = []
 
     def __init__(self, **data):
         super().__init__(**data)
-        codebase_root = None
-        if self.location_type == AppLocationType.Folder:
-            codebase_root = self.location_root
+        # Artifact-backed apps deliberately build no AppCodebase: its __init__
+        # creates `.flow/local/` INSIDE the folder, and writing scratch dirs into
+        # a user's app just to read bytes out of it is not ours to do.
+        if self.location_type in (AppLocationType.Folder, AppLocationType.Builtin):
+            codebase_root = self._configured_root()
+            self.validate_codebase_root(codebase_root)
+            self.code_base = AppCodebase(root_folder=codebase_root)
+
+    @field_validator("artifact_id", mode="before")
+    @classmethod
+    def _valid_artifact_id(cls, value):
+        """Same gate as ``Deployment._valid_artifact_id`` — entity ids are v4/v5."""
+        if value in (None, ""):
+            return None
+        candidate = str(value).strip()
+        if not is_valid_entity_id(candidate):
+            raise ValueError("artifact_id must be a UUID v4 or v5")
+        return candidate
+
+    def _configured_root(self) -> Optional[str]:
         if self.location_type == AppLocationType.Builtin:
-            root_name = self.location_root or self.name
-            codebase_root = get_micro_app_folder(root_name)
-        self.validate_codebase_root(codebase_root)
-        self.code_base = AppCodebase(root_folder=codebase_root)
+            return get_micro_app_folder(self.location_root or self.name)
+        return self.location_root
 
     def validate_codebase_root(self, codebase_root):
+        """Config-level validation only.
+
+        Existence is NOT checked here. An app is registered before its first
+        build, and refusing to construct the entity would mean the row can only
+        exist once the output does — the display could never say "not built
+        yet", because there would be nothing to display.
+
+        A misconfigured root is a 400-shaped ValueError at construction; a root
+        that is merely absent is `AppNotBuilt` at serve time (see
+        ``serving_root``). Same words, two different answers.
+        """
         if not codebase_root:
             raise ValueError(f"app {self.name}({self.location_type}) folder is missing")
         if not os.path.isabs(codebase_root):
             raise ValueError(f"app {self.name}({self.location_type}) folder must be absolute path")
-        if not os.path.exists(codebase_root):
-            raise ValueError(f"app {self.name}({self.location_type}) folder does not exist")
+
+    def serving_root(self, *, env_segment: Optional[str] = None) -> Path:
+        """The directory this app's files are served from.
+
+        Folder/Builtin keep their historical ``public/`` convention. An
+        Artifact-backed app serves straight out of its build output — a `dist/`
+        produced by a normal frontend toolchain has no `public/` inside it.
+        """
+        if self.location_type == AppLocationType.Artifact:
+            if not self.location_root:
+                raise AppNotBuilt("<unset>")
+            return Path(self.location_root)
+
+        if self.location_type == AppLocationType.GCPBucket:
+            # Not AppNotBuilt: that means "run the build", and the display turns
+            # it into a build CTA. Bucket-hosted apps have nothing to build here.
+            raise HTTPException(status_code=501, detail="GCPBucket apps are not servable from this instance")
+
+        root = Path(self._configured_root() or "")
+        if self.location_type == AppLocationType.Builtin:
+            root = root / (env_segment or "graph") / "ui"
+        return root / "public"
 
     @classmethod
     async def get_by_name(cls, name: str) -> Optional["MicroApp"]:
         return await cls.get_one({"name": name})
 
+    @classmethod
+    async def get_by_artifact_id(cls, artifact_id: str) -> Optional["MicroApp"]:
+        return await cls.get_one({"artifact_id": artifact_id})
+
     @action.get()
-    async def view(self, request: Request) -> FileResponse | Response:
+    async def view(self, request: Request) -> Response:
+        """Serve this app's files under the console API path."""
         url = str(request.url)
         service_log.info(f"view app {self.name}({self.typeid}): {url}")
         api_request: APIRequest = APIRequest.from_api_path(url)
-        requested_path = api_request.sub_path
-        if not requested_path:
-            requested_path = "index.html"
-        if not self.code_base:
-            raise HTTPException(status_code=400, detail="App storage error")
-        if self.location_type == AppLocationType.Builtin:
-            # Update the requested path to include the graph path if its a builtin type
-            codebase_root = str(Path(self.code_base.root_folder, "graph", "ui"))
-            self.validate_codebase_root(codebase_root)
-            self.code_base = AppCodebase(root_folder=codebase_root)
-        requested_file = self.code_base.public_file_path(requested_path)
-        service_log.info(f"view app {self.name} code base root: {self.code_base.root}")
-        service_log.info(f"Requested path {requested_path}. requested file: {str(requested_file)}")
-        service_log.info(
-            f"Requested file exists: {str(requested_file.exists())}, is file: {str(requested_file.is_file())}"
+        return await serve_app_bytes(
+            self.serving_root(),
+            api_request.sub_path,
+            request,
+            api_url_scheme=default_service_config.service_urls_config.api_url_scheme,
         )
 
-        if requested_file.exists() and requested_file.is_file():
-            extension = requested_file.suffix
-            if extension == ".html":
-                request_url = request.url
-                api_url_scheme = default_service_config.service_urls_config.api_url_scheme
-                if request_url.scheme != api_url_scheme:
-                    request_url = request_url.replace(scheme=api_url_scheme)
-                # Inject <base> tag for HTML files
-                base_url = str(request_url).split("?")[0]
-                if not base_url.endswith("/"):
-                    base_url += "/"
-                html_content = requested_file.read_text()
-                modified_html = inject_base_tag(html_content, base_url)
-                return HTMLResponse(content=modified_html)
-            return await file_response(request, requested_file)
-
-        index_file = self.code_base.public_file_path("index.html")
-
-        if not requested_file.exists() and index_file.exists():
-            return await file_response(request, index_file)
-
-        return Response(status_code=404, content=f"File not found:{str(requested_file)}. root:{get_micro_apps_root()}")
-
-    async def view_external_domain(self, request: Request) -> FileResponse | Response:
+    async def view_external_domain(self, request: Request) -> Response:
+        """Serve this app on its own domain (cloud seam; no OSS caller today)."""
         request_info = get_current_request_info()
-        url = str(request.url)
-        service_log.info(f"view app {self.name}({self.typeid}): {url}")
-        requested_path = request_info.sub_path
-        if not requested_path:
-            requested_path = "index.html"
+        service_log.info(f"view app {self.name}({self.typeid}): {request.url}")
 
         host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
         if not host:
             return Response(status_code=400, content="Bad request: missing host header")
 
-        # Use a local code_base variable to avoid modifying the cached instance
-        code_base = self.code_base
-        if self.location_type == AppLocationType.Builtin:
-            # Update the requested path to include the env path
-            codebase_root = str(
-                Path(self.code_base.root_folder, "dev" if host.split("--")[0] == "dev" else "prod", "ui")
-            )
-            self.validate_codebase_root(codebase_root)
-            code_base = AppCodebase(root_folder=codebase_root)
-
-        if not code_base:
-            raise HTTPException(status_code=400, detail="App storage error")
-
-        requested_file = code_base.public_file_path(requested_path.lstrip("/"))
-        service_log.info(f"view app {self.name} code base root: {code_base.root}")
-        service_log.info(f"Requested path {requested_path}. requested file: {str(requested_file)}")
-        service_log.info(
-            f"Requested file exists: {str(requested_file.exists())}, is file: {str(requested_file.is_file())}"
+        env_segment = "dev" if host.split("--")[0] == "dev" else "prod"
+        return await serve_app_bytes(
+            self.serving_root(env_segment=env_segment),
+            (request_info.sub_path or "").lstrip("/"),
+            request,
+            # On its own domain the document must not be rewritten; under the
+            # console path relative asset URLs need <base> to resolve.
+            inject_base=not request_info.is_micro_app_request(),
+            api_url_scheme=default_service_config.service_urls_config.api_url_scheme,
         )
-
-        if requested_file.exists() and requested_file.is_file():
-            extension = requested_file.suffix
-            if extension == ".html":
-                request_url = request.url
-                api_url_scheme = default_service_config.service_urls_config.api_url_scheme
-                if request_url.scheme != api_url_scheme:
-                    request_url = request_url.replace(scheme=api_url_scheme)
-                # Inject <base> tag for HTML files
-                base_url = str(request_url).split("?")[0]
-                if not base_url.endswith("/"):
-                    base_url += "/"
-                html_content = requested_file.read_text()
-                # If this is a micro app request, do not modify the HTML content
-                if request_info.is_micro_app_request():
-                    return HTMLResponse(content=html_content)
-                # Otherwise, its a console request inject the base tag
-                modified_html = inject_base_tag(html_content, base_url)
-                return HTMLResponse(content=modified_html)
-            return await file_response(request, requested_file)
-
-        index_file = code_base.public_file_path("index.html")
-
-        if not requested_file.exists() and index_file.exists():
-            return await file_response(request, index_file)
-
-        return Response(status_code=404, content=f"File not found:{str(requested_file)}. root:{get_micro_apps_root()}")

@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Awaitable, Callable, Optional, TYPE_CHECKING
 
 from pydantic import BaseModel
+from flow_sdk.fs_store.identifier import mint_uuid
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
@@ -228,9 +229,14 @@ def _project_id_for(
             rid = cwd_to_pid.get(canonical_posix_path(cwd))
             if rid:
                 return rid
-        return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{cwd}"))
+        # DIVERGENT (deliberately left alone): unlike ``Project.derive_id_for_path``
+        # this does NOT canonicalize, so a non-canonical cwd yields an id that
+        # matches no project row. Canonicalizing here would CHANGE values for
+        # whatever it currently matches, so it needs a migration, not a tidy-up.
+        return mint_uuid(f"project:{cwd}", namespace=uuid.NAMESPACE_DNS)
     if encoded:
-        return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{encoded}"))
+        # A separate key space (encoded dir name), not the cwd formula.
+        return mint_uuid(f"project:{encoded}", namespace=uuid.NAMESPACE_DNS)
     return None
 
 

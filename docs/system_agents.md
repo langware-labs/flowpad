@@ -74,7 +74,7 @@ System prompt body goes here...
 | `hooks`            | dict | —                   | `hooks` in `--agents` JSON           |
 | `memory`           | dict | —                   | `memory` in `--agents` JSON          |
 
-**Loading priority** (`AgentRecord.load_agent(name, project_dir)`):
+**Loading priority** (`load_subagent(name, project_dir)` — `flow_sdk/fs_store/operations/subagent.py`):
 
 1. **Project agents:** `{project_dir}/.claude/agents/{name}/`
 2. **User agents:** `~/.claude/agents/{name}/`
@@ -87,7 +87,7 @@ System prompt body goes here...
 agent = AgentRecord.load_system_agent("session-analyzer")
 
 # Load with priority resolution (project > user > system)
-agent = AgentRecord.load_agent("session-analyzer", project_dir="/my/project")
+agent = load_subagent("session-analyzer", project_dir="/my/project")
 
 # Load from a standalone .md file
 agent = AgentRecord.from_file("/path/to/my-agent.md")
@@ -124,7 +124,7 @@ env.output_dir          # <root>/output/
 env.agents_dir          # <root>/.claude/agents/
 env.claude_md_path      # <root>/CLAUDE.md
 
-env.load_agent(agent)                    # Copy agent .md into .claude/agents/
+env.load_subagent(agent)                 # Copy subagent .md into .claude/agents/
 env.set_system_prompt("You are...")      # Write CLAUDE.md
 env.append_system_prompt("\n## Extra")   # Append to CLAUDE.md
 env.set_mcp_config({"servers": {...}})   # Write mcp.json
@@ -328,7 +328,7 @@ Add to `tests/unit/test_agent_record.py`:
 
 ```python
 def test_load_my_agent_from_package(self):
-    agent = AgentRecord.load_system_agent("my-agent")
+    agent = load_system_subagent("my-agent")
     assert agent is not None
     assert agent.name == "my-agent"
     assert agent.data.get("model") == "sonnet"
@@ -342,7 +342,7 @@ Add to `tests/unit/test_agent_run.py`:
 ```python
 @pytest.mark.asyncio
 async def test_my_agent_run(tmp_path):
-    agent = AgentRecord.load_system_agent("my-agent")
+    agent = load_system_subagent("my-agent")
     env = ClaudeProjectEnvManager(root=tmp_path / "project")
 
     execution = agent.run(env, "Do the task")
@@ -371,7 +371,7 @@ async def test_my_agent_run(tmp_path):
 from flow_sdk.fs_records import AgentRecord
 from flow_sdk.claude_env import ClaudeProjectEnvManager
 
-agent = AgentRecord.load_system_agent("my-agent")
+agent = load_system_subagent("my-agent")
 env = ClaudeProjectEnvManager(root=workdir)
 
 execution = agent.run(env, "Fix this error: ...")

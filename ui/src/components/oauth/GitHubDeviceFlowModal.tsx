@@ -1,11 +1,13 @@
 import {
-  connectionManager,
   copyToClipboard,
   dataManager,
+  OAUTH_PROVIDERS,
   OAuthEventType,
+  OAuthStatus,
   oauthService,
   type OAuthDeviceFlowPayload,
 } from '@sdk';
+import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -16,27 +18,10 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { notify } from '@src/notifications';
+import { openExternal } from '@src/lib/open-external';
 import { ExternalLink, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-
-interface LlmConfigMsg {
-  message_type?: string;
-  is_configured?: boolean;
-  auth_method?: string;
-  oauth_request_id?: string;
-  status?: string;
-}
-
-function openExternal(url: string) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const electronAPI = (window as any).electronAPI;
-  if (electronAPI?.openExternal) {
-    void electronAPI.openExternal(url);
-    return;
-  }
-  window.open(url, '_blank', 'noopener,noreferrer');
-}
 
 /**
  * Single global mount in App.tsx. Listens for `OAuthEventType.DEVICE_FLOW_START`
@@ -44,8 +29,8 @@ function openExternal(url: string) {
  * a single button that copies the code and opens `verification_uri`. The dialog
  * does NOT open the URL until the user clicks — that way the copy happens
  * inside a user-gesture (so paste works on the GitHub page). Self-closes on
- * `on_llm_config_msg` SUCCESS for the matching `oauth_request_id`, or when the
- * user hits Cancel.
+ * `OAuthEventType.OAUTH_FLOW_COMPLETE` SUCCESS for the matching
+ * `oauth_request_id`, or when the user hits Cancel.
  */
 export function GitHubDeviceFlowModal() {
   const { t } = useLingui();
@@ -75,24 +60,20 @@ export function GitHubDeviceFlowModal() {
     return () => clearInterval(tick);
   }, [payload]);
 
-  // Listen for the backend's broadcast — close on SUCCESS, surface ERROR.
-  useEffect(() => {
-    if (!payload) return;
-    const handler = (msg: LlmConfigMsg) => {
-      if (msg.auth_method !== 'github') return;
-      if (msg.oauth_request_id && msg.oauth_request_id !== payload.state) return;
-      if (msg.status === 'success') {
+  // Close on SUCCESS, surface ERROR — for THIS flow only.
+  useOAuthFlowComplete(
+    OAUTH_PROVIDERS.GITHUB,
+    (msg) => {
+      if (msg.oauth_request_id !== payload?.state) return;
+      if (msg.status === OAuthStatus.SUCCESS) {
         notify.success({ title: t`GitHub connected`, durationMs: 3000 });
         setPayload(null);
-      } else if (msg.status === 'error') {
+      } else {
         setError(t`Authorization failed or was denied. Click Retry to try again.`);
       }
-    };
-    connectionManager.on('on_llm_config_msg', handler);
-    return () => {
-      connectionManager.off('on_llm_config_msg', handler);
-    };
-  }, [payload]);
+    },
+    payload !== null,
+  );
 
   // Single combined action: copy first (inside the user-gesture click handler,
   // so the clipboard write is allowed and paste will work on the GitHub page),
@@ -134,9 +115,14 @@ export function GitHubDeviceFlowModal() {
     <Dialog open onOpenChange={(o) => !o && handleClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle><Trans>Connect GitHub</Trans></DialogTitle>
+          <DialogTitle>
+            <Trans>Connect GitHub</Trans>
+          </DialogTitle>
           <DialogDescription>
-            <Trans>Your one-time code is below. Click <span className="font-medium">Copy code &amp; open GitHub</span> — we'll copy it to your clipboard and open the GitHub activation page so you can paste it there.</Trans>
+            <Trans>
+              Your one-time code is below. Click <span className="font-medium">Copy code &amp; open GitHub</span> —
+              we'll copy it to your clipboard and open the GitHub activation page so you can paste it there.
+            </Trans>
           </DialogDescription>
         </DialogHeader>
 
@@ -147,7 +133,7 @@ export function GitHubDeviceFlowModal() {
 
           <div className="flex items-center gap-2">
             <Button size="sm" onClick={() => void handleCopyAndOpen()}>
-              <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+              <ExternalLink className="me-1.5 h-3.5 w-3.5" />
               <Trans>Copy code &amp; open GitHub</Trans>
             </Button>
           </div>
@@ -163,7 +149,9 @@ export function GitHubDeviceFlowModal() {
           ) : (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <Trans>Waiting for authorization… (expires in {mm}:{ss})</Trans>
+              <Trans>
+                Waiting for authorization… (expires in {mm}:{ss})
+              </Trans>
             </div>
           )}
         </div>

@@ -8,6 +8,10 @@ import { IResource } from './IResource';
  * Also maintains Date versions of timestamps for backwards compatibility.
  */
 export interface IEntity extends Partial<IResource> {
+  /** Hub role roster cache — one row per member with their hub-set role.
+   *  Generic to any remote entity; hub-authoritative, local is a read cache.
+   *  ``EntityMember``-shaped; kept as ``unknown[]`` here to avoid an import cycle. */
+  members?: unknown[];
   /** Unique name (URL-safe identifier) */
   uname?: string;
   /** Display name */
@@ -101,6 +105,11 @@ export interface IEntity extends Partial<IResource> {
    * still deliver an ISO string during the transition window.
    */
   last_active_at?: number | string | null;
+  /**
+   * Epoch-ms of this entity's last content edit. Edit flows stamp this after a
+   * successful mutation; ISO strings are accepted for tolerant wire loading.
+   */
+  last_edited_at?: number | string | null;
 }
 
 export const defaultEntityType = 'entity_base';

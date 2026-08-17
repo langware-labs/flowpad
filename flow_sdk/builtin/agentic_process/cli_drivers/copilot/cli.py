@@ -6,13 +6,13 @@ import logging
 import os
 from typing import Any
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
 from flow_sdk.builtin.agentic_process.model_tiers import COPILOT_MODEL_TIERS
 
 logger = logging.getLogger(__name__)
 
 
-class CopilotCliOptions(WorkerCLIOptions):
+class CopilotAgentOptions(AgentOptions):
     """Builds Copilot CLI argv for headless JSON streaming or visible PTY mode."""
 
     # sm/md/lg → gpt-5.4-mini/gpt-5.4/gpt-5.5, applied when emitting command.
@@ -35,6 +35,7 @@ class CopilotCliOptions(WorkerCLIOptions):
         no_custom_instructions: bool = True,
         allow_all: bool = True,
         custom_instruction_dirs: list[str] | None = None,
+        plugin_dirs: list[str] | None = None,
     ) -> None:
         super().__init__(workdir=workdir, env_vars=env_vars)
         self.session_id = session_id
@@ -50,6 +51,7 @@ class CopilotCliOptions(WorkerCLIOptions):
         self.no_custom_instructions = no_custom_instructions
         self.allow_all = allow_all
         self.custom_instruction_dirs: list[str] = list(custom_instruction_dirs or [])
+        self.plugin_dirs: list[str] = list(plugin_dirs or [])
 
     EXECUTABLE = "copilot"
     PROMPT_CHANNEL = "stdin"  # copilot reads the prompt from stdin
@@ -66,6 +68,8 @@ class CopilotCliOptions(WorkerCLIOptions):
             tail.extend(["--effort", self.effort])
         for directory in self.add_dirs:
             tail.extend(["--add-dir", directory])
+        for directory in self.plugin_dirs:
+            tail.extend(["--plugin-dir", directory])
         if self.resume and self.session_id:
             tail.append(f"--resume={self.session_id}")
         elif self.session_id:
@@ -98,7 +102,9 @@ class CopilotCliOptions(WorkerCLIOptions):
             self.env_vars["COPILOT_ALLOW_ALL"] = "true"
         if not self.custom_instruction_dirs:
             return
-        existing = self.env_vars.get("COPILOT_CUSTOM_INSTRUCTIONS_DIRS") or os.environ.get("COPILOT_CUSTOM_INSTRUCTIONS_DIRS", "")
+        existing = self.env_vars.get("COPILOT_CUSTOM_INSTRUCTIONS_DIRS") or os.environ.get(
+            "COPILOT_CUSTOM_INSTRUCTIONS_DIRS", ""
+        )
         parts = [p for p in existing.split(",") if p]
         for directory in self.custom_instruction_dirs:
             if directory not in parts:
@@ -121,25 +127,27 @@ class CopilotCliOptions(WorkerCLIOptions):
 
     def to_json(self) -> dict[str, Any]:
         data = super().to_json()
-        data.update({
-            "worker_type": "copilot",
-            "session_id": self.session_id,
-            "resume": self.resume,
-            "model": self.model,
-            "permission_mode": self.permission_mode,
-            "effort": self.effort,
-            "skill_names": self.skill_names,
-            "add_dirs": self.add_dirs,
-            "json_stream": self.json_stream,
-            "no_ask_user": self.no_ask_user,
-            "no_auto_update": self.no_auto_update,
-            "no_custom_instructions": self.no_custom_instructions,
-            "allow_all": self.allow_all,
-        })
+        data.update(
+            {
+                "worker_type": "copilot",
+                "session_id": self.session_id,
+                "resume": self.resume,
+                "model": self.model,
+                "permission_mode": self.permission_mode,
+                "effort": self.effort,
+                "skill_names": self.skill_names,
+                "add_dirs": self.add_dirs,
+                "json_stream": self.json_stream,
+                "no_ask_user": self.no_ask_user,
+                "no_auto_update": self.no_auto_update,
+                "no_custom_instructions": self.no_custom_instructions,
+                "allow_all": self.allow_all,
+            }
+        )
         return data
 
     @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "CopilotCliOptions":
+    def from_json(cls, data: dict[str, Any]) -> "CopilotAgentOptions":
         return cls(
             session_id=data.get("session_id"),
             resume=bool(data.get("resume", False)),

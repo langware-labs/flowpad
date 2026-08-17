@@ -1,5 +1,7 @@
 import { IEntity } from '../IEntity';
-import { APIEntity, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { ActionInfo } from '../models';
+import { TypeId } from '../models/TypeId';
 
 /**
  * ApiKey entity representing an API key for authentication.
@@ -18,6 +20,12 @@ export interface IApiKey extends IEntity {
   expires_at?: string; // ISO datetime string
   last_used_at?: string; // ISO datetime string
   is_active: boolean;
+}
+
+/** The hub's `ApiKeyCreateOut` (app/actions/api_keys.py) — the wire row for a mint. */
+export interface ApiKeyCreateOut extends Omit<ApiKeyCredentials, 'var_name' | 'description'> {
+  id: string;
+  description?: string;
 }
 
 /**
@@ -54,5 +62,41 @@ export class ApiKey extends APIEntity<ApiKey> implements IApiKey {
     this.expires_at = entity.expires_at;
     this.last_used_at = entity.last_used_at;
     this.is_active = entity.is_active ?? true;
+  }
+
+  /** The one key every surface generates: a self-bound key for the flowpad API. */
+  static readonly SELF_KEY_DESCRIPTION = 'API key for communicating with flowpad API itself';
+
+  /**
+   * POST /graph/<user>/api-keys — mint a self-bound key and shape the wire row
+   * into `ApiKeyCredentials`. The full key value is returned ONCE; the masking
+   * rule lives here rather than in each screen that shows it.
+   */
+  static async generateSelfKey(userTypeId: TypeId): Promise<ApiKeyCredentials> {
+    const info = new ActionInfo('api-keys', userTypeId.type, userTypeId.id, 'POST');
+    info.bodyParameters = {
+      name: 'FLOWPAD_API_KEY',
+      description: ApiKey.SELF_KEY_DESCRIPTION,
+      bind_typeid: userTypeId.toString(),
+    };
+    // `visible_value` arrives already masked, so it is taken rather than recomputed.
+    const result = await dataManager.callAction<unknown, ApiKeyCreateOut>(info);
+    return { ...result, var_name: result.name, description: result.description ?? ApiKey.SELF_KEY_DESCRIPTION };
+  }
+
+  /**
+   * DELETE /graph/<user>/api-keys/<name> — the hub addresses keys by name on the
+   * request sub-path, never by id.
+   *
+   * Names are unique among *active* keys per bound entity, so this resolves to one
+   * key in the steady state. The exception is desktop-login rotation, which mints a
+   * same-named grace key with `allow_duplicate_name=True`; during that window the
+   * hub's lookup picks the first active match. Addressing by id would close that,
+   * but that is the hub's API to change.
+   */
+  static async deleteByName(userTypeId: TypeId, name: string): Promise<void> {
+    const info = new ActionInfo('api-keys', userTypeId.type, userTypeId.id, 'DELETE');
+    info.subpath = name;
+    await dataManager.callAction(info);
   }
 }

@@ -1,11 +1,12 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { canonicalPath, selectProjectContext } from '@src/components/project-selector';
-import { useDockNavigation, useIsVibeHome } from '@src/navigation/useDockNavigation';
+import { projectScope } from '@src/lib/scope-filter';
+import { useDockNavigation, useIsHomeSurface } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { agenticProcessIdForProjectEntry, dockForProjectEntry } from '@src/tabs/project-entry';
 import { useIsVibe, ViewMode } from '@src/contexts/view-mode-context';
 import { notify } from '@src/notifications';
-import { ContextEntitiesEnum, dataContext, Project, QueryRequest } from '@sdk';
+import { ContextEntitiesEnum, dataContext, isHubOnly, PageId, Project, QueryRequest } from '@sdk';
 import { useCallback } from 'react';
 import { useLingui } from '@lingui/react/macro';
 
@@ -41,13 +42,14 @@ export interface UseProjectOpenerOptions {
 export function useProjectOpener({ onProjectChanged, onPicked, onError }: UseProjectOpenerOptions = {}) {
   const { t } = useLingui();
   const { computeNode } = useAgentContext();
-  const { navigation } = useDockNavigation();
+  const { currentDock, navigation } = useDockNavigation();
   const isVibe = useIsVibe();
-  // Surface-derived, not a prop: on a vibe *home* surface switching a project
-  // just changes the project and lands on the fresh vibe home; from within a
-  // vibe workspace (or any other dock) it resumes the target's build process.
+  // Surface-derived, not a prop: on ANY home surface (root `/` or /dock/home,
+  // in any view mode) switching a project just changes the project and lands
+  // on the fresh home; only from within a workspace/dock does it resume the
+  // target's build process (Vibe) or last-active tab (Standard/Advanced).
   // Keeps the hero buttons, the modal, AND the footer Switch Project consistent.
-  const isVibeHome = useIsVibeHome();
+  const isHome = useIsHomeSurface();
 
   const setCurrentProjectContext = useCallback(
     async (project: Project) => {
@@ -65,32 +67,66 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
           // continuation errors shouldn't break the picker
         }
       } else {
-        if (isVibe) {
+        // Hub: there's no desk home / vibe hero / tab strip to land on, and no
+        // build process to resume — the hub's own project card goes straight to
+        // the project dock on the hub page, so every hub open lands the same way.
+        if (isHubOnly()) {
           await selectProjectContext(project);
-          if (!isVibeHome) {
+          navigation.openDock(DockPointer.forProject(project.id).withPage(PageId.HUB));
+          return;
+        }
+        // On a home surface, switching a project stays home — on the new
+        // project — in every view mode.
+        if (isVibe) {
+          if (!isHome) {
+            // Leaving home for a build process: adopt the context here, because
+            // this branch resolves the destination FROM the project rather than
+            // spelling it out in a scope-carrying URL.
+            await selectProjectContext(project);
             const processId = project.id ? await agenticProcessIdForProjectEntry(project.id) : null;
             if (processId) {
               void navigation.openShellProcess(processId, { viewMode: ViewMode.Vibe });
               return;
             }
           }
+          // URL-first, exactly as the non-vibe home branch below: the
+          // scope-carrying HOME dock's loader (adoptScopeProject → loadProject)
+          // is the single writer of project context.
+          //
+          // This used to pre-write the context with `selectProjectContext`,
+          // which DISARMED that loader: `adoptScopeProject` skips when
+          // `dataContext.project?.id` already equals the URL's project, so
+          // `loadProject` never ran and nothing that hangs off it happened —
+          // the project's remembered LANGUAGE and view mode were never applied,
+          // so switching projects here left you reading the previous project's
+          // language. The vibe-only clears below stay: they are about the stale
+          // process/active entity, not about which project is current.
           await dataContext.setActiveEntityTypeId(null);
           await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
           navigation.openDock(
-            DockPointer.forHome(undefined, undefined, { vibeNoProcess: true }).withViewMode(ViewMode.Vibe),
+            DockPointer.forHome(undefined, undefined, { vibeNoProcess: true })
+              .withScopeFilter(projectScope(project.id))
+              .withViewMode(ViewMode.Vibe),
           );
+          return;
+        }
+        if (isHome) {
+          // URL-first: the scope-carrying HOME dock's loader
+          // (adoptScopeProject) is the single writer of project context.
+          navigation.openDock(DockPointer.forHome().withScopeFilter(projectScope(project.id)));
           return;
         }
         // Plain switch (footer Switch Project included): navigate to the
         // project's tab — the same path as clicking that tab in the strip
-        // (dockForProjectEntry → fromTabHash → openDock). Resumes the
-        // last-active tab, or the project landing when it has no open tab. No
-        // context pre-write here: the destination dock's loader is the single
-        // writer of project context (URL-first).
-        navigation.openDock(await dockForProjectEntry(project.id));
+        // (dockForProjectEntry → fromTabHash → openDock). Resumes the KNOWN
+        // last-active tab; with no known tab, a scope-keyed current view
+        // (Assets/Explorer/Desktop) re-scopes to the destination, else the
+        // project landing. No context pre-write here: the destination dock's
+        // loader is the single writer of project context (URL-first).
+        navigation.openDock(await dockForProjectEntry(project.id, currentDock));
       }
     },
-    [isVibe, isVibeHome, onProjectChanged, onPicked, navigation],
+    [isVibe, isHome, onProjectChanged, onPicked, navigation, currentDock],
   );
 
   const ensureProjectAndSetContext = useCallback(
@@ -157,5 +193,14 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
     [pickFolder, ensureProjectAndSetContext, onError, t],
   );
 
-  return { computeNode, ensureProjectAndSetContext, pickFolder, openProjectFolder };
+  return {
+    computeNode,
+    ensureProjectAndSetContext,
+    pickFolder,
+    openProjectFolder,
+    // The landing policy above (see `setCurrentProjectContext`), for callers
+    // holding an already-minted Project rather than a path — e.g. a git clone,
+    // where the backend minted it. A `ProjectLanding`.
+    openExistingProject: setCurrentProjectContext,
+  };
 }

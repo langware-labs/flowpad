@@ -1,13 +1,27 @@
-import { AgenticProcess, Plan, QueryRequest, RemoteWorkerSession, Trigger, TypeId, VFSPath } from '@sdk';
+import { t } from '@lingui/core/macro';
+import {
+  AgenticProcess,
+  dataContext,
+  isValidTag,
+  PageId,
+  Plan,
+  Project,
+  QueryRequest,
+  RemoteWorkerSession,
+  Trigger,
+  TypeId,
+  VFSPath,
+} from '@sdk';
 import { redirect } from 'react-router';
 import { DockPointer } from '@src/navigation';
 import { ViewType } from '@src/types/ViewType';
 import { clearDockLoadError } from './dock-load-error-store';
 import { DockLoadError, handleDockLoadError } from './dock-load-error';
+import { wikiAuthorityForPage } from '@src/components/wiki/resolve-wiki';
 import { loadAssetRoute } from './load-asset';
 import { loadConversationRoute } from './load-conversation';
 import { loadLensRoute } from './load-lens';
-import { loadProjectRoute } from './load-project';
+import { loadProject, loadProjectRoute } from './load-project';
 import { loadProcess, ProcessLoadError } from './load-process';
 import { loadShellRoute } from './load-shell';
 import { loadTasksRoute } from './load-tasks';
@@ -15,6 +29,22 @@ import { processLoadErrorToDockError } from './process-load-error-resolution';
 
 export interface DockLoaderContext {
   requestPath: string;
+}
+
+/**
+ * Adopt the project pinned in a dock's scope filter into context. This is the
+ * URL-first project write for CONTEXT-NEUTRAL docks — the scoped browse views
+ * (assets list, explorer, desktop, triggers) whose loaders have no entity to
+ * derive a project from. Without it, entering a project whose landing tab is
+ * one of these views leaves `CurrentProjectTypeId` pointing at the PREVIOUS
+ * project (the stuck-footer switch bug). Entity-backed docks keep their own
+ * derivation: they run after this and their entity's project wins.
+ * Best-effort — a missing project must not fail a browse landing.
+ */
+export async function adoptScopeProject(dock: DockPointer): Promise<void> {
+  const projectId = dock.scopeProjectId;
+  if (!projectId || dataContext.project?.id === projectId) return;
+  await loadProject(new TypeId(Project.type, projectId)).catch(() => {});
 }
 
 async function loadPlanRoute(pointer: string | undefined): Promise<void> {
@@ -26,6 +56,7 @@ async function loadPlanRoute(pointer: string | undefined): Promise<void> {
   // path and redirect to the canonical, process-independent `vfs` form so the
   // view only ever sees the new grammar and the link self-heals on first open.
   if (parsed.kind === 'legacy') {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw redirect(`/dock/plan/${DockPointer.forPlanByPath(parsed.filePath).pointer}`);
   }
 
@@ -39,8 +70,8 @@ async function loadPlanRoute(pointer: string | undefined): Promise<void> {
         'hard',
         {
           action: 'render_error',
-          title: 'Plan not found',
-          message: 'This plan no longer exists.',
+          title: t`Plan not found`,
+          message: t`This plan no longer exists.`,
         },
         'plan',
       );
@@ -67,8 +98,8 @@ async function loadAgenticProcessRoute(pointer: string | undefined): Promise<voi
       'hard',
       {
         action: 'render_error',
-        title: 'Session not found',
-        message: 'This session URL is malformed or unavailable.',
+        title: t`Session not found`,
+        message: t`This session URL is malformed or unavailable.`,
       },
       'agentic_process',
       error,
@@ -81,6 +112,30 @@ async function loadAgenticProcessRoute(pointer: string | undefined): Promise<voi
       throw processLoadErrorToDockError(error, 'agentic_process');
     }
     throw error;
+  }
+}
+
+/** Resolve the portal project so context is written URL-first, exactly as a
+ *  PROJECT dock does. The article (if any) is resolved by the view from the
+ *  pointer — it is a file path, not an entity, so there is nothing to load. */
+async function loadHelpdeskRoute(pointer: string | undefined): Promise<void> {
+  const { projectId } = DockPointer.parseHelpdeskPointer(pointer);
+  if (!projectId) return; // portal root with no project — the view renders its own empty state
+  try {
+    await loadProject(new TypeId(Project.type, projectId));
+  } catch (error) {
+    throw new DockLoadError(
+      'helpdesk_project_not_found',
+      'hard',
+      {
+        action: 'render_error',
+        title: t`Help desk unavailable`,
+        message: t`The help desk files are missing. Open the help desk again to download them.`,
+        retryable: true,
+      },
+      'helpdesk',
+      error,
+    );
   }
 }
 
@@ -97,8 +152,8 @@ function loadLiveSessionRoute(pointer: string | undefined): void {
       'hard',
       {
         action: 'render_error',
-        title: 'Live session not found',
-        message: 'This live-session URL is malformed or unavailable.',
+        title: t`Live session not found`,
+        message: t`This live-session URL is malformed or unavailable.`,
       },
       'live_session',
       error,
@@ -106,15 +161,96 @@ function loadLiveSessionRoute(pointer: string | undefined): void {
   }
 }
 
-export async function loadDockPointer(
-  dock: DockPointer,
-  context: DockLoaderContext,
-): Promise<string> {
+/**
+ * Validate a graph root and adopt it as the URL-owned active entity. This is
+ * intentionally the loader's entire responsibility: graph reads happen in the
+ * mounted view and cloud inventory sync is only triggered by its Sync button.
+ */
+export async function loadGraphIdentityRoute(dock: DockPointer, surface: 'graph' | 'worldview'): Promise<void> {
+  try {
+    if (surface === 'worldview') {
+      if (!DockPointer.parseWorldViewProjection(dock.pointer)) {
+        throw new Error('Expected a WorldView projection');
+      }
+      const focus = dock.options?.focus;
+      await dataContext.setActiveEntityTypeId(focus ? new TypeId(focus) : null);
+      return;
+    }
+
+    if (!dock.pointer) return;
+    const parsed = DockPointer.parseGraphPointer(dock.pointer);
+    if (!parsed) throw new Error('Expected <type>/<id>');
+    await dataContext.setActiveEntityTypeId(new TypeId(parsed.type, parsed.id));
+  } catch (error) {
+    throw new DockLoadError(
+      'malformed_graph_pointer',
+      'hard',
+      {
+        action: 'render_error',
+        title: surface === 'worldview' ? 'WorldView not found' : 'Graph root not found',
+        message: t`This ${surface === 'worldview' ? 'WorldView' : 'graph'} URL is malformed or unavailable.`,
+      },
+      surface,
+      error,
+    );
+  }
+}
+
+/** `/dock/tag/graph[/<name>]` — shape check only (loaders stay near-empty). */
+function loadTagRoute(dock: DockPointer): void {
+  const parsed = DockPointer.parseTagPointer(dock.pointer);
+  const tagName = parsed?.tag;
+  if (!parsed || (tagName !== null && !isValidTag(tagName))) {
+    throw new DockLoadError(
+      'malformed_tag_pointer',
+      'hard',
+      {
+        action: 'render_error',
+        title: t`Tag view not found`,
+        message: t`Expected /dock/tag/graph or /dock/tag/graph/<dot.tag.name>.`,
+      },
+      'tag',
+    );
+  }
+}
+
+/** `/dock/subgraph/<projection>[/<focusKey>]` — non-empty projection only. */
+function loadSubgraphRoute(dock: DockPointer): void {
+  if (!DockPointer.parseSubgraphPointer(dock.pointer)) {
+    throw new DockLoadError(
+      'malformed_subgraph_pointer',
+      'hard',
+      {
+        action: 'render_error',
+        title: t`Subgraph not found`,
+        message: t`Expected /dock/subgraph/<projection>.`,
+      },
+      'subgraph',
+    );
+  }
+}
+
+export async function loadDockPointer(dock: DockPointer, context: DockLoaderContext): Promise<string> {
+  // `/dock/home` is the dock spelling of the app root, and the root's canonical
+  // URL is `/`. Without this redirect both spellings stay live: the address bar
+  // reads `/dock/home` while the pointer parsed from it serializes to `/`, so
+  // the URL silently changes under the user on their next navigation. Redirect
+  // rather than render, so one location keeps exactly one address — which is the
+  // point of making the root a pointer at all.
+  if (dock.isRoot) {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw redirect(dock.toUrl(context.requestPath));
+  }
+
   const label = `loadDockPointer:${dock.viewType ?? 'unknown'}`;
   try {
     switch (dock.viewType) {
       case ViewType.SHELL:
-        await loadShellRoute(dock.pointer, context.requestPath, { scope: dock.scopeFilter, viewMode: dock.viewMode });
+        await loadShellRoute(dock.pointer, context.requestPath, {
+          scope: dock.scopeFilter,
+          viewMode: dock.viewMode,
+          options: dock.options,
+        });
         break;
       case ViewType.PROJECT:
         await loadProjectRoute(dock.pointer, { viewMode: dock.viewMode });
@@ -123,7 +259,11 @@ export async function loadDockPointer(
         await loadConversationRoute(dock.pointer);
         break;
       case ViewType.ASSETS:
-        await loadAssetRoute(dock.pointer);
+        await adoptScopeProject(dock);
+        await loadAssetRoute(dock.pointer, {
+          allowLocalWikiAlias: dock.page !== PageId.HUB,
+          wikiAuthority: wikiAuthorityForPage(dock.page),
+        });
         break;
       case ViewType.TASKS:
         await loadTasksRoute(dock.pointer);
@@ -131,10 +271,19 @@ export async function loadDockPointer(
       case ViewType.AGENTIC_PROCESS:
         await loadAgenticProcessRoute(dock.pointer);
         break;
+      case ViewType.HELPDESK:
+        await loadHelpdeskRoute(dock.pointer);
+        break;
       case ViewType.LIVE_SESSION:
         loadLiveSessionRoute(dock.pointer);
         break;
+      // The merged Events screen and its three URL aliases share one loader:
+      // the rules list is the navigator's data on all four.
+      case ViewType.EVENTS:
       case ViewType.TRIGGERS:
+      case ViewType.SIGNALS:
+      case ViewType.CRON:
+        await adoptScopeProject(dock);
         await Trigger.query(new QueryRequest({ type: Trigger.type, scope: [] }));
         break;
       case ViewType.PLAN:
@@ -143,7 +292,24 @@ export async function loadDockPointer(
       case ViewType.LENS:
         await loadLensRoute(dock.pointer);
         break;
+      case ViewType.GRAPH:
+        await loadGraphIdentityRoute(dock, 'graph');
+        break;
+      case ViewType.WORLDVIEW:
+        await loadGraphIdentityRoute(dock, 'worldview');
+        break;
+      case ViewType.TAG:
+        // URL-first + near-empty: validate shape only. NO entity resolution —
+        // anonymous (ghost) tags are first-class in the tag graph.
+        loadTagRoute(dock);
+        break;
+      case ViewType.SUBGRAPH:
+        loadSubgraphRoute(dock);
+        break;
       default:
+        // Explorer, desktop, and other loader-less views: still honor a
+        // project-pinned scope so a scoped browse landing switches the project.
+        await adoptScopeProject(dock);
         break;
     }
     clearDockLoadError(dock);

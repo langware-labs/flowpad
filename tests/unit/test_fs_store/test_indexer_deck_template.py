@@ -1,11 +1,11 @@
 """Indexer tests for the DECK_TEMPLATE type.
 
 Covers the slot functions end-to-end:
-- ``deck_template_fn`` walker emits one FSRef per ``assets/deck-templates/<slug>/``
+- ``repo_assets_fn`` emits one FSRef per ``agentic-assets/deck_template/<slug>/``
   folder carrying a ``template.json`` manifest.
 - ``extract_deck_template`` parses the manifest + ``layouts/`` into one FSRecord
   with denormalized layout data.
-- ``deck_template_gen_id`` adopts a valid manifest id else mints via the
+- ``TypeInfo.mint_id`` adopts a valid manifest id else mints via the
   ``.flow/id`` capsule (idempotent).
 - ``deck_template_asset_hash`` tracks inner layout/common file edits.
 
@@ -25,11 +25,19 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.indexer.functions.deck_template import (
     deck_template_asset_hash,
-    deck_template_fn,
-    deck_template_gen_id,
     extract_deck_template,
 )
+from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+
+def _mint(ref: FSRef) -> str:
+    return SchemaRegistry.get("deck_template").mint_entity_id(ref, derive=True, overwrite=True)
+
+
+def _extract(ref: FSRef):
+    return extract_deck_template(ref, _mint(ref))
 
 # do not increase timeout without approval — these are pure-sync parses (<1s).
 pytestmark = pytest.mark.timeout(5)
@@ -52,8 +60,8 @@ def _seed_template(
     common: dict[str, str] | None = None,
     media: dict[str, bytes] | None = None,
 ) -> Path:
-    """Seed a deck template folder under ``assets/deck-templates/<slug>/``."""
-    tpl = project / "assets" / "deck-templates" / slug
+    """Seed a deck template folder under ``agentic-assets/deck_template/<slug>/``."""
+    tpl = project / "agentic-assets" / "deck_template" / slug
     tpl.mkdir(parents=True)
     (tpl / "template.json").write_text(
         _doc(metadata=manifest, data=manifest_data), encoding="utf-8"
@@ -82,10 +90,10 @@ def test_walker_emits_one_ref_per_template(tmp_path: Path) -> None:
     _seed_template(tmp_path, "A", layouts=["cover-centered"])
     _seed_template(tmp_path, "B", layouts=["agenda-list"])
     # A folder without template.json must be skipped.
-    (tmp_path / "assets" / "deck-templates" / "no-manifest").mkdir(parents=True)
+    (tmp_path / "agentic-assets" / "deck_template" / "no-manifest").mkdir(parents=True)
 
     node = FSRef(tmp_path, record_type=RecordType.REAL_PROJECT_CWD)
-    refs = deck_template_fn([node], IndexerOptions(verbose=False))
+    refs = repo_assets_fn([node], IndexerOptions(verbose=False))
 
     assert len(refs) == 2
     assert all(r.record_type == RecordType.DECK_TEMPLATE for r in refs)
@@ -94,7 +102,7 @@ def test_walker_emits_one_ref_per_template(tmp_path: Path) -> None:
 
 def test_walker_no_templates_dir(tmp_path: Path) -> None:
     node = FSRef(tmp_path, record_type=RecordType.REAL_PROJECT_CWD)
-    assert deck_template_fn([node], IndexerOptions(verbose=False)) == []
+    assert repo_assets_fn([node], IndexerOptions(verbose=False)) == []
 
 
 # ── id minting ────────────────────────────────────────────────────────────────
@@ -102,13 +110,13 @@ def test_walker_no_templates_dir(tmp_path: Path) -> None:
 def test_gen_id_adopts_valid_manifest_id(tmp_path: Path) -> None:
     valid = str(uuid.uuid4())  # v4 → adoptable
     tpl = _seed_template(tmp_path, "adopt", manifest={"id": valid})
-    assert deck_template_gen_id(FSRef(tpl)) == valid
+    assert _mint(FSRef(tpl)) == valid
 
 
 def test_gen_id_mints_v4_capsule_when_absent(tmp_path: Path) -> None:
     tpl = _seed_template(tmp_path, "mint")
-    first = deck_template_gen_id(FSRef(tpl))
-    second = deck_template_gen_id(FSRef(tpl))
+    first = _mint(FSRef(tpl))
+    second = _mint(FSRef(tpl))
     assert first == second  # idempotent (adopted from the .flow/id capsule)
     assert uuid.UUID(first).version == 4  # capsule-v4, not uuid5(path)
 
@@ -117,7 +125,7 @@ def test_gen_id_ignores_foreign_id_version(tmp_path: Path) -> None:
     """A non-v4/v5 id (e.g. a hand-authored v7) must be ignored, not adopted."""
     v7 = "018f5b2a-7c00-7000-8000-000000000000"  # version nibble = 7
     tpl = _seed_template(tmp_path, "v7", manifest={"id": v7})
-    minted = deck_template_gen_id(FSRef(tpl))
+    minted = _mint(FSRef(tpl))
     assert minted != v7
     assert uuid.UUID(minted).version == 4  # foreign id rejected → fresh v4
 
@@ -136,7 +144,7 @@ def test_extract_happy_path(tmp_path: Path) -> None:
         layouts=["cover-centered", "agenda-list", "closing-centered"],
         common={"tokens.css": ":root { --bg: #fff; }"},
     )
-    records = extract_deck_template(FSRef(tpl))
+    records = _extract(FSRef(tpl))
     assert len(records) == 1
     rec = records[0]
     assert rec.type == RecordType.DECK_TEMPLATE
@@ -152,7 +160,7 @@ def test_extract_happy_path(tmp_path: Path) -> None:
 
 def test_extract_defaults_name_to_slug(tmp_path: Path) -> None:
     tpl = _seed_template(tmp_path, "untitled", layouts=["blank-canvas"])
-    rec = extract_deck_template(FSRef(tpl))[0]
+    rec = _extract(FSRef(tpl))[0]
     assert rec.name == "untitled"
     assert rec.meta_dict()["metadata"]["page_types"] == []
 
@@ -161,7 +169,7 @@ def test_extract_free_data_section_passthrough(tmp_path: Path) -> None:
     tpl = _seed_template(
         tmp_path, "d", manifest_data={"owner": "eran", "brand": "acme"}
     )
-    meta = extract_deck_template(FSRef(tpl))[0].meta_dict()["metadata"]
+    meta = _extract(FSRef(tpl))[0].meta_dict()["metadata"]
     assert meta["data"] == {"owner": "eran", "brand": "acme"}
 
 
@@ -169,21 +177,21 @@ def test_extract_layouts_ignore_non_html(tmp_path: Path) -> None:
     tpl = _seed_template(tmp_path, "mix", layouts=["cover-centered"])
     (tpl / "layouts" / "notes.txt").write_text("not a layout", encoding="utf-8")
     (tpl / "layouts" / "partials").mkdir()
-    meta = extract_deck_template(FSRef(tpl))[0].meta_dict()["metadata"]
+    meta = _extract(FSRef(tpl))[0].meta_dict()["metadata"]
     assert meta["layouts"] == ["cover-centered"]
 
 
 def test_extract_non_template_folder_returns_empty(tmp_path: Path) -> None:
-    plain = tmp_path / "assets" / "deck-templates" / "no-manifest"
+    plain = tmp_path / "agentic-assets" / "deck_template" / "no-manifest"
     plain.mkdir(parents=True)
-    assert extract_deck_template(FSRef(plain)) == []
+    assert extract_deck_template(FSRef(plain), "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee") == []
 
 
 def test_extract_id_agrees_with_gen_id(tmp_path: Path) -> None:
     """extract and gen_id must resolve the same id (capsule precedence)."""
     tpl = _seed_template(tmp_path, "agree", layouts=["cover-centered"])
-    gen = deck_template_gen_id(FSRef(tpl))  # stamps the capsule first (prod order)
-    rec = extract_deck_template(FSRef(tpl))[0]
+    gen = _mint(FSRef(tpl))
+    rec = _extract(FSRef(tpl))[0]
     assert rec.id == gen
 
 

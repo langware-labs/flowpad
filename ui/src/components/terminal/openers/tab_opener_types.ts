@@ -44,6 +44,13 @@ export interface OpenerDescriptor {
    * message to its tooltip. The opener stays clickable.
    */
   warning?: string | null;
+  /**
+   * The capability kind behind this opener (harness openers only). Carried to
+   * the Capabilities view when a warned opener routes there, so that view
+   * re-probes the capability the user actually asked for instead of showing
+   * the last sweep's answer.
+   */
+  capabilityKind?: string;
   pendingInline?: boolean;
   disabled?: boolean;
   dockerNodes?: ComputeNode[];

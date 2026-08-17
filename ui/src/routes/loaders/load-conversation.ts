@@ -23,15 +23,8 @@
  * into declarative dock-load resolutions.
  */
 
-import {
-  type Conversation,
-  ContextEntitiesEnum,
-  dataContext,
-  dataManager,
-  Project,
-  type Task,
-  TypeId,
-} from '@sdk';
+import { t } from '@lingui/core/macro';
+import { type Conversation, ContextEntitiesEnum, dataContext, dataManager, Project, type Task, TypeId } from '@sdk';
 import { Conversation as ConversationEntity } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { DockLoadError } from './dock-load-error';
@@ -103,19 +96,14 @@ export async function loadConversation(conversationId: string): Promise<Conversa
     );
     // Prefetch the Project entity into the cache so the footer label / any
     // useEntity(Project, …) read in the page is warm on first paint.
-    await dataManager
-      .getByTypeId<Project>(new TypeId(Project.type, projectId))
-      .catch(() => null);
+    await dataManager.getByTypeId<Project>(new TypeId(Project.type, projectId)).catch(() => null);
   } else {
     // Conversation has no mapped project (receiver pre-mapping, or
     // project-scoped conversation that lost its project). Drop the global
     // active project to null — the StatusBar will render the red
     // "Select Project" pill until the user picks one (via the gate dialog
     // or the footer's Switch Project button).
-    await dataContext.setContextEntityTypeId(
-      ContextEntitiesEnum.CurrentProjectTypeId,
-      null,
-    );
+    await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
   }
 
   if (projectRoot) {
@@ -152,8 +140,9 @@ export async function loadConversationRoute(pointer: string | undefined): Promis
           'hard',
           {
             action: 'render_error',
-            title: 'Conversation not found',
-            message: 'This conversation no longer exists or is unavailable.',
+            title: t`Conversation not found`,
+            message: t`This conversation no longer exists or is unavailable.`,
+            link: { label: t`Go to inbox`, pointer: DockPointer.forInbox() },
           },
           'conversation',
           e,
@@ -165,8 +154,8 @@ export async function loadConversationRoute(pointer: string | undefined): Promis
           'soft',
           {
             action: 'render_error',
-            title: 'Conversation unavailable',
-            message: 'Could not load this conversation. Try again in a moment.',
+            title: t`Conversation unavailable`,
+            message: t`Could not load this conversation. Try again in a moment.`,
             retryable: true,
           },
           'conversation',

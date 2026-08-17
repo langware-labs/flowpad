@@ -28,9 +28,7 @@ class _FakeResp:
 
 
 def _conn(ctx, *, visible, focused):
-    return websocket.ConnectionInfo(
-        ws=object(), visible=visible, focused=focused, browser_context=ctx
-    )
+    return websocket.ConnectionInfo(ws=object(), visible=visible, focused=focused, browser_context=ctx)
 
 
 def test_worker_context_uses_origin_connection_not_active_tab(monkeypatch, capsys):
@@ -63,7 +61,7 @@ def test_worker_context_uses_origin_connection_not_active_tab(monkeypatch, capsy
         cid = (params or {}).get("connection_id")
         return _FakeResp(asyncio.run(navigate.get_browser_context(connection_id=cid)))
 
-    monkeypatch.setattr(context_cmd.requests, "get", _fake_get)
+    monkeypatch.setattr(context_cmd, "_local_get", _fake_get)
 
     # Exactly how the records workflow invokes it: no --connection-id.
     context_cmd.list_context()

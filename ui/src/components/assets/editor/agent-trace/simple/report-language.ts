@@ -6,6 +6,7 @@
  * Pure / React-free on purpose, so it's covered by a no-mock unit test (mirrors
  * the `analysis-improvements.ts` style). The report component computes nothing.
  */
+import { t } from '@lingui/core/macro';
 import type { AgentTraceDoc, TraceFinding } from '../trace-types';
 
 /** Tone drives the tint — reuses the same palette key as `verdictStyle`. */
@@ -20,19 +21,26 @@ export interface FriendlyVerdict {
 }
 
 /** ok/mixed/bad/none → a friendly headline + emoji + the model's reason line. */
-export function friendlyVerdict(
-  verdict?: string | null,
-  reason?: string | null,
-): FriendlyVerdict {
+export function friendlyVerdict(verdict?: string | null, reason?: string | null): FriendlyVerdict {
   const v = (verdict ?? '').toLowerCase();
   const plainReason = (reason ?? '').trim();
   switch (v) {
     case 'ok':
       return { emoji: '🟢', headline: 'Looks good — it did what you asked.', reason: plainReason, tone: 'ok' };
     case 'mixed':
-      return { emoji: '🟡', headline: "Mostly fine — a few things could've gone better.", reason: plainReason, tone: 'mixed' };
+      return {
+        emoji: '🟡',
+        headline: "Mostly fine — a few things could've gone better.",
+        reason: plainReason,
+        tone: 'mixed',
+      };
     case 'bad':
-      return { emoji: '🔴', headline: 'Ran into trouble — several things went wrong.', reason: plainReason, tone: 'bad' };
+      return {
+        emoji: '🔴',
+        headline: 'Ran into trouble — several things went wrong.',
+        reason: plainReason,
+        tone: 'bad',
+      };
     default:
       return { emoji: '⚪', headline: 'Not rated yet.', reason: plainReason, tone: 'neutral' };
   }
@@ -47,12 +55,12 @@ export interface FriendlySeverity {
 export function friendlySeverity(severity?: string | null): FriendlySeverity {
   switch ((severity ?? '').toLowerCase()) {
     case 'attention':
-      return { label: 'Needs a look', tone: 'bad' };
+      return { label: t`Needs a look`, tone: 'bad' };
     case 'warn':
     case 'warning':
-      return { label: 'Minor', tone: 'mixed' };
+      return { label: t`Minor`, tone: 'mixed' };
     default:
-      return { label: 'Note', tone: 'neutral' };
+      return { label: t`Note`, tone: 'neutral' };
   }
 }
 

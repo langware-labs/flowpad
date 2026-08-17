@@ -143,7 +143,39 @@ class IndexItem:
 
     @property
     def is_manual(self) -> bool:
+        """``manual: true`` alone. To decide whether to WRITE, use
+        :attr:`is_protected` — these two flags are separate spellings of the same
+        veto, and enforcing on one of them lets the other through."""
         return self._node.manual
+
+    @property
+    def is_ground_truth(self) -> bool:
+        """``ground_truth: true`` — hand-written content, not a generated index."""
+        return self._node.ground_truth
+
+    @property
+    def is_protected(self) -> bool:
+        """Either opt-out flag is set; the generator must not write this folder."""
+        return self._node.protected
+
+    @property
+    def has_index(self) -> bool:
+        """An ``index.md`` exists on disk, whoever authored it."""
+        return self._node.has_index
+
+    @property
+    def index_title(self) -> str:
+        """H1 of the on-disk ``index.md`` (``""`` when there is none)."""
+        return self._node.index_title
+
+    @property
+    def is_generator_authored(self) -> bool:
+        """The on-disk ``index.md`` carries an ``inputs_hash`` — we wrote it.
+
+        ``has_index and not is_generator_authored`` is the clobber hazard: a
+        hand-written ``index.md`` that reads as stale and would be overwritten.
+        """
+        return self._node.is_generator_authored
 
     @property
     def has_folder_note(self) -> bool:
@@ -245,7 +277,7 @@ class StampStats:
     """Result of a native baseline stamp (no LLM)."""
 
     folders_stamped: int
-    folders_skipped: int      # already-fresh baselines + manual folders
+    folders_skipped: int      # already-fresh baselines + protected folders
     blobs_written: int
     blobs_deleted: int        # GC'd orphans
     total_files: int
@@ -410,7 +442,7 @@ class LLMIndexer:
 
     def stale_indexes(self) -> Iterator[IndexItem]:
         for item in self.indexes():
-            if not item.is_manual and (self.force or item.is_stale):
+            if not item.is_protected and (self.force or item.is_stale):
                 yield item
 
     def docs(self) -> Iterator[DocItem]:
@@ -453,7 +485,7 @@ class LLMIndexer:
 
         folders_done = 0
         for item in self.indexes():
-            if item.is_manual or not (self.force or item.is_stale):
+            if item.is_protected or not (self.force or item.is_stale):
                 continue
             prior = None if self.force else item.load_prior()
             reused = item.reusable_self_summary(prior) if prior else None
@@ -485,7 +517,8 @@ class LLMIndexer:
         No LLM: real content hashes + titles, summaries only from the existing
         cache / a still-valid prior. Idempotent — folders whose baseline already
         matches (inputs_hash + file-set) are skipped, so a no-change re-stamp
-        rewrites nothing. ``manual: true`` folders are never stamped. With
+        rewrites nothing. Protected folders (``manual: true`` /
+        ``ground_truth: true``) are never stamped. With
         ``write_blobs``, file contents are stored content-addressed under
         ``blobs/<sha256>`` (size/binary-guarded) and orphans are GC'd afterwards.
         """
@@ -495,7 +528,7 @@ class LLMIndexer:
         stamped = skipped = blobs_written = total_files = 0
         for item in self.indexes():  # post-order: children before parents
             total_files += len(item.files)
-            if item.is_manual:
+            if item.is_protected:
                 skipped += 1
                 continue
             prior_doc = IndexDocument.load_file(self._baseline_json_path(item.rel_path))
@@ -593,7 +626,7 @@ class LLMIndexer:
 
         for item in self.indexes():
             live_rels.add(item.rel_path)
-            if item.is_manual:
+            if item.is_protected:
                 continue
             prior = self.load_baseline(item)
             if prior is None:
@@ -722,7 +755,9 @@ class LLMIndexer:
         for item in self.indexes():
             prior = self.load_baseline(item)
             baseline_by_rel[item.rel_path] = prior
-            if item.is_manual:
+            if item.is_ground_truth:
+                fstatus = "ground_truth"
+            elif item.is_manual:
                 fstatus = "manual"
             elif prior is None:
                 fstatus = "unindexed"

@@ -2,6 +2,7 @@ import type { BranchSummary, RepoSummary } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { useGitBranches } from '@src/hooks/use-git-providers';
+import { formatRelative } from './relative-time';
 import { ArrowLeft, GitBranch, Loader2, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -12,7 +13,8 @@ interface BranchPickerProps {
   onBack: () => void;
 }
 
-/** Move the default branch to the top of the list (mirrors GitHubConnectionDialog.sortBranches). */
+/** Move the default branch to the top of the list (mirrors GitHubConnectionDialog.sortBranches).
+ *  Everything below it stays in the backend's order, which is most-recently-changed first. */
 function pinDefault(branches: BranchSummary[], defaultName: string): BranchSummary[] {
   const i = branches.findIndex((b) => b.name === defaultName);
   if (i <= 0) return branches;
@@ -41,7 +43,9 @@ export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
           <ArrowLeft className="h-3.5 w-3.5" />
         </Button>
         <span className="font-medium">{repo.full_name}</span>
-        <span className="text-muted-foreground"><Trans>· pick a branch</Trans></span>
+        <span className="text-muted-foreground">
+          <Trans>· pick a branch</Trans>
+        </span>
       </div>
 
       <div className="relative">
@@ -50,7 +54,7 @@ export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t`Filter branches…`}
-          className="pl-7 text-sm"
+          className="ps-7 text-sm"
           autoFocus
         />
       </div>
@@ -62,7 +66,7 @@ export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
           </div>
         ) : isError ? (
           <div className="px-3 py-4 text-xs text-destructive">
-            Failed to load branches: {(error as Error)?.message ?? 'unknown error'}
+            Failed to load branches: {error?.message ?? 'unknown error'}
           </div>
         ) : list.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-muted-foreground">
@@ -79,11 +83,19 @@ export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
                 <GitBranch className="h-3 w-3 text-muted-foreground" />
                 <span className="flex-1 font-mono">{branch.name}</span>
                 {branch.name === repo.default_branch && (
-                  <span className="rounded bg-muted px-1.5 py-px text-[10px] uppercase text-muted-foreground"><Trans>default</Trans></span>
+                  <span className="rounded bg-muted px-1.5 py-px text-[10px] uppercase text-muted-foreground">
+                    <Trans>default</Trans>
+                  </span>
                 )}
                 {branch.protected && (
-                  <span className="rounded bg-amber-500/15 px-1.5 py-px text-[10px] uppercase text-amber-700 dark:text-amber-300"><Trans>protected</Trans></span>
+                  <span className="rounded bg-amber-500/15 px-1.5 py-px text-[10px] uppercase text-amber-700 dark:text-amber-300">
+                    <Trans>protected</Trans>
+                  </span>
                 )}
+                {/* The list is ordered by this, so show it — otherwise the order looks arbitrary. */}
+                <span className="w-16 shrink-0 text-end text-[10px] text-muted-foreground">
+                  {formatRelative(branch.updated_at)}
+                </span>
               </li>
             ))}
           </ul>

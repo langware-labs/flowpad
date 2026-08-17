@@ -10,11 +10,11 @@ from typing import Any, AsyncIterator, BinaryIO, List
 import anyio
 from starlette.concurrency import run_in_threadpool
 
-# FSItem import is optional - it may not be defined yet in models
+# FSEntry import is optional - it may not be defined yet in models
 try:
-    from flow_sdk.models import FSItem
+    from flow_sdk.models import FSEntry
 except ImportError:
-    FSItem = None  # Will be used for type hints only
+    FSEntry = None  # Will be used for type hints only
 
 from flow_sdk.storage.storage_driver import StorageDriver, StorageError, StoragePermissionError, StreamUploader, VFSPath
 
@@ -141,15 +141,17 @@ class LocalStorageDriver(StorageDriver):
         pass  # No authentication needed for local file system
 
     def _local_full_path(self, vfs_path: str) -> str:
-        relative_vpath = vfs_path
         vpath = VFSPath(vfs_path)
-        if vpath.is_absolute():
-            relative_vpath = vpath.entity_subpath
+        # Storage paths are relative to this driver's mount whether the caller
+        # uses `/foo` or `foo`. VFSPath is now a pure parser, so normalize at
+        # this storage boundary instead of relying on ambient request context
+        # to turn a leading slash into an absolute typed locator.
+        relative_vpath = vpath.entity_subpath
         # If entity_subpath is already an absolute OS path (e.g. C:/Users/... on Windows),
         # return it directly — joining with mount_path would double-prefix the drive letter.
         if os.path.isabs(relative_vpath):
             return os.path.normpath(relative_vpath)
-        return self.get_storage_path(relative_vpath)
+        return self.get_storage_path(vfs_path)
         # rel_os_path = to_os_path(storage_path)
         # return str(os.path.join(self.mount.storage_path, rel_os_path))
 
@@ -247,7 +249,7 @@ class LocalStorageDriver(StorageDriver):
         except Exception as e:
             raise StorageError(f"Failed to stream file: {e}")
 
-    async def list_dir(self, vfs_path: str | None = None) -> List[FSItem]:
+    async def list_dir(self, vfs_path: str | None = None) -> List[FSEntry]:
         """List the contents of a directory on the storage device."""
         if vfs_path is None:
             vfs_path = "/"
@@ -256,7 +258,7 @@ class LocalStorageDriver(StorageDriver):
         # Extract the entity sub-path (strip typeid prefix if present)
         # This prevents double-prefixing when constructing item paths
         parsed_vpath = VFSPath(vfs_path)
-        entity_sub_path = parsed_vpath.entity_subpath if parsed_vpath.is_absolute() else vfs_path
+        entity_sub_path = parsed_vpath.entity_subpath
 
         if not os.path.isdir(storage_local_path):
             return []
@@ -296,7 +298,7 @@ class LocalStorageDriver(StorageDriver):
                         except OSError:
                             # Some pseudo-fs entries (e.g. /dev/fd/*) can fail while probing.
                             is_directory = False
-                        item = FSItem(
+                        item = FSEntry(
                             vfs_abs_path=item_vfs_path,
                             is_dir=is_directory,
                             size=None if is_directory else stat.st_size,

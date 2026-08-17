@@ -6,12 +6,16 @@ import { applyScopeToParams, scopeFilterKey, type ScopeFilter } from '@src/lib/s
 const SEARCH_PATH = '/graph/compute_node/@local/fs-records/search';
 const DEFAULT_SEARCH_LIMIT = 20;
 
+/** Shortest query this hook will actually send. Exported so a caller can gate
+ *  its own UI on the same threshold instead of guessing at it. */
+export const MIN_SEARCH_QUERY_LENGTH = 2;
+
 const ANNOTATION_LABEL_DISPLAY: Record<string, string> = {
   prompt: 'user prompt',
 };
 
 export function getSearchResultBadgeLabel(result: { record_type: string; labels?: string[] }): string {
-  if (result.record_type === RecordType.ANNOTATION && result.labels?.length) {
+  if (result.record_type === String(RecordType.ANNOTATION) && result.labels?.length) {
     const key = result.labels[0].replace(/:$/, '');
     return ANNOTATION_LABEL_DISPLAY[key] ?? key;
   }
@@ -26,6 +30,8 @@ export interface SearchFilters {
   time_start?: string;  // ISO string (used when time_preset === 'custom')
   time_end?: string;    // ISO string (used when time_preset === 'custom')
   include_system?: boolean;  // Show SDK-shipped system-project entities. Default off.
+  /** Browse without a text query, ordered by explicit user-edit activity. */
+  sort_by?: 'last_edited_at';
 }
 
 export interface SearchCalibration {
@@ -49,6 +55,8 @@ export interface SearchResult {
   scope: string;
   created_at: string;
   modified_at: string;
+  /** Epoch milliseconds; present on explicit recent-activity browse rows. */
+  last_edited_at?: number | string | null;
   asset_ref: string;
   message_count?: number;
   labels?: string[];
@@ -57,10 +65,17 @@ export interface SearchResult {
 
 export interface UseRecordSearchResult {
   results: SearchResult[];
+  /** Matching rows before backend pagination. */
+  total: number;
   isLoading: boolean;
   error: string | null;
   indexerReady: boolean;
   latencyMs: number | null;
+}
+
+export interface RecordSearchRequestOptions {
+  /** Backend page size. Search keeps its established default when omitted. */
+  limit?: number;
 }
 
 const LS_CALIBRATION_KEY = 'flowpad-search-calibration';
@@ -71,7 +86,7 @@ export function loadStoredCalibration(): SearchCalibration {
 }
 
 export function saveCalibration(c: SearchCalibration) {
-  try { localStorage.setItem(LS_CALIBRATION_KEY, JSON.stringify(c)); } catch {}
+  try { localStorage.setItem(LS_CALIBRATION_KEY, JSON.stringify(c)); } catch { /* Best effort. */ }
 }
 
 const TIME_OFFSETS: Record<string, number> = { '1h': 3_600_000, '1d': 86_400_000, '1w': 604_800_000 };
@@ -98,38 +113,41 @@ export function useRecordSearch(
   // _handle_fs_records_search narrows the search by user / project entities.
   scopeFilter: ScopeFilter | null = null,
   debounceMs = 300,
+  requestOptions: RecordSearchRequestOptions = {},
 ): UseRecordSearchResult {
   const [results, setResults] = useState<SearchResult[]>([]);
+  const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [indexerReady, setIndexerReady] = useState(true);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cancelledRef = useRef(false);
-
   const { col_weights, recency_boost, recency_factor, overfetch, type_scores } = calibration;
+  const { limit = DEFAULT_SEARCH_LIMIT } = requestOptions;
 
   useEffect(() => {
+    let cancelled = false;
     if (timerRef.current) clearTimeout(timerRef.current);
 
     // `filters.scope` is intentionally excluded — it no longer drives the
     // request (the canonical ScopeFilter does that). Gating on it here used
     // to fire searches that came back unscoped, which silently rendered
     // global results in scope-only UIs.
-    const hasFilter = !!(filters.record_type || filters.status || filters.time_preset);
-    if (!hasFilter && (!query.trim() || query.trim().length < 2)) {
+    const hasFilter = !!(filters.record_type || filters.status || filters.time_preset || filters.sort_by);
+    if (!hasFilter && query.trim().length < MIN_SEARCH_QUERY_LENGTH) {
       setResults([]);
+      setTotal(0);
       setIsLoading(false);
       return;
     }
 
-    cancelledRef.current = false;
     timerRef.current = setTimeout(() => {
-      const params = new URLSearchParams({ q: query, limit: String(DEFAULT_SEARCH_LIMIT) });
+      const params = new URLSearchParams({ q: query, limit: String(limit) });
       if (filters.record_type) params.set('record_type', filters.record_type);
       if (filters.status) params.set('status', filters.status);
       if (filters.include_system) params.set('include_system', 'true');
+      if (filters.sort_by) params.set('sort_by', filters.sort_by);
       // Canonical scope wire-format — `user=…&projects=…`. The legacy
       // `filters.scope` enum string used to be sent as `?scope=<enum>` but
       // the backend never read it; the ScopeFilter below is the only path.
@@ -148,26 +166,27 @@ export function useRecordSearch(
       apiClient
         .get(`${SEARCH_PATH}?${params.toString()}`)
         .then((data: unknown) => {
-          if (cancelledRef.current) return;
-          const d = data as { results?: SearchResult[]; indexer_ready?: boolean } | null;
+          if (cancelled) return;
+          const d = data as { results?: SearchResult[]; total?: number; indexer_ready?: boolean } | null;
           const raw = d?.results ?? [];
           setResults(applyTimeFilter(raw, filters));
+          setTotal(d?.total ?? raw.length);
           setIndexerReady(d?.indexer_ready ?? true);
           setLatencyMs(Date.now() - startTime);
           setIsLoading(false);
         })
         .catch((err: unknown) => {
-          if (cancelledRef.current) return;
+          if (cancelled) return;
           setError(err instanceof Error ? err.message : 'Search failed');
           setIsLoading(false);
         });
     }, debounceMs);
 
     return () => {
-      cancelledRef.current = true;
+      cancelled = true;
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [query, filters.record_type, filters.status, filters.time_preset, filters.time_start, filters.time_end, filters.include_system, scopeFilter ? scopeFilterKey(scopeFilter) : null, col_weights, recency_boost, recency_factor, overfetch, type_scores, debounceMs]);
+  }, [query, filters.record_type, filters.status, filters.time_preset, filters.time_start, filters.time_end, filters.include_system, filters.sort_by, scopeFilter ? scopeFilterKey(scopeFilter) : null, col_weights, recency_boost, recency_factor, overfetch, type_scores, debounceMs, limit]);
 
-  return { results, isLoading, error, indexerReady, latencyMs };
+  return { results, total, isLoading, error, indexerReady, latencyMs };
 }

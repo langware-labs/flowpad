@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const log = require('electron-log');
@@ -13,6 +13,8 @@ const { SOD_KEY_KEYCHAIN_SERVICE, PYPI_PACKAGE, PYTHON_VERSION } = UvManager;
 const UPGRADE_COMMAND = `uv tool install ${PYPI_PACKAGE}@latest --python ${PYTHON_VERSION} --force`;
 const DIAGNOSE_COMMAND = 'flow diagnose';
 const { isNewer } = require('./semver');
+
+const isMac = process.platform === 'darwin';
 
 // Register flowpad:// as a custom protocol so the OS routes deep links here.
 // Must be called before app.whenReady().
@@ -329,13 +331,71 @@ app.on('second-instance', (_event, argv) => {
 //
 // handleDeepLink will see mainWindow === null and stash the URL into
 // pendingDeepLink, which startApp consumes after backend warmup.
-if (process.platform !== 'darwin') {
+if (!isMac) {
   const argvDeepLink = process.argv.find(arg => arg.startsWith('flowpad://'));
   if (argvDeepLink) {
     log.info(`[deep-link] picked up from process.argv: ${argvDeepLink}`);
     handleDeepLink(argvDeepLink);
   }
 }
+
+// --- Application menu (view-mode gated) ---------------------------------
+//
+// The menu is shown only in Advanced/Dev view modes. The renderer owns the
+// view-mode state and pushes the current "should the menu be visible" boolean
+// over the `set-menu-visible` channel (see preload.js / view-mode-context.tsx).
+//
+// macOS caveat: the menu lives in the system bar, and `setMenuBarVisibility`
+// is a no-op there. `setApplicationMenu(null)` would strip Cmd+Q, Copy/Paste,
+// window shortcuts, etc. So on macOS we always install a MINIMAL BASELINE menu
+// (App / Edit / Window) even when "hidden", and swap in the fuller menu (adds
+// File + View) when advanced. On Windows/Linux the in-window bar is genuinely
+// hidden when not advanced.
+let menuVisible = false;
+
+function buildMenuTemplate(advanced) {
+  const template = [];
+  if (isMac) template.push({ role: 'appMenu' });
+  if (advanced) template.push({ role: 'fileMenu' });
+  template.push({ role: 'editMenu' });
+  if (advanced) template.push({ role: 'viewMenu' });
+  template.push({ role: 'windowMenu' });
+  return template;
+}
+
+function applyMenu() {
+  // Non-mac + hidden: strip the bar entirely. Otherwise install the
+  // advanced-or-baseline template (advanced === menuVisible); on macOS the
+  // baseline stays so Cmd+Q / Copy-Paste / window shortcuts survive.
+  const menu = !menuVisible && !isMac ? null : Menu.buildFromTemplate(buildMenuTemplate(menuVisible));
+  Menu.setApplicationMenu(menu);
+  // No-op on macOS (menu lives in the system bar); meaningful on Win/Linux.
+  if (mainWindow) mainWindow.setMenuBarVisibility(menuVisible);
+}
+
+// Electron ships Chromium's renderer without Chromium's chrome, so there is no
+// default right-click menu: the spellchecker underlines misspellings but its
+// suggestions have nowhere to appear. This installs the standard one.
+//
+// Pinned to ^3 deliberately — v4+ is ESM-only and this file is CommonJS.
+//
+// shouldShowMenu is the important option. Electron fires this event even when
+// the renderer calls preventDefault() on the DOM contextmenu, so without a gate
+// the native menu would open on top of the app's own Radix context menus
+// (BrowseableGrid, TabStrip, FavoriteStar, SimpleFileManager, terminal strip).
+// Limiting it to text contexts leaves those menus alone and still covers the
+// case this exists for.
+require('electron-context-menu')({
+  shouldShowMenu: (_event, params) => params.isEditable || !!params.selectionText || !!params.misspelledWord,
+  showSearchWithGoogle: false, // sends the selection to an external search
+});
+
+ipcMain.on('set-menu-visible', (_event, visible) => {
+  const next = !!visible;
+  if (next === menuVisible) return;
+  menuVisible = next;
+  applyMenu();
+});
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -361,7 +421,7 @@ function createWindow() {
   // [nav] tracing: every back/forward source and every resulting history
   // transition is logged so a double-navigation (e.g. "back jumps two") shows
   // up as either two trigger lines for one gesture, or one trigger followed by
-  // two did-navigate lines. Pairs with the frontend toplog `navigation` topic
+  // two did-navigate lines. Pairs with the frontend toplog `navigation` tag
   // (window.history pushState/popstate from NavigationActions) — together they
   // tell us whether the main process or the renderer is double-stepping.
   const navState = () => {
@@ -394,7 +454,7 @@ function createWindow() {
     log.info(`[nav] did-navigate-in-page (SPA/pushState) url=${url} ${navState()}`);
   });
 
-  if (process.platform === 'darwin') {
+  if (isMac) {
     // macOS surfaces the buttons two ways and never reaches the renderer:
     //  - a raw mouse `input-event` (button 'back'/'forward'); and
     //  - with drivers like Logitech Options / Options+ (or the trackpad), a
@@ -454,6 +514,18 @@ function createWindow() {
       if (/^https?:\/\//.test(url)) {
         require('electron').shell.openExternal(url);
       }
+    }
+  });
+
+  // Clear the taskbar/dock "attention" flash once the user focuses the window.
+  // On Linux/Windows a new-message notification calls flashFrame(true) (there is
+  // no dock to bounce); this turns it off the moment the window is focused. No-op
+  // on macOS where dock bounce self-clears on focus.
+  mainWindow.on('focus', () => {
+    try {
+      mainWindow.flashFrame(false);
+    } catch (err) {
+      log.warn(`[notify] flashFrame(false) on focus failed: ${err.message}`);
     }
   });
 
@@ -525,6 +597,11 @@ async function startApp() {
   setupElectronAutoUpdater();
 
   createWindow();
+
+  // Install the default (hidden/baseline) menu now that the app is ready and the
+  // window exists — so the app never flashes Electron's stock menu before the
+  // renderer reports its view mode over `set-menu-visible`.
+  applyMenu();
 
   // Wait for the loading page to finish loading so IPC listeners are ready
   if (mainWindow.webContents.isLoading()) {
@@ -871,6 +948,75 @@ ipcMain.on('quit-app', () => {
 ipcMain.handle('get-backend-url', () => BACKEND_URL);
 
 ipcMain.handle('get-app-version', () => app.getVersion());
+
+// ── OS-level desktop notifications ───────────────────────────────────────────
+// Native surfaces for the `desktop_notify` ui_command (see the renderer's
+// handleDesktopNotify). Three channels: banner, dock/launcher badge, and an
+// attention signal (dock bounce on macOS, taskbar flash on Linux/Windows).
+let lastNote = null; // close the previous banner before the next so macOS doesn't coalesce
+let notifySeq = 0; // unique-body suffix — a repeated identical body is silently dropped
+
+// Show an OS banner. On click: focus the window (restoring if minimized) and
+// round-trip the opaque clickTarget to the renderer, which owns navigation.
+ipcMain.handle('notify-os', (_event, payload) => {
+  const { title, body, clickTarget } = payload && typeof payload === 'object' ? payload : {};
+  if (!Notification.isSupported()) return false;
+  try {
+    if (lastNote) {
+      try { lastNote.close(); } catch { /* already gone */ }
+    }
+    notifySeq += 1;
+    lastNote = new Notification({
+      title: typeof title === 'string' && title ? title : 'Flowpad',
+      // Zero-width space suffix keeps each body unique (invisible) so macOS
+      // renders every banner instead of collapsing repeats.
+      body: `${typeof body === 'string' ? body : ''}${'​'.repeat(notifySeq % 8)}`,
+      silent: false,
+    });
+    lastNote.on('click', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+        mainWindow.webContents.send('notification-click', { clickTarget });
+      }
+    });
+    lastNote.show();
+    return true;
+  } catch (err) {
+    log.warn(`[notify] notify-os failed: ${err.message}`);
+    return false;
+  }
+});
+
+// Set the dock (macOS) / launcher (Linux Unity) badge count. 0 clears it.
+ipcMain.handle('set-badge', (_event, n) => {
+  try {
+    app.setBadgeCount(Math.max(0, Number(n) | 0));
+    return true;
+  } catch (err) {
+    log.warn(`[notify] set-badge failed: ${err.message}`);
+    return false;
+  }
+});
+
+// Attention signal: dock bounce (macOS) or taskbar flash (Linux/Windows). Only
+// fires when the window is NOT focused — no point yelling at a user already
+// looking at the app.
+ipcMain.handle('notify-attention', () => {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()) return false;
+    if (process.platform === 'darwin') {
+      app.dock?.bounce('critical');
+    } else if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.flashFrame(true);
+    }
+    return true;
+  } catch (err) {
+    log.warn(`[notify] notify-attention failed: ${err.message}`);
+    return false;
+  }
+});
 
 ipcMain.handle('get-startup-logs', () => {
   const logs = [];

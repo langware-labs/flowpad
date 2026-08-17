@@ -14,6 +14,7 @@ Real AP entities (no AgentTranscriptFile/parser mocks); status is driven by
 monkeypatching ``_discover_status_from_transcript`` — the same wrapper the
 flush uses, so we exercise the live decision logic.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -23,10 +24,9 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
-from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
+from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.flowpad_types.enums import WorkerType
-
 
 # do not increase timeout without approval
 pytestmark = pytest.mark.timeout(30)
@@ -43,8 +43,12 @@ async def _make_ap(status: WorkerStatus, monkeypatch) -> AgenticProcess:
         worker_type=WorkerType.CLAUDE_CODE,
     )
     ap.status = ProcessStatus.RUNNING.value
+    await ap.save(notify=False)
     monkeypatch.setattr(
-        type(ap), "_discover_status_from_transcript", lambda self: status, raising=False,
+        type(ap),
+        "_discover_status_from_transcript",
+        lambda self: status,
+        raising=False,
     )
     return ap
 
@@ -155,6 +159,36 @@ async def test_flush_short_circuits_when_not_running(initialize_test_db, monkeyp
     await ap._debounce_task
 
     assert notify_calls == []
+
+
+@pytest.mark.asyncio
+async def test_stale_pty_flush_cannot_overwrite_durable_cli_switch(initialize_test_db, monkeypatch) -> None:
+    """A PTY callback armed before a CLI switch never republishes its stale row."""
+    ap = await _make_ap(WorkerStatus.COMPLETE, monkeypatch)
+    object.__setattr__(ap, "_last_broadcast_key", ("running", True, "thinking"))
+
+    notify_snapshots: list[tuple[str, bool]] = []
+
+    async def _fake_notify(entity: AgenticProcess) -> None:
+        notify_snapshots.append((entity.status, entity.pty_mode))
+
+    monkeypatch.setattr(type(ap), "notify_updated", _fake_notify, raising=False)
+
+    await ap.on_transcript_change(Path("/tmp/x.jsonl"), [])
+    durable = await AgenticProcess.get_by_id(str(ap.id))
+    assert durable is not None
+    durable.status = ProcessStatus.STOPPED.value
+    durable.pty_mode = False
+    durable.visible = False
+    await durable.save(notify=False)
+
+    await ap._debounce_task
+
+    assert notify_snapshots == []
+    persisted = await AgenticProcess.get_by_id(str(ap.id))
+    assert persisted is not None
+    assert persisted.status == ProcessStatus.STOPPED.value
+    assert persisted.pty_mode is False
 
 
 @pytest.mark.asyncio

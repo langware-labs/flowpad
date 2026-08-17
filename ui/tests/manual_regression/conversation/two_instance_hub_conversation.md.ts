@@ -70,6 +70,31 @@ test('binding criterion: real alice↔bob conversation through the local hub', a
   expect(proj.status()).toBe(200);
   const pid: string = (await proj.json()).data.id;
 
+  // The hub's consent boundary requires the receiver to be an explicit project
+  // member before a guest conversation can target them. Alice invites Bob and
+  // Bob accepts with his own authenticated identity.
+  const invite = await rq.post(`${HUB}/api/v1/graph/project/${pid}/members`, {
+    ...auth(alice.token),
+    data: {
+      recipient_email: BOB_EMAIL,
+      invitation_targets: [{ typeid: `project-${pid}`, role: 'member' }],
+    },
+  });
+  expect(invite.status()).toBe(200);
+  const pendingRes = await rq.get(`${HUB}/api/v1/graph/invitation/pending`, auth(bob.token));
+  expect(pendingRes.status()).toBe(200);
+  const pending = ((await pendingRes.json()).data ?? []) as Array<{
+    id: string;
+    target?: { type?: string; id?: string } | null;
+  }>;
+  const projectInvite = pending.find((row) => row.target?.type === 'project' && row.target.id === pid);
+  expect(projectInvite, 'bob receives the project membership invitation').toBeTruthy();
+  const accepted = await rq.get(
+    `${HUB}/api/v1/graph/members/accept?invitation-id=${projectInvite!.id}`,
+    { ...auth(bob.token), maxRedirects: 0 },
+  );
+  expect(accepted.status()).toBe(302);
+
   // alice starts a guest conversation addressed to bob by id, first message "hi".
   const startRes = await rq.post(`${HUB}/api/v1/graph/project/${pid}/start_guest_conversation`, {
     ...auth(alice.token),

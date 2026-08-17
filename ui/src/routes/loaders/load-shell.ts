@@ -18,6 +18,7 @@
  * Failure UI: 1 cleanup → toast; 2+ cleanups → modal counter.
  */
 
+import { t } from '@lingui/core/macro';
 import {
   AgenticProcess,
   connectionManager,
@@ -29,43 +30,32 @@ import {
   Shell,
   ShellStatus,
   systemTools,
+  tabManager,
   TypeId,
 } from '@sdk';
-import { closeTerminalTab } from '@src/tabs/useTabs';
-import { stampTabRecencyForTarget } from '@src/tabs/tab-recency';
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
 import { buildShellRedirectUrl, detectLayout, DockPointer } from '@src/navigation';
 import type { ViewMode } from '@src/contexts/view-mode-context';
 
 /**
- * The URL-derived values that must SURVIVE the scope-align redirect in
- * `reconcileProcessScope` — one home for "what the redirect carries" instead of
- * a growing positional tail. The redirect rebuilds the URL from scratch (the
- * loader `requestPath` contract is pathname-only), so anything not listed here
- * is dropped; widening the contract to carry the whole search string is the
- * tracked deeper fix.
+ * The URL-derived values that must survive the scope-align redirect in
+ * `reconcileProcessScope`. `options` is the complete parsed query record: scope
+ * reconciliation owns only the scope keys and must preserve every unrelated
+ * option (view mode, side windows, deep-link metadata, and future additions).
  */
 export interface ProcessRouteCarry {
   scope?: ScopeFilter | null;
   viewMode?: ViewMode | null;
+  options?: Record<string, string>;
 }
 import { ViewType } from '@sdk';
 import { projectScope, scopeFilterEqual, type ScopeFilter } from '@src/lib/scope-filter';
 import { replace } from 'react-router';
 import { perfLog, perfTime } from './_perf';
-import {
-  describeProcessStartError,
-  loadProcess,
-  ProcessLoadError,
-} from './load-process';
+import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
 import { loadProject } from './load-project';
-import {
-  buildProcessCleanup,
-  loadNextProcess,
-  type CleanupRecord,
-  type LoadedNext,
-} from './load-next-process';
+import { buildProcessCleanup, loadNextProcess, type CleanupRecord, type LoadedNext } from './load-next-process';
 
 // ── typed error (for plain-Shell loads) ─────────────────────────────────────
 
@@ -84,7 +74,7 @@ export class ShellLoadError extends Error {
 
 // Synchronously iterate the DataManager entity cache, returning all live
 // entities of a given type. Used to skip redundant backend queries on tab
-// switches — the cache is kept warm by the tabs store's (`useTabs`) live subscription.
+// switches — mounted tab bodies keep the cache warm through entity subscriptions.
 function cachedEntitiesByType<U>(type: string): U[] {
   const out: U[] = [];
   for (const [typeId, ref] of dataManager.entities.entries()) {
@@ -107,10 +97,7 @@ export async function loadShell(shellId: string): Promise<Shell> {
   const cached = Shell.getByIdFromCache<Shell>(shellId);
   perfLog(`loadShell cache=${cached ? 'hit' : 'miss'} shellId=${shellId.slice(0, 8)}`);
   const shell =
-    cached ??
-    (await perfTime('Shell.getById (network)', () =>
-      Shell.getById<Shell>(shellId).catch(() => null),
-    ));
+    cached ?? (await perfTime('Shell.getById (network)', () => Shell.getById<Shell>(shellId).catch(() => null)));
   if (!shell) {
     throw new ShellLoadError('not_found', shellId);
   }
@@ -148,13 +135,13 @@ export async function loadShell(shellId: string): Promise<Shell> {
   // Stamp recency on the Tab too — the close-resolver reads Tab.last_active_at,
   // not the Shell row, so without this close-to-most-recently-active falls back
   // to tab_order.
-  stampTabRecencyForTarget(Shell.type, shell.id);
+  tabManager.stampTargetRecency(Shell.type, shell.id);
   dataContext.setWorkdir(shell.workdir ?? dataContext.project?.fs_storage_mount_path ?? null);
   await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
   return shell;
 }
 
-// Default-tab resolution moved to `resolveNextTab` (src/tabs/tab-candidates.ts):
+// Default-tab resolution lives in the SDK TabManager's `resolveNext` facade:
 // the single `resolveActive` resolver applied to the pre-filtered tab list,
 // retiring `resolveDefaultTab` (tab-management.md Part 1 §5, Phase 3).
 
@@ -175,9 +162,7 @@ function handleCleanups(cleaned: CleanupRecord[]): void {
 }
 
 function loadedToPointer(loaded: LoadedNext): string {
-  return loaded.kind === 'process'
-    ? loaded.process.terminalDockPointer.pointer
-    : loaded.shell.dockPointer.pointer;
+  return loaded.kind === 'process' ? loaded.process.terminalDockPointer.pointer : loaded.shell.dockPointer.pointer;
 }
 
 // ── ROUTE: internal branches ────────────────────────────────────────────────
@@ -242,37 +227,41 @@ async function routeDefaultShell(shellUrl: ShellUrlBuilder): Promise<void> {
  * diverge (open an oss chat while sapora-streams was active → URL carries
  * sapora's scope), `replace()` the URL onto the same pointer carrying the
  * process's own project scope. This runs at LOAD, so it also corrects deep
- * links / hard refresh / back-forward, not just the click path. Projectless
- * targets keep whatever scope was seeded (no entity project to project from).
+ * links / hard refresh / back-forward, not just the click path. A genuinely
+ * projectless target actively removes any seeded project scope so its tab and
+ * the mounted view agree on the Global owner.
  *
  * Keyed off entity IDENTITY only and run BEFORE the runtime phase, so the scope
  * follows `project_id` regardless of how `loadProcess` later resolves — PTY
  * soft-failure, a stale-instance unexpected throw, or success all land on the
  * correctly-scoped URL (the runtime then attaches on the redirected re-run).
  */
-async function reconcileProcessScope(
-  processId: string,
-  requestPath: string,
-  carry?: ProcessRouteCarry,
-): Promise<void> {
+async function reconcileProcessScope(processId: string, requestPath: string, carry?: ProcessRouteCarry): Promise<void> {
   // Resolve identity only (cache-first; a cheap get-by-id on cold nav).
   const proc =
     AgenticProcess.getByIdFromCache<AgenticProcess>(processId) ??
     (await AgenticProcess.getById<AgenticProcess>(processId).catch(() => null));
-  if (!proc?.project_id) return; // projectless / unresolvable target — leave the seeded scope as-is
-  const want = projectScope(proc.project_id);
+  if (!proc) return;
+  const pathProject = !proc.project_id && proc.workdir ? await Project.getProjectByPath(proc.workdir) : null;
+  const ownerProjectId = proc.project_id ?? pathProject?.id ?? null;
+  const base = new DockPointer(
+    ViewType.SHELL,
+    proc.terminalDockPointer.pointer,
+    carry?.options,
+    detectLayout(requestPath),
+  );
+  if (!ownerProjectId) {
+    if (!carry?.scope) return;
+    const url = base
+      .withoutScopeFilter()
+      .withViewMode(carry?.viewMode ?? null)
+      .toUrl(requestPath);
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw replace(url);
+  }
+  const want = projectScope(ownerProjectId);
   if (carry?.scope && scopeFilterEqual(carry.scope, want)) return; // already aligned — no redirect loop
-  // NOTE: this scope-align redirect drops the incoming URL's query options
-  // (`?sideWindows=dir`, etc.) — `requestPath` is pathname-only (loaders.ts:73
-  // strips the query before it reaches here) and this DockPointer seeds
-  // options=undefined. Carrying deep-link options through the redirect needs the
-  // loader `requestPath` contract to include the search string (touches
-  // detectLayout / buildShellRedirectUrl across all routes) — tracked separately;
-  // not fixed here. See dir_panel_scroll.md.ts for the affected deep-link.
-  // ONE exception, threaded explicitly: `?viewMode`. Vibe is a rendering mode
-  // of the process's single shell URL — dropping the param here would silently
-  // land every project-owned vibe entry in standard mode.
-  const url = new DockPointer(ViewType.SHELL, proc.terminalDockPointer.pointer, undefined, detectLayout(requestPath))
+  const url = base
     .withScopeFilter(want)
     .withViewMode(carry?.viewMode ?? null)
     .toUrl(requestPath);
@@ -308,9 +297,7 @@ async function routeProcessPointer(
     // sibling class of bugs after a backend restart. (Scope is already
     // aligned above, before this phase ran.)
     if (e.severity === 'soft') {
-      dataContext.setActiveTerminalTargetTypeId(
-        new TypeId(AgenticProcess.type, processId),
-      );
+      dataContext.setActiveTerminalTargetTypeId(new TypeId(AgenticProcess.type, processId));
       dataContext.setTerminalRuntimeError({
         kind: e.kind as Exclude<typeof e.kind, 'entity_not_found'>,
         processId,
@@ -340,11 +327,11 @@ async function routeProcessPointer(
     const requestedName = requestedProc?.name ?? requestedProc?.displayName ?? `${processId.slice(0, 8)}…`;
     const fallbackName =
       next.loaded.kind === 'process'
-        ? next.loaded.process.name ?? next.loaded.process.displayName ?? fallbackPointer
-        : next.loaded.shell.name ?? fallbackPointer;
+        ? (next.loaded.process.name ?? next.loaded.process.displayName ?? fallbackPointer)
+        : (next.loaded.shell.name ?? fallbackPointer);
     notify.error({
-      title: `Terminal "${requestedName}" not found`,
-      message: `${directCleanup.title} — opened "${fallbackName}" instead.`,
+      title: t`Terminal "${requestedName}" not found`,
+      message: t`${directCleanup.title} — opened "${fallbackName}" instead.`,
     });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw replace(shellUrl(fallbackPointer));
@@ -352,15 +339,11 @@ async function routeProcessPointer(
 }
 
 async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder): Promise<void> {
-  const shellId = pointer.startsWith(Shell.type + '-')
-    ? pointer.slice(Shell.type.length + 1)
-    : pointer;
+  const shellId = pointer.startsWith(Shell.type + '-') ? pointer.slice(Shell.type.length + 1) : pointer;
 
   // If a process owns this shell, send the user to the process URL instead —
   // that path handles open({ visible: true }) + PTY reconnect for us.
-  const linkedProcess = cachedEntitiesByType<AgenticProcess>(AgenticProcess.type).find(
-    (p) => p.shell_id === shellId,
-  );
+  const linkedProcess = cachedEntitiesByType<AgenticProcess>(AgenticProcess.type).find((p) => p.shell_id === shellId);
   if (linkedProcess) {
     // Use replace so BACK from the process URL doesn't pop back to the bare
     // shell URL (which would just re-bounce here → flicker).
@@ -369,7 +352,7 @@ async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder
   }
 
   // Cache miss — cold navigation (hard refresh / deep link / page.goto): the
-  // loader runs before the tabs store (`useTabs`) warms the cache. The shell carries
+  // loader runs before a mounted tab body warms the cache. The shell carries
   // its owner directly (Shell.agentic_process_id, the reverse of
   // AgenticProcess.shell_id), so a plain get-by-id resolves ownership — no
   // reverse scan over processes.
@@ -409,8 +392,8 @@ async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder
     }
     const fallbackPointer = loadedToPointer(next.loaded);
     notify.error({
-      title: 'Opened a different terminal',
-      message: `Couldn't load ${shellId.slice(0, 8)}… (${directCleanup.title}) — opened ${fallbackPointer} instead.`,
+      title: t`Opened a different terminal`,
+      message: t`Couldn't load ${shellId.slice(0, 8)}… (${directCleanup.title}) — opened ${fallbackPointer} instead.`,
     });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw replace(shellUrl(fallbackPointer));
@@ -422,11 +405,21 @@ async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder
 async function buildShellCleanupForRoute(e: ShellLoadError): Promise<CleanupRecord> {
   switch (e.kind) {
     case 'not_found':
-      return { kind: 'shell_not_found', shellId: e.shellId, title: 'Shell not found', description: 'This terminal no longer exists.' };
+      return {
+        kind: 'shell_not_found',
+        shellId: e.shellId,
+        title: t`Shell not found`,
+        description: t`This terminal no longer exists.`,
+      };
     case 'error_status':
-      return { kind: 'shell_error_status', shellId: e.shellId, title: 'Shell unavailable', description: e.errorMessage ?? 'Shell error' };
+      return {
+        kind: 'shell_error_status',
+        shellId: e.shellId,
+        title: t`Shell unavailable`,
+        description: e.errorMessage ?? 'Shell error',
+      };
     case 'start_failed': {
-      await closeTerminalTab(new TypeId(Shell.type, e.shellId)).catch(() => {});
+      await tabManager.closeTarget(new TypeId(Shell.type, e.shellId)).catch(() => {});
       const desc = describeProcessStartError(e.cause ?? e);
       return { kind: 'shell_start_failed', shellId: e.shellId, title: desc.title, description: desc.description };
     }
@@ -451,22 +444,27 @@ export async function loadShellRoute(
 
   // All redirects below preserve the request's layout keyword (dock/dev/win)
   // so a /win/shell focus window never falls back into full-app chrome (§7).
-  const shellUrl: ShellUrlBuilder = (p?: string) => buildShellRedirectUrl(requestPath, p);
+  const shellUrl: ShellUrlBuilder = (p?: string) => buildShellRedirectUrl(requestPath, p, carry?.options);
 
-  // Gate on the FlowSync WS being OPEN. The dispatch chain below
-  // (loadProcess → process.start → shell.attachPty → _reattach → callActionOverWS)
-  // throws synchronously when the socket isn't connected, which on cold tabs
-  // races against initSdk's fire-and-forget connect. 5 s budget; on timeout we
-  // surface a toast and fall through (the existing redirect-on-failure chain
-  // still applies if the downstream WS call ultimately fails).
+  // A process URL resolves identity/context only. Its mounted TerminalPanel
+  // owns the WS-bound start/attach, so do not hold this route on realtime
+  // readiness before React Router can commit the URL.
+  if (pointer && DockPointer.isAgenticProcessPointer(pointer)) {
+    const processId = DockPointer.extractAgenticProcessId(pointer);
+    await routeProcessPointer(processId, shellUrl, requestPath, carry);
+    perfLog('loadShellRoute done (agentic process path)');
+    return;
+  }
+
+  // Plain-Shell paths still attach inside loadShell, so retain their existing
+  // FlowSync readiness gate and budget. On timeout we surface a toast and let
+  // the existing failure/recovery chain decide what to render.
   try {
-    await perfTime('connectionManager.waitForConnected', () =>
-      connectionManager.waitForConnected(5000),
-    );
+    await perfTime('connectionManager.waitForConnected', () => connectionManager.waitForConnected(5000));
   } catch {
     notify.error({
-      title: 'No realtime connection',
-      message: 'Terminal may be unresponsive until the connection recovers.',
+      title: t`No realtime connection`,
+      message: t`Terminal may be unresponsive until the connection recovers.`,
     });
   }
 
@@ -476,13 +474,6 @@ export async function loadShellRoute(
 
   if (!pointer) {
     await routeDefaultShell(shellUrl);
-    return;
-  }
-
-  if (DockPointer.isAgenticProcessPointer(pointer)) {
-    const processId = DockPointer.extractAgenticProcessId(pointer);
-    await routeProcessPointer(processId, shellUrl, requestPath, carry);
-    perfLog('loadShellRoute done (agentic process path)');
     return;
   }
 

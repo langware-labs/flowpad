@@ -10,6 +10,7 @@
  * never blocks the attach. Cancel resolves `null` — the capture is aborted
  * entirely (the image is NOT attached and the caller does nothing further).
  */
+import { t } from '@lingui/core/macro';
 import { useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { notify } from '@src/notifications';
@@ -82,7 +83,10 @@ async function writeImageToClipboard(blob: Promise<Blob>): Promise<void> {
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
   } catch {
     // Clipboard write can fail (permissions / focus) — surface, never block.
-    notify.error({ title: 'Clipboard not updated', message: 'The annotated image was attached but could not be copied to the clipboard.' });
+    notify.error({
+      title: t`Clipboard not updated`,
+      message: t`The annotated image was attached but could not be copied to the clipboard.`,
+    });
   }
 }
 
@@ -103,7 +107,7 @@ export function ImageAnnotatorRoot() {
           .then(() => settle(annotated))
           .catch((err) => {
             notify.error({
-              title: 'Annotation not submitted',
+              title: t`Annotation not submitted`,
               message: err instanceof Error ? err.message : String(err),
             });
             settle(null);

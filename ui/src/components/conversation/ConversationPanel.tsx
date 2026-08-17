@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Conversation, type Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
@@ -7,8 +8,8 @@ import { OpenProjectComponent } from '@src/components/open-project-component/ope
 import { TabbedSideDrawer } from '@src/components/ui/side-drawer';
 import { CollapsedSideRail, SideRailButton } from '@src/components/ui/collapsed-side-rail';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
-import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
-import type { ProcessEntry } from '@src/components/workflows-view/workflow-run-store';
+import { ProcessRunsPanel } from '@src/components/process-runs/ProcessRunsPanel';
+import type { ProcessEntry } from '@src/components/process-runs/process-run-store';
 import { ConversationView } from './ConversationView';
 import { useProjectMappingGate } from './useProjectMappingGate';
 import { ChipsExcludeProvider } from './chips/ChipsExcludeContext';
@@ -49,6 +50,10 @@ interface ConversationPanelProps {
    * `selectedMessageId`. Omitted → local-state selection (embedded hosts).
    */
   onMessageNavigate?: (messageId: string) => void;
+  /** URL-carried thread filter (`?thread=<id>`); null = show every thread. */
+  threadId?: string | null;
+  /** Open a thread (id) or return to the packed list (null). */
+  onThreadNavigate?: (threadId: string | null) => void;
 }
 
 /**
@@ -99,7 +104,12 @@ export function EditableConversationTitle({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
 
-  if (!conv) return <span className={className} title={fallback}>{fallback}</span>;
+  if (!conv)
+    return (
+      <span className={className} title={fallback}>
+        {fallback}
+      </span>
+    );
 
   const display = (conv.title ?? '').trim() || fallback;
 
@@ -110,6 +120,7 @@ export function EditableConversationTitle({
     conv.title = next;
     try {
       await conv.save();
+      conv.markEdit();
     } catch {
       // best-effort; the optimistic title stays until the next sync
     }
@@ -156,15 +167,15 @@ export function ConversationPanel({
   className,
   selectedMessageId,
   onMessageNavigate,
+  threadId,
+  onThreadNavigate,
 }: ConversationPanelProps) {
   // One gate, two subject shapes. Remote provenance always lives on the
   // conversation; the gate stamps the task when present (task owns project_root
   // for cwd) or the conversation itself otherwise. Both shapes feed the same
   // `OpenProjectComponent` dialog and the same per-machine remote→local
   // mapping table.
-  const { data: convEntity } = useEntity<Conversation>(
-    new TypeId(Conversation.type, conversationId),
-  );
+  const { data: convEntity } = useEntity<Conversation>(new TypeId(Conversation.type, conversationId));
   const mappingGate = useProjectMappingGate(task ?? undefined, convEntity ?? undefined);
   const ensureMapped = mappingGate.ensureMapped;
   const mappingDialogProps = mappingGate.dialogProps;
@@ -219,13 +230,10 @@ export function ConversationPanel({
     },
     [onMessageNavigate],
   );
-  const selectEntity = useCallback(
-    (entityKey: string, messageIds: string[]) => {
-      setSelectedMessageIds(messageIds);
-      setSelectedEntityKey(entityKey);
-    },
-    [],
-  );
+  const selectEntity = useCallback((entityKey: string, messageIds: string[]) => {
+    setSelectedMessageIds(messageIds);
+    setSelectedEntityKey(entityKey);
+  }, []);
 
   // Runs tab target — always the conversation typeid. Approve & Execute
   // stamps every spawned AP with ``target_vfs_path = <conversation typeid>``,
@@ -244,9 +252,7 @@ export function ConversationPanel({
       if (typeof d === 'string') return new Date(d).getTime() || 0;
       return 0;
     };
-    return [...runProcesses]
-      .sort((a, b) => toMs(b.created_date) - toMs(a.created_date))
-      .map((p) => ({ process: p }));
+    return [...runProcesses].sort((a, b) => toMs(b.created_date) - toMs(a.created_date)).map((p) => ({ process: p }));
   }, [runProcesses]);
 
   const headerWrapper =
@@ -258,7 +264,7 @@ export function ConversationPanel({
   // Context first, Runs second. Runs is hidden entirely when there's no
   // anchor to query (covered by `showRuns`).
   const tabs = [
-    { id: 'context' as const, label: 'Context', icon: Layers },
+    { id: 'context' as const, label: t`Context`, icon: Layers },
     ...(showRuns
       ? [{ id: 'runs' as const, label: runEntries.length > 0 ? `Runs ${runEntries.length}` : 'Runs', icon: History }]
       : []),
@@ -279,10 +285,9 @@ export function ConversationPanel({
   };
   if (showRuns) {
     drawerChildren.runs = (
-      <WorkflowRunsPanel
+      <ProcessRunsPanel
         entries={runEntries}
         currentEntry={runEntries.find((e) => e.process.id === focusedRunId) ?? null}
-        computeNodeId={targetStr || undefined}
       />
     );
   }
@@ -300,12 +305,15 @@ export function ConversationPanel({
   // Clicking a message's run-status one-liner opens that run in the Runs tab,
   // focused on it. Execution itself no longer pops the drawer — the user opens
   // it here on demand. No-op when the conversation has no Runs target.
-  const openRun = useCallback((processId: string) => {
-    if (!showRuns) return;
-    setFocusedRunId(processId);
-    setActiveSideTab('runs');
-    setSideOpen(true);
-  }, [showRuns]);
+  const openRun = useCallback(
+    (processId: string) => {
+      if (!showRuns) return;
+      setFocusedRunId(processId);
+      setActiveSideTab('runs');
+      setSideOpen(true);
+    },
+    [showRuns],
+  );
 
   return (
     <div className={`flex h-full min-h-0 flex-1 flex-col ${className ?? ''}`}>
@@ -314,15 +322,17 @@ export function ConversationPanel({
           {headerLabel !== null && (
             <div className={headerWrapper}>
               <EditableConversationTitle conv={convEntity ?? null} fallback={headerLabel} />
-              <ProjectChip projectId={convEntity?.project_id ?? null} className="mr-auto" />
-              <MembersAvatarStack
-                typeId={new TypeId(Conversation.type, conversationId)}
-              />
+              <ProjectChip projectId={convEntity?.project_id ?? null} className="me-auto" />
+              <MembersAvatarStack typeId={new TypeId(Conversation.type, conversationId)} />
             </div>
           )}
           <div className={`${bodyWrapper} relative min-h-0 flex-1 overflow-y-auto`}>
             <ChipsExcludeProvider add={taskKeys}>
               <ConversationView
+                // Keyed so switching conversations RESETS the view's local
+                // state. Without it the instance is reused and an in-flight
+                // "composing…" line follows you into the next conversation.
+                key={conversationId}
                 conversationId={conversationId}
                 task={task}
                 senderName={senderName}
@@ -330,6 +340,8 @@ export function ConversationPanel({
                 selectedMessageIds={selectedMessageIds}
                 onSelectMessage={selectOneMessage}
                 onOpenRun={openRun}
+                threadId={threadId}
+                onThreadNavigate={onThreadNavigate}
               />
             </ChipsExcludeProvider>
           </div>
@@ -352,11 +364,7 @@ export function ConversationPanel({
         ) : (
           // Collapsed strip — clicking the drawer icon folds it back open.
           <CollapsedSideRail data-testid="conversation-side-drawer-collapsed">
-            <SideRailButton
-              icon={PanelRightOpen}
-              label="Expand drawer"
-              onClick={() => setSideOpen(true)}
-            />
+            <SideRailButton icon={PanelRightOpen} label={t`Expand drawer`} onClick={() => setSideOpen(true)} />
           </CollapsedSideRail>
         )}
       </div>

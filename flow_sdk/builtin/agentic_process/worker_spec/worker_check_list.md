@@ -301,6 +301,9 @@ workarounds.
 - [ ] Confirm flag ordering constraints.
 - [ ] Confirm `--` separator requirement, if any.
 - [ ] Confirm shell-string command and argv+env command can be rendered consistently.
+- [ ] Identify any flag whose value is structured (JSON or TOML) and confirm it
+      can be emitted as ONE raw argv value — quoting belongs to shell rendering,
+      never to the value builder (`cli_serialization.py`).
 
 Required mapping table:
 
@@ -320,7 +323,7 @@ Exit criteria:
 
 - [ ] Headless argv shape is known.
 - [ ] Interactive argv shape is known or marked unsupported.
-- [ ] Serialization requirements for `WorkerCLIOptions` are known.
+- [ ] Serialization requirements for `AgentOptions` are known.
 
 ## 8. FlowData Parser Feasibility
 
@@ -426,12 +429,19 @@ Goal: determine whether visible terminal mode can be supported.
 - [ ] Validate process exits cleanly on terminal close.
 - [ ] Validate restart reuses or resumes expected session.
 - [ ] Validate transcript is discoverable after visible launch.
+- [ ] Determine whether a pasted prompt ending in `\r` self-submits, or needs a
+      discrete Enter (`pty_submits_on_paste`).
+- [ ] Capture the exact composer-ready line printed when input is accepted
+      (`pty_composer_ready_pattern`), from ANSI-stripped output.
+- [ ] Enumerate blocking boot interstitials (directory trust, login, migration,
+      update prompts) and how to suppress each.
 - [ ] Mark interactive mode unsupported if vendor is headless-only.
 
 Exit criteria:
 
 - [ ] Interactive support is proven or explicitly out of scope.
 - [ ] PTY argv shape is known if supported.
+- [ ] Prompt-delivery timing is grounded in an observed marker, not a sleep.
 
 ## 12. Embedded Agents and Context Injection
 
@@ -544,7 +554,77 @@ Exit criteria:
 - [ ] Fixture set is enough for parser, status, and stream-worker tests.
 - [ ] Sensitive data has been redacted without changing schema.
 
-## 16. Implementation Readiness Summary
+## 16. Registration Surfaces
+
+Goal: list every registry the worker name must appear in, so nothing falls back
+silently. Each item is a table row in FlowPad code, not vendor behavior — see
+`AgenticWorkerSpec.md` §10 for the file for each.
+
+- [ ] Worker type added to both `WorkerType` enums.
+- [ ] `get_driver` registry entry (plus aliases) and `factory()` key.
+- [ ] Capability kind, spec, and `CliCapabilityRunner` registration.
+- [ ] Model tier map (`sm`/`md`/`lg` → concrete models).
+- [ ] `TranscriptFormat` member(s) — one per canonical shape, plus the stdout tee.
+- [ ] Transcript parser module and `PARSERS` entry.
+- [ ] Transcript resolver branch and worker→record-type mapping.
+- [ ] Transcript streamer path-sniff branch.
+- [ ] Pricing module and dispatcher branch.
+- [ ] Session `EntityType`, `TypeInfo`, indexer function, and its registration.
+- [ ] Asset placement harness prefix.
+- [ ] `InstanceSettings` fields for the vendor's home/session/config paths.
+
+Exit criteria:
+
+- [ ] Every registry above has a row for this worker.
+- [ ] No `if worker_type == ...` branch was added to `agentic_process.py`.
+
+## 17. Authentication and Installation
+
+Goal: prove FlowPad can detect, install-check, and log in this CLI without
+guessing.
+
+- [ ] Confirm the executable is discoverable and record its bin folder.
+- [ ] Confirm the CLI runs with a PATH that does NOT include the user's shell
+      profile (workers do not inherit nvm shims).
+- [ ] Identify the auth-state command and whether its exit code is meaningful.
+- [ ] Confirm "cannot determine" is distinguishable from "logged out".
+- [ ] Record whether the probe can be `verified` (vendor-confirmed) or heuristic.
+- [ ] Confirm the probe completes within the 5s budget.
+- [ ] Identify the login command and whether it is a device flow or paste-back.
+- [ ] Capture the exact stdout lines carrying the verification URL and code.
+- [ ] Confirm login can be driven non-interactively enough to script.
+- [ ] Identify env-var overrides for base URL, API key, and model slug.
+- [ ] Confirm a missing API key fails fast rather than falling back to a login prompt.
+- [ ] Identify which credentials live in the OS credential store vs. on disk.
+
+Exit criteria:
+
+- [ ] Install detection is proven.
+- [ ] Login state is machine-detectable.
+- [ ] Login flow is classified (device / paste-back / manual only).
+- [ ] API-key mode is proven or explicitly out of scope.
+
+## 18. Presentation and Naming
+
+Goal: make the worker visually and verbally distinct before it ships.
+
+- [ ] Source a monochrome-able vendor mark that reads at 12–16 px.
+- [ ] Produce the fresh icon component.
+- [ ] Produce the restored-session icon variant.
+- [ ] Register both in the process-icon map.
+- [ ] Add the terminal-strip provider entry (icon, color class, label).
+- [ ] Register the entity icon name on the session `TypeInfo`.
+- [ ] Confirm no glyph is hardcoded at a call site.
+- [ ] Choose the capability-card icon and homepage URL.
+- [ ] Check every new noun against `docs/glossary.md`.
+- [ ] Confirm the display name matches the vendor's own product name.
+
+Exit criteria:
+
+- [ ] Icons resolve in all three surfaces without falling back to generic.
+- [ ] Names do not collide with taken vocabulary.
+
+## 19. Implementation Readiness Summary
 
 Complete this summary before opening any implementation task.
 
@@ -570,7 +650,7 @@ Complete this summary before opening any implementation task.
 - [ ] Required tests:
 - [ ] Open risks:
 
-## 17. Critical Acceptance Gate
+## 20. Critical Acceptance Gate
 
 Development may start only when every critical item below is `Supported` or
 `Partial` with a documented workaround.
@@ -595,6 +675,8 @@ Development may start only when every critical item below is `Supported` or
 - [ ] Cancellation behavior.
 - [ ] Permission bypass or non-blocking approval strategy.
 - [ ] Test fixtures captured.
+- [ ] Install/auth detection wired (§17) — a worker that cannot report "not
+      installed" or "logged out" fails opaquely at spawn time.
 
 Stop conditions:
 

@@ -122,7 +122,7 @@ async def test_project_in_protected_folder_is_not_walked(
     # exactly as a real non-temp project would be — the guard gap under test is
     # orthogonal to temp filtering.
     sf = await get_all_scope_filter(include_temp=True, create_missing=False)
-    roots = await _Actions()._resolve_scoped_roots(sf)
+    roots = await _Actions()._resolve_scoped_roots(sf, foreground=False)
     assert roots is not None
 
     # The guard must have dropped the Documents-nested project walk root...
@@ -170,7 +170,7 @@ async def _project_under(folder: str, tmp_path: Path, monkeypatch: pytest.Monkey
 
 async def _resolve_for_all_projects():
     sf = await get_all_scope_filter(include_temp=True, create_missing=False)
-    return await _Actions()._resolve_scoped_roots(sf)
+    return await _Actions()._resolve_scoped_roots(sf, foreground=False)
 
 
 @pytest.mark.parametrize(
@@ -241,6 +241,52 @@ async def test_foreground_open_walks_even_when_ask(tmp_path: Path, monkeypatch: 
     bg = await _Actions()._resolve_scoped_roots(sf, foreground=False)
     fg = await _Actions()._resolve_scoped_roots(sf, foreground=True)
     assert not any(_under_protected(Path(r.path), home) for r in (bg or []))
+    assert any(_under_protected(Path(r.path), home) for r in (fg or []))
+
+
+async def test_auto_index_never_walks_an_ask_gated_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Auto-index (fired by merely SELECTING a project) must stay background.
+
+    The whole protected-folder design assumes the OS consent dialog only appears
+    after the user clicked "Index". Auto-index has no click behind it, so a
+    Documents-nested project must resolve to zero roots and queue an in-app
+    consent request instead — and `_auto_index_project` must therefore skip.
+
+    This is the regression lock on the one-word change that would break it:
+    passing ``foreground=True`` from the auto path (as the *scan* handler does for
+    an explicit ``?projects=``) would fire TCC prompts on a plain project switch.
+    """
+    from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope
+
+    home, proj_root = await _project_under("Documents", tmp_path, monkeypatch)
+    drain_pending_consent()
+    # Default state is 'ask' — deliberately not written, so this covers the
+    # out-of-the-box case a new user hits.
+
+    # Scope exactly as _auto_index_project does: this one project, background.
+    # Same id derivation the fixture used, so the scope really resolves to it —
+    # a mismatched id would yield zero roots and pass this test vacuously.
+    pid = Project.derive_id_for_path(str(proj_root))
+    sf = await resolve_project_scope(
+        ScopeFilter(user=False, projects=(pid,)), create_missing=False
+    )
+    assert sf.projects, "scope must resolve to the project, or the gate is untested"
+    roots = await _Actions()._resolve_scoped_roots(sf, foreground=False)
+
+    assert not any(_under_protected(Path(r.path), home) for r in (roots or [])), (
+        "an ASK-gated project must not be walked by an automatic index"
+    )
+    # ...and it is skipped as ASK (consent requested), not silently dropped.
+    # `_resolve_scoped_roots` already surfaced+drained the queued request, so the
+    # observable here is the decision itself; the event shape is covered by
+    # test_ask_state_queues_consent_event.
+    assert indexing_decision(proj_root, foreground=False) is IndexDecision.ASK
+
+    # Foreground would walk it — proving the gate is the `foreground` flag and
+    # that the auto path's choice of False is what protects the user.
+    fg = await _Actions()._resolve_scoped_roots(sf, foreground=True)
     assert any(_under_protected(Path(r.path), home) for r in (fg or []))
 
 

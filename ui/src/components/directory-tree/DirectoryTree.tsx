@@ -1,5 +1,5 @@
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
-import { FSItem } from '@sdk';
+import { FSEntry } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { ChevronDown, ChevronRight, ExternalLink, Folder, Home } from 'lucide-react';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
@@ -12,9 +12,9 @@ import { useDirectoryTree } from './useDirectoryTree';
 /**
  * DirectoryTree - Generic reusable directory tree component
  *
- * Simplified component that accepts FSItem folder objects as roots.
+ * Simplified component that accepts FSEntry folder objects as roots.
  * Features:
- * - Multiple FSItem folder roots
+ * - Multiple FSEntry folder roots
  * - Lazy loading of folder contents
  * - Expand/collapse folders
  * - Selection highlighting
@@ -41,7 +41,7 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
   ref,
 ) {
   // State for built-in delete confirmation
-  const [itemToDelete, setItemToDelete] = useState<FSItem | null>(null);
+  const [itemToDelete, setItemToDelete] = useState<FSEntry | null>(null);
   const { t } = useLingui();
 
   // Extract event handlers from events object
@@ -137,7 +137,7 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
    * Uses VFSPath comparison for robust path matching (handles protocol normalization)
    */
   const isRootFolder = useCallback(
-    (item: FSItem) => {
+    (item: FSEntry) => {
       return rootFolders.some((root) => {
         const rootPath = root.vfsPath;
         const itemPath = item.vfsPath;
@@ -177,12 +177,12 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
 
     // Check if user already provided a delete action
     const hasUserDeleteAction = itemHandler
-      ?.getHoverActions({ is_dir: false } as FSItem)
+      ?.getHoverActions({ is_dir: false } as FSEntry)
       .some((a) => a.name === 'delete');
 
     if (enableBuiltInDelete && !hasUserDeleteAction) {
       // Create a new handler that includes the built-in delete action
-      const existingActions = baseHandler.getHoverActions({ is_dir: true } as FSItem);
+      const existingActions = baseHandler.getHoverActions({ is_dir: true } as FSEntry);
       return new ItemHandler({
         renderIcon: (item) => baseHandler.renderIcon(item),
         renderItem: (item, level) => baseHandler.renderItem(item, level),
@@ -212,7 +212,7 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
    * Handle item click
    */
   const handleItemClick = useCallback(
-    (item: FSItem) => {
+    (item: FSEntry) => {
       // For folders, toggle expand/collapse on single click
       if (item.is_dir) {
         void tree.toggleExpanded(item);
@@ -244,7 +244,7 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
    * Handle item double-click
    */
   const handleItemDoubleClick = useCallback(
-    (item: FSItem) => {
+    (item: FSEntry) => {
       // Cancel any pending click timeout to prevent rename
       if (clickTimeoutRef.current) {
         clearTimeout(clickTimeoutRef.current);
@@ -271,7 +271,7 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
    * Handle rename submit
    */
   const handleRenameSubmit = useCallback(
-    async (item: FSItem) => {
+    async (item: FSEntry) => {
       await tree.performRename(item, tree.state.renameValue);
     },
     [tree],
@@ -281,7 +281,7 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
    * Render a tree item (file or folder)
    */
   const renderTreeItem = useCallback(
-    (item: FSItem, level: number = 0) => {
+    (item: FSEntry, level: number = 0) => {
       const isSelected = tree.isSelected(item);
       const isRenaming = tree.isRenaming(item);
       const isExpanded = item.is_dir && tree.isExpanded(item);
@@ -321,7 +321,7 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
                   {isExpanded ? (
                     <ChevronDown className="h-3 w-3 text-muted-foreground" />
                   ) : (
-                    <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                    <ChevronRight className="h-3 w-3 text-muted-foreground rtl:-scale-x-100" />
                   )}
                 </button>
               ) : (
@@ -402,11 +402,17 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
 
           {/* Empty state for folder */}
           {isExpanded && !isItemLoading && contents.length === 0 && (
-            <div className="ml-8 p-2 text-xs text-muted-foreground"><Trans>No files or folders</Trans></div>
+            <div className="ms-8 p-2 text-xs text-muted-foreground">
+              <Trans>No files or folders</Trans>
+            </div>
           )}
 
           {/* Loading state for folder */}
-          {isExpanded && isItemLoading && <div className="ml-8 p-2 text-xs text-muted-foreground"><Trans>Loading...</Trans></div>}
+          {isExpanded && isItemLoading && (
+            <div className="ms-8 p-2 text-xs text-muted-foreground">
+              <Trans>Loading...</Trans>
+            </div>
+          )}
         </div>
       );
     },
@@ -415,7 +421,11 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
 
   // Show loading state
   if (externalLoading) {
-    return <div className={`p-4 text-center text-xs text-muted-foreground ${className}`}><Trans>Loading...</Trans></div>;
+    return (
+      <div className={`p-4 text-center text-xs text-muted-foreground ${className}`}>
+        <Trans>Loading...</Trans>
+      </div>
+    );
   }
 
   // Show error state
@@ -428,7 +438,9 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
     return (
       <div className={`p-4 text-center ${className}`}>
         <Folder className="mx-auto h-8 w-8 text-muted-foreground/50" />
-        <p className="mt-2 text-xs text-muted-foreground"><Trans>No roots configured</Trans></p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          <Trans>No roots configured</Trans>
+        </p>
       </div>
     );
   }
@@ -457,7 +469,7 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
           )}
           {/* Filter dropdown */}
           {filterDefinitions && filterDefinitions.length > 0 && onEnabledFiltersChange && (
-            <div className="ml-auto">
+            <div className="ms-auto">
               <FilterDropdown
                 filters={filterDefinitions}
                 enabledFilters={enabledFilters ?? []}

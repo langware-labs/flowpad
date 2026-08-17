@@ -8,6 +8,25 @@ import pytest
 
 
 @pytest.mark.asyncio
+async def test_search_results_emit_remote_boolean():
+    from types import SimpleNamespace
+
+    from flow_sdk.server.routes.search import _entity_to_result
+
+    base = {
+        "id": "11111111-1111-4111-8111-111111111111",
+        "type": "markdown",
+        "name": "doc",
+        "asset_ref": "/tmp/doc.md",
+    }
+    cloud = await _entity_to_result(SimpleNamespace(**base, remote=True))
+    local = await _entity_to_result(SimpleNamespace(**base, remote=False))
+
+    assert cloud["remote"] is True
+    assert local["remote"] is False
+
+
+@pytest.mark.asyncio
 async def test_search_user_only(bootstrapped_client):
     """user=true & projects= → keep user-scoped rows; drop project-scoped rows.
 
