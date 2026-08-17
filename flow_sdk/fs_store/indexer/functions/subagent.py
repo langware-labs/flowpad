@@ -147,12 +147,16 @@ def agent_id(ref: FSRef) -> str:
 def subagent_peek_entity_id(ref: FSRef) -> str:
     """Entity UUID for an agent .md without writing the source.
 
-    Strictly read-only, so it is safe to call from request handlers
-    (``TypeInfo.mint_id`` persists a missing identity capsule, which would dirty
-    read-only mounts and trip the dev reload watcher).
+    Strictly read-only, so it is safe to call from request handlers — hence the
+    probe form of the seam (``derive=False, overwrite=False``), which never
+    stamps a missing capsule onto a read-only mount.
 
-    Reads the canonical identity capsule first, then valid legacy frontmatter.
-    On a miss it returns the same stable v5 derivation used by indexing.
+    Carrier reads go through ``TypeInfo.mint_entity_id``. The miss path does NOT:
+    it derives ``uuid5(DNS, "subagent:<name-or-stem>")`` while the seam would
+    derive ``uuid5(URL, <resolved path>)``. **These disagree**, and the value is
+    kept as-is deliberately — converging it would move the id of every
+    unstamped subagent, which is a data migration, not a refactor. Verified
+    divergent rather than assumed; see the id-derivation golden file.
     """
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 

@@ -781,30 +781,18 @@ class Entity(DBEntity):
 
     @classmethod
     def allocate_id(cls, data: dict) -> str:
-        """Return a stable UUID for this entity type given creation data.
+        """Row-only entity id. Thin shim over the single minting policy.
 
-        Validate-on-adopt + single minter:
-        - If data['id'] is a **conforming** entity id (UUID v4/v5) → keep it.
-        - Else if data['id'] is non-empty (a slug, or a foreign/non-conforming
-          uuid such as a v7) → derive a stable ``uuid5(type:id)`` (normalizes
-          it; a hand-authored v7 never survives as the id).
-        - If empty/absent → fresh random uuid4.
-
-        All cases route through ``mint_uuid`` so the version policy lives in one
-        place. Override in subclasses with a natural fs identity key (e.g.
-        Project uses fs_storage_mount_path).
+        Kept as the entity-side entry point (``flow_message``/``conversation``
+        have no ``TypeInfo``), but it no longer *implements* anything — the
+        policy lives in ``TypeInfo.mint_row_entity_id`` so a filesystem asset
+        and a row-only entity cannot drift apart. Per-type behaviour goes in a
+        ``_row_id_policy`` classmethod, not in an override of this.
         """
-        import uuid as _uuid
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-        from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
-
-        rid = data.get("id") or ""
-        if rid and is_valid_entity_id(rid):
-            return rid
-        if rid:
-            type_str = data.get("type") or "record"
-            return mint_uuid(f"{type_str}:{rid}", namespace=_uuid.NAMESPACE_DNS)
-        return mint_uuid()
+        type_str = data.get("type") or getattr(cls, "type_name", None) or cls.get_type()
+        return SchemaRegistry.mint_row_entity_id(str(type_str), data)
 
     @classmethod
     async def from_record(cls, record: "Record", notify: bool = True) -> Entity:
@@ -836,6 +824,23 @@ class Entity(DBEntity):
             for _k in getattr(_mm, "model_fields", None) or {}:
                 if _k in _nested and _k not in data:
                     data[_k] = _nested[_k]
+        # Tripwire on the universal FS→DB path. An asset-backed record arrives
+        # here already resolved by ``TypeInfo.mint_entity_id``; if it ever does
+        # not, ``allocate_id`` would mint a SECOND id for a path the seam
+        # already owns — silently forking the entity. A no-op today (the id is
+        # always valid by this point), a permanent guard against the regression.
+        import logging  # noqa: PLC0415
+
+        from flow_sdk.fs_store.identifier import is_valid_entity_id  # noqa: PLC0415
+
+        if data.get("asset_ref") and not is_valid_entity_id(str(data.get("id") or "")):
+            logging.warning(
+                "[asset-id] %s record for %s reached from_record without a seam-resolved id "
+                "(%r); identity must come from TypeInfo.mint_entity_id, not allocate_id.",
+                record_type,
+                data.get("asset_ref"),
+                data.get("id"),
+            )
         entity_uuid = entity_cls.allocate_id(data)
         # Filter by the *record's* type, not entity_cls.get_type(). The latter
         # is "entity" when entity_cls falls back to base Entity (most types

@@ -267,15 +267,15 @@ def test_golden_fsrecord_content_fingerprint_is_not_an_entity_id(tmp_path: Path)
     assert rec.content_fingerprint != seam, "a content hash is not an entity id"
 
 
-def test_golden_markdown_id_diverges_from_the_seam_on_a_capsule_only_doc(
+def test_golden_markdown_id_agrees_with_the_seam_on_a_capsule_only_doc(
     tmp_path: Path,
 ) -> None:
-    """The live fork: `markdown_id` reads frontmatter only; the seam reads the capsule.
+    """Regression: `markdown_id` used to FORK a capsule-stamped, frontmatter-less doc.
 
-    A capsule-stamped, frontmatter-less doc therefore gets a DIFFERENT id from
-    `agentic_process`/`bootstrap` than from the indexer — and it flows straight
-    into `sync_to_db()`. Pinned as the pre-fix state so the convergence in the
-    per-type-minter phase is a deliberate, visible diff.
+    It read frontmatter only, while the indexer's backend reads the identity
+    capsule first — and its result flows straight into `sync_to_db()` from
+    `agentic_process` and `bootstrap`. The two derivations must agree, or those
+    paths mint a second entity for a document the walk already owns.
     """
     from flow_sdk.capsules import AssetCapsule, CapsuleData
     from flow_sdk.fs_store.indexer.functions.markdown import markdown_id
@@ -286,9 +286,41 @@ def test_golden_markdown_id_diverges_from_the_seam_on_a_capsule_only_doc(
     ref = FSRef(path, record_type="markdown")
 
     assert _info("markdown").mint_entity_id(ref) == V4, "the seam sees the capsule"
-    assert markdown_id(ref) == str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve()))), (
-        "markdown_id ignores the capsule and derives path-v5 — the divergence"
-    )
+    assert markdown_id(ref) == V4, "and so must the read-only derive"
+
+
+def test_golden_markdown_id_miss_path_is_unchanged(tmp_path: Path) -> None:
+    """The far commoner case must NOT move: no carrier → path-v5, still no write."""
+    from flow_sdk.fs_store.indexer.functions.markdown import markdown_id
+
+    path = tmp_path / "plain.md"
+    path.write_text("# Plain\n\nbody\n", encoding="utf-8")
+    before = path.read_bytes()
+    ref = FSRef(path, record_type="markdown")
+
+    assert markdown_id(ref) == str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
+    assert path.read_bytes() == before, "a read-only derive never stamps"
+
+
+def test_golden_subagent_peek_miss_path_diverges_from_the_seam(tmp_path: Path) -> None:
+    """Pinned DIVERGENCE, not agreement.
+
+    ``subagent_peek_entity_id`` reads its carrier through the seam, but its miss
+    path derives ``uuid5(DNS, "subagent:<name-or-stem>")`` where the seam derives
+    ``uuid5(URL, <path>)``. Converging them would move the id of every unstamped
+    subagent, so the divergence is kept and pinned here — a future "cleanup"
+    that quietly merges them must fail this test first.
+    """
+    from flow_sdk.fs_store.indexer.functions.subagent import subagent_peek_entity_id
+
+    path = tmp_path / "helper.md"
+    path.write_text("# Helper\n\nbody\n", encoding="utf-8")
+    ref = FSRef(path, record_type="subagent")
+
+    peek = subagent_peek_entity_id(ref)
+    assert peek == str(uuid.uuid5(uuid.NAMESPACE_DNS, "subagent:helper"))
+    assert peek != _info("subagent").mint_entity_id(ref, derive=True, overwrite=False)
+    assert path.read_bytes() == b"# Helper\n\nbody\n", "the peek never writes"
 
 
 def test_golden_secret_origin_id_matches_the_seam_key() -> None:

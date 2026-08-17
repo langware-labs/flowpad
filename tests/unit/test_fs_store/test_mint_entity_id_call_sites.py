@@ -40,10 +40,9 @@ _PER_TYPE_MINTER_ALLOWLIST = {
     # Provider-owned journals: the run id IS the natural key and doubles as the
     # type's ``id_stable_key_fn``. Read-only source, so nothing is ever stamped.
     ("workflow_run.py", "workflow_run_id"),
-    # Read-only derives for request handlers / non-indexer callers. Both are
-    # scheduled to fold into ``mint_entity_id(..., derive=True)``; the fold
-    # MOVES ids for capsule-stamped docs, so it ships on its own.
-    ("markdown.py", "markdown_id"),
+    # A read-only derive for request handlers. Still listed because its
+    # import-order fallback reaches the historic derive; the main path is the
+    # seam. (``markdown_id`` no longer needs an entry — it delegates outright.)
     ("subagent.py", "subagent_peek_entity_id"),
 }
 
