@@ -47,6 +47,12 @@ describe('APIEntity.markEdit', () => {
     const byId = project(ENTITY_ID);
 
     byId.markEdit();
+    expect(dataManager.getRecentEntityEdits()).toEqual([
+      expect.objectContaining({
+        target: expect.objectContaining({ type: Project.type, id: ENTITY_ID }),
+        markedAt: Date.now(),
+      }),
+    ]);
     await vi.advanceTimersByTimeAsync(30_000);
 
     // This separately-hydrated object addresses the same row through @uname,
@@ -65,6 +71,7 @@ describe('APIEntity.markEdit', () => {
     expect(action.targetEntity).toMatchObject({ type: Project.type, id: ENTITY_ID });
     expect(byId.last_edited_at).toBe(123);
     expect(byUname.last_edited_at).toBe(123);
+    expect(dataManager.getRecentEntityEdits()).toHaveLength(1);
   });
 
   it('schedules by type and id without hydrating an entity', async () => {

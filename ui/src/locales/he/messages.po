@@ -1236,6 +1236,7 @@ msgstr "כל הפריסות עדכניות"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/terminal/HistoryModal.tsx
+#: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "All projects"
 msgstr "כל הפרויקטים"
 
@@ -3424,8 +3425,8 @@ msgstr "העתק קישור"
 #~ msgstr "העתק יומן"
 
 #: src/components/spec-editor/SpecEditor.tsx
-#: src/components/top-nav-bar/CrumbDetailsPopover.tsx
-#: src/components/top-nav-bar/CrumbDetailsPopover.tsx
+#: src/components/top-nav-bar/CopyPathButton.tsx
+#: src/components/top-nav-bar/CopyPathButton.tsx
 msgid "Copy path"
 msgstr "העתק נתיב"
 
@@ -5115,6 +5116,10 @@ msgstr "עריכת טריגר"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Edit your draft…"
 msgstr "ערוך את הטיוטה שלך…"
+
+#: src/pages/flow-page/vibe-recent-sessions.tsx
+msgid "Edited items could not be loaded. Chat sessions are still shown."
+msgstr ""
 
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Editing system trigger"
@@ -8111,6 +8116,10 @@ msgstr "בדיקת LM עברה בהצלחה (200 OK)"
 msgid "Load Flowpad assistant"
 msgstr ""
 
+#: src/pages/flow-page/vibe-recent-sessions.tsx
+msgid "Load more"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "Loaded"
 msgstr "טעון"
@@ -8138,6 +8147,10 @@ msgstr "טוען {0}..."
 #: src/components/assets/editor/EntityResolutionGate.tsx
 msgid "Loading {typeLabel}…"
 msgstr "טוען {typeLabel}…"
+
+#: src/pages/flow-page/vibe-recent-sessions.tsx
+msgid "Loading activity…"
+msgstr ""
 
 #: src/components/code-editor/AssetCompareView.tsx
 msgid "Loading asset diff…"
@@ -8409,6 +8422,7 @@ msgstr "טוען..."
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #: src/pages/discover-page/discover-page.tsx
+#: src/pages/flow-page/vibe-recent-sessions.tsx
 #: src/pages/hub-browse/HubEntityView.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
 #: src/pages/hub-project/HubProjectPage.tsx
@@ -8854,6 +8868,7 @@ msgstr "עוד"
 #: src/components/connections-manager.tsx
 #: src/components/helpdesk/HelpdeskGuides.tsx
 #: src/components/ui/breadcrumb.tsx
+#: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "More"
 msgstr "עוד"
 
@@ -9878,6 +9893,7 @@ msgid "No published assets yet."
 msgstr ""
 
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
+#: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "No recent activity"
 msgstr "אין פעילות אחרונה"
 
@@ -10649,6 +10665,7 @@ msgid "Open Folder"
 msgstr "פתח תיקייה"
 
 #: src/components/status-bar.tsx
+#: src/components/top-nav-bar/ProjectCrumbHoverCard.tsx
 msgid "Open folder: {projectPath}"
 msgstr "פתיחת התיקייה: {projectPath}"
 
@@ -12183,6 +12200,15 @@ msgstr "גורם העדכניות (k)"
 msgid "Recent"
 msgstr "אחרוני"
 
+#: src/pages/flow-page/vibe-recent-sessions.tsx
+#: src/pages/flow-page/vibe-recent-sessions.tsx
+msgid "Recent activity"
+msgstr ""
+
+#: src/pages/flow-page/vibe-recent-sessions.tsx
+msgid "Recent activity could not be loaded"
+msgstr ""
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Recent conversations"
 msgstr "שיחות אחרונות"
@@ -12195,6 +12221,10 @@ msgstr "סשנים אחרונים"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Recent Transcripts"
 msgstr "תמלילים אחרונים"
+
+#: src/pages/flow-page/vibe-recent-sessions.tsx
+msgid "Recently edited items and chat sessions"
+msgstr ""
 
 #: src/components/connections-manager.tsx
 msgid "Reconnect"
@@ -14241,8 +14271,8 @@ msgstr "הצגת המסע"
 #~ msgstr ""
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
-msgid "Show more"
-msgstr "להציג עוד"
+#~ msgid "Show more"
+#~ msgstr "להציג עוד"
 
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyTray.tsx
@@ -16725,6 +16755,7 @@ msgid "What is a context folder?"
 msgstr ""
 
 #: src/components/status-bar.tsx
+#: src/components/top-nav-bar/ProjectCrumbHoverCard.tsx
 msgid "What is a Flowpad project?"
 msgstr "מה זה פרויקט Flowpad?"
 

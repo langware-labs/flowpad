@@ -15,9 +15,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@src/components/ui/dialog';
+import { Checkbox } from '@src/components/ui/checkbox';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
-import { defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
+import { ALL_SCOPE_FILTER, defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
@@ -101,13 +102,26 @@ function RecentActivityDialog({
   openSession: (entry: WorkerHistoryEntry) => void;
 }) {
   const [fetchLimit, setFetchLimit] = useState(FULL_PAGE_SIZE);
-  const { items, isLoading, error, hasMore } = useRecentActivity(scope, fetchLimit);
+  const [allProjects, setAllProjects] = useState(false);
+  const activityScope = allProjects ? ALL_SCOPE_FILTER : scope;
+  const { items, isLoading, error, hasMore } = useRecentActivity(activityScope, fetchLimit);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[80vh] overflow-hidden p-0 sm:max-w-xl" data-testid="recent-activity-dialog">
         <DialogHeader className="px-4 pt-4">
-          <DialogTitle><Trans>Recent activity</Trans></DialogTitle>
+          <div className="flex items-center gap-3 pr-7">
+            <DialogTitle><Trans>Recent activity</Trans></DialogTitle>
+            <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-muted-foreground">
+              <Checkbox
+                className="h-3.5 w-3.5"
+                checked={allProjects}
+                onCheckedChange={(checked) => setAllProjects(checked === true)}
+                data-testid="recent-activity-all-projects"
+              />
+              <Trans>All projects</Trans>
+            </label>
+          </div>
           <DialogDescription className="sr-only">
             <Trans>Recently edited items and chat sessions</Trans>
           </DialogDescription>
@@ -222,5 +236,5 @@ function ProjectRecentActivity({ projectId }: { projectId: string }) {
  * export name so callers do not need a parallel home-only activity surface. */
 export function VibeRecentSessions() {
   const { project } = useProject();
-  return project?.id ? <ProjectRecentActivity projectId={project.id} /> : null;
+  return project?.id ? <ProjectRecentActivity key={project.id} projectId={project.id} /> : null;
 }

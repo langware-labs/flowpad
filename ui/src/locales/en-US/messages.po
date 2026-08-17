@@ -1236,6 +1236,7 @@ msgstr "All observed deployments are current"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/terminal/HistoryModal.tsx
+#: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "All projects"
 msgstr "All projects"
 
@@ -3424,8 +3425,8 @@ msgstr "Copy link"
 #~ msgstr "Copy Log"
 
 #: src/components/spec-editor/SpecEditor.tsx
-#: src/components/top-nav-bar/CrumbDetailsPopover.tsx
-#: src/components/top-nav-bar/CrumbDetailsPopover.tsx
+#: src/components/top-nav-bar/CopyPathButton.tsx
+#: src/components/top-nav-bar/CopyPathButton.tsx
 msgid "Copy path"
 msgstr "Copy path"
 
@@ -5115,6 +5116,10 @@ msgstr "Edit Trigger"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Edit your draft…"
 msgstr "Edit your draft…"
+
+#: src/pages/flow-page/vibe-recent-sessions.tsx
+msgid "Edited items could not be loaded. Chat sessions are still shown."
+msgstr "Edited items could not be loaded. Chat sessions are still shown."
 
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Editing system trigger"
@@ -8111,6 +8116,10 @@ msgstr "LM test passed (200 OK)"
 msgid "Load Flowpad assistant"
 msgstr "Load Flowpad assistant"
 
+#: src/pages/flow-page/vibe-recent-sessions.tsx
+msgid "Load more"
+msgstr "Load more"
+
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "Loaded"
 msgstr "Loaded"
@@ -8138,6 +8147,10 @@ msgstr "Loading {0}..."
 #: src/components/assets/editor/EntityResolutionGate.tsx
 msgid "Loading {typeLabel}…"
 msgstr "Loading {typeLabel}…"
+
+#: src/pages/flow-page/vibe-recent-sessions.tsx
+msgid "Loading activity…"
+msgstr "Loading activity…"
 
 #: src/components/code-editor/AssetCompareView.tsx
 msgid "Loading asset diff…"
@@ -8409,6 +8422,7 @@ msgstr "Loading..."
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #: src/pages/discover-page/discover-page.tsx
+#: src/pages/flow-page/vibe-recent-sessions.tsx
 #: src/pages/hub-browse/HubEntityView.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
 #: src/pages/hub-project/HubProjectPage.tsx
@@ -8854,6 +8868,7 @@ msgstr "more"
 #: src/components/connections-manager.tsx
 #: src/components/helpdesk/HelpdeskGuides.tsx
 #: src/components/ui/breadcrumb.tsx
+#: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "More"
 msgstr "More"
 
@@ -9878,6 +9893,7 @@ msgid "No published assets yet."
 msgstr "No published assets yet."
 
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
+#: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "No recent activity"
 msgstr "No recent activity"
 
@@ -10649,6 +10665,7 @@ msgid "Open Folder"
 msgstr "Open Folder"
 
 #: src/components/status-bar.tsx
+#: src/components/top-nav-bar/ProjectCrumbHoverCard.tsx
 msgid "Open folder: {projectPath}"
 msgstr "Open folder: {projectPath}"
 
@@ -12183,6 +12200,15 @@ msgstr "Recency Factor (k)"
 msgid "Recent"
 msgstr "Recent"
 
+#: src/pages/flow-page/vibe-recent-sessions.tsx
+#: src/pages/flow-page/vibe-recent-sessions.tsx
+msgid "Recent activity"
+msgstr "Recent activity"
+
+#: src/pages/flow-page/vibe-recent-sessions.tsx
+msgid "Recent activity could not be loaded"
+msgstr "Recent activity could not be loaded"
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Recent conversations"
 msgstr "Recent conversations"
@@ -12195,6 +12221,10 @@ msgstr "Recent Sessions"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Recent Transcripts"
 msgstr "Recent Transcripts"
+
+#: src/pages/flow-page/vibe-recent-sessions.tsx
+msgid "Recently edited items and chat sessions"
+msgstr "Recently edited items and chat sessions"
 
 #: src/components/connections-manager.tsx
 msgid "Reconnect"
@@ -14241,8 +14271,8 @@ msgstr "Show journey"
 #~ msgstr "Show member tasks"
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
-msgid "Show more"
-msgstr "Show more"
+#~ msgid "Show more"
+#~ msgstr "Show more"
 
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyTray.tsx
@@ -16725,6 +16755,7 @@ msgid "What is a context folder?"
 msgstr "What is a context folder?"
 
 #: src/components/status-bar.tsx
+#: src/components/top-nav-bar/ProjectCrumbHoverCard.tsx
 msgid "What is a Flowpad project?"
 msgstr "What is a Flowpad project?"
 
