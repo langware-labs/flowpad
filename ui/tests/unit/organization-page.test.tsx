@@ -81,7 +81,11 @@ describe('OrganizationPage', () => {
     mockRoster([ME]);
     const { rerender } = render(<OrganizationPage />);
     const callsAfterFirst = orgsMock.mock.calls.length;
-    rerender(<MemoryRouter><OrganizationPage /></MemoryRouter>);
+    rerender(
+      <MemoryRouter>
+        <OrganizationPage />
+      </MemoryRouter>,
+    );
     // Re-rendering may call the hook again, but it must never spiral: a handful
     // of calls is a render, thousands is the loop this pins shut.
     expect(orgsMock.mock.calls.length).toBeLessThan(callsAfterFirst + 10);
