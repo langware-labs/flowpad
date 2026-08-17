@@ -19,6 +19,7 @@ from pathlib import Path
 
 import psutil
 
+from flow_sdk.server.memory_probe import memory_snapshot
 from flow_sdk.service_log import cleanup_old_logs, generate_timestamped_log_path
 
 
@@ -291,7 +292,16 @@ def monitor_loop(port: int, interval: float = 30.0) -> None:
                     proc = psutil.Process(server_pid)
                     cpu = proc.cpu_percent(interval=0.2)
                     mem_mb = proc.memory_info().rss / (1024 * 1024)
-                    log.info("Server PID=%d | CPU=%.1f%% | RSS=%.1fMB", server_pid, cpu, mem_mb)
+                    # System totals alongside the per-process RSS: the server's own
+                    # footprint stays flat while the box fills up around it, so the
+                    # process number alone cannot show memory pressure building.
+                    log.info(
+                        "Server PID=%d | CPU=%.1f%% | RSS=%.1fMB | %s",
+                        server_pid,
+                        cpu,
+                        mem_mb,
+                        memory_snapshot(top_n=0),
+                    )
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
             last_resource_log = now
@@ -303,7 +313,15 @@ def monitor_loop(port: int, interval: float = 30.0) -> None:
             continue
 
         consecutive_failures += 1
-        log.warning("Health check failed (attempt %d)", consecutive_failures)
+        # Record the machine before deciding anything. A health check fails for want
+        # of memory as often as for a real hang, and the two are indistinguishable
+        # afterwards without this line. The monitor is a separate process, so it
+        # still gets written when the server itself is too starved to log.
+        log.warning(
+            "Health check failed (attempt %d) | %s",
+            consecutive_failures,
+            memory_snapshot(),
+        )
 
         info = _load_info()
         server_pid = info.get("server_pid")
