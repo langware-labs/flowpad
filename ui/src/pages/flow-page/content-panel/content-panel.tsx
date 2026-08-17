@@ -33,6 +33,7 @@ import { HubAssetsPage } from '@src/components/assets/HubAssetsPage';
 import { CollaborationPage, LiveSessionView } from '@src/components/collaboration';
 import { CredentialsView } from '@src/components/credentials-view/CredentialsView';
 import { LlmEndpointsView } from '@src/components/llm-endpoints';
+import { TokenPlanView } from '@src/components/token-plan';
 import { CapabilitiesView } from '@src/components/capabilities-view';
 import { ConversationRoute } from '@src/components/conversation';
 import { InboxView } from '@src/components/inbox-view/InboxView';
@@ -247,6 +248,8 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return <CredentialsView />;
       case ViewType.LLM_ENDPOINTS:
         return <LlmEndpointsView pointer={currentDock?.pointer} />;
+      case ViewType.TOKEN_PLAN:
+        return <TokenPlanView pointer={currentDock?.pointer} />;
       case ViewType.HOME:
       default:
         return <HubHome />;

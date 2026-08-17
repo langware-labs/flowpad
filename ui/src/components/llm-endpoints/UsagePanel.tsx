@@ -18,7 +18,7 @@ import { formatValue, type TimeCohort, type ValueFormat } from '@src/components/
 import { UsageByChildTable } from './UsageByChildTable';
 import { canConfigure } from './endpoint-catalog';
 import { useLlmEndpointUsage } from './use-llm-endpoints';
-import { ZERO_COUNTERS, cohortRange, formatUsd, toChartPoints, type ChartPoint } from './usage-math';
+import { COST_CHART_COLOR, ZERO_COUNTERS, cohortRange, formatUsd, toChartPoints, type ChartPoint } from './usage-math';
 
 type Metric = {
   id: keyof Pick<
@@ -97,7 +97,7 @@ export function UsagePanel({ endpointId, endpoint, all }: UsagePanelProps) {
         icon: DollarSign,
         color: 'text-green-500',
         bgColor: 'bg-green-500/10',
-        chartColor: '#22c55e',
+        chartColor: COST_CHART_COLOR,
         format: 'currency',
       },
       {
@@ -238,7 +238,9 @@ export function UsagePanel({ endpointId, endpoint, all }: UsagePanelProps) {
         )}
       </div>
 
-      {isAdmin && data?.breakdown && <UsageByChildTable by={by} breakdown={data.breakdown} all={all} />}
+      {isAdmin && data?.breakdown && (
+        <UsageByChildTable by={by} breakdown={data.breakdown} names={data.names} all={all} />
+      )}
     </div>
   );
 }

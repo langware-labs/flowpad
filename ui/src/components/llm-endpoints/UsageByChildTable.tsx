@@ -6,29 +6,32 @@
  */
 import type { LLMEndpoint, LLMUsageBy, LLMUsageCounters } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { useMemo } from 'react';
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { formatValue } from '@src/components/cost-dashboard/constants';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
-import { endpointIdFromTypeId } from './endpoint-catalog';
-import { openLlmEndpoint } from './llm-endpoints-pointer';
-import { formatUsd } from './usage-math';
+import { UsageChildRow } from './UsageRows';
+import { endpointIdFromTypeId } from './llm-endpoints-pointer';
+import { childLabel, formatUsd } from './usage-math';
 
 export interface UsageByChildTableProps {
   by: LLMUsageBy;
   breakdown: Record<string, LLMUsageCounters>;
-  /** For naming child ids; unknown ids fall back to the id. */
+  /** The hub's display names for the `by` dimension — it names children the
+   *  caller cannot list, which `all` alone cannot. */
+  names?: Record<string, string>;
+  /** Fallback naming for child ids; unknown ids fall back to the id. */
   all: readonly LLMEndpoint[];
 }
 
-export function UsageByChildTable({ by, breakdown, all }: UsageByChildTableProps) {
+export function UsageByChildTable({ by, breakdown, names, all }: UsageByChildTableProps) {
   const { t } = useLingui();
-  const { navigation } = useDockNavigation();
-  const names = new Map(all.map((e) => [e.id, e.name]));
+  const lookup = useMemo(() => {
+    const byId = new Map(all.map((e) => [e.id, e.name]));
+    return (id: string) => byId.get(id);
+  }, [all]);
   const rows = Object.entries(breakdown).sort((a, b) => b[1].cost_usd - a[1].cost_usd);
-
-  const openChild = (dim: string) => openLlmEndpoint(navigation, dim, 'usage');
 
   return (
     <div className="rounded-md border" data-testid="usage-breakdown">
@@ -64,23 +67,20 @@ export function UsageByChildTable({ by, breakdown, all }: UsageByChildTableProps
           {rows.map(([dim, c]) => {
             // "" is usage that entered HERE (no child in between) — not a link.
             const isChild = by === 'child' && dim !== '';
-            const label = isChild ? (names.get(endpointIdFromTypeId(dim)) ?? dim) : dim || t`direct`;
             return (
-              <TableRow
+              <UsageChildRow
                 key={dim || '__direct'}
-                data-testid={`usage-row-${dim || 'direct'}`}
-                className={isChild ? 'cursor-pointer' : undefined}
-                onClick={isChild ? () => openChild(dim) : undefined}
-              >
-                <TableCell className={isChild ? 'font-medium underline-offset-2 hover:underline' : ''}>
-                  {label}
-                </TableCell>
-                <TableCell className="text-end font-mono text-xs">{c.requests}</TableCell>
-                <TableCell className="text-end font-mono text-xs">{c.errors}</TableCell>
-                <TableCell className="text-end font-mono text-xs">{c.fallbacks}</TableCell>
-                <TableCell className="text-end font-mono text-xs">{formatValue(c.total_tokens, 'tokens')}</TableCell>
-                <TableCell className="text-end font-mono text-xs">{formatUsd(c.cost_usd)}</TableCell>
-              </TableRow>
+                id={isChild ? endpointIdFromTypeId(dim) : null}
+                label={isChild ? childLabel(dim, names, lookup) : dim || t`direct`}
+                testId={`usage-row-${dim || 'direct'}`}
+                values={[
+                  c.requests,
+                  c.errors,
+                  c.fallbacks,
+                  formatValue(c.total_tokens, 'tokens'),
+                  formatUsd(c.cost_usd),
+                ]}
+              />
             );
           })}
         </TableBody>

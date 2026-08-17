@@ -29,6 +29,7 @@ import { lucideByName } from '@src/lib/lucide-by-name';
 import { openExternal } from '@src/lib/open-external';
 import { openWikiModal } from '@src/components/wiki-tip/wiki-modal';
 import { openLlmEndpoint } from '@src/components/llm-endpoints/llm-endpoints-pointer';
+import { TokenPlanChip } from '@src/components/token-plan/TokenPlanChip';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openHarnessLoginModal, useHarnessLoginStore } from './harness-login-store';
 
@@ -447,6 +448,7 @@ function LlmKeysSection({ keys, refreshKeys }: { keys: LmApiKeySummary[]; refres
                       <Trans>via hub login</Trans>
                     </Badge>
                   )}
+                  {k.managed && <TokenPlanChip />}
                   {v && (
                     <Badge
                       variant="outline"

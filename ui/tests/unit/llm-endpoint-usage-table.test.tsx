@@ -77,4 +77,12 @@ describe('UsageByChildTable', () => {
     expect(rows[0]).toContain('llm_endpoint-pricey');
     expect(rows[1]).toContain('llm_endpoint-cheap');
   });
+
+  it("the hub's names map names children the caller cannot list", () => {
+    const dim = `llm_endpoint-${CHILD}`;
+    render(
+      <UsageByChildTable by="child" breakdown={{ [dim]: c({ cost_usd: 1 }) }} names={{ [dim]: 'Dana' }} all={[]} />,
+    );
+    expect(screen.getByTestId(`usage-row-${dim}`).textContent).toContain('Dana');
+  });
 });

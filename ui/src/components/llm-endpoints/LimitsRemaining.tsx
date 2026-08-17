@@ -2,48 +2,51 @@
  * What is left of each configured limit, per hop, as progress bars. Reads the
  * `chain` payload's `remaining` map (the hub already did the window math), so
  * this shows exactly what the gate will enforce on the next request.
+ *
+ * `LimitBar` is the shared presentation of one window — the token plan's budget
+ * hero renders its own windows through it, passing its "resets in 4 h" wording
+ * and its own test id.
  */
 import type { LLMChainHop, LLMChainRemaining } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 import { Progress } from '@src/components/ui/progress';
-import { formatValue } from '@src/components/cost-dashboard/constants';
 
 import { LIMIT_LABELS } from './LimitsEditor';
 import type { LimitKey } from './filters-limits-forms';
-import { formatUsd, remainingRatio } from './usage-math';
+import { RATIO_TONE } from './tone';
+import { formatAmount, ratioTone, usedRatio } from './usage-math';
 
-function fmt(key: string, value: number): string {
-  if (key.startsWith('cost_usd')) return formatUsd(value);
-  if (key.startsWith('tokens')) return formatValue(value, 'tokens');
-  return String(value);
+export interface LimitBarProps {
+  limitKey: string;
+  remaining: LLMChainRemaining;
+  /** Overrides the default "resets <date>" line; `''` hides it entirely. */
+  resetsText?: string;
+  /** Defaults to `limit-bar-<key>`. */
+  testId?: string;
 }
 
-function tone(ratio: number): string {
-  if (ratio <= 0.1) return '[&>div]:bg-destructive';
-  if (ratio <= 0.3) return '[&>div]:bg-amber-500';
-  return '';
-}
-
-export function LimitBar({ limitKey, remaining }: { limitKey: string; remaining: LLMChainRemaining }) {
+export function LimitBar({ limitKey, remaining, resetsText, testId }: LimitBarProps) {
   const { t } = useLingui();
-  const ratio = remainingRatio(remaining);
+  const used = usedRatio(remaining);
   const label = LIMIT_LABELS[limitKey as LimitKey];
   const resets = remaining.resets_at ? new Date(remaining.resets_at * 1000).toLocaleString() : null;
   return (
-    <div className="space-y-0.5" data-testid={`limit-bar-${limitKey}`}>
+    <div className="space-y-0.5" data-testid={testId ?? `limit-bar-${limitKey}`}>
       <div className="flex items-baseline justify-between text-xs">
         <span>{label ? t(label) : limitKey}</span>
         <span className="font-mono text-muted-foreground">
-          {fmt(limitKey, remaining.used)} / {fmt(limitKey, remaining.limit)}
+          {formatAmount(limitKey, remaining.used)} / {formatAmount(limitKey, remaining.limit)}
         </span>
       </div>
-      <Progress value={Math.round((1 - ratio) * 100)} className={`h-1.5 ${tone(ratio)}`} />
-      {resets && (
-        <div className="text-[11px] text-muted-foreground">
-          <Trans>resets {resets}</Trans>
-        </div>
-      )}
+      <Progress value={Math.round(used * 100)} className={`h-1.5 ${RATIO_TONE[ratioTone(used)].bar}`} />
+      {resetsText !== undefined
+        ? resetsText !== '' && <div className="text-[11px] text-muted-foreground">{resetsText}</div>
+        : resets && (
+            <div className="text-[11px] text-muted-foreground">
+              <Trans>resets {resets}</Trans>
+            </div>
+          )}
     </div>
   );
 }
