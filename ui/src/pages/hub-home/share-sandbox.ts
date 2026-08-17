@@ -135,6 +135,25 @@ export function shareFailureText(error: unknown, fallback: string): string {
  * rejection would silently discard the grants that already landed and leave the
  * sender with no idea which of them took.
  */
+/**
+ * Did this fail only because the person already holds the role?
+ *
+ * The hub refuses to re-invite an existing member -- `change_role` is the only
+ * path for one -- and answers 400 naming it. That is not a failed share: the
+ * access being asked for is already in place.
+ *
+ * It became load-bearing when the project started riding along with the box.
+ * Sharing a SECOND sandbox built on the same project hits it every time, because
+ * the recipient kept the project role from the first, and reporting it as an
+ * error blocked the share of a box they did not have yet.
+ *
+ * Matched on the hub's own wording rather than the bare 400, which every other
+ * invitation failure also uses.
+ */
+function isAlreadyMember(error: unknown): boolean {
+  return errorStatus(error) === 400 && /change_role/i.test(errorMessage(error, ''));
+}
+
 export async function shareSandboxByEmail(
   node: ComputeNode,
   emails: string[],
@@ -142,73 +161,49 @@ export async function shareSandboxByEmail(
 ): Promise<ShareOutcome> {
   const outcome: ShareOutcome = { granted: [], failed: [] };
   const role = opts.transfer ? 'owner' : (opts.role ?? SANDBOX_SHARE_ROLE);
-  // THE PROJECT TRAVELS WITH THE BOX. A sandbox is only useful as the project it
-  // opens, and the box fetches that project from the hub AS the person who opened
-  // it -- so a role on the machine alone gets a 401 there and the box keeps a bare
-  // row: right files, no language, no helpdesk config, none of the author's
-  // settings. It fails silently (the adopt is best-effort and logs inside the box)
-  // and reads as "the sandbox opened in the wrong language", not as a permission
-  // problem.
+  // THE PROJECT TRAVELS WITH THE BOX, IN THE SAME INVITATION. A sandbox is only
+  // useful as the project it opens, and the box fetches that project from the hub
+  // AS the person who opened it -- so a role on the machine alone gets a 401
+  // there and the box keeps a bare row: right files, no language, none of the
+  // author's settings.
   //
-  // TWO INVITATIONS, NOT ONE, and the reason is not style. `transfer` is a
-  // property of the INVITATION, not of a target: the hub picks one `grant_kind`
-  // per request, so a handover judges every target as a transfer and `can_assign`
-  // refuses anything but `owner` -- "a transfer confers 'owner' and nothing else".
-  // A single invitation therefore cannot say "hand over the box, share the
-  // project". Sending the project separately is the only shape that expresses it.
+  // ONE invitation, so ONE email. Two invitations meant two mails, and the second
+  // one landed the recipient on the PROJECT -- where a "wrong account" screen was
+  // waiting -- instead of on the box they were given.
   //
-  // It also fixes where the emailed link lands. `choose_target_entity` sends the
-  // recipient to `non_workspace_targets[0]`, and with two targets that order is
-  // whatever the relationship round-trip returns -- so the mail could open the
-  // PROJECT instead of the sandbox, while the copied link (built here, always the
-  // node) was correct. One target per invitation makes the destination
-  // unambiguous by construction rather than by an override.
+  // A handover rides here too, which it could not before. The hub used to judge
+  // every target in a transfer invitation as a transfer, and a transfer may only
+  // confer `owner`, so a `member` project target was refused outright. That was
+  // one end of the feature disagreeing with the other: ACCEPT has always decided
+  // per target (`invitation.transfer and rel.invited_to_role == owner`), so only
+  // the box was ever handed over. The invite-time check now reads the same way.
   //
-  // Nothing dangles from the split: `invitation_auto_accept_on_invite` is on, so
-  // the project grant lands at send; a handover is the one thing that waits for a
-  // real click, and its companion is not a transfer. A recipient with no account
-  // yet has every pending invitation swept on first sign-in
-  // (`auto_accept_pending_invitations`), which exists precisely so clicking one
-  // link does not strand the others.
-  //
-  // `member`, deliberately, not `reader`: on `project` the reader role also allows
-  // `secret`, and being handed a sandbox is not a reason to reach its secrets.
-  //
-  // Nothing to grant for a box with no project -- an empty sandbox is a machine
-  // and nothing else.
+  // `member`, deliberately, not `reader`: on `project` the reader role also
+  // allows `secret`, and being handed a sandbox is not a reason to reach its
+  // secrets. The same on a handover as on a share -- owning the machine does not
+  // make someone the owner of the work it opens.
   const projectId = pendingSetup(node)?.projectId;
-  const project = projectId ? new Project({ id: projectId }) : null;
+  const projectTarget = projectId ? { typeid: `${Project.type}-${projectId}`, role: SANDBOX_PROJECT_ROLE } : undefined;
 
   for (const email of emails) {
     try {
       await node.inviteMember(email, role, {
         ...(opts.transfer ? { transfer: true, roleToKeep: opts.roleToKeep ?? null } : {}),
+        ...(projectTarget ? { extraTargets: [projectTarget] } : {}),
       });
       outcome.granted.push(email);
     } catch (err) {
+      // ALREADY A MEMBER IS NOT A FAILED SHARE. Sharing a SECOND box built on the
+      // same project hits this every time: the person already holds the project
+      // role from the first one, the hub refuses a re-invite (change_role is the
+      // only path for an existing member), and reporting that as an error blocked
+      // the share of a box they do not have yet. The end state asked for is
+      // already true, so it counts as granted.
+      if (isAlreadyMember(err)) {
+        outcome.granted.push(email);
+        continue;
+      }
       outcome.failed.push({ email, message: shareFailureText(err, 'Could not share with this address') });
-      // The box is what they asked to share. If that failed there is nothing for a
-      // project grant to accompany, and granting it anyway would leave a role on
-      // work they cannot open.
-      continue;
-    }
-    if (!project) continue;
-    try {
-      // Always `member`, including on a handover: the new owner of the machine is
-      // not thereby the owner of the work it opens.
-      await project.inviteMember(email, SANDBOX_PROJECT_ROLE);
-    } catch (err) {
-      // Reported but NOT counted as a failed share: the sandbox is theirs and the
-      // link works. What they lose is the project's own settings -- the language
-      // it is read in, its helpdesk config -- so it is worth saying rather than
-      // swallowing.
-      outcome.failed.push({
-        email,
-        message: shareFailureText(
-          err,
-          "Shared the sandbox, but could not share its project — it may open without the project's settings",
-        ),
-      });
     }
   }
   return outcome;
