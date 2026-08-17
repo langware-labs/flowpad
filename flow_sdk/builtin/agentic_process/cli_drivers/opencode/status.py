@@ -7,56 +7,17 @@ alike.
 
 from __future__ import annotations
 
-import json
-import time
 from pathlib import Path
 from typing import Any
 
+from flow_sdk.builtin.agentic_process.cli_drivers.transcript_tail_status import tail_status
 from flow_sdk.builtin.worker_status import WorkerStatus
 
-_TAIL_BYTES = 64 * 1024
-_ACTIVE_SECONDS = 300
 
 
 def opencode_tail_status(path: str | Path) -> WorkerStatus:
-    file_path = Path(path)
-    try:
-        stat = file_path.stat()
-    except OSError:
-        return WorkerStatus.INITIALIZING
-
-    is_active = (time.time() - stat.st_mtime) <= _ACTIVE_SECONDS
-    try:
-        size = stat.st_size
-        with file_path.open("rb") as handle:
-            if size > _TAIL_BYTES:
-                handle.seek(size - _TAIL_BYTES)
-            chunk = handle.read().decode("utf-8", errors="replace")
-    except OSError:
-        return WorkerStatus.INITIALIZING
-
-    saw_parseable = False
-    for line in reversed(chunk.splitlines()):
-        raw_line = line.strip()
-        if not raw_line:
-            continue
-        try:
-            raw = json.loads(raw_line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(raw, dict):
-            continue
-        saw_parseable = True
-        status, terminal = _classify(raw)
-        if status is None:
-            continue
-        if terminal:
-            return status
-        return status if is_active else WorkerStatus.INACTIVE
-
-    if not saw_parseable:
-        return WorkerStatus.INITIALIZING
-    return WorkerStatus.UNKNOWN if is_active else WorkerStatus.INACTIVE
+    """OpenCode's classifier over the shared JSONL tail scanner."""
+    return tail_status(path, _classify)
 
 
 def _classify(raw: dict[str, Any]) -> tuple[WorkerStatus | None, bool]:
