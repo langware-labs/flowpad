@@ -488,7 +488,7 @@ def test_build_spawn_uses_absolute_discovered_claude_path(tmp_path: Path, monkey
         env_vars={"PATH": f"{tmp_path / 'venv-bin'}{os.pathsep}{stripped}"},
     )
 
-    argv, env, stdin_payload = ClaudeCLIStreamWorker()._build_spawn("hi", ctx)
+    argv, env, stdin_payload = ClaudeCLIStreamWorker()._build_spawn(ctx, "hi")
 
     assert argv[0] == str(claude)
     assert env["PATH"].split(os.pathsep)[0] == str(bin_dir)
