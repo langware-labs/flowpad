@@ -112,12 +112,12 @@ describe('shareSandboxByEmail wire contract', () => {
     const body = lastBody();
     expect(body.recipient_email).toBe('bob@example.com');
     expect(body.invitation_targets).toEqual([{ typeid: `${ComputeNode.type}-${NODE_ID}`, role: SANDBOX_SHARE_ROLE }]);
-    // NO override: the hub's own post-accept landing is
-    // `build_entity_url(target.typeid)`, which is exactly
-    // `sandboxShareLandingPath`. Sending one would be a second, hand-made
-    // spelling of an address the hub already produces — and the drift between
-    // two spellings is what this whole module keeps learning about.
-    expect('callback_override' in body).toBe(false);
+    // The override IS sent. It used to be deliberately absent, on the reasoning
+    // that the hub's own post-accept landing is `build_entity_url(target.typeid)`
+    // — true, and sufficient, while the box was the only target. It is not the
+    // only target any more, and with two the hub picks off a list it rebuilds
+    // from the graph, so the destination has to be stated.
+    expect(body.callback_override).toBe(sandboxShareLandingPath(NODE_ID));
     // Not a transfer unless asked: these keys must be absent, not false/null.
     expect('transfer' in body).toBe(false);
     expect('role_to_keep' in body).toBe(false);
@@ -323,10 +323,26 @@ describe('sharing grants the project too', () => {
     ]);
   });
 
-  it('puts the machine FIRST, which is where the mail lands', async () => {
-    // The hub sends the recipient to the first non-workspace target.
+  it('lands the mail on the MACHINE even though the project rides along', async () => {
+    // THE REGRESSION. This used to assert that the machine was first in
+    // `invitation_targets`, on the belief that the hub lands the recipient on the
+    // first non-workspace target. It does — but on a list it REBUILDS from the
+    // graph at accept time (`_build_invitation_relationships` ->
+    // `get_incoming_relationships`), not on the array sent here. The client's
+    // order is gone by then, both targets are non-workspace, and the project won:
+    // people were handed a machine and shown the work.
+    //
+    // So the destination is asserted where it is actually decided —
+    // `callback_override`, which `landing_url` prefers over the chosen target.
+    // Array order is not the mechanism and is deliberately not asserted.
     await shareSandboxByEmail(nodeWithProject(), ['someone@example.com']);
-    expect(targets()[0].typeid).toBe(`compute_node-${NODE_ID}`);
+    expect(lastBody().callback_override).toBe(sandboxShareLandingPath(NODE_ID));
+    expect(lastBody().callback_override).not.toContain(PROJECT_ID);
+  });
+
+  it('lands on the machine on a handover too', async () => {
+    await shareSandboxByEmail(nodeWithProject(), ['someone@example.com'], { transfer: true, roleToKeep: 'reader' });
+    expect(lastBody().callback_override).toBe(sandboxShareLandingPath(NODE_ID));
   });
 
   it('grants member on the project, not reader', async () => {
