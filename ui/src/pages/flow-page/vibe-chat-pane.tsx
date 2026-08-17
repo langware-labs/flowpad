@@ -3,7 +3,7 @@ import { VibeAssignTaskButton } from './VibeAssignTaskButton';
 import {
   continueVibeSessionForProject,
   createVibeProcessForProject,
-  embedVibeAgent,
+  embedVibeSubagent,
   vibeChatTargetForProject,
 } from './use-start-vibe-session';
 import { ViewMode } from '@src/contexts/view-mode-context';
@@ -170,7 +170,7 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
         }}
         onProcessCreated={async (newProcess) => {
           await newProcess.enableAssistant();
-          await embedVibeAgent(newProcess);
+          await embedVibeSubagent(newProcess);
           void navigation.openShellProcess(newProcess.id, { viewMode: ViewMode.Vibe });
         }}
       />

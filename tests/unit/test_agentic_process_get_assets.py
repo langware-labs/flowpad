@@ -441,14 +441,29 @@ async def test_auto_appended_assets_dir_filtered_from_additional(tree):
 
 
 @pytest.mark.asyncio
-async def test_inline_fallback_to_embedded_agent_ids(tree):
+async def test_inline_fallback_to_embedded_subagent_ids(tree):
     """When cli_config.agents_json is empty, inline source falls back to
-    embedded_agent_ids (legacy persona list)."""
+    embedded_subagent_ids (legacy persona list)."""
     proc = _make_proc()
-    proc.embedded_agent_ids = ["legacy_persona"]
+    proc.embedded_subagent_ids = ["legacy_persona"]
     descs = await proc.get_asset_descriptors()
     inline = _by_source(descs, AssetSource.INLINE)
     assert any(d.typeid == "subagent-legacy_persona" for d in inline)
+
+
+def test_legacy_embedded_agent_ids_key_is_adopted():
+    """Rows persisted before the rename carry ``embedded_agent_ids``; the
+    before-validator maps them onto ``embedded_subagent_ids``. An explicit new
+    key wins over the legacy one."""
+    legacy = AgenticProcess(id=str(uuid.uuid4()), embedded_agent_ids=["legacy_persona"])
+    assert legacy.embedded_subagent_ids == ["legacy_persona"]
+
+    both = AgenticProcess(
+        id=str(uuid.uuid4()),
+        embedded_agent_ids=["old"],
+        embedded_subagent_ids=["new"],
+    )
+    assert both.embedded_subagent_ids == ["new"]
 
 
 AGENT_MD = """---
@@ -468,7 +483,7 @@ def _write_agent_md(path: Path, name: str) -> Path:
 
 @pytest.mark.asyncio
 async def test_inline_legacy_name_resolves_to_entity_id(tree):
-    """A legacy embedded_agent_ids NAME whose materialized .md exists resolves
+    """A legacy embedded_subagent_ids NAME whose materialized .md exists resolves
     to the real entity uuid (openable typeid) with the materialized path."""
     from flow_sdk.fs_store.fs_ref import FSRef
     from flow_sdk.fs_store.indexer.functions.subagent import subagent_peek_entity_id
@@ -477,7 +492,7 @@ async def test_inline_legacy_name_resolves_to_entity_id(tree):
     proc = _make_proc()
     assets_dir = await proc._assets_dir_path()
     md = _write_agent_md(assets_dir / ".claude" / "agents" / "legacy_vibe.md", "legacy_vibe")
-    proc.embedded_agent_ids = ["legacy_vibe"]
+    proc.embedded_subagent_ids = ["legacy_vibe"]
 
     descs = await proc.get_asset_descriptors()
     inline = _by_source(descs, AssetSource.INLINE)
@@ -503,7 +518,7 @@ async def test_inline_resolved_dedups_against_embedded(tree):
     md = _write_agent_md(assets_dir / ".claude" / "agents" / "dup_vibe.md", "dup_vibe")
     entity_id = subagent_peek_entity_id(FSRef(md, record_type=RecordType.SUBAGENT))
     proc.embedded_asset_refs = [TypeId(f"subagent-{entity_id}")]
-    proc.embedded_agent_ids = ["dup_vibe"]
+    proc.embedded_subagent_ids = ["dup_vibe"]
 
     descs = await proc.get_asset_descriptors()
     matching = [d for d in descs if d.typeid == f"subagent-{entity_id}"]
@@ -513,11 +528,11 @@ async def test_inline_resolved_dedups_against_embedded(tree):
 
 
 @pytest.mark.asyncio
-async def test_load_embedded_agent_action_records_entity_ref(tree, tmp_path):
-    """load_embedded_agent_action persists the agent's ENTITY ref (uuid form)
-    in embedded_asset_refs — not a name in embedded_agent_ids — and the
-    descriptor comes out EMBEDDED + openable. A legacy name entry for the
-    same agent is migrated away on touch."""
+async def test_load_embedded_subagent_action_records_entity_ref(tree, tmp_path):
+    """load_embedded_subagent_action persists the sub-agent's ENTITY ref (uuid
+    form) in embedded_asset_refs — not a name in embedded_subagent_ids — and
+    the descriptor comes out EMBEDDED + openable. A legacy name entry for the
+    same sub-agent is migrated away on touch."""
     import types
 
     from flow_sdk.fs_store.fs_ref import FSRef
@@ -526,7 +541,7 @@ async def test_load_embedded_agent_action_records_entity_ref(tree, tmp_path):
 
     src = _write_agent_md(tmp_path / "src_agents" / "fresh_vibe.md", "fresh_vibe")
     proc = _make_proc()
-    proc.embedded_agent_ids = ["fresh_vibe"]  # legacy leftover → must migrate away
+    proc.embedded_subagent_ids = ["fresh_vibe"]  # legacy leftover → must migrate away
 
     saved: list[None] = []
     async def _fake_save(self):
@@ -534,7 +549,7 @@ async def test_load_embedded_agent_action_records_entity_ref(tree, tmp_path):
         return self
     object.__setattr__(proc, "save", types.MethodType(_fake_save, proc))
 
-    res = await proc.load_embedded_agent_action(asset_ref=str(src))
+    res = await proc.load_embedded_subagent_action(asset_ref=str(src))
     assert res.status == "SUCCESS", res
     assert saved
 
@@ -542,7 +557,7 @@ async def test_load_embedded_agent_action_records_entity_ref(tree, tmp_path):
     refs = [str(r) for r in proc.embedded_asset_refs]
     assert refs == [f"subagent-{expected_id}"]
     assert res.data["ref"] == f"subagent-{expected_id}"
-    assert proc.embedded_agent_ids == []
+    assert proc.embedded_subagent_ids == []
 
     assets_dir = await proc._assets_dir_path()
     assert (assets_dir / ".claude" / "agents" / "fresh_vibe.md").is_file()
@@ -552,7 +567,7 @@ async def test_load_embedded_agent_action_records_entity_ref(tree, tmp_path):
     assert matching and all(d.source == AssetSource.EMBEDDED for d in matching)
 
     # Idempotent: re-attach doesn't duplicate the ref.
-    await proc.load_embedded_agent_action(asset_ref=str(src))
+    await proc.load_embedded_subagent_action(asset_ref=str(src))
     assert [str(r) for r in proc.embedded_asset_refs] == [f"subagent-{expected_id}"]
 
 

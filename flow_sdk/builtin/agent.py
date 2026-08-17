@@ -103,7 +103,7 @@ class Agent(Entity):
         description="SubAgent NAMES this agent may delegate to. Names, not TypeIds, because a "
         "shipped agent.md is authored before the SubAgent it references has ever been indexed. "
         "DECLARED ONLY — nothing projects these into --agents yet; wire through "
-        "AgenticProcess.load_embedded_agent(name) when a caller needs it.",
+        "AgenticProcess.load_embedded_subagent(name) when a caller needs it.",
     )
     additional_dirs: list[str] = APIField(default_factory=list)
     load_flowpad_assistant: bool = APIField(default=False)

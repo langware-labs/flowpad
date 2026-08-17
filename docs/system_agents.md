@@ -4,6 +4,11 @@ id: "10c7d57b-09db-5a20-9ffd-b5475f2edff4"
 
 # System Agents
 
+> **Note (current shape):** this page describes an older `AgentRecord`/`AgentExecution`
+> design. The current shape is Agent → Deployment → AgenticProcess (see
+> `flow_sdk/builtin/agent.py`), and the "system agents" described here are **SubAgent**
+> personas (`.claude/agents/*.md`), not launchable `Agent` entities.
+
 System agents are pre-built Claude Code sub-agents bundled with the SDK. They execute specialized tasks (session analysis, skill creation, error fixing) through an isolated project environment and produce typed artifacts.
 
 ## Architecture

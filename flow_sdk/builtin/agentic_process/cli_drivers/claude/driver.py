@@ -91,7 +91,7 @@ class ClaudeDriver:
 
         Injects ``--add-dir`` for the Flowpad Assistant project (so SDK-shipped
         skills / agents are discoverable) plus any ``additional_dirs``;
-        registers embedded agents via ``--agents``; sets ``CLAUDE_PROJECT_DIR``
+        registers embedded sub-agents via ``--agents``; sets ``CLAUDE_PROJECT_DIR``
         env from the workdir.
 
         The Flowpad Assistant mount is gated by ``process.assistant_enabled`` —

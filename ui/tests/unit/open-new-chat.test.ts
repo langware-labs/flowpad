@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The persona embed is the seam the chat surface routes through. Spy on it: the
 // real helper resolves its ref through the backend, so asserting the low-level
-// loadEmbeddedAgent would need a live server.
+// loadEmbeddedSubagent would need a live server.
 const embedMock = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock('@src/navigation/embed-standard-agent', () => ({ embedStandardAgent: embedMock }));
 

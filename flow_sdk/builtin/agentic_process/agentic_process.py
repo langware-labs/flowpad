@@ -168,14 +168,14 @@ def _shell_compute_is_local(shell: "Shell") -> bool:
 # ── Asset descriptors ──────────────────────────────────────────────────────────
 # Read-side surface for ``AgenticProcess.get_asset_descriptors`` — see plan
 # "AgenticProcess.get_assets() — unified read-side asset view". The descriptors
-# unify the scattered fields (``embedded_asset_refs``, ``embedded_agent_ids``,
+# unify the scattered fields (``embedded_asset_refs``, ``embedded_subagent_ids``,
 # ``cli_config.agents_json``, ``additional_dirs``) plus path-discovered assets
 # under user/project/workdir into one list the UI can consume.
 
 
 class AssetSource(str, Enum):
     EMBEDDED = "embedded"  # materialized via embedded_asset_refs
-    INLINE = "inline"  # cli_config.agents_json / embedded_agent_ids — no file
+    INLINE = "inline"  # cli_config.agents_json / embedded_subagent_ids — no file
     PROJECT_DIR = "project_dir"  # under project.fs_storage_mount_path
     USER_DIR = "user_dir"  # under user_home
     WORKDIR = "workdir"  # process workdir if distinct from project/user
@@ -818,7 +818,7 @@ class AgenticProcess(Entity):
     )
     assets_folder: FSRef | None = APIField(
         default=None,
-        description="FSRef for `<exe_folder>/assets/` — materialised embedded agents / skills.",
+        description="FSRef for `<exe_folder>/assets/` — materialised embedded sub-agents / skills.",
     )
     total_cost_usd: float | None = APIField(
         default=None,
@@ -929,8 +929,8 @@ class AgenticProcess(Entity):
             "Resolve via the assistant_enabled property; the driver reads that."
         ),
     )
-    embedded_agent_ids: list[str] = APIField(
-        default_factory=list, description="Embedded agent names materialized into process instruction assets"
+    embedded_subagent_ids: list[str] = APIField(
+        default_factory=list, description="Embedded sub-agent names materialized into process instruction assets"
     )
     embedded_asset_refs: list[TypeId] = APIField(
         default_factory=list,
@@ -1003,6 +1003,21 @@ class AgenticProcess(Entity):
     # serialised and re-loaded entities re-arm via the same validator.
 
     _BINDING_FROZEN_FIELDS: ClassVar[frozenset[str]] = frozenset(("project_id", "workdir"))
+
+    @model_validator(mode="before")
+    @classmethod
+    def _adopt_legacy_embedded_agent_ids(cls, data: Any) -> Any:
+        """Read rows persisted before ``embedded_agent_ids`` was renamed.
+
+        The field is a legacy name list for embedded sub-agents; nothing writes
+        it any more, but old rows (and old wire payloads) still carry the old
+        key. Map it onto the new key only when the new one is absent, so a
+        payload that carries both wins on the new name.
+        """
+        if isinstance(data, dict) and "embedded_agent_ids" in data and "embedded_subagent_ids" not in data:
+            data = dict(data)
+            data["embedded_subagent_ids"] = data.pop("embedded_agent_ids")
+        return data
 
     @model_validator(mode="after")
     def _arm_binding_lock(self) -> "AgenticProcess":
@@ -4764,23 +4779,23 @@ class AgenticProcess(Entity):
 
     # ── State ─────────────────────────────────────────────────────────────────
 
-    @action.post(action_name="load-embedded-agent")
-    async def load_embedded_agent_action(self, asset_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
-        """Load an agent from its ``asset_ref`` and embed it into this process.
+    @action.post(action_name="load-embedded-subagent")
+    async def load_embedded_subagent_action(self, asset_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
+        """Load a sub-agent from its ``asset_ref`` and embed it into this process.
 
-        ``asset_ref`` is the agent record's own OS filesystem path (an ``FSRef``
+        ``asset_ref`` is the sub-agent record's own OS filesystem path (an ``FSRef``
         path), NOT a VFS path — it was renamed from ``source_vfs_path`` and the
         contract changed with it, which is what stranded the old VFS-style
         re-rooting below.
 
-        Materializes the agent markdown into the process asset directory so the
+        Materializes the sub-agent markdown into the process asset directory so the
         generated system-instruction files can include it on every launch.
 
-        Identity is persisted as the agent's entity ref (``embedded_asset_refs``,
+        Identity is persisted as the sub-agent's entity ref (``embedded_asset_refs``,
         same as ``attach_embedded_asset``) — the name is only the projection used
-        for the materialized filename / CLI payload. ``embedded_agent_ids`` is a
+        for the materialized filename / CLI payload. ``embedded_subagent_ids`` is a
         legacy name list; we no longer write it, and migrate-on-touch any entry
-        for this agent so attach/detach stays symmetric on old processes.
+        for this sub-agent so attach/detach stays symmetric on old processes.
         """
         from flow_sdk.fs_store.operations.subagent import (  # noqa: PLC0415
             extract_subagent_from_path,
@@ -4828,9 +4843,9 @@ class AgenticProcess(Entity):
         )
 
     def _drop_legacy_agent_name(self, name: str | None) -> None:
-        """Migrate-on-touch: strip a legacy ``embedded_agent_ids`` name entry."""
-        if name and name in (self.embedded_agent_ids or []):
-            self.embedded_agent_ids = [n for n in self.embedded_agent_ids if n != name]
+        """Migrate-on-touch: strip a legacy ``embedded_subagent_ids`` name entry."""
+        if name and name in (self.embedded_subagent_ids or []):
+            self.embedded_subagent_ids = [n for n in self.embedded_subagent_ids if n != name]
 
     @action.post(action_name="load-embedded-skill")
     async def load_embedded_skill_action(self, asset_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
@@ -4847,7 +4862,7 @@ class AgenticProcess(Entity):
 
         if not asset_ref:
             return ApiFailResponse(message="asset_ref is required")
-        # Absolute already (see load_embedded_agent_action) — do not re-root.
+        # Absolute already (see load_embedded_subagent_action) — do not re-root.
         skill_dir = Path(asset_ref).resolve()
         if not skill_dir.is_dir():
             return ApiFailResponse(message=f"Skill folder not found: {skill_dir}")
@@ -4896,33 +4911,33 @@ class AgenticProcess(Entity):
             return ApiFailResponse(message="Could not resolve skill source folder")
         return await self.load_embedded_skill_action(asset_ref=source)
 
-    def load_embedded_agent(self, agent: "Any") -> None:
-        """Embed an agent into this process so it is registered via --agents at launch.
+    def load_embedded_subagent(self, agent: "Any") -> None:
+        """Embed a sub-agent into this process so it is registered via --agents at launch.
 
-        Accepts an AgentRecord, any object with to_agents_json(), or a name string.
-        Adds the agent's name to the persisted embedded_agent_ids list and stores
-        the agent object in the in-memory _embedded_agents list.
+        Accepts a SubAgent record, any object with to_agents_json(), or a name string.
+        Adds the sub-agent's name to the persisted embedded_subagent_ids list and
+        stores the record in the in-memory _embedded_agents list.
         """
         from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
-        from flow_sdk.fs_store.operations.subagent import load_subagent as _load_agent  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.subagent import load_subagent as _load_subagent  # noqa: PLC0415
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
         _agents: list = object.__getattribute__(self, "__dict__").setdefault("_embedded_agents", [])
         if isinstance(agent, str):
-            rec = _load_agent(agent) or FSRecord(type=RecordType.SUBAGENT, name=agent, id=agent)
+            rec = _load_subagent(agent) or FSRecord(type=RecordType.SUBAGENT, name=agent, id=agent)
         else:
             # duck-type: Record or anything with name/id
             rec = agent
         _agents.append(rec)
         name = rec.name if hasattr(rec, "name") else str(agent)
-        if name and name not in (self.embedded_agent_ids or []):
-            self.embedded_agent_ids = list(self.embedded_agent_ids or []) + [name]
+        if name and name not in (self.embedded_subagent_ids or []):
+            self.embedded_subagent_ids = list(self.embedded_subagent_ids or []) + [name]
 
     def get_agents_json(self) -> "dict | None":
-        """Return merged --agents JSON from all embedded agents, or None if none loaded.
+        """Return merged --agents JSON from all embedded sub-agents, or None if none loaded.
 
         Falls back to the persisted ``cli_config.agents_json`` for legacy
-        processes created before embedded agents were materialized as assets.
+        processes created before embedded sub-agents were materialized as assets.
         """
         _agents: list = object.__getattribute__(self, "__dict__").get("_embedded_agents", [])
         if _agents:
@@ -5064,14 +5079,14 @@ class AgenticProcess(Entity):
             subagent_to_cli_json,
         )
 
-        # Emit agents in EMBED order, not filename order. Each agent is
-        # materialized by a sequential `load_asset` write, so file mtime tracks
-        # embed order: the standard vibe agent is embedded first (earliest
-        # mtime), then the kind==vibe agents in the created-date order the
-        # frontend embedded them. Insertion order into `agents` is the render
-        # order (see _render_agents_instruction_block), so mtime-sort pins the
-        # vibe agent first and lays the vibe agents after it. (name is the
-        # tiebreaker for same-tick writes.)
+        # Emit sub-agents in EMBED order, not filename order. Each sub-agent
+        # is materialized by a sequential `load_asset` write, so file mtime
+        # tracks embed order: the standard vibe sub-agent is embedded first
+        # (earliest mtime), then the kind==vibe sub-agents in the created-date
+        # order the frontend embedded them. Insertion order into `agents` is the
+        # render order (see _render_agents_instruction_block), so mtime-sort
+        # pins the vibe sub-agent first and lays the vibe sub-agents after it.
+        # (name is the tiebreaker for same-tick writes.)
         def _sort_key(p: "Path") -> tuple:
             try:
                 return (p.stat().st_mtime_ns, p.name)
@@ -5085,7 +5100,7 @@ class AgenticProcess(Entity):
                     continue
                 agents.update(subagent_to_cli_json(rec))
             except Exception:
-                logger.debug("failed to parse embedded agent %s", md, exc_info=True)
+                logger.debug("failed to parse embedded sub-agent %s", md, exc_info=True)
         return agents
 
     async def _prepare_system_instruction_assets(self) -> SystemInstructionAssets | None:
@@ -5093,7 +5108,7 @@ class AgenticProcess(Entity):
         explicit = await self.resolve_system_instructions()
         legacy_agents = self.get_agents_json() or {}
         # Embedded assets must be detected from PERSISTED state, not just the
-        # in-memory AssetDir handle: load-embedded-agent runs on one entity
+        # in-memory AssetDir handle: load-embedded-subagent runs on one entity
         # instance and save() invalidates the cache, so the prompt/launch
         # request gets a fresh instance whose _embedded_assets is None. Without
         # this, a materialized persona (e.g. vibe) silently never reaches the
@@ -5324,12 +5339,12 @@ class AgenticProcess(Entity):
         """
         from flow_sdk.fs_store.operations.skill import copy_skill_to, get_skill
         from flow_sdk.fs_store.operations.subagent import get_subagent  # noqa: PLC0415
-        from flow_sdk.fs_store.operations.subagent import load_subagent as _load_agent
+        from flow_sdk.fs_store.operations.subagent import load_subagent as _load_subagent
 
         if ref.type == "subagent":
             # Resolve by id (uuid5-derived from the .md path) first, then fall back
             # to name-based lookup for agents the UI knows by name only.
-            agent = get_subagent(ref.id) or _load_agent(ref.id)
+            agent = get_subagent(ref.id) or _load_subagent(ref.id)
             if agent is None:
                 raise FileNotFoundError(f"Agent not found: {ref.id}")
             target_dir = assets_dir / ".claude" / "agents"
@@ -5359,10 +5374,10 @@ class AgenticProcess(Entity):
 
         from flow_sdk.fs_store.operations.skill import get_skill
         from flow_sdk.fs_store.operations.subagent import get_subagent  # noqa: PLC0415
-        from flow_sdk.fs_store.operations.subagent import load_subagent as _load_agent
+        from flow_sdk.fs_store.operations.subagent import load_subagent as _load_subagent
 
         if ref.type == "subagent":
-            agent = get_subagent(ref.id) or _load_agent(ref.id)
+            agent = get_subagent(ref.id) or _load_subagent(ref.id)
             name = agent.name if agent else ref.id
             target = assets_dir / ".claude" / "agents" / f"{name}.md"
             if target.exists():
@@ -5411,7 +5426,7 @@ class AgenticProcess(Entity):
             await self._unmaterialize_entity(ref, assets_dir)
             refs = [r for r in (self.embedded_asset_refs or []) if not (r.type == ref.type and r.id == ref.id)]
             self.embedded_asset_refs = refs
-            if ref.type == "subagent" and self.embedded_agent_ids:
+            if ref.type == "subagent" and self.embedded_subagent_ids:
                 # Legacy processes may still carry the agent by NAME — drop it
                 # too, or the persona file is gone while an INLINE row lingers.
                 from flow_sdk.fs_store.operations.subagent import get_subagent  # noqa: PLC0415
@@ -5694,7 +5709,7 @@ class AgenticProcess(Entity):
 
         Composed from four sources of truth:
           1. EMBEDDED   — ``self.embedded_asset_refs`` + computed materialized path.
-          2. INLINE     — ``cli_config.agents_json`` (or ``embedded_agent_ids``
+          2. INLINE     — ``cli_config.agents_json`` (or ``embedded_subagent_ids``
                            fallback). No file → ``posix_path=None``.
           3. Path-scan  — one ``Entity.assets_by_path()`` over the union of
                            user/project/workdir/additional_dirs, filtered to
@@ -5842,9 +5857,9 @@ class AgenticProcess(Entity):
         try:
             if ref.type == "subagent":
                 from flow_sdk.fs_store.operations.subagent import get_subagent  # noqa: PLC0415
-                from flow_sdk.fs_store.operations.subagent import load_subagent as _load_agent
+                from flow_sdk.fs_store.operations.subagent import load_subagent as _load_subagent
 
-                rec = get_subagent(ref.id) or _load_agent(ref.id)
+                rec = get_subagent(ref.id) or _load_subagent(ref.id)
                 if rec is None:
                     return None
                 name = rec.name or ref.id
@@ -5865,8 +5880,8 @@ class AgenticProcess(Entity):
         """Return ``(typeid, posix_path)`` pairs for inline-attached agents.
 
         Primary source: keys of ``cli_config.agents_json`` (agent names injected
-        via ``--agents`` at session launch). Fallback: ``embedded_agent_ids``
-        (legacy name list written by old ``load_embedded_agent`` calls).
+        via ``--agents`` at session launch). Fallback: ``embedded_subagent_ids``
+        (legacy name list written by old ``load_embedded_subagent`` calls).
 
         Each name is resolved to its agent ENTITY id (the same uuid the indexer
         mints) so the UI can open the row — the materialized copy under
@@ -5875,7 +5890,7 @@ class AgenticProcess(Entity):
         nowhere is an entity-less persona: it keeps the legacy
         ``subagent-<name>`` form with no path, and renders non-openable.
         """
-        from flow_sdk.fs_store.operations.subagent import load_subagent as _load_agent  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.subagent import load_subagent as _load_subagent  # noqa: PLC0415
         from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
@@ -5884,7 +5899,7 @@ class AgenticProcess(Entity):
         if isinstance(agents_json, dict) and agents_json:
             names = list(agents_json.keys())
         else:
-            names = list(self.embedded_agent_ids or [])
+            names = list(self.embedded_subagent_ids or [])
 
         pairs: list[tuple[str, str | None]] = []
         for name in names:
@@ -5894,7 +5909,7 @@ class AgenticProcess(Entity):
                 src_path = materialized
             else:
                 try:
-                    rec = _load_agent(name, project_dir=self.workdir or None)
+                    rec = _load_subagent(name, project_dir=self.workdir or None)
                 except Exception:
                     rec = None
                 rec_ref = getattr(rec, "asset_ref", None) if rec else None
@@ -6107,7 +6122,7 @@ class AgenticProcess(Entity):
             "session_id": self.session_id,
             "additional_dirs": sorted(self.additional_dirs or []),
             "embedded_asset_refs": sorted(str(r) for r in (self.embedded_asset_refs or [])),
-            "embedded_agent_ids": sorted(self.embedded_agent_ids or []),
+            "embedded_subagent_ids": sorted(self.embedded_subagent_ids or []),
             "process_hook_events": list(hook_events),
             "process_hooks": hook_snapshot,
         }
@@ -6777,7 +6792,7 @@ class AgenticProcess(Entity):
         process_assets_active = bool(
             hook_assets_active
             or self.embedded_asset_refs
-            or self.embedded_agent_ids
+            or self.embedded_subagent_ids
             or self.get_agents_json()
             or self.instructions
             or self.instruction_content

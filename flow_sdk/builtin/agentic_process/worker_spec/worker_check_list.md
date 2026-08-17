@@ -443,7 +443,7 @@ Exit criteria:
 - [ ] PTY argv shape is known if supported.
 - [ ] Prompt-delivery timing is grounded in an observed marker, not a sleep.
 
-## 12. Embedded Agents and Context Injection
+## 12. Embedded Sub-Agents and Context Injection
 
 Goal: prove FlowPad context can be delivered to the worker.
 
@@ -454,9 +454,9 @@ Goal: prove FlowPad context can be delivered to the worker.
 - [ ] Determine whether process `add_dirs` are visible in interactive mode.
 - [ ] Confirm generated process instruction assets are created under `<record_dir>/execution/assets`.
 - [ ] Confirm the worker consumes `CLAUDE.md` / `AGENTS.md` / `.agents` / custom-instruction files as expected.
-- [ ] Confirm embedded agent specs are delivered through instruction assets, not prompt inlining.
+- [ ] Confirm embedded sub-agent specs are delivered through instruction assets, not prompt inlining.
 - [ ] Confirm prompt composition preserves the original user instruction unchanged.
-- [ ] Confirm large embedded agent specs fit the worker's instruction sink.
+- [ ] Confirm large embedded sub-agent specs fit the worker's instruction sink.
 - [ ] Confirm process-local assets are accessible.
 - [ ] Confirm environment variables are visible to tools.
 - [ ] Confirm project/workspace metadata can be injected safely.
@@ -563,7 +563,7 @@ silently. Each item is a table row in FlowPad code, not vendor behavior — see
 - [ ] Worker type added to both `WorkerType` enums.
 - [ ] `get_driver` registry entry (plus aliases) and `factory()` key.
 - [ ] Capability kind, spec, and `CliCapabilityRunner` registration.
-- [ ] Model tier map (`sm`/`md`/`lg` → concrete models).
+- [ ] Model tier map (`sm`/`md`/`lg` → concrete models or vendor auto/no flag).
 - [ ] `TranscriptFormat` member(s) — one per canonical shape, plus the stdout tee.
 - [ ] Transcript parser module and `PARSERS` entry.
 - [ ] Transcript resolver branch and worker→record-type mapping.
@@ -644,7 +644,7 @@ Complete this summary before opening any implementation task.
 - [ ] History strategy:
 - [ ] Usage/cost strategy:
 - [ ] Permission strategy:
-- [ ] Embedded agent strategy:
+- [ ] Embedded sub-agent strategy:
 - [ ] Unsupported features:
 - [ ] Required implementation files:
 - [ ] Required tests:
