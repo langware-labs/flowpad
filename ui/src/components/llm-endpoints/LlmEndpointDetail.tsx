@@ -6,17 +6,19 @@
 import { PageId, ViewType, type LLMEndpoint } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ArrowLeft, Pencil, RefreshCw, Trash2 } from 'lucide-react';
+import { useMemo } from 'react';
 
 import { Button } from '@src/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 import { ChainTree } from './ChainTree';
+import { consumerRows } from './chain-tree';
 import { LimitsRemaining } from './LimitsRemaining';
-import { CredentialChip, KindBadge, ProviderBadge } from './LlmEndpointsList';
+import { CredentialChip, EndpointLink, KindBadge, ProviderBadge } from './LlmEndpointsList';
 import { ModelsList } from './ModelsList';
 import { UsagePanel } from './UsagePanel';
-import { canConfigure, canRemove } from './endpoint-catalog';
+import { canConfigure, canRemove, endpointIdFromTypeId, endpointTypeId } from './endpoint-catalog';
 import { LLM_ENDPOINT_TABS, llmEndpointsPointer, type LlmEndpointTab } from './llm-endpoints-pointer';
 import { useLlmEndpointChain } from './use-llm-endpoints';
 
@@ -77,7 +79,12 @@ export function LlmEndpointDetail({
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const chain = useLlmEndpointChain(endpointId);
-  const entryHop = chain.data?.hops.find((h) => h.id === endpointId);
+  // Hop ids are typeids; the pointer is the bare uuid.
+  const entryTypeId = endpointTypeId(endpointId);
+  const entryHop = chain.data?.hops.find((h) => h.id === entryTypeId);
+  const openEndpoint = (id: string) =>
+    navigation.openPage(PageId.HUB, ViewType.LLM_ENDPOINTS, llmEndpointsPointer(endpointIdFromTypeId(id)));
+  const consumers = useMemo(() => consumerRows(endpointId, all), [endpointId, all]);
   const tabLabels: Record<LlmEndpointTab, string> = { overview: t`Overview`, usage: t`Usage`, models: t`Models` };
 
   return (
@@ -152,10 +159,38 @@ export function LlmEndpointDetail({
                 <Trans>Could not resolve the chain.</Trans>
               </p>
             )}
-            <ChainTree
-              chain={chain.data}
-              onOpen={(id) => navigation.openPage(PageId.HUB, ViewType.LLM_ENDPOINTS, llmEndpointsPointer(id))}
-            />
+            <ChainTree chain={chain.data} onOpen={openEndpoint} />
+          </section>
+
+          <section className="space-y-2" data-testid="llm-consumers">
+            <h3 className="text-sm font-medium">
+              <Trans>Used by</Trans>
+            </h3>
+            {consumers.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                <Trans>No endpoint sources from this one.</Trans>
+              </p>
+            ) : (
+              <ol className="space-y-0.5 text-sm">
+                {consumers.map(({ endpoint: c, depth }) => (
+                  <li
+                    key={c.id}
+                    data-testid={`consumer-node-${c.id}`}
+                    data-depth={depth}
+                    style={{ paddingInlineStart: `${depth * 1.25}rem` }}
+                    className="flex items-center gap-2 px-1 py-0.5"
+                  >
+                    <span className="text-muted-foreground">{depth === 0 ? '┌' : '├'}</span>
+                    <EndpointLink endpoint={c} onOpen={(e) => openEndpoint(e.id)} testId={`consumer-link-${c.id}`} />
+                    {!c.enabled && (
+                      <span className="text-xs text-muted-foreground">
+                        <Trans>disabled</Trans>
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            )}
           </section>
 
           <section className="space-y-2">

@@ -31,6 +31,11 @@ describe('parseLlmEndpointsPointer', () => {
   it('unknown tab falls back to overview', () => {
     expect(parseLlmEndpointsPointer(`${ID}/nope`).tab).toBe('overview');
   });
+
+  it('a typeid in the URL resolves to the bare id (hop ids and sources are typeids)', () => {
+    expect(parseLlmEndpointsPointer(`llm_endpoint-${ID}/usage`)).toEqual({ id: ID, tab: 'usage' });
+    expect(llmEndpointsPointer(`llm_endpoint-${ID}`, 'models')).toBe(`${ID}/models`);
+  });
 });
 
 describe('llmEndpointsPointer', () => {

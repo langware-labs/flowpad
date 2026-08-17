@@ -17,11 +17,14 @@ const TABS = new Set<string>(LLM_ENDPOINT_TABS);
 export function parseLlmEndpointsPointer(pointer?: string | null): { id?: string; tab: LlmEndpointTab } {
   const [id, rawTab] = (pointer ?? '').split('/').filter(Boolean);
   const tab = TABS.has(rawTab) ? (rawTab as LlmEndpointTab) : 'overview';
-  return { id: id || undefined, tab };
+  // A typeid in the URL (`llm_endpoint-<uuid>`) resolves too — hop ids and
+  // `sources` are typeids, so a pasted one should land on the endpoint.
+  return { id: id ? endpointIdFromTypeId(id) : undefined, tab };
 }
 
 export function llmEndpointsPointer(id?: string, tab?: LlmEndpointTab): string {
   if (!id) return '';
+  id = endpointIdFromTypeId(id);
   return tab && tab !== 'overview' ? `${id}/${tab}` : id;
 }
 

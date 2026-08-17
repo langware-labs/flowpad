@@ -5,7 +5,7 @@
 import type { LLMChain, LLMChainHop } from '@sdk';
 import { describe, expect, it } from 'vitest';
 
-import { buildChainTree, hopHealth } from '@src/components/llm-endpoints/chain-tree';
+import { buildChainTree, consumerRows, consumersOf, hopHealth } from '@src/components/llm-endpoints/chain-tree';
 
 const hop = (id: string, over: Partial<LLMChainHop> = {}): LLMChainHop => ({
   id,
@@ -108,5 +108,35 @@ describe('buildChainTree', () => {
   it('an entry with no paths still renders itself', () => {
     expect(buildChainTree({ ...chain, paths: [], hops: [hop('E')] }).map((n) => n.id)).toEqual(['E']);
     expect(buildChainTree(null)).toEqual([]);
+  });
+});
+
+describe('consumersOf / consumerRows', () => {
+  const ep = (id: string, sources: string[] = []) => ({ id, sources });
+  const A = '00000000-0000-4000-8000-00000000000a';
+  const B = '00000000-0000-4000-8000-00000000000b';
+  const C = '00000000-0000-4000-8000-00000000000c';
+  const D = '00000000-0000-4000-8000-00000000000d';
+  const tid = (id: string) => `llm_endpoint-${id}`;
+  // A ← B ← C, A ← D (B and D source from A; C sources from B).
+  const all = [ep(A), ep(B, [tid(A)]), ep(C, [tid(B)]), ep(D, [tid(A), tid(B)])];
+
+  it('finds the direct consumers by typeid, in list order', () => {
+    expect(consumersOf(A, all).map((e) => e.id)).toEqual([B, D]);
+    expect(consumersOf(B, all).map((e) => e.id)).toEqual([C, D]);
+    expect(consumersOf(C, all)).toEqual([]);
+  });
+
+  it('walks consumers depth-first, listing an endpoint once at its first depth', () => {
+    expect(consumerRows(A, all).map((r) => [r.endpoint.id, r.depth])).toEqual([
+      [B, 0],
+      [C, 1],
+      [D, 1],
+    ]);
+  });
+
+  it('a stale cycle terminates', () => {
+    const cyc = [ep(A, [tid(B)]), ep(B, [tid(A)])];
+    expect(consumerRows(A, cyc).map((r) => r.endpoint.id)).toEqual([B]);
   });
 });

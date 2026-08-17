@@ -17,7 +17,8 @@ import { Button } from '@src/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { formatValue } from '@src/components/cost-dashboard/constants';
 
-import { canConfigure, canRemove } from './endpoint-catalog';
+import { consumersOf } from './chain-tree';
+import { canConfigure, canRemove, endpointTypeId } from './endpoint-catalog';
 import { cohortRange, formatUsd } from './usage-math';
 
 export interface LlmEndpointsListProps {
@@ -54,6 +55,31 @@ export function ProviderBadge({ provider }: { provider: string | null | undefine
     <Badge variant="secondary" data-testid="provider-badge" className="font-mono text-[11px]">
       {provider}
     </Badge>
+  );
+}
+
+/** A clickable endpoint name — the graph edge in the table. Stops the row click. */
+export function EndpointLink({
+  endpoint,
+  onOpen,
+  testId,
+}: {
+  endpoint: LLMEndpoint;
+  onOpen: (endpoint: LLMEndpoint) => void;
+  testId?: string;
+}) {
+  return (
+    <button
+      type="button"
+      className="truncate text-xs text-primary hover:underline"
+      data-testid={testId}
+      onClick={(ev) => {
+        ev.stopPropagation();
+        onOpen(endpoint);
+      }}
+    >
+      {endpoint.name || endpoint.id}
+    </button>
   );
 }
 
@@ -107,6 +133,7 @@ export function LlmEndpointsList({
 }: LlmEndpointsListProps) {
   const { t } = useLingui();
   const usage = useTodayUsage(endpoints.map((e) => e.id));
+  const byId = useMemo(() => new Map(endpoints.map((e) => [endpointTypeId(e.id), e])), [endpoints]);
 
   return (
     <div className="space-y-3" data-testid="llm-endpoints-list">
@@ -132,6 +159,12 @@ export function LlmEndpointsList({
                 <Trans>Provider</Trans>
               </TableHead>
               <TableHead>
+                <Trans>Sources</Trans>
+              </TableHead>
+              <TableHead>
+                <Trans>Used by</Trans>
+              </TableHead>
+              <TableHead>
                 <Trans>Enabled</Trans>
               </TableHead>
               <TableHead>
@@ -146,7 +179,7 @@ export function LlmEndpointsList({
           <TableBody>
             {endpoints.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={9} className="py-8 text-center text-sm text-muted-foreground">
                   {isLoading ? t`Loading…` : t`No endpoints yet.`}
                 </TableCell>
               </TableRow>
@@ -155,6 +188,8 @@ export function LlmEndpointsList({
               const totals = usage.get(e.id)?.totals;
               const configurable = canConfigure(e);
               const removable = canRemove(e);
+              const sources = e.sources.map((id) => byId.get(id) ?? null);
+              const consumers = consumersOf(e.id, endpoints);
               return (
                 <TableRow
                   key={e.id}
@@ -168,9 +203,33 @@ export function LlmEndpointsList({
                   </TableCell>
                   <TableCell>
                     <ProviderBadge provider={e.kind === 'root' ? e.provider : null} />
-                    {e.kind === 'chain' && (
-                      <span className="text-xs text-muted-foreground">{t`${e.sources.length} source(s)`}</span>
-                    )}
+                  </TableCell>
+                  <TableCell data-testid={`llm-sources-${e.id}`}>
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      {sources.length === 0 && <span className="text-xs text-muted-foreground">—</span>}
+                      {sources.map((src, i) =>
+                        src ? (
+                          <EndpointLink
+                            key={src.id}
+                            endpoint={src}
+                            onOpen={onOpen}
+                            testId={`llm-source-link-${src.id}`}
+                          />
+                        ) : (
+                          <span key={e.sources[i]} className="text-xs text-muted-foreground" title={e.sources[i]}>
+                            {t`(not visible)`}
+                          </span>
+                        ),
+                      )}
+                    </span>
+                  </TableCell>
+                  <TableCell data-testid={`llm-consumers-${e.id}`}>
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      {consumers.length === 0 && <span className="text-xs text-muted-foreground">—</span>}
+                      {consumers.map((c) => (
+                        <EndpointLink key={c.id} endpoint={c} onOpen={onOpen} testId={`llm-consumer-link-${c.id}`} />
+                      ))}
+                    </span>
                   </TableCell>
                   <TableCell>
                     <span
