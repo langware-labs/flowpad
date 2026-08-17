@@ -27,6 +27,7 @@ from .base_settings import (
     ENV_FLOWPAD_CLAUDE_HOME,
     ENV_FLOWPAD_CLOUD_API_KEY,
     ENV_FLOWPAD_CLOUD_API_URL,
+    ENV_FLOWPAD_COPILOT_HOME,
     ENV_FLOWPAD_DOCKER_PUBLIC_URL,
     ENV_FLOWPAD_HUB_URL,
     ENV_FS_RECORD_PATH,
@@ -55,12 +56,16 @@ class TestInstanceSettings(BaseInstanceSettings):
         claude_home = Path(claude_home_env) if claude_home_env else sandbox / ".claude"
         codex_home_env = os.environ.get(ENV_CODEX_HOME)
         codex_home = Path(codex_home_env) if codex_home_env else sandbox / ".codex"
+        copilot_home_env = os.environ.get(ENV_FLOWPAD_COPILOT_HOME)
+        copilot_home = Path(copilot_home_env) if copilot_home_env else sandbox / ".copilot"
         flow_home.mkdir(parents=True, exist_ok=True)
         claude_home.mkdir(parents=True, exist_ok=True)
         codex_home.mkdir(parents=True, exist_ok=True)
+        copilot_home.mkdir(parents=True, exist_ok=True)
         for sub in ("skills", "agents", "projects", "commands", "plans", "workflows", "docs", "tasks"):
             (claude_home / sub).mkdir(parents=True, exist_ok=True)
         (codex_home / "sessions").mkdir(parents=True, exist_ok=True)
+        (copilot_home / "session-state").mkdir(parents=True, exist_ok=True)
 
         # Tests can still override via FS_RECORD_PATH / SQLITE_DATABASE_PATH for
         # per-test isolation on top of the sandbox.
@@ -105,7 +110,7 @@ class TestInstanceSettings(BaseInstanceSettings):
             claude_commands_dir=claude_home / "commands",
             claude_plans_dir=claude_home / "plans",
             claude_workflows_dir=claude_home / "workflows",
-            claude_docs_dir=claude_home / "docs",
+            user_docs_dir=sandbox / "docs",
             claude_tasks_dir=claude_home / "tasks",
             claude_history_path=claude_home / "history.jsonl",
             claude_mcp_json_path=claude_home / "mcp.json",
@@ -116,6 +121,9 @@ class TestInstanceSettings(BaseInstanceSettings):
             codex_config_path=codex_home / "config.toml",
             codex_history_path=codex_home / "history.jsonl",
             codex_session_index_path=codex_home / "session_index.jsonl",
+            copilot_home=copilot_home,
+            copilot_session_state_dir=copilot_home / "session-state",
+            copilot_config_path=copilot_home / "config.json",
             cloud_user_email=os.environ.get("FLOWPAD_CLOUD_USER_EMAIL") or None,
             cloud_user_pass=os.environ.get("FLOWPAD_CLOUD_USER_PASSWORD") or None,
             cloud_login_timeout_seconds=cls._resolve_login_timeout(),

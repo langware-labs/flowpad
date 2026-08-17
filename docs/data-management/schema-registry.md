@@ -38,14 +38,30 @@ class TypeInfo:
 
     # --- Runtime refs (NOT in hash, NOT persisted) ---
     entity_cls: type | None = ...     # the Entity subclass (db_base_record)
-    post_sync_fn / from_disk_fn / gen_uuid_fn / asset_hash_fn / default_body_fn: Any
+    post_sync_fn / from_disk_fn / asset_hash_fn / default_body_fn: Any
+    capsules: tuple[CapsuleSpec, ...]
+    identity_backend: IdentityBackend | None
+    id_stable_key_fn: Any
+    id_namespace: UUID
     metadata: Any                     # the TypeMetadata instance it was built from
     meta_model: Any                   # per-type pydantic FS↔DB schema model
     main_subdir: str | None = None    # scope-relative asset subdir
     main_layout: str = "file"         # "file" | "folder"
 ```
 
-There is **no `record_cls` field** — `FSRecord` is now the single concrete record class (no `Record` subclasses), so a per-type record class is no longer registered. Per-type record behavior lives in free functions (`from_disk_fn`, `gen_uuid_fn`, etc.) attached to the `TypeInfo`, not on a subclass.
+There is **no `record_cls` field** — `FSRecord` is now the single concrete record class (no `Record` subclasses), so a per-type record class is no longer registered. Per-type record behavior lives in free functions and declarative runtime slots (`from_disk_fn`, `capsules`, `identity_backend`, etc.) attached to the `TypeInfo`, not on a subclass.
+
+`TypeInfo.mint_entity_id(ref, *, owner_id=None, live_ids=None, proposed_id=None, derive=False, overwrite=False)` is the ONE identity seam; `extract_id`/`mint_id`/`resolve_id` are gone. Its backend observes the canonical named capsule then ordered read-only legacy/native candidates, and TypeInfo applies the UUID v4/v5 adoption policy.
+
+Resolution order is **carrier → owning row → derive**, by carrier LIVENESS: the carrier wins unless a row owns this path AND the carrier is provably dead (`live_ids` is the oracle; `None` means "cannot prove dead", so only the index walk may conclude it). Two orthogonal flags, both defaulting to the inert corner:
+
+| `derive` | `overwrite` | behaviour | callers |
+|---|---|---|---|
+| `False` | `False` | probe — answers only from evidence, returns `None` when there is none | collision-identity ranking, create guards, assertions, read-only mounts |
+| `True` | `False` | compute the id the indexer would assign, write nothing | request handlers |
+| `True` | `True` | compute AND commit, healing an ABSENT carrier | the index walk |
+
+A derived value is NOT an acceptable substitute for the probe's `None`: it makes two unstamped copies look identical to the collision ranker. An INVALID carrier keeps its bytes even under `overwrite` — only an ABSENT one is stamped. Deterministic types supply `id_stable_key_fn`/`id_namespace`. Parsers receive the resolved value and do not mint.
 
 ### Dynamic properties
 
@@ -78,7 +94,8 @@ SKILL = TypeMetadata(
     main_subdir=".claude/skills",
     main_layout="folder",
     from_disk_fn=extract_skill,
-    gen_uuid_fn=skill_gen_id,
+    capsules=(CapsuleSpec("identity"),),
+    identity_backend=capsule_identity(skill_id_from_folder),
     asset_hash_fn=skill_asset_hash,
 )
 ```
@@ -99,7 +116,7 @@ This is the **only** remaining `__init_subclass__` auto-registration. There is n
 
 `register()` is idempotent and **merges on re-register** (`schema_registry.py:357`). The declarative `TypeMetadata` and the Entity `__init_subclass__` typically both register the same `type_name`; the merge:
 - unions `locations`,
-- fills `entity_cls`, `metadata`, `meta_model`, and the per-type function refs (`post_sync_fn`, `from_disk_fn`, `gen_uuid_fn`, `asset_hash_fn`, `default_body_fn`) on first non-None,
+- fills `entity_cls`, `metadata`, `meta_model`, and the per-type runtime refs (`post_sync_fn`, `from_disk_fn`, `capsules`, `identity_backend`, stable-key/namespace policy, `asset_hash_fn`, `default_body_fn`) on first non-None,
 - OR-merges the boolean flags (`browseable`, `creatable`, `indexed_by_default`, `api_visible`),
 - overwrites `icon`, `main_subdir`, `main_layout`, `index_fields` when the new value is set.
 

@@ -1,6 +1,7 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { WikiResolveView } from '@src/components/assets/editor/WikiResolveView';
 import { useWikiModalStore } from './wiki-modal';
+import { Trans } from '@lingui/react/macro';
 
 /**
  * Global host for `openWikiModal(wikiword)`. Mounted once near the app root
@@ -20,9 +21,14 @@ export function WikiModalRoot() {
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>[[{wikiword}]]</DialogTitle>
+          <DialogDescription className="sr-only">
+            <Trans>Preview of the wiki page, shown without leaving the current view.</Trans>
+          </DialogDescription>
         </DialogHeader>
         <div className="h-[70vh] overflow-auto">
-          {open && wikiword ? <WikiResolveView name={wikiword} space={space} fragment={fragment} /> : null}
+          {open && wikiword ? (
+            <WikiResolveView name={wikiword} space={space} fragment={fragment} variant="plain" />
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>

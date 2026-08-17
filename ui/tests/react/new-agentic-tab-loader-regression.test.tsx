@@ -7,10 +7,9 @@
  * - The user clicks the production Claude opener from the tab strip.
  *
  * The only mocked function is the SDK backend action boundary,
- * dataManager.callAction. It returns real-shaped backend payloads but does not
- * mutate the React tab store. The test currently fails at the final assertion:
- * the URL changes and setupTab materializes the Tab, but TabbedTerminal still
- * renders from a stale all-tabs-store snapshot.
+ * dataManager.callAction. Its process `open` action is deliberately held so
+ * this test proves URL commitment + tab materialization happen before the
+ * mounted terminal finishes its worker/PTY start.
  */
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -35,10 +34,12 @@ import {
   type TabRow,
 } from '@sdk';
 import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesContext';
+import { TooltipProvider } from '@src/components/ui/tooltip';
+import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { loadAgentApp } from '@src/routes/loaders/main-loader';
-import { applyAllTabs } from '@src/tabs/all-tabs-store';
-import { resetTabLifecycleForTests } from '@src/tabs/tab-lifecycle';
+import { tabManager } from '@sdk';
+import { resetTabContentLifecycleForTests } from '@src/tabs/tab-content-lifecycle';
 
 const PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const COMPUTE_NODE_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -83,6 +84,8 @@ function processPayload(processId: string, shellId: string | null = null) {
     project_id: PROJECT_ID,
     workdir: '/tmp/flowpad-project',
     shell_id: shellId,
+    pty_mode: true,
+    visible: true,
     worker_type: 'claude',
     auto_rename: false,
   };
@@ -181,9 +184,10 @@ describe('new agentic-process loader handoff', () => {
     }
 
     window.localStorage.clear();
+    setViewMode(ViewMode.Advanced);
     await dataManager.clearCache();
-    applyAllTabs([]);
-    resetTabLifecycleForTests();
+    tabManager.adoptGlobal([]);
+    resetTabContentLifecycleForTests();
     seedCapabilities();
     seedConnectedWebSocket();
     releaseNewProcessOpen = null;
@@ -309,10 +313,11 @@ describe('new agentic-process loader handoff', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    applyAllTabs([]);
-    resetTabLifecycleForTests();
+    tabManager.adoptGlobal([]);
+    resetTabContentLifecycleForTests();
     (capabilityManager as unknown as { capabilities: Capability[] }).capabilities = [];
     (connectionManager as unknown as { socket: unknown }).socket = null;
+    setViewMode(ViewMode.Vibe);
     // Reset the shared dataContext the loader mutated (active shell/target +
     // current project). These are process-wide singletons; without clearing them
     // a following loader-integration test in the SAME worker inherits this test's
@@ -339,9 +344,13 @@ describe('new agentic-process loader handoff', () => {
 
     render(
       <QueryClientProvider client={queryClient}>
-        <HarnessCapabilitiesProvider>
-          <RouterProvider router={router} />
-        </HarnessCapabilitiesProvider>
+        {/* App.tsx wraps the whole app in one TooltipProvider; radix's Tooltip
+            throws without it, and the terminal subtree renders several. */}
+        <TooltipProvider>
+          <HarnessCapabilitiesProvider>
+            <RouterProvider router={router} />
+          </HarnessCapabilitiesProvider>
+        </TooltipProvider>
       </QueryClientProvider>,
     );
 
@@ -354,7 +363,7 @@ describe('new agentic-process loader handoff', () => {
 
     const expectedPath = `/dock/shell/agentic_process-${NEW_PROCESS_ID}`;
     await waitFor(() => {
-      expect(window.location.pathname).toBe(expectedPath);
+      expect(screen.getByTestId('router-location')).toHaveTextContent(expectedPath);
     });
 
     await waitFor(() => {

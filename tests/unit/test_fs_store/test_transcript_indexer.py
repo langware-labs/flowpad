@@ -560,7 +560,7 @@ async def test_indexer_force_redispatches(tmp_path: Path, clean_db) -> None:
 
 @pytest.mark.asyncio
 async def test_index_single_markdown_creates_row(tmp_path: Path, clean_db) -> None:
-    """A fresh .md under .claude/docs/ should become a Docs entity row when
+    """A fresh .md under docs/ should become a Docs entity row when
     _index_single_markdown is invoked on its path. Mirrors the production
     self-heal flow: the chip carries data.path → graph.py registry dispatch
     → row exists on retry."""
@@ -570,7 +570,7 @@ async def test_index_single_markdown_creates_row(tmp_path: Path, clean_db) -> No
     )
 
     home = tmp_path / "home"
-    docs = home / ".claude" / "docs"
+    docs = home / "docs"
     docs.mkdir(parents=True)
     md = docs / "self-heal-smoke.md"
     md.write_text("# self-heal smoke\n\nbody\n", encoding="utf-8")

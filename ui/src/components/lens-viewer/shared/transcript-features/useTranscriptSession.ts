@@ -1,5 +1,6 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useMemo, useState } from 'react';
-import { AgenticProcess, ClaudeSession, dataContext, ProcessKind, TypeId } from '@sdk';
+import { AgenticProcess, dataContext, ProcessKind, TypeId } from '@sdk';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
@@ -7,14 +8,7 @@ import { buildSharedAndPrivateContextSection } from '@src/components/conversatio
 import { mostRecentProcess } from '@src/utils/process-recency';
 import type { WorkerType as ConversationWorkerType } from '@src/components/conversation/conversation-session-constants';
 import type { WorkerType } from '@src/hooks/use-transcript';
-
-/** Worker → session entity-type slug. claude is the only one with a frontend
- *  entity class (`ClaudeSession`); codex/copilot use their backend slug. */
-const SESSION_TYPE_BY_WORKER: Record<WorkerType, string> = {
-  claude: ClaudeSession.type,
-  codex: 'codex_session',
-  copilot: 'copilot_session',
-};
+import { SESSION_TYPE_BY_WORKER } from './transcript-utils';
 
 /** Fixed first instruction for the analyze-transcript worker. */
 const ANALYZE_PROMPT = 'Load this transcript using transcript analyzer and summarise it.';
@@ -36,7 +30,10 @@ const ANALYZE_PROMPT = 'Load this transcript using transcript analyzer and summa
  * "load + summarise" instruction, and the worker session itself as context.
  * Runs in the current active project (`dataContext.project`).
  */
-export function useTranscriptSession(workerType: WorkerType, sessionId: string | null): {
+export function useTranscriptSession(
+  workerType: WorkerType,
+  sessionId: string | null,
+): {
   process: AgenticProcess | null;
   starting: boolean;
   launch: (worker: ConversationWorkerType) => void;
@@ -50,20 +47,36 @@ export function useTranscriptSession(workerType: WorkerType, sessionId: string |
   const { processes } = useProcessesForTarget(target, { processType: ProcessKind.Analysis });
   const process = useMemo(() => mostRecentProcess(processes), [processes]);
 
-  const launch = useCallback(
+  const startLaunch = useCallback(
     async (worker: ConversationWorkerType) => {
-      if (!sessionId || !target || starting) return;
+      // Every path that returns without a terminal logs why. "Click does
+      // nothing and we stay on the transcript page" is the shared symptom of
+      // all of them, so the console line is the only way to tell them apart.
+      const LOG = '[useTranscriptSession]';
+      if (!sessionId || !target || starting) {
+        console.warn(
+          `${LOG} launch click did NOT open a session — ` +
+            `sessionId=${sessionId ?? 'null'} target=${target ?? 'null'} starting=${starting}` +
+            (starting ? ' (a previous launch is still in flight and never settled)' : ''),
+        );
+        return;
+      }
       const project = dataContext.project;
       const workdir = project?.fs_storage_mount_path ?? undefined;
       if (!workdir) {
-        notify.error({ title: 'No active project', message: 'Open a project to analyze this transcript.' });
+        console.warn(
+          `${LOG} launch click did NOT open a session — the active project has no folder on this machine. ` +
+            `project=${project?.id ?? 'null'} name=${project?.name ?? 'null'} fs_storage_mount_path=${String(project?.fs_storage_mount_path)}`,
+        );
+        notify.error({ title: t`No active project`, message: t`Open a project to analyze this transcript.` });
         return;
       }
       setStarting(true);
+      console.debug(`${LOG} launching ${worker} for ${target} in ${workdir}…`);
       try {
         const sessTypeId = new TypeId(sessionType, sessionId);
         const ctx = buildSharedAndPrivateContextSection([sessTypeId], []);
-        await AgenticProcess.launch({
+        const proc = await AgenticProcess.launch({
           workerType: worker,
           workdir,
           projectId: project?.id ?? undefined,
@@ -73,9 +86,10 @@ export function useTranscriptSession(workerType: WorkerType, sessionId: string |
           sharedContextEntities: [sessTypeId.toString()],
           target,
         });
+        console.debug(`${LOG} launched process ${proc?.id ?? 'null'} — terminal dock opened`);
       } catch (err) {
-        console.error('[useTranscriptSession] start session failed', err);
-        notify.error({ title: 'Failed to start session' });
+        console.error(`${LOG} launch click did NOT open a session — AgenticProcess.launch threw`, err);
+        notify.error({ title: t`Failed to start session` });
       } finally {
         setStarting(false);
       }
@@ -83,8 +97,24 @@ export function useTranscriptSession(workerType: WorkerType, sessionId: string |
     [sessionId, target, sessionType, starting],
   );
 
+  // Fire-and-forget wrapper: callers hand `launch` straight to an onClick, and a
+  // promise-returning handler there is unhandled-rejection bait (the async body
+  // already notifies on its own failures).
+  const launch = useCallback(
+    (worker: ConversationWorkerType) => {
+      void startLaunch(worker);
+    },
+    [startLaunch],
+  );
+
   const open = useCallback(() => {
-    if (!process?.id) return;
+    if (!process?.id) {
+      console.warn(
+        '[useTranscriptSession] Open click did NOT open a session — no analysis process resolved for this transcript',
+      );
+      return;
+    }
+    console.debug(`[useTranscriptSession] opening existing analysis process ${process.id}`);
     void navigation.openShellProcess(process.id);
   }, [process, navigation]);
 

@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { ScopeBar, type ScopeBarOption } from '@src/components/ui/scope-bar';
 import type React from 'react';
 
@@ -21,26 +22,17 @@ export function SearchScopeToggle({
   const options: ScopeBarOption<SearchScopeMode>[] = [
     {
       value: 'all',
-      label: 'All projects',
+      label: t`All projects`,
       count: allProjectCount,
-      title: 'Search all known projects',
+      title: t`Search all known projects`,
     },
     {
       value: 'current',
-      label: 'Current project',
+      label: t`Current project`,
       disabled: !currentProjectAvailable,
-      title: currentProjectAvailable
-        ? 'Search only the current project'
-        : 'No current project is selected',
+      title: currentProjectAvailable ? 'Search only the current project' : 'No current project is selected',
     },
   ];
 
-  return (
-    <ScopeBar
-      value={value}
-      options={options}
-      onChange={onChange}
-      className={className}
-    />
-  );
+  return <ScopeBar value={value} options={options} onChange={onChange} className={className} />;
 }

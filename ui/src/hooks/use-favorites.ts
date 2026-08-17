@@ -1,6 +1,7 @@
 import { Bookmark, BookmarkType } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
-import { useCallback, useMemo } from 'react';
+import { canNavigateFavorite } from '@src/navigation/favorite-nav';
+import { useCallback, useMemo, useRef } from 'react';
 import { useProjectBookmarks } from './use-project-bookmarks';
 
 export interface FavoriteRef {
@@ -11,8 +12,17 @@ export interface FavoriteRef {
   nav?: Record<string, unknown>;
 }
 
-function isFavoriteBookmark(b: Bookmark): boolean {
+export function isFavoriteBookmark(b: Bookmark): boolean {
   return b.bookmark_type === BookmarkType.FAVORITE;
+}
+
+/** Never opened AND never looked at — the unread predicate behind every
+ *  favorites badge. Absent `counter`/`seen` (every row written before those
+ *  fields existed) read as 0/false, so a pre-existing favorite correctly
+ *  starts out unread. The two are separate on purpose: resting on a row in the
+ *  menu clears the badge (`Bookmark.markSeen`) without claiming an open. */
+export function isUnopened(b: Bookmark): boolean {
+  return (b.counter ?? 0) === 0 && !b.seen;
 }
 
 function isFolderBookmark(b: Bookmark): boolean {
@@ -114,13 +124,17 @@ export function useFavorites() {
   );
 
   const addFavorite = useCallback(
-    async (ref: FavoriteRef): Promise<Bookmark> => {
+    // `parentId` files the favorite directly into a folder ('' = root). The
+    // existing-favorite short-circuit ignores it — a duplicate stays where it
+    // already lives; callers that want to re-file follow with `moveToFolder`.
+    async (ref: FavoriteRef, parentId = ''): Promise<Bookmark> => {
       const existing = isFavorited(ref.entityType, ref.entityId);
       if (existing) return existing;
       const bookmark = new Bookmark({
         bookmark_type: BookmarkType.FAVORITE,
         title: ref.title,
-        order: appendOrder(''),
+        parent_id: parentId,
+        order: appendOrder(parentId),
         project_id: currentProjectId,
         data: {
           entity_type: ref.entityType,
@@ -145,6 +159,28 @@ export function useFavorites() {
     [excludeBookmarks, refetch],
   );
 
+  // A favorite whose stored pointer resolves to no route is permanently dead:
+  // `canNavigateFavorite` is a pure function of the bookmark's own `data` blob
+  // and the static nav table (never a load-time race), so a non-navigable
+  // favorite can never become reachable. Reap them — a hard delete, matching
+  // unfavorite — so the menu shows no broken "ghost" rows. Only leaf favorites
+  // are candidates: folders carry no target ref and would always read as
+  // non-navigable.
+  //
+  // Read `favorites` through a ref so this callback's identity stays stable:
+  // its one caller runs it from an effect keyed on menu-open, and a `favorites`
+  // dep would rebuild it on every refetch (including reap's own), re-firing that
+  // effect for no reason.
+  const favoritesRef = useRef(favorites);
+  favoritesRef.current = favorites;
+  const reapDead = useCallback(async () => {
+    const dead = favoritesRef.current.filter((b) => b.id && !canNavigateFavorite(b));
+    if (dead.length === 0) return;
+    excludeBookmarks(dead.map((b) => b.id));
+    await Promise.all(dead.map((b) => b.delete()));
+    await refetch();
+  }, [excludeBookmarks, refetch]);
+
   const renameFavorite = useCallback(
     async (bookmark: Bookmark, newName: string) => {
       const next = newName.trim();
@@ -157,12 +193,16 @@ export function useFavorites() {
   );
 
   const createFolder = useCallback(
-    async (name: string): Promise<Bookmark> => {
+    // `parentId` nests the folder ('' = root). This is the only path to a nested
+    // folder — `moveToFolder` refuses folders, so a create-then-move workaround
+    // can't build one.
+    async (name: string, parentId = ''): Promise<Bookmark> => {
       const folder = new Bookmark({
         bookmark_type: BookmarkType.FAVORITE_FOLDER,
         name: name.trim(),
         title: name.trim(),
-        order: appendOrder(''),
+        parent_id: parentId,
+        order: appendOrder(parentId),
         project_id: currentProjectId,
       });
       await folder.save([]);
@@ -214,13 +254,13 @@ export function useFavorites() {
   );
 
   const toggleFavorite = useCallback(
-    async (ref: FavoriteRef): Promise<Bookmark | null> => {
+    async (ref: FavoriteRef, parentId = ''): Promise<Bookmark | null> => {
       const existing = isFavorited(ref.entityType, ref.entityId);
       if (existing) {
         await removeFavorite(existing);
         return null;
       }
-      return addFavorite(ref);
+      return addFavorite(ref, parentId);
     },
     [isFavorited, addFavorite, removeFavorite],
   );
@@ -235,6 +275,7 @@ export function useFavorites() {
     isFavorited,
     addFavorite,
     removeFavorite,
+    reapDead,
     renameFavorite,
     toggleFavorite,
     createFolder,

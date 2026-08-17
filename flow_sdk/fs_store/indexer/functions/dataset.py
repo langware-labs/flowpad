@@ -1,10 +1,10 @@
-"""Walker + extractor + id mint for DATASET records.
+"""Extractor + id mint for DATASET records.
 
-A dataset is a folder under ``assets/datasets/`` containing a ``dataset.json``
+A dataset is a folder under ``agentic-assets/dataset/`` containing a ``dataset.json``
 manifest (which is also the walker's marker file). The manifest declares the
 physical layout; the example rows live beside it:
 
-    assets/datasets/<slug>/
+    agentic-assets/dataset/<slug>/
       dataset.json                 # {"metadata": {id?, data_layout, field_spec, schema, …}, "data": {…}}
       data.csv                     # data_layout == "csv"
       examples/0001/...            # data_layout == "io_folder" (see below)
@@ -27,7 +27,7 @@ Back-compat: ``input.txt``/``expected.txt`` still populate ``Example.input`` /
 into the shared ``Example`` shape. Modeled on ``functions/whiteboard.py``.
 
 Type metadata lives in ``flow_sdk/schema/type_info/dataset_type_info.py``; this
-module provides the walker + slot functions only.
+module provides the slot functions only.
 """
 from __future__ import annotations
 
@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from flow_sdk.builtin.dataset import (
+    EXAMPLE_META,  # canonical per-example metadata filename (model-owned)
     ArtifactKind,
     DataLayoutEnum,
     Example,
@@ -49,10 +50,8 @@ from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identifier import adopt_entity_id, mint_uuid
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
-    folder_capsule_gen_id,
     read_folder_capsule_id,
 )
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 MANIFEST = "dataset.json"
@@ -61,40 +60,12 @@ EXAMPLES_DIR = "examples"
 
 # IO_FOLDER per-example layout.
 SLOT_BASES = ("input", "output", "ground_truth")
-EXAMPLE_META = "example.json"          # canonical per-example metadata
 EXAMPLE_META_ALIAS = "meta.json"       # back-compat alias (example.json wins)
 EXPECTED_LEGACY = "expected"           # legacy expected.txt → folded onto ground_truth
 TEXT_EXTS = {".txt", ".md"}            # only these data files are decoded into .text
 
 
-# ── walker ────────────────────────────────────────────────────────────────────
-
-def dataset_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
-) -> list[FSRef]:
-    """Emit one DATASET FSRef per ``assets/datasets/<slug>/`` folder containing a
-    ``dataset.json`` manifest."""
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        root = Path(node.path) / "assets" / "datasets"
-        if not root.is_dir():
-            continue
-        for entry in sorted(root.iterdir()):
-            if not entry.is_dir():
-                continue
-            if not (entry / MANIFEST).is_file():
-                continue
-            key = str(entry.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(entry, record_type=RecordType.DATASET, parent=node))
-    return out
-
-
-# ── id helpers ────────────────────────────────────────────────────────────────
+# ── manifest + id helpers ──────────────────────────────────────────────────────
 
 def _load_json_dict(path: Path) -> dict[str, Any]:
     """Read a JSON object from ``path``; ``{}`` when absent, malformed, or non-dict."""
@@ -136,18 +107,13 @@ def _id_from_manifest(manifest: dict[str, Any], path: Path) -> str:
     return adopt_entity_id(manifest.get("id")) or _dataset_id_from_path(path)
 
 
-def dataset_gen_id(ref: FSRef) -> str:
-    """Resolve a dataset's id. Idempotent.
-
-    Precedence: the `.flow/id` capsule → a VALID `dataset.json` `id` (adopted +
-    backfilled into the capsule) → a fresh random **v4** into the capsule. The
-    uuid5(path) derive survives only as a read-only / transitional fallback.
-    """
-    path = ref._path
-    if not path.is_dir():
-        return _dataset_id_from_path(path)
+def dataset_id_from_folder(ref: FSRef | Path) -> object | None:
+    path = Path(getattr(ref, "_path", ref))
+    cap = read_folder_capsule_id(path)
+    if cap:
+        return cap
     meta, _ = _load_manifest(path)
-    return folder_capsule_gen_id(path, meta.get("id"))
+    return adopt_entity_id(meta.get("id"))
 
 
 # ── parser (shared by both layouts) ───────────────────────────────────────────
@@ -404,7 +370,7 @@ def iter_examples(
 
 # ── extractor ─────────────────────────────────────────────────────────────────
 
-def extract_dataset(ref: FSRef) -> list[FSRecord]:
+def extract_dataset(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a dataset folder into a single FSRecord with denormalized counts."""
     path = ref._path
     if not path.is_dir() or not (path / MANIFEST).is_file():
@@ -412,12 +378,11 @@ def extract_dataset(ref: FSRef) -> list[FSRecord]:
     ds_meta, ds_data = _load_manifest(path)
 
     # Capsule wins (gen_id stamped it), else manifest id, else uuid5(path) — the
-    # same precedence dataset_gen_id uses, so extract and gen agree.
-    ds_id = read_folder_capsule_id(path) or _id_from_manifest(ds_meta, path)
+    # same precedence as the TypeInfo reader, so direct extraction agrees.
     layout = _coerce_enum(ds_meta.get("data_layout"), DataLayoutEnum, DataLayoutEnum.CSV)
     field_spec = ds_meta.get("field_spec") if isinstance(ds_meta.get("field_spec"), dict) else {}
     delimiter = ds_meta.get("delimiter") or ","
-    examples = iter_examples(path, layout, field_spec, delimiter, dataset_id=ds_id)
+    examples = iter_examples(path, layout, field_spec, delimiter, dataset_id=resolved_id)
 
     kind_counts: dict[str, int] = {}
     num_annotated = num_multi_output = num_binary_inputs = 0
@@ -452,7 +417,7 @@ def extract_dataset(ref: FSRef) -> list[FSRecord]:
 
     rec_kwargs: dict[str, Any] = {
         "type": RecordType.DATASET,
-        "id": ds_id,
+        "id": resolved_id,
         "name": name,
         "status": "active",
         "content": content,

@@ -1,6 +1,16 @@
 import { useSyncExternalStore } from 'react';
 import type { DockPointer } from '@src/navigation';
 
+/**
+ * Optional "where do I go from here" affordance on an error card. The loader
+ * hands over a ready-made pointer so the view stays a dumb renderer and the
+ * click path is still a plain `navigation.openDock(pointer)`.
+ */
+export interface DockLoadErrorLink {
+  label: string;
+  pointer: DockPointer;
+}
+
 export interface DockLoadErrorEntry {
   kind: string;
   severity: 'hard' | 'soft';
@@ -8,6 +18,7 @@ export interface DockLoadErrorEntry {
   title: string;
   message: string;
   retryable: boolean;
+  link?: DockLoadErrorLink;
   updatedAt: number;
 }
 
@@ -34,10 +45,7 @@ function getSnapshot(): ReadonlyMap<string, DockLoadErrorEntry> {
   return snapshot;
 }
 
-export function setDockLoadError(
-  dock: DockPointer | null | undefined,
-  entry: DockLoadErrorEntry,
-): void {
+export function setDockLoadError(dock: DockPointer | null | undefined, entry: DockLoadErrorEntry): void {
   const key = dockLoadErrorKey(dock);
   if (!key) return;
   entries.set(key, entry);
@@ -52,17 +60,16 @@ export function clearDockLoadError(dock: DockPointer | null | undefined): void {
 
 export function getDockLoadError(dock: DockPointer | null | undefined): DockLoadErrorEntry | null {
   const key = dockLoadErrorKey(dock);
-  return key ? entries.get(key) ?? null : null;
+  return key ? (entries.get(key) ?? null) : null;
 }
 
 export function useDockLoadError(dock: DockPointer | null | undefined): DockLoadErrorEntry | null {
   const errorSnapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const key = dockLoadErrorKey(dock);
-  return key ? errorSnapshot.get(key) ?? null : null;
+  return key ? (errorSnapshot.get(key) ?? null) : null;
 }
 
 export function resetDockLoadErrorsForTests(): void {
   entries.clear();
   notifyListeners();
 }
-

@@ -1,17 +1,19 @@
-import { ContextEntitiesEnum, dataContext, Project } from '@sdk';
+import { ContextEntitiesEnum, dataContext } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
 import { CopilotIcon } from '@src/components/icons/CopilotIcon';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import {
   NewProjectDialog,
   NewProjectFromGitDialog,
   ProjectSelectorModal,
   useEnsureProject,
-  useSelectExistingProject,
+  useGitCloneDialogSubmit,
 } from '@src/components/project-selector';
+import { projectEntitiesToSelectorItems } from '@src/components/project-selector/project-items';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,10 +26,11 @@ import { useAssetTypes } from '@src/hooks/use-asset-types';
 import { useProjects } from '@src/hooks/use-projects';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { openNewChat } from '@src/navigation/open-new-chat';
+import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
 import { FolderOpen, FolderPlus, GitBranch } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useCallback, useMemo, useState } from 'react';
-import { projectRecencyMs } from '@src/lib/project-recency';
 import { QUICK_CREATE_REGISTRY } from './registry';
 
 interface QuickCreateMenuProps {
@@ -52,15 +55,12 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
   const { computeNode } = useAgentContext();
   const { navigation } = useDockNavigation();
   const ensureProject = useEnsureProject();
-  const selectExisting = useSelectExistingProject();
+  const handleCreateGitProject = useGitCloneDialogSubmit(computeNode?.id);
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [newLocalProjectOpen, setNewLocalProjectOpen] = useState(false);
   const [newGitProjectOpen, setNewGitProjectOpen] = useState(false);
 
-  const defaultWorkspacePath = useMemo(
-    () => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '',
-    [],
-  );
+  const defaultWorkspacePath = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '', []);
 
   const handlePickFolder = useCallback(async (): Promise<string | null> => {
     if (!computeNode) {
@@ -86,39 +86,7 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
     [ensureProject],
   );
 
-  const handleCreateGitProject = useCallback(
-    async (
-      url: string,
-      acceptSuggested?: string,
-      branch?: string,
-    ): Promise<{ ok: true } | { ok: false; suggestedName: string; attemptedName: string }> => {
-      if (!computeNode) {
-        throw new Error('No compute node available');
-      }
-      const result = await Project.createFromGitUrl(computeNode.id, url, acceptSuggested, branch);
-      if (result.kind === 'ok') {
-        await selectExisting(result.project);
-        return { ok: true };
-      }
-      if (result.kind === 'collision') {
-        return { ok: false, suggestedName: result.suggestedName, attemptedName: result.attemptedName };
-      }
-      throw new Error(result.message);
-    },
-    [computeNode, selectExisting],
-  );
-
-  const projectItems = useMemo(
-    () =>
-      (projects ?? []).map((p) => ({
-        id: p.id,
-        name: p.displayName,
-        path: p.fs_storage_mount_path ?? '',
-        modifiedAt: p.updated_date ?? null,
-        recencyMs: projectRecencyMs({ last_active_at: p.last_active_at, modified_at: p.updated_date }),
-      })),
-    [projects],
-  );
+  const projectItems = useMemo(() => projectEntitiesToSelectorItems(projects), [projects]);
 
   // Coding-agent sessions aren't "assets" with a name/folder — they launch a
   // live AgenticProcess immediately. Create the process, then navigate to its
@@ -126,12 +94,17 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
   const handleStartSession = useCallback(
     async (workerType: 'claude_code' | 'codex' | 'copilot') => {
       onOpenChange(false);
-      const result = await navigation.openNewClaudeProcess({ workerType });
-      if (!result) {
-        notify.error({ title: t`Failed to start session` });
-        return;
+      // openNewChat creates AND navigates (carrying the chat mode) — no second nav.
+      // The catch is load-bearing: this is invoked as `void handleStartSession(…)`,
+      // so a rejected create used to become an unhandled rejection and the user
+      // got no feedback at all in any view mode.
+      try {
+        const process = await openNewChat(navigation, { workerType });
+        if (!process) notify.error({ title: t`Failed to start session` });
+      } catch (err) {
+        console.error('[QuickCreateMenu] start session failed', err);
+        openCapabilitiesForWorker(navigation, workerType);
       }
-      await navigation.openShellProcess(result.processId);
     },
     [navigation, onOpenChange, t],
   );
@@ -148,17 +121,17 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
   );
 
   const items = useMemo(() => {
-    const serverCreatable = new Set(
-      serverTypes.filter((t) => t.creatable).map((t) => t.type_name),
-    );
+    const serverCreatable = new Set(serverTypes.filter((t) => t.creatable).map((t) => t.type_name));
     // When server list is empty (still loading / older backend), fall back to the
     // full UI registry — it's the best-effort source of truth.
     const enforce = serverCreatable.size > 0;
     return QUICK_CREATE_REGISTRY.filter((d) => !enforce || serverCreatable.has(d.type)).map((d) => {
-      const label = d.label ?? serverTypes.find((t) => t.type_name === d.type)?.label;
+      // `t(d.label)` translates at render, so the menu re-labels on a language
+      // switch; the server's own label is the fallback for a descriptor without one.
+      const label = d.label ? t(d.label) : serverTypes.find((s) => s.type_name === d.type)?.label;
       return { ...d, displayLabel: label };
     });
-  }, [serverTypes]);
+  }, [serverTypes, t]);
 
   return (
     <>
@@ -183,28 +156,32 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
             </button>
           </div>
           <DropdownMenuSeparator />
-          <DropdownMenuLabel><Trans>New session</Trans></DropdownMenuLabel>
+          <DropdownMenuLabel>
+            <Trans>New session</Trans>
+          </DropdownMenuLabel>
           <DropdownMenuItem onSelect={() => void handleStartSession('claude_code')}>
-            <ClaudeIcon className="mr-2 h-4 w-4 text-orange-500" />
+            <ClaudeIcon className="me-2 h-4 w-4 text-orange-500" />
             <Trans>Claude Code session</Trans>
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => void handleStartSession('codex')}>
-            <CodexIcon className="mr-2 h-4 w-4 text-emerald-500" />
+            <CodexIcon className="me-2 h-4 w-4 text-emerald-500" />
             <Trans>Codex session</Trans>
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => void handleStartSession('copilot')}>
-            <CopilotIcon className="mr-2 h-4 w-4 text-sky-500" />
+            <CopilotIcon className="me-2 h-4 w-4 text-sky-500" />
             <Trans>Copilot session</Trans>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuLabel><Trans>New project</Trans></DropdownMenuLabel>
+          <DropdownMenuLabel>
+            <Trans>New project</Trans>
+          </DropdownMenuLabel>
           <DropdownMenuItem
             onSelect={() => {
               onOpenChange(false);
               setNewLocalProjectOpen(true);
             }}
           >
-            <FolderPlus className="mr-2 h-4 w-4" />
+            <FolderPlus className="me-2 h-4 w-4" />
             <Trans>Project (local)</Trans>
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -213,13 +190,16 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
               setNewGitProjectOpen(true);
             }}
           >
-            <GitBranch className="mr-2 h-4 w-4" />
+            <GitBranch className="me-2 h-4 w-4" />
             <Trans>From git</Trans>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuLabel><Trans>Create new…</Trans></DropdownMenuLabel>
+          <DropdownMenuLabel>
+            <Trans>Create new…</Trans>
+          </DropdownMenuLabel>
           {items.map((item) => {
-            const Icon = item.Icon;
+            // Backend type registry owns the glyph (TypeInfo.icon).
+            const Icon = iconForType(item.type);
             return (
               <DropdownMenuItem
                 key={item.type}
@@ -228,13 +208,15 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
                   onPick(item.type);
                 }}
               >
-                <Icon className="mr-2 h-4 w-4" />
+                <Icon className="me-2 h-4 w-4" />
                 {item.displayLabel}
               </DropdownMenuItem>
             );
           })}
           {items.length === 0 && (
-            <DropdownMenuItem disabled><Trans>No creatable types available</Trans></DropdownMenuItem>
+            <DropdownMenuItem disabled>
+              <Trans>No creatable types available</Trans>
+            </DropdownMenuItem>
           )}
         </DropdownMenuContent>
       </DropdownMenu>

@@ -81,12 +81,12 @@ async def test_prompt_project_scoped_create_materializes_md(bootstrapped_client,
     assert resp.json().get("status") == "SUCCESS", resp.text
     created = resp.json()["data"]
 
-    md = tmp_path / "prompts" / "code_review_pass.md"
+    md = tmp_path / "agentic-assets" / "prompt" / "code_review_pass.md"
     assert created["asset_ref"] == str(md), created
     assert md.is_file(), "create must materialize the backing .md"
 
     # what the indexer would read back equals what the API wrote
-    [rec] = extract_prompt(FSRef(Path(md)))
+    [rec] = extract_prompt(FSRef(Path(md)), created["id"])
     assert rec.id == created["id"]
     assert rec.name == "Code review pass"
     assert rec.icon == "Rocket"
@@ -98,6 +98,6 @@ async def test_prompt_project_scoped_create_materializes_md(bootstrapped_client,
     edited = await Prompt.get_by_id(created["id"])
     edited.color = "#8b5cf6"
     await edited.save()
-    [rec2] = extract_prompt(FSRef(Path(md)))
+    [rec2] = extract_prompt(FSRef(Path(md)), created["id"])
     assert rec2.color == "#8b5cf6"
     assert rec2.text == "Review the diff."  # body preserved

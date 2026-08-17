@@ -1,5 +1,6 @@
 ---
 id: b27cd997-c564-573a-bf9c-ac5fa323b555
+ground_truth: true
 ---
 
 # Collaboration
@@ -62,15 +63,20 @@ skill, …) are anchored to the conversation and recursively auto-share.
    surfaces → one `ShareSource`), the three backend share paths (new / reply /
    forward), the `Conversation.share()` hub-invite sequence, and recursive share
    via the effective-remote parent chain.
-4. **[Invitations, Members & Sender Identity](./invites-members-identity.md)** —
+4. **[Cloud sharing — what leaves your machine](./cloud-sharing.md)** — the
+   user-facing privacy answer: metadata and git coordinates travel, document
+   bytes and secret values do not. Pinned against the code by
+   `tests/unit/test_cloud_share_contract.py`.
+5. **[Invitations, Members & Sender Identity](./invites-members-identity.md)** —
    the `Invitation` entity, the invite → accept → join algorithm, the role
    ladder, late-joiner history sync, and the hub-authoritative sender-identity
    model (resolution chain + unresolved-sender alert).
-5. **[Hub Fan-out & Conversation Loader](./hub-fanout-and-loader.md)** — how a
+6. **[Hub Fan-out & Conversation Loader](./hub-fanout-and-loader.md)** — how a
    local message reaches the hub and fans out (content-skips-sender,
-   status-honors-sender), the OSS receive/upsert path, the materialize pipeline,
-   conversation-list reconcile/staleness, and the URL-first conversation loader
-   cascade. (Supersedes the old root `DESIGN_loadConversation.md`.)
+   installation-gated status receipts), the OSS receive/upsert path, the
+   materialize pipeline, conversation-list reconcile/staleness, and the
+   URL-first conversation loader cascade. (Supersedes the old root
+   `DESIGN_loadConversation.md`.)
 
 ## Glossary
 

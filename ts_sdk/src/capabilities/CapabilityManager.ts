@@ -2,8 +2,18 @@ import { EventEmitter } from 'events';
 
 import { dataManager } from '../APIEntity';
 import apiClient from '../client';
-import { Capability, CapabilityActionName, CapabilityCheck, CapabilityResult } from '../entities/capability';
+import {
+  Capability,
+  CapabilityActionName,
+  CapabilityCheck,
+  CapabilityResult,
+  CapabilityState,
+  ICapability,
+} from '../entities/capability';
+import { normalizeKind } from '../models/Kind';
+import { EventBus } from '../tags/EventBus';
 import { defineGlobal } from '../utils/globals';
+import { isHubOnly } from '../utils/hub-runtime';
 
 export interface CapabilitySnapshot {
   queryKind: string;
@@ -21,6 +31,8 @@ export interface CapabilitySnapshot {
    * capability's own kind.
    */
   resolvedKind: string | null;
+  /** Canonical process worker behind `resolvedKind`, from the backend summary. */
+  resolvedWorkerType: string | null;
 }
 
 /** One dependency edge in a CapabilityAccess (mirror of backend summary.py). */
@@ -41,6 +53,8 @@ export interface CapabilityAccess {
   icon: string;
   available: boolean;
   checked: boolean;
+  /** Persisted four-state readiness (mirror of CapabilityState). */
+  state: CapabilityState;
   runnable: boolean;
   installable: boolean;
   worker_type: string | null;
@@ -122,6 +136,13 @@ export class CapabilityManager extends EventEmitter {
     }
 
     this.loadPromise = (async () => {
+      // Hub mode: the hub backend has no `capability` entity, so this graph
+      // query would 422. Return an empty set — capabilities are local-only.
+      if (isHubOnly()) {
+        this.capabilities = [];
+        this.emit('change');
+        return this.capabilities;
+      }
       const rows = await apiClient.get<unknown[]>('/graph/capability', {
         params: { include_system: true },
       });
@@ -183,9 +204,9 @@ export class CapabilityManager extends EventEmitter {
    * email"). Returns the spawned process id; refreshes the summary so the
    * row's running state surfaces.
    */
-  async installIntent(text: string): Promise<{ process_id?: string | null; message?: string }> {
+  async setupIntent(text: string): Promise<{ process_id?: string | null; message?: string }> {
     const result = await apiClient.post<{ process_id?: string | null; message?: string }>(
-      '/graph/capabilities/install-intent',
+      '/graph/capabilities/setup-intent',
       { text },
     );
     void this.getSummary(true);
@@ -193,14 +214,14 @@ export class CapabilityManager extends EventEmitter {
   }
 
   getMatching(queryKind: string): Capability[] {
-    const query = this.normalizeKind(queryKind);
+    const query = normalizeKind(queryKind);
     return this.capabilities
       .filter((capability) => this.kindMatches(query, capability.kind))
       .sort((a, b) => this.compareCapabilitiesForQuery(query, a, b));
   }
 
   getSnapshot(queryKind: string): CapabilitySnapshot {
-    const query = this.normalizeKind(queryKind);
+    const query = normalizeKind(queryKind);
     const capabilities = this.getMatching(query);
     const capability = this.pickCapability(query, capabilities);
     const result = capability ? this.getResult(capability) : null;
@@ -213,6 +234,14 @@ export class CapabilityManager extends EventEmitter {
     const resolvedKind = capability
       ? ((result?.details?.reference_kind as string | undefined) ?? capability.reference_kind ?? capability.kind)
       : null;
+    const resolvedWorkerType =
+      (resolvedKind
+        ? this.summary?.capabilities.find((access) => access.kind === resolvedKind)?.worker_type
+        : null) ??
+      (capability
+        ? this.summary?.capabilities.find((access) => access.kind === capability.kind)?.worker_type
+        : null) ??
+      null;
 
     return {
       queryKind: query,
@@ -224,11 +253,12 @@ export class CapabilityManager extends EventEmitter {
       dependencies: capability ? (this.actionResults.get(capability.kind)?.dependencies ?? {}) : {},
       processId,
       resolvedKind,
+      resolvedWorkerType,
     };
   }
 
   async ensureChecked(queryKind: string): Promise<CapabilitySnapshot> {
-    const query = this.normalizeKind(queryKind);
+    const query = normalizeKind(queryKind);
     const existing = this.ensureCheckPromises.get(query);
     if (existing) return existing;
 
@@ -243,7 +273,7 @@ export class CapabilityManager extends EventEmitter {
 
       for (const capability of snapshot.capabilities) {
         if (this.getResult(capability) !== null) continue;
-        const check = await this.runActionForCapability(capability, 'check');
+        const check = await this.runActionForCapability(capability, 'test');
         if (check.result.available) break;
       }
 
@@ -258,44 +288,137 @@ export class CapabilityManager extends EventEmitter {
     }
   }
 
-  async check(queryKind: string): Promise<CapabilitySnapshot> {
-    return this.runAction(queryKind, 'check');
+  /**
+   * Tri-state readiness for an exact capability kind: true = available,
+   * false = not available, null = unknown (never tried / errored — retryable
+   * via setupCapability). Reads the persisted row state; does NOT probe.
+   */
+  async checkCapability(kind: string): Promise<boolean | null> {
+    const query = normalizeKind(kind);
+    await this.load(true);
+    const state = this.capabilities.find((c) => c.kind === query)?.state ?? 'none';
+    if (state === 'available') return true;
+    if (state === 'not_available') return false;
+    return null;
   }
 
-  async install(queryKind: string): Promise<CapabilitySnapshot> {
-    return this.runAction(queryKind, 'install');
+  /**
+   * Run the capability's setup (backend install verb) to a terminal verdict:
+   * resolves true ⇔ the capability is available afterwards.
+   *
+   * When install spawns an agentic process, resolution waits for the install
+   * monitor's terminal row write (`last_setup.details.install_finalized`,
+   * arriving over the entity WS channel) — the monitor always terminates and
+   * persists a verdict, so no client-side timeout is layered on top.
+   */
+  async setupCapability(kind: string): Promise<boolean> {
+    const query = normalizeKind(kind);
+    await this.load();
+    const row = this.capabilities.find((c) => c.kind === query);
+    if (!row) throw new Error(`Capability ${query} was not found`);
+
+    let resolveTerminal: () => void;
+    const terminal = new Promise<void>((resolve) => {
+      resolveTerminal = resolve;
+    });
+    let expectedProcessId: string | null = null;
+    const off = EventBus.on(
+      'app.entity.updated',
+      (event) => {
+        const entity = (event.data?.entity ?? null) as ICapability | null;
+        const setup = entity?.last_setup;
+        if (!setup?.details?.install_finalized) return;
+        if (expectedProcessId && setup.process_id !== expectedProcessId) return;
+        resolveTerminal();
+      },
+      { target: `capability:${row.id}` },
+    );
+    try {
+      const check = await row.setup();
+      expectedProcessId = check.result.process_id ?? null;
+      if (expectedProcessId) await terminal;
+    } finally {
+      off();
+    }
+    void this.getSummary(true);
+    return (await this.checkCapability(query)) === true;
   }
 
   async test(queryKind: string): Promise<CapabilitySnapshot> {
     return this.runAction(queryKind, 'test');
   }
 
-  async setReferenceKind(queryKind: string, referenceKind: string): Promise<CapabilitySnapshot> {
-    const query = this.normalizeKind(queryKind);
-    const reference = this.normalizeKind(referenceKind);
+  async setup(queryKind: string): Promise<CapabilitySnapshot> {
+    return this.runAction(queryKind, 'setup');
+  }
+
+  /** Mutate one capability entity's persisted fields, save, then invalidate the
+   *  cached action result and re-check. The shared write path behind
+   *  setReferenceKind / setAuthMode. */
+  private async mutateAndRecheck(
+    queryKind: string,
+    mutate: (capability: Capability) => void,
+  ): Promise<CapabilitySnapshot> {
+    const query = normalizeKind(queryKind);
     await this.load();
     const capability = this.capabilities.find((candidate) => candidate.kind === query);
     if (!capability) {
       throw new Error(`Capability ${query} was not found`);
     }
-    if (!this.kindMatches(query, reference) || reference === query) {
-      throw new Error(`Capability ${query} cannot reference ${reference}`);
-    }
-    capability.reference_kind = reference;
+    mutate(capability);
     await capability.save();
     this.actionResults.delete(query);
     await this.load(true);
-    return this.check(query);
+    return this.test(query);
+  }
+
+  async setReferenceKind(queryKind: string, referenceKind: string): Promise<CapabilitySnapshot> {
+    const query = normalizeKind(queryKind);
+    const reference = normalizeKind(referenceKind);
+    if (!this.kindMatches(query, reference) || reference === query) {
+      throw new Error(`Capability ${query} cannot reference ${reference}`);
+    }
+    return this.mutateAndRecheck(queryKind, (capability) => {
+      capability.reference_kind = reference;
+    });
+  }
+
+  /**
+   * Set a harness's auth mode (device vs a stored LLM-provider key) and the
+   * chosen provider. Unlike setReferenceKind (which writes the `harness`
+   * reference row), this writes the concrete LEAF capability, e.g.
+   * `harness.claude.cli`. Persists via entity save() then re-checks.
+   */
+  async setAuthMode(
+    queryKind: string,
+    mode: 'device' | 'api',
+    provider?: string | null,
+  ): Promise<CapabilitySnapshot> {
+    return this.mutateAndRecheck(queryKind, (capability) => {
+      capability.auth_mode = mode;
+      capability.api_provider = mode === 'api' ? (provider ?? null) : null;
+    });
+  }
+
+  /** Persist a harness's tier→model override map ({provider: {name: slug}}),
+   *  layered over the driver defaults at spawn. Written on the leaf capability. */
+  async setModelMap(
+    queryKind: string,
+    map: Record<string, Record<string, string>>,
+  ): Promise<CapabilitySnapshot> {
+    return this.mutateAndRecheck(queryKind, (capability) => {
+      capability.model_map = map;
+    });
   }
 
   private async runAction(queryKind: string, actionName: CapabilityActionName): Promise<CapabilitySnapshot> {
-    const query = this.normalizeKind(queryKind);
+    const query = normalizeKind(queryKind);
     await this.load();
     const capabilities = this.getMatching(query);
 
     for (const capability of capabilities) {
       const result = await this.runActionForCapability(capability, actionName);
-      if (actionName !== 'check' || result.result.available) break;
+      if (actionName !== 'test' || result.result.available) break;
     }
 
     return this.getSnapshot(query);
@@ -327,8 +450,7 @@ export class CapabilityManager extends EventEmitter {
   private getResult(capability: Capability): CapabilityResult | null {
     return (
       this.actionResults.get(capability.kind)?.result ??
-      capability.last_install ??
-      capability.last_check ??
+      capability.last_setup ??
       capability.last_test ??
       null
     );
@@ -338,9 +460,8 @@ export class CapabilityManager extends EventEmitter {
     if (!capability) return null;
     return (
       this.actionResults.get(capability.kind)?.result.process_id ??
-      capability.last_install?.process_id ??
+      capability.last_setup?.process_id ??
       capability.last_test?.process_id ??
-      capability.last_check?.process_id ??
       null
     );
   }
@@ -355,10 +476,6 @@ export class CapabilityManager extends EventEmitter {
       capabilities[0] ??
       null
     );
-  }
-
-  private normalizeKind(kind: string): string {
-    return kind.trim().toLowerCase();
   }
 
   private compareCapabilitiesForQuery(query: string, a: Capability, b: Capability): number {

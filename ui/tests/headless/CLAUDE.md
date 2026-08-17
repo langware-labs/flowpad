@@ -22,7 +22,13 @@ FLOW_INSTANCE=<disposable-name> FLOWPAD_CLAUDE_HOME=/tmp/<cycle-owned-claude-hom
 
 Only kill the disposable instance that the current run launched. Never select, restart, clear, or kill a user-owned instance.
 
-**Process isolation:** the project uses `pool: 'forks'` (not threads). `_setup.ts` explicitly disposes every file-owned SDK realm; a fresh child process per file remains a second boundary for app-owned timers and browser globals that are not part of the SDK realm.
+**Process isolation:** the project uses `pool: 'forks'` (not threads), and the
+`test:vitest:headless` command uses `--no-file-parallelism` because all files
+share one writable backend. Serialization belongs to the root CLI invocation:
+Vitest does not honor `fileParallelism` or worker counts inside an extended
+project config. `_setup.ts` explicitly disposes every file-owned SDK realm; a
+fresh isolated child per file remains a second boundary for app-owned timers
+and browser globals that are not part of the SDK realm.
 
 **jsdom ceiling:** jsdom has no layout engine or canvas/WebGL. So `getBoundingClientRect()` is all-zeros and canvas surfaces don't paint — **xterm terminals, the Excalidraw whiteboard, and timeline/DockPointer geometry are out of scope here** and stay in the Playwright/browser-MCP matrices. Headless covers routing, loaders, context, bootstrap/auth, data flow, panels, modals, and entity round-trips through the SDK.
 

@@ -61,12 +61,11 @@ def _doc_search_dirs_cached(_fp: tuple) -> tuple[Path, ...]:
         seen.add(rp)
         dirs.append(rp)
 
-    _add(get_instance_settings().claude_docs_dir)
+    _add(get_instance_settings().user_docs_dir)
 
     try:
         from flow_sdk.config import flowpad_assistant_project_root
         _add(flowpad_assistant_project_root() / "docs")
-        _add(flowpad_assistant_project_root() / ".claude" / "docs")
     except Exception:
         pass
 

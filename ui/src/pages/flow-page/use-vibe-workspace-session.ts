@@ -1,9 +1,11 @@
-import { Tab } from '@sdk';
-import { useMemo } from 'react';
+import { AgenticProcess, parentOfTab, tabForDockKey, tabManager, Tab, TypeId } from '@sdk';
+import { useEffect, useMemo } from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useAllTabs } from '@src/tabs/all-tabs-store';
+import { useAllTabs } from '@src/tabs/use-tab-manager';
 import { ViewType } from '@src/types/ViewType';
+import { useEntity } from '@src/hooks/entity-hooks';
+import { setupTabAndAdopt } from '@src/tabs/tab-content-lifecycle';
 
 /**
  * Resolved vibe-workspace session for the current URL.
@@ -41,8 +43,7 @@ export function useVibeWorkspaceSession(): VibeWorkspaceSession | null {
 
   return useMemo(() => {
     if (!currentDock) return null;
-    const tabByHash = (hash: string | null | undefined) =>
-      hash ? (allTabs.find((t) => t.dockPointer?.tabHash === hash) ?? null) : null;
+    const tabByHash = (hash: string | null | undefined) => tabForDockKey(allTabs, hash);
 
     // One session shape from "a process dock + its tab" — null if the dock isn't
     // a process dock. Both entry cases build through here so the 4 fields never
@@ -64,17 +65,49 @@ export function useVibeWorkspaceSession(): VibeWorkspaceSession | null {
     // Case 1 — the process URL itself: a SHELL dock with an agentic_process
     // pointer (the single URL family; legacy /dock/display forms redirect here
     // in the main loader's canonicalProcessDockPath).
-    if (currentDock.viewType === ViewType.SHELL) {
+    //
+    // The pointer check is load-bearing: a PLAIN shell dock (a terminal) is
+    // also viewType SHELL, but it is workspace CONTENT, not the anchor — it
+    // must fall through to the child lookup so a terminal opened inside the
+    // workspace keeps rendering in its display pane instead of taking over the
+    // whole surface.
+    if (
+      currentDock.viewType === ViewType.SHELL &&
+      DockPointer.isAgenticProcessPointer(currentDock.pointer)
+    ) {
       return build(tabByHash(currentDock.tabHash), currentDock, true);
     }
 
     // Case 2 — a child URL: the current tab's parent is a live process dock.
-    const currentTab = tabByHash(currentDock.tabHash);
-    const parent = currentTab?.parent_tab_id
-      ? allTabs.find((t) => t.id === currentTab.parent_tab_id && t.visible !== false)
-      : undefined;
+    const parent = parentOfTab(allTabs, tabByHash(currentDock.tabHash));
     if (parent?.dockPointer) return build(parent, new DockPointer(parent.dockPointer), false);
 
     return null;
   }, [currentDock, allTabs]);
+}
+
+/**
+ * Own the process/session side effects shared by both workspace presentations.
+ * The process is resolved by the parent session id, never from the child route's
+ * active entity.
+ */
+export function useVibeWorkspaceSessionHost(
+  session: VibeWorkspaceSession | null,
+  active = true,
+): AgenticProcess | null {
+  const processTypeId = useMemo(
+    () => (session?.processId ? new TypeId(AgenticProcess.type, session.processId) : null),
+    [session?.processId],
+  );
+  const { data: process } = useEntity<AgenticProcess>(processTypeId, {
+    watch: true,
+    enabled: !!processTypeId,
+  });
+
+  useEffect(() => {
+    if (!active || !session || session.processTab) return;
+    void setupTabAndAdopt(session.processDock);
+  }, [active, session, session?.processTab, session?.processDock]);
+
+  return process ?? null;
 }

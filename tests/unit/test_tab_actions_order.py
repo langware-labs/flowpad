@@ -20,6 +20,7 @@ from flow_sdk.builtin.tab import (
     Tab,
     _build_list,
     _http_close,
+    _http_close_many,
     _http_list,
     _http_new_tab,
     _http_order,
@@ -28,6 +29,10 @@ from flow_sdk.builtin.tab import (
     tab_id_for,
 )
 from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.db import get_db_driver
+from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
+from flow_sdk.fs_store.record_types import RecordType
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
@@ -106,6 +111,60 @@ async def test_close_action_drops_from_list() -> None:
     b = await ensure_tab("c/b", project_id="p1")
     await _http_close(b)
     assert await _order("p1") == [a.id]
+
+
+async def test_close_action_is_not_starved_by_index_orphan_discovery(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A long read-only index sweep must not own SQLite's writer slot."""
+    tab = await ensure_tab("c/during-index-sweep", project_id="p1")
+    driver = get_db_driver()
+    real_list_sources = driver.list_entity_sources_by_type
+    close_requested = asyncio.Event()
+    close_done = asyncio.Event()
+    gated = False
+
+    async def gate_orphan_discovery(type_name: str):
+        nonlocal gated
+        if type_name == str(RecordType.MARKDOWN) and not gated:
+            gated = True
+            close_requested.set()
+            await close_done.wait()
+        return await real_list_sources(type_name)
+
+    monkeypatch.setattr(driver, "list_entity_sources_by_type", gate_orphan_discovery)
+
+    async def close_during_sweep() -> None:
+        await close_requested.wait()
+        await _http_close(tab)
+        close_done.set()
+
+    root = tmp_path / "empty-project"
+    root.mkdir()
+    indexer = FSIndexer(
+        roots=[FSRef(root, record_type=RecordType.USER_HOME_FOLDER, scope="user")]
+    )
+    await asyncio.gather(
+        indexer.index(
+            IndexerOptions(verbose=False, types=[RecordType.MARKDOWN])
+        ),
+        close_during_sweep(),
+    )
+
+    assert gated, "the regression must exercise orphan discovery"
+    assert (await Tab.get_one({"id": tab.id})).visible is False
+
+
+async def test_close_many_durably_hides_every_tab_before_acknowledging() -> None:
+    a = await ensure_tab("cm/a", project_id="p1")
+    b = await ensure_tab("cm/b", project_id="p1")
+    c = await ensure_tab("cm/c", project_id="p1")
+
+    await _http_close_many(Tab, tab_ids=[a.id, b.id, a.id], project="p1")
+
+    assert await _order("p1") == [c.id]
+    assert (await Tab.get_one({"id": a.id})).visible is False
+    assert (await Tab.get_one({"id": b.id})).visible is False
 
 
 # ── Background teardown (fast close) ─────────────────────────────────────────

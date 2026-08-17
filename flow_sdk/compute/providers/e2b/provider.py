@@ -20,6 +20,7 @@ from flow_sdk.compute.providers.compute_provider import (
     ListDirItem,
     get_remote_paths_and_data_for_files,
 )
+from flow_sdk.compute.providers.env_prefix import build_env_prefix
 from flow_sdk.flowpad_types import (
     CLICommand,
     ExecutionEnvironmentStatus,
@@ -163,6 +164,35 @@ class E2BComputeProvider(ComputeProvider):
                 return ExecutionEnvironmentStatus.NOT_FOUND
             service_log.error(f"[E2B] Error getting status for {provider_node_id}: {e}")
             return ExecutionEnvironmentStatus.ERROR
+
+    async def get_node_details(self, provider_node_id: str) -> dict:
+        """Status + cheap live metadata (started_at, end_at, cpu, mem) from one get_info."""
+        sandbox = self._sandboxes.get(provider_node_id)
+        if sandbox is None:
+            # Never booted in this process (lazy boot) — no e2b id to probe.
+            return {"status": ExecutionEnvironmentStatus.READY.value}
+        try:
+            info = await AsyncSandbox.get_info(sandbox_id=sandbox.sandbox_id, api_key=get_e2b_api_key())
+        except Exception as e:
+            msg = str(e).lower()
+            st = (
+                ExecutionEnvironmentStatus.NOT_FOUND
+                if ("not found" in msg or "404" in msg)
+                else ExecutionEnvironmentStatus.ERROR
+            )
+            return {"status": st.value}
+        status = (
+            ExecutionEnvironmentStatus.READY
+            if info.state == SandboxState.RUNNING
+            else ExecutionEnvironmentStatus.PAUSED
+        )
+        return {
+            "status": status.value,
+            "started_at": info.started_at.isoformat() if info.started_at else None,
+            "end_at": info.end_at.isoformat() if info.end_at else None,
+            "cpu_count": info.cpu_count,
+            "memory_mb": info.memory_mb,
+        }
 
     async def get_machine_status(self, provider_node_id: str) -> dict:
         # Minimal stub; E2B exposes metrics separately. Return empty for now.
@@ -348,9 +378,16 @@ class E2BComputeProvider(ComputeProvider):
         provider_node_id: str,
         command: str,
         session_id: Optional[str] = None,
-        background: bool = False,
-        env: Optional[dict[str, str]] = None,
+        background: bool = True,
+        env: Optional[list] = None,
     ) -> CLICommand:
+        """Run a command in the sandbox.
+
+        ``env`` is a ``list[FlowEnv]``, matching every caller and the other
+        providers — it used to be annotated as a ``dict`` and call
+        ``.items()``, which raised ``AttributeError`` on the list that
+        ``ComputeNode.run_command`` actually forwards.
+        """
         import uuid
 
         sandbox = await self._get_or_boot_sandbox(provider_node_id)
@@ -358,14 +395,9 @@ class E2BComputeProvider(ComputeProvider):
         cmd = CLICommand(command, message_id=message_id)
         self.running_commands[message_id] = cmd
 
-        env_prefix = ""
-        if env:
-            assignments = []
-            for k, v in env.items():
-                escaped = v.replace("'", "'\\''")
-                assignments.append(f"{k}='{escaped}'")
-            env_prefix = " ".join(assignments) + " "
-        full_command = env_prefix + command if env_prefix else command
+        # Values join the string here and nowhere else — the log line above
+        # carries the bare command.
+        full_command = build_env_prefix(env) + command
 
         try:
             process = await sandbox.commands.run(
@@ -429,7 +461,7 @@ class E2BComputeProvider(ComputeProvider):
         if spawn_args:
             service_log.debug(f"[E2B] Ignoring spawn_args for sandbox PTY: {spawn_args}")
         if extra_env:
-            service_log.debug(f"[E2B] Ignoring extra_env for sandbox PTY (use set_env instead)")
+            service_log.debug("[E2B] Ignoring extra_env for sandbox PTY (use set_env instead)")
 
         pty_key = (provider_node_id, session_id)
         existing = self._pty_processes.get(pty_key)

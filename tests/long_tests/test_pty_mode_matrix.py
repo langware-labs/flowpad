@@ -28,6 +28,7 @@ import shutil
 import httpx
 import pytest
 
+from tests.long_tests._model_tier import small_model_for
 from tests.test_settings import test_service_config
 
 pytestmark = [
@@ -94,12 +95,16 @@ def _require_binary(worker_type: str) -> None:
 
 async def _create(hub_client, compute_node_id: str, workdir: str, worker_type: str, pty_mode: bool) -> dict:
     """Create a process in the requested transport. Returns the process row."""
+    context = {
+        "workdir": workdir,
+        "worker_type": worker_type,
+        "permission_mode": "bypassPermissions",
+    }
+    model = small_model_for(worker_type)
+    if model:
+        context["model"] = model
     body = {
-        "context": {
-            "workdir": workdir,
-            "worker_type": worker_type,
-            "permission_mode": "bypassPermissions",
-        },
+        "context": context,
         # headless == !visible; pty_mode seeds visible at launch (see plan).
         "visible": pty_mode,
         "pty_mode": pty_mode,
@@ -110,8 +115,8 @@ async def _create(hub_client, compute_node_id: str, workdir: str, worker_type: s
     )
     assert r.status_code == 200, f"createProcess {r.status_code}: {r.text[:400]}"
     pid = (r.json().get("data") or r.json())["id"]
-    # createProcess returns a minimal row (id/type/shell_id/pty_pid); GET the
-    # entity to read the persisted fields (pty_mode, visible, session_id).
+    # createProcess returns the full authoritative entity. GET it independently
+    # to confirm the transport fields persisted before exercising the live worker.
     g = await hub_client.get(f"/api/v1/graph/agentic_process/{pid}")
     assert g.status_code == 200, f"get process {g.status_code}: {g.text[:300]}"
     return g.json().get("data") or g.json()
@@ -127,6 +132,31 @@ def _has_exact_assistant_reply(received: bytes, expected_reply: str) -> bool:
     return re.search(pattern, received, re.DOTALL) is not None
 
 
+def _skip_if_worker_unavailable(received: bytes, worker_type: str) -> None:
+    """Skip when the PROVIDER says it cannot serve the turn (quota / rate limit).
+
+    Keyed on the normalized ``worker-unavailable`` frame the driver emits from
+    the vendor's own error event — never on a merely missing reply. A transport
+    or parsing regression produces no such frame and still fails red.
+    """
+    # Cheap membership test first: the regex rescans the whole accumulated
+    # buffer, and this runs on every chunk.
+    if b"</flow-worker-unavailable>" not in received:
+        return
+    match = re.search(
+        rb"<flow-worker-unavailable\b[^>]*>.*?</flow-worker-unavailable>",
+        received,
+        re.DOTALL,
+    )
+    if match is None:
+        return
+    frame = match.group(0).decode("utf-8", errors="replace")
+    pytest.skip(
+        f"{worker_type} CLI is provider-unavailable (account quota / rate "
+        f"limit) — external infra, not a transport regression: {frame[:300]}"
+    )
+
+
 def _raise_on_result_before_reply(received: bytes, expected_reply: str) -> None:
     """A result before assistant content is terminal, never proof of a turn."""
     match = re.search(rb"<flow-result\b[^>]*>.*?</flow-result>", received, re.DOTALL)
@@ -138,7 +168,7 @@ def _raise_on_result_before_reply(received: bytes, expected_reply: str) -> None:
 
 
 async def _prompt_until_assistant(
-    hub_client, process_id: str, message: str, expected_reply: str
+    hub_client, process_id: str, message: str, expected_reply: str, worker_type: str
 ) -> str:
     """Send a prompt; return only after its exact assistant chat frame arrives.
 
@@ -158,12 +188,14 @@ async def _prompt_until_assistant(
             received += chunk
             if _has_exact_assistant_reply(received, expected_reply):
                 break
+            _skip_if_worker_unavailable(received, worker_type)
             _raise_on_result_before_reply(received, expected_reply)
+    _skip_if_worker_unavailable(received, worker_type)
     return received.decode("utf-8", errors="replace")
 
 
 async def _send_turn(
-    hub_client, process_id: str, message: str, expected_reply: str
+    hub_client, process_id: str, message: str, expected_reply: str, worker_type: str
 ) -> str:
     """Transport-agnostic turn: read through noise to the exact assistant reply.
 
@@ -192,8 +224,10 @@ async def _send_turn(
                 received += chunk
                 if _has_exact_assistant_reply(received, expected_reply):
                     return received.decode("utf-8", errors="replace")
+                _skip_if_worker_unavailable(received, worker_type)
                 _raise_on_result_before_reply(received, expected_reply)
         # Stream closed with no expected reply — let the worker settle and retry.
+        _skip_if_worker_unavailable(received, worker_type)
         await asyncio.sleep(1.0)
     raise AssertionError(
         f"no assistant reply {expected_reply!r} after {deadline_attempts} attempts on {process_id}"
@@ -281,7 +315,7 @@ async def test_prompt_streams_in_both_transports(hub_and_node, tmp_path, worker_
     assert proc.get("pty_mode", True) is pty_mode, f"pty_mode not persisted: {proc.get('pty_mode')}"
 
     xml = await _prompt_until_assistant(
-        hub_client, pid, _TURN_ONE_PROMPT, _TURN_ONE_REPLY
+        hub_client, pid, _TURN_ONE_PROMPT, _TURN_ONE_REPLY, worker_type
     )
     assert _TURN_ONE_REPLY in xml, (
         f"{worker_type}/{'pty' if pty_mode else 'headless'}: "
@@ -305,7 +339,7 @@ async def test_multi_turn_resumes_same_session(hub_and_node, tmp_path, worker_ty
     pid = proc["id"]
 
     xml1 = await _send_turn(
-        hub_client, pid, _TURN_ONE_PROMPT, _TURN_ONE_REPLY
+        hub_client, pid, _TURN_ONE_PROMPT, _TURN_ONE_REPLY, worker_type
     )
     assert _TURN_ONE_REPLY in xml1, f"turn1 missing exact assistant reply: {xml1[:200]}"
 
@@ -314,7 +348,7 @@ async def test_multi_turn_resumes_same_session(hub_and_node, tmp_path, worker_ty
 
     # _send_turn retries on the in-flight 409 until turn 1 frees the worker.
     xml2 = await _send_turn(
-        hub_client, pid, _TURN_TWO_PROMPT, _TURN_TWO_REPLY
+        hub_client, pid, _TURN_TWO_PROMPT, _TURN_TWO_REPLY, worker_type
     )
     assert _TURN_TWO_REPLY in xml2, f"turn2 missing exact assistant reply: {xml2[:200]}"
 

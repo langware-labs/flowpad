@@ -1,66 +1,79 @@
-"""Generic ``members`` action — list participants of any entity.
+"""Generic ``members`` action — read/mutate the role roster of any entity.
 
-Reflection is requested per call: the TS SDK sets ``ActionInfo.hub_reflect`` on
-these calls, which sends the ``Hub-Reflect: true`` header. When the entity also
+Membership is a fully hub-authoritative capability: a user always has a hub-set
+role on a remote entity (a ``RoleRelationship`` edge), and the local store is a
+thin READ cache (``Entity.members``). Reflection is requested per call: the TS SDK
+sets ``ActionInfo.hub_reflect``, sending ``Hub-Reflect: true``. When the entity
 has a hub counterpart (``remote=True``) and the user is logged in, the dispatcher
 in ``graph.py`` forwards the call to the hub and mirrors the response onto the
-local row (see ``_hub_reflect.should_reflect_to_hub``).
+local row (see ``_hub_reflect``).
 
-The local body runs when the call didn't request reflection, the entity is
-local-only, or the hub is unreachable — it returns whatever participants the
-entity has cached. Entities without a ``participants`` field return an empty list.
+Read (GET) falls back to the local cache when reflection didn't happen (not
+requested, local-only entity, or hub unreachable) — a stale roster read is fine.
+MUTATIONS (POST/PUT/DELETE) are hub-only: there is no local membership store, so
+when the local body runs it means the mutation could NOT reach the hub, and it
+must FAIL LOUDLY (409) rather than fake-success. The UI also disables these
+controls when membership is unavailable; the 409 is the backstop.
 """
 from __future__ import annotations
 
+from fastapi import HTTPException
+
 from flow_sdk.actions import action
 from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse
 
+# Raised by every mutation when the local body runs (i.e. the call was not
+# reflected to the hub). 409 Conflict: the request can't be honored in the
+# current state (no hub connection).
+_OFFLINE_DETAIL = "Membership changes require Flowpad Cloud; you're offline or signed out."
 
-def _participants(entity: Entity) -> list:
-    """The entity's cached participants, or an empty list when it has none."""
-    return list(getattr(entity, "participants", []) or [])
+
+def _members(entity: Entity) -> list:
+    """The entity's cached role roster, or an empty list when it has none."""
+    return list(getattr(entity, "members", []) or [])
+
+
+def _members_local(self: Entity) -> ApiSuccessResponse:
+    """The local body for every ``members`` verb.
+
+    The action dispatcher resolves the ``members`` handler by NAME, not by HTTP
+    method (``action.get_by_name``), so all four registered handlers funnel here
+    and branch on the ACTUAL request method:
+
+    - GET  → return the cached roster. Reads are stale-tolerant; when the call
+      isn't reflected (local-only entity / offline / signed out) the cache is
+      the best available answer.
+    - POST/PUT/DELETE → 409. Membership is hub-owned and there is no local
+      membership store, so a mutation reaching this local body means it could
+      NOT reach the hub — fail loudly instead of the old fake-success.
+    """
+    info = get_current_request_info()
+    method = (getattr(info, "method", None) or "GET").upper()
+    if method == "GET":
+        return ApiResponse.success(data=_members(self))
+    raise HTTPException(status_code=409, detail=_OFFLINE_DETAIL)
 
 
 @action.get(action_name="members", types="all")
 async def list_members(self: Entity) -> ApiSuccessResponse:
-    return ApiResponse.success(data=_participants(self))
+    return _members_local(self)
 
 
 @action.post(action_name="members", types="all")
 async def invite_member(self: Entity) -> ApiSuccessResponse:
-    """Invite a member — reflection enabler. Like ``list_members``, the SDK
-    calls this with ``hub_reflect`` set: for a ``remote`` entity (e.g. an
-    organization or team) the dispatcher forwards the POST to the hub's
-    ``create_membership`` (which creates the Invitation + emails the recipient)
-    and mirrors the resulting roster back. The POST body is a
-    ``MembershipRequest`` — ``{recipient_email, invitation_targets:[{typeid, role}]}``.
-
-    There is no local-only membership store, so the local body is a no-op
-    success — the reflect path is the real implementation. A registered POST
-    handler is required for the dispatcher to match (and therefore reflect) the
-    call; without it the route 404s before reflection."""
-    return ApiResponse.success(data=_participants(self))
+    """Invite a member — hub ``create_membership``; POST body is a ``MembershipRequest``."""
+    return _members_local(self)
 
 
 @action.all(action_name="members", methods="put", types="all")
 async def set_member_role(self: Entity) -> ApiSuccessResponse:
-    """Change a member's role — reflection enabler (hub-owned). Forwarded to the
-    hub for a ``remote`` entity; the PUT body is ``{user_id, role}``. Local body
-    is a no-op success."""
-    return ApiResponse.success(data=_participants(self))
+    """Change a member's role — hub ``update_membership``; PUT body is ``{user_id, role}``."""
+    return _members_local(self)
 
 
 @action.delete(action_name="members", types="all")
 async def remove_member(self: Entity) -> ApiSuccessResponse:
-    """Remove a member — OWNER ONLY (enforced hub-side in
-    ``delete_membership``). Like ``list_members``, the SDK calls this with
-    ``hub_reflect`` set: for a ``remote`` entity the dispatcher forwards the
-    DELETE to the hub (which revokes the role + strips the participant + fans the
-    update) and mirrors the resulting roster back onto the local row. The DELETE
-    body is a ``MembershipMethod`` — ``{member_through: "id", value: "<user_id>"}``.
-
-    The local body runs only for local-only entities or when the hub is
-    unreachable; there is no local-only membership store, so it's a no-op
-    success (the reflect path is the real implementation)."""
-    return ApiResponse.success(data=_participants(self))
+    """Remove a member — hub ``delete_membership``; DELETE body is a ``MembershipMethod``."""
+    return _members_local(self)

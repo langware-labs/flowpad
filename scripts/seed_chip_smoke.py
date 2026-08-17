@@ -5,7 +5,7 @@ Each variant mirrors the original RCA flow inside the OSS dev instance so
 the v1+v1.1+v1.2 fix can be validated end-to-end via Chrome MCP:
 
     1. Write a real .md to the layout the BE indexer expects (``~/.claude/
-       plans/<slug>.md`` for plan, ``~/.claude/docs/<slug>.md`` for
+       plans/<slug>.md`` for plan, ``~/docs/<slug>.md`` for
        markdown), with a frontmatter ``id`` matching ``uuid5(NAMESPACE_URL,
        path)``.
     2. POST a fresh AgenticProcess to the OSS backend (default

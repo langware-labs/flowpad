@@ -9,6 +9,28 @@ export enum Layout {
 }
 
 /**
+ * PageId — which SPA-surface ("page") a dock URL addresses. Sits between the
+ * layout keyword and the viewType: `/<layout>/<page>/<viewType>/<pointer>`.
+ * `desk` is today's desktop app and the default; it is NEVER emitted into a URL
+ * (bare `/dock/<viewType>` == page `desk`), so existing URLs are unchanged.
+ *
+ * INVARIANT: no `ViewType` value may ever equal a `PageId` value. Parsing detects
+ * the page positionally ("is the post-layout segment a known page id?"), so a
+ * collision would silently reinterpret a viewType segment as a page. (`desktop`
+ * is a ViewType but `desk` ≠ `desktop`; there is intentionally no `hub` viewType.)
+ */
+export enum PageId {
+  DESK = 'desk',
+  HUB = 'hub',
+}
+
+/** Type-guard: is `value` a known page id? Data-driven like `isValidView` /
+ *  `isValidViewSlot`, so it tracks the enum automatically as pages are added. */
+export function isValidPage(value: string | undefined | null): value is PageId {
+  return value != null && Object.values(PageId).includes(value as PageId);
+}
+
+/**
  * Dev layout keyword - appears in URL as /dev/...
  * Not flexible by design for security, validation, and clarity
  */
@@ -34,6 +56,8 @@ export enum ViewType {
   SHELL = 'shell',
   EDITOR = 'editor',
   WEB_APP = 'web-app',
+  // Retired decode-only aliases; the loader redirects to /dock/credentials/<subview>
+  // and `normalizeRetiredDockPointer` resolves saved tabs. See CREDENTIALS.
   ENVIRONMENT = 'environment',
   CONNECTIONS = 'connections',
   ARTIFACTS = 'artifacts', // Renamed from RESULTS
@@ -44,16 +68,18 @@ export enum ViewType {
   DOCS = 'docs',
   ASSISTANCE = 'assistance', // expert assistance tasks
   SURVEY = 'survey',
-  API_KEYS = 'api-keys',
+  API_KEYS = 'api-keys', // Retired decode-only alias; see ENVIRONMENT
   HOOKS = 'hooks', // Claude Code hooks configuration
   MACHINE = 'machine', // Machine overview (processes, network)
   EXPLORER = 'explorer', // File explorer view
   SKILLS = 'skills', // Claude Code skills editor
   AI_CONFIG = 'ai-config', // AI Configuration (LLM APIs, CLIs)
-  EXECUTE_FLOW = 'execute-flow', // Execute markdown instruction files
   SHOW = 'show', // MCP UI display dock pointer
   APPS = 'apps', // Skill UI apps - /dock/apps/<uname>/<router> mounts AppHost
   GRAPH = 'graph', // Built-in dep-graph viewer - /dock/graph/<type>/<id>
+  WORLDVIEW = 'worldview', // Shared projections - /dock[/hub]/worldview/<world|organization|deployment>
+  TAG = 'tag', // Tag taxonomy graph/tree - /dock/tag/graph[/<dot.name>]?view=tree
+  SUBGRAPH = 'subgraph', // Generic entity-subgraph - /dock/subgraph/<projection>[/<focusKey>]
   K_BROWSER = 'k-browser', // Docs knowledge browser - /dock/k-browser/<vfs|typeid>/<value>
   LENS = 'lens', // Lens viewer for specialized content (e.g., transcripts)
   SESSION = 'session', // Live session view (simplified workflow without file)
@@ -62,11 +88,18 @@ export enum ViewType {
   PREFERENCES = 'preferences', // User preferences screen (registry-driven, category tabs)
   AGENTIC_PROCESS = 'agentic_process', // Process terminal view (Layer 3)
   SEARCH = 'search', // Record semantic search view
-  TRIGGERS = 'triggers', // Activation rules browser + editor
+  // The merged rules+events screen. TRIGGERS / SIGNALS / CRON are kept as
+  // ALIASES onto it (same body, same navigator) rather than redirects, so every
+  // bookmarked URL keeps working — the pattern CRON already used for TRIGGERS.
+  EVENTS = 'events', // Rules and the events they fire on - /dock/events[?rule=<id>]
+  TRIGGERS = 'triggers', // Alias of EVENTS (was: activation rules browser + editor)
   CAPABILITIES = 'capabilities', // System capability checks/install/test
+  GRAPH_WORKFLOWS = 'graph-workflows', // Flow-graph editor/observatory (GraphWorkflowManager) — dev mode
+  SIGNALS = 'signals', // Alias of EVENTS (was: global event-bus monitor + injector)
+  DATA_SOURCES = 'data-sources', // Configured ingestion sources — /dock/data-sources
+  PROCESS_RUNS = 'process-runs', // AgenticProcess execution history — /dock/process-runs[/<processId>]
   PLAN = 'plan', // Plan viewer with Milkdown editor
   CRON = 'cron', // Scheduled cron jobs manager
-  WORKFLOWS = 'workflows', // Workflows manager with markdown editor
   ASSETS = 'assets', // Assets - unified docs/skills/workflows tree
   PROJECT = 'project', // Collaboration on a project — meet, share tabs/docs/plans
   INBOX = 'inbox', // Inbox — received FlowMessages from hub
@@ -76,6 +109,22 @@ export enum ViewType {
   DIAGNOSIS = 'diagnosis', // Single FlowpadDiagnosis viewer - /dock/diagnosis/<id>
   DESKTOP = 'desktop', // Full-page favorites desktop (BrowseableGrid) - /dock/desktop
   LIVE_SESSION = 'live_session', // Live remote-worker session (terminal chat) - /dock/live_session/<id>
+  HELPDESK = 'helpdesk', // Helpdesk portal — guides + ask + my tickets - /dock/helpdesk/<projectId>[/article/<path>]
+  ATLAS = 'atlas', // Retired decode-only alias; loader redirects to /dock/hub/worldview/…
+  HUB_RECORDS = 'records', // Hub entity list by type (page=hub) - /dock/hub/records/<type>
+  HUB_ENTITY = 'entity', // Hub single-entity viewer (page=hub) - /dock/hub/entity/<type>/<id>
+  CREDENTIALS = 'credentials', // Env vars + OAuth connections + API keys - /dock/hub/credentials/<subview>[/<projectId>]
+}
+
+/**
+ * CredentialsSubview enum for the credentials view's internal tabs.
+ * Used as pointer in dock/credentials/:pointer URLs, optionally followed by a
+ * project id: `credentials/environment/<projectId>`.
+ */
+export enum CredentialsSubview {
+  ENVIRONMENT = 'environment',
+  CONNECTIONS = 'connections',
+  API_KEYS = 'api-keys',
 }
 
 /**
@@ -97,6 +146,8 @@ export enum MachineSubview {
   GATEWAY = 'gateway',
   METRICS = 'metrics', // E2B only - CPU/Memory charts
   LOGS = 'logs', // E2B only - sandbox logs
+  SECRETS = 'secrets', // Which project secrets this node may see. NOT E2B-gated
+                       // — the local desktop node needs it just as much.
 }
 
 /**

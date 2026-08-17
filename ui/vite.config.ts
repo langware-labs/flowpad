@@ -2,6 +2,7 @@ import react from '@vitejs/plugin-react-swc';
 import { lingui } from '@lingui/vite-plugin';
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
+import { SHARED_DEDUPE, sdkVersion, sharedAliases } from './vite.shared';
 
 const envDir = path.resolve(__dirname, '..');
 
@@ -13,7 +14,9 @@ export default defineConfig(({ mode }) => {
     envDir,
     base: '/',
     define: {
-      __API_URL__: JSON.stringify(env.VITE_API_URL || (isPackage ? '' : `http://localhost:${env.LOCAL_SERVER_PORT || '9007'}`)),
+      __API_URL__: JSON.stringify(
+        env.VITE_API_URL || (isPackage ? '' : `http://localhost:${env.LOCAL_SERVER_PORT || '9007'}`),
+      ),
       __AUTH_PROVIDER__: JSON.stringify(env.AUTH_PROVIDER || 'local'),
       __DEPLOY_ENV__: JSON.stringify(env.DEPLOY_ENV || 'local'),
       __IS_PACKAGE__: JSON.stringify(!!isPackage),
@@ -21,6 +24,7 @@ export default defineConfig(({ mode }) => {
       // Don't bake it into the bundle; that turned every published wheel into
       // a dev-mode-on artifact regardless of the user's runtime.
       __CHECK_REFRESH_TOKEN__: JSON.stringify(env.VITE_CHECK_REFRESH_TOKEN === 'true'),
+      __UI_VERSION__: JSON.stringify(sdkVersion(envDir)),
     },
     build: {
       sourcemap: true,
@@ -57,7 +61,7 @@ export default defineConfig(({ mode }) => {
             'props2.ref = React.useMemo(' +
               '() => forwardedRef ? composeRefs(forwardedRef, childrenRef) : childrenRef, ' +
               '[forwardedRef, childrenRef]' +
-            ');',
+              ');',
           );
           return patched === code ? null : { code: patched, map: null };
         },
@@ -67,6 +71,10 @@ export default defineConfig(({ mode }) => {
       host: 'localhost',
       port: parseInt(env.VITE_PORT || '4097'),
       strictPort: true,
+      watch: {
+        // Playwright writes traces under the UI tree; they are evidence, not source.
+        ignored: ['**/tests/manual_regression/_results/**'],
+      },
       fs: {
         allow: [
           path.resolve(__dirname, './'),
@@ -81,23 +89,43 @@ export default defineConfig(({ mode }) => {
       // `/api/*` URLs from inside the sandbox. In Electron/wheel this is
       // same-origin with the backend (no proxy needed); in `npm run dev` the
       // backend is on a different port, so proxy it here.
-      proxy: {
-        '/api/v1/connect/ws': {
-          target: `ws://localhost:${env.LOCAL_SERVER_PORT || '9007'}`,
-          ws: true,
-          changeOrigin: true,
-        },
-        '/api': {
-          target: `http://localhost:${env.LOCAL_SERVER_PORT || '9007'}`,
-          changeOrigin: true,
-        },
-      },
+      // The proxy is NOT optional in dev, and VITE_API_URL is the wrong switch
+      // for it. That variable steers the SPA's own XHRs, which are absolute and
+      // therefore never touch this server. It cannot steer a BROWSER
+      // NAVIGATION -- and the hub's login redirect is exactly that: an
+      // app-origin `<app_url>/api/v1/login` (authorizer._login_url_back_to).
+      //
+      // With the proxy off, that navigation landed on the SPA router, which
+      // re-rendered, found no session, and redirected to login again -- wrapping
+      // the previous url into `target_path` each pass. A redirect loop with an
+      // address growing one encoding layer at a time, not the "Page not found"
+      // the old comment predicted.
+      //
+      // So: always proxy, and let VITE_API_URL choose the TARGET. One knob
+      // ("which hub am I talking to?") instead of two that could disagree.
+      proxy: (() => {
+        const target = env.VITE_API_URL || `http://localhost:${env.LOCAL_SERVER_PORT || '9007'}`;
+        return {
+          // Derived from the same value so the two can never skew: http -> ws,
+          // https -> wss.
+          '/api/v1/connect/ws': {
+            target: target.replace(/^http/, 'ws'),
+            ws: true,
+            changeOrigin: true,
+          },
+          // changeOrigin rewrites Host, which a remote hub behind a vhost
+          // requires and a localhost one does not mind.
+          '/api': {
+            target,
+            changeOrigin: true,
+          },
+        };
+      })(),
     },
     optimizeDeps: {
       exclude: ['playwright-core', 'playwright'],
       include: [
         'axios',
-        '@sentry/browser',
         'uuid',
         'immer',
         'mobx',
@@ -118,36 +146,13 @@ export default defineConfig(({ mode }) => {
     resolve: {
       preserveSymlinks: true,
       alias: {
-        '@src': path.resolve(__dirname, './src'),
-        '@sdk': path.resolve(__dirname, '../ts_sdk/src'),
+        ...sharedAliases(__dirname),
         // @xterm/headless 6.0.0 declares module:"lib/xterm.mjs" but ships
         // lib-headless/xterm-headless.mjs — Node resolves via main, Vite via
         // module and fails. Point straight at the shipped ESM build.
-        '@xterm/headless': path.resolve(
-          __dirname,
-          'node_modules/@xterm/headless/lib-headless/xterm-headless.mjs',
-        ),
+        '@xterm/headless': path.resolve(__dirname, 'node_modules/@xterm/headless/lib-headless/xterm-headless.mjs'),
       },
-      dedupe: [
-        'react',
-        'react-dom',
-        'react-router',
-        '@tanstack/react-query',
-        'zustand',
-        'axios',
-        'mobx',
-        'immer',
-        '@sentry/browser',
-        '@msgpack/msgpack',
-        'uuid',
-        'events',
-        'eventsource-parser',
-        'http-status-codes',
-        'cytoscape',
-        'best-effort-json-parser',
-        'mobx-utils',
-        'yaml',
-      ],
+      dedupe: SHARED_DEDUPE,
     },
   };
 });

@@ -1,12 +1,7 @@
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { useActivityModalStore } from '@src/store/use-activity-modal-store';
 import { CheckCircle2, Circle, Loader2 } from 'lucide-react';
-import {
-  activityFooterLabel,
-  phaseLabelTrailing,
-  progressCountsLabel,
-  rowState,
-} from './activity-labels';
+import { activityFooterLabel, phaseLabelTrailing, progressCountsLabel, rowState } from './activity-labels';
 import { ActivityProgressBar, MiniProgressBar } from './ActivityProgressModal';
 
 type StripProps = { variant: 'strip'; className?: string };
@@ -67,16 +62,12 @@ export function ActivityIndicator(props: ActivityIndicatorProps) {
               <Icon className={style.iconClass} />
               <span className={style.nameClass}>{t}</span>
               {row && (row.total > 0 || row.done > 0) && (
-                <span className="ml-auto flex items-center gap-1.5 text-xs tabular-nums">
+                <span className="ms-auto flex items-center gap-1.5 text-xs tabular-nums">
                   {/* Actually-(re)indexed this run = done − skipped. Shown on any
                       delta (Fast) run — where some entries were skipped-fresh — so
                       the real work is visible (incl. 0) instead of hidden in done. */}
-                  {row.skipped > 0 && (
-                    <span className="text-foreground">{row.done - row.skipped} indexed</span>
-                  )}
-                  <span className="text-muted-foreground">
-                    {row.total > 0 ? `${row.done}/${row.total}` : row.done}
-                  </span>
+                  {row.skipped > 0 && <span className="text-foreground">{row.done - row.skipped} indexed</span>}
+                  <span className="text-muted-foreground">{row.total > 0 ? `${row.done}/${row.total}` : row.done}</span>
                   {pct !== null && (
                     <>
                       <span className="text-muted-foreground">({Math.round(pct)}%)</span>
@@ -105,12 +96,10 @@ export function ActivityIndicator(props: ActivityIndicatorProps) {
           <button
             type="button"
             onClick={show}
-            className="w-full text-left rounded-md px-1 py-0.5 hover:bg-accent/30 transition-colors flex items-center gap-2"
+            className="flex w-full items-center gap-2 rounded-md px-1 py-0.5 text-start transition-colors hover:bg-accent/30"
           >
             <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
-            <span className="text-xs text-muted-foreground">
-              {phaseLabelTrailing(currentActivity)}
-            </span>
+            <span className="text-xs text-muted-foreground">{phaseLabelTrailing(currentActivity)}</span>
           </button>
         )}
       </div>
@@ -139,37 +128,25 @@ export function ActivityIndicator(props: ActivityIndicatorProps) {
 
   const phase = phaseLabelTrailing(currentActivity);
   const counts = progressCountsLabel(progressTable);
-  const pct =
-    progressTable && progressTable.total > 0
-      ? (progressTable.done / progressTable.total) * 100
-      : null;
+  const pct = progressTable && progressTable.total > 0 ? (progressTable.done / progressTable.total) * 100 : null;
   return (
     <button
       type="button"
       onClick={show}
       className={
         props.className ??
-        'shrink-0 flex w-full items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-xs hover:bg-muted/60 transition-colors text-left'
+        'flex w-full shrink-0 items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-start text-xs transition-colors hover:bg-muted/60'
       }
     >
-      <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0 text-primary" />
-      <span className="text-muted-foreground shrink-0">{phase}</span>
+      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+      <span className="shrink-0 text-muted-foreground">{phase}</span>
       {progressTable?.current && (
-        <span className="font-mono text-foreground truncate max-w-[180px]">
-          {progressTable.current}
-        </span>
+        <span className="max-w-[180px] truncate font-mono text-foreground">{progressTable.current}</span>
       )}
-      {counts && (
-        <span className="ml-auto text-muted-foreground shrink-0 tabular-nums">
-          {counts}
-        </span>
-      )}
+      {counts && <span className="ms-auto shrink-0 tabular-nums text-muted-foreground">{counts}</span>}
       {pct !== null && (
-        <div className="h-1 w-20 rounded-full bg-muted overflow-hidden shrink-0">
-          <div
-            className="h-full bg-primary rounded-full transition-all"
-            style={{ width: `${pct}%` }}
-          />
+        <div className="h-1 w-20 shrink-0 overflow-hidden rounded-full bg-muted">
+          <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
         </div>
       )}
     </button>

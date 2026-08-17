@@ -1,14 +1,14 @@
-"""Tests for WorkerCLIOptions base class — cross-platform shell string building."""
+"""Tests for AgentOptions base class — cross-platform shell string building."""
 
 import sys
 import pytest
 from unittest.mock import patch
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
 
 
 # Minimal concrete subclass for testing the base
-class _EchoCmd(WorkerCLIOptions):
+class _EchoCmd(AgentOptions):
     def _build_worker_args(self) -> list[str]:
         return ["myworker", "--flag"]
 

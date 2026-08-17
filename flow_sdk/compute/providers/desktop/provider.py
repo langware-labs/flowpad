@@ -32,8 +32,21 @@ from ..compute_provider import (
     ListDirItem,
     get_remote_paths_and_data_for_files,
 )
+from ..env_prefix import build_env_prefix
 
 logger = logging.getLogger(__name__)
+
+
+def _pty_return_code(pty_process: Any) -> int | None:
+    """Normalize PTY exit status, preserving signal termination as negative."""
+    exit_status = getattr(pty_process, "exitstatus", None)
+    if isinstance(exit_status, int):
+        return exit_status
+    signal_status = getattr(pty_process, "signalstatus", None)
+    if isinstance(signal_status, int):
+        return -signal_status
+    return None
+
 
 _INHERITED_NO_COLOR_ENV_VARS = (
     "NO_COLOR",
@@ -541,37 +554,13 @@ class LocalComputeProvider(ComputeProvider):
         cmd = CLICommand(command, message_id=message_id)
         self.running_commands[message_id] = cmd
 
-        env_prefix = ""
-        if env:
-            env_assignments = []
-            for flow_env in env:
-                # Extract the actual value from SecretStr
-                env_value = (
-                    flow_env.value.get_secret_value()
-                    if hasattr(flow_env.value, "get_secret_value")
-                    else str(flow_env.value)
-                )
-
-                if sys.platform == PLATFORM_WIN32:
-                    escaped_value = (
-                        env_value.replace("&", "^&")
-                        .replace("|", "^|")
-                        .replace("<", "^<")
-                        .replace(">", "^>")
-                        .replace("^", "^^")
-                    )
-                    env_assignments.append(f"set {flow_env.name}={escaped_value}")
-                else:
-                    escaped_value = env_value.replace("'", "'\\''")
-                    env_assignments.append(f"{flow_env.name}='{escaped_value}'")
-
-            if sys.platform == PLATFORM_WIN32:
-                env_prefix = " && ".join(env_assignments) + " && "
-            else:
-                env_prefix = " ".join(env_assignments) + " "
+        # Shared with the E2B provider so the two can't drift again — and so
+        # the escaping has exactly one place to be tested. The values join the
+        # string here, after the log line above.
+        env_prefix = build_env_prefix(env)
 
         try:
-            full_command = env_prefix + command if env_prefix else command
+            full_command = env_prefix + command
             process = await asyncio.create_subprocess_shell(
                 full_command,
                 stdout=asyncio.subprocess.PIPE,
@@ -895,7 +884,7 @@ class LocalComputeProvider(ComputeProvider):
                                 else:
                                     # Process died
                                     try:
-                                        exit_code = pty_process.exitstatus
+                                        exit_code = _pty_return_code(pty_process)
                                     except Exception:
                                         pass
                                     logger.info(
@@ -916,6 +905,14 @@ class LocalComputeProvider(ComputeProvider):
                     except Exception:
                         pass
                     finally:
+                        # EOF may arrive before the loop takes its explicit
+                        # `isalive() == false` branch. Reap non-blockingly once
+                        # more so signal deaths retain their negative status.
+                        try:
+                            if not pty_process.isalive():
+                                exit_code = _pty_return_code(pty_process)
+                        except Exception:
+                            pass
                         if on_exit is not None:
                             try:
                                 on_exit(exit_code)
@@ -1119,20 +1116,24 @@ class LocalComputeProvider(ComputeProvider):
         pick_file = mode == "file"
 
         if sys.platform == PLATFORM_DARWIN:
-            # Activate Finder to bring the dialog in front, close any Finder
-            # windows so only the picker is visible, then choose the path.
+            # The dialog belongs to `osascript` itself — never drive Finder.
+            # Scripting another app is an Apple event, which the hardened,
+            # signed desktop app can't send (no `com.apple.security.automation
+            # .apple-events` entitlement), so a `tell application "Finder"`
+            # block aborts the whole script and NO picker ever appears. A bare
+            # `choose folder` needs no permission and opens in the floating
+            # window layer, above every normal window including ours. The
+            # prompt names us so a user hunting for it knows what asked.
             if initial_dir:
-                default_location = f'default location POSIX file "{initial_dir}"'
+                escaped_dir = initial_dir.replace("\\", "\\\\").replace('"', '\\"')
+                default_location = f'default location POSIX file "{escaped_dir}"'
             else:
                 default_location = ""
             chooser = "choose file" if pick_file else "choose folder"
+            what = "file" if pick_file else "folder"
             apple_script = (
-                'tell application "Finder"\n'
-                "    activate\n"
-                "    close every window\n"
-                "end tell\n"
-                "delay 0.1\n"
-                f"set thePath to {chooser} {default_location}\n"
+                "tell me to activate\n"
+                f'set thePath to {chooser} with prompt "Flowpad — select a {what}" {default_location}\n'
                 "return POSIX path of thePath"
             )
             result = subprocess.run(
@@ -1152,23 +1153,44 @@ class LocalComputeProvider(ComputeProvider):
             # break the script. Force UTF-8 on the dialog's stdout (and decode
             # it as UTF-8) so a returned non-ASCII path survives intact instead
             # of being mangled by the console's cp1252 default.
+            #
+            # An OWNERLESS dialog inherits the z-order of the background
+            # PowerShell process, and Windows' foreground lock forbids a
+            # background process from raising itself — so the picker opened
+            # BEHIND the Flowpad window and all the user got was a taskbar
+            # blink. Give it a hidden, centered, topmost owner form: an owned
+            # window always sits above its owner, and an owner in the topmost
+            # band puts the dialog there too — visible over every normal
+            # window no matter who holds the foreground.
+            owner_lines = (
+                "$owner = New-Object System.Windows.Forms.Form; "
+                "$owner.FormBorderStyle = 'None'; $owner.Opacity = 0; "
+                "$owner.Width = 1; $owner.Height = 1; "
+                "$owner.ShowInTaskbar = $false; $owner.TopMost = $true; "
+                "$owner.StartPosition = 'CenterScreen'; "
+                "$owner.Show(); $owner.Activate(); "
+            )
             if pick_file:
                 initial_line = f"$d.InitialDirectory = {_ps_single_quote(initial_dir)}; " if initial_dir else ""
                 ps_script = (
                     "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
                     "Add-Type -AssemblyName System.Windows.Forms; "
+                    f"{owner_lines}"
                     "$d = New-Object System.Windows.Forms.OpenFileDialog; "
                     f"{initial_line}"
-                    "if ($d.ShowDialog() -eq 'OK') { $d.FileName } else { '' }"
+                    "$r = $d.ShowDialog($owner); $owner.Close(); "
+                    "if ($r -eq 'OK') { $d.FileName } else { '' }"
                 )
             else:
                 selected_path_line = f"$d.SelectedPath = {_ps_single_quote(initial_dir)}; " if initial_dir else ""
                 ps_script = (
                     "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
                     "Add-Type -AssemblyName System.Windows.Forms; "
+                    f"{owner_lines}"
                     "$d = New-Object System.Windows.Forms.FolderBrowserDialog; "
                     f"{selected_path_line}"
-                    "if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath } else { '' }"
+                    "$r = $d.ShowDialog($owner); $owner.Close(); "
+                    "if ($r -eq 'OK') { $d.SelectedPath } else { '' }"
                 )
             result = subprocess.run(
                 ["powershell", "-NoProfile", "-Command", ps_script],

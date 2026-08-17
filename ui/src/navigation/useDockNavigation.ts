@@ -5,7 +5,7 @@ import { useLocation, useNavigate, useParams } from 'react-router';
 import { ViewType } from '@src/types/ViewType';
 import { DockPointer } from './DockPointer';
 import { NavigationActions } from './NavigationActions';
-import { detectLayout } from './url-builder';
+import { detectLayout, ROOT_PATH } from './url-builder';
 
 export interface UseDockNavigationReturn {
   /** Navigation actions instance */
@@ -58,28 +58,37 @@ export function useCurrentDock(): DockPointer | null {
   const params = useParams<{ viewType?: string }>();
 
   return useMemo(() => {
+    const url = `${location.pathname}${location.search}`;
     if (params.viewType) {
       try {
-        return DockPointer.fromUrl(`${location.pathname}${location.search}`);
+        return DockPointer.fromUrl(url);
       } catch (error) {
         console.warn('[useDockNavigation] Invalid URL, returning default dock:', error);
         // Return default dock pointer for invalid URLs
         return new DockPointer();
       }
     }
+    // The app root is an ordinary location, not the absence of one — so `/` and
+    // its options (`?journeyId=`, `?highlight=`, `?scope-…`) are readable
+    // through the pointer like anywhere else. This is what lets the param hooks
+    // stop reaching for `useSearchParams` behind the pointer's back.
+    if (location.pathname === ROOT_PATH) return DockPointer.root().withOptionsFromUrl(url);
+    // Another top-level route (discover, an invite landing): genuinely not a
+    // dock, and not the home either. Still null.
     return null;
   }, [location.pathname, location.search, params.viewType]);
 }
 
 /**
- * True when the current URL is a vibe *home* surface — the bare home (no dock
- * URL) or the HOME view (incl. the `vibeNoProcess` landing) — as opposed to a
- * vibe workspace or any other dock. This is the single predicate for "is there
- * no active session here worth preserving": consumed by `flow-page` to pick the
- * home hero and by the project-open flow to decide whether switching a project
- * should resume its last build process (it shouldn't, on home).
+ * True when the current URL is a *home* surface in ANY view mode — the bare
+ * home (no dock URL) or the HOME view (incl. the vibe `vibeNoProcess` landing)
+ * — as opposed to a workspace or any other dock. This is the single predicate
+ * for "is there no active session here worth preserving": consumed by
+ * `flow-page` to pick the home hero and by the project-open flow to decide
+ * whether switching a project should resume its last tab/build process (it
+ * shouldn't, on home — home stays home, on the new project).
  */
-export function useIsVibeHome(): boolean {
+export function useIsHomeSurface(): boolean {
   const currentDock = useCurrentDock();
   return currentDock === null || currentDock.viewType === ViewType.HOME;
 }
@@ -96,7 +105,11 @@ export function useDockNavigation(): UseDockNavigationReturn {
     return actions;
   }, [navigate, currentDock]);
 
-  const isDockUrl = currentDock !== null;
+  // "Is a dock open" — the ROOT is a location but not a dock, so it keeps
+  // answering false here exactly as the old null did. Every consumer
+  // (content-panel's body view type, NavigatorSlot, useActiveViewer) means
+  // "something other than the home is showing".
+  const isDockUrl = currentDock !== null && !currentDock.isRoot;
 
   // URL-derived, read-only (Part 3 §7): the focus-window layout is a property
   // of the URL, never of component state.

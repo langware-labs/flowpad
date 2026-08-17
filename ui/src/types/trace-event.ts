@@ -6,7 +6,7 @@ export type { EventLayer };
 
 /**
  * Renderer-friendly trace event consumed by the InteractiveTerminal trace
- * gutter and the workflow trace gutter. Vendor-neutral — it carries the
+ * gutter. Vendor-neutral — it carries the
  * underlying `FlowData.source` (a `FlowDataSource` enum value) directly, so
  * downstream renderers can color/icon by source without touching any
  * vendor-specific (Claude/Codex) shape.

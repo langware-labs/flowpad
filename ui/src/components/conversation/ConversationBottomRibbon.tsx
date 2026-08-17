@@ -37,7 +37,7 @@ export function ConversationBottomRibbon({
 
   return (
     <div className="flex items-center border-t bg-muted/30 px-2 py-1">
-      <div className="ml-auto flex items-center gap-1">
+      <div className="ms-auto flex items-center gap-1">
         <TooltipProvider delayDuration={400}>
           {tabs.map((tab) => {
             const Icon = tab.icon;

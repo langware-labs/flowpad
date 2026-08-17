@@ -2,22 +2,15 @@
  * AgenticProcess loading primitive.
  *
  * Pure (no redirects, no toasts, no URL knowledge): fetches the process,
- * starts it to attach the PTY, resolves the linked Shell, and sets the
- * dataContext bits every caller needs. Failures throw typed errors — the
- * route wrapper decides how to recover (redirect URL, recovery skips, etc).
+ * resolves its owning project + linked Shell, and sets the dataContext bits
+ * every caller needs. Identity-only: the mounted terminal panel owns the
+ * PTY-bound `process.start()` side effect so route commitment is never gated
+ * on a worker/WS attach. Failures throw typed errors — the route wrapper
+ * decides how to recover (redirect URL, recovery skips, etc).
  */
 
-import {
-  AgenticProcess,
-  ContextEntitiesEnum,
-  dataContext,
-  Project,
-  Shell,
-  systemTools,
-  TypeId,
-} from '@sdk';
-import { estimateCols, estimateRows } from '@src/components/terminal/interactive-terminal/terminalConfig';
-import { stampTabRecencyForTarget } from '@src/tabs/tab-recency';
+import { t } from '@lingui/core/macro';
+import { AgenticProcess, ContextEntitiesEnum, dataContext, Project, Shell, systemTools, tabManager, TypeId } from '@sdk';
 import { perfLog, perfTime } from './_perf';
 import { loadProject } from './load-project';
 
@@ -42,20 +35,17 @@ import { loadProject } from './load-project';
  * silently jumped to a stale cached sibling.
  */
 export type ProcessLoadErrorKind =
-  | 'entity_not_found'      // hard — entity row is gone
-  | 'network_error'         // hard — fetch failed (non-404). URL still valid; show Retry.
-  | 'runtime_terminated'    // soft — backend ``open`` returned null (process stopped/orphan)
-  | 'shell_entity_missing'  // soft — start succeeded but Shell entity can't be resolved
-  | 'pty_attach_failed'     // soft — PTY couldn't attach (compute node, mismatched pty_id, …)
-  | 'project_missing'       // soft — process.project_id points at a deleted Project
-  | 'failed_to_start';      // soft — worker exits instantly; backend latched, auto-relaunch paused
+  | 'entity_not_found' // hard — entity row is gone
+  | 'network_error' // hard — fetch failed (non-404). URL still valid; show Retry.
+  | 'runtime_terminated' // soft — backend ``open`` returned null (process stopped/orphan)
+  | 'shell_entity_missing' // soft — start succeeded but Shell entity can't be resolved
+  | 'pty_attach_failed' // soft — PTY couldn't attach (compute node, mismatched pty_id, …)
+  | 'project_missing' // soft — process.project_id points at a deleted Project
+  | 'failed_to_start'; // soft — worker exits instantly; backend latched, auto-relaunch paused
 
 export type ProcessLoadErrorSeverity = 'hard' | 'soft';
 
-const HARD_KINDS: ReadonlySet<ProcessLoadErrorKind> = new Set([
-  'entity_not_found',
-  'network_error',
-]);
+const HARD_KINDS: ReadonlySet<ProcessLoadErrorKind> = new Set(['entity_not_found', 'network_error']);
 
 export class ProcessLoadError extends Error {
   readonly severity: ProcessLoadErrorSeverity;
@@ -76,16 +66,11 @@ export class ProcessLoadError extends Error {
  * server-supplied error messages — those are the only signals available
  * without rewiring the SDK to throw typed errors of its own.
  */
-function classifyRuntimeFailure(
-  processId: string,
-  process: AgenticProcess,
-  cause: unknown,
-): ProcessLoadError {
+export function classifyRuntimeFailure(processId: string, process: AgenticProcess, cause: unknown): ProcessLoadError {
   // ApiFailResponse bodies surface through axios as a generic "Request
   // failed with status code 500" Error.message — the server's actual
   // message lives in response.data.message. Prefer it when present.
-  const responseMsg = (cause as { response?: { data?: { message?: string } } })?.response?.data
-    ?.message;
+  const responseMsg = (cause as { response?: { data?: { message?: string } } })?.response?.data?.message;
   const msg = responseMsg ?? (cause instanceof Error ? cause.message : String(cause ?? ''));
   if (/failed to start/i.test(msg)) {
     // Backend `open` refused: the worker exited instantly on its last
@@ -109,31 +94,28 @@ function classifyRuntimeFailure(
 export function describeProcessStartError(error: unknown): { title: string; description: string } {
   const rawMessage = error instanceof Error ? error.message : String(error ?? '').trim();
   if (/PTY .* not found/i.test(rawMessage)) {
-    return { title: 'Terminal reattach failed', description: rawMessage };
+    return { title: t`Terminal reattach failed`, description: rawMessage };
   }
   if (/compute[_ -]?node/i.test(rawMessage) && /not found|missing|stale/i.test(rawMessage)) {
     return {
-      title: 'Session unavailable',
-      description: 'This session points to a stale compute node and could not be restored.',
+      title: t`Session unavailable`,
+      description: t`This session points to a stale compute node and could not be restored.`,
     };
   }
   return {
-    title: 'Session unavailable',
+    title: t`Session unavailable`,
     description: rawMessage || 'Failed to restore this session.',
   };
 }
 
 /**
- * Load an AgenticProcess by id: cache-first fetch, `start({visible:true})` to
- * attach the PTY, resolve its Shell, write context. Idempotent when the
- * process is already live and attached in this client (fast path inside
- * AgenticProcess.start).
+ * Load an AgenticProcess by id: cache-first fetch, resolve its owning project
+ * and linked Shell, then write URL-derived context. The PTY attach belongs to
+ * the mounted terminal panel, not this route loader.
  *
  * Throws ProcessLoadError on any failure. Never redirects.
  */
-export async function loadProcess(
-  processId: string,
-): Promise<{ process: AgenticProcess; shell: Shell | null }> {
+export async function loadProcess(processId: string): Promise<{ process: AgenticProcess; shell: Shell | null }> {
   // ── Entity phase (hard errors only) ────────────────────────────────────
   // Split the fetch catch so a real network failure (timeout, abort,
   // non-404 5xx) reports as ``network_error`` instead of being silently
@@ -152,8 +134,9 @@ export async function loadProcess(
     } catch (cause) {
       // 404 → entity is genuinely gone; anything else → transient fetch
       // failure that doesn't mean the URL is dead.
-      const status = (cause as { response?: { status?: number }; status?: number })?.response?.status
-        ?? (cause as { status?: number })?.status;
+      const status =
+        (cause as { response?: { status?: number }; status?: number })?.response?.status ??
+        (cause as { status?: number })?.status;
       if (status === 404) {
         throw new ProcessLoadError('entity_not_found', processId, null, cause);
       }
@@ -165,21 +148,18 @@ export async function loadProcess(
   }
 
   // ── Project phase — URL-first: resolve the owning project into context
-  // BEFORE any runtime side effect. `process.start()` and its downstream
-  // (claude-session discovery, CWD selection for `claude --resume`, etc.)
-  // read `dataContext.project`; if that still reflects the previously-active
-  // project, the PTY launches in the wrong CWD and Claude can't find the
-  // transcript. Doing the project write here makes every consumer URL-first.
+  // before the route commits. The mounted view starts the process only after
+  // this loader has established the project, so runtime CWD/session discovery
+  // cannot observe the previously-active project.
   if (process.project_id) {
     try {
-      await perfTime('loadProject', () =>
-        loadProject(new TypeId(Project.type, process!.project_id!)),
-      );
+      await perfTime('loadProject', () => loadProject(new TypeId(Project.type, process.project_id!)));
     } catch (cause) {
       // The stored project_id can dangle when the project was deleted under
       // us. Recover via the backend's 3-phase recover_by_path, then continue.
-      const status = (cause as { response?: { status?: number }; status?: number })?.response?.status
-        ?? (cause as { status?: number })?.status;
+      const status =
+        (cause as { response?: { status?: number }; status?: number })?.response?.status ??
+        (cause as { status?: number })?.status;
       if (status !== 404) throw cause;
       const recovered = await process.recoverProject().catch(() => null);
       if (!recovered) {
@@ -194,35 +174,26 @@ export async function loadProcess(
     await systemTools.resolveProjectContext(process.workdir, process);
   }
 
-  // ── Runtime phase (soft errors — entity is fine, runtime isn't) ────────
-  // Headless (`pty_mode === false`): no PTY attach and no Shell — the chat
-  // streams over `flowDataStream`. Skip the PTY runtime phase entirely so the
-  // choice is durable across reload (the loader no longer forces visible:true).
+  // ── Linked-Shell identity phase ────────────────────────────────────────
+  // Do not call process.start() here: it awaits the backend worker plus PTY/WS
+  // attach, and React Router cannot commit the destination URL while a loader
+  // is pending. The mounted TerminalPanel owns that runtime side effect.
+  // An already-cached linked Shell remains useful for workdir context, but no
+  // Shell fetch belongs on the route's critical path — start() hydrates or
+  // restores the runtime entity after paint. Headless processes legitimately
+  // have no Shell.
   let shell: Shell | null = null;
-  if (process.pty_mode !== false) {
-    try {
-      const cols = estimateCols(window.innerWidth);
-      const rows = estimateRows(window.innerHeight);
-      await perfTime('process.start (PTY attach)', () =>
-        process.start({ visible: true, cols, rows }),
-      );
-      shell = await perfTime('process.shell()', () => process.shell());
-    } catch (cause) {
-      throw classifyRuntimeFailure(processId, process, cause);
-    }
-
-    if (!shell) {
-      throw new ProcessLoadError('shell_entity_missing', processId, process.shell_id ?? null);
-    }
+  if (process.pty_mode !== false && process.shell_id) {
+    shell = Shell.getByIdFromCache<Shell>(process.shell_id) ?? null;
   }
 
   // The strip self-populates from the live `Tab` entity query (useTerminalTabs);
   // the loader's `ensureTabForCurrentDock` already materialized this process's
   // Tab. No imperative strip fetch needed.
 
-  await perfTime('dataContext sync setters (shellId/target/workdir)', async () => {
+  await perfTime('dataContext sync setters (shellId/target/workdir)', () => {
     // Headless: '' clears any stale active shell (same sentinel as load-shell).
-    dataContext.setActiveShellId(shell?.id ?? '');
+    dataContext.setActiveShellId(process.pty_mode === false ? '' : (process.shell_id ?? ''));
     dataContext.setActiveTerminalTargetTypeId(new TypeId(AgenticProcess.type, processId));
     // Fire-and-forget server stamp (Part 3 §4 D-A): never awaited — loaders
     // must stay fast; the in-cache bump above is the synchronous seed.
@@ -230,10 +201,8 @@ export async function loadProcess(
     // Stamp recency on the Tab too — the close-resolver reads Tab.last_active_at,
     // not the AgenticProcess row, so without this close-to-most-recently-active
     // falls back to tab_order.
-    stampTabRecencyForTarget(AgenticProcess.type, processId);
-    dataContext.setWorkdir(
-      process!.workdir ?? shell?.workdir ?? dataContext.project?.fs_storage_mount_path ?? null,
-    );
+    tabManager.stampTargetRecency(AgenticProcess.type, processId);
+    dataContext.setWorkdir(process.workdir ?? shell?.workdir ?? dataContext.project?.fs_storage_mount_path ?? null);
   });
   await perfTime('setContextEntityTypeId(CurrentProcessTypeId)', () =>
     dataContext.setContextEntityTypeId(

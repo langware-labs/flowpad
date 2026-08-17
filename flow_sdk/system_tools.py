@@ -434,7 +434,22 @@ async def clear_all_data() -> ClearAllResult:
     # 1. Backup first
     backup = await backup_db()
 
-    # 2. Clear the scan index (FTS + index logs + RecordErrors). Best-effort:
+    # 2. Cancel detached auto-index work while it still belongs to the current
+    # graph. Otherwise a first-selection scan can keep its old writer alive
+    # across the DB swap and race bootstrap with `BEGIN IMMEDIATE`.
+    from flow_sdk.fs_store.indexer.auto_index import cancel_auto_indexes  # noqa: PLC0415
+
+    await cancel_auto_indexes()
+
+    # 3. Tear down every live PTY while its ComputeNode/provider identity is
+    # still queryable. The DB wipe removes those rows, after which registry-only
+    # cleanup can no longer reach the provider-owned OS child and workers leak
+    # across factory resets.
+    from flow_sdk.compute.providers.desktop.pty_session_manager import PtyRegistry  # noqa: PLC0415
+
+    await PtyRegistry.get_instance().close_all_sessions()
+
+    # 4. Clear the scan index (FTS + index logs + RecordErrors). Best-effort:
     # this queries the entity DB, and factory reset is exactly the operation
     # that must still work when that DB is broken (e.g. schema-less after an
     # interrupted clear). Its DB-row deletes are redundant with the wipe
@@ -444,39 +459,33 @@ async def clear_all_data() -> ClearAllResult:
     except Exception as e:  # noqa: BLE001
         logger.warning(f"clear_all_data: clear_index failed (continuing with wipe): {e}")
 
-    # 3. Drop in-memory caches
+    # 5. Drop in-memory caches
     from flow_sdk.core.cache.entity_cache import entity_cache, uname_cache  # noqa: PLC0415
 
     entity_cache.clear()
     uname_cache.clear()
 
-    # Capability system rows are wiped along with the DB below, but the
-    # once-per-process seed guard is an in-memory cache of "DB has been
-    # seeded". Reset it so the capability specs are re-seeded on next access
-    # — otherwise a factory reset silently loses all capabilities until the
-    # process restarts.
-    from flow_sdk.builtin.capability import Capability  # noqa: PLC0415
+    # Capability system rows are wiped along with the DB below. No seed-guard
+    # reset is needed: Capability._seeded_dbs is keyed on the live driver
+    # object, and the reinit below constructs a fresh driver — the new DB
+    # re-seeds on next access automatically.
 
-    Capability._seeded_once = False
-
-    # 4. Close DB, delete file, reinitialize
+    # 6. Close DB, delete file, reinitialize
     from flow_sdk.db.database import close_db, init_db  # noqa: PLC0415
+    from flow_sdk.db.db_entity import DBEntity  # noqa: PLC0415
+    from flow_sdk.db.db_relationship import DBRelationship  # noqa: PLC0415
     from flow_sdk.db.drivers.db_driver import (  # noqa: PLC0415
         _driver_instances,
         db_lifecycle_guard,
         get_db_driver,
-        LazyDBDriver,
         remove_db_sidecars,
     )
-    from flow_sdk.db.db_entity import DBEntity  # noqa: PLC0415
-    from flow_sdk.db.db_relationship import DBRelationship  # noqa: PLC0415
 
     async def _wipe_and_reinit() -> None:
-        # Serialize the entire close→unlink→init→repoint→bootstrap block against
-        # any overlapping lifecycle swap AND against fresh-session opens so no two
-        # engines can straddle the unlink. The guard also flags this coroutine so
-        # the nested session opens below (init_db / bootstrap rebuild) bypass the
-        # same non-reentrant lock instead of self-deadlocking.
+        # Serialize the close→unlink→init→repoint block against overlapping
+        # lifecycle swaps and fresh-session opens so no two engines can straddle
+        # the unlink. Bootstrap deliberately runs after this guard; it takes
+        # per-record locks and must preserve the normal record→session order.
         async with db_lifecycle_guard():
             # Close the SQLiteDriver's own engine before wiping the file
             sqlite_driver = _driver_instances.get("sqlite")
@@ -498,43 +507,42 @@ async def clear_all_data() -> ClearAllResult:
             DBEntity._db = new_driver
             DBRelationship._db = new_driver
 
-            # Invalidate the bootstrap cache and immediately rebuild the @local
-            # entities. Without the rebuild, subsequent requests addressed via
-            # `/compute_node/@local/...` cannot resolve `@local` (it has just been
-            # wiped) and the request middleware returns "Invalid request" until the
-            # client happens to call /bootstrap again.
-            from flow_sdk.server.routes.bootstrap import (  # noqa: PLC0415
-                bootstrap,
-                invalidate_bootstrap_cache,
-            )
-            invalidate_bootstrap_cache()
-            await bootstrap()
+        # Rebuild @local immediately after the atomic file/driver swap, but
+        # outside the lifecycle lock. Entity.save() takes a per-record sync
+        # lock before it opens a DB session. Holding the lifecycle lock while
+        # bootstrap seeds entities reverses that normal order and deadlocks
+        # when a background writer already owns a record lock and is waiting
+        # for the lifecycle swap to finish (capability discovery exposed this
+        # on minute-boundary clears). Once the new driver is repointed, the
+        # destructive swap is complete and normal record→session ordering can
+        # safely resume.
+        #
+        # Without this rebuild, subsequent requests addressed via
+        # `/compute_node/@local/...` cannot resolve `@local` and return
+        # "Invalid request" until a client happens to call /bootstrap again.
+        from flow_sdk.server.routes.bootstrap import (  # noqa: PLC0415
+            bootstrap,
+            invalidate_bootstrap_cache,
+        )
+        invalidate_bootstrap_cache()
+        await bootstrap()
 
-        # Re-seed the system projects (e.g. @flowpad_assistant). These are seeded
-        # only by the startup-index path — the bootstrap() route handler above
-        # rebuilds @local but NOT the system projects, so without this a factory
-        # reset silently loses them until the process restarts (same class of bug
-        # as the Capability._seeded_once reset above). Their absence makes the FE
-        # assistant resolver log "Invalid entity type or ID" console errors on every
-        # page load. Non-fatal — mirror startup's best-effort handling.
+        # Rebuild the shipped system content through the same canonical pass as
+        # process startup. The bootstrap() route handler above only restores the
+        # @local graph; a factory reset also deletes the indexed system agents,
+        # skills, whiteboards, and docs. Restoring only the project/markdown rows
+        # leaves callers such as Vibe unable to resolve their bundled agent until
+        # the whole process restarts.
+        #
+        # Await this pass: once the destructive reset response says "complete",
+        # every shipped asset must already be queryable. The pass itself remains
+        # best-effort, matching startup.
         try:
-            from flow_sdk.server.routes.bootstrap import (  # noqa: PLC0415
-                _ensure_system_projects,
-                _index_system_project_markdowns,
-                get_or_create_local_user,
-            )
+            from flow_sdk.server.routes.bootstrap import index_system_content  # noqa: PLC0415
 
-            _user = await get_or_create_local_user()
-            _system_projects = await _ensure_system_projects(desktop_user=_user)
-            # Mirror the startup-index path: seed THEN index the system markdown so
-            # the assistant docs are searchable/browsable after a reset, not just
-            # present as empty project rows.
-            try:
-                await _index_system_project_markdowns(_system_projects)
-            except Exception as e:  # noqa: BLE001
-                logger.warning(f"clear_all_data: failed to index system markdowns (non-fatal): {e}")
+            await index_system_content()
         except Exception as e:  # noqa: BLE001
-            logger.warning(f"clear_all_data: failed to re-seed system projects (non-fatal): {e}")
+            logger.warning(f"clear_all_data: failed to re-seed system content (non-fatal): {e}")
 
     # The triggering HTTP request can be CANCELLED at any await (ASGI client
     # disconnect — e.g. the test runner being killed mid-clear). Without a

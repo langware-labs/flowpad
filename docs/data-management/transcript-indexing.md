@@ -70,7 +70,7 @@ class TranscriptHandler(Protocol):
     async def handle(self, entry: TranscriptEntry, ctx: TranscriptContext) -> None: ...
 ```
 
-- `match_kind` / `match_tool_name` are the class-level matchers. The dispatcher feeds them straight into the analyzer's `AgentTranscriptFile.filter(kind=..., tool_name=...)` (`flow_sdk/transcript_analyzer/transcript.py`), which yields only entries matching **all** provided filters (they are AND-ed; a `None` filter matches everything). `tool_name` matches any parsed entry that carries a tool name, including semantic operation entries like `shell_command`.
+- `match_kind` / `match_tool_name` are the class-level matchers. The dispatcher feeds them straight into the analyzer's `AgentTranscriptFile.filter(kind=..., tool_name=...)` (`flow_sdk/transcript_analyzer/transcript.py`), which yields only entries matching **all** provided filters (they are AND-ed; a `None` filter matches everything). `tool_name` matches any entry that carries a tool name, including semantic operation entries like `shell_command`. Note those may be *derived* rather than parsed: the derivation layer (`flow_sdk/transcript_analyzer/derivation/`, see [agentic_process_outputs.md](../agentic_process_outputs.md)) appends semantic entries beside the physical ones a parser produced, flagged `virtual=true`. A handler that must act once per real tool call should therefore filter on `virtual` — a physical entry and its refinement share a `tool_use_id`.
 - `handle` receives the matched `TranscriptEntry` and a `TranscriptContext` — a frozen dataclass carrying the `jsonl_path` and the parsed `AgentTranscriptFile`.
 - Handlers are registered on an indexer instance via `TranscriptIndexer.add_handler(handler)`.
 

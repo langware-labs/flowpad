@@ -1,0 +1,35 @@
+/* swiss-signal — International Typographic Style. White, black, one red. */
+:root {
+  --bg: #ffffff;
+  --surface: #f2f2f2;
+  --text: #000000;
+  --text-secondary: #767676;
+  --accent: #e5261f;
+  --accent-contrast: #ffffff;
+  --border: #000000;
+
+  --fs-hero: 104px;
+  --fs-title: 56px;
+  --fs-subtitle: 26px;
+  --fs-body: 22px;
+  --fs-caption: 13px;
+
+  /* Helvetica Neue (macOS) -> Arial Nova / Arial (Windows) -> Liberation Sans
+   * (Linux metric clone) -> sans-serif. All neo-grotesks. */
+  --font-display: "Helvetica Neue", Helvetica, "Arial Nova", Arial, "Liberation Sans", sans-serif;
+  --font-sans: "Helvetica Neue", Helvetica, "Arial Nova", Arial, "Liberation Sans", sans-serif;
+  --font-mono: "SF Mono", Menlo, Consolas, monospace;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-bold: 700;
+  --lh-tight: 0.94;
+  --lh-body: 1.45;
+  --tracking-kicker: 0.14em;
+
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px;
+
+  --radius-sm: 0; --radius-md: 0; --radius-lg: 0;
+  --safe-area: 64px;
+}

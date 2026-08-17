@@ -41,21 +41,22 @@ import flow_sdk.wiki as wiki
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.fs_store.indexer.functions.markdown import (
     extract_markdown,
-    markdown_gen_id as _markdown_gen_id,
 )
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
 
 
 class MarkdownRecord:
     @staticmethod
     def from_file(p):
-        return extract_markdown(_FSRef(p))[0]
+        ref = _FSRef(p)
+        return extract_markdown(ref, SchemaRegistry.get("markdown").mint_entity_id(ref, derive=True, overwrite=True))[0]
 
     @staticmethod
     def from_fsref(ref):
         # async-compat: the real indexer awaits this; the test will too.
         async def _aw():
-            return extract_markdown(ref)
+            return extract_markdown(ref, SchemaRegistry.get("markdown").mint_entity_id(ref, derive=True, overwrite=True))
         return _aw()
 
     @staticmethod
@@ -65,7 +66,7 @@ class MarkdownRecord:
 
     @staticmethod
     def genId(ref):
-        return _markdown_gen_id(ref)
+        return SchemaRegistry.get("markdown").mint_entity_id(ref, derive=True, overwrite=True)
   # alias for tests; uses extract_markdown for parsing
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions, build_default_indexer

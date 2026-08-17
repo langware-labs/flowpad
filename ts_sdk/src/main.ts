@@ -3,14 +3,15 @@ import { dataManager } from './APIEntity';
 import apiClient, { getErrorMessages } from './client';
 import config from './config';
 import { sdkConfig } from './config/index';
-import { Agent, ComputeNode, Project, User, Visitor, Workspace } from './entities';
+import { SubAgent, ComputeNode, Project, User, Visitor, Workspace } from './entities';
 import { AgentHook } from './entities/agent-hook';
 import { authManager, dataContext, isTypeId, TypeId } from './FlowSync';
 import { snifferManager } from './services/snifferManager';
+import { isHubOnly, markHubModeReady, setSupportedPagesForHubMode } from './utils/hub-runtime';
+import { RuntimeKind } from './utils/runtime';
 import { ActionInfo } from './models';
 import { navigator } from './services/navigationService';
 // import { authService } from './services/authService';
-import * as Sentry from '@sentry/browser';
 import { ContextEntitiesEnum } from './FlowSync/context';
 import { getContextEntityFromLocalStorage, setContextEntityToLocalStorage } from './FlowSync/context-local-storage';
 import { capabilityManager } from './capabilities';
@@ -41,12 +42,28 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       const domain = window.location.hostname;
       const session = !(window as any).allow_persistent_visitor; // session=true if no GDPR consent
       const bootstrapInfo = await dataManager.bootstrap(domain, session);
+      // Dev override: `VITE_FORCE_HUB=true` forces hub mode when testing the OSS
+      // UI against a hub backend that doesn't yet declare its runtime. Set it ON
+      // bootstrapInfo so EVERY consumer agrees — the leaf `isHubOnly()` signal,
+      // `dataContext.runtimeKind`, and main-loader's page-redirect (which reads
+      // `bootstrapInfo.supported_pages` directly). No effect in normal builds.
+      if (import.meta.env.VITE_FORCE_HUB === 'true') {
+        (bootstrapInfo as { supported_pages?: string[] }).supported_pages = ['hub'];
+        bootstrapInfo.runtime = { ...bootstrapInfo.runtime, kind: RuntimeKind.HUB };
+      }
       // Store bootstrap info in dataContext for UI access (e.g., desktop_info)
       dataContext.bootstrapInfo = bootstrapInfo;
+      // Seed the leaf hub-mode signal (so `isHubOnly()` works without importing
+      // dataContext into entities — see utils/hub-runtime.ts).
+      setSupportedPagesForHubMode((bootstrapInfo as { supported_pages?: string[] })?.supported_pages);
 
-      // Seed cloudManager from bootstrap; it owns isLoggedIn / currentUser / cloudUrl
-      // and listens to oauth WS events for the lifetime of the app.
-      void cloudManager.bootstrap(bootstrapInfo.desktop_info);
+      // Seed cloudManager from bootstrap; it owns isLoggedIn / currentUser / cloudUrl.
+      // Hub identity comes directly from this bootstrap response and must be ready
+      // before the initial route renders. Keep the desktop bootstrap fire-and-forget
+      // so its existing startup timing is unchanged.
+      const cloudBootstrap = cloudManager.bootstrap(bootstrapInfo);
+      if (isHubOnly()) await cloudBootstrap;
+      else void cloudBootstrap;
 
       // Seed the data-privacy mode (Local/Connected); it mirrors into dataContext
       // and listens for live mode changes over WS.
@@ -111,7 +128,7 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         console.log('[initSdk] Using agentId from params:', params.agentId);
         await dataContext.setContextEntityTypeId(
           ContextEntitiesEnum.CurrentAgentTypeId,
-          new TypeId(Agent.type, params.agentId),
+          new TypeId(SubAgent.type, params.agentId),
         );
       }
 
@@ -122,8 +139,12 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         user = new User(bootstrapInfo.user);
         user.markAsExpanded();
         await dataContext.setContextEntityTypeId(ContextEntitiesEnum.LocalUserTypeId, user.typeId);
-        trackUserToSentry(user);
-        void ConnectionManager.getInstance().connect();
+        // Startup does not block rendering on the WebSocket handshake, but the
+        // background promise still needs an owner. In particular, disposing an
+        // isolated SDK realm can intentionally close a still-CONNECTING socket;
+        // observing that rejection prevents it from escaping as an unhandled
+        // promise while the connection manager handles reconnect/reporting.
+        void ConnectionManager.getInstance().connect().catch(() => undefined);
       }
 
       // Set default workspace in context if present (after user is set)
@@ -139,6 +160,9 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         await snifferManager.attach(snifferHook);
       }
       dataContext.setSnifferEnabled(!!bootstrapInfo.sniffer_hook);
+      // The settings file is the truth about whether hooks actually fire —
+      // another instance may have installed them without an entity here.
+      dataContext.setSnifferInstalled(!!bootstrapInfo.sniffer_installed);
 
       await authManager.init(user);
       await dataContext.initContext({ setupWorkspace: params?.setupWorkspace, setupProject: true });
@@ -179,6 +203,11 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       // Reset initPromise to allow retry
       initPromise = null;
       return;
+    } finally {
+      // Unblock any early desktop-only probe awaiting the hub-mode signal, even
+      // if bootstrap failed / early-returned before seeding it (keeps the desk
+      // fallback so desk probes still run).
+      markHubModeReady();
     }
   })();
 
@@ -231,28 +260,6 @@ export async function signup(signup: SignupInfo): Promise<User> {
     throw new Error('Failed to signup');
   }
   return new User(entity_json);
-}
-
-export function trackUserToSentry(logged_in: User) {
-  //Associate user with Sentry
-  Sentry.setUser({
-    id: logged_in.id,
-  });
-
-  //Add custom tags (for filtering in Sentry UI)
-  if (logged_in.id) {
-    Sentry.setTag('user.id', logged_in.id);
-  }
-
-  //Add breadcrumb for audit trail
-  Sentry.addBreadcrumb({
-    category: 'auth',
-    message: `User logged in: ${logged_in.name}`,
-    level: 'info',
-    data: {
-      id: logged_in.id,
-    },
-  });
 }
 
 export async function getErrorMessagesFromAxios(error: any): Promise<string> {

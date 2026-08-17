@@ -12,15 +12,16 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
-from flow_sdk.schema.types import EntityType
-from flow_sdk.schema.view_mode import ViewMode
+from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, folder_capsule_id
 from flow_sdk.fs_store.indexer.functions.task import (
     TASK_FRONTMATTER_FIELDS,
     extract_task,
     task_asset_hash,
-    task_gen_id,
+    task_id_from_folder,
 )
+from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
+from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.view_mode import ViewMode
 
 # The frontmatter written to ``task.md`` = the canonical round-trip field set
 # (single source of truth, shared with the reader ``extract_task``) plus the
@@ -81,12 +82,23 @@ TASK = TypeMetadata(
     indexed_by_default=True,
     api_visible=True,
     index_fields=["description", "objective"],
-    main_subdir="tasks",
+    asset_class="repo",
+    family="task",
     main_layout="folder",
     main_file="task.md",
     from_disk_fn=extract_task,
-    gen_uuid_fn=task_gen_id,
+    capsules=(IDENTITY_CAPSULE,),
+    identity_backend=capsule_identity(folder_capsule_id, task_id_from_folder),
     asset_hash_fn=task_asset_hash,
     default_body_fn=_task_default_body,
     owns_main_ref=True,
+    # An assignee moves the work along; they don't get to rewrite the ask. These
+    # are the only fields their hub-reflected update carries, which is what makes
+    # ONE shared task row safe to hand to someone (see ``assignee_owned_fields``).
+    assignee_owned_fields=("status", "completed_at"),
+    # The plan stays home. ``spec.md`` is authored beside ``task.md`` in the same
+    # folder, and the bundle packer copies folders verbatim — so sharing or
+    # assigning a task used to ship the owner's plan with it, contradicting the
+    # decoupling this type documents.
+    pack_exclude=("spec.md",),
 )

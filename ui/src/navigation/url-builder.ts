@@ -1,4 +1,4 @@
-import { DOCK_KEYWORD, DEV_KEYWORD, WIN_KEYWORD, Layout, ViewType } from '@sdk';
+import { DOCK_KEYWORD, DEV_KEYWORD, WIN_KEYWORD, Layout, ViewType, PageId, isValidPage } from '@sdk';
 
 /**
  * The single keyword→Layout table the parse/strip/build helpers below share.
@@ -13,6 +13,43 @@ const LAYOUT_KEYWORDS: ReadonlyArray<{ keyword: string; layout: Layout }> = [
 
 function keywordForLayout(layout: Layout): string {
   return LAYOUT_KEYWORDS.find((row) => row.layout === layout)?.keyword ?? DOCK_KEYWORD;
+}
+
+/**
+ * THE statement that the desk home is spelled `/`.
+ *
+ * The app root is an ordinary location — a `DockPointer` for the desk `HOME`
+ * view with no pointer — it just has a shorter URL than the dock grammar would
+ * give it. Both directions consult this one predicate, so `/` and
+ * `DockPointer.root()` can never disagree about which is which.
+ *
+ * Deliberately narrow. Three things are NOT the root and keep their dock URLs:
+ *  - `page=hub` — `/dock/hub/home` is the hub's own home, a different surface;
+ *  - HOME with a pointer — `/dock/home/<x>`, still addressed the normal way;
+ *  - a non-DOCK layout — collapsing `/win/home` to `/` would break a focus
+ *    window out of its own chrome.
+ */
+export function isRootAddress(
+  viewType: ViewType | undefined,
+  pointer: string | undefined,
+  layout: Layout,
+  page: PageId,
+): boolean {
+  return viewType === ViewType.HOME && !pointer && layout === Layout.DOCK && page === PageId.DESK;
+}
+
+/** The app root's path. The one place the literal lives. */
+export const ROOT_PATH = '/';
+
+/** The parse of a layout-less path: the root, under whatever base path it carries. */
+export function rootDockAddress(fullPath: string): ParsedDockUrl {
+  return {
+    ...parseBasePath(fullPath),
+    page: PageId.DESK,
+    viewType: ViewType.HOME,
+    pointer: undefined,
+    layout: Layout.DOCK,
+  };
 }
 
 interface LayoutToken {
@@ -59,8 +96,12 @@ export function preserveWindowLayout(currentPath: string, layout: Layout): Layou
  * full-app chrome (Part 3 §7). Used by the shell route loader's fallback /
  * ownership redirects.
  */
-export function buildShellRedirectUrl(currentPath: string, pointer?: string): string {
-  return buildDockUrl(currentPath, ViewType.SHELL, pointer, undefined, detectLayout(currentPath));
+export function buildShellRedirectUrl(
+  currentPath: string,
+  pointer?: string,
+  options?: Record<string, string>,
+): string {
+  return buildDockUrl(currentPath, ViewType.SHELL, pointer, options, detectLayout(currentPath));
 }
 
 /**
@@ -75,6 +116,7 @@ export interface ParsedBasePath {
  * Full parsed dock URL including base path entities and dock portion
  */
 export interface ParsedDockUrl extends ParsedBasePath {
+  page: PageId;
   viewType?: string;
   pointer?: string;
   layout: Layout;
@@ -107,7 +149,10 @@ export function parseBasePath(basePath: string): ParsedBasePath {
  * => { agentId: "abc", processId: "xyz", viewType: "editor", pointer: "file.ts", layout: "dock" }
  *
  * parseDockUrl("/dock/skills")
- * => { viewType: "skills", layout: "dock" }
+ * => { page: "desk", viewType: "skills", layout: "dock" }
+ *
+ * parseDockUrl("/dock/hub/organization")
+ * => { page: "hub", viewType: "organization", layout: "dock" }
  */
 export function parseDockUrl(fullPath: string): ParsedDockUrl | null {
   const token = findLayoutToken(fullPath);
@@ -119,10 +164,18 @@ export function parseDockUrl(fullPath: string): ParsedDockUrl | null {
 
   // Parse dock portion (after the layout keyword)
   const dockPortion = fullPath.substring(token.index + token.keyword.length + 2); // +2 for slashes
-  const [viewType, ...pointerParts] = dockPortion.split('/');
+  const segments = dockPortion.split('/');
+
+  // The segment right after the layout keyword is the page IFF it is a known page
+  // id; otherwise it is the viewType and page defaults to `desk` (back-compat —
+  // every existing `/dock/<viewType>/…` URL is unaffected).
+  const hasPage = isValidPage(segments[0]);
+  const page = hasPage ? (segments[0] as PageId) : PageId.DESK;
+
+  const [viewType, ...pointerParts] = hasPage ? segments.slice(1) : segments;
   const pointer = pointerParts.length > 0 ? pointerParts.join('/') : undefined;
 
-  return { agentId, processId, viewType: viewType || undefined, pointer, layout: token.layout };
+  return { agentId, processId, page, viewType: viewType || undefined, pointer, layout: token.layout };
 }
 
 /**
@@ -146,6 +199,19 @@ export function stripDockPortion(currentPath: string): string {
 }
 
 /**
+ * Rewrite a `/dev/…` URL into its `/dock/…` twin.
+ *
+ * `dev` and `dock` are interchangeable layout keywords to every parser here, so
+ * people arrive on `/dev/…` from copy/paste, stale links and hand-typed URLs —
+ * and without this the root catch-all swallows them into NotFound. Lives beside
+ * the keyword table it depends on rather than in the router, where it was a
+ * regex that would silently stop matching if a keyword were ever renamed.
+ */
+export function devToDockPath(pathname: string): string {
+  return `/${DOCK_KEYWORD}/${pathname.replace(new RegExp(`^/${DEV_KEYWORD}/?`), '')}`;
+}
+
+/**
  * Build a layout URL by replacing or appending the dock portion
  * Takes the current URL and replaces everything after dock/dev keyword
  *
@@ -154,6 +220,8 @@ export function stripDockPortion(currentPath: string): string {
  * @param pointer - Optional pointer (file path, skill name, etc.)
  * @param queryParams - Optional query parameters
  * @param layout - Layout type (dock or dev), defaults to DOCK
+ * @param page - SPA-surface, defaults to DESK. Emitted as a `/<page>` segment
+ *   ONLY when non-desk, so existing `/dock/<viewType>` URLs stay byte-identical.
  */
 export function buildDockUrl(
   currentUrl: string,
@@ -161,6 +229,7 @@ export function buildDockUrl(
   pointer?: string,
   queryParams?: Record<string, string | undefined>,
   layout: Layout = Layout.DOCK,
+  page: PageId = PageId.DESK,
 ): string {
   // Get base URL (everything before the layout keyword)
   const base = stripDockPortion(currentUrl);
@@ -168,8 +237,12 @@ export function buildDockUrl(
   // Choose layout keyword based on layout parameter
   const layoutKeyword = keywordForLayout(layout);
 
+  // Page segment sits between the layout keyword and the viewType; `desk` is the
+  // default and is never emitted (bare `/dock/<viewType>` == desk).
+  const pageSegment = page === PageId.DESK ? '' : `/${page}`;
+
   // Build layout URL with or without pointer
-  let layoutBase = `${base}/${layoutKeyword}/${viewType}`;
+  let layoutBase = `${base}/${layoutKeyword}${pageSegment}/${viewType}`;
   if (pointer && pointer.length > 0) {
     const cleanPointer = pointer.startsWith('/') ? pointer.slice(1) : pointer;
     // Encode each path segment individually to preserve slashes
@@ -180,8 +253,14 @@ export function buildDockUrl(
     layoutBase += `/${encodedPointer}`;
   }
 
-  // If viewType is undefined, use base, otherwise use layoutBase
-  const urlBase = typeof viewType === 'undefined' ? base : layoutBase;
+  // The root is the base path itself — `/` at the app root, or the agent/flow
+  // prefix when one is being preserved. `base` is '' for a bare root, so it is
+  // normalized here rather than at each call site.
+  const urlBase = isRootAddress(viewType, pointer, layout, page)
+    ? base || '/'
+    : typeof viewType === 'undefined'
+      ? base
+      : layoutBase;
 
   // Filter undefined values and build query string
   if (!queryParams) return urlBase;

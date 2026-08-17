@@ -60,6 +60,11 @@ export interface Browseable {
    *  `opacity-50 hover:opacity-100`). Cosmetic only — never carries behavior. */
   rowClassName?: string;
 
+  /** Optional tag tag (see ui/src/tags): the row renders `data-tag`, so
+   *  it is highlightable by journeys/wiki links and click-observable on the
+   *  EventBus — declaratively, with no per-adapter DOM wiring. */
+  tag?: string;
+
   /** Optional full-row body that replaces the default `icon | label | badge`
    *  zone. Use for rich, multi-line rows (e.g. a trigger showing scope chip +
    *  name + type-specific metadata lines). When set, `label`/`icon`/`badge` are
@@ -96,9 +101,30 @@ export interface Browseable {
    *  wherever possible — it keeps navigation URL-first and selectable. */
   activate?: () => void | Promise<void>;
 
+  /** Fired when the row is OPENED — from BOTH the `pointer` and `activate`
+   *  arms, so a usage stamp can't miss the (majority) pointer case. Never
+   *  fires for a row that opened nothing (neither arm set). Whether a
+   *  CONTAINER can open is the renderer's call, not this contract's: a click
+   *  on one expands, and the grid and tree order that against the pointer arm
+   *  differently. Both go through `openBrowseable` (./open.ts), which owns the
+   *  arm resolution and fires this AFTER dispatch, so a throw here cannot
+   *  break the navigation.
+   *
+   *  Side effect ONLY — a usage stamp on the underlying entity (e.g. the
+   *  favorites open-counter). Never navigate, never gate navigation, never
+   *  write view state. */
+  onOpen?: () => void;
+
+  /** Fired when the pointer RESTS on the row for the host's `hoverSeenMs` —
+   *  "the user looked at this", short of opening it. Same contract as
+   *  `onOpen`: a side-effect-only usage stamp, never navigation. Re-fires on
+   *  each qualifying dwell, so make it idempotent. Honored by the TREE only —
+   *  the grid has no dwell of its own. */
+  onHoverSeen?: () => void;
+
   /** Optional hover tooltip content (e.g. a live entity summary). Rendered by
-   *  renderers that support tooltips (the desktop grid); the tree currently
-   *  ignores it. */
+   *  both the desktop grid and the tree. In the tree it doubles as the hover
+   *  PREVIEW: hovering a row shows it without opening anything. */
   tooltip?: ReactNode;
 
   /** Optional stable alternate identity for *selection* matching, used when the
@@ -163,8 +189,10 @@ export interface Browseable {
 export interface BrowseableRoot extends Browseable {
   kind: 'root';
 
-  /** Does this root own the given pointer? First truthy wins during
-   *  auto-expand. */
+  /** Does this root own the given pointer? Every matching root participates in
+   *  auto-expand. This is intentional for resource-addressed pointers: the
+   *  same VFS file can appear under both a semantic root (for example
+   *  Markdown) and a physical filesystem root (Files). */
   ownsPointer: (pointer: DockPointer) => boolean;
 
   /**
@@ -218,9 +246,49 @@ export interface BrowseableTreeProps {
   /** Top-level roots. */
   roots: BrowseableRoot[];
 
-  /** The currently-active pointer (from URL). Drives both row selection and
-   *  ancestor auto-expand. */
+  /** Dwell (ms) before hovering a row expands it — menu mode. Undefined (the
+   *  default) schedules nothing, so ordinary navigators never expand on hover.
+   *  Hover only ever EXPANDS; collapse stays on the chevron/click, and an
+   *  explicit collapse suppresses hover until the pointer leaves the row. */
+  hoverExpandMs?: number;
+
+  /** Dwell (ms) before hovering a row fires its `onHoverSeen` — menu mode.
+   *  Undefined (the default) never fires it, so ordinary navigators stamp
+   *  nothing on hover. Mouse only, and the dwell restarts on every entry, so a
+   *  pointer sweeping down a menu stamps nothing it merely crosses. */
+  hoverSeenMs?: number;
+
+  /** Rendered as the last row of EVERY level: once at the root ('') and once at
+   *  the end of each expanded folder's children (its id). Its use is a build-
+   *  as-you-browse toolbar — "add into THIS level" — so the parent id is handed
+   *  in. Undefined ⇒ no footer, unchanged for ordinary navigators. */
+  levelFooter?: (parentId: string) => ReactNode;
+
+  /**
+   * Lay the rows out mirrored — for a menu that grows against the reading
+   * direction, i.e. the bookmarks flyout hanging off the top bar's right edge.
+   *
+   * The tree was built for a panel anchored on the LEFT (the rail's flyout):
+   * glyphs lead the label, indentation grows away from the panel, the collapsed
+   * chevron points right and row previews open right — all "into open space".
+   * Pinned to the window's right edge every one of those points back at the
+   * panel, and the preview opens off-screen.
+   *
+   * Implemented as a flex-axis reversal, NOT by setting `dir`: direction is a
+   * property of the LANGUAGE, owned solely by `locale-context.tsx`, and which
+   * way a panel happens to grow is not a statement about language. Reversing
+   * also composes with an RTL locale rather than cancelling against it.
+   */
+  mirrored?: boolean;
+
+  /** The currently-active pointer (from URL). Drives exact row selection and
+   *  remains the navigation cursor. */
   activePointer: DockPointer | null;
+
+  /** Optional resolved resource identity for a URL whose serialized pointer
+   *  cannot carry the backing VFS path (for example a TypeId editor URL). Used
+   *  only for ancestor expansion, resource equality, and reveal/scroll. */
+  activeResourcePointer?: DockPointer | null;
 
   /** Optional URL-derived alternate selection key (e.g. the active entity's
    *  `<type>-<uuid>` typeid when the URL addresses an asset by typeid). A row is

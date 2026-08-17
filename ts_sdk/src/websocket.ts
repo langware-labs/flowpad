@@ -13,10 +13,7 @@ import { toplog } from './services/toplog';
 import { defineGlobal } from './utils/globals';
 
 type MessageType =
-  | 'entity_msg'
   | 'data_op_msg'
-  | 'stream_msg'
-  | 'transcript_msg'
   | 'control_msg'
   | 'oauth_msg'
   | 'rest_api_msg'
@@ -30,6 +27,7 @@ type MessageType =
   | 'cloud_connection_status_msg'
   | 'privacy_mode_msg'
   | 'toplog_state_msg'
+  | 'tag_msg'
   | 'ui_command'
   | 'recovered_msg'
   | 'broadcast';
@@ -38,6 +36,8 @@ type MessageType =
 interface BaseMessage {
   message_type: MessageType;
   message_id: string;
+  /** Monotonic server-side creation sequence (present on entity data ops). */
+  instance_id?: number;
 }
 
 export interface IWSRestOptions {
@@ -70,14 +70,6 @@ type ITypeId = string | { type: string; id: string };
 interface EntityMessage extends BaseMessage {
   from_entity?: ITypeId;
   to_entity: ITypeId;
-}
-
-export interface IStreamMessage extends BaseMessage {
-  stream_id: number;
-}
-
-export interface TranscriptMessage extends IStreamMessage {
-  text: string;
 }
 
 export interface ControlMessage extends BaseMessage {
@@ -129,6 +121,12 @@ export interface ToplogStateMessage extends BaseMessage {
   filter: Record<string, boolean>;
 }
 
+/** The unified event-bus frame — one serialized FlowEvent (docs/flow-events.md). */
+export interface TagMsg extends BaseMessage {
+  message_type: 'tag_msg';
+  event: import('./tags/EventBus').FlowEvent;
+}
+
 /**
  * Server → client directive to drive the UI (navigate, open, etc.).
  * Emitted by the local Flowpad server when an agent invokes a `flow navigate ...`
@@ -138,13 +136,24 @@ export interface ToplogStateMessage extends BaseMessage {
 export interface UiCommandMessage extends BaseMessage {
   message_type: 'ui_command';
   /** Discriminator for the specific action the UI should perform. */
-  kind: 'navigate_entity' | 'navigate_vfs' | string;
+  kind: 'navigate_entity' | 'navigate_vfs' | 'navigate_dock' | string;
   /** For `navigate_entity`: the entity's type (e.g. "shell", "project"). */
   type?: string;
   /** For `navigate_entity`: the entity's id. */
   id?: string;
   /** For `navigate_vfs`: the absolute file path to open in the asset editor. */
   path?: string;
+  /** For `navigate_dock`: the dock address — a SCREEN. Already validated
+   *  server-side against the dock-address table, so the UI constructs rather
+   *  than resolves. */
+  view_type?: string;
+  pointer?: string | null;
+  options?: Record<string, string> | null;
+  page?: string;
+  /** For `desktop_notify`: the notification kind (e.g. "message"). */
+  notify_type?: string;
+  /** For `desktop_notify`: the kind-specific payload (conversation_id, message_id, sender_name, preview, …). */
+  info?: Record<string, unknown>;
 }
 
 export interface LlmConfigMessage extends BaseMessage {
@@ -239,15 +248,30 @@ export interface BroadcastMessage extends BaseMessage {
   broadcast_type?: string;
 }
 
-export type DataOpType = 'create' | 'update' | 'delete';
+export type DataOpType =
+  | 'create'
+  | 'update'
+  | 'delete'
+  | 'child_created'
+  | 'child_updated'
+  | 'child_deleted';
 
 /** Enum form of {@link DataOpType}. Use these members instead of bare
  *  'create' / 'update' / 'delete' string literals when matching a
- *  data_op frame's ``op``. */
+ *  data_op frame's ``op``.
+ *
+ *  The ``CHILD_*`` members INVERT the envelope: ``to_entity`` is the PARENT,
+ *  ``from_entity`` is the changed child, and ``data`` is the child. They exist
+ *  so a watcher of a parent learns its subtree changed without subscribing to
+ *  every child — which is how a new message reaches an open conversation.
+ *  Values match the hub's ``flowpad/hub/api/messages.py`` exactly. */
 export enum DataOp {
   CREATE = 'create',
   UPDATE = 'update',
   DELETE = 'delete',
+  CHILD_CREATED = 'child_created',
+  CHILD_UPDATED = 'child_updated',
+  CHILD_DELETED = 'child_deleted',
 }
 
 interface DataOpMessage extends EntityMessage {
@@ -261,6 +285,8 @@ export class ConnectionManager extends EventEmitter {
   private socket: WebSocket | null = null;
   private pendingRequests: Map<string, PendingRequest<unknown>> = new Map();
   private warnedMessageTypes = new Set<string>();
+  /** Last accepted data-op sequence per entity on the current socket. */
+  private lastDataOpInstanceByEntity = new Map<string, number>();
   private requestTimeoutMs: number = 30000;
 
   // Reconnect state
@@ -369,7 +395,8 @@ export class ConnectionManager extends EventEmitter {
       ws.addEventListener('message', (event) => {
         try {
           if (event.data instanceof ArrayBuffer) {
-            this.onBinMessage(event.data);
+            // Binary frames are unused (dead on_bin_msg path removed —
+            // flow-events phase-8 scan found zero subscribers).
           } else if (typeof event.data === 'string') {
             this.onMessage(JSON.parse(event.data));
           } else {
@@ -461,6 +488,10 @@ export class ConnectionManager extends EventEmitter {
   }
 
   onOpen(event: Event) {
+    // The backend counter restarts with its process and an old socket cannot
+    // deliver frames after this new connection opens, so sequence ownership is
+    // per socket generation.
+    this.lastDataOpInstanceByEntity.clear();
     this.reportLifecycle('ws_open', { attempts_used: this.reconnectAttempts });
     // Reset reconnect attempts on successful connection
     this.reconnectAttempts = 0;
@@ -541,14 +572,8 @@ export class ConnectionManager extends EventEmitter {
   }
 
   onMessage(data: BaseMessage) {
-    if (data.message_type === 'entity_msg') {
-      return null;
-    }
     if (data.message_type === 'control_msg') {
       return this.onControlMessage(data as ControlMessage);
-    }
-    if (data.message_type === 'transcript_msg') {
-      return this.onStreamMessage(data as TranscriptMessage);
     }
     if (data.message_type === 'data_op_msg') {
       return this.onDataOpMessage(data as DataOpMessage);
@@ -582,6 +607,9 @@ export class ConnectionManager extends EventEmitter {
     }
     if (data.message_type === 'privacy_mode_msg') {
       return this.onPrivacyModeMessage(data as PrivacyModeMessage);
+    }
+    if (data.message_type === 'tag_msg') {
+      return this.onTagMessage(data as TagMsg);
     }
     if (data.message_type === 'toplog_state_msg') {
       return this.onToplogStateMessage(data as ToplogStateMessage);
@@ -634,27 +662,20 @@ export class ConnectionManager extends EventEmitter {
     this.emit('on_toplog_state_msg', data);
   }
 
+  /** Unified event bus frame → the ws-bridge feeds it into the app EventBus. */
+  onTagMessage(data: TagMsg) {
+    this.emit('on_tag_msg', data);
+  }
+
   onUiCommandMessage(data: UiCommandMessage) {
     this.emit('on_ui_command', data);
   }
 
-  onBinMessage(data: ArrayBuffer) {
-    // print all the data in the buffer
-    // const byteArray = new Uint8Array(data);
-    // let byteString = '';
-    // for (let i = 0; i < byteArray.length; i++) {
-    //   byteString += byteArray[i].toString(16).padStart(2, '0') + ' ';
-    // }
-    this.emit('on_bin_msg', data);
-  }
 
   onControlMessage(data: ControlMessage) {
     this.emit('on_control_msg', data);
   }
 
-  onStreamMessage(data: TranscriptMessage) {
-    this.emit('on_stream_msg', data);
-  }
 
   private parseTypeId(rawTypeId: ITypeId): TypeId | null {
     try {
@@ -690,7 +711,19 @@ export class ConnectionManager extends EventEmitter {
       console.warn('Ignoring data_op message with invalid to_entity:', data.to_entity);
       return;
     }
-    this.emit('on_data_op', typeId.toString(), data.op, data.data);
+    // ``from_entity`` rides as a trailing 4th argument so the six existing
+    // 3-arg listeners are untouched (JS ignores extra args). It is only
+    // meaningful for the child_* ops, where ``to_entity`` is the parent and
+    // this carries the child that actually changed.
+    const fromEntity = data.from_entity ? this.parseTypeId(data.from_entity) : null;
+    const key = typeId.toString();
+    const instanceId = data.instance_id;
+    if (typeof instanceId === 'number' && Number.isSafeInteger(instanceId)) {
+      const previous = this.lastDataOpInstanceByEntity.get(key);
+      if (previous !== undefined && instanceId <= previous) return;
+      this.lastDataOpInstanceByEntity.set(key, instanceId);
+    }
+    this.emit('on_data_op', key, data.op, data.data, fromEntity?.toString() ?? null);
   }
   onOAuthMessage(data: OAuthMessage) {
     this.emit('on_oauth_msg', data);

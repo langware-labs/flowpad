@@ -1,3 +1,5 @@
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import type { Project } from '@sdk';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
@@ -21,7 +23,7 @@ export interface Scope {
   folderPath: string | null;
 }
 
-interface ScopeSelectionProps {
+export interface ScopeSelectionProps {
   scope: Scope;
   onScopeChange: (next: Scope) => void;
   harness: HarnessKind;
@@ -33,20 +35,39 @@ interface ScopeSelectionProps {
   onPickFolder: () => Promise<string | null>;
   /** Opens the project picker (currently OpenProjectComponent). */
   onOpenProjectPicker: () => void;
+  /**
+   * False when the type has only one on-disk destination, so the harness chips
+   * are inert (see `harnessAppliesTo`). Only SHARED assets — skill, agent —
+   * genuinely live in a per-harness folder; a whiteboard or a task mounts under
+   * `agentic-assets/` no matter which chip is lit, so an enabled chip would be
+   * promising a destination the backend never writes.
+   */
+  harnessApplies?: boolean;
+  /** Scope chips available for this asset type. Omitted means all scopes. */
+  allowedScopes?: readonly ScopeKind[];
 }
 
-const SCOPE_OPTIONS: ScopeBarOption<ScopeKind>[] = [
-  { value: 'user', label: 'User' },
-  { value: 'project', label: 'Project' },
-  { value: 'folder', label: 'Folder' },
+/* Both tables are module-level, so their wording is held as lazy `msg`
+ * descriptors and resolved with `t` inside the component — an eager macro out
+ * here would bind the language at import and never follow a locale switch.
+ * The harness NAMES (Claude Code, Codex, Copilot) stay literal: they are
+ * products, not words to translate. */
+const SCOPE_OPTIONS: { value: ScopeKind; label: MessageDescriptor }[] = [
+  { value: 'user', label: msg`User` },
+  { value: 'project', label: msg`Project` },
+  { value: 'folder', label: msg`Folder` },
 ];
 
-const HARNESS_OPTIONS: { value: HarnessKind; title: string; Icon: React.ComponentType<{ className?: string }> }[] = [
-  { value: 'all', title: 'All harnesses', Icon: Layers },
-  { value: 'claude', title: 'Claude Code', Icon: ClaudeIcon },
-  { value: 'codex', title: 'Codex', Icon: CodexIcon },
-  { value: 'copilot', title: 'Copilot', Icon: CopilotIcon },
-  { value: 'none', title: 'None (project root)', Icon: CircleSlash },
+const HARNESS_OPTIONS: {
+  value: HarnessKind;
+  title: MessageDescriptor;
+  Icon: React.ComponentType<{ className?: string }>;
+}[] = [
+  { value: 'all', title: msg`All harnesses`, Icon: Layers },
+  { value: 'claude', title: msg`Claude Code`, Icon: ClaudeIcon },
+  { value: 'codex', title: msg`Codex`, Icon: CodexIcon },
+  { value: 'copilot', title: msg`Copilot`, Icon: CopilotIcon },
+  { value: 'none', title: msg`None (project root)`, Icon: CircleSlash },
 ];
 
 export function ScopeSelection({
@@ -58,15 +79,23 @@ export function ScopeSelection({
   onPathChange,
   onPickFolder,
   onOpenProjectPicker,
+  harnessApplies = true,
+  allowedScopes,
 }: ScopeSelectionProps) {
   const { t } = useLingui();
+  // Resolved here rather than in the table: `ScopeBar` wants plain strings, and
+  // resolving at render is what lets the chips re-label on a locale switch.
+  const scopeOptions: ScopeBarOption<ScopeKind>[] = (
+    allowedScopes ? SCOPE_OPTIONS.filter((option) => allowedScopes.includes(option.value)) : SCOPE_OPTIONS
+  ).map(({ value, label }) => ({ value, label: t(label) }));
 
   const handleScopeChange = useCallback(
     (next: ScopeKind) => {
       if (next === scope.kind) return;
+      if (allowedScopes && !allowedScopes.includes(next)) return;
       onScopeChange({ ...scope, kind: next });
     },
-    [scope, onScopeChange],
+    [allowedScopes, scope, onScopeChange],
   );
 
   const handleBrowseFolder = useCallback(async () => {
@@ -77,12 +106,12 @@ export function ScopeSelection({
   }, [onPickFolder, onScopeChange, scope]);
 
   const projectLabel = scope.project?.displayName ?? scope.project?.name ?? null;
-  const harnessDisabled = scope.kind === 'folder';
+  const harnessDisabled = scope.kind === 'folder' || !harnessApplies;
 
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
-        <ScopeBar value={scope.kind} options={SCOPE_OPTIONS} onChange={handleScopeChange} />
+        <ScopeBar value={scope.kind} options={scopeOptions} onChange={handleScopeChange} />
         {scope.kind === 'project' && (
           <Button
             variant="outline"
@@ -111,9 +140,12 @@ export function ScopeSelection({
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground"><Trans>Harness path</Trans></span>
+        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          <Trans>Harness path</Trans>
+        </span>
         <div className="flex items-center gap-1" role="radiogroup" aria-label={t`Harness path`}>
-          {HARNESS_OPTIONS.map(({ value, title, Icon }) => {
+          {HARNESS_OPTIONS.map(({ value, title: titleMsg, Icon }) => {
+            const title = t(titleMsg);
             const active = value === harness;
             return (
               <button

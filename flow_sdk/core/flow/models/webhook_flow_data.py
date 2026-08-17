@@ -5,10 +5,11 @@ Consolidated to 2 webhook types:
 - hook_op: everything else (entity CRUD, events, logs, invocations)
 """
 
-from flow_sdk._compat import StrEnum
 from typing import Literal, Optional
 
 from pydantic import BaseModel
+
+from flow_sdk._compat import StrEnum
 
 
 class WebhookType(StrEnum):
@@ -23,6 +24,7 @@ class AgentHookData(BaseModel):
 
     webhook_type: Literal["agent_hook"] = "agent_hook"
     agent_hook_id: Optional[str] = None
+    agentic_process_id: Optional[str] = None
     hook_data: dict
     hook_entry_id: Optional[str] = None
     hook_metadata: Optional[dict] = None

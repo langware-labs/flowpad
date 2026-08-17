@@ -15,10 +15,9 @@
  */
 import { render, fireEvent, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ContextEntitiesEnum, dataContext, dataManager, Project, Tab, type TabRow, TypeId } from '@sdk';
+import { ContextEntitiesEnum, dataContext, dataManager, Project, Tab, tabManager, type TabRow, TypeId } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { applyAllTabRows } from '@src/tabs/all-tabs-store';
-import { resetTabLifecycleForTests } from '@src/tabs/tab-lifecycle';
+import { resetTabContentLifecycleForTests } from '@src/tabs/tab-content-lifecycle';
 
 const PROJ_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01';
 const SHELL_A = '5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -32,6 +31,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
+  useCurrentDock: () => h.currentDock,
   useDockNavigation: () => ({
     navigation: { openDock: h.openDock, openDockInWindow: h.openDockInWindow, closeDock: h.closeDock },
     currentDock: h.currentDock,
@@ -84,12 +84,9 @@ function shellTab(shellId: string, name: string): TabRow {
 async function setupStrip(): Promise<{ tabA: TabRow; tabB: TabRow }> {
   const tabA = shellTab(SHELL_A, 'Tab A');
   const tabB = shellTab(SHELL_B, 'Tab B');
-  applyAllTabRows([tabA, tabB]);
+  tabManager.adoptGlobal([tabA, tabB]);
   dataManager.updateEntityFromJson<Project>(new Project({ id: PROJ_A, name: 'Project A' }) as never);
-  await dataContext.setContextEntityTypeId(
-    ContextEntitiesEnum.CurrentProjectTypeId,
-    new TypeId(Project.type, PROJ_A),
-  );
+  await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, new TypeId(Project.type, PROJ_A));
   h.currentDock = DockPointer.fromTabHash(tabA.pointer);
   return { tabA, tabB };
 }
@@ -97,8 +94,8 @@ async function setupStrip(): Promise<{ tabA: TabRow; tabB: TabRow }> {
 afterEach(async () => {
   vi.clearAllMocks();
   vi.restoreAllMocks();
-  resetTabLifecycleForTests();
-  applyAllTabRows([]);
+  resetTabContentLifecycleForTests();
+  tabManager.adoptGlobal([]);
   await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
 });
 

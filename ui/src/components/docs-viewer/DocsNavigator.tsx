@@ -1,4 +1,5 @@
-import { ActionInfo, AgenticProcess, FSItem, TypeId } from '@sdk';
+import { t } from '@lingui/core/macro';
+import { ActionInfo, AgenticProcess, FSEntry, TypeId } from '@sdk';
 import { NavigatorPanel } from '@src/components/navigator-panel/NavigatorPanel';
 import type { NavigatorDescriptor } from '@src/components/navigator-panel/types';
 import { flatEntityRoots } from '@src/components/browseable-tree/adapters/flatEntityRoot';
@@ -19,10 +20,7 @@ export function DocsNavigator() {
   // No process in the URL → no docs folder to browse. Guard the TypeId ctor,
   // which throws "Invalid typeId" on an undefined id (would crash the shell
   // since this navigator mounts at the page root).
-  const flowTypeId = useMemo(
-    () => (processId ? new TypeId(AgenticProcess.type, processId) : null),
-    [processId],
-  );
+  const flowTypeId = useMemo(() => (processId ? new TypeId(AgenticProcess.type, processId) : null), [processId]);
   const { navigation, currentDock } = useDockNavigation();
 
   const browseDocsActionInfo = useMemo(() => {
@@ -37,7 +35,7 @@ export function DocsNavigator() {
     isLoading,
     error,
     refetch,
-  } = useAction<Required<Pick<FSItem, 'vfs_abs_path' | 'display_name' | 'is_dir'>>[]>(browseDocsActionInfo, {
+  } = useAction<Required<Pick<FSEntry, 'vfs_abs_path' | 'display_name' | 'is_dir'>>[]>(browseDocsActionInfo, {
     retry: false,
   });
 
@@ -61,14 +59,14 @@ export function DocsNavigator() {
       id: 'docs',
       roots,
       isLoading,
-      search: { recordTypes: ['markdown'], placeholder: 'Search docs…' },
+      search: { recordTypes: ['markdown'], placeholder: t`Search docs…` },
       header: {
-        title: 'Documentation',
+        title: t`Documentation`,
         toolbar: [
           {
             id: 'refresh',
             icon: <RefreshCw />,
-            label: 'Refresh docs',
+            label: t`Refresh docs`,
             run: () => void refetch(),
           },
         ],

@@ -4,7 +4,7 @@
  * Alice (runner, real browser).
  *
  *   1. Bob creates the "find me a product" skill and shares it with Alice (SDK).
- *   2. Alice accepts, opens the conversation, downloads it (staged chip), and
+ *   2. Alice receives it, opens the conversation, downloads it (staged chip), and
  *      clicks the RUN icon on the chip.
  *   3. A Vibe process opens; the skill is installed into the conversation
  *      project and run BY NAME (`run the skill <name>`).
@@ -20,7 +20,7 @@
  *   - a settled frontend (the concurrent project-home/context-folders refactor
  *     must land first — a churning tree yields false failures).
  *
- * The SDK share → accept → stage → install legs are already proven by
+ * The SDK share → receive → stage → install legs are already proven by
  * skill_share_two_client.test.ts; the install-then-run-by-name wiring is
  * unit-covered by tests/unit/use-run-received-skill.test.ts. This test covers
  * the NEW browser run surface; the mcp-ui selectors are reused verbatim from
@@ -33,13 +33,12 @@ import type { Browser } from 'playwright';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { testEntityName, trackForCleanup } from '../_cleanup';
 import { hubAvailable } from './_hub';
-import { pollUntil } from './_matrix';
 import {
   HUB_INST_1 as AUTHOR_INSTANCE,
   HUB_INST_2 as RUNNER_INSTANCE,
-  findPendingInvitation,
   getInstance,
   instanceAvailable,
+  syncAssignedConversation,
   type ResolvedInstance,
 } from './_instances';
 import { launchBrowser, openInstancePage, type InstancePage } from './_browser';
@@ -54,7 +53,10 @@ const post = (apiUrl: string, p: string, body?: unknown) =>
 // Bob's skill: the 4 pasted steps + two flowpad-native nudges so the run is
 // deterministic (ask via MCP-UI, present via `flow show`). Frontmatter `name`
 // drives `run the skill find-me-a-product`.
-const SKILL_NAME = 'find-me-a-product';
+// The receiver installs into a long-lived cycle project. A fixed folder name
+// collides with an earlier run's installed copy even though this run minted a
+// fresh entity id, so make the on-disk skill name cycle-unique.
+const SKILL_NAME = testEntityName('find-me-a-product');
 // The skill body (Bob's 4 steps + two flowpad-native nudges so the run is
 // deterministic). Frontmatter `id` is stamped from the created entity so the
 // on-disk SKILL.md stays the same entity the share bundle carries.
@@ -142,15 +144,10 @@ describe('run a received skill in a Vibe MCP-UI session', () => {
     await post(bob.apiUrl, `/graph/flow_message/${fmId}/upload_body`, {});
     step(`shared fm=${fmId?.slice(0, 8)}`);
 
-    // 2. Alice accepts the invitation (SDK), then opens the conversation in her
-    //    real browser and downloads the bundle → staged chip.
-    const invitation = await pollUntil(
-      () => findPendingInvitation(alice, conv.id),
-      20_000,
-      'pending invitation on dev-2',
-    );
-    await alice.sdk.acceptInvitation({ invitation_id: invitation.id! });
-    step('alice accepted invitation');
+    // 2. Alice synchronizes the immediate assignment, then opens the conversation
+    //    in her real browser and downloads the bundle → staged chip.
+    await syncAssignedConversation(alice, conv.id);
+    step('alice synchronized assignment');
 
     const page = alicePage.page;
     await page.goto(`${alicePage.feUrl}/dock/conversation/${conv.id}?viewMode=advanced`, {
@@ -158,15 +155,26 @@ describe('run a received skill in a Vibe MCP-UI session', () => {
     });
     step('alice opened conversation');
     const download = page.getByTestId('download-attachments-button');
-    if (await download.isVisible({ timeout: 30_000 }).catch(() => false)) {
-      await download.click({ force: true }).catch(() => undefined);
+    const runIcon = page.getByTestId('skill-run-icon').first();
+    // Depending on the assignment materialization path, the first
+    // browser render legitimately starts in either state:
+    //   • remote body → Download button; the user click stages the bundle;
+    //   • body already staged by assignment sync → the Run chip is present directly.
+    // Race those two production surfaces inside the click's existing
+    // actionability window. An instantaneous isVisible probe would race the
+    // conversation render and misclassify the required branch.
+    const firstSurface = await Promise.race([
+      download.waitFor({ state: 'visible' }).then(() => 'download' as const),
+      runIcon.waitFor({ state: 'visible' }).then(() => 'staged' as const),
+    ]);
+    if (firstSurface === 'download') {
+      await download.click({ force: true });
       step('clicked download');
     } else {
-      step('no download button (already staged?)');
+      step('assignment sync already staged the bundle');
     }
 
     // 3. The run icon appears on the staged skill chip → click it.
-    const runIcon = page.getByTestId('skill-run-icon').first();
     await runIcon.waitFor({ state: 'visible', timeout: 30_000 });
     step('run icon visible');
     await runIcon.click({ force: true });

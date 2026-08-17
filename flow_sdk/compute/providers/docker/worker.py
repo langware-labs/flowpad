@@ -14,6 +14,7 @@ Env vars set by `flow compute connect`:
   FLOW_CONNECT_KEY shared secret for the handshake.
   FLOW_OUTER_URL   WebSocket URL of the outer server.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -25,6 +26,7 @@ import signal
 import sys
 import time
 import uuid
+from pathlib import Path
 
 from flow_sdk.api.messages import PtyOutputMessage, WSMessageType
 
@@ -37,11 +39,27 @@ HANDSHAKE_CONNECTED = "compute_connected"
 HANDSHAKE_ERROR = "error"
 
 
+def _signal_connected(ready_path: str, connected_path: str) -> None:
+    """Publish the completed handshake to the provisioning CLI.
+
+    The regular marker lets the detached supervisor distinguish a later worker
+    exit from a pre-handshake failure. The ready path is normally a FIFO, so
+    this write releases exactly the ``flow compute connect --start`` caller
+    waiting for provider registration.
+    """
+    if not ready_path or not connected_path:
+        return
+    Path(connected_path).write_text("connected\n", encoding="utf-8")
+    Path(ready_path).write_text("ready\n", encoding="utf-8")
+
+
 async def _run_worker(
     machine_id: str,
     secret: str,
     outer_url: str,
     container_name: str = "",
+    ready_path: str = "",
+    connected_path: str = "",
 ) -> None:
     """Connect to the outer server and serve `rest_api_msg` forever."""
     try:
@@ -61,12 +79,16 @@ async def _run_worker(
         try:
             service_log.info(f"[worker] connecting to {outer_url} (machine_id={machine_id[:8]})")
             async with websockets.connect(outer_url) as ws:
-                await ws.send(json.dumps({
-                    "type": HANDSHAKE_CONNECT,
-                    "machine_id": machine_id,
-                    "secret": secret,
-                    "container_name": container_name,
-                }))
+                await ws.send(
+                    json.dumps(
+                        {
+                            "type": HANDSHAKE_CONNECT,
+                            "machine_id": machine_id,
+                            "secret": secret,
+                            "container_name": container_name,
+                        }
+                    )
+                )
 
                 reply = json.loads(await ws.recv())
                 if reply.get("type") == HANDSHAKE_ERROR:
@@ -75,7 +97,8 @@ async def _run_worker(
                     backoff = min(backoff * 2, 30)
                     continue
 
-                service_log.info(f"[worker] connected to outer server")
+                service_log.info("[worker] connected to outer server")
+                _signal_connected(ready_path, connected_path)
                 backoff = 1.0
 
                 async for raw in ws:
@@ -90,20 +113,28 @@ async def _run_worker(
                     request_id = frame.get("message_id")
                     try:
                         content = await _dispatch(provider, pn_id, pty_sessions, ws, frame)
-                        await ws.send(json.dumps({
-                            "message_type": WSMessageType.RESPONSE_MSG.value,
-                            "message_id": uuid.uuid4().hex,
-                            "response_message_id": request_id,
-                            "content": content,
-                        }))
+                        await ws.send(
+                            json.dumps(
+                                {
+                                    "message_type": WSMessageType.RESPONSE_MSG.value,
+                                    "message_id": uuid.uuid4().hex,
+                                    "response_message_id": request_id,
+                                    "content": content,
+                                }
+                            )
+                        )
                     except Exception as e:
                         service_log.warning(f"[worker] dispatch error: {e}")
-                        await ws.send(json.dumps({
-                            "message_type": WSMessageType.RESPONSE_MSG.value,
-                            "message_id": uuid.uuid4().hex,
-                            "response_message_id": request_id,
-                            "error": str(e),
-                        }))
+                        await ws.send(
+                            json.dumps(
+                                {
+                                    "message_type": WSMessageType.RESPONSE_MSG.value,
+                                    "message_id": uuid.uuid4().hex,
+                                    "response_message_id": request_id,
+                                    "error": str(e),
+                                }
+                            )
+                        )
 
         except (ConnectionRefusedError, OSError) as e:
             service_log.warning(f"[worker] connection failed: {e}; retry in {backoff:.0f}s")
@@ -167,8 +198,11 @@ async def _dispatch(
             raise RuntimeError(f"PTY session not found: {shell_id}")
         data = base64.b64decode(body.get("data", ""))
         await provider.send_pty_input(
-            info["pn_id"], shell_id, data,
-            body.get("cols", 80), body.get("rows", 24),
+            info["pn_id"],
+            shell_id,
+            data,
+            body.get("cols", 80),
+            body.get("rows", 24),
         )
         return None
 
@@ -177,8 +211,10 @@ async def _dispatch(
         if info is None:
             raise RuntimeError(f"PTY session not found: {shell_id}")
         await provider.resize_pty(
-            info["pn_id"], shell_id,
-            body.get("cols", 80), body.get("rows", 24),
+            info["pn_id"],
+            shell_id,
+            body.get("cols", 80),
+            body.get("rows", 24),
         )
         return None
 
@@ -198,6 +234,8 @@ def run() -> None:
     secret = os.environ.get("FLOW_CONNECT_KEY", "")
     outer_url = os.environ.get("FLOW_OUTER_URL", "")
     container_name = os.environ.get("CONTAINER_NAME", os.environ.get("HOSTNAME", ""))
+    ready_path = os.environ.get("FLOW_WORKER_READY_PATH", "")
+    connected_path = os.environ.get("FLOW_WORKER_CONNECTED_PATH", "")
 
     if not machine_id or not secret or not outer_url:
         print(
@@ -223,7 +261,16 @@ def run() -> None:
     signal.signal(signal.SIGINT, _shutdown)
 
     try:
-        loop.run_until_complete(_run_worker(machine_id, secret, outer_url, container_name))
+        loop.run_until_complete(
+            _run_worker(
+                machine_id,
+                secret,
+                outer_url,
+                container_name,
+                ready_path,
+                connected_path,
+            )
+        )
     except (KeyboardInterrupt, asyncio.CancelledError):
         pass
     finally:

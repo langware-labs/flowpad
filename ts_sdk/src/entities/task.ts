@@ -1,14 +1,38 @@
-import { APIEntity, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { dataContext } from '../FlowSync/context';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
+import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { IEntity } from '../IEntity';
 import type { GitOrigin } from '../models/GitOrigin';
+import { normalizeEmail } from '../utils/utils';
+import type { ConversationParticipant } from './conversation';
+import { createAndSendConversation } from './conversation-send';
 
 export enum TaskKind {
   STANDARD = 'standard',
   GROUP = 'group',
+}
+
+export interface TaskAssignOptions {
+  /** Rides the invitation email, and the notification message when sent. */
+  message?: string;
+  /** Session transcript to send with the notification: the file plus the
+   *  session it came from, so the chip and the bytes can't drift apart. */
+  transcript?: { files: File[]; sessionId?: string };
+  /** Skip the notification conversation. The assignment itself still lands —
+   *  the task and its invitation email do not depend on it. Default: send. */
+  notify?: boolean;
+  /** Cloud-login gate for the notification send (UI passes useCloudLoginGate). */
+  ensureCloudLogin?: () => Promise<{ ok: true } | { ok: false; error: string }>;
+}
+
+export interface TaskAssignResult {
+  /** Notification conversation id; null when not sent. */
+  conversationId: string | null;
+  /** True when the assignee is the caller — a local stamp, nothing delivered. */
+  self: boolean;
 }
 
 export interface ITask extends IEntity {
@@ -19,10 +43,10 @@ export interface ITask extends IEntity {
   status?: string;
   /** TaskKind: 'group' = overview task owning one member task per group member. */
   kind?: string;
+  /** Contacts-group name a group task was assigned to — shown as "Owner: <group_name>". */
+  group_name?: string | null;
   /** Group-task parent pointer; '' = top-level. Children own only their status. */
   parent_id?: string;
-  /** The member's deliverable (repo / PR / doc / app URL); rides hub reflection. */
-  submission_url?: string | null;
   last_viewed_at?: Date;
   due_at?: Date;
   start_date?: string | null;
@@ -83,8 +107,8 @@ export class Task extends APIEntity<Task> implements ITask {
   description?: string;
   status?: string;
   kind?: string;
+  group_name?: string | null;
   parent_id?: string;
-  submission_url?: string | null;
   last_viewed_at?: Date;
   due_at?: Date;
   start_date?: string | null;
@@ -141,8 +165,8 @@ export class Task extends APIEntity<Task> implements ITask {
     this.description = entity.description;
     this.status = entity.status;
     this.kind = entity.kind;
+    this.group_name = entity.group_name;
     this.parent_id = entity.parent_id;
-    this.submission_url = entity.submission_url;
     this.last_viewed_at = entity.last_viewed_at;
     this.due_at = entity.due_at;
     this.start_date = entity.start_date;
@@ -268,6 +292,69 @@ export class Task extends APIEntity<Task> implements ITask {
           },
         })
       : '';
+  }
+
+  /**
+   * Give this task to someone — the whole assignment in one call.
+   *
+   * Assignment is a SHARE: the backend `assign-task` action puts THIS task on the
+   * hub and grants the assignee `editor` on it, so it simply appears on their
+   * machine (the hub grants an internal invite's roles at invite time — no accept
+   * step). There is no second "member task": that shape belongs to the
+   * contacts-group fan-out, where every member needs their own status. Their
+   * status changes reflect back automatically, scoped to the fields an assignee
+   * owns (`TypeInfo.assignee_owned_fields`), so they can move the work along
+   * without rewriting the ask.
+   *
+   * Then, unless `notify: false`, a notification conversation goes out carrying
+   * the task chip and any `files` (pass `transcript` to include the session).
+   *
+   * `person` may be a bare email or a picker participant (member / contact /
+   * free-form email). Assigning to yourself only stamps `assignee` locally.
+   */
+  async assign(
+    person: ConversationParticipant | string,
+    opts: TaskAssignOptions = {},
+  ): Promise<TaskAssignResult> {
+    const participant: ConversationParticipant =
+      typeof person === 'string' ? { email: person } : person;
+    const email = normalizeEmail(participant.email);
+    if (!email) throw new Error('Task.assign: a recipient email is required');
+
+    const info = new ActionInfo('assign-task', Task.type, this.id, 'POST');
+    info.bodyParameters = {
+      email,
+      ...(participant.name ? { name: participant.name } : {}),
+      ...(opts.message?.trim() ? { message: opts.message.trim() } : {}),
+    };
+    const { self } = await dataManager.callAction<
+      Record<string, unknown>,
+      { self: boolean; assignee: string }
+    >(info);
+
+    this.assignee = email;
+    if (self || opts.notify === false) return { conversationId: null, self };
+
+    // One ask, one task chip (plus the transcript when the caller attached one).
+    const chips = [
+      this.typeId.toString(),
+      opts.transcript?.sessionId && `claude_session-${opts.transcript.sessionId}`,
+    ].filter(Boolean) as string[];
+    const sent = await createAndSendConversation(
+      {
+        project_id: null, // cross-user bundle conversation
+        participants: [participant],
+        title: this.title || 'Task',
+      },
+      {
+        text: (opts.message ?? '').trim(),
+        ...(opts.transcript?.files.length ? { files: opts.transcript.files } : {}),
+        assetReferences: chips,
+        sharedContextEntities: chips,
+      },
+      opts.ensureCloudLogin ? { ensureCloudLogin: opts.ensureCloudLogin } : undefined,
+    );
+    return { conversationId: sent.conversation_id, self };
   }
 
   /**

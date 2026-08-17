@@ -1,71 +1,42 @@
-"""Walker + extractor + id mint for DECK records.
+"""Extractor + id mint for DECK records.
 
-A deck is a generated presentation — a folder under ``assets/decks/`` containing
+A deck is a generated presentation — a folder under ``agentic-assets/deck/`` containing
 a ``deck.json`` build record (the walker's marker file) and the assembled,
 self-contained ``<name>.html``:
 
-    assets/decks/<slug>/
-      deck.json          # {"title", "template": "../../deck-templates/<name>", "slides": [...]}
+    agentic-assets/deck/<slug>/
+      deck.json          # {"title", "template": "../../deck_template/<name>", "slides": [...]}
       <name>.html        # self-contained Reveal deck (inlined CSS/JS + base64 media)
 
 Provenance: the deck records which ``deck_template`` it was built from. The
 extractor resolves ``deck.json["template"]`` (a relative path) to the sibling
-template folder and reads that folder's ``.flow/id`` capsule (read-only) — so a
-deck carries a ``template_ref`` edge to its template once the template is
-indexed (else ``None``).
+template folder and asks the deck-template ``TypeInfo`` for its existing
+filesystem identity (read-only) — so a deck carries a ``template_ref`` edge to
+its template once an identity exists (else ``None``).
 
 Type metadata lives in ``flow_sdk/schema/type_info/deck_type_info.py``; this
-module provides the walker + slot functions only. Modeled on
+module provides the slot functions only. Modeled on
 ``functions/deck_template.py``.
 """
 from __future__ import annotations
 
 import json
 import uuid
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
-    folder_capsule_gen_id,
     read_folder_capsule_id,
 )
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 MANIFEST = "deck.json"
 
 
-# ── walker ────────────────────────────────────────────────────────────────────
-
-def deck_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
-) -> list[FSRef]:
-    """Emit one DECK FSRef per ``assets/decks/<slug>/`` folder containing a
-    ``deck.json`` build record."""
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        root = Path(node.path) / "assets" / "decks"
-        if not root.is_dir():
-            continue
-        for entry in sorted(root.iterdir()):
-            if not entry.is_dir():
-                continue
-            if not (entry / MANIFEST).is_file():
-                continue
-            key = str(entry.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(entry, record_type=RecordType.DECK, parent=node))
-    return out
-
-
-# ── id helpers ────────────────────────────────────────────────────────────────
+# ── manifest + id helpers ──────────────────────────────────────────────────────
 
 def _load_manifest(deck_dir: Path) -> dict[str, Any]:
     """Read deck.json as a flat dict; ``{}`` when absent, malformed, or non-dict.
@@ -86,18 +57,14 @@ def _deck_id_from_path(path: Path) -> str:
     return mint_uuid(f"{RecordType.DECK}:{path.resolve()}", namespace=uuid.NAMESPACE_DNS)
 
 
-def deck_gen_id(ref: FSRef) -> str:
-    """Resolve a deck's id. Idempotent.
+def deck_id_from_folder(ref: FSRef | Path) -> object | None:
+    path = Path(getattr(ref, "_path", ref))
+    cap = read_folder_capsule_id(path)
+    if cap:
+        return cap
+    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
 
-    Precedence: the `.flow/id` capsule → a VALID `deck.json` `id` (adopted +
-    backfilled) → a fresh random **v4** into the capsule. uuid5(path) is the
-    read-only fallback.
-    """
-    path = ref._path
-    if not path.is_dir():
-        return _deck_id_from_path(path)
-    manifest = _load_manifest(path)
-    return folder_capsule_gen_id(path, manifest.get("id"))
+    return adopt_entity_id(_load_manifest(path).get("id"))
 
 
 # ── extractor ─────────────────────────────────────────────────────────────────
@@ -121,7 +88,7 @@ def _find_html(path: Path) -> str:
 
 def _resolve_template_ref(deck_dir: Path, manifest: dict[str, Any]) -> str | None:
     """Resolve deck.json ``template`` (relative path) → the source deck_template's
-    entity id, by reading the sibling template folder's ``.flow/id`` capsule.
+    entity id through the deck-template type's identity backend.
 
     Read-only: returns ``None`` when there's no template ref, the folder is
     missing, or the template hasn't been indexed yet (no capsule). Never mints —
@@ -130,13 +97,61 @@ def _resolve_template_ref(deck_dir: Path, manifest: dict[str, Any]) -> str | Non
     rel = manifest.get("template")
     if not isinstance(rel, str) or not rel:
         return None
+    tpl_dir = _resolve_template_dir(deck_dir, rel)
+    if tpl_dir is None:
+        return None
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(str(RecordType.DECK_TEMPLATE))
+    if info is None:
+        return None
     try:
-        tpl_dir = (deck_dir / rel).resolve()
+        return info.mint_entity_id(FSRef(tpl_dir, record_type=RecordType.DECK_TEMPLATE))
+    except Exception:
+        return None
+
+
+def _resolve_template_dir(deck_dir: Path, rel: str) -> Path | None:
+    """The template folder ``rel`` points at, by relative path then by NAME.
+
+    ``deck.json``'s ``template`` is a path relative to the deck folder, which made
+    the provenance edge brittle: the repo-assets move retargeted decks from
+    ``assets/decks/<slug>/`` to ``agentic-assets/deck/<slug>/``, so every existing
+    deck's ``../../deck-templates/<name>`` now resolves to nothing and the edge
+    would silently vanish.
+
+    So: try the literal relative path, then fall back to the template family's
+    canonical mount plus the ref's leaf name. Migrated decks self-heal without a
+    manifest rewrite, and a hand-moved template keeps its edge.
+    """
+    try:
+        literal = (deck_dir / rel).resolve()
+        if literal.is_dir():
+            return literal
     except OSError:
+        pass
+
+    from flow_sdk.fs_store.placement import AGENTIC_ASSETS_DIR  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    leaf = PurePosixPath(rel.replace("\\", "/")).name
+    if not leaf or leaf in (".", ".."):
         return None
-    if not tpl_dir.is_dir():
+    # The template's mount comes from ITS OWN registered layout, so a change to
+    # deck_template's asset_class/family is picked up here instead of drifting.
+    tpl_info = SchemaRegistry.get(str(RecordType.DECK_TEMPLATE))
+    subdir = getattr(tpl_info, "main_subdir", None) if tpl_info else None
+    if not subdir:
         return None
-    return read_folder_capsule_id(tpl_dir)
+    # Find the scope root by walking UP to the agentic-assets container rather
+    # than indexing a fixed number of parents: ``parents[2]`` silently encodes
+    # "<root>/agentic-assets/deck/<slug>" and breaks the moment nesting changes
+    # (repo assets nest recursively — see repo_assets_fn).
+    root = next((p.parent for p in deck_dir.parents if p.name == AGENTIC_ASSETS_DIR), None)
+    if root is None:
+        return None
+    candidate = root / subdir / leaf
+    return candidate if candidate.is_dir() else None
 
 
 def _slide_text(manifest: dict[str, Any]) -> str:
@@ -159,14 +174,12 @@ def _slide_text(manifest: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
-def extract_deck(ref: FSRef) -> list[FSRecord]:
+def extract_deck(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a deck folder into a single FSRecord with denormalized build data."""
     path = ref._path
     if not path.is_dir() or not (path / MANIFEST).is_file():
         return []
     manifest = _load_manifest(path)
-
-    deck_id = read_folder_capsule_id(path) or _deck_id_from_path(path)
 
     slides = manifest.get("slides")
     num_slides = len(slides) if isinstance(slides, list) else 0
@@ -188,7 +201,7 @@ def extract_deck(ref: FSRef) -> list[FSRecord]:
 
     rec_kwargs: dict[str, Any] = {
         "type": RecordType.DECK,
-        "id": deck_id,
+        "id": resolved_id,
         "name": name,
         "status": "active",
         "content": content,

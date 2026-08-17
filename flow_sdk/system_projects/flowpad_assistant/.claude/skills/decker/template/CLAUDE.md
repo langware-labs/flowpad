@@ -9,6 +9,7 @@ Full agent instructions and the contracts you must preserve live in
 [AGENTS.md](AGENTS.md) — read it before changing anything.
 
 Quick facts: layouts are isolated HTML fragments in `layouts/`; all visuals
-come from `common/tokens.css` + `common/theme.css` (no Reveal theme CSS);
-decks are assembled into ONE self-contained HTML file via
-`python3 tools/build_deck.py <deck.json> -o <out.html>`.
+come from `common/tokens.css` + `common/theme.css` + `common/style.css` (no
+Reveal theme CSS), where tokens+style are applied from the decker skill's
+`styles/<slug>/` catalog; decks are assembled into ONE self-contained HTML
+file via `python3 tools/build_deck.py <deck.json> -o <out.html>`.

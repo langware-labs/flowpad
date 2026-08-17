@@ -20,7 +20,7 @@ inside ``_restart_snapshot``.
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
-from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexAgentOptions
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.flowpad_types.enums.worker_enums import WorkerType
 
@@ -81,8 +81,8 @@ def test_every_worker_type_member_is_snapshot_stable(form_a, form_b):
 
 
 def test_codex_snapshot_treats_null_and_missing_optional_cli_keys_the_same():
-    """Persisted cli_config may omit null fields present in CodexCliOptions JSON."""
-    cli_config_with_nulls = CodexCliOptions(
+    """Persisted cli_config may omit null fields present in CodexAgentOptions JSON."""
+    cli_config_with_nulls = CodexAgentOptions(
         workdir=None,
         session_id=None,
         model=None,

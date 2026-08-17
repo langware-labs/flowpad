@@ -1,18 +1,12 @@
-import { dataManager, FlowData, Skill, systemTools } from '@sdk';
+import { FlowData } from '@sdk';
+import { basename } from '@src/components/asset-manager/asset-row-helpers';
 import { MarkdownView } from '@src/components/markdown-view';
 import { Button } from '@src/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@src/components/ui/dialog';
-import { useDockNavigation } from '@src/navigation';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { useLingui } from '@lingui/react/macro';
-import { notify } from '@src/notifications/notify';
 import { Loader2, Pencil, Sparkles } from 'lucide-react';
 import { useState } from 'react';
+import { useOpenSkill } from './useOpenSkill';
 
 /**
  * Framework-injected (`isMeta`) user lines — skill bodies, command expansions,
@@ -21,37 +15,30 @@ import { useState } from 'react';
  * the chip previews the skill in a modal (chat stays clean); the modal's "Open
  * external" button does the full navigation to the skill's page and closes.
  */
-export function MetaMessageChip({ flowData }: { flowData: FlowData }) {
+export function MetaMessageChip({
+  flowData,
+  skillName: structuredName,
+}: {
+  flowData: FlowData;
+  /**
+   * The skill name lifted off the dropped `Skill` TOOL_CALL by the turn
+   * grouper — the structured signal, present on live frames and replays alike.
+   * The `Base directory…` regex below is only the fallback for sessions
+   * recorded before the backend carried it.
+   */
+  skillName?: string;
+}) {
   const { t } = useLingui();
   const content = flowData.content ?? '';
   const skillDir = parseSkillDir(content);
-  const skillName = skillDir ? skillDir.replace(/\/+$/, '').split('/').pop() : null;
+  const skillName = structuredName ?? (skillDir ? basename(skillDir) : null);
   const label = skillName ? t`Using skill: ${skillName}` : t`System note`;
-  const { navigation } = useDockNavigation();
   const [open, setOpen] = useState(false);
-  const [opening, setOpening] = useState(false);
+  const { openSkill, opening } = useOpenSkill();
 
   const openEditor = async () => {
-    if (!skillDir || opening) return;
-    setOpening(true);
-    try {
-      const row = await systemTools.discoverByPath(Skill.type, skillDir);
-      if (!row) {
-        notify.error({ title: t`Skill not found`, message: skillName ?? skillDir });
-        return;
-      }
-      const rowT = row as Record<string, unknown> & { type?: string };
-      if (!rowT.type) rowT.type = Skill.type;
-      const skill = dataManager.updateEntityFromJson<Skill>(rowT as never);
-      if (skill) {
-        navigation.openDock(skill.editorDockPointer);
-        setOpen(false);
-      }
-    } catch (err) {
-      notify.error({ title: t`Could not open skill`, message: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setOpening(false);
-    }
+    if (!skillDir) return;
+    if (await openSkill(skillDir)) setOpen(false);
   };
 
   return (
@@ -82,7 +69,7 @@ export function MetaMessageChip({ flowData }: { flowData: FlowData }) {
                 {label}
               </DialogTitle>
             </DialogHeader>
-            <div className="min-h-0 flex-1 overflow-y-auto pr-1 text-[14px] leading-7">
+            <div className="min-h-0 flex-1 overflow-y-auto pe-1 text-[14px] leading-7">
               <MarkdownView value={skillBody(content)} compact />
             </div>
             <DialogFooter>

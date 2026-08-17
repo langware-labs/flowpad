@@ -5,9 +5,9 @@ action the normal way — ``dataManager.callAction(new ActionInfo('report', null
 null, 'POST'))`` → ``/api/v1/graph/report`` — with ``{diagnosis_id}`` in the body.
 
 It loads the ``flowpad_diagnosis`` record, pulls out the interesting parts (what
-happened, the user's own words, who/when/which OS), and hands a ready-to-send
-payload to the **hub**, which holds the SendGrid key and sends the mail to
-``diagnosis@langware.ai``.
+happened, the user's own words, and the who/when/which-OS snapshot the reporter
+stamped onto the record), and hands a ready-to-send payload to the **hub**, which
+holds the SendGrid key and sends the mail to ``diagnosis@langware.ai``.
 
 Why relay through the hub instead of calling SendGrid here: this backend runs
 **on the user's machine** (pip-installed desktop app), so any API key shipped with
@@ -16,17 +16,17 @@ action just POSTs the report to an **unauthenticated** hub endpoint (mirroring t
 public ``GET /health/version`` probe), so it works whether or not the user is
 cloud-logged-in.
 """
+
 from __future__ import annotations
 
 import logging
-import platform as _platform
 from datetime import datetime, timezone
 
 import httpx
 
 from flow_sdk.actions.action_registry import action
 from flow_sdk.request_context.methods import get_current_request_info
-from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse, ApiFailResponse
+from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
 logger = logging.getLogger(__name__)
 
@@ -79,17 +79,11 @@ async def report() -> ApiResponse:
     if diag is None:
         return ApiFailResponse(message=f"diagnosis {diag_id} not found", status_code=404)
 
-    # Who: best-effort identity (works signed-out — git config / OS / desktop default).
-    from flow_sdk.server.routes.bootstrap import get_email, get_name
-
-    name, email = get_name(), get_email()
-    user_label = f"{name} <{email}>" if name and email else (email or name or "unknown")
-
-    try:
-        from flow_sdk._version import __version__ as app_version
-    except Exception:  # noqa: BLE001
-        app_version = None
-
+    # Who / when / where come off the RECORD, not off this machine: a diagnosis
+    # can be forwarded to a helper who then hits "Report issue", and the email
+    # must describe the reporter's machine, not the helper's. The snapshot is
+    # stamped at record time by the flow-diagnose reporter and travels in the
+    # bundle header.
     fields = {
         "diagnosis_id": diag_id,
         "title": getattr(diag, "title", None) or "",
@@ -98,11 +92,10 @@ async def report() -> ApiResponse:
         "rca": getattr(diag, "rca", None) or "",
         "fix": getattr(diag, "fix", None) or "",
         "user_report": getattr(diag, "user_report", None) or "",
-        "user": user_label,
-        # created_date may be a datetime — coerce to str so the JSON body serializes.
-        "occurred_at": str(getattr(diag, "created_date", None) or ""),
-        "os": _platform.platform(),
-        "app_version": app_version or "",
+        "user": getattr(diag, "reported_by", None) or "",
+        "occurred_at": getattr(diag, "occurred_at", None) or "",
+        "os": getattr(diag, "os", None) or "",
+        "app_version": getattr(diag, "app_version", None) or "",
     }
 
     title = fields["title"] or "Issue report"
@@ -135,7 +128,22 @@ async def report() -> ApiResponse:
 
     if resp.status_code != 200:
         logger.warning("[report] POST %s returned %s: %s", url, resp.status_code, resp.text[:300])
-        return ApiFailResponse(message="The reporting service rejected the report.", status_code=502)
+        # Prefer the hub's own client-intended message ("Could not send the diagnosis
+        # report email.") over a generic one — it is what the user ends up reading. The
+        # hub carries it in `detail` for a deliberate HTTPException and in `message` for
+        # the envelope it returns on anything unhandled; its generic fallback says less
+        # than ours, so drop that one.
+        try:
+            hub_body = resp.json() or {}
+            hub_message = hub_body.get("detail") or hub_body.get("message") or ""
+        except Exception:  # noqa: BLE001
+            hub_message = ""
+        if hub_message.strip().lower() == "internal server error":
+            hub_message = ""
+        return ApiFailResponse(
+            message=hub_message or "The reporting service rejected the report.",
+            status_code=502,
+        )
 
     logger.info("[report] emailed diagnosis %s to %s via hub", diag_id, REPORT_TO_EMAIL)
     return ApiSuccessResponse(data={"sent": True, "diagnosis_id": diag_id})

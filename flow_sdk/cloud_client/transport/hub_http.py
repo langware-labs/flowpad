@@ -132,14 +132,20 @@ async def get_info() -> Optional[dict[str, Any]]:
                 version = data.get("version")
                 deployed_at = data.get("deployed_at")
                 generated_at = data.get("generated_at")
-                # Fixed community/support project id — the app opens support
-                # tickets against this project. Returned by newer hubs only.
-                community_project_id = data.get("community_project_id")
+                # Default helpdesk project id — the app opens support tickets
+                # against this project when no nearer desk is configured.
+                # Returned by newer hubs only.
+                helpdesk_project_id = data.get("helpdesk_project_id")
+                # Portal repo for that desk (help content cloned locally).
+                helpdesk_portal_git_url = data.get("helpdesk_portal_git_url")
                 return {
                     "version": version if isinstance(version, str) else None,
                     "deployed_at": deployed_at if isinstance(deployed_at, str) else None,
                     "generated_at": generated_at if isinstance(generated_at, str) else None,
-                    "community_project_id": (community_project_id if isinstance(community_project_id, str) else None),
+                    "helpdesk_project_id": (helpdesk_project_id if isinstance(helpdesk_project_id, str) else None),
+                    "helpdesk_portal_git_url": (
+                        helpdesk_portal_git_url if isinstance(helpdesk_portal_git_url, str) else None
+                    ),
                 }
             return {"version": None}
     except Exception as e:  # noqa: BLE001
@@ -274,6 +280,55 @@ async def hub_get(
     except Exception as e:
         logger.warning("[hub] GET %s error (non-fatal): %s", url, e)
         return None
+
+
+async def hub_get_or_raise(
+    entity_type: BuiltinEntityType,
+    entity_id: str | None = None,
+    action: str | None = None,
+    sub_path: str | None = None,
+    *,
+    scope: list[tuple[str, str]] | None = None,
+    params: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """GET a hub graph endpoint, PRESERVING the status. Raises ``HubError``.
+
+    The symmetric sibling of :func:`hub_post`, and the reason it exists is an
+    asymmetry that was quietly harmful: ``hub_get`` collapses *hub not
+    configured*, *signed out*, *network error*, *5xx* and a **definitive 404**
+    all to ``None``. A caller that must decide "is this permanently broken, or
+    just unreachable right now?" cannot, and picking either answer for ``None``
+    is wrong in one direction — park a healthy source on one dropped packet, or
+    retry a deleted resource every cycle forever while the UI shows a spinner
+    instead of "fix me".
+
+    That is the same three-way distinction :func:`hub_resolve_by_typeid`
+    documents; this returns the status so an ingest driver can map it through
+    ``SourceError.for_status`` — THE status→health table — instead of growing a
+    second copy of it.
+
+    ``HubError.status_code`` is 0 when there was no HTTP response at all; the
+    ``reason`` then separates "no hub URL configured" (a person must act) from a
+    transport failure (retry at the ordinary cadence).
+    """
+    url = hub_graph_url(entity_type, entity_id, action, sub_path, scope=scope)
+    if not url:
+        raise HubError(0, "hub not configured")
+    try:
+        async with _hub_client() as client:
+            logger.info("[hub] GET %s params=%s", url, params)
+            resp = await client.request("GET", url, params=params or {}, timeout=httpx.Timeout(10))
+    except HubAuthExpiredError as e:
+        logger.warning("[hub] GET %s auth expired: %s", url, e)
+        raise HubError(401, "auth expired")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[hub] GET %s transport error: %s", url, e)
+        raise HubError(0, str(e))
+    if resp.status_code == 200:
+        return resp.json().get("data") or {}
+    reason = _extract_reason(resp)
+    logger.warning("[hub] GET %s returned %s: %s", url, resp.status_code, resp.text[:200])
+    raise HubError(resp.status_code, reason, code=_extract_error_code(resp))
 
 
 # Result of a status-aware hub existence probe (see ``hub_resolve_by_typeid``):
@@ -466,20 +521,25 @@ async def hub_delete(
     entity_type: BuiltinEntityType,
     entity_id: str,
     action: str | None = None,
+    sub_path: str | None = None,
     *,
     payload: dict[str, Any] | None = None,
+    params: dict[str, str] | None = None,
     scope: list[tuple[str, str]] | None = None,
 ) -> Optional[dict[str, Any]]:
     """DELETE a hub graph endpoint (entity-level or entity-action).
 
     ``payload`` is sent as the JSON request body — the hub parses DELETE
     bodies (e.g. ``members`` DELETE expects a ``MembershipMethod``
-    ``{member_through, value}``). Returns the response ``data`` dict on
-    success, None when FLOWPAD_HUB_URL is not configured. Raises ``HubError``
-    on transport failure or non-200 so callers can classify (e.g. 403
-    owner-only) vs network errors.
+    ``{member_through, value}``). ``sub_path`` selects a sibling endpoint under
+    the same action (``members/link``), and ``params`` carries its selector
+    (revoke takes ``?link-id=``) — both mirror ``hub_get``/``hub_post``, and
+    without the sub-path a ``members/link`` DELETE would reach the hub as a
+    member removal. Returns the response ``data`` dict on success, None when
+    FLOWPAD_HUB_URL is not configured. Raises ``HubError`` on transport failure
+    or non-200 so callers can classify (e.g. 403 owner-only) vs network errors.
     """
-    url = hub_graph_url(entity_type, entity_id, action, scope=scope)
+    url = hub_graph_url(entity_type, entity_id, action, sub_path, scope=scope)
     if not url:
         logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping DELETE %s/%s", entity_type, entity_id)
         return None
@@ -490,6 +550,7 @@ async def hub_delete(
                 "DELETE",
                 url,
                 json=payload or {},
+                params=params or None,
                 timeout=httpx.Timeout(10),
             )
     except HubAuthExpiredError as e:
@@ -543,3 +604,32 @@ async def hub_put(
     reason = _extract_reason(resp)
     logger.warning("[hub] PUT %s returned %s: %s", url, resp.status_code, resp.text[:200])
     raise HubError(resp.status_code, reason, code=_extract_error_code(resp))
+
+
+async def hub_upload_entity_file(
+    entity_type: BuiltinEntityType,
+    entity_id: str,
+    filename: str,
+    content: bytes,
+    sub_path: str = "upload",
+) -> None:
+    """Upload ONE file into an entity's hub VFS.
+
+    The single call behind both halves of entity-file write-through: the
+    per-upload mirror in ``_hub_reflect._reflect_fs_to_hub`` (a shared entity's
+    live writes) and the catch-up in ``Entity.share()`` (files that already
+    existed when the hub twin was created — they can't ride the create POST,
+    which is JSON, and ``fs/upload`` needs the id to exist first).
+
+    ``sub_path`` is the destination DIRECTORY, not the target name — the hub
+    takes the filename from the multipart part. Passing ``upload/<name>`` would
+    nest it as ``<name>/<name>``.
+    """
+    await hub_post(
+        entity_type,
+        {},
+        entity_id,
+        "fs",
+        sub_path,
+        files={"uploaded_file": (filename, content, "application/octet-stream")},
+    )

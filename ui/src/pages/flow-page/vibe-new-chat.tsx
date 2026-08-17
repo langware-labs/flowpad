@@ -1,19 +1,12 @@
 import { SessionInput } from '@src/components/session-input/session-input';
-import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
-import { useProjectOpener } from '@src/components/open-project-component/use-open-project';
-import { notify } from '@src/notifications';
+import { HomeCustomBackground, HomeGreeting, useHomeCustomization } from '@src/components/home-customization';
+import { ProjectActionsRow } from '@src/components/open-project-component/project-actions-row';
 import { useAuth } from '@sdk/react/hooks';
-import { FolderOpen, FolderSearch, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useStartVibeSession } from './use-start-vibe-session';
-import { VIBE_MODEL_DEFAULT, VibeModelSelect, type VibeModelTier } from './vibe-model-select';
-import { VibeWorkerSelect } from './vibe-worker-select';
-import { DEFAULT_WORKER_TYPE, type WorkerType } from '@src/components/workers/worker-types';
-
-/** Shared ghost-button style for the two under-input project actions. */
-const PROJECT_ACTION_BUTTON_CLASS =
-  'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50';
+import { VIBE_MODEL_DEFAULT, type VibeModelTier } from './vibe-model-select';
+import { VibeRecentSessions } from './vibe-recent-sessions';
 
 /**
  * Vibe fallback shown when no build session is active — i.e. we're in Vibe mode
@@ -25,46 +18,38 @@ const PROJECT_ACTION_BUTTON_CLASS =
  */
 export function VibeNewChat() {
   const { t } = useLingui();
-  const { user } = useAuth();
+  const { currentUser } = useAuth();
   const startVibe = useStartVibeSession();
   const [draft, setDraft] = useState('');
-  const [model, setModel] = useState<VibeModelTier>(VIBE_MODEL_DEFAULT);
-  const [workerType, setWorkerType] = useState<WorkerType>(DEFAULT_WORKER_TYPE);
-  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
-  const [isOpeningFolder, setIsOpeningFolder] = useState(false);
-  const firstName = user?.name?.split(' ')[0] || 'there';
-
-  // On vibe home, opening/switching a project just changes the project and
-  // lands on the fresh vibe home (never resumes an old build process) — that
-  // decision lives inside useProjectOpener, derived from the current surface.
-  const { openProjectFolder } = useProjectOpener({
-    onError: (message) => notify.error({ title: message }),
-  });
-
-  const handleOpenFolder = async () => {
-    // openProjectFolder never throws — it routes failures through onError.
-    setIsOpeningFolder(true);
-    try {
-      await openProjectFolder();
-    } finally {
-      setIsOpeningFolder(false);
-    }
-  };
+  const model: VibeModelTier = VIBE_MODEL_DEFAULT;
+  const firstName = currentUser?.name?.split(' ')[0] || 'there';
+  const { homeTitle, homeBackgroundUrl } = useHomeCustomization();
 
   return (
     <div className="relative flex h-full flex-col items-center justify-center overflow-hidden px-4">
-      <div
-        aria-hidden
-        className="vibe-hero-gradient pointer-events-none absolute inset-x-0 bottom-0 h-2/3"
-      />
+      <HomeCustomBackground url={homeBackgroundUrl} />
+      {/* The runtime banner used to be pinned here, absolutely positioned so it
+          could sit above this centered surface. It now lives once in FlowPage,
+          above the rail — which is why this surface no longer needs a special
+          case for it (e2b workspaces boot into vibe mode and land here). */}
+      <div aria-hidden className="vibe-hero-gradient pointer-events-none absolute inset-x-0 bottom-0 h-2/3" />
       <div
         className="relative z-10 flex w-full max-w-2xl flex-col items-center gap-4 text-center"
         data-testid="vibe-new-chat"
       >
         <h1 className="text-3xl font-bold tracking-tight">
-          <Trans>
-            Hey <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
-          </Trans>
+          <HomeGreeting
+            override={homeTitle}
+            className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent"
+            fallback={
+              <Trans>
+                Hey{' '}
+                <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+                  {firstName}
+                </span>
+              </Trans>
+            }
+          />
         </h1>
         <div className="w-full">
           <SessionInput
@@ -72,42 +57,12 @@ export function VibeNewChat() {
             value={draft}
             onChange={setDraft}
             allowAttachments
-            footerSlot={(
-              <div className="flex flex-wrap items-center gap-1.5">
-                <VibeModelSelect value={model} onChange={setModel} />
-                <VibeWorkerSelect value={workerType} onChange={setWorkerType} />
-              </div>
-            )}
-            onSubmit={(msg, files) => startVibe(msg, files, model, workerType)}
+            onSubmit={(msg, files) => startVibe(msg, files, model)}
           />
         </div>
-        <div className="flex w-full items-center gap-1.5 self-start">
-          <button
-            type="button"
-            onClick={() => void handleOpenFolder()}
-            disabled={isOpeningFolder}
-            className={PROJECT_ACTION_BUTTON_CLASS}
-            data-testid="vibe-open-project-folder"
-          >
-            {isOpeningFolder ? (
-              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
-            ) : (
-              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-            )}
-            <Trans>Open project folder</Trans>
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsProjectModalOpen(true)}
-            className={PROJECT_ACTION_BUTTON_CLASS}
-            data-testid="vibe-open-existing-project"
-          >
-            <FolderSearch className="h-3.5 w-3.5 shrink-0" />
-            <Trans>Open existing project</Trans>
-          </button>
-        </div>
+        <ProjectActionsRow className="w-full self-start" />
+        <VibeRecentSessions />
       </div>
-      <OpenProjectComponent open={isProjectModalOpen} onOpenChange={setIsProjectModalOpen} />
     </div>
   );
 }

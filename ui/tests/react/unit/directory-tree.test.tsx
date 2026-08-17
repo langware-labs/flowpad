@@ -1,4 +1,4 @@
-import type { FSItem } from '@sdk';
+import type { FSEntry } from '@sdk';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -17,8 +17,8 @@ function renderWithProviders(ui: React.ReactElement) {
 const TEST_UUID = '12345678-1234-4234-a234-123456789abc';
 const TEST_VFS_PREFIX = `project-${TEST_UUID}`;
 
-// Mock FSItem factory
-function createMockFSItem(overrides: Partial<FSItem> & { name?: string } = {}): FSItem {
+// Mock FSEntry factory
+function createMockFSEntry(overrides: Partial<FSEntry> & { name?: string } = {}): FSEntry {
   const relativePath = overrides.relativePath || '/test/path';
   const name = overrides.name || relativePath.split('/').pop() || 'test-item';
 
@@ -40,11 +40,11 @@ function createMockFSItem(overrides: Partial<FSItem> & { name?: string } = {}): 
     enumerable: true,
   });
 
-  return item as FSItem;
+  return item as FSEntry;
 }
 
-function createMockFolder(name: string, path: string): FSItem {
-  return createMockFSItem({
+function createMockFolder(name: string, path: string): FSEntry {
+  return createMockFSEntry({
     name,
     vfs_abs_path: `${TEST_VFS_PREFIX}${path}`,
     relativePath: path,
@@ -52,8 +52,8 @@ function createMockFolder(name: string, path: string): FSItem {
   });
 }
 
-function createMockFile(name: string, path: string): FSItem {
-  return createMockFSItem({
+function createMockFile(name: string, path: string): FSEntry {
+  return createMockFSEntry({
     name,
     vfs_abs_path: `${TEST_VFS_PREFIX}${path}`,
     relativePath: path,

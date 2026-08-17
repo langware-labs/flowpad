@@ -4,7 +4,7 @@ id: c107bc99-a521-595d-98f3-4fd5353da021
 
 # Interactive tabs / project filtering — regression matrix
 
-Users have reported tab close, restore, and project-filter regressions. This file holds 52 scenarios across 9 areas: refresh & browse, open by id / from history, close-all, project-counter chip, footer selections, restart & CLI, Codex/Claude/terminal mix, navigation in/out of dock, and the kind-agnostic project chip (content tabs count + select-switches-project).
+Users have reported tab close, restore, and project-filter regressions. This file holds 51 active scenarios across 9 areas (historical test numbering is retained): refresh & browse, open by id / from history, close-all, project-counter chip, footer selections, restart & CLI, Codex/Claude/terminal mix, navigation in/out of dock, and the kind-agnostic project chip (content tabs count + select-switches-project).
 
 ## Selectors
 
@@ -35,7 +35,7 @@ After scenario-specific steps, verify ALL FIVE:
 
 1. **Tabs alive** — every tab in the tab bar is clickable; the active tab has a mounted `terminal-panel`. No `CLOSING` zombies. xterm cursor blinks (plain shell) or process status badge shows ready/running (Claude/Codex).
 2. **Expected content** — active panel shows only the content this scenario produced. Switching tabs never shows another tab's scrollback.
-3. **Counts correct** — `close-all-tabs-button` badge equals visible-tab count for the current project (and the button is hidden when count < 2). `projects-counter-chip` button shows the distinct project count (one per project with ≥1 open tab of ANY kind — terminal AND content); tooltip says `"<N> active project[s] with <M> open tab[s]"` (note the `chip` correctly singularizes per `projectTotal === 1 ? '' : 's'`).
+3. **Counts correct** — `close-all-tabs-button` badge equals visible-tab count for the current project (and the button is hidden when count < 2). `projects-counter-chip` button shows the distinct project count (one per project with ≥1 open tab of ANY kind — terminal AND content); the `aria-label` reads `"<scope> — <N> open project[s], <M> open tab[s]"` (note the `chip` correctly singularizes per `projectTotal === 1 ? '' : 's'`).
 4. **Project + workdir correct** — footer (`[data-testid="footer"]`) shows the active tab's project displayName/workdir; this matches `dataContext.project.id` for the active tab.
 5. **URL correct** — URL ends with `/dock/shell/<targetTypeId>`; agent segment if present matches the local agent.
 
@@ -188,8 +188,11 @@ test 10: Open invalid shell id (graceful fallback)
 - validate UI shows ONE of: explicit error page, default-tab redirect, or empty-state — record which one
 - run common validation block (the URL check applies to whatever resolves)
 
-test 11: Open Claude tab via history record [skip:harness]
-- (rationale: the History modal at `ui/src/components/terminal/HistoryModal.tsx` is fed by `useWorkerHistory` which calls the backend `worker-history` action on the compute_node — the source is the disk-based session log under `~/.claude/projects/...`, populated only when a real Claude/Codex session has actually run. REST POST to `/api/v1/graph/agentic_process` does NOT enroll a row in this disk log; nothing from the QA harness can fabricate it without writing files outside the API surface. Mark `status:"skip"` with `skip_reason:"harness"` and `skip_challenge_required:true`.)
+test 11: Open the current session-history modal from the opener menu
+- create a disposable project + shell and navigate to its terminal
+- open the history opener from the tab-opener toolbar (`openTabViaMenu(page, 'history')`)
+- validate the current `Recent Sessions` dialog contract: project-scope
+  checkbox, refresh control, and search control
 
 test 12: Open shell-by-id whose project differs from current
 - via REST: create `Proj-A` and `Proj-B`. Create a shell in `Proj-B` and record its id.
@@ -261,11 +264,12 @@ test 20: Close-all button hides at < 2 tabs
 
 ## D. Projects count chips selection
 
-test 21: Chip selects project, swaps tab strip + URL
+test 21: Chip selects project, swaps tab strip, and lands on the project home
 - via REST: create `Proj-A` (2 shells) and `Proj-B` (3 shells)
 - navigate to `{APP_URL}/dock/shell` (lands in one of them); click `projects-counter-chip` and select the OTHER one
-- validate strip switches; first tab of new project activates; URL points at it; footer/workdir match
-- run common validation block
+- validate strip switches; URL lands on `/dock/project/<project-id>` because
+  direct REST tabs have no known recency; footer/workdir match
+- validate no terminal panel is active until a tab is selected
 
 test 22: Chip badge equals distinct project count
 - via REST: create 3 projects with shells in each — `A`(2), `B`(1), `C`(4)
@@ -279,10 +283,10 @@ test 23: Selecting current project = no-op
 - validate URL unchanged, no flicker, no `terminal-panel` re-mount
 - run common validation block
 
-test 24: Popover ordering — current first, count desc, alpha tiebreak
+test 24: Popover lists every open project in stable alphabetical order
 - via REST: create `Proj-A`(5), `Proj-B`(3), `Proj-C`(5), `Proj-D`(1); set current = `Proj-B` via chip
 - click chip
-- validate row order: `Proj-B` (current), `Proj-A`, `Proj-C` (count tie, alpha), `Proj-D`
+- validate row order: `Proj-A`, `Proj-B`, `Proj-C`, `Proj-D`
 - validate `Proj-B` row has aria-current="true"
 - run common validation block
 
@@ -294,12 +298,12 @@ test 25: Project with zero tabs after close-all
 - validate footer still shows `Proj-A` as current project + workdir
 - run common validation block
 
-test 26: Switching project auto-selects first tab by `tab_order`
-- via REST: create `Proj-A`(3) and `Proj-B`(2). Note both projects' shell ids in `tab_order` order.
+test 26: Switching to a project with no known last tab lands on project home
+- via REST: create `Proj-A`(3) and `Proj-B`(2). The direct REST tabs have no `last_active_at`.
 - navigate to `{APP_URL}/dock/shell`; click the 2nd `Proj-A` tab to activate it
 - via chip, switch to `Proj-B`
-- validate the lowest-`tab_order` `Proj-B` shell is active; URL = its id
-- run common validation block
+- validate both `Proj-B` tabs are present in the strip
+- validate URL = `/dock/project/<Proj-B-id>` and no terminal panel is active
 
 test 27: Every shell carries a real project_id (no orphans by design)
 - (rationale: the "orphan tab" concept the matrix originally tested was DELIBERATELY REMOVED on 2026-05-09 as part of "Project consolidation (Path A)" — see `useActiveTerminals.ts:343-347` which explicitly states *"The historical orphan-include rule — || t.projectId == null — is gone; the strict per-project filter below is now safe because no tab's projectId is ever null in normal flows"*. Backend `Shell.save()` at `flow_sdk/builtin/shell.py:256-279` auto-assigns the bootstrap `@local` project to any shell created without an explicit `project_id`. So there is NO null-projectId state to test for orphans — the test is rewritten to validate the consolidated invariant.)
@@ -314,13 +318,11 @@ test 27: Every shell carries a real project_id (no orphans by design)
 ## E. Footer selections
 
 test 28: Footer "Switch Project" modal switches end-to-end
-- via REST: create `Proj-B` with 2 shells (mount path `/tmp/regression/proj-b` — note macOS resolves to `/private/tmp/regression/proj-b` via canonical-path normalization, both forms work)
-- navigate to `{APP_URL}/dock/shell` (lands in bootstrap project)
-- click the "Switch Project" button inside `[data-testid="footer"]` (button title: "Switch project")
-- in the modal, click the **"All"** tab/filter (modal defaults to "Today" / "This week" subset views; freshly-created REST projects with no Claude session history are still listed under "Today" via timestamp, but explicitly clicking "All" guarantees the full project list is rendered)
-- find and click the `proj-b` row (text matches `proj-b/private/tmp/regression/proj-b`)
-- validate footer label updates to `Proj-B` (or its fs_storage_mount_path basename); chip current row = `Proj-B`; tab strip shows `Proj-B`'s 2 tabs; URL is a `Proj-B` tab URL
-- run common validation block
+- create two project entities with real disposable mount directories and one
+  shell/tab in each
+- enter Proj-A, click the footer `Switch Project` control, and validate the
+  modal's `Active projects` section includes Proj-B
+- select Proj-B and validate its project-home URL, footer, and tab strip
 
 test 29: Footer label fallback chain
 - (rationale: previous wording assumed `displayName` and `workdir` are persisted fields on Project. They are not. Project's actual schema (`flow_sdk/builtin/project.py:53,59`) exposes `name: str | None` and `fs_storage_mount_path: str | None` — nothing else label-relevant. `displayName` is a TS-only computed getter on `APIEntity` (`ts_sdk/src/APIEntity.ts:149-151`) deriving from `getDisplayName()` (not persisted). `workdir` is a `dataContext` runtime override (`status-bar.tsx:31,40`), not a Project field. The footer's actual fallback is documented in `status-bar.tsx:38-50` — first `dataContext.workdir`, then `project.fs_storage_mount_path`, then computed paths.)
@@ -345,29 +347,24 @@ test 30: "Select Project" red pill — tab spawn flow
 test 31: "Open folder" launches at workdir [skip:platform]
 - mark `status:"skip"` with `skip_reason:"platform"` and `skip_challenge_required:true`. The OS file manager opens outside the browser; we cannot verify it headlessly.
 
-test 32: Footer repo/branch Git artifact [removed]
-- mark `status:"skip"` with `skip_reason:"removed"`. Project Git artifacts and footer repo/branch rendering were removed; git share provenance is represented by `GitOrigin` bundle metadata instead.
-
 ## F. Restart & CLI changes
 
-> **Important:** F33 and F34 restart the backend. In a CI/dedicated-test backend they would run as full live tests; in a shared dev backend (the typical QA harness) the restart would disrupt the user's CLI session and other agents. Both tests are marked `[skip:harness]` for shared-backend runs. To run them: spin up an isolated backend instance and re-classify these as live tests.
+> **Important:** F33 and F34 restart the backend and fail preflight unless
+> `FLOW_INSTANCE` resolves to a matching live `instance_ctl` launcher registry.
+> They never restart a shared/default backend.
 
-test 33: Backend restart preserves tabs [skip:harness]
-- (rationale: Shell hydration via `fetchActiveTerminals` against a restarted backend is the assertion. Restarting `flow_sdk.server.run` on the shared dev backend would terminate every other live agent's WS connection. Mark `status:"skip"` with `skip_reason:"harness"` and `skip_challenge_required:true` for shared-backend runs. Live test only viable in an isolated backend instance.)
-- (preserved spec for isolated-backend runs:)
+test 33: Backend restart preserves tabs on the launcher-owned instance
   - via REST: create 4 shells split across 2 projects (`Proj-A`:3, `Proj-B`:1)
   - navigate to `{APP_URL}/dock/shell`; record the 4 `targetTypeId`s and their project assignments
-  - run the backend-restart helper from "Setup helpers"
+  - validate launcher ownership and relaunch that exact named instance
   - hard refresh the browser
   - validate `fetchActiveTerminals` rehydrates the same 4 tabs (same ids, same names, same project assignments, no duplicates)
   - run common validation block
 
-test 34: Backend restart with an AgenticProcess in the strip [skip:harness]
-- (rationale: same harness limit as test 33. Mark `status:"skip"` with `skip_reason:"harness"` for shared-backend runs.)
-- (preserved spec for isolated-backend runs:)
+test 34: Backend restart with an AgenticProcess in the strip
   - via REST: create an AgenticProcess (`worker_type=claude_code`) in the bootstrap project
   - navigate to `{APP_URL}/dock/shell/agentic_process-<id>`; validate it activates
-  - run the backend-restart helper
+  - validate launcher ownership and relaunch that exact named instance
   - hard refresh
   - validate the Claude tab is rebound (process resolved via `get-by-worker-id`); no duplicate tab; `agentic_process-<id>` is the active tab
   - run common validation block
@@ -399,8 +396,11 @@ test 37: External REST DELETE/close removes a session
 - validate active selection self-heals to an adjacent tab; URL updates
 - run common validation block
 
-test 38: Two browser windows in sync [skip:harness]
-- (rationale: validating cross-window WS sync requires two genuinely independent browser sessions with separate WS connections. The MCP harness shares one Chrome instance / one tab pool — `mcp__debugMcp__browser_tabs` adds a Chrome tab to the SAME session, so creating "window 2" doesn't simulate two clients. Cross-tab tab-index churn after close also disrupts state. Mark `status:"skip"` with `skip_reason:"harness"` and `skip_challenge_required:true`. Live test viable only with two separate Playwright contexts or two real browser windows driven independently — not the current MCP setup. The underlying mechanism (cross-session WS sync) is already validated by tests 35/36/37 which use REST POSTs from outside the browser as the "second client".)
+test 38: Two independent browser contexts stay in sync
+- create two shells in one disposable project
+- open that project in the fixture page and a second Playwright context so each
+  owns an independent WebSocket connection
+- close one tab in the first context and validate it disappears from both strips
 
 ## G. Codex / Claude / terminal mix
 
@@ -530,6 +530,7 @@ test 51: Chip counts a project whose ONLY open tab is a content (markdown) tab
 test 52: Selecting a content-only project switches the current project (footer parity)
 - same setup as test 51 (`Proj-A` with 2 shells, `Proj-C` with 1 content tab)
 - navigate to `{APP_URL}/dock/shell` (lands in `Proj-A`); click `projects-counter-chip`; click the `Proj-C` row
-- validate the footer (`[data-testid="footer"]`) updates to `Proj-C` — the current project switched even though `Proj-C` has no terminal tab to navigate to (the OLD navigate-to-first-tab chip could NOT switch to such a project)
-- validate the terminal strip is now empty (0 `tab-shell-*` — `Proj-C` owns no terminal tab)
+- validate URL lands on Proj-C's project home because its content tab has no
+  known recency
+- validate the footer updates to Proj-C and no terminal panel is active
 - (NOTE: no `commonValidation` here — it asserts a mounted terminal panel + concrete shell URL, which a content-only project intentionally does not have)

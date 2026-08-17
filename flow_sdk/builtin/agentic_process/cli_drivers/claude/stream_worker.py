@@ -42,9 +42,13 @@ import asyncio
 import json
 import logging
 import os
+import time
 from typing import AsyncIterator
 
-from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.credential import (
+    ensure_fresh_before_turn,
+)
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.event_to_flowdata import (
     convert_event,
     final_end_frame,
@@ -60,6 +64,10 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     terminate_asyncio_process_tree,
     wait_for_asyncio_process_or_kill_tree,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.transcript_durability_gate import (
+    TranscriptDurabilityGate,
+    stream_event,
+)
 from flow_sdk.builtin.agentic_process.turn_abort import (
     TURN_TERMINATED_ATTR,
     abort_status_frame,
@@ -69,6 +77,7 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowDataType,
     FlowElementType,
 )
+from flow_sdk.instance_settings import get_instance_settings
 
 logger = logging.getLogger(__name__)
 
@@ -76,9 +85,17 @@ logger = logging.getLogger(__name__)
 # timeout (~10 s) so a stuck subprocess never wedges the chat.
 CANCEL_GRACE_SECONDS = 5.0
 
+# What a user sees in place of the CLI's raw auth 401. The raw text is always
+# logged first — see ``_humanize_auth_error``.
+_AUTH_ERROR_TEXT = (
+    "Couldn't verify this machine's Claude sign-in, so the message wasn't sent. "
+    "This usually clears on its own — try sending it again. "
+    "If it keeps happening, the machine needs to sign in to Claude again."
+)
 
-class _TranscriptDurabilityGate:
-    """Hold terminal Claude frames until the subprocess has settled.
+
+class _TranscriptDurabilityGate(TranscriptDurabilityGate):
+    """The shared ordering gate, told what Claude's two vendor facts are.
 
     Claude Code 2.1.207 writes an ``assistant`` stream-json event to stdout
     before appending the matching assistant row to its session JSONL. Exposing
@@ -98,79 +115,25 @@ class _TranscriptDurabilityGate:
     its own text-only assistant event — shape-identical to the final answer.
     A candidate is therefore held only until the stream proves the turn is
     continuing: a following ``assistant`` or ``user`` (tool_result) event
-    means the held block was narration and the whole held run is released
-    live, in order. Passive events (``rate_limit_event``-style statuses) join
-    the hold — they may legitimately trail the real final answer. Once the
-    ``result`` event arrives the hold is locked: the complete remaining
-    suffix is retained through EOF so delayed status/result frames cannot
-    move ahead of the answer, and is released only after the worker's
-    existing subprocess-settlement path completes. No new clock, sleep,
-    timeout, or polling budget is involved.
+    means the held block was narration. Passive events
+    (``rate_limit_event``-style statuses) are not continuations — they may
+    legitimately trail the real final answer, so they join the hold.
     """
 
-    def __init__(self) -> None:
-        self._pending_terminal: list[FlowData] = []
-        self._result_seen = False
-
-    def feed(self, event: dict | None, frames: list[FlowData]) -> list[FlowData]:
-        event_type = str(event.get("type") or "") if event else ""
-        if self._result_seen:
-            self._pending_terminal.extend(frames)
-            return []
-        if event_type == "result":
-            self._result_seen = True
-            self._pending_terminal.extend(frames)
-            return []
-
-        message = event.get("message") if event and isinstance(event.get("message"), dict) else {}
-        stop_reason = message.get("stop_reason")
+    def is_terminal_candidate(self, event: dict, frames: list[FlowData]) -> bool:
+        if event.get("type") != "assistant":
+            return False
+        raw_message = event.get("message")
+        message = raw_message if isinstance(raw_message, dict) else {}
         content = message.get("content")
         has_tool_use = isinstance(content, list) and any(
-            isinstance(block, dict) and block.get("type") == "tool_use"
-            for block in content
+            isinstance(block, dict) and block.get("type") == "tool_use" for block in content
         )
-        has_chat = any(
-            frame.attributes.get("element-type") == FlowElementType.CHAT
-            for frame in frames
-        )
-        terminal_assistant = (
-            event_type == "assistant"
-            and has_chat
-            and not has_tool_use
-            and stop_reason not in {"tool_use", "pause_turn"}
-        )
+        has_chat = any(frame.attributes.get("element-type") == FlowElementType.CHAT for frame in frames)
+        return has_chat and not has_tool_use and message.get("stop_reason") not in {"tool_use", "pause_turn"}
 
-        if self._pending_terminal:
-            if event_type in {"assistant", "user"}:
-                # The turn is provably continuing — the held candidate was
-                # per-block narration, not the final answer. Release the held
-                # run live, in order.
-                released = self._pending_terminal
-                self._pending_terminal = []
-                if terminal_assistant:
-                    self._pending_terminal = list(frames)
-                    return released
-                return [*released, *frames]
-            self._pending_terminal.extend(frames)
-            return []
-
-        if terminal_assistant:
-            self._pending_terminal.extend(frames)
-            return []
-        return frames
-
-    def drain(self) -> list[FlowData]:
-        pending, self._pending_terminal = self._pending_terminal, []
-        self._result_seen = False
-        return pending
-
-
-def _stream_event(decoded: str) -> dict | None:
-    try:
-        event = json.loads(decoded)
-    except (json.JSONDecodeError, TypeError):
-        return None
-    return event if isinstance(event, dict) else None
+    def is_continuation(self, event_type: str) -> bool:
+        return event_type in {"assistant", "user"}
 
 
 class ClaudeCLIStreamWorker(AgenticWorker):
@@ -208,6 +171,13 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         context: AgenticContext,
     ) -> AsyncIterator[FlowData]:
         self._process_run_id = None
+        # A turn must never start on a token we already know is dead — the CLI
+        # would renew it inside this request and, if that renewal is slow, give
+        # up and hand the user a raw 401. One file read on every healthy turn;
+        # yields a STATUS frame (so the chat shows the wait) only when it renews.
+        async for fd in ensure_fresh_before_turn():
+            yield fd
+        _maybe_prune_debug_logs()
         try:
             # stdin_payload is always a string in production (the stream-json
             # user message); test fakes may pass None to run stdin-less.
@@ -261,7 +231,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
                 # session-id capture, and the durability gate — a line can be
                 # up to 4 MB, so a re-parse per concern is not free.
                 decoded = line.decode("utf-8", errors="replace")
-                event = _stream_event(decoded)
+                event = stream_event(decoded)
                 frames = convert_event(event) if event is not None else []
                 for fd in frames:
                     # Capture session_id from the first ``system:init`` event.
@@ -276,7 +246,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
                 if event is not None and event.get("type") == "result":
                     self._close_stdin()
                 for fd in durability_gate.feed(event, frames):
-                    yield fd
+                    yield self._humanize_auth_error(fd)
         except asyncio.CancelledError:
             # Caller cancelled the async iteration — propagate after cleanup.
             cancelled = True
@@ -305,7 +275,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
                     # A user-requested cancel is not an error: the CLI reports
                     # the interrupted turn's result as ``is_error``; reclassify
                     # so the chat renders an abort, not a crash.
-                    yield self._reclassify_cancelled(fd)
+                    yield self._reclassify_cancelled(self._humanize_auth_error(fd))
 
             # If Claude exited cleanly without emitting a ``result`` event (which
             # would have produced ``<flow-end>`` via the converter), emit our own
@@ -369,28 +339,16 @@ class ClaudeCLIStreamWorker(AgenticWorker):
 
     # ── Internals ─────────────────────────────────────────────────────────────
 
-    def _build_spawn(
-        self,
-        prompt: str,
-        context: AgenticContext,
-    ) -> tuple[list[str], dict[str, str], str]:
-        """Build (argv, env, stdin payload) via ``ClaudeCliOptions``.
-
-        The prompt rides stdin as a stream-json user message
-        (``--input-format stream-json``) so the open pipe doubles as the
-        graceful-interrupt channel for ``close_session()``.
-
-        Raises :class:`WorkerSpawnError` when claude is not installed (no
-        harness capability discovered) or its executable can't be resolved on
-        the spawn PATH.
-        """
+    @staticmethod
+    def _options_from_context(context: AgenticContext) -> ClaudeAgentOptions:
+        """Translate an already-prepared turn context into raw Claude options."""
         # Resume takes priority — when ``resume_session_id`` is set, attach
         # ``--resume <sid>``. Otherwise honour ``context.session_id`` (a
         # pre-allocated UUID the caller wants Claude to use) so transcript
         # discovery doesn't race the first ``system:init`` event.
         #
         # Fork (``--resume <source> --fork-session --session-id <new>``):
-        # ``ClaudeCliOptions`` wants ``session_id=<new>`` and
+        # ``ClaudeAgentOptions`` wants ``session_id=<new>`` and
         # ``fork_session_id=<source>``. Mapping from ``AgenticContext`` puts
         # the source on ``resume_session_id`` and the new id on ``session_id``.
         resume_sid = context.resume_session_id
@@ -410,7 +368,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         # embedded-agent/persona content. Codex's equivalent forces
         # ``ephemeral=False`` so resume works. Do not "unify" these two
         # construction points — you'd regress model latency and resume behavior.
-        opts = ClaudeCliOptions(
+        return ClaudeAgentOptions(
             workdir=context.workdir,
             env_vars=dict(context.env_vars) if context.env_vars else None,
             model=context.model,
@@ -422,9 +380,37 @@ class ClaudeCLIStreamWorker(AgenticWorker):
             print_mode=True,
             effort=context.effort,
             add_dirs=list(context.add_dirs),
-            # verbose=True is auto-enabled by ClaudeCliOptions when
+            plugin_dirs=list(context.plugin_dirs),
+            # Debug is ALWAYS on for the headless per-turn spawn, redirected to
+            # a file we own. This is not a tuning knob: the CLI's own auth /
+            # token-refresh failures are only ever explained by this stream,
+            # and every incident so far has been diagnosed after the fact —
+            # when the CLI's own ``~/.claude/debug/`` copy had already been
+            # pruned by its ``.last-cleanup`` pass. The cost is a small file
+            # per turn; stderr stays empty (measured), so nothing extra is
+            # logged on the normal path.
+            debug=True,
+            debug_file=_turn_debug_file(opts_session_id),
+            # verbose=True is auto-enabled by ClaudeAgentOptions when
             # output_format == "stream-json".
         )
+
+    def _build_spawn(
+        self,
+        prompt: str,
+        context: AgenticContext,
+    ) -> tuple[list[str], dict[str, str], str]:
+        """Build (argv, env, stdin payload) via ``ClaudeAgentOptions``.
+
+        The prompt rides stdin as a stream-json user message
+        (``--input-format stream-json``) so the open pipe doubles as the
+        graceful-interrupt channel for ``close_session()``.
+
+        Raises :class:`WorkerSpawnError` when claude is not installed (no
+        harness capability discovered) or its executable can't be resolved on
+        the spawn PATH.
+        """
+        opts = self._options_from_context(context)
         opts.system_prompt_file = context.system_prompt_file
         # No argv instruction — the prompt is delivered over stdin (below) so
         # the pipe stays open as the graceful-interrupt channel.
@@ -495,6 +481,48 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         except Exception:
             logger.debug("claude stdin close failed", exc_info=True)
 
+    def _humanize_auth_error(self, fd: FlowData) -> FlowData:
+        """Replace the CLI's raw auth 401 with something a user can act on.
+
+        The CLI synthesizes this text itself (``model: "<synthetic>"``, no
+        request id) and it reads like a developer console line —
+        ``Failed to authenticate. API Error: 401 OAuth access token has expired.
+        Re-authenticate to continue.`` — which is what a Flowpad user saw when
+        this first happened. Rewriting it is the same move
+        ``_reclassify_cancelled`` makes for aborts: the CLI's own status text
+        translated into the surface's terms.
+
+        The raw text is logged verbatim, never swallowed. With the pre-flight in
+        place this path should be unreachable for plain expiry, so reaching it
+        means something ELSE rejected the credential (revoked, signed out
+        elsewhere, rotated on the shared account) — worth a WARNING every time.
+        """
+        # Two carriers, because the CLI reports the same failure twice: as the
+        # assistant CHAT text, and again inside the terminal RESULT frame's
+        # ``result`` field (``_convert_result`` keeps that one as a dict).
+        # Rewriting only the first would leave the raw string reachable.
+        if isinstance(fd.flow_value, str):
+            if "API Error: 401" not in fd.flow_value:
+                return fd
+            raw, carrier = fd.flow_value, "chat"
+        elif isinstance(fd.flow_value, dict) and isinstance(fd.flow_value.get("result"), str):
+            if "API Error: 401" not in fd.flow_value["result"]:
+                return fd
+            raw, carrier = fd.flow_value["result"], "result"
+        else:
+            return fd
+
+        logger.warning(
+            "claude auth error surfaced to the user (%s frame), raw text: %s",
+            carrier,
+            raw.strip(),
+        )
+        if carrier == "chat":
+            fd.flow_value = _AUTH_ERROR_TEXT
+        else:
+            fd.flow_value = {**fd.flow_value, "result": _AUTH_ERROR_TEXT}
+        return fd
+
     def _reclassify_cancelled(self, fd: FlowData) -> FlowData:
         """Downgrade an interrupted turn's error RESULT to ``outcome=aborted``.
 
@@ -513,6 +541,83 @@ class ClaudeCLIStreamWorker(AgenticWorker):
 
 
 # ── Module helpers ────────────────────────────────────────────────────────────
+
+
+DEBUG_LOG_RETENTION_SECONDS = 7 * 86400
+_DEBUG_PRUNE_INTERVAL_SECONDS = 3600.0
+_last_debug_prune = 0.0
+
+
+def _debug_dir():
+    return get_instance_settings().logs_dir / "claude-cli-debug"
+
+
+async def _prune_debug_logs() -> None:
+    """Drop per-turn debug logs older than the retention window.
+
+    We redirect the CLI's debug stream into a directory we own precisely so its
+    own ``.last-cleanup`` pass can't delete the log of the incident we're trying
+    to explain — which means retention is now ours to do. A tool-using turn
+    writes ~17 KB (measured), so this is not about disk pressure; it's about not
+    growing without bound on boxes that run for weeks.
+
+    Detached and off the turn's path: a spawn never waits on it.
+    """
+    try:
+        debug_dir = _debug_dir()
+        if not debug_dir.is_dir():
+            return
+        cutoff = time.time() - DEBUG_LOG_RETENTION_SECONDS
+        dropped = 0
+        for path in debug_dir.glob("*.txt"):
+            try:
+                if path.stat().st_mtime < cutoff:
+                    path.unlink()
+                    dropped += 1
+            except OSError:
+                continue
+        if dropped:
+            logger.info("claude debug-log retention: removed %d file(s)", dropped)
+    except Exception:
+        logger.warning("claude debug-log retention failed", exc_info=True)
+
+
+def _maybe_prune_debug_logs() -> None:
+    """Kick off a retention sweep at most hourly, riding the spawn path.
+
+    Deliberately not a scheduled job: the only time these files accumulate is
+    when turns run, so the turn is the natural trigger and nothing has to tick
+    in the background. ``abs`` so a backwards clock step (these sandboxes
+    suspend and resume) can't park the next sweep in the future forever.
+    """
+    global _last_debug_prune
+    now = time.time()
+    if abs(now - _last_debug_prune) < _DEBUG_PRUNE_INTERVAL_SECONDS:
+        return
+    _last_debug_prune = now
+    asyncio.create_task(_prune_debug_logs())
+
+
+def _turn_debug_file(session_id: str | None) -> str | None:
+    """Path for this turn's ``--debug-file``, under the instance logs dir.
+
+    One file per TURN, not per session: the failure worth capturing is the
+    first turn after an idle gap, and the recovery turn follows ~30s later —
+    a session-keyed name would let that second turn clobber the evidence.
+
+    Returns ``None`` if the logs dir can't be resolved, in which case the CLI
+    falls back to its own ``~/.claude/debug/`` (still better than nothing).
+    """
+    from datetime import datetime, timezone
+
+    try:
+        logs_dir = get_instance_settings().logs_dir / "claude-cli-debug"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        logger.warning("could not resolve claude debug dir", exc_info=True)
+        return None
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")[:-3]
+    return str(logs_dir / f"{session_id or 'nosession'}-{stamp}.txt")
 
 
 def _error(message: str) -> FlowData:
@@ -534,5 +639,3 @@ def _status(subtype: str, value: str = "") -> FlowData:
             "subtype": subtype,
         },
     )
-
-

@@ -1,8 +1,4 @@
 import { dataManager, isTypeId, isValidUUIDv4, TypeId } from '@sdk';
-import type { LucideIcon } from 'lucide-react';
-import { lucideByName } from '@src/lib/lucide-by-name';
-import { ICON_BY_TYPE } from '@src/components/conversation/EntityChip';
-import type { AssetTypeInfo } from '@src/hooks/use-asset-types';
 
 /**
  * Resolve a descriptor's typeid string to the cached entity's `displayName`.
@@ -10,7 +6,7 @@ import type { AssetTypeInfo } from '@src/hooks/use-asset-types';
  * isn't well-formed.
  */
 export function displayLabelForTypeid(typeid: string): string {
-  // Name-form pseudo-typeids (entity-less inline personas, `agent-<name>`)
+  // Name-form pseudo-typeids (entity-less inline personas, `subagent-<name>`)
   // aren't cache-resolvable — show the bare name, not the raw pair.
   if (!isTypeId(typeid)) return parseTypeid(typeid).id || typeid;
   try {
@@ -19,22 +15,6 @@ export function displayLabelForTypeid(typeid: string): string {
   } catch {
     return typeid;
   }
-}
-
-/**
- * Build a typeName → LucideIcon resolver from an AssetTypeInfo[] (typically
- * the result of `useAssetTypes`). Prefers the API-provided icon name; falls
- * back to the chat EntityChip icon registry when the API hasn't loaded yet.
- */
-export function makeIconForType(
-  assetTypes: AssetTypeInfo[],
-): (typeName: string) => LucideIcon {
-  return (typeName: string): LucideIcon => {
-    const ti = assetTypes.find((t) => t.type_name === typeName);
-    const fromApi = ti?.icon ? lucideByName(ti.icon) : null;
-    if (fromApi) return fromApi;
-    return ICON_BY_TYPE[typeName] ?? lucideByName(null);
-  };
 }
 
 export function parseTypeid(typeid: string): { type: string; id: string } {
@@ -47,7 +27,7 @@ export function parseTypeid(typeid: string): { type: string; id: string } {
  * Whether a descriptor's typeid points at a real backing entity that can be
  * opened in an editor/viewer. Entity ids are always UUID v4/v5 (policy), so
  * gate on that rather than the looser isTypeId grammar: an entity-less inline
- * persona carries a name-form pseudo-typeid (e.g. `agent-team.lead`) that
+ * persona carries a name-form pseudo-typeid (e.g. `subagent-team.lead`) that
  * parses as well-formed but has nothing to open. Single source of truth for
  * the "click to open" affordance shared by the asset picker and manager rows.
  */
@@ -63,12 +43,28 @@ export function basename(path: string): string {
 
 /**
  * Canonicalize a filesystem/VFS path for comparison and basename extraction:
- * backslashes → `/`, collapse repeated `/`, drop a trailing `/`. Shared by the
- * asset-manager popover (its `dirname`/`descriptorKey`) and `improvableMainFile`
- * so the normalization can't drift between the two.
+ * backslashes → `/`, collapse repeated `/`, drop a trailing `/`. Shared by
+ * `dirname`/`descriptorKey` below and `improvableMainFile` so the normalization
+ * can't drift between them.
  */
 export function normalizePath(path: string | null | undefined): string {
   return (path ?? '').replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '');
+}
+
+/** The directory containing `path`, normalized. `.` when there is no separator. */
+export function dirname(path: string): string {
+  const n = normalizePath(path);
+  const idx = n.lastIndexOf('/');
+  return idx >= 0 ? n.slice(0, idx) || '/' : '.';
+}
+
+/**
+ * Stable identity for a descriptor's *asset* (not its row): typeid + normalized
+ * path. The improve flow keys its busy state on this, so the host that launches
+ * an improvement and the row that renders the spinner agree on one key.
+ */
+export function descriptorKey(descriptor: { typeid: string; posix_path?: string | null }): string {
+  return `${descriptor.typeid}@${normalizePath(descriptor.posix_path)}`;
 }
 
 /** The subset of a type's TypeInfo that decides its improvable main file. */
@@ -94,6 +90,6 @@ export function improvableMainFile(
   if (!assetPath) return null;
   const { type } = parseTypeid(descriptor.typeid);
   const ti = typeInfoByName.get(type);
-  const file = ti?.folder_backed ? ti.main_file ?? '' : basename(assetPath);
+  const file = ti?.folder_backed ? (ti.main_file ?? '') : basename(assetPath);
   return file || null;
 }

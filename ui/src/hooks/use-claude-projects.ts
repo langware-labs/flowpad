@@ -1,4 +1,4 @@
-import { useAgentContext } from '@src/components/agent-layout/agent-layout';
+import { useAgentContext } from '@src/contexts/agent-context';
 import {
   fetchAllSkillsFromComputeNode,
   fsManager,
@@ -10,6 +10,11 @@ import {
   type SkillItem,
 } from '@sdk';
 import { useCallback, useEffect, useRef, useState } from 'react';
+
+/** Stable empty result. A fresh `[]` per render is a new identity, which breaks
+ *  every downstream memo keyed on `projects` — and a disabled hook never has
+ *  data, so that is the permanent case, not the rare one. */
+const NO_PROJECTS: ProjectListItem[] = [];
 
 /** Cache TTL in milliseconds (2 minutes for project list, longer since it changes less often) */
 const PROJECT_LIST_CACHE_TTL = 120000;
@@ -32,10 +37,7 @@ interface ProjectListCache {
 }
 
 const projectListCache = new Map<string, ProjectListCache>();
-const projectListInFlight = new Map<string, Promise<ListProjectsResponse>>();
-
 const projectResourcesCache = new Map<string, ProjectResourcesCache>();
-const projectResourcesInFlight = new Map<string, Promise<ScanProjectResponse>>();
 
 /**
  * Hook for fast project list enumeration.
@@ -62,6 +64,7 @@ export function useProjectList(options: UseProjectListOptions = {}) {
     return !cached || Date.now() - cached.timestamp >= PROJECT_LIST_CACHE_TTL;
   });
   const [error, setError] = useState<string | null>(null);
+  const requestRef = useRef<AbortController | null>(null);
 
   const fetchData = useCallback(
     async (forceRefresh = false) => {
@@ -91,23 +94,24 @@ export function useProjectList(options: UseProjectListOptions = {}) {
 
       setIsLoading(true);
       setError(null);
+      requestRef.current?.abort();
+      const controller = new AbortController();
+      requestRef.current = controller;
 
       try {
-        let pending = projectListInFlight.get(cacheKey);
-        if (!pending || forceRefresh) {
-          pending = listProjectsFromComputeNode(computeNode.id);
-          projectListInFlight.set(cacheKey, pending);
-        }
-
-        const result = await pending;
+        const result = await listProjectsFromComputeNode(computeNode.id, controller.signal);
+        if (controller.signal.aborted || requestRef.current !== controller) return;
         setData(result);
         projectListCache.set(cacheKey, { data: result, timestamp: Date.now() });
       } catch (err) {
+        if (controller.signal.aborted || requestRef.current !== controller) return;
         console.error('Failed to list projects:', err);
         setError(err instanceof Error ? err.message : 'Failed to list projects');
       } finally {
-        projectListInFlight.delete(cacheKey);
-        setIsLoading(false);
+        if (requestRef.current === controller) {
+          requestRef.current = null;
+          setIsLoading(false);
+        }
       }
     },
     [computeNode?.id, enabled],
@@ -119,10 +123,14 @@ export function useProjectList(options: UseProjectListOptions = {}) {
       return;
     }
     void fetchData();
+    return () => {
+      requestRef.current?.abort();
+      requestRef.current = null;
+    };
   }, [enabled, fetchData]);
 
   return {
-    projects: data?.projects ?? [],
+    projects: data?.projects ?? NO_PROJECTS,
     totalCount: data?.total_count ?? 0,
     isLoading,
     error,
@@ -167,6 +175,7 @@ export function useClaudeProjectResources(
 
   // Per-project cache
   const cacheRef = useRef<Map<string, ProjectResourcesCache>>(new Map());
+  const requestRef = useRef<AbortController | null>(null);
 
   const fetchData = useCallback(
     async (forceRefresh = false) => {
@@ -200,24 +209,31 @@ export function useClaudeProjectResources(
 
       setIsLoading(true);
       setError(null);
+      requestRef.current?.abort();
+      const controller = new AbortController();
+      requestRef.current = controller;
 
       try {
-        let pending = projectResourcesInFlight.get(cacheKey);
-        if (!pending || forceRefresh) {
-          pending = scanProjectFromComputeNode(computeNode.id, projectEncodedName, 100, includeSessions);
-          projectResourcesInFlight.set(cacheKey, pending);
-        }
-
-        const result = await pending;
+        const result = await scanProjectFromComputeNode(
+          computeNode.id,
+          projectEncodedName,
+          100,
+          includeSessions,
+          controller.signal,
+        );
+        if (controller.signal.aborted || requestRef.current !== controller) return;
         setData(result);
         projectResourcesCache.set(cacheKey, { data: result, timestamp: Date.now() });
         cacheRef.current.set(cacheRefKey, { data: result, timestamp: Date.now() });
       } catch (err) {
+        if (controller.signal.aborted || requestRef.current !== controller) return;
         console.error('Failed to scan Claude project:', err);
         setError(err instanceof Error ? err.message : 'Failed to scan project');
       } finally {
-        projectResourcesInFlight.delete(cacheKey);
-        setIsLoading(false);
+        if (requestRef.current === controller) {
+          requestRef.current = null;
+          setIsLoading(false);
+        }
       }
     },
     [computeNode?.id, enabled, includeSessions, projectEncodedName],
@@ -229,6 +245,10 @@ export function useClaudeProjectResources(
       return;
     }
     void fetchData();
+    return () => {
+      requestRef.current?.abort();
+      requestRef.current = null;
+    };
   }, [enabled, fetchData]);
 
   // Auto-refresh polling

@@ -1,16 +1,21 @@
-import { ArtifactType, CodebaseReferenceType, IArtifact } from '@sdk';
+import { ARTIFACT_KINDS, gitOriginFromUrl, normalizeKind, type FSOriginField, type IArtifact } from '@sdk';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { useArtifactActions } from '@src/hooks/flow-hooks';
+import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
-import { notify } from '@src/notifications';
-import { useArtifactActions } from '@src/hooks/flow-hooks';
 import { Loader2 } from 'lucide-react';
-import React, { useCallback, useMemo, useState } from 'react';
-import { Trans, useLingui } from '@lingui/react/macro';
-import { ArtifactMetadataEditor } from './artifact-metadata-editor';
-import { getArtifactTypeConfig, getArtifactTypeOptions } from './artifact-type-config';
+import React, { useCallback, useState } from 'react';
 
 interface ArtifactFormProps {
   open: boolean;
@@ -18,100 +23,60 @@ interface ArtifactFormProps {
   onSuccess?: () => void;
 }
 
+type OriginKind = 'none' | 'local' | 'git';
+
 interface FormState {
   name: string;
-  artifactType: ArtifactType | null;
-  refType: CodebaseReferenceType;
-  path: string;
+  kind: string;
   description: string;
-  metadata: Record<string, unknown>;
+  originKind: OriginKind;
+  originLocator: string;
+  originBranch: string;
+  originRelPath: string;
 }
 
 const initialFormState: FormState = {
   name: '',
-  artifactType: null,
-  refType: CodebaseReferenceType.FILE,
-  path: '',
+  kind: '',
   description: '',
-  metadata: {},
+  originKind: 'none',
+  originLocator: '',
+  originBranch: '',
+  originRelPath: '.',
 };
+
+const KIND_SUGGESTIONS = Object.values(ARTIFACT_KINDS);
+
+function originFromForm(state: FormState): FSOriginField | null {
+  if (state.originKind === 'none') return null;
+  const relPath = state.originRelPath.trim() || '.';
+  if (state.originKind === 'local') {
+    const base = state.originLocator.trim();
+    if (!base) throw new Error('Local source base is required');
+    return { kind: 'local', base, rel_path: relPath };
+  }
+  const origin = gitOriginFromUrl(state.originLocator, state.originBranch.trim(), relPath);
+  if (!origin) throw new Error('Enter a valid Git repository URL and relative path');
+  return { ...origin, kind: 'git' };
+}
 
 export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, onSuccess }) => {
   const { t } = useLingui();
   const { addArtifact, isAdding } = useArtifactActions();
   const [formState, setFormState] = useState<FormState>(initialFormState);
 
-  const artifactTypeOptions = useMemo(() => getArtifactTypeOptions(), []);
-
-  const handleTypeChange = useCallback((type: string) => {
-    const artifactType = type as ArtifactType;
-    const config = getArtifactTypeConfig(artifactType);
-
-    setFormState((prev) => ({
-      ...prev,
-      artifactType,
-      refType: config.defaultRefType,
-      // Reset metadata when type changes
-      metadata: {},
-    }));
-  }, []);
-
-  const handleMetadataChange = useCallback((metadata: Record<string, unknown>) => {
-    setFormState((prev) => ({
-      ...prev,
-      metadata,
-    }));
-  }, []);
-
   const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault();
-
-      if (!formState.name.trim()) {
-        notify.error({
-          title: t`Validation error`,
-          message: t`Name is required`,
-        });
-        return;
-      }
-
-      // Build artifact data
-      const artifactData: Partial<IArtifact> = {
-        name: formState.name.trim(),
-        artifact_type: formState.artifactType || ArtifactType.FILE,
-        ref_type: formState.refType,
-        path: formState.path.trim() || '.',
-        description: formState.description.trim() || undefined,
-        metadata: {
-          ...formState.metadata,
-        },
-      };
-
-      // Extract port to top level if present (for WEBAPP/APP_SERVICE)
-      const metaPort = formState.metadata.port;
-      if (metaPort !== undefined && metaPort !== null) {
-        const portStr = typeof metaPort === 'string' ? metaPort : JSON.stringify(metaPort);
-        artifactData.port = portStr;
-        // Keep port in metadata too for frontend reading
-        artifactData.metadata = {
-          ...artifactData.metadata,
-          port: portStr,
-        };
-      }
-
-      // Extract start_cmd if present
-      const metaStartCmd = formState.metadata.start_cmd;
-      if (metaStartCmd !== undefined && metaStartCmd !== null) {
-        artifactData.start_cmd = typeof metaStartCmd === 'string' ? metaStartCmd : JSON.stringify(metaStartCmd);
-      }
-
-      // Extract health if present
-      const metaHealth = formState.metadata.health;
-      if (metaHealth !== undefined && metaHealth !== null) {
-        artifactData.health = typeof metaHealth === 'string' ? metaHealth : JSON.stringify(metaHealth);
-      }
-
+    async (event: React.FormEvent) => {
+      event.preventDefault();
       try {
+        const name = formState.name.trim();
+        if (!name) throw new Error(t`Name is required`);
+        const artifactData: Partial<IArtifact> = {
+          name,
+          kind: normalizeKind(formState.kind),
+          description: formState.description.trim() || undefined,
+          origin: originFromForm(formState),
+        };
         await addArtifact(artifactData);
         notify.success({
           title: t`Artifact created`,
@@ -127,7 +92,7 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
         });
       }
     },
-    [formState, addArtifact, onOpenChange, onSuccess],
+    [addArtifact, formState, onOpenChange, onSuccess, t],
   );
 
   const handleCancel = useCallback(() => {
@@ -137,95 +102,131 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[500px]">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle><Trans>Add Artifact</Trans></DialogTitle>
-          <DialogDescription><Trans>Create a new artifact in this project.</Trans></DialogDescription>
+          <DialogTitle>
+            <Trans>Add Artifact</Trans>
+          </DialogTitle>
+          <DialogDescription>
+            <Trans>Describe the logical application, service, resource, or content and its optional source.</Trans>
+          </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
-          {/* Name */}
+        <form onSubmit={(event) => void handleSubmit(event)} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="name">
+            <Label htmlFor="artifact-name">
               <Trans>Name</Trans> <span className="text-destructive">*</span>
             </Label>
             <Input
-              id="name"
-              placeholder={t`My Artifact`}
+              id="artifact-name"
+              placeholder={t`My web application`}
               value={formState.name}
-              onChange={(e) => setFormState((prev) => ({ ...prev, name: e.target.value }))}
+              onChange={(event) => setFormState((previous) => ({ ...previous, name: event.target.value }))}
             />
           </div>
 
-          {/* Artifact Type */}
           <div className="space-y-2">
-            <Label htmlFor="artifact-type"><Trans>Type</Trans></Label>
-            <Select value={formState.artifactType || ''} onValueChange={handleTypeChange}>
-              <SelectTrigger>
-                <SelectValue placeholder={t`Select artifact type`} />
-              </SelectTrigger>
-              <SelectContent>
-                {artifactTypeOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label htmlFor="artifact-kind">
+              <Trans>Kind</Trans> <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="artifact-kind"
+              list="artifact-kind-suggestions"
+              placeholder="application.web"
+              value={formState.kind}
+              onChange={(event) => setFormState((previous) => ({ ...previous, kind: event.target.value }))}
+            />
+            <datalist id="artifact-kind-suggestions">
+              {KIND_SUGGESTIONS.map((kind) => (
+                <option value={kind} key={kind} />
+              ))}
+            </datalist>
+            <p className="text-xs text-muted-foreground">
+              <Trans>Open dot-path ontology; custom descendants are welcome.</Trans>
+            </p>
           </div>
 
-          {/* Reference Type */}
           <div className="space-y-2">
-            <Label htmlFor="ref-type"><Trans>Reference Type</Trans></Label>
+            <Label htmlFor="artifact-description">
+              <Trans>Description</Trans>
+            </Label>
+            <Input
+              id="artifact-description"
+              placeholder={t`Optional description`}
+              value={formState.description}
+              onChange={(event) => setFormState((previous) => ({ ...previous, description: event.target.value }))}
+            />
+          </div>
+
+          <div className="space-y-2 rounded-md border p-3">
+            <Label>
+              <Trans>Source</Trans>
+            </Label>
             <Select
-              value={formState.refType}
-              onValueChange={(value) => setFormState((prev) => ({ ...prev, refType: value as CodebaseReferenceType }))}
+              value={formState.originKind}
+              onValueChange={(value) => setFormState((previous) => ({ ...previous, originKind: value as OriginKind }))}
             >
-              <SelectTrigger>
+              <SelectTrigger aria-label={t`Source kind`}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={CodebaseReferenceType.FILE}><Trans>File</Trans></SelectItem>
-                <SelectItem value={CodebaseReferenceType.FOLDER}><Trans>Folder</Trans></SelectItem>
-                <SelectItem value={CodebaseReferenceType.URL}><Trans>URL</Trans></SelectItem>
-                <SelectItem value={CodebaseReferenceType.REFERENCE}><Trans>Reference</Trans></SelectItem>
-                <SelectItem value={CodebaseReferenceType.GLOB}><Trans>Glob Pattern</Trans></SelectItem>
+                <SelectItem value="none">
+                  <Trans>No source</Trans>
+                </SelectItem>
+                <SelectItem value="local">
+                  <Trans>Local path</Trans>
+                </SelectItem>
+                <SelectItem value="git">
+                  <Trans>Git repository</Trans>
+                </SelectItem>
               </SelectContent>
             </Select>
-          </div>
 
-          {/* Path */}
-          <div className="space-y-2">
-            <Label htmlFor="path"><Trans>Path</Trans></Label>
-            <Input
-              id="path"
-              placeholder={t`./src/app or https://... (optional)`}
-              value={formState.path}
-              onChange={(e) => setFormState((prev) => ({ ...prev, path: e.target.value }))}
-            />
-          </div>
-
-          {/* Description */}
-          <div className="space-y-2">
-            <Label htmlFor="description"><Trans>Description</Trans></Label>
-            <Input
-              id="description"
-              placeholder={t`Optional description`}
-              value={formState.description}
-              onChange={(e) => setFormState((prev) => ({ ...prev, description: e.target.value }))}
-            />
-          </div>
-
-          {/* Type-specific metadata */}
-          <div className="space-y-2">
-            <Label><Trans>Metadata</Trans></Label>
-            <div className="rounded-md border p-3">
-              <ArtifactMetadataEditor
-                artifactType={formState.artifactType}
-                metadata={formState.metadata}
-                onChange={handleMetadataChange}
-              />
-            </div>
+            {formState.originKind !== 'none' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="artifact-origin-locator">
+                    {formState.originKind === 'git' ? <Trans>Repository URL</Trans> : <Trans>Base path</Trans>}
+                  </Label>
+                  <Input
+                    id="artifact-origin-locator"
+                    placeholder={formState.originKind === 'git' ? 'https://github.com/acme/app.git' : '/workspace/apps'}
+                    value={formState.originLocator}
+                    onChange={(event) =>
+                      setFormState((previous) => ({ ...previous, originLocator: event.target.value }))
+                    }
+                  />
+                </div>
+                {formState.originKind === 'git' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="artifact-origin-branch">
+                      <Trans>Branch</Trans>
+                    </Label>
+                    <Input
+                      id="artifact-origin-branch"
+                      placeholder="main"
+                      value={formState.originBranch}
+                      onChange={(event) =>
+                        setFormState((previous) => ({ ...previous, originBranch: event.target.value }))
+                      }
+                    />
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="artifact-origin-rel">
+                    <Trans>Relative path</Trans>
+                  </Label>
+                  <Input
+                    id="artifact-origin-rel"
+                    placeholder="."
+                    value={formState.originRelPath}
+                    onChange={(event) =>
+                      setFormState((previous) => ({ ...previous, originRelPath: event.target.value }))
+                    }
+                  />
+                </div>
+              </>
+            )}
           </div>
 
           <DialogFooter>
@@ -233,7 +234,7 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
               <Trans>Cancel</Trans>
             </Button>
             <Button type="submit" disabled={isAdding}>
-              {isAdding && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isAdding && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
               <Trans>Add Artifact</Trans>
             </Button>
           </DialogFooter>

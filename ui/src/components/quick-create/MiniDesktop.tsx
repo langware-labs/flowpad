@@ -9,11 +9,11 @@ import { useLingui } from '@lingui/react/macro';
 import { DesktopSurface } from './DesktopSurface';
 
 /**
- * MiniDesktop — the compact desktop strip on the home landing (unscoped) and the
- * project home (scoped via `scope`). When scoped, the grid shows only that
- * scope's favorites and the corner expand affordance opens the full-page desktop
- * pinned to the same scope (`/dock/desktop?<scope>` → a "<project> Desktop" tab);
- * unscoped it opens the global desktop. URL-first, same surface with more slots.
+ * MiniDesktop — the compact desktop strip on the home landing. When scoped, the
+ * grid shows only that scope's favorites and the corner expand affordance opens
+ * the full-page desktop pinned to the same scope (`/dock/desktop?<scope>` → a
+ * "<project> Desktop" tab); unscoped it opens the global desktop. URL-first,
+ * same surface with more slots.
  */
 export function MiniDesktop({ scope }: { scope?: ScopeFilter }) {
   const { t } = useLingui();
@@ -28,7 +28,7 @@ export function MiniDesktop({ scope }: { scope?: ScopeFilter }) {
 
   return (
     <div className="relative rounded-lg border border-border bg-card/50 px-4 py-3">
-      <DesktopSurface className="pr-6" filter={filter} />
+      <DesktopSurface className="pe-6" filter={filter} />
 
       <button
         type="button"

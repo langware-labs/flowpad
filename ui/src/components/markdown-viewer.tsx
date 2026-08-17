@@ -1,5 +1,5 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { AgenticProcess, FSItem } from '@sdk';
+import { AgenticProcess, FSEntry } from '@sdk';
 import { MarkdownView } from '@src/components/markdown-view';
 import { Button } from '@src/components/ui/button';
 import { ScrollArea } from '@src/components/ui/scroll-area';
@@ -30,7 +30,7 @@ export function MarkdownViewer() {
     setError(null);
 
     try {
-      const fsItem = new FSItem({
+      const fsItem = new FSEntry({
         vfs_abs_path: `${AgenticProcess.type}-${flow.id}/${filePath}`,
       });
 

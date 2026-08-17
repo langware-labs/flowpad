@@ -37,6 +37,8 @@ from ..entries import (
     UsageEntry,
     UserMessageEntry,
     WebFetchEntry,
+    WorkerUnavailableEntry,
+    classify_limit_reason,
 )
 from ..entry import TranscriptEntry
 
@@ -100,6 +102,48 @@ def _resolve_id(raw: dict) -> str:
     return ""
 
 
+def parse_worker_unavailable_event(
+    raw: dict,
+    base: dict[str, Any],
+) -> WorkerUnavailableEntry | None:
+    """Normalize a Claude API rate-limit assistant event.
+
+    Claude emits quota exhaustion as an ``assistant`` row and may keep the CLI
+    process alive, so neither a terminal result nor a non-zero exit is a
+    reliable signal. Both transcript replay and the live stream converter call
+    this helper to keep classification and payload shape identical.
+    """
+    provider_error = str(raw.get("error") or "")
+    status_raw = raw.get("apiErrorStatus")
+    try:
+        status_code = int(status_raw) if status_raw is not None else None
+    except (TypeError, ValueError):
+        status_code = None
+    is_rate_limit = provider_error == "rate_limit" or (
+        bool(raw.get("isApiErrorMessage")) and status_code == 429
+    )
+    if not is_rate_limit:
+        return None
+
+    message_data = raw.get("message")
+    message_obj = message_data if isinstance(message_data, dict) else {}
+    message = extract_text(message_obj.get("content") or [])
+    if not message and isinstance(message_data, str):
+        message = message_data
+    # The provider already said this is a limit, so an unclassified message is
+    # a plain rate limit rather than "not a limit at all".
+    reason = classify_limit_reason(message) or "rate_limited"
+    return WorkerUnavailableEntry(
+        reason=reason,
+        worker_type="claude_code",
+        provider_error=provider_error or "rate_limit",
+        status_code=status_code,
+        message=message,
+        recoverable_with_alternative=True,
+        **base,
+    )
+
+
 class ClaudeParser:
     worker_type = "claude"
 
@@ -147,6 +191,9 @@ class ClaudeParser:
             )]
 
         if rtype == "assistant":
+            worker_unavailable = parse_worker_unavailable_event(raw, base)
+            if worker_unavailable is not None:
+                return [worker_unavailable]
             return self._parse_assistant(raw, base)
         if rtype == "user":
             return [self._parse_user(raw, base)]
@@ -203,7 +250,7 @@ class ClaudeParser:
             tool_name = str(tool_block.get("name") or "")
             tool_use_id = str(tool_block.get("id") or "")
             tool_input = tool_block.get("input") or {}
-            main = self._build_semantic_tool_entry(
+            main = build_semantic_tool_entry(
                 tool_name=tool_name,
                 tool_use_id=tool_use_id,
                 tool_input=tool_input,
@@ -318,133 +365,6 @@ class ClaudeParser:
             self._usage_entries_by_msg_id[msg_id] = out
         return out
 
-    def _build_semantic_tool_entry(
-        self,
-        *,
-        tool_name: str,
-        tool_use_id: str,
-        tool_input: dict,
-        envelope: dict,
-        base: dict,
-    ) -> TranscriptEntry:
-        """Map a Claude ``tool_use`` block onto a semantic entry kind.
-
-        Falls through to :class:`ToolUseEntry` for any tool not in the
-        recognized set — this keeps MCP tools (``mcp__*``) and unknown
-        bespoke tools rendering as the generic catch-all rather than
-        silently dropping fields.
-        """
-        common: dict[str, Any] = {
-            "tool_name": tool_name,
-            "tool_use_id": tool_use_id,
-            **envelope,
-            **base,
-        }
-        ti = tool_input if isinstance(tool_input, dict) else {}
-
-        if tool_name == "Skill":
-            return SkillCallEntry(
-                skill_name=str(ti.get("skill") or ti.get("name") or ti.get("command") or ""),
-                tool_input=ti,
-                **common,
-            )
-        if tool_name == "ExitPlanMode":
-            return ExitPlanModeEntry(tool_input=ti, **common)
-        if tool_name == "Write":
-            full_content = ti.get("content")
-            full_str = str(full_content) if full_content is not None else None
-            line_count = full_str.count("\n") + 1 if full_str else None
-            bytes_count = len(full_str.encode("utf-8")) if full_str else None
-            return FileWriteEntry(
-                path=str(ti.get("file_path") or ""),
-                content=truncate_file_content(full_str),
-                bytes_count=bytes_count,
-                line_count=line_count,
-                is_new=True,
-                **common,
-            )
-        if tool_name in ("Edit", "MultiEdit"):
-            hunks: list[dict] = []
-            if tool_name == "Edit":
-                if ti.get("old_string") is not None or ti.get("new_string") is not None:
-                    hunks.append({
-                        "old": str(ti.get("old_string") or ""),
-                        "new": str(ti.get("new_string") or ""),
-                        "replace_all": bool(ti.get("replace_all", False)),
-                    })
-            else:
-                edits = ti.get("edits") or []
-                if isinstance(edits, list):
-                    for ed in edits:
-                        if isinstance(ed, dict):
-                            hunks.append({
-                                "old": str(ed.get("old_string") or ""),
-                                "new": str(ed.get("new_string") or ""),
-                                "replace_all": bool(ed.get("replace_all", False)),
-                            })
-            return FileEditEntry(
-                path=str(ti.get("file_path") or ""),
-                hunks=hunks,
-                **common,
-            )
-        if tool_name == "NotebookEdit":
-            return FileEditEntry(
-                path=str(ti.get("notebook_path") or ti.get("file_path") or ""),
-                hunks=[],
-                change_summary=str(ti.get("new_source") or "") or None,
-                **common,
-            )
-        if tool_name in ("Read", "NotebookRead"):
-            offset = ti.get("offset")
-            limit = ti.get("limit")
-            start_line = int(offset) if isinstance(offset, (int, float)) else None
-            end_line: int | None = None
-            if start_line is not None and isinstance(limit, (int, float)):
-                end_line = start_line + int(limit)
-            return FileReadEntry(
-                path=str(ti.get("file_path") or ti.get("notebook_path") or ""),
-                start_line=start_line,
-                end_line=end_line,
-                **common,
-            )
-        if tool_name == "Bash":
-            timeout_raw = ti.get("timeout")
-            timeout_val = int(timeout_raw) if isinstance(timeout_raw, (int, float)) else None
-            return ShellCommandEntry(
-                command=str(ti.get("command") or ""),
-                timeout=timeout_val,
-                **common,
-            )
-        if tool_name in ("Glob", "Grep"):
-            return SearchEntry(
-                search_kind=tool_name.lower(),
-                query=str(ti.get("pattern") or ""),
-                path=str(ti.get("path") or "") or None,
-                **common,
-            )
-        if tool_name in ("WebFetch", "WebSearch"):
-            return WebFetchEntry(
-                url=str(ti.get("url") or "") or None,
-                query=str(ti.get("query") or "") or None,
-                prompt=str(ti.get("prompt") or "") or None,
-                **common,
-            )
-        if tool_name == "TodoWrite":
-            todos_raw = ti.get("todos")
-            items = todos_raw if isinstance(todos_raw, list) else []
-            return TodoUpdateEntry(
-                items=items,
-                **common,
-            )
-        if tool_name in ("Task", "Agent"):
-            return AgentSpawnEntry(
-                agent_type=str(ti.get("subagent_type") or ti.get("agent_type") or ""),
-                prompt=str(ti.get("prompt") or "") or None,
-                description=str(ti.get("description") or "") or None,
-                **common,
-            )
-        return ToolUseEntry(tool_input=ti, **common)
-
     def _parse_user(self, raw: dict, base: dict) -> TranscriptEntry:
         message = raw.get("message") or {}
         content = message.get("content") or []
@@ -482,3 +402,134 @@ class ClaudeParser:
             is_meta=bool(raw.get("isMeta", False)) or _is_flowpad_prompt_envelope(text),
             **base,
         )
+
+
+def build_semantic_tool_entry(
+    *,
+    tool_name: str,
+    tool_use_id: str,
+    tool_input: dict,
+    envelope: dict,
+    base: dict,
+) -> TranscriptEntry:
+    """Map a Claude ``tool_use`` block onto a semantic entry kind.
+
+    Module-level because BOTH paths need it: the JSONL parser (history) and
+    ``cli_drivers/claude/event_to_flowdata`` (live stream-json). A live frame
+    that skipped this mapping rendered as a nameless generic tool while the
+    same block rendered semantically after a reload.
+
+    Falls through to :class:`ToolUseEntry` for any tool not in the recognized
+    set — this keeps MCP tools (``mcp__*``) and unknown bespoke tools
+    rendering as the generic catch-all rather than silently dropping fields.
+    """
+    common: dict[str, Any] = {
+        "tool_name": tool_name,
+        "tool_use_id": tool_use_id,
+        **envelope,
+        **base,
+    }
+    ti = tool_input if isinstance(tool_input, dict) else {}
+
+    if tool_name == "Skill":
+        return SkillCallEntry(
+            skill_name=str(ti.get("skill") or ti.get("name") or ti.get("command") or ""),
+            tool_input=ti,
+            **common,
+        )
+    if tool_name == "ExitPlanMode":
+        return ExitPlanModeEntry(tool_input=ti, **common)
+    if tool_name == "Write":
+        full_content = ti.get("content")
+        full_str = str(full_content) if full_content is not None else None
+        line_count = full_str.count("\n") + 1 if full_str else None
+        bytes_count = len(full_str.encode("utf-8")) if full_str else None
+        return FileWriteEntry(
+            path=str(ti.get("file_path") or ""),
+            content=truncate_file_content(full_str),
+            bytes_count=bytes_count,
+            line_count=line_count,
+            is_new=True,
+            **common,
+        )
+    if tool_name in ("Edit", "MultiEdit"):
+        hunks: list[dict] = []
+        if tool_name == "Edit":
+            if ti.get("old_string") is not None or ti.get("new_string") is not None:
+                hunks.append({
+                    "old": str(ti.get("old_string") or ""),
+                    "new": str(ti.get("new_string") or ""),
+                    "replace_all": bool(ti.get("replace_all", False)),
+                })
+        else:
+            edits = ti.get("edits") or []
+            if isinstance(edits, list):
+                for ed in edits:
+                    if isinstance(ed, dict):
+                        hunks.append({
+                            "old": str(ed.get("old_string") or ""),
+                            "new": str(ed.get("new_string") or ""),
+                            "replace_all": bool(ed.get("replace_all", False)),
+                        })
+        return FileEditEntry(
+            path=str(ti.get("file_path") or ""),
+            hunks=hunks,
+            **common,
+        )
+    if tool_name == "NotebookEdit":
+        return FileEditEntry(
+            path=str(ti.get("notebook_path") or ti.get("file_path") or ""),
+            hunks=[],
+            change_summary=str(ti.get("new_source") or "") or None,
+            **common,
+        )
+    if tool_name in ("Read", "NotebookRead"):
+        offset = ti.get("offset")
+        limit = ti.get("limit")
+        start_line = int(offset) if isinstance(offset, (int, float)) else None
+        end_line: int | None = None
+        if start_line is not None and isinstance(limit, (int, float)):
+            end_line = start_line + int(limit)
+        return FileReadEntry(
+            path=str(ti.get("file_path") or ti.get("notebook_path") or ""),
+            start_line=start_line,
+            end_line=end_line,
+            **common,
+        )
+    if tool_name == "Bash":
+        timeout_raw = ti.get("timeout")
+        timeout_val = int(timeout_raw) if isinstance(timeout_raw, (int, float)) else None
+        return ShellCommandEntry(
+            command=str(ti.get("command") or ""),
+            timeout=timeout_val,
+            **common,
+        )
+    if tool_name in ("Glob", "Grep"):
+        return SearchEntry(
+            search_kind=tool_name.lower(),
+            query=str(ti.get("pattern") or ""),
+            path=str(ti.get("path") or "") or None,
+            **common,
+        )
+    if tool_name in ("WebFetch", "WebSearch"):
+        return WebFetchEntry(
+            url=str(ti.get("url") or "") or None,
+            query=str(ti.get("query") or "") or None,
+            prompt=str(ti.get("prompt") or "") or None,
+            **common,
+        )
+    if tool_name == "TodoWrite":
+        todos_raw = ti.get("todos")
+        items = todos_raw if isinstance(todos_raw, list) else []
+        return TodoUpdateEntry(
+            items=items,
+            **common,
+        )
+    if tool_name in ("Task", "Agent"):
+        return AgentSpawnEntry(
+            agent_type=str(ti.get("subagent_type") or ti.get("agent_type") or ""),
+            prompt=str(ti.get("prompt") or "") or None,
+            description=str(ti.get("description") or "") or None,
+            **common,
+        )
+    return ToolUseEntry(tool_input=ti, **common)

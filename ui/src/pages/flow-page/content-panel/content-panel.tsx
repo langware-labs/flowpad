@@ -1,15 +1,12 @@
 import { SpecEditor } from '@src/components/spec-editor/SpecEditor';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { AIConfigView } from '@src/components/ai-config-view';
-import { ApiKeysView } from '@src/components/api-keys-view/api-keys-view';
 import { ArtifactsView } from '@src/components/artifacts';
 import { AssistanceViewer } from '@src/components/assistance-viewer/AssistanceViewer';
 import CodeEditor from '@src/components/code-editor/CodeEditor';
 import { AssetCompareView } from '@src/components/code-editor/AssetCompareView';
 import DiffViewer from '@src/components/code-editor/DiffViewer';
 import { DocsViewer } from '@src/components/docs-viewer/DocsViewer';
-import EnvVarsManager from '@src/components/EnvVarsManager';
-import { ExecuteFlowView } from '@src/components/execute-flow-view';
 import { ExplorerView } from '@src/components/explorer-view';
 import { HooksManager } from '@src/components/hooks-manager';
 import { LensViewer } from '@src/components/lens-viewer';
@@ -19,55 +16,95 @@ import { ProcessTerminal } from '@src/components/process-terminal';
 import { SettingsView } from '@src/components/settings-view/SettingsView';
 import { PreferencesView } from '@src/components/preferences-view/PreferencesView';
 import { DesktopPage } from '@src/pages/desktop/DesktopPage';
-import { ShowView } from '@src/components/show-view/ShowView';
-import { AppHost } from '@src/components/app-host/AppHost';
 import { FilterName, getAllFilterDefinitions } from '@src/components/simple-file-manager';
 import { TasksRedirect } from '@src/components/tasks-viewer/TasksRedirect';
 import { HomeLanding } from '@src/pages/home-landing';
+import { HubHome } from '@src/pages/hub-home/HubHome';
+import { HubRecordsView } from '@src/pages/hub-browse/HubRecordsView';
+import { HubEntityView } from '@src/pages/hub-browse/HubEntityView';
+import { HubProjectPage } from '@src/pages/hub-project/HubProjectPage';
 import { LiveStatus } from '@src/pages/live-status';
 import { SearchView } from '@src/pages/search-view/SearchView';
 
-import { ConnectionStatus, dataContext, navigator, type OAuthConnection } from '@sdk';
-import { useAuth, useContext } from '@sdk/react/hooks';
+import { dataContext, PageId } from '@sdk';
+import { useAuth } from '@sdk/react/hooks';
 import { AssetsPage } from '@src/components/assets/AssetsPage';
+import { HubAssetsPage } from '@src/components/assets/HubAssetsPage';
 import { CollaborationPage, LiveSessionView } from '@src/components/collaboration';
-import { ConnectionsManager } from '@src/components/connections-manager';
+import { CredentialsView } from '@src/components/credentials-view/CredentialsView';
 import { CapabilitiesView } from '@src/components/capabilities-view';
 import { ConversationRoute } from '@src/components/conversation';
 import { InboxView } from '@src/components/inbox-view/InboxView';
-import { SurveyView } from '@src/components/survey/SurveyView';
 import { TabbedTerminal } from '@src/components/terminal';
-import { TriggersView } from '@src/components/triggers-view';
-import { Button } from '@src/components/ui/button';
 import { WebappViewer } from '@src/components/webapp-viewer';
-import { WorkflowsPage } from '@src/components/workflows-view/WorkflowsPage';
 import { useActiveViewer } from '@src/hooks/flow-hooks';
 import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
-import { useEnvVarsStore } from '@src/hooks/use-env-vars-store';
-import { Tab } from '@sdk';
-import { useTerminalTabs } from '@src/tabs/useTabs';
+import { Tab, tabForDockKey } from '@sdk';
+import { useTerminalTabs, useTabLifecycle } from '@src/tabs/use-tab-manager';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { NavigatorSlot } from '@src/navigation/NavigatorSlot';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SpecRoute } from '@src/pages/spec/SpecRoute';
 import { GraphContextViewer } from '@src/components/graph-context/GraphContextViewer';
 import { DiagnosisViewer } from '@src/components/diagnosis-viewer/DiagnosisViewer';
-import { useSendMessageStore } from '@src/store/use-send-message-store';
 import { useSurveyStore } from '@src/store/use-survey-store';
-import { TabLifecycleState, useTabLifecycle } from '@src/tabs/tab-lifecycle';
+import { TabLifecycleState } from '@sdk';
 import { DockLoadErrorView } from '@src/components/agent-layout/DockLoadErrorView';
 import { useDockLoadError } from '@src/routes/loaders/dock-load-error-store';
 import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
 import { useIsVibe } from '@src/components/view-mode';
-import { AlertTriangle, LogIn } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { isWebglAvailable, WebglUnavailableView } from '@src/components/graph-view/webglSupport';
 
 // Lazy-loaded: GraphView pulls in sigma.js + @sigma/node-image, which run
 // WebGL init (gl.getParameter) at module load. Importing it eagerly crashes
 // the entire app in any WebGL-less context (headless browsers, GPU-disabled
 // CI, software-render fallbacks). Loading it only when the graph tab opens
-// keeps app bootstrap independent of WebGL availability.
-const GraphView = lazy(() => import('@src/components/graph-view/GraphView').then((m) => ({ default: m.GraphView })));
+// keeps app bootstrap independent of WebGL availability, and the
+// isWebglAvailable gate keeps the sigma chunk from ever being evaluated when
+// WebGL is missing — the tab shows WebglUnavailableView instead of crashing.
+const GraphView = lazy(() =>
+  isWebglAvailable()
+    ? import('@src/components/graph-view/GraphView').then((m) => ({ default: m.GraphView }))
+    : Promise.resolve({ default: WebglUnavailableView }),
+);
+// Lazy like its neighbours: the portal drags react-markdown + the article
+// renderer, which no user who never opens a help desk should pay for.
+const HelpdeskPortalPage = lazy(() =>
+  import('@src/components/helpdesk/HelpdeskPortalPage').then((m) => ({ default: m.HelpdeskPortalPage })),
+);
+const WorldView = lazy(() =>
+  isWebglAvailable()
+    ? import('@src/components/graph-view/GraphView').then((m) => ({ default: m.WorldView }))
+    : Promise.resolve({ default: WebglUnavailableView }),
+);
+const TagGraphView = lazy(() =>
+  import('@src/components/graph-view/TagGraphView').then((m) => ({ default: m.TagGraphView })),
+);
+const GenericSubgraphView = lazy(() =>
+  import('@src/components/graph-view/SubgraphView').then((m) => ({ default: m.GenericSubgraphView })),
+);
+// Lazy like GRAPH — keeps @xyflow/react out of app bootstrap.
+const GraphWorkflowsView = lazy(() =>
+  import('@src/components/graph-workflows/GraphWorkflowsView').then((m) => ({ default: m.GraphWorkflowsView })),
+);
+const EventsView = lazy(() =>
+  import('@src/components/events/EventsView').then((m) => ({ default: m.EventsView })),
+);
+const DataSourcesView = lazy(() =>
+  import('@src/components/data-sources/DataSourcesView').then((m) => ({ default: m.DataSourcesView })),
+);
+const RunsView = lazy(() => import('@src/components/runs/RunsView').then((m) => ({ default: m.RunsView })));
+const SurveyView = lazy(() =>
+  import('@src/components/survey/SurveyView').then((m) => ({ default: m.SurveyView })),
+);
+const ShowView = lazy(() =>
+  import('@src/components/show-view/ShowView').then((m) => ({ default: m.ShowView })),
+);
+const AppHost = lazy(() =>
+  import('@src/components/app-host/AppHost').then((m) => ({ default: m.AppHost })),
+);
 const DocsGraphView = lazy(() =>
   import('@src/components/graph-view/DocsGraphView').then((m) => ({ default: m.DocsGraphView })),
 );
@@ -105,11 +142,10 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
 
   const { user } = useAuth();
 
-  const { flow, agent } = useAgentContext();
-  const { project: contextProject } = useContext();
+  const { agent } = useAgentContext();
 
   // Sync flow focus and URL dock state to viewer store
-  useActiveViewer(flow);
+  useActiveViewer();
 
   const terminalTabs = useTerminalTabs();
 
@@ -127,35 +163,6 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
 
   // Survey state (shared with chat-panel)
   const { activeSurveyData, onSurveyComplete } = useSurveyStore();
-  const { addEnvVar, deleteEnvVar } = useEnvVarsStore();
-  const [connections, setConnections] = useState<OAuthConnection[]>([]);
-
-  const handleConnectionConnect = useCallback((connectionId: string) => {
-    setConnections((prev) =>
-      prev.map((conn) =>
-        conn.id === connectionId ? { ...conn, status: ConnectionStatus.CONNECTED, connectedAt: new Date() } : conn,
-      ),
-    );
-  }, []);
-
-  const handleConnectionDisconnect = useCallback((connectionId: string) => {
-    setConnections((prev) =>
-      prev.map((conn) => (conn.id === connectionId ? { ...conn, status: ConnectionStatus.DISCONNECTED } : conn)),
-    );
-  }, []);
-
-  const { setOpenEnvironmentTab } = useEnvVarsStore();
-
-  const { sendMessage } = useSendMessageStore();
-
-  const onWebappErrorRetry = useCallback(
-    (retryMessage: string) => {
-      if (sendMessage) {
-        void sendMessage(retryMessage, {});
-      }
-    },
-    [sendMessage],
-  );
 
   const handleExplorerFileSelect = useCallback(
     (path: string) => {
@@ -166,20 +173,14 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
     [navigation],
   );
 
-
   // Shell entity sync is automatic via DataOp stream — no manual sync needed.
-
-  // React to shouldOpenEnvironmentTab flag
-  useEffect(() => {
-    setOpenEnvironmentTab(() => navigation.openTab(ViewType.ENVIRONMENT));
-  }, [navigation, setOpenEnvironmentTab]);
 
   // When the URL's active terminal is closing (is_disabled), redirect to the
   // first alive tab. A pointer-less shell URL is loader-owned (the loader
   // resolves the default target), so we only act when a tab matches the URL.
   useEffect(() => {
     if (currentDock?.viewType !== ViewType.SHELL || !currentDock.pointer) return;
-    const active = terminalTabs.find((t) => t.dockPointer?.tabHash === currentDock.tabHash);
+    const active = tabForDockKey(terminalTabs, currentDock.tabHash);
     if (active?.is_disabled) {
       const alive = terminalTabs.find((t) => t.id !== active.id && !t.is_disabled);
       if (alive) navigateToTab(alive);
@@ -227,9 +228,46 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
   // and a per-viewType TabsContent ladder). Renders the surface for `vt`; only
   // the active body is mounted (matches the old radix Tabs, which did not
   // forceMount). `null`/unknown → the Home landing.
+  // Hub page (page=hub) renders its OWN small set of views, not the desk switch.
+  // Kept as a separate dispatch (not extra cases in the desk switch) so the two
+  // SPA-surfaces stay cleanly independent — see PAGES_DOCKPOINTER_SPEC.
+  const renderHubBody = (vt: ViewType | null) => {
+    switch (vt) {
+      case ViewType.WORLDVIEW:
+        return (
+          <Suspense fallback={null}>
+            <WorldView />
+          </Suspense>
+        );
+      case ViewType.HUB_RECORDS:
+        return <HubRecordsView type={currentDock?.pointer} />;
+      case ViewType.HUB_ENTITY:
+        return <HubEntityView pointer={currentDock?.pointer} />;
+      case ViewType.CONVERSATION:
+        // Reuse the OSS conversation viewer (pure-graph, hub-safe) under page=hub.
+        return <ConversationRoute />;
+      case ViewType.ASSETS:
+        return <HubAssetsPage />;
+      case ViewType.PROJECT:
+        return <HubProjectPage />;
+      case ViewType.CREDENTIALS:
+        return <CredentialsView />;
+      case ViewType.HOME:
+      default:
+        return <HubHome />;
+    }
+  };
+
   const renderBody = (vt: ViewType | null) => {
     if (dockLoadError) {
       return <DockLoadErrorView error={dockLoadError} />;
+    }
+
+    // page=hub → the hub surface. Placed after the load-error guard (which is
+    // page-agnostic) but before the desk tab/OpenFailed handling, which doesn't
+    // apply to the hub (its views don't materialize `tab` entities).
+    if (currentDock?.page === PageId.HUB) {
+      return renderHubBody(vt);
     }
 
     if (activeOpenFailed) {
@@ -240,7 +278,9 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         >
           <AlertTriangle className="h-9 w-9 text-destructive" />
           <div>
-            <h2 className="text-base font-semibold text-foreground"><Trans>Tab failed to open</Trans></h2>
+            <h2 className="text-base font-semibold text-foreground">
+              <Trans>Tab failed to open</Trans>
+            </h2>
             <p className="mt-1 max-w-md text-sm">
               {activeLifecycle?.error || <Trans>The tab content could not be prepared.</Trans>}
             </p>
@@ -255,7 +295,7 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
       case ViewType.EDITOR:
         return <CodeEditor activePath={editorActivePath} />;
       case ViewType.WEB_APP:
-        return <WebappViewer onWebappErrorRetry={onWebappErrorRetry} />;
+        return <WebappViewer />;
       case ViewType.DIFF:
         if (currentDock?.pointer?.startsWith('asset-compare/')) {
           return <AssetCompareView pointer={currentDock.pointer} />;
@@ -263,51 +303,26 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return checkpointHash ? (
           <DiffViewer checkpoint_hash={checkpointHash} />
         ) : (
-          <div className="p-4 text-gray-500"><Trans>No checkpoint selected</Trans></div>
+          <div className="p-4 text-gray-500">
+            <Trans>No checkpoint selected</Trans>
+          </div>
         );
       case ViewType.MARKDOWN:
         return <MarkdownViewer />;
       case ViewType.SURVEY:
         return activeSurveyData && onSurveyComplete ? (
-          <SurveyView surveyData={activeSurveyData} onComplete={onSurveyComplete} />
+          <Suspense fallback={null}>
+            <SurveyView surveyData={activeSurveyData} onComplete={onSurveyComplete} />
+          </Suspense>
         ) : (
-          <div className="p-6 text-muted-foreground"><Trans>No active survey</Trans></div>
+          <div className="p-6 text-muted-foreground">
+            <Trans>No active survey</Trans>
+          </div>
         );
       case ViewType.SYSTEM_PROFILE:
         return <LiveStatus />;
-      case ViewType.ENVIRONMENT:
-        return user?.id && dataContext.project?.typeId ? (
-          <EnvVarsManager
-            entityTypeId={dataContext.project.typeId}
-            onEnvVarSaved={addEnvVar}
-            onEnvVarDeleted={deleteEnvVar}
-            onEnvVarUpdated={() => {
-              // noteItemUpdated was a Flow entity method - no-op for now
-            }}
-          />
-        ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-gray-200 p-6 text-center">
-            <LogIn className="h-10 w-10 text-gray-400" />
-            <div>
-              <h2 className="text-lg font-semibold"><Trans>Login Required</Trans></h2>
-              <p className="mt-1 text-sm text-gray-500"><Trans>Please log in to view and manage environment variables.</Trans></p>
-            </div>
-            <Button onClick={() => void navigator.navigateToLogin()} className="px-6">
-              <Trans>Login</Trans>
-            </Button>
-          </div>
-        );
-      case ViewType.CONNECTIONS:
-        return (
-          <ConnectionsManager
-            connections={connections}
-            currentProject={contextProject?.typeId}
-            onConnectionConnect={handleConnectionConnect}
-            onConnectionDisconnect={handleConnectionDisconnect}
-          />
-        );
-      case ViewType.API_KEYS:
-        return <ApiKeysView />;
+      case ViewType.CREDENTIALS:
+        return <CredentialsView />;
       case ViewType.AI_CONFIG:
         return <AIConfigView />;
       case ViewType.HOOKS:
@@ -331,21 +346,71 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
             onFileSelect={handleExplorerFileSelect}
           />
         );
+      // The merged Events screen. TRIGGERS / SIGNALS / CRON are aliases, not
+      // redirects — every bookmarked URL keeps resolving to the same screen.
+      case ViewType.EVENTS:
       case ViewType.TRIGGERS:
+      case ViewType.SIGNALS:
       case ViewType.CRON:
-        return <TriggersView />;
+        return (
+          <Suspense fallback={null}>
+            <EventsView />
+          </Suspense>
+        );
       case ViewType.CAPABILITIES:
         return <CapabilitiesView />;
-      case ViewType.EXECUTE_FLOW:
-        return <ExecuteFlowView />;
       case ViewType.SHOW:
-        return <ShowView />;
+        return (
+          <Suspense fallback={null}>
+            <ShowView />
+          </Suspense>
+        );
       case ViewType.APPS:
-        return <AppHost />;
+        return (
+          <Suspense fallback={null}>
+            <AppHost />
+          </Suspense>
+        );
       case ViewType.GRAPH:
         return (
           <Suspense fallback={null}>
             <GraphView />
+          </Suspense>
+        );
+      case ViewType.WORLDVIEW:
+        return (
+          <Suspense fallback={null}>
+            <WorldView />
+          </Suspense>
+        );
+      case ViewType.TAG:
+        return (
+          <Suspense fallback={null}>
+            <TagGraphView />
+          </Suspense>
+        );
+      case ViewType.SUBGRAPH:
+        return (
+          <Suspense fallback={null}>
+            <GenericSubgraphView />
+          </Suspense>
+        );
+      case ViewType.GRAPH_WORKFLOWS:
+        return (
+          <Suspense fallback={null}>
+            <GraphWorkflowsView />
+          </Suspense>
+        );
+      case ViewType.DATA_SOURCES:
+        return (
+          <Suspense fallback={null}>
+            <DataSourcesView />
+          </Suspense>
+        );
+      case ViewType.PROCESS_RUNS:
+        return (
+          <Suspense fallback={null}>
+            <RunsView />
           </Suspense>
         );
       case ViewType.K_BROWSER:
@@ -368,22 +433,26 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return <DesktopPage />;
       case ViewType.SEARCH:
         return <SearchView />;
-      case ViewType.WORKFLOWS:
-        return <WorkflowsPage />;
       case ViewType.AGENTIC_PROCESS:
         return currentDock?.pointer ? (
           <ProcessTerminal key={currentDock.pointer} processId={currentDock.pointer} />
         ) : (
-          <div className="flex h-full items-center justify-center text-muted-foreground"><Trans>No process ID specified</Trans></div>
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            <Trans>No process ID specified</Trans>
+          </div>
         );
       case ViewType.LIVE_SESSION:
         return currentDock?.pointer ? (
           <LiveSessionView key={currentDock.pointer} sessionId={currentDock.pointer} />
         ) : (
-          <div className="flex h-full items-center justify-center text-muted-foreground"><Trans>No live session specified</Trans></div>
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            <Trans>No live session specified</Trans>
+          </div>
         );
       case ViewType.ASSETS:
         return <AssetsPage />;
+      case ViewType.HELPDESK:
+        return <HelpdeskPortalPage />;
       case ViewType.PROJECT: {
         // A project dock scoped to a collaboration_room (…/collaboration_room/<id>)
         // renders the collaboration room; a bare project dock is the assets
@@ -437,9 +506,7 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
               so xterm fits on first paint — a flex-col parent broke its initial sizing.
               No entrance animation: a tab switch must be visually instant (a fade
               reads as page navigation, not a tab switch). */}
-          <div className="absolute inset-0 mt-0 h-full flex-1 overflow-auto">
-            {renderBody(bodyViewType)}
-          </div>
+          <div className="absolute inset-0 mt-0 h-full flex-1 overflow-auto">{renderBody(bodyViewType)}</div>
         </div>
       </div>
     </div>

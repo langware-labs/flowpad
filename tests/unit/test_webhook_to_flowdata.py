@@ -2,9 +2,8 @@
 
 The dispatcher (`convert_webhook_event`) routes by `webhook_type` so the
 ``listen.py`` helpers (``_broadcast_to_sniffer``, ``_route_to_source_process``)
-can stay vendor-neutral. The hook_op translator surfaces the fields that
-``WorkflowTraceGutter`` needs (``workflow-label`` / ``workflow-phase``) and
-the ``getEventIcon`` hook_op branch needs (``hook-op-event-name``).
+can stay vendor-neutral. The hook_op translator surfaces the fields the
+``getEventIcon`` hook_op branch needs (``hook-op-event-name``).
 """
 
 from __future__ import annotations
@@ -23,16 +22,13 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
 )
 
 
-def test_hook_op_event_workflow_trace_surfaces_workflow_attrs() -> None:
+def test_hook_op_event_surfaces_event_attrs() -> None:
     payload = {
         "webhook_type": "hook_op",
-        "type": "workflow",
+        "type": "rule",
         "operation": "event",
-        "id": "wf-1",
-        "data": {
-            "event_name": "workflow_trace",
-            "event_data": {"label": "Plan Phase", "phase": "planning"},
-        },
+        "id": "r-1",
+        "data": {"event_name": "rules_executed"},
     }
     fds = convert_hook_op_event(payload)
     assert len(fds) == 1
@@ -40,13 +36,11 @@ def test_hook_op_event_workflow_trace_surfaces_workflow_attrs() -> None:
     assert fd.element_type == FlowElementType.STATUS
     assert fd.attributes["source"] == FlowDataSource.SNIFFER
     assert fd.attributes["webhook-type"] == "hook_op"
-    assert fd.attributes["subtype"] == "workflow_trace"
-    assert fd.attributes["hook-op-event-name"] == "workflow_trace"
+    assert fd.attributes["subtype"] == "rules_executed"
+    assert fd.attributes["hook-op-event-name"] == "rules_executed"
     assert fd.attributes["hook-op-operation"] == "event"
-    assert fd.attributes["hook-op-record-type"] == "workflow"
-    assert fd.attributes["hook-op-id"] == "wf-1"
-    assert fd.attributes["workflow-label"] == "Plan Phase"
-    assert fd.attributes["workflow-phase"] == "planning"
+    assert fd.attributes["hook-op-record-type"] == "rule"
+    assert fd.attributes["hook-op-id"] == "r-1"
 
 
 def test_hook_op_event_minimal_payload() -> None:
@@ -58,7 +52,6 @@ def test_hook_op_event_minimal_payload() -> None:
     assert fd.attributes["hook-op-record-type"] == "skill"
     # Optional fields not present for non-event ops.
     assert "subtype" not in fd.attributes
-    assert "workflow-label" not in fd.attributes
 
 
 def test_hook_op_invalid_payload_returns_empty() -> None:
@@ -80,7 +73,7 @@ def test_dispatcher_routes_agent_hook() -> None:
 
 
 def test_dispatcher_routes_hook_op() -> None:
-    payload = {"webhook_type": "hook_op", "type": "workflow", "operation": "event", "id": "x", "data": {"event_name": "rules_executed"}}
+    payload = {"webhook_type": "hook_op", "type": "rule", "operation": "event", "id": "x", "data": {"event_name": "rules_executed"}}
     fds = convert_webhook_event(payload)
     assert len(fds) == 1
     assert fds[0].attributes["subtype"] == "rules_executed"

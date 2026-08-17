@@ -9,8 +9,7 @@ import { homedir } from 'node:os';
 import * as path from 'node:path';
 
 import { createSdkRealm } from '../_sdk_realm';
-import { pickPendingInvitation } from './_matrix';
-import { HUB_URL, parseDotEnv } from './_hub';
+import { HUB_URL, parseDotEnv, syncAssignedConversationAt } from './_hub';
 
 /** The freshly-evaluated `@sdk` module namespace for one realm/instance. */
 export type SdkRealm = typeof import('@sdk');
@@ -114,8 +113,7 @@ export function resolveLaunchedInstance(name: string): LaunchedInstance | null {
   }
 
   const expectedEnvFile = path.join(WORKTREE_ROOT, `.env.${name}.local`);
-  const launcherEnvFile =
-    typeof launcher.env_file === 'string' ? path.resolve(launcher.env_file) : '';
+  const launcherEnvFile = typeof launcher.env_file === 'string' ? path.resolve(launcher.env_file) : '';
   if (
     launcher.name !== name ||
     Number(launcher.backend_port) !== Number(backendPort) ||
@@ -173,9 +171,30 @@ export async function getInstance(name: string): Promise<ResolvedInstance> {
   return { ...launched, sdk };
 }
 
-/** Find the exact pending invitation after the receiver's production catch-up. */
-export async function findPendingInvitation(inst: ResolvedInstance, convId: string): Promise<any> {
-  await inst.sdk.fetchConversations();
-  const all: any[] = await (inst.sdk.Invitation as any).query({ query: {} }, true);
-  return pickPendingInvitation(all, convId);
+/** Raw POST to an instance's /api/v1 — the production HTTP surface the tests
+ *  drive for actions the SDK doesn't wrap (add_message with asset_references,
+ *  body upload/download, attachment install/uninstall). */
+export const postApi = (apiUrl: string, p: string, body?: unknown) =>
+  fetch(`${apiUrl}/api/v1${p}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+  }).then((r) => r.json());
+
+/** MessageAttachment rows for a message, invalidated past the realm's query
+ *  cache — install/uninstall land as UPDATEs the cached query won't refetch. */
+export async function queryMessageAttachments(inst: ResolvedInstance, fmId: string): Promise<any[]> {
+  return (await inst.sdk.MessageAttachment.query(
+    new inst.sdk.QueryRequest({
+      type: 'message_attachment',
+      query: { flow_message_id: fmId },
+      name: 'message attachments (hub test)',
+    }),
+    /* invalidate — re-read from the backend, not the realm's query cache */ true,
+  ).catch(() => [])) as any[];
+}
+
+/** Materialize one immediately assigned conversation on the receiver. */
+export async function syncAssignedConversation(inst: ResolvedInstance, convId: string): Promise<unknown> {
+  return syncAssignedConversationAt(`${inst.apiUrl}/api/v1`, convId, inst.name);
 }

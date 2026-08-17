@@ -6,12 +6,14 @@ export * from './CapabilityManager';
  * when querying `useCapability` / `capabilityManager`.
  */
 export const CapabilityKinds = {
-  /** CapabilityReference row — resolves to the default harness (claude or codex). */
+  /** CapabilityReference row — resolves to the selected default harness. */
   Harness: 'harness',
   ClaudeCode: 'harness.claude.cli',
   Codex: 'harness.codex.cli',
   Copilot: 'harness.copilot.cli',
   ChromeAuthenticated: 'browsing.chrome.authenticated',
+  GitHub: 'source_control.git.github',
+  GitHubGh: 'source_control.git.github.gh',
 } as const;
 
 export type CapabilityKindKey = keyof typeof CapabilityKinds;

@@ -121,13 +121,33 @@ export class InstancePreferences extends EventEmitter {
 
   // ===== Generic registry-keyed API =====
 
-  /** Current value for a topic, falling back to the registry default. */
+  /** Current value for a tag, falling back to the registry default. */
   get(key: PrefKey): unknown {
     return key in this._prefs ? this._prefs[key] : PREF_REGISTRY[key]?.defaultValue;
   }
 
   /**
-   * Set a topic's value (coerced to its registered dataType). No-op when the
+   * Do we KNOW this key's value yet, as opposed to serving the registry default
+   * because nothing has been read in?
+   *
+   * `get()` cannot express the difference: before `loadJson()` lands it returns
+   * the registry default for an unseeded key, which is indistinguishable from a
+   * stored value that happens to equal the default. A consumer that renders a
+   * user-visible arrangement off a preference (which surface a session opens in,
+   * which language) must wait for this rather than commit to the default and
+   * repaint when the real value arrives.
+   *
+   * True once the key has a value in memory — boot keys are seeded synchronously
+   * from localStorage at construction, so in any browser that has run the app
+   * before this is true on the first read and costs nothing — or once the JSON
+   * load has completed, at which point the absence of a value IS the answer.
+   */
+  isResolved(key: PrefKey): boolean {
+    return key in this._prefs || this._loaded;
+  }
+
+  /**
+   * Set a tag's value (coerced to its registered dataType). No-op when the
    * value is unchanged. Bumps the version and schedules a debounced save.
    */
   set(key: PrefKey, value: unknown): void {

@@ -52,7 +52,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     terminate_asyncio_process_tree,
     wait_for_asyncio_process_or_kill_tree,
 )
-from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.event_to_flowdata import (
     convert_line,
     final_end_frame,
@@ -261,7 +261,7 @@ class CodexCLIStreamWorker(AgenticWorker):
         harness capability discovered) or its executable can't be resolved on
         the spawn PATH.
         """
-        opts = CodexCliOptions(
+        opts = CodexAgentOptions(
             workdir=context.workdir,
             env_vars=dict(context.env_vars) if context.env_vars else None,
             model=context.model,
@@ -278,6 +278,8 @@ class CodexCLIStreamWorker(AgenticWorker):
         )
         opts.add_dirs = list(context.add_dirs or [])
         opts.developer_instructions = context.developer_instructions
+        opts.extra_config_overrides = list(context.extra_config_overrides or [])
+        opts.bypass_hook_trust = context.bypass_hook_trust
         # Asset-backed system instructions ride developer_instructions; the
         # legacy system_prompt_append path remains unused for new launches.
         argv, env_from_opts, stdin = opts.to_spawn(instruction=prompt, system_prompt_append=context.instructions)

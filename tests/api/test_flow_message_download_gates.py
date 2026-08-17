@@ -150,19 +150,19 @@ def _no_project_bundle_bytes(fm_id: str, conv_id: str, prompt_id: str) -> bytes:
         zf.writestr("header.json", json.dumps(msg, ensure_ascii=False))
         # Conversation entry → creates a local Conversation with NO project_id.
         zf.writestr(
-            f"attachment/conversation-@{conv_id}/header.json",
+            f"attachment/conversation-{conv_id}/header.json",
             json.dumps(
                 {"type": "conversation", "id": conv_id, "participants": [], "project_id": None},
                 ensure_ascii=False,
             ),
         )
         zf.writestr(
-            f"attachment/conversation-@{conv_id}/conversation.jsonl",
+            f"attachment/conversation-{conv_id}/conversation.jsonl",
             json.dumps(pointer, ensure_ascii=False) + "\n",
         )
         # File-backed prompt asset → parked when no project is mapped.
         zf.writestr(
-            f"attachment/prompt-@{prompt_id}/prompts/shared.md",
+            f"attachment/prompt-{prompt_id}/prompts/shared.md",
             f"---\nid: {prompt_id}\nname: Shared Prompt\nuse_count: 1\n---\n\nFix the auth bug.\n",
         )
     return buf.getvalue()
@@ -219,7 +219,7 @@ async def test_download_body_no_project_stages_assets_without_materializing(
     assert fm_data_ops.is_downloaded(fm_id)
     assert fm_data_ops.is_unpacked(fm_id)
 
-    entry_key = f"prompt-@{prompt_id}"
+    entry_key = f"prompt-{prompt_id}"
     ma = await MessageAttachment.get_one({
         "id": MessageAttachment.allocate_deterministic_id(fm_id, entry_key),
     })

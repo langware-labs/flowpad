@@ -4,15 +4,48 @@ id: a92a9c6b-3ea7-5680-bd00-d0bd1902490f
 
 # Agent Management
 
-This is the top-level index for agent management documentation. The focused topic
+This is the top-level index for agent management documentation. The focused subject
 documents live in `docs/agent-management/`.
 
 ## Current Model
 
-Flowpad represents an agent run as an `AgenticProcess` entity. The entity is the
-durable control plane: it stores the workdir, instruction/context, CLI
-configuration, `session_id`, lifecycle `status`, visibility, and the linked
-`shell_id` when a terminal is open.
+Flowpad separates the persistent agent from each execution:
+
+- An `Agent` is a named, launchable identity and authoring bundle. Project
+  members create one with **New → Agent**, or create a personal Agent by
+  choosing the User scope.
+- An `AgentDeployment` records where an Agent is placed.
+- An `AgenticProcess` records one run. It stores the workdir,
+  instruction/context, CLI configuration, `session_id`, lifecycle `status`,
+  visibility, and linked `shell_id` when a terminal is open.
+
+Creating an Agent authors the definition only. Cloud deployment and sandbox
+identity provisioning are separate deployment phases.
+
+## Agent authoring bundle
+
+A project-scoped Agent is stored under the selected Project, using a
+backend-derived lowercase filesystem slug. For example, an Agent whose name is
+`Q` has this portable bundle:
+
+```text
+agentic-assets/agent/q/
+├── agent.md
+└── avatar.png
+```
+
+`name` is the addressable identity (`Q`) and supplies the filesystem slug
+(`q`). `title` is the human role shown in the profile (`QA manager`); it does
+not rename the Agent. Both values round-trip through `agent.md` frontmatter.
+
+An uploaded image is kept beside `agent.md`, and frontmatter stores only the
+portable bundle-relative reference `avatar: ./avatar.png`. Absolute paths,
+parent traversal such as `../avatar.png`, and generated download URLs are not
+portable identity data and are rejected by the authoring UI. Emoji and registry
+icon values remain supported for Agents that do not use an image.
+
+Creating another Agent whose normalized name resolves to an occupied bundle
+returns a conflict and never overwrites the existing Agent or its files.
 
 The same entity supports two execution modes:
 
@@ -39,13 +72,13 @@ and is returned from `AgenticProcess.open` as `pty_id`.
 | Frontend `Shell` / `PtyConnection` | Browser-side PTY attachment, replay sequencing, deduplication, input, and resize |
 | UI terminal components | `InteractiveTerminal`, `ProcessToolbar`, route loaders, terminal tab discovery |
 
-## Sub-Topic Documentation
+## Focused Documentation
 
 ### 1. [AgenticProcess Entity](agent-management/agentic-process.md)
 
 Backend and frontend `AgenticProcess` behavior.
 
-Topics covered:
+Coverage:
 - Current entity fields and lifecycle
 - `session_id`, `shell_id`, `visible`, `status`, `worker_status`, and `ready_for_input`
 - PTY mode startup, restart, fork, close, and shell ownership
@@ -57,28 +90,29 @@ Topics covered:
 
 Filesystem records and transcript/status sync.
 
-Topics covered:
+Coverage:
 - `ClaudeSessionRecord` and transcript discovery
 - `AgenticProcessRecord` and legacy compatibility fields
 - `WorkerStatus` derivation from transcript tails
 - Difference between durable records and live `Shell`/PTY runtime state
 - How CLI and PTY modes share session history
 
-### 3. [ClaudeSessionManager](agent-management/claude-session-manager.md)
+### 3. [Claude Process Lifecycle & Restart Contract](agent-management/claude-session-manager.md)
 
-Small TypeScript helper for creating and opening new Claude sessions.
+The `AgenticProcess` lifecycle reference (the `ClaudeSessionManager` service it
+was named for no longer exists).
 
-Topics covered:
-- Actual current API: `createAndStartSession(context, { instruction? })`
-- What lifecycle operations now live on `AgenticProcess`
-- How process creation flows through `ComputeNode.createProcess`
-- How CLI mode and PTY mode are started
+Coverage:
+- Process creation flows (`ComputeNode.createProcess`, `AgenticProcess.spawn`)
+- Interactive PTY vs headless CLI lifecycles; stop/restart/fork/close
+- The persisted CLI-options model (`cli_config`) and how to change options
+- Restart-required detection and the end-to-end restart flow
 
 ### 4. [PTY & WebSocket Transport](agent-management/pty-websocket.md)
 
 Terminal runtime and browser transport.
 
-Topics covered:
+Coverage:
 - `Shell`-owned PTY state and worker process liveness
 - Compute-node terminal actions: attach, input, resize, close, list, ping
 - Replay buffer sequence numbers and reconnect behavior
@@ -89,7 +123,7 @@ Topics covered:
 
 Terminal tabs, routing, and visible process discovery.
 
-Topics covered:
+Coverage:
 - Loading an `AgenticProcess` route and opening it in PTY mode
 - How visible processes and shells become terminal tabs
 - Dock pointers, active shell state, and route-level startup
@@ -99,7 +133,7 @@ Topics covered:
 
 Controls mounted above interactive agent terminals.
 
-Topics covered:
+Coverage:
 - Current `ProcessToolbar` controls and flag staging
 - Restart and fork flows through `AgenticProcess`
 - Session info popover behavior

@@ -45,12 +45,10 @@ export function useContext() {
   const snapshotRef = useRef<{
     user: typeof dataContext.user;
     workspace: typeof dataContext.workspace;
-    flow: typeof dataContext.flow;
     activeEntity: typeof dataContext.activeEntity;
     activeEntityTypeId: typeof dataContext.activeEntityTypeId;
     workspaceTypeId: typeof dataContext.workspaceTypeId;
     userTypeId: typeof dataContext.userTypeId;
-    flowTypeId: typeof dataContext.flowTypeId;
     visitorTypeId: typeof dataContext.visitorTypeId;
     someone: typeof dataContext.someone;
     activeOntology: typeof dataContext.activeOntology;
@@ -62,15 +60,13 @@ export function useContext() {
     visitor: typeof dataContext.visitor;
     bootstrapError: typeof dataContext.bootstrapError;
     isBootstrapping: typeof dataContext.isBootstrapping;
-    envName: typeof dataContext.envName;
     cloudApiUrl: typeof dataContext.cloudApiUrl;
     cloudLoginAvailable: typeof dataContext.cloudLoginAvailable;
     desktopInfo: typeof dataContext.desktopInfo;
+    runtimeKind: typeof dataContext.runtimeKind;
     isDesktop: typeof dataContext.isDesktop;
     instanceName: typeof dataContext.instanceName;
     warnings: typeof dataContext.warnings;
-    workflow: typeof dataContext.workflow;
-    workflowTypeId: typeof dataContext.workflowTypeId;
     agenticProcess: typeof dataContext.agenticProcess;
     agenticProcessTypeId: typeof dataContext.agenticProcessTypeId;
     activeShellId: typeof dataContext.activeShellId;
@@ -80,12 +76,10 @@ export function useContext() {
   }>({
     user: dataContext.user,
     workspace: dataContext.workspace,
-    flow: dataContext.flow,
     activeEntity: dataContext.activeEntity,
     activeEntityTypeId: dataContext.activeEntityTypeId,
     workspaceTypeId: dataContext.workspaceTypeId,
     userTypeId: dataContext.userTypeId,
-    flowTypeId: dataContext.flowTypeId,
     visitorTypeId: dataContext.visitorTypeId,
     someone: dataContext.someone,
     activeOntology: dataContext.activeOntology,
@@ -97,15 +91,13 @@ export function useContext() {
     visitor: dataContext.visitor,
     bootstrapError: dataContext.bootstrapError,
     isBootstrapping: dataContext.isBootstrapping,
-    envName: dataContext.envName,
     cloudApiUrl: dataContext.cloudApiUrl,
     cloudLoginAvailable: dataContext.cloudLoginAvailable,
     desktopInfo: dataContext.desktopInfo,
+    runtimeKind: dataContext.runtimeKind,
     isDesktop: dataContext.isDesktop,
     instanceName: dataContext.instanceName,
     warnings: dataContext.warnings,
-    workflow: dataContext.workflow,
-    workflowTypeId: dataContext.workflowTypeId,
     agenticProcess: dataContext.agenticProcess,
     agenticProcessTypeId: dataContext.agenticProcessTypeId,
     activeShellId: dataContext.activeShellId,
@@ -125,12 +117,10 @@ export function useContext() {
     const current = {
       user: dataContext.user,
       workspace: dataContext.workspace,
-      flow: dataContext.flow,
       activeEntity: dataContext.activeEntity,
       activeEntityTypeId: dataContext.activeEntityTypeId,
       workspaceTypeId: dataContext.workspaceTypeId,
       userTypeId: dataContext.userTypeId,
-      flowTypeId: dataContext.flowTypeId,
       visitorTypeId: dataContext.visitorTypeId,
       someone: dataContext.someone,
       activeOntology: dataContext.activeOntology,
@@ -142,15 +132,13 @@ export function useContext() {
       visitor: dataContext.visitor,
       bootstrapError: dataContext.bootstrapError,
       isBootstrapping: dataContext.isBootstrapping,
-      envName: dataContext.envName,
       cloudApiUrl: dataContext.cloudApiUrl,
       cloudLoginAvailable: dataContext.cloudLoginAvailable,
       desktopInfo: dataContext.desktopInfo,
+      runtimeKind: dataContext.runtimeKind,
       isDesktop: dataContext.isDesktop,
       instanceName: dataContext.instanceName,
       warnings: dataContext.warnings,
-      workflow: dataContext.workflow,
-      workflowTypeId: dataContext.workflowTypeId,
       agenticProcess: dataContext.agenticProcess,
       agenticProcessTypeId: dataContext.agenticProcessTypeId,
       activeShellId: dataContext.activeShellId,
@@ -170,12 +158,10 @@ export function useContext() {
     if (
       prev.user !== current.user ||
       prev.workspace !== current.workspace ||
-      prev.flow !== current.flow ||
       prev.activeEntity !== current.activeEntity ||
       typeIdChanged(prev.activeEntityTypeId, current.activeEntityTypeId) ||
       typeIdChanged(prev.workspaceTypeId, current.workspaceTypeId) ||
       typeIdChanged(prev.userTypeId, current.userTypeId) ||
-      typeIdChanged(prev.flowTypeId, current.flowTypeId) ||
       typeIdChanged(prev.visitorTypeId, current.visitorTypeId) ||
       prev.someone !== current.someone ||
       prev.activeOntology !== current.activeOntology ||
@@ -187,15 +173,13 @@ export function useContext() {
       prev.visitor !== current.visitor ||
       prev.bootstrapError !== current.bootstrapError ||
       prev.isBootstrapping !== current.isBootstrapping ||
-      prev.envName !== current.envName ||
       prev.cloudApiUrl !== current.cloudApiUrl ||
       prev.cloudLoginAvailable !== current.cloudLoginAvailable ||
       prev.desktopInfo !== current.desktopInfo ||
+      prev.runtimeKind !== current.runtimeKind ||
       prev.isDesktop !== current.isDesktop ||
       prev.instanceName !== current.instanceName ||
       prev.warnings !== current.warnings ||
-      prev.workflow !== current.workflow ||
-      typeIdChanged(prev.workflowTypeId, current.workflowTypeId) ||
       prev.agenticProcess !== current.agenticProcess ||
       typeIdChanged(prev.agenticProcessTypeId, current.agenticProcessTypeId) ||
       prev.activeShellId !== current.activeShellId ||

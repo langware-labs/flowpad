@@ -23,21 +23,17 @@ export * from './services/index';
 export * from './preferences/prefRegistry';
 export * from './preferences/indexingConsent';
 export * from './stores/fsStore';
+export * from './tags/EventBus';
+export * from './tags/grammar';
+export * from './tags/ws-bridge';
+export * from './tabs/index';
 export * from './stores/ontology-store';
 export * from './utils';
 export * from './websocket';
-export * from './voice';
-export * from './sentry';
+export * from './worldview';
 export * from './types/index';
 export * from './schema/index';
+export { FSEntry } from './fs/FSEntry';
 export { FSRef } from './fs/FSRef';
 export { FrontMatterFsRef } from './fs/FrontMatterFsRef';
 export { Frontmatter } from './fs/Frontmatter';
-export type {
-  PathContextData,
-  PlanContextData,
-  MarkdownContextData,
-  SkillContextData,
-  ClaudeMdContextData,
-  ClaudeCommandContextData,
-} from './context-data-schemas';

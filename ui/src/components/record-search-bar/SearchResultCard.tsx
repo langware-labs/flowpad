@@ -41,9 +41,7 @@ export function SearchResultCard({ result }: { result: SearchResult }) {
   const title = result.fts_title ?? result.name ?? '(unnamed)';
   const description = result.fts_description;
   // Only show snippet when match is in content (not already visible in title/description)
-  const snippetText = result.snippet
-    ? result.snippet.replace(/^(user:|assistant:)\s*/i, '')
-    : null;
+  const snippetText = result.snippet ? result.snippet.replace(/^(user:|assistant:)\s*/i, '') : null;
   // Suppress snippet if it merely echoes the title (match was in title column)
   const showSnippet = snippetText && !(result.fts_title && snippetText.replace(/<\/?mark>/g, '') === result.fts_title);
   const typeColor = TYPE_COLORS[result.record_type] ?? 'bg-muted text-foreground border-border';
@@ -68,21 +66,19 @@ export function SearchResultCard({ result }: { result: SearchResult }) {
         {relativeTime && <span className="shrink-0 text-xs text-muted-foreground">{relativeTime}</span>}
       </div>
       {/* description line */}
-      {description && (
-        <p className="line-clamp-2 text-xs text-muted-foreground">{description}</p>
-      )}
+      {description && <p className="line-clamp-2 text-xs text-muted-foreground">{description}</p>}
       {/* snippet — only when match is in content */}
       {showSnippet && (
         <p
           className="line-clamp-3 text-xs text-muted-foreground [&_mark]:rounded [&_mark]:bg-yellow-200 [&_mark]:px-0.5 [&_mark]:text-yellow-900 dark:[&_mark]:bg-yellow-500/30 dark:[&_mark]:text-yellow-200"
-          dangerouslySetInnerHTML={{ __html: snippetText! }}
+          dangerouslySetInnerHTML={{ __html: snippetText }}
         />
       )}
       {/* footer: status dot */}
       {result.status && result.status !== 'new' && (
         <div className="flex items-center gap-1">
           <span className={`text-xs ${statusColor}`}>
-            <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-current align-middle" />
+            <span className="me-1 inline-block h-1.5 w-1.5 rounded-full bg-current align-middle" />
             {result.status}
           </span>
         </div>

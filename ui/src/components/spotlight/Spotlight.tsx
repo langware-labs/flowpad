@@ -1,8 +1,8 @@
+import { i18n } from '@lingui/core';
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@src/components/ui/command';
 import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 import { useRecordSearch } from '@src/hooks/use-record-search';
 import { useDefaultScopeFilter } from '@src/hooks/use-default-scope-filter';
-import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSpotlightStore } from '@src/store/use-spotlight-store';
 import { Loader2 } from 'lucide-react';
@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { EntityTypePopover } from './EntityTypePopover';
 import { ScopeFilterPopover } from './ScopeFilterPopover';
+import { activateSearchRow } from './activate-row';
 import { searchResultToRow, searchResultToTerminalRow } from './adapters';
 import { SpotlightResultRowContent } from './SpotlightResultRow';
 import { resolveProfile } from './profiles';
@@ -92,29 +93,26 @@ export function Spotlight() {
   const handleSelect = async (row: SpotlightRow) => {
     setOpening(row.key);
     try {
-      // Try onActivate first; if it signals false (e.g. terminal-profile row
-      // whose AgenticProcess has been pruned), fall through to the shared
-      // record-type-nav router using `searchResult` (typically opens the
-      // transcript lens). This avoids a dead-end toast when a graceful
-      // fallback is available.
-      const handled = row.onActivate ? await row.onActivate(navigation) : false;
-      if (!handled && row.searchResult) {
-        await navigateToResult(row.searchResult, navigation);
-      }
+      await activateSearchRow(row, navigation);
       closeSpotlight();
     } finally {
       setOpening(null);
     }
   };
 
-  const placeholder = profile.placeholder ?? t`Search…`;
+  const placeholder = profile.placeholder ? i18n._(profile.placeholder) : t`Search…`;
   // Hide the entity chip when only one type is allowed AND it's pinned (no meaningful choice).
   const hideEntityChip = profile.allowedEntityTypes?.length === 1 && !!profile.defaultEntityType;
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) closeSpotlight(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) closeSpotlight();
+      }}
+    >
       <DialogContent className="overflow-hidden p-0 sm:max-w-[720px]">
-        <DialogTitle className="sr-only">{profile.label ?? t`Search`}</DialogTitle>
+        <DialogTitle className="sr-only">{profile.label ? i18n._(profile.label) : t`Search`}</DialogTitle>
         <Command
           shouldFilter={false}
           className="[&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-2"
@@ -128,7 +126,7 @@ export function Spotlight() {
                 allowedEntityTypes={profile.allowedEntityTypes}
               />
             )}
-            <div className="ml-1 flex-1">
+            <div className="ms-1 flex-1">
               <CommandInput
                 value={query}
                 onValueChange={setQuery}
@@ -149,11 +147,7 @@ export function Spotlight() {
               </div>
             ) : visible.length === 0 ? (
               <CommandEmpty className="py-6 text-sm text-muted-foreground">
-                {trimmed
-                  ? t`No matches.`
-                  : profile.showTerminalHistory
-                    ? t`No recent items.`
-                    : t`Type to search…`}
+                {trimmed ? t`No matches.` : profile.showTerminalHistory ? t`No recent items.` : t`Type to search…`}
               </CommandEmpty>
             ) : (
               visible.map((row) => (

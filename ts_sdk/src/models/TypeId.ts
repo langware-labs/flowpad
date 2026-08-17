@@ -31,10 +31,7 @@ export function isValidUUIDv4(id: string): boolean {
  * Matches backend: flowpad/hub/api/identifier.py::is_valid_named_id
  */
 export function isValidUName(id: string): boolean {
-  if (namedIdPattern.test(id)) return true;
-  // Also accept @UUID (e.g. @3bd9d5f6-...) for entities whose uname is an external UUID
-  if (id.startsWith('@') && isValidUUIDv4(id.slice(1))) return true;
-  return false;
+  return namedIdPattern.test(id);
 }
 
 /**

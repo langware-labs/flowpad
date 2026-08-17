@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   AgenticProcess,
+  ClaudeSession,
   Conversation,
   dataManager,
   FlowMessage,
@@ -10,9 +11,11 @@ import {
   Skill,
   Spec,
   Task,
+  TaskKind,
   TypeId,
 } from '@sdk';
 import { useEntitiesQuery, useEntity, useProject } from '@sdk/react/hooks';
+import { useSessionDisplayName } from '@src/hooks/use-session-display-name';
 import { attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
 import {
   Download,
@@ -41,7 +44,6 @@ import {
   buildPrivateTypeIds,
   buildSharedEntities,
   buildSkipKeys,
-  buildTranscriptEntries,
   flowMessageIdSet as buildFlowMessageIdSet,
   orderMessagesByConversation,
   resolveAnchorMessage,
@@ -51,7 +53,6 @@ import {
   type PrivateProcessAgg,
   type PrivateTaskAgg,
   type SharedEntityAgg,
-  type TranscriptEntry,
 } from './conversation-context-aggregation';
 
 interface ConversationContextPanelProps {
@@ -82,6 +83,20 @@ interface ConversationContextPanelProps {
 /** Title-case the type slug for human-friendly type labels in tables. */
 function humanType(type: string): string {
   return type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ');
+}
+
+/** Parent/child role of a task, used to refine the context-row type label.
+ *  Only tasks IN a parent/child relationship get a special label:
+ *   - 'group'  = the overview/parent task (``kind === 'group'``) → "Group Task"
+ *   - 'member' = a child task (non-empty ``parent_id``)          → "Member Task"
+ *  A standalone task returns null → plain "Task". */
+function taskRole(
+  task: { kind?: string | null; parent_id?: string | null } | null | undefined,
+): 'group' | 'member' | null {
+  if (!task) return null;
+  if (task.kind === TaskKind.GROUP) return 'group';
+  if (task.parent_id) return 'member';
+  return null;
 }
 
 /** Canonical dock pointer for an entity TypeId — delegates to the single
@@ -125,10 +140,7 @@ export function ConversationContextPanel({
   // Normalise the optional selection input. A Set keeps the per-row overlap
   // check O(1) instead of O(n) on a list that may contain every message id
   // the user just clicked through.
-  const selectedSet = useMemo(
-    () => new Set(selectedMessageIds ?? []),
-    [selectedMessageIds],
-  );
+  const selectedSet = useMemo(() => new Set(selectedMessageIds ?? []), [selectedMessageIds]);
   // When set, an entity row should light *only* when its key matches —
   // origin-overlap cascade is suppressed so clicking one entity doesn't
   // co-light every other entity that happens to share its messages.
@@ -139,17 +151,21 @@ export function ConversationContextPanel({
   // list) — origin lists derived from this query are then re-sorted to that
   // order so click-back consistently jumps to the *earliest* occurrence.
   const flowMessagesQuery = useMemo(
-    () => new QueryRequest({
-      type: FlowMessage.type,
-      scope: [],
-      name: `conv-flow-messages:${conversationId}`,
-      query: undefined,
-    }),
+    () =>
+      new QueryRequest({
+        type: FlowMessage.type,
+        scope: [],
+        name: `conv-flow-messages:${conversationId}`,
+        query: undefined,
+      }),
     [conversationId],
   );
-  const { data: candidateFlowMessages = [], refetch: refetchFlowMessages } = useEntitiesQuery<FlowMessage>(flowMessagesQuery, {
-    enabled: !!conversationId,
-  });
+  const { data: candidateFlowMessages = [], refetch: refetchFlowMessages } = useEntitiesQuery<FlowMessage>(
+    flowMessagesQuery,
+    {
+      enabled: !!conversationId,
+    },
+  );
 
   // Type-level FlowMessage queries don't auto-invalidate when a new entity is
   // registered in the cache (see DataManager._query — it updates results but
@@ -177,31 +193,17 @@ export function ConversationContextPanel({
     [candidateFlowMessages, conversation],
   );
 
-  const flowMessageIdSet = useMemo(
-    () => buildFlowMessageIdSet(orderedMessages),
-    [orderedMessages],
-  );
+  const flowMessageIdSet = useMemo(() => buildFlowMessageIdSet(orderedMessages), [orderedMessages]);
 
   // ── Shared Context (aggregated) ──────────────────────────────────────
-  const skipKeys = useMemo(
-    () => buildSkipKeys(flowMessageIdSet, conversationId),
-    [flowMessageIdSet, conversationId],
-  );
+  const skipKeys = useMemo(() => buildSkipKeys(flowMessageIdSet, conversationId), [flowMessageIdSet, conversationId]);
 
   const sharedEntities = useMemo(
     () => buildSharedEntities(orderedMessages, skipKeys, conversation),
     [orderedMessages, skipKeys, conversation],
   );
 
-  const transcriptEntries = useMemo(
-    () => buildTranscriptEntries(orderedMessages),
-    [orderedMessages],
-  );
-
-  const attachmentEntries = useMemo(
-    () => buildAttachmentEntries(orderedMessages),
-    [orderedMessages],
-  );
+  const attachmentEntries = useMemo(() => buildAttachmentEntries(orderedMessages), [orderedMessages]);
 
   // ── Private Context (aggregated across the whole conversation) ───────
   // Walk every ordered FlowMessage's *shared* bucket, pick out the TypeIds
@@ -217,7 +219,7 @@ export function ConversationContextPanel({
     // bubble-highlight; conversation-sourced entries have none (empty origins).
     const sources: { id: string | null; tids: readonly TypeId[] }[] = orderedMessages
       .filter((fm) => fm.id)
-      .map((fm) => ({ id: fm.id as string, tids: fm.sharedContextEntities ?? [] }));
+      .map((fm) => ({ id: fm.id, tids: fm.sharedContextEntities ?? [] }));
     if (conversation) {
       sources.push({ id: null, tids: conversation.sharedContextEntities ?? [] });
     }
@@ -256,10 +258,7 @@ export function ConversationContextPanel({
     return { privateTasks: tasksOut, privateProcesses: procsOut };
   }, [orderedMessages, conversation]);
 
-  const projectTypeId = useMemo(
-    () => resolveProjectTypeId(task, conversation),
-    [task, conversation],
-  );
+  const projectTypeId = useMemo(() => resolveProjectTypeId(task, conversation), [task, conversation]);
   const { project: currentProject } = useProject();
   const effectiveProjectId = resolveAttachmentProjectId(task, conversation, currentProject?.id);
 
@@ -268,10 +267,7 @@ export function ConversationContextPanel({
     [projectTypeId, privateTasks, privateProcesses],
   );
 
-  const sharedTypeIds = useMemo<TypeId[]>(
-    () => sharedEntities.map((e) => e.typeId),
-    [sharedEntities],
-  );
+  const sharedTypeIds = useMemo<TypeId[]>(() => sharedEntities.map((e) => e.typeId), [sharedEntities]);
 
   const anchorMessageId = useMemo(
     () => resolveAnchorMessage(selectedMessageIds, flowMessageIdSet, orderedMessages),
@@ -287,7 +283,11 @@ export function ConversationContextPanel({
     () => buildAssistancePrompt(sharedTypeIds, privateTypeIds),
     [sharedTypeIds, privateTypeIds],
   );
-  const { conversationProcess, starting, launch: launchSession } = useConversationSession({
+  const {
+    conversationProcess,
+    starting,
+    launch: launchSession,
+  } = useConversationSession({
     conversation,
     ensureMapped,
     buildPrompt,
@@ -318,10 +318,9 @@ export function ConversationContextPanel({
   }
 
   return (
-    <div className="h-full overflow-y-auto p-3 space-y-4" data-testid="conversation-context-panel">
+    <div className="h-full space-y-4 overflow-y-auto p-3" data-testid="conversation-context-panel">
       <SharedContextSection
         sharedEntities={sharedEntities}
-        transcriptEntries={transcriptEntries}
         attachmentEntries={attachmentEntries}
         conversationId={conversationId}
         selectedSet={selectedSet}
@@ -354,7 +353,6 @@ export function ConversationContextPanel({
 
 interface SharedContextSectionProps {
   sharedEntities: SharedEntityAgg[];
-  transcriptEntries: TranscriptEntry[];
   attachmentEntries: AttachmentEntry[];
   conversationId: string;
   selectedSet: ReadonlySet<string>;
@@ -368,7 +366,6 @@ interface SharedContextSectionProps {
 
 function SharedContextSection({
   sharedEntities,
-  transcriptEntries,
   attachmentEntries,
   conversationId,
   selectedSet,
@@ -381,10 +378,7 @@ function SharedContextSection({
   const { navigation } = useDockNavigation();
   const containerInside = useMemo(() => ({ type: Conversation.type, id: conversationId }), [conversationId]);
 
-  const isEmpty =
-    sharedEntities.length === 0
-    && transcriptEntries.length === 0
-    && attachmentEntries.length === 0;
+  const isEmpty = sharedEntities.length === 0 && attachmentEntries.length === 0;
 
   // When an entity is the selection origin, only the matching row lights;
   // otherwise we fall back to "any origin in selectedSet" so message-driven
@@ -425,23 +419,6 @@ function SharedContextSection({
                   const ptr = dockPointerFor(entry.typeId, containerInside, projectId);
                   if (ptr) navigation.openDock(ptr);
                 }}
-              />
-            );
-          })}
-          {transcriptEntries.map((t) => {
-            const rowKey = `transcript:${t.messageId}:${attachmentDataString(t.attachment)}`;
-            return (
-              <TranscriptRow
-                key={rowKey}
-                messageId={t.messageId}
-                attachment={t.attachment}
-                originMessageIds={t.originMessageIds}
-                isHighlighted={isRowHighlighted(rowKey, t.originMessageIds)}
-                onSelect={
-                  onSelectEntity && t.originMessageIds.length > 0
-                    ? () => onSelectEntity(rowKey, t.originMessageIds)
-                    : undefined
-                }
               />
             );
           })}
@@ -498,9 +475,22 @@ function SharedEntityRow({
 }: SharedEntityRowProps) {
   const { t } = useLingui();
   const { data: entity } = useEntity(typeId);
-  const name = entity?.displayName ?? typeId.id;
+  // A just-started claude_session has no title in its transcript yet, so the
+  // indexer falls back to the bare session id and this row renders a UUID.
+  // Heal it to the owning process's label; no-op for every other type.
+  const name = useSessionDisplayName(
+    typeId.type === ClaudeSession.type ? typeId.id : null,
+    entity?.displayName ?? typeId.id,
+  );
   const assetRef = (entity as unknown as { asset_ref?: string | null })?.asset_ref ?? undefined;
   const Icon = ICON_BY_TYPE[typeId.type] ?? ExternalLink;
+  // Tasks in a parent/child relationship get a refined type label
+  // ("Group Task" / "Member Task"); everything else uses the plain type word.
+  const role =
+    typeId.type === Task.type
+      ? taskRole(entity as unknown as { kind?: string | null; parent_id?: string | null } | null)
+      : null;
+  const typeLabel = role === 'group' ? t`Group Task` : role === 'member' ? t`Member Task` : humanType(typeId.type);
   // Spec rows say "View" (they open in the Milkdown editor — see
   // DockPointer.forSpec → /dock/spec/<id>); everything else stays "Open".
   const isSpec = typeId.type === Spec.type;
@@ -509,7 +499,7 @@ function SharedEntityRow({
   return (
     <Row
       icon={Icon}
-      type={humanType(typeId.type)}
+      type={typeLabel}
       name={name}
       isHighlighted={isHighlighted}
       onFocus={onSelect}
@@ -520,10 +510,7 @@ function SharedEntityRow({
       }
     >
       {needsDownload && onDownload ? (
-        <RowAction
-          onClick={onDownload}
-          title={`Download ${humanType(typeId.type)} — not pulled to this device yet`}
-        >
+        <RowAction onClick={onDownload} title={`Download ${humanType(typeId.type)} — not pulled to this device yet`}>
           <Download className="h-3 w-3" />
           Download {humanType(typeId.type)}
         </RowAction>
@@ -533,67 +520,6 @@ function SharedEntityRow({
           {primaryLabel}
         </RowAction>
       )}
-    </Row>
-  );
-}
-
-interface TranscriptRowProps {
-  messageId: string;
-  attachment: Attachment;
-  originMessageIds: string[];
-  isHighlighted: boolean;
-  onSelect?: () => void;
-}
-
-function TranscriptRow({
-  messageId,
-  attachment,
-  isHighlighted,
-  onSelect,
-}: TranscriptRowProps) {
-  const { t } = useLingui();
-  const { navigation } = useDockNavigation();
-  // ``attachment.local_path`` is synthesized at serialization time by
-  // ``flow_message.py::_serialize_with_local_paths`` from the local backend's
-  // ``tempfile.gettempdir()``. On macOS that's ``/var/folders/.../T/…`` and on
-  // Windows that's ``C:\Users\…\AppData\Local\Temp\…`` — both valid local paths
-  // for the backend that produced them. The download URL is the fallback when
-  // no local path is populated.
-  const localPath = attachment.local_path ?? null;
-  // Defensive: stale/malformed rows can have a non-string `data`; the bare
-  // `.split` used to take down the whole context panel.
-  const dataStr = attachmentDataString(attachment);
-  // Only resolves to a URL when the bytes are local — a not-yet-downloaded /
-  // dangling transcript yields null, so "View" stays inert rather than 404ing.
-  const downloadUrl = localAttachmentUrl(messageId, attachment);
-
-  const handleView = () => {
-    if (localPath) {
-      // ``claude/transcript`` handles the absolute-path form via LensViewer's
-      // Form 2 branch (POSIX or Windows-style absolute paths are both
-      // forwarded to ``TranscriptViewer path={…}``).
-      navigation.openLens('claude', 'transcript', encodeURIComponent(localPath));
-    } else if (downloadUrl) {
-      window.open(downloadUrl, '_blank', 'noopener,noreferrer');
-    }
-  };
-
-  return (
-    <Row
-      icon={ICON_BY_TYPE.conversation ?? ExternalLink}
-      type={t`Transcript`}
-      name={dataStr.split('/').pop() || dataStr || '(unknown)'}
-      isHighlighted={isHighlighted}
-      onFocus={onSelect}
-      focusTitle={t`Reveal the message that produced this transcript`}
-    >
-      <RowAction
-        onClick={handleView}
-        title={localPath ? t`Open in the transcript viewer` : t`Open the raw JSONL in a new tab`}
-      >
-        <Eye className="h-3 w-3" />
-        <Trans>View</Trans>
-      </RowAction>
     </Row>
   );
 }
@@ -610,13 +536,7 @@ interface AttachmentRowProps {
 // Exported for the conversation-shared-md routing test (mirrors
 // DownloadAttachmentsButton's test-export): the "Open" action must route a
 // shared .md attachment to the markdown document editor, not the code editor.
-export function AttachmentRow({
-  messageId,
-  attachment,
-  kind,
-  isHighlighted,
-  onSelect,
-}: AttachmentRowProps) {
+export function AttachmentRow({ messageId, attachment, kind, isHighlighted, onSelect }: AttachmentRowProps) {
   const { t } = useLingui();
   // Same URL helper FlowMessageBubble uses to render its inline chips
   // (FlowMessageBubble.tsx:131) — points at the backend endpoint that streams
@@ -823,9 +743,7 @@ function PrivateContextSection({
     for (const p of derivationProcesses) {
       if (!p.process.id) continue;
       const procKey = new TypeId(AgenticProcess.type, p.process.id).toString();
-      const linked = tasks.find((t) =>
-        t.task.sharedContextEntities?.some((tid) => tid.toString() === procKey),
-      );
+      const linked = tasks.find((t) => t.task.sharedContextEntities?.some((tid) => tid.toString() === procKey));
       if (linked) map.set(p.process.id, linked);
     }
     return map;
@@ -903,9 +821,7 @@ function PrivateContextSection({
           })}
           {derivationProcesses.map((p) => {
             const linked = p.process.id ? linkedTaskByProcessId.get(p.process.id) : undefined;
-            const rowKey = p.process.typeId
-              ? p.process.typeId.toString()
-              : `ap:${p.process.id ?? ''}`;
+            const rowKey = p.process.typeId ? p.process.typeId.toString() : `ap:${p.process.id ?? ''}`;
             return (
               <PrivateDerivationRow
                 key={p.process.id}
@@ -920,17 +836,13 @@ function PrivateContextSection({
                 }
                 onOpenTask={() => {
                   if (!linked?.task.id) return;
-                  navigation.openDock(
-                    DockPointer.forTasks(linked.task.id, { conversationId }),
-                  );
+                  navigation.openDock(DockPointer.forTasks(linked.task.id, { conversationId }));
                 }}
               />
             );
           })}
           {transcriptProcesses.map((p) => {
-            const rowKey = p.process.typeId
-              ? p.process.typeId.toString()
-              : `ap:${p.process.id ?? ''}`;
+            const rowKey = p.process.typeId ? p.process.typeId.toString() : `ap:${p.process.id ?? ''}`;
             return (
               <PrivateProcessRow
                 key={p.process.id}
@@ -967,7 +879,7 @@ function PrivateContextSection({
             <Trans>Add</Trans>
           </button>
           {menuOpen && (
-            <div className="absolute top-full left-0 right-0 z-10 mt-1 rounded-md border border-border bg-popover p-1 text-xs shadow-md">
+            <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-md border border-border bg-popover p-1 text-xs shadow-md">
               {onStartAssistance && (
                 <WorkerToolbar
                   variant="menu-list"
@@ -980,7 +892,7 @@ function PrivateContextSection({
                 type="button"
                 onClick={() => void handleAddSpec()}
                 disabled={adding}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-foreground transition-colors hover:bg-muted disabled:opacity-50"
                 data-testid="private-context-add-spec"
               >
                 {ICON_BY_TYPE.spec &&
@@ -994,7 +906,7 @@ function PrivateContextSection({
                 type="button"
                 onClick={() => void handleAddSkill()}
                 disabled={adding}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-foreground transition-colors hover:bg-muted disabled:opacity-50"
                 data-testid="private-context-add-skill"
               >
                 {ICON_BY_TYPE.skill &&
@@ -1046,10 +958,12 @@ function PrivateTaskRow({
 }) {
   const { t } = useLingui();
   const Icon = ICON_BY_TYPE.task ?? ExternalLink;
+  const role = taskRole(task);
+  const typeLabel = role === 'group' ? t`Group Task` : role === 'member' ? t`Member Task` : t`Task`;
   return (
     <Row
       icon={Icon}
-      type={t`Task`}
+      type={typeLabel}
       name={task.displayName ?? task.id ?? '(unnamed)'}
       isHighlighted={isHighlighted}
       onFocus={onSelect}
@@ -1121,7 +1035,6 @@ function PrivateProcessRow({
   );
 }
 
-
 // Single row representing a "derive task" headless run. The Task is
 // pre-created server-side (placeholder title from FM text), so `linkedTask`
 // is defined from the moment the row appears. The Open button is gated on the
@@ -1167,11 +1080,7 @@ function PrivateDerivationRow({
       <RowAction
         onClick={onOpenTask}
         disabled={!ready || !linkedTask}
-        title={
-          ready
-            ? `Open Task: ${linkedTask?.displayName ?? ''}`
-            : t`Deriving with Claude…`
-        }
+        title={ready ? `Open Task: ${linkedTask?.displayName ?? ''}` : t`Deriving with Claude…`}
       >
         <ExternalLink className="h-3 w-3" />
         <Trans>Open</Trans>
@@ -1188,19 +1097,13 @@ function SectionHeader({ title, icon: Icon }: { title: string; icon?: LucideIcon
   return (
     <div className="mb-1.5 flex items-center gap-1.5">
       {Icon && <Icon className="h-3 w-3 text-foreground" aria-hidden="true" />}
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground">
-        {title}
-      </span>
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground">{title}</span>
     </div>
   );
 }
 
 function ContextTable({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="divide-y divide-border rounded border border-border bg-background">
-      {children}
-    </div>
-  );
+  return <div className="divide-y divide-border rounded border border-border bg-background">{children}</div>;
 }
 
 function Row({
@@ -1248,7 +1151,7 @@ function Row({
           onClick={onFocus}
           title={focusTitle}
           aria-label={focusTitle ?? `Reveal ${type}: ${name}`}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded text-left transition-colors hover:bg-muted/40"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded text-start transition-colors hover:bg-muted/40"
         >
           {focusInner}
         </button>
@@ -1284,13 +1187,7 @@ function RowAction(props: RowActionProps) {
   }
   const { onClick, title, disabled, children } = props;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      disabled={disabled}
-      className={className}
-    >
+    <button type="button" onClick={onClick} title={title} disabled={disabled} className={className}>
       {children}
     </button>
   );

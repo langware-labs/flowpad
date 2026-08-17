@@ -5,9 +5,9 @@ from pydantic import SecretStr
 from flow_sdk import service_log
 from flow_sdk.builtin.user import User
 from flow_sdk.core import Entity
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.core.entity.entity_env.env_table import merge_env_tables
 from flow_sdk.core.entity.entity_env.env_types import EnvStatusEnum, EnvVar, EnvVarType
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.request_context.methods import get_entity_credentials, get_user_credentials
 
 
@@ -110,3 +110,26 @@ async def get_env_vars_context(user: User, project: Entity) -> list[FlowEnv]:
                         logging.exception(f"Error getting {var_type_str} {token_name} from user")
 
     return env_vars
+
+
+async def resolve_node_secret_env(project) -> list[FlowEnv]:
+    """The project's ATTACHED secrets, as FlowEnv for a compute node.
+
+    The node-side half of the same resolution the worker path uses — one
+    resolver, two transports (see ``secret_origin_resolver``). Values ride the
+    per-command prefix and are never written to the node's filesystem; ``set_env``
+    stays reserved for the FLOWPAD_* proxy config.
+    """
+    from flow_sdk.builtin.secret_origin_resolver import (  # noqa: PLC0415
+        attached_env_vars_for,
+        resolve_project_secrets,
+    )
+
+    if project is None:
+        return []
+    only = await attached_env_vars_for(project)
+    resolved = await resolve_project_secrets(project, only=only)
+    return [
+        FlowEnv.model_construct(name=name, var_type=EnvVarType.API_KEY, value=value)
+        for name, value in resolved.items()
+    ]

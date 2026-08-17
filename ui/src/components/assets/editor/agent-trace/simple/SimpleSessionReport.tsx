@@ -48,11 +48,7 @@ export function StatTile({ label, value }: { label: string; value: string }) {
 }
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
-  return (
-    <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-      {children}
-    </h3>
-  );
+  return <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{children}</h3>;
 }
 
 function IssueRow({ issue }: { issue: ReportIssue }) {
@@ -60,15 +56,9 @@ function IssueRow({ issue }: { issue: ReportIssue }) {
   return (
     <div className="rounded border border-border/60 bg-muted/30 px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-medium', toneChip(sev.tone))}>
-          {sev.label}
-        </span>
-        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-          {friendlyKind(issue.kind)}
-        </span>
-        {issue.count > 1 && (
-          <span className="text-[11px] font-medium text-muted-foreground">×{issue.count}</span>
-        )}
+        <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-medium', toneChip(sev.tone))}>{sev.label}</span>
+        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{friendlyKind(issue.kind)}</span>
+        {issue.count > 1 && <span className="text-[11px] font-medium text-muted-foreground">×{issue.count}</span>}
       </div>
       <p className="mt-1 text-sm text-foreground">{issue.title}</p>
       {issue.detail && <p className="mt-0.5 text-xs text-muted-foreground">{issue.detail}</p>}
@@ -93,8 +83,7 @@ export function SimpleSessionReport({ trace, doc }: SimpleSessionReportProps) {
   const costUsd = trace.cost_usd ?? summary?.cost_usd ?? null;
   const stepCount = summary?.tool_call_count ?? null;
   const problemCount =
-    (trace.issue_count ?? summary?.issue_count ?? 0) +
-    (trace.divergence_count ?? summary?.divergence_count ?? 0);
+    (trace.issue_count ?? summary?.issue_count ?? 0) + (trace.divergence_count ?? summary?.divergence_count ?? 0);
 
   const v = friendlyVerdict(verdict, reason);
   const goals = doc?.annotations?.goals ?? [];
@@ -133,8 +122,10 @@ export function SimpleSessionReport({ trace, doc }: SimpleSessionReportProps) {
         {/* What it worked on */}
         {goals.length > 0 && (
           <div>
-            <SectionHeading><Trans>What it worked on</Trans></SectionHeading>
-            <ul className="list-disc space-y-0.5 pl-5 text-sm text-foreground">
+            <SectionHeading>
+              <Trans>What it worked on</Trans>
+            </SectionHeading>
+            <ul className="list-disc space-y-0.5 ps-5 text-sm text-foreground">
               {goals.map((g, i) => (
                 <li key={i}>{g.label}</li>
               ))}
@@ -144,9 +135,13 @@ export function SimpleSessionReport({ trace, doc }: SimpleSessionReportProps) {
 
         {/* What to look at */}
         <div>
-          <SectionHeading><Trans>What to look at</Trans></SectionHeading>
+          <SectionHeading>
+            <Trans>What to look at</Trans>
+          </SectionHeading>
           {!doc ? (
-            <p className="text-sm text-muted-foreground"><Trans>Loading details…</Trans></p>
+            <p className="text-sm text-muted-foreground">
+              <Trans>Loading details…</Trans>
+            </p>
           ) : issues.length === 0 ? (
             <p className="rounded border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
               <Trans>🎉 No problems found — nothing needs your attention.</Trans>
@@ -163,7 +158,9 @@ export function SimpleSessionReport({ trace, doc }: SimpleSessionReportProps) {
         {/* Helpers used */}
         {skills.length > 0 && (
           <div>
-            <SectionHeading><Trans>Helpers used</Trans></SectionHeading>
+            <SectionHeading>
+              <Trans>Helpers used</Trans>
+            </SectionHeading>
             <ul className="flex flex-col gap-1 text-sm">
               {skills.map((s) => (
                 <li
@@ -173,7 +170,7 @@ export function SimpleSessionReport({ trace, doc }: SimpleSessionReportProps) {
                   <span className="truncate text-foreground" title={s.name}>
                     {s.name}
                   </span>
-                  <span className="ml-2 shrink-0 text-xs text-muted-foreground">
+                  <span className="ms-2 shrink-0 text-xs text-muted-foreground">
                     {s.issueCount === 0 ? t`all good` : pluralize(s.issueCount, t`problem`)}
                   </span>
                 </li>

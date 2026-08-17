@@ -28,7 +28,7 @@ function explorerScopeMode(scope: ScopeFilter): ExplorerScopeMode {
  */
 export function useExplorerModel() {
   const { currentDock, navigation } = useDockNavigation();
-  const { typeId, anchorForScope, projectRootPath, projectAvailable, projectId, projectName, contextDirs } =
+  const { typeId, locatorTypeId, anchorForScope, projectRootPath, projectAvailable, projectId, projectName, contextDirs } =
     useExplorerComputeNode();
 
   const scope = useMemo<ScopeFilter>(() => currentDock?.scopeFilter ?? allScope(), [currentDock]);
@@ -60,17 +60,17 @@ export function useExplorerModel() {
   }, [scopeMode]);
 
   const roots = useMemo<BrowseableRoot[]>(() => {
-    if (!typeId) return [];
+    if (!typeId || !locatorTypeId) return [];
     const list: BrowseableRoot[] = [
-      fsFolderRoot({ typeId, anchorRelPath, scope, label: rootLabel, rootIcon, projectRootPath }),
+      fsFolderRoot({ typeId, locatorTypeId, anchorRelPath, scope, label: rootLabel, rootIcon, projectRootPath }),
     ];
     // Project context folders (include_dirs) get their own grouping root, shown
     // whenever the current project has any — browseable like any FS root.
     if (contextDirs.length > 0) {
-      list.push(contextFoldersRoot({ typeId, scope, dirs: contextDirs }));
+      list.push(contextFoldersRoot({ typeId, locatorTypeId, scope, dirs: contextDirs }));
     }
     return list;
-  }, [typeId, anchorRelPath, scope, rootLabel, rootIcon, projectRootPath, contextDirs]);
+  }, [typeId, locatorTypeId, anchorRelPath, scope, rootLabel, rootIcon, projectRootPath, contextDirs]);
 
   const activePointer = currentDock ?? null;
 
@@ -85,12 +85,12 @@ export function useExplorerModel() {
   // Scope toggle → re-anchor BOTH tree and table at the new scope's root.
   const handleScopeChange = useCallback(
     (next: ScopeFilter) => {
-      if (!typeId) return;
+      if (!locatorTypeId) return;
       const newAnchor = anchorForScope(next);
-      const path = newAnchor ? `${typeId.toString()}/${newAnchor}` : `${typeId.toString()}/`;
+      const path = newAnchor ? `${locatorTypeId.toString()}/${newAnchor}` : `${locatorTypeId.toString()}/`;
       navigation.openDock(DockPointer.forExplorer(path).withScopeFilter(next));
     },
-    [typeId, anchorForScope, navigation],
+    [locatorTypeId, anchorForScope, navigation],
   );
 
   const handleSelectMode = useCallback(

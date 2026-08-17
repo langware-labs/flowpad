@@ -1,8 +1,9 @@
-import * as Sentry from '@sentry/browser';
 import { runInAction } from 'mobx';
 import { config } from '../config';
 import { dataContext, isTypeId, TypeId } from '../FlowSync';
+import { isHubOnly } from '../utils/hub-runtime';
 import { cloudManager } from './cloud_login';
+import { resolveLoginCallbackUrl } from './login_callback';
 import { secretsService } from './secrets-service';
 import { secretApprovalGate } from './secretApprovalGate';
 
@@ -57,7 +58,7 @@ class Navigator {
   }
 
   getLoginWithCallbackUrl(loginCallbackUrl: string = window.location.href, connection?: string): string {
-    const targetUrl = this.getLoginCallbackUrlForEmailVerification(loginCallbackUrl);
+    const targetUrl = resolveLoginCallbackUrl(loginCallbackUrl);
     return this.appendParams(`${config.SERVER_URL}${config.API_PREFIXES.login}`, {
       target_path: targetUrl,
       connection,
@@ -65,7 +66,7 @@ class Navigator {
   }
 
   async navigateToLogin(_loginCallbackUrl: string = window.location.href, _connection?: string): Promise<void> {
-    if (!(await this.ensureSecretsEnabled())) return;
+    if (!isHubOnly() && !(await this.ensureSecretsEnabled())) return;
     void dataContext.setActiveEntityTypeId(null);
     // cloudManager handles env-mode vs system-browser-mode internally.
     // The connection param is ignored — the cloud's login form handles provider choice.
@@ -100,7 +101,6 @@ class Navigator {
 
   navigateToLogout(_returnToUrl: string = window.location.origin) {
     void dataContext.setActiveEntityTypeId(null);
-    Sentry.setUser(null);
     void cloudManager.logout();
   }
 
@@ -203,28 +203,6 @@ class Navigator {
     urlPath = url.href;
     // Use window.history.replaceState directly (React Router will sync automatically)
     window.history.replaceState(null, '', urlPath);
-  }
-
-  private getLoginCallbackUrlForEmailVerification(loginCallbackUrl: string): string {
-    const url = new URL(document.location.href);
-    const searchParams = url.searchParams;
-
-    const hasSuccess = searchParams.get('success');
-    const message = searchParams.get('message') || '';
-    const hasValidMessage = message.includes('email') && message.includes('verified');
-
-    const isFollowingEmailVerification = hasSuccess && hasValidMessage;
-    if (!isFollowingEmailVerification) {
-      localStorage.setItem('loginCallbackUrl', loginCallbackUrl);
-    } else {
-      const storedCallbackUrl = localStorage.getItem('loginCallbackUrl');
-      if (storedCallbackUrl) {
-        loginCallbackUrl = storedCallbackUrl;
-        localStorage.removeItem('loginCallbackUrl');
-      }
-    }
-
-    return loginCallbackUrl;
   }
 }
 

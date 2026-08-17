@@ -22,6 +22,11 @@ import typer
 
 from flow_sdk.agentic_run_consts import DEFAULT_TRANSCRIPT_TIMEOUT_S
 from flow_sdk.agentic_warmup import await_worker_started
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
+
+# The id keys report.py's result JSON carries. ``diagnosis_id`` is always an id;
+# the support pair is either both ids (an issue) or both ``None`` (a clean sweep).
+_REPORT_ID_KEYS = ("diagnosis_id", "conversation_id", "flow_message_id")
 
 
 def _extract_report_result(text: str) -> dict | None:
@@ -30,7 +35,22 @@ def _extract_report_result(text: str) -> dict | None:
     the agent's ``tool_result`` (and the agent usually echoes it in text too), so
     the parent can detect completion + read the ids from the stream it is already
     consuming — no cross-process DB read or marker file. Returns the parsed dict,
-    or None if not present."""
+    or None if not present.
+
+    **The ids are validated on adopt**, because this scrapes a MODEL-produced
+    stream: a JSON-shaped blob the agent composed itself — a hallucinated id, a
+    report template it echoed — is indistinguishable by shape alone from the
+    reporter's stdout. report.py mints every id through ``mint_uuid`` and prints
+    "UUIDs/booleans only", so a blob whose ids are not conforming entity ids is
+    NOT report.py's output: reject it, leave the run un-recorded, and let the
+    nudge path make the agent actually run the reporter.
+
+    Without this gate a phantom id is accepted as the completion signal and
+    stamped onto the Feed card's ``MessageSuggest.diagnosis_id``, and every UI
+    surface that renders that card then dies constructing
+    ``new TypeId('flowpad_diagnosis', <phantom>)`` — the "Invalid type-id:
+    flowpad_diagnosis, flowpad_diagnostic_<timestamp>" crash.
+    """
     if not text or "diagnosis_id" not in text:
         return None
     for m in re.finditer(r'\{[^{}]*"diagnosis_id"[^{}]*\}', text):
@@ -38,8 +58,12 @@ def _extract_report_result(text: str) -> dict | None:
             d = json.loads(m.group(0))
         except ValueError:
             continue
-        if isinstance(d, dict) and d.get("diagnosis_id"):
-            return d
+        if not isinstance(d, dict) or not is_valid_entity_id(d.get("diagnosis_id")):
+            continue
+        # The support ids are optional (None on a clean sweep) but never free text.
+        if any(d.get(k) is not None and not is_valid_entity_id(d.get(k)) for k in _REPORT_ID_KEYS[1:]):
+            continue
+        return d
     return None
 
 
@@ -230,26 +254,28 @@ async def _load_recorded_diagnosis(diagnosis_cls, diagnosis_id: str | None):
     return last
 
 
-def _build_diagnose_process():
+async def _build_diagnose_process():
     """The diagnose worker process, exactly as `flow diagnose` launches it.
 
-    A single construction point so tests can exercise the real thing: the
-    process is never persisted, so it MUST select the headless transport —
-    ``prompt()`` routes on ``pty_mode`` and refuses an unsaved process on the
-    PTY branch ("not found in database") before any worker spawns.
-    """
-    from flow_sdk.builtin.agentic_process import AgenticProcess
+    Built from the named ``diagnose`` Agent, so the permission mode, model and
+    assistant flag are the ones a user can read off its card rather than
+    literals buried here. A single construction point so tests can exercise the
+    real thing.
 
-    ap = AgenticProcess(
-        cli_config={"permission_mode": "bypassPermissions"},
+    Deliberately neither saved nor started here: the process is never persisted (the exist_in_db gate was dropped for visible=False precisely so
+    this could spawn without a record), and the caller drives the turns itself
+    with ``ap.prompt``. Never persisted also means it MUST select the headless
+    transport — ``prompt()`` routes on ``pty_mode`` and the PTY branch would
+    refuse an unsaved process ("not found in database") before any worker
+    spawns.
+    """
+    from flow_sdk.builtin.agent_registry import get_agent_local_deployment
+
+    deployment = await get_agent_local_deployment("diagnose")
+    return await deployment.build(
         workdir=str(Path.cwd()),
-        visible=False,
-        # Headless transport — prompt() routes on pty_mode (NOT visible); the
-        # PTY branch would refuse this never-persisted process outright.
-        pty_mode=False,
+        name="flow diagnose",
     )
-    ap.enable_assistant()
-    return ap
 
 
 async def _run_diagnose(
@@ -324,7 +350,7 @@ async def _run_diagnose(
         f'sweep:\n"{message}"'
     )
 
-    ap = _build_diagnose_process()
+    ap = await _build_diagnose_process()
 
     # stream_transcript re-reads the transcript from the start on each call, so
     # track how many entries we've already printed and skip them on the re-stream

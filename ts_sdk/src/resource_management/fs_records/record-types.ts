@@ -68,6 +68,9 @@ export enum RecordType {
   MARKETPLACE = 'marketplace',
   HOOK = 'hook',
   MCP_SERVER = 'mcp_server',
+  SUBAGENT = 'subagent',
+  /** The launchable agent (agentic-assets/agent/<name>/agent.md).
+   *  Distinct from SUBAGENT, the provider-owned .claude/agents/<name>.md. */
   AGENT = 'agent',
   COMMAND = 'command',
   CLAUDE_MD = 'claude_md',
@@ -77,7 +80,6 @@ export enum RecordType {
   SESSION = 'session',
   PLAN = 'plan',
   PROMPT = 'prompt',
-  WORKFLOW = 'workflow',
   DIRECTORY = 'directory',
   GITHUB_REPO = 'github_repo',
   TODO_FILE = 'todo_file',
@@ -89,4 +91,5 @@ export enum RecordType {
   DYNAMIC_WORKFLOW = 'dynamic_workflow',
   USAGE_REPORT = 'usage_report',
   ASSET_CLEANUP_REPORT = 'asset_cleanup_report',
+  JOURNEY = 'journey',
 }

@@ -18,7 +18,7 @@ from typing import ClassVar, Optional
 from pydantic import field_validator
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.builtin.user import normalize_email
 from flow_sdk.core import Entity
 
@@ -49,7 +49,7 @@ class ContactPermission(Entity):
     contact_user_id: Optional[str] = APIField(None)
     contact_email: Optional[str] = APIField(None)
     # None = global (all projects); else scoped to this local project id.
-    project_id: Optional[str] = APIField(None)
+    project_id: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     # Granted capabilities (``PermissionAction`` values).
     allowed_actions: list[str] = APIField(default_factory=list)
 

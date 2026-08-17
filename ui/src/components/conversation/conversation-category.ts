@@ -1,15 +1,10 @@
+import { t } from '@lingui/core/macro';
 import type { LucideIcon } from 'lucide-react';
 import { Archive, ArchiveRestore, CheckSquare, LifeBuoy, Trash2 } from 'lucide-react';
-import {
-  Conversation,
-  ConversationKind,
-  FlowMessage,
-  FlowMessageKind,
-  Invitation,
-} from '@sdk';
+import { Conversation, FlowMessage, FlowMessageKind, Invitation, isHelpdeskKind } from '@sdk';
 
 // ── Conversation category — the single source of truth ──────────────────────
-// The inbox "category" is NOT one axis: a conversation can be community AND
+// The inbox "category" is NOT one axis: a conversation can be helpdesk AND
 // archived AND unread at once, and two of the axes (unread, invitation) are
 // *viewer-relative* — the same thread is an "Accept" row for the recipient and
 // a normal row for the sender. So we derive a small facet struct (centralizing
@@ -38,7 +33,7 @@ export interface CategoryInputs {
 }
 
 export interface ConversationFacets {
-  kind: 'direct' | 'community';
+  kind: 'direct' | 'helpdesk';
   /** Viewer is the pending recipient of an unaccepted invitation. */
   isInvitation: boolean;
   /** `archived_at` is set and not yet revived by newer activity. */
@@ -53,7 +48,7 @@ export interface ConversationFacets {
 export function conversationFacets(inp: CategoryInputs): ConversationFacets {
   const { conv, firstMessage, latestMessage, latestPtrTs, invitation, viewer } = inp;
 
-  const kind = conv.kind === ConversationKind.COMMUNITY ? 'community' : 'direct';
+  const kind = isHelpdeskKind(conv.kind) ? 'helpdesk' : 'direct';
 
   // Invitation — viewer-relative. The first message stays `kind === invitation`
   // forever, so the sender (and everyone post-accept) must see a normal row;
@@ -70,22 +65,15 @@ export function conversationFacets(inp: CategoryInputs): ConversationFacets {
   // arrives. Compare against the pointer ts (not the FM) to avoid the fetch race.
   const archivedAt = conv.archived_at ? new Date(conv.archived_at).getTime() : null;
   const latestTime = latestPtrTs ? new Date(latestPtrTs).getTime() : 0;
-  const isArchived =
-    archivedAt !== null && !Number.isNaN(archivedAt) && latestTime <= archivedAt;
+  const isArchived = archivedAt !== null && !Number.isNaN(archivedAt) && latestTime <= archivedAt;
 
   // Unread — viewer-relative, like invitation: sending a message must not make
   // the conversation look unread to the sender himself (there is nothing for
   // him to read). Invitation rows always carry an actionable CTA, so they
   // count as unread.
   const senderId = latestMessage?.sender_id ?? null;
-  const isSelfSent =
-    !!senderId &&
-    (senderId === viewer.cloudUserId || senderId === viewer.localUserId);
-  const isUnread = isInvitation
-    ? true
-    : latestMessage
-      ? !latestMessage.is_read && !isSelfSent
-      : false;
+  const isSelfSent = !!senderId && (senderId === viewer.cloudUserId || senderId === viewer.localUserId);
+  const isUnread = isInvitation ? true : latestMessage ? !latestMessage.is_read && !isSelfSent : false;
 
   return { kind, isInvitation, isArchived, isUnread };
 }
@@ -104,7 +92,7 @@ export function compareConversationsByRecency(a: Conversation, b: Conversation):
 }
 
 // ── Chips — a per-row category label ─────────────────────────────────────────
-// Chips can co-occur (a community row can also be archived), so this returns a
+// Chips can co-occur (a helpdesk row can also be archived), so this returns a
 // list. Invitation rows keep their existing row treatment (violet left border +
 // MailPlus + Accept), so they get no chip here.
 
@@ -116,17 +104,16 @@ export interface ChipSpec {
   className: string;
 }
 
-const VIOLET_CHIP =
-  'border-violet-500/40 bg-violet-500/15 text-violet-600 dark:text-violet-400';
+const VIOLET_CHIP = 'border-violet-500/40 bg-violet-500/15 text-violet-600 dark:text-violet-400';
 const MUTED_CHIP = 'border-border/60 bg-muted text-muted-foreground';
 
 export function chipsFor(f: ConversationFacets): ChipSpec[] {
   const chips: ChipSpec[] = [];
-  if (f.kind === 'community') {
-    chips.push({ key: 'community', icon: LifeBuoy, label: 'Support', className: VIOLET_CHIP });
+  if (f.kind === 'helpdesk') {
+    chips.push({ key: 'helpdesk', icon: LifeBuoy, label: t`Support`, className: VIOLET_CHIP });
   }
   if (f.isArchived) {
-    chips.push({ key: 'archived', icon: Archive, label: 'Archived', className: MUTED_CHIP });
+    chips.push({ key: 'archived', icon: Archive, label: t`Archived`, className: MUTED_CHIP });
   }
   return chips;
 }
@@ -172,7 +159,7 @@ export function actionsFor(f: ConversationFacets, ctx: RowActionContext): Action
         key: 'accept',
         kind: 'primary',
         text: ctx.accepting ? 'Accepting…' : 'Accept',
-        label: 'Accept',
+        label: t`Accept`,
         onClick: ctx.onAccept,
         disabled: ctx.accepting || !ctx.invitationId,
         testId: 'inbox-accept-invitation-button',
@@ -184,7 +171,7 @@ export function actionsFor(f: ConversationFacets, ctx: RowActionContext): Action
         kind: 'icon',
         icon: Trash2,
         tone: 'destructive',
-        label: 'Decline (delete) invitation',
+        label: t`Decline (delete) invitation`,
         onClick: ctx.onDecline,
         testId: 'inbox-invitation-delete-button',
       });
@@ -205,7 +192,7 @@ export function actionsFor(f: ConversationFacets, ctx: RowActionContext): Action
           key: 'unarchive',
           kind: 'icon',
           icon: ArchiveRestore,
-          label: 'Unarchive — back to Inbox',
+          label: t`Unarchive — back to Inbox`,
           onClick: ctx.onUnarchive,
           testId: 'inbox-row-unarchive-button',
         }
@@ -214,7 +201,7 @@ export function actionsFor(f: ConversationFacets, ctx: RowActionContext): Action
           kind: 'icon',
           icon: Archive,
           tone: 'destructive',
-          label: 'Archive — moves to Archived, kept',
+          label: t`Archive — moves to Archived, kept`,
           onClick: ctx.onArchive,
           testId: 'inbox-row-archive-button',
         },

@@ -38,9 +38,11 @@ _WALK_IGNORED: frozenset[str] = frozenset({
     # macOS zip-extraction junk: __MACOSX holds only AppleDouble (._*)
     # resource-fork sidecars — binary, never real content.
     "__MACOSX",
-    # Flowpad-generated state dirs (llm_index summary caches, markdown-index
-    # sidecars, instance state). Never content — no walker should enter them.
-    ".flowpad", ".markdown_index", ".llm_index",
+    # Flowpad-generated state and metadata dirs. They may travel with an asset,
+    # but no content walker should enter them.
+    # Asset-local FlowPad metadata (named capsules, legacy ids, and future
+    # carriers) is transportable content, but never an asset-discovery root.
+    ".flow", ".flowpad", ".markdown_index", ".llm_index",
 })
 
 
@@ -74,6 +76,19 @@ def is_denylisted(path: Path) -> bool:
     generated/vendor dirs without honoring ``.gitignore``.
     """
     return path.name in _WALK_IGNORED or _is_claude_worktree(path)
+
+
+def is_under_denylisted_dir(path: Path | str) -> bool:
+    """True when any ANCESTOR directory of ``path`` is walk-denylisted.
+
+    ``is_denylisted`` answers this for one directory as a walk descends. A path
+    that was *stored* earlier has no walk to ride along with, so the offending
+    segment is an ancestor and has to be looked for explicitly — the seam that
+    lets retention apply the same policy discovery does. Pure string work: the
+    caller may be checking thousands of stored paths.
+    """
+    p = Path(path)
+    return any(part in _WALK_IGNORED for part in p.parts[:-1]) or _is_claude_worktree(p)
 
 
 def _is_force_include(path: Path, root: Path) -> bool:

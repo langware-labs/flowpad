@@ -29,5 +29,5 @@ async def resolve_project_by_code(code: str) -> dict:
         "session_code": proj.session_code,
         "name": proj.name,
         "host_name": None,
-        "members_count": len(proj.members or []),
+        "members_count": len(proj.presence or []),
     }

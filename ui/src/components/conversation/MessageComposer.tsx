@@ -1,14 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Boxes, File as FileIcon, MessageSquarePlus, Paperclip, Send, Smile, Trash2, X } from 'lucide-react';
 import type { AssetDescriptor, FlowMessage } from '@sdk';
-import { sendReply } from '@sdk/entities/notifications';
+import { sendReply, sendToChannel } from '@sdk/entities/notifications';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
-import { AssetPickerPopover } from '@src/components/asset-manager/AssetPickerPopover';
+import { AssetManagerPopover } from '@src/components/asset-manager/AssetManagerPopover';
 import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_LABEL } from './constants';
-import { AssetRefChips } from './AttachMenu';
+import { AssetRefChips, useAssetRefSelection } from './AttachMenu';
 import { EmojiPicker } from './EmojiPicker';
 import { PromptComposerDialog, type QueuedPrompt } from './PromptComposerDialog';
 import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } from './attachment-actions';
@@ -22,6 +22,14 @@ interface MessageComposerProps {
   /** Conversation to append to. Falls back to the draft's `conversation_id`. */
   conversationId?: string;
   disabled?: boolean;
+  /** Overrides the reply placeholder. Used when the composer is gated, so the
+   *  box explains why instead of inviting a reply that goes nowhere. */
+  placeholder?: string;
+  /** When set, this conversation caches a cloud thread and Send pushes the
+   *  reply back into that channel instead of the hub. */
+  channel?: string;
+  /** Fires when a channel send is accepted (dispatched, not delivered). */
+  onChannelSent?: (text: string) => void;
   /** Live-session composer: every send is stamped with this session id (the
    *  backend appends the snapshot-carrier attachment). Set by LiveSessionView;
    *  the plain conversation composer leaves it unset. */
@@ -46,21 +54,17 @@ interface MessageComposerProps {
 
 const SAVE_DEBOUNCE_MS = 400;
 
+/** Ceiling for the auto-growing composer (~10 lines of text). Past this the
+ *  textarea scrolls instead of eating the conversation above it. */
+const MAX_COMPOSER_HEIGHT_PX = 240;
+
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function PendingFileChip({
-  file,
-  disabled,
-  onRemove,
-}: {
-  file: File;
-  disabled?: boolean;
-  onRemove: () => void;
-}) {
+function PendingFileChip({ file, disabled, onRemove }: { file: File; disabled?: boolean; onRemove: () => void }) {
   const { t } = useLingui();
   const image = isImageFile(file);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -124,6 +128,9 @@ function PendingFileChip({
 export function MessageComposer({
   conversationId,
   disabled,
+  placeholder,
+  channel,
+  onChannelSent,
   liveSessionId,
   onSent,
   queuedPrompt,
@@ -149,15 +156,32 @@ export function MessageComposer({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const canAddPrompt = !!effectiveConversationId;
+  // "Suggest prompt" is the legacy relay affordance (attach a prompt for the
+  // other user to approve). In a live session the composer text IS the prompt
+  // that runs on the host, so the button is redundant — hide it there.
+  const canAddPrompt = !!effectiveConversationId && !liveSessionId;
   const isBusy = sending || discarding;
   const isDisabled = disabled || isBusy;
+  // A channel send carries text only, so offering the paperclip would
+  // invite an attachment the send silently drops.
+  const attachmentsDisabled = isDisabled || !!channel;
 
   const activePrompt = queuedPrompt ?? localPrompt;
   const setActivePrompt = (p: QueuedPrompt | null) => {
     if (onQueuedPromptChange) onQueuedPromptChange(p);
     else setLocalPrompt(p);
   };
+
+  // Auto-grow the composer to fit what's been typed so far — wrapped lines
+  // count, not just explicit newlines — up to MAX_COMPOSER_HEIGHT_PX, after
+  // which it scrolls. Height must be reset to 'auto' first so scrollHeight
+  // reports the content height rather than the current (larger) box.
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(textarea.scrollHeight, MAX_COMPOSER_HEIGHT_PX)}px`;
+  }, [text, isDraftMode]);
 
   // Draft auto-save: persist edits into the FlowMessage so a reload doesn't
   // lose them. No-op outside draft mode.
@@ -252,8 +276,7 @@ export function MessageComposer({
     });
   };
 
-  const addAssetRef = (d: AssetDescriptor) =>
-    setAssetRefs((prev) => (prev.some((a) => a.typeid === d.typeid && a.source === d.source) ? prev : [...prev, d]));
+  const assetSelection = useAssetRefSelection(assetRefs, setAssetRefs);
 
   const buildExtras = (effectivePrompt: QueuedPrompt | null): Parameters<typeof sendReply>[3] | undefined => {
     const extras: NonNullable<Parameters<typeof sendReply>[3]> = {};
@@ -262,8 +285,9 @@ export function MessageComposer({
       if (effectivePrompt.files.length > 0) extras.promptFiles = effectivePrompt.files;
     }
     // Assets (skill/agent/markdown/spec) ride as assetReferences.
-    const refs = assetRefs.map((a) => a.typeid);
-    if (refs.length > 0) extras.assetReferences = refs;
+    if (assetSelection.selectedTypeIds.length > 0) {
+      extras.assetReferences = assetSelection.selectedTypeIds;
+    }
     if (liveSessionId) extras.remoteWorkerSessionId = liveSessionId;
     return Object.keys(extras).length > 0 ? extras : undefined;
   };
@@ -286,32 +310,42 @@ export function MessageComposer({
     const outgoingFiles = liveSessionPrompt ? undefined : files.length > 0 ? files : undefined;
     setSending(true);
     setError(null);
+
     try {
-      // Cloud reply needs an authenticated hub token; otherwise the hub POST
-      // 401s and the send fails silently. Route through OAuth first.
-      const gate = await ensureCloudLogin();
-      if (!gate.ok) {
-        setError(gate.error);
-        if (isDraftMode) notify.error({ title: gate.error });
-        return;
+      if (channel) {
+        // A channel reply never touches the hub, so it must not drag the user
+        // through a Flowpad-Cloud login to send an email. Branch on the CALL
+        // only — an early return here would have to restate the cleanup below,
+        // and the first version of it restated one quarter of it.
+        await sendToChannel(effectiveConversationId!, messageBody);
+        onChannelSent?.(messageBody);
+      } else {
+        // Cloud reply needs an authenticated hub token; otherwise the hub POST
+        // 401s and the send fails silently. Route through OAuth first.
+        const gate = await ensureCloudLogin();
+        if (!gate.ok) {
+          setError(gate.error);
+          if (isDraftMode) notify.error({ title: gate.error });
+          return;
+        }
+        // Draft promotion: discard the local-only draft, then send through the
+        // SAME reply pipeline as a fresh send. Single code path beats forking
+        // the upload/push plumbing for drafts.
+        if (draft) await discardDraftFlowMessage(draft);
+        await sendReply(
+          { conversationId: effectiveConversationId },
+          messageBody,
+          outgoingFiles,
+          buildExtras(outgoingPrompt),
+        );
       }
-      // Draft promotion: discard the local-only draft, then send through the
-      // SAME reply pipeline as a fresh send. Single code path beats forking
-      // the upload/push plumbing for drafts.
-      if (draft) await discardDraftFlowMessage(draft);
-      await sendReply(
-        { conversationId: effectiveConversationId },
-        messageBody,
-        outgoingFiles,
-        buildExtras(outgoingPrompt),
-      );
       if (!isDraftMode) {
         setText('');
         setFiles([]);
         setAssetRefs([]);
         setActivePrompt(null);
       }
-      onSent?.();
+      if (!channel) onSent?.();
     } catch (err: unknown) {
       console.error('[MessageComposer] send failed', err);
       setError(err instanceof Error ? err.message : t`Failed to send reply.`);
@@ -382,8 +416,7 @@ export function MessageComposer({
     });
   };
 
-  const canSend =
-    (!!text.trim() || !!activePrompt || files.length > 0 || assetRefs.length > 0) && !isDisabled;
+  const canSend = (!!text.trim() || !!activePrompt || files.length > 0 || assetRefs.length > 0) && !isDisabled;
 
   // ── Shared building blocks (identical in both modes) ────────────────────
 
@@ -393,7 +426,7 @@ export function MessageComposer({
       type="file"
       multiple
       className="sr-only"
-      disabled={isDisabled}
+      disabled={attachmentsDisabled}
       onChange={(e) => {
         void addFiles(e.target.files);
         e.target.value = '';
@@ -408,18 +441,18 @@ export function MessageComposer({
       <button
         type="button"
         onClick={() => fileInputRef.current?.click()}
-        disabled={isDisabled}
+        disabled={attachmentsDisabled}
         title={t`Attach files`}
         data-testid="attach-file-button"
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
       >
         <Paperclip className="h-3.5 w-3.5" />
       </button>
-      <AssetPickerPopover
+      <AssetManagerPopover
         trigger={
           <button
             type="button"
-            disabled={isDisabled}
+            disabled={attachmentsDisabled}
             title={t`Attach an asset (skill, agent, doc, spec)`}
             data-testid="attach-asset-button"
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
@@ -427,8 +460,7 @@ export function MessageComposer({
             <Boxes className="h-3.5 w-3.5" />
           </button>
         }
-        onPick={addAssetRef}
-        filter={() => true}
+        {...assetSelection}
         side="top"
         searchPlaceholder={t`Search assets…`}
       />
@@ -476,7 +508,7 @@ export function MessageComposer({
       title={t`Send`}
       className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
     >
-      <Send className="h-3.5 w-3.5" />
+      <Send className="h-3.5 w-3.5 rtl:-scale-x-100" />
     </button>
   );
 
@@ -485,12 +517,7 @@ export function MessageComposer({
       {files.length > 0 && (
         <ul className="space-y-1">
           {files.map((f, i) => (
-            <PendingFileChip
-              key={`${f.name}-${i}`}
-              file={f}
-              disabled={isDisabled}
-              onRemove={() => removeFile(i)}
-            />
+            <PendingFileChip key={`${f.name}-${i}`} file={f} disabled={isDisabled} onRemove={() => removeFile(i)} />
           ))}
         </ul>
       )}
@@ -505,10 +532,7 @@ export function MessageComposer({
           <AttachmentActionsRow
             actions={composerActions}
             preview={
-              <PromptAttachmentPreview
-                attachments={queuedPromptAttachments}
-                pendingFiles={activePrompt.files}
-              />
+              <PromptAttachmentPreview attachments={queuedPromptAttachments} pendingFiles={activePrompt.files} />
             }
           />
         </div>
@@ -570,14 +594,14 @@ export function MessageComposer({
               onKeyDown={handleKeyDown}
               onPaste={(e) => void handlePaste(e)}
               placeholder={dragging ? t`Drop files here` : t`Edit your draft…`}
-              rows={Math.max(2, Math.min(10, text.split('\n').length + 1))}
+              rows={2}
               disabled={isDisabled}
-              className="min-h-[2.5rem] w-full resize-none bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-[2.5rem] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
             />
             <div className="flex items-center gap-1.5">
               {attachButtons}
               {promptButton}
-              <div className="ml-auto flex items-center gap-1.5">
+              <div className="ms-auto flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => void handleDiscard()}
@@ -622,10 +646,10 @@ export function MessageComposer({
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={(e) => void handlePaste(e)}
-          placeholder={dragging ? t`Drop files here` : t`Reply to sender…`}
+          placeholder={dragging ? t`Drop files here` : (placeholder ?? t`Reply to sender…`)}
           rows={1}
           disabled={isDisabled}
-          className="min-h-[1.5rem] flex-1 resize-none bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          className="min-h-[1.5rem] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
         />
         {promptButton}
         {sendButton}

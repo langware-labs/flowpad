@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Maximize2, ExternalLink, Presentation } from 'lucide-react';
 import { FSRef, type Deck } from '@sdk';
@@ -5,6 +6,7 @@ import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { entityReloadKey } from '@src/utils/entity-reload-key';
+import { AssetCollisionBadge } from '../AssetCollisionUI';
 
 /**
  * DeckViewer — the presenter surface for a generated `deck` entity.
@@ -64,16 +66,19 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
         if (!ref) {
           const files = await fsRef.ls();
           ref =
-            files.find(
-              (f) => f.path.toLowerCase().endsWith('.html') && !f.path.toLowerCase().endsWith('.mcp.html'),
-            ) ?? null;
+            files.find((f) => f.path.toLowerCase().endsWith('.html') && !f.path.toLowerCase().endsWith('.mcp.html')) ??
+            null;
         }
         if (!ref) throw new Error('No deck HTML in this folder.');
         // deck.json is nice-to-have (slide count + provenance) — a missing/invalid
         // one leaves those unset, never fails the deck itself.
         const [text, manifest] = await Promise.all([
           ref.read(),
-          fsRef.child('deck.json').read().then(JSON.parse).catch(() => null),
+          fsRef
+            .child('deck.json')
+            .read()
+            .then(JSON.parse)
+            .catch(() => null),
         ]);
         if (cancelled) return;
         setHtml(text);
@@ -120,15 +125,16 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
     <div className="flex h-full w-full flex-col bg-neutral-950">
       <div className="flex items-center gap-3 border-b border-border px-4 py-2">
         <span className="truncate text-sm font-medium text-neutral-100">{title}</span>
+        <AssetCollisionBadge />
         {numSlides && numSlides > 0 ? (
           <span className="shrink-0 text-xs text-neutral-500">{numSlides} slides</span>
         ) : null}
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ms-auto flex items-center gap-1">
           {templateVpath ? (
             <button
               type="button"
               onClick={openTemplate}
-              title="Open the source template"
+              title={t`Open the source template`}
               className="flex items-center gap-1 rounded px-2 py-1 text-xs text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100"
             >
               <Presentation className="h-3.5 w-3.5" />
@@ -138,7 +144,7 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
           <button
             type="button"
             onClick={openInNewTab}
-            title="Open in a new browser tab"
+            title={t`Open in a new browser tab`}
             className="rounded p-1.5 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100"
           >
             <ExternalLink className="h-4 w-4" />
@@ -146,7 +152,7 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
           <button
             type="button"
             onClick={() => void deckAreaRef.current?.requestFullscreen?.()}
-            title="Fullscreen"
+            title={t`Fullscreen`}
             className="rounded p-1.5 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100"
           >
             <Maximize2 className="h-4 w-4" />

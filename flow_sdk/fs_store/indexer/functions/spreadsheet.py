@@ -19,7 +19,6 @@ from __future__ import annotations
 import csv
 import zipfile
 from pathlib import Path
-from typing import Any
 from xml.etree import ElementTree as ET
 
 from flow_sdk.fs_store.fs_record import FSRecord
@@ -91,9 +90,8 @@ def _spreadsheet_id_from_path(path: Path) -> str:
     return mint_uuid(str(path.resolve()))
 
 
-def spreadsheet_gen_id(ref: FSRef) -> str:
-    """Resolve a spreadsheet's id — the stable uuid5(path). Idempotent."""
-    return _spreadsheet_id_from_path(ref._path)
+def spreadsheet_identity_key(ref: FSRef | Path) -> str:
+    return str(Path(getattr(ref, "_path", ref)).resolve())
 
 
 # ── extractor ─────────────────────────────────────────────────────────────────
@@ -140,7 +138,7 @@ def _extract_xlsx_sheets(path: Path) -> list[str]:
     return names
 
 
-def extract_spreadsheet(ref: FSRef) -> list[FSRecord]:
+def extract_spreadsheet(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a .csv/.xlsx file into a single FSRecord with shape metadata.
 
     Single-path index paths bypass the walker's suffix glob, so gate on the
@@ -179,7 +177,7 @@ def extract_spreadsheet(ref: FSRef) -> list[FSRecord]:
 
     rec = FSRecord(
         type=RecordType.SPREADSHEET,
-        id=_spreadsheet_id_from_path(path),
+        id=resolved_id,
         name=name,
         status="active",
         content=content,

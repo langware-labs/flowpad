@@ -3,8 +3,8 @@
 Pre-flight responsibilities:
   1. Skip the whole module if DEEP_TESTING is off (matches long_tests convention).
   2. Skip if docker is unavailable on the host.
-  3. Validate ANTHROPIC_API_KEY against api.anthropic.com once per session;
-     abort the whole matrix run with a loud message on invalid/rate-limited.
+  3. Skip if ANTHROPIC_API_KEY is absent; otherwise validate it against
+     api.anthropic.com once per session and abort loudly when invalid/rate-limited.
   4. Build the harness Docker image once per session.
 
 Per ``feedback_no_mocks_in_integration_tests`` and the user's "real claude only"
@@ -83,7 +83,7 @@ def valid_api_key() -> str:
     """
     key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not key:
-        _abort("INVALID_API_KEY: ANTHROPIC_API_KEY is unset; set it before running stress matrix")
+        pytest.skip("ANTHROPIC_API_KEY is unset — stress matrix unavailable")
 
     req = urllib.request.Request(
         ANTHROPIC_VALIDATE_URL,

@@ -34,6 +34,10 @@ ENV_FS_RECORD_PATH = "FS_RECORD_PATH"
 ENV_FLOWPAD_CLAUDE_HOME = "FLOWPAD_CLAUDE_HOME"
 ENV_CLAUDE_CONFIG_DIR = "CLAUDE_CONFIG_DIR"
 ENV_CODEX_HOME = "CODEX_HOME"
+# Copilot publishes no home env var of its own (unlike CLAUDE_CONFIG_DIR /
+# CODEX_HOME), so this is Flowpad's own override — used by test sandboxes and
+# isolated instances that must not read or write the real ``~/.copilot``.
+ENV_FLOWPAD_COPILOT_HOME = "FLOWPAD_COPILOT_HOME"
 ENV_FLOWPAD_HUB_URL = "FLOWPAD_HUB_URL"
 ENV_MINIHUB_HOST = "MINIHUB_HOST"
 ENV_MINIHUB_RELOAD = "MINIHUB_RELOAD"
@@ -56,10 +60,13 @@ def _canonical_lexical_path(path: str | os.PathLike[str]) -> Path:
     """Normalize a configured path without touching the filesystem."""
     return Path(os.path.abspath(os.path.expanduser(os.fspath(path))))
 
+
 # Phase B additions — instance identity + sod accessor.
 INSTANCE_NAME_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
 SOD_KEY_KEYCHAIN_SERVICE = "Flowpad.ai.sod_key"
 CONSENT_MARKER_FILENAME = ".secrets_enabled"
+COOKIE_GATE_MARKER_FILENAME = ".cookie_gate_armed"
+DESKTOP_MARKER_FILENAME = ".desktop_managed"
 SODOT_FILENAME = "sodot"
 
 # Sentinel for the per-instance memoized key/store fields, set on the frozen
@@ -84,7 +91,7 @@ class BaseInstanceSettings:
     """Resolved per-instance config. Defaults are prod values."""
 
     # ---- Identity ----
-    instance_name: str           # "prod" | "dev" | "test"
+    instance_name: str  # "prod" | "dev" | "test"
     is_dev: bool
 
     # ---- Networking ----
@@ -116,7 +123,7 @@ class BaseInstanceSettings:
     toplog_config_path: Path
 
     # ---- Database ----
-    db_driver: str               # "sqlite" | "neo4j" | "networkx"
+    db_driver: str  # "sqlite" | "neo4j" | "networkx"
 
     # ---- User-level (intentionally shared across instances unless overridden) ----
     user_home: Path
@@ -127,7 +134,11 @@ class BaseInstanceSettings:
     claude_commands_dir: Path
     claude_plans_dir: Path
     claude_workflows_dir: Path
-    claude_docs_dir: Path
+    # NOT a Claude Code directory — ``~/.claude/docs`` was flowpad's own
+    # invention. Markdown is ``AssetClass.DOCS``, so the user's docs live at
+    # ``<user_home>/docs``; kept in this dataclass (rather than derived) so the
+    # one owner of the path stays a setting.
+    user_docs_dir: Path
     claude_tasks_dir: Path
     claude_history_path: Path
     claude_mcp_json_path: Path
@@ -140,6 +151,11 @@ class BaseInstanceSettings:
     codex_config_path: Path
     codex_history_path: Path
     codex_session_index_path: Path
+
+    # Copilot (~/.copilot). User-level — shared across instances unless overridden.
+    copilot_home: Path
+    copilot_session_state_dir: Path
+    copilot_config_path: Path
 
     # ---- Defaults / runtime ----
     default_compute_provider: str = "local-machine"
@@ -206,7 +222,11 @@ class BaseInstanceSettings:
 
     @staticmethod
     def _build_from_env(
-        *, cls: type, instance_name: str, is_dev: bool, default_port: int,
+        *,
+        cls: type,
+        instance_name: str,
+        is_dev: bool,
+        default_port: int,
     ) -> "BaseInstanceSettings":
         """Shared from_env body — Phase F consolidation.
 
@@ -219,6 +239,7 @@ class BaseInstanceSettings:
         flow_home = cls._resolve_flow_home()
         claude_home = cls._resolve_claude_home()
         codex_home = cls._resolve_codex_home()
+        copilot_home = cls._resolve_copilot_home()
         instance_dir = flow_home / "instances" / instance_name
         records_root = cls._resolve_records_root_in(instance_dir)
         db_path = cls._resolve_db_path_in(instance_dir)
@@ -266,7 +287,7 @@ class BaseInstanceSettings:
             claude_commands_dir=claude_home / "commands",
             claude_plans_dir=claude_home / "plans",
             claude_workflows_dir=claude_home / "workflows",
-            claude_docs_dir=claude_home / "docs",
+            user_docs_dir=Path.home() / "docs",
             claude_tasks_dir=claude_home / "tasks",
             claude_history_path=claude_home / "history.jsonl",
             claude_mcp_json_path=claude_home / "mcp.json",
@@ -277,6 +298,9 @@ class BaseInstanceSettings:
             codex_config_path=codex_home / "config.toml",
             codex_history_path=codex_home / "history.jsonl",
             codex_session_index_path=codex_home / "session_index.jsonl",
+            copilot_home=copilot_home,
+            copilot_session_state_dir=copilot_home / "session-state",
+            copilot_config_path=copilot_home / "config.json",
             cloud_user_email=os.environ.get("FLOWPAD_CLOUD_USER_EMAIL") or None,
             cloud_user_pass=os.environ.get("FLOWPAD_CLOUD_USER_PASSWORD") or None,
             cloud_login_timeout_seconds=cls._resolve_login_timeout(),
@@ -338,6 +362,11 @@ class BaseInstanceSettings:
     def _resolve_codex_home() -> Path:
         env = os.environ.get(ENV_CODEX_HOME)
         return Path(env) if env else Path.home() / ".codex"
+
+    @staticmethod
+    def _resolve_copilot_home() -> Path:
+        env = os.environ.get(ENV_FLOWPAD_COPILOT_HOME)
+        return Path(env) if env else Path.home() / ".copilot"
 
     @staticmethod
     def _resolve_records_root(flow_home: Path, default_subdir: str) -> Path:
@@ -411,6 +440,17 @@ class BaseInstanceSettings:
     # spans instances, like the migration ledger.
 
     @property
+    def ui_port(self) -> int:
+        """The port a BROWSER should be pointed at to reach this instance's UI.
+
+        Not the same as ``port`` whenever Vite is serving the frontend, which is
+        every dev instance — so any deep link built against ``port`` 404s there.
+        One owner for that rule: the notification redirect and ``flow record
+        url`` both read it here rather than each re-deriving the fallback.
+        """
+        return self.vite_port if self.vite_port is not None else self.port
+
+    @property
     def global_dir(self) -> Path:
         """``<flow_home>/global`` — cross-instance shared state."""
         return self.flow_home / "global"
@@ -452,6 +492,41 @@ class BaseInstanceSettings:
         content" remain independent facts. Touched by ``enable_secrets()``.
         """
         return self.instance_dir / CONSENT_MARKER_FILENAME
+
+    @property
+    def cookie_gate_marker_path(self) -> Path:
+        """cookie-gate armed marker. Presence ⇔ this instance is request-gated.
+
+        Same stat()-only trick as ``consent_marker_path``, for the same reason:
+        answering "is this instance gated?" from the sod would decrypt it, and
+        decrypting fetches the Fernet key — a keychain prompt on the first
+        request after every restart, on installs that are never gated. Holds no
+        secret; the value itself lives in the sod. See
+        ``flow_sdk/instance_settings/cookie_gate.py``.
+        """
+        return self.instance_dir / COOKIE_GATE_MARKER_FILENAME
+
+    @property
+    def desktop_marker_path(self) -> Path:
+        """Desktop-managed marker. Presence ⇔ the Electron app owns this instance.
+
+        Written by the backend at startup when it sees ``FLOWPAD_DESKTOP=1``
+        (``server/startup.py::mark_desktop_managed``), which is set only by
+        ``electron/uv-manager.js``. It exists because that env var lives in the
+        backend process alone: ``flow`` CLI invocations are separate processes
+        and cannot see it, so without a persisted fact they cannot tell a
+        desktop install from a sandbox. ``cookie_gate.set_cookie_gate`` reads
+        this to refuse arming a gate that would lock the desktop app out of its
+        own health check.
+
+        Positive evidence rather than the absence of a hub runtime assignment:
+        a sandbox has no assignment either until ``/auth/login_callback`` lands,
+        so keying on "unassigned" would refuse legitimate arming on a box that
+        has not finished starting.
+
+        Holds no secret; the same stat()-only trick as the markers above.
+        """
+        return self.instance_dir / DESKTOP_MARKER_FILENAME
 
     @property
     def sod_key(self) -> bytes:
@@ -510,6 +585,7 @@ class BaseInstanceSettings:
         if cached is not _UNSET:
             return cached
         from flow_sdk.sod.file_sod import FileSodStorage
+
         store = FileSodStorage(key_provider=lambda: self.sod_key, file_path=self.sodot_path)
         object.__setattr__(self, "_sod_store_memo", store)
         return store
@@ -591,6 +667,7 @@ def _read_legacy_keyring_key(instance_name: str) -> str | None:
     unavailable. Kept local to avoid a circular import with the secrets layer."""
     try:
         import keyring
+
         return keyring.get_password(SOD_KEY_KEYCHAIN_SERVICE, instance_name)
     except Exception:  # noqa: BLE001
         return None

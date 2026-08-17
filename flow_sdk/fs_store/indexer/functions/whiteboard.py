@@ -1,12 +1,11 @@
-"""Walker + extractor + id mint + asset-hash for WHITEBOARD records.
+"""Extractor + id mint + asset-hash for WHITEBOARD records.
 
 A whiteboard is a folder containing ``WHITE_BOARD.md`` (with YAML frontmatter)
 and ``board.json`` (Excalidraw scene). Replaces the deleted
 ``WhiteboardRecord`` subclass.
 
-Registration at module bottom. The ``default_body`` stub for "+ New
-Whiteboard" creation is dropped; new whiteboards self-heal on first indexer
-pass via ``whiteboard_gen_id`` which mints+writes an id into frontmatter.
+Registration lives in the type registry; ``TypeInfo.mint_id`` persists the
+folder capsule before extraction.
 """
 
 from __future__ import annotations
@@ -23,44 +22,22 @@ from flow_sdk.fs_store.indexer._frontmatter import (
     _yaml_load,
 )
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
-    folder_capsule_gen_id,
     read_folder_capsule_id,
 )
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.identifier import mint_uuid
 
 WHITE_BOARD_MD = "WHITE_BOARD.md"
 BOARD_JSON = "board.json"
 
-def whiteboard_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
-) -> list[FSRef]:
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        wb_dir = Path(node.path) / ".claude" / "whiteboards"
-        if not wb_dir.is_dir():
-            continue
-        for entry in sorted(wb_dir.iterdir()):
-            if not entry.is_dir():
-                continue
-            if not (entry / WHITE_BOARD_MD).exists():
-                continue
-            key = str(entry.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(entry, record_type=RecordType.WHITEBOARD, parent=node))
-    return out
-
-# ── id helpers ───────────────────────────────────────────────────────────────
-
 def _read_frontmatter_id_from_yaml(yaml_fields: dict) -> str | None:
     """Pick ``id`` (or legacy ``asset_id``) from a parsed frontmatter dict."""
     from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
-    raw = yaml_fields.get("id") or yaml_fields.get("asset_id")
-    return adopt_entity_id(raw)  # validate-on-adopt (v4/v5) → else derive from name
+    for candidate in (yaml_fields.get("id"), yaml_fields.get("asset_id")):
+        adopted = adopt_entity_id(candidate)
+        if adopted:
+            return adopted
+    return None
 
 def _resolve_whiteboard_name(yaml_fields: dict, folder_name: str) -> str:
     """Pick the whiteboard's display name: yaml.name first, else folder name."""
@@ -71,7 +48,7 @@ def _resolve_whiteboard_name(yaml_fields: dict, folder_name: str) -> str:
 
 def _whiteboard_id_from_name(name: str) -> str:
     """Stable uuid5 derived from the whiteboard name."""
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{RecordType.WHITEBOARD}:{name}"))
+    return mint_uuid(f"{RecordType.WHITEBOARD}:{name}", namespace=uuid.NAMESPACE_DNS)
 
 def _load_whiteboard_fm(whiteboard_dir: Path) -> dict[str, Any]:
     """Load frontmatter from WHITE_BOARD.md, returning {} if absent."""
@@ -85,34 +62,14 @@ def _load_whiteboard_fm(whiteboard_dir: Path) -> dict[str, Any]:
     parsed = _yaml_load(fm)
     return parsed if isinstance(parsed, dict) else {}
 
-def whiteboard_id(ref: FSRef) -> str:
-    """Cheap id (no write): `.flow/id` capsule, else valid frontmatter id, else
-    the transitional uuid5(name) read fallback for legacy rows."""
-    path = ref._path
-    if path.is_dir():
-        cap = read_folder_capsule_id(path)
-        if cap:
-            return cap
-        fm = _load_whiteboard_fm(path)
-        fm_id = _read_frontmatter_id_from_yaml(fm)
-        if fm_id:
-            return fm_id
-        wb_name = _resolve_whiteboard_name(fm, path.name)
-        return _whiteboard_id_from_name(wb_name)
-    return path.name.split("-@", 1)[-1] if "-@" in path.name else path.name
 
-def whiteboard_gen_id(ref: FSRef) -> str:
-    """Adopt the whiteboard's id from its capsule, else mint a fresh v4.
-
-    Precedence: `.flow/id` capsule → valid WHITE_BOARD.md frontmatter id (adopted
-    + backfilled into the capsule) → fresh random **v4** into `.flow/id`. No
-    longer name-derives (`uuid5("whiteboard:name")` collided across machines).
-    """
-    path = ref._path
-    if not path.is_dir():
-        return whiteboard_id(ref)
+def whiteboard_id_from_folder(ref: FSRef | Path) -> object | None:
+    path = Path(getattr(ref, "_path", ref))
+    cap = read_folder_capsule_id(path)
+    if cap:
+        return cap
     fm = _load_whiteboard_fm(path)
-    return folder_capsule_gen_id(path, fm.get("id"), fm.get("asset_id"))
+    return _read_frontmatter_id_from_yaml(fm)
 
 def whiteboard_asset_hash(ref: FSRef) -> float:
     """mtime across the whiteboard's inner content files.
@@ -132,7 +89,7 @@ def whiteboard_asset_hash(ref: FSRef) -> float:
 
 # ── extractor ────────────────────────────────────────────────────────────────
 
-def extract_whiteboard(ref: FSRef) -> list[FSRecord]:
+def extract_whiteboard(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a whiteboard folder into a Record. Replaces ``WhiteboardRecord._from_fsref_sync``.
 
     Eagerly populates: id, name, description, content (name + description +
@@ -144,11 +101,6 @@ def extract_whiteboard(ref: FSRef) -> list[FSRecord]:
     path = ref._path
     fm = _load_whiteboard_fm(path) if path.is_dir() else {}
     wb_name = _resolve_whiteboard_name(fm, path.name)
-    rec_id = (
-        (read_folder_capsule_id(path) if path.is_dir() else None)
-        or _read_frontmatter_id_from_yaml(fm)
-        or _whiteboard_id_from_name(wb_name)  # transitional read fallback for legacy rows
-    )
     description = ""
     if isinstance(fm.get("description"), str):
         description = fm["description"]
@@ -176,7 +128,7 @@ def extract_whiteboard(ref: FSRef) -> list[FSRecord]:
 
     rec_kwargs: dict = {
         "type": RecordType.WHITEBOARD,
-        "id": rec_id,
+        "id": resolved_id,
         "name": wb_name,
         "status": "active",
         "content": content,

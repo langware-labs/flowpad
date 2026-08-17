@@ -19,10 +19,14 @@ dependencies = [
     "httpx[http2]",
     "dpath~=2.2.0",
     "typer>=0.9.0",
+    # Installed transitively by typer, but `flow instance ctl` imports it
+    # directly to render instance/group tables — declare what we import.
+    "rich",
     "python-dotenv",
     "keyring",
     "keyrings.alt",
-    "fastmcp",
+    # FastMCP 4 uses MCP 2.x; pydantic-ai 1.x's MCP integration requires MCP 1.x.
+    "fastmcp>=3,<4",
     "httpx>=0.24.0,<1.0",
     "websockets",
     "sqlalchemy~=2.0.27",
@@ -40,19 +44,22 @@ dependencies = [
     "beautifulsoup4",
     "dpath",
     "tiktoken",
-    "usearch",
+    # <2.24: usearch 2.24+ depends on numkong, which ships no wheels for many
+    # platforms and fails to build from source (needs omp.h) — breaks fresh installs.
+    "usearch<2.24",
     "numpy",
     "bs4>=0.0.2",
     "h2",
     "groq",
     "openai",
     "anthropic",
-    "pydantic-ai-slim>=1.62,<2",
+    "pydantic-ai-slim[mcp]>=1.62,<2",
     "distro",
     "appdirs",
     "colorama",
     "apscheduler~=3.10",
     "pathspec",
+    "pyyaml>=6.0",
 ]
 
 [project.urls]
@@ -70,7 +77,6 @@ dev = [
     "build",
     "twine",
     "ruff>=0.15.2",
-    "pyinstaller>=6.19.0",
     "pytest-timeout>=2.4.0",
     "pytest-env>=1.2.0",
     "pytest-rerunfailures>=16.0",
@@ -90,6 +96,8 @@ include = ["flow_sdk*"]
     "system_projects/**/*",
     "system_projects/**/.claude/**/*",
     "server/static/**/*",
+    # Type icons addressed by path from TypeInfo.icon — see server/icons/README.
+    "server/icons/**/*",
     # Separately-signed standalone flow-rs binaries (macOS universal2 +
     # Windows x64), vendored by scripts/deploy_to_github.sh. NOT the crate
     # source or target/ — only the signed binaries under rust/bin/.
@@ -105,6 +113,9 @@ include = ["flow_sdk*"]
     "system_projects/**/ui/dist/**",
     "system_projects/**/package-lock.json",
     "system_projects/**/.vite/**",
+    # Run journals are per-user EXECUTION OUTPUT written next to the authored
+    # flow/journey. They must never ship in the wheel.
+    "system_projects/**/runs/**",
 ]
 
 [tool.ruff]
@@ -130,6 +141,10 @@ extend-select = [
 "flow_sdk/server/app.py" = ["T20", "E402"]
 "examples/*" = ["T20"]
 "flow_sdk/db/drivers/sqlite/sqlite_driver.py" = ["E402"]
+# Registers its sub-typers at the BOTTOM of the file, each import immediately
+# above its own `app.add_typer` so the two cannot drift apart. Same shape, and
+# same exemption, as run.py and app.py above.
+"flow_sdk/cli/flow_cli.py" = ["E402"]
 "flow_sdk/fs_store/schema_registry.py" = ["F821"]
 
 [tool.pyright]

@@ -145,11 +145,21 @@ but the bundle still contains the source files.
 In `git` mode, git-backed attachments share **declaration, not bytes**:
 
 ```
-header.json
+flow_message.json
+entities.json
 git_origins.json
 git_transfers.json
 metadata/<type>-@<id>/metadata.json
 ```
+
+`flow_message.json` is the top-level FlowMessage envelope (renamed from the legacy
+`header.json`, which unpack still reads for older bundles). `entities.json` is the
+**metadata axis** — a `{ "<type>-<id>": <portable entity JSON> }` map, always embedded
+regardless of transfer mode, that carries each file-backed/repo entity's metadata
+(`parent_type_id`, labels, status, …) so it survives even a bytes-only `copy`-mode
+share; the receiver overlays it onto the materialized rows by id. Sender-local fields
+(scope, project_id, asset_ref, git_origin) are stripped via `Entity.to_common_json()`
+and re-derived on receive.
 
 For file-backed entities, the receiver resolves the `GitOrigin` to a local repo:
 prefer the conversation's mapped project checkout when it matches, then any known
@@ -400,3 +410,18 @@ on the exact route the UI's role-walk `QueryRequest` resolves to).
   (`upsert_from_hub_child`) replays the origin's write — row + parent edge +
   blobs — never a bare row copy; orphans (child before parent) are healed by
   the catch-up rebind pass. See §5.
+
+### Entity location indicator
+
+Asset-instance icons reflect the persisted entity's exact `remote` field. A
+known remote entity renders a leading Cloud with **Available on cloud** and a
+cloud-blue registry type glyph; a known local entity renders a leading
+HardDrive with **Local only** while preserving the surface's existing type-glyph
+color. The location glyph is a sibling immediately before the type glyph, not a
+badge on it.
+
+This presentation does not use `effective_remote`, cloud-login state, Git
+remote state, scope, source, or parentage. An unresolved entity—or an omitted
+field from an older backend—has unknown location and therefore renders no
+location glyph or local/cloud claim. The asset shape itself remains owned by
+the backend `TypeInfo.icon` registry.

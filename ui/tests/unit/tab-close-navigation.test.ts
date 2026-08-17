@@ -17,7 +17,9 @@
 
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { NavigationActions } from '@src/navigation/NavigationActions';
 
 const navigationActionsSource = readFileSync(
   resolve(__dirname, '../../src/navigation/NavigationActions.ts'),
@@ -55,17 +57,35 @@ describe('strip width containment (live-QA regression, 2026-06-11)', () => {
 });
 
 describe('closeDock from root-level dock URLs', () => {
-  it('normalizes the stripped base to the app root', () => {
-    expect(navigationActionsSource).toContain("stripDockPortion(currentPath) || '/'");
+  // Was a source-text assertion on the hand-rolled `stripDockPortion(...) || '/'`.
+  // Closing the dock IS going to the root, and the root is an ordinary pointer
+  // now, so assert the behaviour: a root-level dock URL lands on `/`, and one
+  // under an agent/flow prefix keeps that prefix.
+  const closeFrom = (path: string): string => {
+    window.history.pushState({}, '', path);
+    const navigate = vi.fn();
+    new NavigationActions(navigate, DockPointer.fromUrl(path)).openDock(null);
+    return String(navigate.mock.calls[0][0]);
+  };
+
+  afterEach(() => NavigationActions.resetPendingNavigationForTests());
+
+  it('lands on the app root', () => {
+    expect(closeFrom('/dock/assets/list/skill')).toBe('/');
+  });
+
+  it('keeps an agent/flow base path', () => {
+    expect(closeFrom('/agent/a/flow/f/dock/assets/list/skill')).toBe('/agent/a/flow/f');
   });
 });
 
 describe('UnifiedTabStrip close navigation', () => {
-  it('only navigates when the closed tab is the URL-active one', () => {
-    // The strip navigates off a close ONLY for the current chip — closing a
-    // background tab leaves the view untouched. The guard is `isCurrentTab(key)`
-    // (active OR pending-active, the close-X-during-pending-nav self-heal), whose
-    // definition anchors on the URL-derived active key (`currentDock.tabHash`).
+  it('only navigates when the closed tab is the one on screen', () => {
+    // The strip navigates off a close ONLY for the chip that is on screen —
+    // closing a background tab leaves the view untouched. The guard is
+    // `isCurrentTab(key)`, keyed on `activeKey` (the chip actually lit, which an
+    // ancestor can stand in for) or `pendingActiveKey` (the
+    // close-X-during-pending-nav self-heal). Both originate at the URL.
     expect(unifiedStripSource).toContain('if (isCurrentTab(key))');
     expect(unifiedStripSource).toContain('key === activeKey || key === pendingActiveKey');
     expect(unifiedStripSource).toContain("currentDock?.tabHash ?? ''");

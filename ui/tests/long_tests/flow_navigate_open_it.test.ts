@@ -12,7 +12,14 @@
  * Timeout: 240s (two real Claude turns) — the established long-test cap; do not raise.
  */
 
-import { AgenticProcess, ConnectionManager, FlowData, FlowElementTypes, type UiCommandMessage } from '@sdk';
+import {
+  AgenticProcess,
+  ConnectionManager,
+  FlowData,
+  FlowElementTypes,
+  WorkerModelTier,
+  type UiCommandMessage,
+} from '@sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import * as fs from 'fs';
@@ -94,7 +101,16 @@ describe('assistance agent flow navigate — ui_command(navigate_entity) reaches
     proc = await new AgenticProcess({
       workdir,
       load_flowpad_assistant: true,
-      cli_config: { permission_mode: 'bypassPermissions' },
+      cli_config: {
+        permission_mode: 'bypassPermissions',
+        // This test exercises the navigate PLUMBING (skill → `flow navigate` →
+        // ui_command on the WS), not model quality — same rationale as the
+        // sibling flow_show_display_focus test. Unpinned, the turn runs the
+        // backend default (opus-4-8): turn 1 alone measured 89s, so two real
+        // turns plus a skill invocation cannot fit the 240s cap. SM (→ haiku)
+        // keeps it inside the cap without touching the cap.
+        model: WorkerModelTier.SM,
+      },
     }).save([]);
     await proc.watch();
 
@@ -121,7 +137,15 @@ describe('assistance agent flow navigate — ui_command(navigate_entity) reaches
         resolve();
       });
     });
-    await proc.executeInstruction('now open it in flowpad', { sync: false });
+    // "navigate to it", not the bare "open it": the assistance skill routes
+    // "open it" to its `navigate` action, but that phrasing ALSO reads as
+    // `flow show` (set display focus, explicitly "no navigation"), and on the
+    // pinned SM tier the model took that branch — three `flow show` attempts,
+    // no navigate. This test asserts the navigate PLUMBING, not the model's
+    // verb choice (see the cli_config note above), so it names the action and
+    // still lets the skill decide HOW. Model verb-routing belongs in a skill
+    // eval, not here.
+    await proc.executeInstruction('now navigate flowpad to it', { sync: false });
     await turn2Done;
 
     // The navigate frame may land a tick after the worker's terminal edge.

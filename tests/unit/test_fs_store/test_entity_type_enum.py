@@ -16,10 +16,14 @@ EXPECTED = {
     "TASK": "task",
     "RULE": "rule",
     "SKILL": "skill",
+    "SUBAGENT": "subagent",
+    # Launchable agent (identity + launch bundle) — additive member; the
+    # subagent rename freed the noun, no existing value changed.
     "AGENT": "agent",
     "LOG": "log",
     "AGENTIC_PROCESS": "agentic_process",
     "ARTIFACT": "artifact",
+    "DEPLOYMENT": "deployment",
     "BOOKMARK": "bookmark",
     "ANNOTATION": "annotation",
     "COMMENT": "comment",
@@ -86,7 +90,6 @@ EXPECTED = {
     "DOC_DB": "doc_db",
     "RECORD_ERROR": "record_error",
     "TEXT_FILE": "text_file",
-    "WORKFLOW": "workflow",
     "MARKDOWN": "markdown",
     "MARKDOWN_INDEX": "markdown_index",
     "SPEC": "spec",
@@ -109,7 +112,6 @@ EXPECTED = {
     "ORGANIZATION": "organization",
     "WORKSPACE": "workspace",
     "PAGE": "page",
-    "FLOW": "flow",
     "INVITATION": "invitation",
     "MENTION": "mention",
     "CONNECTION": "connection",
@@ -137,14 +139,14 @@ EXPECTED = {
     "MESSAGE_ATTACHMENT": "message_attachment",
     "TEAM_SPACE": "team_space",
     "NOTIFICATION": "notification",
+    "INBOX_MANAGER": "inbox_manager",
     "RUN": "run",
-    "PROMPT_RESULT": "prompt_result",
+    "PROMPT_COMPLETION": "prompt_completion",
     "REMOTE_WORKER_SESSION": "remote_worker_session",
     # SemanticLock file targets (5a19f9e6) — additive member; the commit that
     # added it missed this freeze.
     "FILE": "file",
     "ARTIFACT_RELATION": "artifact_relation",
-    "FS_ITEM": "fs_item",
     "KNOWLEDGE_BASE": "knowledge_base",
     "SKILLIT_SESSION": "skillit_session",
     "SKILLIT_CONFIG": "skillit_config",
@@ -174,6 +176,28 @@ EXPECTED = {
     # brand-new types, no existing value changed, so no migration. Their
     # introducing commits missed this freeze.
     "DECK": "deck", "SPREADSHEET": "spreadsheet",
+    # Tag vocabulary consolidation: blessed taxonomy tags are a first-class
+    # entity type. Flow-graph v2 added the run model.
+    "TAG": "tag",
+    "WIKI": "wiki",
+    "WIKI_ENTRY": "wiki_entry",
+    "GRAPH_WORKFLOW": "graph_workflow", "GRAPH_WORKFLOW_NODE": "graph_workflow_node",
+    "GRAPH_WORKFLOW_RUN": "graph_workflow_run",
+    # Journeys (0.2.105): folder-backed guided-onboarding doc + per-user
+    # DB-only journal — additive members, no existing value changed.
+    "JOURNEY": "journey", "JOURNEY_JOURNAL": "journey_journal",
+    # Help desk (0.2.114): folder-backed support portal discovered by indexing a
+    # cloned repo that ships agentic-assets/helpdesk/<name>/helpdesk.json —
+    # additive member, no existing value changed.
+    "HELPDESK": "helpdesk",
+    # Cloud data-source ingestion (flow_sdk/ingest): the configured remote
+    # source, its per-stream cursor, and the records it produces — additive
+    # members, no existing value changed.
+    "DATA_SOURCE": "data_source", "DATA_SOURCE_CURSOR": "data_source_cursor",
+    "SOURCE_ITEM": "source_item",
+    # The inbox projection's thread grouping — additive member, no existing
+    # value changed.
+    "MESSAGE_THREAD": "message_thread",
 }
 
 
@@ -194,4 +218,4 @@ def test_back_compat_aliases_are_the_same_class():
     assert BuiltinEntityType is EntityType
     assert SkillitRecordType is EntityType
     # shared members resolve to the same singleton
-    assert RecordType.AGENT is BuiltinEntityType.AGENT
+    assert RecordType.SUBAGENT is BuiltinEntityType.SUBAGENT

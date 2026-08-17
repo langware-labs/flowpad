@@ -2,13 +2,16 @@ import { AgenticProcess } from '@sdk';
 import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/AutoScrollContainer';
 import { ChatActivityLine } from '@src/components/entity-execution-panel/ChatActivityLine';
 import { TurnGroupsList } from '@src/components/entity-execution-panel/TurnGroupsList';
+import { describeCurrentActivity } from '@src/components/entity-execution-panel/current-activity';
+import { useObservedTurn } from '@src/components/entity-execution-panel/hooks/useObservedTurn';
+import { useStickyActivity } from '@src/components/entity-execution-panel/hooks/useStickyActivity';
 import { useTurnActivity } from '@src/components/entity-execution-panel/hooks/useTurnActivity';
-import { useTurnGroups } from '@src/components/floating-chat/groupTurnEvents';
+import { splitLiveGroup, useTurnGroups } from '@src/components/floating-chat/groupTurnEvents';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { cn } from '@src/lib/utils';
 import { Trans } from '@lingui/react/macro';
 import { MessageSquare } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { PlanInteractionBar } from './PlanInteractionBar';
 import { useTurnCompletionReconcile } from './useTurnCompletionReconcile';
 
@@ -40,8 +43,15 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
     });
   }, [process.id]);
 
+  // Render a turn this pane did not start — typed into the xterm, or already
+  // running when the user switched to Standard. Opens only while such a turn is
+  // live; costs nothing otherwise.
+  useObservedTurn(process);
+
   // A browser reload can remount this pane while a backend turn is still in
-  // flight — converge with the transcript once when that turn completes.
+  // flight — converge with the transcript once when that turn completes. Still
+  // the floor under the observation above: it also covers a turn that started
+  // before this pane mounted.
   useTurnCompletionReconcile(process);
 
   const items = useAgenticProcessStream(process);
@@ -49,6 +59,24 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
   // so the memoized rows below only re-render the trailing group (QA D10).
   const turnGroups = useTurnGroups(items);
   const activity = useTurnActivity(process);
+
+  // Same named-operation readout the vibe chat shows ("Editing · foo.ts").
+  // Only `liveEvents` is taken from the split — unlike the vibe pane, this one
+  // deliberately keeps rendering EVERY group inline, tool rows included, since
+  // that is what Standard mode is for. The line reports what is happening now;
+  // the rows below remain the record of what happened.
+  const currentActivity = useStickyActivity(
+    useMemo(
+      () =>
+        describeCurrentActivity(
+          splitLiveGroup(turnGroups, activity.active).liveEvents,
+          activity.startedAt,
+          activity.status,
+        ),
+      [turnGroups, activity.active, activity.startedAt, activity.status],
+    ),
+    activity.startedAt,
+  );
 
   const scrollRef = useRef<AutoScrollContainerHandle>(null);
   useEffect(() => {
@@ -59,14 +87,28 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
     <div className={cn('flex h-full min-h-0 flex-col bg-background', className)} data-testid="simple-chat-pane">
       <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
         {turnGroups.length === 0 ? (
+          // A turn can be in flight with nothing rendered yet — the pane mounted
+          // mid-turn, before any row landed. The empty state must still carry
+          // the activity line, or a working agent reads as an idle session
+          // inviting a first message.
           <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
               <MessageSquare className="h-6 w-6" />
             </div>
-            <div>
-              <p className="text-[15px] font-medium text-foreground"><Trans>Start a conversation</Trans></p>
-              <p className="mt-1 text-sm"><Trans>Send a message below and the agent will get to work.</Trans></p>
-            </div>
+            {activity.active ? (
+              <ChatActivityLine
+                process={process}
+                active={activity.active}
+                startedAt={activity.startedAt}
+                status={activity.status}
+                activity={currentActivity}
+              />
+            ) : (
+              <div>
+                <p className="text-[15px] font-medium text-foreground"><Trans>Start a conversation</Trans></p>
+                <p className="mt-1 text-sm"><Trans>Send a message below and the agent will get to work.</Trans></p>
+              </div>
+            )}
           </div>
         ) : (
           <div className="w-full px-4 py-3">
@@ -76,6 +118,7 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
               active={activity.active}
               startedAt={activity.startedAt}
               status={activity.status}
+              activity={currentActivity}
             />
           </div>
         )}

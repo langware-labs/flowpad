@@ -26,17 +26,26 @@ HOUR_IN_SECONDS = 3600
 def _server_json_path() -> Path:
     """Resolve the active server.json via the per-instance settings."""
     from flow_sdk.instance_settings import get_instance_settings
+
     return get_instance_settings().server_json_path
 
 
 @dataclass
 class FlowpadServerInfo:
-    """Server connection information from port file."""
+    """Server connection information from port file.
+
+    Note this is a *different* type from ``flow_sdk.config.FlowpadServerInfo``
+    (a pydantic model that writes the file); this one is the read side and
+    carries only what discovery consumers need.
+    """
 
     port: int
     webhook_path: str
     health_path: str
     url: str  # Computed: http://localhost:{port}{webhook_path}
+    #: Optional: absent from files written by older servers. Used to tell a
+    #: live entry from one left behind by a crashed backend.
+    server_pid: Optional[int] = None
 
 
 class FlowpadStatus:
@@ -60,11 +69,16 @@ def _parse_server_json(path: Path) -> Optional[FlowpadServerInfo]:
     """Read one server.json and return its info, or None if missing/corrupt."""
     try:
         data = json.loads(path.read_text())
+        try:
+            server_pid = int(data["server_pid"])
+        except (KeyError, TypeError, ValueError):
+            server_pid = None
         return FlowpadServerInfo(
             port=data["port"],
             webhook_path=data["webhook_path"],
             health_path=data["health_path"],
             url=f"http://localhost:{data['port']}{data['webhook_path']}",
+            server_pid=server_pid,
         )
     except (json.JSONDecodeError, KeyError, OSError):
         return None
@@ -253,6 +267,7 @@ def resolve_cli_port() -> int:
     if info is not None:
         return info.port
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
     settings = get_instance_settings()
     raise InstanceNotRunningError(settings.instance_name, settings.server_json_path)
 
@@ -270,6 +285,16 @@ def check_server_health(server_info: FlowpadServerInfo, timeout: float = 2.0) ->
     health_url = f"http://localhost:{server_info.port}{server_info.health_path}"
     try:
         req = urllib.request.Request(health_url, method="GET")
+        # Carry the cookie-gate secret when this instance is armed. Without it a
+        # gated server refuses the probe -- the gate has NO path exemptions and
+        # `/health/status` is explicitly included -- and a 403 is
+        # indistinguishable from a dead server from here, so a perfectly healthy
+        # instance reads as down. Same reasoning, and the same header transport,
+        # as `server.launch.check_server_health`.
+        from flow_sdk.instance_settings.cookie_gate import gate_headers
+
+        for name, value in gate_headers(health_url).items():
+            req.add_header(name, value)
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status == 200
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError):
@@ -336,6 +361,7 @@ def _enumerate_server_json_paths() -> list[Path]:
     CLI subprocess invoked without FLOW_INSTANCE.
     """
     from flow_sdk.instance_settings import BaseInstanceSettings
+
     flow_home = BaseInstanceSettings._resolve_flow_home()
     instances_root = flow_home / "instances"
     if not instances_root.is_dir():
@@ -350,24 +376,60 @@ def _enumerate_server_json_paths() -> list[Path]:
     return paths
 
 
+def _server_pid_is_alive(pid: int | None) -> bool:
+    """Is this server.json's recorded backend still running?
+
+    ``pid_probe`` rather than psutil: this is on the hook-broadcast path, which
+    must stay import-cheap and must never raise. It is emphatically NOT
+    ``os.kill(pid, 0)``, which this function used to call — on Windows that
+    sends the caller's own console a Ctrl-C instead of probing anything, so
+    enumerating instances here shut the enumerating backend down.
+    """
+    from flow_sdk.pid_probe import pid_is_alive
+
+    return pid_is_alive(pid)
+
+
 def read_all_server_infos() -> list[FlowpadServerInfo]:
-    """Read every instance's server JSON file, return all valid entries.
+    """Read every instance's server JSON file, return the LIVE entries.
 
     Fast path — no health check. Skips missing or corrupt files.
 
-    Deduped by port: only one server can own a port, so a second file
-    claiming the same port is a leftover from a dead instance whose port
-    band was recycled. Without this, hook broadcasts POST the same payload
-    once per stale file into whichever live server holds the port now.
+    Two filters, and the order matters:
+
+    1. **Dead-PID filter.** ``clear_server_info`` only runs on a graceful
+       uvicorn shutdown, so a SIGKILL, a crash or a closed laptop leaves the
+       file behind; one developer machine had 27 such files against a single
+       live backend. A stale entry is not inert — ``flow hooks report`` POSTs to
+       every server.json it is handed, so once the port band recycles, a dead
+       instance's file delivers hook payloads into a live, unrelated backend.
+       Filtering on the recorded PID removes the entry at the source rather than
+       relying on the port-dedupe below to mask it.
+
+       Entries with no recorded ``server_pid`` are kept: older writers omitted
+       it, and dropping them would silently stop notifying a real backend.
+
+    2. **Port dedupe.** Only one server can own a port, so a second *live-looking*
+       file claiming the same port is still a leftover. Live entries are
+       preferred over pid-less ones when both claim a port.
 
     Returns:
         List of FlowpadServerInfo, one per distinct port.
     """
     by_port: dict[int, FlowpadServerInfo] = {}
+    pidless: list[FlowpadServerInfo] = []
     for path in _enumerate_server_json_paths():
         info = _parse_server_json(path)
-        if info is not None:
-            by_port.setdefault(info.port, info)
+        if info is None:
+            continue
+        if info.server_pid is None:
+            pidless.append(info)
+            continue
+        if not _server_pid_is_alive(info.server_pid):
+            continue
+        by_port[info.port] = info
+    for info in pidless:
+        by_port.setdefault(info.port, info)
     return list(by_port.values())
 
 
@@ -388,11 +450,14 @@ def discover_all_flowpads() -> list[FlowpadDiscoveryResult]:
 
 
 if __name__ == "__main__":
-    # CLI interface for testing
+    # CLI interface for testing. Pre-existing prints; noqa'd rather than
+    # rewritten because staging this file for an unrelated fix is the first
+    # time pre-commit has ever linted it, and a debug __main__ block is where
+    # print is the right call.
     result = discover_flowpad()
-    print(f"Status: {result.status}")
+    print(f"Status: {result.status}")  # noqa: T201
     if result.server_info:
-        print(f"Server URL: {result.server_info.url}")
-        print(f"Health URL: http://localhost:{result.server_info.port}{result.server_info.health_path}")
+        print(f"Server URL: {result.server_info.url}")  # noqa: T201
+        print(f"Health URL: http://localhost:{result.server_info.port}{result.server_info.health_path}")  # noqa: T201
     if result.error:
-        print(f"Error: {result.error}")
+        print(f"Error: {result.error}")  # noqa: T201

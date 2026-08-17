@@ -1,8 +1,10 @@
+import { t } from '@lingui/core/macro';
 import {
   APIEntity,
   Artifact,
   createConversationForShare,
   dataContext,
+  dataManager,
   FlowMessage,
   gitOriginCloneUrl,
   isImagePath,
@@ -23,13 +25,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage, ConversationParticipant } from '@sdk/entities/conversation';
 import { BodyStatus, FlowMessageKind, forwardMessage } from '@sdk/entities/flow-message';
-import { AlertCircle, Download, File, FileText, Loader2, Play, X } from 'lucide-react';
+import { AlertCircle, Download, File, Loader2, Play, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { MessageContextButton } from './MessageContextButton';
 import { MessageRunStatus } from './MessageRunStatus';
-import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
+import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { chipStateFor } from './useMessageAttachments';
 import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
 import { TESTABLE_TYPES } from './asset-review/test-prompt';
@@ -83,7 +85,7 @@ export function DownloadAttachmentsButton({
       data-testid="download-attachments-button"
       title={labels.length ? labels.join('\n') : t('Download attachments')}
       className={cn(
-        'flex w-full max-w-[360px] items-center gap-3 rounded-lg border border-dashed px-3 py-2.5 text-left transition-colors',
+        'flex w-full max-w-[360px] items-center gap-3 rounded-lg border border-dashed px-3 py-2.5 text-start transition-colors',
         uploading
           ? 'cursor-not-allowed border-border bg-background opacity-50'
           : downloading
@@ -184,14 +186,11 @@ interface FlowMessageBubbleProps {
    *  to the soft cushions (sender_name, creator, 'unknown') so legitimate
    *  load windows don't flash the alert glyph. */
   rosterReady?: boolean;
-  /** True when the parent conversation is a community (support-center) ticket.
+  /** True when the parent conversation is a helpdesk (support) ticket.
    *  Staff replies are masked to a single brand identity and the real
    *  responder's `sender_id` is intentionally absent from the guest's roster,
    *  so we suppress the unresolved-sender alert and its telemetry. */
-  isCommunity?: boolean;
-  /** Parent conversation's `message_status_visible` flag — passed straight
-   *  through to the receipt indicator. Defaults to true. */
-  conversationStatusVisible?: boolean;
+  isHelpdesk?: boolean;
   /** Project shell to use when opening asset entity attachments. */
   attachmentProjectId?: string | null;
   /** Staged MessageAttachment rows for THIS message (parent-resolved via the
@@ -223,8 +222,7 @@ export function FlowMessageBubble({
   onDeleteMessage,
   participants,
   rosterReady = false,
-  isCommunity = false,
-  conversationStatusVisible = true,
+  isHelpdesk = false,
   attachmentProjectId,
   messageAttachments,
 }: FlowMessageBubbleProps) {
@@ -265,8 +263,6 @@ export function FlowMessageBubble({
     items: attachmentItems,
     entities,
     downloaded,
-    sharesTranscript,
-    hasPrompt,
     assetCount,
     assetLabels,
     assetTypeChips,
@@ -276,6 +272,11 @@ export function FlowMessageBubble({
     downloading,
     download: handleDownloadBody,
   } = useAttachments(fm, messageId);
+
+  // Hoisted above the early returns (hook count — see the telemetry note below).
+  // A group parent whose member task is attached to this same message is
+  // context, not the ask: it ships, but its chip is suppressed.
+  const parentTaskIds = useAttachedParentTaskIds(entities);
 
   // Forward-to-another-conversation. Hoisted above the early returns (hook
   // count). The dialog's `commit` override POSTs the backend forward action —
@@ -311,7 +312,7 @@ export function FlowMessageBubble({
   const unresolvedSenderId =
     fm &&
     !isDraft &&
-    !isCommunity &&
+    !isHelpdesk &&
     fm.sender_id &&
     rosterReady &&
     !participantLabelByUserId(participants, fm.sender_id) &&
@@ -385,7 +386,7 @@ export function FlowMessageBubble({
     displayName = wireSenderName;
   } else if (creatorLabel) {
     displayName = creatorLabel;
-  } else if (fm.sender_id && rosterReady && !isCommunity) {
+  } else if (fm.sender_id && rosterReady && !isHelpdesk) {
     displayName = UNRESOLVED_SENDER_LABEL;
   } else {
     displayName = t('unknown');
@@ -418,7 +419,11 @@ export function FlowMessageBubble({
   // `prompt` entities render via the attachment-actions row's
   // PromptAttachmentPreview (inside MessageBubble), not as generic chips; the
   // rest ride in the body bundle and only render as live chips once `downloaded`.
-  const otherEntities = entities.filter((t) => t.type !== Prompt.type);
+  // Prompt entities render in the attachment-actions row; a group parent whose
+  // member task is attached here renders not at all (`parentTaskIds`, above).
+  const otherEntities = entities.filter(
+    (t) => t.type !== Prompt.type && !(t.type === Task.type && parentTaskIds.has(String(t.id))),
+  );
   const hasAttachments = attachmentItems.length > 0 || entities.length > 0;
   const bodyStatus = fm.body_status ?? BodyStatus.NA;
   const hasBody = bodyStatus !== BodyStatus.NA;
@@ -426,15 +431,12 @@ export function FlowMessageBubble({
   // A transcript-only share renders a fully blank bubble without this note:
   // the backend synthesizes the "Please run the following prompt:" placeholder
   // for any empty-text send (MessageBubble suppresses it, assuming a prompt
-  // row takes its place), the conversation.jsonl transcript is deliberately
-  // NOT a chip (it lives in the Context tab), and the structural TYPE_ID
-  // self-refs are filtered too. When the message carries a transcript but no
-  // prompt and no renderable chips, say what was shared instead of nothing.
-  const isBareTranscriptShare =
-    sharesTranscript &&
-    !hasPrompt &&
-    !hasAttachments &&
-    (!message.content || message.content === PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT);
+  // row takes its place) and the structural TYPE_ID self-refs are filtered too.
+  //
+  // A shared session used to need a "see the Context tab" note here, because
+  // its transcript rode as a hidden raw file and produced no chip at all. It is
+  // an ordinary entity attachment now, so it renders as its own chip like every
+  // other shared entity and needs no special-case copy.
 
   // One click pulls the whole bundle (files + entities). Downloads STAGE into
   // the message's record-data dir — no project mapping needed; installing into
@@ -471,14 +473,8 @@ export function FlowMessageBubble({
   const progressPct = progress && progress.bytesTotal > 0 ? Math.round(progress.fraction * 100) : null;
 
   const attachmentFooter =
-    hasAttachments || downloadError || isBareTranscriptShare ? (
+    hasAttachments || downloadError ? (
       <div className="mt-2 space-y-1.5">
-        {isBareTranscriptShare && (
-          <div className="flex items-center gap-1.5 text-[11px] italic text-muted-foreground">
-            <FileText className="h-3 w-3 shrink-0" />
-            <Trans>Shared a session transcript — see the Context tab</Trans>
-          </div>
-        )}
         {downloadError && (
           <div
             className="flex items-start gap-2 rounded-md border border-orange-500/30 bg-orange-500/10 px-2 py-1.5 text-[11px] text-orange-700 dark:text-orange-300"
@@ -556,6 +552,9 @@ export function FlowMessageBubble({
                 attachment={messageAttachments?.find(
                   (ma) => ma.asset_type === typeId.type && ma.asset_id === String(typeId.id),
                 )}
+                // The whole message's attachments — the review modal lists them
+                // all on the left, with the clicked chip pinned + selected.
+                siblingAttachments={messageAttachments}
               />
             ))}
           </div>
@@ -565,7 +564,12 @@ export function FlowMessageBubble({
         {fileAttachments.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {fileAttachments.map((ma) => (
-              <MessageFileChip key={`file:${ma.id}`} attachment={ma} projectId={attachmentProjectId} />
+              <MessageFileChip
+                key={`file:${ma.id}`}
+                attachment={ma}
+                projectId={attachmentProjectId}
+                siblingAttachments={messageAttachments}
+              />
             ))}
           </div>
         )}
@@ -662,7 +666,6 @@ export function FlowMessageBubble({
         footer={footer}
         isSelected={isSelected}
         onSelect={onSelect}
-        conversationStatusVisible={conversationStatusVisible}
       />
       {forwardOpen && forwardSource && (
         <ShareToConversationDialog
@@ -695,7 +698,15 @@ export function FlowMessageBubble({
  * File chip (installed); clicking opens the review modal (install / uninstall +
  * content preview live there), matching the entity-chip flow.
  */
-function MessageFileChip({ attachment, projectId }: { attachment: MessageAttachment; projectId?: string | null }) {
+function MessageFileChip({
+  attachment,
+  projectId,
+  siblingAttachments,
+}: {
+  attachment: MessageAttachment;
+  projectId?: string | null;
+  siblingAttachments?: MessageAttachment[];
+}) {
   const [reviewOpen, setReviewOpen] = useState(false);
   const typeId = new TypeId('file', String(attachment.asset_id ?? ''));
   return (
@@ -715,8 +726,8 @@ function MessageFileChip({ attachment, projectId }: { attachment: MessageAttachm
         <AssetReviewDialog
           open={reviewOpen}
           onClose={() => setReviewOpen(false)}
-          attachment={attachment}
-          targetTypeId={typeId}
+          attachments={siblingAttachments?.length ? siblingAttachments : [attachment]}
+          initialAttachmentId={attachment.id}
           attachmentProjectId={projectId ?? null}
         />
       )}
@@ -724,20 +735,74 @@ function MessageFileChip({ attachment, projectId }: { attachment: MessageAttachm
   );
 }
 
-function MessageEntityChip({
+/**
+ * Ids of attached tasks that are the PARENT of another task attached to the
+ * SAME message — their chips are suppressed.
+ *
+ * An assignment message carries the member's own task AND its group parent:
+ * both must ride as real attachments (only attachments are packed into the body
+ * bundle, so context-only sharing would strand the parent as an unresolvable
+ * reference — see `useTaskAssignmentMessage`). But the message is a request to
+ * do the CHILD's work; the parent is context, reachable via the child's
+ * `parent_id` and the conversation's context row. So it ships, but doesn't
+ * clutter the bubble.
+ *
+ * Only ever hides a parent whose child is attached here too — a task sent on
+ * its own always renders. Resolution is async and self-correcting: until the
+ * child's row is local (pre-download) nothing is hidden, and the parent chip
+ * drops out once it resolves.
+ */
+function useAttachedParentTaskIds(entities: TypeId[]): Set<string> {
+  const taskIds = useMemo(() => entities.filter((t) => t.type === Task.type).map((t) => String(t.id)), [entities]);
+  const key = taskIds.join(',');
+  const [parentIds, setParentIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    // A lone task has no sibling to be the parent OF — nothing to hide.
+    if (taskIds.length < 2) {
+      setParentIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    void Promise.all(
+      taskIds.map((id) => dataManager.getByTypeId<Task>(new TypeId(Task.type, id)).catch(() => null)),
+    ).then((tasks) => {
+      if (cancelled) return;
+      const attached = new Set(taskIds);
+      const parents = new Set<string>();
+      for (const t of tasks) {
+        // Only suppress a parent that is itself attached to this message.
+        if (t?.parent_id && attached.has(t.parent_id)) parents.add(t.parent_id);
+      }
+      setParentIds(parents);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // `key` is the stable identity of `taskIds` (order-preserving join).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  return parentIds;
+}
+
+export function MessageEntityChip({
   typeId,
   conversationId,
   projectId,
   forceShow,
   attachment,
+  siblingAttachments,
 }: {
   typeId: TypeId;
   conversationId: string;
   projectId?: string | null;
   forceShow: boolean;
   attachment?: MessageAttachment;
+  siblingAttachments?: MessageAttachment[];
 }) {
   const { navigation } = useDockNavigation();
+  const isAdvanced = useIsAdvanced();
   const { start: startSkillRun, picker: runPicker } = useRunSkillWithProjectPrompt();
   const [reviewOpen, setReviewOpen] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -762,7 +827,7 @@ function MessageEntityChip({
         if (!url) return;
         const targetProjectId = projectId ?? dataContext.project?.id ?? null;
         const result = await launchWizard('git-context-folder', {
-          title: `Pull ${attachment?.name ?? 'git folder'}`,
+          title: t`Pull ${attachment?.name ?? 'git folder'}`,
           targetTypeId: typeId.toString(),
           payload: { projectId: targetProjectId, scope: 'private', mode: 'existing', url },
         });
@@ -776,17 +841,13 @@ function MessageEntityChip({
         }
       }
     : null;
-  // Assigned-task chip: one click unpacks — installs the staged task folder
-  // (task.md) so it lands in the task list. Git context folders referenced by
-  // the task ride as their own folder chips (the wizard-clone path above);
-  // loose attachment files ride as ordinary file attachments on the message.
-  const handleTaskInstall =
-    typeId.type === Task.type && attachment && !attachment.installed
-      ? async () => {
-          const targetProjectId = projectId ?? dataContext.project?.id ?? null;
-          await attachment.install(targetProjectId ? 'project' : 'user', targetProjectId ?? undefined);
-        }
-      : null;
+  // Assigned-task chips install through the SAME review dialog as every other
+  // staged entity — the dialog's Select-project / Install-in-project owns the
+  // placement (project scope). No separate task project-picker: a staged task
+  // chip falls through to `setReviewOpen(true)` below, so the click opens one
+  // surface (the review dialog), never a picker-then-dialog pair. Git context
+  // folders referenced by the task ride as their own folder chips (the
+  // wizard-clone path above); loose attachment files ride as file attachments.
   // "Run icon near the skill": one-click install-if-needed + run in a Vibe
   // session (see useRunReceivedSkill). Only for skills with a staged/installed
   // attachment — not artifacts or plain shares.
@@ -794,7 +855,7 @@ function MessageEntityChip({
   const runButton = runnable ? (
     <button
       type="button"
-      title="Run skill"
+      title={t`Run skill`}
       data-testid="skill-run-icon"
       onClick={() => startSkillRun(attachment, projectId ?? null)}
       className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/50 bg-background text-primary transition-colors hover:bg-primary/10"
@@ -809,8 +870,8 @@ function MessageEntityChip({
     <AssetReviewDialog
       open={reviewOpen}
       onClose={() => setReviewOpen(false)}
-      attachment={attachment}
-      targetTypeId={typeId}
+      attachments={siblingAttachments?.length ? siblingAttachments : [attachment]}
+      initialAttachmentId={attachment.id}
       attachmentProjectId={projectId ?? null}
     />
   );
@@ -821,13 +882,7 @@ function MessageEntityChip({
           <EntityChip
             entity={{ typeId, type: typeId.type, id: typeId.id, name: attachment!.name ?? typeId.type }}
             staged
-            onClick={
-              handleFolderPull
-                ? () => void handleFolderPull()
-                : handleTaskInstall
-                  ? () => void handleTaskInstall()
-                  : () => setReviewOpen(true)
-            }
+            onClick={handleFolderPull ? () => void handleFolderPull() : () => setReviewOpen(true)}
           />
           {runButton}
         </span>
@@ -842,11 +897,16 @@ function MessageEntityChip({
         ? data
         : new Artifact(data as unknown as Partial<Artifact>)
       : null;
-  // Installed via a MessageAttachment: the chip KEEPS opening the review modal
-  // (uninstall / test live there — requirement: "if already installed,
-  // uninstall appears instead"). The asset itself opens via the modal-adjacent
-  // context panel or any normal entity surface. Chips without an attachment
-  // (plain shares, artifacts) keep their navigation behavior.
+  // Installed via a MessageAttachment: behavior splits by view mode.
+  //  • Advanced (or Dev): the chip KEEPS opening the review modal, where
+  //    uninstall / test live and an "Open" button jumps to the entity view.
+  //  • Standard / Vibe: no uninstall surface — the chip navigates straight to
+  //    the entity view like any normal chip (onClick left undefined).
+  // Chips without an attachment (plain shares, artifacts) keep their navigation
+  // behavior — as do receive_policy='auto' row-only types (shared transcripts,
+  // diagnoses): they auto-installed at unpack with nothing to review, so their
+  // chip navigates straight to the entity.
+  const autoInstalled = dataManager.getTypeInfo?.(typeId.type)?.receive_policy === 'auto';
   return (
     <>
       <span className="inline-flex items-center gap-1">
@@ -858,7 +918,7 @@ function MessageEntityChip({
               ? () => void openArtifact(artifact, { navigation, currentProjectId: projectId ?? null })
               : handleFolderPull
                 ? () => void handleFolderPull()
-                : attachment
+                : attachment && !autoInstalled && isAdvanced
                   ? () => setReviewOpen(true)
                   : undefined
           }

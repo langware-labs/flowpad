@@ -112,8 +112,7 @@ def _write_marker_line(record_dir: Path, *, timestamp: str, session_id: str = _S
 
 def _is_terminated_status(fd) -> bool:
     return (
-        fd.attributes.get("element-type") == FlowElementType.STATUS
-        and fd.attributes.get("turn-terminated") == "true"
+        fd.attributes.get("element-type") == FlowElementType.STATUS and fd.attributes.get("turn-terminated") == "true"
     )
 
 
@@ -125,7 +124,13 @@ def test_cancelled_rollout_replay_has_no_termination_signal(tmp_path: Path):
 
     history = load_transcript_history(rollout)
 
-    calls = [fd for fd in history if fd.attributes.get("element-type") == FlowElementType.TOOL_CALL]
+    # Physical calls only: the derivation layer appends a refinement beside the
+    # vendor's tool-use, and both render as TOOL_CALL sharing one tool_use_id.
+    calls = [
+        fd
+        for fd in history
+        if fd.attributes.get("element-type") == FlowElementType.TOOL_CALL and fd.attributes.get("is-virtual") != "true"
+    ]
     results = [fd for fd in history if fd.attributes.get("element-type") == FlowElementType.TOOL_RESULT]
     assert len(calls) == 1 and not results, "fixture must model an unmatched in-flight call"
     assert not any(_is_terminated_status(fd) for fd in history)

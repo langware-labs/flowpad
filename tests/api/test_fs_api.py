@@ -127,8 +127,17 @@ class TestFsApiBrowse:
                 f.write("ok")
 
             class DummyEntity:
+                # `get_entity_storage` checks the entity-VFS binding first (a
+                # git-publishable asset serves its checkout from there), which needs
+                # `get_type()` + `asset_ref`. A compute_node with no asset_ref has no
+                # binding, so resolution falls through to the provider check this
+                # test is actually about.
                 fs_storage_provider = StorageProvider.SANDBOX
                 fs_storage_mount_path = tmpdir
+                asset_ref = None
+
+                def get_type(self):
+                    return "compute_node"
 
             driver = get_entity_storage(TypeId(type="compute_node", id="@local"), entity=DummyEntity())
             items = await driver.list_dir("/")

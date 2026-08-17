@@ -158,6 +158,13 @@ class DuplicateWorkerError(RuntimeError):
     """Raised when a second worker tries to register with an already-live machine_id."""
 
 
+def _invalidate_bootstrap_provider_state() -> None:
+    """Make provider availability reflect this registry transition immediately."""
+    from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache
+
+    invalidate_bootstrap_cache()
+
+
 def register(machine_id: str, ws: Any, container_name: str = "") -> WorkerConn:
     """Register a worker. Rejects duplicate machine_id when the existing WS is still alive.
 
@@ -173,8 +180,14 @@ def register(machine_id: str, ws: Any, container_name: str = "") -> WorkerConn:
             f"machine_id {machine_id[:8]} already registered (container={existing.container_name})"
         )
     conn = WorkerConn(machine_id, ws, container_name)
+    is_new_machine = machine_id not in _workers
     _workers[machine_id] = conn
     conn.start_reader()
+    # Only a change to the worker SET changes provider availability. A flapping
+    # container reconnecting under the same machine_id must not discard the
+    # whole bootstrap cache and make the next requester pay a full rebuild.
+    if is_new_machine:
+        _invalidate_bootstrap_provider_state()
     service_log.info(f"[DockerRegistry] registered worker {machine_id[:8]} (container={container_name})")
     return conn
 
@@ -187,6 +200,7 @@ async def unregister(machine_id: str) -> None:
     conn = _workers.pop(machine_id, None)
     if conn:
         await conn.close()
+        _invalidate_bootstrap_provider_state()
         service_log.info(f"[DockerRegistry] unregistered worker {machine_id[:8]}")
 
 

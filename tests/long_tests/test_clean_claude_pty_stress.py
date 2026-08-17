@@ -39,6 +39,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.config import FLOWPAD_TEMP_DIR
 from tests.long_tests._pty_helpers import read_pty_stream
@@ -290,11 +291,11 @@ async def test_clean_claude_pty_stress(bootstrapped_client):
         process = AgenticProcess(
             compute_node_id=f"compute_node-{cn.id}",
             project_id=local_project.id,
-            cli_config={"permission_mode": "bypassPermissions"},
+            cli_config={"permission_mode": "bypassPermissions", "model": ModelTier.SM.value},
             workdir=FLOWPAD_TEMP_DIR,
             visible=True,
         )
-        await process.save([])
+        await process.save()
 
         try:
             start_resp = await process.start_pty()

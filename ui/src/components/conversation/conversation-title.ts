@@ -7,7 +7,7 @@ import { participantLabel } from './participant-display';
  *
  * Order of preference:
  *   1. Entity's `title` (user-set in NewConversationDialog, shipped via bundle)
- *   2. Entity's own `name` (legacy / set by Community Assistance)
+ *   2. Entity's own `name` (legacy / set by the helpdesk request dialog)
  *   3. Comma-joined participant names/emails
  *   4. "Conversation <short-id>" so each row stays visually distinguishable
  */
@@ -17,7 +17,7 @@ export function deriveConversationTitle(conv: Conversation | null | undefined): 
   if (typeof title === 'string' && title.trim()) return title.trim();
   const name = (conv as { name?: string | null }).name;
   if (typeof name === 'string' && name.trim()) return name.trim();
-  const parts = (conv.participants ?? [])
+  const parts = (conv.members ?? [])
     .map((p) => participantLabel(p));
   if (parts.length > 0) return parts.join(', ');
   if (conv.id) return `Conversation ${conv.id.slice(0, 8)}`;

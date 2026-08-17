@@ -19,6 +19,8 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowDataType,
     FlowElementType,
 )
+from flow_sdk.transcript_analyzer.derive import derive_entry
+from flow_sdk.transcript_analyzer.entry import EntryKind
 from flow_sdk.transcript_analyzer.parsers.codex import CodexParser
 from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 
@@ -47,9 +49,6 @@ def convert_event(event: dict[str, Any]) -> list[FlowData]:
 
     if etype == "turn.completed":
         return _convert_turn_completed(event)
-    if etype == "error":
-        return [_error(_safe_dump(event))]
-
     try:
         entries = _parser.feed(event, _line_index)
     except Exception:
@@ -57,6 +56,15 @@ def convert_event(event: dict[str, Any]) -> list[FlowData]:
         return [_status("parse-error", _safe_dump(event))]
     finally:
         _line_index += 1
+
+    if etype == "error" and not any(
+        e.kind is EntryKind.WORKER_UNAVAILABLE for e in entries
+    ):
+        # A provider quota/rate-limit error is not a crash: the parser
+        # normalizes it into the vendor-blind WORKER_UNAVAILABLE frame (same
+        # shape Claude emits) so callers can tell "the account is out" from
+        # "the CLI broke". Anything else stays a raw ERROR frame.
+        return [_error(_safe_dump(event))]
 
     if not entries:
         # Non-conversational lines (thread.started, turn.started, item.started
@@ -95,6 +103,10 @@ def final_end_frame() -> FlowData:
 
 
 def _wrap_live(entry) -> FlowData:
+    # Derived refinements (e.g. a `flow` CLI call inside a shell command)
+    # are applied here so the live frame matches what history's refold
+    # produces for the same entry.
+    entry = derive_entry(entry)
     pe = ProcessEntry(transcript_entry=entry, observation_kind="live")
     frames = entry.to_flow_data()
     if frames:

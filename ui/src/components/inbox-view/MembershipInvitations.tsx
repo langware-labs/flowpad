@@ -1,9 +1,15 @@
-import { useCallback, useMemo, useState } from 'react';
+import { t } from '@lingui/core/macro';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Invitation,
   QueryRequest,
   acceptInvitation,
+  acceptInvitationOnHub,
   declineInvitation,
+  declineInvitationOnHub,
+  fetchPendingInvitations,
+  hubModeReady,
+  isHubOnly,
   isInvitationGoneError,
   normalizeEmail,
 } from '@sdk';
@@ -31,9 +37,58 @@ function isExpired(inv: Invitation): boolean {
   return !Number.isNaN(at.getTime()) && at.getTime() < Date.now();
 }
 
-export function MembershipInvitations({ recipientEmail }: { recipientEmail: string | null }) {
+export function MembershipInvitations({
+  recipientEmail,
+  onPendingCount,
+}: {
+  recipientEmail: string | null;
+  /** Reports the rendered pending count so the parent's empty-state logic can
+   *  account for these rows (a membership-only inbox must not also say
+   *  "No unread conversations"). Rendering only — the numeric unread badge is
+   *  backend-owned (InboxManager.unread) and never derived from this list. */
+  onPendingCount?: (count: number) => void;
+}) {
+  // `isHubOnly()` reads its `[desk]` default until bootstrap resolves, so it is
+  // only trustworthy after `hubModeReady()` — checking it during the first
+  // render would classify a hub as a desktop and silently pick the wrong
+  // source. `null` means "not known yet", and neither source runs until it is.
+  const [hubMode, setHubMode] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void hubModeReady().then(() => {
+      if (alive) setHubMode(isHubOnly());
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const request = useMemo(() => new QueryRequest({ type: Invitation.type, query: {} }), []);
-  const { data: invitations = [], refetch } = useEntitiesQuery<Invitation>(request);
+  const { data: mirrored = [], refetch: refetchMirrored } = useEntitiesQuery<Invitation>(request, {
+    enabled: hubMode === false,
+  });
+
+  // Hub mode has no local mirror of these rows, and the generic query above
+  // cannot substitute for one: invitations are saved with NO owner, so a
+  // recipient holds no role on the row and the role-scoped read returns nothing
+  // for exactly the people it is addressed to. The hub's `pending` action
+  // self-scopes on the recipient's email instead.
+  const [fetched, setFetched] = useState<Invitation[]>([]);
+  const loadFromHub = useCallback(async () => {
+    try {
+      setFetched(await fetchPendingInvitations());
+    } catch {
+      // A failed poll keeps the previous rows rather than blanking the inbox.
+    }
+  }, []);
+  useEffect(() => {
+    if (hubMode) void loadFromHub();
+  }, [hubMode, loadFromHub]);
+
+  const invitations = hubMode ? fetched : mirrored;
+  const refetch = useCallback(() => {
+    void (hubMode ? loadFromHub() : refetchMirrored());
+  }, [hubMode, loadFromHub, refetchMirrored]);
 
   const pending = useMemo(() => {
     const email = normalizeEmail(recipientEmail);
@@ -50,18 +105,33 @@ export function MembershipInvitations({ recipientEmail }: { recipientEmail: stri
     });
   }, [invitations, recipientEmail]);
 
+  useEffect(() => {
+    onPendingCount?.(pending.length);
+  }, [pending.length, onPendingCount]);
+
   if (pending.length === 0) return null;
 
   return (
     <div className="flex flex-col">
       {pending.map((inv) => (
-        <MembershipInvitationRow key={inv.id} invitation={inv} onResolved={() => void refetch()} />
+        <MembershipInvitationRow key={inv.id} invitation={inv} hubMode={!!hubMode} onResolved={() => void refetch()} />
       ))}
     </div>
   );
 }
 
-function MembershipInvitationRow({ invitation, onResolved }: { invitation: Invitation; onResolved: () => void }) {
+function MembershipInvitationRow({
+  invitation,
+  onResolved,
+  hubMode,
+}: {
+  invitation: Invitation;
+  onResolved: () => void;
+  /** Hub and desktop expose DIFFERENT accept/decline endpoints — see
+   *  `acceptInvitationOnHub`. Passed down rather than re-derived so the row
+   *  cannot disagree with the list about which backend it is on. */
+  hubMode: boolean;
+}) {
   const inv = invitation as any;
   const [busy, setBusy] = useState<'accept' | 'decline' | null>(null);
   const targetType: string = inv.target_type;
@@ -78,10 +148,11 @@ function MembershipInvitationRow({ invitation, onResolved }: { invitation: Invit
     if (!invitation.id) return;
     setBusy('accept');
     try {
-      await acceptInvitation({ invitation_id: invitation.id });
+      if (hubMode) await acceptInvitationOnHub(invitation.id);
+      else await acceptInvitation({ invitation_id: invitation.id });
       notify.success({
-        title: 'Invitation accepted',
-        message: `${targetLabel} is now available in your workspace.`,
+        title: t`Invitation accepted`,
+        message: t`${targetLabel} is now available in your workspace.`,
         id: 'membership-invite',
       });
       onResolved();
@@ -89,44 +160,45 @@ function MembershipInvitationRow({ invitation, onResolved }: { invitation: Invit
       if (isInvitationGoneError(err)) {
         // Orphan: the backend already removed the stale local row — just tell
         // the user and refetch so it drops (and stays gone across refresh).
-        notify.warning({ title: 'Invitation no longer valid', id: 'membership-invite' });
+        notify.warning({ title: t`Invitation no longer valid`, id: 'membership-invite' });
         onResolved();
         return;
       }
       notify.error({
-        title: 'Accept failed',
+        title: t`Accept failed`,
         message: err instanceof Error ? err.message : 'Unknown error.',
         id: 'membership-invite',
       });
     } finally {
       setBusy(null);
     }
-  }, [invitation.id, targetLabel, onResolved]);
+  }, [invitation.id, targetLabel, onResolved, hubMode]);
 
   const decline = useCallback(async () => {
     if (!invitation.id) return;
     setBusy('decline');
     try {
-      await declineInvitation({ invitation_id: invitation.id });
+      if (hubMode) await declineInvitationOnHub(invitation.id);
+      else await declineInvitation({ invitation_id: invitation.id });
       onResolved();
     } catch (err) {
       if (isInvitationGoneError(err)) {
-        notify.warning({ title: 'Invitation no longer valid', id: 'membership-invite' });
+        notify.warning({ title: t`Invitation no longer valid`, id: 'membership-invite' });
         onResolved();
         return;
       }
       notify.error({
-        title: 'Decline failed',
+        title: t`Decline failed`,
         message: err instanceof Error ? err.message : 'Unknown error.',
         id: 'membership-invite',
       });
     } finally {
       setBusy(null);
     }
-  }, [invitation.id, onResolved]);
+  }, [invitation.id, onResolved, hubMode]);
 
   return (
-    <div className="flex items-center gap-3 border-b border-l-2 border-border/40 border-l-violet-500 px-3 py-2">
+    <div className="flex items-center gap-3 border-b border-s-2 border-border/40 border-s-violet-500 px-3 py-2">
       <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{kindLabel}</div>

@@ -16,8 +16,9 @@ import {
 import { gfm, insertTableCommand } from '@milkdown/preset-gfm';
 import { tableBlock } from '@milkdown/components/table-block';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { listener, listenerCtx } from '@milkdown/plugin-listener';
-import { prism } from '@milkdown/plugin-prism';
+import { prism, prismConfig } from '@milkdown/plugin-prism';
 import { emoji } from '@milkdown/plugin-emoji';
 import { history } from '@milkdown/plugin-history';
 import { trailing } from '@milkdown/plugin-trailing';
@@ -28,6 +29,10 @@ import type { EditorState } from '@milkdown/prose/state';
 import { TextSelection } from '@milkdown/prose/state';
 import type { MarkType } from '@milkdown/prose/model';
 import type { EditorView } from '@milkdown/prose/view';
+import { dataContext, VFSPath, type TypeId } from '@sdk';
+import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { openFilePreview } from '@src/components/file-preview/file-preview';
 import {
   Bold, Italic, Code, Heading1, Heading2, Heading3,
   List, ListOrdered, SquareCode, Pilcrow, ExternalLink,
@@ -37,21 +42,17 @@ import {
   Table as TableIcon,
 } from 'lucide-react';
 
-// Prism core must be imported before language components
-import 'prismjs';
-// Prism languages
-import 'prismjs/components/prism-typescript';
-import 'prismjs/components/prism-javascript';
-import 'prismjs/components/prism-python';
-import 'prismjs/components/prism-bash';
-import 'prismjs/components/prism-json';
-import 'prismjs/components/prism-yaml';
-import 'prismjs/components/prism-markdown';
-import 'prismjs/components/prism-css';
-import 'prismjs/components/prism-jsx';
-import 'prismjs/components/prism-tsx';
-
 import './milkdown.css';
+import './plugins/fence-render/fence-render.css';
+import { configureRefractor } from './plugins/prism-languages';
+import { fenceRenderPlugins, fenceHostServicesCtx, type FenceHostServices } from './plugins/fence-render';
+// Concrete fence renderers self-register on import. Listed here, at the
+// composition point, rather than inside the plugin — the same direction
+// `AssetsPage` imports its column modules, and it keeps `fence-render/` free of
+// any dependency on the renderers built on top of it.
+import './plugins/fence-render/renderers/mermaid';
+import './plugins/fence-render/renderers/interface';
+import './plugins/fence-render/renderers/breadcrumb';
 import {
   bidiPlugins,
   setDirCommand, unsetDirCommand,
@@ -71,7 +72,7 @@ function stripHtmlComments(content: string): string {
 // preset doesn't recognize `[[..]]`, so we rewrite it to the markdown URL
 // form on the way in (clickable), and reverse on the way out (preserves
 // `[[..]]` in the source file).
-const _WIKILINK_DISPLAY_RE = /(?<!\\)\[\[([^\[\]\n|#^]+)(?:\|([^\[\]\n]+))?\]\]/g;
+const _WIKILINK_DISPLAY_RE = /(?<!\\)\[\[([^[\]\n|#^]+)(?:\|([^[\]\n]+))?\]\]/g;
 const _DOCK_WIKI_HREF_RE = /\[([^\]\n]+)\]\(\/dock\/assets\/wiki\/([^)\s#]+)\)/g;
 
 function wikilinksToMdLinks(md: string): string {
@@ -129,6 +130,22 @@ function getBlockStartLines(body: string): number[] {
   return starts;
 }
 
+/**
+ * A project's absolute root directory on disk.
+ *
+ * `fs_storage_mount_path` is the field that actually holds it — it is what
+ * `Project.getProjectByPath` longest-prefix-matches against. `cwd` is a
+ * secondary. Deliberately NO `name` fallback: a project's name is not a path,
+ * and falling back to it silently produced a *relative* root that resolved
+ * source pointers to unopenable paths.
+ */
+function projectRootOf(
+  project: { fs_storage_mount_path?: string | null; cwd?: string | null } | null | undefined,
+): string | null {
+  const root = project?.fs_storage_mount_path || project?.cwd || '';
+  return root.startsWith('/') ? root : null;
+}
+
 /** Top-level child index of the caret in the doc, or null if not resolvable. */
 function caretBlockIndex(view: EditorView): number | null {
   const sel = view.state.selection;
@@ -136,6 +153,14 @@ function caretBlockIndex(view: EditorView): number | null {
   const $from = sel.$from;
   if ($from.depth === 0) return null;
   return $from.index(0);
+}
+
+/** Keyboard gestures that can mutate a ProseMirror document without `beforeinput`. */
+function isEditingKey(event: KeyboardEvent): boolean {
+  if (event.key.length === 1 && !event.ctrlKey && !event.metaKey) return true;
+  if (['Backspace', 'Delete', 'Enter', 'Tab'].includes(event.key)) return true;
+  if (!event.ctrlKey && !event.metaKey) return false;
+  return ['b', 'i', 'v', 'x', 'y', 'z'].includes(event.key.toLowerCase());
 }
 
 /**
@@ -148,6 +173,8 @@ export type MilkdownEditorMode = 'view' | 'review' | 'editor';
 interface MilkdownEditorProps {
   content: string;
   onChange?: (content: string) => void;
+  /** Fires for trusted editor input or an explicit editing command, never content sync. */
+  onUserEdit?: () => void;
   /** Defaults to 'editor'. 'view' and 'review' disable editing and hide the toolbar. */
   editorMode?: MilkdownEditorMode;
   plugins?: MilkdownPlugin[];
@@ -165,6 +192,12 @@ interface MilkdownEditorProps {
    * gating — hidden in view/review modes.
    */
   toolbarRight?: React.ReactNode;
+  /**
+   * Optional host for the edit toolbar. `undefined` keeps the toolbar above the
+   * document; an element portals it into that host; `null` opts into external
+   * placement while the host ref is mounting (so no extra toolbar flashes).
+   */
+  toolbarPortalTarget?: HTMLElement | null;
   /**
    * Fires when the caret moves to a different top-level block. The `bodyLine`
    * is 1-indexed against the `content` prop (body markdown). Approximate when
@@ -499,18 +532,21 @@ export function FormatButton({ title, icon, active, disabled, testId, onMouseDow
 function TextFormatButtons({
   activeState,
   onRequestLink,
+  onEditIntent,
 }: {
   activeState: ActiveState;
   onRequestLink: () => void;
+  onEditIntent: () => void;
 }) {
   const { t } = useLingui();
   const [loading, get] = useInstance();
   const act = useCallback(
     (fn: (ctx: Ctx) => void) => {
       if (loading) return;
+      onEditIntent();
       get().action(fn);
     },
-    [loading, get],
+    [loading, get, onEditIntent],
   );
   const { bold, italic, inlineCode, link, canAddLink } = activeState;
   const linkEnabled = link || canAddLink;
@@ -550,11 +586,15 @@ function TextFormatButtons({
 function MilkdownToolbar({
   activeState,
   onRequestLink,
+  onEditIntent,
   rightSlot,
+  embedded = false,
 }: {
   activeState: ActiveState;
   onRequestLink: () => void;
+  onEditIntent: () => void;
   rightSlot?: React.ReactNode;
+  embedded?: boolean;
 }) {
   const { t } = useLingui();
   const [loading, get] = useInstance();
@@ -562,9 +602,10 @@ function MilkdownToolbar({
   const act = useCallback(
     (fn: (ctx: Ctx) => void) => {
       if (loading) return;
+      onEditIntent();
       get().action(fn);
     },
-    [loading, get],
+    [loading, get, onEditIntent],
   );
 
   const headingBtn = (title: string, icon: React.ReactNode, fn: (ctx: Ctx) => void, active = false) => (
@@ -595,8 +636,18 @@ function MilkdownToolbar({
   const alignDisabled = codeBlock;
 
   return (
-    <div className="flex flex-shrink-0 items-center gap-0.5 border-b bg-muted/20 px-2 py-1">
-      <TextFormatButtons activeState={activeState} onRequestLink={onRequestLink} />
+    <div
+      className={`flex flex-shrink-0 items-center gap-0.5 ${
+        embedded ? 'rounded-md border bg-muted/20 px-1 py-0.5' : 'border-b bg-muted/20 px-2 py-1'
+      }`}
+      data-testid="milkdown-toolbar"
+      data-embedded={embedded ? 'true' : 'false'}
+    >
+      <TextFormatButtons
+        activeState={activeState}
+        onRequestLink={onRequestLink}
+        onEditIntent={onEditIntent}
+      />
       <div className="mx-1.5 h-4 w-px bg-border" />
       {headingBtn(t`Normal text`, <Pilcrow className="h-3.5 w-3.5" />, callCommand(turnIntoTextCommand.key), headingLevel === 0 && !codeBlock)}
       {headingBtn(t`Heading 1`, <Heading1 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 1), headingLevel === 1)}
@@ -720,10 +771,12 @@ function SelectionToolbar({
   rect,
   activeState,
   onRequestLink,
+  onEditIntent,
 }: {
   rect: SelectionRect | null;
   activeState: ActiveState;
   onRequestLink: () => void;
+  onEditIntent: () => void;
 }) {
   const { t } = useLingui();
   if (!rect) return null;
@@ -748,15 +801,63 @@ function SelectionToolbar({
       className="flex items-center gap-0.5 rounded-md border border-border bg-popover p-1 shadow-md"
       onMouseDown={(e) => e.preventDefault()}
     >
-      <TextFormatButtons activeState={activeState} onRequestLink={onRequestLink} />
+      <TextFormatButtons
+        activeState={activeState}
+        onRequestLink={onRequestLink}
+        onEditIntent={onEditIntent}
+      />
     </div>
   );
 }
 
 // ── Editor inner ──────────────────────────────────────────────────────────────
 
-function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveStateChange, onSelectionRectChange, onCursorLineChange, initialLine, direction, editorRef }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; onSelectionRectChange?: (r: SelectionRect | null) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
+function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugins, onActiveStateChange, onSelectionRectChange, onCursorLineChange, initialLine, direction, editorRef }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; onSelectionRectChange?: (r: SelectionRect | null) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
+  const { navigation, currentDock } = useDockNavigation();
+
+  /** The entity files are addressed through — the document's own compute node. */
+  const docEntityTypeId = (): TypeId =>
+    VFSPath.parse(currentDock?.pointer ?? '').typeId ?? LOCAL_COMPUTE_NODE;
+
+  const openMachinePath = (path: string, options?: { line?: number }) => {
+    navigation.openMachinePath(path, docEntityTypeId(), options);
+  };
+
+  /*
+   * Capabilities lent to fence renderers (see `plugins/fence-render/host-services`).
+   * Held in a ref because the Milkdown editor is constructed once: the ctx slice
+   * closes over this ref, so navigation and the active project stay current
+   * without rebuilding the editor.
+   *
+   * `projectRootById` only answers for the project already in context. There is
+   * no by-id project fetch in the SDK today (`Project` exposes `getProjectByPath`,
+   * not a get-by-id), and firing a query per rendered block would be worse than
+   * a clear "not open" reason on the button.
+   */
+  const hostServicesRef = useRef<FenceHostServices>({
+    openFile: () => {},
+    previewFile: () => {},
+    documentProjectRoot: () => null,
+    projectRootById: () => null,
+  });
+  hostServicesRef.current = {
+    // Renderers resolve to an ABSOLUTE MACHINE path; editor docks address files
+    // as VFS paths (`compute_node-<id>/abs/path`). Converting here keeps that
+    // convention at the app boundary instead of teaching every renderer about
+    // compute nodes — without it the dock URL loses the entity prefix and the
+    // code editor never resolves the file. The entity comes from the DOCUMENT's
+    // own dock, so source opens on the compute node the doc is read on;
+    // `LOCAL_COMPUTE_NODE` is only a fallback (it serializes to the `@local`
+    // uname, which the code editor does not resolve to a filesystem).
+    openFile: (path, options) => openMachinePath(path, options),
+    previewFile: (path, options) =>
+      openFilePreview({ path, line: options?.line, typeId: docEntityTypeId() }),
+    documentProjectRoot: () => projectRootOf(dataContext.project),
+    projectRootById: (projectId) =>
+      dataContext.project?.id === projectId ? projectRootOf(dataContext.project) : null,
+  };
+
   const localRef = useRef<Editor | null>(null);
   const setEditor = (e: Editor | null) => {
     localRef.current = e;
@@ -813,6 +914,18 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
           ctx.set(defaultValueCtx, initialContentRef.current);
           // Read-only modes disable editing but keep the DOM interactive
           // (anchors remain clickable, hover events still fire).
+          // Register the grammars refractor's common bundle lacks. Must be
+          // set before `prism` builds its decoration plugin.
+          ctx.set(prismConfig.key, { configureRefractor });
+          // Lend fence renderers the app capabilities they can't reach from a
+          // NodeView. Backed by a ref so the values stay live for the life of
+          // the editor rather than freezing at construction.
+          ctx.set(fenceHostServicesCtx.key, {
+            openFile: (path, options) => hostServicesRef.current.openFile(path, options),
+            previewFile: (path, options) => hostServicesRef.current.previewFile(path, options),
+            documentProjectRoot: () => hostServicesRef.current.documentProjectRoot(),
+            projectRootById: (id) => hostServicesRef.current.projectRootById(id),
+          });
           ctx.update(editorViewOptionsCtx, (prev) => ({
             ...prev,
             editable: () => !isReadOnlyRef.current,
@@ -868,7 +981,11 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
         // attrs, and re-emits the wrappers on serialize when attrs are
         // non-default. Default-attr nodes round-trip byte-identical to the
         // unmodified commonmark output.
-        .use(bidiPlugins);
+        .use(bidiPlugins)
+        // Renderable code fences (```mermaid → diagram) with a Render | Code
+        // tab strip. Render-only: no schema, parser or serializer changes, so
+        // fence markdown round-trips byte-identically.
+        .use(fenceRenderPlugins);
 
       // Register extra plugins (e.g. plan-note mark)
       if (plugins) {
@@ -936,13 +1053,25 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
     const editor = get?.();
     if (!editor) return;
     const onUser = () => { userInteractedRef.current = true; };
+    const onKeyDown = (event: KeyboardEvent) => {
+      onUser();
+      if (event.isTrusted && !isReadOnlyRef.current && isEditingKey(event)) onUserEdit?.();
+    };
+    const onTrustedEditIntent = (event: Event) => {
+      if (!event.isTrusted || isReadOnlyRef.current) return;
+      onUserEdit?.();
+    };
     let dom: HTMLElement | null = null;
     try {
       editor.action((ctx) => {
         const view = ctx.get(editorViewCtx);
-        dom = view.dom as HTMLElement;
+        dom = view.dom;
         view.dom.addEventListener('mousedown', onUser);
-        view.dom.addEventListener('keydown', onUser);
+        view.dom.addEventListener('keydown', onKeyDown);
+        view.dom.addEventListener('beforeinput', onTrustedEditIntent, true);
+        view.dom.addEventListener('paste', onTrustedEditIntent, true);
+        view.dom.addEventListener('cut', onTrustedEditIntent, true);
+        view.dom.addEventListener('drop', onTrustedEditIntent, true);
       });
     } catch {
       // view not ready yet
@@ -950,9 +1079,13 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
     return () => {
       if (!dom) return;
       dom.removeEventListener('mousedown', onUser);
-      dom.removeEventListener('keydown', onUser);
+      dom.removeEventListener('keydown', onKeyDown);
+      dom.removeEventListener('beforeinput', onTrustedEditIntent, true);
+      dom.removeEventListener('paste', onTrustedEditIntent, true);
+      dom.removeEventListener('cut', onTrustedEditIntent, true);
+      dom.removeEventListener('drop', onTrustedEditIntent, true);
     };
-  }, [get]);
+  }, [get, onUserEdit]);
 
   // Toggle editable on mode change. setProps forces ProseMirror to re-read the
   // editable closure (which is backed by isReadOnlyRef) and update contenteditable.
@@ -998,7 +1131,7 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
   );
 }
 
-export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugins, onLinkClick, editorRef: externalEditorRef, toolbarRight, onCursorLineChange, initialLine, direction }: MilkdownEditorProps) {
+export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'editor', plugins, onLinkClick, editorRef: externalEditorRef, toolbarRight, toolbarPortalTarget, onCursorLineChange, initialLine, direction }: MilkdownEditorProps) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const [activeState, setActiveState] = useState<ActiveState>(EMPTY_ACTIVE);
   const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null);
@@ -1006,6 +1139,7 @@ export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugi
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const internalEditorRef = useRef<Editor | null>(null);
   const editorRef = externalEditorRef ?? internalEditorRef;
+  const markEditIntent = useCallback(() => onUserEdit?.(), [onUserEdit]);
 
   useEffect(() => () => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); }, []);
 
@@ -1118,13 +1252,14 @@ export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugi
         if (pos == null) return;
         const range = findLinkRangeAtPos(view.state, linkType, pos);
         if (!range) return;
+        markEditIntent();
         view.dispatch(view.state.tr.removeMark(range.from, range.to, linkType));
       });
     } catch {
       // ignore
     }
     setLinkPopup(null);
-  }, [linkPopup]);
+  }, [linkPopup, markEditIntent]);
 
   const handleApply = useCallback((href: string) => {
     const current = linkPopup;
@@ -1139,13 +1274,14 @@ export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugi
         const tr = view.state.tr;
         tr.removeMark(range.from, range.to, linkType);
         if (href) tr.addMark(range.from, range.to, linkType.create({ href }));
+        markEditIntent();
         view.dispatch(tr);
       });
     } catch {
       // ignore
     }
     setLinkPopup(null);
-  }, [linkPopup]);
+  }, [linkPopup, markEditIntent]);
 
   // Toolbar "Link" clicked — open in 'edit' (if cursor in a link) or 'new' (if selection non-empty).
   const handleRequestLink = useCallback(() => {
@@ -1191,30 +1327,38 @@ export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugi
     if (next) setLinkPopup(next);
   }, []);
 
+  const formattingToolbar = (
+    <MilkdownToolbar
+      activeState={activeState}
+      onRequestLink={handleRequestLink}
+      onEditIntent={markEditIntent}
+      rightSlot={toolbarRight}
+      embedded={toolbarPortalTarget !== undefined}
+    />
+  );
+
   return (
     <MilkdownProvider>
       <div className="flex h-full flex-col overflow-hidden">
-        {!isReadOnly && (
-          <MilkdownToolbar
-            activeState={activeState}
-            onRequestLink={handleRequestLink}
-            rightSlot={toolbarRight}
-          />
-        )}
+        {!isReadOnly && toolbarPortalTarget === undefined && formattingToolbar}
         <div
           className="min-h-0 flex-1 overflow-auto"
           onMouseOver={handleMouseOver}
           onMouseLeave={scheduleHide}
           onClickCapture={handleContainerClick}
         >
-          <MilkdownEditorInner content={content} onChange={onChange} editorMode={editorMode} plugins={plugins} onActiveStateChange={setActiveState} onSelectionRectChange={setSelectionRect} editorRef={editorRef} onCursorLineChange={onCursorLineChange} initialLine={initialLine} direction={direction} />
+          <MilkdownEditorInner content={content} onChange={onChange} onUserEdit={onUserEdit} editorMode={editorMode} plugins={plugins} onActiveStateChange={setActiveState} onSelectionRectChange={setSelectionRect} editorRef={editorRef} onCursorLineChange={onCursorLineChange} initialLine={initialLine} direction={direction} />
         </div>
       </div>
+      {!isReadOnly && toolbarPortalTarget
+        ? createPortal(formattingToolbar, toolbarPortalTarget)
+        : null}
       {!isReadOnly && !linkPopup && (
         <SelectionToolbar
           rect={selectionRect}
           activeState={activeState}
           onRequestLink={handleRequestLink}
+          onEditIntent={markEditIntent}
         />
       )}
       {linkPopup && (

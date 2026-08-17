@@ -1,189 +1,288 @@
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
+import { t } from '@lingui/core/macro';
 import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarStack';
-import { MiniDesktop } from '@src/components/quick-create/MiniDesktop';
-import { Button } from '@src/components/ui/button';
+import { ProjectGitChecksDialog } from '@src/components/project-home/ProjectGitChecksDialog';
+import { ProjectGitChip, type GitCheck } from '@src/components/project-home/ProjectGitChip';
+import { ProjectPublishButton } from '@src/components/project-home/ProjectPublishButton';
+import { GitShareGateDialog } from '@src/components/share-to-conversation/GitShareGateDialog';
+import type { GitShareGate } from '@src/hooks/use-git-share-gate';
+import apiClient from '@sdk/client';
+import { launchWizard, CapabilityKinds } from '@sdk';
+import { QuickCreatePanel, useQuickCreatePick } from '@src/components/quick-create';
+import type { PanelHandlers } from '@src/components/quick-create';
+import { EnvLocalCard } from './EnvLocalCard';
+import { SecretsCard } from './SecretsCard';
+import { HomeCustomizationCard } from './HomeCustomizationCard';
+import { ProjectLanguageCard } from './ProjectLanguageCard';
+import { VIBE_AGENTS_TAG, VibeAgentsCard } from './VibeAgentsCard';
+import { useHighlight } from '@src/components/wiki-tip/highlight';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { useContext as useDataContext } from '@src/hooks/useContext';
-import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
-import { projectScope } from '@src/lib/scope-filter';
 import { Project, TypeId } from '@sdk';
-import { History, Loader2, SquareTerminal } from 'lucide-react';
-import React, { useMemo } from 'react';
-import { Trans } from '@lingui/react/macro';
-import { ContextFolders } from './ContextFolders';
-import { Secrets } from './Secrets';
+import { tagAttrs } from '@src/tags/tag-attrs';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
+
+/** Journey anchor for the session launcher (`?highlight=NewSession`). */
+const NEW_SESSION_TAG = 'NewSession';
 
 interface ProjectHomeProps {
   /** Pin spawned shells/processes to this project; otherwise the active project. */
   spawnProjectId?: string | null;
-  /** Show the "start a session" openers (Claude Code / Terminal / history).
-   *  On for the terminal body's empty state (its whole point is to start one);
-   *  off for the project-home landing, which is a browse surface. */
-  showSessionStarters?: boolean;
+  /** Render only the "Create" body with no tab bar — the terminal empty state,
+   *  whose whole point is to start something. The landing shows all three tabs. */
+  createOnly?: boolean;
+  /** Hub-owned body rendered inside the shared Project Home shell. When set,
+   *  local Git/setup/create controls are omitted; the Hub body owns content. */
+  cloudContent?: React.ReactNode;
 }
 
 /**
- * SessionStarters — the spawn openers (Claude Code / Terminal / Open from
- * history) + their modals. Encapsulates `useTerminalStripController` so only
- * one controller instance (this one, or StartSessionWorkers' — they render
- * mutually exclusively) runs per ProjectHome.
+ * SessionTiles — the single worker-launch affordance on the project home: the
+ * QuickCreatePanel `session` group (the big vendor tiles — Claude / Codex /
+ * Copilot in their brand colors) plus a Terminal tile appended via
+ * `extraSessionTiles`. Terminal's creation path (and its modals) live on the
+ * terminal strip controller, which this host encapsulates so the controller +
+ * modals run once, here — the vendor tiles launch through the panel's own
+ * `openNewClaudeProcess` path and need none of it.
  */
-const SessionStarters: React.FC<{ spawnProjectId?: string | null }> = ({ spawnProjectId }) => {
-  const {
-    modals,
-    isTabCreationPending,
-    isClaudeCreationPending,
-    isTerminalCreationPending,
-    handleStartClaude,
-    handleStartTerminal,
-    handleOpenHistory,
-  } = useTerminalStripController({ spawnProjectId });
+const SessionTiles: React.FC<{ spawnProjectId?: string | null; panelProps: PanelHandlers }> = ({
+  spawnProjectId,
+  panelProps,
+}) => {
+  const { t } = useLingui();
+  const { modals, isTabCreationPending, openers } = useTerminalStripController({ spawnProjectId });
+
+  const terminalTile = useMemo(() => {
+    const opener = openers.find((o) => o.id === 'terminal');
+    if (!opener) return [];
+    return [
+      {
+        key: 'terminal',
+        Icon: opener.Icon,
+        label: t`Terminal`,
+        wikiword: 'Terminal sessions',
+        disabled: isTabCreationPending,
+        onClick: () => opener.onActivate(),
+      },
+    ];
+  }, [openers, isTabCreationPending, t]);
 
   return (
-    <div className="flex flex-col items-center gap-4 py-2 text-muted-foreground">
-      <p className="text-sm"><Trans>No terminal sessions</Trans></p>
-      <div className="flex gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-2"
-          onClick={() => void handleStartClaude()}
-          disabled={isTabCreationPending}
-          data-testid="start-claude-button"
-        >
-          {isClaudeCreationPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <ClaudeIcon className="h-4 w-4 text-orange-500" />
-          )}
-          <Trans>Claude Code</Trans>
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-2"
-          onClick={() => void handleStartTerminal()}
-          disabled={isTabCreationPending}
-        >
-          {isTerminalCreationPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <SquareTerminal className="h-4 w-4" />
-          )}
-          <Trans>Terminal</Trans>
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-2"
-          onClick={handleOpenHistory}
-          disabled={isTabCreationPending}
-          data-testid="open-history-button"
-        >
-          <History className="h-4 w-4" />
-          <Trans>Open from history</Trans>
-        </Button>
-      </div>
+    <div data-testid="project-home-start-session" {...tagAttrs(NEW_SESSION_TAG, 'button')}>
+      <QuickCreatePanel {...panelProps} sections={['session']} extraSessionTiles={terminalTile} />
       {modals}
     </div>
   );
 };
 
-/**
- * StartSessionWorkers — the per-vendor launch buttons for the "Start new
- * session" row on the project-home landing. Encapsulates
- * `useTerminalStripController` (like SessionStarters) so the controller +
- * its modals only run where the row renders.
- */
-const StartSessionWorkers: React.FC<{ spawnProjectId?: string | null }> = ({ spawnProjectId }) => {
-  const { modals, isTabCreationPending, startWorker } = useTerminalStripController({ spawnProjectId });
+/** The "Create" body — the session tiles and the New asset / New folder tiles.
+ *  Its own component so the tabbed landing and the terminal empty state share
+ *  one definition. Favorites are NOT repeated here: the desktop (rail flyout /
+ *  full desktop page) already owns them, and the "+" tile they carried
+ *  duplicated the very asset grid below. */
+const CreateTab: React.FC<{
+  projectId: string | null;
+  spawnProjectId?: string | null;
+  panelProps: PanelHandlers;
+}> = ({ projectId, spawnProjectId, panelProps }) => (
+  <div className="flex flex-col gap-6">
+    {projectId && <SessionTiles spawnProjectId={spawnProjectId} panelProps={panelProps} />}
+    <QuickCreatePanel {...panelProps} sections={['asset', 'folder']} />
+  </div>
+);
 
-  return (
-    <>
-      <WorkerToolbar
-        onLaunch={startWorker}
-        starting={isTabCreationPending}
-        mode="all"
-        testIdPrefix="project-home-worker"
-      />
-      {modals}
-    </>
-  );
+/** Which tab hosts which tag word — see the `?highlight=` effect below.
+ *  Add an entry whenever a card on a non-default tab takes `tagAttrs`. */
+const TAB_FOR_TAG: Record<string, string> = {
+  [VIBE_AGENTS_TAG]: 'customize',
 };
 
 /**
  * ProjectHome — the project's landing surface, shown wherever a project has no
  * open content: the terminal body's empty state (no terminal sessions) and the
  * project-home content slot (no asset/item selected). The one surface that is
- * unambiguously "the project itself" rather than content inside it, so it hosts,
- * top-to-bottom: the project-level Members roster, the project-scoped favorites
- * mini-desktop (bookmarks stamped with this project), and the project's context
- * folders (see `ContextFolders`). The terminal empty state also shows the spawn
- * openers via `showSessionStarters`.
+ * unambiguously "the project itself" rather than content inside it.
+ *
+ * Organized into three tabs:
+ *   - **Create**    — the session tiles (workers + terminal) and the New asset /
+ *                     New folder tiles.
+ *   - **Customize** — home title/background + the vibe agents layered on.
+ *   - **Secrets**   — value-free secret references + setup wizard.
  */
-export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, showSessionStarters = false }) => {
+export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, createOnly = false, cloudContent }) => {
   const dataCtx = useDataContext();
+  const cloudMode = cloudContent !== undefined;
 
-  // Resolve the target project (explicit spawn pin, else the active project) —
-  // same resolution ContextFolders uses.
+  // Resolve the target project (explicit spawn pin, else the active project).
   const projectId = spawnProjectId ?? dataCtx.project?.id ?? null;
-  const projectTypeId = useMemo(
-    () => (projectId ? new TypeId(Project.type, projectId) : null),
-    [projectId],
+  const projectTypeId = useMemo(() => (projectId ? new TypeId(Project.type, projectId) : null), [projectId]);
+
+  // The dialogs the create tiles defer to. Hosted here rather than in the panel
+  // so they outlive whatever the tile click dismisses.
+  const { panelProps, dialogs } = useQuickCreatePick();
+
+  // Customize/Secrets cards are project-entity bound — only when the resolved
+  // project is the active one (they read/write live Project state).
+  const project = dataCtx.project?.id === projectId ? dataCtx.project : null;
+  const [gitChecks, setGitChecks] = useState<GitCheck[] | null>(null);
+  const [gitGateOpen, setGitGateOpen] = useState(false);
+  const [gitGateState, setGitGateState] = useState<'setup' | 'blocked'>('setup');
+  const [gitGateReason, setGitGateReason] = useState<string | null>(null);
+  const beforeProjectInvite = useMemo<(() => Promise<boolean>) | undefined>(() => {
+    if (!projectId || cloudMode) return undefined;
+    return async () => {
+      const result = await apiClient.post<{
+        result?: { available?: boolean; message?: string; details?: { reason?: string } };
+      }>('/graph/capabilities/test', { kind: CapabilityKinds.GitHub, scope_type: 'project', scope_id: projectId });
+      const capability = result?.result;
+      if (capability?.available) return true;
+      const reason = capability?.details?.reason;
+      setGitGateReason(capability?.message ?? null);
+      setGitGateState(reason === 'no-git-remote' || reason === 'no-workspace' ? 'setup' : 'blocked');
+      setGitGateOpen(true);
+      return false;
+    };
+  }, [cloudMode, projectId]);
+  const gitGate = useMemo<GitShareGate>(
+    () => ({
+      state: gitGateState,
+      reason: gitGateReason,
+      busy: false,
+      runSetup: async () => {
+        if (!project?.fs_storage_mount_path) return;
+        await launchWizard('git-context-folder', {
+          title: t`Set up Git for project sharing`,
+          targetTypeId: project.typeId.toString(),
+          payload: {
+            projectId: project.id,
+            scope: 'private',
+            mode: 'adopt',
+            path: project.fs_storage_mount_path,
+            name: project.name,
+          },
+          prompt: `Set up Git in the exact project folder ${project.fs_storage_mount_path}, create or configure its origin remote, and report when it is ready for sharing.`,
+        });
+        setGitGateOpen(false);
+      },
+      runCommit: async () => {},
+    }),
+    [gitGateReason, gitGateState, project],
   );
 
-  // The mini-desktop is pinned to this project's scope: it shows only bookmarks
-  // stamped with this project, and its expand affordance opens the full desktop
-  // pinned to the same scope. Unscoped/personal favorites don't leak in.
-  const desktopScope = useMemo(() => (projectId ? projectScope(projectId) : null), [projectId]);
+  const createTab = <CreateTab projectId={projectId} spawnProjectId={spawnProjectId} panelProps={panelProps} />;
+
+  // A `?highlight=` target that lives on a tab we aren't showing would never
+  // mount, so the generic TagHighlightObserver would find nothing — open the
+  // owning tab instead. Each tab declares the tag words it hosts.
+  const [tab, setTab] = useState('create');
+  const highlight = useHighlight();
+  useEffect(() => {
+    const owner = highlight ? TAB_FOR_TAG[highlight] : undefined;
+    if (owner) setTab(owner);
+  }, [highlight]);
 
   return (
     <div className="flex h-full flex-col">
-      {/* Members — project-level roster + invite (role-gated inside the stack). */}
+      {/* Project header: git state on the left, roster + invite on the right.
+          The roster names itself (avatars / "No members" / Invite), so a
+          separate "Members" caption was one label too many. */}
       {projectTypeId && (
         <div
           className="flex items-center justify-between border-b border-border/50 px-4 py-2"
           data-testid="project-home-members"
         >
-          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            <Trans>Members</Trans>
-          </span>
-          <MembersAvatarStack typeId={projectTypeId} />
+          <div className="flex min-w-0 items-center gap-3">
+            {cloudMode ? (
+              <span className="truncate text-sm font-medium">{project?.displayName ?? project?.name ?? 'Project'}</span>
+            ) : (
+              <>
+                <ProjectGitChip projectTypeId={projectTypeId} onChecked={setGitChecks} />
+                {project && <ProjectPublishButton project={project} />}
+              </>
+            )}
+          </div>
+          <MembersAvatarStack
+            typeId={projectTypeId}
+            allowInviteLink
+            showInviteButton
+            beforeInvite={beforeProjectInvite}
+          />
         </div>
       )}
-
-      {/* Start new session — worker launch row, right below Members. Hidden on
-          the terminal empty state, which shows the full SessionStarters instead
-          (avoids two controller instances / duplicate modals). */}
-      {projectTypeId && !showSessionStarters && (
+      {!cloudMode && gitChecks && (
+        <ProjectGitChecksDialog
+          open
+          onOpenChange={(next) => !next && setGitChecks(null)}
+          checks={gitChecks}
+          onSetupRepo={gitGate.runSetup}
+        />
+      )}
+      {!cloudMode && gitGateState === 'blocked' && gitGateReason && (
         <div
-          className="flex items-center justify-between border-b border-border/50 px-4 py-2"
-          data-testid="project-home-start-session"
+          className="border-b border-red-300 bg-red-50 px-4 py-2 text-xs text-red-800"
+          data-testid="project-git-access-warning"
         >
-          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            <Trans>Start new session</Trans>
-          </span>
-          <StartSessionWorkers spawnProjectId={spawnProjectId} />
+          {gitGateReason}
         </div>
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 py-6">
-          {showSessionStarters && <SessionStarters spawnProjectId={spawnProjectId} />}
+        <div className="mx-auto flex w-full flex-col gap-6 px-4 py-6">
+          {cloudMode ? (
+            cloudContent
+          ) : createOnly ? (
+            createTab
+          ) : (
+            <Tabs value={tab} onValueChange={setTab} data-testid="project-home-tabs">
+              <TabsList>
+                <TabsTrigger value="create" data-testid="project-home-tab-create">
+                  <Trans>Create</Trans>
+                </TabsTrigger>
+                <TabsTrigger value="customize" data-testid="project-home-tab-customize">
+                  <Trans>Customize</Trans>
+                </TabsTrigger>
+                <TabsTrigger value="secrets" data-testid="project-home-tab-secrets">
+                  <Trans>Secrets</Trans>
+                </TabsTrigger>
+              </TabsList>
 
-          {desktopScope && (
-            <div className="flex flex-col gap-2" data-testid="project-home-bookmarks">
-              <span className="px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                <Trans>Bookmarks</Trans>
-              </span>
-              <MiniDesktop scope={desktopScope} />
-            </div>
+              <TabsContent value="create">{createTab}</TabsContent>
+
+              <TabsContent value="customize" className="flex flex-col gap-6">
+                {project && (
+                  <>
+                    <ProjectLanguageCard project={project} />
+                    <HomeCustomizationCard project={project} />
+                    <VibeAgentsCard project={project} />
+                  </>
+                )}
+              </TabsContent>
+
+              <TabsContent value="secrets">
+                {project && (
+                  <div className="flex flex-col gap-3">
+                    {/* Declarations first, then what was merely detected on
+                        disk — the model, in the order it reads. */}
+                    <SecretsCard project={project} />
+                    <EnvLocalCard project={project} />
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           )}
-
-          <ContextFolders spawnProjectId={spawnProjectId} />
-          <Secrets spawnProjectId={spawnProjectId} />
         </div>
       </div>
+
+      {!cloudMode && (
+        <GitShareGateDialog
+          open={gitGateOpen}
+          onOpenChange={setGitGateOpen}
+          folderName={project?.name ?? 'Project'}
+          gate={gitGate}
+        />
+      )}
+      {!cloudMode && dialogs}
     </div>
   );
 };

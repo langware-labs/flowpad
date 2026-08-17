@@ -1,5 +1,9 @@
 # Building a deck template
 
+The style is already chosen by the time you get here — the one-click picker in
+[SKILL.md](../SKILL.md) runs first. If it hasn't run and the design is
+undecided, go back and run it.
+
 ## 1. Copy the scaffold
 
 ```bash
@@ -13,45 +17,66 @@ metrics-grid, closing-centered), `common/` tokens+theme, vendored Reveal, and
 the assembler. Copy verbatim — the slot contract, theme classes, and assembler
 agree with each other; hand-rolled folders drift.
 
-## 2. Ask which page types to support (MCP UI multi-select)
+If the folder already exists, this is not a bootstrap: check
+`common/theme.css` for the `decker:structural-fix` marker and repair it first
+(see [SKILL.md](../SKILL.md)).
 
-Inside FlowPad, ask via an interactive multi-select rather than prose. Follow
-the `mcp-ui` skill's output contract (the `.mcp.html` + inline JSON-RPC bridge
-pattern documented there) with this decker-specific shape:
+## 2. Apply the chosen style
+
+```bash
+S="<this skill's directory>/styles/<style slug>"
+T="<project root>/assets/deck-templates/<template name>/common"
+cp "$S/tokens.css" "$T/tokens.css"
+cp "$S/style.css"  "$T/style.css"
+```
+
+That's the whole design step. Do not hand-write a palette — see
+[styles.md](styles.md) for the three-layer contract and why `--font-display`
+carries most of the weight.
+
+**Tuning on top.** If the user named brand colours or a tone, apply the style
+first and then edit `common/tokens.css` (usually just `--accent`, `--bg`,
+`--text`). The style is the floor, not the ceiling. Reach for `style.css` only
+to change what a component *is* (a card becoming a ruled column); reach for a
+layout file only if it has hardcoded design that should not be there.
+
+## 3. Layouts — the core six are the default
+
+The scaffold already ships the core six page types (cover, agenda, content,
+media, metrics, closing). **That is the default: take it and keep moving.** The
+whole point of the one-click picker is that a deck needs exactly one question.
+
+Only when the request actually needs other page types (a roadmap, the team, a
+comparison) do more:
+
+- Required layouts per page type → the table in [layouts.md](layouts.md).
+- Already shipped → keep as-is; a style restyles it without edits.
+- Missing → write `layouts/<layout name>.html` per the slot contract and that
+  layout's slot inventory. Start from the closest exemplar (same
+  repeatable/media pattern). Extra layouts are harmless; delete unselected ones
+  only if the user asks.
+
+Preview each new layout by building a one-slide deck with placeholder fills
+(see [generating-decks.md](generating-decks.md)) and `flow show file` it.
+
+### Optional — the page-type multi-select
+
+Only when the user wants to choose page types explicitly (or asks for a
+template broader than one deck). Skipping it is the normal path.
+
+Follow the `mcp-ui` skill's contract (`.mcp.html` + the inline JSON-RPC bridge):
 
 - Write `<scratchpad>/decker-page-types.mcp.html` — a multi-select of the **17
   page types** from [layouts.md](layouts.md), one option per page type, its
   layout names shown as the option detail. Test IDs:
-  `data-testid="mcp-ui-multiselect-<page type>"`. Pre-check a sensible core
-  (cover, agenda, content, media, metrics, closing — plus any the user's
-  request implies). Include one open-text field
-  (`data-testid="mcp-ui-open-question"`) asking for design-language wishes
-  (brand colors, tone).
+  `data-testid="mcp-ui-multiselect-<page type>"`. Pre-check the core six plus
+  any the request implies.
 - Present it: `flow show file <absolute path>.mcp.html` (exit 0 = shown), then
-  **stop and wait** for the submission message (text starting
-  `MCP_UI_SUBMISSION ` with JSON like
-  `{"selectedOptions": ["cover", "metrics", …], "openQuestion": "…"}`).
-- Acknowledge with `MCP_UI_RECEIVED` and proceed with exactly the selected
-  page types.
+  **stop and wait** for the submission (text starting `MCP_UI_SUBMISSION ` with
+  JSON like `{"selectedOptions": ["cover", "metrics", …]}`).
+- Acknowledge with `MCP_UI_RECEIVED` and proceed with exactly those page types.
 
-Outside FlowPad (no Vibe display), ask the same question as a plain message
-listing the page types.
-
-## 3. Generate the selected layouts
-
-For each selected page type, ensure its **required layouts** (table in
-[layouts.md](layouts.md)) exist under `layouts/`:
-
-- Already shipped by the scaffold → keep as-is (restyle only via tokens).
-- Missing → write `layouts/<layout name>.html` following the slot contract and
-  that layout's slot inventory in layouts.md. Start from the closest exemplar
-  (same repeatable/media pattern). Delete exemplar layouts whose page type was
-  NOT selected only if the user asks — extra layouts are harmless.
-- Apply the user's design-language wishes by editing `common/tokens.css`
-  (colors, type, spacing) — not the layout files.
-
-Preview each new layout by building a one-slide deck with placeholder fills
-(see [generating-decks.md](generating-decks.md)) and `flow show file` it.
+Outside FlowPad (no Vibe display), ask as a plain message listing the page types.
 
 ## 4. Write the manifest and index
 
@@ -64,11 +89,16 @@ one via the `.flow/id` capsule):
     "title": "<Template title>",
     "description": "<one line: design language + intended use>",
     "page_types": ["cover", "agenda", "…the selected ones"],
-    "reveal_version": "5.2.1"
+    "style": "<style slug>",
+    "reveal_version": "5.2.0"
   },
   "data": {}
 }
 ```
+
+`style` records which style was applied, so a later session can re-apply or
+re-style without guessing from the CSS. Unknown metadata keys ride through the
+indexer into the entity's metadata, so this needs no schema change.
 
 Then index the **project root** (not the template folder — the walker scans
 `<root>/assets/deck-templates/`, so indexing the template folder finds nothing):

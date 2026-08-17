@@ -80,11 +80,16 @@ class FlowServer:
 
         # 4. Middleware (added in reverse execution order)
         from .middleware.catch_all_exception_middleware import CatchAllExceptionMiddleware
+        from .middleware.cookie_gate_middleware import CookieGateMiddleware
         from .middleware.request_transaction_middleware import RequestTransactionMiddleware
 
         app.add_middleware(CatchAllExceptionMiddleware)
         app.add_middleware(RequestTransactionMiddleware)
         app.add_middleware(CORSMiddleware, **self._cors_config)
+        # Last = outermost = runs first: an ungated request is rejected before
+        # RequestTransactionMiddleware opens a transaction or resolves a user.
+        # No-op on an unarmed instance, which is the default and every desktop.
+        app.add_middleware(CookieGateMiddleware)
 
         # 5. Core routers
         from .routes import bootstrap_router, health_router, wiki_router
@@ -146,6 +151,13 @@ class FlowServer:
             # ── Startup ──────────────────────────────────────────────
             await init_db()
 
+            # Record "the Electron app owns this instance" while FLOWPAD_DESKTOP
+            # is still visible — only this process ever sees it, and the CLI that
+            # can arm the cookie-gate needs the fact on disk to refuse.
+            from .startup import mark_desktop_managed
+
+            mark_desktop_managed()
+
             # SOD driver. An explicitly-registered driver (tests / embedders /
             # cloud) wins. Otherwise there is NO desktop driver to install:
             # get_current_sod_store() falls through to the single per-instance
@@ -154,18 +166,22 @@ class FlowServer:
             sod = drivers.get(FlowDrivers.SOD)
             if sod is not None:
                 from flow_sdk.request_context.methods import set_default_test_sod_driver
+
                 set_default_test_sod_driver(sod)
             else:
                 from .startup import cleanup_legacy_sod_local
+
                 cleanup_legacy_sod_local()
 
             # Storage driver
             storage = drivers.get(FlowDrivers.STORAGE)
             if storage is not None:
                 from flow_sdk.request_context.methods import set_default_test_storage_fallback
+
                 set_default_test_storage_fallback(storage)
             else:
                 from .startup import init_local_storage_driver
+
                 init_local_storage_driver()
 
             # User startup hooks

@@ -5,6 +5,9 @@ import { IDockPointer } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { EntityTypes } from '../schema/types';
 import { dockOptionsToScopeFilter } from '../utils/scope-filter';
+import { isHubOnly } from '../utils/hub-runtime';
+import { normalizeRetiredDockPointer } from '../utils/ui/retired-views';
+import { normalizeWorldViewDockPointer } from '../worldview/dock-pointer';
 import { Project } from './project';
 
 /** A terminal target's display fields, read off the (cached/resolved) entity. */
@@ -15,7 +18,8 @@ interface TerminalTargetFields {
 
 /** Provider/display kind for a terminal chip (vendor→glyph) denormalized onto
  *  `Tab.icon_key`. Shells use `'shell'`; an AgenticProcess maps its
- *  `worker_type`; unset/unknown → `'claude'` (the spawn default). */
+ *  `worker_type`; unset/unknown uses the generic process presentation. Runtime
+ *  defaults are resolved by the backend `harness` capability at creation. */
 function providerKindForWorkerType(workerType: string | null | undefined): string {
   const wt = (workerType ?? '').toLowerCase();
   if (wt === 'codex') return 'codex';
@@ -41,7 +45,10 @@ function displayForTarget(
 
 const LEGACY_LAYOUT_SEGMENTS = new Set(['dock', 'dev', 'win']);
 
-function targetDockPointer(targetType: string | null | undefined, targetId: string | null | undefined): {
+function targetDockPointer(
+  targetType: string | null | undefined,
+  targetId: string | null | undefined,
+): {
   viewType: string;
   pointer: string;
 } | null {
@@ -74,9 +81,7 @@ function normalizeLegacyPointer(
 
     if (
       targetDock &&
-      (path === targetDock.pointer ||
-        path === `${targetType}-${targetId}` ||
-        path === `${targetType}/${targetId}`)
+      (path === targetDock.pointer || path === `${targetType}-${targetId}` || path === `${targetType}/${targetId}`)
     ) {
       return targetDock;
     }
@@ -103,6 +108,16 @@ function normalizeLegacyPointer(
   }
   if (!rawViewType) return null;
   return { viewType: rawViewType, pointer: rawSubPointer };
+}
+
+function withCanonicalTabHash(pointer: IDockPointer): IDockPointer {
+  const normalized = normalizeWorldViewDockPointer(normalizeRetiredDockPointer(pointer));
+  const viewType = normalized.viewType ?? '';
+  const subPointer = normalized.pointer ?? '';
+  return {
+    ...normalized,
+    tabHash: normalized.tabHash ?? `${viewType}|${subPointer}`,
+  };
 }
 
 /**
@@ -143,6 +158,7 @@ export interface ITab extends IEntity {
   /** Runtime-computed fields: backing entity status and close-in-progress flag. Never persisted. */
   status?: string | null;
   is_disabled?: boolean;
+  target_remote?: boolean;
   /** name / project_id / tab_order / last_active_at come from IEntity. */
 }
 
@@ -177,6 +193,7 @@ export interface TabRow extends ITab {
   last_active_at: number | string | null;
   status: string | null;
   is_disabled: boolean;
+  target_remote?: boolean;
 }
 
 @registerEntity
@@ -196,27 +213,18 @@ export class Tab extends APIEntity<Tab> implements ITab {
   last_active_at: number | string | null = null;
   status: string | null = null;
   is_disabled: boolean = false;
+  target_remote?: boolean;
 
   /** Computed DockPointer from the stored pointer. Parsed directly (SDK layer, no UI dependency). */
   get dockPointer(): IDockPointer | null {
     if (!this.pointer) return null;
     try {
       const parsed = JSON.parse(this.pointer) as IDockPointer;
-      const viewType = parsed.viewType ?? '';
-      const subPointer = parsed.pointer ?? '';
-      return {
-        ...parsed,
-        tabHash: parsed.tabHash ?? `${viewType}|${subPointer}`,
-      };
+      return withCanonicalTabHash(parsed);
     } catch {
       const normalized = normalizeLegacyPointer(this.pointer, this.target_type, this.target_id);
       if (!normalized) return null;
-      const { viewType, pointer: subPointer } = normalized;
-      return {
-        viewType,
-        pointer: subPointer,
-        tabHash: `${viewType}|${subPointer}`,
-      } as IDockPointer;
+      return withCanonicalTabHash(normalized as IDockPointer);
     }
   }
 
@@ -230,7 +238,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
   // canonical, project-filtered, ordered rows. The frontend renders them as-is.
 
   /** GET /graph/tab/list?project=<id> — the deterministic ordered render list for
-   *  one project view (projectless tabs inline). `null` ⇒ no active project. */
+   *  one exact project scope. `null` selects the separate Global scope. */
   static async list(projectId: string | null = null): Promise<Tab[]> {
     const info = new ActionInfo('list', Tab.type, null, 'GET');
     info.queryParameters = { project: projectId ?? '' };
@@ -280,7 +288,10 @@ export class Tab extends APIEntity<Tab> implements ITab {
    */
   static async resolveDockTarget(dock: IDockPointer): Promise<{
     targetTypeId: TypeId | null;
-    target: (APIEntity<any> & TerminalTargetFields & { project_id?: string | null; cwd?: string | null; workdir?: string | null }) | null;
+    target:
+      | (APIEntity<any> &
+          TerminalTargetFields & { project_id?: string | null; cwd?: string | null; workdir?: string | null })
+      | null;
     projectId: string | null;
   }> {
     // One cast names the fields we read off the heterogeneous target
@@ -319,7 +330,11 @@ export class Tab extends APIEntity<Tab> implements ITab {
     } else {
       const cwd = target?.cwd ?? target?.workdir ?? null;
       const byPath = cwd ? await Project.getProjectByPath(cwd) : null;
-      projectId = byPath?.id ?? scopeProjectId ?? null;
+      // An existing target that resolves to no project is GLOBAL. Never let an
+      // ambient project scope in the URL adopt it while the target loader is
+      // concurrently clearing context to Global. Scope is a valid ownership
+      // hint only for target-less surfaces (assets/project home).
+      projectId = byPath?.id ?? (target ? null : scopeProjectId) ?? null;
     }
 
     return { targetTypeId, target, projectId };
@@ -327,7 +342,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
 
   static async getFromDockPointer(
     dock: IDockPointer,
-    opts: { parentTabId?: string | null } = {},
+    opts: { parentTabId?: string | null; afterTabId?: string | null } = {},
   ): Promise<Tab[]> {
     const pointerJson = dock.toJSON?.();
     if (!pointerJson) return [];
@@ -344,6 +359,12 @@ export class Tab extends APIEntity<Tab> implements ITab {
       iconKey,
       worktree,
       parentTabId: opts.parentTabId ?? null,
+      // Explicit placement anchor. Omitted, the backend appends after the
+      // most-recently-active tab (browser-style opener locality), which is
+      // right for a navigation the user just made. A tab minted WITHOUT
+      // navigating (`flow show` outside vibe) has no such opener, so it names
+      // the tab it belongs beside.
+      afterTabId: opts.afterTabId ?? null,
     });
   }
 
@@ -352,6 +373,9 @@ export class Tab extends APIEntity<Tab> implements ITab {
    *  sessions view + footer projects-chip read; replaces the old reactive
    *  `tab?visible=true` entity query. (Project-scoped views use `list`.) */
   static async listAll(): Promise<Tab[]> {
+    // Hub mode runs ephemeral: the hub backend has no `tab` entity, so a
+    // `list_all` would 422. Return an empty set — tabs are never persisted here.
+    if (isHubOnly()) return [];
     const info = new ActionInfo('list_all', Tab.type, null, 'GET');
     const res = await dataManager.callAction<undefined, { tabs: ITab[] }>(info);
     return Tab.fromResponse(res?.tabs ?? []);
@@ -387,6 +411,19 @@ export class Tab extends APIEntity<Tab> implements ITab {
    *  target teardown). Returns the updated list. */
   static async closeById(id: string): Promise<Tab[]> {
     const info = new ActionInfo('close', Tab.type, id, 'POST');
+    const res = await dataManager.callAction<unknown, { tabs: ITab[] }>(info);
+    return Tab.fromResponse(res?.tabs ?? []);
+  }
+
+  /** POST /graph/tab/close_many — durably hide all requested tabs in one
+   * acknowledgement. Used by close-all so a reload cannot abort a fan-out of
+   * independent requests after the chips have disappeared. */
+  static async closeManyByIds(ids: string[], projectId: string | null = null): Promise<Tab[]> {
+    const info = new ActionInfo('close_many', Tab.type, null, 'POST');
+    info.bodyParameters = {
+      tab_ids: ids,
+      project: projectId ?? '',
+    };
     const res = await dataManager.callAction<unknown, { tabs: ITab[] }>(info);
     return Tab.fromResponse(res?.tabs ?? []);
   }
@@ -437,12 +474,13 @@ export class Tab extends APIEntity<Tab> implements ITab {
    *  to reuse instances by id, preventing duplicate-registration warnings. */
   static fromResponse(data: ITab[]): Tab[] {
     return data.map((t) => {
+      const targetRemote =
+        typeof t.target_remote === 'boolean' ? t.target_remote : undefined;
       const cached = Tab.getByIdFromCache<Tab>(t.id ?? '');
-      if (cached) {
-        Object.assign(cached, t);
-        return cached;
-      }
-      return new Tab(t);
+      const tab = cached ?? new Tab(t);
+      Object.assign(tab, t);
+      tab.target_remote = targetRemote;
+      return tab;
     });
   }
 

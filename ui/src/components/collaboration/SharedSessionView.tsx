@@ -13,7 +13,7 @@ interface Props {
 
 /**
  * A shared session's detail: the guest drives work on the host's machine, and
- * both sides watch the prompt/PromptResult turn exchange as a chat. The HOST
+ * both sides watch the prompt/PromptCompletion turn exchange as a chat. The HOST
  * (the machine being driven) sees a banner + Disconnect; the GUEST sees the
  * same chat + a "running on <host>'s machine" note.
  */
@@ -63,13 +63,8 @@ export function SharedSessionView({ sessionId }: Props) {
               <Trans>This session is running remotely by {guestName} on your machine.</Trans>
             </span>
           </div>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={handleDisconnect}
-            disabled={disconnecting || ended}
-          >
-            <PlugZap className="mr-1.5 h-4 w-4" />
+          <Button variant="destructive" size="sm" onClick={handleDisconnect} disabled={disconnecting || ended}>
+            <PlugZap className="me-1.5 h-4 w-4" />
             {ended ? <Trans>Disconnected</Trans> : <Trans>Disconnect</Trans>}
           </Button>
         </div>

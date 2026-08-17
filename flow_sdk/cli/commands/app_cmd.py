@@ -16,12 +16,19 @@ from typing_extensions import Annotated
 from flow_sdk.cli.app_discovery import WebAppCandidate, discover_webapps
 from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
+)
+from flow_sdk.cli.commands._common import (
     fail as _fail,
+)
+from flow_sdk.cli.commands._common import (
     ok as _ok,
+)
+from flow_sdk.cli.commands._common import (
     post_graph_json as _post_graph_json,
+)
+from flow_sdk.cli.commands._common import (
     resolve_process_id as _resolve_process_id,
 )
-
 
 app_app = typer.Typer(
     name="app",
@@ -57,6 +64,7 @@ def open_app(
     process: Annotated[Optional[str], typer.Option("--process", "-p", help=_PROCESS_HELP)] = None,
     port: Annotated[Optional[int], typer.Option("--port", help="Override the app port.")] = None,
     no_start: Annotated[bool, typer.Option("--no-start", help="Register/show only; do not launch a server.")] = False,
+    dist: Annotated[Optional[str], typer.Option("--dist", help="Build-output dir (relative to the app) to serve as the app's delivery.")] = None,
     install: Annotated[bool, typer.Option("--install/--no-install", help="Install JS dependencies if node_modules is missing.")] = True,
     timeout: Annotated[float, typer.Option("--timeout", help="Seconds to wait for the port after starting.")] = 75.0,
     max_depth: Annotated[int, typer.Option("--max-depth", help="Maximum directory depth to scan.")] = 6,
@@ -89,12 +97,60 @@ def open_app(
         candidate,
         process_id=process_id,
         request=request,
+        dist=dist,
         port_override=port,
         no_start=no_start,
         install=install,
         timeout=timeout,
     )
     _ok(opened)
+
+
+@app_app.command("serve", help="Register an app's built output so Flowpad serves it, and show it.")
+def serve_app(
+    name: Annotated[Optional[str], typer.Argument(help="Display name for the app (defaults to the folder name).")] = None,
+    root: Annotated[Optional[str], typer.Option("--root", help="The app directory (defaults to cwd).")] = None,
+    dist: Annotated[Optional[str], typer.Option("--dist", help="Build output within the app to serve. Omit when the folder IS the output.")] = None,
+    process: Annotated[Optional[str], typer.Option("--process", "-p", help=_PROCESS_HELP)] = None,
+    no_show: Annotated[bool, typer.Option("--no-show", help="Register only; do not present it in the display.")] = False,
+) -> None:
+    """Serve the app from Flowpad's own origin — no dev server, no port.
+
+    This is the mode an app wants when it talks to Flowpad: served from the
+    backend's origin, it is handed the API origin and the session cookies ride
+    along, so the SDK works with nothing to configure. Registering without a
+    port is what makes the display resolve `served` instead of pointing at a dev
+    server that isn't there.
+    """
+    app_dir = _resolve_root(root)
+    process_id = _resolve_process_id(process)
+
+    data = _register_webapp(
+        process_id,
+        {
+            "name": (name or "").strip() or app_dir.name,
+            "path": str(app_dir),
+            "dist": dist,
+            "description": f"Flowpad-served web app at {app_dir}",
+            "show": not no_show,
+        },
+    )
+    micro_app = data.get("micro_app")
+    if micro_app is None:
+        _fail(
+            EXIT_NOT_FOUND,
+            "NO_BUILD_OUTPUT",
+            f"No servable output under {app_dir}. Build the app first, or pass --dist <dir>.",
+        )
+    _ok(
+        {
+            "source": "serve",
+            "artifact": data.get("artifact"),
+            "micro_app": micro_app,
+            "shown": data.get("shown"),
+            "serving": micro_app.get("location_root"),
+        }
+    )
 
 
 def _resolve_root(root: str | None) -> Path:
@@ -165,18 +221,18 @@ def _open_artifact(
         {
             "artifact_id": artifact.get("id"),
             "name": artifact.get("name") or f"Web App {port}",
-            "path": artifact.get("path") or str(cwd),
+            "path": _artifact_path(artifact, root) or str(cwd),
             "port": str(port),
             "start_cmd": command,
-            "health": artifact.get("health") or _metadata(artifact).get("health") or "/",
+            "health": _deployment_labels(artifact).get("flowpad.runtime.health") or "/",
             "description": artifact.get("description") or "Web application",
-            "metadata": {**_metadata(artifact), "opened_from": "artifact"},
             "show": True,
         },
     )
     return {
         "source": "artifact",
         "artifact": data.get("artifact"),
+        "deployment": data.get("deployment"),
         "shown": data.get("shown"),
         "port": port,
         "url": f"http://127.0.0.1:{port}",
@@ -191,6 +247,7 @@ def _open_candidate(
     *,
     process_id: str,
     request: str,
+    dist: str | None = None,
     port_override: int | None,
     no_start: bool,
     install: bool,
@@ -231,6 +288,10 @@ def _open_candidate(
             "start_cmd": start_cmd,
             "health": candidate.health,
             "description": f"{candidate.kind} web app at {app_dir}",
+            # Names the built output the backend should serve as this app's
+            # delivery. Omitted, the backend looks for a conventional build dir
+            # and falls back to the app folder itself when it is already static.
+            "dist": dist,
             "metadata": {
                 "app_kind": candidate.kind,
                 "evidence": candidate.evidence,
@@ -244,6 +305,7 @@ def _open_candidate(
         "source": "discovery",
         "candidate": candidate.to_dict(),
         "artifact": data.get("artifact"),
+        "deployment": data.get("deployment"),
         "shown": data.get("shown"),
         "port": port,
         "url": f"http://127.0.0.1:{port}",
@@ -273,10 +335,10 @@ def _artifact_score(artifact: dict, query: str, root: Path) -> int:
     terms = _query_terms(query)
     fields = " ".join(
         str(artifact.get(k) or "")
-        for k in ("name", "path", "description")
+        for k in ("name", "description", "kind")
     ).lower()
     score = 25
-    path = str(artifact.get("path") or "")
+    path = _artifact_path(artifact, root)
     if path:
         try:
             if Path(path).expanduser().resolve().is_relative_to(root):
@@ -296,7 +358,7 @@ def _query_terms(query: str) -> set[str]:
 
 
 def _artifact_port(artifact: dict) -> int | None:
-    value = artifact.get("port") or _metadata(artifact).get("port")
+    value = _deployment_labels(artifact).get("flowpad.runtime.port")
     try:
         port = int(str(value))
     except (TypeError, ValueError):
@@ -305,12 +367,12 @@ def _artifact_port(artifact: dict) -> int | None:
 
 
 def _artifact_start_cmd(artifact: dict) -> str:
-    value = artifact.get("start_cmd") or _metadata(artifact).get("start_cmd") or _metadata(artifact).get("start-cmd")
+    value = _deployment_labels(artifact).get("flowpad.runtime.start_cmd")
     return str(value or "").strip()
 
 
 def _artifact_cwd(artifact: dict, root: Path) -> Path:
-    raw = str(artifact.get("path") or "").strip()
+    raw = _artifact_path(artifact, root)
     if not raw:
         return root
     path = Path(raw).expanduser()
@@ -319,9 +381,25 @@ def _artifact_cwd(artifact: dict, root: Path) -> Path:
     return path.resolve() if path.exists() else root
 
 
-def _metadata(artifact: dict) -> dict:
-    metadata = artifact.get("metadata")
-    return metadata if isinstance(metadata, dict) else {}
+def _artifact_path(artifact: dict, root: Path) -> str:
+    origin = artifact.get("origin")
+    if not isinstance(origin, dict):
+        return ""
+    rel_path = str(origin.get("rel_path") or ".").strip()
+    if origin.get("kind") == "local":
+        base = str(origin.get("base") or "").strip()
+        return str(Path(base) / rel_path) if base else ""
+    # A git origin is checkout-independent.  The app command already knows the
+    # active checkout root, so its repo-relative placement resolves from there.
+    if origin.get("kind") == "git":
+        return str(root / rel_path)
+    return ""
+
+
+def _deployment_labels(artifact: dict) -> dict:
+    deployment = artifact.get("deployment")
+    labels = deployment.get("provider_labels") if isinstance(deployment, dict) else None
+    return labels if isinstance(labels, dict) else {}
 
 
 def _choose_static_port() -> int:

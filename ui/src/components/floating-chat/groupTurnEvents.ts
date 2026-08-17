@@ -1,6 +1,8 @@
 import { FlowData, FlowElementTypes } from '@sdk';
 import { useMemo, useRef } from 'react';
 
+import { transcriptEntry } from './transcriptEntry';
+
 /**
  * Groups a flat FlowData stream into a sequence of "turn groups" suitable for
  * the dense floating-chat layout: text-shaped messages stay as-is, and any
@@ -14,7 +16,19 @@ import { useMemo, useRef } from 'react';
  */
 
 export type TurnGroup =
-  | { kind: 'message'; flowData: FlowData; index: number }
+  | {
+      kind: 'message';
+      flowData: FlowData;
+      index: number;
+      /**
+       * Set on the framework-injected (`is-meta`) message that follows a
+       * dropped `Skill` tool call: the skill's name, lifted off that call's
+       * structured payload. The chip prefers it over regexing the injected
+       * body — see `MetaMessageChip`.
+       */
+      skillName?: string;
+    }
+  | { kind: 'worker-unavailable'; flowData: FlowData; index: number }
   | { kind: 'dense'; events: FlowData[]; index: number };
 
 const MESSAGE_TYPES = new Set<string>([
@@ -30,6 +44,16 @@ const DENSE_TYPES = new Set<string>([
   FlowElementTypes.STATUS,
   FlowElementTypes.ERROR,
 ]);
+
+/**
+ * Transcript bookkeeping that is NOT "something the agent did": per-snapshot
+ * token accounting and Claude's session-envelope lines (file-history snapshots,
+ * queue operations, titles). A replayed transcript carries dozens of them, and
+ * they buried the real operations under a wall of empty `{}` rows. Live
+ * lifecycle STATUS frames (`init`, `task_started`, `rate-limit`) are NOT here —
+ * those describe the run and stay visible.
+ */
+const NON_ACTIVITY_SUBTYPES = new Set<string>(['token_usage', 'meta', 'summary']);
 
 const NO_LIVE_EVENTS: FlowData[] = [];
 
@@ -86,28 +110,107 @@ export function createTurnGrouper(): TurnGrouper {
   /** Trailing dense run, not yet sealed — rebuilt with fresh identity per call. */
   let tail: FlowData[] = [];
   let skillCallIds = new Set<string>();
+  /** Name from the most recent dropped Skill call, awaiting its meta message. */
+  let pendingSkillName: string | null = null;
+  /** Emitted dense rows by transcript-entry id — the handles `retract` needs. */
+  let emittedByEntryId = new Map<string, FlowData>();
+  /** tool_use_ids still claimed by a rendered TOOL_CALL, and ids whose only
+   *  call(s) were dropped. A result is dropped only when the id is in the
+   *  second set and NOT in the first — a refinement inherits its source's
+   *  tool_use_id, so the leaf keeps claiming it. */
+  let liveCallIds = new Set<string>();
+  let droppedCallIds = new Set<string>();
 
   const reset = () => {
     committed = [];
     tail = [];
     skillCallIds = new Set<string>();
+    pendingSkillName = null;
+    emittedByEntryId = new Map<string, FlowData>();
+    liveCallIds = new Set<string>();
+    droppedCallIds = new Set<string>();
+  };
+
+  /** Un-render an already-emitted row: its refinement just arrived. */
+  const retract = (sourceEntryId: string) => {
+    const item = emittedByEntryId.get(sourceEntryId);
+    if (!item) return; // never rendered — dropped earlier, or not a dense row
+    emittedByEntryId.delete(sourceEntryId);
+    const toolUseId = getToolUseId(item);
+    if (toolUseId) {
+      liveCallIds.delete(toolUseId);
+      droppedCallIds.add(toolUseId);
+    }
+    const inTail = tail.lastIndexOf(item);
+    if (inTail >= 0) {
+      tail.splice(inTail, 1);
+      return;
+    }
+    // Already sealed by an intervening message. Rebuild that group with a fresh
+    // identity so memoized rows notice; adjacency is the normal case, not a
+    // guarantee this module may lean on.
+    for (let i = committed.length - 1; i >= 0; i--) {
+      const group = committed[i];
+      if (group.kind !== 'dense') continue;
+      const at = group.events.lastIndexOf(item);
+      if (at < 0) continue;
+      const events = [...group.events];
+      events.splice(at, 1);
+      committed[i] = { ...group, events };
+      return;
+    }
+  };
+
+  const flushTail = () => {
+    if (tail.length === 0) return;
+    committed.push({ kind: 'dense', events: tail, index: committed.length });
+    tail = [];
   };
 
   const consume = (item: FlowData) => {
     const t: string = item.elementType;
     if (MESSAGE_TYPES.has(t)) {
-      if (tail.length > 0) {
-        committed.push({ kind: 'dense', events: tail, index: committed.length });
-        tail = [];
-      }
-      committed.push({ kind: 'message', flowData: item, index: committed.length });
+      flushTail();
+      const isMeta = item.attributes['is-meta'] === 'true';
+      const skillName = isMeta && pendingSkillName ? pendingSkillName : undefined;
+      if (isMeta) pendingSkillName = null;
+      committed.push({ kind: 'message', flowData: item, index: committed.length, skillName });
+    } else if (t === FlowElementTypes.WORKER_UNAVAILABLE) {
+      flushTail();
+      committed.push({ kind: 'worker-unavailable', flowData: item, index: committed.length });
     } else if (DENSE_TYPES.has(t)) {
-      // A `Skill` tool use is already represented in the chat by the skill's
+      if (NON_ACTIVITY_SUBTYPES.has(item.attributes['subtype'])) return;
+      // A skill invocation is already represented in the chat by the skill's
       // meta-injection chip (MetaMessageChip, "Using skill: <name>") — the
       // injected body arrives as an isMeta USER_MESSAGE right after the call.
       // Keeping the TOOL_CALL/TOOL_RESULT in the dense stream too rendered
       // duplicate "Using Skill" chips around that one, so drop the pair here.
-      if (isSkillToolEvent(item, skillCallIds)) return;
+      if (isSkillToolEvent(item, skillCallIds)) {
+        const name = skillNameOf(item);
+        if (name) pendingSkillName = name;
+        const toolUseId = getToolUseId(item);
+        if (toolUseId) droppedCallIds.add(toolUseId);
+        return;
+      }
+      // Derivation is ADDITIVE: this row may be the refinement of one already
+      // rendered. Suppression is generic — an entry that is the `derived_from`
+      // of an entry present in the stream never renders — so a chain
+      // (shell_command → flow_command → artifact) collapses to its leaf with no
+      // per-kind rules here.
+      const source = derivedFromOf(item);
+      if (source) retract(source);
+
+      const toolUseId = getToolUseId(item);
+      if (t === FlowElementTypes.TOOL_RESULT) {
+        // Drop only a genuinely orphaned result: its call was suppressed AND no
+        // survivor claims the id. A refinement INHERITS its source's
+        // tool_use_id, so the common case is that the leaf still claims it.
+        if (toolUseId && droppedCallIds.has(toolUseId) && !liveCallIds.has(toolUseId)) return;
+      } else if (t === FlowElementTypes.TOOL_CALL && toolUseId) {
+        liveCallIds.add(toolUseId);
+      }
+      const entryId = transcriptEntryIdOf(item);
+      if (entryId) emittedByEntryId.set(entryId, item);
       tail.push(item);
     }
     // Anything else (END, RESULT, CHECKPOINT, …) is intentionally dropped from
@@ -156,14 +259,47 @@ export function useTurnGroups(items: FlowData[]): TurnGroup[] {
   return useMemo(() => grouperRef.current!.next(items), [items]);
 }
 
+/** This frame's transcript-entry id; null for frames that carry none. */
+function transcriptEntryIdOf(item: FlowData): string | null {
+  const id = transcriptEntry(item)?.id ?? item.attributes['transcript-entry-id'];
+  return typeof id === 'string' && id ? id : null;
+}
+
+/** The id of the entry this one REFINES, or null when it is physical. */
+function derivedFromOf(item: FlowData): string | null {
+  const from = transcriptEntry(item)?.derived_from;
+  return typeof from === 'string' && from ? from : null;
+}
+
+/** The transcript kind behind a frame (`shell_command`, `skill_call`, …). */
+function entryKindOf(item: FlowData): string {
+  const kind = transcriptEntry(item)?.kind ?? item.attributes['subtype'];
+  return typeof kind === 'string' ? kind : '';
+}
+
 /** The worker-side tool name Claude uses to load a skill. */
 const SKILL_TOOL_NAME = 'Skill';
 
-function isSkillToolEvent(item: FlowData, skillCallIds: Set<string>): boolean {
-  if (
-    item.elementType === FlowElementTypes.TOOL_CALL &&
+/**
+ * Is this frame a skill invocation?
+ *
+ * Deliberately NOT `tool-name === 'Skill'` alone: codex has no Skill tool — it
+ * loads a skill by reading its SKILL.md, so its `SkillCallEntry` carries
+ * `tool-name: shell`. Matching only the Claude name is why codex rendered two
+ * chips for one skill load. The authority is the transcript KIND, with the
+ * `skill-name` attribute (stamped by every `SkillCallEntry`) and Claude's tool
+ * name as fallbacks for frames that reach us without a `process_entry`.
+ */
+function isSkillCallFrame(item: FlowData): boolean {
+  return (
+    entryKindOf(item) === 'skill_call' ||
+    !!item.attributes['skill-name'] ||
     item.attributes['tool-name'] === SKILL_TOOL_NAME
-  ) {
+  );
+}
+
+function isSkillToolEvent(item: FlowData, skillCallIds: Set<string>): boolean {
+  if (item.elementType === FlowElementTypes.TOOL_CALL && isSkillCallFrame(item)) {
     const id = getToolUseId(item);
     if (id) skillCallIds.add(id);
     return true;
@@ -173,6 +309,20 @@ function isSkillToolEvent(item: FlowData, skillCallIds: Set<string>): boolean {
     return !!id && skillCallIds.has(id);
   }
   return false;
+}
+
+/**
+ * The skill a `Skill` TOOL_CALL loaded, from the backend's structured payload.
+ * Both the live stream and a replay carry it (`skill-name` attribute /
+ * `skill_name` in the flow value), so the chip never has to parse prose.
+ */
+function skillNameOf(item: FlowData): string | null {
+  const attr = item.attributes['skill-name'];
+  if (attr) return attr;
+  const data = item.data as { skill_name?: unknown; args?: { skill?: unknown } } | undefined;
+  if (data && typeof data.skill_name === 'string' && data.skill_name) return data.skill_name;
+  const skill = data?.args?.skill;
+  return typeof skill === 'string' && skill ? skill : null;
 }
 
 /**

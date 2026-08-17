@@ -1,26 +1,20 @@
-import {
-  describeToolInput,
-  describeToolName,
-} from '@src/components/flowdata-renderer/ToolCallMessageComponent';
 import { cn } from '@src/lib/utils';
 import { FlowData, FlowElementTypes } from '@sdk';
-import {
-  Activity,
-  AlertTriangle,
-  ChevronDown,
-  ChevronRight,
-  Sparkles,
-  Wrench,
-} from 'lucide-react';
+import { Activity, AlertTriangle, ChevronDown, ChevronRight, Sparkles, Wrench } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { pairToolEvents, type ToolPair } from './groupTurnEvents';
+import { describeEvent } from './toolEventDescriptor';
+import { useChipTarget } from './useChipTarget';
 
 interface ToolEntryRowProps {
   events: FlowData[];
 }
 
 interface OneLiner {
-  icon: 'tool' | 'reasoning' | 'status' | 'error';
+  icon: LucideIcon;
+  /** Errors render in the destructive colour; everything else is muted. */
+  isError?: boolean;
   label: string;
   detail: string;
   inFlight: boolean;
@@ -71,18 +65,18 @@ export function ToolEntryRow({ events }: ToolEntryRowProps) {
           'transition-colors',
         ].join(' ')}
       >
-        <OneLinerIcon kind={latest?.icon ?? 'tool'} inFlight={latest?.inFlight ?? false} />
-        {latest && <span className="font-medium">{latest.label}</span>}
+        <OneLinerIcon icon={latest?.icon ?? Wrench} isError={latest?.isError} inFlight={latest?.inFlight ?? false} />
+        {latest && <span className="whitespace-nowrap font-medium">{latest.label}</span>}
         {headlineDetail && (
           <span className="max-w-[260px] truncate font-mono text-[12px] text-muted-foreground/80">
             {headlineDetail}
           </span>
         )}
-        {totalCount > 1 && <span className="tabular-nums text-[11px] opacity-50">·&nbsp;{totalCount}</span>}
+        {totalCount > 1 && <span className="text-[11px] tabular-nums opacity-50">·&nbsp;{totalCount}</span>}
       </button>
 
       {expanded && (
-        <div className="ml-3 max-w-full rounded-md border border-border/60 bg-muted/30 px-2 py-1">
+        <div className="ms-3 max-w-full rounded-md border border-border/60 bg-muted/30 px-2 py-1">
           <TurnEventList events={events} />
         </div>
       )}
@@ -118,16 +112,12 @@ export function TurnEventList({ events }: { events: FlowData[] }) {
   );
 }
 
-function OneLinerIcon({ kind, inFlight }: { kind: OneLiner['icon']; inFlight: boolean }) {
-  const cls = 'h-3.5 w-3.5 flex-shrink-0';
-  // In-flight = a TOOL_CALL has no matching TOOL_RESULT yet. Use the same
-  // tool icon as the resting state and animate a soft pulse rather than a
-  // spinning loader so the row feels like activity, not "busy/loading".
-  if (inFlight) return <Wrench className={`${cls} animate-pulse text-foreground`} />;
-  if (kind === 'reasoning') return <Sparkles className={`${cls} text-muted-foreground`} />;
-  if (kind === 'error') return <AlertTriangle className={`${cls} text-destructive`} />;
-  if (kind === 'status') return <Activity className={`${cls} text-muted-foreground`} />;
-  return <Wrench className={`${cls} text-muted-foreground`} />;
+function OneLinerIcon({ icon: Icon, isError, inFlight }: Omit<OneLiner, 'label' | 'detail'>) {
+  // In-flight = a TOOL_CALL has no matching TOOL_RESULT yet. Pulse the SAME
+  // icon as the resting state rather than swapping in a spinner, so the row
+  // reads as activity, not "busy/loading".
+  const tone = isError ? 'text-destructive' : inFlight ? 'animate-pulse text-foreground' : 'text-muted-foreground';
+  return <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${tone}`} />;
 }
 
 /**
@@ -137,33 +127,43 @@ function OneLinerIcon({ kind, inFlight }: { kind: OneLiner['icon']; inFlight: bo
 function ExpandableRow({
   children,
   payload,
+  trailing,
 }: {
   children: React.ReactNode;
   payload: React.ReactNode;
+  /**
+   * Rendered beside the toggle, NOT inside it — a chip's "open the thing I
+   * touched" link is its own affordance and must not nest inside the
+   * expander's button.
+   */
+  trailing?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-1.5 px-1.5 py-1 text-left"
-      >
-        {open ? (
-          <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
-        )}
-        {children}
-      </button>
+      <div className="flex w-full items-center gap-1.5 px-1.5 py-1">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex min-w-0 items-center gap-1.5 text-start"
+        >
+          {open ? (
+            <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+          )}
+          {children}
+        </button>
+        {trailing}
+      </div>
       {open && <div className="px-2 pb-1 pt-0.5">{payload}</div>}
     </>
   );
 }
 
 function ToolPairItem({ pair }: { pair: ToolPair }) {
-  const toolName = pair.call.attributes['tool-name'] || 'Tool';
-  const summary = describeToolInput(pair.call.data);
+  const desc = useMemo(() => describeEvent(pair.call), [pair.call]);
+  const openTarget = useChipTarget(desc.target);
   // Replay emits durable semantic operations (file_write, file_edit,
   // skill_call, etc.) as TOOL_CALL-shaped rows. They describe work that has
   // already happened and do not have a separate TOOL_RESULT to pair with.
@@ -185,25 +185,42 @@ function ToolPairItem({ pair }: { pair: ToolPair }) {
       <ExpandableRow
         payload={
           <>
-            <PayloadBlock label="input" value={(pair.call.data as Record<string, unknown> | undefined)?.args ?? (pair.call.data as Record<string, unknown> | undefined)?.input} />
+            <PayloadBlock
+              label="input"
+              value={
+                (pair.call.data as Record<string, unknown> | undefined)?.args ??
+                (pair.call.data as Record<string, unknown> | undefined)?.input
+              }
+            />
             <PayloadBlock label={inFlight ? 'output (running…)' : 'output'} value={resultOutput} />
           </>
         }
+        trailing={
+          desc.detail && openTarget ? (
+            <button
+              type="button"
+              data-testid="tool-entry-target"
+              title={desc.detail}
+              onClick={openTarget}
+              className="min-w-0 flex-1 truncate text-start font-mono text-[12px] text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
+            >
+              {desc.detail}
+            </button>
+          ) : undefined
+        }
       >
-        {isError ? (
-          <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 text-destructive" />
-        ) : (
-          <Wrench className={`h-3.5 w-3.5 flex-shrink-0 text-muted-foreground${inFlight ? ' animate-pulse' : ''}`} />
+        <OneLinerIcon icon={isError ? AlertTriangle : desc.icon} isError={isError} inFlight={inFlight} />
+        <span className="flex-shrink-0 whitespace-nowrap font-medium text-foreground">{desc.label}</span>
+        {desc.detail && !openTarget && (
+          <span className="truncate font-mono text-[12px] text-muted-foreground">{desc.detail}</span>
         )}
-        <span className="font-medium text-foreground">{describeToolName(toolName)}</span>
-        {summary && <span className="truncate font-mono text-[12px] text-muted-foreground">{summary}</span>}
       </ExpandableRow>
     </li>
   );
 }
 
 function OtherEventItem({ event }: { event: FlowData }) {
-  const { icon, label } = describeOther(event);
+  const { icon, label, isError } = describeOther(event);
   const detail = extractText(event);
 
   return (
@@ -216,13 +233,11 @@ function OtherEventItem({ event }: { event: FlowData }) {
         payload={
           <>
             <PayloadBlock label="data" value={event.data} />
-            {Object.keys(event.attributes).length > 0 && (
-              <PayloadBlock label="attributes" value={event.attributes} />
-            )}
+            {Object.keys(event.attributes).length > 0 && <PayloadBlock label="attributes" value={event.attributes} />}
           </>
         }
       >
-        <OneLinerIcon kind={icon} inFlight={false} />
+        <OneLinerIcon icon={icon} isError={isError} inFlight={false} />
         <span className="font-medium text-foreground">{label}</span>
         {detail && <span className="truncate font-mono text-[12px] text-muted-foreground">{detail}</span>}
       </ExpandableRow>
@@ -232,11 +247,7 @@ function OtherEventItem({ event }: { event: FlowData }) {
 
 function OrphanResultItem({ event }: { event: FlowData }) {
   return (
-    <li
-      data-testid="tool-entry"
-      data-state="done"
-      className={cn('px-1.5 py-0.5 text-[11px] text-muted-foreground')}
-    >
+    <li data-testid="tool-entry" data-state="done" className={cn('px-1.5 py-0.5 text-[11px] text-muted-foreground')}>
       <span className="opacity-60">tool result (no matching call):</span>{' '}
       <span className="truncate font-mono text-[10px]">{extractText(event)}</span>
     </li>
@@ -291,13 +302,10 @@ function describeLatest(events: FlowData[], pairs: ToolPair[]): OneLiner | null 
       return pid && pid === id;
     });
     const inFlight = !!matchingPair && matchingPair.result === null;
-    const toolName = evt.attributes['tool-name'] || 'Tool';
-    return {
-      icon: 'tool',
-      label: describeToolName(toolName),
-      detail: describeToolInput(evt.data),
-      inFlight,
-    };
+    // Same descriptor the expanded rows use, so the collapsed headline names
+    // the operation the same way ("Read · path", not "Using Read").
+    const desc = describeEvent(evt);
+    return { icon: desc.icon, label: desc.label, detail: desc.detail, inFlight };
   }
   // No tool calls in the bucket — fall back to the latest reasoning /
   // status / error entry. The label alone is the chip detail; we never
@@ -305,25 +313,24 @@ function describeLatest(events: FlowData[], pairs: ToolPair[]): OneLiner | null 
   for (let i = events.length - 1; i >= 0; i--) {
     const evt = events[i];
     if (DENSE_OTHER.has(evt.elementType)) {
-      const { icon, label } = describeOther(evt);
-      return { icon, label, detail: label, inFlight: false };
+      const other = describeOther(evt);
+      return { ...other, detail: other.label, inFlight: false };
     }
   }
   return null;
 }
 
-const DENSE_OTHER = new Set<string>([
-  FlowElementTypes.REASONING,
-  FlowElementTypes.STATUS,
-  FlowElementTypes.ERROR,
-]);
+const DENSE_OTHER = new Set<string>([FlowElementTypes.REASONING, FlowElementTypes.STATUS, FlowElementTypes.ERROR]);
 
-function describeOther(event: FlowData): { icon: OneLiner['icon']; label: string } {
-  if (event.elementType === FlowElementTypes.REASONING) return { icon: 'reasoning', label: 'thinking' };
-  if (event.elementType === FlowElementTypes.ERROR) return { icon: 'error', label: 'error' };
-  // STATUS — surface the subtype if present (e.g. "PreToolUse")
+function describeOther(event: FlowData): { icon: LucideIcon; label: string; isError?: boolean } {
+  if (event.elementType === FlowElementTypes.REASONING) return { icon: Sparkles, label: 'thinking' };
+  if (event.elementType === FlowElementTypes.ERROR) return { icon: AlertTriangle, label: 'error', isError: true };
+  // STATUS — surface the subtype if present (e.g. "PreToolUse"), except where
+  // the subtype names something the user is actively waiting on and deserves
+  // words rather than a machine token.
   const subtype = event.attributes['subtype'];
-  return { icon: 'status', label: subtype || 'status' };
+  if (subtype === 'credential_refresh') return { icon: Activity, label: 'refreshing credentials' };
+  return { icon: Activity, label: subtype || 'status' };
 }
 
 function extractText(event: FlowData): string {

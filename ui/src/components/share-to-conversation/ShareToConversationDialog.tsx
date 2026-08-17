@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, GitBranch, MessageSquarePlus, Send } from 'lucide-react';
+import { Check, GitBranch, Loader2, MessageSquarePlus, Send } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Conversation,
@@ -16,6 +16,7 @@ import { useAutoTitle } from '@src/hooks/use-auto-title';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { guardCloudAction } from '@src/services/privacy-guard';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
+import { SendProgressNotice } from '@src/components/conversation/SendProgressNotice';
 import type { ShareSource } from '@src/hooks/share-sources';
 import { useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
 import { WikiTip } from '@src/components/wiki-tip/WikiTip';
@@ -23,12 +24,7 @@ import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
 import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@src/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { cn } from '@src/lib/utils';
@@ -92,11 +88,9 @@ const NEW_CONVERSATION = '__new__';
 /** Shared styling for a selectable conversation row; `dashed` marks the "new" row. */
 const rowClasses = (isSelected: boolean, dashed = false) =>
   cn(
-    'flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-xs text-foreground disabled:pointer-events-none disabled:opacity-50',
+    'flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-start text-xs text-foreground disabled:pointer-events-none disabled:opacity-50',
     dashed && 'border-dashed',
-    isSelected
-      ? 'border-primary bg-primary/10 ring-1 ring-primary/40'
-      : 'border-input bg-background hover:bg-muted/50',
+    isSelected ? 'border-primary bg-primary/10 ring-1 ring-primary/40' : 'border-input bg-background hover:bg-muted/50',
   );
 
 /**
@@ -157,10 +151,7 @@ export function ShareToConversationDialog({
 
   const effectiveProjectId = projectId ?? ctx.project?.id ?? null;
   const matches = useConversationsForContacts(participants, effectiveProjectId, open);
-  const conversations = useMemo(
-    () => matches.conversations.slice(0, MAX_CONVERSATIONS),
-    [matches.conversations],
-  );
+  const conversations = useMemo(() => matches.conversations.slice(0, MAX_CONVERSATIONS), [matches.conversations]);
   // Default selection follows the list: the latest existing conversation
   // (sorted updated_date desc by the hook), or "start new" when there are none.
   // Keyed on the latest id (not the array ref) so a background refetch that
@@ -204,16 +195,13 @@ export function ShareToConversationDialog({
 
   const isRemote = hasRemoteParticipant(participants);
   const recipientEmails = useMemo(
-    () =>
-      participants
-        .map((p) => normalizeEmail(p.email) || '')
-        .filter((e) => !!e && e.includes('@')),
+    () => participants.map((p) => normalizeEmail(p.email) || '').filter((e) => !!e && e.includes('@')),
     [participants],
   );
   // The title is always editable. When the user hasn't typed one, fall back to
   // the source default / auto-generated title (shown as the input's placeholder).
   // `requiresTitle` sources have no fallback — the user must type one.
-  const defaultTitle = source.requiresTitle ? '' : source.defaultTitle ?? newConvTitle;
+  const defaultTitle = source.requiresTitle ? '' : (source.defaultTitle ?? newConvTitle);
   const effectiveTitle = (titleInput.trim() || defaultTitle).trim();
   const titleOk = !source.requiresTitle || titleInput.trim().length > 0;
   const canStartNew = participants.length > 0 && (isRemote || !!effectiveProjectId) && titleOk;
@@ -232,16 +220,14 @@ export function ShareToConversationDialog({
   useEffect(() => {
     if (!gitCapable) return;
     const conv = conversationsRef.current.find((c) => c.id === selected);
-    setGitSharing(selected === NEW_CONVERSATION ? false : conv?.git_sharing_enabled ?? false);
+    setGitSharing(selected === NEW_CONVERSATION ? false : (conv?.git_sharing_enabled ?? false));
   }, [selected, gitCapable]);
 
   // Git mode is on-and-eligible; blocked = on but not (yet) shareable. A blocked
   // toggle stops the share entirely — we never silently downgrade to a copy.
   const gitMode = gitCapable && gitSharing && preflight.available;
   const gitBlocked = gitCapable && gitSharing && (preflight.loading || !preflight.available);
-  const canShareSelected =
-    !gitBlocked &&
-    (isNewSelected ? canStartNew : conversations.some((c) => c.id === selected));
+  const canShareSelected = !gitBlocked && (isNewSelected ? canStartNew : conversations.some((c) => c.id === selected));
 
   const doShare = async (existingId: string | null) => {
     if (busy) return;
@@ -249,9 +235,7 @@ export function ShareToConversationDialog({
     // Fail closed: Git is on but the asset isn't (yet) eligible. Never fall back
     // to a silent copy — the sender must turn Git off to share it as a copy.
     if (gitBlocked) {
-      setLocalError(
-        preflight.reason ?? t`This asset can't be shared with Git. Turn Git sharing off to send a copy.`,
-      );
+      setLocalError(preflight.reason ?? t`This asset can't be shared with Git. Turn Git sharing off to send a copy.`);
       return;
     }
     if (isRemote) {
@@ -313,8 +297,7 @@ export function ShareToConversationDialog({
         // (from either side) inherit it. Best-effort — the share already
         // succeeded; a failed preference write must not surface as a share error.
         if (gitCapable) {
-          const conv =
-            conversations.find((c) => c.id === convId) ?? new Conversation({ id: convId });
+          const conv = conversations.find((c) => c.id === convId) ?? new Conversation({ id: convId });
           if ((conv.git_sharing_enabled ?? false) !== gitSharing) {
             try {
               await conv.setGitSharingEnabled(gitSharing);
@@ -334,11 +317,16 @@ export function ShareToConversationDialog({
   const shownError = localError ?? error;
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o && !busy) onClose(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o && !busy) onClose();
+      }}
+    >
       <DialogContent className="sm:max-w-md" data-testid="share-to-conversation-dialog">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Send className="h-5 w-5 text-primary" />
+            <Send className="h-5 w-5 text-primary rtl:-scale-x-100" />
             {heading ?? <Trans>Share</Trans>}
           </DialogTitle>
         </DialogHeader>
@@ -348,7 +336,9 @@ export function ShareToConversationDialog({
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500/15 text-green-600 dark:text-green-400">
               <Check className="h-6 w-6" />
             </div>
-            <p className="font-medium text-foreground"><Trans>Shared</Trans></p>
+            <p className="font-medium text-foreground">
+              <Trans>Shared</Trans>
+            </p>
             <div className="flex gap-2">
               <Button variant="outline" onClick={onClose}>
                 <Trans>Close</Trans>
@@ -417,9 +407,7 @@ export function ShareToConversationDialog({
                   onChange={(e) => setTitleInput(e.target.value)}
                   placeholder={
                     titlePlaceholder ??
-                    (source.requiresTitle
-                      ? t`What do you need help with?`
-                      : defaultTitle || t`Conversation title`)
+                    (source.requiresTitle ? t`What do you need help with?` : defaultTitle || t`Conversation title`)
                   }
                   disabled={busy}
                   data-testid="share-title-input"
@@ -498,7 +486,7 @@ export function ShareToConversationDialog({
                     )}
                   >
                     <GitBranch className="h-3.5 w-3.5 shrink-0" />
-                    <span className="flex-1 text-left">
+                    <span className="flex-1 text-start">
                       <Trans>Share using Git origin</Trans>
                     </span>
                     <span
@@ -520,9 +508,9 @@ export function ShareToConversationDialog({
                     {preflight.loading ? (
                       <Trans>Checking Git eligibility…</Trans>
                     ) : (
-                      preflight.reason ?? (
+                      (preflight.reason ?? (
                         <Trans>This asset can't be shared with Git. Turn Git sharing off to send a copy.</Trans>
-                      )
+                      ))
                     )}
                   </div>
                 )}
@@ -554,13 +542,9 @@ export function ShareToConversationDialog({
                           className={rowClasses(isSelected)}
                           data-testid={`share-conv-row-${conv.id}`}
                         >
-                          <span className="flex-1 truncate text-foreground">
-                            {deriveConversationTitle(conv)}
-                          </span>
+                          <span className="flex-1 truncate text-foreground">{deriveConversationTitle(conv)}</span>
                           <span className="shrink-0 text-[10px] text-muted-foreground">
-                            {formatTimeAgo(
-                              conv.updated_date ? new Date(conv.updated_date).toISOString() : null,
-                            ) ?? ''}
+                            {formatTimeAgo(conv.updated_date ? new Date(conv.updated_date).toISOString() : null) ?? ''}
                           </span>
                         </button>
                       </li>
@@ -590,19 +574,25 @@ export function ShareToConversationDialog({
 
             {shownError && <p className="text-xs text-destructive">{shownError}</p>}
 
-            <div className="flex justify-end gap-2 pt-1">
-              <Button variant="outline" onClick={onClose} disabled={busy}>
-                <Trans>Cancel</Trans>
-              </Button>
-              <Button
-                onClick={() => void doShare(isNewSelected ? null : selected)}
-                disabled={busy || !canShareSelected}
-                data-testid="share-submit"
-                className="gap-1.5"
-              >
-                <Send className="h-4 w-4" />
-                {busy ? t`Sharing…` : submitLabel ?? t`Share`}
-              </Button>
+            <div className="flex items-center gap-2 pt-1">
+              {/* The share path is the slow one: `source.prepare` packs the asset and
+                  the backend may summarize an attached session transcript before the
+                  message is even pushed. Always treat it as attachment-bearing. */}
+              <SendProgressNotice busy={busy} hasAttachments />
+              <div className="ms-auto flex gap-2">
+                <Button variant="outline" onClick={onClose} disabled={busy}>
+                  <Trans>Cancel</Trans>
+                </Button>
+                <Button
+                  onClick={() => void doShare(isNewSelected ? null : selected)}
+                  disabled={busy || !canShareSelected}
+                  data-testid="share-submit"
+                  className="gap-1.5"
+                >
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 rtl:-scale-x-100" />}
+                  {busy ? t`Sharing…` : (submitLabel ?? t`Share`)}
+                </Button>
+              </div>
             </div>
           </div>
         )}

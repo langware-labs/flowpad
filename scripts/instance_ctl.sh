@@ -235,6 +235,13 @@ FLOWPAD_CLOUD_USER_PASSWORD=$password
 MINIHUB_RELOAD=False
 FLOWPAD_SKIP_DOTENV=true
 EOF
+  # The isolated backend intentionally skips the repo dotenv so its injected
+  # ports/identity cannot be clobbered. Carry the explicitly exported E2B
+  # credential through that boundary so provider-backed QA instances retain
+  # the same sandbox capability as the source checkout. Never print it.
+  if [ -n "${E2B_KEY:-}" ]; then
+    printf 'E2B_KEY=%s\n' "$E2B_KEY" >> "$ef"
+  fi
 
   # ---- 3. launch backend (detached) ----
   local be_log="$dir/launcher-backend.log" fe_log="$dir/launcher-frontend.log"
@@ -362,34 +369,24 @@ cmd_kill() {
 # ---------------------------------------------------------------------------
 # status / list
 # ---------------------------------------------------------------------------
-_status_one() {
-  local name="$1" reg; reg="$(registry "$name")"
-  [ -f "$reg" ] || { echo "  $name: (no registry)"; return; }
-  local fe be; fe=$(grep -oE '"frontend_port": *[0-9]+' "$reg" | grep -oE '[0-9]+')
-  be=$(grep -oE '"backend_port": *[0-9]+' "$reg" | grep -oE '[0-9]+')
-  local be_state="down" fe_state="down"
-  port_in_use "$be" && be_state="UP"
-  port_in_use "$fe" && fe_state="UP"
-  printf "  %-10s backend :%s [%s]   frontend :%s [%s]\n" "$name" "$be" "$be_state" "$fe" "$fe_state"
-}
-
-cmd_status() {
-  if [ -n "${1:-}" ]; then _status_one "$1"; return; fi
-  cmd_list
-}
-
-cmd_list() {
-  local root="$FLOW_HOME/instances" found=0
-  log "instances with a launcher registry:"
-  if [ -d "$root" ]; then
-    local d
-    for d in "$root"/*/; do
-      [ -f "$d/launcher.json" ] || continue
-      _status_one "$(basename "$d")"; found=1
-    done
+# status / list are served by `flow instance ctl`, which decides liveness by
+# process OWNERSHIP rather than port occupancy. The bash implementation these
+# replace reported "[UP]" whenever anything listened on a recorded port, so on
+# a machine where four stale registries all claimed :5007 it printed four UPs
+# for one unrelated vite.
+#
+# The text output is NOT a contract. Callers that need a value must use
+# `flow instance ctl status --json`, `... port <name>` or `... is-up <name>`.
+_ctl_py() {
+  if command -v flow >/dev/null 2>&1; then
+    flow instance ctl "$@"
+  else
+    (cd "$REPO_ROOT" && uv run flow instance ctl "$@")
   fi
-  [ "$found" = 0 ] && echo "  (none)"
 }
+
+cmd_status() { _ctl_py status "$@"; }
+cmd_list()   { _ctl_py list "$@"; }
 
 # ---------------------------------------------------------------------------
 main() {

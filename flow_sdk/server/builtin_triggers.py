@@ -29,7 +29,7 @@ _log = logging.getLogger(__name__)
 @trigger_callbacks.register(
     "builtin_toplog_filter_apply",
     meaning="Fired when the per-instance toplog.json changes. Re-derives the "
-            "in-memory topic state from the file and broadcasts the new state to "
+            "in-memory tag state from the file and broadcasts the new state to "
             "all UI clients. This is the single broadcaster for toplog — every "
             "writer (backend, frontend-via-route, worker, human edit) converges "
             "through the file and this callback.",
@@ -66,9 +66,11 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
     upserts the trigger, guaranteeing the callback is in the registry when
     the first fire dispatches.
     """
+    from flow_sdk.ingest import flow_functions as _ingest_flow_fns  # noqa: F401  decorator side-effect
+    from flow_sdk.ingest import poller as _ingest_poller  # noqa: F401  decorator side-effect
     from flow_sdk.server import system_heartbeat as _heartbeat  # noqa: F401  decorator side-effect
-    from flow_sdk.usage_report import callback as _usage_report_cb  # noqa: F401  decorator side-effect
     from flow_sdk.transcript_streamer.triggers import transcript_watcher_trigger_specs
+    from flow_sdk.usage_report import callback as _usage_report_cb  # noqa: F401  decorator side-effect
 
     settings = get_instance_settings()
     specs: list[dict[str, Any]] = [
@@ -76,7 +78,7 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
             uname="builtin_toplog_watcher",
             name="Toplog filter watcher",
             description="Watches the per-instance toplog.json; re-applies the "
-                        "filter to topic loggers and broadcasts to UI.",
+                        "filter to tag loggers and broadcasts to UI.",
             trigger_type=TriggerType.FSOP,
             watch_path=str(settings.toplog_config_path),
             recursive=False,
@@ -88,16 +90,16 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
         dict(
             uname="builtin_daily_usage_analysis",
             name="Last day usage analysis",
-            description="Every day at 7am (local): analyze the previous day's "
-                        "agentic usage and post a usage report to the Home Feed. "
-                        "Manually runnable like any trigger.",
+            description="Every day at 7am (local): fires the daily-analysis "
+                        "flow — analyze (function) → publish — which posts a usage "
+                        "report to the Home Feed. Manually runnable like any trigger.",
             trigger_type=TriggerType.SCHEDULE,
             sched_trigger_type="cron",
             expr="0 7 * * *",
-            actions=[TriggerAction(
-                action_type=ActionType.CALLBACK,
-                callback_name="builtin_daily_usage_report",
-            )],
+            # No direct action: the daily-analysis GraphWorkflow (service_graph_workflows)
+            # routes this trigger's `fired` through analyze → publish —
+            # a direct action here would double-fire the report.
+            actions=[],
         ),
         dict(
             uname="builtin_system_heartbeat",

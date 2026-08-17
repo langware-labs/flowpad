@@ -1,7 +1,7 @@
 import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-action-buttons';
+import { useDiagnosisReport } from '@src/components/diagnose/use-diagnosis-report';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Textarea } from '@src/components/ui/textarea';
-import { forwardDiagnosis, sendDiagnosisEmailReport } from '@sdk';
 import { streamDiagnose, type DiagnoseEvent } from '@src/components/diagnose/diagnose-stream';
 import { animateMinimizeToProcessChip } from '@src/lib/minimize-to-element';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -36,12 +36,12 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
   const [running, setRunning] = useState(false);
   const [lines, setLines] = useState<Line[]>([]);
   const [done, setDone] = useState<DoneState | null>(null);
-  const [reporting, setReporting] = useState(false);
-  const [reportError, setReportError] = useState<string | undefined>(undefined);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const { navigation } = useDockNavigation();
+  const { report, forward, busy: reporting, error: reportError, reset: resetReport } =
+    useDiagnosisReport(done?.diagnosisId ?? null);
 
   // Reset everything whenever the modal is (re)opened.
   useEffect(() => {
@@ -51,10 +51,9 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
       setRunning(false);
       setLines([]);
       setDone(null);
-      setReporting(false);
-      setReportError(undefined);
+      resetReport();
     }
-  }, [open]);
+  }, [open, resetReport]);
 
   // Auto-scroll the activity log to the latest line.
   useEffect(() => {
@@ -121,39 +120,21 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
   // formatted diagnostic report into the chosen conversation (the same send path
   // the Feed card uses), then close. The body comes from the recorded support
   // FlowMessage; the diagnosis summary is only the no-message fallback.
-  // "Report issue" — email the diagnosis to the Flowpad team.
+  // "Report issue" — email the diagnosis to the Flowpad team, then close.
   const handleReportIssue = useCallback(async () => {
-    if (!done?.diagnosisId) return;
-    setReporting(true);
-    setReportError(undefined);
-    try {
-      await sendDiagnosisEmailReport(done.diagnosisId);
-      handleClose();
-    } catch (e) {
-      setReportError(e instanceof Error ? e.message : 'Failed to send report');
-    } finally {
-      setReporting(false);
-    }
-  }, [done, handleClose]);
+    if (await report()) handleClose();
+  }, [report, handleClose]);
 
   // "Forward" — attach the diagnosis entity into the chosen conversation.
   const handleForward = useCallback(
     async (conversationId: string) => {
-      if (!done?.diagnosisId) return;
-      setReporting(true);
-      setReportError(undefined);
-      try {
-        await forwardDiagnosis(conversationId, done.diagnosisId);
+      if (await forward(conversationId)) {
         // Open the conversation we forwarded into, replacing this modal.
         navigation.openDock(DockPointer.forConversation(conversationId));
         handleClose();
-      } catch (e) {
-        setReportError(e instanceof Error ? e.message : 'Failed to send report');
-      } finally {
-        setReporting(false);
       }
     },
-    [done, handleClose, navigation],
+    [forward, handleClose, navigation],
   );
 
   return (

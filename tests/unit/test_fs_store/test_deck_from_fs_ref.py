@@ -15,7 +15,8 @@ import pytest
 from flow_sdk.builtin.deck import Deck
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions._folder_capsule import write_folder_capsule_id
-from flow_sdk.fs_store.indexer.functions.deck import deck_gen_id, extract_deck
+from flow_sdk.fs_store.indexer.functions.deck import extract_deck
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 # do not increase timeout without approval — these are pure-sync parses (<1s).
 pytestmark = pytest.mark.timeout(5)
@@ -55,9 +56,9 @@ def test_indexer_compatible_all_fields(tmp_path: Path) -> None:
         "slides": [{"layout": "cover-centered", "slots": {"title": "Hi"}}],
     })
     ref = FSRef(deck)
-    gen = deck_gen_id(ref)  # production order: gen stamps capsule first
+    gen = SchemaRegistry.get("deck").mint_entity_id(ref, derive=True, overwrite=True)
     loaded = Deck.from_fs_ref(ref)
-    rec = extract_deck(ref)[0]
+    rec = extract_deck(ref, gen)[0]
     m = rec.meta_dict()["metadata"]
 
     assert loaded.id == gen == rec.id

@@ -23,12 +23,18 @@ import { Callable } from './types';
  * opens the port preview.
  */
 export interface ReceiveShowTarget {
-  kind?: 'entity' | 'vfs' | 'webapp';
+  /** Mirrors python `DisplayTargetKind` (flow_sdk/core/display_target.py). */
+  kind?: 'entity' | 'vfs' | 'webapp' | 'app' | 'shell' | 'dock';
   typeid?: string;
   type?: string;
   id?: string;
   path?: string;
   port?: number | string;
+  /** dock: a SCREEN, addressed by view rather than by entity or file. */
+  view_type?: string;
+  pointer?: string | null;
+  options?: Record<string, string> | null;
+  page?: string;
 }
 
 /**
@@ -45,6 +51,32 @@ export interface EntityMember {
   role?: string | null;
   status?: string | null;
   [key: string]: unknown;
+}
+
+/** Why a copy exists on disk, as classified by the backend path rules. */
+export type AssetOccurrenceOrigin = 'installed_package' | 'dependency' | 'local';
+
+/** Which signal separated the primary from the runner-up. Primary row only. */
+export type AssetRankBasis = 'git' | 'created' | 'first_seen' | 'path';
+
+/**
+ * One backend-ranked on-disk occurrence of an asset identity, with the
+ * evidence that ranked it. Evidence is present only on collided assets — a
+ * lone occurrence has nothing to explain — so every field past `first_seen_at`
+ * is optional and the UI must render around its absence.
+ */
+export interface AssetOccurrence {
+  path: string;
+  /** When FlowPad first indexed this path. */
+  first_seen_at: string;
+  /** Git introduction time, when the path is tracked in a repo. */
+  introduced_at?: string;
+  /** Filesystem birth time, when the filesystem reports a trustworthy one. */
+  birth_time?: string;
+  /** Omitted when `local`. */
+  origin?: AssetOccurrenceOrigin;
+  /** Set on the primary occurrence only. */
+  rank_basis?: AssetRankBasis;
 }
 import { defineGlobal } from './utils/globals';
 import { WikiLink } from './types/wiki';
@@ -78,8 +110,7 @@ export function getProxy<T extends Manageable & { [key: string | symbol]: any }>
         // component" warning: a getter-with-side-effects (e.g. `flowDataStream`)
         // mutated `_flowDataStream` during a sibling component's render and
         // synchronously dispatched setState across all subscribers.
-        const isInternal =
-          typeof property === 'string' && property.startsWith('_');
+        const isInternal = typeof property === 'string' && property.startsWith('_');
         if (!isInternal && property !== 'dirty') {
           target.dirty = true;
           dataManager.notifyPropertyChanged(target.typeId, property as string);
@@ -93,6 +124,42 @@ export function getProxy<T extends Manageable & { [key: string | symbol]: any }>
 export const registerEntity = (constructor: new (json?: IEntity) => unknown) => {
   EntityFactory.registerEntity(constructor);
 };
+
+/**
+ * Persisted fields declared by this class itself — the shared columns every
+ * entity carries (Python ``DBBaseRecord`` + ``Entity``). They are db fields no
+ * matter what a per-type schema says, because the type schema only describes
+ * that type's OWN fields. See ``isDbField``.
+ *
+ * Read-only/computed slots (``expand``, ``members``, ``asset_occurrences``,
+ * ``duplicate_count``, ``orphan*``) stay OUT — they're server-owned and must
+ * not be echoed back on save.
+ */
+const BASE_WIRE_FIELDS = new Set<string>([
+  'id',
+  'uname',
+  'name',
+  'title',
+  'key',
+  'namespace',
+  'tags',
+  'labels',
+  'system',
+  'created_by',
+  'created_date',
+  'updated_by',
+  'updated_date',
+  'created_through',
+  'updated_through',
+  'schema_version',
+  'root_vfs_path',
+  'fs_storage_mount_path',
+  'visitor_role',
+  'last_edited_at',
+]);
+
+/** Backend-owned fields that hydrate into the cache but never ride a full save. */
+const SERVER_MANAGED_SAVE_FIELDS = new Set<string>(['last_edited_at']);
 
 export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   static type?: string = defaultEntityType;
@@ -118,6 +185,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   orphan?: boolean;
   /** ISO 8601 timestamp of the last ``orphan = true`` transition; null otherwise. */
   orphan_since?: string | null;
+  /** Backend-owned live paths for this asset identity, including the primary. */
+  asset_occurrences?: AssetOccurrence[];
+  /** Number of non-primary live paths. The frontend displays, but never derives, it. */
+  duplicate_count?: number;
   created_by?: string;
   created_date?: Date;
   updated_by?: string;
@@ -129,6 +200,16 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   root_vfs_path?: string;
   fs_storage_mount_path?: string;
   visitor_role?: string;
+  /** Epoch-ms of the last successful content edit. */
+  last_edited_at?: number | string | null;
+  /**
+   * Hub role roster cache: one row per member with their hub-set role. Membership
+   * is a generic capability of any remote entity; the hub is the source of truth
+   * (RoleRelationship edges) and this is a READ CACHE. ``deepAssign`` populates it
+   * from the wire ``members`` field. The conversation WIRE key is ``participants``
+   * (hub contract) and is adapted to ``members`` in Conversation.onEntityUpdate.
+   */
+  members?: EntityMember[];
   _expand?: EntityExpansion;
   _dirty: boolean = true;
   _typeId: TypeId | null = null;
@@ -191,7 +272,15 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   }
 
   get saved(): boolean {
-    return this.created_by !== undefined;
+    // Hub mirrors intentionally omit ``created_by``: attribution is PRIVATE.
+    // ``created_date`` is HUB_READ and is stamped for every durable row,
+    // including creator-less remote reflections. Recognize either marker so a
+    // received entity updates its existing id via PUT instead of being POSTed
+    // as a new, local-only entity.
+    return (
+      (this.created_by !== undefined && this.created_by !== null) ||
+      (this.created_date !== undefined && this.created_date !== null)
+    );
   }
 
   get isLoaded(): boolean {
@@ -443,17 +532,13 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     // ``private_context_entities`` (Pydantic computed_field).
     const fromWireShared = (this as any).shared_context_entities as Array<unknown> | undefined;
     if (Array.isArray(fromWireShared) && fromWireShared.length > 0) {
-      this._shared_context_entities_ = fromWireShared.map((v) =>
-        v instanceof TypeId ? v : new TypeId(String(v)),
-      );
+      this._shared_context_entities_ = fromWireShared.map((v) => (v instanceof TypeId ? v : new TypeId(String(v))));
     }
     delete (this as any).shared_context_entities;
 
     const fromWirePrivate = (this as any).private_context_entities as Array<unknown> | undefined;
     if (Array.isArray(fromWirePrivate) && fromWirePrivate.length > 0) {
-      this._private_context_entities_ = fromWirePrivate.map((v) =>
-        v instanceof TypeId ? v : new TypeId(String(v)),
-      );
+      this._private_context_entities_ = fromWirePrivate.map((v) => (v instanceof TypeId ? v : new TypeId(String(v))));
     }
     delete (this as any).private_context_entities;
 
@@ -587,6 +672,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     // This includes properties in subclasses
     for (const key in this) {
       if (!key.startsWith('_') && this.hasOwnProperty(key) && baseObject[key] === undefined) {
+        // Edit recency is patched atomically by the generic mark-edit action.
+        // Echoing a cached value in a normal full-entity save could overwrite a
+        // newer stamp that arrived after this entity snapshot was hydrated.
+        if (SERVER_MANAGED_SAVE_FIELDS.has(key)) continue;
         if (this.schema && !this.isDbField(key)) {
           continue; // Skip non-database fields
         }
@@ -679,6 +768,15 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   }
 
   public isDbField(fieldName: string): boolean {
+    // The universal fields this class declares (lifted from Python
+    // ``DBBaseRecord``/``Entity``) belong to EVERY entity's wire contract by
+    // construction — a per-type schema is only authoritative about that type's
+    // own fields. The desk publishes each type's fully-resolved schema, so the
+    // distinction never showed; the hub publishes only the SUBCLASS DELTA
+    // (`project` → artifacts/helpdesk/shared_*_origins), which made `name` look
+    // like a non-db field and silently stripped it from every project POST/PUT
+    // — a project created on the hub came back nameless.
+    if (BASE_WIRE_FIELDS.has(fieldName)) return true;
     if (!this.schema) {
       console.warn('isDbField: Schema not found, cant check blobs', this.type);
       return false;
@@ -759,7 +857,8 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * Push this entity to the hub via the standard graph action
    * ``POST /api/v1/graph/<type>/<id>/share``. The local backend's
    * ``share`` action handler forwards the create to the hub using the
-   * stored cloud credentials. On success, ``remote`` is flipped.
+   * stored cloud credentials. The action returns the backend's canonical
+   * entity; adopt that response rather than guessing which fields changed.
    *
    * When ``recipients`` is provided (list of email strings) and the entity
    * is a Conversation, each recipient is invited via the standard
@@ -768,12 +867,22 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    */
   public async share(recipients?: string[]): Promise<T> {
     const info = new ActionInfo('share', this.typeId.type, this.typeId.id, 'POST');
-    const cleaned = recipients
-      ?.map((r) => normalizeEmail(r))
-      .filter((r): r is string => !!r);
-    info.bodyParameters = { ...this.toJSON(), ...(cleaned?.length ? { recipients: cleaned } : {}) };
-    await dataManager.callAction<unknown, unknown>(info);
-    (this as any).remote = true;
+    const cleaned = recipients?.map((r) => normalizeEmail(r)).filter((r): r is string => !!r);
+    info.bodyParameters = cleaned?.length ? { ...this.toJSON(), recipients: cleaned } : {};
+    const response = await dataManager.callAction<unknown, unknown>(info);
+    if (
+      response &&
+      typeof response === 'object' &&
+      'id' in response &&
+      'type' in response &&
+      String((response as { id: unknown }).id) === this.id &&
+      String((response as { type: unknown }).type) === this.typeId.type
+    ) {
+      return dataManager.updateEntityFromJson<T>(response);
+    }
+    // Some specialized share actions return a receipt rather than an entity.
+    // They update their local cache server-side and broadcast that canonical
+    // state; crucially, do not manufacture ``remote=true`` while waiting for it.
     return this as unknown as T;
   }
 
@@ -821,13 +930,47 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    *
    * ``role`` defaults to ``member``. The reflection layer returns the refreshed
    * roster; seed the cache from it when it comes back as an array.
+   *
+   * ``opts`` are all optional and all omitted from the body when absent — an
+   * always-present ``undefined`` would change the wire shape of every existing
+   * caller:
+   *  - ``callbackOverride``: app-relative path the recipient lands on after
+   *    accepting. Without it the hub falls back to the target's entity URL,
+   *    which for most types the SPA has no route for.
+   *  - ``transfer`` + ``roleToKeep``: hand the entity OVER rather than share it.
+   *    ``roleToKeep: null`` means keep nothing. Owner-only, enforced hub-side by
+   *    ``can_assign``'s TRANSFER branch — never assume it from the UI.
    */
-  public async inviteMember(email: string, role: string = 'member'): Promise<void> {
+  public async inviteMember(
+    email: string,
+    role: string = 'member',
+    opts?: {
+      callbackOverride?: string;
+      transfer?: boolean;
+      roleToKeep?: string | null;
+      /**
+       * Entities to grant ALONGSIDE this one, in the same invitation.
+       *
+       * `invitation_targets` has always been a list the hub grants in full, and
+       * ONE invitation means one email landing on one place — which is why a
+       * thing that is only usable together with something else says so here
+       * rather than being chased with a second invitation.
+       *
+       * Safe to combine with `transfer`: the hub decides the grant kind per
+       * TARGET (the entity invited at `owner` is the one handed over), so a
+       * companion granted at a lower role rides along as an ordinary
+       * membership instead of being refused.
+       */
+      extraTargets?: { typeid: string; role: string }[];
+    },
+  ): Promise<void> {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
     info.hubReflect = true; // membership change is hub-owned — reflect to the hub
     info.bodyParameters = {
       recipient_email: normalizeEmail(email) ?? '',
-      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }],
+      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }, ...(opts?.extraTargets ?? [])],
+      ...(opts?.callbackOverride ? { callback_override: opts.callbackOverride } : {}),
+      ...(opts?.transfer ? { transfer: true, role_to_keep: opts.roleToKeep ?? null } : {}),
     };
     const res = await dataManager.callAction<unknown, EntityMember[]>(info);
     this._membersCache = Array.isArray(res) ? res : undefined;
@@ -930,6 +1073,21 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     await dataManager.callAction<unknown, unknown>(info);
   }
 
+  /**
+   * Record real user editing without issuing a request for every input event.
+   * Calls coalesce by canonical type + entity id and stamp server-side one
+   * minute after the final call. Fire-and-forget by design; a pending mark is
+   * not flushed during a hard page close.
+   */
+  public static markEditById(this: { type: string }, id: string): void {
+    dataManager.markEdit(new TypeId(this.type, id));
+  }
+
+  public markEdit(): void {
+    const entityClass = this.constructor as typeof APIEntity & { type: string };
+    entityClass.markEditById(this.id);
+  }
+
   /** POST /entity-event {event, payload}. Unknown events are a server-side no-op. */
   public async entityEvent(event: string, payload: Record<string, unknown> = {}): Promise<unknown> {
     return APIEntity.entityEvent(this.typeId, event, payload);
@@ -1017,15 +1175,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     if (!this.expand?.auth_scopes) {
       return [];
     }
-    const parsedScopes: TypeId[][] = this.expand.auth_scopes.map((scope) =>
-      scope.map((raw) => new TypeId(raw)),
-    );
+    const parsedScopes: TypeId[][] = this.expand.auth_scopes.map((scope) => scope.map((raw) => new TypeId(raw)));
     let selectedScope = parsedScopes.find((scope) =>
       workspaceTypeId
-        ? scope.some(
-            (typeId) =>
-              typeId.id === workspaceTypeId.id && typeId.type === workspaceTypeId.type,
-          )
+        ? scope.some((typeId) => typeId.id === workspaceTypeId.id && typeId.type === workspaceTypeId.type)
         : false,
     );
     if (!selectedScope && parsedScopes.length > 0) {
@@ -1206,9 +1359,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     if (targets.length === 0) return [...this._shared_context_entities_];
     const info = new ActionInfo('share-context', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters =
-      targets.length === 1
-        ? { typeid: targets[0].toString() }
-        : { typeids: targets.map((t) => t.toString()) };
+      targets.length === 1 ? { typeid: targets[0].toString() } : { typeids: targets.map((t) => t.toString()) };
     const result = await dataManager.callAction<
       { typeid?: string; typeids?: string[] },
       { ok: boolean; id: string; type: string; shared_context_entities: string[] }
@@ -1225,9 +1376,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     if (targets.length === 0) return [...this._shared_context_entities_];
     const info = new ActionInfo('unshare-context', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters =
-      targets.length === 1
-        ? { typeid: targets[0].toString() }
-        : { typeids: targets.map((t) => t.toString()) };
+      targets.length === 1 ? { typeid: targets[0].toString() } : { typeids: targets.map((t) => t.toString()) };
     const result = await dataManager.callAction<
       { typeid?: string; typeids?: string[] },
       { ok: boolean; id: string; type: string; shared_context_entities: string[] }
@@ -1367,9 +1516,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * Returns a Record with recordFolderRef (record folder) and mainRef (primary content).
    * Use ref.child() to navigate further: entity.record().then(r => r.mainRef?.child("subdir"))
    */
-  public async record(): Promise<Record> {
+  public async record(options: { hubReflect?: boolean } = {}): Promise<Record> {
     const actionInfo = new ActionInfo('record', this.typeId.type, this.typeId.id, 'GET');
     actionInfo.subpath = 'refs';
+    actionInfo.hubReflect = options.hubReflect === true;
     const result = await dataManager.callAction<void, RecordRefs>(actionInfo);
     return new Record(result as RecordRefs);
   }

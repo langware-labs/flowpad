@@ -153,6 +153,57 @@ class TestUpdateNullCreatedBy:
         assert reloaded[0].session_id == "soc2-updated"
 
 
+class TestCompareAndSetDataField:
+    @pytest.mark.asyncio
+    async def test_updates_only_the_expected_existing_value(self, driver):
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+
+        process = AgenticProcess(session_id="cas-active")
+        await driver.save(process)
+
+        updated, changed = await driver.compare_and_set_data_field(
+            str(process.id),
+            process.type,
+            "name",
+            None,
+            "First title",
+        )
+        assert changed is True
+        assert updated is not None
+        assert updated.name == "First title"
+
+        _, stale_changed = await driver.compare_and_set_data_field(
+            str(process.id),
+            process.type,
+            "name",
+            None,
+            "Late stale title",
+        )
+        assert stale_changed is False
+        persisted = await driver.get_by_id(str(process.id), process.type)
+        assert persisted is not None
+        assert persisted.name == "First title"
+
+    @pytest.mark.asyncio
+    async def test_never_recreates_a_deleted_row(self, driver):
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+
+        process = AgenticProcess(session_id="cas-deleted")
+        await driver.save(process)
+        await driver.delete(process.typeid)
+
+        updated, changed = await driver.compare_and_set_data_field(
+            str(process.id),
+            process.type,
+            "name",
+            None,
+            "Late title",
+        )
+        assert updated is None
+        assert changed is False
+        assert await driver.get_by_id(str(process.id), process.type) is None
+
+
 class TestGetAllJsonFieldFilter:
     def test_unknown_kwarg_raises(self):
         """QueryFilter(unknown_field=X) must raise, not silently drop the filter."""

@@ -1,4 +1,3 @@
-import { decode, encode } from '@msgpack/msgpack';
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
 import { ApiError, isApiError } from '../ApiResponse';
@@ -8,7 +7,10 @@ import { IEntity } from '../IEntity';
 import { ActionInfo, BootstrapInfo, ScanInfo } from '../models';
 import { TypeId } from '../models/TypeId';
 import { dockOptionsToScopeFilter } from '../utils/scope-filter';
+import { isHubOnly } from '../utils/hub-runtime';
+import { isElectronShell } from '../utils/runtime';
 import { isAbsoluteMachinePath } from '../utils/vfs-path';
+import { parseWikiPointer } from '../utils/wiki-word';
 import { UserRole } from '../services/membershipService';
 import {
   ConnectionManager,
@@ -17,16 +19,15 @@ import {
   OAuthMessage,
   PtyOutputMessage,
   RestApiMessage,
-  TranscriptMessage,
 } from '../websocket';
 import { FlowData, FlowDataSource } from '../flow_processing';
 import { getUtmParams } from './auth';
+import { emitEntityTag } from './entity.onTag';
 import { ExpansionType } from './expand';
 import { EntityFactory } from '../schema/factory';
 import { SubscriptionMap, TypeIdMap, WatchMap, WatchQueryMap } from './map';
 import { ExpansionRequest, QueryRequest } from './query';
 import { ActionType, JSONSchemaParser, TypeInfo } from './schema';
-import { IStream, IStreamConfig, WSStream } from './stream';
 import { ptyOrphanBuffer } from '../services/shell/ptyOrphanBuffer';
 
 export enum EntityStatus {
@@ -47,6 +48,119 @@ export interface EntityExpansion {
 interface PendingPromise<T> {
   resolve: (value: T | null) => void;
   reject: (reason: any) => void;
+}
+
+/** One minute of inactivity before a user edit is stamped on the backend. */
+export const EDIT_MARK_DEBOUNCE_MS = 60_000;
+
+export interface RecentEntityEdit {
+  target: TypeId;
+  markedAt: number;
+}
+
+const RECENT_ENTITY_EDITS_CHANGED = 'recent_entity_edits_changed';
+
+interface PendingEditMark {
+  target: TypeId;
+  revision: number;
+  dueAt: number;
+  timer: ReturnType<typeof setTimeout> | null;
+  inFlight: Promise<void> | null;
+}
+
+/**
+ * One trailing edit marker per logical entity in this DataManager realm.
+ *
+ * APIEntity objects can be re-hydrated or addressed through a uname alias, so
+ * timers cannot live on an individual object. The caller supplies the
+ * canonical type + entity UUID and this coordinator owns the debounce and
+ * request serialization without mutating the cached entity locally.
+ */
+class EntityEditMarker {
+  private pending = new TypeIdMap<PendingEditMark>();
+  private recent = new TypeIdMap<RecentEntityEdit>();
+  private recentSnapshot: readonly RecentEntityEdit[] = [];
+
+  constructor(
+    private readonly send: (target: TypeId) => Promise<unknown>,
+    private readonly onRecentChanged: () => void,
+  ) {}
+
+  getRecentSnapshot(): readonly RecentEntityEdit[] {
+    return this.recentSnapshot;
+  }
+
+  mark(target: TypeId): void {
+    let state = this.pending.get(target);
+    if (!state) {
+      const canonicalTarget = new TypeId(target);
+      state = {
+        target: canonicalTarget,
+        revision: 0,
+        dueAt: 0,
+        timer: null,
+        inFlight: null,
+      };
+      this.pending.set(canonicalTarget, state);
+    }
+
+    state.revision += 1;
+    const markedAt = Date.now();
+    state.dueAt = markedAt + EDIT_MARK_DEBOUNCE_MS;
+    this.recent.set(state.target, { target: state.target, markedAt });
+    this.recentSnapshot = [...this.recent.values()].sort((a, b) => b.markedAt - a.markedAt);
+    this.onRecentChanged();
+    this.arm(state);
+  }
+
+  reset(): void {
+    for (const state of this.pending.values()) {
+      if (state.timer) clearTimeout(state.timer);
+    }
+    this.pending.clear();
+    if (this.recentSnapshot.length > 0) {
+      this.recent.clear();
+      this.recentSnapshot = [];
+      this.onRecentChanged();
+    }
+  }
+
+  private arm(state: PendingEditMark): void {
+    if (state.timer) clearTimeout(state.timer);
+    state.timer = setTimeout(() => {
+      state.timer = null;
+      void this.flush(state);
+    }, Math.max(0, state.dueAt - Date.now()));
+  }
+
+  private async flush(state: PendingEditMark): Promise<void> {
+    if (this.pending.get(state.target) !== state) return;
+
+    // A newer mark may reach its deadline while the prior request is still
+    // running. Its revision remains pending; the prior request's finally block
+    // re-arms it without ever overlapping two writes for this entity.
+    if (state.inFlight) return;
+
+    const sentRevision = state.revision;
+    const request = Promise.resolve()
+      .then(() => this.send(state.target))
+      .then(() => undefined);
+    state.inFlight = request;
+
+    try {
+      await request;
+    } catch (error) {
+      // Edit recency is best-effort. Do not retry a failed generation: a later
+      // real user edit creates a fresh trailing window, avoiding request loops.
+      console.warn(`[EntityEditMarker] Failed to mark ${state.target.toString()} as edited:`, error);
+    } finally {
+      // reset() may have discarded this state while its request was in flight.
+      if (this.pending.get(state.target) !== state) return;
+      state.inFlight = null;
+      if (state.revision > sentRevision) this.arm(state);
+      else this.pending.delete(state.target);
+    }
+  }
 }
 
 class EntityRef<T> {
@@ -100,7 +214,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
    * (icon/browseable_by/creatable/fields) and validation schemas.
    */
   typeInfos: { [type: string]: TypeInfo } = {};
-  streams: WSStream[] = [];
   saveIntervalMs: number = 5000;
   isPopupOpen = false;
   dataOpQueryInvalidation = false;
@@ -109,11 +222,22 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   private watches: WatchMap = new WatchMap();
   private watchedQueries: WatchQueryMap<T> = new WatchQueryMap<T>();
   private streamingRequestsCount: number = 0;
+  private editMarker: EntityEditMarker;
   scanInfo: ScanInfo | null = null;
   recordsRoot: string | null = null;
 
   constructor() {
     super();
+    this.editMarker = new EntityEditMarker(
+      async (target) => {
+        // Local recency only in v1. A later explicit share can carry the stored
+        // field, but this delayed marker does not reflect an action to the Hub.
+        const action = new ActionInfo('mark-edit', target.type, target.id, 'POST');
+        const ref = this.getRef(target);
+        await this.enqueueEntityWrite(ref, () => this.callAction<undefined, unknown>(action));
+      },
+      () => this.emit(RECENT_ENTITY_EDITS_CHANGED),
+    );
     this.attach_connection_manager(ConnectionManager.getInstance());
     // Schedule the repeated function call every 5 seconds
     //setInterval(() => this.onSaveAllDirty(), this.saveIntervalMs);
@@ -123,8 +247,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     manager.on('on_open', this.onConnectionOpen.bind(this));
     manager.on('on_close', this.onConnectionClose.bind(this));
     manager.on('on_data_op', this.onDataOp.bind(this));
-    manager.on('on_stream_msg', this.onStreamMessage.bind(this));
-    manager.on('on_bin_msg', this.onBinMessage.bind(this));
     manager.on('on_control_msg', this.onControlMessage.bind(this));
     manager.on('on_oauth_msg', this.onOAuthMessage.bind(this));
     manager.on('on_pty_output_msg', this.onPtyOutputMessage.bind(this));
@@ -135,8 +257,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     manager.off('on_open', this.onConnectionOpen.bind(this));
     manager.off('on_close', this.onConnectionClose.bind(this));
     manager.off('on_data_op', this.onDataOp.bind(this));
-    manager.off('on_stream_msg', this.onStreamMessage.bind(this));
-    manager.off('on_bin_msg', this.onBinMessage.bind(this));
     manager.off('on_control_msg', this.onControlMessage.bind(this));
     manager.off('on_oauth_msg', this.onOAuthMessage.bind(this));
     manager.off('on_pty_output_msg', this.onPtyOutputMessage.bind(this));
@@ -224,6 +344,12 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   async refreshScanInfo(): Promise<void> {
+    // Hub mode: the hub backend has no local fs-records `/index-status` (404).
+    // Seed an empty (idle, never-indexed) scan info instead of round-tripping.
+    if (isHubOnly()) {
+      this.setScanInfo({ total_indexed: 0, last_indexed_at: null, never_indexed: true, stale: false });
+      return;
+    }
     try {
       const raw = await apiClient.get<any>('/graph/compute_node/@local/fs-records/index-status');
       this.setScanInfo({
@@ -245,6 +371,12 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (session !== undefined) {
       queryParams.session = session;
     }
+
+    // The server decides the runtime kind; this is the one input only the
+    // client can observe (the preload bridge). Sent on every bootstrap rather
+    // than stored server-side, because one local server serves both the
+    // Electron shell and localhost browser tabs and must answer each correctly.
+    queryParams.electron = isElectronShell();
 
     // Add UTM params from current URL
     const utmParams = getUtmParams();
@@ -285,84 +417,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // Do not call connect() here — a second caller races with ConnectionManager
     // and creates duplicate WebSocket instances (same connection_id, two sockets).
   }
-  public async createStream(config: IStreamConfig): Promise<WSStream | null> {
-    const connection_manager = ConnectionManager.getInstance();
-    if (!connection_manager.connected) {
-      console.warn('Connection not established, can not create stream');
-      return null;
-    }
-    const actionInfo = new ActionInfo('ws_stream');
-    actionInfo.method = 'POST';
-    actionInfo.bodyParameters = { stream_info: config };
-    const iStream = await this.callAction<any, IStream>(actionInfo);
-    iStream.config = config;
-    const stream = new WSStream(iStream);
-    if (this.streams[iStream.id]) {
-      console.warn('Stream already exists', iStream.id);
-    }
-    stream.on('ON_SEND', async (data: Blob) => {
-      const socket = connection_manager.getSocket();
-      if (!socket) {
-        console.warn('Socket not found, can not send stream data');
-        return;
-      }
-      const dataBuffer = new Uint8Array(await data.arrayBuffer());
-      const msg = encode([iStream.id, dataBuffer]);
-      socket.send(msg);
-    });
-    stream.on('ON_CLOSE', async () => {
-      await this.closeStream(iStream.id);
-    });
-    this.streams[iStream.id] = stream;
-    return stream;
-  }
-  public async closeStream(stream_id: number) {
-    const actionInfo = new ActionInfo('delete_ws_stream');
-    actionInfo.method = 'DELETE';
-    actionInfo.queryParameters = { stream_id };
-    await this.callAction<any, any>(actionInfo);
-    this.streams.splice(stream_id, 1);
-  }
-
-  private async onBinMessage(data: ArrayBuffer) {
-    if (!data) {
-      console.warn('Stream bin message is empty', data);
-      return;
-    }
-    // const arrayBuffer = new Uint8Array(await data.arrayBuffer());
-    const decoded = decode(data);
-    if (!decoded || !Array.isArray(decoded) || decoded.length < 2) {
-      console.warn('Stream bin message is invalid', decoded);
-      return;
-    }
-    const stream_id = decoded[0];
-    const stream = this.streams[stream_id];
-    if (!stream) {
-      console.warn('Stream not found on binary message', data);
-    }
-    // const byteArray = decoded[1]
-    // let byteString = '';
-    // for (let i = 0; i < byteArray.length; i++) {
-    //   byteString += byteArray[i].toString(16).padStart(2, '0') + ' ';
-    // }
-    await stream.handleBinMessage(decoded[1]);
-  }
-
-  private async onStreamMessage(data: TranscriptMessage) {
-    if (!data) {
-      console.warn('Stream message is empty', data);
-      return;
-    }
-    if (!data.stream_id) {
-      console.warn('Stream ID is empty', data);
-    }
-    const stream = this.streams[data.stream_id];
-    if (!stream) {
-      console.warn('Stream not found', data);
-    }
-    await stream.handleMessage(data);
-  }
-
   private onControlMessage(data: ControlMessage) {
     this.isPopupOpen = data.state;
   }
@@ -394,6 +448,27 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   private onFlowData(typeId: TypeId, flowDataJson: any) {
+    // Parse the envelope before cache resolution. Entity events are also
+    // surfaced at manager level so late-mounting hosts can key directly on the
+    // target TypeId without depending on which entity instance is hydrated.
+    const elementType = flowDataJson.element_type || flowDataJson.elementType || 'notification';
+    const attributes = flowDataJson.attributes || {};
+    if (elementType === 'entity_event') {
+      const event = String(attributes.event ?? '');
+      const payload = (attributes.payload as Record<string, unknown>) ?? {};
+      this.emit('on_entity_event', typeId, event, payload);
+
+      const entity = this.getByTypeIdFromCache<T>(typeId);
+      if (!entity) {
+        console.debug(`[DataManager.onFlowData] Entity not found in cache for typeId: ${typeId.toString()}`);
+        return;
+      }
+      if (typeof (entity as any).onEntityEvent === 'function') {
+        (entity as any).onEntityEvent(event, payload);
+      }
+      return;
+    }
+
     // Get entity from cache
     const entity = this.getByTypeIdFromCache<T>(typeId);
     if (!entity) {
@@ -402,21 +477,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
 
     // Create FlowData from JSON
-    const elementType = flowDataJson.element_type || flowDataJson.elementType || 'notification';
-    const attributes = flowDataJson.attributes || {};
-
-    // Transport-level envelope from Python Entity.emit_entity_event — never
-    // ingested into the flow stream or renderer pipeline. Route straight to
-    // the entity's onEntityEvent hook.
-    if (elementType === 'entity_event') {
-      const event = String(attributes.event ?? '');
-      const payload = (attributes.payload as Record<string, unknown>) ?? {};
-      if (typeof (entity as any).onEntityEvent === 'function') {
-        (entity as any).onEntityEvent(event, payload);
-      }
-      return;
-    }
-
     // Backend sends content as 'flow_value', fallback to 'content' for compatibility
     const content = flowDataJson.flow_value ?? flowDataJson.content ?? '';
 
@@ -443,8 +503,28 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
   }
 
-  private onDataOp(typeIdStr: string, op: DataOpType, data: IEntity) {
+  private onDataOp(typeIdStr: string, op: DataOpType, data: IEntity, fromEntityStr?: string | null) {
     const typeId = new TypeId(typeIdStr);
+
+    // child_* INVERTS the envelope: `typeId` is the PARENT, `data` is the CHILD.
+    // Handle and return before the switch below, which assumes they are the same
+    // entity — falling through would run castAndDeepAssign(child) into the
+    // parent's cache ref and corrupt it.
+    //
+    // A child op means "your subtree changed"; the authoritative membership is
+    // the parent's own projection, so refresh the parent rather than trying to
+    // splice the child in. That refetch is what makes a synced message appear in
+    // an already-open conversation without a manual Refresh.
+    if (op === 'child_created' || op === 'child_updated' || op === 'child_deleted') {
+      emitEntityTag(typeId, op, (data as IEntity) ?? null);
+      if (this.hasRef(typeId)) {
+        void this.fetchByTypeId(typeId).catch(() => {
+          /* best-effort wake-up: the next read repairs a failed refresh */
+        });
+      }
+      return;
+    }
+
     // Skip non-entity data (e.g., flow report elements that have element_type but no id)
     // These are handled by other listeners (e.g., instruction trace handlers)
     // Note: delete operations may have null/empty data, so we only skip for non-delete ops
@@ -457,6 +537,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       console.warn(`Data op messages ignored, Entity constructor not found for type: ${typeId.type}`);
       return;
     }
+    // Bus wake-up BEFORE the branchy cache handling below: several branches
+    // early-return (uncached update, in-flight buffer) and must still emit.
+    emitEntityTag(typeId, op, data ?? null);
     // Handle delete operation by removing from all query results
     if (op === 'delete') {
       this.watchedQueries.removeEntityFromResults(typeId.type, typeId);
@@ -585,9 +668,29 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   public async reset() {
+    this.editMarker.reset();
     await this.clearCache();
     clearStats();
     this.streamingRequestsCount = 0;
+  }
+
+  /** Schedule one server-owned edit stamp after the entity becomes idle. */
+  public markEdit(typeId: TypeId): void {
+    this.editMarker.mark(typeId);
+  }
+
+  /**
+   * User edits observed in this client realm, including marks still waiting for
+   * their trailing server stamp. This is an ephemeral activity projection; it
+   * never mutates the backend-owned ``last_edited_at`` field.
+   */
+  public getRecentEntityEdits(): readonly RecentEntityEdit[] {
+    return this.editMarker.getRecentSnapshot();
+  }
+
+  public onRecentEntityEditsChange(callback: () => void): () => void {
+    this.on(RECENT_ENTITY_EDITS_CHANGED, callback);
+    return () => this.off(RECENT_ENTITY_EDITS_CHANGED, callback);
   }
 
   get apiStats() {
@@ -865,11 +968,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       const base = lastSegment(pointer.split('/vfs/').pop() ?? '');
       if (base) return base;
     }
-    // 3. wiki — the keyword (last path segment).
-    if (dock?.viewType === 'wiki' || pointer.startsWith('wiki/')) {
-      const kw = lastSegment(pointer.replace(/^wiki\//, ''));
-      if (kw) return kw;
-    }
+    // 3. wiki — the word the route actually resolves. NOT the last segment:
+    //    `wiki/@local/Docs/Child` resolves `Docs`, so naming the tab `Child`
+    //    made the tab strip and the address bar disagree about the open page.
+    const wiki = parseWikiPointer(pointer) ?? (dock?.viewType === 'wiki' ? parseWikiPointer(`wiki/${pointer}`) : null);
+    if (wiki?.word) return wiki.word;
     // 4. lens transcript — the ClaudeSession entity (id = sessionId), fetched
     //    into cache by the tab mint via `dock.targetTypeId`.
     if (dock?.viewType === 'lens') {
@@ -1125,13 +1228,24 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     const capturedJson = JSON.parse(JSON.stringify(entityJson ?? entity.toJSON())) as IEntity;
     const capturedScope = [...scope];
 
-    const operation = ref.saveTail.then(() => this.saveSnapshot<U>(ref, selfTypeId, capturedScope, capturedJson));
-    // A failed write rejects its own caller but must not poison the queue.
+    const operation = this.enqueueEntityWrite(ref, () =>
+      this.saveSnapshot<U>(ref, selfTypeId, capturedScope, capturedJson),
+    );
+    return await operation;
+  }
+
+  /**
+   * Serialize every mutation for one cached entity through the same tail.
+   * Each operation still reports its own failure, while the settled void tail
+   * keeps a rejection from poisoning later saves or edit-recency stamps.
+   */
+  private enqueueEntityWrite<R>(ref: EntityRef<T>, write: () => Promise<R>): Promise<R> {
+    const operation = ref.saveTail.then(write);
     ref.saveTail = operation.then(
       () => undefined,
       () => undefined,
     );
-    return await operation;
+    return operation;
   }
 
   private async saveSnapshot<U extends T>(
@@ -1265,21 +1379,24 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
     const endpoint = actionInfo.actionUrl;
 
-    let requestConfig: any = undefined;
+    let requestConfig: any = actionInfo.abortSignal
+      ? { signal: actionInfo.abortSignal }
+      : undefined;
     if (actionInfo.isRawResponse) {
       requestConfig = {
+        ...(requestConfig ?? {}),
         transformResponse: (data: any) => {
           return { data };
         },
-        signal: actionInfo.abortSignal || undefined,
         responseType: actionInfo.responseType || undefined,
       };
     }
 
-    // Per-call hub-reflection opt-in: send the `Hub-Reflect` header so the local
-    // server forwards this call to the hub (default is don't-reflect). Applies to
-    // every verb branch below since they all pass `requestConfig`.
-    if (actionInfo.hubReflect) {
+    // Per-call hub-reflection opt-in: send the `Hub-Reflect` header only to a
+    // desktop/local server, which owns the forwarding bridge. In Hub-only mode
+    // this client already targets Hub directly, so reflecting again is neither
+    // meaningful nor part of the Hub API contract.
+    if (actionInfo.hubReflect && !isHubOnly()) {
       requestConfig = {
         ...(requestConfig ?? {}),
         headers: { ...(requestConfig?.headers ?? {}), 'Hub-Reflect': 'true' },
@@ -1288,7 +1405,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
     // In-flight dedup for GETs: share a pending request with concurrent callers
     // (e.g. StrictMode double-invoke, or multiple components mounting at once).
-    // Safe because GETs are idempotent. Mutations (POST/PUT/DELETE) are never deduped.
+    // Safe because GETs are idempotent. Mutations (POST/PUT/PATCH/DELETE) are never deduped.
     const method = actionInfo.method ?? 'GET';
     const isDedupable = method === 'GET' && !actionInfo.abortSignal;
     if (isDedupable) {
@@ -1312,13 +1429,21 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     switch (method) {
       case 'POST':
       case 'PUT':
+      case 'PATCH':
         if (!actionInfo.queryParameters) {
           throw new Error(`Can not call ${method} action ${actionInfo.name}, Missing request data`);
         }
-        response =
-          method === 'POST'
-            ? ((await apiClient.post<Res>(endpoint, actionInfo.bodyParameters, requestConfig)) as unknown as Res)
-            : ((await apiClient.put<Res>(endpoint, actionInfo.bodyParameters, requestConfig)) as unknown as Res);
+        {
+          // One body-carrying send per verb — keeps adding a verb to the case
+          // labels above the only edit, instead of another ternary level.
+          const send = { POST: apiClient.post, PUT: apiClient.put, PATCH: apiClient.patch }[method];
+          response = (await send.call(
+            apiClient,
+            endpoint,
+            actionInfo.bodyParameters,
+            requestConfig,
+          )) as unknown as Res;
+        }
         break;
       case 'DELETE':
         response = (await apiClient.delete<Res>(endpoint, {
@@ -1354,7 +1479,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       sub_path: actionInfo.subpath,
       query_params: actionInfo.queryParameters as Record<string, unknown> | null,
       body: actionInfo.bodyParameters as Record<string, unknown> | null,
-      hub_reflect: actionInfo.hubReflect,
+      hub_reflect: actionInfo.hubReflect && !isHubOnly(),
     };
 
     const response = await connectionManager.sendRestApiMessage<Res>(message, options);
@@ -1694,6 +1819,21 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (cachedSource) {
       source.expand = this.mergeExpansions(cachedSource.expand, source.expand);
 
+      // Collision occurrences are a complete backend projection. They must
+      // replace the cached array: deepAssign merges arrays by index and would
+      // otherwise retain deleted trailing paths after a 3 -> 2 -> 1 update.
+      let assignSource = source;
+      if (Array.isArray(source.asset_occurrences)) {
+        cachedSource.asset_occurrences = source.asset_occurrences.map(
+          (occurrence: unknown) =>
+            occurrence && typeof occurrence === 'object'
+              ? { ...(occurrence as Record<string, unknown>) }
+              : occurrence,
+        );
+        const { asset_occurrences: _assetOccurrences, ...rest } = source;
+        assignSource = rest;
+      }
+
       const maybeOnEntityUpdate = (cachedSource as any).onEntityUpdate;
       const hasEntityUpdateHook = typeof maybeOnEntityUpdate === 'function';
       if (hasEntityUpdateHook) {
@@ -1706,11 +1846,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
       // When entities provide their own update hook, avoid clobbering normalized
       // state fields with raw snake_case payloads.
-      if (hasEntityUpdateHook && source && typeof source === 'object' && 'state' in source) {
-        const { state: _ignoredState, ...rest } = source;
+      if (hasEntityUpdateHook && assignSource && typeof assignSource === 'object' && 'state' in assignSource) {
+        const { state: _ignoredState, ...rest } = assignSource;
         this.deepAssign(cachedSource, rest);
       } else {
-        this.deepAssign(cachedSource, source);
+        this.deepAssign(cachedSource, assignSource);
       }
       // ``deepAssign`` re-adds the raw ``shared_context_entities`` /
       // ``private_context_entities`` string arrays without the constructor's

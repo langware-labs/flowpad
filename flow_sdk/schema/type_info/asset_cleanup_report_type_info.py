@@ -2,8 +2,8 @@
 import json
 from typing import Optional
 
+from flow_sdk.fs_store.indexer.functions._asset_identity import NATIVE_JSON_IDENTITY, resolved_path_key
 from flow_sdk.fs_store.indexer.functions.asset_cleanup_report import (
-    asset_cleanup_report_gen_id,
     extract_asset_cleanup_report,
 )
 from flow_sdk.schema.type_info import TypeMetadata
@@ -53,14 +53,16 @@ def _asset_cleanup_report_default_body(entity) -> Optional[str]:
 ASSET_CLEANUP_REPORT = TypeMetadata(
     type=EntityType.ASSET_CLEANUP_REPORT,
     from_disk_fn=extract_asset_cleanup_report,
-    gen_uuid_fn=asset_cleanup_report_gen_id,
+    identity_backend=NATIVE_JSON_IDENTITY,
+    id_stable_key_fn=resolved_path_key,
     indexed_by_default=True,
     browseable_by=ViewMode.ADVANCED,
     creatable=False,
     icon="Recycle",
     api_visible=True,
     index_fields=["name"],
-    main_subdir=".claude/cleanup_reports",
+    asset_class="repo",
+    family="asset_cleanup_report",
     main_layout="folder",
     main_file="report.json",
     main_file_is_asset_ref=True,

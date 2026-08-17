@@ -34,9 +34,10 @@ from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
     ClaudeCLIStreamWorker,
 )
+from flow_sdk.builtin.artifact import Artifact
+from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.builtin.project import Project
 from flow_sdk.responses.response import ApiResponse, ApiResponseStatus
-
 from tests.api.conftest import (
     create_agentic_process,
     default_compute_node_id,
@@ -89,6 +90,56 @@ async def test_set_visible_does_not_touch_pty_mode_true(bootstrapped_client, use
 
 
 @pytest.mark.asyncio
+async def test_show_view_resolves_a_screen_and_persists_it(bootstrapped_client, user):
+    """`flow show view` — the SCREEN form, the one that needs no entity.
+
+    The address survives onto `last_shown` as the frontend's own dock fields, so
+    the client builds its DockPointer without re-parsing a URL.
+    """
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    resp = await bootstrapped_client.post(f"{base}/show", json={"view": "assets/list/skill"})
+    assert resp.status_code == 200, resp.text
+    shown = ApiResponse(**resp.json()).data
+    assert shown["kind"] == "dock"
+    assert shown["view_type"] == "assets"
+    assert shown["pointer"] == "list/skill"
+    assert shown["page"] == "desk"
+
+    row = await get_agentic_process(bootstrapped_client, pid)
+    assert row["context_data"]["last_shown"] == shown
+
+
+async def test_show_view_carries_query_options(bootstrapped_client, user):
+    """Options ride the address, so `search?q=…` reaches the screen intact."""
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    resp = await bootstrapped_client.post(f"{base}/show", json={"view": "search?q=dock-address"})
+    assert resp.status_code == 200, resp.text
+    shown = ApiResponse(**resp.json()).data
+    assert shown["view_type"] == "search"
+    assert shown["options"] == {"q": "dock-address"}
+
+
+@pytest.mark.parametrize(
+    "address",
+    ["nonsense", "skills", "helpdesk"],
+    ids=["unknown-view", "not-addressable", "pointer-required"],
+)
+async def test_show_view_rejects_a_bad_address_with_400(bootstrapped_client, user, address):
+    """Validation happens before anything is emitted — nothing lands on the stack."""
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    resp = await bootstrapped_client.post(f"{base}/show", json={"view": address})
+    assert resp.status_code == 400, resp.text
+
+    row = await get_agentic_process(bootstrapped_client, pid)
+    assert "last_shown" not in (row.get("context_data") or {})
+
+
 async def test_show_last_shown_survives_stale_process_save(bootstrapped_client, user):
     """A transcript/status save from an older AP object must not wipe display focus."""
     pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
@@ -178,27 +229,34 @@ async def test_trailing_show_survives_stale_turn_save(bootstrapped_client, user)
     assert row["context_data"]["last_shown"].get("type") == "skill"
 
 
+async def _owner_bookmarks(owner, bookmark_type, *, source: str | None = None) -> list:
+    """The owner's bookmarks of one type, optionally narrowed to one ``source``
+    (``AUTO_SOURCE`` = the machine-built `flow show` tree, never manual stars)."""
+    from flow_sdk.builtin.bookmark import Bookmark  # noqa: PLC0415
+
+    query = {"bookmark_type": bookmark_type.value}
+    if source is not None:
+        query["source"] = source
+    return await Bookmark.get_all(query, source_entity=owner)
+
+
 @pytest.mark.asyncio
 async def test_show_auto_bookmarks_into_nested_type_tree(bootstrapped_client, user):
     """Every `flow show` files its target into `Auto / <type> / item` (nested,
     idempotent). Two types → two subfolders under one Auto root; re-showing the
     same target does not duplicate the leaf."""
-    from flow_sdk.builtin.bookmark import Bookmark, BookmarkType
+    from flow_sdk.builtin.bookmark import BookmarkType
     from flow_sdk.server.routes.bootstrap import get_or_create_local_user
 
     owner = await get_or_create_local_user()
 
     async def _favs():
-        folders = await Bookmark.get_all(
-            {"bookmark_type": BookmarkType.FAVORITE_FOLDER.value}, source_entity=owner
+        return (
+            await _owner_bookmarks(owner, BookmarkType.FAVORITE_FOLDER),
+            await _owner_bookmarks(owner, BookmarkType.FAVORITE),
         )
-        leaves = await Bookmark.get_all(
-            {"bookmark_type": BookmarkType.FAVORITE.value}, source_entity=owner
-        )
-        return folders, leaves
 
     pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
-    base = f"/api/v1/graph/agentic_process/{pid}"
 
     # A resolved skill entity show (payload shape from resolve_display_target).
     ap = await AgenticProcess.get_by_id(pid)
@@ -236,6 +294,68 @@ async def test_show_auto_bookmarks_into_nested_type_tree(bootstrapped_client, us
     folders, leaves = await _favs()
     assert len([f for f in folders if (f.data or {}).get("auto_type") == "skill"]) == 1
     assert len([b for b in leaves if (b.data or {}).get("entity_id") == "s1"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_show_auto_bookmarks_are_project_scoped(bootstrapped_client, user, tmp_path):
+    """A `flow show` files its auto favorite into the SHOWING PROJECT's tree — two
+    projects get their own stamped root and leaf, or one project's slider shows
+    every other project's shows (unscoped rows are global — see bookmark-scope.ts).
+    """
+    from flow_sdk.builtin.bookmark import AUTO_SOURCE, BookmarkType
+    from flow_sdk.server.routes.bootstrap import get_or_create_local_user
+
+    owner = await get_or_create_local_user()
+    payload = {
+        "kind": "entity", "typeid": "markdown-shared", "type": "markdown", "id": "shared",
+        "path": str(tmp_path / "notes.md"),
+    }
+
+    async def _auto(bookmark_type: BookmarkType) -> list:
+        return await _owner_bookmarks(owner, bookmark_type, source=AUTO_SOURCE)
+
+    proj_a = Project(name="fav-scope-a", fs_storage_mount_path=str(tmp_path / "a"))
+    proj_b = Project(name="fav-scope-b", fs_storage_mount_path=str(tmp_path / "b"))
+    await proj_a.save()
+    await proj_b.save()
+
+    pids = {}
+    for project in (proj_a, proj_b):
+        pids[project.id] = await create_agentic_process(
+            bootstrapped_client, visible=False, pty_mode=False, project_id=project.id
+        )
+        await (await AgenticProcess.get_by_id(pids[project.id])).on_show(payload)
+
+    leaves = [b for b in await _auto(BookmarkType.FAVORITE) if (b.data or {}).get("entity_id") == "shared"]
+    assert {b.project_id for b in leaves} == {proj_a.id, proj_b.id}, (
+        f"one leaf per showing project, each stamped: {[(b.project_id, b.title) for b in leaves]}"
+    )
+
+    # One Auto root per project. (Other rows in this shared DB may carry no
+    # project — a project-less show is legitimately unscoped — so assert on this
+    # test's two projects, not on the whole set.)
+    roots = [f for f in await _auto(BookmarkType.FAVORITE_FOLDER) if (f.data or {}).get("auto_root")]
+    for project in (proj_a, proj_b):
+        assert len([f for f in roots if f.project_id == project.id]) == 1, (
+            f"expected exactly one Auto root for {project.name}: "
+            f"{[(f.project_id, f.id) for f in roots]}"
+        )
+
+    # Re-showing from project A is still idempotent WITHIN its own tree — it must
+    # not adopt B's root or mint a second leaf.
+    await (await AgenticProcess.get_by_id(pids[proj_a.id])).on_show(payload)
+    again = [b for b in await _auto(BookmarkType.FAVORITE) if (b.data or {}).get("entity_id") == "shared"]
+    assert len(again) == 2, "re-show must not duplicate within a project"
+
+    # A project-less process keeps the legacy unscoped row (global favorite).
+    pid_none = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    await (await AgenticProcess.get_by_id(pid_none)).on_show(payload)
+    unscoped = [
+        b
+        for b in await _auto(BookmarkType.FAVORITE)
+        if (b.data or {}).get("entity_id") == "shared" and not b.project_id
+    ]
+    assert len(unscoped) == 1, "project-less show mints exactly one unscoped favorite"
 
 
 @pytest.mark.asyncio
@@ -284,11 +404,30 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     assert resp.status_code == 200, resp.text
     data = ApiResponse(**resp.json()).data
     artifact = data["artifact"]
-    assert artifact["artifact_type"] == "WEBAPP"
-    assert artifact["ref_type"] == "FOLDER"
-    assert artifact["path"] == str(app_dir)
-    assert artifact["port"] == "3300"
-    assert data["shown"] == {"kind": "webapp", "port": 3300}
+    deployment = data["deployment"]
+    assert artifact["kind"] == "application.web"
+    assert artifact["origin"] == {
+        "kind": "local",
+        "base": str(tmp_path),
+        "rel_path": "frontend",
+        "project_id": "",
+    }
+    assert deployment["kind"] == "runtime.web"
+    assert deployment["artifact_id"] == artifact["id"]
+    assert deployment["provider_labels"]["flowpad.runtime.port"] == "3300"
+    # The pin is the APP, not the port: a port is one of two ways to reach it
+    # and changes between runs, while the artifact id stays true. Runtime is
+    # derived from the companions — dev here, since there is no build output.
+    assert data["shown"] == {
+        "kind": "app",
+        "artifact_id": artifact["id"],
+        "typeid": f"artifact-{artifact['id']}",
+        "name": "Frontend",
+        "runtime": "dev",
+        "port": 3300,
+    }
+    # No dist/ in this app yet, so it has no delivery companion.
+    assert data["micro_app"] is None
 
     row = await get_agentic_process(bootstrapped_client, pid)
     assert row["context_data"]["last_shown"] == data["shown"]
@@ -296,6 +435,20 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     listed = await bootstrapped_client.post(f"{base}/webapp-artifacts", json={})
     listed_data = ApiResponse(**listed.json()).data
     assert [item["id"] for item in listed_data["artifacts"]] == [artifact["id"]]
+    assert listed_data["artifacts"][0]["deployment"]["id"] == deployment["id"]
+
+    # Kind filters honor exact-or-descendant ontology semantics.
+    artifact_entity = await Artifact.get_by_id(artifact["id"])
+    deployment_entity = await Deployment.get_by_id(deployment["id"])
+    assert artifact_entity is not None and deployment_entity is not None
+    artifact_entity.kind = "application.web.react"
+    deployment_entity.kind = "runtime.web.vite"
+    await artifact_entity.save(notify=False)
+    await deployment_entity.save(notify=False)
+    descendant_list = await bootstrapped_client.post(f"{base}/webapp-artifacts", json={})
+    descendant_data = ApiResponse(**descendant_list.json()).data
+    assert [item["id"] for item in descendant_data["artifacts"]] == [artifact["id"]]
+    assert descendant_data["artifacts"][0]["deployment"]["id"] == deployment["id"]
 
     update = await bootstrapped_client.post(
         f"{base}/register-webapp-artifact",
@@ -307,9 +460,175 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
             "show": False,
         },
     )
-    updated = ApiResponse(**update.json()).data["artifact"]
+    updated_data = ApiResponse(**update.json()).data
+    updated = updated_data["artifact"]
     assert updated["id"] == artifact["id"]
-    assert updated["port"] == "3301"
+    assert updated_data["deployment"]["id"] == deployment["id"]
+    assert updated_data["deployment"]["provider_labels"]["flowpad.runtime.port"] == "3301"
+
+
+@pytest.mark.asyncio
+async def test_register_webapp_artifact_mints_delivery_micro_app(bootstrapped_client, user, tmp_path):
+    """Built output gets a MicroApp — the delivery companion of the same Artifact.
+
+    Artifact (source) → Deployment (runtime) → MicroApp (delivery) is one app in
+    three planes, so the delivery row must hang off the SAME artifact id and be
+    updated, never forked, when the app is re-registered.
+    """
+    from flow_sdk.builtin.faas.micro_app import AppLocationType, MicroApp
+
+    project = Project(name="served-proj", fs_storage_mount_path=str(tmp_path))
+    await project.save()
+    app_dir = tmp_path / "todo"
+    (app_dir / "dist").mkdir(parents=True)
+    (app_dir / "dist" / "index.html").write_text("<html><body>todo</body></html>")
+    pid = await create_agentic_process(
+        bootstrapped_client,
+        visible=False,
+        pty_mode=False,
+        workdir=str(tmp_path),
+        project_id=project.id,
+    )
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    resp = await bootstrapped_client.post(
+        f"{base}/register-webapp-artifact",
+        json={"name": "Todo", "path": str(app_dir), "port": "3400", "show": True},
+    )
+    assert resp.status_code == 200, resp.text
+    data = ApiResponse(**resp.json()).data
+    artifact, micro_app = data["artifact"], data["micro_app"]
+
+    # dist/ was discovered without being named in the request.
+    assert micro_app is not None
+    assert micro_app["artifact_id"] == artifact["id"]
+    assert micro_app["location_type"] == AppLocationType.Artifact.value
+    assert micro_app["location_root"] == str(app_dir / "dist")
+    assert micro_app["project_id"] == project.id
+
+    # Both runtimes exist; a live port wins for display purposes.
+    assert data["shown"]["runtime"] == "dev"
+    assert data["shown"]["micro_app_id"] == micro_app["id"]
+
+    # Re-registering updates the same delivery row rather than forking one.
+    again = await bootstrapped_client.post(
+        f"{base}/register-webapp-artifact",
+        json={"name": "Todo", "path": str(app_dir), "port": "3401", "dist": "dist", "show": False},
+    )
+    again_app = ApiResponse(**again.json()).data["micro_app"]
+    assert again_app["id"] == micro_app["id"]
+
+    rows = await MicroApp.get_all({"artifact_id": artifact["id"]})
+    assert len(rows) == 1
+
+    # An app named the same as another must still save: name is a label, not an
+    # identity, and per-type global uniqueness would 409 the second one.
+    other_dir = tmp_path / "todo-two"
+    (other_dir / "dist").mkdir(parents=True)
+    (other_dir / "dist" / "index.html").write_text("<html><body>two</body></html>")
+    twin = await bootstrapped_client.post(
+        f"{base}/register-webapp-artifact",
+        json={"name": "Todo", "path": str(other_dir), "port": "3402", "show": False},
+    )
+    assert twin.status_code == 200, twin.text
+    twin_app = ApiResponse(**twin.json()).data["micro_app"]
+    assert twin_app is not None and twin_app["id"] != micro_app["id"]
+
+
+@pytest.mark.asyncio
+async def test_registering_without_a_port_yields_a_served_app(bootstrapped_client, user, tmp_path):
+    """An app Flowpad serves itself has no dev server, so it has no Deployment.
+
+    This is the shape that lets a generated app use the SDK: served from our own
+    origin, it is handed the API origin and the session cookies. Minting a
+    Deployment for a port nobody is listening on would make the display derive
+    `dev` and point at nothing.
+    """
+    from flow_sdk.builtin.faas.micro_app import MicroApp
+
+    project = Project(name="served-only-proj", fs_storage_mount_path=str(tmp_path))
+    await project.save()
+    app_dir = tmp_path / "task-manager"
+    app_dir.mkdir()
+    (app_dir / "index.html").write_text("<html><body>tasks</body></html>")
+    pid = await create_agentic_process(
+        bootstrapped_client,
+        visible=False,
+        pty_mode=False,
+        workdir=str(tmp_path),
+        project_id=project.id,
+    )
+
+    resp = await bootstrapped_client.post(
+        f"/api/v1/graph/agentic_process/{pid}/register-webapp-artifact",
+        json={"name": "Task Manager", "path": str(app_dir), "show": True},
+    )
+    assert resp.status_code == 200, resp.text
+    data = ApiResponse(**resp.json()).data
+
+    assert data["artifact"]["kind"] == "application.web"
+    assert data["deployment"] is None
+    assert data["micro_app"]["artifact_id"] == data["artifact"]["id"]
+    assert await Deployment.get_one({"artifact_id": data["artifact"]["id"]}) is None
+
+    # The display resolves to the served runtime, with no port to point at.
+    assert data["shown"]["kind"] == "app"
+    assert data["shown"]["runtime"] == "served"
+    assert "port" not in data["shown"]
+
+    rows = await MicroApp.get_all({"artifact_id": data["artifact"]["id"]})
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_malformed_port_is_still_rejected(bootstrapped_client, user, tmp_path):
+    """Omitting the port is now legal; sending a bad one is still an error —
+    otherwise a typo would silently downgrade an app to served-only."""
+    project = Project(name="bad-port-proj", fs_storage_mount_path=str(tmp_path))
+    await project.save()
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    pid = await create_agentic_process(
+        bootstrapped_client, visible=False, pty_mode=False, workdir=str(tmp_path), project_id=project.id
+    )
+
+    resp = await bootstrapped_client.post(
+        f"/api/v1/graph/agentic_process/{pid}/register-webapp-artifact",
+        json={"name": "App", "path": str(app_dir), "port": "not-a-port", "show": False},
+    )
+    assert resp.status_code == 400
+    assert ApiResponse(**resp.json()).status == ApiResponseStatus.FAIL.value
+
+
+@pytest.mark.asyncio
+async def test_static_app_folder_is_its_own_build_output(bootstrapped_client, user, tmp_path):
+    """A static app has no build step: the registered folder IS the deliverable.
+
+    `flow app open` discovers static apps by finding index.html and registers
+    that directory, so requiring a nested dist/ would deny a delivery companion
+    to exactly the apps that need no work to serve.
+    """
+    project = Project(name="static-proj", fs_storage_mount_path=str(tmp_path))
+    await project.save()
+    app_dir = tmp_path / "static-todo"
+    app_dir.mkdir()
+    (app_dir / "index.html").write_text("<html><body>static todo</body></html>")
+    pid = await create_agentic_process(
+        bootstrapped_client,
+        visible=False,
+        pty_mode=False,
+        workdir=str(tmp_path),
+        project_id=project.id,
+    )
+
+    resp = await bootstrapped_client.post(
+        f"/api/v1/graph/agentic_process/{pid}/register-webapp-artifact",
+        json={"name": "Static Todo", "path": str(app_dir), "port": "8123", "show": False},
+    )
+    assert resp.status_code == 200, resp.text
+    micro_app = ApiResponse(**resp.json()).data["micro_app"]
+    assert micro_app is not None
+    assert micro_app["location_root"] == str(app_dir)
 
 
 @pytest.mark.asyncio
@@ -349,10 +668,10 @@ async def test_register_webapp_artifact_stamps_git_origin(bootstrapped_client, u
     )
     assert resp.status_code == 200, resp.text
     artifact = ApiResponse(**resp.json()).data["artifact"]
-    assert artifact["git_origin"]["provider"] == "file"
-    assert artifact["git_origin"]["branch"] == "feature/webapp"
-    assert artifact["git_origin"]["rel_path"] == "frontend"
-    assert artifact["metadata"]["git_origin"]["rel_path"] == "frontend"
+    assert artifact["origin"]["kind"] == "git"
+    assert artifact["origin"]["provider"] == "file"
+    assert artifact["origin"]["branch"] == "feature/webapp"
+    assert artifact["origin"]["rel_path"] == "frontend"
 
 
 # ---------------------------------------------------------------------------
@@ -475,6 +794,7 @@ async def test_input_stages_onto_queue_headless(bootstrapped_client, user):
     """``input`` on a cold/headless process stages onto the PERSISTED queue."""
     pid = await create_agentic_process(bootstrapped_client, pty_mode=False)
     base = f"/api/v1/graph/agentic_process/{pid}"
+    await bootstrapped_client.post(f"{base}/set-queue-enabled", json={"enabled": False})
 
     resp = await bootstrapped_client.post(f"{base}/input", json={"text": "staged line"})
     assert resp.status_code == 200, resp.text
@@ -484,6 +804,13 @@ async def test_input_stages_onto_queue_headless(bootstrapped_client, user):
 
     # The staged line is durable on the queue (survives a separate request).
     q = await bootstrapped_client.post(f"{base}/enqueue", json={"prompt": "second"})
+    pending_drains = [
+        task
+        for task in asyncio.all_tasks()
+        if task is not asyncio.current_task()
+        and "_maybe_drain_queue" in getattr(task.get_coro(), "__qualname__", "")
+    ]
+    await asyncio.gather(*pending_drains, return_exceptions=True)
     prompts = [e["prompt"] for e in ApiResponse(**q.json()).data["entries"]]
     assert prompts == ["staged line", "second"]
 

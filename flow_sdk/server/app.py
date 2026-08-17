@@ -47,6 +47,7 @@ import flow_sdk.fs_store.indexer.registrations  # noqa: E402, F401
 # Default args (include_schema=True) match bootstrap's call, so it's a cache hit.
 try:
     from flow_sdk.core.schema import build_all_type_payloads as _warm_type_payloads
+
     _warm_type_payloads()
 except Exception:
     logging.getLogger(__name__).exception("Failed to warm type payloads at startup")
@@ -55,8 +56,10 @@ from flow_sdk.server import FlowServer
 
 from .routes import (
     agent_records_router,
+    asset_share_router,
     assets_router,
     auth_router,
+    capabilities_router,
     chat_router,
     cloud_router,
     compute_register_router,
@@ -64,17 +67,24 @@ from .routes import (
     dep_graph_router,
     detection_router,
     directory_router,
+    display_router,
     docs_graph_router,
     favorites_router,
+    git_router,
+    graph_workflows_router,
     hooks_router,
+    ingest_router,
+    journeys_router,
     markdown_index_router,
-    capabilities_router,
     navigate_router,
-    project_router,
     privacy_router,
+    project_router,
     pty_stream_router,
+    runs_router,
     search_router,
     semantic_checker_router,
+    subgraph_router,
+    tags_router,
     testing_router,
     toplog_router,
     transcripts_router,
@@ -83,16 +93,19 @@ from .routes import (
     watch_router,
     webhook_api_router,
     websocket_router,
+    worldview_router,
 )
 
 
 async def _on_server_startup():
     """Write server.json for discovery by hooks/CLI and start cron scheduler."""
+    from flow_sdk.builtin.process_lifecycle import clear_backend_restart_request
     from flow_sdk.config import set_server_info
     from flow_sdk.db.drivers.sqlite.connection import get_database_path
     from flow_sdk.instance_settings import get_instance_settings
 
     settings = get_instance_settings()
+    clear_backend_restart_request()
     print(f"  Database path: {get_database_path()}")
 
     # Development: mirror all logs to a file on disk in addition to the
@@ -133,6 +146,17 @@ async def _on_server_startup():
     except Exception as _e:  # noqa: BLE001
         print(f"  Capability seed: failed ({_e})")
 
+    # Seed the shipped tag vocabulary as system Tag entities (the taxonomy
+    # catalog IS the entities — no separate registry). Idempotent: uuid5 ids
+    # converge on re-runs; user tags are never touched.
+    try:
+        from flow_sdk.builtin.tag import seed_system_tags
+
+        _tag_rows = await seed_system_tags()
+        print(f"  Tag seed: {_tag_rows} row(s) written")
+    except Exception as _e:  # noqa: BLE001
+        print(f"  Tag seed: failed ({_e})")
+
     # Discover capability values in the background (every restart). The env
     # probe runs in a separate subprocess with a hard cap — nothing blocks
     # startup; values land in the discovery dict + entity rows when ready.
@@ -145,9 +169,7 @@ async def _on_server_startup():
         _asyncio_disc.create_task(run_discovery(), name="capability-discovery")
         # Mint MCP-server capabilities (<service>.mcp.<worker_type>) from the
         # indexed records so they exist after boot.
-        _asyncio_disc.create_task(
-            reconcile_mcp_capabilities(), name="mcp-capability-reconcile"
-        )
+        _asyncio_disc.create_task(reconcile_mcp_capabilities(), name="mcp-capability-reconcile")
         print("  Capability discovery: started (background)")
     except Exception as _e:  # noqa: BLE001
         print(f"  Capability discovery: failed to start ({_e})")
@@ -193,6 +215,15 @@ async def _on_server_startup():
         print("  Cron scheduler: started")
     except Exception as e:
         print(f"  Cron scheduler: failed to start ({e})")
+
+    # Arm backend→app tag forwarding (unified event bus — docs/flow-events.md).
+    try:
+        from flow_sdk.tags.ws_forward import start_tag_forwarding
+
+        start_tag_forwarding()
+        print("  Tag forwarding: armed")
+    except Exception as _e:  # noqa: BLE001
+        print(f"  Tag forwarding: failed to arm ({_e})")
 
     # Warm schema cache in background so first bootstrap call is fast
     import asyncio as _asyncio
@@ -249,6 +280,13 @@ async def _seed_service_triggers() -> None:
         from flow_sdk.server.builtin_triggers import set_service_triggers
 
         await set_service_triggers()
+        # Seed the system-scope service flows (mini-analyzer, daily-analysis).
+        try:
+            from flow_sdk.graph_workflow_manager.service_graph_workflows import set_service_graph_workflows
+
+            await set_service_graph_workflows()
+        except Exception:
+            logging.getLogger(__name__).exception("set_service_graph_workflows failed")
         print("  System triggers: upserted")
     except Exception:
         logging.getLogger(__name__).exception("System triggers: failed to seed")
@@ -260,6 +298,20 @@ async def _start_fsop_watcher() -> None:
         from flow_sdk.server.fsop_watcher import fsop_watcher
 
         await fsop_watcher.start()
+        # Arm TAG triggers (unified-bus subscriptions — flow-events phase 4).
+        from flow_sdk.builtin.tag_triggers import start_tag_triggers
+
+        await start_tag_triggers()
+        # Arm graph-level flow subscriptions (flow-events phase 5).
+        from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
+
+        await get_graph_workflow_manager().arm_all_flow_subscriptions()
+        # Arm the inbox projection (ingested cloud records → conversations).
+        # A backend subscriber rather than a GraphWorkflow on purpose: it must
+        # not be possible to break your inbox by editing a graph.
+        from flow_sdk.inbox.projection import start_inbox_projection
+
+        start_inbox_projection()
         print(f"  FSOp watcher: started ({len(fsop_watcher)} trigger(s))")
     except Exception:
         logging.getLogger(__name__).exception("FSOp watcher: failed to start")
@@ -346,13 +398,13 @@ async def _transcript_catch_up_walk() -> None:
                 await transcript_streamer_registry.notify_change(jsonl)
                 scanned += 1
             except Exception:
-                logging.getLogger(__name__).exception(
-                    "Transcript streamer catch-up failed for %s", jsonl
-                )
+                logging.getLogger(__name__).exception("Transcript streamer catch-up failed for %s", jsonl)
         await transcript_streamer_registry.flush_cursors()
         logging.getLogger(__name__).info(
             "Transcript streamer catch-up: parsed %d of %d JSONL(s) (%d fresh, skipped)",
-            scanned, total, total - len(pending),
+            scanned,
+            total,
+            total - len(pending),
         )
     except Exception:
         logging.getLogger(__name__).exception("Transcript streamer catch-up failed")
@@ -365,6 +417,7 @@ async def _start_notification_scanner() -> None:
 
         from flow_sdk.app.actions.notification_scanner import scan_incoming_notifications
         from flow_sdk.builtin.user import User as _User
+
         local_user = await _User.get_one({"uname": "local"})
         if local_user:
             _asyncio.create_task(scan_incoming_notifications(local_user.id))
@@ -375,38 +428,14 @@ async def _start_notification_scanner() -> None:
 async def _start_inbox_catchup() -> None:
     """Pull any FlowMessages that landed on the hub while the app was offline.
 
-    The hub WebSocket only pushes live events; it does not replay history on
-    (re)connect, so a user who closes the app overnight and reopens it would
-    otherwise see an empty inbox until something else (manual refresh, an
-    inbound live message, ...) triggers a fetch. This sweep closes that gap.
+    Startup is only ONE of the two catch-up transitions — logging in is the
+    other, and it runs the same sweep from ``cloud_login._finalize_login``
+    (this one bails on ``hub_auth_available()`` when the app boots logged out).
+    See ``flow_sdk.inbox.catchup`` for why the sweep exists at all.
     """
-    import asyncio as _asyncio
+    from flow_sdk.inbox.catchup import start_hub_catchup
 
-    async def _run() -> None:
-        try:
-            from flow_sdk.app.actions.flow_message_action import handle_conversation_list
-            from flow_sdk.builtin.user import User as _User
-            from flow_sdk.cli.auth.hub_login import hub_auth_available
-
-            # No cloud session → the hub would 401 every conversation/invitation
-            # call. Skip the catch-up entirely instead of logging 401 warnings
-            # on every offline startup.
-            if not hub_auth_available():
-                return
-            local_user = await _User.get_one({"uname": "local"})
-            if not local_user:
-                return
-            resp = await handle_conversation_list(local_user.typeid)
-            data = getattr(resp, "data", None) or {}
-            dispatched = data.get("bg_fetch_dispatched") or []
-            if dispatched:
-                logging.getLogger(__name__).info(
-                    "Inbox catch-up: queued bundle fetch for %d conversation(s)", len(dispatched),
-                )
-        except Exception as exc:  # noqa: BLE001
-            logging.getLogger(__name__).info("Inbox catch-up skipped: %s", exc)
-
-    _asyncio.create_task(_run())
+    start_hub_catchup("startup")
 
 
 async def _start_cloud_ws_listener() -> None:
@@ -431,6 +460,13 @@ async def _start_cloud_ws_listener() -> None:
 async def _shutdown_extras():
     """Clean up server.json and stop cron scheduler."""
     from flow_sdk.config import clear_server_info
+
+    try:
+        from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks
+
+        clear_process_hook_callbacks()
+    except Exception:
+        pass
 
     # Close the process-shared outbound hub HTTP client (kept alive across calls
     # so its TLS context isn't rebuilt per request — see hub_http._hub_client).
@@ -496,6 +532,12 @@ server.add_router(assets_router)
 server.add_router(project_router, prefix="/api/v1")
 server.add_router(compute_register_router)
 server.add_router(debug_router)
+server.add_router(ingest_router)
+server.add_router(runs_router)
+server.add_router(tags_router)
+server.add_router(display_router)
+server.add_router(asset_share_router)
+server.add_router(subgraph_router)
 server.add_router(navigate_router)
 server.add_router(agent_records_router)
 server.add_router(transcripts_router)
@@ -508,6 +550,10 @@ server.add_router(docs_graph_router)
 server.add_router(semantic_checker_router)
 server.add_router(capabilities_router)
 server.add_router(toplog_router)
+server.add_router(graph_workflows_router)
+server.add_router(journeys_router)
+server.add_router(git_router)
+server.add_router(worldview_router)
 
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)
@@ -538,6 +584,27 @@ def _get_assets_path() -> Path | None:
 _assets_path = _get_assets_path()
 if _assets_path and _assets_path.exists():
     app.mount("/assets", StaticFiles(directory=str(_assets_path)), name="assets")
+
+
+# ── Type icons (/icons/<file>) ───────────────────────────────────────────────
+# ``TypeInfo.icon`` may name a lucide glyph OR a file this backend serves; the
+# frontend absolutises the second against THIS origin (ts_sdk ``iconAssetUrl``).
+# Backend origin, not the frontend's, because the file is declared by the type
+# registry — a plugin's bespoke glyph is something only this server knows about
+# and only this server can hand out.
+#
+# Its own directory rather than ``server/static/`` (see that directory's
+# README): a dev backend has no built ``static/`` at all, and packaging wipes it
+# wholesale, so a checked-in icon would not survive either.
+def _get_type_icons_path() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) / "server" / "icons"
+    return Path(__file__).parent / "icons"
+
+
+_type_icons_path = _get_type_icons_path()
+if _type_icons_path.exists():
+    app.mount("/icons", StaticFiles(directory=str(_type_icons_path)), name="type-icons")
 
 
 # ── Root-level public files ──────────────────────────────────────────────────
@@ -677,6 +744,7 @@ def wait_for_login_callback(timeout_sec: int = None):
         timeout_sec = int(timeout_str) if timeout_str else 30
 
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
     port = get_instance_settings().port
 
     # Start server in daemon thread
@@ -699,6 +767,7 @@ def wait_for_login_callback(timeout_sec: int = None):
 if __name__ == "__main__":
     setup_defaults()
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
     port = get_instance_settings().port
     print(f"Starting minihub server on http://127.0.0.1:{port}")
     start_server(port)

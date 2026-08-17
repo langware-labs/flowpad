@@ -150,7 +150,7 @@ export async function createConversationForShare(
       opts?.draftRef?.current ??
       new Conversation({
         title: params.title,
-        participants: params.participants,
+        members: params.participants,
         // Local-only project mapping (the hub body strips project_id) — without
         // it a remote-shared conversation loses its project association and the
         // sender's conversation list can't scope it.
@@ -162,7 +162,7 @@ export async function createConversationForShare(
           : {}),
       } as Partial<Conversation>);
     if (params.title !== undefined) conv.title = params.title;
-    conv.participants = params.participants;
+    conv.members = params.participants;
     if (opts?.draftRef) opts.draftRef.current = conv;
 
     await conv.save();

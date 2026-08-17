@@ -9,13 +9,17 @@ location, history loading, and the prompt-composition compatibility hook.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Sequence
 from uuid import uuid4
 
-from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
+from flow_sdk.builtin.agent_hook import HookEventType
+from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
     load_session_history as _claude_load_session_history,
 )
@@ -24,14 +28,24 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
-    WorkerCLIOptions,
+    AgentOptions,
+    DeviceLoginSpec,
+    ProcessHookRuntime,
+    WorkerAuthResult,
     WorkerSpawnError,
     apply_worker_env,
     apply_worker_secret_env,
     latch_spawn_failure,
     restart_payload_from_cli_options,
+    run_worker_auth_probe,
 )
+from flow_sdk.builtin.agentic_process.process_hooks import (
+    build_process_hook_snapshot,
+    normalize_process_hook_events,
+)
+from flow_sdk.builtin.flowpad_runner_wrapper import get_installed_flow_invocation
 from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
+from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.transcript_analyzer import (
     TranscriptDescriptor,
@@ -46,6 +60,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_PROCESS_HOOK_PLUGIN = Path(".flowpad/plugins/claude/flowpad-process-hooks")
 # Module-level cache of in-flight workers (looked up for cancel-prompt).
 # Shared with the codex driver via ``AgenticProcess._PROMPT_WORKERS`` —
 # the entity owns the dict, drivers just register/deregister.
@@ -55,18 +70,23 @@ class ClaudeDriver:
     """Vendor glue for Claude Code. Implements the ``WorkerDriver`` Protocol."""
 
     name = "claude"
+    supports_process_hooks = True
+    process_hooks_use_assets = True
     preassign_interactive_session_id = True
     pty_submits_on_paste = True
-    # Real Claude Code 2.1.207 PTY captures paint the rotating ``Try \"…\"``
-    # placeholder only after the main composer is live. The welcome banner is
-    # earlier and therefore is not a readiness signal. Accept either the
-    # regular or non-breaking space Claude paints after the prompt glyph.
-    pty_composer_ready_pattern = re.compile(r'❯[ \t\u00a0]+Try "')
+    # Real Claude Code PTY captures expose two grounded blank-composer frames:
+    # a fresh boot paints the rotating ``Try "…"`` placeholder (2.1.207+),
+    # while a resumed session can paint a bare prompt followed immediately by
+    # the composer rule (2.1.220+). The welcome banner and echoed user prompts
+    # match neither form, so they cannot release typed delivery prematurely.
+    # Accept either the regular or non-breaking space Claude paints after the
+    # prompt glyph.
+    pty_composer_ready_pattern = re.compile(r'❯[ \t\u00a0]+(?:Try "|─{3,})')
     pins_resume_cwd = True  # pins CLAUDE_PROJECT_DIR + workdir to the source session's cwd
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
-    def cli_options(self, process: "AgenticProcess") -> ClaudeCliOptions:
+    def cli_options(self, process: "AgenticProcess") -> ClaudeAgentOptions:
         """Build a Claude CLI command for ``process``.
 
         Injects ``--add-dir`` for the Flowpad Assistant project (so SDK-shipped
@@ -80,7 +100,7 @@ class ClaudeDriver:
         ``process.enable_assistant()``) to override per process; ``None`` keeps
         the global default.
         """
-        cmd = ClaudeCliOptions.from_json(process.cli_config)
+        cmd = ClaudeAgentOptions.from_json(process.cli_config)
         cmd.session_id = process.session_id
         cmd.workdir = process.workdir
         if cmd.session_id and self.transcript_path(process) is not None:
@@ -97,9 +117,73 @@ class ClaudeDriver:
     def restart_snapshot(
         self,
         process: "AgenticProcess",
-        options: WorkerCLIOptions,
+        options: AgentOptions,
     ) -> dict:
         return restart_payload_from_cli_options(options)
+
+    def process_hook_snapshot(self, events: Sequence[HookEventType]) -> dict[str, Any]:
+        return build_process_hook_snapshot(events, provider=self.name)
+
+    def prepare_process_hooks(
+        self,
+        assets: AssetDir,
+        process_id: str,
+        events: Sequence[HookEventType],
+    ) -> ProcessHookRuntime:
+        normalized = normalize_process_hook_events(events, provider=self.name)
+        if not normalized:
+            assets.remove(_PROCESS_HOOK_PLUGIN)
+            return ProcessHookRuntime()
+        if not is_valid_entity_id(process_id):
+            raise ValueError(f"Invalid agentic process id: {process_id!r}")
+
+        command, prefix_args = get_installed_flow_invocation()
+        handler = {
+            "args": [*prefix_args, "hooks", "report", "--process-id", process_id],
+            "command": command,
+            "type": "command",
+        }
+        hooks = {
+            "description": "Flowpad process-scoped hooks",
+            "hooks": {event.value: [{"hooks": [handler]}] for event in normalized},
+        }
+        manifest = {
+            "author": {"name": "Flowpad"},
+            "description": "Flowpad process-scoped hooks",
+            "name": "flowpad-process-hooks",
+            "version": "1.0.0",
+        }
+
+        assets.remove(_PROCESS_HOOK_PLUGIN)
+        plugin = assets.subdir(_PROCESS_HOOK_PLUGIN)
+        plugin.load_asset(
+            ".claude-plugin/plugin.json",
+            content=json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        )
+        plugin.load_asset(
+            "hooks/hooks.json",
+            content=json.dumps(hooks, indent=2, sort_keys=True) + "\n",
+        )
+        return ProcessHookRuntime(plugin_dirs=(str(plugin.os_path),))
+
+    def normalize_process_hook_data(
+        self,
+        process_id: str,
+        raw_hook_data: dict[str, Any],
+    ) -> AgentHookData:
+        if not is_valid_entity_id(process_id):
+            raise ValueError(f"Invalid agentic process id: {process_id!r}")
+        raw = dict(raw_hook_data)
+        canonical_fields = (
+            "hook_event_name",
+            "prompt",
+            "session_id",
+            "cwd",
+            "transcript_path",
+        )
+        hook_data = {key: raw[key] for key in canonical_fields if key in raw}
+        hook_data["raw_hook_data"] = raw
+        return AgentHookData(agentic_process_id=process_id, hook_data=hook_data)
 
     # ── Per-turn execution ───────────────────────────────────────────────────
 
@@ -123,7 +207,7 @@ class ClaudeDriver:
             await process.get_project()
         except Exception:
             logger.debug("ClaudeDriver.headless_prompt: get_project failed", exc_info=True)
-        instruction_assets = await process.prepare_system_instruction_assets()
+        process_assets = await process.prepare_process_assets()
         if not process.workdir:
             return ApiFailResponse(message="claude print prompt: workdir is not set")
 
@@ -158,7 +242,7 @@ class ClaudeDriver:
         parent_effort = cli_cfg.get("effort")
         # Mirror PTY path's FLOWPAD_EXECUTION_SCOPE injection
         # (agentic_process.py:786-788) so headless workers can route
-        # CLI calls (e.g. ``flow workflow report``) back to this process.
+        # CLI calls (e.g. ``flow record``) back to this process.
         env_vars = apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process)
         await apply_worker_secret_env(env_vars, process)
 
@@ -172,7 +256,7 @@ class ClaudeDriver:
             session_id=process.session_id if fork_source else (None if is_resume else process.session_id),
             fork_session=bool(fork_source),
             add_dirs=process.resolved_add_dirs,
-            **process._instruction_context_kwargs(instruction_assets),
+            **process._process_asset_context_kwargs(process_assets),
         )
 
         # Lifecycle: flip to RUNNING before launching the worker.
@@ -285,6 +369,21 @@ class ClaudeDriver:
             "session_id": process.session_id,
             "reason": "unsupported_event",
         }
+
+    # ── Auth ─────────────────────────────────────────────────────────────────
+
+    async def auth_probe(self) -> WorkerAuthResult:
+        """`claude auth status` against the discovered CLI (JSON `loggedIn`)."""
+        return await run_worker_auth_probe(self.name)
+
+    # Auth-code + PKCE: the browser shows a code the user pastes BACK into the
+    # CLI (no device-flow user_code in the terminal output).
+    device_login_spec = DeviceLoginSpec(
+        login_argv=("claude", "auth", "login"),
+        url_re=re.compile(r"(https://(?:\S*\.)?(?:claude\.(?:ai|com)|anthropic\.com)/\S*oauth\S+)"),
+        code_re=None,
+        accepts_code_paste=True,
+    )
 
     # ── Transcript discovery ─────────────────────────────────────────────────
 

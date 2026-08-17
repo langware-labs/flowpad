@@ -36,8 +36,8 @@ _COMMITTED_ID = "4a1f6926-a591-55ab-94d7-5abbfdd3d6db"
 
 
 def _seed_clone(root: Path) -> Path:
-    """A checkout root with ``.claude/docs/a.md`` carrying the committed id."""
-    docs = root / "proj" / ".claude" / "docs"
+    """A checkout root with ``docs/a.md`` carrying the committed id."""
+    docs = root / "proj" / "docs"
     docs.mkdir(parents=True)
     md = docs / "a.md"
     md.write_text(f"---\nid: {_COMMITTED_ID}\n---\n\n# a\nbody\n", encoding="utf-8")

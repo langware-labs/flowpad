@@ -20,14 +20,20 @@ interface DiffContentProps {
 
 export const DiffContent: React.FC<DiffContentProps> = ({ diffString, sideBySide = true }) => {
   const { resolvedTheme } = useTheme();
-  const monacoRef = useRef<Monaco | null>(null);
+  // `Monaco` is already `any` in @monaco-editor/react's types, so `| null`
+  // added nothing to the union.
+  const monacoRef = useRef<Monaco>(null);
   const editorInstancesRef = useRef<Map<string, editor.IStandaloneDiffEditor>>(new Map());
 
   useEffect(() => {
     const editorInstances = editorInstancesRef.current;
     return () => {
       editorInstances.forEach((ed) => {
-        try { ed.dispose(); } catch { /* ignore */ }
+        try {
+          ed.dispose();
+        } catch {
+          /* ignore */
+        }
       });
       editorInstances.clear();
     };
@@ -36,8 +42,12 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString, sideBySide
   useEffect(() => {
     if (!themeLoadingPromise) {
       themeLoadingPromise = createHighlighter({ themes: ['dark-plus', 'light-plus'], langs: ['text'] })
-        .then((h) => { shikiHighlighter = h; })
-        .catch(() => { themeLoadingPromise = null; });
+        .then((h) => {
+          shikiHighlighter = h;
+        })
+        .catch(() => {
+          themeLoadingPromise = null;
+        });
     }
   }, []);
 
@@ -103,15 +113,17 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString, sideBySide
       return (
         <div key={editorKey} className="border-t last:border-t-0">
           <div className="bg-muted/50 px-3 py-1 text-xs text-muted-foreground">
-            Hunk {hunkIndex + 1}: Lines {hunk.oldStart}–{hunk.oldStart + hunk.oldLines - 1} →{' '}
-            {hunk.newStart}–{hunk.newStart + hunk.newLines - 1}
+            Hunk {hunkIndex + 1}: Lines {hunk.oldStart}–{hunk.oldStart + hunk.oldLines - 1} → {hunk.newStart}–
+            {hunk.newStart + hunk.newLines - 1}
           </div>
           <DiffEditor
             height={`${height}px`}
             language="text"
             original={original}
             modified={modified}
-            onMount={(ed, monaco) => { void handleEditorDidMount(ed, monaco, editorKey); }}
+            onMount={(ed, monaco) => {
+              void handleEditorDidMount(ed, monaco, editorKey);
+            }}
             theme={resolvedTheme === 'dark' ? 'dark-plus' : 'light-plus'}
             options={{
               renderSideBySide: sideBySide,
@@ -139,26 +151,39 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString, sideBySide
     (fileDiff: DiffFile, fileIndex: number) => {
       const getFilePath = () => {
         switch (fileDiff.type) {
-          case 'add': return `(+) ${fileDiff.newPath}`;
-          case 'delete': return `(-) ${fileDiff.oldPath}`;
-          case 'rename': return `${fileDiff.oldPath} → ${fileDiff.newPath}`;
-          case 'copy': return `${fileDiff.oldPath} → copy → ${fileDiff.newPath}`;
-          default: return fileDiff.newPath;
+          case 'add':
+            return `(+) ${fileDiff.newPath}`;
+          case 'delete':
+            return `(-) ${fileDiff.oldPath}`;
+          case 'rename':
+            return `${fileDiff.oldPath} → ${fileDiff.newPath}`;
+          case 'copy':
+            return `${fileDiff.oldPath} → copy → ${fileDiff.newPath}`;
+          default:
+            return fileDiff.newPath;
         }
       };
       return (
         <div key={fileIndex} className="overflow-hidden rounded-lg border">
           <div className="border-b bg-muted px-4 py-2 text-sm font-medium">{getFilePath()}</div>
           <div className="grid grid-cols-2 border-b bg-muted/40">
-            <div className="flex items-center gap-1.5 border-r px-4 py-1.5">
+            <div className="flex items-center gap-1.5 border-e px-4 py-1.5">
               <GitBranch className="h-3 w-3 text-muted-foreground" />
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide"><Trans>HEAD</Trans></span>
-              <span className="ml-1 text-xs text-muted-foreground/60"><Trans>— before</Trans></span>
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <Trans>HEAD</Trans>
+              </span>
+              <span className="ms-1 text-xs text-muted-foreground/60">
+                <Trans>— before</Trans>
+              </span>
             </div>
             <div className="flex items-center gap-1.5 px-4 py-1.5">
               <HardDrive className="h-3 w-3 text-muted-foreground" />
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide"><Trans>Working Tree</Trans></span>
-              <span className="ml-1 text-xs text-muted-foreground/60"><Trans>— current</Trans></span>
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <Trans>Working Tree</Trans>
+              </span>
+              <span className="ms-1 text-xs text-muted-foreground/60">
+                <Trans>— current</Trans>
+              </span>
             </div>
           </div>
           <div className="space-y-2">
@@ -172,7 +197,11 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString, sideBySide
 
   const parsedDiff: DiffFile[] = useMemo(() => {
     if (!diffString) return [];
-    try { return gitDiffParser.parse(diffString); } catch { return []; }
+    try {
+      return gitDiffParser.parse(diffString);
+    } catch {
+      return [];
+    }
   }, [diffString]);
 
   if (parsedDiff.length === 0) {
@@ -184,8 +213,6 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString, sideBySide
   }
 
   return (
-    <div className="space-y-4 p-4">
-      {parsedDiff.map((fileDiff, fileIndex) => renderFile(fileDiff, fileIndex))}
-    </div>
+    <div className="space-y-4 p-4">{parsedDiff.map((fileDiff, fileIndex) => renderFile(fileDiff, fileIndex))}</div>
   );
 };

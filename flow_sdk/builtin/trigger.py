@@ -8,7 +8,7 @@ from starlette.requests import Request
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.flowpad_types.enums.entity_enums import BuiltInRelationshipTypes, RelationshipDirection
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.messages import HttpMethod
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.hook_models import (
@@ -22,9 +22,10 @@ from flow_sdk.builtin.hook_models import (
     get_action_handler,
 )
 from flow_sdk.core import action as core_action
+from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.db.drivers.query import QueryFilter
-from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.flowpad_types.enums.entity_enums import BuiltInRelationshipTypes, RelationshipDirection
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -37,6 +38,9 @@ class TriggerType(StrEnum):
     HOOK = "hook"
     SCHEDULE = "schedule"
     FSOP = "fsop"
+    # A unified-bus subscription (docs/flow-events.md phase 4): fires on
+    # matching FlowEvents instead of files/cron/hooks.
+    TAG = "tag"
 
 
 def _allowlisted_roots() -> list[Path]:
@@ -111,6 +115,54 @@ def _parse_interval_expr(expr: str) -> int:
     return int(expr)
 
 
+async def activate_flows_for_trigger(trigger_id: str, trigger_name: str,
+                                     envelope=None, trigger: "Trigger" = None) -> None:
+    """Flow activation on any trigger fire — THE shared step for every trigger
+    kind (schedule / fsop / tag): enters a run in each flow whose trigger
+    node references this Trigger entity. ``envelope`` (tag fires only)
+    preserves the triggering FlowEvent's id/actor onto the run entry."""
+    from flow_sdk.builtin.trigger_on_tag import emit_trigger_failed
+
+    try:
+        from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
+
+        await get_graph_workflow_manager().on_trigger_fired(trigger_id, envelope=envelope)
+    except Exception as exc:
+        logger.exception("Trigger %s: flow activation failed", trigger_name)
+        # `trigger.failed` is emitted HERE, not at a call site: this except is
+        # where the failure is actually caught, and it is the one outcome the
+        # events screen exists to show that has no natural home above.
+        emit_trigger_failed(
+            trigger_id, str(trigger.trigger_type) if trigger else "", trigger_name,
+            stage="flow_activation", error=str(exc),
+            project_id=trigger.project_id if trigger else None,
+        )
+
+
+async def dispatch_trigger_actions(trigger: "Trigger", changes: list) -> None:
+    """Action dispatch on any trigger fire — THE shared loop for every trigger
+    kind. Per-action try/except so one bad handler can't skip the rest.
+    ``changes`` is empty for schedule/tag fires; FSOp passes its batch."""
+    from flow_sdk.builtin.trigger_on_tag import emit_trigger_failed
+
+    for action in trigger.actions:
+        try:
+            handler = get_action_handler(action.action_type)
+            if handler is None:
+                logger.warning("Trigger %s: no handler for action_type=%s",
+                               trigger.name, action.action_type)
+                continue
+            await handler.execute(trigger, action=action, changes=changes)
+        except Exception as exc:
+            logger.exception("Trigger %s: action %s raised during dispatch",
+                             trigger.name, action.action_type)
+            emit_trigger_failed(
+                trigger.id or "", str(trigger.trigger_type), trigger.name or trigger.id or "",
+                stage="action", error=str(exc), action_type=str(action.action_type),
+                project_id=trigger.project_id,
+            )
+
+
 async def _fire_schedule_job(trigger_id: str) -> None:
     """Callback executed by APScheduler when a schedule trigger fires.
 
@@ -124,8 +176,8 @@ async def _fire_schedule_job(trigger_id: str) -> None:
     AgenticProcess with the prompt).
     """
     try:
-        from flow_sdk.builtin.hook_models import get_action_handler
-        from flow_sdk.fs_store.operations.trigger_log import append_entry as _append_trigger_log_entry, discover as _discover_trigger_log
+        from flow_sdk.builtin.trigger_on_tag import emit_trigger_fired
+        from flow_sdk.fs_store.operations.trigger_log import append_entry as _append_trigger_log_entry
 
         entity = await Trigger.get_by_id(trigger_id)
         if not (entity and entity.enabled):
@@ -134,25 +186,22 @@ async def _fire_schedule_job(trigger_id: str) -> None:
         entity.last_run = datetime.now(timezone.utc)
         await entity.update()
 
-        # Dispatch actions via the shared registry. ``changes`` is empty for
-        # schedule fires — FSOp fires populate it via _fire(trigger, batch).
-        # RUN_SCRIPT then reports CHANGES_COUNT=0 / FIRST_*="" to the script.
-        for action in entity.actions:
-            try:
-                handler = get_action_handler(action.action_type)
-                if handler is None:
-                    logger.warning(
-                        "Schedule trigger %s: no handler for action_type=%s",
-                        entity.name, action.action_type,
-                    )
-                    continue
-                # Schedule fires carry no file changes; pass an empty list.
-                await handler.execute(entity, action=action, changes=[])
-            except Exception:
-                logger.exception(
-                    "Schedule trigger %s: action %s raised during dispatch",
-                    entity.name, action.action_type,
-                )
+        # Emit BEFORE the work — `fired` means the schedule came due and
+        # dispatch has begun, not that it finished.
+        event_id = emit_trigger_fired(
+            trigger_id, str(entity.trigger_type), entity.name or trigger_id,
+            counter=entity.counter,
+            action_types=[str(a.action_type) for a in entity.actions],
+            detail={"expr": entity.expr,
+                    "sched_trigger_type": entity.sched_trigger_type or "cron"},
+            project_id=entity.project_id,
+        )
+
+        # Shared fire steps (same helpers as fsop/tag): flow activation +
+        # action dispatch. ``changes`` is empty for schedule fires — RUN_SCRIPT
+        # then reports CHANGES_COUNT=0 / FIRST_*="" to the script.
+        await activate_flows_for_trigger(trigger_id, entity.name or trigger_id, trigger=entity)
+        await dispatch_trigger_actions(entity, changes=[])
 
         # Legacy back-compat: schedule triggers with ``instruction`` set spawn
         # an AgenticProcess. Pre-dates the actions list; kept so existing
@@ -181,6 +230,10 @@ async def _fire_schedule_job(trigger_id: str) -> None:
             "reason": f"Scheduled ({entity.sched_trigger_type or 'cron'}): {entity.expr}",
             "is_test": False,
             "rule_name": entity.name,
+            "trigger_id": trigger_id,
+            "trigger_type": str(entity.trigger_type),
+            "event_id": event_id,
+            "actor": "system",
             "actions": [{"action_type": str(a.action_type)} for a in entity.actions],
             "agentic_process_id": process_id,
         })
@@ -213,7 +266,7 @@ class Trigger(Entity):
     counter: int = APIField(default=0, description="Counter incremented when trigger action is executed")
     hook_events: list[str] = APIField(default_factory=list)
     log_mode: str = APIField(default="activations")
-    path: Optional[str] = APIField(None)
+    path: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
 
     # Schedule trigger fields
     expr: Optional[str] = APIField(None, description="Cron/interval/date expression (schedule triggers only)")
@@ -233,6 +286,14 @@ class Trigger(Entity):
     debounce_ms: int = APIField(1600, description="awatch debounce in ms — max wait before yielding a coalesced batch (FSOp only). Raise on noisy paths (npm install bursts).")
     respect_gitignore: bool = APIField(default=False, description="If True, walk for .gitignore files under watch_path and drop matching events (FSOp only).")
     ignore_patterns: list[str] = APIField(default_factory=list, description="Extra gitignore-style ignore patterns (FSOp only). Applied in addition to .gitignore.")
+
+    # TAG trigger fields — a unified-bus subscription (tag_ prefix avoids
+    # colliding with the entity's own scope field).
+    tag_pattern: Optional[str] = APIField(None, description="Bus tag pattern, segment-glob (TAG triggers only), e.g. 'entity.created' or 'graph_workflow.*'. Bare '*' is rejected.")
+    tag_target: Optional[str] = APIField(None, description="Optional target filter in colon form: 'usage_report:*' or an exact 'type:id' (TAG only)")
+    tag_scope: list[str] = APIField(default_factory=list, description="Optional scope filter — colon-form targets the event's ctx.scope must intersect (TAG only)")
+    max_fires_per_minute: int = APIField(default=30, description="Storm guard for TAG triggers: fires beyond this per-minute cap are dropped (one storm_suppressed log entry per window)")
+    confirm: Optional[dict[str, Any]] = APIField(None, description="Optional confirm-against-store gate (TAG only): {type, filter} — the entity query must match or the fire is skipped (event != proof)")
 
     _api_visible: ClassVar[bool] = True
     _unique: ClassVar[list[str]] = []
@@ -263,6 +324,11 @@ class Trigger(Entity):
             coerced = [_coerce(a) for a in actions_in]
             data["actions"] = coerced
             data["action"] = coerced[0]  # back-sync for legacy access
+        elif isinstance(actions_in, list):
+            # `actions` explicitly EMPTY (a cleared trigger, e.g. the daily-usage
+            # cutover to flow routing): it wins — reset the legacy `action` so a
+            # stale stored callback can't resurrect `actions` on the next load.
+            data["action"] = TriggerAction(action_type=ActionType.NOP)
         elif action_in is not None:
             coerced = _coerce(action_in)
             data["action"] = coerced
@@ -280,10 +346,9 @@ class Trigger(Entity):
         Matches the fs-record convention at `flow_sdk/fs_store/record.py:105`.
         """
         # Import lazily so the function works in tests that monkeypatch the root.
-        from flow_sdk.fs_store.record_paths import get_default_records_data_root, record_stem
+        from flow_sdk.fs_store.record_paths import data_dir_for
 
-        root = get_default_records_data_root()
-        path = root / "trigger" / record_stem("trigger", self.id or "unsaved")
+        path = data_dir_for("trigger", self.id or "unsaved")
         path.mkdir(parents=True, exist_ok=True)
         return path
 
@@ -382,6 +447,14 @@ class Trigger(Entity):
         """Invoke this trigger if it matches the hook data."""
         if not self.match(hook_data):
             return None
+        # Flow activation for hook fires.
+        if self.id:
+            try:
+                from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
+
+                await get_graph_workflow_manager().on_trigger_fired(self.id)
+            except Exception:
+                logger.exception("Hook trigger %s: flow activation failed", self.name)
         return await self.execute_action()
 
     async def execute_action(self) -> ExecutedAction:
@@ -452,6 +525,15 @@ class Trigger(Entity):
             "scope": body.get("scope", "user"),
         }
 
+        if trigger_type == "tag":
+            from flow_sdk.builtin.tag_triggers import validate_tag_trigger
+            problem = validate_tag_trigger(body.get("tag_pattern"))
+            if problem:
+                return ApiFailResponse(message=problem)
+            kwargs["tag_pattern"] = body["tag_pattern"]
+            for field in ("tag_target", "tag_scope", "max_fires_per_minute", "confirm"):
+                if field in body:
+                    kwargs[field] = body[field]
         if trigger_type == "schedule":
             kwargs["expr"] = body.get("expr", "* * * * *")
             kwargs["sched_trigger_type"] = body.get("sched_trigger_type", "cron")
@@ -483,6 +565,9 @@ class Trigger(Entity):
             # (without waiting for the next server boot).
             from flow_sdk.server.fsop_watcher import fsop_watcher
             await fsop_watcher.on_trigger_saved(entity)
+        elif trigger_type == "tag":
+            from flow_sdk.builtin.tag_triggers import register_tag_trigger
+            register_tag_trigger(entity)
 
         return ApiSuccessResponse(data=entity)
 
@@ -499,7 +584,9 @@ class Trigger(Entity):
 
         for field in ("name", "description", "enabled", "scope", "expr",
                       "sched_trigger_type", "log_mode", "trigger_type",
-                      "instruction", "workdir", "project_id"):
+                      "instruction", "workdir", "project_id",
+                      "tag_pattern", "tag_target", "tag_scope",
+                      "max_fires_per_minute", "confirm"):
             if field in body:
                 setattr(self, field, body[field])
         if "mask" in body:
@@ -509,6 +596,14 @@ class Trigger(Entity):
             self.action = TriggerAction(**action_data) if isinstance(action_data, dict) else action_data
         if "hook_events" in body:
             self.hook_events = body["hook_events"]
+
+        if self.trigger_type == "tag":
+            # Mirror create: a bad pattern must FAIL the update, not silently
+            # decline to arm on re-register.
+            from flow_sdk.builtin.tag_triggers import validate_tag_trigger
+            problem = validate_tag_trigger(self.tag_pattern)
+            if problem:
+                return ApiFailResponse(message=problem)
 
         await self.update()
 
@@ -520,6 +615,10 @@ class Trigger(Entity):
             # existing task and starts a fresh one.
             from flow_sdk.server.fsop_watcher import fsop_watcher
             await fsop_watcher.on_trigger_saved(self)
+        elif self.trigger_type == "tag":
+            # Re-arm (replace) — pattern/filters/enabled may have changed.
+            from flow_sdk.builtin.tag_triggers import register_tag_trigger
+            register_tag_trigger(self)
 
         return ApiSuccessResponse(data=self)
 
@@ -533,6 +632,9 @@ class Trigger(Entity):
                     scheduler.remove_job(self.id)
             except Exception as e:
                 logger.debug(f"APScheduler remove_job error (may not exist): {e}")
+        elif self.trigger_type == "tag" and self.id:
+            from flow_sdk.builtin.tag_triggers import unregister_tag_trigger
+            unregister_tag_trigger(self.id)
         elif self.trigger_type == "fsop" and self.id:
             try:
                 from flow_sdk.server.fsop_watcher import fsop_watcher
@@ -598,6 +700,29 @@ class Trigger(Entity):
 
         return ApiFailResponse(message=f"{ErrorMessage.METHOD_NOT_ALLOWED} agent_hook")
 
+    @core_action.get(action_name="fires")
+    async def fires_action(cls, request: Request) -> ApiResponse:
+        """
+        GET /api/v1/graph/trigger/fires — recent outcomes across ALL rules,
+        newest first.
+
+        The per-rule ``{id}/log`` action answers "what did THIS rule do"; the
+        events screen asks "what has been happening", which would otherwise cost
+        one request per rule on every poll. ``discover(None)`` already reads
+        across rules — this just exposes it and sorts.
+
+        Rows are the durable half of a fire; the matching ``trigger.*`` envelope
+        is the live half, joined by ``event_id``. They are read separately
+        because ``trigger.*`` is not forwarded to the app (see the pin test in
+        ``tests/unit/test_trigger_tags.py``) and the bus keeps no history.
+        """
+        request_info = get_current_request_info()
+        params = request_info.request_parameters if request_info else {}
+        limit = int(params.get("limit", 200))
+        from flow_sdk.fs_store.operations.trigger_log import discover as _discover_trigger_log
+
+        return ApiSuccessResponse(data=_discover_trigger_log(None, limit=limit))
+
     @core_action.get(action_name="discover")
     async def discover_action(cls, request: Request) -> ApiResponse:
         """
@@ -658,6 +783,7 @@ class Trigger(Entity):
             if not self.watch_path:
                 return ApiFailResponse(message="Trigger has no watch_path configured.")
             from pathlib import Path as _Path
+
             from flow_sdk.builtin.change_event import ChangeEvent
             from flow_sdk.server.fsop_watcher import _fire as _fsop_fire
             test_event = ChangeEvent(path=_Path(self.watch_path), change_type="test")
@@ -669,6 +795,7 @@ class Trigger(Entity):
         if not self.path:
             return ApiFailResponse(message="Trigger has no filesystem path")
         from pathlib import Path
+
         from flow_sdk.rules.activation_rule import ActivationRule
         record_file = Path(self.path) / "record.json"
         if not record_file.exists():
@@ -682,7 +809,7 @@ class Trigger(Entity):
         }
         result = rule.run(mock_data, [])
         try:
-            from flow_sdk.fs_store.operations.trigger_log import append_entry as _append_trigger_log_entry, discover as _discover_trigger_log
+            from flow_sdk.fs_store.operations.trigger_log import append_entry as _append_trigger_log_entry
             _append_trigger_log_entry(rule.name, {
                 "hook_event": "UserPromptSubmit",
                 "trigger": result.trigger,
@@ -732,7 +859,7 @@ class Trigger(Entity):
         params = request_info.request_parameters if request_info else {}
         limit = int(params.get("limit", 500))
         triggered_only = str(params.get("triggered_only", "false")).lower() == "true"
-        from flow_sdk.fs_store.operations.trigger_log import append_entry as _append_trigger_log_entry, discover as _discover_trigger_log
+        from flow_sdk.fs_store.operations.trigger_log import discover as _discover_trigger_log
         entries = _discover_trigger_log(self.name, limit=limit)
         if triggered_only:
             entries = [e for e in entries if e.get("trigger")]
@@ -754,6 +881,7 @@ class Trigger(Entity):
         await self.update()
         if self.path:
             from pathlib import Path
+
             from flow_sdk.rules.activation_rule import ActivationRule
             record_file = Path(self.path) / "record.json"
             if record_file.exists():

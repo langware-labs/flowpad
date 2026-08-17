@@ -10,7 +10,7 @@
  *   no commits yet.
  */
 
-import { AgenticProcess, isWorkerRunning, WorkerStatus } from '@sdk';
+import { AgenticProcess, isWorkerRunning } from '@sdk';
 import type { ComputeNode } from '@sdk';
 import { useContext } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -40,7 +40,7 @@ export function CommitMergeButton({ process, onInjectPrompt }: CommitMergeButton
   // worker status transition out of a running state (WORKING/THINKING/TOOL_*).
   useEffect(() => {
     if (!awaitingCompletion) return;
-    const workerBusy = isWorkerRunning(process.workerStatus ?? WorkerStatus.IDLE);
+    const workerBusy = isWorkerRunning(process.workerStatus);
     if (workerBusy) {
       wasActiveRef.current = true;
     } else if (wasActiveRef.current) {

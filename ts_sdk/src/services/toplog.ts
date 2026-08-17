@@ -1,9 +1,9 @@
 /**
- * Toplog — topic-based runtime logging on the SDK/frontend side.
+ * Toplog — tag-based runtime logging on the SDK/frontend side.
  *
- * Mirror of the backend `flow_sdk/toplog.py`. Sprinkle `toplog.log([topics], …)`
- * calls through frontend code; they stay silent until one of their topics is on.
- * Topics can be flipped at runtime from either side.
+ * Mirror of the backend `flow_sdk/toplog.py`. Sprinkle `toplog.log([tags], …)`
+ * calls through frontend code; they stay silent until one of their tags is on.
+ * Tags can be flipped at runtime from either side.
  *
  * The backend file `toplog.json` is the single source of truth. This manager:
  *   - keeps an in-memory mirror of `{enabled, filter}`,
@@ -12,17 +12,18 @@
  *   - toggles via the `/toplog/*` routes (the frontend can't write the file).
  *
  * `log()` writes to `console` (the frontend has no Python logging). Semantics
- * match the backend: master `enabled` switch + OR over topics.
+ * match the backend: master `enabled` switch + OR over tags.
  */
 
 import { EventEmitter } from 'events';
 import apiClient from '../client';
+import { hubModeReady, isHubOnly } from '../utils/hub-runtime';
 import type { ToplogStateMessage } from '../websocket';
 
-type Topics = string | string[];
+type Tags = string | string[];
 
-function normalize(topics: Topics): string[] {
-  return Array.isArray(topics) ? topics.map(String) : [String(topics)];
+function normalize(tags: Tags): string[] {
+  return Array.isArray(tags) ? tags.map(String) : [String(tags)];
 }
 
 class ToplogManager extends EventEmitter {
@@ -34,8 +35,8 @@ class ToplogManager extends EventEmitter {
     return this._enabled;
   }
 
-  /** Snapshot of the active topics. */
-  activeTopics(): string[] {
+  /** Snapshot of the active tags. */
+  activeTags(): string[] {
     return Array.from(this._active);
   }
 
@@ -56,6 +57,12 @@ class ToplogManager extends EventEmitter {
       this._apply(msg);
     });
 
+    // Wait for the hub-mode signal (this runs at init, possibly before bootstrap
+    // seeds it), then decide. Hub mode: the hub backend has no `/toplog/state`
+    // route (404) — skip the seed and stay off until a WS push arrives (if ever).
+    await hubModeReady();
+    if (isHubOnly()) return;
+
     try {
       const data = await apiClient.get<{ enabled: boolean; filter: Record<string, boolean> }>(
         '/toplog/state',
@@ -66,20 +73,20 @@ class ToplogManager extends EventEmitter {
     }
   }
 
-  /** True iff the master switch is on AND any of `topics` is active (OR). */
-  isOn(topics: Topics): boolean {
+  /** True iff the master switch is on AND any of `tags` is active (OR). */
+  isOn(tags: Tags): boolean {
     if (!this._enabled) return false;
-    return normalize(topics).some((t) => this._active.has(t));
+    return normalize(tags).some((t) => this._active.has(t));
   }
 
   /**
    * Emit `args` to the console iff the master switch is on AND at least one of
-   * `topics` is active. Cheap no-op otherwise (note: JS evaluates `args` before
+   * `tags` is active. Cheap no-op otherwise (note: JS evaluates `args` before
    * the call — wrap expensive payloads in `isOn()` if needed).
    */
-  log(topics: Topics, ...args: unknown[]): void {
+  log(tags: Tags, ...args: unknown[]): void {
     if (!this._enabled) return;
-    const matched = normalize(topics).filter((t) => this._active.has(t));
+    const matched = normalize(tags).filter((t) => this._active.has(t));
     if (matched.length === 0) return;
     // eslint-disable-next-line no-console
     console.log(`[toplog:${matched.join(',')}]`, ...args);
@@ -94,14 +101,14 @@ class ToplogManager extends EventEmitter {
     if (data) this._apply(data);
   }
 
-  /** Turn topics on via the backend route; the returned state mirrors locally. */
-  async on(...topics: string[]): Promise<void> {
-    await this._post('/toplog/on', { topics });
+  /** Turn tags on via the backend route; the returned state mirrors locally. */
+  async on(...tags: string[]): Promise<void> {
+    await this._post('/toplog/on', { tags });
   }
 
-  /** Turn topics off via the backend route. */
-  async off(...topics: string[]): Promise<void> {
-    await this._post('/toplog/off', { topics });
+  /** Turn tags off via the backend route. */
+  async off(...tags: string[]): Promise<void> {
+    await this._post('/toplog/off', { tags });
   }
 
   /** Flip the master switch on via the backend route. */

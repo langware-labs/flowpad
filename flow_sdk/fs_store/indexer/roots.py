@@ -25,7 +25,6 @@ _ENV_VAR_TO_TYPE = (
     "FLOWPAD_PLAN_DIRS",
     "FLOWPAD_SKILL_DIRS",
     "FLOWPAD_AGENT_DIRS",
-    "FLOWPAD_WORKFLOW_DIRS",
 )
 
 
@@ -110,7 +109,13 @@ def resolve_project_id_for_cwd(cwd: str | None) -> str | None:
         return None
 
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import (  # noqa: PLC0415
+        canonical_posix_path,
+        is_valid_project_cwd,
+    )
+
+    if not is_valid_project_cwd(cwd, include_temp=True):
+        return None
 
     # Cache only confirmed real-id hits — a project's id won't change once it
     # exists. The derived-alias fallback is intentionally NOT cached so a
@@ -146,7 +151,10 @@ async def load_project_mounts() -> tuple[tuple[str, str], ...]:
     Returns an empty tuple when there are no projects / any DB error.
     """
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import (  # noqa: PLC0415
+        canonical_posix_path,
+        is_valid_project_mount,
+    )
 
     try:
         projects = await Project.get_all()
@@ -156,6 +164,11 @@ async def load_project_mounts() -> tuple[tuple[str, str], ...]:
     for proj in projects or []:
         mount = proj.fs_storage_mount_path or getattr(proj, "cwd", None)
         if not mount or not proj.id:
+            continue
+        # Ownership gate, NOT the worker-cwd/delete gate: a shipped system
+        # project is undeletable but perfectly ownable, and excluding it here
+        # hands its files to the enclosing checkout instead.
+        if not is_valid_project_mount(mount, include_temp=True):
             continue
         try:
             mounts.append((canonical_posix_path(str(mount)).rstrip("/"), str(proj.id)))

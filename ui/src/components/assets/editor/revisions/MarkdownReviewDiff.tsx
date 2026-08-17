@@ -5,13 +5,7 @@ import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import { Check, X } from 'lucide-react';
 import { markdownComponents } from '@src/components/markdown-view';
-import {
-  annotate,
-  buildReviewParts,
-  countChanges,
-  countPending,
-  type Decision,
-} from '@src/lib/markdown-review-diff';
+import { annotate, buildReviewParts, countChanges, countPending, type Decision } from '@src/lib/markdown-review-diff';
 
 interface MarkdownReviewDiffProps {
   /** Markdown of the past revision. */
@@ -54,10 +48,13 @@ function ReviewMark({
       }
     >
       {children}
-      <span className="ml-0.5 hidden gap-0.5 align-middle no-underline group-hover/mrd:inline-flex">
+      <span className="ms-0.5 hidden gap-0.5 align-middle no-underline group-hover/mrd:inline-flex">
         <button
           type="button"
-          onMouseDown={(e) => { e.preventDefault(); onDecide(id, kind === 'ins' ? 'accepted' : 'rejected'); }}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onDecide(id, kind === 'ins' ? 'accepted' : 'rejected');
+          }}
           title={kind === 'ins' ? 'Keep' : 'Keep text'}
           className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-600 text-white"
         >
@@ -65,7 +62,10 @@ function ReviewMark({
         </button>
         <button
           type="button"
-          onMouseDown={(e) => { e.preventDefault(); onDecide(id, kind === 'ins' ? 'rejected' : 'accepted'); }}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onDecide(id, kind === 'ins' ? 'rejected' : 'accepted');
+          }}
           title={kind === 'ins' ? 'Discard' : 'Confirm deletion'}
           className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-red-600 text-white"
         >
@@ -102,8 +102,16 @@ export function MarkdownReviewDiff({ oldContent, newContent }: MarkdownReviewDif
   const components = useMemo<Components>(
     () => ({
       ...markdownComponents({ codeChrome: false }),
-      ins: ({ className, children }) => <ReviewMark kind="ins" className={className} onDecide={decide}>{children}</ReviewMark>,
-      del: ({ className, children }) => <ReviewMark kind="del" className={className} onDecide={decide}>{children}</ReviewMark>,
+      ins: ({ className, children }) => (
+        <ReviewMark kind="ins" className={className} onDecide={decide}>
+          {children}
+        </ReviewMark>
+      ),
+      del: ({ className, children }) => (
+        <ReviewMark kind="del" className={className} onDecide={decide}>
+          {children}
+        </ReviewMark>
+      ),
     }),
     [decide],
   );
@@ -129,8 +137,12 @@ export function MarkdownReviewDiff({ oldContent, newContent }: MarkdownReviewDif
             Final
           </button>
         </div>
-        <span className="ml-auto text-xs text-muted-foreground">
-          {total === 0 ? 'No differences' : final ? `${total} change${total === 1 ? '' : 's'}` : `${pending} of ${total} unresolved`}
+        <span className="ms-auto text-xs text-muted-foreground">
+          {total === 0
+            ? 'No differences'
+            : final
+              ? `${total} change${total === 1 ? '' : 's'}`
+              : `${pending} of ${total} unresolved`}
         </span>
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5" data-testid="markdown-review-diff">

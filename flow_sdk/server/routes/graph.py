@@ -133,13 +133,18 @@ async def handle_request(
     request: Request, response: Response | None = None, background_tasks: BackgroundTasks | None = None
 ) -> ApiResponse | Response:
     import time as _bench_time
+
     _hr_t0 = _bench_time.perf_counter()
+
     def _hr_bench(label):
         try:
             with open("/tmp/bench_open.log", "a") as _f:
-                _f.write(f"[BENCH handle_request {request.url.path[-30:]}] {label}: {(_bench_time.perf_counter() - _hr_t0) * 1000:.1f}ms\n")
+                _f.write(
+                    f"[BENCH handle_request {request.url.path[-30:]}] {label}: {(_bench_time.perf_counter() - _hr_t0) * 1000:.1f}ms\n"
+                )
         except Exception:
             pass
+
     _hr_bench("entry")
     request_info = get_current_request_info()
     if not request_info:
@@ -171,6 +176,22 @@ async def handle_request(
     if first_param:
         await fill_self_cls_param_if_needed(kwargs, first_param, request_info)
     _hr_bench("after fill_self_cls_param")
+
+    # A published Git-backed asset has no local byte authority. Forward its
+    # ordinary entity-VFS request before parsing/binding the action body so the
+    # exact method, path, query, multipart bytes, and download response remain
+    # intact. A Hub rejection is the response; there is deliberately no local
+    # fallback for this branch.
+    from flow_sdk.server.routes._hub_reflect import (
+        is_git_backed_remote_fs,
+        proxy_git_backed_remote_fs,
+    )
+
+    entity_for_early_fs_proxy = kwargs.get("self")
+    if entity_for_early_fs_proxy is None and request_info.auth_result is not None:
+        entity_for_early_fs_proxy = request_info.auth_result.target
+    if is_git_backed_remote_fs(entity_for_early_fs_proxy, a.action_name):
+        return await proxy_git_backed_remote_fs(request)
 
     request_params = request_info.request_parameters
 
@@ -255,6 +276,7 @@ async def handle_request(
     # the local handler. Falls through to the local handler on HubError
     # (offline / hub unreachable) so degraded mode still works.
     from flow_sdk.server.routes._hub_reflect import (
+        REFLECT_CONTINUE_LOCAL,
         reflect_to_hub,
         should_reflect_to_hub,
     )
@@ -268,15 +290,23 @@ async def handle_request(
     entity_for_reflect = kwargs.get("self")
     if entity_for_reflect is None and request_info.auth_result is not None:
         entity_for_reflect = request_info.auth_result.target
-    if should_reflect_to_hub(entity_for_reflect, request_info.hub_reflect):
+    if should_reflect_to_hub(entity_for_reflect, request_info.hub_reflect, a.action_name):
         try:
             # Carry the REAL request method into reflection — never infer the hub
             # verb from the matched action's static methods (see reflect_to_hub).
             hub_data = await reflect_to_hub(
-                a, entity_for_reflect, {**request_params, **json_data}, request_info.method
+                a,
+                entity_for_reflect,
+                {**request_params, **json_data},
+                request_info.method,
+                request_info.sub_path,
             )
             _hr_bench("after hub reflect")
-            return ApiResponse.success(data=hub_data)
+            # Write-through actions (entity files) mirrored to the hub but still
+            # need their LOCAL write — the local store is the cache. Everything
+            # else replaces the local handler with the hub's answer.
+            if hub_data is not REFLECT_CONTINUE_LOCAL:
+                return ApiResponse.success(data=hub_data)
         except HubError as e:
             # A hub REJECTION (4xx/5xx) of a mutation must reach the client —
             # falling back to the local handler would turn a denial (e.g. the
@@ -363,6 +393,7 @@ def _get_self_heal_indexers() -> dict[str, Any]:
             _index_single_plan,
             _index_single_skill,
         )
+
         out["plan"] = _index_single_plan
         out["markdown"] = _index_single_markdown
         out["skill"] = _index_single_skill
@@ -399,15 +430,14 @@ async def _try_self_heal_missing_entity(
     if indexer is None:
         return None
     from pathlib import Path
+
     p = Path(hint_path)
     if not p.exists():
         return None
     try:
         await indexer(p)
     except Exception as exc:
-        service_log.warn(
-            f"self-heal index failed for {target_typeid} at {hint_path}: {exc}"
-        )
+        service_log.warn(f"self-heal index failed for {target_typeid} at {hint_path}: {exc}")
         return None
     # Reset the per-request cache so the retry actually rehydrates.
     request_info._target_entity = None
@@ -428,9 +458,7 @@ async def fill_self_cls_param_if_needed(args, first_param, request_info):
             target_entity = await request_info.get_target_entity()
             if target_entity is None:
                 # 404 self-heal: ?hint_path=<file> → single-file index + retry.
-                target_entity = await _try_self_heal_missing_entity(
-                    request_info.request, request_info
-                )
+                target_entity = await _try_self_heal_missing_entity(request_info.request, request_info)
             if target_entity is None:
                 raise HTTPException(
                     status_code=404,

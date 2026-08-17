@@ -51,6 +51,11 @@ export interface TabStripItem {
   statusReason?: string;
   /** Rename capability — present iff the tab has a target entity (Part 3 §3). */
   renameable?: boolean;
+  /** What this chip DISPLAYS while standing in for something else — the ancestor
+   *  chip showing the workspace child that fills the panel. `key` and `title`
+   *  keep meaning "the row I am", so select/close/rename stay pointed at this
+   *  tab; only the rendered icon and label defer. */
+  standsFor?: { icon?: React.ReactNode; title: string };
   /** Whether the chip can be closed (default true). A `closable: false` chip
    *  hides its X, is excluded from close-all/close-others/close-right, and shows
    *  no "Close" context item — for pinned fixtures like the vibe "Display" chip. */
@@ -240,9 +245,9 @@ export const TabStrip: React.FC<TabStripProps> = ({
             onSelect={entry.onSelect}
             className={entry.emphasized ? 'bg-accent/50 font-medium text-foreground focus:bg-accent' : undefined}
           >
-            {entry.Icon && <entry.Icon className={`mr-2 h-4 w-4${entry.emphasized ? ' text-primary' : ''}`} />}
+            {entry.Icon && <entry.Icon className={`me-2 h-4 w-4${entry.emphasized ? 'text-primary' : ''}`} />}
             {entry.label}
-            {entry.shortcut && <span className="ml-auto pl-4 text-xs text-muted-foreground">{entry.shortcut}</span>}
+            {entry.shortcut && <span className="ms-auto ps-4 text-xs text-muted-foreground">{entry.shortcut}</span>}
           </ContextMenuItem>
         ))}
         <ContextMenuSeparator />
@@ -384,7 +389,13 @@ export const TabStrip: React.FC<TabStripProps> = ({
           tabRefs.current[key] = node;
         }}
         style={sizing}
-        className={`group relative flex select-none items-center overflow-hidden rounded-t-lg border py-1.5 transition-colors ${
+        // `border-t-2` on EVERY state, colored only when active: the accent has
+        // to follow the `rounded-t-lg` curve, and a border does that natively.
+        // It used to be an absolutely-positioned 2px bar, which `overflow-hidden`
+        // clipped into a straight chord across the corner curve — the ends came
+        // out visibly pointed. Uniform on all states so activation never changes
+        // a chip's metrics.
+        className={`group relative flex select-none items-center overflow-hidden rounded-t-lg border border-t-2 py-1.5 transition-colors ${
           iconOnly ? 'justify-center gap-0 px-1' : 'gap-2 px-3'
         } ${
           isDisabled
@@ -395,7 +406,8 @@ export const TabStrip: React.FC<TabStripProps> = ({
                 ? // Active tab shares the body background and opens its bottom edge
                   // (-mb-px over the baseline) so it reads as one surface with the
                   // content below — a folder-tab continuum lifted off the muted band.
-                  'z-10 -mb-px cursor-pointer border-border border-b-transparent bg-background text-foreground shadow-sm'
+                  // Its top border IS the accent, so it hugs the rounded corners.
+                  'z-10 -mb-px cursor-pointer border-border border-b-transparent border-t-primary bg-background text-foreground shadow-sm'
                 : // Inactive tabs are flat on the band (Chrome-style); the
                   // transparent border keeps their box metrics identical to the
                   // active chip so activation never shifts neighbors.
@@ -412,11 +424,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
         data-active={isActive ? 'true' : undefined}
         {...(item.dataAttributes ?? {})}
       >
-        {/* Active accent — absolutely positioned so it never shifts tab height. */}
-        {isActive && !hasError && (
-          <span className="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-primary" />
-        )}
-        {item.icon}
+        {item.standsFor?.icon ?? item.icon}
         {!iconOnly && item.badge}
         {isEditing ? (
           <input
@@ -447,7 +455,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
                 startRename(key, item.title);
               }}
             >
-              {item.title}
+              {item.standsFor?.title ?? item.title}
             </span>
           )
         )}
@@ -496,7 +504,9 @@ export const TabStrip: React.FC<TabStripProps> = ({
             {renderMenuGroup(item.contextMenuItems?.filter((e) => e.emphasized))}
             {item.renameable && (
               <>
-                <ContextMenuItem onSelect={() => startRename(key, item.title)}><Trans>Rename</Trans></ContextMenuItem>
+                <ContextMenuItem onSelect={() => startRename(key, item.title)}>
+                  <Trans>Rename</Trans>
+                </ContextMenuItem>
                 <ContextMenuSeparator />
               </>
             )}
@@ -506,11 +516,13 @@ export const TabStrip: React.FC<TabStripProps> = ({
               <ContextMenuItem onSelect={() => onClose(key)}>
                 <Trans>Close</Trans>{' '}
                 {closeShortcutLabel && (
-                  <span className="ml-auto pl-4 text-xs text-muted-foreground">{closeShortcutLabel}</span>
+                  <span className="ms-auto ps-4 text-xs text-muted-foreground">{closeShortcutLabel}</span>
                 )}
               </ContextMenuItem>
             )}
-            <ContextMenuItem onSelect={() => closeMany(allVisibleItems.map((i) => i.key))}><Trans>Close All</Trans></ContextMenuItem>
+            <ContextMenuItem onSelect={() => closeMany(allVisibleItems.map((i) => i.key))}>
+              <Trans>Close All</Trans>
+            </ContextMenuItem>
             <ContextMenuItem
               onSelect={() => closeMany(list.filter((i) => i.key !== key).map((i) => i.key))}
               disabled={list.length <= 1}
@@ -542,7 +554,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
       <div
         ref={tabContainerRef}
         data-testid="terminal-tabs-row"
-        className="flex min-w-0 flex-1 items-end overflow-hidden pl-2 pr-1 pt-1"
+        className="flex min-w-0 flex-1 items-end overflow-hidden pe-1 ps-2 pt-1"
       >
         {items.map((item, index) => renderChip(item, index, items))}
       </div>
@@ -571,7 +583,9 @@ export const TabStrip: React.FC<TabStripProps> = ({
                 </span>
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom"><Trans>Close all {allVisibleItems.length} tabs</Trans></TooltipContent>
+            <TooltipContent side="bottom">
+              <Trans>Close all {allVisibleItems.length} tabs</Trans>
+            </TooltipContent>
           </Tooltip>
         </TooltipProvider>
       )}

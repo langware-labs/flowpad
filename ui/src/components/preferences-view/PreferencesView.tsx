@@ -1,9 +1,13 @@
-import { PREF_CATEGORIES, prefsForCategory } from '@sdk';
+import { instancePreferences, PREF_CATEGORIES, PrefKey, visiblePrefsForCategory } from '@sdk';
 import { SettingsCard } from '@src/components/settings/settings-card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
+import { usePreferencesVersion } from '@src/hooks/use-preference';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { humanizeType } from '@src/tabs/provider-meta';
 import { PrefControl } from './PrefControl';
+
+/** Reads live values for the `visibleWhen` filter; no stable identity needed. */
+const readPref = (key: PrefKey) => instancePreferences.get(key);
 
 /**
  * User Preferences screen — registry-driven, one tab per category. URL-first: the
@@ -17,6 +21,13 @@ import { PrefControl } from './PrefControl';
  */
 export function PreferencesView() {
   const { navigation, currentDock } = useDockNavigation();
+
+  // Re-render on any preference change so `visibleWhen` rows appear/disappear the
+  // moment their controller flips. One subscription regardless of row count —
+  // reading each controller with its own hook would make the hook count depend on
+  // the data. `set()` emits synchronously, so this lands in the same tick as the
+  // toggle rather than after the debounced save.
+  usePreferencesVersion();
 
   const categories = PREF_CATEGORIES;
   const pointer = currentDock?.pointer;
@@ -44,7 +55,7 @@ export function PreferencesView() {
           {categories.map((cat) => (
             <TabsContent key={cat} value={cat} className="mt-0 focus-visible:outline-none">
               <SettingsCard>
-                {prefsForCategory(cat).map((info) => (
+                {visiblePrefsForCategory(cat, readPref).map((info) => (
                   <PrefControl key={info.key} info={info} />
                 ))}
               </SettingsCard>

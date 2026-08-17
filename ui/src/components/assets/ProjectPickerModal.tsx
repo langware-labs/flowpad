@@ -49,15 +49,11 @@ interface RowItem {
   modifiedMs: number;
 }
 
-function renderRow(
-  r: RowItem,
-  checked: boolean,
-  toggle: (pid: string) => void,
-): React.ReactElement {
+function renderRow(r: RowItem, checked: boolean, toggle: (pid: string) => void): React.ReactElement {
   return (
     <label
       key={r.pid}
-      className={`flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-accent/50 ${
+      className={`flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-start text-sm transition-colors hover:bg-accent/50 ${
         checked ? 'bg-accent/30' : ''
       }`}
     >
@@ -69,9 +65,7 @@ function renderRow(
       />
       <div className="min-w-0 flex-1">
         <div className="truncate font-medium">{r.label}</div>
-        {r.cwd && (
-          <div className="truncate font-mono text-xs text-muted-foreground">{r.cwd}</div>
-        )}
+        {r.cwd && <div className="truncate font-mono text-xs text-muted-foreground">{r.cwd}</div>}
       </div>
       <div className="flex shrink-0 flex-col items-end gap-0.5">
         {r.raw.session_count > 0 && (
@@ -79,9 +73,7 @@ function renderRow(
             {r.raw.session_count} session{r.raw.session_count !== 1 ? 's' : ''}
           </span>
         )}
-        <span className="text-xs text-muted-foreground/70">
-          {relativeTime(r.raw.modified_at)}
-        </span>
+        <span className="text-xs text-muted-foreground/70">{relativeTime(r.raw.modified_at)}</span>
       </div>
     </label>
   );
@@ -131,9 +123,7 @@ export function ProjectPickerModal({
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return rows;
-    return rows.filter((r) =>
-      r.label.toLowerCase().includes(q) || r.cwd.toLowerCase().includes(q),
-    );
+    return rows.filter((r) => r.label.toLowerCase().includes(q) || r.cwd.toLowerCase().includes(q));
   }, [rows, search]);
 
   // Selected projects (as of when the modal opened) float to the top, followed
@@ -171,7 +161,9 @@ export function ProjectPickerModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle><Trans>Select Projects</Trans></DialogTitle>
+          <DialogTitle>
+            <Trans>Select Projects</Trans>
+          </DialogTitle>
           <DialogDescription>
             {description ?? <Trans>Choose which projects to filter by. Sorted by latest activity.</Trans>}
           </DialogDescription>
@@ -183,7 +175,7 @@ export function ProjectPickerModal({
             placeholder={t`Search projects…`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-8 pl-8 text-sm"
+            className="h-8 ps-8 text-sm"
             autoFocus
           />
         </div>
@@ -216,7 +208,7 @@ export function ProjectPickerModal({
         <div className="max-h-96 overflow-y-auto rounded-lg border border-border bg-card">
           {isLoading ? (
             <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <Loader2 className="me-2 h-4 w-4 animate-spin" />
               <Trans>Loading projects...</Trans>
             </div>
           ) : filtered.length === 0 ? (

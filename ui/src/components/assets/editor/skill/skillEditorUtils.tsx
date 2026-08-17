@@ -1,4 +1,4 @@
-import type { FSItem } from '@sdk';
+import type { FSEntry } from '@sdk';
 import { File, Folder, Sparkles, Zap } from 'lucide-react';
 import type { ReactNode } from 'react';
 
@@ -34,14 +34,14 @@ export function getPathDepthAfterMarker(path: string, marker: string): number {
 /**
  * Check if an item is inside an activation folder (skill_rules)
  */
-export function isInActivationFolder(item: FSItem): boolean {
+export function isInActivationFolder(item: FSEntry): boolean {
   return item.vfs_abs_path.includes('skill_rules');
 }
 
 /**
  * Check if an item is a direct child of skill_rules (an activation rule folder)
  */
-export function isActivationRuleFolder(item: FSItem): boolean {
+export function isActivationRuleFolder(item: FSEntry): boolean {
   if (!item.is_dir) return false;
   const depth = getPathDepthAfterMarker(item.vfs_abs_path, 'skill_rules');
   return depth === 1;
@@ -50,7 +50,7 @@ export function isActivationRuleFolder(item: FSItem): boolean {
 /**
  * Check if an item is a skill folder (direct child of .claude/skills)
  */
-export function isUserOrProjectSkillFolder(item: FSItem): boolean {
+export function isUserOrProjectSkillFolder(item: FSEntry): boolean {
   if (!item.is_dir) return false;
   const depth = getPathDepthAfterMarker(item.vfs_abs_path, '.claude/skills');
   return depth === 1;
@@ -59,7 +59,7 @@ export function isUserOrProjectSkillFolder(item: FSItem): boolean {
 /**
  * Check if an item is a system skill folder (direct child of .flow/system_skills)
  */
-export function isSystemSkillFolder(item: FSItem): boolean {
+export function isSystemSkillFolder(item: FSEntry): boolean {
   if (!item.is_dir) return false;
   const depth = getPathDepthAfterMarker(item.vfs_abs_path, '.flow/system_skills');
   return depth === 1;
@@ -68,21 +68,21 @@ export function isSystemSkillFolder(item: FSItem): boolean {
 /**
  * Check if an item is any type of skill folder
  */
-export function isSkillFolder(item: FSItem): boolean {
+export function isSkillFolder(item: FSEntry): boolean {
   return isUserOrProjectSkillFolder(item) || isSystemSkillFolder(item);
 }
 
 /**
  * Check if an item is a root activation folder (User Activations or Project Activations)
  */
-export function isActivationRootFolder(item: FSItem): boolean {
+export function isActivationRootFolder(item: FSEntry): boolean {
   return item.display_name === 'User Activations' || item.display_name === 'Project Activations';
 }
 
 /**
  * Render the appropriate icon for a skills/activations tree item
  */
-export function renderSkillsItemIcon(item: FSItem): ReactNode {
+export function renderSkillsItemIcon(item: FSEntry): ReactNode {
   if (item.is_dir) {
     // Activation rule folder (direct child of skill_rules) - lightning icon
     if (isActivationRuleFolder(item)) {

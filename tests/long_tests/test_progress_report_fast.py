@@ -16,12 +16,11 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
+from starlette.testclient import TestClient
 
 from flow_sdk.fs_store import get_default_records_root, set_default_records_root
 from flow_sdk.server.app import app
-from starlette.testclient import TestClient
 from tests.test_settings import test_service_config
-
 
 pytestmark = [
     pytest.mark.skipif(
@@ -33,12 +32,69 @@ pytestmark = [
 
 
 @pytest.fixture(autouse=True)
-def isolate_records_root(tmp_path):
-    """Redirect all record I/O to a temp directory for test isolation."""
+def no_startup_system_index(monkeypatch):
+    """Keep the startup system-content index off this test's wire.
+
+    ``app._on_server_startup`` spawns ``bootstrap.index_system_content`` as a
+    detached task, which runs ``ComputeNode._index_system_assets`` — a real
+    index that broadcasts ``progress_report`` events to the same entity, under
+    the same ``job_name``s ("index", plus "scan" for its forwarded discovery
+    snapshots). The wire carries no run id, so a listener cannot tell that
+    job's snapshots from the one the test triggered: the test would read a
+    foreign job's mid-run snapshot as its own terminal event. Suppressing the
+    startup task makes this test the only producer, so ``events[-1]`` really is
+    the terminal snapshot of the job under test.
+    """
+    import flow_sdk.server.app as _app
+
+    async def _noop() -> None:
+        return None
+
+    monkeypatch.setattr(_app, "_start_system_content_index", _noop)
+
+
+@pytest.fixture(autouse=True)
+def no_startup_capability_discovery(monkeypatch):
+    """Keep unrelated real-worker capability probes off this test's lifespan.
+
+    Server startup schedules a full capability discovery sweep. Mirroring the
+    Chrome-authenticated capability actively launches a hidden Claude worker,
+    even though these tests exercise only fs-record progress events. Repeated
+    ``TestClient`` lifespans then cancel that detached probe during shutdown,
+    producing event-loop warnings and making the progress contract depend on
+    an external LLM process. Suppress only the startup sweep; explicit
+    capability discovery remains covered by its own tests.
+    """
+    import flow_sdk.core.capabilities.discovery as _discovery
+
+    async def _noop(_kinds=None) -> dict:
+        return {}
+
+    monkeypatch.setattr(_discovery, "run_discovery", _noop)
+
+
+@pytest.fixture(autouse=True)
+def isolate_records_root(tmp_path, monkeypatch):
+    """Redirect all record I/O to a temp directory for test isolation.
+
+    Also points FLOWPAD_CLAUDE_HOME at an empty tmp dir (as
+    ``test_fs_scan_aggregate`` does) so the ``claude_*`` walkers see a known
+    tree instead of the host's real ``~/.claude`` and leftovers from earlier
+    runs. The per-row ``done == min(limit_per_type, total)`` assertions depend
+    on the walked corpus being the one this test created.
+    """
+    from flow_sdk.instance_settings import reset_instance_settings  # noqa: PLC0415
+
+    claude_home = tmp_path / "claude_home"
+    claude_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("FLOWPAD_CLAUDE_HOME", str(claude_home))
+    reset_instance_settings()
+
     original = get_default_records_root()
     set_default_records_root(tmp_path)
     yield tmp_path
     set_default_records_root(original)
+    reset_instance_settings()
 
 
 def _bootstrap(tc: TestClient) -> dict:
@@ -52,8 +108,14 @@ def _cn_url(bootstrap_payload: dict, sub: str) -> str:
     return f"/api/v1/graph/compute_node/{cn_id}/fs-records/{sub}"
 
 
-def _create_skill(tc: TestClient, skill_base: str, name: str) -> str:
-    resp = tc.post(skill_base, json={"name": name, "description": f"{name} desc"})
+def _create_skill(tc: TestClient, name: str) -> str:
+    # Create via the sanctioned entity endpoint (Entity.save chokepoint), which
+    # materialises the real ``<user_home>/.claude/skills/<name>/SKILL.md`` folder
+    # that the FS scan walks. The lower-level ``fs-records/skill`` POST only
+    # writes the metadata.json shadow under records_root and never lands an
+    # on-disk skill for the indexer to discover — so the scan would (correctly)
+    # never count it. See tests/long_tests/test_fs_scan_aggregate.py.
+    resp = tc.post("/api/v1/graph/skill", json={"name": name, "description": f"{name} desc"})
     assert resp.status_code == 200, resp.text
     return resp.json()["data"]["id"]
 
@@ -157,10 +219,9 @@ def test_scan_progress_report_events():
     """Aggregate scan emits IndexProgressTable snapshots with total=0 (unknown)."""
     with TestClient(app) as tc:
         boot = _bootstrap(tc)
-        skill_base = _cn_url(boot, "skill")
 
         for i in range(3):
-            _create_skill(tc, skill_base, f"fast-scan-{i}")
+            _create_skill(tc, f"fast-scan-{i}")
 
         scan_url = _cn_url(boot, "scan")
         collected = _collect_ws_during(tc, f"{scan_url}?trigger=manual&limit_types=5")
@@ -185,10 +246,9 @@ def test_index_progress_report_events():
     """Aggregate index emits snapshots with totals known up front."""
     with TestClient(app) as tc:
         boot = _bootstrap(tc)
-        skill_base = _cn_url(boot, "skill")
 
         for i in range(3):
-            _create_skill(tc, skill_base, f"fast-index-{i}")
+            _create_skill(tc, f"fast-index-{i}")
 
         index_url = _cn_url(boot, "index")
         collected = _collect_ws_during(tc, f"{index_url}?limit_types=5&limit_per_type=20", method="post")
@@ -201,9 +261,7 @@ def test_index_progress_report_events():
         # Per-row done <= total invariant. Grand-total may briefly exceed when
         # a row is mid-update, but each row individually is bounded.
         for row in attrs["rows"]:
-            assert row["done"] <= row["total"], (
-                f"Row done > total: {row}"
-            )
+            assert row["done"] <= row["total"], f"Row done > total: {row}"
 
     final = events[-1]
     assert final["text"] == "complete"
@@ -212,9 +270,7 @@ def test_index_progress_report_events():
     # when many records exist on disk. Each row's `done` must equal
     # min(limit_per_type, total).
     for row in final["rows"]:
-        assert row["done"] == min(20, row["total"]), (
-            f"Row done should equal min(limit_per_type=20, total): {row}"
-        )
+        assert row["done"] == min(20, row["total"]), f"Row done should equal min(limit_per_type=20, total): {row}"
 
 
 # do not increase timeout without approval
@@ -223,10 +279,9 @@ def test_progress_report_events_monotonic():
     """Grand-total ``done`` is non-decreasing across snapshots within one job."""
     with TestClient(app) as tc:
         boot = _bootstrap(tc)
-        skill_base = _cn_url(boot, "skill")
 
         for i in range(3):
-            _create_skill(tc, skill_base, f"interleave-{i}")
+            _create_skill(tc, f"interleave-{i}")
 
         scan_url = _cn_url(boot, "scan")
         collected = _collect_ws_during(tc, f"{scan_url}?trigger=manual&limit_types=5")
@@ -236,9 +291,7 @@ def test_progress_report_events_monotonic():
 
     done_values = [e["done"] for e in events]
     for i in range(1, len(done_values)):
-        assert done_values[i] >= done_values[i - 1], (
-            f"Grand-total done not monotonic: {done_values}"
-        )
+        assert done_values[i] >= done_values[i - 1], f"Grand-total done not monotonic: {done_values}"
 
 
 # do not increase timeout without approval
@@ -247,10 +300,9 @@ def test_per_type_scan_emits_progress_report():
     """Per-type scan (?type=X) emits a table whose only relevant row is X."""
     with TestClient(app) as tc:
         boot = _bootstrap(tc)
-        skill_base = _cn_url(boot, "skill")
 
         for i in range(3):
-            _create_skill(tc, skill_base, f"per-type-s-{i}")
+            _create_skill(tc, f"per-type-s-{i}")
 
         scan_url = _cn_url(boot, "scan")
         collected = _collect_ws_during(tc, f"{scan_url}?type=skill&trigger=manual")
@@ -272,10 +324,9 @@ def test_per_type_index_emits_progress_report():
     """Per-type index (?type=X) emits a table that completes for that type."""
     with TestClient(app) as tc:
         boot = _bootstrap(tc)
-        skill_base = _cn_url(boot, "skill")
 
         for i in range(3):
-            _create_skill(tc, skill_base, f"per-type-i-{i}")
+            _create_skill(tc, f"per-type-i-{i}")
 
         index_url = _cn_url(boot, "index")
         collected = _collect_ws_during(tc, f"{index_url}?type=skill&limit_per_type=20", method="post")

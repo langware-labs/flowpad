@@ -1,21 +1,27 @@
-import { useCallback, useRef, useState } from 'react';
+import { forwardRef, useCallback, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
-import {
-  AgenticProcess,
-  GraphContext,
-  ProcessKind,
-  TypeId,
-  isTypeId,
-  type AssetDescriptor,
-} from '@sdk';
-import { AssetPickerPopover } from '@src/components/asset-manager/AssetPickerPopover';
+import { AgenticProcess, GraphContext, ProcessKind, TypeId, isTypeId, type AssetDescriptor } from '@sdk';
+import { AssetManagerPopover, RUNNABLE_ASSETS } from '@src/components/asset-manager/AssetManagerPopover';
 import { displayLabelForTypeid, parseTypeid } from '@src/components/asset-manager/asset-row-helpers';
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { SideDrawer } from '@src/components/ui/side-drawer';
 import { CollapsedSideRail } from '@src/components/ui/collapsed-side-rail';
-import { RunButton } from '@src/components/assets/editor/run/RunButton';
+import { Button } from '@src/components/ui/button';
 import { notify } from '@src/notifications';
 import { Play } from 'lucide-react';
+
+/** Drawer-header Run trigger. Forwards the ref so the Radix popover can use it via `asChild`. */
+const RunButton = forwardRef<HTMLButtonElement, { label: string; onClick?: () => void }>(function RunButton(
+  { label, onClick },
+  ref,
+) {
+  return (
+    <Button ref={ref} size="sm" onClick={onClick} title={label}>
+      <Play className="me-1 h-4 w-4" />
+      {label}
+    </Button>
+  );
+});
 
 /**
  * "Run Automation" surface for a GraphContext: pick an agent or a skill, launch
@@ -39,7 +45,7 @@ export function RunAutomationPanel({ ctx }: { ctx: GraphContext }) {
     const { type } = parseTypeid(d.typeid);
     const name = displayLabelForTypeid(d.typeid);
     setInstruction(
-      type === 'agent'
+      type === 'subagent'
         ? t`Act as the "${name}" agent and work on the current context.`
         : t`Run the skill "${name}" on the current context.`,
     );
@@ -55,14 +61,12 @@ export function RunAutomationPanel({ ctx }: { ctx: GraphContext }) {
       if (!d) return;
       try {
         const { type } = parseTypeid(d.typeid);
-        if (type === 'agent' && d.posix_path) {
+        if (type === 'subagent' && d.posix_path) {
           await proc.loadEmbeddedAgent(d.posix_path);
         } else {
           await proc.embeddedAssets.attach(d.typeid);
         }
-        const members = (ctx.context_typeids ?? [])
-          .filter((t) => isTypeId(t))
-          .map((t) => new TypeId(t));
+        const members = (ctx.context_typeids ?? []).filter((t) => isTypeId(t)).map((t) => new TypeId(t));
         if (members.length > 0) await proc.shareContextEntities(members);
       } catch (err) {
         console.error('[RunAutomationPanel] run setup failed', err);
@@ -75,11 +79,19 @@ export function RunAutomationPanel({ ctx }: { ctx: GraphContext }) {
     [ctx.context_typeids],
   );
 
+  // The rail and the drawer header host the same picker; only the trigger
+  // differs. Sharing one prop bundle is what keeps them from drifting.
+  const pickerProps = {
+    filter: RUNNABLE_ASSETS,
+    searchPlaceholder: t`Search agents and skills…`,
+    onPick: handlePick,
+  };
+
   // Collapsed: a thin rail whose Play button opens the agent/skill picker.
   if (!open) {
     return (
       <CollapsedSideRail data-testid="run-automation-rail">
-        <AssetPickerPopover
+        <AssetManagerPopover
           trigger={
             <button
               type="button"
@@ -91,7 +103,7 @@ export function RunAutomationPanel({ ctx }: { ctx: GraphContext }) {
               <Play className="h-4 w-4" />
             </button>
           }
-          onPick={handlePick}
+          {...pickerProps}
         />
       </CollapsedSideRail>
     );
@@ -104,12 +116,7 @@ export function RunAutomationPanel({ ctx }: { ctx: GraphContext }) {
       onOpenChange={setOpen}
       width="w-96"
       data-testid="run-automation-drawer"
-      headerActions={
-        <AssetPickerPopover
-          trigger={<RunButton idleLabel={t`Run automation`} />}
-          onPick={handlePick}
-        />
-      }
+      headerActions={<AssetManagerPopover trigger={<RunButton label={t`Run automation`} />} {...pickerProps} />}
     >
       <EntityExecutionPanel
         target={ctx.typeId.toString()}

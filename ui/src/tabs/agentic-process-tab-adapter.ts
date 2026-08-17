@@ -2,7 +2,7 @@ import { AgenticProcess, Tab } from '@sdk';
 import { EntryKind } from '@sdk/transcript-analyzer';
 import { launchSkillEval, loadSkillsByName } from '@src/components/assets/editor/skill/skill-eval-analysis';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { registerTabContentAdapter, type TabContentAdapter } from '@src/tabs/tab-lifecycle';
+import { registerTabContentAdapter, type TabContentAdapter } from '@src/tabs/tab-content-lifecycle';
 import { ViewType } from '@src/types/ViewType';
 
 /**

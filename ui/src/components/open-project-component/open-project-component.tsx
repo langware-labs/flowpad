@@ -1,16 +1,12 @@
-import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { getProjectDisplayName } from '@src/hooks/use-claude-projects';
 import { useAllProjects } from '@src/hooks/use-all-projects';
-import { ContextEntitiesEnum, dataContext, type ProjectListItem, Project, QueryRequest, PrefKey } from '@sdk';
+import { dataContext, type ProjectListItem, Project, PrefKey } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
-import { selectProjectContext } from '@src/components/project-selector';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { DockPointer } from '@src/navigation/DockPointer';
-import { agenticProcessIdForProjectEntry, dockForProjectEntry } from '@src/tabs/project-entry';
+import { canonicalPath } from '@src/components/project-selector';
+import { normalizePath, useProjectOpener } from './use-open-project';
 import { SectionHairlineTitle } from '@src/components/terminal/ProjectsCounterChip';
-import { useTabProjectBuckets } from '@src/tabs/useTabs';
+import { useTabProjectBuckets } from '@src/tabs/use-tab-manager';
 import { useProject } from '@sdk/react/hooks';
-import { useIsVibe, ViewMode } from '@src/contexts/view-mode-context';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
@@ -19,22 +15,8 @@ import { notify } from '@src/notifications';
 import { Check, FolderOpen, FolderPlus, Loader2, Search } from 'lucide-react';
 import { projectRecencyMs } from '@src/lib/project-recency';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
-
-const normalizePath = (path: string): string => {
-  const normalized = path.trim().replace(/\\/g, '/');
-  if (!normalized) return '';
-  if (normalized === '/') return '/';
-  return normalized.replace(/\/+$/, '');
-};
-
-const canonicalPathKey = (path: string): string => {
-  const normalized = normalizePath(path);
-  if (!normalized) return '';
-  return normalized.replace(/^\/+/, '') || normalized;
-};
-
-const getProjectPath = (project: Project): string => normalizePath(project.fs_storage_mount_path || project.name || '');
 
 /** Free-text match against a project's display name or cwd. `q` must already be
  *  trimmed + lowercased. */
@@ -133,7 +115,7 @@ function CompactProjectSelectDialog({
   // One row shape for both sections; active rows carry the chip's tab-count badge.
   const renderRow = (project: ProjectListItem, tabCount?: number) => {
     const projectPath = normalizePath(project.cwd || project.name || '');
-    const isCurrent = !!currentProjectPath && canonicalPathKey(projectPath) === canonicalPathKey(currentProjectPath);
+    const isCurrent = !!currentProjectPath && canonicalPath(projectPath) === canonicalPath(currentProjectPath);
     const isOpening = openingProjectId === project.id;
     return (
       <button
@@ -141,7 +123,7 @@ function CompactProjectSelectDialog({
         onClick={() => onProjectClick(project)}
         disabled={!!openingProjectId || isSubmitting}
         title={project.cwd ? `${getProjectDisplayName(project)}\n${project.cwd}` : getProjectDisplayName(project)}
-        className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-50 ${isCurrent ? 'bg-accent/30' : ''}`}
+        className={`flex w-full items-center gap-2 px-3 py-1.5 text-start text-sm transition-colors hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-50 ${isCurrent ? 'bg-accent/30' : ''}`}
       >
         {isOpening ? (
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
@@ -176,7 +158,7 @@ function CompactProjectSelectDialog({
                 placeholder={t`Search projects…`}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="h-8 pl-8 text-sm"
+                className="h-8 ps-8 text-sm"
               />
             </div>
           )}
@@ -184,7 +166,7 @@ function CompactProjectSelectDialog({
           <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-card">
             {isLoadingProjects ? (
               <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="me-2 h-4 w-4 animate-spin" />
                 <Trans>Loading…</Trans>
               </div>
             ) : filtered.length === 0 ? (
@@ -216,16 +198,22 @@ function CompactProjectSelectDialog({
           )}
 
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex-1 gap-1.5"
-              onClick={onOpenFolder}
-              disabled={!computeNodeAvailable || isSubmitting || !!openingProjectId}
-            >
-              <FolderOpen className="h-3.5 w-3.5" />
-              <Trans>Open Folder</Trans>
-            </Button>
+            {/* Native host folder picker — nothing to point at on a hub-only
+                server, whose files live on the git-backed VFS. Same gate as the
+                home-surface `ProjectActionsRow`, so the two can't disagree
+                about which affordances a hub offers. */}
+            {!isHubOnly() && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 gap-1.5"
+                onClick={onOpenFolder}
+                disabled={!computeNodeAvailable || isSubmitting || !!openingProjectId}
+              >
+                <FolderOpen className="h-3.5 w-3.5" />
+                <Trans>Open Folder</Trans>
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -364,7 +352,7 @@ function NewProjectDialog({
           >
             {isSubmitting ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="me-2 h-4 w-4 animate-spin" />
                 <Trans>Creating...</Trans>
               </>
             ) : (
@@ -416,15 +404,22 @@ export function OpenProjectComponent({
 }: OpenProjectComponentProps) {
   const { t } = useLingui();
   const { project: currentProject } = useProject();
-  const { computeNode } = useAgentContext();
-  const { navigation } = useDockNavigation();
 
   const [showCreate, setShowCreate] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [openingProjectId, setOpeningProjectId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showSystem] = usePreference<boolean>(PrefKey.SHOW_SYSTEM_PROJECTS);
-  const isVibe = useIsVibe();
+
+  // The open/switch flow lives in ONE place — useProjectOpener — shared with
+  // the vibe home hero buttons, so surface-derived behavior (stay on home,
+  // resume a process, resume the last tab) can't drift between call sites.
+  // The dialog owns only its UI state (busy flags, error, close-on-success).
+  const { computeNode, ensureProjectAndSetContext, pickFolder } = useProjectOpener({
+    onProjectChanged,
+    onPicked,
+    onError: setError,
+  });
 
   const resolvedTrigger = trigger ?? (remoteProjectId ? 'map' : taskId ? 'gate' : 'switch');
 
@@ -449,74 +444,6 @@ export function OpenProjectComponent({
     [currentProject],
   );
 
-  const setCurrentProjectContext = useCallback(
-    async (project: Project) => {
-      onProjectChanged?.();
-      if (onPicked) {
-        // Gate/map flows don't navigate through a project loader, so adopt the
-        // context here. Entity stamping (task/conversation/project_id, mapping
-        // table writes, remap navigation) happens inside `onPicked` — the
-        // gate's apply callback owns it (and its own navigation) so the
-        // wasReplacement signal isn't clobbered by a pre-stamp here.
-        await selectProjectContext(project);
-        try {
-          await onPicked(project);
-        } catch {
-          // continuation errors shouldn't break the picker
-        }
-      } else {
-        if (isVibe) {
-          await selectProjectContext(project);
-          const processId = project.id ? await agenticProcessIdForProjectEntry(project.id) : null;
-          if (processId) {
-            void navigation.openShellProcess(processId, { viewMode: ViewMode.Vibe });
-            return;
-          }
-          await dataContext.setActiveEntityTypeId(null);
-          await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
-          navigation.openDock(
-            DockPointer.forHome(undefined, undefined, { vibeNoProcess: true }).withViewMode(ViewMode.Vibe),
-          );
-          return;
-        }
-        // Plain switch (footer Switch Project included): navigate to the
-        // project's tab — the same path as clicking that tab in the strip
-        // (dockForProjectEntry → fromTabHash → openDock). Resumes the
-        // last-active tab, or the project landing when it has no open tab. No
-        // context pre-write here: the destination dock's loader is the single
-        // writer of project context (URL-first).
-        navigation.openDock(await dockForProjectEntry(project.id));
-      }
-    },
-    [isVibe, onProjectChanged, onPicked, navigation],
-  );
-
-  const ensureProjectAndSetContext = useCallback(
-    async (path: string) => {
-      if (!dataContext.someone) throw new Error(t`You must be logged in`);
-
-      const normalizedPath = normalizePath(path);
-      if (!normalizedPath) throw new Error(t`Please provide a valid project path`);
-
-      const pathKey = canonicalPathKey(normalizedPath);
-      const freshProjects = await Project.query(
-        new QueryRequest({ type: Project.type, query: null, scope: [], name: 'open-project-dedup' }),
-      );
-      let targetProject = freshProjects.find((p) => canonicalPathKey(getProjectPath(p)) === pathKey) || null;
-      const openedExisting = !!targetProject;
-
-      if (!targetProject) {
-        targetProject = new Project({ name: normalizedPath });
-        targetProject = await targetProject.save([dataContext.someone]);
-      }
-
-      await targetProject.setupForDesktop();
-      await setCurrentProjectContext(targetProject);
-      return { project: targetProject, openedExisting };
-    },
-    [setCurrentProjectContext, t],
-  );
-
   const handleProjectClick = useCallback(
     async (project: ProjectListItem) => {
       const path = normalizePath(project.cwd || project.name || '');
@@ -534,22 +461,6 @@ export function OpenProjectComponent({
       }
     },
     [ensureProjectAndSetContext, onOpenChange, t],
-  );
-
-  const pickFolder = useCallback(
-    async (initialDir?: string): Promise<string | null> => {
-      if (!computeNode) {
-        setError(t`No compute node available`);
-        return null;
-      }
-      try {
-        return await computeNode.openPathDialog(initialDir);
-      } catch {
-        setError(t`Failed to open folder picker`);
-        return null;
-      }
-    },
-    [computeNode, t],
   );
 
   const handleOpenFolder = useCallback(async () => {

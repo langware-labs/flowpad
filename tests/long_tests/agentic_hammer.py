@@ -29,18 +29,18 @@ import pytest
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.flowpad_types.enums import WorkerType
+from tests.long_tests._model_tier import small_model_for
 
 ITERATIONS = 10
 # conftest sandboxes HOME; the CLIs need their REAL home (auth + transcript dir).
 _REAL_HOME = os.environ.get("FLOWPAD_PRE_SANDBOX_HOME") or os.path.expanduser("~")
 
-# worker_type → (CLI binary, model). The sm/md/lg tier only maps for claude;
-# codex/copilot have no tier map, so leave model unset (CLI default) rather than
-# pass a bogus "sm".
+# worker_type → CLI binary. The model is the cheapest tier each worker can resolve
+# (see ``_model_tier.small_model_for`` — Copilot must stay unset).
 WORKERS = {
-    "claude_code": {"bin": "claude", "model": "sm"},
-    "codex": {"bin": "codex", "model": None},
-    "copilot": {"bin": "copilot", "model": None},
+    "claude_code": {"bin": "claude", "model": small_model_for("claude_code")},
+    "codex": {"bin": "codex", "model": small_model_for("codex")},
+    "copilot": {"bin": "copilot", "model": small_model_for("copilot")},
 }
 
 
@@ -99,10 +99,14 @@ async def test_agentic_hammer(worker_type, transport, bootstrapped_client, tmp_p
         visible=pty,
         pty_mode=pty,
     )
-    await proc.save([])
+    await proc.save()
 
-    prev_home = os.environ.get("HOME")
+    previous_homes = {
+        "HOME": os.environ.get("HOME"),
+        "USERPROFILE": os.environ.get("USERPROFILE"),
+    }
     os.environ["HOME"] = _REAL_HOME  # the CLI uses its real auth/config
+    os.environ["USERPROFILE"] = _REAL_HOME
     results: list[tuple[int, bool, int]] = []
     try:
         if pty:
@@ -114,6 +118,7 @@ async def test_agentic_hammer(worker_type, transport, bootstrapped_client, tmp_p
             # input() uses a raw write that skips shell._wait_for_shell_ready, so
             # the readiness gate must live here.
             from tests.long_tests._pty_helpers import read_pty_stream
+
             prev, stable, ready_deadline = -1, 0, time.monotonic() + 18.0
             while time.monotonic() < ready_deadline:
                 cur = len(read_pty_stream(proc.shell_id))
@@ -152,8 +157,11 @@ async def test_agentic_hammer(worker_type, transport, bootstrapped_client, tmp_p
                 await proc.send(b"\x03")  # Ctrl-C cancels (ESC quits copilot's TUI)
                 await asyncio.sleep(0.5)
     finally:
-        if prev_home is not None:
-            os.environ["HOME"] = prev_home
+        for key, value in previous_homes.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
         try:
             await proc.exit()
         except Exception:

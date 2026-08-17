@@ -2,10 +2,17 @@
 
 Drive the user's Flowpad browser tab to a specific entity. The CLI targets the tab the user is currently looking at — you do not need to pick a destination window.
 
-> **Not for Display presentation.** `flow navigate` moves the user's browser tab.
-> When you are presenting a file/entity into an active process **Display** (a
-> vibe/creator session, "open it in the display"), use `flow show file <path>` /
-> `flow show entity <typeid>` instead — never `flow navigate`.
+> **Not for presenting a deliverable.** `flow navigate` moves the user's browser
+> tab and interrupts them. When you are handing over something you made, use
+> `flow show file <path>` / `flow show entity <typeid>` — it works in every mode
+> (pinning the vibe display pane where there is one, otherwise opening a tab
+> beside your process) and never navigates. Reserve `flow navigate` for an
+> explicit "take me there".
+>
+> **Screens have their own form.** Events, Assets, Files, Preferences, Search,
+> Inbox, Data Sources, Runs and the rest are addressed by VIEW NAME, not TypeId:
+> `flow show view <address>` / `flow navigate view <address>`. See "Opening a
+> screen" below.
 
 ## How to navigate
 
@@ -49,6 +56,24 @@ flow navigate entity <data.typeid>                        # navigate the browser
 ```
 
 No search needed — `data.typeid` is the entity to open.
+
+## Opening a screen
+
+A screen is addressed by **view name** plus an optional `/pointer` and `?opts`
+— the same string the URL bar carries after `/dock/`:
+
+```bash
+flow show view events                       # present it (never interrupts)
+flow show view assets/list/skill
+flow show view "search?q=widget"            # quote anything with a ?
+flow navigate view preferences/appearance   # only on an explicit "take me there"
+```
+
+`flow schema views` lists every addressable view and whether it requires a
+pointer — use it instead of guessing. The grammar is validated server-side, so a
+wrong view is exit `2` rather than a silent no-op.
+
+Screens are NOT TypeIds: `flow navigate entity events` is wrong and will fail.
 
 ## Expected output
 

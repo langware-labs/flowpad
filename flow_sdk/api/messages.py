@@ -1,32 +1,24 @@
 import uuid
 from enum import Enum
-from flow_sdk._compat import StrEnum
 from typing import Any, ClassVar, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from flow_sdk.api.api_request import APIRequest
+from flow_sdk.api.api_types.messages import DataOpMessage, OperationType  # noqa: F401  (re-export)
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.request_context.auth_info import AuthContext
 
 
 class WSMessageType(Enum):
-    ECHO = "echo"
     BROADCAST = "broadcast"
     PING = "ping"
     PONG = "pong"
-    HANGUP = "hangup"
     ENTITY_MSG = "entity_msg"
     DATA_OP_MSG = "data_op_msg"
     REST_API_MSG = "rest_api_msg"
-    STREAM_MSG = "stream_msg"
-    TRANSCRIPT = "transcript_msg"
-    EXE_MSG = "exe_msg"
-    CONTROL_MSG = "control_msg"
     OAUTH_MSG = "oauth_msg"
     RESPONSE_MSG = "response_msg"
-    CMD_STATUS_MSG = "cmd_status_msg"
-    CLIENT_NODE_READY_MSG = "client_node_ready_msg"
     PTY_OUTPUT_MSG = "pty_output_msg"
     PTY_SESSION_STATUS_MSG = "pty_session_status_msg"
     LLM_CONFIG_MSG = "llm_config_msg"
@@ -37,16 +29,8 @@ class WSMessageType(Enum):
     CLOUD_CONNECTION_STATUS_MSG = "cloud_connection_status_msg"
     PRIVACY_MODE_MSG = "privacy_mode_msg"
     TOPLOG_STATE_MSG = "toplog_state_msg"
-
-
-class ExeMessageSubType(StrEnum):
-    CONTROL = "control"
-    EXECUTION = "execution"
-
-
-class CtlMessageSubType(StrEnum):
-    READY = "ready"
-    START_SESSION = "session_start"
+    # The unified event bus frame (docs/flow-events.md) — carries one FlowEvent.
+    TAG_MSG = "tag_msg"
 
 
 class BaseMessage(BaseModel):
@@ -77,11 +61,6 @@ class BaseMessage(BaseModel):
         return cls._counter
 
 
-class EchoMessage(BaseMessage):
-    message_type: str = WSMessageType.ECHO.value
-    text: str
-
-
 class PingMessage(BaseMessage):
     message_type: str = WSMessageType.PING.value
     text: str
@@ -89,21 +68,6 @@ class PingMessage(BaseMessage):
 
 class PongMessage(BaseMessage):
     message_type: str = WSMessageType.PONG.value
-    text: str
-
-
-class HangupMessage(BaseMessage):
-    message_type: str = WSMessageType.HANGUP.value
-    text: str
-
-
-class StreamMessage(BaseMessage):
-    message_type: str = WSMessageType.STREAM_MSG.value
-    stream_id: int
-
-
-class TranscriptMessage(StreamMessage):
-    message_type: str = WSMessageType.TRANSCRIPT.value
     text: str
 
 
@@ -137,16 +101,29 @@ class AuthExpiredMessage(BaseMessage):
 class PrivacyModeMessage(BaseMessage):
     """Broadcast when this instance's data-privacy mode changes, so every open
     client updates the footer control + cloud-access guards without a reload."""
+
     message_type: str = WSMessageType.PRIVACY_MODE_MSG.value
     privacy_mode: str  # "local" | "connected"
 
 
 class ToplogStateMessage(BaseMessage):
     """Broadcast when this instance's toplog state changes, so every open client
-    updates its in-memory topic set live (no reload). See flow_sdk/toplog.py."""
+    updates its in-memory tag set live (no reload). See flow_sdk/toplog.py."""
+
     message_type: str = WSMessageType.TOPLOG_STATE_MSG.value
     enabled: bool
     filter: Dict[str, bool]
+
+
+class TagMessage(BaseMessage):
+    """The unified event-bus frame: one serialized FlowEvent
+    (flow_sdk/tags/envelope.py), forwarded backend→app for the declared
+    allowlist only (tags/ws_forward.py). The envelope rides as a plain dict
+    so its schema stays pinned by the contract fixture, independent of
+    BaseMessage plumbing. TS mirror: ``TagMsg`` in ``ts_sdk/src/websocket.ts``."""
+
+    message_type: str = WSMessageType.TAG_MSG.value
+    event: Dict[str, Any]
 
 
 class BroadcastMessage(BaseMessage):
@@ -165,27 +142,11 @@ class EntityMessage(BaseMessage):
     to_entity: TypeId
 
 
-class OperationType(Enum):
-    CREATE = "create"
-    UPDATE = "update"
-    DELETE = "delete"
-
-
 class HttpMethod(Enum):
     GET = "GET"
     POST = "POST"
     PUT = "PUT"
     DELETE = "DELETE"
-
-
-class DataOpMessage(EntityMessage):
-    model_config = ConfigDict(use_enum_values=True)
-    message_type: str = WSMessageType.DATA_OP_MSG.value
-    op: OperationType
-    data: Any = None  # AppLayerMessage
-
-    def handle(self):
-        raise NotImplementedError("This method must be implemented in a subclass")
 
 
 class APIMessage(BaseMessage, APIRequest):
@@ -212,37 +173,6 @@ class APIMessage(BaseMessage, APIRequest):
 class ComputeMessage(BaseMessage):
     session_id: Optional[str] = None
     ack_required: bool = False
-
-
-class ComputeExeMessage(ComputeMessage):
-    message_type: str = WSMessageType.EXE_MSG.value
-    session_id: Optional[str] = None
-    cmd: str
-
-
-class ComputeCtrlMessage(ComputeMessage):
-    message_type: str = WSMessageType.CONTROL_MSG.value
-    subtype: CtlMessageSubType
-    content: str
-
-
-class CommandStatusMessage(ComputeMessage):
-    """
-    Represents a message that contains the status of a command execution.
-    This can be used to report the status of a command execution back to the client.
-    """
-
-    message_type: str = WSMessageType.CMD_STATUS_MSG.value
-    command_message_id: str
-    exit_code: Optional[int] = None
-    stdout: Optional[str] = None
-    stderr: Optional[str] = None
-
-
-class ClientReadyMessage(ComputeMessage):
-    message_type: str = WSMessageType.CLIENT_NODE_READY_MSG.value
-    node_id: str
-    default_session_id: Optional[str] = None
 
 
 class PtyOutputMessage(BaseMessage):

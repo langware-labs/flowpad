@@ -9,12 +9,8 @@ export function LogsSection() {
 
   return (
     <div className="flex flex-col gap-3">
-      <Button
-        variant="outline"
-        className="w-full"
-        onClick={() => navigation.openLens('cli', 'log', 'all')}
-      >
-        <Terminal className="mr-2 h-4 w-4" />
+      <Button variant="outline" className="w-full" onClick={() => navigation.openLens('cli', 'log', 'all')}>
+        <Terminal className="me-2 h-4 w-4" />
         CLI Invocation Log
       </Button>
 

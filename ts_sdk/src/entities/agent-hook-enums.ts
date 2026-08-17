@@ -22,7 +22,7 @@ export enum HookScope {
 }
 
 /**
- * Agent provider types
+ * SubAgent provider types
  */
 export enum AgentProvider {
   CLAUDE_CODE = 'claude_code',

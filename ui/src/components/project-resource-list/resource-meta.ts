@@ -1,3 +1,5 @@
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import type { LucideIcon } from 'lucide-react';
 import { Bot, CheckSquare, Command, FileText, FolderOpen, Plug, Settings, Sparkles, Terminal } from 'lucide-react';
 import type { ProjectResourceType } from './ProjectResourceList';
@@ -8,15 +10,15 @@ export interface ResourceMeta {
 }
 
 export const RESOURCE_META: Record<ProjectResourceType, ResourceMeta> = {
-  session: { label: 'Session', icon: FolderOpen },
-  skill: { label: 'Skill', icon: Sparkles },
-  mcp_server: { label: 'MCP Server', icon: Plug },
-  plugin: { label: 'Plugin', icon: Settings },
-  hook: { label: 'Hook', icon: Terminal },
-  command: { label: 'Command', icon: Command },
-  agent: { label: 'Agent', icon: Bot },
-  claude_md: { label: 'CLAUDE.md', icon: FileText },
-  todo: { label: 'Todo', icon: CheckSquare },
+  session: { label: msg`Session`, icon: FolderOpen },
+  skill: { label: msg`Skill`, icon: Sparkles },
+  mcp_server: { label: msg`MCP Server`, icon: Plug },
+  plugin: { label: msg`Plugin`, icon: Settings },
+  hook: { label: msg`Hook`, icon: Terminal },
+  command: { label: msg`Command`, icon: Command },
+  agent: { label: msg`SubAgent`, icon: Bot },
+  claude_md: { label: msg`CLAUDE.md`, icon: FileText },
+  todo: { label: msg`Todo`, icon: CheckSquare },
 };
 
 /** Display order for grouped views (sessions first). */

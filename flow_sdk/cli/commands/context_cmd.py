@@ -24,11 +24,20 @@ import typer
 from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
+    bad_response_message as _bad_response_message,
+)
+from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
+)
+from flow_sdk.cli.commands._common import (
     fail as _fail,
+)
+from flow_sdk.cli.commands._common import (
+    local_get as _local_get,
+)
+from flow_sdk.cli.commands._common import (
     ok as _ok,
 )
-
 
 context_app = typer.Typer(
     name="context",
@@ -48,10 +57,7 @@ EXIT_CONNECTION_ERROR = 5
 
 @context_app.command(
     "list",
-    help=(
-        "Print the data-context snapshot for the active tab as JSON. "
-        "Pass --connection-id to target a specific tab."
-    ),
+    help=("Print the data-context snapshot for the active tab as JSON. Pass --connection-id to target a specific tab."),
 )
 def list_context(
     connection_id: Annotated[
@@ -72,7 +78,7 @@ def list_context(
     params = {"connection_id": connection_id} if connection_id else None
 
     try:
-        resp = requests.get(url, params=params, timeout=5)
+        resp = _local_get(url, params=params, timeout=5)
     except requests.exceptions.RequestException as e:
         _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
         return
@@ -80,11 +86,7 @@ def list_context(
     try:
         body = resp.json()
     except ValueError:
-        _fail(
-            EXIT_CONNECTION_ERROR,
-            "CONNECTION_ERROR",
-            f"Unexpected server response (status {resp.status_code}): {resp.text[:200]}",
-        )
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", _bad_response_message(resp))
         return
 
     if resp.status_code == 200 and body.get("ok"):

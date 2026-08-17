@@ -1,6 +1,6 @@
 /**
  * RCA capture: a restarting worker's startup OSC title (the bare program name
- * `claude`) must NOT overwrite a topic-derived session name.
+ * `claude`) must NOT overwrite a tag-derived session name.
  *
  * Real mechanism end-to-end:
  * - The real TabbedTerminal → TerminalPanel → InteractiveTerminal mount with a
@@ -15,10 +15,11 @@
  *   mirroring tests/react/new-agentic-tab-loader-regression.test.tsx.
  *
  * The bug manifests as a PUT of the AgenticProcess with name='claude'. The
- * control assertion (a topic title MUST still flow into a save) proves the
+ * control assertion (a tag title MUST still flow into a save) proves the
  * delivery pipeline is live, so the 'claude' assertion can't pass vacuously.
  */
 import { render, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import {
@@ -37,9 +38,10 @@ import {
   type TabRow,
 } from '@sdk';
 import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesContext';
+import { TooltipProvider } from '@src/components/ui/tooltip';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { applyAllTabs } from '@src/tabs/all-tabs-store';
-import { resetTabLifecycleForTests } from '@src/tabs/tab-lifecycle';
+import { tabManager } from '@sdk';
+import { resetTabContentLifecycleForTests } from '@src/tabs/tab-content-lifecycle';
 
 const PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const COMPUTE_NODE_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -47,10 +49,10 @@ const PROC_ID = '11111111-1111-4111-8111-111111111111';
 const SHELL_ID = '33333333-3333-4333-8333-333333333333';
 const TAB_ID = '40000000-0000-4000-8000-000000000001';
 
-/** The topic-derived name the session already has (what the bug destroys). */
+/** The tag-derived name the session already has (what the bug destroys). */
 const ORIGINAL_NAME = 'Fix expired invitation returning HTTP 500';
-/** A later topic title — the control proving the title pipeline is live. */
-const TOPIC_TITLE = 'Debug undelivered messages in conversation';
+/** A later tag title — the control proving the title pipeline is live. */
+const TAG_TITLE = 'Debug undelivered messages in conversation';
 
 let TabbedTerminalComponent: typeof import('@src/components/terminal/TabbedTerminal').default;
 
@@ -79,12 +81,25 @@ function oscTitle(title: string): string {
   return `\x1b]0;${title}\x07`;
 }
 
+/** The session-less TabbedTerminal body renders ProjectHome, whose favorites
+ *  mini-desktop reads react-query — the real tree gets its client from App.tsx,
+ *  so the harness has to supply one too or the render throws. */
+const testQueryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+});
+
 function TerminalWorkspace() {
   const TabbedTerminal = TabbedTerminalComponent;
   return (
-    <div style={{ height: 320 }}>
-      <TabbedTerminal className="h-full" />
-    </div>
+    <QueryClientProvider client={testQueryClient}>
+      {/* Same reason as the query client: App.tsx wraps the whole app in one
+          TooltipProvider, and radix's Tooltip throws without it. */}
+      <TooltipProvider>
+        <div style={{ height: 320 }}>
+          <TabbedTerminal className="h-full" />
+        </div>
+      </TooltipProvider>
+    </QueryClientProvider>
   );
 }
 
@@ -126,8 +141,8 @@ describe('PTY title mirror vs program identity titles', () => {
 
     window.localStorage.clear();
     await dataManager.clearCache();
-    applyAllTabs([]);
-    resetTabLifecycleForTests();
+    tabManager.adoptGlobal([]);
+    resetTabContentLifecycleForTests();
     const fakeSocket = { readyState: WebSocket.OPEN, send: () => {} };
     (connectionManager as unknown as { socket: Pick<WebSocket, 'readyState' | 'send'> | null }).socket = fakeSocket;
     // shell.connected (ptyConnection.isLive) requires dataContext.isConnected —
@@ -268,8 +283,8 @@ describe('PTY title mirror vs program identity titles', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    applyAllTabs([]);
-    resetTabLifecycleForTests();
+    tabManager.adoptGlobal([]);
+    resetTabContentLifecycleForTests();
     (connectionManager as unknown as { socket: unknown }).socket = null;
     dataContext.connection = null;
     dataContext.setActiveShellId('');
@@ -277,10 +292,10 @@ describe('PTY title mirror vs program identity titles', () => {
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
   });
 
-  it("does not adopt the worker's startup title 'claude' over a topic-derived name", async () => {
+  it("does not adopt the worker's startup title 'claude' over a tag-derived name", async () => {
     // Seed the tab store with the session's tab (what the route loader's
     // setupTab would have materialized) and navigate straight to it.
-    applyAllTabs([new Tab(tabRow())]);
+    tabManager.adoptGlobal([new Tab(tabRow())]);
 
     render(
       <HarnessCapabilitiesProvider>
@@ -304,15 +319,15 @@ describe('PTY title mirror vs program identity titles', () => {
     //    title escape, delivered through the production WS ingest seam.
     shell.ptyConnection.routeOutput(btoa(oscTitle('claude')), 1);
 
-    // 2. A conversation later produces a topic title (the control signal).
-    shell.ptyConnection.routeOutput(btoa(oscTitle(TOPIC_TITLE)), 2);
+    // 2. A conversation later produces a tag title (the control signal).
+    shell.ptyConnection.routeOutput(btoa(oscTitle(TAG_TITLE)), 2);
 
     // The control MUST arrive: proves bytes flowed through xterm's parser into
     // the title mirror. Without this, the 'claude' assertion could pass only
     // because nothing was delivered at all. Waits on the Tab set_name mirror —
     // it receives the cleaned title verbatim, so it's a stable signal in both
     // the fixed and unfixed code paths.
-    await waitFor(() => expect(savedTabNames).toContain(TOPIC_TITLE), { timeout: 10000 });
+    await waitFor(() => expect(savedTabNames).toContain(TAG_TITLE), { timeout: 10000 });
 
     // THE BUG: the identity title must never have been persisted. Pre-fix the
     // mirror saves name='claude' (entity PUT + Tab set_name) the moment the

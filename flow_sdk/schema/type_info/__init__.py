@@ -17,12 +17,16 @@ Concrete entity classes carry NO type-metadata config; they only attach
 from __future__ import annotations
 
 import importlib
+import logging
 import pkgutil
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
+from flow_sdk.capsules import CapsuleSpec
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
 from flow_sdk.schema.view_mode import ViewMode
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -30,6 +34,11 @@ class TypeMetadata:
     """Declarative per-type metadata. Subclass to add type-specific extras."""
 
     type: str
+    # Either a lucide export name in PascalCase ("BrainCog") or a path to a file
+    # this backend serves ("icons/agent.svg"). The frontend discriminates on the
+    # slash — a lucide name can never contain one — so both reach every surface
+    # through the same ``iconForType`` lookup. Free string by design: the set of
+    # valid lucide names lives in the frontend's bundle, not here.
     icon: str | None = None
     # UX-friendly, human-readable label for this type — used wherever the type
     # is shown to the user as a word (e.g. the auto-bookmark folder title). Plural
@@ -43,8 +52,21 @@ class TypeMetadata:
     creatable: bool = False
     indexed_by_default: bool = False
     api_visible: bool = False
+    # Cloud transport for file-backed assets. Runtime delivery capability only;
+    # it deliberately does not participate in the local indexing schema hash.
+    cloud_file_transport: Literal["embedded", "git"] = "embedded"
+    # True ⇒ this entity type persists only in the database. ``Entity.save``
+    # skips the FSRecord guard + disk mirror entirely; there is no disk→DB adopt
+    # path for the type. Runtime persistence policy, not part of the schema hash.
+    db_only: bool = False
     index_fields: list[str] = field(default_factory=list)
-    main_subdir: str | None = None
+    # Placement axis — the harness-aware replacement for the fused ``.claude/…``
+    # subdir. Declare ``asset_class`` + ``family`` (+ ``harness`` for HARNESS
+    # types); resolved by ``flow_sdk.fs_store.placement``. Typed ``Any`` to keep
+    # this authoring module free of a placement import.
+    asset_class: Any = None            # placement.AssetClass | None
+    harness: Any = None                # placement.HarnessType | None
+    family: str | None = None
     main_layout: str = "file"
     # Folder-layout types: inner filename of the primary asset (e.g. "spec.md"
     # under specs/<name>/, "SKILL.md" under .claude/skills/<name>/). See
@@ -61,6 +83,16 @@ class TypeMetadata:
     # non-markdown asset (e.g. a ``.js`` dynamic workflow) overrides it so the
     # created file matches the type's indexer glob.
     main_ext: str = ".md"
+    # Fields the ASSIGNEE of a shared entity of this type owns. A hub-reflected
+    # update written by the assignee carries ONLY these; everything else belongs
+    # to whoever handed the work over. Empty ⇒ no scoping. See
+    # ``_hub_reflect.scope_body_to_assignee_fields`` for why one shared row needs
+    # it: whole-row LWW plus a client that PUTs its whole snapshot means a status
+    # click would otherwise revert the owner's title and body.
+    assignee_owned_fields: tuple = field(default_factory=tuple)
+    # Files inside a folder-backed asset that never ride a share bundle (the
+    # packer copies the folder verbatim). E.g. a task's inner ``spec.md``.
+    pack_exclude: tuple = field(default_factory=tuple)
     parent_type: str | None = None
     # True ⇒ sharing an entity of this type automatically includes its parent
     # (``parent_type_id``) in the outgoing ``shared_context_entities``, and the
@@ -76,7 +108,10 @@ class TypeMetadata:
     shared_child: bool = False
     # Indexer dispatch callables (walked types only).
     from_disk_fn: Any = None
-    gen_uuid_fn: Any = None
+    capsules: tuple[CapsuleSpec, ...] = ()
+    identity_backend: Any = None
+    id_stable_key_fn: Any = None
+    id_namespace: Any = None
     asset_hash_fn: Any = None
     post_sync_fn: Any = None
     # Per-type default-body writer used by FSRecord.upsert_main_ref to materialize
@@ -103,6 +138,17 @@ class TypeMetadata:
     # is ``"<reception_verb> the <typeLabel>"`` (e.g. "Set up the app", "Run the
     # skill", "Open the note"). Declared next to the type like ``main_subdir``.
     reception_verb: str = "Open"
+    # Reception seam: how a received bundle entry of this type is gated.
+    # ``None`` (default) ⇒ staged → review → explicit install (the consent
+    # boundary). ``"auto"`` ⇒ row-only payload with no agent-executable
+    # content: unpack stages the MessageAttachment like every payload entry,
+    # then installs it immediately through the one install action — no review
+    # dialog, and its chip navigates instead of opening the review modal.
+    receive_policy: str | None = None
+    # Row-only auto types: local-state overrides merged over the packed header
+    # when the row materializes on install (e.g. claude_session stamps
+    # ``{"remote": False, "received": True}``). Backend-only; never serialized.
+    receive_row_overrides: dict | None = None
 
     def to_type_info(self) -> TypeInfo:
         return TypeInfo(
@@ -113,17 +159,26 @@ class TypeMetadata:
             creatable=self.creatable,
             indexed_by_default=self.indexed_by_default,
             api_visible=self.api_visible,
+            cloud_file_transport=self.cloud_file_transport,
+            db_only=self.db_only,
             index_fields=list(self.index_fields),
-            main_subdir=self.main_subdir,
+            asset_class=self.asset_class,
+            harness=self.harness,
+            family=self.family,
             main_layout=self.main_layout,
             main_file=self.main_file,
             main_file_is_asset_ref=self.main_file_is_asset_ref,
             main_ext=self.main_ext,
+            assignee_owned_fields=tuple(self.assignee_owned_fields),
+            pack_exclude=tuple(self.pack_exclude),
             parent_type=self.parent_type,
             parent_share_on_default=self.parent_share_on_default,
             shared_child=self.shared_child,
             from_disk_fn=self.from_disk_fn,
-            gen_uuid_fn=self.gen_uuid_fn,
+            capsules=tuple(self.capsules),
+            identity_backend=self.identity_backend,
+            id_stable_key_fn=self.id_stable_key_fn,
+            **({"id_namespace": self.id_namespace} if self.id_namespace is not None else {}),
             asset_hash_fn=self.asset_hash_fn,
             post_sync_fn=self.post_sync_fn,
             default_body_fn=self.default_body_fn,
@@ -131,6 +186,8 @@ class TypeMetadata:
             meta_model=self.meta_model,
             setup_skill=self.setup_skill,
             reception_verb=self.reception_verb,
+            receive_policy=self.receive_policy,
+            receive_row_overrides=self.receive_row_overrides,
             locations=["index"],
             metadata=self,
         )
@@ -140,27 +197,39 @@ class TypeMetadata:
 
 
 def render_entity_frontmatter(entity: Any, fields: dict[str, Any]) -> str:
-    """Frontmatter block for a ``default_body_fn`` — ALWAYS stamps ``id`` first.
-
-    Entity-id policy: the backing file must carry the entity's UUID, or the
-    indexer cannot adopt the API-created row (validate-on-adopt rejects the
-    name/stem fallback) and mints a duplicate v5-from-path entity on the next
-    walk. Every md-backed ``default_body_fn`` renders through this single
-    chokepoint so a new type can't re-introduce the omission.
-    """
+    """Render domain frontmatter; identity is stored by ``AssetCapsule``."""
     from flow_sdk.fs_store.indexer._frontmatter import _render_frontmatter  # noqa: PLC0415
 
-    return _render_frontmatter({"id": str(entity.id), **fields})
+    return _render_frontmatter(fields)
 
 
 def register_all() -> None:
-    """Import every ``*_info`` sibling module and register its TypeMetadata."""
+    """Import every ``*_info`` sibling module and register its TypeMetadata.
+
+    Each module is registered independently: a broken one (e.g. a stale
+    ``*_type_info.py`` left behind by a partial upgrade that references an
+    ``EntityType`` member a newer ``types.py`` has since removed) is logged and
+    SKIPPED rather than aborting the whole registry. Degrading to "that one type
+    is missing" keeps the server bootable — a wholesale failure here poisons
+    every entity lookup (SchemaRegistry can't finish loading) and the process
+    won't start. See the ``AttributeError: FLOW`` incident from a mismatched
+    site-packages install.
+    """
     import flow_sdk.schema.type_info as pkg
 
     for mod in pkgutil.iter_modules(pkg.__path__):
         if mod.name.startswith("_"):
             continue
-        module = importlib.import_module(f"{__name__}.{mod.name}")
-        for value in vars(module).values():
-            if isinstance(value, TypeMetadata):
-                value.register()
+        try:
+            module = importlib.import_module(f"{__name__}.{mod.name}")
+            for value in vars(module).values():
+                if isinstance(value, TypeMetadata):
+                    value.register()
+        except Exception:  # noqa: BLE001 — one bad module must not wedge the registry
+            logger.warning(
+                "register_all: skipping type_info module %r (failed to load/register) — "
+                "that type will be unavailable, but the registry stays usable. "
+                "A stale/mismatched install is the usual cause.",
+                mod.name,
+                exc_info=True,
+            )

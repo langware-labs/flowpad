@@ -270,6 +270,9 @@ export function KnowledgeAtlas({ root }: { root: string }) {
   const stageRef = useRef<HTMLDivElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
   const pan = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
+  // Open and close each cancel the other, so at most one drawer transition
+  // timer is ever pending — one ref covers both, and unmount clears it.
+  const drawerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [layout, setLayout] = useState<AtlasLayout | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
@@ -353,22 +356,40 @@ export function KnowledgeAtlas({ root }: { root: string }) {
     setTimeout(() => setAnimate(false), 480);
   }, [view.s, drawerW]);
 
+  const clearDrawerTimer = useCallback(() => {
+    if (drawerTimerRef.current) {
+      clearTimeout(drawerTimerRef.current);
+      drawerTimerRef.current = null;
+    }
+  }, []);
+
   const openDoc = useCallback((id: string) => {
     const n = layout?.byId[id];
     if (!n || n.type !== 'doc') return;
+    clearDrawerTimer();
     setFocus(id);
     // Ghosts have no on-disk doc — land on the Changes tab (old vs nothing).
     setDrawerTab(n.isGhost ? 'changes' : 'doc');
     if (drawerRef.current) drawerRef.current.scrollTop = 0;
     // commit a closed frame first, THEN add .open so the slide-in transition
     // fires. setTimeout (not rAF) so it runs even when painting is throttled.
-    setTimeout(() => { setDrawerOpen(true); centerOn(n); }, 20);
-  }, [layout, centerOn]);
+    drawerTimerRef.current = setTimeout(() => {
+      drawerTimerRef.current = null;
+      setDrawerOpen(true);
+      centerOn(n);
+    }, 20);
+  }, [layout, centerOn, clearDrawerTimer]);
 
   const closeDoc = useCallback(() => {
+    clearDrawerTimer();
     setDrawerOpen(false);
-    setTimeout(() => setFocus(null), 340);
-  }, []);
+    drawerTimerRef.current = setTimeout(() => {
+      drawerTimerRef.current = null;
+      setFocus(null);
+    }, 340);
+  }, [clearDrawerTimer]);
+
+  useEffect(() => clearDrawerTimer, [clearDrawerTimer]);
 
   /* drawer content */
   useEffect(() => {

@@ -1,0 +1,36 @@
+/* terminal-core — monospace, phosphor-on-black, CLI metaphors. */
+:root {
+  --bg: #080b08;
+  --surface: #0d140c;
+  --text: #b9f5b0;
+  --text-secondary: #4c7a46;
+  --accent: #6bff52;
+  --accent-contrast: #080b08;
+  --border: #1d3a1a;
+
+  /* mono is wide — the hero has to come down or it will not fit 16:9 */
+  --fs-hero: 58px;
+  --fs-title: 34px;
+  --fs-subtitle: 21px;
+  --fs-body: 19px;
+  --fs-caption: 14px;
+
+  /* Menlo/SF Mono (macOS) -> DejaVu Sans Mono (Linux) -> Consolas (Windows)
+   * -> Courier New -> monospace. */
+  --font-display: Menlo, "SF Mono", "DejaVu Sans Mono", Consolas, "Courier New", monospace;
+  --font-sans: Menlo, "SF Mono", "DejaVu Sans Mono", Consolas, "Courier New", monospace;
+  --font-mono: Menlo, "SF Mono", "DejaVu Sans Mono", Consolas, monospace;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-bold: 700;
+  --lh-tight: 1.2;
+  --lh-body: 1.6;
+  --tracking-kicker: 0.1em;
+
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px;
+
+  --radius-sm: 0; --radius-md: 0; --radius-lg: 0;
+  --safe-area: 72px;
+}

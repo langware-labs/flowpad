@@ -1,19 +1,18 @@
 import { FolderOpen, GitBranch } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
+import { useCallback } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Project, TypeId } from '@sdk';
-import { useEntity } from '@src/hooks/entity-hooks';
 import { useGitFolderStatus } from '@src/hooks/use-git-folder-status';
-import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
+import { useContextFolderForRel } from '@src/hooks/use-context-folder-for-rel';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useExplorerComputeNode } from '@src/components/explorer-view/useExplorerComputeNode';
 import { normalizeRel } from '@src/components/browseable-tree/adapters/fsFolderRoot';
 import { SimpleFileManager } from '@src/components/simple-file-manager';
+import { VFSPath } from '@sdk';
 
 interface ContextFolderBrowserProps {
-  /** Compute-node-relative path (no leading slash) from the `fs/` pointer. */
-  relPath: string;
+  /** Canonical resource identity from the `fs/vfs/` pointer. */
+  vfsPath: VFSPath;
   /** Host navigation (AssetsPage's `navigateAsset`) — re-stamps the active
    *  scope so folder navigation stays in the same assets/project tab. */
   onNavigate: (p: DockPointer) => void;
@@ -34,36 +33,35 @@ interface ContextFolderBrowserProps {
  * diff + push/notify) live on the folder's tree row — see
  * {@link ContextFolderGitBadge} — not in this pane.
  */
-export function ContextFolderBrowser({ relPath, onNavigate, projectId }: ContextFolderBrowserProps) {
+export function ContextFolderBrowser({ vfsPath, onNavigate, projectId }: ContextFolderBrowserProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
+  // The VFS the file manager browses. `useContextFolderForRel` resolves the same
+  // compute node for its git-ops workdir, but the manager needs the TypeId itself.
   const { typeId } = useExplorerComputeNode();
 
-  const projectTypeId = useMemo(() => (projectId ? new TypeId(Project.type, projectId) : null), [projectId]);
-  const { data: project } = useEntity<Project>(projectTypeId, { watch: true, enabled: !!projectTypeId });
-  const { contextDirInfos } = useProjectContextFolders(project);
-
-  const rel = normalizeRel(relPath);
+  const rel = normalizeRel(vfsPath.entitySubPath);
   const initialPath = rel ? `/${rel}` : '/';
 
-  // The git-backed context folder containing the browsed path (if any) — the
-  // repo root the status probes bind to.
-  const gitWorkdir = useMemo(() => {
-    const match = contextDirInfos.find((info) => {
-      if (info.origin_kind !== 'git') return false;
-      const dirRel = normalizeRel(info.path);
-      return !!dirRel && (rel === dirRel || rel.startsWith(`${dirRel}/`));
-    });
-    return match ? `/${normalizeRel(match.path)}` : null;
-  }, [contextDirInfos, rel]);
+  // The context folder containing the browsed path; this pane only decorates the
+  // GIT-backed ones, so a local folder reads as "no workdir" exactly as before.
+  const folder = useContextFolderForRel(projectId, rel);
+  const gitWorkdir = folder?.originKind === 'git' ? folder.workdir : null;
 
-  const { status, hasUnpushed, isPathUnpushed, refresh } = useGitFolderStatus(gitWorkdir, typeId?.id ?? '@local');
+  const { status, hasUnpushed, isPathUnpushed, refresh } = useGitFolderStatus(
+    gitWorkdir,
+    folder?.computeNodeId ?? '@local',
+  );
 
   const handlePathChange = useCallback(
-    (path: string) => {
-      onNavigate(DockPointer.forAssetFsFolder(path));
+    (vfs: string) => {
+      const locatorTypeId = vfsPath.typeId;
+      if (!locatorTypeId) return;
+      // SimpleFileManager reports a full VFS path on the LIVE compute node;
+      // re-stamp it onto the root's durable locator typeId.
+      onNavigate(DockPointer.forAssetFs(VFSPath.fromTypeId(locatorTypeId, VFSPath.parse(vfs).entitySubPath)));
     },
-    [onNavigate],
+    [onNavigate, vfsPath],
   );
 
   const handleFileSelect = useCallback(

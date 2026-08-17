@@ -1,4 +1,15 @@
-import { dataContext, detectLanguage, downloadFile, EditorLanguage, FSItem, fsManager, isImagePath, Shell, TypeId, VFSPath } from '@sdk';
+import {
+  dataContext,
+  detectLanguage,
+  downloadFile,
+  EditorLanguage,
+  FSEntry,
+  fsManager,
+  isImagePath,
+  Shell,
+  TypeId,
+  VFSPath,
+} from '@sdk';
 import { TabbedTerminal } from '@src/components/terminal';
 import { Button } from '@src/components/ui/button';
 import { InputDialog } from '@src/components/ui/input-dialog';
@@ -14,6 +25,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DirectoryTree, ItemHandler } from '../directory-tree';
 import DiffViewer from './DiffViewer';
 import { EditorPane } from './EditorPane';
+import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
 
 interface EditorFile {
   path: string;
@@ -49,13 +61,22 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
 
   const fs = useFS(effectiveTypeId);
 
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
   const [showHiddenItems, setShowHiddenItems] = useState(false);
+
+  // `?line=` on the dock (written by `DockPointer.forFile`) is a deep link into
+  // the active file — e.g. an interface block's "Open in editor". Only the
+  // active tab honours it; the others are just open, not targeted.
+  const deepLink = useMemo(() => {
+    const raw = currentDock?.options?.line;
+    const line = raw ? Number.parseInt(raw, 10) : NaN;
+    return Number.isFinite(line) && line > 0 ? line : null;
+  }, [currentDock]);
 
   // Dialog state for file/folder creation
   const [showFileInput, setShowFileInput] = useState(false);
   const [showFolderInput, setShowFolderInput] = useState(false);
-  const pendingActionRef = useRef<{ item: FSItem; callback: (name: string) => Promise<void> } | null>(null);
+  const pendingActionRef = useRef<{ item: FSEntry; callback: (name: string) => Promise<void> } | null>(null);
 
   // Ref to trigger refresh of DirectoryTree
   const [treeRefreshKey, setTreeRefreshKey] = useState(0);
@@ -63,11 +84,11 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
     setTreeRefreshKey((prev) => prev + 1);
   }, []);
 
-  // Create root FSItem for the project directory (used by DirectoryTree)
+  // Create root FSEntry for the project directory (used by DirectoryTree)
   const rootFolders = useMemo(() => {
     if (!projectTypeId) return [];
     return [
-      new FSItem({
+      new FSEntry({
         is_dir: true,
         vfs_abs_path: `${projectTypeId.type}-${projectTypeId.id}/.`,
         size: 0,
@@ -84,7 +105,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
         actions: [
           // ItemHandler.runSkillAction((item, e) => {
           //   e.stopPropagation();
-          //   // Navigate to execute-flow page with the FSItem (full VFS context)
+          //   // Navigate to execute-flow page with the FSEntry (full VFS context)
           //   navigation.openExecuteFlow({ file: item });
           // }),
           ItemHandler.createFileAction((item, e) => {
@@ -156,7 +177,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
       {
         name: 'hidden' as const,
         label: t`Hide hidden files`,
-        filterFn: (item: FSItem) => !item.name.startsWith('.'),
+        filterFn: (item: FSEntry) => !item.name.startsWith('.'),
       },
     ],
     [t],
@@ -287,7 +308,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
 
   // Handle file selection from DirectoryTree
   const handleFileSelect = useCallback(
-    (item: FSItem | null) => {
+    (item: FSEntry | null) => {
       if (!item || item.is_dir) {
         // Null or folder - DirectoryTree handles expand/collapse
         return;
@@ -392,7 +413,11 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
       dataContext.setActiveTerminalTargetTypeId(new TypeId(Shell.type, runShell.id));
 
       if (!runShell.pty?.isLive) {
-        await runShell.start({ cols: 80, rows: 24, workdir: runShell.workdir ?? dataContext.project?.fs_storage_mount_path ?? undefined });
+        await runShell.start({
+          cols: 80,
+          rows: 24,
+          workdir: runShell.workdir ?? dataContext.project?.fs_storage_mount_path ?? undefined,
+        });
       }
       await runShell.resize(80, 24);
       await runShell.sendInput(command.trim() + '\r');
@@ -407,9 +432,11 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
   }, [fs]);
 
   const renderExplorerPanel = () => (
-    <div className="h-full border-r bg-muted/20">
+    <div className="h-full border-e bg-muted/20">
       <div className="flex items-center justify-between border-b bg-muted/50 p-1">
-        <h2 className="p-2 text-sm font-medium text-foreground"><Trans>Explorer</Trans></h2>
+        <h2 className="p-2 text-sm font-medium text-foreground">
+          <Trans>Explorer</Trans>
+        </h2>
         <div className="flex items-center">
           <Button
             variant="ghost"
@@ -423,7 +450,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
             variant="ghost"
             size="icon"
             onClick={() => void downloadAllFiles()}
-            className="ml-auto"
+            className="ms-auto"
             title={t`Download all files`}
           >
             <Download className="h-4 w-4" />
@@ -450,6 +477,14 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
     <div className="flex h-full flex-col">
       {openTabs.length > 0 || diffTab ? (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex h-full flex-col">
+          {activeTab !== 'diff' && activeTab && (
+            <AssetEditorHeader
+              fileName={activeTab.split('/').pop() || activeTab}
+              dirPath={activeTab.includes('/') ? activeTab.slice(0, activeTab.lastIndexOf('/')) : ''}
+              sourcePath={activeTab}
+              dirty={openTabs.find((tab) => tab.path === activeTab)?.isDirty}
+            />
+          )}
           <div className="flex items-center border-b bg-muted/20">
             <ScrollArea className="w-full flex-1 whitespace-nowrap">
               <TabsList className="h-auto w-max justify-start rounded-none bg-transparent p-0">
@@ -459,7 +494,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
                     <TabsTrigger
                       key={tab.path}
                       value={tab.path}
-                      className="group relative flex items-center gap-1 rounded-none border-r px-4 py-2 data-[state=active]:bg-background data-[state=active]:shadow-none"
+                      className="group relative flex items-center gap-1 rounded-none border-e px-4 py-2 data-[state=active]:bg-background data-[state=active]:shadow-none"
                     >
                       <span className="max-w-[120px] truncate text-sm">
                         {file.path?.split('/')?.pop()}
@@ -467,7 +502,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
                       </span>
                       {tab.isPinned ? (
                         <div
-                          className="ml-1 flex h-4 w-4 cursor-pointer items-center justify-center rounded p-0 opacity-50 hover:opacity-100"
+                          className="ms-1 flex h-4 w-4 cursor-pointer items-center justify-center rounded p-0 opacity-50 hover:opacity-100"
                           onClick={(e) => {
                             e.stopPropagation();
                             togglePinTab(tab.path);
@@ -478,7 +513,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
                       ) : (
                         <>
                           <div
-                            className="ml-1 flex h-4 w-4 cursor-pointer items-center justify-center rounded p-0 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-50"
+                            className="ms-1 flex h-4 w-4 cursor-pointer items-center justify-center rounded p-0 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-50"
                             onClick={(e) => {
                               e.stopPropagation();
                               togglePinTab(tab.path);
@@ -487,7 +522,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
                             <Pin className="h-3 w-3 rotate-45" />
                           </div>
                           <div
-                            className="ml-1 flex h-4 w-4 cursor-pointer items-center justify-center rounded p-0 opacity-50 hover:opacity-100"
+                            className="ms-1 flex h-4 w-4 cursor-pointer items-center justify-center rounded p-0 opacity-50 hover:opacity-100"
                             onClick={(e) => {
                               e.stopPropagation();
                               closeFile(tab.path);
@@ -503,9 +538,11 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
                 {diffTab && (
                   <TabsTrigger
                     value="diff"
-                    className="group relative flex items-center gap-1 rounded-none border-r px-4 py-2 data-[state=active]:bg-background data-[state=active]:shadow-none"
+                    className="group relative flex items-center gap-1 rounded-none border-e px-4 py-2 data-[state=active]:bg-background data-[state=active]:shadow-none"
                   >
-                    <span className="text-sm"><Trans>Diff</Trans></span>
+                    <span className="text-sm">
+                      <Trans>Diff</Trans>
+                    </span>
                     <div
                       className="flex h-4 w-4 cursor-pointer items-center justify-center rounded-sm p-0 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
                       onClick={(e) => {
@@ -532,6 +569,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
                 <EditorPane
                   readOnly={readOnly}
                   file={file}
+                  revealLine={tab.path === activeTab ? deepLink : null}
                   onExecuteScript={expandTerminal}
                   onShellCmd={(command) => {
                     handleShellCommand(command).catch((error) => {
@@ -552,7 +590,9 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
       ) : (
         <div className="flex flex-1 items-center justify-center text-muted-foreground">
           <div className="text-center">
-            <p className="text-lg"><Trans>No files open</Trans></p>
+            <p className="text-lg">
+              <Trans>No files open</Trans>
+            </p>
           </div>
         </div>
       )}
@@ -563,7 +603,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
     <div data-testid="terminal-panel" className="flex h-full flex-col border-t bg-muted/20">
       <div className="flex items-center justify-between border-b bg-muted/50 p-2">
         <h3 className="flex text-sm font-medium text-foreground">
-          <TerminalIcon className="mr-2 h-4 w-4" />
+          <TerminalIcon className="me-2 h-4 w-4" />
           <Trans>Shell</Trans>
         </h3>
 
@@ -580,7 +620,9 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
   if (!projectTypeId) {
     return (
       <div className="flex h-full w-full flex-col items-center justify-center text-muted-foreground">
-        <p className="text-sm"><Trans>No project context available</Trans></p>
+        <p className="text-sm">
+          <Trans>No project context available</Trans>
+        </p>
       </div>
     );
   }

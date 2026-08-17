@@ -4,11 +4,13 @@ id: 56fb0e59-2f93-57c1-bec9-49a18b3151c5
 
 # Scan and Discovery
 
-This document describes the discovery mechanisms used throughout `flow_sdk` to locate, load, and index records from disk. The current model is a single **DFS walker** — `FSIndexer` (`flow_sdk/fs_store/indexer/index_function.py`) — that starts from a small set of roots, fans out through transient *waypoint* types, and dispatches per-type parser slots (`from_disk_fn` / `gen_uuid_fn` / `asset_hash_fn`) declared in `flow_sdk/schema/type_info/<type>_info.py`. It also covers Claude/Codex session lookup helpers, `RecordQuery` filtering, the scan/index HTTP actions, and error-record handling.
+This document describes the discovery mechanisms used throughout `flow_sdk` to locate, load, and index records from disk. The current model is a single **DFS walker** — `FSIndexer` (`flow_sdk/fs_store/indexer/index_function.py`) — that starts from a small set of roots, fans out through transient *waypoint* types, and dispatches per-type parser, identity, and freshness slots declared in `flow_sdk/schema/type_info/<type>_info.py`. It also covers Claude/Codex session lookup helpers, `RecordQuery` filtering, the scan/index HTTP actions, and error-record handling.
 
 > **Disk is the source of truth.** Records are scanned from disk; the Entity/DB layer is a queryable index that can be deleted and rebuilt from disk without data loss. See `docs/CLAUDE.md`.
 
-> **Indexing is explicit-action only.** A scan or index pass runs only when something explicitly requests it: a user clicking "reindex" in the UI (`POST /fs-records/index`), a scan/resource action, or a narrow self-heal that fires *only* when the caller passes an explicit `?hint_path=` (`_try_self_heal_missing_entity`, `flow_sdk/server/routes/graph.py`). It is **never** triggered automatically from mount, navigation, focus, bootstrap, or an interval (see the no-auto-walk rule, `feedback_no_auto_indexing.md`). Read-only `index-status` is the only thing the bootstrap path touches.
+> **Indexing is explicit-action only, with one opt-out exception.** A scan or index pass runs only when something explicitly requests it: a user clicking "reindex" in the UI (`POST /fs-records/index`), a scan/resource action, or a narrow self-heal that fires *only* when the caller passes an explicit `?hint_path=` (`_try_self_heal_missing_entity`, `flow_sdk/server/routes/graph.py`). It is still **never** triggered from mount, focus, an interval, or the bootstrap request; read-only `index-status` is the only thing the bootstrap path touches.
+>
+> The exception is **auto-index on project selection** (`preferences.auto_index.*`, on by default) — see [When Does Indexing Run](#when-does-indexing-run). It is a deliberate reversal of the original no-auto-walk rule (`feedback_no_auto_indexing.md`), taken because a never-indexed project presents as a permanently empty Assets menu with no signal telling the user to act. Everything the old rule protected still holds: the run is scoped to the one project, gated behind a preference the user can switch off, never walks a protected folder without consent, and never sweeps orphans.
 
 ---
 
@@ -35,7 +37,7 @@ Two public coroutines:
 
 | Method | Purpose |
 |---|---|
-| `scan(opts)` | DFS over the roots; returns the flat list of visited `FSRef`s. No parse, no DB. |
+| `scan(opts)` | DFS over the roots; returns the flat list of visited `FSRef`s. No payload parse and no DB write. Callers that project scan results resolve identity through `TypeInfo`, which may persist a missing portable id. |
 | `index(opts)` | Runs `scan()`, then for each visited ref whose type declares a `from_disk_fn`, parses it into `FSRecord`s and persists them (`rec.sync_to_db(...)`) plus an FTS upsert. Returns an `IndexResult`. |
 
 `IndexerOptions` (frozen dataclass) controls a run: `limit`, `limit_per_type`, `include_temp`, `types` (index filter), `roots` (per-call root override), `force` (bypass skip-fresh), `gitignore`, `project_id`, `orphan_action`, `scope_filter`, and `on_progress`.
@@ -103,6 +105,7 @@ Notable structural facts:
 
 - **Two-stage into-file walks.** Hooks and MCP servers are discovered in two steps: `<root> → *_SOURCE` (one FSRef per `settings.json` / `.mcp.json`-like file), then `*_SOURCE → leaf` (one FSRef per entry, each carrying a distinct RFC-6901 `json_path` so fragment records sharing one file are not collapsed by the DFS dedup key `(path, record_type, json_path)`).
 - **`real_project_cwd_fn` is intentionally NOT registered** on `USER_HOME_FOLDER`. Project-cwd fan-out used to be implicit (any user-home scan silently walked every project tree). Project-cwd roots are now contributed explicitly by the scope filter via `_resolve_scoped_roots` — callers wanting all projects pass a `ScopeFilter` from `get_all_scope_filter()`.
+- **A project root can be read-only.** `_resolve_scoped_roots` stamps `read_only` on a root whose mount is in `Folder.borrowed_checkout_paths()` — someone else's repo, which the walk must not write identity capsules into (why, and who else asks: [fs-ref.md](../fs-ref.md)). The set is fetched once per scan, not per root; `read_only` then propagates down the parent chain.
 - **Codex projects** are consolidated into `RecordType.PROJECT` (`codex_projects_fn` is annotated `PROJECT`); `CODEX_PROJECT` is a deprecated alias.
 
 ### Type-gating the dispatch
@@ -113,9 +116,24 @@ When `opts.types` is set, `scan()` computes the reverse-reachability closure (`_
 
 Walkers are typically synchronous file I/O. `scan()` runs them in chunks of `_SCAN_CHUNK_NODES = 256` node-visits per `asyncio.to_thread` round-trip, yielding the event loop between chunks so progress emits and concurrent requests stay responsive. Async walkers (rare) are detected via `_is_async_walker` and awaited on the main loop.
 
+### Out-of-process discovery (`SubprocessScanIndexer`)
+
+`preferences.auto_index.index_function = subprocess` (the default) swaps in `SubprocessScanIndexer`, which overrides **only** `scan()`. `index()` is inherited verbatim, so the per-record loop and every SQLite write stay in the server process.
+
+The boundary is deliberately drawn there rather than around the whole run: SQLite serializes writers regardless of which process issues them, so moving the writes off-process buys no write throughput while losing the `_session_ctx` contextvar handshake, `record_sync_guard`, the `_COMPUTE_ACTIVITIES` single-flight gate, and `_DB_LIFECYCLE_LOCK` — and it would break the rule stated in `graph_workflow_manager/function_runner.py` that *a subprocess must never open the instance DB directly*. The walk is GIL-bound CPU plus filesystem I/O with no DB at all, which is the part a separate process actually parallelizes.
+
+Wire protocol: `flow_sdk/fs_store/indexer/ndjson_stream.py`, shared with `RSIndexerAdapter`. The child (`python -m flow_sdk.fs_store.indexer.scan_child`) takes one JSON request on stdin — roots, options, and the parent's **effective** records/data roots, which it adopts rather than re-deriving — and emits NDJSON candidates, progress snapshots, and one terminal `{"result": …}` line.
+
+Two details are load-bearing:
+
+* **Candidates carry their parent link** (`parent_i` / `parent_ref`), not just resolved `scope` / `project_id` / `read_only`. `index()` derives a record's enclosure `parent_type_id` from `ref._parent` directly (`ref_typeid(getattr(ref, "_parent", None))`), so a purely flattened candidate silently unparents every received asset.
+* **The terminal result line is a safety mechanism.** Without it a child killed mid-stream is indistinguishable from a clean scan, and a truncated candidate set reaching `index()` would let the orphan sweep delete every record the child never emitted. Its absence is a hard failure.
+
+Any failure — spawn error, bad JSON, missing result line, non-zero exit — logs one warning and falls back to the in-process walk, mirroring `_maybe_rs_indexer`. Note the child pays full interpreter + `flow_sdk` import startup (~1.5s), so `thread` is faster for small projects; `subprocess` buys isolation and GIL-free parallelism on large trees.
+
 ---
 
-## Per-type Dispatch Slots: `from_disk_fn` / `gen_uuid_fn` / `asset_hash_fn`
+## Per-type Dispatch Slots: parsing, identity, and freshness
 
 **Source:** `flow_sdk/schema/type_info/__init__.py` (`TypeMetadata`), registered into `SchemaRegistry` (`flow_sdk/fs_store/schema_registry.py`, `TypeInfo`).
 
@@ -125,8 +143,9 @@ The dispatch callables:
 
 | Slot | Signature | Role |
 |---|---|---|
-| `from_disk_fn` | `(FSRef) -> list[FSRecord]` (sync or async) | Parse one discovered ref into one or more records. `index()` only parses refs whose type declares this (`_has_dispatch`). |
-| `gen_uuid_fn` | `(FSRef) -> str` | Mint-on-first-encounter id: idempotent if the file already carries an id (e.g. frontmatter), else writes the derived id back so future scans are rename-stable. Falls back to a `mint_uuid(path)` uuid5 when absent. |
+| `from_disk_fn` | `(FSRef, resolved_id) -> list[FSRecord]` (sync or async) | Parse payload using the identity resolved once by the caller. |
+| `capsules` / `identity_backend` | `tuple[CapsuleSpec, ...]`, backend | Declare named capsules and observe canonical plus legacy/native identity carriers. |
+| `id_stable_key_fn` / `id_namespace` | `(FSRef) -> str`, `UUID` | Optional natural/path key and namespace for deterministic v5 identity. |
 | `asset_hash_fn` | `(...) -> str` | Content hash for the type's primary asset (used by skip-fresh / sentinel logic). |
 | `post_sync_fn` | hook | Post-sync side effects. |
 | `default_body_fn` | hook | Default-body writer for `FSRecord.upsert_main_ref` on create. |
@@ -141,7 +160,8 @@ SKILL = TypeMetadata(
     index_fields=["description"],
     main_subdir=".claude/skills", main_layout="folder",
     from_disk_fn=extract_skill,
-    gen_uuid_fn=skill_gen_id,
+    capsules=(CapsuleSpec("identity"),),
+    identity_backend=capsule_identity(skill_id_from_folder),
     asset_hash_fn=skill_asset_hash,
 )
 ```
@@ -150,11 +170,26 @@ SKILL = TypeMetadata(
 
 For each visited ref of a type that has a `from_disk_fn`:
 
-1. **Mint id** via `gen_uuid_fn` (or default `mint_uuid(path)`), record it in `seen_ids` *before* any skip/index decision (so a fresh-skip isn't later misclassified as an orphan).
-2. **Skip-fresh** (unless `opts.force`): a probe `FSRecord` reads its own on-disk `.hash` sentinel; if `not index_required`, increment `skipped` and continue. This is pure on-disk equality — no parse, no DB read.
-3. **Parse + persist**: call `from_disk_fn(ref)` (awaited or via `to_thread`), stamp walk-time `scope`/`project_id` from the FSRef parent-chain onto each record, `await rec.sync_to_db(fts_batch=..., notify=False)`, then `probe.write_hash()` on success (a failed parse stays `index_required` for retry).
+1. **Resolve id** via `TypeInfo.mint_entity_id(ref, owner_id=..., live_ids=..., derive=True, overwrite=True)` — ONE call, never a read-then-mint pair. The order is carrier → the row that already owns this path (`owner_id`, supplied from the walk's preload) → derive. A read-then-mint pair forks the entity whenever a full-content rewrite has wiped the carrier, so it is banned by an AST lint. Existing valid carrier ids are never rewritten. A missing portable id is minted as v4 and persisted; deterministic/provider types mint configured v5 identities. Foreign ids are not adoptable and must fall back to a stable v5 under the entity-id policy. Record the resolved id in `seen_ids` *before* any skip/index decision so a fresh-skip is not later misclassified as an orphan.
+2. **Resolve live occurrences** across the complete candidate set before parsing. `resolve_asset_collisions()` groups canonical filesystem paths by `type+id` and chooses one primary deterministically: earliest Git introduction commit, then trusted filesystem birth time (`st_birthtime`, never `ctime`), then persisted `first_seen_at`, then canonical path. Git is probed only for groups with multiple live paths and failures fall through to the next rank. Every losing path is warned and skipped; no source bytes, capsules, or ids are rewritten.
+3. **Skip-fresh** (unless `opts.force`): a probe `FSRecord` reads its own on-disk `.hash` sentinel and the preloaded DB id set confirms that the indexed row still exists. If both are fresh, increment `skipped` and continue.
+4. **Parse + persist**: call `from_disk_fn(ref, resolved_id)` (awaited or via `to_thread`); the parser constructs the top-level record with that id. Stamp walk-time `scope`/`project_id`, sync, then write the hash after the DB batch commits.
 
 The whole loop runs inside **one DB session** but commits in **bounded batches** (`_INDEX_COMMIT_BATCH = 50`). The engine issues `BEGIN IMMEDIATE` per transaction; a single session spanning the whole scan would hold the SQLite writer lock for seconds/minutes and starve concurrent requests (`database is locked`). Per-batch commits release the lock between batches. This is a contention fix, not a `busy_timeout`/retry change. (See `project_indexer_db_lock_contention.md`.)
+
+### Filesystem occurrence projection
+
+Collision state describes what is live on the filesystem, not an alternate
+identity store. Each decision records `AssetOccurrence(path, first_seen_at)` in
+primary-first order. A narrowed discovery pass retains a previously observed
+out-of-scope path only when it still exists and a read-only identity check still
+resolves it to the same `type+id`; deleted or re-keyed paths are pruned.
+
+The winning path is the only occurrence parsed and synchronized. Losing paths
+remain byte-identical and keep their existing ids, so indexing never resolves a
+copy conflict by mutating user assets. Per-type and total index results report
+`duplicate_groups` and `duplicate_occurrences`, and each group is warned once
+per run.
 
 ### Orphan handling
 
@@ -290,8 +325,30 @@ There is **no filesystem-watcher-triggered indexer walk** — a file changing on
 | **GET-time lazy refresh** (per entity) | If the record's `index_required` says the source changed, re-run `sync_to_db()` + stamp the sentinel — one record, no walk | `Entity.check_and_refresh_record()` (`flow_sdk/core/entity/entity_model.py`) |
 | **404 self-heal** (dock loader) | A single-file, single-type forced index when a navigation carries `?hint_path=` for an entity the DB doesn't have | `_try_self_heal_missing_entity` (`flow_sdk/app/actions/graph.py`) → `flow_sdk/fs_store/transcript_indexer/handlers/single_file_indexers.py` |
 | **Resource-browser scans** | Read-only `FSIndexer.scan()` projections (no DB writes) | `flow_sdk/builtin/faas/scan_indexer.py` |
+| **Project selection / creation** (opt-out, `preferences.auto_index.*`) | A project-scoped `index()` when the user enters a project, so its assets are present without a manual run. Detached from the `activate` response; silently skips when another index holds the activity | `flow_sdk/fs_store/indexer/auto_index.py` → `ComputeNode._auto_index_project` |
 
-The deliberate absence of auto-indexing is a product decision: walks are user-visible work (progress pill) and only start on an explicit click or the narrow startup/system scope above.
+Auto-indexing on project selection is **on by default** and controlled by the four
+`preferences.auto_index.*` keys (the "Auto Index" preferences tab):
+
+| Key | Values | Default |
+|---|---|---|
+| `enabled` | bool | `true` |
+| `index_type` | `fast` (skip-fresh delta) \| `full` (`force=true`) | `fast` |
+| `index_trigger` | `project_create` \| `first_selection` \| `every_selection` | `first_selection` |
+| `index_function` | `subprocess` \| `thread` | `subprocess` |
+
+`first_selection` is tracked by an `auto_index_at` marker in the project record's shadow
+`metadata.json` — deliberately **not** `indexed_at` (project create stamps that sentinel,
+so it is non-null from birth) and not `last_active_at` (its writer overwrites the prior
+value before returning). The marker is stamped only once the index activity is actually
+held, so a run skipped for contention does not consume a project's one first-selection
+chance.
+
+Everything else still requires an explicit click. Two invariants the auto path must keep:
+it always resolves roots with `foreground=False`, so a protected-folder project is gated
+and an in-app consent request is queued rather than tripping an OS dialog on a plain
+project switch; and it always runs with `orphan_action=INDEX` (count-only), so an
+automatic run can never delete records.
 
 ## Scan & Index API Endpoints
 

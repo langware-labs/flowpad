@@ -203,9 +203,9 @@ export class Shell extends APIEntity<Shell> implements IShell {
   }
 
   /**
-   * Subscribe to ANSI-stripped output lines. Fires for every \n in the
-   * stream, replayed chunks included. Use this for live pattern detection
-   * over terminal output.
+   * Subscribe to ANSI-stripped output rows. Fires for LF-delimited lines and
+   * bare-CR terminal redraw rows, replayed chunks included. Use this for live
+   * pattern detection over terminal output.
    *
    * Also re-emits as a `line` event on this Shell — callers can use
    * `shell.on('line', fn)` interchangeably.

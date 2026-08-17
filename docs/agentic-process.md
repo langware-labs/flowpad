@@ -118,8 +118,33 @@ The backend entity stores the durable state:
 
 The entity resolves a vendor driver through
 `flow_sdk/builtin/agentic_process/cli_drivers/get_driver`. Vendor details such
-as CLI args, transcript lookup, history loading, and status tail parsing belong
-to the driver layer rather than being hard-coded throughout the entity.
+as CLI args, transcript lookup, history loading, status tail parsing, login
+probing (`driver.auth_probe()`), and the device-login flow (the
+`driver.device_login_spec` trait) belong to the driver layer rather than being
+hard-coded throughout the entity. Two classmethod facades expose the harness
+state: `AgenticProcess.is_installed(worker_type)` (reads the capability
+discovery value — the same source actual spawns use) and
+`AgenticProcess.is_logged_in(worker_type)`, which returns a `WorkerAuthResult`
+(`not_installed` / `logged_in` / `logged_out` / `unknown`; "couldn't check" is
+`unknown`, never `logged_out`). The result also carries an `auth_mode`
+(`device` / `api`) describing how the harness authenticates.
+
+A harness can authenticate two ways, selected by the per-harness `Capability`
+row's persisted `auth_mode` field:
+
+* **Device login** (`auth_mode = "device"`, the default) — the vendor's
+  link(+code) sign-in flow, driven through the `Capability` entity's
+  `device_login_spec` trait and `device-login`/`auth-status` actions.
+* **API key** (`auth_mode = "api"`) — the harness spawns against a stored
+  LLM-provider key instead of vendor credentials. The chosen provider lives in
+  `Capability.api_provider`; the key is stored via `flow_sdk.lm_api`
+  (`set_lm_api`/`get_lm_api`) in the per-instance secret store. Each driver
+  declares an `ApiAuthSpec`
+  (`flow_sdk/builtin/agentic_process/cli_drivers/api_auth.py`) with the
+  provider env, model-tier→slug map, and codex `-c` config it needs;
+  `resolve_worker_api_auth` folds that env into the spawn via
+  `apply_worker_secret_env` and overrides the model slug before argv is frozen.
+  `auth-status` reports `logged_in` iff a key is stored for the provider.
 
 ## PTY Mode Runtime
 

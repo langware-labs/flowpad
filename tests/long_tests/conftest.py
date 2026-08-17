@@ -31,35 +31,46 @@ import pytest
 # every platform CLAUDE.md says we support.
 _REAL_HOME = os.environ.get("FLOWPAD_PRE_SANDBOX_HOME") or os.path.expanduser("~")
 _SANDBOX_HOME = os.environ["HOME"]
+_SANDBOX_USERPROFILE = os.environ["USERPROFILE"]
 
-# Test modules whose tests spawn real Claude/Codex CLI subprocesses and need
+# Test modules whose tests spawn real Claude/Codex/Copilot CLI subprocesses and need
 # real ``$HOME`` for credentials. Anything not in this set keeps the parent
 # conftest's sandbox HOME.
-_REAL_HOME_TEST_MODULES = frozenset({
-    "test_agentic_process",
-    "test_agentic_process_prompt_streaming",
-    "test_agentic_cli_shell_mix",
-    "test_claude_cli",
-    "test_clean_claude_pty",
-    "test_clean_claude_pty_stress",
-    "test_markdown_index",
-    "test_prompt_queue_integration",
-    "test_process_status_report_stream",
-    "test_relaunch_kills_session_orphan",
-    "test_agent",
-    "test_debug_log_records",
-    "test_skill_transcript_analysis",
-    "test_docs_browse_skill",
-    "test_context_process",
-    "test_system_prompt",
-    "test_asset_cleanup_agent",
-    "test_context_folder_worker",
-})
+_REAL_HOME_TEST_MODULES = frozenset(
+    {
+        "test_agentic_process",
+        "test_agentic_process_prompt_streaming",
+        "test_agentic_cli_shell_mix",
+        "test_claude_cli",
+        "test_clean_claude_pty",
+        "test_clean_claude_pty_stress",
+        "test_cli_driver_binary_smoke",
+        "test_markdown_index",
+        "test_prompt_queue_integration",
+        "test_process_status_report_stream",
+        "test_process_hooks_multi_vendor",
+        "test_relaunch_kills_session_orphan",
+        "test_agent",
+        "test_debug_log_records",
+        "test_skill_chip_live_stream",
+        "test_skill_transcript_analysis",
+        "test_docs_browse_skill",
+        "test_context_process",
+        "test_system_prompt",
+        "test_settings_instruction",
+        "test_asset_cleanup_agent",
+        "test_context_folder_worker",
+        "test_artifact_real_worker",
+        # Not a CLI test: reads the real ``~/.flow/instances/*`` rig (ports,
+        # pids) of two running instances, which the sandbox HOME hides.
+        "test_ws_reconnect_message_catchup",
+    }
+)
 
 
 @pytest.fixture(autouse=True)
 def _real_home_for_cli_subprocess_tests(request):
-    """Restore real ``$HOME`` for tests that spawn real Claude/Codex CLI subprocesses.
+    """Restore real ``$HOME`` for tests that spawn real worker CLI subprocesses.
 
     Scope of this fixture is **subprocess auth only**: the CLI inherits the
     swapped ``$HOME`` via ``os.environ`` propagation and reads its credentials
@@ -81,15 +92,19 @@ def _real_home_for_cli_subprocess_tests(request):
     module_stem = request.path.stem
     if module_stem in _REAL_HOME_TEST_MODULES:
         os.environ["HOME"] = _REAL_HOME
+        os.environ["USERPROFILE"] = _REAL_HOME
         try:
             yield
         finally:
             os.environ["HOME"] = _SANDBOX_HOME
+            os.environ["USERPROFILE"] = _SANDBOX_USERPROFILE
     else:
         yield
 
+
 from flow_sdk.builtin.worker_status import ApiErrorTimeoutError  # noqa: E402
 from tests.api.conftest import (  # noqa: F401, E402
+    _rebind_session_db_driver,
     bootstrap_payload,
     bootstrapped_client,
     clean_db,
@@ -233,6 +248,7 @@ def make_process(worker_id) -> Callable[..., Awaitable]:
     """
     from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.flowpad_types.enums import WorkerType
+    from tests.long_tests._model_tier import small_model_for
 
     _DRIVER_TO_ENUM = {
         "claude": WorkerType.CLAUDE_CODE,
@@ -242,7 +258,15 @@ def make_process(worker_id) -> Callable[..., Awaitable]:
     enum_value = _DRIVER_TO_ENUM[worker_id]
 
     async def _make(**kwargs):
-        return await AgenticProcess(worker_type=enum_value, **kwargs).save()
+        # Default every agentic-process test to the cheapest model the worker can
+        # actually resolve (see ``_model_tier.small_model_for`` — Copilot must stay
+        # unset). Tests that need a specific model still win: their
+        # ``cli_config['model']`` is preserved, and only the key is defaulted.
+        cli_config = {**(kwargs.pop("cli_config", None) or {})}
+        model = small_model_for(enum_value)
+        if model:
+            cli_config.setdefault("model", model)
+        return await AgenticProcess(worker_type=enum_value, cli_config=cli_config, **kwargs).save()
 
     return _make
 

@@ -15,8 +15,9 @@ import collections
 import logging
 import os
 import re
+import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import psutil
 
@@ -33,7 +34,7 @@ from flow_sdk.utils.serialization import now_epoch_ms
 if TYPE_CHECKING:
     from flow_sdk.api.api_types.type_id import TypeId
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
-        WorkerCLIOptions,
+        AgentOptions,
         WorkerExecutionInfo,
     )
     from flow_sdk.builtin.faas.compute_node import ComputeNode
@@ -80,13 +81,11 @@ def get_shell_record(uid: str) -> FSRecord | None:
 
 def shell_pty_stream_path(record_id: str, pty_pid: str | None):
     """Path to the .pty stream file for a shell session."""
-    from flow_sdk.fs_store.fs_record import record_stem
-    from flow_sdk.fs_store.record_paths import get_default_records_data_root
-
     if pty_pid is None:
         raise ValueError("No pty_pid set")
-    stem = record_stem(BuiltinEntityType.SHELL.value, record_id)
-    return get_default_records_data_root() / BuiltinEntityType.SHELL.value / stem / f"{pty_pid}.pty"
+    from flow_sdk.fs_store.record_paths import data_dir_for
+
+    return data_dir_for(BuiltinEntityType.SHELL.value, record_id) / f"{pty_pid}.pty"
 
 
 def close_shell_record(record: FSRecord) -> None:
@@ -106,6 +105,63 @@ def close_shell_record(record: FSRecord) -> None:
         except (OSError, ValueError):
             pass
     record.save_metadata_field("status", ShellStatus.CLOSED.value)
+
+
+# PTY output is a paint stream, not a text file. To report a command's output
+# we drop the escape sequences but KEEP the line structure — unlike
+# ``strip_pty_controls`` (cli_worker_base_driver), which flattens everything
+# because it only ever searches for single-line markers.
+_PTY_OSC_RE = re.compile(rb"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+_PTY_CSI_RE = re.compile(rb"\x1b\[[0-9;:?<>=!]*[ -/]*[@-~]")
+_PTY_ESC_RE = re.compile(rb"\x1b[@-_=>]?")
+_PTY_CTRL_RE = re.compile(rb"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")  # keeps \t \n \r
+
+
+def _strip_pty_keep_lines(data: bytes) -> str:
+    """Printable text of a PTY chunk, newlines intact."""
+    for pattern in (_PTY_OSC_RE, _PTY_CSI_RE, _PTY_ESC_RE, _PTY_CTRL_RE):
+        data = pattern.sub(b"", data)
+    return data.decode("utf-8", "replace").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _sentinel_body(text: str, marker: str, end: int) -> str:
+    """The command's own output: everything between the ECHOED command line and
+    the sentinel at ``end``.
+
+    The terminal echoes what was typed, and what was typed ends in the sentinel
+    ``echo`` — so the first marker-bearing line is the echo, never output. Drop
+    it, or every result would be prefixed by the command that produced it.
+    """
+    lines = text[:end].split("\n")
+    for i, line in enumerate(lines):
+        if marker in line:
+            lines = lines[i + 1 :]
+            break
+    return "\n".join(lines).strip("\n")
+
+
+async def _with_attached_project_secrets(
+    project_id: str | None, extra_env: dict[str, str] | None
+) -> dict[str, str] | None:
+    """Merge the project's attached secrets under any explicit ``extra_env``.
+
+    Best-effort by design: a terminal must open even when a secret cannot be
+    resolved, so every failure here is swallowed and the PTY spawns without it.
+    """
+    if not project_id:
+        return extra_env
+    try:
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.builtin.secret_origin_resolver import secret_env_dict  # noqa: PLC0415
+
+        project = await Project.get_by_id(str(project_id))
+        if project is None or not project.secret_origins:
+            # The common case. Return before the node lookup rather than after.
+            return extra_env
+        return await secret_env_dict(project, extra_env)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[shell] could not resolve project secrets for the PTY: %s", e)
+        return extra_env
 
 
 class Shell(Entity):
@@ -151,7 +207,7 @@ class Shell(Entity):
         ),
     )
     last_launch_cmd: dict | None = APIField(
-        default=None, description="Serialized WorkerCLIOptions from the last launch() call"
+        default=None, description="Serialized AgentOptions from the last launch() call"
     )
 
     def get_implicit_private_context_entities(self) -> list["TypeId"]:
@@ -292,6 +348,41 @@ class Shell(Entity):
             return None
         return argv[next_idx]
 
+    @staticmethod
+    def _exe_stem(path: str) -> str:
+        """Basename-without-extension of *path*, casefolded, parsed independently
+        of the host OS.
+
+        ``os.path`` follows the *host's* convention, so a Windows argv inspected
+        from a POSIX host does not split at all —
+        ``posixpath.basename(r"C:\\WINDOWS\\system32\\cmd.exe")`` returns the whole
+        string, because a backslash is an ordinary filename character there.
+        Worker identity is a property of the *target's* path convention, not the
+        machine asking, so split on both separators explicitly. On a real POSIX
+        argv (``/usr/local/bin/node``) this is identical to ``posixpath``.
+        """
+        tail = re.split(r"[\\/]", path)[-1]
+        stem, _, _ext = tail.rpartition(".")
+        # rpartition yields an empty stem for a dotless name ("codex") and for a
+        # leading-dot name (".bashrc"); both keep the whole tail, as splitext does.
+        return (stem or tail).casefold()
+
+    @classmethod
+    def _strip_cmd_shim(cls, cmdline: list[str]) -> list[str]:
+        """Drop a leading Windows ``cmd.exe /c`` wrapper from *cmdline*.
+
+        npm installs a console script on Windows as a ``.CMD`` batch shim, and
+        spawning that shim yields a PTY process whose argv is
+        ``['C:\\WINDOWS\\system32\\cmd.exe', '/c', 'C:\\...\\codex.CMD', ...]``
+        — the worker's own name sits at argv[2], one slot past the window the
+        identity check looks at. Unwrapping here lets the caller apply the same
+        argv[0]/argv[1] rule to the real command on every platform.
+        """
+        if len(cmdline) >= 3 and cls._exe_stem(cmdline[0]) == "cmd":
+            if cmdline[1].casefold() in ("/c", "/k"):
+                return cmdline[2:]
+        return cmdline
+
     @classmethod
     def _cmdline_matches_expected(
         cls,
@@ -307,12 +398,20 @@ class Shell(Entity):
         ``codex`` whose installed entrypoint is a Node shebang script —
         the kernel exec's ``node`` with the script path as argv[1], so a
         strict argv[0] check would falsely report the worker as dead.
+
+        A leading ``cmd.exe /c`` shim is unwrapped first: on Windows the same
+        npm workers are launched through a ``.CMD`` batch file, which pushes the
+        worker name to argv[2]. Without the unwrap this returns False for a
+        perfectly healthy worker, and the pty-recovery watchdog reads that
+        false negative as "worker dead", kills the live PTY and respawns it —
+        a ~5s relaunch loop that never converges (exit code 15 = SIGTERM).
         """
+        cmdline = cls._strip_cmd_shim(cmdline)
         if expected_exe:
             # Strip extension + casefold so stored "claude" matches Windows
             # psutil cmdline "claude.exe" / "claude.EXE". Linux unaffected.
-            expected_basename = os.path.splitext(os.path.basename(expected_exe))[0].casefold()
-            candidates = [os.path.splitext(os.path.basename(c))[0].casefold() for c in cmdline[:2]] if cmdline else []
+            expected_basename = cls._exe_stem(expected_exe)
+            candidates = [cls._exe_stem(c) for c in cmdline[:2]] if cmdline else []
             if expected_basename not in candidates:
                 return False
 
@@ -472,6 +571,11 @@ class Shell(Entity):
             elif self.status in ("running", "closed"):
                 await self._cleanup_stale_session()
 
+            # A terminal on this node sees the project's ATTACHED secrets, the
+            # same set a worker gets. Transient: it reaches the child process
+            # env and is never written to the node's filesystem. An explicitly
+            # passed value always wins.
+            extra_env = await _with_attached_project_secrets(self.project_id, extra_env)
             await cn.create_pty(
                 self.id,
                 rows=rows,
@@ -631,6 +735,71 @@ class Shell(Entity):
             last_seq = current_seq
             await asyncio.sleep(idle_ms / 1000)
 
+    #: Sentinel grammar for "run this and tell me how it went". MIRRORED in TS —
+    #: ``ui/src/terminal/run-in-terminal.ts`` builds the identical string, and a
+    #: test on each side pins this literal shape so the two cannot drift. The
+    #: appended ``echo`` is the only moment we know the command FINISHED, since
+    #: writing to a PTY proves delivery and nothing else.
+    SENTINEL_PREFIX: ClassVar[str] = "__flow_"
+
+    @classmethod
+    def sentinel_command(cls, command: str, marker: str) -> str:
+        """``<command>; echo "<marker>_$?"`` — the shared assertion grammar."""
+        return f'{command}; echo "{marker}_$?"'
+
+    async def run_and_capture(
+        self,
+        command: str,
+        *,
+        timeout: float = 120.0,
+        poll_interval: float = 0.15,
+    ) -> dict:
+        """Type ``command`` into the PTY and return WHAT IT PRINTED.
+
+        ``write`` alone is fire-and-forget: the user sees the command run, but
+        the caller learns nothing — an agent that types ``ls`` and cannot read
+        the listing is worse than useless, because it has to guess. This runs
+        the command in the visible terminal AND hands back its output and exit
+        code, so one call serves the user and the caller at once.
+
+        The sentinel is what makes "finished" knowable: the appended
+        ``echo "<marker>_$?"`` only prints once the command returns, and it
+        carries the exit code with it. Output is everything the PTY emitted
+        between the echoed command line and that sentinel.
+
+        ``timeout`` bounds the WAIT, not the command: on expiry the command
+        keeps running in the user's terminal and this returns what it printed
+        so far with ``completed: False``. It never kills anything and never
+        reports success it did not observe — a long-running command is a fact
+        to report, not an error to hide.
+        """
+        marker = f"{self.SENTINEL_PREFIX}{uuid.uuid4().hex[:8]}"
+        sentinel = re.compile(rf"{re.escape(marker)}_(\d+)")
+        # Only read what THIS command adds; the stream file holds the whole
+        # session, and a previous `ls` in scrollback must not be reported here.
+        baseline = len(await self.read())
+
+        await self.write(self.sentinel_command(command, marker))
+
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while True:
+            tail = _strip_pty_keep_lines((await self.read())[baseline:])
+            match = sentinel.search(tail)
+            if match:
+                return {
+                    "output": _sentinel_body(tail, marker, match.start()),
+                    "exit_code": int(match.group(1)),
+                    "completed": True,
+                }
+            if loop.time() >= deadline:
+                return {
+                    "output": _sentinel_body(tail, marker, len(tail)),
+                    "exit_code": None,
+                    "completed": False,
+                }
+            await asyncio.sleep(poll_interval)
+
     async def write(self, text: str) -> None:
         """Wait for the shell to be ready then inject text as if typed by the user.
 
@@ -688,9 +857,7 @@ class Shell(Entity):
         try:
             stream = session.pty_stream_file
             if stream is not None:
-                initial, snapshot_max_seq = stream.read_output_snapshot_after_seq(
-                    session.generation_start_seq
-                )
+                initial, snapshot_max_seq = stream.read_output_snapshot_after_seq(session.generation_start_seq)
             else:
                 initial, snapshot_max_seq = b"", session.generation_start_seq
 
@@ -768,7 +935,7 @@ class Shell(Entity):
 
     async def launch(
         self,
-        cmd: "WorkerCLIOptions",
+        cmd: "AgentOptions",
         instruction: str | None = None,
     ) -> "WorkerExecutionInfo":
         """Inject cmd into the PTY, poll for worker PID, persist on entity.
@@ -813,7 +980,7 @@ class Shell(Entity):
             started_at=datetime.now(timezone.utc).isoformat(),
         )
 
-    async def set_worker_pid_direct(self, cmd: "WorkerCLIOptions") -> "WorkerExecutionInfo":
+    async def set_worker_pid_direct(self, cmd: "AgentOptions") -> "WorkerExecutionInfo":
         """Record worker_pid when Claude IS the PTY process (direct spawn, no polling).
 
         Used by AgenticProcess when shell_mode=False. The PTY PID is Claude's PID directly,
@@ -981,6 +1148,23 @@ class Shell(Entity):
     @action.post(action_name="close")
     async def close(self) -> ApiResponse:
         """Kill worker + PTY + delete disk record + delete entity. Permanent teardown."""
+        owner = None
+        if self.agentic_process_id:
+            try:
+                from flow_sdk.builtin.agentic_process import AgenticProcess
+                from flow_sdk.builtin.process_lifecycle import ProcessStatus
+
+                owner = await AgenticProcess.get_by_id(self.agentic_process_id)
+                if owner is not None and owner.shell_id == self.id:
+                    owner.status = ProcessStatus.STOPPING.value
+                    owner.context_data = {
+                        **owner.context_data,
+                        "_shell_exit_pending": True,
+                    }
+                    await owner.save()
+            except Exception as e:
+                logging.warning(f"[Shell.close] owner stop transition failed: {e}")
+
         try:
             await self.terminate_worker()
         except Exception as e:
@@ -1001,6 +1185,27 @@ class Shell(Entity):
             logging.warning(f"[Shell.close] PTY kill failed: {e}")
 
         await self.delete()
+
+        # A direct shell close is an explicit lifecycle action, not an
+        # externally interrupted worker that restart recovery should preserve.
+        # Persist the terminal owner state before returning so the next entity
+        # read cannot race the PTY reader thread's on_exit callback.
+        if owner is not None:
+            try:
+                from flow_sdk.builtin.process_lifecycle import ProcessStatus
+
+                latest_owner = await type(owner).get_by_id(owner.id)
+                if latest_owner is not None and latest_owner.shell_id == self.id:
+                    latest_owner.context_data = {
+                        key: value for key, value in latest_owner.context_data.items() if key != "_shell_exit_pending"
+                    }
+                    latest_owner.sidecar_shell_id = None
+                    latest_owner.status = ProcessStatus.STOPPED.value
+                    latest_owner.visible = False
+                    await latest_owner.save()
+            except Exception as e:
+                logging.warning(f"[Shell.close] owner stopped transition failed: {e}")
+
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
     @action.post(action_name="run")

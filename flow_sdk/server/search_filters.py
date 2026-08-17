@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 SCOPED_RECORD_TYPES: frozenset[str] = frozenset({
-    "skill", "agent", "markdown", "whiteboard", "workflow", "task",
+    "skill", "subagent", "markdown", "whiteboard", "task",
     "claude_hook", "claude_rules", "claude_memory", "claude_md",
     "claude_session", "codex_session", "command", "spec",
     "plan", "prompt",

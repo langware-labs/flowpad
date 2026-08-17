@@ -4,8 +4,8 @@
  * A terminal panel mirrors the PTY auto-title onto the Tab via `set_name`; the
  * backend persists it and fires `broadcast_tabs_changed()` — a WS message
  * `{message_type: "broadcast", broadcast_type: "tabs_changed"}` (tab.py). The
- * tab strip renders from the global store in `ui/src/tabs/all-tabs-store.ts`,
- * which refetches on that ping.
+ * tab strip renders from the SDK TabManager's global store, which refetches on
+ * that ping.
  *
  * This test drives the REAL consumer end-to-end over the real websocket: it
  * attaches the store's ping subscription, renames a real Tab through the real
@@ -17,10 +17,9 @@
  * when I open a new tab" bug).
  */
 
-import { Tab } from '@sdk';
+import { Tab, tabManager } from '@sdk';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
-import { attachTabsChangedPing, getAllTabsSnapshot, refreshAllTabs } from '@src/tabs/all-tabs-store';
 import { apiTestSetup } from '../utils/test-utils';
 
 describe('tabs_changed broadcast drives the tab-strip store', () => {
@@ -37,12 +36,13 @@ describe('tabs_changed broadcast drives the tab-strip store', () => {
 
   afterAll(async () => {
     if (tabId) await Tab.closeById(tabId).catch(() => {});
+    tabManager.resetForTests();
   });
 
   it('updates the store snapshot after a backend set_name, with no local refetch', async () => {
-    attachTabsChangedPing();
-    await refreshAllTabs(); // seed the snapshot with the pre-rename name
-    expect(getAllTabsSnapshot().find((t) => t.id === tabId)?.name).toBe(marker);
+    tabManager.attachTabsChangedPing();
+    await tabManager.refresh(); // seed the snapshot with the pre-rename name
+    expect(tabManager.getSnapshot().find((t) => t.id === tabId)?.name).toBe(marker);
 
     const newName = `${marker}-renamed`;
     await Tab.setNameById(tabId!, newName);
@@ -53,7 +53,7 @@ describe('tabs_changed broadcast drives the tab-strip store', () => {
 
     // The contract under test: the ping alone must refresh the store.
     await vi.waitFor(
-      () => expect(getAllTabsSnapshot().find((t) => t.id === tabId)?.name).toBe(newName),
+      () => expect(tabManager.getSnapshot().find((t) => t.id === tabId)?.name).toBe(newName),
       { timeout: 3000, interval: 100 },
     );
   });

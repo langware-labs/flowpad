@@ -60,6 +60,7 @@ export function RoomHeader({ room, isHost, isSupport = false, onEnded }: Props) 
     try {
       room.name = next;
       await room.save();
+      room.markEdit();
       notify.success({ title: t`Room renamed`, message: trimmed || '(cleared)' });
     } catch (err) {
       console.error('[RoomHeader] rename failed', err);
@@ -104,7 +105,9 @@ export function RoomHeader({ room, isHost, isSupport = false, onEnded }: Props) 
           {room.displayName}
         </button>
       )}
-      <span className="text-muted-foreground">· <Trans>started</Trans> {formatStarted(room.started_at)}</span>
+      <span className="text-muted-foreground">
+        · <Trans>started</Trans> {formatStarted(room.started_at)}
+      </span>
       {isSupport && (
         <span
           className="flex items-center gap-1 rounded-full border border-border bg-muted px-1.5 py-px text-[10px] uppercase tracking-wide text-muted-foreground"
@@ -114,8 +117,8 @@ export function RoomHeader({ room, isHost, isSupport = false, onEnded }: Props) 
           <Trans>Support room</Trans>
         </span>
       )}
-      <span className="ml-auto text-muted-foreground">
-        {(room.members?.length ?? 0)} {room.members?.length === 1 ? t`member` : t`members`}
+      <span className="ms-auto text-muted-foreground">
+        {room.presence?.length ?? 0} {room.presence?.length === 1 ? t`member` : t`members`}
       </span>
       {isHost && live && (
         <Button size="sm" variant="outline" className="h-6 text-[11px]" onClick={() => void handleEnd()}>

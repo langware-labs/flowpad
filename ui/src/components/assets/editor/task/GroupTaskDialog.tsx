@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { ActionInfo, ContactsGroup, dataManager, normalizeEmail, Task, TypeId } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import {
@@ -8,8 +9,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@src/components/ui/dialog';
+import { groupActionRef } from '@src/components/contact-picker/computed-groups';
 import { useContactsGroups } from '@src/components/contact-picker/use-contacts-groups';
 import { WikiLabel } from '@src/components/wiki-tip';
+import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { useTaskAssignmentMessage } from '@src/hooks/use-task-assignment-message';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
@@ -43,32 +46,43 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
   const { sendAssignment } = useTaskAssignmentMessage(task);
+  const ensureCloudLogin = useCloudLoginGate();
 
   const selected = groups.find((g) => g.id === selectedId) ?? null;
 
   const create = async () => {
     if (!selected || !task.id || busy) return;
+    setLocalError(null);
+    // `create-group-task` creates the member tasks ON THE HUB — without cloud
+    // login it 403s. Open the login flow first and resume on the same click,
+    // exactly like the share dialog's send.
+    const gate = await ensureCloudLogin();
+    if (!gate.ok) {
+      setLocalError(gate.error);
+      return;
+    }
     setBusy(true);
     try {
       // callAction reads the POST body from the ActionInfo itself — a second
       // argument would be silently ignored.
       const actionInfo = new ActionInfo('create-group-task', Task.type, task.id, 'POST');
-      actionInfo.bodyParameters = { group_id: selected.id };
-      const result = await dataManager.callAction<{ group_id: string }, CreateGroupTaskResult>(actionInfo);
+      actionInfo.bodyParameters = groupActionRef(selected);
+      const result = await dataManager.callAction<Record<string, unknown>, CreateGroupTaskResult>(actionInfo);
       const created = result?.created?.length ?? 0;
       const failed = result?.failed ?? [];
       if (failed.length) {
         notify.warning({
-          title: `Group task created with issues`,
+          title: t`Group task created with issues`,
           message: `${created} member task(s) created; ${failed.length} failed (${failed
             .map((f) => f.email ?? f.error)
             .join(', ')}). Re-run to retry.`,
         });
       } else {
         notify.success({
-          title: 'Group task created',
-          message: `${created} member task(s) created for "${selected.displayName ?? selected.name}".`,
+          title: t`Group task created`,
+          message: t`${created} member task(s) created for "${selected.displayName ?? selected.name}".`,
         });
       }
       // The assignment message (push-notify channel): ONE conversation PER
@@ -92,14 +106,14 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
       }
       if (messageFailures > 0) {
         notify.warning({
-          title: 'Members assigned, but some messages failed',
-          message: `The member tasks were created; ${messageFailures} notification message(s) did not go through.`,
+          title: t`Members assigned, but some messages failed`,
+          message: t`The member tasks were created; ${messageFailures} notification message(s) did not go through.`,
         });
       }
       onOpenChange(false);
     } catch (e) {
       notify.error({
-        title: 'Could not create group task',
+        title: t`Could not create group task`,
         message: e instanceof Error ? e.message : 'The group task could not be created.',
       });
     } finally {
@@ -132,13 +146,14 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
               type="button"
               onClick={() => setSelectedId(g.id ?? null)}
               className={cn(
-                'flex items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors',
+                'flex items-center justify-between rounded-md border px-3 py-2 text-start text-sm transition-colors',
                 selectedId === g.id ? 'border-primary bg-primary/5' : 'border-transparent hover:bg-muted',
               )}
             >
               <span className="flex items-center gap-2">
                 <Users className="h-4 w-4 text-muted-foreground" />
                 {g.displayName ?? g.name}
+                {g.computed && <span className="text-[10px] uppercase text-muted-foreground/70">auto</span>}
               </span>
               <span className="text-xs text-muted-foreground">
                 {(g.contacts ?? []).length} member{(g.contacts ?? []).length === 1 ? '' : 's'}
@@ -151,11 +166,17 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
           <textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="Optional message to the members…"
+            placeholder={t`Optional message to the members…`}
             rows={2}
             data-testid="group-task-message"
             className="w-full resize-none rounded-md border bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
           />
+        )}
+
+        {localError && (
+          <p className="text-xs text-destructive" data-testid="group-task-error">
+            {localError}
+          </p>
         )}
 
         <DialogFooter>

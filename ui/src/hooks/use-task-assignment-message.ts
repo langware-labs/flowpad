@@ -1,51 +1,18 @@
 import { useCallback } from 'react';
-import { ConversationParticipant, dataContext, fsManager, Task, VFSPath } from '@sdk';
+import { ConversationParticipant, Task, TypeId } from '@sdk';
 import { useSendToConversation } from '@src/hooks/use-send-to-conversation';
-import { useTaskGitAttachmentFolders } from '@src/hooks/use-task-git-attachments';
 
 /**
  * The "assign a task" notification message — the same channel as the
  * context-folder push notify: one new conversation to all recipients carrying
- * the optional text plus entity chips. Chips = the task itself + a Folder chip
- * for every git context folder referenced by the task's attachments (those
- * ride origin-only via transferMode 'git', so the recipient's chip click
- * clones the repo). LOOSE attachment files — everything outside a git context
- * folder — ride as ORDINARY message file attachments, exactly like a user
- * attaching files to any message (no task-specific bundle packing).
+ * the optional text plus entity chips. A task never rides alone: its PARENT
+ * task (the group overview for a member task) rides as its own chip too. Chips
+ * = the task + its parent, both as ENTITY chips. The task's Files & Folders are
+ * NOT packed into the message — they live on the task entity, so the recipient
+ * sees them by opening the task chip. No file bytes or folder chips ride along.
  */
 export function useTaskAssignmentMessage(task: Task | null | undefined) {
   const { send, busy, resetDraft } = useSendToConversation();
-  const { gitFolderTypeids, loosePaths } = useTaskGitAttachmentFolders(task);
-
-  /** Read each loose attachment off the local VFS as a regular File. Only
-   *  real FILES ride — a directory can't be a message attachment (a folder
-   *  outside the context dirs is simply not sendable this way). A path that
-   *  can't be read (deleted/moved since attach) is skipped — the message
-   *  still goes out with the rest. */
-  const collectLooseFiles = useCallback(async (): Promise<File[]> => {
-    const cn = dataContext.computeNodeTypeId;
-    if (!cn || loosePaths.length === 0) return [];
-    const files: File[] = [];
-    for (const p of loosePaths) {
-      try {
-        const rel = VFSPath.fromMachinePath(p, cn).entitySubPath;
-        if (!rel) continue;
-        // Directory guard: stat via the parent listing; skip non-files.
-        const name = p.split('/').pop() || '';
-        const parentRel = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '/';
-        const listing = await fsManager.listDirectory(cn, parentRel);
-        const item = listing.items.find((i) => i.name === name);
-        if (!item || item.is_dir) continue;
-        const blob = await fsManager.download(cn, rel, { asBlob: true });
-        if (blob instanceof Blob) {
-          files.push(new File([blob], name || 'attachment'));
-        }
-      } catch {
-        // Unreadable attachment (moved/deleted) — send the rest.
-      }
-    }
-    return files;
-  }, [loosePaths]);
 
   const sendAssignment = useCallback(
     async (
@@ -61,8 +28,15 @@ export function useTaskAssignmentMessage(task: Task | null | undefined) {
       // and the retry-draft cache would otherwise reuse the previous member's
       // conversation (wrong participants, wrong chip).
       resetDraft();
-      const chips = [taskChipTypeid ?? task.typeId.toString(), ...gitFolderTypeids];
-      const files = await collectLooseFiles();
+
+      // The task actually being sent — the group flow features each recipient's
+      // OWN member task; otherwise it's this task. Resolve it (and its parent)
+      // so the parent chip rides along as its own entity chip.
+      const featuredTypeid = taskChipTypeid ?? task.typeId.toString();
+      const featured = taskChipTypeid ? await Task.getById(new TypeId(taskChipTypeid).id).catch(() => null) : task;
+      const parent = featured?.parent_id ? await Task.getById(featured.parent_id).catch(() => null) : null;
+
+      const chips = Array.from(new Set([featuredTypeid, ...(parent ? [parent.typeId.toString()] : [])]));
       return send(
         {
           kind: 'new',
@@ -74,14 +48,12 @@ export function useTaskAssignmentMessage(task: Task | null | undefined) {
         },
         {
           text: message.trim(),
-          files,
           assetReferences: chips,
           sharedContextEntities: chips,
-          shareConfig: { transferMode: 'git' },
         },
       );
     },
-    [task, gitFolderTypeids, collectLooseFiles, send, resetDraft],
+    [task, send, resetDraft],
   );
 
   return { sendAssignment, sending: busy };

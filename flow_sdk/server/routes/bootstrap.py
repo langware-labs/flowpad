@@ -24,6 +24,7 @@ import asyncio
 import functools
 import json
 import logging
+import ntpath
 import os
 import platform
 import shutil
@@ -58,8 +59,19 @@ from flow_sdk.core.schema import build_all_type_payloads
 from flow_sdk.db.database import init_db
 from flow_sdk.external_apis.llm.llm_drivers.definitions import LLMProvider
 from flow_sdk.flowpad_types.runtime_environment import OSType, RuntimeEnvironment
+from flow_sdk.fs_store.indexer.auto_index import (
+    DEFAULT_AUTO_INDEX_ENABLED,
+    DEFAULT_AUTO_INDEX_FUNCTION,
+    DEFAULT_AUTO_INDEX_TRIGGER,
+    DEFAULT_AUTO_INDEX_TYPE,
+    PREF_AUTO_INDEX_ENABLED,
+    PREF_AUTO_INDEX_FUNCTION,
+    PREF_AUTO_INDEX_TRIGGER,
+    PREF_AUTO_INDEX_TYPE,
+)
 from flow_sdk.models import AppPaths, BootstrapInfo, EnvInfo, LmInfo
 from flow_sdk.models.responses import ApiSuccessResponse
+from flow_sdk.preferences import DEFAULT_SHARE_MESSAGE_STATUS, PREF_SHARE_MESSAGE_STATUS
 
 router = APIRouter()
 
@@ -115,12 +127,7 @@ def get_default_desktop_email() -> str:
 def get_name() -> Optional[str]:
     """Get user full name from git config user.name."""
     try:
-        result = subprocess.run(
-            ["git", "config", "user.name"],
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
+        result = subprocess.run(["git", "config", "user.name"], capture_output=True, text=True, timeout=2)
         name = result.stdout.strip()
         if name:
             return name
@@ -144,12 +151,7 @@ def get_email() -> Optional[str]:
     """
     # Try git config first
     try:
-        result = subprocess.run(
-            ["git", "config", "user.email"],
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
+        result = subprocess.run(["git", "config", "user.email"], capture_output=True, text=True, timeout=2)
         email = normalize_email(result.stdout)
         if email:
             return email
@@ -429,6 +431,7 @@ def build_app_paths() -> AppPaths:
     Migrated from FlowPad: flowpad/hub/core/desktop_loader.py
     """
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
     root = get_os_root_path()
 
     def _vfs_relative(abs_path: str) -> str:
@@ -467,9 +470,7 @@ def build_app_paths() -> AppPaths:
     # Per-instance preferences. Lives under instance_dir so multiple instances
     # (oss / prod / app / dev) don't clobber each other's UI prefs. The same
     # absolute path on disk, expressed VFS-relative.
-    preferences = _vfs_relative(
-        str(get_instance_settings().instance_dir / "preferences.json")
-    )
+    preferences = _vfs_relative(str(get_instance_settings().instance_dir / "preferences.json"))
 
     return AppPaths(
         root=root,
@@ -579,6 +580,7 @@ async def is_cloud_login_available() -> bool:
             try:
                 from flow_sdk.cli.app_config import set_user
                 from flow_sdk.cli.auth.hub_login import delete_api_key
+
                 await asyncio.wait_for(asyncio.to_thread(delete_api_key), timeout=2.0)
                 set_user({})
             except Exception:
@@ -717,7 +719,8 @@ async def get_or_create_local_user() -> User:
             logging.warning(
                 "@local user has legacy random id %s; expected stable %s. "
                 "Keeping existing row to preserve references — wipe the DB to migrate.",
-                desktop_user.id, local_id,
+                desktop_user.id,
+                local_id,
             )
         # Handle existing desktop user with no email - update with default email
         if not desktop_user.email:
@@ -743,7 +746,8 @@ async def get_or_create_local_user() -> User:
             logging.warning(
                 "@local user (uname='local') has legacy random id %s; expected stable %s. "
                 "Keeping existing row to preserve references — wipe the DB to migrate.",
-                existing_by_uname.id, local_id,
+                existing_by_uname.id,
+                local_id,
             )
         # Ensure it has the desktop label
         if DESKTOP_LABEL not in (existing_by_uname.labels or []):
@@ -756,8 +760,7 @@ async def get_or_create_local_user() -> User:
         manually_overridden = NAME_OVERRIDE_LABEL in (existing_by_uname.labels or [])
         needs_email_update = not existing_by_uname.email
         needs_name_update = not manually_overridden and (
-            existing_by_uname.name == "Local Desktop User"
-            or (git_name and existing_by_uname.name != git_name)
+            existing_by_uname.name == "Local Desktop User" or (git_name and existing_by_uname.name != git_name)
         )
         if needs_email_update or needs_name_update:
             if needs_email_update:
@@ -830,7 +833,8 @@ async def get_or_create_local_project(desktop_user: Optional[Entity] = None) -> 
             logging.warning(
                 "@local project has legacy random id %s; expected stable %s. "
                 "Keeping existing row to preserve references — wipe the DB to migrate.",
-                project.id, local_id,
+                project.id,
+                local_id,
             )
         logging.info(f"@local project already exists: {project.id}")
         return project
@@ -881,7 +885,8 @@ async def get_or_create_local_workspace(desktop_user: Optional[Entity] = None) -
             logging.warning(
                 "@local workspace has legacy random id %s; expected stable %s. "
                 "Keeping existing row to preserve references — wipe the DB to migrate.",
-                workspace.id, local_id,
+                workspace.id,
+                local_id,
             )
         logging.info(f"@local workspace already exists: {workspace.id}")
         return workspace
@@ -914,6 +919,7 @@ def _local_entity_id(entity_type: str) -> str:
     """Deterministic per-machine id for the @local entities — see the single
     source of truth ``flow_sdk.utils.machine_id.local_entity_id``."""
     from flow_sdk.utils.machine_id import local_entity_id  # noqa: PLC0415
+
     return local_entity_id(entity_type)
 
 
@@ -948,7 +954,9 @@ async def get_or_create_local_compute_node(
         compute_node = await ComputeNode.create_local(owner=desktop_user)
         logging.info(
             "Created @local compute node: %s with owner: %s, mount_path: %s",
-            compute_node.id, desktop_user.id if desktop_user else "None", os_root,
+            compute_node.id,
+            desktop_user.id if desktop_user else "None",
+            os_root,
         )
         return compute_node
 
@@ -992,6 +1000,7 @@ def is_sandbox_available() -> bool:
         return False
     try:
         from flow_sdk.compute.providers.e2b.provider import E2B_AVAILABLE  # noqa: PLC0415
+
         return E2B_AVAILABLE
     except Exception:
         return False
@@ -1087,9 +1096,7 @@ async def get_or_create_sandbox_compute_node(
         try:
             compute_node.node_provider_id = _new_provider_id("sandbox")
             await compute_node.save()
-            logging.info(
-                f"@sandbox compute node initialized with provider_id: {compute_node.node_provider_id}"
-            )
+            logging.info(f"@sandbox compute node initialized with provider_id: {compute_node.node_provider_id}")
         except Exception as e:
             logging.warning(f"Failed to initialize @sandbox provider_id: {e}")
 
@@ -1115,14 +1122,14 @@ async def _ensure_system_projects(desktop_user: Optional[Entity] = None) -> list
 
     ensured: list[Project] = []
     for sub in sorted(root.iterdir()):
-        if not sub.is_dir() or sub.name.startswith('.'):
+        if not sub.is_dir() or sub.name.startswith("."):
             continue
         if sub.name == FLOWPAD_ASSISTANT_DIRNAME:
             uname = FLOWPAD_ASSISTANT_PROJECT_UNAME
             display_name = FLOWPAD_ASSISTANT_PROJECT_NAME
         else:
             uname = sub.name
-            display_name = sub.name.replace('_', ' ').title()
+            display_name = sub.name.replace("_", " ").title()
 
         mount_path = str(sub)
         existing = await Project.get_by_prop("uname", uname, "project")
@@ -1165,9 +1172,125 @@ async def _ensure_system_projects(desktop_user: Optional[Entity] = None) -> list
     return ensured
 
 
+async def _reap_protected_path_projects() -> None:
+    """Remove stale protected-path Project rows and exact Project shadows.
+
+    Source content and relationship targets are deliberately untouched:
+    ``Project.destroy`` / ``FSRecord.destroy`` cascade through entity children,
+    while project delete-with-children can remove source folders.
+    """
+    from flow_sdk.builtin.tab import delete_tabs_for_missing_project  # noqa: PLC0415
+    from flow_sdk.core.cache.entity_cache import uname_cache  # noqa: PLC0415
+    from flow_sdk.db import get_db_driver  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.roots import _CWD_PID_CACHE  # noqa: PLC0415
+    from flow_sdk.fs_store.operations.all_projects import (  # noqa: PLC0415
+        invalidate_projects_cache,
+    )
+    from flow_sdk.fs_store.path_utils import is_protected_path  # noqa: PLC0415
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    settings = get_instance_settings()
+    project_shadows = settings.records_root / "project"
+    projects = await Project.get_all()
+    rows_by_id = {str(project.id): project for project in projects}
+
+    # A system project is never stale: ``_ensure_system_projects`` runs immediately
+    # before this reaper and re-creates it every time. Its root lives INSIDE the
+    # install (``<checkout>/flow_sdk/system_projects/<name>``), which
+    # ``is_protected_path`` reports as protected — so without an exemption the
+    # reaper deleted the Flowpad Assistant project microseconds after it was
+    # created, on EVERY startup and every ``desktop-db/clear``. The symptom was
+    # silent: the row vanished, ``project/@flowpad_assistant`` answered "Invalid
+    # request", and the assistant docs surface had nothing to resolve.
+    #
+    # Rows carry the answer already — ``_ensure_system_projects`` stamps
+    # ``system=True`` — so ask the row rather than re-deriving it from the path.
+    protected_row_ids = {
+        str(project.id)
+        for project in projects
+        if project.fs_storage_mount_path and project.protected_path and not project.system
+    }
+
+    # Shadows are the exception: their ``metadata.json`` carries no ``system``
+    # key, so the flag above is unavailable and the shape of the path is the only
+    # evidence. Resolved once here, outside the per-shadow loop below.
+    shipped_system_root = system_projects_root().resolve()
+
+    def _is_shipped_system_project(mount: str | None) -> bool:
+        """True for ``<running-install>/flow_sdk/system_projects/<name>``.
+
+        Deliberately the RUNNING install only: a copy under some OTHER install is
+        genuinely stale and must still be reaped. (``config.is_system_project_path``
+        answers the any-install question and is the wrong one here.)
+        """
+        if not mount:
+            return False
+        try:
+            return Path(mount).resolve().parent == shipped_system_root
+        except OSError:
+            return False
+
+    # Orphan shadows are independent evidence: their DB row may already be
+    # gone, but protected-path metadata must not survive to be re-adopted.
+    shadow_by_id: dict[str, Path] = {}
+    protected_shadow_ids: set[str] = set()
+    if project_shadows.is_dir():
+        for shadow in project_shadows.iterdir():
+            metadata = shadow / "metadata.json"
+            if not shadow.is_dir() or not metadata.is_file():
+                continue
+            try:
+                data = json.loads(metadata.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            project_id = str(data.get("id") or shadow.name)
+            mount = data.get("fs_storage_mount_path") or data.get("cwd") or data.get("real_path")
+            name = data.get("name")
+            if not mount and isinstance(name, str) and (os.path.isabs(name) or ntpath.isabs(name)):
+                mount = name
+            if mount and is_protected_path(mount) and not _is_shipped_system_project(mount):
+                protected_shadow_ids.add(project_id)
+                shadow_by_id[project_id] = shadow
+
+    protected_ids = protected_row_ids | protected_shadow_ids
+    if not protected_ids:
+        return
+
+    driver = get_db_driver()
+    for project_id in sorted(protected_ids):
+        project = rows_by_id.get(project_id)
+        if project_id in protected_row_ids and project is not None:
+            if hasattr(driver, "fts_delete"):
+                await driver.fts_delete(project_id)
+            if project.uname:
+                uname_cache.invalidate("project", project.uname)
+            await Project.delete_by_id(project_id)
+
+        shadow = shadow_by_id.get(project_id) or project_shadows / project_id
+        try:
+            if shadow.parent.resolve() == project_shadows.resolve():
+                shutil.rmtree(shadow)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            logging.warning(
+                "[bootstrap] Failed to remove protected-path project shadow %s: %s",
+                shadow,
+                exc,
+            )
+
+        if project_id in protected_row_ids or project is None:
+            await delete_tabs_for_missing_project(project_id)
+        logging.info("[bootstrap] Reaped protected-path project %s", project_id)
+
+    if protected_row_ids:
+        invalidate_projects_cache()
+        _CWD_PID_CACHE.clear()
+
+
 async def _index_system_project_markdowns(projects: list[Project]) -> None:
     """Seed Markdown entities for every .md file under each system project's
-    ``docs/`` and ``.claude/docs/`` subtree.
+    ``docs/`` subtree.
 
     The async indexer is the canonical path, but it runs out-of-band — and
     several scenarios (welcome favorite seed, Flowpad Assistant docs panel,
@@ -1178,33 +1301,71 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
     from pathlib import Path  # noqa: PLC0415
 
     from flow_sdk.core.entity import Entity  # noqa: PLC0415
+    from flow_sdk.db import get_db_driver  # noqa: PLC0415
+    from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry  # noqa: PLC0415
     from flow_sdk.fs_store.fs_ref import FSRef as _FSRef  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown, markdown_id  # noqa: PLC0415
 
+    fts_entries: list[FtsEntry] = []
     for proj in projects:
         mount = proj.fs_storage_mount_path
         if not mount:
             continue
         root = Path(mount)
-        for subdir in ("docs", ".claude/docs"):
-            base = root / subdir
-            if not base.is_dir():
-                continue
+        base = root / "docs"
+        if base.is_dir():
             for md_path in base.rglob("*.md"):
                 try:
-                    records = extract_markdown(_FSRef(md_path))
+                    # Resolve id READ-ONLY (frontmatter id, else stable
+                    # uuid5(path)) — extract_markdown requires it since capsule
+                    # refactor 4f94fb92, and bootstrap must not stamp identity
+                    # capsules into tracked repo/system docs. Deterministic id
+                    # also makes this seeding idempotent across bootstraps.
+                    _md_ref = _FSRef(md_path)
+                    records = extract_markdown(_md_ref, markdown_id(_md_ref))
                     if not records:
                         continue
                     rec = records[0]
-                    if proj.id and getattr(rec, "project_id", None) is None:
+                    # System-project ownership is authoritative at seed time.
+                    # A desktop clear recreates the project with a fresh id,
+                    # while the shipped record metadata may still carry the
+                    # previous id. Never preserve that stale foreign key:
+                    # search scope and every project-derived view must point at
+                    # the project row created by this bootstrap.
+                    if proj.id:
                         object.__setattr__(rec, "project_id", proj.id)
                     # Stamp `system` on the record so from_record persists it in
                     # the single upsert — avoids a redundant second save() per
                     # file just to flip the flag (include_system filters rely on it).
                     object.__setattr__(rec, "system", True)
-                    await Entity.from_record(rec, notify=False)
+                    entity = await Entity.from_record(rec, notify=False)
+                    # ``from_record`` deliberately suppresses the DB→disk store
+                    # path, including its normal FTS upsert. System markdowns
+                    # are read directly from their shipped files (not record
+                    # shadows), so collect their already-parsed search content
+                    # and index the whole walk in ONE batch below — this runs on
+                    # startup and again on every clear, so per-file upserts would
+                    # be a session open/close cycle per shipped doc.
+                    search_content = rec.search_content
+                    if search_content is not None:
+                        fts_entries.append(
+                            FtsEntry(
+                                entity_id=entity.id,
+                                entity_type=str(rec.type or rec._record_type),
+                                name=getattr(entity, "name", None) or None,
+                                content=search_content,
+                            )
+                        )
                 except Exception as e:
                     logging.debug(f"[bootstrap] failed to index system markdown {md_path}: {e}")
+
+    if fts_entries:
+        try:
+            driver = get_db_driver()
+            if hasattr(driver, "fts_upsert"):
+                await driver.fts_upsert(fts_entries)
+        except Exception as e:
+            logging.debug(f"[bootstrap] failed to index system markdown search content: {e}")
 
 
 async def index_system_content() -> None:
@@ -1231,13 +1392,15 @@ async def index_system_content() -> None:
     except Exception as e:
         logging.warning(f"[startup-index] Failed to ensure system projects (non-fatal): {e}")
     try:
+        await _reap_protected_path_projects()
+    except Exception as e:
+        logging.warning(f"[startup-index] Failed to reap mount-root project (non-fatal): {e}")
+    try:
         await _index_system_project_markdowns(system_projects)
     except Exception as e:
         logging.warning(f"[startup-index] Failed to index system markdowns (non-fatal): {e}")
     try:
-        compute_node = await get_or_create_local_compute_node(
-            local_project=project, desktop_user=user
-        )
+        compute_node = await get_or_create_local_compute_node(local_project=project, desktop_user=user)
         await compute_node._index_system_assets()
     except Exception as e:
         logging.warning(f"[startup-index] Failed to index system assets (non-fatal): {e}")
@@ -1284,11 +1447,42 @@ def _read_pref(key: str, default: Any) -> Any:
 
 def _write_pref(key: str, value: Any) -> None:
     """Merge a single key into preferences.json (read-modify-write), preserving
-    every other key the frontend owns. Thin wrapper over the shared writer."""
+    every other key the frontend owns. Thin wrapper over the shared writer.
+
+    Writing ``index_function`` also drops the cached shared indexer, because
+    ``build_default_indexer`` picks the scan mode once and ``get_shared_indexer``
+    caches the instance for the process lifetime — without this the new mode would
+    only apply after a restart (the papercut ``indexer_backend`` still has).
+    """
     from flow_sdk.preferences import write_instance_pref  # noqa: PLC0415
 
     if not write_instance_pref(key, value):
         logging.warning(f"[onboarding] failed to write {key} to preferences.json")
+        return
+    if key == PREF_AUTO_INDEX_FUNCTION:
+        try:
+            from flow_sdk.fs_store.indexer import reset_shared_indexer  # noqa: PLC0415
+
+            reset_shared_indexer()
+        except Exception:
+            logging.debug("[preferences] shared-indexer reset skipped", exc_info=True)
+
+
+def _resolve_supported_pages() -> list[str]:
+    """Which SPA page(s) this local server advertises in bootstrap.
+
+    The same OSS bundle renders either the desktop (`desk`) or the hub (`hub`)
+    page, selected by `supported_pages`. The local desktop server serves BOTH:
+    `desk` stays first so it remains the default landing home (an unqualified
+    dock never redirects away from desktop), while `hub` is also advertised so
+    the hub page's dock URLs (`/dock/hub/...`) are reachable in the same build
+    without the version-modal toggle.
+
+    Because `desk` is present, the frontend's `isHubOnly()` stays false, so the
+    app keeps calling the desktop-only endpoints (`tab`, `capability`,
+    `bookmark`, ...) as normal.
+    """
+    return ["desk", "hub"]
 
 
 async def create_onboarding_assets(user: User) -> None:
@@ -1322,8 +1516,7 @@ async def create_onboarding_assets(user: User) -> None:
 
     # 1) Favorite bookmark to the Welcome page on the home view (skip if present).
     has_bookmark = any(
-        getattr(bm, "source", None) == _ONBOARDING_SOURCE
-        for bm in await Bookmark.get_all(source_entity=user.typeid)
+        getattr(bm, "source", None) == _ONBOARDING_SOURCE for bm in await Bookmark.get_all(source_entity=user.typeid)
     )
     if not has_bookmark:
         favorite = Bookmark(
@@ -1389,7 +1582,9 @@ async def _delete_onboarding_assets(user: User) -> int:
 async def onboarding_status() -> ApiSuccessResponse[dict]:
     """Whether onboarding assets have been seeded. Onboarded ≡ the
     ``preferences.onboarding.welcome`` gate is off. Surfaced in profile settings."""
-    return ApiSuccessResponse[dict](data={"onboarded": not _read_pref(_ONBOARDING_WELCOME_KEY, _ONBOARDING_WELCOME_DEFAULT)})
+    return ApiSuccessResponse[dict](
+        data={"onboarded": not _read_pref(_ONBOARDING_WELCOME_KEY, _ONBOARDING_WELCOME_DEFAULT)}
+    )
 
 
 @router.post("/api/v1/onboarding/reset")
@@ -1402,7 +1597,9 @@ async def onboarding_reset() -> ApiSuccessResponse[dict]:
     _write_pref(_ONBOARDING_WELCOME_KEY, True)
     await create_onboarding_assets(user)
     logging.info(f"[onboarding/reset] removed {removed} asset(s), re-seeded for user {user.typeid}")
-    return ApiSuccessResponse[dict](data={"onboarded": not _read_pref(_ONBOARDING_WELCOME_KEY, _ONBOARDING_WELCOME_DEFAULT)})
+    return ApiSuccessResponse[dict](
+        data={"onboarded": not _read_pref(_ONBOARDING_WELCOME_KEY, _ONBOARDING_WELCOME_DEFAULT)}
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1435,6 +1632,7 @@ def setup_desktop_filesystem() -> None:
 
     # Create logs folder structure under the per-instance logs dir.
     from flow_sdk.instance_settings import get_instance_settings
+
     logs_base = get_instance_settings().logs_dir
     for subdir in ("server", "monitor", "main_desktop"):
         try:
@@ -1445,7 +1643,7 @@ def setup_desktop_filesystem() -> None:
 
     # Per-instance UI preferences. Defaults must stay in sync with the
     # PREF_REGISTRY in ts_sdk/src/preferences/prefRegistry.ts. Keys are the dotted
-    # topic ids `preferences.<category>.<name>`; the frontend store migrates any
+    # tag ids `preferences.<category>.<name>`; the frontend store migrates any
     # legacy flat-keyed preferences.json on load.
     # Legacy location: <workspace>/.flow/settings.json — migrated below.
     prefs_path = _preferences_path()
@@ -1458,6 +1656,7 @@ def setup_desktop_filesystem() -> None:
         "preferences.terminal.buffer_sync_updates": False,
         "preferences.notifications.sound_enabled": False,
         "preferences.notifications.sound_key": "supershort-ping",
+        PREF_SHARE_MESSAGE_STATUS: DEFAULT_SHARE_MESSAGE_STATUS,
         "preferences.advanced.scrollback_lines": 1000,
         "preferences.advanced.experimental_flags": {},
         # Indexer engine: "python" (FSIndexer) | "rust" (external RSIndexer via
@@ -1470,6 +1669,14 @@ def setup_desktop_filesystem() -> None:
         "preferences.indexing.folders.documents": "ask",
         "preferences.indexing.folders.desktop": "ask",
         "preferences.indexing.folders.downloads": "ask",
+        # Auto-index a project on selection. Constants come from auto_index.py so
+        # this stub and the backend read sites cannot disagree. NOTE this dict is
+        # only written for a MISSING or stub preferences.json — existing installs
+        # never gain these keys, so read sites must always pass the same default.
+        PREF_AUTO_INDEX_ENABLED: DEFAULT_AUTO_INDEX_ENABLED,
+        PREF_AUTO_INDEX_TYPE: DEFAULT_AUTO_INDEX_TYPE,
+        PREF_AUTO_INDEX_TRIGGER: DEFAULT_AUTO_INDEX_TRIGGER,
+        PREF_AUTO_INDEX_FUNCTION: DEFAULT_AUTO_INDEX_FUNCTION,
         # Onboarding gate: true (or missing) → seed onboarding assets on start, then
         # the seeder flips it to false. Flip back on to re-seed on the next start.
         _ONBOARDING_WELCOME_KEY: _ONBOARDING_WELCOME_DEFAULT,
@@ -1507,14 +1714,11 @@ def setup_desktop_filesystem() -> None:
         legacy = _read_existing_prefs(legacy_settings_path)
         if legacy is None:
             logging.warning(
-                f"Legacy settings at {legacy_settings_path} is not valid JSON "
-                f"or not a dict; falling back to defaults"
+                f"Legacy settings at {legacy_settings_path} is not valid JSON or not a dict; falling back to defaults"
             )
             return None
         # Legacy settings.json uses old flat field names — re-key to dotted PrefKeys.
-        migrated_pairs = {
-            legacy_key_map[k]: v for k, v in legacy.items() if k in legacy_key_map
-        }
+        migrated_pairs = {legacy_key_map[k]: v for k, v in legacy.items() if k in legacy_key_map}
         return {**default_prefs, **migrated_pairs}
 
     try:
@@ -1573,11 +1777,19 @@ async def get_desktop_info() -> LmInfo:
     # Build fully resolved paths
     app_paths = build_app_paths()
 
+    cloud_config = ApiConfig.from_env()
+    # Who this instance is signed in as, from the same builder `/cloud/status`
+    # uses. Both of its inputs are file reads (and keychain-safe by design), so it
+    # adds nothing measurable to the cold-start path it now sits on.
+    from flow_sdk.cloud_client.auth_state import login_block
+
     return LmInfo(
         llm_providers=llm_providers,
         installed_agents=installed_agents,
         cloud_login_available=cloud_login_available,
-        cloud_url=ApiConfig.from_env().api_base_url,
+        login=login_block(),
+        cloud_url=cloud_config.api_base_url,
+        cloud_app_url=cloud_config.app_base_url,
         paths=app_paths,
         # Legacy fields for backward compatibility (deprecated)
         home=get_vfs_home_path(),
@@ -1593,14 +1805,42 @@ async def get_desktop_info() -> LmInfo:
 
 
 def entity_to_dict(entity) -> dict:
-    """Convert entity to dict for JSON response."""
+    """Convert entity to dict for JSON response.
+
+    ``name`` keeps its historic fallback to ``title`` so display sites that read
+    only ``name`` still get a label. But ``title`` is ALSO sent on its own:
+    collapsing the two made a real title unreachable, which is why the user menu
+    could never show one under the name. Both are base-``Entity`` fields, so
+    every type carries them; ``email`` is likewise absent on most and simply
+    serializes as null there.
+    """
     return {
         "id": entity.id,
         "type": entity.type,
         "uname": entity.uname,
         "name": getattr(entity, "name", None) or getattr(entity, "title", None),
+        "title": getattr(entity, "title", None),
+        "email": getattr(entity, "email", None),
         "visitor_role": entity.visitor_role,
     }
+
+
+def project_to_dict(project) -> dict:
+    """``entity_to_dict`` plus the project fields the client boots ON.
+
+    The generic dict above is the identity projection every entity shares, so a
+    project-only field must not be added to it. But a Project handed out at
+    bootstrap is not just a label to display: `initSdk` makes it CURRENT before
+    any route runs, and the app then reads properties off it.
+
+    ``locale`` is one of those, and its absence was a real bug: a provisioned
+    sandbox adopts `default_project` on its very first load, so the app saw a
+    project with no language and correctly opened in English — while the row in
+    the database said Hebrew. It only came right on a refresh, when the full
+    entity was fetched. "Correctly, from what it could see" is exactly how a
+    missing field fails: silently, and looking like a timing bug.
+    """
+    return {**entity_to_dict(project), "locale": getattr(project, "locale", None)}
 
 
 # ---------------------------------------------------------------------------
@@ -1611,6 +1851,10 @@ def entity_to_dict(entity) -> dict:
 # and return the cached result. TTL of 30s allows a fresh bootstrap if the
 # server has been running a while (e.g. after a plugin install).
 _bootstrap_lock = asyncio.Lock()
+# Holds SERVER-owned fields only. Per-caller fields (today: `runtime`, which
+# depends on the request's `electron` flag) are left unset here and stamped on
+# the way out by `_with_runtime` — a new per-caller field belongs there, not in
+# the payload builder below.
 _bootstrap_cache: BootstrapInfo | None = None
 _bootstrap_cache_ts: float = 0.0
 _BOOTSTRAP_CACHE_TTL = 30.0  # seconds
@@ -1636,8 +1880,61 @@ def invalidate_bootstrap_cache() -> None:
     _bootstrap_cache_ts = 0.0
 
 
+async def _with_runtime(info: BootstrapInfo, electron: bool) -> ApiSuccessResponse[BootstrapInfo]:
+    """Stamp the per-request fields onto a (possibly cached) payload.
+
+    ``runtime`` belongs to the CALLER rather than to the server: the same
+    instance answers ``desktop`` to the Electron shell and ``browser`` to a
+    localhost tab, concurrently. Baking it into ``_bootstrap_cache`` would serve
+    whichever client happened to miss the cache first to everyone else for the
+    next 30 seconds.
+
+    ``default_project`` is per-caller for a different reason: a provisioned box
+    carries a one-shot instruction to open the project the hub just set up, and
+    it must reach exactly one bootstrap. Through the cached payload it would
+    either be served repeatedly for 30s or skipped entirely. (A shared box's
+    second reader gets their own turn because the hub re-arms the instruction
+    before handing them the machine — not because anything here counts people.)
+
+    ``model_copy`` leaves the cached object untouched — mutating ``info`` in
+    place would write through to the cache, which is the same bug wearing a
+    different hat.
+    """
+    from flow_sdk.instance_settings.runtime import resolve_runtime  # noqa: PLC0415
+
+    update: dict = {"runtime": resolve_runtime(electron=electron)}
+    opening_project = await _take_opening_project()
+    if opening_project is not None:
+        update["default_project"] = opening_project
+    return ApiSuccessResponse[BootstrapInfo](data=info.model_copy(update=update))
+
+
+async def _take_opening_project() -> Optional[dict]:
+    """The one-shot "open this project" instruction, resolved to an entity dict.
+
+    A pending id that no longer resolves (project deleted between provisioning
+    and first load) is dropped rather than raised: it has already been consumed,
+    and failing bootstrap over it would make the box unusable instead of merely
+    landing on the ordinary default.
+    """
+    from flow_sdk.server.state import take_pending_default_project  # noqa: PLC0415
+
+    project_id = take_pending_default_project()
+    if not project_id:
+        return None
+    try:
+        project = await Project.get_by_id(project_id)
+    except Exception as e:  # noqa: BLE001
+        logging.warning(f"[bootstrap] pending default project {project_id} could not be loaded: {e}")
+        return None
+    if project is None:
+        logging.warning(f"[bootstrap] pending default project {project_id} no longer exists")
+        return None
+    return project_to_dict(project)
+
+
 @router.get("/api/v1/graph/bootstrap")
-async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
+async def bootstrap(electron: bool = False) -> ApiSuccessResponse[BootstrapInfo]:
     """
     Bootstrap endpoint - creates local entities and returns BootstrapInfo.
 
@@ -1652,21 +1949,29 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
     Migrated from FlowPad: flowpad/hub/core/desktop_loader.py (init_desktop_entities)
     and flowpad/hub/app/actions/bootstrap_actions.py (bootstrap action).
 
+    Args:
+        electron: Set by the client when it is running inside the Electron
+            shell (``ts_sdk`` ``isElectronShell()``). The preload bridge is the
+            only thing that can know this, so the client reports it and the
+            server decides — see ``instance_settings/runtime.py``. It selects
+            ``desktop`` vs ``browser`` and is never stored.
+
     Returns:
-        ApiSuccessResponse containing BootstrapInfo with env, desktop_info, user, project, workspace, agent
+        ApiSuccessResponse containing BootstrapInfo with env, runtime, desktop_info, user, project, workspace, agent
     """
     global _bootstrap_cache, _bootstrap_cache_ts
 
     # Fast path: return cached result without acquiring the lock
     if _bootstrap_cache is not None and time.monotonic() - _bootstrap_cache_ts < _BOOTSTRAP_CACHE_TTL:
-        return ApiSuccessResponse[BootstrapInfo](data=_bootstrap_cache)
+        return await _with_runtime(_bootstrap_cache, electron)
 
     async with _bootstrap_lock:
         # Re-check inside the lock (another coroutine may have just finished)
         if _bootstrap_cache is not None and time.monotonic() - _bootstrap_cache_ts < _BOOTSTRAP_CACHE_TTL:
-            return ApiSuccessResponse[BootstrapInfo](data=_bootstrap_cache)
+            return await _with_runtime(_bootstrap_cache, electron)
 
         from flow_sdk.utils import TimeIt  # noqa: PLC0415
+
         _t = TimeIt("Bootstrap")
 
         # Initialize database (creates tables if needed)
@@ -1683,6 +1988,7 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             clear_app_secret_metadata,
             recover_orphaned_sodot,
         )
+
         notice: Optional[dict] = None
         try:
             notice = await asyncio.wait_for(asyncio.to_thread(recover_orphaned_sodot), timeout=2.0)
@@ -1714,6 +2020,17 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         compute_node = await get_or_create_local_compute_node(local_project=project, desktop_user=user)
         _t.time("get_or_create_local_compute_node")
 
+        # Ensure + repair the @local inbox unread projection. The mutable
+        # ``unread`` value is deliberately NOT put in BootstrapInfo (cached 30s)
+        # — the FE hydrates it via the normal entity GET/watch channel.
+        try:
+            from flow_sdk.inbox import recompute_unread as _recompute_unread
+
+            await _recompute_unread("bootstrap", user.typeid if user else None)
+        except Exception as e:
+            logging.warning(f"[bootstrap] inbox recompute failed (non-fatal): {e}")
+        _t.time("inbox_recompute")
+
         sandbox_available = is_sandbox_available()
         sandbox_compute_node: Optional[ComputeNode] = None
         if sandbox_available:
@@ -1742,6 +2059,7 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         from flow_sdk.core.capabilities.harness_state import compute_harness_state  # noqa: PLC0415
         from flow_sdk.core.capabilities.summary import compute_capabilities_summary  # noqa: PLC0415
         from flow_sdk.system_tools import get_scan_info  # noqa: PLC0415
+
         # Harness state + capabilities summary are computed WITHOUT awaiting the
         # full capability-discovery sweep (~860ms env probe). That sweep already
         # runs as a detached startup task; the frontend reads harness/capability
@@ -1757,41 +2075,64 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         _t.time("get_desktop_info+get_scan_info+compute_harness_state+capabilities_summary")
 
         # Sniffer hook is opt-in via InstanceSettings.sniffer_enabled
-        # (default off). When disabled, bootstrap reports whatever is in the
-        # DB (None if it was never enabled, the existing entity if the user
-        # toggled it on via the hooks-sniffer action) but never auto-installs
-        # hooks into ~/.claude/settings.json on its own.
+        # (default off). "Disabled" has ONE meaning everywhere — no sniffer
+        # commands in ~/.claude/settings.json — and it is enforced from both
+        # ends: the hooks-sniffer DELETE action purges on an explicit toggle
+        # off, and this boot path purges when nothing here backs the sniffer
+        # (default-off, or entries left behind by an uninstalled/other
+        # instance). Enabled state is the DB entity, so a user who toggled the
+        # sniffer on keeps it across restarts even with the instance gate off.
         from flow_sdk.app.actions.hooks_sniffer import (  # noqa: PLC0415
             _create_or_update_sniffer_hook,
             _get_sniffer_hook,
+            sniffer_installed,
+        )
+        from flow_sdk.builtin.agent_hook import HookScope  # noqa: PLC0415
+        from flow_sdk.builtin.claude_settings_sync import (  # noqa: PLC0415
+            purge_sniffer_entries_from_settings,
         )
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
         sniffer_hook = None
+        sniffer_is_installed = False
         try:
             sniffer_hook = await _get_sniffer_hook()
             _t.time("get_sniffer_hook")
-            if get_instance_settings().sniffer_enabled and (
-                not sniffer_hook or not sniffer_hook.enabled
-            ):
+            sniffer_active = bool(sniffer_hook and sniffer_hook.enabled)
+            # What settings.json actually carries — the UI warns on this, not on
+            # the DB entity, so a sniffer installed by another instance shows
+            # up. Read once here; each branch below knows what it changed it to.
+            sniffer_is_installed = sniffer_installed()
+            _t.time("sniffer_installed")
+            if get_instance_settings().sniffer_enabled and not sniffer_active:
                 sniffer_hook = await _create_or_update_sniffer_hook(user)
                 _t.time("create_or_update_sniffer_hook")
                 await sniffer_hook.apply()
+                sniffer_is_installed = sniffer_installed()
                 _t.time("sniffer_hook.apply")
+            elif not sniffer_active and sniffer_is_installed:
+                # Disabled, yet the settings file still carries sniffer
+                # commands — stale. Same purge the DELETE action runs, so both
+                # roads to "off" leave the harness in the same state.
+                purge_sniffer_entries_from_settings(HookScope.USER)
+                sniffer_is_installed = False
+                _t.time("purge_stale_sniffer_entries")
         except Exception as e:
-            logging.warning(f"Failed to auto-enable sniffer hook: {e}")
+            logging.warning(f"Failed to reconcile sniffer hook: {e}")
 
         # Build BootstrapInfo using Pydantic model
         types = build_all_type_payloads()
         _t.time("build_all_type_payloads")
+        from flow_sdk.i18n import get_supported_locales, get_translation_targets  # noqa: PLC0415
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         from flow_sdk.instance_settings.privacy_mode import get_privacy_mode  # noqa: PLC0415
-        from flow_sdk.i18n import get_supported_locales  # noqa: PLC0415
+
         bootstrap_info = BootstrapInfo(
             types=types,
             user=entity_to_dict(user),
             domain=None,
             visitor=None,
-            default_project=entity_to_dict(project),
+            default_project=project_to_dict(project),
             default_workspace=entity_to_dict(workspace),
             default_compute_node=entity_to_dict(compute_node),
             sandbox_available=sandbox_available,
@@ -1809,8 +2150,13 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             capabilities_summary=capabilities_summary.model_dump(mode="json"),
             scan_info=scan_info,
             sniffer_hook=entity_to_dict(sniffer_hook) if sniffer_hook else None,
+            sniffer_installed=sniffer_is_installed,
             records_root=str(get_instance_settings().records_root),
             supported_locales=get_supported_locales(),
+            translation_targets=get_translation_targets(),
+            # Both pages; see _resolve_supported_pages. A hub backend reports
+            # its own set here (and its own `runtime`).
+            supported_pages=_resolve_supported_pages(),
             privacy_mode=get_privacy_mode(),
             notice=notice,
         )
@@ -1822,4 +2168,4 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         # Release any background backfills that deferred to the first bootstrap.
         first_bootstrap_served.set()
 
-    return ApiSuccessResponse[BootstrapInfo](data=_bootstrap_cache)
+    return await _with_runtime(_bootstrap_cache, electron)

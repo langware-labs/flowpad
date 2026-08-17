@@ -64,11 +64,9 @@ def codex_transcript_path_for_process(process_id: str) -> Path:
 
     Lazily imported to avoid pulling Record machinery at module import time.
     """
-    from flow_sdk.fs_store.fs_record import record_stem
-    from flow_sdk.fs_store.record_paths import get_default_records_root
+    from flow_sdk.fs_store.record_paths import shadow_dir_for
 
-    root = get_default_records_root()
-    d = root / "agentic_process" / record_stem("agentic_process", process_id)
+    d = shadow_dir_for("agentic_process", process_id)
     d.mkdir(parents=True, exist_ok=True)
     return d / "codex_transcript.jsonl"
 
@@ -80,6 +78,7 @@ def find_codex_session_jsonl(thread_id: str) -> Path | None:
     glob-search for the suffix.
     """
     from flow_sdk.instance_settings import get_instance_settings
+
     sessions_root = get_instance_settings().codex_sessions_dir
     if not sessions_root.is_dir():
         return None
@@ -188,15 +187,17 @@ def load_transcript_history(transcript: Path) -> list[FlowData]:
         parsed = AgentTranscriptFile("codex", transcript)
     except Exception as exc:
         logger.warning("Codex history parse failed for %s", transcript, exc_info=True)
-        return [FlowData(
-            flow_value=f"Failed to parse codex transcript {transcript}: {exc}",
-            attributes={
-                "element-type": FlowElementType.ERROR,
-                "data-type": FlowDataType.TEXT,
-                "subtype": "history-parse-error",
-                "observation-kind": "replay",
-            },
-        )]
+        return [
+            FlowData(
+                flow_value=f"Failed to parse codex transcript {transcript}: {exc}",
+                attributes={
+                    "element-type": FlowElementType.ERROR,
+                    "data-type": FlowDataType.TEXT,
+                    "subtype": "history-parse-error",
+                    "observation-kind": "replay",
+                },
+            )
+        ]
 
     for entry in parsed.entries:
         # Session metadata and unknown parser fallbacks are discovery/debug
@@ -211,19 +212,21 @@ def load_transcript_history(transcript: Path) -> list[FlowData]:
 # ── Per-entry conversion ───────────────────────────────────────────────────────
 
 
-_TOOL_USE_KINDS = frozenset({
-    "tool_use",
-    "shell_command",
-    "file_write",
-    "file_edit",
-    "file_read",
-    "skill_call",
-    "search",
-    "web_fetch",
-    "todo_update",
-    "agent_spawn",
-    "exit_plan_mode",
-})
+_TOOL_USE_KINDS = frozenset(
+    {
+        "tool_use",
+        "shell_command",
+        "file_write",
+        "file_edit",
+        "file_read",
+        "skill_call",
+        "search",
+        "web_fetch",
+        "todo_update",
+        "agent_spawn",
+        "exit_plan_mode",
+    }
+)
 
 
 def _entry_to_replay_flow_data(entry) -> list[FlowData]:
@@ -237,14 +240,16 @@ def _entry_to_replay_flow_data(entry) -> list[FlowData]:
         # TOKEN_USAGE) still get one STATUS frame — the live stream does the
         # same (see ``event_to_flowdata._wrap_live``), so replay stays
         # row-for-row comparable with what a live subscriber saw.
-        frames = [FlowData(
-            flow_value={},
-            created_time=entry.timestamp or "",
-            attributes={
-                "element-type": _element_type_for_kind(entry.kind.value),
-                "data-type": FlowDataType.OBJECT,
-            },
-        )]
+        frames = [
+            FlowData(
+                flow_value={},
+                created_time=entry.timestamp or "",
+                attributes={
+                    "element-type": _element_type_for_kind(entry.kind.value),
+                    "data-type": FlowDataType.OBJECT,
+                },
+            )
+        ]
 
     # SYSTEM entries carry a refined subtype (``turn_context``,
     # ``event_msg.error``, ...) that is strictly more informative than the
@@ -264,6 +269,11 @@ def _entry_to_replay_flow_data(entry) -> list[FlowData]:
         if subtype == "event_msg.turn_aborted":
             frame.attributes["turn-terminated"] = "true"
         frame.attributes["observation-kind"] = "replay"
+        # Lets a consumer filter the derivation layer's output without reaching
+        # into ``process_entry`` — a physical entry and its refinement share a
+        # tool_use_id, so anything counting calls needs to tell them apart.
+        if getattr(entry, "virtual", False):
+            frame.attributes["is-virtual"] = "true"
         frame.attributes.setdefault("transcript-entry-id", entry.id)
         if entry.entry_id:
             frame.attributes.setdefault("transcript-source-entry-id", entry.entry_id)

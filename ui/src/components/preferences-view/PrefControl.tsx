@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { PrefDataType, PrefInfo, PrefOption, soundService } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
 import { SettingRow } from '@src/components/settings/settings-card';
@@ -35,9 +36,7 @@ export function PrefControl({ info }: { info: PrefInfo }) {
 
   switch (info.dataType) {
     case PrefDataType.BOOL:
-      return row(
-        <Switch id={id} checked={value === true} onCheckedChange={(checked) => setValue(checked === true)} />,
-      );
+      return row(<Switch id={id} checked={value === true} onCheckedChange={(checked) => setValue(checked === true)} />);
 
     case PrefDataType.STRING: {
       // dataType STRING ⇒ the stored value is a string (coerced by the store).
@@ -59,7 +58,7 @@ export function PrefControl({ info }: { info: PrefInfo }) {
           type="number"
           value={Number(value ?? 0)}
           onChange={(e) => setValue(e.target.value === '' ? 0 : Number(e.target.value))}
-          className="h-9 w-28 text-right tabular-nums"
+          className="h-9 w-28 text-end tabular-nums"
         />,
       );
 
@@ -106,8 +105,8 @@ function SelectControl({
             if (url) void soundService.play(url);
           }}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/60 text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground"
-          title="Preview"
-          aria-label="Preview sound"
+          title={t`Preview`}
+          aria-label={t`Preview sound`}
         >
           <Play className="h-3.5 w-3.5" />
         </button>
@@ -120,15 +119,7 @@ function SelectControl({
  * JSON textarea. Edits stay local until they parse; invalid JSON shows an inline
  * error and does NOT write (so the store never holds an unparseable value).
  */
-function JsonControl({
-  id,
-  value,
-  onChange,
-}: {
-  id: string;
-  value: unknown;
-  onChange: (v: unknown) => void;
-}) {
+function JsonControl({ id, value, onChange }: { id: string; value: unknown; onChange: (v: unknown) => void }) {
   const serialized = useMemo(() => JSON.stringify(value ?? null, null, 2), [value]);
   const [draft, setDraft] = useState(serialized);
   const [error, setError] = useState<string | null>(null);

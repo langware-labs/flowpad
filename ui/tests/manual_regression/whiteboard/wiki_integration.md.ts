@@ -77,10 +77,16 @@ test.describe('Whiteboard participates in the wiki graph', () => {
     const md = fs.readFileSync(`${wb.asset_ref}/WHITE_BOARD.md`, 'utf8');
     expect(md).toContain(targetName);
 
-    // Wiki edges are (re)extracted on fs-records index, not on autosave.
-    const idxRes = await request.post(`${API}/api/v1/graph/compute_node/@local/fs-records/index?type=whiteboard`);
-    expect(idxRes.status()).toBe(200);
-    await page.waitForTimeout(3_000);
+    // Reindex just the entity whose markdown changed. A corpus-wide fs-records
+    // scan is unrelated to this contract and can be blocked by other records.
+    const reindexRes = await request.post(
+      `${API}/api/v1/graph/whiteboard/${wb.id}/wiki/reindex`,
+      { data: { body: md } },
+    );
+    expect(reindexRes.status()).toBe(200);
+    const reindexBody = await reindexRes.json();
+    expect(reindexBody.status).toBe('SUCCESS');
+    expect(Array.isArray(reindexBody.data)).toBe(true);
 
     // Query the links table for the edge whiteboard -> target name. The raw wiki
     // target name lives in `target_raw` (there is no `target_name` column).

@@ -1,7 +1,7 @@
 import { WorkerCliOptions, shellQuote } from './base'
 import { COPILOT_MODEL_TIERS, resolveModelTier } from './model-tiers'
 
-export interface CopilotCliOptionsOptions {
+export interface CopilotAgentOptionsOptions {
   session_id?: string | null
   resume?: boolean
   model?: string | null
@@ -18,7 +18,7 @@ export interface CopilotCliOptionsOptions {
   allow_all?: boolean
 }
 
-export class CopilotCliOptions extends WorkerCliOptions {
+export class CopilotAgentOptions extends WorkerCliOptions {
   session_id?: string | null
   resume: boolean
   model?: string | null
@@ -32,7 +32,7 @@ export class CopilotCliOptions extends WorkerCliOptions {
   no_custom_instructions: boolean
   allow_all: boolean
 
-  constructor(opts: CopilotCliOptionsOptions = {}) {
+  constructor(opts: CopilotAgentOptionsOptions = {}) {
     super(opts.workdir ?? undefined, opts.env_vars)
     this.session_id = opts.session_id ?? undefined
     this.resume = opts.resume ?? false
@@ -93,8 +93,8 @@ export class CopilotCliOptions extends WorkerCliOptions {
     }
   }
 
-  static fromJson(data: Record<string, any>): CopilotCliOptions {
-    return new CopilotCliOptions({
+  static fromJson(data: Record<string, any>): CopilotAgentOptions {
+    return new CopilotAgentOptions({
       session_id: data['session_id'] ?? undefined,
       resume: Boolean(data['resume'] ?? false),
       model: data['model'] ?? undefined,

@@ -11,16 +11,13 @@ import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoTriggers, cleanupScheduleTriggers } from './helpers';
 import { apiOrigin } from '../_shared/api';
 
-// SKIPPED: the FlaskConical "Test" button click + invocation surfacing flow
-// doesn't reach a visible "Scheduled" entry within 15s — selectedItem may
-// resolve to the wrong button (delete vs flask) under the new UI, and the
-// invocation list doesn't refresh in playwright. Real e2e fire test —
-// needs trace + selector audit.
-test.skip('schedule trigger test button fires job and shows invocation', async ({ page }) => {
+test('schedule trigger test button fires job and shows invocation', async ({ page }) => {
   test.setTimeout(60_000);
   const errors: string[] = [];
   page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
   page.on('pageerror', err => errors.push(err.message));
+  const triggerName = `test-fire-schedule-${Date.now()}`;
+  let triggerId: string | null = null;
 
   await dismissSetupModal(page);
 
@@ -37,47 +34,40 @@ test.skip('schedule trigger test button fires job and shows invocation', async (
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      name: 'test-fire-schedule',
+      name: triggerName,
       trigger_type: 'schedule',
       expr: '0 9 * * *',
       sched_trigger_type: 'cron',
-      scope: 'user',
+      scope: 'project',
       enabled: true,
       project_id: projectId,
     }),
   });
-  const triggerId: string = (await createRes.json())?.data?.id as string;
+  triggerId = (await createRes.json())?.data?.id as string;
   if (!triggerId) throw new Error('Failed to create test schedule trigger');
 
-  await gotoTriggers(page);
+  try {
+    await gotoTriggers(page);
 
-  // Select the schedule trigger
-  await page.locator('text=test-fire-schedule').first().waitFor({ state: 'visible', timeout: 15_000 });
-  await page.locator('text=test-fire-schedule').first().click();
+    // Select through the current URL-owned navigator row.
+    const triggerRow = page.getByText(triggerName, { exact: true }).first();
+    await triggerRow.waitFor({ state: 'visible', timeout: 15_000 });
+    await triggerRow.click();
 
-  // Wait for invocations panel to show
-  await page.getByText('Invocations', { exact: true }).first().waitFor({ state: 'visible', timeout: 5_000 });
-  const initialEntries = await page.locator('text=No invocations yet').isVisible().catch(() => false);
-  expect(initialEntries).toBe(true);
+    await page.getByText('Invocations', { exact: true }).first().waitFor({ state: 'visible', timeout: 5_000 });
+    await expect(page.getByText('No invocations yet', { exact: true })).toBeVisible();
 
-  // Click Test button
-  const testBtn = page.locator('[data-testid-trigger="test-fire-schedule"] button[title*="Test"]')
-    .or(page.locator('button:has([data-lucide="flask-conical"])').first());
-  // Use the FlaskConical button within the selected item
-  const selectedItem = page.locator('.bg-muted').filter({ hasText: 'test-fire-schedule' });
-  const flaskBtn = selectedItem.locator('button').first();
-  await flaskBtn.click();
+    // The selected schedule editor owns the current, accessible Run-now action.
+    await page.getByRole('button', { name: 'Run now', exact: true }).click();
+    await expect(page.getByText('Scheduled', { exact: true })).toBeVisible({ timeout: 15_000 });
 
-  // Wait for the invocations panel to show 1 entry
-  await expect(async () => {
-    const badge = page.getByText('Invocations', { exact: true }).first().locator('..').locator('text=1');
-    const scheduledText = page.locator('text=Scheduled');
-    const hasScheduled = await scheduledText.isVisible().catch(() => false);
-    expect(hasScheduled).toBe(true);
-  }).toPass({ timeout: 15_000 });
-
-  // Cleanup
-  await cleanupScheduleTriggers(page, [triggerId]);
+    const updatedResponse = await fetch(`${API}/api/v1/graph/trigger/${triggerId}`);
+    const updated = (await updatedResponse.json())?.data ?? null;
+    expect(updated?.last_run).toBeTruthy();
+    expect(updated?.counter).toBeGreaterThanOrEqual(1);
+  } finally {
+    if (triggerId) await cleanupScheduleTriggers(page, [triggerId]);
+  }
 
   const criticalErrors = errors.filter(e =>
     !e.includes('favicon') && !e.includes('ResizeObserver') && !e.includes('net::ERR_'),

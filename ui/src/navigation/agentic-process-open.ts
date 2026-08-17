@@ -1,6 +1,6 @@
-import { AgenticProcess, ClaudeSession, Shell, TypeId } from '@sdk';
+import { t } from '@lingui/core/macro';
+import { AgenticProcess, ClaudeSession, Shell, tabManager, TypeId } from '@sdk';
 import { notify } from '@src/notifications';
-import { setPendingIntent } from '@src/tabs/pending-intent';
 import type { NavigationActions } from './NavigationActions';
 
 /** The two related ids the name resolver reads off an AgenticProcess. */
@@ -77,10 +77,9 @@ export async function resolveAgenticProcessName(processId: string): Promise<void
   const shellId = ap?.shell_id;
   const sessionWarm = sessionId ? warmClaudeSession(sessionId) : null;
   await Promise.allSettled(
-    [
-      sessionWarm,
-      shellId && !Shell.getByIdFromCache<Shell>(shellId) ? Shell.getById<Shell>(shellId) : null,
-    ].filter(Boolean) as Promise<unknown>[],
+    [sessionWarm, shellId && !Shell.getByIdFromCache<Shell>(shellId) ? Shell.getById<Shell>(shellId) : null].filter(
+      Boolean,
+    ) as Promise<unknown>[],
   );
 }
 
@@ -110,7 +109,7 @@ export async function openAgenticProcess(
     const ap =
       interactive === true
         ? cached
-        : cached ?? ((await AgenticProcess.getById<AgenticProcess>(processId)) as APWithIds | null);
+        : (cached ?? ((await AgenticProcess.getById<AgenticProcess>(processId)) as APWithIds | null));
     const asTerminal = interactive ?? !!ap?.visible;
 
     if (asTerminal) {
@@ -119,12 +118,12 @@ export async function openAgenticProcess(
       // self-heal resolver would re-pick the new project's default tab instead of
       // the clicked agent. resolveActive honors this intent, then consumes it once
       // the agent lands in the strip.
-      setPendingIntent(new TypeId(AgenticProcess.type, processId).toString());
+      tabManager.setPendingIntent(new TypeId(AgenticProcess.type, processId).toString());
       const opened = await navigation.openShellProcess(processId);
       if (!opened) {
         notify.error({
-          title: 'Process unavailable',
-          message: 'That agent is no longer in your workspace.',
+          title: t`Process unavailable`,
+          message: t`That agent is no longer in your workspace.`,
         });
       }
       return;
@@ -135,13 +134,13 @@ export async function openAgenticProcess(
     if (sessionId) {
       navigation.openLens('claude', 'transcript', sessionId);
     } else {
-      notify.error({ title: 'No transcript', message: 'This worker has no session to view yet.' });
+      notify.error({ title: t`No transcript`, message: t`This worker has no session to view yet.` });
     }
   } catch (err) {
     console.error('[openAgenticProcess] open failed', err);
     notify.error({
-      title: 'Process unavailable',
-      message: 'That agent is no longer in your workspace.',
+      title: t`Process unavailable`,
+      message: t`That agent is no longer in your workspace.`,
     });
   }
 }

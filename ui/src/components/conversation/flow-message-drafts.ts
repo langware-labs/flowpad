@@ -2,9 +2,7 @@ import { dataManager, FlowMessage, TypeId } from '@sdk';
 import { ActionInfo } from '@sdk/models/ActionInfo';
 
 /** URL pointing at the local-only `.flowmsg` zip download for `messageId`. */
-export function localBundleUrl(messageId: string): string {
-  return new ActionInfo('create-and-download-local-flowmsg', 'flow_message', messageId, 'GET').fullActionUrl;
-}
+export { localFlowMessageBundleUrl as localBundleUrl } from '@sdk';
 
 /**
  * Promote a draft FlowMessage to a real reply.

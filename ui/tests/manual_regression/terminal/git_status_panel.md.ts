@@ -13,12 +13,12 @@
  *   flow_sdk/builtin/faas/compute_node.py  (git-status action)
  *
  * Implementation notes:
- *   - Side window container: .w-80.flex-col.border-l (SideWindow)
+ *   - Side window container: .w-80.flex-col.border-s (SideWindow)
  *   - Tab strip: first .border-b inside the side window
  *   - Git tab × close button: button[aria-label="Close Git"]
  *   - Git panel header has exactly 1 button (Refresh); NO X in the panel header
  *   - File rows: .overflow-y-auto .flex.items-center.gap-2.rounded (hover:bg-muted/50)
- *   - Ribbon .ml-auto button order: 0=Context, 1=Git, 2=Prompts, 3=Files, 4=Dir
+ *   - Ribbon .ms-auto button order: 0=Context, 1=Git, 2=Prompts, 3=Files, 4=Dir
  *   - The ribbon only renders when an AgenticProcess is linked to the shell (process prop truthy)
  *   - Panel polls the git-status action every 5 seconds while open
  *
@@ -26,10 +26,21 @@
  * Test 7 (non-git workdir) requires env with a process pointing to a non-git dir.
  * Test 9 (auto-refresh) is automatable but requires filesystem write access.
  */
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect } from '@playwright/test';
-import { activePanel, dismissSetupModal, ensureAdvancedView, ensureSideTabOpen, getSideWindow, skipIfPtyExhausted, startClaudeSession } from './helpers';
+import {
+  activePanel,
+  dismissSetupModal,
+  ensureAdvancedView,
+  ensureSideTabOpen,
+  getSideWindow,
+  skipIfPtyExhausted,
+  startClaudeSession,
+} from './helpers';
 import { apiOrigin } from '../_shared/api';
 
 const API_URL = apiOrigin();
@@ -38,6 +49,44 @@ const API_URL = apiOrigin();
 // derive it from import.meta.url.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
+
+function createChangedGitRepo(): string {
+  const repo = mkdtempSync(path.join(tmpdir(), 'flowpad-git-panel-'));
+  execFileSync('git', ['init', '--quiet', repo]);
+  execFileSync('git', ['-C', repo, 'config', 'user.name', 'Flowpad QA']);
+  execFileSync('git', ['-C', repo, 'config', 'user.email', 'flowpad-qa@local.test']);
+  writeFileSync(path.join(repo, 'README.md'), 'baseline\n');
+  execFileSync('git', ['-C', repo, 'add', 'README.md']);
+  execFileSync('git', ['-C', repo, 'commit', '--quiet', '-m', 'baseline']);
+  writeFileSync(path.join(repo, 'README.md'), 'baseline\nchanged\n');
+  return repo;
+}
+
+async function createProjectForWorkdir(workdir: string): Promise<string> {
+  const response = await fetch(`${API_URL}/api/v1/graph/project`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: `git-panel-${Date.now()}`,
+      fs_storage_mount_path: workdir,
+    }),
+  });
+  expect(response.status).toBe(200);
+  const projectId = (await response.json())?.data?.id as string | undefined;
+  expect(projectId).toBeTruthy();
+  return projectId!;
+}
+
+async function gotoProjectAgenticProcess(page: import('@playwright/test').Page, projectId: string): Promise<string> {
+  await page.goto(`/dock/project/${projectId}?viewMode=advanced`);
+  const launcher = page.locator('[data-testid="project-home-start-session"]');
+  await expect(launcher).toBeVisible();
+  await launcher.getByRole('button', { name: 'Claude Code' }).click();
+  await expect(page).toHaveURL(/\/dock\/shell\/agentic_process-(?!new)/);
+  await ensureAdvancedView(page);
+  await expect(activePanel(page).locator('.border-t .ms-auto')).toBeVisible();
+  return page.url().match(/agentic_process-([0-9a-f-]+)/)?.[1] ?? '';
+}
 
 /**
  * Cache the agentic process URL after the first successful navigation.
@@ -53,7 +102,7 @@ let cachedAgenticUrl: string | null = null;
  */
 async function gotoAgenticProcess(page: import('@playwright/test').Page) {
   const panel = activePanel(page);
-  const ribbon = panel.locator('.border-t .ml-auto');
+  const ribbon = panel.locator('.border-t .ms-auto');
 
   // Fast path: reuse the URL from the first successful navigation in this run.
   if (cachedAgenticUrl) {
@@ -107,7 +156,7 @@ async function gotoAgenticProcess(page: import('@playwright/test').Page) {
 async function getComputeNodeId(): Promise<string | null> {
   try {
     const res = await fetch(`${API_URL}/api/v1/graph/compute_node`);
-    const json = await res.json() as { data?: Array<{ id?: string }> };
+    const json = (await res.json()) as { data?: Array<{ id?: string }> };
     return json.data?.[0]?.id ?? null;
   } catch {
     return null;
@@ -127,10 +176,10 @@ test.describe('Git Status Panel', () => {
 
     await gotoAgenticProcess(page);
 
-    // Ribbon should be visible — check the ml-auto button container
+    // Ribbon should be visible — check the ms-auto button container
     // (text=/running|idle/i is unreliable: may match a visibility:hidden tooltip element)
     const panel = activePanel(page);
-    const mlAuto = panel.locator('.border-t .ml-auto');
+    const mlAuto = panel.locator('.border-t .ms-auto');
     await expect(mlAuto).toBeVisible({ timeout: 15_000 });
 
     // Right section: Context(0), Git(1), Prompts(2), Files(3), Dir(4), Queue(5)
@@ -138,7 +187,7 @@ test.describe('Git Status Panel', () => {
     // 55a71046; more since). Assert the Git button (the subject of this test) is
     // present and the ribbon carries at least the documented core set — robust to
     // additions, still catches a regression that DROPS buttons.
-    await expect(mlAuto.locator("button").nth(1)).toBeVisible({ timeout: 5_000 });
+    await expect(mlAuto.locator('button').nth(1)).toBeVisible({ timeout: 5_000 });
     const ribbonButtons = await mlAuto.locator('button').count();
     expect(ribbonButtons).toBeGreaterThanOrEqual(7);
   });
@@ -153,7 +202,7 @@ test.describe('Git Status Panel', () => {
 
     await ensureSideTabOpen(page, 1, 'Git');
 
-    // Side window should appear (w-80 flex-col border-l)
+    // Side window should appear (w-80 flex-col border-s)
     const sideWindow = getSideWindow(page);
     await expect(sideWindow).toBeVisible({ timeout: 5_000 });
 
@@ -208,39 +257,31 @@ test.describe('Git Status Panel', () => {
   // ---------------------------------------------------------------------------
   test('git panel shows file list with status badges and line counts', async ({ page }) => {
     test.setTimeout(60_000);
+    const repo = createChangedGitRepo();
+    const projectId = await createProjectForWorkdir(repo);
+    let processId = '';
 
-    await gotoAgenticProcess(page);
+    try {
+      processId = await gotoProjectAgenticProcess(page, projectId);
+      expect(processId).toBeTruthy();
+      await ensureSideTabOpen(page, 1, 'Git');
 
-    await ensureSideTabOpen(page, 1, 'Git');
+      const sideWindow = getSideWindow(page);
+      await expect(sideWindow).toBeVisible({ timeout: 5_000 });
+      await page.waitForTimeout(5_000);
 
-    const sideWindow = getSideWindow(page);
-    await expect(sideWindow).toBeVisible({ timeout: 5_000 });
-    await page.waitForTimeout(5_000);
-
-    const body = sideWindow.locator('.flex-1 .overflow-y-auto');
-    const bodyText = await body.textContent();
-
-    if (bodyText?.includes('No changes')) {
-      test.skip(true, 'No changed files in git workdir — cannot validate file rows');
-      return;
+      const body = sideWindow.locator('.flex-1 .overflow-y-auto');
+      const readmeRow = body.locator('.group.rounded').filter({ hasText: 'README.md' });
+      await expect(readmeRow).toHaveCount(1);
+      await expect(readmeRow.locator('span').first()).toHaveText('M');
+    } finally {
+      await page.goto('/');
+      if (processId) {
+        await fetch(`${API_URL}/api/v1/graph/agentic_process/${processId}`, { method: 'DELETE' });
+      }
+      await fetch(`${API_URL}/api/v1/graph/project/${projectId}`, { method: 'DELETE' });
+      rmSync(repo, { recursive: true, force: true });
     }
-
-    if (bodyText?.includes('Not a git repository') || bodyText?.includes('Not a git repo')) {
-      test.skip(true, 'Process workdir is not a git repository in this environment');
-      return;
-    }
-
-    // Validate file rows exist
-    const rows = body.locator('.flex.items-center.gap-2.rounded');
-    const rowCount = await rows.count();
-    expect(rowCount).toBeGreaterThan(0);
-
-    // Validate first row: status badge should be a short code (M, A, D, ?, R)
-    const firstRow = rows.first();
-    await expect(firstRow).toBeVisible();
-    const statusBadge = firstRow.locator('span').first();
-    const statusText = await statusBadge.textContent();
-    expect(['M', 'A', 'D', '?', 'R', 'U']).toContain(statusText?.trim());
   });
 
   // ---------------------------------------------------------------------------
@@ -272,7 +313,7 @@ test.describe('Git Status Panel', () => {
     await gotoAgenticProcess(page);
 
     const panel = activePanel(page);
-    const mlAuto = panel.locator('.border-t .ml-auto');
+    const mlAuto = panel.locator('.border-t .ms-auto');
 
     // Open Git (index 1)
     await ensureSideTabOpen(page, 1, 'Git');
@@ -311,25 +352,31 @@ test.describe('Git Status Panel', () => {
   // ---------------------------------------------------------------------------
   test('git button is absent in plain shell terminal (no agentic process)', async ({ page }) => {
     test.setTimeout(60_000);
+    const bootstrap = await fetch(`${API_URL}/api/v1/graph/bootstrap`).then((response) => response.json());
+    const projectId = bootstrap?.data?.default_project?.id as string | undefined;
+    expect(projectId, 'Phase 11 plain-shell preflight requires a default project').toBeTruthy();
+    const created = await fetch(`${API_URL}/api/v1/graph/shell`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: projectId }),
+    }).then((response) => response.json());
+    const shellId = created?.data?.id as string | undefined;
+    expect(shellId, 'Phase 11 plain-shell fixture creation failed').toBeTruthy();
 
-    await page.goto('/dock/shell/new_terminal');
-    const skip = page.getByRole('button', { name: 'Skip' });
-    if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
+    try {
+      await page.goto(`/dock/shell/shell-${shellId}?viewMode=advanced`);
+      await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
+      await page.waitForTimeout(2_000);
 
-    await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: 60_000 });
-
-    if (page.url().includes('agentic_process-')) {
-      test.skip(true, 'App redirected to existing agentic process; plain shell not available in this environment');
-      return;
+      // On plain shell: ribbon (.border-t .ms-auto) is NOT present.
+      const panel = activePanel(page);
+      const mlAuto = panel.locator('.border-t .ms-auto');
+      await expect(mlAuto).not.toBeVisible({ timeout: 3_000 });
+      await expect(page).toHaveURL(new RegExp(`/dock/shell/shell-${shellId}`));
+    } finally {
+      await page.goto('/');
+      await fetch(`${API_URL}/api/v1/graph/shell/${shellId}/close`, { method: 'POST' });
     }
-
-    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
-    await page.waitForTimeout(2_000);
-
-    // On plain shell: ribbon (.border-t .ml-auto) is NOT present
-    const panel = activePanel(page);
-    const mlAuto = panel.locator('.border-t .ml-auto');
-    await expect(mlAuto).not.toBeVisible({ timeout: 3_000 });
   });
 
   // ---------------------------------------------------------------------------
@@ -339,17 +386,18 @@ test.describe('Git Status Panel', () => {
     test.setTimeout(30_000);
 
     const nodeId = await getComputeNodeId();
-    if (!nodeId) {
-      test.skip(true, 'Could not find compute_node entity ID');
-      return;
-    }
+    expect(
+      nodeId,
+      'Phase 11 provider preflight failed: bootstrap did not expose a compute_node entity for git-status.',
+    ).toBeTruthy();
+    const computeNodeId = nodeId!;
 
     // --- git repo case ---
     const gitRes = await fetch(
-      `${API_URL}/api/v1/graph/compute_node/${nodeId}/git-ops/status?workdir=${encodeURIComponent(REPO_ROOT)}`
+      `${API_URL}/api/v1/graph/compute_node/${computeNodeId}/git-ops/status?workdir=${encodeURIComponent(REPO_ROOT)}`,
     );
     expect(gitRes.status).toBe(200);
-    const gitJson = await gitRes.json() as {
+    const gitJson = (await gitRes.json()) as {
       status: string;
       data?: {
         branch?: string | null;
@@ -377,11 +425,9 @@ test.describe('Git Status Panel', () => {
     }
 
     // --- non-git dir case ---
-    const nonGitRes = await fetch(
-      `${API_URL}/api/v1/graph/compute_node/${nodeId}/git-ops/status?workdir=/tmp`
-    );
+    const nonGitRes = await fetch(`${API_URL}/api/v1/graph/compute_node/${computeNodeId}/git-ops/status?workdir=/tmp`);
     expect(nonGitRes.status).toBe(200);
-    const nonGitJson = await nonGitRes.json() as {
+    const nonGitJson = (await nonGitRes.json()) as {
       status: string;
       data?: { error?: string | null; files?: unknown[] };
     };

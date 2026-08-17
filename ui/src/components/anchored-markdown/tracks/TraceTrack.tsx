@@ -70,9 +70,7 @@ function TraceMarker({ mark }: { mark: TraceMark }) {
         {mark.startedAt && ` · started ${new Date(mark.startedAt).toLocaleTimeString()}`}
       </div>
       {mark.errorMessage && (
-        <div className="mt-1 max-w-[280px] whitespace-pre-wrap text-[10px] text-amber-200">
-          {mark.errorMessage}
-        </div>
+        <div className="mt-1 max-w-[280px] whitespace-pre-wrap text-[10px] text-amber-200">{mark.errorMessage}</div>
       )}
     </div>
   );
@@ -81,9 +79,12 @@ function TraceMarker({ mark }: { mark: TraceMark }) {
       <TooltipTrigger asChild>
         <div className="flex h-full items-start justify-end gap-1 px-1.5 pt-1 text-[10px] tabular-nums text-muted-foreground">
           <Icon className={cn('h-3 w-3 shrink-0', color)} />
-          <span className="truncate">{main}{retried}</span>
+          <span className="truncate">
+            {main}
+            {retried}
+          </span>
           {cost && (
-            <span className="ml-0.5 truncate text-muted-foreground/80" data-testid="trace-mark-cost">
+            <span className="ms-0.5 truncate text-muted-foreground/80" data-testid="trace-mark-cost">
               {cost}
             </span>
           )}

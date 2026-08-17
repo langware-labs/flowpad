@@ -1,19 +1,18 @@
-import { ActionInfo, connectionManager, dataContext, dataManager, oauthService, type RepoSummary } from '@sdk';
+import { OAUTH_PROVIDERS, OAuthStatus, oauthService, type RepoSummary } from '@sdk';
+import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { BranchPicker } from '@src/components/git/BranchPicker';
 import { InvitationsStrip } from '@src/components/git/InvitationsStrip';
 import { RepoPicker } from '@src/components/git/RepoPicker';
 import { Button } from '@src/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@src/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { notify } from '@src/notifications';
+import { hasGitHubRepoAccess } from '@src/utils/gitUtils';
+import { isHubOnly } from '@src/navigation/hub-runtime';
+import { SETUP_GITHUB_JOURNEY_ID, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
+import { fetchGithubStatus } from '@src/lib/github-oauth-status';
 import { CheckCircle2, GitBranch, Github, Loader2 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 export interface NewProjectFromGitDialogProps {
@@ -45,38 +44,29 @@ export interface NewProjectFromGitDialogProps {
   ) => Promise<{ ok: true } | { ok: false; suggestedName: string; attemptedName: string }>;
 }
 
-async function fetchGithubStatus(): Promise<boolean | null> {
-  // Returns:
-  //   true  → connected
-  //   false → genuinely missing
-  //   null  → couldn't determine (bootstrap not ready / network error)
-  // The caller treats null as "show the disconnected banner but don't be loud".
-  const userTypeId = dataContext.userTypeId;
-  if (!userTypeId?.id) {
-    // Bootstrap hasn't populated the user yet — skip the call rather than fire
-    // a malformed /api/v1/graph/user/oauth/github/status (no id), which would
-    // 404 silently and falsely report "not connected" for connected users.
-    return null;
-  }
-  try {
-    const info = new ActionInfo('oauth', userTypeId.type, userTypeId.id, 'GET');
-    info.subpath = 'github/status';
-    const res = await dataManager.callAction<unknown, { has_token?: boolean; status?: string }>(info);
-    return Boolean(res?.has_token);
-  } catch {
-    return null;
-  }
-}
-
-export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialUrl, initialBranch }: NewProjectFromGitDialogProps) {
+export function NewProjectFromGitDialog({
+  open,
+  onOpenChange,
+  onCreate,
+  initialUrl,
+  initialBranch,
+}: NewProjectFromGitDialogProps) {
   const { t } = useLingui();
   const [url, setUrl] = useState(initialUrl ?? '');
   const [branch, setBranch] = useState<string | null>(initialBranch ?? null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // One user action, two sequential phases — never concurrent, so one value
+  // rather than a pair of booleans that can disagree.
+  const [phase, setPhase] = useState<'idle' | 'checking' | 'cloning'>('idle');
+  const [accessError, setAccessError] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<{ suggestedName: string; attemptedName: string } | null>(null);
   const [githubConnected, setGithubConnected] = useState<boolean>(false);
+  // null = the repo list has not resolved yet, so we do not yet know.
+  const [privateReposVisible, setPrivateReposVisible] = useState<boolean | null>(null);
   // Picker state: null = step 1 (repo table). Non-null = step 2 (branches for this repo).
   const [pickedRepo, setPickedRepo] = useState<RepoSummary | null>(null);
+  // Last URL that passed the access probe — lets a collision retry skip a
+  // second identical `ls-remote` for a repo already proven readable.
+  const probedUrlRef = useRef<string | null>(null);
 
   // Re-poll on every open AND whenever userTypeId becomes available — handles
   // the bootstrap race where the dialog mounts before dataContext.userTypeId is
@@ -86,8 +76,10 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
     setUrl(initialUrl ?? '');
     setBranch(initialBranch ?? null);
     setPickedRepo(null);
-    setIsSubmitting(false);
+    setPhase('idle');
+    setAccessError(null);
     setSuggestion(null);
+    probedUrlRef.current = null;
 
     let cancelled = false;
     const poll = async () => {
@@ -109,25 +101,25 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
     };
   }, [open, initialUrl, initialBranch]);
 
-  // Refresh status on a successful GitHub connect broadcast.
-  useEffect(() => {
-    if (!open) return;
-    const handler = (msg: { auth_method?: string; status?: string }) => {
-      if (msg.auth_method === 'github' && msg.status === 'success') {
-        void fetchGithubStatus().then((r) => {
-          if (r !== null) setGithubConnected(r);
-        });
-      }
-    };
-    connectionManager.on('on_llm_config_msg', handler);
-    return () => {
-      connectionManager.off('on_llm_config_msg', handler);
-    };
-  }, [open]);
+  // Refresh status when a GitHub grant lands.
+  useOAuthFlowComplete(
+    OAUTH_PROVIDERS.GITHUB,
+    (msg) => {
+      if (msg.status !== OAuthStatus.SUCCESS) return;
+      // A stale "no access" verdict was reached WITHOUT the token that just
+      // arrived — drop it so the user isn't looking at an answer that no
+      // longer holds. Re-clicking Clone re-probes with the new credential.
+      setAccessError(null);
+      void fetchGithubStatus().then((r) => {
+        if (r !== null) setGithubConnected(r);
+      });
+    },
+    open,
+  );
 
   const handleConnectGithub = useCallback(async () => {
     try {
-      await oauthService.connect('github');
+      await oauthService.connect(OAUTH_PROVIDERS.GITHUB);
     } catch (err) {
       // Prefer the backend's ApiFailResponse message over axios's generic
       // "Request failed with status code 500".
@@ -135,16 +127,44 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
       const title = ax.response?.data?.message ?? ax.message ?? t`Failed to start GitHub connection`;
       notify.error({ title });
     }
-  }, []);
+  }, [t]);
 
-  const canSubmit = !!url.trim() && !isSubmitting;
+  const isBusy = phase !== 'idle';
+  const canSubmit = !!url.trim() && !isBusy;
 
   const submit = useCallback(
     async (acceptSuggested?: string) => {
-      if (isSubmitting || !url.trim()) return;
-      setIsSubmitting(true);
+      const target = url.trim();
+      if (isBusy || !target) return;
       try {
-        const res = await onCreate(url.trim(), acceptSuggested, branch ?? undefined);
+        // Gate on the SAME credential path the clone will use, so we never
+        // commit to a clone we already know fails. `null` means the question
+        // couldn't be asked at all (bad URL / backend unreachable) — a
+        // different failure from a real denial, so it gets its own message.
+        // Skipped once a URL has been cleared, so accepting a name suggestion
+        // doesn't re-probe a repo we just proved readable.
+        // `/api/v1/git/remote-access` is a flow_sdk route; the hub registers no
+        // git router, so on hub the probe 404s and `hasGitHubRepoAccess` reports
+        // "couldn't reach" for every repo — including ones we can demonstrably
+        // read. Skip the question where it cannot be asked; the clone itself
+        // reports the real failure.
+        if (!isHubOnly() && probedUrlRef.current !== target) {
+          setPhase('checking');
+          setAccessError(null);
+          const access = await hasGitHubRepoAccess(target);
+          if (!access?.hasAccess) {
+            setAccessError(
+              access === null
+                ? t`Couldn't reach that repository. Check the URL and try again.`
+                : t`No access to this repository. Connect GitHub if it's private, or check the URL.`,
+            );
+            return;
+          }
+          probedUrlRef.current = target;
+        }
+
+        setPhase('cloning');
+        const res = await onCreate(target, acceptSuggested, branch ?? undefined);
         if (res.ok) {
           onOpenChange(false);
         } else {
@@ -155,20 +175,23 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
           title: err instanceof Error ? err.message : t`Failed to clone repository`,
         });
       } finally {
-        setIsSubmitting(false);
+        setPhase('idle');
       }
     },
-    [isSubmitting, url, branch, onCreate, onOpenChange],
+    [isBusy, url, branch, onCreate, onOpenChange, t],
   );
 
-  const handlePickRepo = useCallback((repo: RepoSummary) => {
-    setPickedRepo(repo);
-    setBranch(null); // require explicit branch choice after picking a different repo
-    // Pre-fill the URL field so the user can see what they picked even before
-    // choosing a branch; selecting a branch only updates the branch chip.
-    setUrl(`${repo.html_url}.git`);
-    if (suggestion) setSuggestion(null);
-  }, [suggestion]);
+  const handlePickRepo = useCallback(
+    (repo: RepoSummary) => {
+      setPickedRepo(repo);
+      setBranch(null); // require explicit branch choice after picking a different repo
+      // Pre-fill the URL field so the user can see what they picked even before
+      // choosing a branch; selecting a branch only updates the branch chip.
+      setUrl(`${repo.html_url}.git`);
+      if (suggestion) setSuggestion(null);
+    },
+    [suggestion],
+  );
 
   const handlePickBranch = useCallback((b: { name: string }) => {
     setBranch(b.name);
@@ -180,10 +203,10 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
   // happened. The footer Cancel button is separately disabled in JSX below.
   const handleOpenChange = useCallback(
     (next: boolean) => {
-      if (!next && isSubmitting) return;
+      if (!next && isBusy) return;
       onOpenChange(next);
     },
-    [isSubmitting, onOpenChange],
+    [isBusy, onOpenChange],
   );
 
   return (
@@ -191,38 +214,55 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
       <DialogContent
         className="sm:max-w-2xl"
         onEscapeKeyDown={(e) => {
-          if (isSubmitting) e.preventDefault();
+          if (isBusy) e.preventDefault();
         }}
         onPointerDownOutside={(e) => {
-          if (isSubmitting) e.preventDefault();
+          if (isBusy) e.preventDefault();
         }}
         onInteractOutside={(e) => {
-          if (isSubmitting) e.preventDefault();
+          if (isBusy) e.preventDefault();
         }}
       >
         <DialogHeader>
-          <DialogTitle><Trans>Clone project from git</Trans></DialogTitle>
+          <DialogTitle>
+            <Trans>Clone project from git</Trans>
+          </DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-3">
           {githubConnected ? (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-              <Trans>GitHub connected — you can clone private repos.</Trans>
+              {/* "Connected" is all `github/status` proves — it is a stored token
+                  row, with no scope check and no call to GitHub. Whether that
+                  token can reach PRIVATE repos is only knowable once the list
+                  comes back, so the stronger claim waits for evidence. */}
+              {privateReposVisible === true ? (
+                <Trans>GitHub connected — private repos included.</Trans>
+              ) : privateReposVisible === false ? (
+                <Trans>GitHub connected — no private repos visible to this token.</Trans>
+              ) : (
+                <Trans>GitHub connected.</Trans>
+              )}
             </div>
           ) : (
             <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-xs">
               <span className="text-muted-foreground">
                 <Trans>Tip: connect GitHub to clone private repos.</Trans>
               </span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={() => void handleConnectGithub()}
-              >
-                <Github className="mr-1.5 h-3 w-3" />
-                <Trans>Connect</Trans>
-              </Button>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => void handleConnectGithub()}
+                >
+                  <Github className="me-1.5 h-3 w-3" />
+                  <Trans>Connect</Trans>
+                </Button>
+                <SetupJourneyButton journeyId={SETUP_GITHUB_JOURNEY_ID} variant="ghost">
+                  <Trans>Guided setup</Trans>
+                </SetupJourneyButton>
+              </div>
             </div>
           )}
           {/* URL input (always visible) */}
@@ -233,6 +273,7 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
               onChange={(e) => {
                 setUrl(e.target.value);
                 if (suggestion) setSuggestion(null);
+                if (accessError) setAccessError(null);
               }}
               autoFocus
               spellCheck={false}
@@ -247,7 +288,7 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
                 <span className="font-mono">{branch}</span>
                 <button
                   type="button"
-                  className="ml-1 text-muted-foreground hover:text-foreground"
+                  className="ms-1 text-muted-foreground hover:text-foreground"
                   onClick={() => setBranch(null)}
                   title={t`Clear branch (uses default)`}
                 >
@@ -259,28 +300,42 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
           {suggestion && (
             <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
               <div className="mb-1.5">
-                <Trans><span className="font-mono">{suggestion.attemptedName}</span> already exists in the workspace.</Trans>
+                <Trans>
+                  <span className="font-mono">{suggestion.attemptedName}</span> already exists in the workspace.
+                </Trans>
               </div>
               <div className="flex items-center gap-2">
-                <span><Trans>Use</Trans></span>
+                <span>
+                  <Trans>Use</Trans>
+                </span>
                 <span className="font-mono font-medium">{suggestion.suggestedName}</span>
-                <span><Trans>instead?</Trans></span>
+                <span>
+                  <Trans>instead?</Trans>
+                </span>
                 <Button
                   size="sm"
                   variant="outline"
-                  className="ml-auto h-6 px-2 text-xs"
+                  className="ms-auto h-6 px-2 text-xs"
                   onClick={() => void submit(suggestion.suggestedName)}
-                  disabled={isSubmitting}
+                  disabled={isBusy}
                 >
                   <Trans>Use suggestion</Trans>
                 </Button>
               </div>
             </div>
           )}
-          {isSubmitting && (
+          {accessError && (
+            <div
+              className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+              data-testid="git-access-error"
+            >
+              {accessError}
+            </div>
+          )}
+          {isBusy && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <Trans>Cloning…</Trans>
+              {phase === 'checking' ? <Trans>Checking access…</Trans> : <Trans>Cloning…</Trans>}
             </div>
           )}
 
@@ -300,17 +355,22 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
                   }}
                 />
               ) : (
-                <RepoPicker provider="github" onSelect={handlePickRepo} enabled={open} />
+                <RepoPicker
+                  provider="github"
+                  onSelect={handlePickRepo}
+                  enabled={open}
+                  onReposLoaded={(repos) => setPrivateReposVisible(repos.some((r) => r.private))}
+                />
               )}
             </>
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isBusy}>
             <Trans>Cancel</Trans>
           </Button>
-          <Button onClick={() => void submit()} disabled={!canSubmit}>
-            {isSubmitting && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+          <Button onClick={() => void submit()} disabled={!canSubmit} data-testid="git-clone-submit">
+            {isBusy && <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />}
             {branch ? <Trans>Clone @ {branch}</Trans> : <Trans>Clone</Trans>}
           </Button>
         </DialogFooter>

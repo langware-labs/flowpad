@@ -1,8 +1,11 @@
-import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
-import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Button } from '@src/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
+import { openBrowseable } from './open';
+import { useLocaleInfo } from '@src/contexts/locale-context';
 import type { Browseable, BrowseableDragData, BrowseableTreeProps, ToolbarAction } from './types';
 import { useBrowseableTree } from './useBrowseableTree';
 import {
@@ -14,7 +17,7 @@ import {
 } from './drag';
 import { subscribeRefresh } from './refresh-store';
 import { TreeSelectionContext, type TreeSelectionApi } from './useTreeSelection';
-import { useOpenTabHashes } from '@src/tabs/useTabs';
+import { useOpenTabHashes } from '@src/tabs/use-tab-manager';
 import { RAIL_DIM_WHEN_CLOSED } from '@src/lib/utils';
 
 /** Walk a root's currently-visible (expanded) subtree in render order,
@@ -44,14 +47,14 @@ function collectVisibleSelectable(root: Browseable, tree: ReturnType<typeof useB
  *  - Clicking the chevron toggles expansion; it does not navigate.
  *  - Selection is derived from `activePointer` — never stored locally.
  *  - Expansion is ephemeral (local Set<string>).
- *  - When `activePointer` changes, the first root that `ownsPointer` is
- *    asked for the ancestor chain and every ancestor is expanded.
+ *  - When `activePointer` changes, every root that `ownsPointer` is asked for
+ *    its ancestor chain and every ancestor is expanded.
  */
 export function BrowseableTree(props: BrowseableTreeProps) {
-  const { t } = useLingui();
   const {
     roots,
     activePointer,
+    activeResourcePointer,
     activeKey,
     header,
     onNavigate,
@@ -61,12 +64,17 @@ export function BrowseableTree(props: BrowseableTreeProps) {
     className = '',
     persistKey,
     defaultExpandedIds,
+    hoverExpandMs,
+    hoverSeenMs,
+    levelFooter,
+    mirrored = false,
   } = props;
 
   const tree = useBrowseableTree(roots, { persistKey, defaultExpandedIds });
   // Set of open-tab identities → rows backed by an open tab stay bright, the rest
   // dim (see BrowseableRow). Subscribed once here, passed down through the tree.
   const openTabHashes = useOpenTabHashes();
+  const treeElementRef = useRef<HTMLDivElement | null>(null);
   const lastResolvedRef = useRef<string | null>(null);
   const [dragData, setDragData] = useState<BrowseableDragData | null>(null);
 
@@ -118,31 +126,37 @@ export function BrowseableTree(props: BrowseableTreeProps) {
     [tree],
   );
 
-  // Auto-expand ancestors for the active pointer. Dedupe by pointer value so
+  // Auto-expand ancestors for the active resource. Most routes encode their
+  // resource directly, so this falls back to the URL pointer. Canonical TypeId
+  // routes can provide a separately resolved VFS cursor without replacing the
+  // URL/navigation identity. Dedupe by both pointer values so
   // we don't re-walk on every render — but only mark as resolved once a leaf
   // was actually found, so we retry when `roots` populate later (e.g. async
   // adapter like useAssetTypes loads after initial render).
   useEffect(() => {
-    if (!activePointer) return;
-    const key = `${activePointer.viewType ?? ''}::${activePointer.pointer ?? ''}::${activeKey ?? ''}`;
+    const resourcePointer = activeResourcePointer ?? activePointer;
+    if (!resourcePointer) return;
+    const key = `${activePointer?.viewType ?? ''}::${activePointer?.pointer ?? ''}::${resourcePointer.viewType ?? ''}::${resourcePointer.pointer ?? ''}::${activeKey ?? ''}::${rootIdsKey}`;
     if (key === lastResolvedRef.current) return;
-    void tree.expandParentsForPointer(activePointer).then((leaf) => {
+    void tree.expandParentsForPointer(resourcePointer).then((leaves) => {
       requestAnimationFrame(() => {
-        // Prefer the keyed target: a typeid URL expands the type root (pathFor →
-        // [root]) so the matching leaf renders, but it's keyed by vfs path, not
-        // the URL's typeid. Find it by `data-selection-key`; fall back to the
-        // pathFor leaf (the vfs case). Only mark resolved once a target is found
-        // so a not-yet-rendered typeid leaf retries on the next children load.
+        // Resource identity crosses presentation routes: an editor pointer and
+        // an Assets fs pointer can name the same VFS file. Prefer the first
+        // matching resource row in DOM/root order, then retain the typeid-key
+        // fallback for entity-addressed assets and finally the first path leaf.
+        const resourceUri = resourcePointer.resourceVfsPath?.uri;
+        const treeElement = treeElementRef.current;
         const el =
-          (activeKey && document.querySelector(`[data-selection-key="${CSS.escape(activeKey)}"]`)) ||
-          (leaf && document.querySelector(`[data-browseable-id="${CSS.escape(leaf.id)}"]`));
+          (resourceUri && treeElement?.querySelector(`[data-resource-vfs="${CSS.escape(resourceUri)}"]`)) ||
+          (activeKey && treeElement?.querySelector(`[data-selection-key="${CSS.escape(activeKey)}"]`)) ||
+          (leaves[0] && treeElement?.querySelector(`[data-browseable-id="${CSS.escape(leaves[0].id)}"]`));
         if (!el) return;
         lastResolvedRef.current = key;
         el.scrollIntoView({ block: 'center' });
       });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePointer, activeKey, tree.expandParentsForPointer]);
+  }, [activePointer, activeResourcePointer, activeKey, tree.expandParentsForPointer]);
 
   if (isLoading) {
     return (
@@ -169,11 +183,11 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   }
 
   return (
-    <div className={`flex h-full flex-col ${className}`} role="tree" aria-label={header?.title}>
+    <div ref={treeElementRef} className={`flex h-full flex-col ${className}`} role="tree" aria-label={header?.title}>
       {header && (
         <div className="flex items-center gap-1 border-b p-1.5">
           <span className="text-xs font-medium text-muted-foreground">{header.title}</span>
-          <div className="ml-auto flex items-center gap-0.5">
+          <div className="ms-auto flex items-center gap-0.5">
             {header.toolbar?.map((a) => (
               <ToolbarButton key={a.id} action={a} />
             ))}
@@ -188,9 +202,14 @@ export function BrowseableTree(props: BrowseableTreeProps) {
             node={root}
             level={0}
             rootId={root.id}
+            hoverExpandMs={hoverExpandMs}
+            hoverSeenMs={hoverSeenMs}
+            mirrored={mirrored}
+            levelFooter={levelFooter}
             tree={tree}
             selection={selection}
             activePointer={activePointer}
+            activeResourcePointer={activeResourcePointer}
             activeKey={activeKey}
             openTabHashes={openTabHashes}
             onNavigate={handleNavigate}
@@ -199,9 +218,28 @@ export function BrowseableTree(props: BrowseableTreeProps) {
             onDragEnd={() => setDragData(null)}
           />
         ))}
+        {levelFooter?.('')}
       </div>
     </div>
   );
+}
+
+/** One hover dwell on a row: `start` schedules `run` after `ms` (a no-op when
+ *  `ms` is undefined, which is how every non-menu navigator opts out), `cancel`
+ *  drops a pending one. Unmount cancels itself, so a caller adding a dwell
+ *  never has to remember the cleanup. */
+function useDwell(ms: number | undefined, run: () => void) {
+  const timer = useRef<ReturnType<typeof setTimeout>>();
+  const latest = useRef(run);
+  latest.current = run;
+  const cancel = useCallback(() => clearTimeout(timer.current), []);
+  const start = useCallback(() => {
+    if (!ms) return;
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => latest.current(), ms);
+  }, [ms]);
+  useEffect(() => cancel, [cancel]);
+  return useMemo(() => ({ start, cancel }), [start, cancel]);
 }
 
 interface RowProps {
@@ -212,6 +250,7 @@ interface RowProps {
   tree: ReturnType<typeof useBrowseableTree>;
   selection: TreeSelectionApi | null;
   activePointer: DockPointer | null;
+  activeResourcePointer?: DockPointer | null;
   activeKey?: string | null;
   /** Open-tab identities (`pointer.tabHash`) → un-dimmed rows. */
   openTabHashes: Set<string>;
@@ -219,6 +258,14 @@ interface RowProps {
   dragData: BrowseableDragData | null;
   onDragStart: (data: BrowseableDragData) => void;
   onDragEnd: () => void;
+  /** Dwell (ms) before hover expands this row. Undefined ⇒ nothing is
+   *  scheduled ⇒ ordinary navigators never expand on hover. */
+  hoverExpandMs?: number;
+  /** Dwell (ms) before hover fires this row's `onHoverSeen`. Undefined ⇒ never. */
+  hoverSeenMs?: number;
+  levelFooter?: (parentId: string) => React.ReactNode;
+  /** Flip the direction cues for a leftward-growing menu — see BrowseableTreeProps. */
+  mirrored?: boolean;
 }
 
 function BrowseableRow({
@@ -228,12 +275,17 @@ function BrowseableRow({
   tree,
   selection,
   activePointer,
+  activeResourcePointer,
   activeKey,
   openTabHashes,
   onNavigate,
   dragData,
   onDragStart,
   onDragEnd,
+  hoverExpandMs,
+  hoverSeenMs,
+  levelFooter,
+  mirrored,
 }: RowProps) {
   const { t } = useLingui();
   const expanded = tree.isExpanded(node.id);
@@ -263,8 +315,8 @@ function BrowseableRow({
       // Pointer-string match: the original path (vfs leaf, list/folder roots, etc.).
       (node.pointer &&
         activePointer &&
-        node.pointer.viewType === activePointer.viewType &&
-        node.pointer.pointer === activePointer.pointer)
+        ((node.pointer.viewType === activePointer.viewType && node.pointer.pointer === activePointer.pointer) ||
+          node.pointer.resourceVfsPath?.equals((activeResourcePointer ?? activePointer).resourceVfsPath)))
     )
   );
 
@@ -305,15 +357,8 @@ function BrowseableRow({
       // Label click NAVIGATES only — expansion belongs to the chevron (or a
       // double-click). A pointer-less parent still expands on click so header
       // rows (pointer: null) stay usable.
-      // Click resolves as `pointer ?? activate` (see types.ts invariant) —
-      // activate is the imperative fallback for nodes whose navigation can't
-      // be a pure DockPointer.
-      if (node.pointer) {
-        onNavigate(node.pointer);
-      } else if (node.activate) {
-        void node.activate();
-      } else if (hasChildrenHint) {
-        void tree.toggleExpand(node);
+      if (!openBrowseable(node, onNavigate) && hasChildrenHint) {
+        explicitToggle();
       }
     },
     [editing, canSelect, selection, rootId, hasChildrenHint, node, tree, onNavigate],
@@ -339,12 +384,50 @@ function BrowseableRow({
     if (next && next !== node.label) await node.onRename?.(next);
   }, [draft, node]);
 
+  // The row's two hover dwells (menu mode). Hover-expand only ever EXPANDS —
+  // never toggles: the pointer rests on a row it just expanded, so a toggle
+  // would collapse it again and flicker. Collapse stays chevron / click /
+  // double-click. Hover-seen stamps "the user looked at this" without opening
+  // it; it re-fires on every qualifying dwell, so the stamp must be idempotent
+  // (Bookmark.markSeen is).
+  const expandDwell = useDwell(hoverExpandMs, () => void tree.expand(node));
+  const seenDwell = useDwell(hoverSeenMs, () => node.onHoverSeen?.());
+  // An explicit collapse latches hover off until the pointer leaves and comes
+  // back. Without it, collapsing via the chevron re-expands ~150ms later — the
+  // chevron lives inside the row, so collapsing it never ends the hover.
+  const suppressHoverExpand = useRef(false);
+
+  const handleRowPointerEnter = useCallback(
+    (e: React.PointerEvent) => {
+      if (e.pointerType !== 'mouse') return;
+      seenDwell.start();
+      if (hasChildrenHint && !expanded && !suppressHoverExpand.current) expandDwell.start();
+    },
+    [expandDwell, seenDwell, hasChildrenHint, expanded],
+  );
+
+  const handleRowPointerLeave = useCallback(() => {
+    expandDwell.cancel();
+    seenDwell.cancel();
+    suppressHoverExpand.current = false;
+  }, [expandDwell, seenDwell]);
+
+  /** The one way to toggle from a deliberate user action. Latches hover-expand
+   *  off as it goes: the pointer is still on the row you just collapsed, so
+   *  without this the dwell would re-expand it ~150ms later. Any future
+   *  explicit-collapse path (a keyboard ArrowLeft, a context menu) must come
+   *  through here, or it silently reintroduces that. */
+  const explicitToggle = useCallback(() => {
+    suppressHoverExpand.current = true;
+    void tree.toggleExpand(node);
+  }, [node, tree]);
+
   const handleChevronClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      void tree.toggleExpand(node);
+      explicitToggle();
     },
-    [node, tree],
+    [explicitToggle],
   );
 
   // Intra-tree drags carry the full payload in lifted state → full canDrop
@@ -354,7 +437,7 @@ function BrowseableRow({
   // and run the full canDrop check at drop time via readBrowseableDrag.
   const canAcceptDrop = !!(dragData && node.onDrop && (!node.canDrop || node.canDrop(dragData)));
   // Space reserved (on hover/focus only) so the label clears the
-  // absolutely-positioned compact toolbar when it appears
+  // absolutely-positioned compact toolbar (pinned to the row's inline end)
   // (h-5/w-5 buttons + gap-0.5 + px-0.5 + right-1). At rest the toolbar is
   // hidden, so the label keeps its full width.
   //
@@ -440,126 +523,181 @@ function BrowseableRow({
     [dragData, node, onDragEnd],
   );
 
-  return (
-    <div data-browseable-id={node.id} data-selection-key={node.selectionKey}>
+  /** Rows indent away from the side they start on, so the nesting reads as
+   *  nesting whichever way the menu grows. */
+  const indentSide = mirrored ? 'marginInlineEnd' : 'marginInlineStart';
+
+  /**
+   * Which way the "there is more this way" cues point — the collapsed chevron
+   * and the row preview.
+   *
+   * Two independent facts decide it, so it is an XOR: the ambient reading
+   * direction (Hebrew and Arabic ship in `src/locales`), and whether this tree
+   * reversed its axis. Hardcoding either one alone gets the other case
+   * backwards — which is what the LTR-only constants here did to every RTL
+   * locale, in all of this component's consumers, before `mirrored` existed.
+   */
+  const cuePointsLeft = (useLocaleInfo().dir === 'rtl') !== !!mirrored;
+
+  // Built once, wrapped conditionally below: the tooltip is the ONLY
+  // difference between the two cases and the row is ~100 lines.
+  const rowEl = (
+    <div
+      className={`group relative flex items-center gap-1 rounded-md p-1.5 text-xs transition-[color,background-color,border-color,opacity] ${
+        mirrored ? 'flex-row-reverse' : ''
+      } ${
+        isSelected ? 'bg-accent font-medium text-accent-foreground' : 'hover:bg-muted'
+      } ${dimmed ? RAIL_DIM_WHEN_CLOSED : ''} ${
+        // Multi-select ring — distinct from, and composable with, the active
+        // (bg-accent) fill: a row can be both the open editor and selected.
+        multiSelected ? 'ring-2 ring-inset ring-primary' : ''
+      } ${node.pointer || canSelect ? 'cursor-pointer' : 'cursor-default'} ${node.dragData ? 'active:cursor-grabbing' : ''} ${
+        isDropTarget ? 'bg-primary/10 ring-1 ring-primary/40' : ''
+      } ${isDropping ? 'opacity-60' : ''} ${node.rowClassName ?? ''}`}
+      style={{ [indentSide]: `${level * 14}px` }}
+      role="treeitem"
+      aria-level={level + 1}
+      aria-selected={isSelected}
+      data-tag={node.tag}
+      data-tag-kind={node.tag ? 'button' : undefined}
+      data-multi-selected={multiSelected || undefined}
+      aria-expanded={hasChildrenHint ? expanded : undefined}
+      draggable={!!node.dragData}
+      onPointerEnter={handleRowPointerEnter}
+      onPointerLeave={handleRowPointerLeave}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={(e) => {
+        void handleDrop(e);
+      }}
+    >
       <div
-        className={`group relative flex items-center gap-1 rounded-md p-1.5 text-xs transition-[color,background-color,border-color,opacity] ${
-          isSelected ? 'bg-accent font-medium text-accent-foreground' : 'hover:bg-muted'
-        } ${dimmed ? RAIL_DIM_WHEN_CLOSED : ''} ${
-          // Multi-select ring — distinct from, and composable with, the active
-          // (bg-accent) fill: a row can be both the open editor and selected.
-          multiSelected ? 'ring-2 ring-inset ring-primary' : ''
-        } ${node.pointer || canSelect ? 'cursor-pointer' : 'cursor-default'} ${node.dragData ? 'active:cursor-grabbing' : ''} ${
-          isDropTarget ? 'bg-primary/10 ring-1 ring-primary/40' : ''
-        } ${isDropping ? 'opacity-60' : ''} ${node.rowClassName ?? ''}`}
-        style={{ marginLeft: `${level * 14}px` }}
-        role="treeitem"
-        aria-level={level + 1}
-        aria-selected={isSelected}
-        data-multi-selected={multiSelected || undefined}
-        aria-expanded={hasChildrenHint ? expanded : undefined}
-        draggable={!!node.dragData}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={(e) => {
-          void handleDrop(e);
-        }}
+        className={`flex min-w-0 flex-1 items-center gap-1 overflow-hidden ${
+          mirrored ? 'flex-row-reverse text-end' : ''
+        } ${
+          toolbarSpace
+            ? node.badge
+              ? // A badge sits right-aligned in this zone — reserve the
+                // hover-toolbar slot PERMANENTLY so the badge doesn't jump
+                // left when the toolbar fades in (git pills stay put while
+                // the remove button appears beside them).
+                'pe-[var(--toolbar-space)]'
+              : 'transition-[padding] group-focus-within:pe-[var(--toolbar-space)] group-hover:pe-[var(--toolbar-space)]'
+            : ''
+        }`}
+        style={toolbarSpace ? ({ '--toolbar-space': `${toolbarSpace}px` } as React.CSSProperties) : undefined}
       >
-        <div
-          className={`flex min-w-0 flex-1 items-center gap-1 overflow-hidden ${
-            toolbarSpace
-              ? node.badge
-                ? // A badge sits right-aligned in this zone — reserve the
-                  // hover-toolbar slot PERMANENTLY so the badge doesn't jump
-                  // left when the toolbar fades in (git pills stay put while
-                  // the remove button appears beside them).
-                  'pr-[var(--toolbar-space)]'
-                : 'transition-[padding] group-focus-within:pr-[var(--toolbar-space)] group-hover:pr-[var(--toolbar-space)]'
-              : ''
-          }`}
-          style={toolbarSpace ? ({ '--toolbar-space': `${toolbarSpace}px` } as React.CSSProperties) : undefined}
-        >
-          {hasChildrenHint ? (
-            <button
-              type="button"
-              onClick={handleChevronClick}
-              className="flex h-4 w-4 flex-shrink-0 items-center justify-center"
-              title={expanded ? t`Collapse` : t`Expand`}
-              aria-label={expanded ? t`Collapse` : t`Expand`}
-              data-testid={`browseable-chevron-${node.id}`}
-            >
-              {loadState.status === 'loading' ? (
-                <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-              ) : expanded ? (
-                <ChevronDown className="h-3 w-3 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="h-3 w-3 text-muted-foreground" />
-              )}
-            </button>
-          ) : (
-            <div className="w-4 flex-shrink-0" />
-          )}
-
-          <div
-            className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"
-            onClick={handleRowClick}
-            onDoubleClick={handleDoubleClick}
+        {hasChildrenHint ? (
+          <button
+            type="button"
+            onClick={handleChevronClick}
+            className="flex h-4 w-4 flex-shrink-0 items-center justify-center"
+            title={expanded ? t`Collapse` : t`Expand`}
+            aria-label={expanded ? t`Collapse` : t`Expand`}
+            data-testid={`browseable-chevron-${node.id}`}
           >
-            {node.content ? (
-              node.content
-            ) : editing ? (
-              <input
-                autoFocus
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                onFocus={(e) => e.target.select()}
-                onKeyDown={(e) => {
-                  e.stopPropagation();
-                  if (e.key === 'Enter') void commitRename();
-                  else if (e.key === 'Escape') setEditing(false);
-                }}
-                onBlur={() => void commitRename()}
-                className="min-w-0 flex-1 rounded border border-input bg-background px-1 py-0.5 text-xs outline-none focus:ring-1 focus:ring-ring"
-                data-testid={`browseable-rename-${node.id}`}
-              />
+            {loadState.status === 'loading' ? (
+              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+            ) : expanded ? (
+              <ChevronDown className="h-3 w-3 text-muted-foreground" />
+            ) : cuePointsLeft ? (
+              <ChevronLeft className="h-3 w-3 text-muted-foreground" />
             ) : (
-              <>
-                {node.icon}
-                <span className="min-w-0 flex-1 truncate" title={node.label}>
-                  {node.label}
-                </span>
-                {node.badge && <div className="flex-shrink-0">{node.badge}</div>}
-              </>
+              <ChevronRight className="h-3 w-3 text-muted-foreground rtl:-scale-x-100" />
             )}
-          </div>
-        </div>
-
-        {node.toolbar && node.toolbar.length > 0 && (
-          <div className="pointer-events-none absolute right-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-background/80 px-0.5 opacity-0 shadow-sm backdrop-blur group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
-            {node.toolbar.map((a) => (
-              <ToolbarButton key={a.id} action={a} compact />
-            ))}
-          </div>
+          </button>
+        ) : (
+          <div className="w-4 flex-shrink-0" />
         )}
+
+        <div
+          className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"
+          onClick={handleRowClick}
+          onDoubleClick={handleDoubleClick}
+        >
+          {node.content ? (
+            node.content
+          ) : editing ? (
+            <input
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onFocus={(e) => e.target.select()}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter') void commitRename();
+                else if (e.key === 'Escape') setEditing(false);
+              }}
+              onBlur={() => void commitRename()}
+              className="min-w-0 flex-1 rounded border border-input bg-background px-1 py-0.5 text-xs outline-none focus:ring-1 focus:ring-ring"
+              data-testid={`browseable-rename-${node.id}`}
+            />
+          ) : (
+            <>
+              {node.icon}
+              <span className="min-w-0 flex-1 truncate" title={node.tooltip ? undefined : node.label}>
+                {node.label}
+              </span>
+              {node.badge && <div className="flex-shrink-0">{node.badge}</div>}
+            </>
+          )}
+        </div>
       </div>
+
+      {node.toolbar && node.toolbar.length > 0 && (
+        <div className="pointer-events-none absolute end-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-background/80 px-0.5 opacity-0 shadow-sm backdrop-blur group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
+          {node.toolbar.map((a) => (
+            <ToolbarButton key={a.id} action={a} compact />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div
+      data-browseable-id={node.id}
+      data-selection-key={node.selectionKey}
+      data-resource-vfs={node.pointer?.resourceVfsPath?.uri}
+    >
+      {node.tooltip ? (
+        <Tooltip>
+          <TooltipTrigger asChild>{rowEl}</TooltipTrigger>
+          {/* Sideways, never below: rows stack vertically, so a bottom tooltip
+              would cover the next row and sit in the pointer's downward travel
+              path. WHICH side depends on the host — away from the panel, into
+              open space; in a right-anchored menu "right" is off-screen.
+              pointer-events-none: the tooltip portals to document.body, i.e.
+              OUTSIDE the panel — without this, moving onto it fires the panel's
+              pointerleave and closes a menu the user never left. The preview is
+              read-only, so there is nothing in it to click. */}
+          <TooltipContent side={cuePointsLeft ? 'left' : 'right'} className="pointer-events-none max-w-xs">
+            {node.tooltip}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        rowEl
+      )}
 
       {expanded && (
         <div className="space-y-0.5">
           {loadState.status === 'loading' && children.length === 0 && (
-            <div className="p-1 text-xs text-muted-foreground" style={{ marginLeft: `${(level + 1) * 14}px` }}>
+            <div className="p-1 text-xs text-muted-foreground" style={{ [indentSide]: `${(level + 1) * 14}px` }}>
               <Trans>Loading…</Trans>
             </div>
           )}
           {loadState.status === 'error' && (
-            <div className="p-1 text-xs text-destructive" style={{ marginLeft: `${(level + 1) * 14}px` }}>
+            <div className="p-1 text-xs text-destructive" style={{ [indentSide]: `${(level + 1) * 14}px` }}>
               {loadState.message || t`Failed to load`}
             </div>
           )}
-          {loadState.status === 'ready' && children.length === 0 && (
-            <div className="p-1 text-xs text-muted-foreground" style={{ marginLeft: `${(level + 1) * 14}px` }}>
+          {/* A levelFooter makes an empty folder actionable ("add here"), so
+              the bare "Empty" label would just be noise beside it. */}
+          {loadState.status === 'ready' && children.length === 0 && !levelFooter && (
+            <div className="p-1 text-xs text-muted-foreground" style={{ [indentSide]: `${(level + 1) * 14}px` }}>
               <Trans>Empty</Trans>
             </div>
           )}
@@ -569,9 +707,14 @@ function BrowseableRow({
               node={child}
               level={level + 1}
               rootId={rootId}
+              hoverExpandMs={hoverExpandMs}
+              hoverSeenMs={hoverSeenMs}
+              mirrored={mirrored}
+              levelFooter={levelFooter}
               tree={tree}
               selection={selection}
               activePointer={activePointer}
+              activeResourcePointer={activeResourcePointer}
               activeKey={activeKey}
               openTabHashes={openTabHashes}
               onNavigate={onNavigate}
@@ -580,6 +723,11 @@ function BrowseableRow({
               onDragEnd={onDragEnd}
             />
           ))}
+          {/* This folder's footer — new items file into node.id. Aligned with
+              the children (they carry the same (level+1)*14 indent). */}
+          {loadState.status === 'ready' && levelFooter && (
+            <div style={{ [indentSide]: `${(level + 1) * 14}px` }}>{levelFooter(node.id)}</div>
+          )}
         </div>
       )}
     </div>

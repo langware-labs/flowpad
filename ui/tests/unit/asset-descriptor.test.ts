@@ -3,6 +3,7 @@ import {
   ASSET_SOURCE_LABEL,
   READONLY_ASSET_SOURCES,
   assetDescriptorHasUsage,
+  assetSourceLabel,
   isReadOnlySource,
   type AssetDescriptor,
   type AssetSource,
@@ -16,7 +17,8 @@ const ALL_SOURCES: AssetSource[] = [
   'workdir',
   'additional_dir',
   'context_dir',
-  'transcript',
+  'system',
+  'external',
 ];
 
 describe('isReadOnlySource — partition over every AssetSource member', () => {
@@ -30,11 +32,20 @@ describe('isReadOnlySource — partition over every AssetSource member', () => {
     workdir: true,
     additional_dir: true,
     context_dir: true,
-    transcript: true,
+    system: true,
+    external: true,
   };
 
   it.each(ALL_SOURCES)('%s', (source) => {
     expect(isReadOnlySource(source)).toBe(expected[source]);
+  });
+
+  it('fails closed on a source this bundle predates', () => {
+    // ts_sdk ships separately from the Python wheel, so a stale bundle can meet
+    // a source string it has never heard of. Guessing "writable" would hand the
+    // user a live editor over whatever it is — e.g. a file inside site-packages.
+    expect(isReadOnlySource('some_future_source' as AssetSource)).toBe(true);
+    expect(assetSourceLabel('some_future_source' as AssetSource)).toBe('some_future_source');
   });
 
   it('READONLY_ASSET_SOURCES exactly matches the True set above', () => {
@@ -50,7 +61,7 @@ describe('isReadOnlySource — partition over every AssetSource member', () => {
 
 describe('assetDescriptorHasUsage', () => {
   const base: AssetDescriptor = {
-    typeid: 'agent-11111111-1111-4111-8111-111111111111',
+    typeid: 'subagent-11111111-1111-4111-8111-111111111111',
     source: 'embedded',
     posix_path: '/tmp/.claude/agents/vibe.md',
     source_dir: null,
@@ -70,5 +81,12 @@ describe('assetDescriptorHasUsage', () => {
       ...base,
       usage: [{ kind: 'transcript_file_read', path: base.posix_path, entry_id: 'entry-1' }],
     })).toBe(true);
+  });
+
+  it('preserves true, false, and omitted remote compatibility states', () => {
+    const omitted: AssetDescriptor = { ...base };
+    expect(({ ...base, remote: true } satisfies AssetDescriptor).remote).toBe(true);
+    expect(({ ...base, remote: false } satisfies AssetDescriptor).remote).toBe(false);
+    expect(omitted.remote).toBeUndefined();
   });
 });

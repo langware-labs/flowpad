@@ -1,17 +1,13 @@
+import { t } from '@lingui/core/macro';
 import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-action-buttons';
-import {
-  copyToClipboard,
-  FlowpadDiagnosis,
-  forwardDiagnosis,
-  sendDiagnosisEmailReport,
-  TypeId,
-} from '@sdk';
+import { useDiagnosisReport } from '@src/components/diagnose/use-diagnosis-report';
+import { copyToClipboard, FlowpadDiagnosis, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Copy, Loader2 } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { Fragment, useCallback, useMemo } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 interface DiagnosisDetailsProps {
@@ -38,17 +34,36 @@ interface Field {
 /** The four labelled diagnosis fields, in display order. */
 function diagnosisFields(diag: FlowpadDiagnosis): Field[] {
   return [
-    { label: 'Summary', value: diag.summary },
-    { label: 'Symptoms', value: diag.symptoms },
-    { label: 'Root cause', value: diag.rca },
-    { label: 'Fix', value: diag.fix },
+    { label: t`Summary`, value: diag.summary },
+    { label: t`Symptoms`, value: diag.symptoms },
+    { label: t`Root cause`, value: diag.rca },
+    { label: t`Fix`, value: diag.fix },
   ];
 }
 
 /**
- * Assemble the full diagnosis (title + all fields) as one plain-text blob for the
- * clipboard. Shared by the details body's Copy button and the settings table's
- * per-row Copy-all action.
+ * The provenance rows — the same block the "Report issue" email prints under
+ * `Details`. Every value is read off the record (stamped by the flow-diagnose
+ * reporter at record time and carried in the share bundle), NOT recomputed here:
+ * when a diagnosis is forwarded, the person reading this is on a different
+ * machine, and `navigator.platform` there would describe the helper's box rather
+ * than the box the issue happened on. `occurred_at` is used rather than
+ * `created_date` because a receiver's install re-stamps the latter.
+ */
+function diagnosisDetailFields(diag: FlowpadDiagnosis, diagnosisId: string): Field[] {
+  return [
+    { label: t`User`, value: diag.reported_by },
+    { label: t`When`, value: diag.occurred_at },
+    { label: t`OS`, value: diag.os },
+    { label: t`App version`, value: diag.app_version },
+    { label: t`Diagnosis id`, value: diagnosisId },
+  ];
+}
+
+/**
+ * Assemble the full diagnosis (title + all fields + the Details block) as one
+ * plain-text blob for the clipboard. Shared by the details body's Copy button and
+ * the settings table's per-row Copy-all action.
  */
 export function diagnosisToText(diag: FlowpadDiagnosis): string {
   const title = diag.title || diag.name || 'Diagnosis';
@@ -56,7 +71,11 @@ export function diagnosisToText(diag: FlowpadDiagnosis): string {
     .filter((f) => f.value)
     .map((f) => `${f.label}:\n${f.value}`)
     .join('\n\n');
-  return body ? `${title}\n\n${body}` : title;
+  const details = diagnosisDetailFields(diag, diag.id)
+    .filter((f) => f.value)
+    .map((f) => `${f.label}: ${f.value}`)
+    .join('\n');
+  return [title, body, details ? `Details\n${details}` : ''].filter(Boolean).join('\n\n');
 }
 
 /**
@@ -76,16 +95,13 @@ export function DiagnosisDetails({
   const { t } = useLingui();
   const isPage = variant === 'page';
   const { navigation } = useDockNavigation();
-  const typeId = useMemo(
-    () => (diagnosisId ? new TypeId(FlowpadDiagnosis.type, diagnosisId) : null),
-    [diagnosisId],
-  );
+  const typeId = useMemo(() => (diagnosisId ? new TypeId(FlowpadDiagnosis.type, diagnosisId) : null), [diagnosisId]);
   const { data: diag, isLoading } = useEntity<FlowpadDiagnosis>(typeId, { enabled: !!typeId });
 
-  const [reporting, setReporting] = useState(false);
-  const [reportError, setReportError] = useState<string | undefined>(undefined);
+  const { report, forward, busy, reported, error: reportError } = useDiagnosisReport(diagnosisId);
 
   const fields: Field[] = diag ? diagnosisFields(diag) : [];
+  const detailFields: Field[] = diag ? diagnosisDetailFields(diag, diagnosisId) : [];
 
   const handleCopy = useCallback(async () => {
     if (!diag) return;
@@ -95,50 +111,38 @@ export function DiagnosisDetails({
 
   // "Report issue" — email the diagnosis to the Flowpad team.
   const handleReportIssue = useCallback(async () => {
-    if (!diagnosisId) return;
-    setReporting(true);
-    setReportError(undefined);
-    try {
-      await sendDiagnosisEmailReport(diagnosisId);
-      onActionDone?.();
-    } catch (e) {
-      setReportError(e instanceof Error ? e.message : t`Failed to send report`);
-    } finally {
-      setReporting(false);
-    }
-  }, [diagnosisId, onActionDone, t]);
+    if (await report()) onActionDone?.();
+  }, [report, onActionDone]);
 
   // "Forward" — attach the diagnosis entity into the chosen conversation.
   const handleForward = useCallback(
     async (targetConversationId: string) => {
-      if (!diagnosisId) return;
-      setReporting(true);
-      setReportError(undefined);
-      try {
-        await forwardDiagnosis(targetConversationId, diagnosisId);
+      if (await forward(targetConversationId)) {
         // Open the conversation we just forwarded into, replacing the current view.
         navigation.openDock(DockPointer.forConversation(targetConversationId));
         onActionDone?.();
-      } catch (e) {
-        setReportError(e instanceof Error ? e.message : t`Failed to send report`);
-      } finally {
-        setReporting(false);
       }
     },
-    [diagnosisId, navigation, onActionDone, t],
+    [forward, navigation, onActionDone],
   );
 
   if (isLoading) {
     return (
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        <span><Trans>Loading diagnosis…</Trans></span>
+        <span>
+          <Trans>Loading diagnosis…</Trans>
+        </span>
       </div>
     );
   }
 
   if (!diag) {
-    return <p className="text-xs text-muted-foreground"><Trans>Diagnosis not found.</Trans></p>;
+    return (
+      <p className="text-xs text-muted-foreground">
+        <Trans>Diagnosis not found.</Trans>
+      </p>
+    );
   }
 
   return (
@@ -183,12 +187,45 @@ export function DiagnosisDetails({
           ))}
       </div>
 
+      {/* Provenance — the same block the report email prints under `Details`, so a
+          helper who received a forwarded diagnosis sees who/when/where without
+          having to ask. Values travel with the record; rows missing on a
+          diagnosis are skipped rather than shown blank. */}
+      <div className={isPage ? 'space-y-3 border-t pt-7' : 'space-y-2 border-t pt-3'}>
+        <p
+          className={
+            isPage
+              ? 'text-sm font-semibold uppercase tracking-wide text-muted-foreground'
+              : 'text-[11px] font-semibold uppercase tracking-wide text-muted-foreground'
+          }
+        >
+          <Trans>Details</Trans>
+        </p>
+        <dl
+          className={
+            isPage
+              ? 'grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm'
+              : 'grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[11px]'
+          }
+        >
+          {detailFields
+            .filter((f) => f.value)
+            .map((f) => (
+              <Fragment key={f.label}>
+                <dt className="text-muted-foreground">{f.label}</dt>
+                <dd className="break-words font-mono text-foreground">{f.value}</dd>
+              </Fragment>
+            ))}
+        </dl>
+      </div>
+
       {/* Same actions as a Feed entry: Report issue emails the team (needs only the
           diagnosis), Forward posts the report into a chosen conversation. */}
       <DiagnosisActionButtons
         suggestedConversationId={conversationId}
-        busy={reporting}
+        busy={busy}
         error={reportError}
+        reported={reported}
         showDismiss={false}
         canReport={!!diagnosisId}
         diagnosisId={diagnosisId}

@@ -3,6 +3,8 @@ import { apiClient } from '@sdk/client';
 import { dataManager } from '@sdk';
 import { isBrowseableIn, type ViewMode } from '@sdk/FlowSync/schema';
 import { useViewMode } from '@src/contexts/view-mode-context';
+import { isHubOnly } from '@src/navigation/hub-runtime';
+import { translateTypeLabel } from '@src/i18n/type-labels';
 
 export interface AssetTypeVault {
   typeid: string;
@@ -37,6 +39,13 @@ export interface UseAssetTypesOptions {
    * filtering unless they opt in explicitly.
    */
   vibeAsStandard?: boolean;
+  /**
+   * Fetch markdown ``vaults``. They are the ONLY runtime piece here — everything
+   * else is synchronous from the registry — so a caller that never reads
+   * ``vaults`` should pass false and skip the request entirely rather than issue
+   * a `/assets/types` GET per mount for a payload it discards.
+   */
+  withVaults?: boolean;
 }
 
 /** Title-case a snake_case type name: "claude_memory" -> "Claude Memory". */
@@ -56,7 +65,10 @@ function staticAssetTypes(mode: ViewMode): AssetTypeInfo[] {
     .filter((t) => isBrowseableIn(t.browseable_by, mode))
     .map((t) => ({
       type_name: t.type_name,
-      label: humanize(t.type_name),
+      // Same two-step as `labelForType`: the registry picks the word, i18n picks
+      // the language. Without it the asset browser's type rows stayed English on
+      // a Hebrew screen even where the rest of the pane had translated.
+      label: translateTypeLabel(t.type_name, humanize(t.type_name)),
       icon: t.icon,
       creatable: t.creatable,
       browseable_by: t.browseable_by,
@@ -79,37 +91,43 @@ function staticAssetTypes(mode: ViewMode): AssetTypeInfo[] {
  */
 export function useAssetTypes(options: UseAssetTypesOptions = {}): { types: AssetTypeInfo[]; isLoading: boolean } {
   const currentMode = useViewMode();
-  const mode: ViewMode = options.vibeAsStandard && currentMode === 'vibe'
-    ? 'standard'
-    : currentMode;
+  const mode: ViewMode = options.vibeAsStandard && currentMode === 'vibe' ? 'standard' : currentMode;
+  const withVaults = options.withVaults ?? true;
   const [vaults, setVaults] = useState<AssetTypeVault[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(withVaults);
 
   useEffect(() => {
+    if (!withVaults) return;
+    // Hub mode: the hub backend has no `/assets/types` route (404). There are no
+    // markdown vaults there — leave vaults empty and skip the request.
+    if (isHubOnly()) {
+      setIsLoading(false);
+      return;
+    }
     let cancelled = false;
+    (window as any).__DBG_TYPES = ((window as any).__DBG_TYPES || '') + 'fire;';
     apiClient
       .get<{ types: AssetTypeInfo[] }>('/assets/types')
       .then((res) => {
+        (window as any).__DBG_TYPES += cancelled ? 'resolved-cancelled;' : 'resolved-set;';
         if (cancelled) return;
         setVaults(res?.types?.find((t) => t.type_name === 'markdown')?.vaults || []);
         setIsLoading(false);
       })
-      .catch(() => {
+      .catch((e) => {
+        (window as any).__DBG_TYPES += 'catch:' + (e?.message || e) + ';';
         if (!cancelled) setIsLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [withVaults]);
 
   // Re-derive the catalog whenever the view mode changes (live filtering) or the
   // runtime markdown vaults arrive; merge the vaults onto the markdown entry.
   // folder_backed is already on each entry (sync, from the registry).
   const types = useMemo(
-    () =>
-      staticAssetTypes(mode).map((t) =>
-        t.type_name === 'markdown' ? { ...t, vaults } : t,
-      ),
+    () => staticAssetTypes(mode).map((t) => (t.type_name === 'markdown' ? { ...t, vaults } : t)),
     [mode, vaults],
   );
 

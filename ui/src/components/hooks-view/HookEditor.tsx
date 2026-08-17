@@ -1,3 +1,6 @@
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { Button } from '@src/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@src/components/ui/card';
 import { Input } from '@src/components/ui/input';
@@ -9,21 +12,21 @@ import { Save, X } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 const HOOK_EVENTS = {
-  PreToolUse: { title: 'Pre Tool Use', supportsMatchers: true, icon: '⚡' },
-  PostToolUse: { title: 'Post Tool Use', supportsMatchers: true, icon: '✅' },
-  PermissionRequest: { title: 'Permission Request', supportsMatchers: true, icon: '🔐' },
-  UserPromptSubmit: { title: 'User Prompt Submit', supportsMatchers: false, icon: '💬' },
-  Stop: { title: 'Stop', supportsMatchers: false, icon: '🛑' },
-  SubagentStop: { title: 'Subagent Stop', supportsMatchers: false, icon: '🤖' },
-  SessionStart: { title: 'Session Start', supportsMatchers: true, icon: '🚀' },
-  SessionEnd: { title: 'Session End', supportsMatchers: false, icon: '🏁' },
-  Notification: { title: 'Notification', supportsMatchers: true, icon: '🔔' },
-  PreCompact: { title: 'Pre Compact', supportsMatchers: true, icon: '📦' },
+  PreToolUse: { title: msg`Pre Tool Use`, supportsMatchers: true, icon: '⚡' },
+  PostToolUse: { title: msg`Post Tool Use`, supportsMatchers: true, icon: '✅' },
+  PermissionRequest: { title: msg`Permission Request`, supportsMatchers: true, icon: '🔐' },
+  UserPromptSubmit: { title: msg`User Prompt Submit`, supportsMatchers: false, icon: '💬' },
+  Stop: { title: msg`Stop`, supportsMatchers: false, icon: '🛑' },
+  SubagentStop: { title: msg`Subagent Stop`, supportsMatchers: false, icon: '🤖' },
+  SessionStart: { title: msg`Session Start`, supportsMatchers: true, icon: '🚀' },
+  SessionEnd: { title: msg`Session End`, supportsMatchers: false, icon: '🏁' },
+  Notification: { title: msg`Notification`, supportsMatchers: true, icon: '🔔' },
+  PreCompact: { title: msg`Pre Compact`, supportsMatchers: true, icon: '📦' },
 } as const;
 
 const HOOK_EVENT_OPTIONS = Object.entries(HOOK_EVENTS).map(([key, meta]) => ({
   value: key,
-  label: `${meta.icon} ${meta.title}`,
+  label: `${meta.icon} ${i18n._(meta.title)}`,
 }));
 
 interface HookEditorProps {
@@ -76,11 +79,11 @@ export function HookEditor({
           <CardTitle>{isEditing ? <Trans>Edit Hook</Trans> : <Trans>Add New Hook</Trans>}</CardTitle>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={onCancel}>
-              <X className="mr-2 h-4 w-4" />
+              <X className="me-2 h-4 w-4" />
               <Trans>Cancel</Trans>
             </Button>
             <Button size="sm" onClick={onSave} disabled={isSaveDisabled}>
-              <Save className="mr-2 h-4 w-4" />
+              <Save className="me-2 h-4 w-4" />
               {isEditing ? <Trans>Update</Trans> : <Trans>Save</Trans>}
             </Button>
           </div>
@@ -89,21 +92,27 @@ export function HookEditor({
       <CardContent className="space-y-6">
         {/* Hook Name */}
         <div className="space-y-2">
-          <Label htmlFor="hook-name"><Trans>Hook Name *</Trans></Label>
+          <Label htmlFor="hook-name">
+            <Trans>Hook Name *</Trans>
+          </Label>
           <Input
             id="hook-name"
             value={hookName}
             onChange={(e) => onHookNameChange(e.target.value)}
             placeholder={t`e.g., "my-pre-tool-guard", "lint-on-save"`}
           />
-          <p className="text-xs text-muted-foreground"><Trans>Unique identifier for this hook within the settings file.</Trans></p>
+          <p className="text-xs text-muted-foreground">
+            <Trans>Unique identifier for this hook within the settings file.</Trans>
+          </p>
         </div>
 
         <Separator />
 
         {/* Event Name */}
         <div className="space-y-2">
-          <Label htmlFor="event-name"><Trans>Hook Event *</Trans></Label>
+          <Label htmlFor="event-name">
+            <Trans>Hook Event *</Trans>
+          </Label>
           <Select value={eventName} onValueChange={onEventNameChange}>
             <SelectTrigger id="event-name">
               <SelectValue />
@@ -116,7 +125,9 @@ export function HookEditor({
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground"><Trans>Select when this hook should run</Trans></p>
+          <p className="text-xs text-muted-foreground">
+            <Trans>Select when this hook should run</Trans>
+          </p>
         </div>
 
         <Separator />
@@ -124,7 +135,9 @@ export function HookEditor({
         {/* Matcher (conditional) */}
         {supportsMatchers && (
           <div className="space-y-2">
-            <Label htmlFor="matcher"><Trans>Matcher Pattern (optional)</Trans></Label>
+            <Label htmlFor="matcher">
+              <Trans>Matcher Pattern (optional)</Trans>
+            </Label>
             <Input
               id="matcher"
               value={matcher}
@@ -141,14 +154,20 @@ export function HookEditor({
 
         {/* Hook Type */}
         <div className="space-y-2">
-          <Label htmlFor="hook-type"><Trans>Hook Type *</Trans></Label>
+          <Label htmlFor="hook-type">
+            <Trans>Hook Type *</Trans>
+          </Label>
           <Select value={hookType} onValueChange={(v) => onHookTypeChange(v as 'command' | 'prompt')}>
             <SelectTrigger id="hook-type">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="command"><Trans>🔧 Command - Execute bash script</Trans></SelectItem>
-              <SelectItem value="prompt"><Trans>🤖 Prompt - Query AI (Claude Haiku)</Trans></SelectItem>
+              <SelectItem value="command">
+                <Trans>🔧 Command - Execute bash script</Trans>
+              </SelectItem>
+              <SelectItem value="prompt">
+                <Trans>🤖 Prompt - Query AI (Claude Haiku)</Trans>
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -156,7 +175,9 @@ export function HookEditor({
         {/* Command/Prompt Content */}
         {hookType === 'command' ? (
           <div className="space-y-2">
-            <Label htmlFor="command"><Trans>Bash Command *</Trans></Label>
+            <Label htmlFor="command">
+              <Trans>Bash Command *</Trans>
+            </Label>
             <Textarea
               id="command"
               value={command}
@@ -171,12 +192,14 @@ export function HookEditor({
           </div>
         ) : (
           <div className="space-y-2">
-            <Label htmlFor="prompt"><Trans>AI Prompt *</Trans></Label>
+            <Label htmlFor="prompt">
+              <Trans>AI Prompt *</Trans>
+            </Label>
             <Textarea
               id="prompt"
               value={prompt}
               onChange={(e) => onPromptChange(e.target.value)}
-              placeholder={t`Should I allow this tool? Respond with JSON: {permissionDecision: allow or deny}`}
+              placeholder={t`Should I allow this tool? Respond with JSON: ${'{permissionDecision: allow or deny}'}`}
               className="min-h-[120px] font-mono text-sm"
               rows={6}
             />
@@ -188,7 +211,9 @@ export function HookEditor({
 
         {/* Timeout */}
         <div className="space-y-2">
-          <Label htmlFor="timeout"><Trans>Timeout (seconds)</Trans></Label>
+          <Label htmlFor="timeout">
+            <Trans>Timeout (seconds)</Trans>
+          </Label>
           <Input
             id="timeout"
             type="number"
@@ -198,7 +223,9 @@ export function HookEditor({
             min="1"
             max="600"
           />
-          <p className="text-xs text-muted-foreground"><Trans>Maximum execution time (default: 60s, max: 600s)</Trans></p>
+          <p className="text-xs text-muted-foreground">
+            <Trans>Maximum execution time (default: 60s, max: 600s)</Trans>
+          </p>
         </div>
       </CardContent>
     </Card>

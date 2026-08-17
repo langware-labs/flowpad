@@ -6,8 +6,12 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { Switch } from '@src/components/ui/switch';
 import { usePrivacyMode } from '@src/hooks/use-privacy-mode';
 import { notify } from '@src/notifications/notify';
+import { WikiButton } from '@src/components/wiki-tip';
 
 const LEARN_MORE_URL = 'https://flowpad.ai/your-data';
+/** In-app explainer for what each mode blocks, and how it relates to the
+ *  local/cloud badge on every asset. */
+const PRIVACY_WIKI_PAGE = 'Data privacy modes';
 
 const MODE_META: Record<
   PrivacyMode,
@@ -91,6 +95,18 @@ export function PrivacyModePopover() {
           </div>
 
           <p className="text-xs text-muted-foreground">{meta.explanation}</p>
+
+          {/* In-app first: the wiki page explains what each mode actually
+              blocks and how it relates to an asset's local/cloud badge. The
+              external link below is the marketing/legal statement — a
+              different question, so both stay. */}
+          <div>
+            <WikiButton
+              wikiword={PRIVACY_WIKI_PAGE}
+              linkText={t`How privacy modes work`}
+              label={t`Open the ${PRIVACY_WIKI_PAGE} page`}
+            />
+          </div>
 
           <a
             href={LEARN_MORE_URL}

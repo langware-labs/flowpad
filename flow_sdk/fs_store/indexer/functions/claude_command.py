@@ -18,9 +18,7 @@ from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.indexer._frontmatter import (
-    _extract_body,
     _extract_frontmatter,
-    _render_frontmatter,
     _yaml_load,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
@@ -75,44 +73,14 @@ def _command_id_from_key(ref: FSRef) -> str:
     )
 
 
-def command_id(ref: FSRef) -> str:
-    """Cheap id: a pinned frontmatter id (shared command) wins; else the
-    deterministic uuid5 of the natural key ``<scope>:<command_name>``."""
-    existing = _read_command_frontmatter_id(ref._path)
-    return existing if existing else _command_id_from_key(ref)
+def command_identity_key(ref: FSRef | Path) -> str:
+    """Natural key passed to the canonical UUID minter."""
+    path = Path(getattr(ref, "_path", ref))
+    scope = getattr(ref, "scope", None) or "user"
+    return f"{RecordType.COMMAND}:{scope}:{path.stem}"
 
 
-def command_gen_id(ref: FSRef) -> str:
-    """Mint+write id into frontmatter (idempotent), preferring an existing
-    frontmatter id. Mirrors ``claude_plan_gen_id`` so a received command keeps
-    the sender's id and the share chip resolves."""
-    existing = _read_command_frontmatter_id(ref._path)
-    if existing:
-        return existing
-    new_id = _command_id_from_key(ref)
-    try:
-        text = ref._path.read_text(encoding="utf-8")
-    except OSError:
-        return new_id
-    fm = _extract_frontmatter(text)
-    body = _extract_body(text)
-    fields: dict = {}
-    if fm:
-        parsed = _yaml_load(fm)
-        if isinstance(parsed, dict):
-            fields.update(parsed)
-    merged = {"id": new_id, **{k: v for k, v in fields.items() if k not in ("id", "asset_id")}}
-    try:
-        ref._path.write_text(
-            _render_frontmatter(merged) + "\n\n" + body + ("\n" if body and not body.endswith("\n") else ""),
-            encoding="utf-8",
-        )
-    except OSError:
-        pass
-    return new_id
-
-
-def extract_claude_command(ref: FSRef) -> list[FSRecord]:
+def extract_claude_command(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a single ``.md`` command file into a Record.
 
     Replaces ``ClaudeCommandFsRecord._from_fsref_sync``. The record is a base
@@ -124,11 +92,14 @@ def extract_claude_command(ref: FSRef) -> list[FSRecord]:
         content = md_file.read_text(encoding="utf-8")
     except OSError:
         return []
+    from flow_sdk.capsules import strip_capsule_blocks  # noqa: PLC0415
+
+    content = strip_capsule_blocks(content)
     scope = ref.scope or "user"
     command_name = md_file.stem
     rec = FSRecord(
         type=RecordType.COMMAND,
-        id=command_id(ref),
+        id=resolved_id,
         name=command_name,
         command_name=command_name,
         content=content,

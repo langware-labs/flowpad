@@ -23,8 +23,27 @@ def iso_to_datetime(iso: datetime | str) -> datetime:
     return datetime.fromisoformat(iso)
 
 
+def iso_to_utc(iso: datetime | str | None) -> datetime | None:
+    """``iso`` as an aware UTC datetime, or None when it is absent/unparseable.
+
+    The forgiving twin of :func:`iso_to_datetime`, for the many callers that
+    hold an optional timestamp of unknown provenance and want a comparable value
+    or nothing. Both halves are the part that kept getting rewritten: tolerating
+    a ``Z`` suffix (3.10's ``fromisoformat`` rejects it), and reading a NAIVE
+    timestamp as UTC rather than local — which is what every stored timestamp in
+    this repo means.
+    """
+    if iso is None or iso == "":
+        return None
+    try:
+        parsed = iso_to_datetime(iso)
+    except (ValueError, TypeError):
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
 def now_epoch_ms() -> int:
-    """Current UTC time in epoch-milliseconds (the ``last_active_at`` wire format)."""
+    """Current UTC time in the entity activity fields' epoch-ms wire format."""
     return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 

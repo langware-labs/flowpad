@@ -6,7 +6,7 @@ A skill is a folder containing ``SKILL.md`` (markdown + YAML frontmatter) and/or
 Public helpers used outside the indexer:
 - ``parse_skill_yaml_from_dir(path)`` — yaml/frontmatter parse
 - ``extract_skill(ref)`` — parser_fn entry point
-- ``skill_id(ref)`` / ``skill_gen_id(ref)`` — id helpers
+- ``skill_id(ref)`` — compatibility read helper
 - ``skill_asset_hash(ref)`` — folder-content mtime
 - ``resolve_skill_name(yaml_fields, folder_name)`` — display-name picker
 - ``read_frontmatter_id_from_yaml(yaml_fields)`` — id extractor
@@ -27,14 +27,49 @@ from flow_sdk.fs_store.indexer._frontmatter import (
     _yaml_load,
 )
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
-    folder_capsule_gen_id,
     read_folder_capsule_id,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.identifier import mint_uuid
 
 # The files whose presence makes a folder a skill; SKILL.md is the main doc.
-SKILL_INNER_FILES = ("SKILL.md", "skill.yaml", "skill.yml")
+# Both cases of the doc are accepted (SKILL.md is canonical; skill.md tolerated).
+SKILL_INNER_FILES = ("SKILL.md", "skill.md", "skill.yaml", "skill.yml")
+
+
+def folder_is_skill(folder: Path) -> bool:
+    """True if ``folder`` directly contains a skill marker file.
+
+    Shared predicate: ``skill_in_folder_fn`` uses it to claim a folder, and
+    ``markdown_in_folder_fn`` uses it to skip the skill doc so a ``SKILL.md``
+    isn't double-indexed as both SKILL and MARKDOWN.
+    """
+    return any((folder / name).exists() for name in SKILL_INNER_FILES)
+
+
+def _under_claude_skills(folder: Path) -> bool:
+    """``.claude/skills/<x>`` — already owned by ``skill_fn``; skip in the
+    folder-wide walker to avoid a double emit for the same skill folder."""
+    parent = folder.parent
+    return parent.name == "skills" and parent.parent.name == ".claude"
+
+
+def _emit_skill(
+    folder: Path, parent: FSRef, out: list[FSRef], seen: set[str]
+) -> None:
+    """Emit ``folder`` as a SKILL if it's a skill folder and not already seen.
+
+    Shared dedup/emit tail of ``skill_fn`` and ``skill_in_folder_fn`` (mirrors
+    ``markdown._emit_md_rglob``).
+    """
+    if not folder_is_skill(folder):
+        return
+    key = str(folder.resolve())
+    if key in seen:
+        return
+    seen.add(key)
+    out.append(FSRef(folder, record_type=RecordType.SKILL, parent=parent))
 
 
 def skill_fn(
@@ -48,15 +83,38 @@ def skill_fn(
         if not skills_dir.is_dir():
             continue
         for entry in sorted(skills_dir.iterdir()):
-            if not entry.is_dir():
-                continue
-            if not any((entry / name).exists() for name in SKILL_INNER_FILES):
-                continue
-            key = str(entry.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(entry, record_type=RecordType.SKILL, parent=node))
+            if entry.is_dir():
+                _emit_skill(entry, node, out, seen)
+    return out
+
+
+def skill_in_folder_fn(
+    nodes: list[FSRef],
+    opts: IndexerOptions,
+) -> list[FSRef]:
+    """Per-FOLDER emitter: any gitignore-surviving folder in a project that
+    directly contains a skill marker file is emitted as a SKILL.
+
+    Receives FOLDER refs from ``project_folder_walker_fn`` (already pruned via
+    gitignore + the walk denylist), so gitignored skill folders are never
+    seen. Complements ``skill_fn`` (which only scans ``.claude/skills/*``):
+    this discovers ``SKILL.md``-bearing folders anywhere in the project.
+    ``.claude/skills/*`` children are left to ``skill_fn`` to avoid a double
+    emit for the same folder.
+
+    Registered on FOLDER, which is emitted only for the project-scoped roots
+    (REAL_PROJECT_CWD / SYSTEM_ROOT / CWD_ROOT). Home-dir skill discovery is
+    deliberately left to ``skill_fn``'s narrow ``.claude/skills`` scan — same
+    rationale as ``markdown_flat_fn``: don't content-walk all of ``~``.
+    """
+    out: list[FSRef] = []
+    seen: set[str] = set()
+    for node in nodes:
+        if node.record_type != RecordType.FOLDER:
+            continue
+        folder = Path(node.path)
+        if not _under_claude_skills(folder):
+            _emit_skill(folder, node, out, seen)
     return out
 
 
@@ -71,7 +129,11 @@ def read_frontmatter_id_from_yaml(yaml_fields: dict) -> str | None:
     the caller mints a fresh v4 into the capsule instead of adopting garbage.
     """
     from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
-    return adopt_entity_id(yaml_fields.get("id") or yaml_fields.get("asset_id"))
+    for candidate in (yaml_fields.get("id"), yaml_fields.get("asset_id")):
+        adopted = adopt_entity_id(candidate)
+        if adopted:
+            return adopted
+    return None
 
 
 def resolve_skill_name(yaml_fields: dict, folder_name: str) -> str:
@@ -84,7 +146,7 @@ def resolve_skill_name(yaml_fields: dict, folder_name: str) -> str:
 
 def skill_id_from_name(name: str) -> str:
     """Stable uuid5 derived from the skill name."""
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{RecordType.SKILL}:{name}"))
+    return mint_uuid(f"{RecordType.SKILL}:{name}", namespace=uuid.NAMESPACE_DNS)
 
 
 def parse_skill_yaml_from_dir(skill_dir: Path) -> dict[str, Any]:
@@ -117,21 +179,14 @@ def skill_id(ref: FSRef) -> str:
     return path.name.split("-@", 1)[-1] if "-@" in path.name else path.name
 
 
-def skill_gen_id(ref: FSRef) -> str:
-    """Adopt the skill's id from its capsule, else mint a fresh v4 (idempotent).
-
-    Read precedence: (1) the `.flow/id` folder capsule (authoritative, portable);
-    (2) a VALID (v4/v5) `id:` in SKILL.md / skill.yaml frontmatter — adopted and
-    BACKFILLED into `.flow/id` (migrates the skill onto the capsule without
-    changing its id); (3) miss → a fresh random **v4** written to `.flow/id`.
-    No longer name-derives (`uuid5("skill:name")` collided across machines), and
-    now persists for yaml-based skills too (the old code skipped the write).
-    """
-    path = ref._path
-    if not path.is_dir():
-        return skill_id(ref)
-    yaml_fields = parse_skill_yaml_from_dir(path)
-    return folder_capsule_gen_id(path, yaml_fields.get("id"), yaml_fields.get("asset_id"))
+def skill_id_from_folder(ref: FSRef | Path) -> object | None:
+    """Read the capsule, then legacy SKILL.md/yaml fields, without backfill."""
+    path = Path(getattr(ref, "_path", ref))
+    cap = read_folder_capsule_id(path)
+    if cap:
+        return cap
+    fields = parse_skill_yaml_from_dir(path)
+    return read_frontmatter_id_from_yaml(fields)
 
 
 def skill_asset_hash(ref: FSRef) -> float:
@@ -149,7 +204,7 @@ def skill_asset_hash(ref: FSRef) -> float:
     return ts
 
 
-def extract_skill(ref: FSRef) -> list[FSRecord]:
+def extract_skill(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a skill folder into a Record. Replaces ``SkillRecord._from_fsref_sync``.
 
     Eagerly populates: id, name, description, content (name + description +
@@ -163,11 +218,6 @@ def extract_skill(ref: FSRef) -> list[FSRecord]:
         path = path.parent
     yaml_fields = parse_skill_yaml_from_dir(path) if path.is_dir() else {}
     skill_name = resolve_skill_name(yaml_fields, path.name)
-    rec_id = (
-        (read_folder_capsule_id(path) if path.is_dir() else None)
-        or read_frontmatter_id_from_yaml(yaml_fields)
-        or skill_id_from_name(skill_name)  # transitional read fallback for legacy rows
-    )
     description = ""
     if isinstance(yaml_fields.get("description"), str):
         description = yaml_fields["description"]
@@ -203,7 +253,7 @@ def extract_skill(ref: FSRef) -> list[FSRecord]:
     if ref.scope:
         rec_kwargs["scope"] = ref.scope
 
-    rec = FSRecord(RecordType.SKILL, rec_id, **rec_kwargs)
+    rec = FSRecord(RecordType.SKILL, resolved_id, **rec_kwargs)
     rec.asset_ref = FSRef(path.resolve())
     return [rec]
 

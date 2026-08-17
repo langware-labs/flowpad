@@ -10,11 +10,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@src/components/ui/alert-dialog';
-import { ActionInfo, dataManager, type ITrigger } from '@sdk';
+import { ActionInfo, dataManager, Trigger, type ITrigger } from '@sdk';
 import Editor from '@monaco-editor/react';
 import { Pencil } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { scopeColor } from './scope-colors';
 
@@ -31,6 +31,7 @@ export function TriggerEditor({ trigger }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [unlocked, setUnlocked] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const savedContentRef = useRef('');
   const { resolvedTheme } = useTheme();
 
   const isSystem = trigger.scope === 'system';
@@ -46,10 +47,13 @@ export function TriggerEditor({ trigger }: Props) {
     setContent('');
     setError(null);
     const action = new ActionInfo('trigger-content', 'trigger', trigger.id, 'GET');
-    dataManager.callAction<undefined, { content: string }>(action)
+    dataManager
+      .callAction<undefined, { content: string }>(action)
       .then((data) => {
         if (data && typeof (data as { content: string }).content === 'string') {
-          setContent((data as { content: string }).content);
+          const loadedContent = (data as { content: string }).content;
+          savedContentRef.current = loadedContent;
+          setContent(loadedContent);
         } else {
           setError(t`Failed to load trigger.py`);
         }
@@ -65,6 +69,10 @@ export function TriggerEditor({ trigger }: Props) {
       const action = new ActionInfo('trigger-content', 'trigger', trigger.id, 'PUT');
       action.bodyParameters = { content };
       await dataManager.callAction(action);
+      if (content !== savedContentRef.current) {
+        savedContentRef.current = content;
+        Trigger.markEditById(trigger.id);
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
@@ -89,12 +97,14 @@ export function TriggerEditor({ trigger }: Props) {
         )}
         {(trigger.hook_events?.length ?? 0) > 0 && (
           <div className="flex gap-1">
-            {trigger.hook_events!.map(ev => (
-              <Badge key={ev} variant="outline" className="h-4 px-1 text-[9px]">{ev}</Badge>
+            {trigger.hook_events!.map((ev) => (
+              <Badge key={ev} variant="outline" className="h-4 px-1 text-[9px]">
+                {ev}
+              </Badge>
             ))}
           </div>
         )}
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ms-auto flex items-center gap-2">
           {isSystem && !unlocked && (
             <Button
               variant="ghost"
@@ -108,10 +118,16 @@ export function TriggerEditor({ trigger }: Props) {
             </Button>
           )}
           {isSystem && unlocked && (
-            <span className="text-[10px] text-amber-500"><Trans>Editing system trigger</Trans></span>
+            <span className="text-[10px] text-amber-500">
+              <Trans>Editing system trigger</Trans>
+            </span>
           )}
           {error && <span className="text-[10px] text-destructive">{error}</span>}
-          {saved && <span className="text-[10px] text-green-500"><Trans>Saved</Trans></span>}
+          {saved && (
+            <span className="text-[10px] text-green-500">
+              <Trans>Saved</Trans>
+            </span>
+          )}
           {!isReadOnly && (
             <Button size="sm" onClick={() => void handleSave()} disabled={saving || loading}>
               {saving ? t`Saving...` : t`Save`}
@@ -123,7 +139,9 @@ export function TriggerEditor({ trigger }: Props) {
       {/* Editor */}
       <div className="flex-1 overflow-hidden">
         {loading ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground"><Trans>Loading...</Trans></div>
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+            <Trans>Loading...</Trans>
+          </div>
         ) : (
           <Editor
             height="100%"
@@ -151,13 +169,20 @@ export function TriggerEditor({ trigger }: Props) {
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle><Trans>Edit a system trigger?</Trans></AlertDialogTitle>
+            <AlertDialogTitle>
+              <Trans>Edit a system trigger?</Trans>
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              <Trans>System triggers power core Flowpad functionality. Editing them can cause parts of the app to behave unexpectedly. Proceed only if you understand what this trigger does.</Trans>
+              <Trans>
+                System triggers power core Flowpad functionality. Editing them can cause parts of the app to behave
+                unexpectedly. Proceed only if you understand what this trigger does.
+              </Trans>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel><Trans>Cancel</Trans></AlertDialogCancel>
+            <AlertDialogCancel>
+              <Trans>Cancel</Trans>
+            </AlertDialogCancel>
             <AlertDialogAction onClick={() => setUnlocked(true)}>
               <Trans>Edit anyway</Trans>
             </AlertDialogAction>

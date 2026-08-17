@@ -3,6 +3,7 @@ import { ApiFailResponse } from './ApiResponse';
 import { alert } from './alert';
 import { APIStats } from './apiStats';
 import config from './config';
+import { API_PREFIX } from './config/SDKConfig';
 
 //@ts-ignore
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -57,9 +58,23 @@ interface ExtendedApiClient extends ApiAxiosInstance {
   testUserToken?: string;
 }
 
+/** Keep one API prefix when a canonical path meets a prefix-bearing baseURL. */
+export function normalizeApiPathForBase(baseUrl: string | undefined, path: string | undefined): string | undefined {
+  const base = baseUrl?.replace(/\/+$/, '') ?? '';
+  if (base.endsWith(API_PREFIX) && path?.startsWith(`${API_PREFIX}/`)) {
+    return path.slice(API_PREFIX.length);
+  }
+  return path;
+}
+
 function initApiClient(client: ApiAxiosInstance) {
   client.interceptors.request.use(
     function (request) {
+      // `SDKConfig.serverUrl` already ends in /api/v1. Public SDK managers use
+      // canonical API paths (`/api/v1/...`), while older callers still pass
+      // prefix-relative paths (`/graph/...`). Normalize only the former at the
+      // Axios boundary so both resolve to exactly one /api/v1 segment.
+      request.url = normalizeApiPathForBase(request.baseURL, request.url);
       apiStats.incrementTotal();
       const method = request.method?.toUpperCase() || 'UNKNOWN';
       apiStats.incrementInFlight(method);
@@ -166,3 +181,33 @@ export default apiClient;
 // For playwright client global variable
 //@ts-ignore
 window['client'] = apiClient;
+
+/**
+ * Is this error "the backend is unreachable", as opposed to "one request
+ * failed"? The axios interceptor below is the classifier — it stamps
+ * `isServiceUnavailable` exactly when there is no response at all — and this is
+ * the one place that answers the question for every consumer.
+ *
+ * It used to be re-spelled at four call sites (both outage screens and both
+ * route loaders) with four different clause sets, which is how one of them came
+ * to treat ANY 5xx as an outage and blank the app over a single unsupported
+ * action. A 5xx is emphatically not an outage. `type: 'network' | 'config'`
+ * covers errors minted by `navigationService.error()`, which never pass through
+ * the interceptor.
+ */
+export function isBackendUnreachable(error: unknown): boolean {
+  const e = error as
+    | { isServiceUnavailable?: boolean; type?: string; code?: string; message?: string }
+    | null
+    | undefined;
+  if (!e) return false;
+  return Boolean(
+    e.isServiceUnavailable ||
+    e.type === 'network' ||
+    e.type === 'config' ||
+    e.code === 'ERR_NETWORK' ||
+    e.code === 'ERR_CONNECTION_REFUSED' ||
+    e.message?.includes('Failed to fetch') ||
+    e.message?.includes('Network request failed'),
+  );
+}

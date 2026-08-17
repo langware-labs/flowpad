@@ -7,52 +7,28 @@
  * which is the point at which the ProcessToolbar mounts in the Claude pane.
  */
 import { type Page, test, expect } from '@playwright/test';
+import { selectViewMode, withViewMode } from '../_shared/view-mode';
+export { apiBase } from '../_shared/api';
 
 export async function dismissSetupModal(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    localStorage.setItem('flowpad-index-approved', 'true');
-    // HomeLanding's first-run WelcomeModal (an AlertDialog) opens when the
-    // backend `indexing.approved` preference is false (a fresh DB after a clear)
-    // and the workspace has never been indexed. While it is open the AlertDialog
-    // marks the rest of the page inert/aria-hidden, so getByRole('button', …)
-    // for anything underneath (e.g. Quick create) matches nothing. The legacy
-    // `flowpad-index-approved` localStorage key above is no longer read by
-    // HomeLanding (indexApproved is now a prefMan pref), so pre-seed the
-    // session-scoped scan-dismissed flag the modal itself honours.
-    sessionStorage.setItem('flowpad-scan-dismissed', '1');
-    // Every scenario in this category drives the full ProcessToolbar
-    // (Restart, Open Terminal, Fork, Worktree, Session Info, Transcript).
-    // Those controls only exist in the Advanced view header — the default
-    // Standard view renders the simple-chat header without them.
-    localStorage.setItem('viewMode', 'advanced');
   });
 }
 
 /**
- * Force the app into Advanced view AFTER bootstrap. View mode is now a
- * backend-owned preference (`preferences.ui.view_mode`); the legacy
- * `localStorage.viewMode` seed in dismissSetupModal is only adopted when the
- * backend file has no value, so an explicit backend Standard/Vibe wins the
- * moment bootstrap reconciles it. `window.setView` (exposed by
- * view-mode-context) is the live setter that wins post-bootstrap — the whole
- * ProcessToolbar (Restart / Open Terminal / Fork / Worktree / Session Info /
- * Transcript) only exists in Advanced view, so every scenario here needs this.
+ * Force Advanced through the URL-backed footer control so a dock override and
+ * the backend preference cannot disagree.
  */
 export async function forceAdvancedView(page: Page) {
-  await page.evaluate(() => {
-    (window as unknown as { setView?: (v: string) => void }).setView?.('advanced');
-  });
-  await page.locator('html[data-view="advanced"]').waitFor({ timeout: 10_000 });
+  await selectViewMode(page, 'advanced');
 }
 
 /** Navigate to a fresh interactive shell and wait until xterm is attached. */
 export async function gotoNewShell(page: Page) {
-  await page.goto('/dock/shell/new_terminal');
+  await page.goto(withViewMode('/dock/shell/new_terminal', 'advanced'));
   const skip = page.getByRole('button', { name: 'Skip' });
   if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
-  const skipForNow = page.getByRole('button', { name: 'Skip for now' });
-  if (await skipForNow.isVisible({ timeout: 2_000 }).catch(() => false)) await skipForNow.click();
   await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: 60_000 });
   await forceAdvancedView(page);
   await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
@@ -122,16 +98,6 @@ export async function waitForRunningSession(page: Page, apiBase: string, process
  */
 export function sessionPopover(page: Page) {
   return page.locator('[data-radix-popper-content-wrapper]').filter({ hasText: 'Session Details' });
-}
-
-/**
- * API base for in-page fetches. Empty string = relative `/api/...` URLs,
- * which the Vite dev server proxies to whatever backend the app itself is
- * wired to — so tests always query the SAME backend as the UI under test.
- * QA_API_URL remains as an explicit override; never hardcode a port here.
- */
-export function apiBase(): string {
-  return process.env.QA_API_URL || '';
 }
 
 /**

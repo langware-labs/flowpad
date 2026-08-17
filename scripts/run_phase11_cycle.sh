@@ -6,6 +6,7 @@
 #   BOB_INSTANCE      cycle-owned Bob companion instance
 #   FLOWPAD_HUB_URL   explicit hub shared by both instances
 #   RD                cycle result directory
+#   QA_DOCKER_CONTAINER disposable running container for Docker scenarios
 #
 # The generated .env.<instance>.local files are parsed as data by the Python
 # helper; they are never sourced or executed.
@@ -19,6 +20,7 @@ set -Eeuo pipefail
 : "${BOB_INSTANCE:?BOB_INSTANCE is required (cycle-owned Bob instance)}"
 : "${FLOWPAD_HUB_URL:?FLOWPAD_HUB_URL is required}"
 : "${RD:?RD is required (Phase 11 result directory)}"
+: "${QA_DOCKER_CONTAINER:?QA_DOCKER_CONTAINER is required}"
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HELPER="$REPO/scripts/phase11_cycle_report.py"
@@ -85,6 +87,7 @@ ALICE_APP="$(python3 "$HELPER" get --input "$PREFLIGHT" --key instances.alice.ap
 ALICE_BE_PORT="$(python3 "$HELPER" get --input "$PREFLIGHT" --key instances.alice.backend_port)"
 ALICE_FE_PORT="$(python3 "$HELPER" get --input "$PREFLIGHT" --key instances.alice.frontend_port)"
 ALICE_EMAIL="$(python3 "$HELPER" get --input "$PREFLIGHT" --key instances.alice.email)"
+QA_ALICE_HUB_ID="$(python3 "$HELPER" get --input "$PREFLIGHT" --key hub.alice_user_id)"
 BOB_API="$(python3 "$HELPER" get --input "$PREFLIGHT" --key instances.bob.api_url)"
 BOB_EMAIL="$(python3 "$HELPER" get --input "$PREFLIGHT" --key instances.bob.email)"
 QA_BOB_HUB_ID="$(python3 "$HELPER" get --input "$PREFLIGHT" --key hub.bob_user_id)"
@@ -147,12 +150,18 @@ ensure_category_reset() {
     --app-url "$ALICE_APP" \
     --email "$ALICE_EMAIL" \
     --hub-url "$FLOWPAD_HUB_URL" \
+    --expected-user-id "$QA_ALICE_HUB_ID" \
     --output "$runtime"; then
     emit_blocked_summary "category_runtime_validation_failed"
   fi
+
 }
 
-while IFS=$'\t' read -r category file config source_sha config_sha; do
+# Keep the manifest on a dedicated descriptor. Commands executed by a loop
+# inherit its stdin; when the manifest lived on fd 0, the category reset CLI
+# consumed every row after the first and the runner silently aggregated the
+# remainder as missing.
+while IFS=$'\t' read -r category file config source_sha config_sha <&3; do
   scenario_rel="${file#ui/tests/manual_regression/}"
   artifact="$RD/phase11-files/${scenario_rel%.md.ts}"
   report="$artifact/report.json"
@@ -195,8 +204,44 @@ while IFS=$'\t' read -r category file config source_sha config_sha; do
     emit_blocked_summary "desktop_clear_or_bootstrap_validation_failed"
   fi
 
+  if [[ "$scenario_rel" == terminal/docker_*.md.ts ]]; then
+    docker_log="$artifact/docker-connect.log"
+    provider_json="$artifact/providers.json"
+    log "provision disposable Docker worker for $scenario_rel"
+    set +e
+    (
+      cd "$REPO"
+      FLOW_INSTANCE="$INSTANCE" FLOWPAD_HUB_URL="$FLOWPAD_HUB_URL" \
+        uv run flow compute connect "$QA_DOCKER_CONTAINER" --start
+    ) >"$docker_log" 2>&1
+    docker_rc=$?
+    set -e
+    if [ "$docker_rc" -ne 0 ]; then
+      emit_blocked_summary "docker_provider_provision_failed"
+    fi
+    if ! python3 "$HELPER" providers \
+      --api-url "$ALICE_API" \
+      --require-docker \
+      --output "$provider_json"; then
+      emit_blocked_summary "docker_provider_validation_failed"
+    fi
+  elif [[ "$scenario_rel" == terminal/sandbox_*.md.ts ]]; then
+    provider_json="$artifact/providers.json"
+    if ! python3 "$HELPER" providers \
+      --api-url "$ALICE_API" \
+      --require-sandbox \
+      --output "$provider_json"; then
+      emit_blocked_summary "sandbox_provider_validation_failed"
+    fi
+  fi
+
   set +e
   (
+    # ERR is inherited because the runner uses `set -E`. A normal Playwright
+    # test failure is data for the per-file assessment, not an unexpected
+    # runner failure; keep the outer trap from replacing the test log/exit
+    # code with an aggregate summary.
+    trap - ERR
     cd "$REPO/ui"
     env \
       INSTANCE="$INSTANCE" \
@@ -230,7 +275,8 @@ while IFS=$'\t' read -r category file config source_sha config_sha; do
         "$file_from_ui" \
         --workers=1 \
         --reporter=json \
-        --output "$output_dir"
+        --output "$output_dir" \
+        </dev/null
   ) >"$stdout_log" 2>&1
   playwright_rc=$?
   set -e
@@ -257,7 +303,7 @@ while IFS=$'\t' read -r category file config source_sha config_sha; do
 
   verdict="$(python3 "$HELPER" get --input "$assessment" --key verdict)"
   log "verdict $scenario_rel: $verdict (exit=$playwright_rc)"
-done < <(python3 "$HELPER" manifest-lines --manifest "$MANIFEST")
+done 3< <(python3 "$HELPER" manifest-lines --manifest "$MANIFEST")
 
 python3 "$HELPER" aggregate \
   --repo "$REPO" \

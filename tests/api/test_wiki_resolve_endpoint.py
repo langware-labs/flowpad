@@ -11,46 +11,31 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_store.indexer.functions.markdown import (
-    extract_markdown,
-    markdown_gen_id as _markdown_gen_id,
-)
-from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
+from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.indexer import IndexerOptions, build_default_indexer
+from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown
+from flow_sdk.fs_store.indexer.functions.whiteboard import extract_whiteboard
+from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 
 class MarkdownRecord:
     @staticmethod
-    def from_file(p):
-        return extract_markdown(_FSRef(p))[0]
-
-    @staticmethod
     def from_fsref(ref):
         # async-compat: the real indexer awaits this; the test will too.
         async def _aw():
-            return extract_markdown(ref)
+            return extract_markdown(ref, SchemaRegistry.get("markdown").mint_entity_id(ref, derive=True, overwrite=True))
+
         return _aw()
 
-    @staticmethod
-    def asset_hash_for_ref(ref):
-        from flow_sdk.fs_store.fs_record import FSRecord as _FSR
-        return _FSR.asset_hash_for_ref(ref)
 
-    @staticmethod
-    def genId(ref):
-        return _markdown_gen_id(ref)
-  # alias for tests; uses extract_markdown for parsing
-from flow_sdk.fs_store.indexer.functions.whiteboard import extract_whiteboard
-from flow_sdk.fs_store.fs_record import FSRecord
 class WhiteboardRecord:
     @staticmethod
     def from_fsref(ref):
-        from flow_sdk.fs_store.indexer.functions.whiteboard import extract_whiteboard
         async def _aw():
-            return extract_whiteboard(ref)
+            return extract_whiteboard(ref, SchemaRegistry.get("whiteboard").mint_entity_id(ref, derive=True, overwrite=True))
+
         return _aw()
-from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer import IndexerOptions, build_default_indexer
-from flow_sdk.fs_store.record_types import RecordType
 
 
 pytestmark = pytest.mark.asyncio
@@ -65,12 +50,13 @@ def _write_markdown(root: Path, name: str) -> None:
 
 
 def _write_whiteboard(root: Path, name: str) -> None:
-    """Drop a whiteboard folder under ``root/.claude/whiteboards/<name>/``
-    with WHITE_BOARD.md + board.json — the layout ``whiteboard_fn`` expects."""
-    folder = root / ".claude" / "whiteboards" / name
+    """Drop a whiteboard in its registry-owned folder for the repo walker."""
+    info = SchemaRegistry.get(RecordType.WHITEBOARD)
+    assert info is not None and info.main_subdir is not None
+    folder = root / info.main_subdir / name
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "WHITE_BOARD.md").write_text(
-        f"---\nname: {name}\ndescription: \"\"\n---\n\n# {name}\n",
+        f'---\nname: {name}\ndescription: ""\n---\n\n# {name}\n',
         encoding="utf-8",
     )
     (folder / "board.json").write_text(
@@ -101,10 +87,10 @@ async def test_resolve_markdown_hit(bootstrapped_client, tmp_path: Path) -> None
     resp = await bootstrapped_client.get("/api/v1/wiki/resolve?name=alpha-md")
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body is not None
-    assert body["type"] == "markdown"
-    assert body["id"]
-    assert body["asset_ref"].endswith("alpha-md.md")
+    assert body["status"] == "SUCCESS"
+    assert body["data"]["kind"] == "resolved"
+    assert body["data"]["target_typeid"].startswith("markdown-")
+    assert "asset_ref" not in body["data"]
 
 
 async def test_resolve_whiteboard_hit(bootstrapped_client, tmp_path: Path) -> None:
@@ -115,34 +101,28 @@ async def test_resolve_whiteboard_hit(bootstrapped_client, tmp_path: Path) -> No
     resp = await bootstrapped_client.get("/api/v1/wiki/resolve?name=beta-wb")
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body is not None, "expected hit, got null"
-    assert body["type"] == "whiteboard"
-    assert body["id"]
-    assert body["asset_ref"].endswith("beta-wb")
+    assert body["data"]["kind"] == "resolved"
+    assert body["data"]["target_typeid"].startswith("whiteboard-")
 
 
-async def test_resolve_prefer_type_wins(bootstrapped_client, tmp_path: Path) -> None:
-    """Same name in two types — `prefer_type` selects the matching one."""
+async def test_resolve_collision_is_ambiguous(bootstrapped_client, tmp_path: Path) -> None:
+    """Same name in two types is never resolved by preference or ordering."""
     same = "gamma-shared"
     _write_markdown(tmp_path, same)
     _write_whiteboard(tmp_path, same)
     await _index_and_sync(tmp_path)
 
-    # No preference → alphabetical by (type, id). 'markdown' < 'whiteboard'.
     resp_default = await bootstrapped_client.get(f"/api/v1/wiki/resolve?name={same}")
     assert resp_default.status_code == 200, resp_default.text
-    assert resp_default.json()["type"] == "markdown"
+    assert resp_default.json()["data"] == {"kind": "ambiguous"}
 
-    # prefer_type=whiteboard → whiteboard wins.
-    resp_pref = await bootstrapped_client.get(
-        f"/api/v1/wiki/resolve?name={same}&prefer_type=whiteboard"
-    )
+    resp_pref = await bootstrapped_client.get(f"/api/v1/wiki/resolve?name={same}&prefer_type=whiteboard")
     assert resp_pref.status_code == 200, resp_pref.text
-    assert resp_pref.json()["type"] == "whiteboard"
+    assert resp_pref.json()["data"] == {"kind": "ambiguous"}
 
 
-async def test_resolve_miss_returns_null(bootstrapped_client) -> None:
-    """A name with no candidates returns JSON null (200, not 404)."""
+async def test_resolve_miss_returns_missing_result(bootstrapped_client) -> None:
+    """A name with no candidates returns semantic missing (200, not 404)."""
     resp = await bootstrapped_client.get("/api/v1/wiki/resolve?name=nonexistent-xyz-9999")
     assert resp.status_code == 200, resp.text
-    assert resp.json() is None
+    assert resp.json()["data"] == {"kind": "missing"}

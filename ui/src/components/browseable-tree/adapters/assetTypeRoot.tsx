@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import React from 'react';
 import { Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
@@ -6,17 +7,20 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { resultTypeId } from '@src/navigation/record-type-nav';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
-import { VFSPath } from '@sdk';
+import { VFSPath, isTypeId, TypeId } from '@sdk';
 import { ViewType } from '@src/types/ViewType';
 import type { AssetTypeInfo } from '@src/hooks/use-asset-types';
 import type { SearchResult } from '@src/hooks/use-asset-search';
 import { DEFAULT_ASSET_FILTER, applyFilterToParams } from '@src/components/assets/assetFilter';
-import { scopeFilterKey, type ScopeFilter } from '@src/lib/scope-filter';
+import { type ScopeFilter } from '@src/lib/scope-filter';
 import type { AssetFilter } from '@src/components/assets/assetFilter';
 import type { Browseable, BrowseableRoot, ToolbarAction } from '@src/components/browseable-tree/types';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import { CountChip } from '@src/components/browseable-tree/CountChip';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
+import { EntityIcon } from '@src/components/graph-view/ui/EntityIcon';
 import { skillCreateActions, skillFolderListChildren } from './skillFolder';
+import { tagListChildren } from './tagRoot';
 import { config } from '@sdk';
 
 export interface AssetTypeRootDeps {
@@ -94,10 +98,9 @@ async function fetchAssetsOfType(typeName: string, filter: AssetFilter, limit: n
   applyFilterToParams(urlParams, filter);
   try {
     const data = (await apiClient.get(`/search?${urlParams.toString()}`)) as { results?: SearchResult[] } | null;
-    const results = data?.results ?? [];
-    // Member tasks (group-task children) live in their group task's editor
-    // ("Member tasks" section), not the asset tree.
-    return typeName === 'task' ? results.filter((r) => !r.parent_id) : results;
+    // Member tasks (group-task children) are kept here — the tree nests them
+    // under their parent (see buildTaskTree) rather than dropping them.
+    return data?.results ?? [];
   } catch {
     return [];
   }
@@ -118,9 +121,8 @@ function assetNodeId(typeName: string, path: string): string {
 /**
  * Build a child Browseable from a SearchResult.
  */
-function assetChild(
+export function buildAssetChild(
   typeName: string,
-  iconName: string | null,
   result: SearchResult,
   folderBacked: boolean,
   rootId: string,
@@ -146,7 +148,7 @@ function assetChild(
     toolbar.push({
       id: `delete:${typeName}:${result.record_id}`,
       icon: <Trash2 />,
-      label: `Delete ${label}`,
+      label: t`Delete ${label}`,
       run: () => showDeleteAssetModal({ name: label, onConfirm: deleteRun, onAfterDelete }),
       showBusyIndicator: false,
     });
@@ -155,7 +157,7 @@ function assetChild(
     id: assetNodeId(typeName, result.asset_ref),
     kind: 'asset',
     label,
-    icon: resolveAssetIcon(iconName, 'h-3.5 w-3.5 flex-shrink-0'),
+    icon: <EntityIcon type={typeName} remote={result.remote} density="compact" className="h-3.5 w-3.5 flex-shrink-0" />,
     hasChildren: false,
     pointer,
     // Stable typeid (`<type>-<uuid>`) so a typeid-form active pointer selects this
@@ -191,6 +193,82 @@ function basename(p: string): string {
   return idx >= 0 ? p.slice(idx + 1) : p;
 }
 
+/** Bare entity uuid for a raw id string that may be a `<type>-<uuid>` typeid or
+ *  already a bare uuid. A task's `parent_id` is the parent's entity id in either
+ *  form, so both sides of the parent↔child match must be normalized. */
+function bareEntityId(raw: string | null | undefined): string {
+  const s = (raw ?? '').trim();
+  if (!s) return '';
+  try {
+    if (isTypeId(s)) return new TypeId(s).id;
+  } catch {
+    /* not a typeid — use as-is */
+  }
+  return s;
+}
+
+/**
+ * Build the task rows for the asset tree with member (child) tasks nested under
+ * their parent. `parent_id` ("" = top-level, else the parent task's entity id)
+ * defines the relationship. Children whose parent is present in this result page
+ * render indented under it — children first, then the parent's own folder files
+ * (task.md / spec.md …). A child whose parent is absent (top-level, or an orphan
+ * the page's limit cut off) renders at the root so nothing disappears.
+ */
+function buildTaskTree(
+  type: AssetTypeInfo,
+  results: SearchResult[],
+  rootId: string,
+  onAfterDelete: () => void,
+): Browseable[] {
+  const byId = new Map<string, SearchResult>();
+  for (const r of results) {
+    const id = resultTypeId(r)?.id;
+    if (id) byId.set(id, r);
+  }
+  const childrenByParent = new Map<string, SearchResult[]>();
+  const topLevel: SearchResult[] = [];
+  for (const r of results) {
+    const pid = bareEntityId(r.parent_id);
+    if (pid && byId.has(pid)) {
+      const arr = childrenByParent.get(pid) ?? [];
+      arr.push(r);
+      childrenByParent.set(pid, arr);
+    } else {
+      topLevel.push(r);
+    }
+  }
+
+  // A tree node's identity is its asset path, so a duplicate DB record for one
+  // on-disk task must collapse to a single row (shared across the whole tree).
+  const seen = new Set<string>();
+  const buildNode = (r: SearchResult, ancestry: Set<string>): Browseable | null => {
+    const node = buildAssetChild(type.type_name, r, !!type.folder_backed, rootId, onAfterDelete);
+    if (seen.has(node.id)) return null;
+    seen.add(node.id);
+    const selfBare = resultTypeId(r)?.id ?? '';
+    // Guard against a `parent_id` cycle: don't recurse into an ancestor.
+    const childResults = selfBare && !ancestry.has(selfBare) ? (childrenByParent.get(selfBare) ?? []) : [];
+    if (childResults.length === 0) return node;
+    const nextAncestry = new Set(ancestry);
+    if (selfBare) nextAncestry.add(selfBare);
+    const childNodes = childResults.map((cr) => buildNode(cr, nextAncestry)).filter((n): n is Browseable => n !== null);
+    // Combine member (child) task rows with the parent's own folder-backed
+    // listChildren (task.md / spec.md …) — children first, folder files after.
+    const folderList = node.listChildren;
+    return {
+      ...node,
+      hasChildren: true,
+      listChildren: async (opts) => {
+        const folderRows = folderList ? await folderList(opts) : [];
+        return [...childNodes, ...folderRows];
+      },
+    };
+  };
+
+  return topLevel.map((r) => buildNode(r, new Set<string>())).filter((n): n is Browseable => n !== null);
+}
+
 /**
  * Per-type entity counts, keyed by `type_name`, supplied by the asset page from
  * the single `index-status` response it already fetches — so the sidebar renders
@@ -207,11 +285,7 @@ export const AssetTypeCountsContext = React.createContext<Map<string, number> | 
 export function AssetTypeCountBadge({ typeName }: { typeName: string }) {
   const total = React.useContext(AssetTypeCountsContext)?.get(typeName) ?? 0;
   if (total === 0) return null;
-  return (
-    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-      {total > 999 ? '999+' : total}
-    </span>
-  );
+  return <CountChip count={total} />;
 }
 
 /**
@@ -223,7 +297,7 @@ function buildRootToolbar(type: AssetTypeInfo, deps: AssetTypeRootDeps): Toolbar
     {
       id: `scan:${type.type_name}`,
       icon: <RefreshCw />,
-      label: 'Scan for changes',
+      label: t`Scan for changes`,
       run: async () => {
         // Reindex this type; the resulting data_ops flow back to the tree via
         // the useAssetTreeRefresh subscription, which re-fetches this root.
@@ -236,7 +310,7 @@ function buildRootToolbar(type: AssetTypeInfo, deps: AssetTypeRootDeps): Toolbar
     actions.push({
       id: `new:${type.type_name}`,
       icon: <Plus />,
-      label: `New ${type.label}`,
+      label: t`New ${type.label}`,
       run: () => deps.onNew?.(type.type_name),
       showBusyIndicator: false,
     });
@@ -252,11 +326,14 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
   const filter = deps.filter ?? DEFAULT_ASSET_FILTER;
   const limit = deps.childrenPageSize ?? 200;
 
-  // Filter signature in the id forces the BrowseableTree to refetch
-  // children when the user toggles scope/picker (the children are cached
-  // by node id; without this they'd stay frozen at the previous filter).
-  const filterSig = scopeFilterKey(filter.scope);
-  const rootId = `asset-type:${type.type_name}:${filterSig}`;
+  // STABLE id — deliberately independent of the filter scope. The scope key
+  // oscillates several times while a file opens (URL-scope re-seed, the
+  // open-asset bucket collapsing, a stats refetch); baking it into the id used
+  // to remount this root on every wobble, which dropped its children and
+  // re-flashed "Loading…" — the sidebar "blink". Scope changes now refetch via
+  // an invalidate that keeps existing rows on screen (no flash) — see the
+  // scope-change effect in useAssetTreeRefresh.
+  const rootId = `asset-type:${type.type_name}`;
 
   // After delete: ask the tree to invalidate this root's children. The deleted
   // row drops out without resetting the user's expansion state. The optional
@@ -267,7 +344,17 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
     deps.onDeleteComplete?.(type.type_name);
   };
   const listChildren = async (): Promise<Browseable[]> => {
+    // Tags are row-only (never in the search index): the gardening adapter
+    // merges blessed Tag entities with bus-observed anonymous names instead.
+    if (type.type_name === 'tag') {
+      return tagListChildren(rootId);
+    }
     const results = await fetchAssetsOfType(type.type_name, filter, limit);
+    // Tasks nest: a group/parent task's member (child) tasks render indented
+    // under it (children first, then the parent's folder files). See buildTaskTree.
+    if (type.type_name === 'task') {
+      return buildTaskTree(type, results, rootId, onAfterDelete);
+    }
     // A tree node's identity is its asset path (`asset:<type>:<path>`), so the
     // same file surfaced by more than one search result (e.g. discovered under
     // multiple scopes, or duplicate DB records for one on-disk asset) must
@@ -275,7 +362,7 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
     const seen = new Set<string>();
     const children: Browseable[] = [];
     for (const r of results) {
-      const child = assetChild(type.type_name, type.icon, r, !!type.folder_backed, rootId, onAfterDelete);
+      const child = buildAssetChild(type.type_name, r, !!type.folder_backed, rootId, onAfterDelete);
       if (seen.has(child.id)) continue;
       seen.add(child.id);
       children.push(child);
@@ -318,7 +405,7 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
         id: assetNodeId(type.type_name, parsed.vfsPath),
         kind: 'asset',
         label: basename(parsed.vfsPath),
-        icon: resolveAssetIcon(type.icon, 'h-3.5 w-3.5 flex-shrink-0'),
+        icon: <EntityIcon type={type.type_name} density="compact" className="h-3.5 w-3.5 flex-shrink-0" />,
         hasChildren: false,
         pointer: DockPointer.forAssetEditor(type.type_name, parsed.vfsPath),
       };

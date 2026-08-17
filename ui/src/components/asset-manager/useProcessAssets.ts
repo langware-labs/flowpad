@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { AgenticProcess, Project, dataContext, type AssetDescriptor } from '@sdk';
 
 /**
@@ -24,9 +24,12 @@ const STAGING_ASSET_LIMIT = 1000;
 
 export function useProcessAssets(
   process: AgenticProcess | null,
-  options?: { enabled?: boolean },
+  /** `projectId` is for projectless callers: it names the project to ask
+   *  instead of the active one (e.g. a drill-down into `@flowpad_assistant`). */
+  options?: { enabled?: boolean; projectId?: string },
 ): UseProcessAssetsResult {
   const enabled = options?.enabled !== false;
+  const explicitProjectId = options?.projectId;
 
   const [descriptors, setDescriptors] = useState<AssetDescriptor[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(enabled);
@@ -44,7 +47,7 @@ export function useProcessAssets(
       } else {
         // Staging: the active project's discoverable assets, computed
         // server-side; projectless surfaces fall back to the local project.
-        const projectId = dataContext.project?.typeId?.id ?? '@local';
+        const projectId = explicitProjectId ?? dataContext.project?.typeId?.id ?? '@local';
         const result = await Project.getAssetsById(projectId, { limit: STAGING_ASSET_LIMIT });
         if (tickRef.current === tick) setDescriptors(result);
       }
@@ -54,10 +57,13 @@ export function useProcessAssets(
     } finally {
       if (tickRef.current === tick) setIsLoading(false);
     }
-  }, [process, enabled]);
+  }, [process, enabled, explicitProjectId]);
 
   // Re-fetch when the process identity changes (or the hook becomes enabled).
-  useEffect(() => {
+  // Layout effect, not a passive one: `refresh` sets isLoading synchronously
+  // before its first await, and a passive effect can run after paint — which
+  // would flash the "no assets" empty state for a frame on first open.
+  useLayoutEffect(() => {
     void refresh();
   }, [refresh]);
 
