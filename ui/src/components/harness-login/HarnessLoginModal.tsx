@@ -78,6 +78,24 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
   const capabilityId = snapshot.capability?.id ?? null;
   const typeId = useMemo(() => (capabilityId ? new TypeId(Capability.type, capabilityId) : null), [capabilityId]);
   const { data: capability } = useEntity<Capability>(typeId, { enabled: !!typeId, watch: true });
+  // The badge below reads ``login_state``, a PERSISTED field written by the last
+  // device login or auth test — and nothing invalidates it when the user signs
+  // out of the CLI in a terminal. So the modal would open claiming "Signed in"
+  // over a harness that is demonstrably logged out, which is worse than saying
+  // nothing: it contradicts the very error that opened it.
+  //
+  // ``authStatus()`` re-runs the vendor's own probe and the backend mirrors the
+  // fresh result onto ``login_state`` and broadcasts it, so the watched row
+  // self-corrects. Silent by design — this is a refresh, not a user-invoked
+  // check, and the visible ``testAuth`` below keeps its toasts.
+  const modalOpen = useHarnessLoginStore((s) => s.open);
+  useEffect(() => {
+    if (!modalOpen || !capability) return;
+    void capability.authStatus().catch(() => undefined);
+    // Re-probe per open, per capability — not on every unrelated row update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalOpen, capabilityId]);
+
   const [busy, setBusy] = useState(false);
   // Separate from `busy` so re-testing auth doesn't compute status to 'busy'.
   const [testing, setTesting] = useState(false);
