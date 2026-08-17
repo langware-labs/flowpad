@@ -24,10 +24,7 @@ import { Label } from '@src/components/ui/label';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 
-export const CREDENTIAL_BADGE_TONE = {
-  ok: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500',
-  bad: 'border-destructive/30 bg-destructive/10 text-destructive',
-};
+import { TONE } from './tone';
 
 export interface CredentialFieldProps {
   /** The endpoint the key belongs to; undefined while it is not yet created. */
@@ -173,7 +170,7 @@ export function CredentialField({
         {verdict && (
           <Badge
             variant="outline"
-            className={`gap-1 ${verdict.valid ? CREDENTIAL_BADGE_TONE.ok : CREDENTIAL_BADGE_TONE.bad}`}
+            className={`gap-1 ${verdict.valid ? TONE.emerald : TONE.destructive}`}
             title={verdict.message ?? undefined}
             data-testid="credential-verdict"
           >

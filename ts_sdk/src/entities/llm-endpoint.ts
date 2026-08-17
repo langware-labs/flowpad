@@ -52,7 +52,7 @@ export const DEFAULT_LLM_FILTERS: LLMEndpointFilters = {
   top_p_max: null,
   betas_allow: null,
   streaming: 'allow',
-  paths_allow: [],
+  paths_allow: ['v1/**'],
   aliases: {},
   model_map: {},
 };
@@ -110,10 +110,6 @@ export class LLMEndpoint extends APIEntity<LLMEndpoint> implements ILLMEndpoint 
   /** Root ⇔ no sources. Derived, never stored. */
   get kind(): LLMEndpointKind {
     return this.sources.length ? 'chain' : 'root';
-  }
-
-  get isRoot(): boolean {
-    return this.kind === 'root';
   }
 
   get hasCredential(): boolean {

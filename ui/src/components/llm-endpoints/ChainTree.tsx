@@ -12,6 +12,7 @@ import { useMemo } from 'react';
 import { Badge } from '@src/components/ui/badge';
 
 import { buildChainTree, type ChainTreeNode, type HopHealth } from './chain-tree';
+import { TONE } from './tone';
 
 const HEALTH_TONE: Record<HopHealth, string> = {
   ok: 'text-foreground',
@@ -32,21 +33,21 @@ function HealthBadge({ node }: { node: ChainTreeNode }) {
       );
     case 'no_credential':
       return (
-        <Badge variant="outline" className="gap-1 border-amber-500/30 bg-amber-500/10 text-amber-500">
+        <Badge variant="outline" className={`gap-1 ${TONE.amber}`}>
           <KeyRound className="h-3 w-3" />
           <Trans>no key</Trans>
         </Badge>
       );
     case 'breaker_open':
       return (
-        <Badge variant="outline" className="gap-1 border-destructive/30 bg-destructive/10 text-destructive">
+        <Badge variant="outline" className={`gap-1 ${TONE.destructive}`}>
           <Zap className="h-3 w-3" />
           <Trans>breaker open</Trans>
         </Badge>
       );
     case 'missing':
       return (
-        <Badge variant="outline" className="gap-1 border-destructive/30 bg-destructive/10 text-destructive">
+        <Badge variant="outline" className={`gap-1 ${TONE.destructive}`}>
           <AlertTriangle className="h-3 w-3" />
           <Trans>not visible</Trans>
         </Badge>
@@ -91,7 +92,7 @@ export function ChainTree({ chain, onOpen }: ChainTreeProps) {
             </span>
           )}
           {n.isSticky && (
-            <Badge variant="outline" className="gap-1 border-sky-500/30 bg-sky-500/10 text-sky-500">
+            <Badge variant="outline" className={`gap-1 ${TONE.sky}`}>
               <Pin className="h-3 w-3" />
               <Trans>sticky for you</Trans>
             </Badge>

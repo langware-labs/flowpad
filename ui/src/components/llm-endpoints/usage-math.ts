@@ -2,17 +2,16 @@
  * Arithmetic behind the usage panel: cohort → time range, series → totals /
  * chart points, limit → remaining ratio.
  *
- * Cohorts are the cost dashboard's `TIME_COHORTS` (today / week / month / all),
- * so the two screens agree on what "this week" means: calendar weeks start on
- * Monday, all in UTC — the hub's ledger windows are UTC days/weeks/months, so a
- * local-time cohort would straddle two ledger buckets.
+ * Cohorts are the cost dashboard's `TIME_COHORTS` ids (today / week / month /
+ * all) but NOT its windows: the dashboard's week/month are the PREVIOUS full
+ * calendar week/month; ours are the CURRENT ones, from their start up to now
+ * (calendar weeks start on Monday). All UTC — the hub's ledger windows are UTC
+ * days/weeks/months, so a local-time cohort would straddle two ledger buckets.
  *
  * **Pure.** `now` is a parameter everywhere, so tests pin the clock.
  */
 import type { LLMChainRemaining, LLMUsageCounters, LLMUsageGranularity, LLMUsagePoint } from '@sdk';
 import type { TimeCohort } from '@src/components/cost-dashboard/constants';
-
-export { TIME_COHORTS } from '@src/components/cost-dashboard/constants';
 
 export interface UsageRange {
   /** Epoch seconds, inclusive. */
@@ -25,10 +24,12 @@ export interface UsageRange {
 /** The ledger began with the feature; "all time" needs a finite start. */
 const ALL_TIME_DAYS = 365;
 
-/** [from, to) for a cohort, in epoch seconds, UTC-aligned. */
+/** [from, to) for a cohort, in epoch seconds, UTC-aligned. `to` is `now`
+ *  floored to the minute (+1 so the current minute's start is inside), so
+ *  callers computing it independently within a minute get one query key. */
 export function cohortRange(cohort: TimeCohort, now: Date = new Date()): UsageRange {
   const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const to = Math.floor(now.getTime() / 1000) + 1;
+  const to = Math.floor(now.getTime() / 60_000) * 60 + 1;
   switch (cohort) {
     case 'today':
       return { from: Math.floor(dayStart / 1000), to, granularity: 'hour' };
@@ -70,12 +71,6 @@ export function addCounters(a: LLMUsageCounters, b: Partial<LLMUsageCounters>): 
   return out;
 }
 
-/** Sum a series into one totals row. What the hub's `totals` should equal —
- *  used when only a series is at hand (e.g. batched list rows). */
-export function aggregateSeries(series: readonly Partial<LLMUsageCounters>[]): LLMUsageCounters {
-  return series.reduce<LLMUsageCounters>((acc, p) => addCounters(acc, p), { ...ZERO_COUNTERS });
-}
-
 export interface ChartPoint {
   /** Epoch seconds. */
   t: number;
@@ -101,11 +96,8 @@ function labelFor(bucketStart: number, granularity: LLMUsageGranularity): string
  * buckets filled across `range` so a quiet hour shows as zero rather than a
  * gap the line skips over.
  */
-export function toChartPoints(
-  series: readonly LLMUsagePoint[],
-  range: UsageRange,
-  granularity: LLMUsageGranularity = range.granularity,
-): ChartPoint[] {
+export function toChartPoints(series: readonly LLMUsagePoint[], range: UsageRange): ChartPoint[] {
+  const { granularity } = range;
   const step = granularity === 'hour' ? 3600 : 86400;
   const byBucket = new Map<number, LLMUsageCounters>();
   for (const p of series) {

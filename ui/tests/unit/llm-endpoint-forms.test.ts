@@ -65,6 +65,12 @@ describe('filters round-trip', () => {
     expect(formToFilters(filtersToForm(filters))).toEqual(filters);
   });
 
+  it("the hub's default paths_allow (['v1/**']) survives an untouched edit — never sent back as []", () => {
+    expect(formToFilters(filtersToForm({ paths_allow: ['v1/**'] })).paths_allow).toEqual(['v1/**']);
+    // And a fresh form starts from that default rather than an empty allowlist.
+    expect(formToFilters(filtersToForm(null)).paths_allow).toEqual(['v1/**']);
+  });
+
   it('a form shows lists as lines and nulls as empty', () => {
     const form = filtersToForm(filters);
     expect(form.models_allow).toBe('anthropic/*\nopenai/gpt-4*');
