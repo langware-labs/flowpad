@@ -4766,7 +4766,12 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="load-embedded-agent")
     async def load_embedded_agent_action(self, asset_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
-        """Load an agent from a VFS path and embed it into this process.
+        """Load an agent from its ``asset_ref`` and embed it into this process.
+
+        ``asset_ref`` is the agent record's own OS filesystem path (an ``FSRef``
+        path), NOT a VFS path — it was renamed from ``source_vfs_path`` and the
+        contract changed with it, which is what stranded the old VFS-style
+        re-rooting below.
 
         Materializes the agent markdown into the process asset directory so the
         generated system-instruction files can include it on every launch.
@@ -4784,7 +4789,11 @@ class AgenticProcess(Entity):
 
         if not asset_ref:
             return ApiFailResponse(message="asset_ref is required")
-        abs_path = Path("/" + asset_ref.lstrip("/"))
+        # `Path(ref).resolve()` — the same construction FSRef itself uses, and
+        # which `_agent_entity_ref` re-applies to this value downstream. Rooting
+        # it with `Path("/" + ref)` instead corrupted every Windows ref
+        # (`C:\...` → `\C:\...`), so the file never existed and the embed failed.
+        abs_path = Path(asset_ref).resolve()
         if not abs_path.exists():
             return ApiFailResponse(message=f"Agent file not found: {abs_path}")
         agent = extract_subagent_from_path(abs_path)
@@ -4838,7 +4847,8 @@ class AgenticProcess(Entity):
 
         if not asset_ref:
             return ApiFailResponse(message="asset_ref is required")
-        skill_dir = Path("/" + asset_ref.lstrip("/")).resolve()
+        # Absolute already (see load_embedded_agent_action) — do not re-root.
+        skill_dir = Path(asset_ref).resolve()
         if not skill_dir.is_dir():
             return ApiFailResponse(message=f"Skill folder not found: {skill_dir}")
         if not (skill_dir / "SKILL.md").exists():
@@ -6466,6 +6476,10 @@ class AgenticProcess(Entity):
         # docs/agent/agentic_process_statuses.md for the model.
         computed = self.fetch_worker_status()
         data["worker_status"] = str(computed) if computed else None
+        # The CLI's own sentence behind a bare ERROR ("Not logged in · Please
+        # run /login"). Only resolved for the error status — it costs a second
+        # tail read, and there is nothing to say for any other state.
+        data["worker_status_detail"] = self._worker_status_detail(computed)
         data["status"] = self.status
         busy = is_turn_busy(self, computed)
         data["busy"] = busy
@@ -6529,6 +6543,24 @@ class AgenticProcess(Entity):
         if self.status == ProcessStatus.FAILED.value:
             return WorkerStatus.ERROR
         return self._discover_status_from_transcript()
+
+    def _worker_status_detail(self, worker_status: "WorkerStatus | None") -> str | None:
+        """The CLI's own error sentence, when the worker status is ERROR.
+
+        Best-effort and never raising: a missing transcript, an unreadable file
+        or a driver without a detail hook all yield ``None``, and the surface
+        falls back to the plain status label.
+        """
+        if worker_status != WorkerStatus.ERROR:
+            return None
+        try:
+            from flow_sdk.builtin.worker_status import tail_status_detail
+
+            path = self.driver.transcript_path(self)
+            return tail_status_detail(path) if path else None
+        except Exception:
+            logger.debug("worker_status_detail lookup failed", exc_info=True)
+            return None
 
     def _discover_status_from_transcript(self) -> WorkerStatus | None:
         """Derive the RAW worker status from the worker's transcript via the driver.

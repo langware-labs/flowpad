@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { DotPulse } from '@src/components/dot-pulse';
 import { getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
 import { formatClock } from '@src/components/lens-viewer/shared/format-utils';
+import { useHarnessLoginOnAuthError } from '@src/components/harness-login/use-harness-login-on-auth-error';
 import type { CurrentActivity } from './current-activity';
 
 /**
@@ -16,6 +17,14 @@ const TERMINAL_STATUSES = new Set<WorkerStatus>([
   WorkerStatus.INACTIVE,
   WorkerStatus.IDLE,
   WorkerStatus.PENDING_USER,
+  // ERROR and API_TIMEOUT belong here for exactly the reason the others do, and
+  // their absence is what put a red "Error" under a live pulse. A turn that
+  // failed while LOGGED OUT leaves ``stop_reason: stop_sequence`` as the last
+  // assistant entry; ``worker_status`` walks back to it and reports ERROR until
+  // the NEW turn writes its first entry — so the message you just sent wore the
+  // previous one's failure for a second, then flipped to "Working".
+  WorkerStatus.ERROR,
+  WorkerStatus.API_TIMEOUT,
 ]);
 
 function isTerminalStatus(status: WorkerStatus | null | undefined): boolean {
@@ -58,6 +67,11 @@ export function ChatActivityLine({ process, active, startedAt, status, activity,
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [active]);
+
+  // A signed-out harness is the one failure the user can fix themselves, and
+  // the CLI already named it. Called before the visibility branch so the hook
+  // order stays stable whether or not the activity line renders.
+  useHarnessLoginOnAuthError(process.worker_status_detail ?? process.workerStatusDetail);
 
   if (!active) return null;
 

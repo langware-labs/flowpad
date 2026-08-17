@@ -45,6 +45,7 @@ MATRIX: dict[str, list[tuple[str, dict]]] = {
         ("perm_default", {"permission_mode": "default"}),
         ("perm_plan", {"permission_mode": "plan"}),
         ("chrome_debug_worktree", {"chrome": True, "debug": True, "worktree": True}),
+        ("debug_file", {"debug": True, "debug_file": "/logs/turn.txt"}),
         ("print_stream", {"print_mode": True, "output_format": "stream-json"}),
         ("effort", {"effort": "high"}),
         ("agents", {"agents_json": {"rev": {"description": "d", "prompt": "p"}}}),

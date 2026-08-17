@@ -447,11 +447,26 @@ export class CapabilityManager extends EventEmitter {
     }
   }
 
+  /**
+   * The best available verdict for a capability, strongest evidence first.
+   *
+   * ``actionResults`` is in-memory and lives only as long as the page, so the
+   * persisted fallbacks are what every reload depends on. ``last_check`` was
+   * missing from that chain, and it is the field the backend actually populates
+   * on a routine check (``restamp_capability_state`` writes ``row.last_check``)
+   * — so after any reload this returned null, ``getSnapshot`` computed
+   * ``checked = false``, and an installed, working CLI rendered as "not
+   * installed" until something happened to re-run a check.
+   *
+   * Ordered weakest-last on purpose: a setup or test is a stronger statement
+   * than a check, so ``last_check`` only answers when nothing better has.
+   */
   private getResult(capability: Capability): CapabilityResult | null {
     return (
       this.actionResults.get(capability.kind)?.result ??
       capability.last_setup ??
       capability.last_test ??
+      capability.last_check ??
       null
     );
   }

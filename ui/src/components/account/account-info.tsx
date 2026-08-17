@@ -1,3 +1,4 @@
+import { Trans } from '@lingui/react/macro';
 import { dataContext, User } from '@sdk';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { DatabaseSection } from './database-section';
@@ -20,16 +21,16 @@ export function AccountInfo({ user }: AccountInfoProps) {
     <Tabs defaultValue="organization" className="flex min-h-0 flex-1 flex-col">
       <TabsList className="w-full shrink-0">
         <TabsTrigger value="organization" className="flex-1">
-          Organization
+          <Trans>Organization</Trans>
         </TabsTrigger>
         <TabsTrigger value="settings" className="flex-1">
-          General
+          <Trans>General</Trans>
         </TabsTrigger>
         <TabsTrigger value="database" className="flex-1">
-          Database
+          <Trans>Database</Trans>
         </TabsTrigger>
         <TabsTrigger value="secrets" className="flex-1">
-          Secrets
+          <Trans>Secrets</Trans>
         </TabsTrigger>
       </TabsList>
 

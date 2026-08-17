@@ -187,6 +187,9 @@ export interface StatusBearingProcess {
   busy?: boolean;
   workerStatus?: WorkerStatus | string;
   worker_status?: WorkerStatus | string;
+  /** The CLI's own sentence behind a bare ERROR ("Not logged in · Please run /login"). */
+  workerStatusDetail?: string | null;
+  worker_status_detail?: string | null;
   session_id?: string | null;
   /** Tab visibility only — NOT the transport router (see ``pty_mode``). */
   visible?: boolean;
@@ -423,6 +426,23 @@ export function getDisplayStatus(p: StatusBearingProcess): ProcessStatus | Worke
   const status = resolveStatus(p);
   if (status === undefined) return undefined;
   const worker = resolveWorkerStatus(p);
+  // A turn in flight outranks a terminal worker status, and must be checked
+  // BEFORE the error branch below.
+  //
+  // ``workerStatus`` is derived from the transcript tail's most recent
+  // *assistant* entry, however old (``worker_status.py`` walks backwards until
+  // it finds one). So between accepting a prompt and the new turn writing its
+  // first entry, the tail still describes the PREVIOUS turn — and if that one
+  // ended badly (a logged-out ``stop_sequence``, a session limit) the badge
+  // paints its ERROR onto the turn the user just sent, then flips to WORKING a
+  // second later. That flash is a stale read, not a new failure.
+  //
+  // ``busy`` cannot be stale in the same way: the backend derives it from the
+  // prompt lock / registered worker / in-flight flag, none of which outlive the
+  // turn. When it disagrees with a terminal tail, ``busy`` is the live truth.
+  if (isBusy(p) && (worker === undefined || !WORKER_BUSY_STATUSES.has(worker))) {
+    return WorkerStatus.WORKING;
+  }
   if (worker !== undefined && worker !== WorkerStatus.UNKNOWN && ERROR_WORKER_STATUSES.has(worker)) {
     return worker;
   }

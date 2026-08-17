@@ -263,6 +263,7 @@ def test_to_json_roundtrip():
         "fork_session_id": "src",
         "model": "claude-opus-4-5",
         "debug": False,
+        "debug_file": None,
         "permission_mode": "default",
         "chrome": True,
         "worktree": True,
