@@ -47,7 +47,15 @@ export type RailItemId =
  * different thing entirely — HUB_RECORDS with a `task` pointer. A shared union
  * would have made that removal look like a hub change.
  */
-export type HubRailItemId = 'world' | 'organization' | 'inbox' | 'tasks' | 'docs' | 'llm-endpoints' | 'credentials';
+export type HubRailItemId =
+  | 'world'
+  | 'organization'
+  | 'inbox'
+  | 'tasks'
+  | 'docs'
+  | 'token-plan'
+  | 'llm-endpoints'
+  | 'credentials';
 
 export type RailPlacement =
   /** Rides the top rail. */

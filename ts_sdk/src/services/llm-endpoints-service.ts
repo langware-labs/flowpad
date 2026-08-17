@@ -102,12 +102,22 @@ export interface LLMUsageReport {
   totals: LLMUsageCounters;
   /** Present only when `by` was requested and the caller is an admin. */
   breakdown?: Record<string, LLMUsageCounters>;
+  /** Display names for the `by` dimension values (`by=child`: the child
+   *  endpoint's name), keyed like `breakdown`. */
+  names?: Record<string, string>;
+}
+
+/** One hub action call. `id` is null for a bare, type-level action (`catalog`,
+ *  `token_plan/me`). Shared with the token plan service — one builder, so the
+ *  subpath/method plumbing exists once. */
+export function hubAction(name: string, type: string, id: string | null, method: HttpMethod, subpath?: string) {
+  const info = new ActionInfo(name, type, id, method);
+  if (subpath) info.subpath = subpath;
+  return info;
 }
 
 function action(name: string, id: string, method: HttpMethod, subpath?: string): ActionInfo {
-  const info = new ActionInfo(name, TYPE, id, method);
-  if (subpath) info.subpath = subpath;
-  return info;
+  return hubAction(name, TYPE, id, method, subpath);
 }
 
 export class LlmEndpointsService {

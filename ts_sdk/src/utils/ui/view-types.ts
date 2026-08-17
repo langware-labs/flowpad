@@ -115,6 +115,7 @@ export enum ViewType {
   HUB_ENTITY = 'entity', // Hub single-entity viewer (page=hub) - /dock/hub/entity/<type>/<id>
   CREDENTIALS = 'credentials', // Env vars + OAuth connections + API keys - /dock/hub/credentials/<subview>[/<projectId>]
   LLM_ENDPOINTS = 'llm-endpoints', // Hub LLM endpoints (roots + chains) - /dock/hub/llm-endpoints[/<id>[/overview|usage|models]]
+  TOKEN_PLAN = 'token-plan', // Hub token plan (me / team / org budgets) - /dock/hub/token-plan[/me|team[/<id>]|org]
 }
 
 /**

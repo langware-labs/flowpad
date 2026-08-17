@@ -77,6 +77,8 @@ export interface ILLMEndpoint extends IEntity {
   sources?: string[];
   filters?: Partial<LLMEndpointFilters>;
   limits?: Partial<LLMEndpointLimits>;
+  member_default_limits?: Partial<LLMEndpointLimits>;
+  system_default?: boolean;
   credential_hint?: string;
 }
 
@@ -92,6 +94,11 @@ export class LLMEndpoint extends APIEntity<LLMEndpoint> implements ILLMEndpoint 
   sources: string[] = [];
   filters: LLMEndpointFilters = { ...DEFAULT_LLM_FILTERS };
   limits: LLMEndpointLimits = { ...DEFAULT_LLM_LIMITS };
+  /** The budget the hub stamps on member defaults sourced from this endpoint
+   *  (team/org scope endpoints); same shape as `limits`. */
+  member_default_limits: LLMEndpointLimits = { ...DEFAULT_LLM_LIMITS };
+  /** True for hub-made per-principal defaults (`default-<typeid>`); read-only. */
+  system_default: boolean = false;
   /** `""` or `****abcd`; read-only, written by the hub's credential action. */
   credential_hint: string = '';
 
@@ -104,6 +111,8 @@ export class LLMEndpoint extends APIEntity<LLMEndpoint> implements ILLMEndpoint 
     this.sources = entity.sources ?? this.sources;
     this.filters = { ...DEFAULT_LLM_FILTERS, ...(entity.filters ?? {}) };
     this.limits = { ...DEFAULT_LLM_LIMITS, ...(entity.limits ?? {}) };
+    this.member_default_limits = { ...DEFAULT_LLM_LIMITS, ...(entity.member_default_limits ?? {}) };
+    this.system_default = entity.system_default ?? this.system_default;
     this.credential_hint = entity.credential_hint ?? this.credential_hint;
   }
 

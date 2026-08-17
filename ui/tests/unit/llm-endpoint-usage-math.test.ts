@@ -6,10 +6,14 @@ import type { LLMUsagePoint } from '@sdk';
 import { describe, expect, it } from 'vitest';
 
 import {
+  childLabel,
   cohortRange,
+  formatAmount,
   formatUsd,
+  ratioTone,
   remainingRatio,
   toChartPoints,
+  usedRatio,
   ZERO_COUNTERS,
 } from '@src/components/llm-endpoints/usage-math';
 
@@ -99,5 +103,47 @@ describe('formatUsd', () => {
     expect(formatUsd(0.00003)).toBe('$0.000030');
     expect(formatUsd(0.42)).toBe('$0.420');
     expect(formatUsd(12.345)).toBe('$12.35');
+  });
+});
+
+describe('usedRatio / ratioTone', () => {
+  it('usedRatio is the mirror of remainingRatio; no limit reads as empty', () => {
+    expect(usedRatio({ limit: 10, remaining: 2.5 })).toBe(0.75);
+    expect(usedRatio({ limit: 10, remaining: -3 })).toBe(1);
+    expect(usedRatio({ limit: 0, remaining: 0 })).toBe(0);
+    expect(usedRatio(null)).toBe(0);
+  });
+
+  it('the tone shifts at 70 % and 90 % used', () => {
+    expect(ratioTone(0)).toBe('ok');
+    expect(ratioTone(0.69)).toBe('ok');
+    expect(ratioTone(0.7)).toBe('amber');
+    expect(ratioTone(0.89)).toBe('amber');
+    expect(ratioTone(0.9)).toBe('destructive');
+    expect(ratioTone(1)).toBe('destructive');
+  });
+
+  it('the same limit reads the same on a bar and on a headline', () => {
+    const spent = { limit: 10, remaining: 0.5 };
+    expect(ratioTone(usedRatio(spent))).toBe('destructive');
+  });
+});
+
+describe('formatAmount', () => {
+  it("formats in the key's own unit", () => {
+    expect(formatAmount('cost_usd_per_day', 3.2)).toBe('$3.20');
+    expect(formatAmount('tokens_per_month', 42_000)).toBe('42.0K');
+    expect(formatAmount('requests_per_minute', 60)).toBe('60');
+  });
+});
+
+describe('childLabel', () => {
+  const CHILD = 'abcdef00-0000-4000-8000-000000000000';
+
+  it("prefers the hub's names map, then a local lookup, then the raw dim", () => {
+    const dim = `llm_endpoint-${CHILD}`;
+    expect(childLabel(dim, { [dim]: 'Dana' }, () => 'stale')).toBe('Dana');
+    expect(childLabel(dim, {}, (id) => (id === CHILD ? 'Dana' : undefined))).toBe('Dana');
+    expect(childLabel(dim)).toBe(dim);
   });
 });

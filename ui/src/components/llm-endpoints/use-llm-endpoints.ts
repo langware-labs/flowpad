@@ -12,6 +12,8 @@ import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
+import { endpointIdFromTypeId } from './llm-endpoints-pointer';
+
 /** Global by construction — an endpoint is a hub-wide resource, not a project's. */
 const ENDPOINTS_QUERY = new QueryRequest({
   type: LLMEndpoint.type,
@@ -40,6 +42,19 @@ export function useLlmEndpoints() {
     await Promise.all([refetch(), shared.refetch()]);
   };
   return { endpoints, isLoading: isLoading || shared.isLoading, refetch: refetchAll, error: error ?? shared.error };
+}
+
+/**
+ * One endpoint out of the list, by bare uuid OR by typeid — the hub hands out
+ * `llm_endpoint-<uuid>` in chain hops, `sources` and the token plan, while the
+ * entity's own `id` is bare. Normalising here is the reason callers must not
+ * hand-roll `endpoints.find((e) => e.id === someId)`: that comparison silently
+ * never matches for a typeid.
+ */
+export function useLlmEndpoint(idOrTypeId: string | null | undefined): LLMEndpoint | null {
+  const { endpoints } = useLlmEndpoints();
+  const id = idOrTypeId ? endpointIdFromTypeId(idOrTypeId) : null;
+  return useMemo(() => (id ? (endpoints.find((e) => e.id === id) ?? null) : null), [endpoints, id]);
 }
 
 export function useLlmEndpointChain(id: string | undefined) {

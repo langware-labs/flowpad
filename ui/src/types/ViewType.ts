@@ -98,7 +98,8 @@ export interface ViewerMeta {
     | 'Stethoscope'
     | 'Antenna'
     | 'History'
-    | 'Waypoints';
+    | 'Waypoints'
+    | 'Gauge';
   /** Where this viewer renders: 'overview' tab or dedicated tab */
   tabLocation: 'overview' | 'dedicated';
   /** Can this viewer be manually added as a tab? */
@@ -311,6 +312,15 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   [ViewType.LLM_ENDPOINTS]: {
     title: msg`LLM Endpoints`,
     iconName: 'Waypoints',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    foldsPointer: true,
+  },
+  // Hub token plan (page=hub). Pointer = the scope (`me` | `team[/<id>]` | `org`):
+  // an in-view selection, so it folds into one chip (LLM_ENDPOINTS precedent).
+  [ViewType.TOKEN_PLAN]: {
+    title: msg`Token plan`,
+    iconName: 'Gauge',
     tabLocation: 'dedicated',
     canAddAsTab: false,
     foldsPointer: true,

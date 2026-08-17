@@ -11,7 +11,9 @@
  * **Pure.** `now` is a parameter everywhere, so tests pin the clock.
  */
 import type { LLMChainRemaining, LLMUsageCounters, LLMUsageGranularity, LLMUsagePoint } from '@sdk';
-import type { TimeCohort } from '@src/components/cost-dashboard/constants';
+import { formatValue, type TimeCohort } from '@src/components/cost-dashboard/constants';
+
+import { endpointIdFromTypeId } from './llm-endpoints-pointer';
 
 export interface UsageRange {
   /** Epoch seconds, inclusive. */
@@ -139,3 +141,46 @@ export function formatUsd(value: number): string {
   if (value < 1) return `$${value.toFixed(3)}`;
   return `$${value.toFixed(2)}`;
 }
+
+/** How full a limit is: 0 when nothing is used, 1 when it is spent; 0 when
+ *  there is no limit. The mirror of {@link remainingRatio} — one arithmetic,
+ *  so a bar and a headline can never disagree. */
+export function usedRatio(r: Pick<LLMChainRemaining, 'limit' | 'remaining'> | null | undefined): number {
+  return 1 - remainingRatio(r);
+}
+
+export type RatioTone = 'ok' | 'amber' | 'destructive';
+
+/** Tone of a fill: shifts at 70 % and 90 % used (30 % / 10 % left). The ONE
+ *  place the thresholds live, so moving one moves every bar, headline and
+ *  badge at once. */
+export function ratioTone(used: number): RatioTone {
+  if (used >= 0.9) return 'destructive';
+  if (used >= 0.7) return 'amber';
+  return 'ok';
+}
+
+export function isCostKey(key: string): boolean {
+  return key.startsWith('cost_usd');
+}
+
+/** Format an amount in its limit key's own unit: dollars, tokens, plain count. */
+export function formatAmount(key: string, value: number): string {
+  if (isCostKey(key)) return formatUsd(value);
+  if (key.startsWith('tokens')) return formatValue(value, 'tokens');
+  return String(value);
+}
+
+/** Display name for a `by=child` usage dimension: the hub's `names` map wins
+ *  (it covers children the caller may not list), then a local lookup by bare
+ *  id, then the raw dimension. */
+export function childLabel(
+  dim: string,
+  names?: Record<string, string>,
+  lookup?: (id: string) => string | undefined,
+): string {
+  return names?.[dim] ?? lookup?.(endpointIdFromTypeId(dim)) ?? dim;
+}
+
+/** The green every cost chart in the hub draws with. */
+export const COST_CHART_COLOR = '#22c55e';
