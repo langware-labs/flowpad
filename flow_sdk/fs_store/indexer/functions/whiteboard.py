@@ -25,6 +25,7 @@ from flow_sdk.fs_store.indexer.functions._folder_capsule import (
     read_folder_capsule_id,
 )
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.identifier import mint_uuid
 
 WHITE_BOARD_MD = "WHITE_BOARD.md"
 BOARD_JSON = "board.json"
@@ -47,7 +48,7 @@ def _resolve_whiteboard_name(yaml_fields: dict, folder_name: str) -> str:
 
 def _whiteboard_id_from_name(name: str) -> str:
     """Stable uuid5 derived from the whiteboard name."""
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{RecordType.WHITEBOARD}:{name}"))
+    return mint_uuid(f"{RecordType.WHITEBOARD}:{name}", namespace=uuid.NAMESPACE_DNS)
 
 def _load_whiteboard_fm(whiteboard_dir: Path) -> dict[str, Any]:
     """Load frontmatter from WHITE_BOARD.md, returning {} if absent."""
