@@ -1,20 +1,13 @@
-import { Tab } from '@sdk';
+import { Tab, tabManager, TabLifecycleState } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import {
   closeTabWithLifecycle,
   closeTabsWithLifecycle,
-  excludeClosingTabs,
-  getTabLifecycle,
   registerTabContentAdapter,
-  resetTabLifecycleForTests,
-  setTabLifecycleForTests,
+  resetTabContentLifecycleForTests,
   setupTab,
-  syncTabLifecycleWithTabs,
-  TabLifecycleState,
-  type TabLifecycleEntry,
-} from '@src/tabs/tab-lifecycle';
-import { setActiveTabParent } from '@src/tabs/tab-parent-context';
+} from '@src/tabs/tab-content-lifecycle';
 import { ViewType } from '@src/types/ViewType';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -46,7 +39,7 @@ function mockNoExistingTabs() {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  resetTabLifecycleForTests();
+  resetTabContentLifecycleForTests();
 });
 
 describe('tab lifecycle registry', () => {
@@ -58,8 +51,8 @@ describe('tab lifecycle registry', () => {
 
     await setupTab(d);
 
-    expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.Opened);
-    expect(getTabLifecycle(d.tabHash)?.tabId).toBe(tab.id);
+    expect(tabManager.lifecycle.get(d.tabHash)?.state).toBe(TabLifecycleState.Opened);
+    expect(tabManager.lifecycle.get(d.tabHash)?.tabId).toBe(tab.id);
   });
 
   it('keeps a materialized tab visible when setup fails', async () => {
@@ -77,8 +70,8 @@ describe('tab lifecycle registry', () => {
     const result = await setupTab(d);
 
     expect(result.tab?.id).toBe(tab.id);
-    expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.OpenFailed);
-    expect(getTabLifecycle(d.tabHash)?.error).toBe('attach failed');
+    expect(tabManager.lifecycle.get(d.tabHash)?.state).toBe(TabLifecycleState.OpenFailed);
+    expect(tabManager.lifecycle.get(d.tabHash)?.error).toBe('attach failed');
   });
 
   it('emits materialized tabs before content setup resolves', async () => {
@@ -115,14 +108,14 @@ describe('tab lifecycle registry', () => {
 
     expect(materializedTabs).toHaveLength(1);
     expect(materializedTabs[0].map((materialized) => materialized.id)).toEqual([tab.id]);
-    expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.Opening);
-    expect(getTabLifecycle(d.tabHash)?.tabId).toBe(tab.id);
+    expect(tabManager.lifecycle.get(d.tabHash)?.state).toBe(TabLifecycleState.Opening);
+    expect(tabManager.lifecycle.get(d.tabHash)?.tabId).toBe(tab.id);
 
     releaseSetup();
     const result = await resultPromise;
 
     expect(result.tab?.id).toBe(tab.id);
-    expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.Opened);
+    expect(tabManager.lifecycle.get(d.tabHash)?.state).toBe(TabLifecycleState.Opened);
   });
 
   it('reuses an opened content-asset tab while rerunning loader-owned context setup', async () => {
@@ -154,7 +147,7 @@ describe('tab lifecycle registry', () => {
     expect(setupContent).toHaveBeenCalledTimes(1);
     expect(list).not.toHaveBeenCalled();
     expect(mint).not.toHaveBeenCalled();
-    expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.Opened);
+    expect(tabManager.lifecycle.get(d.tabHash)?.state).toBe(TabLifecycleState.Opened);
   });
 
   it('reuses a visible normalized legacy row before creating a canonical duplicate', async () => {
@@ -176,7 +169,7 @@ describe('tab lifecycle registry', () => {
 
     expect(result.tab?.id).toBe(legacy.id);
     expect(materialize).not.toHaveBeenCalled();
-    expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.Opened);
+    expect(tabManager.lifecycle.get(d.tabHash)?.state).toBe(TabLifecycleState.Opened);
   });
 
   it('moves cleanup success from closing to removed after the tab list drops it', async () => {
@@ -185,10 +178,10 @@ describe('tab lifecycle registry', () => {
     vi.spyOn(Tab, 'closeById').mockResolvedValue([]);
 
     await closeTabWithLifecycle(tab);
-    expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.Closing);
+    expect(tabManager.lifecycle.get(d.tabHash)?.state).toBe(TabLifecycleState.Closing);
 
-    syncTabLifecycleWithTabs([]);
-    expect(getTabLifecycle(d.tabHash)).toBeNull();
+    tabManager.lifecycle.reconcile([]);
+    expect(tabManager.lifecycle.get(d.tabHash)).toBeNull();
   });
 
   it('moves cleanup failure from closing to close_failed', async () => {
@@ -207,8 +200,8 @@ describe('tab lifecycle registry', () => {
     // resolves (empty) so no caller needs a catch.
     await expect(closeTabWithLifecycle(tab)).resolves.toEqual([]);
 
-    expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.CloseFailed);
-    expect(getTabLifecycle(d.tabHash)?.error).toBe('cleanup failed');
+    expect(tabManager.lifecycle.get(d.tabHash)?.state).toBe(TabLifecycleState.CloseFailed);
+    expect(tabManager.lifecycle.get(d.tabHash)?.error).toBe('cleanup failed');
   });
 
   it('moves close action failure from closing to close_failed', async () => {
@@ -218,8 +211,8 @@ describe('tab lifecycle registry', () => {
 
     await expect(closeTabWithLifecycle(tab)).resolves.toEqual([]);
 
-    expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.CloseFailed);
-    expect(getTabLifecycle(d.tabHash)?.error).toBe('close failed');
+    expect(tabManager.lifecycle.get(d.tabHash)?.state).toBe(TabLifecycleState.CloseFailed);
+    expect(tabManager.lifecycle.get(d.tabHash)?.error).toBe('close failed');
   });
 
   it('batch close hides tabs only after the durable action acknowledges', async () => {
@@ -243,13 +236,13 @@ describe('tab lifecycle registry', () => {
     await batchStarted;
 
     expect(closeMany).toHaveBeenCalledWith(tabs.map((tab) => tab.id), null);
-    expect(getTabLifecycle(firstDock.tabHash)).toBeNull();
-    expect(getTabLifecycle(secondDock.tabHash)).toBeNull();
+    expect(tabManager.lifecycle.get(firstDock.tabHash)).toBeNull();
+    expect(tabManager.lifecycle.get(secondDock.tabHash)).toBeNull();
 
     acknowledge([]);
     await closing;
-    expect(getTabLifecycle(firstDock.tabHash)?.state).toBe(TabLifecycleState.Closing);
-    expect(getTabLifecycle(secondDock.tabHash)?.state).toBe(TabLifecycleState.Closing);
+    expect(tabManager.lifecycle.get(firstDock.tabHash)?.state).toBe(TabLifecycleState.Closing);
+    expect(tabManager.lifecycle.get(secondDock.tabHash)?.state).toBe(TabLifecycleState.Closing);
   });
 
   it('clears lifecycle entries when tabs_changed removes the tab', async () => {
@@ -259,18 +252,9 @@ describe('tab lifecycle registry', () => {
     vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([tab]);
     await setupTab(d);
 
-    syncTabLifecycleWithTabs([]);
+    tabManager.lifecycle.reconcile([]);
 
-    expect(getTabLifecycle(d.tabHash)).toBeNull();
-  });
-
-  it('clears key-only lifecycle entries when the tab list does not contain the dock', () => {
-    const d = dock();
-    setTabLifecycleForTests(d.tabHash, TabLifecycleState.OpenFailed, { error: 'materialize failed' });
-
-    syncTabLifecycleWithTabs([]);
-
-    expect(getTabLifecycle(d.tabHash)).toBeNull();
+    expect(tabManager.lifecycle.get(d.tabHash)).toBeNull();
   });
 
   it('does not materialize /dock/shell/new_terminal as a persistent tab', async () => {
@@ -282,35 +266,7 @@ describe('tab lifecycle registry', () => {
 
     expect(materialize).not.toHaveBeenCalled();
     expect(setupContent).toHaveBeenCalledTimes(1);
-    expect(getTabLifecycle(d.tabHash)).toBeNull();
-  });
-});
-
-describe('excludeClosingTabs', () => {
-  function entry(key: string, state: TabLifecycleState): [string, TabLifecycleEntry] {
-    return [key, { key, tabId: null, state, error: null, updatedAt: 0 }];
-  }
-
-  it('filters only Closing tabs; Opened/CloseFailed/absent stay', () => {
-    const dClosing = dock('5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01');
-    const dOpened = dock('5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaa02');
-    const dFailed = dock('5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaa03');
-    const dAbsent = dock('5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaa04');
-    const tabs = [tabFor(dClosing), tabFor(dOpened), tabFor(dFailed), tabFor(dAbsent)];
-    const lifecycles = new Map([
-      entry(dClosing.tabHash, TabLifecycleState.Closing),
-      entry(dOpened.tabHash, TabLifecycleState.Opened),
-      entry(dFailed.tabHash, TabLifecycleState.CloseFailed),
-    ]);
-
-    expect(excludeClosingTabs(tabs, lifecycles)).toEqual(tabs.slice(1));
-  });
-
-  it('falls back to tab.id as the key when there is no dock pointer', () => {
-    const tab = new Tab({ id: nextTabId(), pointer: '', name: 'Bare', visible: true });
-    const lifecycles = new Map([entry(tab.id, TabLifecycleState.Closing)]);
-
-    expect(excludeClosingTabs([tab], lifecycles)).toEqual([]);
+    expect(tabManager.lifecycle.get(d.tabHash)).toBeNull();
   });
 });
 
@@ -340,10 +296,26 @@ describe('workspace child adoption guard', () => {
     return DockPointer.forFile('/project/src/main.ts');
   }
 
-  afterEach(() => setActiveTabParent(null));
+  /** The host process whose display is doing the opening. */
+  const HOST = `agentic_process-${MD}`;
+  /** Put the host's own tab in the store so the URL host resolves to PARENT. */
+  function seedHostTab(): void {
+    tabManager.adoptGlobal([
+      new Tab({
+        id: PARENT,
+        pointer: DockPointer.forShell(HOST).toJSON() ?? '',
+        target_type: 'agentic_process',
+        target_id: MD,
+        visible: true,
+      }),
+    ]);
+  }
+
+  afterEach(() => tabManager.adoptGlobal([]));
 
   async function materializedParent(d: DockPointer): Promise<string | null | undefined> {
-    setActiveTabParent(PARENT);
+    seedHostTab();
+    d = d.withHost(HOST);
     mockNoExistingTabs();
     const spy = vi
       .spyOn(Tab, 'getFromDockPointer')
@@ -366,10 +338,10 @@ describe('workspace child adoption guard', () => {
   it('never materializes (so never adopts) the new-terminal launcher landing', async () => {
     // It redirects into a real shell first; `shouldMaterializeDock` keeps it
     // away from the chokepoint entirely, so there is no tab to adopt.
-    setActiveTabParent(PARENT);
+    seedHostTab();
     mockNoExistingTabs();
     const spy = vi.spyOn(Tab, 'getFromDockPointer');
-    await setupTab(new DockPointer(ViewType.SHELL, 'new_terminal'));
+    await setupTab(new DockPointer(ViewType.SHELL, 'new_terminal').withHost(HOST));
     expect(spy).not.toHaveBeenCalled();
   });
 
@@ -386,8 +358,8 @@ describe('workspace child adoption guard', () => {
   });
 
   it('does not re-parent an EXISTING process tab on navigation (reuse fast-path)', async () => {
-    setActiveTabParent(PARENT);
-    const d = processDock();
+    seedHostTab();
+    const d = processDock().withHost(HOST);
     const existing = new Tab({
       id: nextTabId(),
       pointer: d.toJSON() ?? '',
@@ -470,8 +442,8 @@ describe('workspace child adoption guard', () => {
   });
 
   it('still re-parents an existing asset tab into the active workspace', async () => {
-    setActiveTabParent(PARENT);
-    const d = assetDock();
+    seedHostTab();
+    const d = assetDock().withHost(HOST);
     const existing = new Tab({
       id: nextTabId(),
       pointer: d.toJSON() ?? '',
@@ -491,5 +463,67 @@ describe('workspace child adoption guard', () => {
       (spy.mock.calls[0][1] as { parentTabId?: string | null } | undefined)
         ?.parentTabId,
     ).toBe(PARENT);
+  });
+});
+
+describe('the URL names the workspace host', () => {
+  const PROJ = 'dd682350-c185-52c9-a92b-d0667141b069';
+  const ASSET = 'a684848a-af63-4c8a-988e-37a2c01b20b5';
+  const PROC = 'abc1e873-1ae2-4c55-9242-6b4ddea51420';
+
+  /** The process tab a hosted document should be adopted under. */
+  function processTabRow(): Tab {
+    return new Tab({
+      id: nextTabId(),
+      pointer: DockPointer.forShell(`agentic_process-${PROC}`).toJSON() ?? '',
+      target_type: 'agentic_process',
+      target_id: PROC,
+      project_id: PROJ,
+      visible: true,
+    });
+  }
+
+  it('adopts the document under the host in the URL, with no ambient slot', async () => {
+    const host = processTabRow();
+    tabManager.adoptGlobal([host]);
+
+    const hosted = DockPointer.fromUrl(
+      `/dock/project/${PROJ}/process/agentic_process-${PROC}/display/editor/markdown/typeid/markdown-${ASSET}`,
+    );
+    const doc = new Tab({
+      id: nextTabId(),
+      pointer: hosted.toJSON() ?? '',
+      target_type: 'markdown',
+      target_id: ASSET,
+      project_id: PROJ,
+      visible: true,
+    });
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([host]);
+    vi.spyOn(Tab, 'activateById').mockResolvedValue([]);
+    const mint = vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([doc]);
+
+    await setupTab(hosted);
+
+    // The parent edge comes from the URL, resolved by a pure store lookup — no
+    // project resolve, no "which chat discusses this asset" query, no process
+    // creation, none of which a route loader should ever await.
+    expect(mint).toHaveBeenCalledTimes(1);
+    expect(mint.mock.calls[0][1]).toMatchObject({ parentTabId: host.id });
+  });
+
+  it('falls back cleanly when the host tab is not open yet (cold link)', async () => {
+    tabManager.adoptGlobal([]);
+
+    const hosted = DockPointer.fromUrl(
+      `/dock/project/${PROJ}/process/agentic_process-${PROC}/display/editor/markdown/typeid/markdown-${ASSET}`,
+    );
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([]);
+    vi.spyOn(Tab, 'activateById').mockResolvedValue([]);
+    const mint = vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([]);
+
+    await setupTab(hosted);
+
+    expect(mint).toHaveBeenCalledTimes(1);
+    expect(mint.mock.calls[0][1]?.parentTabId ?? null).toBeNull();
   });
 });

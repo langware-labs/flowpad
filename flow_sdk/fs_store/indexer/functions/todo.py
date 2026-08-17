@@ -47,15 +47,6 @@ def todo_fn(
     return out
 
 
-def todo_id(ref: FSRef) -> str:
-    """Stable, filesystem-safe **UUID** id derived from the legacy collector key
-    ``todo:<filename-stem>`` — hashed into a uuid5 with the same
-    ``f"{type}:{key}"`` formula ``Entity.allocate_id`` uses, so it matches the DB
-    id and is free of any path-illegal character.
-    """
-    return mint_uuid(todo_identity_key(ref), namespace=uuid.NAMESPACE_DNS)
-
-
 def todo_identity_key(ref: FSRef | Path) -> str:
     return f"{RecordType.TODO_FILE}:todo:{Path(getattr(ref, 'path', ref)).stem}"
 

@@ -2,7 +2,7 @@ import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useEffect, useMemo, useState } from 'react';
 import { LayoutGrid, type LucideIcon } from 'lucide-react';
-import { APIEntity, dataManager, Project, Tab, TypeId, Wiki, WikiEntry } from '@sdk';
+import { APIEntity, dataManager, Project, tabManager, TypeId, Wiki, WikiEntry } from '@sdk';
 import { DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
 import { wikiAuthorityForPage } from '@src/components/wiki/resolve-wiki';
 import { useWikiResolveResult } from '@src/routes/loaders/wiki-resolve-store';
@@ -10,7 +10,6 @@ import { buildDockPointer } from '@src/components/conversation/EntityChip';
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { resolveAncestorChain, type AncestorNode } from '@src/navigation/entity-ancestors';
-import { getAllTabsSnapshot } from '@src/tabs/all-tabs-store';
 import { useContext } from '@src/hooks/useContext';
 
 /**
@@ -32,7 +31,7 @@ import { useContext } from '@src/hooks/useContext';
  *   Phase 0 (sync, first frame) — project from context, current entity from the
  *     URL's own target. If the dock target is already the context's active
  *     entity, its display name is in hand immediately.
- *   Phase 1 (microtask on a warm cache) — `Tab.resolveDockTarget` upgrades the
+ *   Phase 1 (microtask on a warm cache) — `tabManager.resolveDockTarget` upgrades the
  *     label and covers path-addressed docks the URL alone can't name.
  *   Phase 2 — the ancestor walk fills the middle in.
  *
@@ -131,7 +130,7 @@ function basename(ref: string | null): string | null {
  *  shell). The open tab already carries the app's canonical name for it. */
 function viewLabel(dock: DockPointer | null): string {
   if (!dock) return i18n._(HOME_CRUMB_LABEL);
-  const tab = getAllTabsSnapshot().find((t) => t.getKey() === dock.tabHash);
+  const tab = tabManager.findByDockKey(dock.tabHash);
   return tab?.name?.trim() || labelForType(dock.viewType ?? '') || i18n._(HOME_CRUMB_LABEL);
 }
 
@@ -214,7 +213,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
               targetTypeId: wikiPageTypeId,
               target: await dataManager.getByTypeId<APIEntity<any>>(wikiPageTypeId).catch(() => null),
             }
-          : await Tab.resolveDockTarget(dock);
+          : await tabManager.resolveDockTarget(dock);
         if (!live) return;
         setResolved({ typeId: targetTypeId ?? null, entity: (target as APIEntity<any>) ?? null });
 

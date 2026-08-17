@@ -6,13 +6,12 @@ import { OpenProjectComponent } from '@src/components/open-project-component/ope
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { WikiTip } from '@src/components/wiki-tip';
 import { useProjects } from '@src/hooks/use-projects';
-import { useContext } from '@src/hooks/useContext';
+import { useProjectLocation } from '@src/hooks/use-project-location';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { tagAttrs } from '@src/tags/tag-attrs';
-import { fsManager } from '@sdk';
 import { ExternalLink, ArrowLeftRight } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 function isRootPath(path: string | null | undefined): boolean {
   if (!path) return false;
@@ -35,39 +34,13 @@ interface StatusBarProps {
 
 export function StatusBar({ className = '' }: StatusBarProps) {
   const { t } = useLingui();
-  const { project, computeNode, bootstrapInfo, workdir } = useContext();
-  const workspacePath = bootstrapInfo?.desktop_info?.paths?.workspace;
+  const { project, computeNode, projectPath, openProjectFolder } = useProjectLocation();
   const { refetch: refetchProjects } = useProjects();
   const { navigation } = useDockNavigation();
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
 
-  // Get the active working directory path — prefer context workdir (reflects active tab),
-  // fall back to project path for cases where workdir hasn't been set yet (e.g. bootstrap).
-  const projectPath = useMemo(() => {
-    if (workdir) return workdir;
-    if (!project) return null;
-    let path = project.fs_storage_mount_path;
-    if (!path && workspacePath && project.displayName) {
-      path = `${workspacePath}/${project.displayName}`;
-    }
-    if (!path) {
-      path = project.name || project.displayName || '';
-    }
-    return path;
-  }, [workdir, project, workspacePath]);
-
   const isRoot = isRootPath(project?.fs_storage_mount_path);
   const openFolderLabel = t`Open folder: ${projectPath}`;
-
-  const handleOpenFolder = useCallback(async () => {
-    if (!computeNode?.typeId || !projectPath) return;
-    try {
-      const relativePath = projectPath.replace(/^\//, '');
-      await fsManager.open(computeNode.typeId, relativePath);
-    } catch (error) {
-      console.error('[StatusBar] Failed to open folder:', error);
-    }
-  }, [computeNode?.typeId, projectPath]);
 
   const openProjectModal = useCallback(() => {
     setIsProjectModalOpen(true);
@@ -147,7 +120,7 @@ export function StatusBar({ className = '' }: StatusBarProps) {
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
               <button
-                onClick={() => void handleOpenFolder()}
+                onClick={() => void openProjectFolder()}
                 className="flex items-center text-[10px] text-muted-foreground/70 transition-colors hover:text-primary"
                 aria-label={openFolderLabel}
               >

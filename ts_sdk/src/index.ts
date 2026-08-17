@@ -26,6 +26,7 @@ export * from './stores/fsStore';
 export * from './tags/EventBus';
 export * from './tags/grammar';
 export * from './tags/ws-bridge';
+export * from './tabs/index';
 export * from './stores/ontology-store';
 export * from './utils';
 export * from './websocket';

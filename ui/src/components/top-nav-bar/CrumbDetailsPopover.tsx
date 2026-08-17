@@ -1,10 +1,11 @@
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import { useLingui } from '@lingui/react/macro';
-import { Check, Copy, ExternalLink, FolderOpen } from 'lucide-react';
-import { copyToClipboard, FSRef, TypeId } from '@sdk';
+import { ExternalLink, FolderOpen } from 'lucide-react';
+import { FSRef, TypeId } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { CopyPathButton } from './CopyPathButton';
 
 /**
  * "What exactly am I looking at" — the details behind the last breadcrumb.
@@ -32,15 +33,6 @@ export function CrumbDetailsPopover({
 }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
-  const [copied, setCopied] = useState(false);
-
-  const copy = useCallback(() => {
-    void copyToClipboard(path);
-    // `copyToClipboard` only alerts on FAILURE, so success needs its own signal.
-    // The repo's idiom is a 1.5s check-mark (see version-popover).
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
-  }, [path]);
 
   const parentDir = path.replace(/[\\/]+$/, '').replace(/[\\/][^\\/]+$/, '') || path;
 
@@ -62,17 +54,7 @@ export function CrumbDetailsPopover({
           {filename || label}
         </div>
 
-        <button
-          type="button"
-          onClick={copy}
-          title={t`Copy path`}
-          aria-label={t`Copy path`}
-          data-testid="top-nav-crumb-copy-path"
-          className="mt-1.5 flex w-full items-center gap-1.5 rounded-sm px-1 py-1 text-start font-mono text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
-        >
-          <span className="min-w-0 flex-1 truncate">{path}</span>
-          {copied ? <Check className="h-3 w-3 shrink-0 text-green-500" /> : <Copy className="h-3 w-3 shrink-0" />}
-        </button>
+        <CopyPathButton path={path} testId="top-nav-crumb-copy-path" className="mt-1.5 w-full" />
 
         <div className="mt-2 flex items-center gap-1">
           <button

@@ -24,6 +24,7 @@ from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.scope import Scope
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.utils.serialization import iso_to_datetime
+from flow_sdk.fs_store.identifier import mint_uuid
 
 PROJECT_RESOURCE_TYPE = "system_resource_claude_project"
 
@@ -70,7 +71,10 @@ def _int_field(value: Any) -> int:
 
 
 def _project_id_for_cwd(cwd: str) -> str:
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{canonical_posix_path(cwd)}"))
+    # Same key + namespace as ``Project.derive_id_for_path`` (project.py). Kept as
+    # its own function because that one returns None for a non-project cwd,
+    # which this caller does not want — the FORMULA is what must not drift.
+    return mint_uuid(f"project:{canonical_posix_path(cwd)}", namespace=uuid.NAMESPACE_DNS)
 
 
 def _index_claude_dirs_by_cwd(claude_root: Path) -> dict[str, Path]:

@@ -31,7 +31,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
-import { setupTab } from '@src/tabs/tab-lifecycle';
+import { setupTab } from '@src/tabs/tab-content-lifecycle';
 import { dockForProjectEntry } from '@src/tabs/project-entry';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 

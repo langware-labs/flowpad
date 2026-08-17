@@ -252,6 +252,7 @@ const WorkerRow = memo(function WorkerRow({
 }) {
   const rename = useInlineRename(row.name, async (next) => {
     await AgenticProcess.renameById(row.processId, next);
+    AgenticProcess.markEditById(row.processId);
     onRenamed();
   });
   const StatusIcon = row.statusIcon?.icon;

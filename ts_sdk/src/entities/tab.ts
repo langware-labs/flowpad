@@ -238,7 +238,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
   // canonical, project-filtered, ordered rows. The frontend renders them as-is.
 
   /** GET /graph/tab/list?project=<id> — the deterministic ordered render list for
-   *  one project view (projectless tabs inline). `null` ⇒ no active project. */
+   *  one exact project scope. `null` selects the separate Global scope. */
   static async list(projectId: string | null = null): Promise<Tab[]> {
     const info = new ActionInfo('list', Tab.type, null, 'GET');
     info.queryParameters = { project: projectId ?? '' };

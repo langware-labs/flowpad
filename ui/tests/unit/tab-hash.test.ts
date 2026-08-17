@@ -66,6 +66,29 @@ describe('DockPointer.tabHash', () => {
     expect(plain).toBe(withOpts);
   });
 
+  it('excludes the workspace host — one document is one tab, whoever displays it', () => {
+    // The load-bearing claim of the hosted-display URL. The host rides in
+    // `options` precisely so identity is untouched: existing stored rows keep
+    // working with no migration, the same doc shown by two agents shares one
+    // tab, and the backend (which stores this string) never sees the host.
+    const url = '/dock/project/proj-1/editor/markdown/typeid/markdown-9';
+    const plain = DockPointer.fromUrl(url);
+    const hosted = DockPointer.fromUrl(
+      '/dock/project/proj-1/process/agentic_process-abc/display/editor/markdown/typeid/markdown-9',
+    );
+
+    expect(hosted.hostProcessId).toBe('agentic_process-abc');
+    expect(plain.hostProcessId).toBeNull();
+    // …yet identity and the stored form are byte-identical.
+    expect(hosted.tabHash).toBe(plain.tabHash);
+    expect(hosted.toJSON()).toBe(plain.toJSON());
+    // Two different hosts showing the same document also collapse to one tab.
+    expect(hosted.withHost('agentic_process-zzz').tabHash).toBe(plain.tabHash);
+    // The URL still SPELLS the host as path segments (never `?host=`).
+    expect(hosted.toUrl()).toContain('/process/agentic_process-abc/display/');
+    expect(hosted.toUrl()).not.toContain('host=');
+  });
+
   it('round-trips through the strip split: `viewType|pointer`', () => {
     // Generic (pointer-keyed) viewType — ASSETS folds its sub-pointer into a
     // scope key instead (covered in assets-tab-scope-hash.test.ts).

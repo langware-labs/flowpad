@@ -98,7 +98,12 @@ export function useActiveJournal(): {
 } {
   const { data: journals = [], refetch } = useJournals();
   const journal = useMemo(() => journals.find((j) => j.isActive) ?? null, [journals]);
-  return { journal, journeyId: journal?.journey_id ?? null, refresh: () => void refetch() };
+  // Stable for the same reason its sibling in `useShownJourney` is: a fresh
+  // arrow per render rebuilds every consumer that closes over it — here
+  // `useBusyRun`'s memoised `run` — and an effect keyed on one of those is how
+  // the tab-freezing render loop got started.
+  const refresh = useCallback(() => void refetch(), [refetch]);
+  return { journal, journeyId: journal?.journey_id ?? null, refresh };
 }
 
 const EMPTY_GRAPH = new JourneyGraph();

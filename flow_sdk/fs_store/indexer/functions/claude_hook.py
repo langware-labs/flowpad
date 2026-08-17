@@ -239,10 +239,6 @@ def claude_hook_identity_key(ref: FSRef | Path) -> str:
     return f"{RecordType.CLAUDE_HOOK}:{key}"
 
 
-def claude_hook_id(ref: FSRef) -> str:
-    return mint_uuid(claude_hook_identity_key(ref), namespace=uuid.NAMESPACE_DNS)
-
-
 def extract_claude_hook(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse one CLAUDE_HOOK FSRef into a record matching the legacy hook item shape."""
     path = Path(ref.path)

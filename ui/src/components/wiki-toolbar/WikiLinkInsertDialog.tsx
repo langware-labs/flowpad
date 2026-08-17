@@ -57,11 +57,18 @@ interface WikiLinkInsertDialogProps {
    * fires; the next sync_to_db will pick it up.
    */
   sourceTypeId: string | null;
+  onUserEdit?: () => void;
 }
 
 type Stage = { kind: 'search' } | { kind: 'name-prompt'; targetTypeId: TypeId };
 
-export function WikiLinkInsertDialog({ open, onOpenChange, editorRef, sourceTypeId }: WikiLinkInsertDialogProps) {
+export function WikiLinkInsertDialog({
+  open,
+  onOpenChange,
+  editorRef,
+  sourceTypeId,
+  onUserEdit,
+}: WikiLinkInsertDialogProps) {
   const [query, setQuery] = useState('');
   const [recordTypeFilter, setRecordTypeFilter] = useState<string>(ALL_TYPES_VALUE);
   const [stage, setStage] = useState<Stage>({ kind: 'search' });
@@ -102,9 +109,10 @@ export function WikiLinkInsertDialog({ open, onOpenChange, editorRef, sourceType
         const tr = view.state.tr.insertText(name, from, to);
         tr.addMark(from, from + name.length, linkType.create({ href }));
         view.dispatch(tr);
+        onUserEdit?.();
       });
     },
-    [editorRef],
+    [editorRef, onUserEdit],
   );
 
   const triggerSourceReindex = useCallback(async () => {
@@ -156,6 +164,7 @@ export function WikiLinkInsertDialog({ open, onOpenChange, editorRef, sourceType
       if (entity) {
         (entity as { name?: string }).name = name;
         await entity.save();
+        entity.markEdit();
       }
     } catch (e) {
       console.warn('[WikiLinkInsertDialog] saving entity name failed:', e);

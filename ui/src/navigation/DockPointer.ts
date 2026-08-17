@@ -100,6 +100,64 @@ export const TRANSCRIPT_TIME_PARAM = 't';
 export const VIEW_MODE_PARAM = 'viewMode';
 
 /**
+ * The agentic process whose DISPLAY is showing this dock — the vibe workspace
+ * hosting it. Written by whoever opens the content (`flow show`, a click inside
+ * the workspace), read by the loader to stamp `parent_tab_id`, so host identity
+ * is a fact of the URL instead of something re-derived from ambient state.
+ *
+ * It rides in `options`, and is therefore EXCLUDED from `tabHash` for the same
+ * reason `layout` and `viewMode` are: which workspace is showing a document is
+ * presentation context, not the document's identity. One document is one tab
+ * however many agents display it, existing rows keep their stored pointer
+ * (no migration), and the backend never sees the composite form.
+ *
+ * Where the URL can nest it, it is spelled as path segments —
+ * `/dock/project/<P>/process/<typeid>/display/<tail>` — which `fromUrl` lifts
+ * into this option and `toUrl` puts back. A hosted dock with no project segment
+ * to nest under (a terminal, a web app) keeps the plain `?host=` query form.
+ * Pairs with `DockPointer.hostProcessId` / `withHost()`.
+ */
+export const HOST_PARAM = 'host';
+
+/** Path markers for {@link HOST_PARAM}: `<projectId>/process/<typeid>/display/<tail>`. */
+const HOST_SEGMENT = 'process';
+const HOST_DISPLAY_SEGMENT = 'display';
+
+/**
+ * Lift `process/<typeid>/display/` out of a PROJECT pointer, returning the
+ * host-free pointer plus the host it carried. The inverse of
+ * {@link embedHostInProjectPointer}. Host-free pointers pass through untouched,
+ * so every existing project URL parses exactly as before.
+ */
+function liftHostFromProjectPointer(pointer: string | undefined): {
+  pointer: string | undefined;
+  hostProcessId: string | null;
+} {
+  if (!pointer) return { pointer, hostProcessId: null };
+  const seg = pointer.split('/');
+  // [0]=<projectId> [1]='process' [2]=<typeid> [3]='display' [4…]=the tail
+  if (seg.length < 5 || seg[1] !== HOST_SEGMENT || seg[3] !== HOST_DISPLAY_SEGMENT) {
+    return { pointer, hostProcessId: null };
+  }
+  return { pointer: [seg[0], ...seg.slice(4)].join('/'), hostProcessId: seg[2] || null };
+}
+
+/**
+ * Put the host back into a PROJECT pointer as path segments. Returns the
+ * pointer unchanged when there is no host, or when the pointer addresses the
+ * project itself — a host with nothing displayed is not an address.
+ */
+function embedHostInProjectPointer(pointer: string | undefined, hostProcessId: string | null): string | undefined {
+  if (!pointer || !hostProcessId) return pointer;
+  const slash = pointer.indexOf('/');
+  if (slash < 0) return pointer;
+  const projectId = pointer.slice(0, slash);
+  const tail = pointer.slice(slash + 1);
+  if (!tail) return pointer;
+  return `${projectId}/${HOST_SEGMENT}/${hostProcessId}/${HOST_DISPLAY_SEGMENT}/${tail}`;
+}
+
+/**
  * URL query-param key selecting which translated body of an asset to show. It
  * carries a language code (`es`, `he`, `fr-CA`, …); absent means the original
  * doc. Like the other option params it rides in `options` and is deliberately
@@ -411,6 +469,19 @@ export class DockPointer implements IDockPointer {
     return isViewMode(value) ? value : null;
   }
 
+  /**
+   * The agentic process whose display is showing this dock, or null. See
+   * {@link HOST_PARAM} — this is URL-carried host identity, not a lookup.
+   */
+  get hostProcessId(): string | null {
+    return this.options?.[HOST_PARAM] ?? null;
+  }
+
+  /** Clone this dock hosted by a process's display, or unhosted with null. */
+  withHost(processId: string | null): DockPointer {
+    return this.withOption(HOST_PARAM, processId);
+  }
+
   /** Clone this dock with a page-local view-mode override, or remove it with null. */
   withViewMode(mode: ViewMode | null): DockPointer {
     const nextOptions = { ...(this.options ?? {}) };
@@ -546,6 +617,23 @@ export class DockPointer implements IDockPointer {
 
     // Parse options from query params
     const options = searchParams ? parseQueryParams(searchParams) : {};
+
+    // The workspace host is spelled as PATH segments but carried as an option,
+    // so it stays out of tab identity (see HOST_PARAM). Lifting here is what
+    // keeps every downstream reader of a project sub-pointer — splitProjectPointer,
+    // targetTypeId, the AssetsPage parsers — unaware that a host exists at all.
+    if (viewType === ViewType.PROJECT) {
+      const lifted = liftHostFromProjectPointer(decodedPointer);
+      if (lifted.hostProcessId) {
+        return new DockPointer(
+          viewType as ViewType,
+          lifted.pointer,
+          { ...options, [HOST_PARAM]: lifted.hostProcessId },
+          layout,
+          page,
+        );
+      }
+    }
 
     return new DockPointer(viewType as ViewType, decodedPointer, options, layout, page);
   }
@@ -1185,9 +1273,31 @@ export class DockPointer implements IDockPointer {
     if (!pointer) return { projectId: null, assetSubPointer: '' };
     const slash = pointer.indexOf('/');
     if (slash < 0) return { projectId: pointer, assetSubPointer: '' };
+    const assetSubPointer = pointer.slice(slash + 1);
+    // Tripwire. The host is lifted out of the pointer in `fromUrl` and only put
+    // back when serializing, so a `process/` prefix here means a stored pointer
+    // or a hand-built dock kept the composite form. Left alone it degrades
+    // silently — `AssetDocPointer.parse` throws `unknown mode "process"`,
+    // `loadAssetRoute` swallows it with a console.warn, and the user gets a
+    // blank pane. Fail loudly at the one chokepoint every consumer shares.
+    if (assetSubPointer.startsWith(`${HOST_SEGMENT}/`)) {
+      // Loud, but NOT fatal: this is a read path — three components call it
+      // during render (AssetsPage, useAssetsModel, HubProjectPage) and so does
+      // `isAdoptableChildDock` on the navigation path. Throwing would upgrade a
+      // degraded pane into a dead screen. Strip and carry on; the write
+      // boundary (`fromUrl`/`withHost`) is where a composite is refused.
+      console.error(
+        `[DockPointer] project pointer still carries its workspace host: ${pointer}. ` +
+          'Build it through DockPointer.fromUrl/withHost so the host rides in options.',
+      );
+      return {
+        projectId: pointer.slice(0, slash),
+        assetSubPointer: liftHostFromProjectPointer(pointer).pointer?.slice(slash + 1) ?? '',
+      };
+    }
     return {
       projectId: pointer.slice(0, slash),
-      assetSubPointer: pointer.slice(slash + 1),
+      assetSubPointer,
     };
   }
 
@@ -2163,10 +2273,33 @@ export class DockPointer implements IDockPointer {
   toUrlSegments(): { viewType: ViewType; pointer?: string; layout: Layout; page: PageId } {
     return {
       viewType: this.viewType!,
-      pointer: this.pointer,
+      pointer: this.urlParts.pointer,
       layout: this.layout,
       page: this.page,
     };
+  }
+
+  /**
+   * This dock as it is SERIALIZED — the stored pointer with the host put back as
+   * path segments where it can nest, and the query options that go with that
+   * choice. The inverse of `fromUrl`'s lift.
+   *
+   * Both halves come from one branch on purpose: the host must be stripped from
+   * the query exactly when the path absorbed it. Deriving that twice and
+   * comparing the results would make it a coincidence rather than a fact.
+   * Everything that serializes goes through here; everything that reads identity
+   * or content uses `pointer`.
+   */
+  private get urlParts(): { pointer?: string; options?: Record<string, string> } {
+    const host = this.hostProcessId;
+    const embedded = host && this.viewType === ViewType.PROJECT
+      ? embedHostInProjectPointer(this.pointer, host)
+      : undefined;
+    // A hosted dock with no project segment to nest under (a terminal, a web
+    // app) keeps the plain `?host=` form rather than losing the host.
+    if (!embedded || embedded === this.pointer) return { pointer: this.pointer, options: this.options };
+    const { [HOST_PARAM]: _host, ...rest } = this.options ?? {};
+    return { pointer: embedded, options: rest };
   }
 
   /**
@@ -2176,18 +2309,21 @@ export class DockPointer implements IDockPointer {
     if (!this.viewType) {
       throw new NavigationError(NavigationErrorType.UNKNOWN_VIEW, 'Cannot serialize DockPointer without a view type');
     }
-    return buildDockUrl(currentPath, this.viewType, this.pointer, this.options, this.layout, this.page);
+    const { pointer, options } = this.urlParts;
+    return buildDockUrl(currentPath, this.viewType, pointer, options, this.layout, this.page);
   }
+
 
   /**
    * Convert options to URLSearchParams
    */
   toSearchParams(): URLSearchParams {
-    if (!this.options) {
+    const { options } = this.urlParts;
+    if (!options) {
       return new URLSearchParams();
     }
     const params = new URLSearchParams();
-    Object.entries(this.options).forEach(([key, value]) => {
+    Object.entries(options).forEach(([key, value]) => {
       if (value !== undefined) {
         params.set(key, value);
       }

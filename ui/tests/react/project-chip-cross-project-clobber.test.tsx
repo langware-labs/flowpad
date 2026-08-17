@@ -40,9 +40,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DockPointer } from '@src/navigation/DockPointer';
 import { loadAgentApp } from '@src/routes/loaders/main-loader';
-import { applyAllTabs } from '@src/tabs/all-tabs-store';
-import { resetTabLifecycleForTests } from '@src/tabs/tab-lifecycle';
-import { useTabProjectBuckets } from '@src/tabs/useTabs';
+import { tabManager } from '@sdk';
+import { resetTabContentLifecycleForTests } from '@src/tabs/tab-content-lifecycle';
+import { useTabProjectBuckets } from '@src/tabs/use-tab-manager';
 
 const PROJECT_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const PROJECT_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -108,8 +108,8 @@ describe('active-projects chip — opening a tab in project B must not drop proj
   beforeEach(async () => {
     window.localStorage.clear();
     await dataManager.clearCache();
-    applyAllTabs([]);
-    resetTabLifecycleForTests();
+    tabManager.adoptGlobal([]);
+    resetTabContentLifecycleForTests();
     seedConnectedWebSocket();
 
     // Two real Project entities, so buckets resolve without per-project network.
@@ -182,8 +182,8 @@ describe('active-projects chip — opening a tab in project B must not drop proj
 
   afterEach(() => {
     vi.restoreAllMocks();
-    applyAllTabs([]);
-    resetTabLifecycleForTests();
+    tabManager.adoptGlobal([]);
+    resetTabContentLifecycleForTests();
     (connectionManager as unknown as { socket: unknown }).socket = null;
   });
 

@@ -55,12 +55,9 @@ vi.mock('@src/hooks/flow-hooks', async (orig) => ({
   ...(await orig<typeof import('@src/hooks/flow-hooks')>()),
   useActiveViewer: () => {},
 }));
-vi.mock('@src/tabs/useTabs', async (orig) => ({
-  ...(await orig<typeof import('@src/tabs/useTabs')>()),
+vi.mock('@src/tabs/use-tab-manager', async (orig) => ({
+  ...(await orig<typeof import('@src/tabs/use-tab-manager')>()),
   useTerminalTabs: () => [],
-}));
-vi.mock('@src/tabs/tab-lifecycle', async (orig) => ({
-  ...(await orig<typeof import('@src/tabs/tab-lifecycle')>()),
   useTabLifecycle: () => undefined,
 }));
 vi.mock('@src/components/view-mode', async (orig) => ({

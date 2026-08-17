@@ -24,7 +24,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useTabProjectBuckets } from '@src/tabs/useTabs';
+import { useTabProjectBuckets } from '@src/tabs/use-tab-manager';
 
 const PROJECT_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const PROJECT_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
