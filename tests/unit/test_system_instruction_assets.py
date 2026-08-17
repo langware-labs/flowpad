@@ -110,7 +110,7 @@ async def test_system_instruction_assets_applied_to_worker_options(records_root,
 
 
 @pytest.mark.asyncio
-async def test_load_embedded_agent_materializes_into_instruction_assets(records_root, tmp_path, monkeypatch):
+async def test_load_embedded_subagent_materializes_into_instruction_assets(records_root, tmp_path, monkeypatch):
     async def _save_noop(self):
         return self
 
@@ -122,11 +122,11 @@ async def test_load_embedded_agent_materializes_into_instruction_assets(records_
     )
     process = _process(WorkerType.CLAUDE_CODE, tmp_path)
 
-    result = await process.load_embedded_agent_action(str(agent_md))
+    result = await process.load_embedded_subagent_action(str(agent_md))
     assert result.status == "SUCCESS"
     assert result.data["ok"] is True
     assert result.data["name"] == "persona-probe"
-    # Identity is persisted as the agent's ENTITY ref, not a legacy name entry.
+    # Identity is persisted as the sub-agent's ENTITY ref, not a legacy name entry.
     from flow_sdk.fs_store.fs_ref import FSRef
     from flow_sdk.fs_store.indexer.functions.subagent import subagent_peek_entity_id
     from flow_sdk.fs_store.record_types import RecordType
@@ -134,7 +134,7 @@ async def test_load_embedded_agent_materializes_into_instruction_assets(records_
     expected_ref = f"subagent-{subagent_peek_entity_id(FSRef(agent_md, record_type=RecordType.SUBAGENT))}"
     assert result.data["ref"] == expected_ref
     assert [str(r) for r in process.embedded_asset_refs] == [expected_ref]
-    assert not process.embedded_agent_ids
+    assert not process.embedded_subagent_ids
 
     materialized = process.embedded_assets.os_path / ".claude" / "agents" / "persona-probe.md"
     assert materialized.exists()
@@ -178,9 +178,9 @@ async def test_persona_survives_fresh_entity_instance(records_root, tmp_path, mo
             **extra,
         )
 
-    # Instance A: the request that handled load-embedded-agent (UI embed call).
+    # Instance A: the request that handled load-embedded-subagent (UI embed call).
     proc_a = make_process()
-    result = await proc_a.load_embedded_agent_action(str(agent_md))
+    result = await proc_a.load_embedded_subagent_action(str(agent_md))
     assert result.status == "SUCCESS"
 
     # Instance B: the fresh instance the prompt/launch request operates on,

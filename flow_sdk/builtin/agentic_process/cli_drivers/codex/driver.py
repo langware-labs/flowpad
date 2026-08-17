@@ -100,7 +100,7 @@ class CodexDriver:
         """Build a Codex CLI command for ``process``.
 
         Codex doesn't accept inline ``--agents`` like Claude. We surface the
-        embedded agent names as ``skill_names`` so ``cmd_line`` reflects them
+        embedded sub-agent names as ``skill_names`` so ``cmd_line`` reflects them
         (some tests assert on this); the instruction bodies are delivered via
         generated process instruction assets.
         """

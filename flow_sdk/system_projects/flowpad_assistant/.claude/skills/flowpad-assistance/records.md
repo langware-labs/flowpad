@@ -92,7 +92,7 @@ Always pass `--types` when you know the type — it scopes parsing/upsert to you
 
 The new TypeId is `<type>-<uid_field_value>` — for tasks that's `task-<task_id>`, for skills it's `skill-<skill_id>`, etc. The `after_index` hint in `flow schema info` tells you the exact form. Pass it to `flow navigate entity <typeid>` per [`navigate.md`](navigate.md).
 
-When you are running as the Vibe agent, do not use `flow navigate`; use
+When you are running as the Vibe sub-agent, do not use `flow navigate`; use
 `flow show entity <typeid>` instead so the entity opens in the display pane.
 
 ## Worked example — create a task and open it

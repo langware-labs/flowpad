@@ -24,10 +24,10 @@ const RunButton = forwardRef<HTMLButtonElement, { label: string; onClick?: () =>
 });
 
 /**
- * "Run Automation" surface for a GraphContext: pick an agent or a skill, launch
+ * "Run Automation" surface for a GraphContext: pick a sub-agent or a skill, launch
  * an agentic process keyed to the context (its `target_typeid_str`), and stream
  * it in the standard `EntityExecutionPanel` side window. The picked automation
- * is attached (agent → `loadEmbeddedAgent`, skill → `embeddedAssets.attach`) and
+ * is attached (sub-agent → `loadEmbeddedSubagent`, skill → `embeddedAssets.attach`) and
  * the context's members are stamped as the process's shared context so the run
  * executes *on* the context.
  */
@@ -62,7 +62,7 @@ export function RunAutomationPanel({ ctx }: { ctx: GraphContext }) {
       try {
         const { type } = parseTypeid(d.typeid);
         if (type === 'subagent' && d.posix_path) {
-          await proc.loadEmbeddedAgent(d.posix_path);
+          await proc.loadEmbeddedSubagent(d.posix_path);
         } else {
           await proc.embeddedAssets.attach(d.typeid);
         }
