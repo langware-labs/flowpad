@@ -3,7 +3,7 @@
  * tabs — Overview (chain tree + limits remaining + effective filters), Usage,
  * Models. The active tab is the URL's, so switching is a navigation.
  */
-import { PageId, ViewType, type LLMEndpoint } from '@sdk';
+import type { LLMEndpoint } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ArrowLeft, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { useMemo } from 'react';
@@ -18,8 +18,8 @@ import { LimitsRemaining } from './LimitsRemaining';
 import { CredentialChip, EndpointLink, KindBadge, ProviderBadge } from './LlmEndpointsList';
 import { ModelsList } from './ModelsList';
 import { UsagePanel } from './UsagePanel';
-import { canConfigure, canRemove, endpointIdFromTypeId, endpointTypeId } from './endpoint-catalog';
-import { LLM_ENDPOINT_TABS, llmEndpointsPointer, type LlmEndpointTab } from './llm-endpoints-pointer';
+import { canConfigure, canRemove, endpointTypeId } from './endpoint-catalog';
+import { LLM_ENDPOINT_TABS, openLlmEndpoint, type LlmEndpointTab } from './llm-endpoints-pointer';
 import { useLlmEndpointChain } from './use-llm-endpoints';
 
 export interface LlmEndpointDetailProps {
@@ -82,8 +82,7 @@ export function LlmEndpointDetail({
   // Hop ids are typeids; the pointer is the bare uuid.
   const entryTypeId = endpointTypeId(endpointId);
   const entryHop = chain.data?.hops.find((h) => h.id === entryTypeId);
-  const openEndpoint = (id: string) =>
-    navigation.openPage(PageId.HUB, ViewType.LLM_ENDPOINTS, llmEndpointsPointer(endpointIdFromTypeId(id)));
+  const openEndpoint = (id: string) => openLlmEndpoint(navigation, id);
   const consumers = useMemo(() => consumerRows(endpointId, all), [endpointId, all]);
   const tabLabels: Record<LlmEndpointTab, string> = { overview: t`Overview`, usage: t`Usage`, models: t`Models` };
 

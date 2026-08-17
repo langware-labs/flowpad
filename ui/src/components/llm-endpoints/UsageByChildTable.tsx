@@ -4,7 +4,7 @@
  * endpoint's own Usage tab (`/dock/hub/llm-endpoints/<child>/usage`), which is
  * how you follow spend down a chain.
  */
-import { PageId, ViewType, type LLMEndpoint, type LLMUsageBy, type LLMUsageCounters } from '@sdk';
+import type { LLMEndpoint, LLMUsageBy, LLMUsageCounters } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
@@ -12,7 +12,7 @@ import { formatValue } from '@src/components/cost-dashboard/constants';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 import { endpointIdFromTypeId } from './endpoint-catalog';
-import { llmEndpointsPointer } from './llm-endpoints-pointer';
+import { openLlmEndpoint } from './llm-endpoints-pointer';
 import { formatUsd } from './usage-math';
 
 export interface UsageByChildTableProps {
@@ -28,10 +28,7 @@ export function UsageByChildTable({ by, breakdown, all }: UsageByChildTableProps
   const names = new Map(all.map((e) => [e.id, e.name]));
   const rows = Object.entries(breakdown).sort((a, b) => b[1].cost_usd - a[1].cost_usd);
 
-  const openChild = (dim: string) => {
-    const childId = endpointIdFromTypeId(dim);
-    navigation.openPage(PageId.HUB, ViewType.LLM_ENDPOINTS, llmEndpointsPointer(childId, 'usage'));
-  };
+  const openChild = (dim: string) => openLlmEndpoint(navigation, dim, 'usage');
 
   return (
     <div className="rounded-md border" data-testid="usage-breakdown">

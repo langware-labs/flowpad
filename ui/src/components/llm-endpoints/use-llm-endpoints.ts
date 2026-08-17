@@ -60,11 +60,20 @@ export function useLlmEndpointModels(id: string | undefined) {
   });
 }
 
-export function useLlmEndpointUsage(id: string | undefined, query: LLMUsageQuery | null) {
-  return useQuery({
-    queryKey: ['llm-endpoint', id, 'usage', query?.from, query?.to, query?.granularity, query?.by ?? ''],
-    queryFn: () => llmEndpointsService.getUsage(id as string, query as LLMUsageQuery),
-    enabled: !!id && !!query,
+/** Key + fetcher for one endpoint's usage over `query` — shared by the detail's
+ *  Usage tab and the list's Today column, so the two hit one cache entry. */
+export function usageQueryOptions(id: string, query: LLMUsageQuery) {
+  return {
+    queryKey: ['llm-endpoint', id, 'usage', query.from, query.to, query.granularity, query.by ?? ''] as const,
+    queryFn: () => llmEndpointsService.getUsage(id, query),
     staleTime: 15_000,
+  };
+}
+
+export function useLlmEndpointUsage(id: string | undefined, query: LLMUsageQuery | null) {
+  // Disabled until both are known; the placeholder key is never fetched.
+  return useQuery({
+    ...usageQueryOptions(id ?? '', query ?? { from: 0, to: 0, granularity: 'day' }),
+    enabled: !!id && !!query,
   });
 }

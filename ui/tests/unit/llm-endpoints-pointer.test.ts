@@ -52,10 +52,15 @@ describe('llmEndpointsPointer', () => {
 });
 
 describe('typeid helpers', () => {
-  it('build and strip the llm_endpoint- prefix, tolerating the colon spelling', () => {
+  it('build and strip the llm_endpoint- prefix (the SDK TypeId form)', () => {
     expect(endpointTypeId(ID)).toBe(`llm_endpoint-${ID}`);
     expect(endpointIdFromTypeId(`llm_endpoint-${ID}`)).toBe(ID);
-    expect(endpointIdFromTypeId(`llm_endpoint:${ID}`)).toBe(ID);
     expect(endpointIdFromTypeId(ID)).toBe(ID);
+    // Not a typeid at all → returned as-is, never thrown on.
+    expect(endpointIdFromTypeId('llm_endpoint-gone')).toBe('llm_endpoint-gone');
+  });
+
+  it('endpointTypeId rejects a non-identifier, as the SDK TypeId does', () => {
+    expect(() => endpointTypeId('nope')).toThrow();
   });
 });

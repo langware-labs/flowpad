@@ -1,12 +1,11 @@
 /**
- * Cohort ranges (UTC-aligned, Monday weeks), series aggregation, chart points
- * with gap-filling, remaining ratios.
+ * Cohort ranges (UTC-aligned, Monday weeks), chart points with gap-filling,
+ * remaining ratios.
  */
 import type { LLMUsagePoint } from '@sdk';
 import { describe, expect, it } from 'vitest';
 
 import {
-  aggregateSeries,
   cohortRange,
   formatUsd,
   remainingRatio,
@@ -33,6 +32,12 @@ describe('cohortRange', () => {
     expect(r.granularity).toBe('hour');
   });
 
+  it('`to` is floored to the minute so two callers within a minute share a key', () => {
+    const later = new Date(NOW.getTime() + 42_000);
+    expect(cohortRange('today', later).to).toBe(cohortRange('today', NOW).to);
+    expect(cohortRange('today', new Date(NOW.getTime() + 60_000)).to).toBe(cohortRange('today', NOW).to + 60);
+  });
+
   it('thisWeek: starts Monday 00:00Z, daily', () => {
     const r = cohortRange('thisWeek', NOW);
     expect(new Date(r.from * 1000).toISOString()).toBe('2026-08-17T00:00:00.000Z');
@@ -52,20 +57,6 @@ describe('cohortRange', () => {
     const r = cohortRange('allTime', NOW);
     expect(r.from).toBeLessThan(cohortRange('thisMonth', NOW).from);
     expect(r.granularity).toBe('day');
-  });
-});
-
-describe('aggregateSeries', () => {
-  it('sums every counter', () => {
-    const t = aggregateSeries([
-      point(0, { requests: 2, cost_usd: 0.5, total_tokens: 100 }),
-      point(3600, { requests: 1, cost_usd: 0.25, total_tokens: 50, errors: 1 }),
-    ]);
-    expect(t).toMatchObject({ requests: 3, cost_usd: 0.75, total_tokens: 150, errors: 1, fallbacks: 0 });
-  });
-
-  it('empty → zeros', () => {
-    expect(aggregateSeries([])).toEqual(ZERO_COUNTERS);
   });
 });
 

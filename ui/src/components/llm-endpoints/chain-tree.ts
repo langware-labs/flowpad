@@ -72,14 +72,13 @@ export function buildChainTree(chain: LLMChain | null | undefined): ChainTreeNod
     }
   });
 
-  const missing = new Set(chain.missing_sources ?? []);
   const out: ChainTreeNode[] = [];
   const walk = (node: Trie, depth: number, order: number, keyPrefix: string) => {
     const hop = hops.get(node.id) ?? null;
     const key = keyPrefix ? `${keyPrefix}/${node.id}` : node.id;
     out.push({
       id: node.id,
-      name: hop?.name ?? (missing.has(node.id) ? node.id : node.id),
+      name: hop?.name ?? node.id,
       depth,
       hop,
       isOnPath: node.pathIndexes.includes(0),

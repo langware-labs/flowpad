@@ -7,9 +7,7 @@ import {
   HARNESS_CAPABILITY_KINDS,
   LMApiProvider,
   lmKeysService,
-  PageId,
   TypeId,
-  ViewType,
   WorkerModelTier,
   type LmApiKeySummary,
   type LmApiKeyValidation,
@@ -30,7 +28,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { openExternal } from '@src/lib/open-external';
 import { openWikiModal } from '@src/components/wiki-tip/wiki-modal';
-import { endpointIdFromTypeId, llmEndpointsPointer } from '@src/components/llm-endpoints/llm-endpoints-pointer';
+import { openLlmEndpoint } from '@src/components/llm-endpoints/llm-endpoints-pointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openHarnessLoginModal, useHarnessLoginStore } from './harness-login-store';
 
@@ -339,7 +337,7 @@ function LlmKeysSection({ keys, refreshKeys }: { keys: LmApiKeySummary[]; refres
   // endpoint's page (page=hub), where its chain, limits and usage live.
   const openEndpoint = (detail: string) => {
     setOpen(false);
-    navigation.openPage(PageId.HUB, ViewType.LLM_ENDPOINTS, llmEndpointsPointer(endpointIdFromTypeId(detail)));
+    openLlmEndpoint(navigation, detail);
   };
   // Only providers a user can key by hand go in the paste-a-key select; managed
   // ones (the FlowPad hub endpoint) appear in the configured list when bound.

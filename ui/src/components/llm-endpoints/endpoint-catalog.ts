@@ -3,6 +3,8 @@ import type { MessageDescriptor } from '@lingui/core';
 import type { LLMEndpoint, LLMEndpointKind, LLMEndpointProvider } from '@sdk';
 import { LLM_ENDPOINT_PROVIDERS } from '@sdk';
 
+import { isHttpUrl } from '@src/components/data-sources/provider-catalog';
+
 import {
   badNonNegative,
   filtersToForm,
@@ -110,8 +112,6 @@ export function draftFrom(entity: LLMEndpoint): EndpointDraft {
   };
 }
 
-const HTTP_URL = /^https?:\/\/[^\s/$.?#].[^\s]*$/i;
-
 /**
  * Does adding `sources` to `selfTypeId` create a cycle in the graph made of
  * `all`'s `sources` edges? Follows edges from each proposed source; reaching
@@ -148,7 +148,7 @@ export function validateDraft(
 
   if (draft.kind === 'root') {
     if (!isProvider(draft.provider)) problems.push(msg`Pick a provider.`);
-    if (!HTTP_URL.test(draft.base_url.trim())) problems.push(msg`Base URL must be an http(s) URL.`);
+    if (!isHttpUrl(draft.base_url.trim())) problems.push(msg`Base URL must be an http(s) URL.`);
   } else {
     const selfTypeId = draft.id ? endpointTypeId(draft.id) : undefined;
     if (draft.sources.length === 0) problems.push(msg`A chain needs at least one source.`);

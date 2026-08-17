@@ -1,12 +1,13 @@
 /**
- * The endpoints table. Rows open the detail; the admin controls (edit/delete,
- * New endpoint) show only when the hub's permission expansion allows them.
+ * The endpoints table. Rows open the detail; edit/delete show only when the
+ * hub's permission expansion allows them. New endpoint is always offered —
+ * creating one is a type-level right (the creator becomes its owner).
  *
  * Today's tokens/cost per row come from one `usage` call per visible endpoint
  * (react-query dedupes and caches them; the same query feeds the detail's
  * Today tab), so the list is a glance at spend without a second endpoint.
  */
-import { llmEndpointsService, type LLMEndpoint, type LLMUsageReport } from '@sdk';
+import type { LLMEndpoint, LLMUsageReport } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useQueries } from '@tanstack/react-query';
 import { KeyRound, Pencil, Plus, Trash2 } from 'lucide-react';
@@ -17,9 +18,10 @@ import { Button } from '@src/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { formatValue } from '@src/components/cost-dashboard/constants';
 
-import { consumersOf } from './chain-tree';
 import { canConfigure, canRemove, endpointTypeId } from './endpoint-catalog';
+import { TONE } from './tone';
 import { cohortRange, formatUsd } from './usage-math';
+import { usageQueryOptions } from './use-llm-endpoints';
 
 export interface LlmEndpointsListProps {
   endpoints: readonly LLMEndpoint[];
@@ -28,22 +30,11 @@ export interface LlmEndpointsListProps {
   onNew: () => void;
   onEdit: (endpoint: LLMEndpoint) => void;
   onDelete: (endpoint: LLMEndpoint) => void;
-  /** Whether the user may create — the list has no entity to ask, so the
-   *  caller decides (any configurable endpoint ⇒ show New; else hidden). */
-  canCreate: boolean;
 }
 
 export function KindBadge({ kind }: { kind: 'root' | 'chain' }) {
   return (
-    <Badge
-      variant="outline"
-      data-testid={`kind-badge-${kind}`}
-      className={
-        kind === 'root'
-          ? 'border-sky-500/30 bg-sky-500/10 text-sky-500'
-          : 'border-violet-500/30 bg-violet-500/10 text-violet-500'
-      }
-    >
+    <Badge variant="outline" data-testid={`kind-badge-${kind}`} className={kind === 'root' ? TONE.sky : TONE.violet}>
       {kind === 'root' ? <Trans>root</Trans> : <Trans>chain</Trans>}
     </Badge>
   );
@@ -87,7 +78,7 @@ export function CredentialChip({ endpoint }: { endpoint: LLMEndpoint }) {
   if (endpoint.kind !== 'root') return <span className="text-xs text-muted-foreground">—</span>;
   return endpoint.hasCredential ? (
     <span
-      className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[11px] text-emerald-500"
+      className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[11px] ${TONE.emerald}`}
       data-testid="credential-chip"
     >
       <KeyRound className="h-3 w-3" />
@@ -95,7 +86,7 @@ export function CredentialChip({ endpoint }: { endpoint: LLMEndpoint }) {
     </span>
   ) : (
     <span
-      className="inline-flex items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-500"
+      className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] ${TONE.amber}`}
       data-testid="credential-chip"
     >
       <KeyRound className="h-3 w-3" />
@@ -106,44 +97,43 @@ export function CredentialChip({ endpoint }: { endpoint: LLMEndpoint }) {
 
 /** Today's usage per endpoint id, one query each, batched by react-query. */
 export function useTodayUsage(ids: readonly string[]) {
-  // The range is computed once per mount-minute: a stable key keeps the queries
-  // from refetching on every render.
+  // Computed once per mount; `cohortRange` floors `to` to the minute, so a
+  // remount within the minute (list ↔ detail) lands on the same cache entry.
   const range = useMemo(() => cohortRange('today'), []);
   const results = useQueries({
-    queries: ids.map((id) => ({
-      queryKey: ['llm-endpoint', id, 'usage', range.from, range.to, range.granularity, ''],
-      queryFn: () =>
-        llmEndpointsService.getUsage(id, { from: range.from, to: range.to, granularity: range.granularity }),
-      staleTime: 30_000,
-    })),
+    queries: ids.map((id) => usageQueryOptions(id, { from: range.from, to: range.to, granularity: range.granularity })),
   });
   const byId = new Map<string, LLMUsageReport | undefined>();
   ids.forEach((id, i) => byId.set(id, results[i]?.data));
   return byId;
 }
 
-export function LlmEndpointsList({
-  endpoints,
-  isLoading,
-  onOpen,
-  onNew,
-  onEdit,
-  onDelete,
-  canCreate,
-}: LlmEndpointsListProps) {
+export function LlmEndpointsList({ endpoints, isLoading, onOpen, onNew, onEdit, onDelete }: LlmEndpointsListProps) {
   const { t } = useLingui();
   const usage = useTodayUsage(endpoints.map((e) => e.id));
   const byId = useMemo(() => new Map(endpoints.map((e) => [endpointTypeId(e.id), e])), [endpoints]);
+  // Consumers per endpoint id, one pass over the list rather than a scan per row.
+  const consumersById = useMemo(() => {
+    const out = new Map<string, LLMEndpoint[]>();
+    for (const e of endpoints) {
+      for (const src of e.sources) {
+        const source = byId.get(src);
+        if (!source) continue;
+        const list = out.get(source.id) ?? [];
+        list.push(e);
+        out.set(source.id, list);
+      }
+    }
+    return out;
+  }, [endpoints, byId]);
 
   return (
     <div className="space-y-3" data-testid="llm-endpoints-list">
       <div className="flex items-center justify-end">
-        {canCreate && (
-          <Button size="sm" onClick={onNew} data-testid="llm-new-endpoint">
-            <Plus className="me-1 h-4 w-4" />
-            <Trans>New endpoint</Trans>
-          </Button>
-        )}
+        <Button size="sm" onClick={onNew} data-testid="llm-new-endpoint">
+          <Plus className="me-1 h-4 w-4" />
+          <Trans>New endpoint</Trans>
+        </Button>
       </div>
       <div className="rounded-md border">
         <Table>
@@ -189,7 +179,7 @@ export function LlmEndpointsList({
               const configurable = canConfigure(e);
               const removable = canRemove(e);
               const sources = e.sources.map((id) => byId.get(id) ?? null);
-              const consumers = consumersOf(e.id, endpoints);
+              const consumers = consumersById.get(e.id) ?? [];
               return (
                 <TableRow
                   key={e.id}

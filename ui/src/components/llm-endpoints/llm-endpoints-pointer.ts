@@ -6,7 +6,13 @@
  * where you were, drill-down is a navigation), and `foldsPointer` on the
  * registry entry keeps every combination in one tab chip — the credentials
  * view's pattern.
+ *
+ * No React here: the harness modal, the catalog and the components all import
+ * this file, so it must stay a leaf.
  */
+import { LLMEndpoint, PageId, TypeId, ViewType, isTypeId } from '@sdk';
+
+import type { NavigationActions } from '@src/navigation/NavigationActions';
 
 export type LlmEndpointTab = 'overview' | 'usage' | 'models';
 
@@ -28,19 +34,21 @@ export function llmEndpointsPointer(id?: string, tab?: LlmEndpointTab): string {
   return tab && tab !== 'overview' ? `${id}/${tab}` : id;
 }
 
-export const ENDPOINT_TYPE = 'llm_endpoint';
+/** Navigate to an endpoint's page (page=hub) on `tab` (overview by default);
+ *  `id` may be a bare uuid or a typeid. */
+export function openLlmEndpoint(navigation: NavigationActions, id: string, tab?: LlmEndpointTab): void {
+  navigation.openPage(PageId.HUB, ViewType.LLM_ENDPOINTS, llmEndpointsPointer(id, tab));
+}
+
+export const ENDPOINT_TYPE = LLMEndpoint.type;
 
 /** `llm_endpoint-<uuid>` — the typeid form `sources` holds. */
 export function endpointTypeId(id: string): string {
-  return `${ENDPOINT_TYPE}-${id}`;
+  return new TypeId(ENDPOINT_TYPE, id).toString();
 }
 
-/** The uuid out of a `llm_endpoint-<uuid>` typeid (or the input, when it is
- *  already bare). Also accepts the hub's `llm_endpoint:<uuid>` spelling. */
+/** The uuid out of a `llm_endpoint-<uuid>` typeid; the input when it is
+ *  already bare (or not a typeid at all). */
 export function endpointIdFromTypeId(typeid: string): string {
-  const prefix = `${ENDPOINT_TYPE}-`;
-  if (typeid.startsWith(prefix)) return typeid.slice(prefix.length);
-  const alt = `${ENDPOINT_TYPE}:`;
-  if (typeid.startsWith(alt)) return typeid.slice(alt.length);
-  return typeid;
+  return isTypeId(typeid) ? new TypeId(typeid).id : typeid;
 }

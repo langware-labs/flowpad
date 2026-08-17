@@ -7,7 +7,7 @@
  * dialog and the delete confirm (one instance each, driven by a nullable
  * target — the house pattern), so rows and the detail hold no dialogs.
  */
-import { PageId, TypeId, ViewType, dataManager, type LLMEndpoint } from '@sdk';
+import { PageId, ViewType, dataManager, type LLMEndpoint } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Waypoints } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
@@ -20,7 +20,7 @@ import { notify } from '@src/notifications';
 import { LlmEndpointDetail } from './LlmEndpointDetail';
 import { LlmEndpointDialog } from './LlmEndpointDialog';
 import { LlmEndpointsList } from './LlmEndpointsList';
-import { llmEndpointsPointer, parseLlmEndpointsPointer, type LlmEndpointTab } from './llm-endpoints-pointer';
+import { openLlmEndpoint, parseLlmEndpointsPointer, type LlmEndpointTab } from './llm-endpoints-pointer';
 import { useLlmEndpoints } from './use-llm-endpoints';
 
 export function LlmEndpointsView({ pointer }: { pointer?: string }) {
@@ -36,7 +36,7 @@ export function LlmEndpointsView({ pointer }: { pointer?: string }) {
 
   const go = useCallback(
     (id?: string, nextTab?: LlmEndpointTab) =>
-      navigation.openPage(PageId.HUB, ViewType.LLM_ENDPOINTS, llmEndpointsPointer(id, nextTab) || undefined),
+      id ? openLlmEndpoint(navigation, id, nextTab) : navigation.openPage(PageId.HUB, ViewType.LLM_ENDPOINTS),
     [navigation],
   );
 
@@ -52,7 +52,7 @@ export function LlmEndpointsView({ pointer }: { pointer?: string }) {
   const confirmDelete = useCallback(
     async (e: LLMEndpoint) => {
       try {
-        await dataManager.delete(new TypeId(e.typeId.type, e.id));
+        await dataManager.delete(e.typeId);
         void refetch();
         if (selectedId === e.id) go();
       } catch (error) {
@@ -64,14 +64,6 @@ export function LlmEndpointsView({ pointer }: { pointer?: string }) {
     },
     [refetch, selectedId, go, t],
   );
-
-  // The list has no entity to ask "may I create?"; the hub's permission
-  // expansion is per entity. Any endpoint the user can configure means they
-  // administer endpoints here; an empty hub shows it too, since the first
-  // endpoint has to come from somewhere.
-  // Creating an endpoint is a type-level right every signed-in human has (the creator becomes
-  // its owner/admin); configuring an EXISTING one is per-entity and gated row by row.
-  const canCreate = true;
 
   return (
     <div className="flex h-full flex-col overflow-y-auto p-6">
@@ -106,7 +98,6 @@ export function LlmEndpointsView({ pointer }: { pointer?: string }) {
         <LlmEndpointsList
           endpoints={endpoints}
           isLoading={isLoading}
-          canCreate={canCreate}
           onOpen={(e) => go(e.id)}
           onNew={openAdd}
           onEdit={openEdit}
