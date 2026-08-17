@@ -12,7 +12,10 @@ worker-specific symbol.
 
 import os
 import sys
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Awaitable, Callable
+from unittest.mock import patch
 
 import pytest
 
@@ -32,6 +35,132 @@ import pytest
 _REAL_HOME = os.environ.get("FLOWPAD_PRE_SANDBOX_HOME") or os.path.expanduser("~")
 _SANDBOX_HOME = os.environ["HOME"]
 _SANDBOX_USERPROFILE = os.environ["USERPROFILE"]
+
+
+@dataclass(frozen=True)
+class LiveE2EInstance:
+    """A launcher-owned backend that is safe for a long test to target."""
+
+    name: str
+    backend_port: int
+    backend_pid: int
+    hub_url: str
+
+
+def _normalized_url(value: str) -> str:
+    return value.rstrip("/")
+
+
+@pytest.fixture()
+def resolve_live_e2e_instance() -> Callable[[str], LiveE2EInstance]:
+    """Resolve an explicitly selected, live launcher-owned E2E instance.
+
+    Pytest sandboxes HOME before importing Flowpad, while these tests target
+    instances launched under the caller's real flow root. The resolver uses an
+    explicit FLOW_HOME when supplied and otherwise derives that real root from
+    FLOWPAD_PRE_SANDBOX_HOME. Every selected target fails closed unless the
+    manager, launcher registry, and generated env file agree.
+    """
+
+    def _resolve(env_key: str) -> LiveE2EInstance:
+        from flow_sdk.instances import env, manager, paths, registry
+        from flow_sdk.instances.atomic import read_json
+        from flow_sdk.instances.errors import NameInvalid
+        from flow_sdk.instances.model import Role
+
+        name = os.environ.get(env_key, "").strip()
+        if not name:
+            pytest.skip(f"{env_key} is not set; select a launcher-owned cycle instance with {env_key}=<name>")
+        try:
+            paths.validate_name(name)
+        except NameInvalid as exc:
+            pytest.fail(f"unsafe {env_key}={name!r}: {exc}", pytrace=False)
+
+        real_home = os.environ.get("FLOWPAD_PRE_SANDBOX_HOME") or _REAL_HOME
+        flow_home = os.environ.get("FLOW_HOME") or str(Path(real_home) / ".flow")
+        with patch.dict(os.environ, {"FLOW_HOME": flow_home}):
+            try:
+                status = manager.resolve(name)
+                record = registry.read(name)
+                launcher = read_json(paths.launcher_path(name))
+                instance_env = env.read_env_file(name)
+                expected_env_file = paths.env_file(name).resolve()
+            except Exception as exc:
+                pytest.fail(
+                    f"could not validate {env_key}={name!r} from launcher records: {exc}",
+                    pytrace=False,
+                )
+
+        backend = status.role(Role.BACKEND)
+        if record is None or not status.launcher_owned:
+            pytest.fail(
+                f"unsafe {env_key}={name!r}: instance is not launcher-owned",
+                pytrace=False,
+            )
+        if not (backend.applicable and backend.alive and backend.owned and backend.listening):
+            pytest.fail(
+                f"unsafe {env_key}={name!r}: backend is not live, owned, and listening",
+                pytrace=False,
+            )
+        if (
+            status.name != name
+            or type(backend.port) is not int
+            or not 0 < backend.port <= 65535
+            or type(backend.pid) is not int
+            or backend.pid <= 0
+        ):
+            pytest.fail(
+                f"unsafe {env_key}={name!r}: manager returned an invalid backend identity",
+                pytrace=False,
+            )
+
+        recorded_backend = record.ref(Role.BACKEND)
+        if (
+            launcher.get("name") != name
+            or record.name != name
+            or recorded_backend is None
+            or recorded_backend.port != backend.port
+            or recorded_backend.pid != backend.pid
+        ):
+            pytest.fail(
+                f"unsafe {env_key}={name!r}: launcher name/PID/port disagrees with the live backend",
+                pytrace=False,
+            )
+        try:
+            recorded_env_file = Path(record.env_file).resolve()
+        except (OSError, TypeError):
+            recorded_env_file = None
+        if recorded_env_file != expected_env_file:
+            pytest.fail(
+                f"unsafe {env_key}={name!r}: launcher env file is not from this checkout",
+                pytrace=False,
+            )
+
+        api_url = f"http://localhost:{backend.port}"
+        if (
+            instance_env.get("FLOW_INSTANCE") != name
+            or instance_env.get("LOCAL_SERVER_PORT") != str(backend.port)
+            or _normalized_url(instance_env.get("VITE_API_URL", "")) != api_url
+        ):
+            pytest.fail(
+                f"unsafe {env_key}={name!r}: generated env disagrees with the live backend",
+                pytrace=False,
+            )
+        if _normalized_url(instance_env.get("FLOWPAD_HUB_URL", "")) != _normalized_url(record.hub_url):
+            pytest.fail(
+                f"unsafe {env_key}={name!r}: generated env and launcher disagree on the Hub",
+                pytrace=False,
+            )
+
+        return LiveE2EInstance(
+            name=name,
+            backend_port=backend.port,
+            backend_pid=backend.pid,
+            hub_url=_normalized_url(record.hub_url),
+        )
+
+    return _resolve
+
 
 # Test modules whose tests spawn real Claude/Codex/Copilot CLI subprocesses and need
 # real ``$HOME`` for credentials. Anything not in this set keeps the parent
@@ -258,9 +387,9 @@ def make_process(worker_id) -> Callable[..., Awaitable]:
     enum_value = _DRIVER_TO_ENUM[worker_id]
 
     async def _make(**kwargs):
-        # Default every agentic-process test to the cheapest model the worker can
-        # actually resolve (see ``_model_tier.small_model_for`` — Copilot must stay
-        # unset). Tests that need a specific model still win: their
+        # Default every agentic-process test to the portable small tier. Native
+        # Copilot resolves it to vendor auto and omits --model. Tests that need
+        # a specific model still win: their
         # ``cli_config['model']`` is preserved, and only the key is defaulted.
         cli_config = {**(kwargs.pop("cli_config", None) or {})}
         model = small_model_for(enum_value)
