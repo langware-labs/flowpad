@@ -219,12 +219,17 @@ def probe_codex_auth(
 def probe_copilot_auth(
     env: Mapping[str, str],
     home: Path,
+    copilot_home: Path | None = None,
 ) -> WorkerAuthResult:
     """Heuristic only — copilot has no status subcommand.
 
-    Env token or a ``loggedInUsers`` marker in ``~/.copilot/config.json``
+    Env token or a ``loggedInUsers`` marker in copilot's ``config.json``
     proves a *past* login at best (the token itself lives in the OS
     credential store), so the result is never ``verified``.
+
+    ``copilot_home`` is the instance-resolved config dir (``FLOWPAD_COPILOT_HOME``
+    redirects it); callers that do not resolve instance settings fall back to
+    ``<home>/.copilot``.
     """
     for var in COPILOT_TOKEN_ENV_VARS:
         if env.get(var):
@@ -233,7 +238,7 @@ def probe_copilot_auth(
                 message=f"copilot auth token present in ${var} (not validated).",
                 details={"source": f"env:{var}"},
             )
-    config_path = home / ".copilot" / "config.json"
+    config_path = (copilot_home or home / ".copilot") / "config.json"
     try:
         raw = config_path.read_text(encoding="utf-8")
     except OSError:
@@ -242,7 +247,7 @@ def probe_copilot_auth(
             message="copilot CLI has no login marker (no env token, no config.json).",
         )
     # The CLI writes JSONC — full-line // comments above the JSON body.
-    body = "\n".join(l for l in raw.splitlines() if not l.lstrip().startswith("//"))
+    body = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("//"))
     try:
         config = json.loads(body)
     except (json.JSONDecodeError, ValueError):
@@ -269,13 +274,15 @@ def probe_worker_auth(
     executable_path: str | None,
     env: Mapping[str, str],
     home: Path,
+    copilot_home: Path | None = None,
 ) -> WorkerAuthResult:
     """Classify one worker CLI's login state. Never raises.
 
     ``executable_path`` is the disk-verified absolute path of the CLI (None ⇔
     not installed); ``env`` is the spawn env the worker would actually run
     with (discovered bin folder first on PATH, so ``#!/usr/bin/env node``
-    shebangs resolve).
+    shebangs resolve). ``copilot_home`` overrides the copilot config dir for
+    callers that can resolve instance settings (``<home>/.copilot`` otherwise).
     """
     if executable_path is None:
         return WorkerAuthResult(
@@ -289,7 +296,7 @@ def probe_worker_auth(
         if worker_type == "codex":
             return probe_codex_auth(executable_path, env)
         if worker_type == "copilot":
-            return probe_copilot_auth(env, home)
+            return probe_copilot_auth(env, home, copilot_home)
         return WorkerAuthResult(
             status=WorkerAuthStatus.UNKNOWN,
             message=f"No auth probe defined for worker type {worker_type!r}.",

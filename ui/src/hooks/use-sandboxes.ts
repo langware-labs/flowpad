@@ -10,6 +10,7 @@ import {
   gitOriginFromUrl,
   type NodeStatus,
   QueryRequest,
+  SANDBOX_PROVIDERS,
   TypeId,
   WORKSPACE_FLAVOR,
 } from '@sdk';
@@ -24,9 +25,9 @@ import { notify } from '@src/notifications';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /**
- * Sandboxes = cloud FlowPad instances running in E2B — a ComputeNode whose
- * `node_config.flavor === 'workspace'`. This hook lists them and drives the
- * hub's EXISTING ComputeNode API to create/terminate them.
+ * Sandboxes = cloud FlowPad instances running on the Hub-selected provider — a
+ * ComputeNode whose `node_config.flavor === 'workspace'`. This hook lists them
+ * and drives the hub's EXISTING ComputeNode API to create/terminate them.
  *
  * Creating, launching and opening are THREE separate operations:
  *   createSandbox: save (workspace-scoped). Nothing is provisioned.
@@ -150,19 +151,34 @@ function plannedSteps(setup?: SandboxSetup): Step[] {
 export type SandboxDetails = NodeStatus;
 
 /**
- * The OSS↔hub wire-field divergence lives ONLY in these two helpers. The hub's
+ * The OSS↔hub wire-field divergence lives ONLY in these three helpers. The hub's
  * ComputeNode field is `node_provider`, but the OSS entity types it
  * `node_provider_type` and drops the former on `toJSON()`. `readProvider`
- * tolerates both on read; `hubEntityJson` re-injects it on write (an existing
- * node's provider, else E2B for a fresh draft) so `ops/setup` doesn't fail with
- * "provider is not set".
+ * tolerates both on read; `hubEntityJson` re-injects it on write. A fresh draft
+ * uses the Hub's bootstrap-selected provider so `ops/setup` never silently
+ * ignores an operator's provider selection.
+ *
+ * The E2B fallback is not just for older hubs: `default_compute_provider` is
+ * hub-only, so it is absent whenever these screens are served by a local or
+ * desktop backend rather than the hub — which they are, since the local server
+ * declares `supported_pages: ["desk","hub"]`. It is also what answers a hub
+ * whose default is `local_machine`, a provider that hosts compute nodes but
+ * never a sandbox.
  */
 function readProvider(node: ComputeNode): string | undefined {
   return (node as unknown as { node_provider?: string }).node_provider ?? node.node_provider_type;
 }
 
+function defaultSandboxProvider(): ComputeProviderType {
+  // Validated against the SANDBOX providers, not against every provider: a hub
+  // configured for `local_machine` would otherwise be taken at its word and mint
+  // a node that `isSandbox` — reading the same set — can never list back.
+  const configured: ComputeProviderType | undefined = dataContext.bootstrapInfo?.default_compute_provider;
+  return configured && SANDBOX_PROVIDERS.has(configured) ? configured : ComputeProviderType.E2B;
+}
+
 function hubEntityJson(node: ComputeNode, patch: Record<string, unknown> = {}): Record<string, unknown> {
-  return { ...node.toJSON(), node_provider: readProvider(node) ?? ComputeProviderType.E2B, ...patch };
+  return { ...node.toJSON(), node_provider: readProvider(node) ?? defaultSandboxProvider(), ...patch };
 }
 
 /**
@@ -182,10 +198,10 @@ export function workspaceServiceUrl(nodeId: string): string {
 }
 
 /**
- * A ComputeNode is a "sandbox" iff it's an E2B node created from the workspace
- * flavor. Named `isSandbox`, not `isDesktop`: `dataContext.isDesktop` already
- * means "running in Electron", and the two answered different questions under
- * one name.
+ * A ComputeNode is a "sandbox" iff its provider is one of `SANDBOX_PROVIDERS`
+ * and it was created from the workspace flavor. Named `isSandbox`, not
+ * `isDesktop`: `dataContext.isDesktop` already means "running in Electron", and
+ * the two answered different questions under one name.
  *
  * The rule itself lives on the entity (`ComputeNode.isSandbox`) rather than here:
  * it used to read the provider AND a magic string out of the untyped
@@ -713,6 +729,7 @@ export function useSandboxes() {
       const trimmed = name.trim();
       if (!trimmed || trimmed === node.name) return;
       await dataManager.save(node.typeId, [], hubEntityJson(node, { name: trimmed }) as never);
+      node.markEdit();
       await refetch();
     },
     [refetch],

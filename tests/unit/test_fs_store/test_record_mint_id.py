@@ -35,12 +35,12 @@ class _MarkdownRecordAdapter:
         return _markdown_id(ref)
     @staticmethod
     def genId(ref):
-        return SchemaRegistry.get("markdown").mint_id(ref)
+        return SchemaRegistry.get("markdown").mint_entity_id(ref, derive=True, overwrite=True)
     @staticmethod
     def from_file(path):
         from flow_sdk.fs_store.fs_ref import FSRef
         ref = FSRef(path)
-        resolved_id = SchemaRegistry.get("markdown").mint_id(ref)
+        resolved_id = SchemaRegistry.get("markdown").mint_entity_id(ref, derive=True, overwrite=True)
         return _extract_markdown(ref, resolved_id)[0]
 
 MarkdownRecord = _MarkdownRecordAdapter
@@ -153,7 +153,7 @@ def test_getId_after_genId_returns_minted(tmp_path: Path) -> None:
     p = tmp_path / "g.md"
     _write_md(p, "# body\n", frontmatter="title: T\n")
     minted = MarkdownRecord.genId(FSRef(p))
-    assert SchemaRegistry.get("markdown").extract_id(FSRef(p)) == minted
+    assert SchemaRegistry.get("markdown").mint_entity_id(FSRef(p)) == minted
 
 
 def test_genId_does_not_overwrite_existing_asset_id(tmp_path: Path) -> None:
@@ -208,7 +208,7 @@ def test_claude_plan_genId_also_mints(tmp_path: Path) -> None:
     Mirrors the markdown contract: idempotent, migration-safe (writes the
     derived path-uuid5 so any existing DB row by that id stays valid).
     """
-    ClaudePlanRecord = type('CP', (), {'genId': staticmethod(lambda ref: SchemaRegistry.get("plan").mint_id(ref))})
+    ClaudePlanRecord = type('CP', (), {'genId': staticmethod(lambda ref: SchemaRegistry.get("plan").mint_entity_id(ref, derive=True, overwrite=True))})
 
     p = tmp_path / "plan.md"
     p.write_text("some plan body", encoding="utf-8")

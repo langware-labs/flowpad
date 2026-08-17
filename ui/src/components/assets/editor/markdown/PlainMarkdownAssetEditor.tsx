@@ -133,6 +133,7 @@ export function PlainMarkdownAssetEditor({
     <AssetCollisionProvider entity={entity}>
       <MarkdownEditor
         fsRef={editorRef}
+        editEntity={entity}
         chatTarget={chatTarget}
         extraSideTabs={[translationsTab, runsTab]}
         onDelete={deletable?.delete ? onDelete : undefined}

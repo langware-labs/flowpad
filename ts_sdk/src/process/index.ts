@@ -40,6 +40,7 @@ export type {
   ProcessState,
   SpawnResult,
 } from './agentic-process';
+export type { AgentHookData, ProcessHookCallback } from './process-hooks';
 export { ProcessCounters, parseStatusReport } from './process-status-report';
 export type { ProcessStatusReport, ProcessCountersData, FocusedAsset } from './process-status-report';
 export { ProcessKind, ProcessType } from './process-types';

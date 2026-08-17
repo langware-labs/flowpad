@@ -72,7 +72,11 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
         .then(async () => {
           const source = await mainRef.read();
           const nextSource = patchAgentDocument(source, patch);
-          if (nextSource !== source) await mainRef.write(nextSource);
+          const changed = nextSource !== source;
+          if (changed) {
+            await mainRef.write(nextSource);
+            agentRef.current.markEdit();
+          }
           Object.assign(agentRef.current, patch);
           await onSaved?.();
           return true;
@@ -100,6 +104,7 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
         const prepared = await prepareAvatarImage(file);
         const upload = await mainRef.parent.uploadFile(prepared);
         await upload.waitForCompletion();
+        agentRef.current.markEdit();
         if (await save({ avatar: AGENT_AVATAR_REF })) setAvatarRevision((value) => value + 1);
       } catch (error) {
         notify.error({

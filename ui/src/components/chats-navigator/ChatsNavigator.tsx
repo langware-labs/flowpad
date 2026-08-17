@@ -8,7 +8,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { openNewChat } from '@src/navigation/open-new-chat';
 import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useOpenTabTargetIds } from '@src/tabs/useTabs';
+import { useOpenTabTargetIds } from '@src/tabs/use-tab-manager';
 import { useProject } from '@src/hooks/useProject';
 import { useContext } from '@src/hooks/useContext';
 import { notify } from '@src/notifications';

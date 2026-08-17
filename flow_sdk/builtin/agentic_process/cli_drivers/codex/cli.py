@@ -20,11 +20,11 @@ lines are easy to filter independently of the Claude CLI lines.
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any
 
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import serialize_toml_cli_value
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
 from flow_sdk.builtin.agentic_process.model_tiers import CODEX_MODEL_TIERS
 
@@ -54,6 +54,7 @@ class CodexAgentOptions(AgentOptions):
         add_dirs: list[str] | None = None,
         json_stream: bool = True,
         ephemeral: bool = True,
+        bypass_hook_trust: bool = False,
     ) -> None:
         super().__init__(workdir=workdir, env_vars=env_vars)
         self.session_id = session_id
@@ -71,7 +72,10 @@ class CodexAgentOptions(AgentOptions):
         # `-c key=val` overrides for API-key auth (the OpenRouter provider block).
         # Derived per-spawn from the harness Capability — excluded from to_json /
         # the restart hash, same as fork/resume.
-        self.extra_config_overrides: list[tuple[str, str]] = []
+        self.extra_config_overrides: list[tuple[str, Any]] = []
+        # Allows process-scoped command hooks for this launch only. Deliberately
+        # absent from ``to_json`` / ``from_json`` so trust is never persisted.
+        self.bypass_hook_trust = bypass_hook_trust
 
     # Overridden per-process in ``_reasoning_effort_flags`` (see there for why).
     # Chosen to stay under the 30s test timeout — keep in sync if that's relaxed.
@@ -97,7 +101,8 @@ class CodexAgentOptions(AgentOptions):
     def _developer_instruction_flags(self) -> list[str]:
         if not self.developer_instructions:
             return []
-        return ["-c", f"developer_instructions={json.dumps(self.developer_instructions)}"]
+        value = serialize_toml_cli_value(self.developer_instructions)
+        return ["-c", f"developer_instructions={value}"]
 
     def _interactive_trust_flags(self) -> list[str]:
         """Trust the injected-input target only when full access was requested."""
@@ -115,12 +120,8 @@ class CodexAgentOptions(AgentOptions):
             workdir = str(Path(self.workdir).resolve(strict=True))
         except OSError:
             workdir = self.workdir
-        # JSON and TOML basic strings share the escapes used here. JSON leaves
-        # DEL (U+007F) raw, though TOML forbids it, so escape that one extra
-        # codepoint while preserving non-BMP Unicode as real UTF-8.
-        project = json.dumps(workdir, ensure_ascii=False).replace("\x7f", "\\u007f")
-        trusted = json.dumps("trusted")
-        return ["-c", f"projects={{{project}={{trust_level={trusted}}}}}"]
+        projects = {workdir: {"trust_level": "trusted"}}
+        return ["-c", f"projects={serialize_toml_cli_value(projects)}"]
 
     def _interactive_update_flags(self) -> list[str]:
         """Keep Codex's startup updater out of automation-owned PTYs.
@@ -151,7 +152,7 @@ class CodexAgentOptions(AgentOptions):
         ``-c`` helpers; empty in device mode."""
         flags: list[str] = []
         for key, value in self.extra_config_overrides:
-            flags.extend(["-c", f"{key}={json.dumps(value)}"])
+            flags.extend(["-c", f"{key}={serialize_toml_cli_value(value)}"])
         return flags
 
     def _emit_flags(self) -> list[str]:
@@ -161,11 +162,13 @@ class CodexAgentOptions(AgentOptions):
         Both end with the shared :meth:`_common_tail`.
         """
         bypass = ["--dangerously-bypass-approvals-and-sandbox"] if self.permission_mode == "bypassPermissions" else []
+        hook_trust = ["--dangerously-bypass-hook-trust"] if self.bypass_hook_trust else []
         dev_flags = self._developer_instruction_flags()
         extra_cfg = self._extra_config_override_flags()
         if not self.json_stream:
             return (
-                bypass
+                hook_trust
+                + bypass
                 + self._interactive_update_flags()
                 + self._interactive_trust_flags()
                 + self._reasoning_effort_flags()
@@ -174,7 +177,7 @@ class CodexAgentOptions(AgentOptions):
                 + self._common_tail()
             )
 
-        head = ["exec", "--skip-git-repo-check", *bypass]
+        head = ["exec", "--skip-git-repo-check", *hook_trust, *bypass]
         if self.ephemeral:
             head.append("--ephemeral")
         head.append("--json")
@@ -184,17 +187,19 @@ class CodexAgentOptions(AgentOptions):
 
     def to_json(self) -> dict[str, Any]:
         d = super().to_json()
-        d.update({
-            "worker_type": "codex",
-            "session_id": self.session_id,
-            "resume": self.resume,
-            "model": self.model,
-            "permission_mode": self.permission_mode,
-            "skill_names": self.skill_names,
-            "add_dirs": self.add_dirs,
-            "json_stream": self.json_stream,
-            "ephemeral": self.ephemeral,
-        })
+        d.update(
+            {
+                "worker_type": "codex",
+                "session_id": self.session_id,
+                "resume": self.resume,
+                "model": self.model,
+                "permission_mode": self.permission_mode,
+                "skill_names": self.skill_names,
+                "add_dirs": self.add_dirs,
+                "json_stream": self.json_stream,
+                "ephemeral": self.ephemeral,
+            }
+        )
         return d
 
     @classmethod

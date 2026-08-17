@@ -120,11 +120,21 @@ def _suppressed(trigger: "Trigger", reason_code: str, reason: str,
 
     trigger_id = trigger.id or ""
     name = trigger.name or trigger_id
-    event_id = emit_trigger_suppressed(
-        trigger_id, str(trigger.trigger_type), name,
-        reason_code=reason_code, detail=reason,
-        project_id=trigger.project_id, cause=cause,
-    )
+    # A self-loop notice must not go back on the bus. `trigger.suppressed`
+    # carries `trigger:<id>` innermost in its scope and is itself a `trigger.*`
+    # event, so for a rule subscribed to `trigger.*` the notice re-enters, trips
+    # the brake again, and emits another notice — forever. The brake stops the
+    # FIRE (counter stays 1) while the cascade runs unbounded underneath it,
+    # which is how this hid: a fixed-sleep test settle simply stopped looking.
+    # Every other reason code terminates, because the notice it emits is caught
+    # by the brake on re-entry.
+    event_id = None
+    if reason_code != "self_loop":
+        event_id = emit_trigger_suppressed(
+            trigger_id, str(trigger.trigger_type), name,
+            reason_code=reason_code, detail=reason,
+            project_id=trigger.project_id, cause=cause,
+        )
     _append_log(name, {
         "hook_event": "storm_suppressed" if reason_code == "storm" else "tag_suppressed",
         "trigger": False,

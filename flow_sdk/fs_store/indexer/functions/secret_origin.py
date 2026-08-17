@@ -42,27 +42,6 @@ def _load_doc(path: Path) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-def _convergent_id(data: dict) -> str | None:
-    """The reference's convergent id: the adopted in-file ``id`` when valid, else
-    recomputed from ``(project_id, env_var)``. Never path-derived.
-
-    A pre-re-key reference carries neither ``project_id`` nor a usable id under
-    the new scheme; it yields ``None`` and is skipped. There is no migration —
-    the file stays on disk untouched.
-    """
-    from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
-    from flow_sdk.builtin.secret_origin_identity import secret_origin_id  # noqa: PLC0415
-
-    raw = str(data.get("id") or "").strip()
-    if raw and is_valid_entity_id(raw):
-        return raw
-    project_id = str(data.get("project_id") or "").strip()
-    env_var = str(data.get("env_var") or "").strip()
-    if project_id and env_var:
-        return secret_origin_id(project_id, env_var)
-    return None
-
-
 # ── walker ────────────────────────────────────────────────────────────────────
 
 def secret_origin_in_folder_fn(nodes: list[FSRef], opts: IndexerOptions) -> list[FSRef]:

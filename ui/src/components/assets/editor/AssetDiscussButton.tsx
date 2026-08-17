@@ -8,8 +8,8 @@ import { isContentAssetDock } from '@src/navigation/content-asset-dock';
 import type { DockPointer } from '@src/navigation/DockPointer';
 import type { NavigationActions } from '@src/navigation/NavigationActions';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useAllTabs } from '@src/tabs/all-tabs-store';
-import { TabLifecycleState, useTabLifecycle } from '@src/tabs/tab-lifecycle';
+import { tabForDockKey, TabLifecycleState } from '@sdk';
+import { useAllTabs, useTabLifecycle } from '@src/tabs/use-tab-manager';
 
 export function DiscussInVibeButton({
   dock,
@@ -76,9 +76,7 @@ export function AssetDiscussButton() {
     return null;
   }
 
-  const projectId =
-    allTabs.find((tab) => tab.dockPointer?.tabHash === currentDock.tabHash)
-      ?.project_id ?? null;
+  const projectId = tabForDockKey(allTabs, currentDock.tabHash)?.project_id ?? null;
   const loading = lifecycle?.state === TabLifecycleState.Opening;
   const disabled = !projectId || loading;
   return (

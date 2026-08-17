@@ -5,7 +5,7 @@ import { usePreference } from '@src/hooks/use-preference';
 import { canonicalPath } from '@src/components/project-selector';
 import { normalizePath, useProjectOpener } from './use-open-project';
 import { SectionHairlineTitle } from '@src/components/terminal/ProjectsCounterChip';
-import { useTabProjectBuckets } from '@src/tabs/useTabs';
+import { useTabProjectBuckets } from '@src/tabs/use-tab-manager';
 import { useProject } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';

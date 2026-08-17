@@ -115,13 +115,23 @@ export function DataSourceDialog({
       const config = buildConfig(draft);
       const account = accountKeyFor(draft);
       if (editing) {
-        editing.name = draft.name.trim();
-        editing.status = statusFor(draft.enabled, editing.status);
+        const nextName = draft.name.trim();
+        const nextStatus = statusFor(draft.enabled, editing.status);
+        const changed =
+          editing.name !== nextName ||
+          editing.status !== nextStatus ||
+          editing.account_key !== account ||
+          JSON.stringify(editing.config ?? {}) !== JSON.stringify(config) ||
+          editing.poll_interval_seconds !== draft.poll_interval_seconds ||
+          editing.window_days !== draft.window_days;
+        editing.name = nextName;
+        editing.status = nextStatus;
         editing.account_key = account;
         editing.config = config;
         editing.poll_interval_seconds = draft.poll_interval_seconds;
         editing.window_days = draft.window_days;
         await editing.save();
+        if (changed) editing.markEdit();
         notify.success({ title: t`Updated ${editing.name}` });
       } else {
         const source = new DataSource({

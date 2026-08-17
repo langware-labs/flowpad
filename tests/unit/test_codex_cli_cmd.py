@@ -197,6 +197,31 @@ def test_headless_bypass_does_not_add_interactive_trust_override():
 
     assert not any("trust_level" in arg for arg in argv)
     assert "check_for_update_on_startup=false" not in argv
+    assert "--dangerously-bypass-hook-trust" not in argv
+
+
+@pytest.mark.parametrize("json_stream", [False, True])
+def test_process_hook_trust_and_structured_overrides_are_launch_only_argv(json_stream):
+    cmd = CodexAgentOptions(json_stream=json_stream, bypass_hook_trust=True)
+    cmd.extra_config_overrides = [
+        ("features.hooks", True),
+        (
+            "hooks.UserPromptSubmit",
+            [{"hooks": [{"type": "command", "command": "flow hooks report"}]}],
+        ),
+    ]
+
+    argv, _ = cmd.to_spawn_args()
+
+    assert argv.count("--dangerously-bypass-hook-trust") == 1
+    overrides = [argv[index + 1] for index, value in enumerate(argv[:-1]) if value == "-c"]
+    assert "features.hooks=true" in overrides
+    hook_override = next(value for value in overrides if value.startswith("hooks.UserPromptSubmit="))
+    assert tomllib.loads(hook_override) == {
+        "hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": "flow hooks report"}]}]}
+    }
+    assert "bypass_hook_trust" not in cmd.to_json()
+    assert "extra_config_overrides" not in cmd.to_json()
 
 
 def test_interactive_non_bypass_does_not_add_trust_override():
@@ -273,18 +298,40 @@ def test_to_json_roundtrip():
         json_stream=False,
         ephemeral=False,
     )
-    loaded = CodexAgentOptions.from_json(cmd.to_json())
+    cmd.fork_session_id = "launch-only-fork"
+    cmd.system_prompt_append = "launch derived"
+    cmd.system_prompt_file = "/tmp/system-prompt"
+    cmd.developer_instructions = "launch derived"
+    cmd.extra_config_overrides = [("provider.name", "runtime")]
+    cmd.bypass_hook_trust = True
+    data = cmd.to_json()
+    loaded = CodexAgentOptions.from_json(data)
 
-    assert loaded.session_id == "abc"
-    assert loaded.resume is True
-    assert loaded.model == "gpt-5.2"
-    assert loaded.permission_mode == "default"
-    assert loaded.skill_names == ["reviewer"]
-    assert loaded.workdir == "/repo"
-    assert loaded.env_vars == {"X": "1"}
-    assert loaded.add_dirs == ["/extra"]
-    assert loaded.json_stream is False
-    assert loaded.ephemeral is False
+    assert data == {
+        "workdir": "/repo",
+        "env_vars": {"X": "1"},
+        "worker_type": "codex",
+        "session_id": "abc",
+        "resume": True,
+        "model": "gpt-5.2",
+        "permission_mode": "default",
+        "skill_names": ["reviewer"],
+        "add_dirs": ["/extra"],
+        "json_stream": False,
+        "ephemeral": False,
+    }
+    assert loaded.to_json() == data
+
+
+def test_launch_only_config_fields_emit_process_local_overrides():
+    cmd = CodexAgentOptions(workdir="/repo")
+    cmd.developer_instructions = "Review O'Brien's change"
+    cmd.extra_config_overrides = [("model_provider", "openrouter")]
+
+    argv, _env = cmd.to_spawn_args()
+
+    assert "developer_instructions=\"Review O'Brien's change\"" in argv
+    assert 'model_provider="openrouter"' in argv
 
 
 def test_factory_returns_codex_cli_cmd():

@@ -335,16 +335,6 @@ def _record_id(source_file: str, json_path: str) -> str:
     return f"{source_file}:{json_path}"
 
 
-def mcp_server_id(ref: FSRef) -> str:
-    """Stable, filesystem-safe **UUID** id — pure string work over the FSRef's
-    pointer (no file read). The natural key ``<source_file>:<pointer>`` carries a
-    ``:`` (illegal in a Windows folder name); hashing it into a uuid5 — with the
-    same ``f"{type}:{key}"`` formula ``Entity.allocate_id`` uses — yields a
-    path-safe id identical to the one the DB row gets.
-    """
-    return mint_uuid(mcp_server_identity_key(ref), namespace=uuid.NAMESPACE_DNS)
-
-
 def mcp_server_identity_key(ref: FSRef | Path) -> str:
     path = Path(getattr(ref, "path", ref))
     json_path = getattr(ref, "json_path", None) or ""

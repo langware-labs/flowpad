@@ -17,6 +17,7 @@ import { DisplayHistoryButton } from './display-history-button';
 import { AgenticProcess, dataContext, type DisplayEntry, FlowData, fsStore, TypeId, ViewType } from '@sdk';
 import { resolveProcessInputDir } from '@src/utils/upload-to-input-dir';
 import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
 import { shellIdFromShowTarget } from '@src/navigation/shell-show-target';
@@ -121,6 +122,9 @@ interface VibeWorkspaceProps {
 export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   const { t } = useLingui();
   const { project } = useAgentContext();
+  // Hoisted: a string dep is identity-stable, so the memo/callbacks below don't
+  // re-run on every refresh that mints a new project object.
+  const projectId = project?.id ?? null;
   const { navigation, currentDock } = useDockNavigation();
   // Select only the stable setter — subscribing to the whole store would
   // re-render this component on its own `currentContext` writes (it never reads it).
@@ -200,10 +204,14 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   const onOpenHistoryEntry = useCallback(
     (entry: DisplayEntry) => {
       const isPortTarget = entry.kind === 'webapp' || entry.kind === 'app';
+      // Same promotion as the toolbar's "open in a new tab": this opens a past
+      // display as its OWN tab, so the assets-shaped dock must be rebased or the
+      // chip collapses onto the scope-keyed Assets tab.
       const ptr = isPortTarget ? null : dockForDisplayTarget(entry);
-      navigation.openDock(ptr ?? session.processDock);
+      const own = ptr ? DockPointer.rebaseAssetsOntoProject(ptr, projectId) : null;
+      navigation.openDock(own ?? session.processDock);
     },
-    [navigation, session.processDock],
+    [navigation, session.processDock, projectId],
   );
 
   // Feed the dev-server port into the viewer store — the exact channel
@@ -377,7 +385,12 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     // the generic action (right). For entities/files that action is "open in
     // a new tab" — IN-APP dock navigation (promotes the item to a full
     // Flowpad content tab), NOT a browser tab; only webapps open externally.
-    const openPtrInTab = (ptr: AssetDocPointer) => () => navigation.openDock(ptr.toDockPointer());
+    // Promote to its OWN tab: rebase onto the project shell first. A bare ASSETS
+    // dock is scope-keyed (one tab per scope, sub-pointer folded away) — right for
+    // browsing inside the Assets tab, wrong for a document that must keep its own
+    // pointer and name. Same reason as `onOpenHistoryEntry` above.
+    const openPtrInTab = (ptr: AssetDocPointer) => () =>
+      navigation.openDock(DockPointer.rebaseAssetsOntoProject(ptr.toDockPointer(), projectId));
     const wrapAsset = (path: string, node: React.ReactNode) => (
       <DisplayToolbar
         onOpenInTab={openPtrInTab(AssetDocPointer.forVfs(editorForPath(path), path))}
@@ -536,6 +549,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     activeProcess,
     handleAnnotateDisplay,
     submitStarterPrompt,
+    projectId,
   ]);
 
   return (
@@ -551,7 +565,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
           <WorkspaceChildStrip
             processTab={session.processTab}
             processDock={session.processDock}
-            projectId={project?.id ?? null}
+            projectId={projectId}
           />
           <div className="min-h-0 flex-1">
             {/* On the display URL: the agent-driven pin. On a child URL: the

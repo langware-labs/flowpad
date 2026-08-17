@@ -78,8 +78,8 @@ async def test_device_mode_returns_none(env) -> None:
 
 
 async def test_claude_api_binding(env) -> None:
-    from flow_sdk.lm_api import LMApiProvider, set_lm_api
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.lm_api import LMApiProvider, set_lm_api
 
     set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
     await _set_harness_api("claude")
@@ -97,8 +97,8 @@ async def test_claude_api_binding(env) -> None:
 
 
 async def test_codex_api_binding_has_responses_provider(env) -> None:
-    from flow_sdk.lm_api import LMApiProvider, set_lm_api
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.lm_api import LMApiProvider, set_lm_api
 
     set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
     await _set_harness_api("codex")
@@ -114,8 +114,8 @@ async def test_codex_api_binding_has_responses_provider(env) -> None:
 
 
 async def test_copilot_api_binding_model_env(env) -> None:
-    from flow_sdk.lm_api import LMApiProvider, set_lm_api
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.lm_api import LMApiProvider, set_lm_api
 
     set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
     await _set_harness_api("copilot")
@@ -141,10 +141,34 @@ async def test_api_mode_missing_key_raises(env) -> None:
 
 async def test_raw_slug_passthrough(env) -> None:
     """A concrete model (not an sm/md/lg tier) passes through unchanged."""
-    from flow_sdk.lm_api import LMApiProvider, set_lm_api
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.lm_api import LMApiProvider, set_lm_api
 
     set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
     await _set_harness_api("claude")
     auth = await resolve_worker_api_auth(_fake_process("claude", model="z-ai/glm-4.6"))
     assert auth.model_slug == "z-ai/glm-4.6"
+
+
+async def test_api_auth_overrides_append_after_process_hook_overrides(monkeypatch) -> None:
+    from flow_sdk.builtin.agentic_process.cli_drivers import api_auth
+
+    cmd = SimpleNamespace(
+        model=None,
+        extra_config_overrides=[("features.hooks", True)],
+    )
+
+    async def resolve(_process):
+        return api_auth.WorkerApiAuth(
+            model_slug="openai/gpt-5-mini",
+            config_overrides=[("model_provider", "openrouter")],
+        )
+
+    monkeypatch.setattr(api_auth, "resolve_worker_api_auth", resolve)
+    await api_auth.apply_api_model_to_options(cmd, SimpleNamespace())
+
+    assert cmd.model == "openai/gpt-5-mini"
+    assert cmd.extra_config_overrides == [
+        ("features.hooks", True),
+        ("model_provider", "openrouter"),
+    ]

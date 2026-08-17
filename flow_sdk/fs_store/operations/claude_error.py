@@ -15,6 +15,7 @@ from flow_sdk._compat import StrEnum
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.fs_store.identifier import mint_uuid
 
 # CRUD-only type (no walker): lets GET /fs-records/claude_error return an empty
 # list instead of 400. Records are upserted on demand from debug logs.
@@ -53,7 +54,7 @@ class Fix:
 
 
 def _rec_id_for_fingerprint(fingerprint: str) -> str:
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{RecordType.CLAUDE_ERROR}:{fingerprint}"))
+    return mint_uuid(f"{RecordType.CLAUDE_ERROR}:{fingerprint}", namespace=uuid.NAMESPACE_DNS)
 
 
 def get_by_fingerprint(fingerprint: str) -> FSRecord | None:

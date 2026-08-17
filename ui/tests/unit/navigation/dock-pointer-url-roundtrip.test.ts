@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Layout, PageId, TypeId, ViewType } from '@sdk';
 import { projectScope } from '@src/lib/scope-filter';
 import { CAPABILITY_PARAM, DockPointer } from '@src/navigation/DockPointer';
+import { ViewMode } from '@src/contexts/view-mode-context';
 
 const LAYOUTS = [Layout.DOCK, Layout.DEV, Layout.WIN] as const;
 const BASE_PATHS = [
@@ -123,6 +124,16 @@ function representativePointers(): DockPointer[] {
     DockPointer.forWiki('Plan A / Research? yes', Layout.DEV, '@local'),
     DockPointer.forProject(project, { roomId: U('5678'), tab: agenticProcess }),
     DockPointer.forProject(project, { conversationId: conversation }, Layout.WIN),
+    // A vibe-hosted document: the host is stored as an option but SERIALIZED as
+    // `/process/<typeid>/display/` path segments, so the codec is asymmetric by
+    // construction — exactly what this round-trip exists to catch.
+    DockPointer.rebaseAssetsOntoProject(
+      DockPointer.forAssetEditor('markdown', `/Users/me/docs/hosted note.md`),
+      project,
+    ).withHost(`agentic_process-${U('h057')}`),
+    DockPointer.forProject(project)
+      .withHost(`agentic_process-${U('h058')}`)
+      .withViewMode(ViewMode.Vibe),
     DockPointer.forInbox({ conversationId: conversation, messageId: U('feed') }),
     DockPointer.forConversation(conversation, { messageId: U('babe') }, Layout.WIN),
     DockPointer.forTasks(U('a1fa'), { conversationId: conversation, layout: Layout.DEV }),

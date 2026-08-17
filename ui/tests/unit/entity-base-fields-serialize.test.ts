@@ -53,4 +53,27 @@ describe('base wire fields survive a partial type schema', () => {
     expect(project.isDbField('not_a_field')).toBe(false);
     expect(project.toJSON().not_a_field).toBeUndefined();
   });
+
+  it('hydrates last_edited_at updates without echoing them in full saves', () => {
+    const project = new Project({
+      id: PROJECT_ID,
+      type: Project.type,
+      name: 'Hub Alpha',
+      last_edited_at: 100,
+    } as never);
+
+    expect(project.last_edited_at).toBe(100);
+    expect(project.toJSON().last_edited_at).toBeUndefined();
+
+    const updated = dataManager.updateEntityFromJson<Project>({
+      id: PROJECT_ID,
+      type: Project.type,
+      last_edited_at: 200,
+    });
+
+    expect(updated).toBe(project);
+    expect(project.last_edited_at).toBe(200);
+    expect(project.name).toBe('Hub Alpha');
+    expect(project.toJSON().last_edited_at).toBeUndefined();
+  });
 });

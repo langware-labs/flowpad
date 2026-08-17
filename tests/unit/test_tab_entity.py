@@ -20,7 +20,13 @@ import pytest
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core.entity.entity_model import Entity
-from flow_sdk.builtin.tab import Tab, delete_tabs_for_missing_project, ensure_tab, tab_id_for
+from flow_sdk.builtin.tab import (
+    Tab,
+    _pointer_is_adoptable_child,
+    delete_tabs_for_missing_project,
+    ensure_tab,
+    tab_id_for,
+)
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
@@ -285,6 +291,28 @@ async def test_parent_tab_id_set_on_create() -> None:
         parent_tab_id=parent.id,
     )
     assert child.parent_tab_id == parent.id
+
+
+@pytest.mark.asyncio
+async def test_workspace_host_never_reaches_the_stored_pointer() -> None:
+    """The vibe host rides in the client's URL options, never in Tab.pointer.
+
+    That is what keeps tab identity — and therefore every stored row and this
+    adoptability rule — unchanged by the hosted-display URL. A composite pointer
+    reaching the backend means the client failed to lift it, and the row would
+    silently stop being a workspace child; ``_pointer_is_adoptable_child`` logs
+    it rather than refusing in silence.
+    """
+    project_id = str(uuid.uuid4())
+    asset_id = str(uuid.uuid4())
+    tail = f"editor/markdown/typeid/markdown-{asset_id}"
+
+    # What the client actually stores for a hosted document: no host.
+    assert _pointer_is_adoptable_child(_jptr("project", f"{project_id}/{tail}"))
+    # The composite form is refused (and logged) rather than quietly adopted.
+    assert not _pointer_is_adoptable_child(
+        _jptr("project", f"{project_id}/process/agentic_process-{uuid.uuid4()}/display/{tail}")
+    )
 
 
 @pytest.mark.asyncio

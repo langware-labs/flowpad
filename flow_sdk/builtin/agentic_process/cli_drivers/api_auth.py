@@ -188,4 +188,7 @@ async def apply_api_model_to_options(cmd, process: "AgenticProcess") -> None:
     if auth.model_slug:
         cmd.model = auth.model_slug
     if auth.config_overrides and hasattr(cmd, "extra_config_overrides"):
-        cmd.extra_config_overrides = auth.config_overrides
+        cmd.extra_config_overrides = [
+            *list(getattr(cmd, "extra_config_overrides", []) or []),
+            *auth.config_overrides,
+        ]

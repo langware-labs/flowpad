@@ -16,6 +16,7 @@ import { OpenProjectComponent } from '@src/components/open-project-component/ope
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ADDRESS_PILL_CLASS } from './address-pill';
 import { CrumbDetailsPopover } from './CrumbDetailsPopover';
+import { ProjectCrumbHoverCard } from './ProjectCrumbHoverCard';
 import { selectVisibleCrumbs } from './crumb-overflow';
 import type { Crumb } from './use-entity-breadcrumbs';
 
@@ -96,7 +97,16 @@ export function AddressField({ crumbs, onSearch }: { crumbs: Crumb[]; onSearch: 
     const page = <BreadcrumbPage className="flex min-w-0 items-center gap-1 font-normal">{body}</BreadcrumbPage>;
     return (
       <BreadcrumbItem key={crumb.key} data-crumb className={isLast ? 'min-w-0 shrink' : 'shrink-0'}>
-        {isLast && crumb.path ? (
+        {crumb.kind === 'project' ? (
+          <ProjectCrumbHoverCard>
+            <BreadcrumbLink
+              className="flex cursor-pointer items-center gap-1 hover:text-foreground"
+              onClick={() => go(crumb)}
+            >
+              {body}
+            </BreadcrumbLink>
+          </ProjectCrumbHoverCard>
+        ) : isLast && crumb.path ? (
           <CrumbDetailsPopover label={crumb.label} filename={crumb.filename} path={crumb.path}>
             <button
               type="button"
