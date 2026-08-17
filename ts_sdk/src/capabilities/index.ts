@@ -11,6 +11,7 @@ export const CapabilityKinds = {
   ClaudeCode: 'harness.claude.cli',
   Codex: 'harness.codex.cli',
   Copilot: 'harness.copilot.cli',
+  OpenCode: 'harness.opencode.cli',
   ChromeAuthenticated: 'browsing.chrome.authenticated',
   GitHub: 'source_control.git.github',
   GitHubGh: 'source_control.git.github.gh',
@@ -24,4 +25,5 @@ export const HARNESS_CAPABILITY_KINDS: readonly string[] = [
   CapabilityKinds.ClaudeCode,
   CapabilityKinds.Codex,
   CapabilityKinds.Copilot,
+  CapabilityKinds.OpenCode,
 ];

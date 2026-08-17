@@ -28,6 +28,8 @@ from .base_settings import (
     ENV_FLOWPAD_CLOUD_API_KEY,
     ENV_FLOWPAD_CLOUD_API_URL,
     ENV_FLOWPAD_COPILOT_HOME,
+    ENV_XDG_CONFIG_HOME,
+    ENV_XDG_DATA_HOME,
     ENV_FLOWPAD_DOCKER_PUBLIC_URL,
     ENV_FLOWPAD_HUB_URL,
     ENV_FS_RECORD_PATH,
@@ -58,6 +60,15 @@ class TestInstanceSettings(BaseInstanceSettings):
         codex_home = Path(codex_home_env) if codex_home_env else sandbox / ".codex"
         copilot_home_env = os.environ.get(ENV_FLOWPAD_COPILOT_HOME)
         copilot_home = Path(copilot_home_env) if copilot_home_env else sandbox / ".copilot"
+        # OpenCode follows XDG, so the sandbox redirects those roots.
+        opencode_data_env = os.environ.get(ENV_XDG_DATA_HOME)
+        opencode_data_dir = (
+            Path(opencode_data_env) if opencode_data_env else sandbox / ".local" / "share"
+        ) / "opencode"
+        opencode_config_env = os.environ.get(ENV_XDG_CONFIG_HOME)
+        opencode_config_dir = (
+            Path(opencode_config_env) if opencode_config_env else sandbox / ".config"
+        ) / "opencode"
         flow_home.mkdir(parents=True, exist_ok=True)
         claude_home.mkdir(parents=True, exist_ok=True)
         codex_home.mkdir(parents=True, exist_ok=True)
@@ -66,6 +77,8 @@ class TestInstanceSettings(BaseInstanceSettings):
             (claude_home / sub).mkdir(parents=True, exist_ok=True)
         (codex_home / "sessions").mkdir(parents=True, exist_ok=True)
         (copilot_home / "session-state").mkdir(parents=True, exist_ok=True)
+        opencode_data_dir.mkdir(parents=True, exist_ok=True)
+        opencode_config_dir.mkdir(parents=True, exist_ok=True)
 
         # Tests can still override via FS_RECORD_PATH / SQLITE_DATABASE_PATH for
         # per-test isolation on top of the sandbox.
@@ -124,6 +137,8 @@ class TestInstanceSettings(BaseInstanceSettings):
             copilot_home=copilot_home,
             copilot_session_state_dir=copilot_home / "session-state",
             copilot_config_path=copilot_home / "config.json",
+            opencode_data_dir=opencode_data_dir,
+            opencode_config_dir=opencode_config_dir,
             cloud_user_email=os.environ.get("FLOWPAD_CLOUD_USER_EMAIL") or None,
             cloud_user_pass=os.environ.get("FLOWPAD_CLOUD_USER_PASSWORD") or None,
             cloud_login_timeout_seconds=cls._resolve_login_timeout(),

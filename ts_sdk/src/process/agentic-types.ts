@@ -37,6 +37,20 @@
  * verbatim on the wire (RUNNING included — no ready/busy projection). "Is a turn
  * in flight?" is the separate ``busy`` boolean (see ``isBusy``).
  */
+/**
+ * The CLI worker vendors a process can run.
+ *
+ * ONE spelling, in the SDK, because the app currently carries several
+ * incompatible ones — `'claude'` vs `'claude_code'`, with and without
+ * `'workflow'`, with and without `'opencode'` — and picking the wrong union at a
+ * call site silently yields `undefined` rather than an error (the app's
+ * `type-check` script is a no-op, so nothing catches it).
+ *
+ * New vendors add a member HERE; every signature that accepts a vendor should
+ * reference this rather than re-spelling the union inline.
+ */
+export type WorkerType = 'claude_code' | 'codex' | 'copilot' | 'opencode';
+
 export enum ProcessStatus {
   NEW = 'new',
   STARTING = 'starting',
@@ -251,6 +265,8 @@ export type ProcessIconKey =
   | 'codex-restore'
   | 'copilot'
   | 'copilot-restore'
+  | 'opencode'
+  | 'opencode-restore'
   | 'generic'
   | 'generic-restore';
 

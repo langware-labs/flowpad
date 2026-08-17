@@ -601,6 +601,7 @@ def install_worker_type(harness_kind: str) -> str:
         CapabilityKind.CLAUDE_CLI.value: WorkerType.CLAUDE_CODE.value,
         CapabilityKind.CODEX_CLI.value: WorkerType.CODEX.value,
         CapabilityKind.COPILOT_CLI.value: WorkerType.COPILOT.value,
+        CapabilityKind.OPENCODE_CLI.value: WorkerType.OPENCODE.value,
     }
     worker = by_kind.get(harness_kind)
     if worker is None:
@@ -871,6 +872,14 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
             homepage_url="https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli",
         ),
         CapabilitySpec(
+            name="OpenCode CLI",
+            kind=CapabilityKind.OPENCODE_CLI.value,
+            description="OpenCode open-source command-line harness.",
+            icon="Terminal",
+            value_type=_FOLDER,
+            homepage_url="https://opencode.ai/docs/",
+        ),
+        CapabilitySpec(
             name="Chrome Authenticated Browsing",
             kind=CapabilityKind.CHROME_AUTHENTICATED.value,
             description="Agent-driven Chrome browsing with authenticated browser state.",
@@ -998,6 +1007,13 @@ def _build_default_registry() -> CapabilityRegistry:
             spec=specs[CapabilityKind.COPILOT_CLI.value],
             executable="copilot",
             worker_type="copilot",
+        )
+    )
+    registry.register(
+        CliCapabilityRunner(
+            spec=specs[CapabilityKind.OPENCODE_CLI.value],
+            executable="opencode",
+            worker_type="opencode",
         )
     )
     registry.register(ChromeAuthenticatedBrowsingRunner(specs[CapabilityKind.CHROME_AUTHENTICATED.value]))

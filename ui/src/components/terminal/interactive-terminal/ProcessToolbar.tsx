@@ -505,7 +505,10 @@ export function ProcessToolbar({
           }
           disabled={!hasTranscript}
           onClick={() => {
-            navigation.openLens('claude', 'transcript', process.session_id!);
+            // The vendor comes from the PROCESS, never a literal. Hardcoding
+            // 'claude' sent an opencode (or codex, or copilot) session to the
+            // claude lens category, which resolves a different transcript path.
+            navigation.openLens(process.transcriptLensCategory, 'transcript', process.session_id!);
           }}
         />
       )}

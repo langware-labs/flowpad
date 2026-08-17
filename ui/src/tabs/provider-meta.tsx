@@ -10,6 +10,7 @@ import { useEntity } from '@src/hooks/entity-hooks';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
 import { CopilotIcon } from '@src/components/icons/CopilotIcon';
+import { OpenCodeIcon } from '@src/components/icons/OpenCodeIcon';
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 import { formatTimeAgo, useLastStatusChange } from '@src/store/pending-actions-store';
 import { useEntityLocationLabel } from '@src/components/graph-view/ui/EntityIcon';
@@ -22,14 +23,25 @@ import React, { useMemo } from 'react';
 /** Vendor metadata per terminal provider kind — the single source for the strip
  *  chips' icon resolution and the vendor openers' glyph/color. */
 export const PROVIDER_META: Record<
-  'claude' | 'codex' | 'copilot' | 'shell',
+  'claude' | 'codex' | 'copilot' | 'opencode' | 'shell',
   { Icon: React.ComponentType<{ className?: string }>; iconClassName: string; label: string }
 > = {
   claude: { Icon: ClaudeIcon, iconClassName: 'text-orange-500', label: 'Claude Code tab' },
   codex: { Icon: CodexIcon, iconClassName: 'text-emerald-500', label: 'Codex tab' },
   copilot: { Icon: CopilotIcon, iconClassName: 'text-sky-500', label: 'Copilot tab' },
+  opencode: { Icon: OpenCodeIcon, iconClassName: 'text-violet-500', label: 'OpenCode tab' },
   shell: { Icon: SquareTerminal, iconClassName: 'text-muted-foreground', label: 'Shell tab' },
 };
+
+/** Resolve a vendor's presentation, falling back to Claude for an unknown one.
+ *
+ *  The table is keyed on the tab-provider spelling; callers hold a `WorkerType`
+ *  (`claude_code`) or a raw string off the wire. This owns BOTH the alias and
+ *  the fallback policy so consumers don't each carry a cast plus a `??`. */
+export function providerMetaFor(workerType: string | undefined | null) {
+  const key = workerType === 'claude_code' ? 'claude' : workerType;
+  return PROVIDER_META[key as keyof typeof PROVIDER_META] ?? PROVIDER_META.claude;
+}
 
 function timeAgo(date: Date | string | undefined | null): string {
   if (!date) return '—';

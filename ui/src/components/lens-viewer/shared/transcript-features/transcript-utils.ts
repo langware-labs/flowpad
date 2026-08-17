@@ -5,6 +5,7 @@
 import type { ComponentType } from 'react';
 import type { GenericEntry, ProcessIconKey } from '@sdk';
 import { isToolUse } from '@sdk';
+import type { WorkerType } from '@src/hooks/use-transcript';
 
 import { pickProcessIcon } from '../../../icons/process-icons';
 import type { UnifiedEntry } from './types';
@@ -17,8 +18,22 @@ import { formatTime } from '../format-utils';
  * backend `SESSION_TYPE_BY_WORKER`). `workerForSessionType` is what lets any
  * surface holding only a record type — a search row, a staged attachment —
  * address the worker-generic transcript route.
+ *
+ * Only these three vendors have a session ENTITY type. OpenCode deliberately has
+ * none (its sessions live in SQLite, so the filesystem indexer has nothing to
+ * mint one from — see the backend `SESSION_TYPE_BY_WORKER`, which has no
+ * opencode row either).
+ *
+ * Typed `Partial<Record<WorkerType, …>>` so indexing it with a bare `WorkerType`
+ * yields `string | undefined` — callers must HANDLE the miss rather than
+ * interpolate it into a key string (`"undefined/ses_…"`).
+ *
+ * Note this uses the transcript-lens `WorkerType` (`claude`), NOT the launcher
+ * one (`claude_code`). The codebase carries several incompatible spellings of
+ * "which vendor"; picking the wrong one here silently yields undefined for
+ * every row.
  */
-export const SESSION_TYPE_BY_WORKER: Record<'claude' | 'codex' | 'copilot', string> = {
+export const SESSION_TYPE_BY_WORKER: Partial<Record<WorkerType, string>> = {
   claude: 'claude_session',
   codex: 'codex_session',
   copilot: 'copilot_session',
@@ -54,6 +69,7 @@ export function workerIcon(worker: string | undefined): ComponentType<{ classNam
     if (w.startsWith('claude')) return 'claude';
     if (w.startsWith('codex')) return 'codex';
     if (w.startsWith('copilot')) return 'copilot';
+    if (w.startsWith('opencode')) return 'opencode';
     return 'generic';
   })();
   return pickProcessIcon(key);

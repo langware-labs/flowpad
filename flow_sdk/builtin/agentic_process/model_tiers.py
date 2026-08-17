@@ -48,6 +48,16 @@ COPILOT_MODEL_TIERS: dict[str, str] = {
     ModelTier.LG.value: "gpt-5.5",
 }
 
+# OpenCode is provider-agnostic: every model is addressed as ``provider/model``
+# and the provider is whatever the user has credentials for. These tiers pick
+# open-weight models through OpenRouter, which is the provider opencode resolves
+# from a bare ``OPENROUTER_API_KEY`` in the environment with no config at all.
+OPENCODE_MODEL_TIERS: dict[str, str] = {
+    ModelTier.SM.value: "openrouter/z-ai/glm-4.7-flash",
+    ModelTier.MD.value: "openrouter/z-ai/glm-5.2",
+    ModelTier.LG.value: "openrouter/z-ai/glm-5.2",
+}
+
 
 def resolve_model_tier(tier_map: dict[str, str], model: str | None) -> str | None:
     """Map a tier (``sm``/``md``/``lg``) to a concrete model via *tier_map*.

@@ -42,6 +42,7 @@ import {
   isReadyForInput,
   isWorkerRunning,
   isWorkerTerminal,
+  type WorkerType,
 } from './agentic-types';
 import type {
   TranscriptFormat as TranscriptFormatType,
@@ -459,7 +460,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * (e.g. an editor "discuss this doc" button) that needs to launch a
    * harness tab pre-filled with a user prompt.
    *
-   * @param workerType - `'claude_code'`, `'codex'`, or `'copilot'`
+   * @param workerType - see {@link WorkerType}
    * @param prompt - Optional initial user prompt. Placed on the process's
    *   prompt queue (not injected directly): the backend drains the queue head
    *   as the worker's launch instruction when the dock starts it, so the
@@ -472,7 +473,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @returns The spawned AgenticProcess (already navigated to).
    */
   static async openTab(
-    workerType: 'claude_code' | 'codex' | 'copilot',
+    workerType: WorkerType,
     prompt?: string,
     project?: { id?: string; fs_storage_mount_path?: string | null } | null,
     opts?: { ptyMode?: boolean },
@@ -523,7 +524,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @returns The launched AgenticProcess (terminal dock already opened).
    */
   static async launch(opts: {
-    workerType?: 'claude_code' | 'codex' | 'copilot';
+    workerType?: WorkerType;
     workdir: string;
     projectId?: string | null;
     /** First prompt — placed on the queue, popped as the launch instruction. */
@@ -743,7 +744,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     action.subpath = `get_by_worker_id/${workerId}`;
     const normalizedWorkerType = workerType?.toLowerCase() ?? null;
     const hint = normalizedWorkerType === 'claude_code' ? 'claude' : normalizedWorkerType;
-    if (hint === 'claude' || hint === 'codex' || hint === 'copilot') {
+    // Omitting a vendor here does not fail loudly — the hint is silently dropped
+    // and the backend falls back to scanning every vendor, so the bug shows up
+    // only as a slower path or a wrong-vendor match. Keep in step with the
+    // backend's own allowlist in `_scan_get_by_worker_id`.
+    if (hint === 'claude' || hint === 'codex' || hint === 'copilot' || hint === 'opencode') {
       action.queryParameters = { worker_type: hint };
     }
     try {
@@ -803,11 +808,25 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * encoding. Falls back to the terminal pointer when no session is attached
    * yet (fresh process before first message).
    */
+  /**
+   * The lens CATEGORY this process's transcript lives under.
+   *
+   * Exposed because more than one surface opens that lens, and each one that
+   * spelled the vendor itself spelled it as the literal `'claude'` — which
+   * silently routed an opencode/codex/copilot session to claude's category and
+   * resolved a different transcript. One derivation, read by all of them.
+   */
+  get transcriptLensCategory(): string {
+    const wt = (this.worker_type ?? 'claude').toLowerCase();
+    return wt === 'codex' || wt === 'copilot' || wt === 'opencode' ? wt : 'claude';
+  }
+
   get transcriptDockPointer(): DockPointerData {
     if (!this.session_id) return this.terminalDockPointer;
-    const wt = (this.worker_type ?? 'claude').toLowerCase();
-    const worker = wt === 'codex' ? 'codex' : wt === 'copilot' ? 'copilot' : 'claude';
-    return new DockPointerData(ViewType.LENS, `${worker}/transcript/${this.session_id}`);
+    return new DockPointerData(
+      ViewType.LENS,
+      `${this.transcriptLensCategory}/transcript/${this.session_id}`,
+    );
   }
 
   /**
@@ -859,6 +878,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const restored = this.wasRestoredFromSession;
     if (wt === 'codex') return restored ? 'codex-restore' : 'codex';
     if (wt === 'copilot') return restored ? 'copilot-restore' : 'copilot';
+    if (wt === 'opencode') return restored ? 'opencode-restore' : 'opencode';
     // Legacy rows may have no worker_type; keep their historical Claude icon.
     // New processes are stamped with the capability-resolved worker by the
     // backend createProcess action.
