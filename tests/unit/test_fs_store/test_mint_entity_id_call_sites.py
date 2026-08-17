@@ -18,7 +18,10 @@ Both guards are self-tested, because a guard that cannot fail is not a guard.
 from __future__ import annotations
 
 import ast
+import functools
 from pathlib import Path
+
+import pytest
 
 from flow_sdk.fs_store.schema_registry import TypeInfo
 
@@ -47,11 +50,29 @@ _PER_TYPE_MINTER_ALLOWLIST = {
 }
 
 
-def _is_call_to(node: ast.AST, name: str) -> bool:
+@functools.lru_cache(maxsize=None)
+def _trees(root: Path, recursive: bool = True) -> tuple[tuple[Path, ast.Module], ...]:
+    """Parse every module under ``root`` once, shared by all three detectors.
+
+    Cached: the full-``flow_sdk`` walk is ~1100 files, and the subtree checks
+    below would otherwise re-parse a couple hundred of them a second time.
+    """
+    paths = sorted(root.rglob("*.py") if recursive else root.glob("*.py"))
+    out = []
+    for path in paths:
+        try:
+            out.append((path, ast.parse(path.read_text(encoding="utf-8"))))
+        except (OSError, SyntaxError):
+            continue
+    return tuple(out)
+
+
+def _calls_to(node: ast.AST, *names: str) -> bool:
+    """True when ``node`` is a call to any of ``names`` (``x.name(...)``)."""
     return (
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
-        and node.func.attr == name
+        and node.func.attr in names
     )
 
 
@@ -73,22 +94,16 @@ def test_the_legacy_seam_methods_no_longer_exist() -> None:
 
 def _carrier_or_mint_sites(root: Path) -> list[str]:
     """Any ``<x>.<read>(...) or <y>.<mint>(...)`` identity shape under ``root``."""
-    reads = {"extract_id", "peek_entity_id", "mint_entity_id"}
-    mints = {"mint_id", "mint_entity_id", "_derive"}
+    reads = ("extract_id", "peek_entity_id", "mint_entity_id")
+    mints = ("mint_id", "mint_entity_id", "_derive")
     hits: list[str] = []
-    for path in root.rglob("*.py"):
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-        except (OSError, SyntaxError):
-            continue
+    for path, tree in _trees(root):
         for node in ast.walk(tree):
             if not isinstance(node, ast.BoolOp) or not isinstance(node.op, ast.Or):
                 continue
             if len(node.values) != 2:
                 continue
-            if any(_is_call_to(node.values[0], r) for r in reads) and any(
-                _is_call_to(node.values[1], m) for m in mints
-            ):
+            if _calls_to(node.values[0], *reads) and _calls_to(node.values[1], *mints):
                 hits.append(f"{path}:{node.lineno}")
     return sorted(hits)
 
@@ -103,14 +118,6 @@ def test_no_carrier_or_mint_pairs_remain() -> None:
     )
 
 
-def test_the_pair_detector_actually_detects(tmp_path: Path) -> None:
-    (tmp_path / "probe.py").write_text(
-        "rid = info.mint_entity_id(ref) or info.mint_entity_id(ref, derive=True)\n",
-        encoding="utf-8",
-    )
-    assert len(_carrier_or_mint_sites(tmp_path)) == 1
-
-
 def _per_type_minters(root: Path) -> list[str]:
     """Module-level ``*_id`` functions that reach ``mint_uuid`` themselves.
 
@@ -118,11 +125,7 @@ def _per_type_minters(root: Path) -> list[str]:
     in its ``TypeInfo``. Twenty-three of them accumulated unnoticed, all dead.
     """
     hits: list[str] = []
-    for path in sorted(root.glob("*.py")):
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-        except (OSError, SyntaxError):
-            continue
+    for path, tree in _trees(root, recursive=False):
         for node in tree.body:
             if not isinstance(node, ast.FunctionDef) or not node.name.endswith("_id"):
                 continue
@@ -144,13 +147,6 @@ def test_no_per_type_minters_regrow() -> None:
         "TypeInfo.mint_entity_id, or add an id_stable_key_fn and let the seam mint. "
         "Found:\n  " + "\n  ".join(sites)
     )
-
-
-def test_the_minter_detector_actually_detects(tmp_path: Path) -> None:
-    (tmp_path / "probe.py").write_text(
-        "def thing_id(ref):\n    return mint_uuid(str(ref))\n", encoding="utf-8"
-    )
-    assert len(_per_type_minters(tmp_path)) == 1
 
 
 #: Raw ``uuid4``/``uuid5`` allowed under the identity-critical tree. Every entry
@@ -177,18 +173,12 @@ def _raw_uuid_sites(root: Path) -> list[str]:
     canonicalization.
     """
     hits: list[str] = []
-    for path in root.rglob("*.py"):
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-        except (OSError, SyntaxError):
-            continue
+    for path, tree in _trees(root):
         for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr in ("uuid4", "uuid5")
-                and (path.name, node.func.attr) not in _RAW_UUID_ALLOWLIST
-            ):
+            if _calls_to(node, "uuid4", "uuid5") and (
+                path.name,
+                node.func.attr,
+            ) not in _RAW_UUID_ALLOWLIST:
                 hits.append(f"{path.name}:{node.lineno} uuid.{node.func.attr}()")
     return sorted(hits)
 
@@ -205,8 +195,16 @@ def test_no_raw_uuid_in_the_identity_tree() -> None:
     )
 
 
-def test_the_raw_uuid_detector_actually_detects(tmp_path: Path) -> None:
-    (tmp_path / "probe.py").write_text(
-        "import uuid\nx = uuid.uuid4()\n", encoding="utf-8"
-    )
-    assert len(_raw_uuid_sites(tmp_path)) == 1
+@pytest.mark.parametrize(
+    "source, detector",
+    [
+        ("rid = info.mint_entity_id(ref) or info.mint_entity_id(ref, derive=True)\n", _carrier_or_mint_sites),
+        ("def thing_id(ref):\n    return mint_uuid(str(ref))\n", _per_type_minters),
+        ("import uuid\nx = uuid.uuid4()\n", _raw_uuid_sites),
+    ],
+    ids=["carrier_or_mint", "per_type_minter", "raw_uuid"],
+)
+def test_the_detectors_actually_detect(tmp_path: Path, source: str, detector) -> None:
+    """A guard that cannot fail is not a guard — each detector sees its own shape."""
+    (tmp_path / "probe.py").write_text(source, encoding="utf-8")
+    assert len(detector(tmp_path)) == 1

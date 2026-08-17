@@ -411,25 +411,32 @@ class FSRecord(Generic[M]):
                 self.asset_ref = FSRef(str(mount))
         return self
 
-    # ── Save / Load ───────────────────────────────────────────────────────
+    def _meta_path_for_write(self, caller: str) -> Path:
+        """Shadow ``metadata.json`` path, ensuring the record has an id first.
 
-    def save(self) -> Path:
-        """Write metadata.json into the shadow folder. Mints id if absent."""
+        An id-less record reaching disk used to silently mint a FIFTH identity
+        formula (``content_fingerprint``), invisible to every identity guard.
+        Identity must come from ``TypeInfo.mint_entity_id`` before save. Logged
+        for one release (removal: 0.2.123), then this becomes a raise —
+        ``shadow_dir`` below already refuses an id-less record.
+        """
         if self.id is None:
-            # An id-less record reaching disk used to silently mint a fifth
-            # identity formula here, invisible to every identity guard. Log for
-            # one release, then raise — `shadow_dir` below already refuses.
             logging.warning(
-                "[asset-id] FSRecord(%s) reached %s with no id; identity must come from "
-                "TypeInfo.mint_entity_id before save. Falling back to the content "
-                "fingerprint, which is NOT an entity id.",
+                "[asset-id] FSRecord(%s) reached %s with no id; falling back to the "
+                "content fingerprint, which is NOT an entity id.",
                 self.type,
-                "save()",
+                caller,
             )
             self.__dict__["id"] = self.content_fingerprint
         folder = self.shadow_dir
         folder.mkdir(parents=True, exist_ok=True)
-        meta_path = folder / _METADATA_JSON
+        return folder / _METADATA_JSON
+
+    # ── Save / Load ───────────────────────────────────────────────────────
+
+    def save(self) -> Path:
+        """Write metadata.json into the shadow folder. Mints id if absent."""
+        meta_path = self._meta_path_for_write("save()")
         meta_path.write_text(
             json.dumps(self.to_dict(), indent=2, ensure_ascii=False, default=str),
             encoding="utf-8",
@@ -454,21 +461,7 @@ class FSRecord(Generic[M]):
         never clobbers a fresh on-disk one. Unmentioned keys are preserved.
         ``type``/``id`` are always anchored from the record's identity.
         """
-        if self.id is None:
-            # An id-less record reaching disk used to silently mint a fifth
-            # identity formula here, invisible to every identity guard. Log for
-            # one release, then raise — `shadow_dir` below already refuses.
-            logging.warning(
-                "[asset-id] FSRecord(%s) reached %s with no id; identity must come from "
-                "TypeInfo.mint_entity_id before save. Falling back to the content "
-                "fingerprint, which is NOT an entity id.",
-                self.type,
-                "save_metadata()",
-            )
-            self.__dict__["id"] = self.content_fingerprint
-        folder = self.shadow_dir
-        folder.mkdir(parents=True, exist_ok=True)
-        meta_path = folder / _METADATA_JSON
+        meta_path = self._meta_path_for_write("save_metadata()")
         merged: dict = {}
         if meta_path.exists():
             try:
