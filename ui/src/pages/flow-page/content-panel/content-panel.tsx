@@ -90,22 +90,14 @@ const GenericSubgraphView = lazy(() =>
 const GraphWorkflowsView = lazy(() =>
   import('@src/components/graph-workflows/GraphWorkflowsView').then((m) => ({ default: m.GraphWorkflowsView })),
 );
-const EventsView = lazy(() =>
-  import('@src/components/events/EventsView').then((m) => ({ default: m.EventsView })),
-);
+const EventsView = lazy(() => import('@src/components/events/EventsView').then((m) => ({ default: m.EventsView })));
 const DataSourcesView = lazy(() =>
   import('@src/components/data-sources/DataSourcesView').then((m) => ({ default: m.DataSourcesView })),
 );
 const RunsView = lazy(() => import('@src/components/runs/RunsView').then((m) => ({ default: m.RunsView })));
-const SurveyView = lazy(() =>
-  import('@src/components/survey/SurveyView').then((m) => ({ default: m.SurveyView })),
-);
-const ShowView = lazy(() =>
-  import('@src/components/show-view/ShowView').then((m) => ({ default: m.ShowView })),
-);
-const AppHost = lazy(() =>
-  import('@src/components/app-host/AppHost').then((m) => ({ default: m.AppHost })),
-);
+const SurveyView = lazy(() => import('@src/components/survey/SurveyView').then((m) => ({ default: m.SurveyView })));
+const ShowView = lazy(() => import('@src/components/show-view/ShowView').then((m) => ({ default: m.ShowView })));
+const AppHost = lazy(() => import('@src/components/app-host/AppHost').then((m) => ({ default: m.AppHost })));
 const DocsGraphView = lazy(() =>
   import('@src/components/graph-view/DocsGraphView').then((m) => ({ default: m.DocsGraphView })),
 );
