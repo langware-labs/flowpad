@@ -245,12 +245,14 @@ def test_golden_entity_allocate_id_branches() -> None:
     assert uuid.UUID(Entity.allocate_id({"type": "markdown"})).version == 4, "absent → v4"
 
 
-def test_golden_fsrecord_fingerprint_formula(tmp_path: Path) -> None:
-    """`FSRecord.fingerprint` is a FOURTH id formula, assigned as `.id` on save.
+def test_golden_fsrecord_content_fingerprint_is_not_an_entity_id(tmp_path: Path) -> None:
+    """`FSRecord.content_fingerprint` was a FIFTH id formula, assigned on save.
 
-    Pinned here precisely because it is invisible to the identity guards: it uses
-    NAMESPACE_URL keyed on `type:asset_ref`, which is NOT what its docstring
-    claims (`Entity.allocate_id` uses NAMESPACE_DNS keyed on `type:rid`).
+    Its value is pinned (some callers may still hash on it), but the point of
+    this test is the SECOND assertion: it must never agree with the seam, so
+    nobody is tempted to treat it as identity again. It keys `type:path` under
+    NAMESPACE_URL, while `Entity.allocate_id` keys `type:rid` under
+    NAMESPACE_DNS — the docstring claiming they "match" was simply false.
     """
     from flow_sdk.fs_store.fs_record import FSRecord
 
@@ -258,9 +260,11 @@ def test_golden_fsrecord_fingerprint_formula(tmp_path: Path) -> None:
     path.write_text("body", encoding="utf-8")
     rec = FSRecord(type="markdown", asset_ref=FSRef(path))
 
-    assert rec.fingerprint == str(
+    assert rec.content_fingerprint == str(
         uuid.uuid5(uuid.NAMESPACE_URL, f"markdown:{FSRef(path).path}")
     )
+    seam = _info("markdown").mint_entity_id(FSRef(path), derive=True, overwrite=True)
+    assert rec.content_fingerprint != seam, "a content hash is not an entity id"
 
 
 def test_golden_markdown_id_diverges_from_the_seam_on_a_capsule_only_doc(

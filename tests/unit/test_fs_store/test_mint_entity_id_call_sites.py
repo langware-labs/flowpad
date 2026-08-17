@@ -152,3 +152,62 @@ def test_the_minter_detector_actually_detects(tmp_path: Path) -> None:
         "def thing_id(ref):\n    return mint_uuid(str(ref))\n", encoding="utf-8"
     )
     assert len(_per_type_minters(tmp_path)) == 1
+
+
+#: Raw ``uuid4``/``uuid5`` allowed under the identity-critical tree. Every entry
+#: carries a REASON; "it was already there" is how the last twenty got in.
+_RAW_UUID_ALLOWLIST = {
+    # `content_fingerprint` — a content hash over (type, path). Explicitly NOT
+    # an entity id (it was one until 0.2.121, which is the bug it caused).
+    ("fs_record.py", "uuid5"),
+    # scan_log / index_log row ids: JSONL diagnostic rows, never entities.
+    ("schema_registry.py", "uuid4"),
+    # record_error / claude_hook: log rows and a Phase-4 stub, not entities.
+    ("record_error.py", "uuid4"),
+    ("claude_hook.py", "uuid4"),
+}
+
+
+def _raw_uuid_sites(root: Path) -> list[str]:
+    """Raw ``uuid.uuid4()`` / ``uuid.uuid5()`` calls under ``root``.
+
+    Entity ids are minted by ``mint_uuid`` so the v4/v5 version policy lives in
+    one place (see CLAUDE.md, "Mint through one place"). A hand-rolled uuid also
+    escapes every identity guard — which is how four separate copies of
+    ``uuid5(DNS, "project:"+cwd)`` came to exist, one of them silently skipping
+    canonicalization.
+    """
+    hits: list[str] = []
+    for path in root.rglob("*.py"):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError):
+            continue
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in ("uuid4", "uuid5")
+                and (path.name, node.func.attr) not in _RAW_UUID_ALLOWLIST
+            ):
+                hits.append(f"{path.name}:{node.lineno} uuid.{node.func.attr}()")
+    return sorted(hits)
+
+
+def test_no_raw_uuid_in_the_identity_tree() -> None:
+    sites = _raw_uuid_sites(FLOW_SDK / "fs_store")
+    sites += _raw_uuid_sites(FLOW_SDK / "schema" / "type_info")
+    assert sites == [], (
+        "construct ids through `mint_uuid` (or, for a filesystem asset, "
+        "`TypeInfo.mint_entity_id`) so the v4/v5 policy stays in one place. Note "
+        "the argument order differs — mint_uuid(key, namespace=...) vs "
+        "uuid.uuid5(namespace, key) — so preserve the pair exactly or every id of "
+        "that type moves. Found:\n  " + "\n  ".join(sites)
+    )
+
+
+def test_the_raw_uuid_detector_actually_detects(tmp_path: Path) -> None:
+    (tmp_path / "probe.py").write_text(
+        "import uuid\nx = uuid.uuid4()\n", encoding="utf-8"
+    )
+    assert len(_raw_uuid_sites(tmp_path)) == 1

@@ -75,17 +75,38 @@ Types declare `CapsuleSpec("identity", 1)` and an identity backend in
 v4/v5 validation, stable-key choice, and `mint_uuid` calls:
 
 ```text
-extract_id(ref)
-  → canonical identity capsule
-  → ordered read-only legacy/native readers
-  → adopt only UUID v4/v5
+mint_entity_id(ref, *, owner_id=None, live_ids=None,
+               proposed_id=None, derive=False, overwrite=False)
 
-mint_id(ref, proposed_id=None)
-  → observe again
-  → existing filesystem id wins
-  → mint/propose only on absence
-  → atomic store_if_absent
+  observe the carrier ONCE
+    → canonical identity capsule
+    → ordered read-only legacy/native readers
+    → adopt only UUID v4/v5   (a foreign id reads as "no carrier")
+
+  1. the carrier   IF no row owns this path
+                   OR the carrier IS that row
+                   OR the carrier is a live id of this type
+  2. else owner_id — the row that already owns ref's path
+  3. else derive   — stable key / path-v5 / fresh v4   [derive=True]
+                     committed via atomic store_if_absent [overwrite=True]
 ```
+
+The ordering axis is carrier **liveness**, not "file vs database". `live_ids` is
+the oracle: `None` means "cannot prove dead", so a valid carrier always wins —
+only the index walk, which holds the complete per-type id set, may conclude that
+a carrier names no entity.
+
+There is no separate extract/mint pair. A read-then-mint pair (`extract_id(ref)
+or mint_id(ref)`) skips step 2, so a full-content rewrite that wiped the carrier
+invents a new id for a path a row already owns — forking the entity and leaving
+every bookmark and display pin dangling. An AST lint fails the build on that
+shape and on the old method names.
+
+`derive=False` (the default) is the read-only probe: it answers only from
+evidence and returns `None` when there is none. Collision-identity ranking,
+create guards and publication assertions all depend on that `None` — a derived
+value would make two unstamped copies look identical. An INVALID carrier keeps
+its bytes even under `overwrite`; only an ABSENT one is stamped.
 
 Legacy Markdown `id`/`asset_id`, folder `.flow/id`, and manifest identities
 remain readable without cleanup, backfill, or dual-write. Types whose native

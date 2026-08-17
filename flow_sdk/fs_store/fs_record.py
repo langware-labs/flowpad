@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import uuid
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
@@ -342,8 +343,16 @@ class FSRecord(Generic[M]):
     # ── Identity ──────────────────────────────────────────────────────────
 
     @property
-    def fingerprint(self) -> str:
-        """Deterministic uuid5 for (type, asset_ref). Matches Entity.allocate_id."""
+    def content_fingerprint(self) -> str:
+        """Deterministic uuid5 over ``(type, asset_ref or name)``.
+
+        NOT an entity id, despite having been assigned as one until 0.2.121.
+        It is a fifth identity formula that never agreed with any of the others
+        — ``Entity.allocate_id`` keys ``type:rid`` under NAMESPACE_DNS, while
+        this keys ``type:path`` under NAMESPACE_URL — and it can fall back to
+        ``name``, so two records with the same name at unrelated paths collide.
+        Entity identity comes from ``TypeInfo.mint_entity_id`` and nowhere else.
+        """
         key = self._asset_ref.path if self._asset_ref else (self.__dict__.get("name") or "")
         return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{self.type}:{key}"))
 
@@ -407,7 +416,17 @@ class FSRecord(Generic[M]):
     def save(self) -> Path:
         """Write metadata.json into the shadow folder. Mints id if absent."""
         if self.id is None:
-            self.__dict__["id"] = self.fingerprint
+            # An id-less record reaching disk used to silently mint a fifth
+            # identity formula here, invisible to every identity guard. Log for
+            # one release, then raise — `shadow_dir` below already refuses.
+            logging.warning(
+                "[asset-id] FSRecord(%s) reached %s with no id; identity must come from "
+                "TypeInfo.mint_entity_id before save. Falling back to the content "
+                "fingerprint, which is NOT an entity id.",
+                self.type,
+                "save()",
+            )
+            self.__dict__["id"] = self.content_fingerprint
         folder = self.shadow_dir
         folder.mkdir(parents=True, exist_ok=True)
         meta_path = folder / _METADATA_JSON
@@ -436,7 +455,17 @@ class FSRecord(Generic[M]):
         ``type``/``id`` are always anchored from the record's identity.
         """
         if self.id is None:
-            self.__dict__["id"] = self.fingerprint
+            # An id-less record reaching disk used to silently mint a fifth
+            # identity formula here, invisible to every identity guard. Log for
+            # one release, then raise — `shadow_dir` below already refuses.
+            logging.warning(
+                "[asset-id] FSRecord(%s) reached %s with no id; identity must come from "
+                "TypeInfo.mint_entity_id before save. Falling back to the content "
+                "fingerprint, which is NOT an entity id.",
+                self.type,
+                "save_metadata()",
+            )
+            self.__dict__["id"] = self.content_fingerprint
         folder = self.shadow_dir
         folder.mkdir(parents=True, exist_ok=True)
         meta_path = folder / _METADATA_JSON
