@@ -4741,7 +4741,12 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="load-embedded-agent")
     async def load_embedded_agent_action(self, asset_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
-        """Load an agent from a VFS path and embed it into this process.
+        """Load an agent from its ``asset_ref`` and embed it into this process.
+
+        ``asset_ref`` is the agent record's own OS filesystem path (an ``FSRef``
+        path), NOT a VFS path — it was renamed from ``source_vfs_path`` and the
+        contract changed with it, which is what stranded the old VFS-style
+        re-rooting below.
 
         Materializes the agent markdown into the process asset directory so the
         generated system-instruction files can include it on every launch.
@@ -4756,10 +4761,13 @@ class AgenticProcess(Entity):
             extract_subagent_from_path,
             render_subagent_markdown,
         )
-
         if not asset_ref:
             return ApiFailResponse(message="asset_ref is required")
-        abs_path = Path("/" + asset_ref.lstrip("/"))
+        # `Path(ref).resolve()` — the same construction FSRef itself uses, and
+        # which `_agent_entity_ref` re-applies to this value downstream. Rooting
+        # it with `Path("/" + ref)` instead corrupted every Windows ref
+        # (`C:\...` → `\C:\...`), so the file never existed and the embed failed.
+        abs_path = Path(asset_ref).resolve()
         if not abs_path.exists():
             return ApiFailResponse(message=f"Agent file not found: {abs_path}")
         agent = extract_subagent_from_path(abs_path)
@@ -4813,7 +4821,8 @@ class AgenticProcess(Entity):
 
         if not asset_ref:
             return ApiFailResponse(message="asset_ref is required")
-        skill_dir = Path("/" + asset_ref.lstrip("/")).resolve()
+        # Absolute already (see load_embedded_agent_action) — do not re-root.
+        skill_dir = Path(asset_ref).resolve()
         if not skill_dir.is_dir():
             return ApiFailResponse(message=f"Skill folder not found: {skill_dir}")
         if not (skill_dir / "SKILL.md").exists():
