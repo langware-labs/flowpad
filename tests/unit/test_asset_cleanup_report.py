@@ -72,7 +72,7 @@ async def test_report_with_garbage_posts_feed_entry():
 
     # report.json materialized at asset_ref with the full payload.
     assert saved.asset_ref, "asset_ref must point at report.json"
-    doc = json.loads(Path("/" + str(saved.asset_ref).lstrip("/")).read_text())
+    doc = json.loads(Path(str(saved.asset_ref)).resolve().read_text())
     assert doc["id"] == report.id
     assert len(doc["findings"]) == 2
     assert "test_skill" in doc["markdown"]
