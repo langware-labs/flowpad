@@ -60,6 +60,7 @@ class ClaudeAgentOptions(AgentOptions):
         fork_session_id: str | None = None,
         model: str | None = None,
         debug: bool = False,
+        debug_file: str | None = None,
         permission_mode: str = "bypassPermissions",
         chrome: bool = False,
         worktree: bool = False,
@@ -79,6 +80,13 @@ class ClaudeAgentOptions(AgentOptions):
         self.fork_session_id = fork_session_id
         self.model = model
         self.debug = debug
+        # ``--debug-file`` redirects the debug stream to a path WE own. Two
+        # reasons that matters: the CLI's own ``~/.claude/debug/`` is pruned by
+        # its ``.last-cleanup`` housekeeping (the log for the incident you want
+        # is routinely gone by the time you look), and a redirected debug
+        # stream leaves stderr empty — measured 0 bytes — so turning debug on
+        # does not flood ``_drain_stderr``'s WARNING logging.
+        self.debug_file = debug_file
         self.permission_mode = permission_mode
         self.chrome = chrome
         self.worktree = worktree
@@ -132,6 +140,8 @@ class ClaudeAgentOptions(AgentOptions):
             flags.append("--chrome")
         if self.debug:
             flags.append("--debug")
+        if self.debug_file:
+            flags.extend(["--debug-file", self.debug_file])
         if self.worktree:
             flags.append("--worktree")
         if self.verbose:
@@ -217,6 +227,7 @@ class ClaudeAgentOptions(AgentOptions):
                 "fork_session_id": self.fork_session_id,
                 "model": self.model,
                 "debug": self.debug,
+                "debug_file": self.debug_file,
                 "permission_mode": self.permission_mode,
                 "chrome": self.chrome,
                 "worktree": self.worktree,
@@ -238,6 +249,7 @@ class ClaudeAgentOptions(AgentOptions):
             fork_session_id=data.get("fork_session_id"),
             model=data.get("model"),
             debug=bool(data.get("debug", False)),
+            debug_file=data.get("debug_file"),
             permission_mode=data.get("permission_mode", "bypassPermissions"),
             chrome=bool(data.get("chrome", False)),
             worktree=bool(data.get("worktree", False)),
