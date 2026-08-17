@@ -1,8 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useProject } from '@sdk/react/hooks';
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
-import { CodexIcon } from '@src/components/icons/CodexIcon';
-import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { BindSecretDialog } from '@src/components/project-home/BindSecretDialog';
 import {
@@ -36,6 +33,7 @@ import { WikiButton, WikiTip } from '@src/components/wiki-tip';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { QuickCreateDialog } from './QuickCreateDialog';
 import { QUICK_CREATE_REGISTRY, getDescriptor } from './registry';
+import { providerMetaFor } from '@src/tabs/provider-meta';
 
 /** Registry types deliberately absent from this launcher (still creatable from
  *  the Assets page's per-type "+"). */
@@ -48,6 +46,7 @@ const HIDDEN_ASSET_TYPES = new Set(['dynamic_workflow']);
 const CLAUDE_CODE_WIKI = 'Claude Code sessions';
 const CODEX_WIKI = 'Codex sessions';
 const COPILOT_WIKI = 'Copilot sessions';
+const OPENCODE_WIKI = 'OpenCode sessions';
 const SECRET_WIKI = 'Project secrets';
 const CONVERSATION_WIKI = 'Conversations';
 
@@ -306,7 +305,7 @@ export function QuickCreatePanel({
   // navigate to its terminal dock pointer (URL-first; the loader owns the view).
   // Not memoized: `onDone` is a fresh arrow from the modal host every render, so
   // a useCallback here could never hit, and no consumer is memo'd anyway.
-  const handleStartSession = async (workerType: 'claude_code' | 'codex' | 'copilot') => {
+  const handleStartSession = async (workerType: 'claude_code' | 'codex' | 'copilot' | 'opencode') => {
     onDone?.();
     // openNewChat creates AND navigates (carrying the chat mode) — no second nav.
     const process = await openNewChat(navigation, { workerType });
@@ -336,30 +335,27 @@ export function QuickCreatePanel({
     iconClassName: string;
     onClick: () => void;
   }> = [
-    {
-      key: 'claude_code',
-      Icon: ClaudeIcon,
-      label: t`Claude Code`,
-      wikiword: CLAUDE_CODE_WIKI,
-      iconClassName: 'text-orange-500',
-      onClick: () => void handleStartSession('claude_code'),
-    },
-    {
-      key: 'codex',
-      Icon: CodexIcon,
-      label: t`Codex`,
-      wikiword: CODEX_WIKI,
-      iconClassName: 'text-emerald-500',
-      onClick: () => void handleStartSession('codex'),
-    },
-    {
-      key: 'copilot',
-      Icon: CopilotIcon,
-      label: t`Copilot`,
-      wikiword: COPILOT_WIKI,
-      iconClassName: 'text-sky-500',
-      onClick: () => void handleStartSession('copilot'),
-    },
+    // Glyph and colour come from `PROVIDER_META`; only the label and wiki page
+    // are this surface's own. Hardcoding the icon here is how a vendor ends up
+    // wearing Claude's mark on one screen and its own on another.
+    ...(
+      [
+        ['claude_code', t`Claude Code`, CLAUDE_CODE_WIKI],
+        ['codex', t`Codex`, CODEX_WIKI],
+        ['copilot', t`Copilot`, COPILOT_WIKI],
+        ['opencode', t`OpenCode`, OPENCODE_WIKI],
+      ] as const
+    ).map(([workerType, label, wikiword]) => {
+      const meta = providerMetaFor(workerType);
+      return {
+        key: workerType,
+        Icon: meta.Icon,
+        label,
+        wikiword,
+        iconClassName: meta.iconClassName,
+        onClick: () => void handleStartSession(workerType),
+      };
+    }),
   ];
 
   // Folder tiles are the context-folder sources, flattened out of the "+"

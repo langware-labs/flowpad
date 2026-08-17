@@ -1,4 +1,4 @@
-"""Real-binary smoke for the codex + copilot CLI drivers.
+"""Real-binary smoke for the codex + copilot + opencode CLI drivers.
 
 Purpose: make **fixture drift detectable**. The unit parser tests
 (``tests/unit/test_transcript_analyzer/``) run against checked-in JSONL
@@ -24,6 +24,7 @@ Run:
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -33,6 +34,7 @@ import pytest
 
 from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotAgentOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.opencode import OpenCodeAgentOptions
 from flow_sdk.transcript_analyzer import AgentTranscriptFile
 from flow_sdk.transcript_analyzer.entries import UnknownEntry
 from tests.long_tests._model_tier import small_model_for
@@ -136,9 +138,22 @@ _copilot = pytest.param(
     marks=pytest.mark.skipif(shutil.which("copilot") is None, reason="copilot CLI not installed"),
     id="copilot",
 )
+# OpenCode's terminal is ``step_finish`` with ``part.reason == "stop"``; the same
+# event with ``reason == "tool-calls"`` is a continuation, not an ending. It needs
+# a provider key read straight from the environment (opencode resolves OpenRouter
+# with no config file at all), so the turn SKIPS rather than fails when none is
+# configured — an unauthenticated CLI is an environment fact, not a driver bug.
+_opencode = pytest.param(
+    "opencode", OpenCodeAgentOptions, {"step_finish"},
+    marks=pytest.mark.skipif(
+        shutil.which("opencode") is None or not os.environ.get("OPENROUTER_API_KEY"),
+        reason="opencode CLI not installed or no OPENROUTER_API_KEY",
+    ),
+    id="opencode",
+)
 
 
-@pytest.mark.parametrize("worker, options_cls, success_types", [_codex, _copilot])
+@pytest.mark.parametrize("worker, options_cls, success_types", [_codex, _copilot, _opencode])
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_version_smoke(worker, options_cls, success_types):
     binary = shutil.which(worker)
@@ -149,7 +164,7 @@ def test_version_smoke(worker, options_cls, success_types):
     assert any(ch.isdigit() for ch in result.stdout)
 
 
-@pytest.mark.parametrize("worker, options_cls, success_types", [_codex, _copilot])
+@pytest.mark.parametrize("worker, options_cls, success_types", [_codex, _copilot, _opencode])
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_headless_turn_parses(worker, options_cls, success_types, tmp_path: Path):
     _run_turn_and_parse(

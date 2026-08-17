@@ -22,7 +22,7 @@ export function useResumeInTerminal() {
         try {
           const p = await AgenticProcess.getByWorkerId(workerId, workerType ?? null);
           if (!p) {
-            notify.error({ title: 'Session not found', message: `Session ${workerId} is not in Claude, Codex, or Copilot history.`, id: `session-not-found:${workerId}` });
+            notify.error({ title: 'Session not found', message: `Session ${workerId} is not in Claude, Codex, Copilot or OpenCode history.`, id: `session-not-found:${workerId}` });
             return;
           }
           // The bookmark/open-session UX wants the live PTY (the timestamp

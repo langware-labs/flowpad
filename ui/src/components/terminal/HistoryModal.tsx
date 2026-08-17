@@ -4,9 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/component
 import { Checkbox } from '@src/components/ui/checkbox';
 import { SideDrawer } from '@src/components/ui/side-drawer';
 import { TooltipProvider } from '@src/components/ui/tooltip';
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
-import { CodexIcon } from '@src/components/icons/CodexIcon';
-import { CopilotIcon } from '@src/components/icons/CopilotIcon';
+import { providerMetaFor } from '@src/tabs/provider-meta';
 import { PromptIndexPanel, usePromptsForProcess } from '@src/components/terminal/interactive-terminal/side-windows';
 import { cn } from '@src/lib/utils';
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
@@ -65,14 +63,14 @@ function formatFullDate(iso: string | null | undefined): string {
   });
 }
 
+/** Vendor glyph via `PROVIDER_META` — the same shared table `WorkerIcon` in
+ *  `entity-execution-panel/history-row.tsx` reads. This was a duplicate
+ *  if-ladder that enumerated codex/copilot and fell through to Claude, so an
+ *  opencode row in this modal wore Claude's mark. Two hand-rolled copies of one
+ *  registry is how that drift happened; both now read the registry. */
 function WorkerIcon({ workerType }: { workerType: WorkerHistoryEntry['worker_type'] }) {
-  if (workerType === 'codex') {
-    return <CodexIcon className="h-3.5 w-3.5 shrink-0 text-emerald-500" />;
-  }
-  if (workerType === 'copilot') {
-    return <CopilotIcon className="h-3.5 w-3.5 shrink-0 text-sky-500" />;
-  }
-  return <ClaudeIcon className="h-3.5 w-3.5 shrink-0 text-orange-500" />;
+  const meta = providerMetaFor(workerType);
+  return <meta.Icon className={`h-3.5 w-3.5 shrink-0 ${meta.iconClassName}`} />;
 }
 
 interface HistoryModalProps {

@@ -330,6 +330,10 @@ class SystemInstructionAssets:
     assets_dir: Path
     instructions: str
     claude_file: Path
+    # The owning process. Every vendor but opencode reaches these assets through
+    # a directory flag and needs nothing else; opencode reaches them ONLY through
+    # a generated per-process config, which is keyed on this id.
+    process_id: str = ""
 
 
 # Types treated as executable agent inputs by the asset-management UI.
@@ -1406,7 +1410,18 @@ class AgenticProcess(Entity):
                 )
                 self.start_failure = None
                 cleared_start_failure = True
-            self.session_id = self.session_id or str(uuid4())
+            # Mint a provisional id ONLY for a vendor that can actually be
+            # handed one at launch. Codex and opencode mint their own
+            # (``rollout-…`` / ``ses_…``) and reject a foreign id, so stamping a
+            # FlowPad uuid here gave them a phantom session id that no vendor
+            # store has ever heard of — it is later replaced by the adopted real
+            # one, but until then every lookup keyed on it misses. ``prompt()``
+            # already honours this trait (see ``preassign_interactive_session_id``
+            # at the prompt admission); this is the same gate on the open path.
+            if not self.session_id and bool(
+                getattr(self.driver, "preassign_interactive_session_id", False)
+            ):
+                self.session_id = str(uuid4())
             reattach_changed = False
             # True iff this open is respawning a dead worker (after-restart
             # recovery), set in the stale-shell-drop branch below. Drives the
@@ -3716,8 +3731,13 @@ class AgenticProcess(Entity):
                 record_turn_abort(self._record_dir(), session_id=self.session_id)
             return ApiSuccessResponse(data={"cancelled": True, "transport": "cli"})
         if self.pty_mode and self.shell_id:
+            # The interrupt key is a VENDOR trait, not a constant: opencode quits
+            # on Ctrl-C, so sending it here destroyed the session instead of
+            # stopping the turn. Default stays Ctrl-C for every vendor that
+            # doesn't declare otherwise.
+            interrupt = getattr(self.driver, "pty_interrupt_sequence", b"\x03")
             try:
-                await self.send(b"\x03")
+                await self.send(interrupt)
             except ValueError:
                 # No shell actually linked — fall through to the no-turn reply.
                 pass
@@ -3887,6 +3907,7 @@ class AgenticProcess(Entity):
         )
         from flow_sdk.transcript_analyzer import AgentTranscriptFile
         from flow_sdk.transcript_analyzer.entry import EntryKind
+        from flow_sdk.transcript_analyzer.resolver import transcript_change_signature
 
         poll_interval = 0.3
         lock = _PROMPT_LOCKS[self.id]
@@ -3941,6 +3962,7 @@ class AgenticProcess(Entity):
         # loop streams only entries appended for THIS turn.
         emitted = 0
         wm_path, wm_fmt, wm_descriptor = _resolve_transcript()
+        wm_derived = bool(getattr(wm_descriptor, "derived", False))
         if wm_path is not None and wm_path.exists():
             emitted = len(_read_entries(wm_path, wm_fmt))
         else:
@@ -3956,7 +3978,8 @@ class AgenticProcess(Entity):
             nudge_task: asyncio.Task | None = None
             resolved_path: "Path | None" = wm_path if (wm_path and wm_path.exists()) else None
             resolved_fmt = wm_fmt
-            last_sig: "tuple[int, int] | None" = None
+            resolved_derived = wm_derived
+            last_sig: "tuple | None" = None
             active_codex_turn_id: str | None = None
             try:
                 async with lock:
@@ -4091,9 +4114,13 @@ class AgenticProcess(Entity):
                     last_activity = time.monotonic()
                     while True:
                         # Resolve the transcript lazily — it may not exist until
-                        # the worker writes its first line of this turn.
-                        if resolved_path is None or not resolved_path.exists():
+                        # the worker writes its first line of this turn. A
+                        # DERIVED transcript is re-resolved every tick: the
+                        # projection only grows when the driver rebuilds it, so
+                        # watching its mtime alone would never advance.
+                        if resolved_path is None or not resolved_path.exists() or resolved_derived:
                             p, f, descriptor = _resolve_transcript()
+                            resolved_derived = bool(getattr(descriptor, "derived", False))
                             if p is not None and p.exists():
                                 resolved_path, resolved_fmt = p, f
                                 last_sig = None  # force a read
@@ -4101,11 +4128,7 @@ class AgenticProcess(Entity):
                                     await self._persist_transcript_session_id(descriptor)
 
                         if resolved_path is not None and resolved_path.exists():
-                            try:
-                                st = resolved_path.stat()
-                                sig = (st.st_size, st.st_mtime_ns)
-                            except OSError:
-                                sig = None
+                            sig = transcript_change_signature(resolved_path)
                             # Only reparse when the file actually changed.
                             if sig is not None and sig != last_sig:
                                 last_sig = sig
@@ -4183,10 +4206,13 @@ class AgenticProcess(Entity):
                             # window to observe the result before failing.
                             if not landed and needs_initial_type and not blind_delivered.is_set():
                                 logger.warning(
-                                    "prompt-pty: composer marker never matched for %s (%s) and the "
-                                    "user turn never landed — typing the prompt blindly as a last "
-                                    "resort before submission-error; CHECK THE VENDOR COMPOSER "
-                                    "REGEX FOR DRIFT (process %s)",
+                                    "prompt-pty: user turn never landed for %s (%s) — typing the "
+                                    "prompt blindly as a last resort before submission-error. "
+                                    "Either the prompt was never delivered (composer marker drift, "
+                                    "or an unrecognized interstitial owns the screen) or it WAS "
+                                    "delivered and the transcript never showed it — check the "
+                                    "vendor's transcript resolution before blaming the regex "
+                                    "(process %s)",
                                     self.id,
                                     worker_type,
                                     self.id,
@@ -4305,23 +4331,25 @@ class AgenticProcess(Entity):
             entry_to_flowdata,
         )
         from flow_sdk.transcript_analyzer import AgentTranscriptFile
+        from flow_sdk.transcript_analyzer.resolver import transcript_change_signature
 
         poll_interval = 0.3
         worker_type = self.driver.name
         noise = live_stream_noise_kinds()
         handler = StreamingResponseHandler()
 
-        def _transcript_path() -> "Path | None":
+        def _transcript_path() -> "tuple[Path | None, bool]":
+            """Return ``(path, derived)`` — see ``TranscriptDescriptor.derived``."""
             try:
                 desc = self.driver.transcript_descriptor(self)
             except Exception:
                 desc = None
             if desc is not None:
-                return desc.path
+                return desc.path, desc.derived
             try:
-                return self.driver.transcript_path(self)
+                return self.driver.transcript_path(self), False
             except Exception:
-                return None
+                return None, False
 
         def _read_entries(path: "Path") -> list:
             """Full reparse keyed off entry COUNT — same choice the prompt
@@ -4344,7 +4372,7 @@ class AgenticProcess(Entity):
                 logger.debug("observe-turn: transcript parse failed for %s", path, exc_info=True)
                 return []
 
-        path = _transcript_path()
+        path, derived = _transcript_path()
         # Watermark at open: the caller's pane loads history on mount, so
         # everything up to now is already on screen. Stream only what the turn
         # appends from here.
@@ -4353,16 +4381,17 @@ class AgenticProcess(Entity):
         async def _observe() -> None:
             nonlocal emitted
             try:
-                last_sig: "tuple[int, int] | None" = None
+                last_sig: "tuple | None" = None
                 saw_marker = False
                 while True:
-                    p = path if (path is not None and path.exists()) else _transcript_path()
+                    # A derived transcript is rebuilt by the driver, so it must
+                    # be re-resolved every tick (see ``TranscriptDescriptor``).
+                    if derived or path is None or not path.exists():
+                        p, _ = _transcript_path()
+                    else:
+                        p = path
                     if p is not None and p.exists():
-                        try:
-                            st = p.stat()
-                            sig = (st.st_size, st.st_mtime_ns)
-                        except OSError:
-                            sig = None
+                        sig = transcript_change_signature(p)
                         if sig is not None and sig != last_sig:
                             last_sig = sig
                             entries = _read_entries(p)
@@ -5077,6 +5106,7 @@ class AgenticProcess(Entity):
             assets_dir=asset_dir.os_path,
             instructions=instructions,
             claude_file=claude_file,
+            process_id=self.id,
         )
 
     @staticmethod
@@ -5086,20 +5116,8 @@ class AgenticProcess(Entity):
     ) -> None:
         if assets is None:
             return
-        if hasattr(cmd, "add_dirs"):
-            add_dirs = list(getattr(cmd, "add_dirs", []) or [])
-            assets_path = str(assets.assets_dir)
-            if assets_path not in add_dirs:
-                add_dirs.append(assets_path)
-                cmd.add_dirs = add_dirs
-        cmd.system_prompt_append = None
-        cmd.system_prompt_file = str(assets.claude_file)
-        if hasattr(cmd, "developer_instructions"):
-            cmd.developer_instructions = assets.instructions
-        if hasattr(cmd, "custom_instruction_dirs"):
-            cmd.custom_instruction_dirs = [str(assets.assets_dir)]
-            if hasattr(cmd, "no_custom_instructions"):
-                cmd.no_custom_instructions = False
+        # One seam, owned by the argv class — see ``AgentOptions``.
+        cmd.apply_instruction_assets(assets)
 
     @staticmethod
     def _instruction_context_kwargs(

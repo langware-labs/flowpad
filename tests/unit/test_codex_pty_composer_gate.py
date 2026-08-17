@@ -39,6 +39,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.driver import CodexDriver
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.driver import CopilotDriver
+from flow_sdk.builtin.agentic_process.cli_drivers.opencode.driver import OpenCodeDriver
 from flow_sdk.builtin.shell import _next_unseen_pty_output
 from flow_sdk.compute.providers.desktop.pty_stream_file import PtyStreamFile
 
@@ -56,6 +57,8 @@ CLAUDE_COMPOSER_CAPTURE = _raw_capture("claude_pty_composer_2_1_207.b64")
 CLAUDE_RESUME_COMPOSER_CAPTURE = _raw_capture("claude_pty_resume_composer_2_1_220.b64")
 COPILOT_TRUST_CAPTURE = _raw_capture("copilot_pty_trust_1_0_70.b64")
 COPILOT_COMPOSER_CAPTURE = _raw_capture("copilot_pty_composer_1_0_70.b64")
+OPENCODE_BOOT_CAPTURE = _raw_capture("opencode_pty_boot_1_18_16.b64")
+OPENCODE_COMPOSER_CAPTURE = _raw_capture("opencode_pty_composer_1_18_16.b64")
 
 
 # ── driver interface symmetry ────────────────────────────────────────────────
@@ -70,6 +73,7 @@ def test_composer_patterns_are_driver_traits():
     assert isinstance(CodexDriver.pty_composer_ready_pattern, re.Pattern)
     assert isinstance(ClaudeDriver.pty_composer_ready_pattern, re.Pattern)
     assert isinstance(CopilotDriver.pty_composer_ready_pattern, re.Pattern)
+    assert isinstance(OpenCodeDriver.pty_composer_ready_pattern, re.Pattern)
 
 
 # ── the codex marker vs the real captures ───────────────────────────────────
@@ -646,3 +650,36 @@ async def test_blind_last_resort_when_composer_marker_never_matches(tmp_path):
     assert inactivity_landed, "expected a terminal inactivity result"
     assert False not in inactivity_landed
     assert inactivity_landed[-1] is True
+
+
+# ── the opencode marker vs its real captures ────────────────────────────────
+
+
+def test_opencode_composer_marker_matches_the_real_composer():
+    """``Ask anything`` is the composer placeholder in opencode 1.18.16."""
+    text = strip_pty_controls(OPENCODE_COMPOSER_CAPTURE)
+    assert OpenCodeDriver.pty_composer_ready_pattern.search(text)
+
+
+def test_opencode_paints_no_blocking_interstitial():
+    """OpenCode is the one vendor here with nothing to gate against.
+
+    Codex and copilot both cold-boot into a directory-trust screen, which is the
+    whole reason this gate exists. OpenCode 1.18.16 goes straight to its
+    composer even against a pristine data home — this capture was taken with a
+    fresh ``XDG_DATA_HOME`` and still reached the composer. The marker is
+    therefore still correct (delivery waits for a real composer rather than for
+    silence), but there is deliberately no "rejects the interstitial" assertion
+    to pair with it: asserting one would mean inventing a screen the vendor does
+    not paint. If a future version adds one, this test is where it gets caught.
+    """
+    boot_text = strip_pty_controls(OPENCODE_BOOT_CAPTURE)
+    assert OpenCodeDriver.pty_composer_ready_pattern.search(boot_text), (
+        "a pristine-data-home boot reached the composer with no interstitial"
+    )
+
+
+def test_opencode_marker_does_not_fire_on_a_half_painted_screen():
+    """The gate must not fire on the banner alone — only once input is offered."""
+    partial = "▄     █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀  loading..."
+    assert not OpenCodeDriver.pty_composer_ready_pattern.search(partial)

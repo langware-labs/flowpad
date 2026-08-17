@@ -751,6 +751,31 @@ class AgentOptions:
     def add_env(self, key: str, value: str) -> None:
         self.env_vars[key] = value
 
+    def apply_instruction_assets(self, assets: "Any") -> None:
+        """Route FlowPad's generated instruction/skill assets into this argv.
+
+        The one seam for "how does a vendor receive system instructions".
+        The default covers every vendor that reads them off the filesystem via
+        a directory flag (``--add-dir`` / custom-instruction dirs) plus a
+        system-prompt file. A vendor with a different channel — opencode reaches
+        them only through a generated config file — overrides this instead of
+        the shared caller growing another ``hasattr`` arm.
+        """
+        if hasattr(self, "add_dirs"):
+            add_dirs = list(getattr(self, "add_dirs", []) or [])
+            assets_path = str(assets.assets_dir)
+            if assets_path not in add_dirs:
+                add_dirs.append(assets_path)
+                self.add_dirs = add_dirs
+        self.system_prompt_append = None
+        self.system_prompt_file = str(assets.claude_file)
+        if hasattr(self, "developer_instructions"):
+            self.developer_instructions = assets.instructions
+        if hasattr(self, "custom_instruction_dirs"):
+            self.custom_instruction_dirs = [str(assets.assets_dir)]
+            if hasattr(self, "no_custom_instructions"):
+                self.no_custom_instructions = False
+
     def _system_prompt(self, override: str | None) -> str | None:
         """Explicit per-call value wins; else the launch-derived field."""
         return override if override is not None else self.system_prompt_append
@@ -1125,6 +1150,10 @@ def factory(cli_json: dict, worker_type: str) -> AgentOptions:
         from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotAgentOptions
 
         return CopilotAgentOptions.from_json(cli_json)
+    if worker_type == "opencode":
+        from flow_sdk.builtin.agentic_process.cli_drivers.opencode.cli import OpenCodeAgentOptions
+
+        return OpenCodeAgentOptions.from_json(cli_json)
     raise ValueError(f"Unknown worker_type: {worker_type!r}")
 
 
@@ -1217,6 +1246,14 @@ class WorkerDriver(Protocol):
 
     name: str  # wire id: "claude" | "codex" | "copilot"
     preassign_interactive_session_id: bool
+    # The byte sequence that INTERRUPTS an in-flight turn in this vendor's
+    # interactive TUI, leaving the session alive. Ctrl-C for claude/codex/copilot;
+    # opencode QUITS on a single Ctrl-C (measured on 1.18.16: the process exits
+    # and prints its ``opencode -s <id>`` resume hint), so cancelling a turn there
+    # destroyed the whole session instead of stopping generation. Escape is
+    # opencode's interrupt. Read via ``getattr`` with a Ctrl-C default, so a
+    # vendor that does not declare it keeps the historical behaviour.
+    pty_interrupt_sequence: bytes
     # True iff this vendor's interactive TUI submits a pasted prompt that ends
     # in ``\r`` (claude). False for TUIs that treat the trailing ``\r`` as
     # literal text and need a discrete Enter after the paste settles (copilot,
@@ -1400,6 +1437,7 @@ def get_driver(worker_type: Any) -> WorkerDriver:
         "claude": "claude",
         "codex": "codex",
         "copilot": "copilot",
+        "opencode": "opencode",
     }
     name = aliases.get(key, key)
 
@@ -1419,6 +1457,10 @@ def get_driver(worker_type: Any) -> WorkerDriver:
         from flow_sdk.builtin.agentic_process.cli_drivers.copilot.driver import CopilotDriver
 
         driver = CopilotDriver()
+    elif name == "opencode":
+        from flow_sdk.builtin.agentic_process.cli_drivers.opencode.driver import OpenCodeDriver
+
+        driver = OpenCodeDriver()
     else:
         raise ValueError(f"No WorkerDriver registered for worker_type={worker_type!r}")
 

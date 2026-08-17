@@ -42,7 +42,7 @@ import { openHarnessLoginModal, useHarnessLoginStore } from './harness-login-sto
 
 const INSTALL_WIKI_PAGE = 'Install a harness';
 
-type Worker = 'claude' | 'codex' | 'copilot';
+type Worker = 'claude' | 'codex' | 'copilot' | 'opencode';
 type Status = 'unavailable' | 'signedin' | 'awaiting' | 'busy' | 'signedout';
 type AuthMode = 'device' | 'api';
 
@@ -59,6 +59,9 @@ const HARNESS_SUPPORTED_PROVIDERS: Record<Worker, LMApiProvider[]> = {
   claude: [LMApiProvider.OpenRouter],
   codex: [LMApiProvider.OpenRouter],
   copilot: [LMApiProvider.OpenRouter],
+  // OpenCode is provider-agnostic and resolves OpenRouter from a bare
+  // OPENROUTER_API_KEY — no config file, no provider block.
+  opencode: [LMApiProvider.OpenRouter],
 };
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -76,6 +79,7 @@ const FRIENDLY: Record<Worker, { name: string; account: string }> = {
   claude: { name: 'Claude', account: 'Anthropic account' },
   codex: { name: 'Codex', account: 'ChatGPT account' },
   copilot: { name: 'Copilot', account: 'GitHub account' },
+  opencode: { name: 'OpenCode', account: 'provider account' },
 };
 
 /** Shared per-harness state hook: resolves the live Capability entity, its

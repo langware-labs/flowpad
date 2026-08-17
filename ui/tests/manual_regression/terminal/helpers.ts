@@ -304,7 +304,10 @@ export async function getActiveTabName(page: Page): Promise<string> {
  * xterm.js terminal sessions.
  */
 export async function goHome(page: Page) {
-  const homeSidebarBtn = page.locator('[data-rail-item="home"]');
+  // Home is a TOP-BAR control, not a rail slot: `RailItemId` (rail-visibility.ts)
+  // has no 'home' member, so the old `[data-rail-item="home"]` locator could
+  // never resolve and every caller burned the full test timeout on the click.
+  const homeSidebarBtn = page.locator('[data-testid="top-nav-home"]');
   await homeSidebarBtn.click();
   await page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first().waitFor({ state: 'visible', timeout: 15_000 });
 

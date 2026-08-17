@@ -31,4 +31,9 @@ def small_model_for(worker: object) -> str | None:
     key = worker.value if isinstance(worker, WorkerType) else str(worker)
     if key == WorkerType.COPILOT.value:
         return None
+    if key == WorkerType.OPENCODE.value:
+        # OpenCode's tiers ARE resolvable (they carry the provider prefix its
+        # ids require), so ``sm`` is honoured here rather than unset — it maps to
+        # the cheapest open model the live tests can reach.
+        return ModelTier.SM.value
     return ModelTier.SM.value

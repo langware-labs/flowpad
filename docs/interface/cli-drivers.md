@@ -20,6 +20,7 @@ flow_sdk/builtin/agentic_process/cli_drivers/
     claude/                     ← ClaudeDriver + Claude CLI specifics
     codex/                      ← CodexDriver + Codex CLI specifics
     copilot/                    ← CopilotDriver + GitHub Copilot specifics
+    opencode/                   ← OpenCodeDriver + OpenCode specifics (open-source harness)
 ```
 
 **Drivers expose no HTTP actions.** They are a Python-internal seam under
@@ -173,6 +174,7 @@ a new vendor plugs in by implementing the Protocol, with no edits to `agentic_pr
 | `preassign_interactive_session_id` | `bool` | Reserve a session id before the interactive worker starts (claude/copilot = True; codex omits — it mints its own rollout) |
 | `pty_submits_on_paste` | `bool` | True iff the TUI submits a pasted prompt ending in `\r` (claude). False → needs a discrete Enter after the paste settles (codex, copilot) — see `Shell.write_then_submit` |
 | `pty_composer_ready_pattern` | `re.Pattern[str] \| None` | Composer-ready marker in the ANSI-stripped PTY output. When a first prompt must be TYPED (`pty_submits_on_paste` False cold start, or a hot submit), delivery waits for this pattern via `pump_composer_ready` so a boot interstitial (directory trust, login, migration screen) can't eat the prompt. `None` → legacy settle-then-type |
+| `pty_interrupt_sequence` | `bytes` | Bytes that INTERRUPT an in-flight turn in this vendor's TUI, leaving the session alive. Read via `getattr(..., b"\x03")`, so a vendor that omits it keeps Ctrl-C. OpenCode declares `b"\x1b"` (Escape): a single Ctrl-C QUITS its TUI — measured on 1.18.16, the process exits and prints its `opencode -s <id>` resume hint — so the shared cancel path was destroying the session instead of stopping the turn |
 | `pins_resume_cwd` | `bool` | True iff, on resume/fork, the worker's launch cwd (`CLAUDE_PROJECT_DIR` + `workdir`) is pinned to the source session's recorded cwd (claude only) |
 | `device_login_spec` | `DeviceLoginSpec` | How this CLI runs its link(+code) login flow — consumed by the generic engine in `device_login.py`, so no orchestration code branches on vendor |
 
@@ -186,7 +188,7 @@ a new vendor plugs in by implementing the Protocol, with no edits to `agentic_pr
 | Per-turn | `stream_worker(process)` | Return an `AgenticWorker` for HTTP print-mode streaming (FlowData straight to the response) |
 | Per-turn | `report_event(process, name, data)` (async) | Handle a client-reported event; return a debug payload for unknown/unsupported rather than raising |
 | Auth | `auth_probe()` (async) | Probe this CLI's login state (≤5s, never raises). `NOT_INSTALLED` when discovery has no bin folder; `UNKNOWN` when the probe couldn't decide (timeout, exec error, unparseable output) — never conflated with `LOGGED_OUT`. `verified` only when the CLI itself confirmed the state |
-| Discovery | `transcript_descriptor(process)` | Resolved transcript path + native JSONL format metadata, or `None` |
+| Discovery | `transcript_descriptor(process)` | Resolved transcript path + native JSONL format metadata, or `None`. Set `derived=True` when the path is a FlowPad-materialised projection of another store (opencode's SQLite) rather than the file the worker appends to — live pollers RE-RESOLVE a derived transcript every tick, because its own mtime only moves when FlowPad rewrites it |
 | Discovery | `transcript_path(process)` | Where the worker writes its JSONL/event log, or `None` if no session id yet |
 | Discovery | `skills_root(process, assets_dir)` | Directory a skill folder is laid into so this worker discovers it |
 | Discovery | `tail_status(transcript_path)` | Map the transcript tail to a `WorkerStatus` |
@@ -271,6 +273,59 @@ falling back to the device-login picker.
   preference. Fresh start passes the caller-provided `--session-id` (copilot accepts it);
   resume uses `--resume=<id>` only when a session file exists. `_has_session` also counts a
   non-empty process-local tee as resumable.
+- **OpenCode** is the open-source harness, and the one vendor that breaks several of the
+  assumptions the other three share (measured against 1.18.16):
+  - **No `--add-dir`.** Instruction assets and skills reach the worker only through a
+    generated per-process `opencode.json` (`config_gen.py`) pointed at by `OPENCODE_CONFIG`,
+    carrying `instructions: [<assets>/AGENTS.md]` and `skills: {paths: […]}`. Because
+    `prepare_system_instruction_assets()` already writes `AGENTS.md`, no new asset content
+    was needed — only the config that registers it.
+  - **No file-per-session store.** Sessions live in a SQLite database
+    (`<data>/opencode.db`), so there is nothing tail-readable to point `tail_status` at.
+    FlowPad therefore owns the canonical JSONL in *both* modes: the headless stdout tee
+    (`OPENCODE_STREAM`) and, for PTY sessions, a projection assembled from the store
+    (`OPENCODE_SESSION`, `session_history.assemble_session_jsonl`, refreshed only when the
+    database is newer than the projection). `part.data` in the store is the same shape the
+    stream prints, so **one parser serves both formats**.
+  - **Transcript preference is the inverse of copilot's**, deliberately: the tee is the
+    richer source here because the worker writes the user's prompt into it, which
+    opencode's stdout never emits (upstream #29997). The store projection is the fallback,
+    for PTY sessions that never had a tee — and it carries the user message too, since the
+    database does record it.
+  - **No preassigned session id.** `--session <unknown>` exits 1 with "Session not found",
+    so `preassign_interactive_session_id` is omitted (codex's shape) and the `ses_…` id is
+    captured from the first `step_start`. `ses_…` is a vendor id, never an entity id.
+  - **`--fork` exists** (as a modifier on a resume), making opencode the second forking
+    vendor after claude.
+  - **OpenRouter needs no configuration**: opencode resolves it from a bare
+    `OPENROUTER_API_KEY` in the spawn env, so `ApiAuthSpec` carries only that var and no
+    credential is ever written to disk.
+  - **Redirected by XDG**, not by a vendor env var — there is no `OPENCODE_DATA_DIR`;
+    `InstanceSettings.opencode_data_dir` / `opencode_config_dir` follow `XDG_DATA_HOME` /
+    `XDG_CONFIG_HOME`.
+  - **`pty_submits_on_paste = True`** (claude's side of that split, verified from a real
+    PTY capture), and it paints **no** directory-trust or first-run interstitial, so its
+    `Ask anything` composer marker has nothing to be confused with.
+  - No session *entity* type: with no per-session file there is nothing for the filesystem
+    indexer to mint one from, so `SESSION_TYPE_BY_WORKER` deliberately has no opencode row.
+    Consequence for the UI: nothing resolves through `iconForType('opencode_session')`, so
+    surfaces that need its glyph must read `PROVIDER_META` (see the Spotlight row builder,
+    which used to fall through to `claude_session` and render Claude's mark).
+  - **Ctrl-C QUITS its TUI** — measured on 1.18.16: a single `\x03` mid-turn exits the
+    process, which prints its `opencode -s <id>` resume hint. **Escape** interrupts the turn
+    and leaves the composer up. Hence `pty_interrupt_sequence = b"\x1b"`; the shared
+    `cancel-prompt` PTY branch used to send a hardcoded Ctrl-C and so destroyed the session
+    instead of stopping the turn.
+  - **Its store is SQLite in WAL mode** (`wal_autocheckpoint=1000`), so `opencode.db`'s own
+    mtime does NOT move while a session is being written — the bytes land in
+    `opencode.db-wal`. Anything keying freshness on the database file alone never
+    invalidates; use `sqlite_source_mtime` / `transcript_change_signature`
+    (`transcript_analyzer/resolver.py`), which fold in the `-wal`/`-shm` sidecars.
+  - **Event timestamps are integer epoch-ms**, unlike every other vendor's ISO-8601. The
+    parser normalises them (`_iso_timestamp`); passing them through as a bare numeric string
+    makes `new Date(ts)` an Invalid Date and crashes the terminal pane via the error
+    boundary. Its session ids are also **mixed case**, so never lowercase a path segment
+    that contains one.
 
 ---
 
@@ -321,6 +376,15 @@ Two directory trees matter beyond the vendor's own config dir:
   appended to `add_dirs`, so a vendor consumes it either by mounting the dir or by being
   handed one file. A new vendor either reads one of those four, or gets a fifth written
   next to them — it never gets its instructions inlined into the user prompt.
+
+  **The seam is `AgentOptions.apply_instruction_assets(assets)`, on the argv class.** The
+  default is the directory channel above (`add_dirs` / `custom_instruction_dirs` +
+  `system_prompt_file`). A vendor whose instructions arrive some other way OVERRIDES it
+  rather than the shared caller growing another `hasattr` arm — opencode has no
+  `--add-dir` at all, so its override turns the assets dir into a generated
+  `opencode.json` and sets `config_path`, which `_sync_config_env` exports as
+  `OPENCODE_CONFIG`. Skipping the override is not a degraded experience but a silent one:
+  an interactive session simply receives no instructions and no skills.
 - **Skills** — `skills_root(process, assets_dir)` decides where a skill folder is laid
   down: under the mounted assets dir (`assets_dir/.claude/skills` — claude, copilot) or in
   a global vendor location (`$CODEX_HOME/skills` — codex). The orchestrator routes all

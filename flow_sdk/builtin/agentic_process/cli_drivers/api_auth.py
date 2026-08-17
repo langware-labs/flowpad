@@ -122,10 +122,29 @@ COPILOT_API_AUTH_SPEC = ApiAuthSpec(
     model_env_vars=("COPILOT_PROVIDER_MODEL_ID", "COPILOT_PROVIDER_WIRE_MODEL", "COPILOT_MODEL"),
 )
 
+OPENCODE_API_AUTH_SPEC = ApiAuthSpec(
+    # OpenCode resolves OpenRouter from a bare key in the environment — it is a
+    # built-in provider, so unlike codex/copilot there is no provider block, no
+    # config override, and nothing written to disk. Verified on 1.18.16:
+    # ``providers list`` reports the env var and ``models openrouter`` returns
+    # the full catalog with no config file present at all.
+    token_env_var="OPENROUTER_API_KEY",
+    base_env={},
+    tier_models={
+        "sm": "openrouter/z-ai/glm-4.7-flash",
+        "md": "openrouter/z-ai/glm-5.2",
+        "lg": "openrouter/z-ai/glm-5.2",
+    },
+    supported_providers=(LMApiProvider.OPENROUTER,),
+    default_provider=LMApiProvider.OPENROUTER,
+)
+
+
 _SPECS: dict[str, ApiAuthSpec] = {
     "claude": CLAUDE_API_AUTH_SPEC,
     "codex": CODEX_API_AUTH_SPEC,
     "copilot": COPILOT_API_AUTH_SPEC,
+    "opencode": OPENCODE_API_AUTH_SPEC,
 }
 
 
