@@ -648,7 +648,7 @@ class FsRecordsActionsMixin:
         if info is None:
             return None
         try:
-            return info.resolve_id(ref)
+            return info.mint_entity_id(ref, derive=True, overwrite=True)
         except Exception:
             return None
 
@@ -2638,7 +2638,9 @@ async def discover_record_by_path(
                 # per-type id set) means a VALID carrier always wins here; only
                 # the full walk may conclude a carrier names no entity.
                 _owner_id = proposed_id or await owner_id_for(record_type, expanded)
-                resolved_id = _info.resolve_id(one_ref, owner_id=_owner_id, proposed_id=proposed_id)
+                resolved_id = _info.mint_entity_id(
+                    one_ref, owner_id=_owner_id, proposed_id=proposed_id, derive=True, overwrite=True
+                )
 
                 # Match the full indexer's deterministic primary ranking. A
                 # non-primary path remains observable but is neither parsed nor
@@ -2671,7 +2673,7 @@ async def discover_record_by_path(
                             record_type=_RT(record_type),
                             scope=classify_path(candidate),
                         )
-                        candidate_id = _info.extract_id(candidate_ref)
+                        candidate_id = _info.mint_entity_id(candidate_ref)
                         if not candidate_id:
                             return None
                         return record_type, candidate_id, canonical_posix_path(candidate)

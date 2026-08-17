@@ -573,7 +573,7 @@ def test_agent_peek_entity_id_reads_capsule_without_writing(tmp_path):
     assert md.read_bytes() == before, "peek must not write"
     assert is_valid_entity_id(peeked)
     # gen_id stamps a fresh v4 into the frontmatter capsule; peek then reads it.
-    minted = SchemaRegistry.get("subagent").mint_id(FSRef(md, record_type=RecordType.SUBAGENT))
+    minted = SchemaRegistry.get("subagent").mint_entity_id(FSRef(md, record_type=RecordType.SUBAGENT), derive=True, overwrite=True)
     assert uuid.UUID(minted).version == 4
     assert subagent_peek_entity_id(FSRef(md, record_type=RecordType.SUBAGENT)) == minted
 

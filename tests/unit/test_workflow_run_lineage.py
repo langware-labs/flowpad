@@ -24,7 +24,7 @@ def _journal(path: Path, script_path: Path) -> Path:
 
 def _rec(journal: Path):
     ref = FSRef(journal, record_type=RecordType.WORKFLOW_RUN)
-    return extract_workflow_run(ref, SchemaRegistry.get("workflow_run").mint_id(ref))[0]
+    return extract_workflow_run(ref, SchemaRegistry.get("workflow_run").mint_entity_id(ref, derive=True, overwrite=True))[0]
 
 
 def test_skill_bundled_run_links_to_workflow_and_skill(tmp_path):
@@ -39,7 +39,7 @@ def test_skill_bundled_run_links_to_workflow_and_skill(tmp_path):
     assert rec.dynamic_workflow_id == _id_for_path(flow)
     assert is_valid_entity_id(rec.dynamic_workflow_id)
     assert is_valid_entity_id(rec.skill_id)
-    assert SchemaRegistry.get("skill").extract_id(FSRef(skill_dir)) == rec.skill_id
+    assert SchemaRegistry.get("skill").mint_entity_id(FSRef(skill_dir)) == rec.skill_id
 
 
 def test_standalone_workflow_run_has_no_skill(tmp_path):

@@ -203,7 +203,7 @@ def _carrier_id(type_name: str, path: str) -> str | None:
         info = SchemaRegistry.get(type_name)
         if info is None or not Path(path).exists():
             return None
-        return info.extract_id(FSRef(Path(path), record_type=RecordType(type_name)))
+        return info.mint_entity_id(FSRef(Path(path), record_type=RecordType(type_name)))
     except Exception:
         return None
 
@@ -448,7 +448,9 @@ def _restamp(groups: list[Group], report: Report) -> None:
             continue
         try:
             ref = FSRef(Path(group.path), record_type=RecordType(group.type_name))
-            resolved = info.resolve_id(ref, owner_id=group.winner, live_ids={group.winner}, restamp=True)
+            resolved = info.mint_entity_id(
+                ref, owner_id=group.winner, live_ids={group.winner}, derive=True, overwrite=True
+            )
             if resolved == group.winner:
                 report.files_restamped += 1
         except Exception as e:

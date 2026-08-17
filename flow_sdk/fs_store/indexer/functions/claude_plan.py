@@ -77,12 +77,6 @@ def _plan_id_from_path(path: Path) -> str:
     return mint_uuid(str(path.resolve()))
 
 
-def claude_plan_id(ref: FSRef) -> str:
-    """Cheap id: frontmatter id; else uuid5 of path."""
-    existing = _read_plan_frontmatter_id(ref._path)
-    return existing if existing else _plan_id_from_path(ref._path)
-
-
 def extract_claude_plan(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     path = ref._path
     name = path.stem

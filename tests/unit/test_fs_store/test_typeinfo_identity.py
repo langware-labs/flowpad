@@ -38,8 +38,8 @@ def test_extract_and_mint_adopt_canonical_file_or_folder(
     AssetCapsule.from_path(path).write("identity", CapsuleData(1, {"id": existing}))
     info = _capsule_info()
 
-    assert info.extract_id(FSRef(path)) == existing
-    assert info.mint_id(FSRef(path), proposed_id=V5) == existing
+    assert info.mint_entity_id(FSRef(path)) == existing
+    assert info.mint_entity_id(FSRef(path), proposed_id=V5, derive=True, overwrite=True) == existing
 
 
 @pytest.mark.parametrize("folder", [False, True])
@@ -48,9 +48,9 @@ def test_absent_portable_identity_persists_one_v4(tmp_path: Path, folder: bool) 
     path.mkdir() if folder else path.write_text("body\n", encoding="utf-8")
     info = _capsule_info()
 
-    first = info.mint_id(FSRef(path))
+    first = info.mint_entity_id(FSRef(path), derive=True, overwrite=True)
     assert uuid.UUID(first).version == 4
-    assert info.mint_id(FSRef(path)) == first
+    assert info.mint_entity_id(FSRef(path), derive=True, overwrite=True) == first
     assert AssetCapsule.from_path(path).read("identity") == CapsuleData(1, {"id": first})
 
 
@@ -60,8 +60,8 @@ def test_stable_policy_persists_v5_in_capsule(tmp_path: Path) -> None:
     info = _capsule_info(stable=True)
 
     expected = str(uuid.uuid5(uuid.NAMESPACE_URL, "stable-key"))
-    assert info.mint_id(path) == expected
-    assert info.extract_id(path) == expected
+    assert info.mint_entity_id(path, derive=True, overwrite=True) == expected
+    assert info.mint_entity_id(path) == expected
 
 
 def test_valid_legacy_id_is_adopted_without_backfill(tmp_path: Path) -> None:
@@ -69,8 +69,8 @@ def test_valid_legacy_id_is_adopted_without_backfill(tmp_path: Path) -> None:
     path.write_text(f"---\nid: {V4}\n---\nbody\n", encoding="utf-8")
     info = _capsule_info(legacy=(read_frontmatter_id,))
 
-    assert info.extract_id(path) == V4
-    assert info.mint_id(path) == V4
+    assert info.mint_entity_id(path) == V4
+    assert info.mint_entity_id(path, derive=True, overwrite=True) == V4
     assert AssetCapsule.from_path(path).read("identity") is None
 
 
@@ -82,7 +82,7 @@ def test_invalid_canonical_uses_valid_legacy_without_rewrite(tmp_path: Path) -> 
     before = path.read_bytes()
     info = _capsule_info(legacy=(read_frontmatter_id,))
 
-    assert info.mint_id(path) == V4
+    assert info.mint_entity_id(path, derive=True, overwrite=True) == V4
     assert path.read_bytes() == before
 
 
@@ -96,7 +96,7 @@ def test_invalid_canonical_without_legacy_uses_path_v5_and_preserves_bytes(
     before = path.read_bytes()
 
     expected = str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
-    assert _capsule_info().mint_id(path) == expected
+    assert _capsule_info().mint_entity_id(path, derive=True, overwrite=True) == expected
     assert path.read_bytes() == before
 
 
@@ -106,7 +106,7 @@ def test_invalid_legacy_is_distinct_from_absence_and_uses_stable_v5(tmp_path: Pa
     before = path.read_bytes()
     info = _capsule_info(legacy=(lambda candidate: "invalid",))
 
-    assert info.mint_id(path) == str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
+    assert info.mint_entity_id(path, derive=True, overwrite=True) == str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
     assert AssetCapsule.from_path(path).read("identity") is None
     assert path.read_bytes() == before
 
@@ -116,7 +116,7 @@ def test_read_only_portable_asset_uses_path_v5_without_writing(tmp_path: Path) -
     path.write_text("body\n", encoding="utf-8")
     ref = FSRef(path, read_only=True)
 
-    assert _capsule_info().mint_id(ref) == str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
+    assert _capsule_info().mint_entity_id(ref, derive=True, overwrite=True) == str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
     assert AssetCapsule.from_path(path).read("identity") is None
 
 
@@ -125,10 +125,10 @@ def test_proposed_id_is_persisted_but_filesystem_winner_wins(tmp_path: Path) -> 
     path.write_text("body\n", encoding="utf-8")
     info = _capsule_info()
 
-    assert info.mint_id(path, proposed_id=V4) == V4
-    assert info.mint_id(path, proposed_id=V5) == V4
+    assert info.mint_entity_id(path, proposed_id=V4, derive=True, overwrite=True) == V4
+    assert info.mint_entity_id(path, proposed_id=V5, derive=True, overwrite=True) == V4
     with pytest.raises(ValueError, match="UUID v4 or v5"):
-        info.mint_id(path, proposed_id=V7)
+        info.mint_entity_id(path, proposed_id=V7, derive=True, overwrite=True)
 
 
 def test_proposed_id_preserves_source_less_stable_type_identity(tmp_path: Path) -> None:
@@ -136,8 +136,8 @@ def test_proposed_id_preserves_source_less_stable_type_identity(tmp_path: Path) 
     path.write_text("body\n", encoding="utf-8")
     info = _capsule_info(stable=True)
 
-    assert info.mint_id(path, proposed_id=V4) == V4
-    assert info.extract_id(path) == V4
+    assert info.mint_entity_id(path, proposed_id=V4, derive=True, overwrite=True) == V4
+    assert info.mint_entity_id(path) == V4
 
 
 def test_malformed_capsule_fails_closed(tmp_path: Path) -> None:
@@ -147,7 +147,7 @@ def test_malformed_capsule_fails_closed(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     with pytest.raises(MalformedCapsuleError):
-        _capsule_info().mint_id(path)
+        _capsule_info().mint_entity_id(path, derive=True, overwrite=True)
 
 
 @pytest.mark.parametrize("payload", [{}, {"id": V4, "extra": True}])
@@ -157,7 +157,7 @@ def test_non_identity_capsule_shape_is_malformed(tmp_path: Path, payload: dict) 
     AssetCapsule.from_path(path).write("identity", CapsuleData(1, payload))
 
     with pytest.raises(MalformedCapsuleError, match="exactly the 'id' key"):
-        _capsule_info().extract_id(path)
+        _capsule_info().mint_entity_id(path)
 
 
 def test_folder_main_file_normalizes_to_owning_capsule(tmp_path: Path) -> None:
@@ -174,7 +174,7 @@ def test_folder_main_file_normalizes_to_owning_capsule(tmp_path: Path) -> None:
     )
 
     assert info.capsule_target_for(FSRef(main)) == folder
-    minted = info.mint_id(FSRef(main))
+    minted = info.mint_entity_id(FSRef(main), derive=True, overwrite=True)
     assert AssetCapsule.from_path(folder).read("identity") == CapsuleData(1, {"id": minted})
 
 

@@ -50,7 +50,7 @@ async def _seed_md(tmp: Path, scan_roots: list[Path]) -> None:
     ):
         for md in sorted(tmp.rglob("*.md")):
             ref = _FSRef(md)
-            rec = extract_markdown(ref, SchemaRegistry.get("markdown").mint_id(ref))[0]
+            rec = extract_markdown(ref, SchemaRegistry.get("markdown").mint_entity_id(ref, derive=True, overwrite=True))[0]
             await rec.sync_to_db()
 
 

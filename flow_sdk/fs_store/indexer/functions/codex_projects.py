@@ -30,11 +30,6 @@ from flow_sdk.fs_store.record_types import RecordType
 # ── Codex project path helpers (inlined from former fs_records/codex/codex_project.py) ──
 
 
-def _codex_project_id(cwd: str) -> str:
-    """Deterministic uuid5 id for a codex project keyed on canonical cwd."""
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"codex_project:{cwd}"))
-
-
 def _read_codex_projects_from_config(
     config_path: Path,
     *,

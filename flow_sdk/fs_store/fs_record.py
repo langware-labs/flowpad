@@ -96,7 +96,7 @@ def _carrier_identity_matches(info: "TypeInfo", asset_ref: FSRef, entity_id: str
     the caller refuses, which is the safe direction.
     """
     try:
-        return info.extract_id(asset_ref) == entity_id
+        return info.mint_entity_id(asset_ref) == entity_id
     except Exception:
         return False
 
@@ -873,7 +873,9 @@ class FSRecord(Generic[M]):
         entity_id = getattr(entity, "id", None)
         if info is None or info.identity_backend is None or not entity_id:
             return None
-        committed_id = info.mint_id(ar, proposed_id=str(entity_id))
+        committed_id = info.mint_entity_id(
+            ar, proposed_id=str(entity_id), derive=True, overwrite=True
+        )
         # The carrier is authoritative. A create can race an existing asset at
         # the same path (or use a deterministic policy), so the record must not
         # keep advertising the losing proposed DB id after the commit.

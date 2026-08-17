@@ -69,24 +69,24 @@ def _capsule_id(path: Path) -> str | None:
 def test_carrier_wins_when_no_row_owns_the_path(tmp_path: Path, folder: bool) -> None:
     """A clone/copy lands at an unowned path — identity travels with the file."""
     path = _asset(tmp_path, carrier=CARRIER, folder=folder)
-    assert _info().resolve_id(FSRef(path)) == CARRIER
+    assert _info().mint_entity_id(FSRef(path)) == CARRIER
 
 
 def test_carrier_wins_when_it_is_the_owning_row(tmp_path: Path) -> None:
     path = _asset(tmp_path, carrier=CARRIER)
-    assert _info().resolve_id(FSRef(path), owner_id=CARRIER, live_ids={CARRIER}) == CARRIER
+    assert _info().mint_entity_id(FSRef(path), owner_id=CARRIER, live_ids={CARRIER}) == CARRIER
 
 
 def test_live_carrier_wins_over_a_different_owner(tmp_path: Path) -> None:
     """Both ids are real entities — this is the adopt case, not a fork."""
     path = _asset(tmp_path, carrier=CARRIER)
-    assert _info().resolve_id(FSRef(path), owner_id=OWNER, live_ids={CARRIER, OWNER}) == CARRIER
+    assert _info().mint_entity_id(FSRef(path), owner_id=OWNER, live_ids={CARRIER, OWNER}) == CARRIER
 
 
 def test_unprovable_carrier_wins_when_liveness_is_unknown(tmp_path: Path) -> None:
     """Without a liveness oracle a caller may not declare a carrier dead."""
     path = _asset(tmp_path, carrier=CARRIER)
-    assert _info().resolve_id(FSRef(path), owner_id=OWNER, live_ids=None) == CARRIER
+    assert _info().mint_entity_id(FSRef(path), owner_id=OWNER, live_ids=None) == CARRIER
 
 
 # --------------------------------------------------------------------------
@@ -98,20 +98,20 @@ def test_absent_carrier_loses_to_owner_and_restamps(tmp_path: Path) -> None:
     path = _asset(tmp_path)
     info = _info()
 
-    assert info.resolve_id(FSRef(path), owner_id=OWNER, live_ids={OWNER}, restamp=True) == OWNER
+    assert info.mint_entity_id(FSRef(path), owner_id=OWNER, live_ids={OWNER}, overwrite=True) == OWNER
     assert _capsule_id(path) == OWNER, "an absent carrier is healed in place"
 
 
 def test_absent_carrier_loses_to_owner_without_restamp(tmp_path: Path) -> None:
     path = _asset(tmp_path)
-    assert _info().resolve_id(FSRef(path), owner_id=OWNER, live_ids={OWNER}) == OWNER
-    assert _capsule_id(path) is None, "restamp=False never writes"
+    assert _info().mint_entity_id(FSRef(path), owner_id=OWNER, live_ids={OWNER}) == OWNER
+    assert _capsule_id(path) is None, "overwrite=False never writes"
 
 
 def test_dead_carrier_loses_to_owner(tmp_path: Path) -> None:
     """A syntactically valid id that names no entity is a fossil, not identity."""
     path = _asset(tmp_path, carrier=OTHER)
-    assert _info().resolve_id(FSRef(path), owner_id=OWNER, live_ids={OWNER}) == OWNER
+    assert _info().mint_entity_id(FSRef(path), owner_id=OWNER, live_ids={OWNER}) == OWNER
 
 
 def test_invalid_carrier_loses_to_owner_without_rewriting_bytes(tmp_path: Path) -> None:
@@ -121,7 +121,7 @@ def test_invalid_carrier_loses_to_owner_without_rewriting_bytes(tmp_path: Path) 
     before = path.read_bytes()
     info = _info(legacy=(lambda p: "not-a-uuid",))
 
-    assert info.resolve_id(FSRef(path), owner_id=OWNER, live_ids={OWNER}, restamp=True) == OWNER
+    assert info.mint_entity_id(FSRef(path), owner_id=OWNER, live_ids={OWNER}, overwrite=True) == OWNER
     assert path.read_bytes() == before
 
 
@@ -131,9 +131,9 @@ def test_stable_key_type_prefers_owner_after_a_move(tmp_path: Path) -> None:
     moved.write_text("body\n", encoding="utf-8")
     info = _info(stable=True)
 
-    would_mint = info.mint_id(FSRef(moved))
+    would_mint = info.mint_entity_id(FSRef(moved), derive=True, overwrite=True)
     assert would_mint != OWNER, "precondition: the derived key disagrees with the row"
-    assert info.resolve_id(FSRef(moved), owner_id=OWNER, live_ids={OWNER}) == OWNER
+    assert info.mint_entity_id(FSRef(moved), owner_id=OWNER, live_ids={OWNER}) == OWNER
 
 
 # --------------------------------------------------------------------------
@@ -142,26 +142,36 @@ def test_stable_key_type_prefers_owner_after_a_move(tmp_path: Path) -> None:
 
 def test_no_carrier_and_no_owner_mints_and_persists(tmp_path: Path) -> None:
     path = _asset(tmp_path)
-    minted = _info().resolve_id(FSRef(path))
+    minted = _info().mint_entity_id(FSRef(path), derive=True, overwrite=True)
     assert uuid.UUID(minted).version == 4
     assert _capsule_id(path) == minted
 
 
-def test_degenerates_to_carrier_or_mint_without_owner_context(tmp_path: Path) -> None:
-    """The DB-free contract: no owner_id/live_ids ⇒ historic behaviour."""
+def test_probe_mode_returns_none_when_evidence_is_exhausted(tmp_path: Path) -> None:
+    """The default corner: no carrier, no owner, no derive ⇒ a truthful None.
+
+    This is what the collision-identity and create-guard callers rely on — a
+    derived value there would make two unstamped copies look identical.
+    """
     path = _asset(tmp_path)
     info = _info()
-    assert info.resolve_id(FSRef(path)) == info.extract_id(FSRef(path))
+    assert info.mint_entity_id(FSRef(path)) is None
+    assert _capsule_id(path) is None, "a probe never writes"
+    # …and once it derives, the answer is stable and committed.
+    minted = info.mint_entity_id(FSRef(path), derive=True, overwrite=True)
+    assert info.mint_entity_id(FSRef(path)) == minted, "the probe now sees the carrier"
 
 
 def test_proposed_id_only_reaches_the_mint_branch(tmp_path: Path) -> None:
     """owner_id is a fact in the store; proposed_id is only a mint hint."""
     owned = _asset(tmp_path)
-    assert _info().resolve_id(FSRef(owned), owner_id=OWNER, live_ids={OWNER}, proposed_id=OTHER) == OWNER
+    assert _info().mint_entity_id(FSRef(owned), owner_id=OWNER, live_ids={OWNER}, proposed_id=OTHER) == OWNER
 
     fresh = tmp_path / "fresh.md"
     fresh.write_text("body\n", encoding="utf-8")
-    assert _info().resolve_id(FSRef(fresh), proposed_id=OTHER) == OTHER
+    assert _info().mint_entity_id(
+        FSRef(fresh), proposed_id=OTHER, derive=True, overwrite=True
+    ) == OTHER
 
 
 # --------------------------------------------------------------------------
@@ -181,7 +191,9 @@ def test_derived_type_ignores_owner_id(tmp_path: Path) -> None:
         identity_backend=DerivedIdentityBackend(reader=lambda p: None),
         id_stable_key_fn=lambda ref: "provider-key",
     )
-    resolved = info.resolve_id(FSRef(path), owner_id=OWNER, live_ids={OWNER})
+    resolved = info.mint_entity_id(
+        FSRef(path), owner_id=OWNER, live_ids={OWNER}, derive=True, overwrite=True
+    )
     assert resolved != OWNER
     assert resolved == str(uuid.uuid5(uuid.NAMESPACE_URL, "provider-key"))
 
@@ -189,7 +201,7 @@ def test_derived_type_ignores_owner_id(tmp_path: Path) -> None:
 def test_read_only_ref_takes_the_owner_without_writing(tmp_path: Path) -> None:
     path = _asset(tmp_path)
     before = path.read_bytes()
-    resolved = _info().resolve_id(FSRef(path, read_only=True), owner_id=OWNER, live_ids={OWNER}, restamp=True)
+    resolved = _info().mint_entity_id(FSRef(path, read_only=True), owner_id=OWNER, live_ids={OWNER}, overwrite=True)
     assert resolved == OWNER
     assert path.read_bytes() == before
 
@@ -199,7 +211,7 @@ def test_native_json_restamp_preserves_sibling_keys(tmp_path: Path) -> None:
     path.write_text(json.dumps({"kept": [1, 2], "nested": {"a": 1}}), encoding="utf-8")
     info = TypeInfo(type_name="probe_json", identity_backend=NativeJsonIdentityBackend())
 
-    assert info.resolve_id(FSRef(path), owner_id=OWNER, live_ids={OWNER}, restamp=True) == OWNER
+    assert info.mint_entity_id(FSRef(path), owner_id=OWNER, live_ids={OWNER}, overwrite=True) == OWNER
     data = json.loads(path.read_text(encoding="utf-8"))
     assert data["id"] == OWNER
     assert data["kept"] == [1, 2] and data["nested"] == {"a": 1}
@@ -217,7 +229,7 @@ def test_malformed_carrier_raises_even_with_an_owner(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     with pytest.raises(MalformedCapsuleError):
-        _info().resolve_id(FSRef(path), owner_id=OWNER, live_ids={OWNER})
+        _info().mint_entity_id(FSRef(path), owner_id=OWNER, live_ids={OWNER})
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores the read-only bit")
@@ -229,6 +241,6 @@ def test_restamp_write_failure_still_returns_the_owner(tmp_path: Path) -> None:
     path.write_text("body\n", encoding="utf-8")
     os.chmod(d, 0o555)
     try:
-        assert _info().resolve_id(FSRef(path), owner_id=OWNER, live_ids={OWNER}, restamp=True) == OWNER
+        assert _info().mint_entity_id(FSRef(path), owner_id=OWNER, live_ids={OWNER}, overwrite=True) == OWNER
     finally:
         os.chmod(d, 0o755)

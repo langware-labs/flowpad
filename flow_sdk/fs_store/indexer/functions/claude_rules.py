@@ -53,14 +53,6 @@ def _read_rules_frontmatter_id(path: Path) -> str | None:
     from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
     return adopt_entity_id(raw)  # validate-on-adopt (v4/v5) → else caller derives uuid5(path)
 
-def _rule_id(path: Path) -> str:
-    from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
-    return mint_uuid(str(path.resolve()))
-
-def claude_rules_id(ref: FSRef) -> str:
-    existing = _read_rules_frontmatter_id(ref._path)
-    return existing if existing else _rule_id(ref._path)
-
 def extract_claude_rules(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     path = ref._path
     rec = FSRecord(
