@@ -28,6 +28,7 @@ from pydantic import SerializationInfo, model_serializer, model_validator
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.api.api_types.type_id import TypeId
+from flow_sdk.builtin.agent_hook import HookEventType
 from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
 from flow_sdk.builtin.agentic_process.cli_drivers import (
     AgenticContext as _AgenticContext,
@@ -41,6 +42,13 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     apply_worker_secret_env,
     get_driver,
     latch_spawn_failure,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import ProcessHookRuntime
+from flow_sdk.builtin.agentic_process.process_hooks import (
+    ProcessHookCallback,
+    clear_process_hook_callbacks,
+    dispatch_process_hook,
+    register_process_hook_callback,
 )
 from flow_sdk.builtin.agentic_process.status_predicates import (
     WorkerMode,
@@ -57,6 +65,7 @@ from flow_sdk.builtin.process_lifecycle import (
 from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.builtin.worker_status import is_terminal as is_worker_terminal
 from flow_sdk.core import Entity, action
+from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.core.flow.streaming.response_handler import StreamingResponseHandler
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.flowpad_types.enums import ProcessKind, WorkerType
@@ -120,12 +129,14 @@ def live_stream_noise_kinds() -> frozenset:
     """
     from flow_sdk.transcript_analyzer.entry import EntryKind
 
-    return frozenset({
-        EntryKind.META,
-        EntryKind.SYSTEM,
-        EntryKind.SUMMARY,
-        EntryKind.TOKEN_USAGE,
-    })
+    return frozenset(
+        {
+            EntryKind.META,
+            EntryKind.SYSTEM,
+            EntryKind.SUMMARY,
+            EntryKind.TOKEN_USAGE,
+        }
+    )
 
 
 def _iter_touched_paths(entries: "Iterable") -> "Iterator[str]":
@@ -330,6 +341,14 @@ class SystemInstructionAssets:
     assets_dir: Path
     instructions: str
     claude_file: Path
+
+
+@dataclass
+class PreparedProcessAssets:
+    """Derived launch assets prepared once for one worker spawn."""
+
+    instruction_assets: SystemInstructionAssets | None = None
+    hook_runtime: ProcessHookRuntime = field(default_factory=ProcessHookRuntime)
 
 
 # Types treated as executable agent inputs by the asset-management UI.
@@ -631,9 +650,7 @@ async def _index_additional_dir(
         new_root = FSRef(p, record_type=RecordType.CWD_ROOT, scope="user", read_only=read_only)
         # include_temp=True so /tmp / /var/folders paths aren't filtered out —
         # the user explicitly added this dir, so honor it regardless of location.
-        result = await get_shared_indexer().index(
-            IndexerOptions(roots=(new_root,), verbose=False, include_temp=True)
-        )
+        result = await get_shared_indexer().index(IndexerOptions(roots=(new_root,), verbose=False, include_temp=True))
         if strict and result.total_errors:
             raise RuntimeError(f"Context indexing reported {result.total_errors} error(s)")
     except Exception:
@@ -922,6 +939,10 @@ class AgenticProcess(Entity):
             "process's <record_dir>/assets folder. Claude discovers them via --add-dir."
         ),
     )
+    process_hook_events: list[str] = APIField(
+        default_factory=list,
+        description="Process-local worker hook events enabled for this process.",
+    )
     worker_type: WorkerType | None = APIField(default=None)
     plan_path: str | None = APIField(
         default=None,
@@ -988,6 +1009,14 @@ class AgenticProcess(Entity):
         # ``object.__setattr__`` bypasses our hook so the marker is set
         # unconditionally even though the field isn't declared on the model.
         object.__setattr__(self, "_binding_lock_armed", True)
+        return self
+
+    @model_validator(mode="after")
+    def _migrate_legacy_process_assets_mount(self) -> "AgenticProcess":
+        if self.id:
+            self.additional_dirs = [
+                path for path in (self.additional_dirs or []) if not self._is_process_assets_path(path)
+            ]
         return self
 
     def __setattr__(self, key: str, value: Any) -> None:
@@ -1467,9 +1496,9 @@ class AgenticProcess(Entity):
 
             await self.get_project()
 
-            instruction_assets = await self.prepare_system_instruction_assets()
+            process_assets = await self.prepare_process_assets()
             cmd = self._finalized_restart_cli_options()
-            self._apply_system_instruction_assets(cmd, instruction_assets)
+            self._apply_process_assets(cmd, process_assets)
 
             # Fork & CLAUDE_PROJECT_DIR resume-cwd pinning are Claude-only —
             # Codex/Copilot mint their own session and use ``-C <cwd>``, not
@@ -2527,9 +2556,7 @@ class AgenticProcess(Entity):
             # the exact identity, where `asset_ref` is a path that has to be
             # resolved back through `get_by_asset_ref`.
             target_type_id=(
-                str(payload.get("typeid") or "") or None
-                if payload.get("kind") == DisplayTargetKind.ENTITY
-                else None
+                str(payload.get("typeid") or "") or None if payload.get("kind") == DisplayTargetKind.ENTITY else None
             ),
             generated_by=str(self.typeid),
             project_id=await self.effective_project_id(),
@@ -3541,7 +3568,7 @@ class AgenticProcess(Entity):
             except Exception:
                 logger.debug("prompt: get_project failed", exc_info=True)
 
-            instruction_assets = await self.prepare_system_instruction_assets()
+            process_assets = await self.prepare_process_assets()
 
             try:
                 env_vars = dict(self.driver.cli_options(self).env_vars)
@@ -3560,7 +3587,7 @@ class AgenticProcess(Entity):
                 add_dirs=list(self.resolved_add_dirs or []),
                 session_id=self.session_id if (self.session_id and not resumable) else None,
                 resume_session_id=self.session_id if resumable else None,
-                **self._instruction_context_kwargs(instruction_assets),
+                **self._process_asset_context_kwargs(process_assets),
             )
 
             # API-key auth (harness in "api" mode): override the model with the
@@ -4386,9 +4413,7 @@ class AgenticProcess(Entity):
                                     # in the gap.
                                     saw_marker = True
                                     continue
-                                await handler.on_flow_data(
-                                    entry_to_flowdata(entry, observation_kind="live")
-                                )
+                                await handler.on_flow_data(entry_to_flowdata(entry, observation_kind="live"))
                     # Neither signal is sufficient alone for a PTY: the provider
                     # marker fires per message, and ``is_turn_busy`` falls through
                     # to the transcript tail, which reads idle for a beat between
@@ -4771,7 +4796,7 @@ class AgenticProcess(Entity):
             Path(".claude") / "agents" / f"{name}.md",
             content=render_subagent_markdown(agent),
         )
-        self._ensure_assets_dir_in_add_dirs(assets.os_path)
+        self._normalize_process_asset_mount()
         ref = self._agent_entity_ref(abs_path)
         refs = list(self.embedded_asset_refs or [])
         if ref not in refs:
@@ -4830,7 +4855,7 @@ class AgenticProcess(Entity):
             elif link.is_dir():
                 shutil.rmtree(link)
             link.symlink_to(skill_dir, target_is_directory=True)
-            self._ensure_assets_dir_in_add_dirs(assets_dir)
+            self._normalize_process_asset_mount()
             await self.save()
             return ApiSuccessResponse(data={"ok": True, "name": skill_dir.name, "link": str(link)})
         except Exception as exc:
@@ -4913,13 +4938,30 @@ class AgenticProcess(Entity):
     def embedded_assets(self) -> AssetDir | None:
         return object.__getattribute__(self, "__dict__").get("_embedded_assets")
 
+    @property
+    def process_assets(self) -> AssetDir | None:
+        """Canonical process-owned asset workspace (lazy)."""
+        return self.embedded_assets
+
     def ensure_embedded_assets(self) -> AssetDir:
-        asset_dir = self.embedded_assets
+        return self.ensure_process_assets()
+
+    def ensure_process_assets(self) -> AssetDir:
+        asset_dir = self.process_assets
         if asset_dir is None:
             asset_dir = AssetDir(self._record_dir() / "execution" / "assets")
             object.__getattribute__(self, "__dict__")["_embedded_assets"] = asset_dir
         asset_dir.os_path.mkdir(parents=True, exist_ok=True)
         return asset_dir
+
+    def _process_assets_path(self) -> Path:
+        return self._record_dir() / "execution" / "assets"
+
+    def _is_process_assets_path(self, path: str | Path) -> bool:
+        try:
+            return Path(path).expanduser().resolve(strict=False) == self._process_assets_path().resolve(strict=False)
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return False
 
     @property
     def instructions(self) -> str | None:
@@ -4942,13 +4984,9 @@ class AgenticProcess(Entity):
         """
         return self.ensure_embedded_assets().os_path
 
-    def _ensure_assets_dir_in_add_dirs(self, assets_dir: "Path") -> None:
-        """Idempotently append the assets dir to additional_dirs."""
-        target = str(assets_dir)
-        current = list(self.additional_dirs or [])
-        if target not in current:
-            current.append(target)
-            self.additional_dirs = current
+    def _normalize_process_asset_mount(self) -> None:
+        """Migrate the former internal mount out of the user-owned field."""
+        self.additional_dirs = [d for d in (self.additional_dirs or []) if not self._is_process_assets_path(d)]
 
     def _skills_root(self, assets_dir: "Path") -> "Path":
         """Directory a skill folder is laid into so THIS process's worker finds it.
@@ -5040,7 +5078,7 @@ class AgenticProcess(Entity):
                 logger.debug("failed to parse embedded agent %s", md, exc_info=True)
         return agents
 
-    async def prepare_system_instruction_assets(self) -> SystemInstructionAssets | None:
+    async def _prepare_system_instruction_assets(self) -> SystemInstructionAssets | None:
         """Materialize process instructions into the process asset directory."""
         explicit = await self.resolve_system_instructions()
         legacy_agents = self.get_agents_json() or {}
@@ -5059,7 +5097,7 @@ class AgenticProcess(Entity):
         agent_block = self._render_agents_instruction_block(agents)
         instructions = "\n\n".join(p for p in (explicit, agent_block) if p).strip()
 
-        self._ensure_assets_dir_in_add_dirs(asset_dir.os_path)
+        self._normalize_process_asset_mount()
         if not instructions:
             return None
 
@@ -5078,6 +5116,134 @@ class AgenticProcess(Entity):
             instructions=instructions,
             claude_file=claude_file,
         )
+
+    async def prepare_process_assets(self) -> PreparedProcessAssets:
+        """Prepare every derived asset contribution once for a launch.
+
+        Hook projection is a driver concern. Drivers predating this contract
+        are harmless while no process hook is configured.
+        """
+        instructions = await self._prepare_system_instruction_assets()
+        hook_runtime = ProcessHookRuntime()
+        supports_hooks = bool(getattr(self.driver, "supports_process_hooks", False))
+        if self.process_hook_events or supports_hooks:
+            prepare = getattr(self.driver, "prepare_process_hooks", None)
+            if prepare is None:
+                raise ValueError("process hooks are unsupported by this worker")
+            # The driver decides whether its projection needs files. Passing a
+            # lazy handle keeps inline-only integrations (Codex) write-free.
+            assets = AssetDir(self._process_assets_path())
+            hook_runtime = prepare(
+                assets,
+                str(self.id),
+                tuple(self.process_hook_events),
+            )
+        return PreparedProcessAssets(instruction_assets=instructions, hook_runtime=hook_runtime)
+
+    async def prepare_system_instruction_assets(self) -> SystemInstructionAssets | None:
+        """Compatibility instruction-only preparation entry point."""
+        return await self._prepare_system_instruction_assets()
+
+    @staticmethod
+    def _canonical_process_hook_event(event: HookEventType | str) -> HookEventType:
+        try:
+            normalized = HookEventType(event)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"unsupported process hook event: {event!r}") from exc
+        if normalized is not HookEventType.USER_PROMPT_SUBMIT:
+            raise ValueError(f"unsupported process hook event: {normalized.value}")
+        return normalized
+
+    def _require_process_hook_support(self) -> None:
+        if not bool(getattr(self.driver, "supports_process_hooks", False)):
+            raise ValueError(f"process hooks are unsupported for worker {self.worker_type or 'default'}")
+
+    async def _set_process_hook_enabled(
+        self,
+        event: HookEventType | str,
+        *,
+        enabled: bool,
+    ) -> bool:
+        normalized = self._canonical_process_hook_event(event)
+        self._require_process_hook_support()
+        original = list(self.process_hook_events or [])
+        updated = set(original)
+        if enabled:
+            updated.add(normalized.value)
+        else:
+            updated.discard(normalized.value)
+        canonical = sorted(updated)
+        if canonical == original:
+            return False
+        self.process_hook_events = canonical
+        await self.save()
+        return True
+
+    async def set_hook(self, event: HookEventType | str) -> bool:
+        """Persist one process-local hook intent; return whether it changed."""
+        return await self._set_process_hook_enabled(event, enabled=True)
+
+    async def remove_hook(self, event: HookEventType | str) -> bool:
+        """Remove one process-local hook intent; return whether it changed."""
+        return await self._set_process_hook_enabled(event, enabled=False)
+
+    def register_callback(self, callback: ProcessHookCallback) -> Callable[[], None]:
+        """Subscribe to every hook delivered to this process."""
+        return register_process_hook_callback(str(self.id), callback)
+
+    async def on_hook(self, data: AgentHookData) -> None:
+        """Emit and dispatch one canonical, process-targeted hook event."""
+        if data.agentic_process_id != str(self.id):
+            raise ValueError("agent hook target does not match process")
+        event = self._canonical_process_hook_event(data.hook_data.get("hook_event_name"))
+        if event.value not in (self.process_hook_events or []):
+            raise ValueError(f"process hook event is not configured: {event.value}")
+
+        payload = data.model_dump(mode="python")
+        try:
+            from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
+                FlowData,
+                FlowDataSource,
+                FlowDataType,
+                FlowElementType,
+            )
+
+            flow_data = FlowData(
+                flow_value=payload,
+                attributes={
+                    "element-type": FlowElementType.STATUS,
+                    "data-type": FlowDataType.OBJECT,
+                    "source": FlowDataSource.WEBSOCKET,
+                    "kind": "process_hook",
+                    "subtype": event.value,
+                },
+            )
+            await self.emit_flow_data(flow_data.model_dump(mode="python"))
+        except Exception:
+            logger.exception("process hook FlowData emission failed for %s", self.id)
+        await dispatch_process_hook(str(self.id), data)
+
+    @action.post(action_name="set-hook")
+    async def _http_set_hook(self) -> ApiSuccessResponse | ApiFailResponse:
+        body = await _read_json_body()
+        if isinstance(body, ApiFailResponse):
+            return body
+        try:
+            changed = await self.set_hook(body.get("event"))
+        except (TypeError, ValueError) as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        return ApiSuccessResponse(data={"changed": changed})
+
+    @action.post(action_name="remove-hook")
+    async def _http_remove_hook(self) -> ApiSuccessResponse | ApiFailResponse:
+        body = await _read_json_body()
+        if isinstance(body, ApiFailResponse):
+            return body
+        try:
+            changed = await self.remove_hook(body.get("event"))
+        except (TypeError, ValueError) as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        return ApiSuccessResponse(data={"changed": changed})
 
     @staticmethod
     def _apply_system_instruction_assets(
@@ -5101,6 +5267,23 @@ class AgenticProcess(Entity):
             if hasattr(cmd, "no_custom_instructions"):
                 cmd.no_custom_instructions = False
 
+    @classmethod
+    def _apply_process_assets(cls, cmd: AgentOptions, prepared: PreparedProcessAssets) -> None:
+        cls._apply_system_instruction_assets(cmd, prepared.instruction_assets)
+        runtime = prepared.hook_runtime
+        if runtime.plugin_dirs:
+            cmd.plugin_dirs = [
+                *list(getattr(cmd, "plugin_dirs", []) or []),
+                *runtime.plugin_dirs,
+            ]
+        if runtime.config_overrides:
+            cmd.extra_config_overrides = [
+                *list(getattr(cmd, "extra_config_overrides", []) or []),
+                *runtime.config_overrides,
+            ]
+        if runtime.bypass_hook_trust:
+            cmd.bypass_hook_trust = True
+
     @staticmethod
     def _instruction_context_kwargs(
         assets: SystemInstructionAssets | None,
@@ -5112,6 +5295,15 @@ class AgenticProcess(Entity):
             "system_prompt_file": str(assets.claude_file),
             "developer_instructions": assets.instructions,
             "custom_instruction_dirs": [str(assets.assets_dir)],
+        }
+
+    @classmethod
+    def _process_asset_context_kwargs(cls, prepared: PreparedProcessAssets) -> dict[str, Any]:
+        return {
+            **cls._instruction_context_kwargs(prepared.instruction_assets),
+            "plugin_dirs": list(prepared.hook_runtime.plugin_dirs),
+            "extra_config_overrides": list(prepared.hook_runtime.config_overrides),
+            "bypass_hook_trust": prepared.hook_runtime.bypass_hook_trust,
         }
 
     async def _materialize_entity(self, ref: TypeId, assets_dir: "Path") -> str | None:
@@ -5187,7 +5379,7 @@ class AgenticProcess(Entity):
             name = await self._materialize_entity(ref, assets_dir)
             if name is None:
                 return ApiFailResponse(message=f"Unsupported entity type for embed: {entity_ref}")
-            self._ensure_assets_dir_in_add_dirs(assets_dir)
+            self._normalize_process_asset_mount()
             refs = list(self.embedded_asset_refs or [])
             if not any(r.type == ref.type and r.id == ref.id for r in refs):
                 refs.append(ref)
@@ -5892,6 +6084,12 @@ class AgenticProcess(Entity):
 
     def _generic_restart_snapshot_payload(self, driver: WorkerDriver | None) -> dict[str, Any]:
         worker_type: Any = driver.name if driver is not None else self.worker_type
+        hook_events = tuple(sorted(set(self.process_hook_events or [])))
+        hook_snapshot = {}
+        if driver is not None:
+            snapshot = getattr(driver, "process_hook_snapshot", None)
+            if snapshot is not None:
+                hook_snapshot = snapshot(hook_events)
         return {
             "worker_type": worker_type,
             "shell_mode": self.shell_mode,
@@ -5900,6 +6098,8 @@ class AgenticProcess(Entity):
             "additional_dirs": sorted(self.additional_dirs or []),
             "embedded_asset_refs": sorted(str(r) for r in (self.embedded_asset_refs or [])),
             "embedded_agent_ids": sorted(self.embedded_agent_ids or []),
+            "process_hook_events": list(hook_events),
+            "process_hooks": hook_snapshot,
         }
 
     def _restart_snapshot_payload(self) -> dict[str, Any]:
@@ -5910,9 +6110,20 @@ class AgenticProcess(Entity):
                 "worker": {"cli_config": self.cli_config or {}},
             }
         options = self._finalized_restart_cli_options()
+        worker_snapshot = driver.restart_snapshot(self, options)
+        # The canonical process-assets mount is a derived implementation path,
+        # not persisted user launch intent. Hook semantics are represented by
+        # generic.process_hooks; generated path presence/absence must not alter
+        # restart identity.
+        add_dirs = worker_snapshot.get("add_dirs")
+        if isinstance(add_dirs, list):
+            worker_snapshot = {
+                **worker_snapshot,
+                "add_dirs": [directory for directory in add_dirs if not self._is_process_assets_path(directory)],
+            }
         return {
             "generic": self._generic_restart_snapshot_payload(driver),
-            "worker": driver.restart_snapshot(self, options),
+            "worker": worker_snapshot,
         }
 
     def _restart_snapshot(self, payload: dict[str, Any] | None = None) -> str:
@@ -6184,7 +6395,9 @@ class AgenticProcess(Entity):
         Best-effort — a tombstone failure never blocks the entity delete.
         """
         self._tombstone_session_transcript()
-        return await super().delete()
+        result = await super().delete()
+        clear_process_hook_callbacks(str(self.id))
+        return result
 
     def _tombstone_session_transcript(self) -> None:
         """Rename this process's on-disk transcript to ``<name>.deleted`` so the
@@ -6261,6 +6474,9 @@ class AgenticProcess(Entity):
         )
         data["queue"] = self._queue_state()
         data["supports_plan_mode"] = self._supports_plan_mode()
+        data["additional_dirs"] = [
+            path for path in (data.get("additional_dirs") or []) if not self._is_process_assets_path(path)
+        ]
         # NOTE: cmd_line is intentionally NOT computed here. Resolving it walks
         # cli_options -> transcript_descriptor -> get_claude_session, i.e. live
         # worker work with disk I/O — which must never run inside a model_dump()
@@ -6284,8 +6500,12 @@ class AgenticProcess(Entity):
                 for attr in missing:
                     p = folder_map.get(attr)
                     if p is not None:
-                        p.mkdir(parents=True, exist_ok=True)
-                        data[attr] = FSRef(p).to_dict()
+                        folder_ref = FSRef(p).to_dict()
+                        # The path may be intentionally unmaterialized. These
+                        # four projections are directories by contract, so do
+                        # not let filesystem existence mislabel them as files.
+                        folder_ref["ref_type"] = "folder"
+                        data[attr] = folder_ref
             except Exception:
                 pass
         return data
@@ -6517,9 +6737,23 @@ class AgenticProcess(Entity):
         await a project fetch). Launch paths call ``get_project`` first, so the
         cache is fresh as of launch.
         """
-        additional = list(self.additional_dirs or [])
+        additional = [d for d in (self.additional_dirs or []) if not self._is_process_assets_path(d)]
         context = [d for d in (self.__dict__.get("_project_context_dirs") or []) if d not in additional]
         dirs = additional + context
+        assets_path = self._process_assets_path()
+        hook_assets_active = bool(self.process_hook_events and getattr(self.driver, "process_hooks_use_assets", False))
+        process_assets_active = bool(
+            hook_assets_active
+            or self.embedded_asset_refs
+            or self.embedded_agent_ids
+            or self.get_agents_json()
+            or self.instructions
+            or self.instruction_content
+        )
+        if process_assets_active:
+            assets_str = str(assets_path)
+            if assets_str not in dirs:
+                dirs.append(assets_str)
         if not self.assistant_enabled:
             return dirs
         from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415

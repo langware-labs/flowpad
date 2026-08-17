@@ -33,7 +33,7 @@ _REAL_HOME = os.environ.get("FLOWPAD_PRE_SANDBOX_HOME") or os.path.expanduser("~
 _SANDBOX_HOME = os.environ["HOME"]
 _SANDBOX_USERPROFILE = os.environ["USERPROFILE"]
 
-# Test modules whose tests spawn real Claude/Codex CLI subprocesses and need
+# Test modules whose tests spawn real Claude/Codex/Copilot CLI subprocesses and need
 # real ``$HOME`` for credentials. Anything not in this set keeps the parent
 # conftest's sandbox HOME.
 _REAL_HOME_TEST_MODULES = frozenset(
@@ -48,6 +48,7 @@ _REAL_HOME_TEST_MODULES = frozenset(
         "test_markdown_index",
         "test_prompt_queue_integration",
         "test_process_status_report_stream",
+        "test_process_hooks_multi_vendor",
         "test_relaunch_kills_session_orphan",
         "test_agent",
         "test_debug_log_records",
@@ -69,7 +70,7 @@ _REAL_HOME_TEST_MODULES = frozenset(
 
 @pytest.fixture(autouse=True)
 def _real_home_for_cli_subprocess_tests(request):
-    """Restore real ``$HOME`` for tests that spawn real Claude/Codex CLI subprocesses.
+    """Restore real ``$HOME`` for tests that spawn real worker CLI subprocesses.
 
     Scope of this fixture is **subprocess auth only**: the CLI inherits the
     swapped ``$HOME`` via ``os.environ`` propagation and reads its credentials

@@ -1,0 +1,35 @@
+{
+  "event": "UserPromptSubmit",
+  "prompt": "Reply with exactly HOOK_ACCEPTANCE_OK.\nSerialization marker: O'Brien said \"hook\".\nUnicode marker: שלום 🧪",
+  "expected_callback_prompt": "Reply with exactly HOOK_ACCEPTANCE_OK.\nSerialization marker: O'Brien said \"hook\".\nUnicode marker: שלום 🧪",
+  "expected_persisted_event": "UserPromptSubmit",
+  "plugin_relative_path": ".flowpad/plugins/claude/flowpad-process-hooks",
+  "plugin_files": [
+    ".claude-plugin/plugin.json",
+    "hooks/hooks.json"
+  ],
+  "vendors": {
+    "claude_code": {
+      "raw_prompt_suffix": "",
+      "plugin_relative_path": ".flowpad/plugins/claude/flowpad-process-hooks",
+      "plugin_files": [
+        ".claude-plugin/plugin.json",
+        "hooks/hooks.json"
+      ]
+    },
+    "copilot": {
+      "raw_prompt_suffix": "\n",
+      "plugin_relative_path": ".flowpad/plugins/copilot/flowpad-process-hooks",
+      "plugin_files": [
+        "plugin.json",
+        "hooks.json"
+      ],
+      "config_event": "userPromptSubmitted"
+    },
+    "codex": {
+      "raw_prompt_suffix": "",
+      "plugin_relative_path": null,
+      "plugin_files": []
+    }
+  }
+}

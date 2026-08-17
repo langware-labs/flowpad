@@ -114,18 +114,10 @@ class _TranscriptDurabilityGate(TranscriptDurabilityGate):
         message = raw_message if isinstance(raw_message, dict) else {}
         content = message.get("content")
         has_tool_use = isinstance(content, list) and any(
-            isinstance(block, dict) and block.get("type") == "tool_use"
-            for block in content
+            isinstance(block, dict) and block.get("type") == "tool_use" for block in content
         )
-        has_chat = any(
-            frame.attributes.get("element-type") == FlowElementType.CHAT
-            for frame in frames
-        )
-        return (
-            has_chat
-            and not has_tool_use
-            and message.get("stop_reason") not in {"tool_use", "pause_turn"}
-        )
+        has_chat = any(frame.attributes.get("element-type") == FlowElementType.CHAT for frame in frames)
+        return has_chat and not has_tool_use and message.get("stop_reason") not in {"tool_use", "pause_turn"}
 
     def is_continuation(self, event_type: str) -> bool:
         return event_type in {"assistant", "user"}
@@ -327,21 +319,9 @@ class ClaudeCLIStreamWorker(AgenticWorker):
 
     # ── Internals ─────────────────────────────────────────────────────────────
 
-    def _build_spawn(
-        self,
-        prompt: str,
-        context: AgenticContext,
-    ) -> tuple[list[str], dict[str, str], str]:
-        """Build (argv, env, stdin payload) via ``ClaudeAgentOptions``.
-
-        The prompt rides stdin as a stream-json user message
-        (``--input-format stream-json``) so the open pipe doubles as the
-        graceful-interrupt channel for ``close_session()``.
-
-        Raises :class:`WorkerSpawnError` when claude is not installed (no
-        harness capability discovered) or its executable can't be resolved on
-        the spawn PATH.
-        """
+    @staticmethod
+    def _options_from_context(context: AgenticContext) -> ClaudeAgentOptions:
+        """Translate an already-prepared turn context into raw Claude options."""
         # Resume takes priority — when ``resume_session_id`` is set, attach
         # ``--resume <sid>``. Otherwise honour ``context.session_id`` (a
         # pre-allocated UUID the caller wants Claude to use) so transcript
@@ -368,7 +348,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         # embedded-agent/persona content. Codex's equivalent forces
         # ``ephemeral=False`` so resume works. Do not "unify" these two
         # construction points — you'd regress model latency and resume behavior.
-        opts = ClaudeAgentOptions(
+        return ClaudeAgentOptions(
             workdir=context.workdir,
             env_vars=dict(context.env_vars) if context.env_vars else None,
             model=context.model,
@@ -380,9 +360,27 @@ class ClaudeCLIStreamWorker(AgenticWorker):
             print_mode=True,
             effort=context.effort,
             add_dirs=list(context.add_dirs),
+            plugin_dirs=list(context.plugin_dirs),
             # verbose=True is auto-enabled by ClaudeAgentOptions when
             # output_format == "stream-json".
         )
+
+    def _build_spawn(
+        self,
+        prompt: str,
+        context: AgenticContext,
+    ) -> tuple[list[str], dict[str, str], str]:
+        """Build (argv, env, stdin payload) via ``ClaudeAgentOptions``.
+
+        The prompt rides stdin as a stream-json user message
+        (``--input-format stream-json``) so the open pipe doubles as the
+        graceful-interrupt channel for ``close_session()``.
+
+        Raises :class:`WorkerSpawnError` when claude is not installed (no
+        harness capability discovered) or its executable can't be resolved on
+        the spawn PATH.
+        """
+        opts = self._options_from_context(context)
         opts.system_prompt_file = context.system_prompt_file
         # No argv instruction — the prompt is delivered over stdin (below) so
         # the pipe stays open as the graceful-interrupt channel.
@@ -492,5 +490,3 @@ def _status(subtype: str, value: str = "") -> FlowData:
             "subtype": subtype,
         },
     )
-
-

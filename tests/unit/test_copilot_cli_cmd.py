@@ -99,6 +99,18 @@ def test_interactive_spawn_args_use_bare_copilot():
     assert env == {"COPILOT_ALLOW_ALL": "true"}
 
 
+@pytest.mark.parametrize("json_stream", [False, True])
+def test_process_plugin_dirs_are_repeatable_raw_runtime_flags(json_stream):
+    plugin_dirs = ["/plugins/one", "/plugins/two with 'quotes' and \U0001f600"]
+    cmd = CopilotAgentOptions(plugin_dirs=plugin_dirs, json_stream=json_stream)
+
+    argv, _env = cmd.to_spawn_args()
+
+    assert [argv[index + 1] for index, value in enumerate(argv[:-1]) if value == "--plugin-dir"] == plugin_dirs
+    assert "plugin_dirs" not in cmd.to_json()
+    assert CopilotAgentOptions.from_json({"plugin_dirs": ["/persisted"]}).plugin_dirs == []
+
+
 def test_interactive_non_bypass_does_not_inject_folder_trust_override():
     cmd = CopilotAgentOptions(
         workdir="/repo",
