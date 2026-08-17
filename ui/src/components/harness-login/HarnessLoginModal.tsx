@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import {
   Capability,
   capabilityManager,
@@ -15,20 +16,9 @@ import { useEntity } from '@sdk/react/hooks';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from '@src/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@src/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { notify } from '@src/notifications';
 import { PROVIDER_META } from '@src/tabs/provider-meta';
 import { AlertCircle, ArrowUpRight, Check, ChevronLeft, ChevronRight, KeyRound, Loader2, Trash2 } from 'lucide-react';
@@ -84,10 +74,7 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
   const { t } = useLingui();
   const snapshot = capabilityManager.getSnapshot(kind);
   const capabilityId = snapshot.capability?.id ?? null;
-  const typeId = useMemo(
-    () => (capabilityId ? new TypeId(Capability.type, capabilityId) : null),
-    [capabilityId],
-  );
+  const typeId = useMemo(() => (capabilityId ? new TypeId(Capability.type, capabilityId) : null), [capabilityId]);
   const { data: capability } = useEntity<Capability>(typeId, { enabled: !!typeId, watch: true });
   const [busy, setBusy] = useState(false);
   // Separate from `busy` so re-testing auth doesn't compute status to 'busy'.
@@ -112,7 +99,7 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
   const rawProvider = capability?.api_provider ?? defaultProvider;
   const activeProvider = configuredProviders.includes(rawProvider as LMApiProvider)
     ? rawProvider
-    : configuredProviders[0] ?? rawProvider;
+    : (configuredProviders[0] ?? rawProvider);
 
   const setAuthMode = useCallback(
     async (mode: AuthMode, provider?: string) => {
@@ -160,7 +147,11 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
       if (r.status === 'logged_in') {
         notify.success({ title: t`Still signed in`, message: r.message || undefined, durationMs: 3000 });
       } else {
-        notify.warning({ title: t`Not signed in — please re-authenticate`, message: r.message || undefined, durationMs: 5000 });
+        notify.warning({
+          title: t`Not signed in — please re-authenticate`,
+          message: r.message || undefined,
+          durationMs: 5000,
+        });
       }
     } catch {
       notify.error({ title: t`Could not check sign-in`, durationMs: 4000 });
@@ -198,9 +189,9 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
   const authBadge =
     authMode === 'api'
       ? apiAvailable
-        ? { label: 'LLM key', tone: 'emerald' as const }
-        : { label: 'Key not set', tone: 'amber' as const }
-      : { label: 'Device login', tone: 'sky' as const };
+        ? { label: t`LLM key`, tone: 'emerald' as const }
+        : { label: t`Key not set`, tone: 'amber' as const }
+      : { label: t`Device login`, tone: 'sky' as const };
 
   return {
     capability,
@@ -245,11 +236,7 @@ function AuthBadge({
   testId?: string;
 }) {
   return (
-    <Badge
-      variant="outline"
-      data-testid={testId}
-      className={`gap-1 ${AUTH_BADGE_TONE[badge.tone]} ${className ?? ''}`}
-    >
+    <Badge variant="outline" data-testid={testId} className={`gap-1 ${AUTH_BADGE_TONE[badge.tone]} ${className ?? ''}`}>
       <KeyRound className="h-3 w-3" />
       {badge.label}
     </Badge>
@@ -257,11 +244,27 @@ function AuthBadge({
 }
 
 const STATUS_TEXT: Record<Status, { label: string; dot: string; tone: string }> = {
-  signedin: { label: 'Signed in', dot: 'bg-emerald-400 shadow-[0_0_7px] shadow-emerald-400/60', tone: 'text-emerald-500' },
-  awaiting: { label: 'Waiting for you…', dot: 'bg-sky-400 shadow-[0_0_7px] shadow-sky-400/60 animate-pulse', tone: 'text-sky-500' },
-  busy: { label: 'Starting…', dot: 'bg-sky-400 shadow-[0_0_7px] shadow-sky-400/60 animate-pulse', tone: 'text-sky-500' },
-  signedout: { label: 'Not signed in', dot: 'bg-amber-400 shadow-[0_0_7px] shadow-amber-400/60', tone: 'text-amber-500' },
-  unavailable: { label: 'Not installed', dot: 'bg-muted-foreground/40', tone: 'text-muted-foreground' },
+  signedin: {
+    label: t`Signed in`,
+    dot: 'bg-emerald-400 shadow-[0_0_7px] shadow-emerald-400/60',
+    tone: 'text-emerald-500',
+  },
+  awaiting: {
+    label: t`Waiting for you…`,
+    dot: 'bg-sky-400 shadow-[0_0_7px] shadow-sky-400/60 animate-pulse',
+    tone: 'text-sky-500',
+  },
+  busy: {
+    label: t`Starting…`,
+    dot: 'bg-sky-400 shadow-[0_0_7px] shadow-sky-400/60 animate-pulse',
+    tone: 'text-sky-500',
+  },
+  signedout: {
+    label: t`Not signed in`,
+    dot: 'bg-amber-400 shadow-[0_0_7px] shadow-amber-400/60',
+    tone: 'text-amber-500',
+  },
+  unavailable: { label: t`Not installed`, dot: 'bg-muted-foreground/40', tone: 'text-muted-foreground' },
 };
 
 /** Master list: one big, tappable row per assistant. */
@@ -286,7 +289,7 @@ function HarnessListRow({
       type="button"
       onClick={onOpen}
       style={{ animation: `hlIn 320ms cubic-bezier(0.16,1,0.3,1) ${index * 60}ms both` }}
-      className="group flex w-full items-center gap-3.5 rounded-xl border border-border/70 bg-card/40 p-3.5 text-left transition-all hover:border-border hover:bg-accent/40"
+      className="group flex w-full items-center gap-3.5 rounded-xl border border-border/70 bg-card/40 p-3.5 text-start transition-all hover:border-border hover:bg-accent/40"
     >
       <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-border/60 bg-background/70">
         {Icon && <Icon className={`h-6 w-6 ${iconClassName}`} />}
@@ -314,13 +317,7 @@ function HarnessListRow({
 /** Central LLM-key management — the base layer. Add a key for any provider, see
  *  all configured keys, test validity, and delete. Shared across the modal;
  *  harnesses only consume these keys (they never enter them). */
-function LlmKeysSection({
-  keys,
-  refreshKeys,
-}: {
-  keys: LmApiKeySummary[];
-  refreshKeys: () => Promise<void>;
-}) {
+function LlmKeysSection({ keys, refreshKeys }: { keys: LmApiKeySummary[]; refreshKeys: () => Promise<void> }) {
   const { t } = useLingui();
   const allProviders = Object.values(LMApiProvider);
   const [provider, setProvider] = useState<string>(allProviders[0]);
@@ -467,9 +464,26 @@ function LlmKeysSection({
 function HarnessDetail({ kind, onBack, keys }: { kind: string; onBack: () => void; keys: LmApiKeySummary[] }) {
   const { t } = useLingui();
   const {
-    capability, status, statusText: st, name, account, Icon, iconClassName, pasted, setPasted,
-    signIn, copyAndOpen, submitCode, testing, testAuth,
-    authMode, authBadge, configuredProviders, activeProvider, apiAvailable, setAuthMode,
+    capability,
+    status,
+    statusText: st,
+    name,
+    account,
+    Icon,
+    iconClassName,
+    pasted,
+    setPasted,
+    signIn,
+    copyAndOpen,
+    submitCode,
+    testing,
+    testAuth,
+    authMode,
+    authBadge,
+    configuredProviders,
+    activeProvider,
+    apiAvailable,
+    setAuthMode,
   } = useHarness(kind, keys);
 
   return (
@@ -513,7 +527,9 @@ function HarnessDetail({ kind, onBack, keys }: { kind: string; onBack: () => voi
                   title={disabled ? t`Add a key in "LLM API keys" above to use it here` : undefined}
                   onClick={() => void setAuthMode(mode, activeProvider)}
                   className={`flex-1 rounded-md px-3 py-1.5 text-sm transition-colors ${
-                    authMode === mode ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground hover:text-foreground'
+                    authMode === mode
+                      ? 'bg-accent font-medium text-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
                   } ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}
                 >
                   {mode === 'device' ? <Trans>Device login</Trans> : <Trans>LLM key</Trans>}
@@ -552,7 +568,10 @@ function HarnessDetail({ kind, onBack, keys }: { kind: string; onBack: () => voi
         {status === 'unavailable' ? (
           <div className="flex flex-col items-center gap-4 text-center">
             <DialogDescription className="text-sm text-muted-foreground">
-              <Trans>{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in.</Trans>
+              <Trans>
+                {name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign
+                in.
+              </Trans>
             </DialogDescription>
             <Button className="w-full" onClick={() => openWikiModal(INSTALL_WIKI_PAGE)}>
               <Trans>Show setup guide</Trans>
@@ -609,9 +628,11 @@ function HarnessDetail({ kind, onBack, keys }: { kind: string; onBack: () => voi
             )}
 
             <Button className="w-full gap-1.5" onClick={() => void copyAndOpen()}>
-              {capability?.login_code
-                ? <Trans>2. Copy &amp; open the sign-in page</Trans>
-                : <Trans>Open the sign-in page</Trans>}
+              {capability?.login_code ? (
+                <Trans>2. Copy &amp; open the sign-in page</Trans>
+              ) : (
+                <Trans>Open the sign-in page</Trans>
+              )}
               <ArrowUpRight className="h-4 w-4" />
             </Button>
 
@@ -651,8 +672,8 @@ function HarnessDetail({ kind, onBack, keys }: { kind: string; onBack: () => voi
           <div className="flex flex-col gap-4">
             <DialogDescription className="text-center text-sm text-muted-foreground">
               <Trans>
-                Sign in with your {account} to let {name} write and run code for
-                you. A browser window opens for sign-in — FlowPad never sees your password.
+                Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in
+                — FlowPad never sees your password.
               </Trans>
             </DialogDescription>
             <Button className="w-full gap-1.5" disabled={status === 'busy'} onClick={() => void signIn()}>
@@ -811,10 +832,7 @@ function MappingView({ onBack }: { onBack: () => void }) {
   const { t } = useLingui();
   const [kind, setKind] = useState<string>(HARNESS_CAPABILITY_KINDS[0]);
   const worker = workerOf(kind);
-  const providers = useMemo(
-    () => HARNESS_SUPPORTED_PROVIDERS[worker] ?? [LMApiProvider.OpenRouter],
-    [worker],
-  );
+  const providers = useMemo(() => HARNESS_SUPPORTED_PROVIDERS[worker] ?? [LMApiProvider.OpenRouter], [worker]);
   const [provider, setProvider] = useState<string>(providers[0]);
   // Keep provider valid when the harness changes.
   useEffect(() => {
@@ -866,7 +884,10 @@ function MappingView({ onBack }: { onBack: () => void }) {
   const listId = `mapping-catalog-${provider}`;
 
   return (
-    <div style={{ animation: 'hlIn 260ms cubic-bezier(0.16,1,0.3,1) both' }} className="flex max-h-[80vh] flex-col overflow-y-auto">
+    <div
+      style={{ animation: 'hlIn 260ms cubic-bezier(0.16,1,0.3,1) both' }}
+      className="flex max-h-[80vh] flex-col overflow-y-auto"
+    >
       <button
         type="button"
         onClick={onBack}

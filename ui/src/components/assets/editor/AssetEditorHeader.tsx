@@ -56,22 +56,18 @@ export function AssetEditorHeader({
   const collisionEntity = useAssetCollisionEntity();
   const resolvedPath = sourcePath ?? (dirPath ? `${dirPath}/${fileName}` : fileName);
   const hasCollision = (collisionEntity?.duplicate_count ?? 0) > 0;
-  const hasControls =
-    advanced ||
-    dirty ||
-    hasCollision ||
-    !!onDelete ||
-    !!actions;
+  const hasControls = advanced || dirty || hasCollision || !!onDelete || !!actions;
   if (!hasControls) return null;
   return (
-    <div
-      className="flex h-10 flex-shrink-0 items-center gap-2 border-b px-3"
-      data-testid="asset-editor-header"
-    >
+    <div className="flex h-10 flex-shrink-0 items-center gap-2 border-b px-3" data-testid="asset-editor-header">
       <AssetCollisionBadge />
-      {dirty && <span className="text-sm text-amber-500" title={t`Unsaved changes`}>*</span>}
+      {dirty && (
+        <span className="text-sm text-amber-500" title={t`Unsaved changes`}>
+          *
+        </span>
+      )}
       {advanced && <ProjectNameChip sourcePath={resolvedPath} />}
-      <div className="ml-auto flex flex-shrink-0 items-center gap-1">
+      <div className="ms-auto flex flex-shrink-0 items-center gap-1">
         {advanced && onOpenExternal && (
           <button
             type="button"

@@ -323,3 +323,9 @@ The unknowns in §7 that these greps did **not** settle: whether
 coverage beyond `test_pentest_identity_auth.py:159`, whether OSS
 `flow_sdk/builtin/faas/compute_node.py` should move in the same shape, and the ~17
 provider-leak claims that never went through refutation.
+
+<!-- flowpad:capsule identity
+version: 1
+data:
+  id: bfba1aab-22b7-46fa-a295-8fa95ab6237f
+flowpad:endcapsule identity -->

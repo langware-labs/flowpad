@@ -1,7 +1,6 @@
-import { ActionInfo, ComputeNode, dataManager, PageId } from '@sdk';
-import { workspaceServiceUrl } from '@src/hooks/use-sandboxes';
+import { ComputeNode, Project } from '@sdk';
+import { pendingSetup, workspaceServiceUrl } from '@src/hooks/use-sandboxes';
 import { errorMessage, errorStatus } from '@src/lib/error-message';
-import { DockPointer } from '@src/navigation/DockPointer';
 
 /**
  * Sharing a cloud sandbox by email, and handing one over.
@@ -29,28 +28,47 @@ import { DockPointer } from '@src/navigation/DockPointer';
  */
 export const SANDBOX_SHARE_ROLE = 'admin';
 
+/**
+ * What a recipient gets on the PROJECT the sandbox opens.
+ *
+ * `member`, not `reader`: on `project` the reader role also allows `secret`, and
+ * being handed a sandbox is not a reason to reach its secrets. `member` is read
+ * plus the member list — exactly what the box's own fetch of the project needs
+ * in order to adopt its language and settings.
+ *
+ * The same on a handover as on a share: owning the machine does not make someone
+ * the owner of the work it opens.
+ */
+export const SANDBOX_PROJECT_ROLE = 'member';
+
 /** What the sender keeps after handing a sandbox over. */
 export const SANDBOX_TRANSFER_ROLE_TO_KEEP = 'reader';
 
 /**
- * Where the emailed invitation lands the recipient.
+ * Where the emailed invitation lands the recipient: `/compute_node/<id>`, the
+ * page that says "Preparing your sandbox…" and then goes into the box.
  *
- * Built from the router's own pointer rather than a string literal so a route
- * rename cannot silently start sending people to the SPA's catch-all. The hub
- * validates it with `is_safe_app_path` (leading `/`, no `//`, no `://`), which
- * this satisfies by construction.
+ * NO `callback_override` rides with the invite any more, and that is the point.
+ * `_post_accept_landing_url` already ends in
+ * `build_entity_url(chosen_target.typeid)` — the hub's own answer to "where do I
+ * send someone who just accepted an invitation to this entity" — and for a
+ * ComputeNode target that IS this URL. The override existed only because the app
+ * had no page listening at the address the hub was already generating; now it
+ * does, so a sandbox invitation lands correctly by the same route every other
+ * entity's does, with nothing steering it.
+ *
+ * Kept as a function rather than inlined because {@link sandboxShareLink} builds
+ * the pasteable copy of the same destination, and two spellings of one address
+ * is how the emailed link and the copied link drifted apart the first time.
  */
-export function sandboxShareLandingPath(): string {
-  return DockPointer.forHome().withPage(PageId.HUB).toUrl();
+export function sandboxShareLandingPath(nodeId: string): string {
+  return `/${ComputeNode.type}/${encodeURIComponent(nodeId)}`;
 }
 
-/** Invoke the owner-only `auto-login` action on a node. */
-function autoLoginCall(nodeId: string, value: boolean): Promise<{ auto_login: boolean } | undefined> {
-  const info = new ActionInfo('auto-login', ComputeNode.type, nodeId, 'POST');
-  info.hubReflect = true; // the node is hub-owned
-  info.bodyParameters = { auto_login: value };
-  return dataManager.callAction<Record<string, unknown>, { auto_login: boolean } | undefined>(info);
-}
+// `setAutoLogin` used to live here. It moved to `use-sandboxes`, next to the
+// launch, because that is what it governs: whether bringing the workspace up
+// signs a person into it. Sharing a box and choosing whose session it runs are
+// different questions, and only one of them belongs to this module.
 
 export interface ShareOutcome {
   granted: string[];
@@ -124,47 +142,129 @@ export async function shareSandboxByEmail(
 ): Promise<ShareOutcome> {
   const outcome: ShareOutcome = { granted: [], failed: [] };
   const role = opts.transfer ? 'owner' : (opts.role ?? SANDBOX_SHARE_ROLE);
+  // THE PROJECT TRAVELS WITH THE BOX. A sandbox is only useful as the project it
+  // opens, and the box fetches that project from the hub AS the person who opened
+  // it -- so a role on the machine alone gets a 401 there and the box keeps a bare
+  // row: right files, no language, no helpdesk config, none of the author's
+  // settings. It fails silently (the adopt is best-effort and logs inside the box)
+  // and reads as "the sandbox opened in the wrong language", not as a permission
+  // problem.
+  //
+  // TWO INVITATIONS, NOT ONE, and the reason is not style. `transfer` is a
+  // property of the INVITATION, not of a target: the hub picks one `grant_kind`
+  // per request, so a handover judges every target as a transfer and `can_assign`
+  // refuses anything but `owner` -- "a transfer confers 'owner' and nothing else".
+  // A single invitation therefore cannot say "hand over the box, share the
+  // project". Sending the project separately is the only shape that expresses it.
+  //
+  // It also fixes where the emailed link lands. `choose_target_entity` sends the
+  // recipient to `non_workspace_targets[0]`, and with two targets that order is
+  // whatever the relationship round-trip returns -- so the mail could open the
+  // PROJECT instead of the sandbox, while the copied link (built here, always the
+  // node) was correct. One target per invitation makes the destination
+  // unambiguous by construction rather than by an override.
+  //
+  // Nothing dangles from the split: `invitation_auto_accept_on_invite` is on, so
+  // the project grant lands at send; a handover is the one thing that waits for a
+  // real click, and its companion is not a transfer. A recipient with no account
+  // yet has every pending invitation swept on first sign-in
+  // (`auto_accept_pending_invitations`), which exists precisely so clicking one
+  // link does not strand the others.
+  //
+  // `member`, deliberately, not `reader`: on `project` the reader role also allows
+  // `secret`, and being handed a sandbox is not a reason to reach its secrets.
+  //
+  // Nothing to grant for a box with no project -- an empty sandbox is a machine
+  // and nothing else.
+  const projectId = pendingSetup(node)?.projectId;
+  const project = projectId ? new Project({ id: projectId }) : null;
 
   for (const email of emails) {
     try {
       await node.inviteMember(email, role, {
-        callbackOverride: sandboxShareLandingPath(),
         ...(opts.transfer ? { transfer: true, roleToKeep: opts.roleToKeep ?? null } : {}),
       });
       outcome.granted.push(email);
     } catch (err) {
       outcome.failed.push({ email, message: shareFailureText(err, 'Could not share with this address') });
+      // The box is what they asked to share. If that failed there is nothing for a
+      // project grant to accompany, and granting it anyway would leave a role on
+      // work they cannot open.
+      continue;
+    }
+    if (!project) continue;
+    try {
+      // Always `member`, including on a handover: the new owner of the machine is
+      // not thereby the owner of the work it opens.
+      await project.inviteMember(email, SANDBOX_PROJECT_ROLE);
+    } catch (err) {
+      // Reported but NOT counted as a failed share: the sandbox is theirs and the
+      // link works. What they lose is the project's own settings -- the language
+      // it is read in, its helpdesk config -- so it is worth saying rather than
+      // swallowing.
+      outcome.failed.push({
+        email,
+        message: shareFailureText(
+          err,
+          "Shared the sandbox, but could not share its project — it may open without the project's settings",
+        ),
+      });
     }
   }
   return outcome;
 }
 
 /**
- * Set whether a box belongs to one person.
- *
- * Its own action, not a PUT on the entity: `update` is granted at editor and
- * above, so on the ordinary write path a shared admin could flip this. The hub
- * keeps `auto_login` in `_immutable_update` to close that path.
- */
-export async function setAutoLogin(node: ComputeNode, value: boolean): Promise<boolean> {
-  const res = await autoLoginCall(node.id, value);
-  return res?.auto_login ?? value;
-}
-
-/**
  * The link to hand someone once they have access.
  *
- * Deliberately the SAME url the card's Open button uses — the open-service
- * route, which resolves the machine's state at click time: it authorizes the
- * caller, resumes a paused box, waits for the workspace to answer, and only then
- * redirects.
+ * The SAME destination the invitation email uses, and that is the whole point:
+ * ONE shared link, with one set of powers. It used to be `workspaceServiceUrl`
+ * — the hub's `open-service` route — on the reasoning that it is the same url
+ * the card's Open button follows. True, and it made the copied link strictly
+ * weaker than the emailed one, because `open-service` OPENS a box and cannot
+ * BUILD one: pointed at a sandbox that was created but never launched, it
+ * answers 409 "this machine has not been set up yet" and the recipient is out of
+ * moves. A sandbox is written down and launched by two separate clicks, so being
+ * shared before its first launch is ordinary, not exotic — and it is exactly the
+ * state a handover arrives in when the new owner is meant to start it.
  *
- * Safe to paste into a chat or an email because it is not a bearer token. The
- * hub requires an authenticated principal holding at least `admin` on the node
- * before it will even attach the cookie-gate secret, so a stranger who gets hold
- * of this gets a 403, not a session. That is exactly why it must never be the
- * raw gated host url, which carries that secret in its query string.
+ * `/compute_node/<id>` is the page that knows both verbs. It launches the box
+ * when the box needs launching and the recipient may launch it, and redirects
+ * through `open-service` otherwise — which is still what does the authorizing,
+ * the resuming and the waiting. This adds a step in front of that route; it
+ * takes nothing away from it.
+ *
+ * Absolute, unlike {@link sandboxShareLandingPath}: this one is pasted into a
+ * chat or an email, where a bare path resolves against the wrong origin or
+ * nothing at all — while the path form is what the hub composes against its own
+ * base.
+ *
+ * ANCHORED TO THE API ORIGIN — the hub — and to nothing else. Two plausible
+ * sources are both wrong, and both were shipped here before this comment existed:
+ *
+ * `window.location.origin` is where the SENDER's browser happens to be. Run the
+ * app locally against a remote hub and the link reads
+ * `http://localhost:4093/compute_node/…`: a flawless link to the sender's own
+ * laptop, handed to somebody who cannot reach it.
+ *
+ * `cloudManager.cloudAppUrl` looks like the fix and is the same bug wearing a
+ * better name. In hub mode — which is ANY app pointed at a hub, including that
+ * same local dev harness — it is ASSIGNED `window.location.origin`, on purpose:
+ * it answers "where is my browser's app origin", which is right for navigating
+ * yourself and wrong for a link you hand to someone else. See
+ * `cloud_login.ts`'s hub-mode branch, which says as much.
+ *
+ * The API origin is neither. It is where the hub actually is, in every mode, and
+ * it is the origin this link already carried before it was absolute at all —
+ * taken from `workspaceServiceUrl` rather than re-derived, so the two entry
+ * points to one box can never resolve to different hubs.
+ *
+ * Safe to paste because it is not a bearer token: it names a node and carries no
+ * credential, and every door behind it authorizes the caller. A stranger gets a
+ * 403, not a session. That is exactly why it must never be the raw gated host
+ * url, which carries the cookie-gate secret in its query string.
  */
 export function sandboxShareLink(node: ComputeNode): string {
-  return workspaceServiceUrl(node.id);
+  const { origin } = new URL(workspaceServiceUrl(node.id));
+  return new URL(sandboxShareLandingPath(node.id), origin).toString();
 }

@@ -25,7 +25,9 @@ from flow_sdk.service_log import cleanup_old_logs, generate_timestamped_log_path
 def _logs_base() -> Path:
     """Lazy logs-dir lookup via per-instance settings."""
     from flow_sdk.instance_settings import get_instance_settings
+
     return get_instance_settings().logs_dir
+
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -61,6 +63,7 @@ def _setup_logging() -> None:
 # ---------------------------------------------------------------------------
 # Process utilities
 # ---------------------------------------------------------------------------
+
 
 def is_process_alive(pid: int, expected_name: str | None = None) -> bool:
     """Check if *pid* is alive and optionally contains *expected_name* in cmdline.
@@ -125,16 +128,54 @@ def start_detached_process(args: list[str], env: dict | None = None, stderr=None
 # Server management
 # ---------------------------------------------------------------------------
 
+
 def check_server_health(port: int, timeout: float = 2.0) -> bool:
-    """GET http://127.0.0.1:{port}/api/v1/health/status → 200?"""
-    import urllib.request
+    """GET http://127.0.0.1:{port}/health/status → 200?
+
+    Carries the cookie-gate secret when this instance is gated. Without it the
+    monitor is refused like any other keyless caller -- the gate has NO path
+    exemptions, `/health/status` explicitly included -- and a 403 is
+    indistinguishable from a dead server down here. The monitor then kills a
+    perfectly healthy app, the replacement is refused for the same reason, and
+    the instance restart-loops forever with a doubling backoff. That is not
+    hypothetical: it is what every gated sandbox did until this line existed,
+    silently destroying agent turns, terminals and pending device logins on
+    every cycle.
+
+    The HEADER transport, not the query param: `cookie_gate_middleware` lists it
+    as the one for machine callers, and a secret in a URL lands in access logs.
+
+    Free when ungated -- `get_cookie_gate` answers from a `stat()` of the marker
+    file and never opens the encrypted store, which is what keeps desktop
+    installs (never gated) away from a keychain prompt. Any failure to read it
+    resolves to None, so the check degrades to exactly its old behaviour rather
+    than erroring.
+    """
     import urllib.error
+    import urllib.request
 
     url = f"http://127.0.0.1:{port}/health/status"
     try:
         req = urllib.request.Request(url, method="GET")
+        # Lazy: `gate_headers` pulls in starlette on the armed path, and this
+        # supervisor otherwise never needs it and must not pay for it at
+        # startup. It swallows its own failures and yields {} -- the monitor
+        # must survive anything the settings layer does, since being unable to
+        # read the gate is a reason to probe without it, never a reason to stop
+        # supervising the server.
+        from flow_sdk.instance_settings.cookie_gate import gate_headers
+
+        for name, value in gate_headers(url).items():
+            req.add_header(name, value)
         with urllib.request.urlopen(req, timeout=timeout):
             return True
+    except urllib.error.HTTPError as e:
+        # Distinguished from "no answer" on purpose. A gated instance that
+        # refuses the monitor looks exactly like a crashed one from here, and
+        # the only difference visible anywhere is this status code -- so it gets
+        # said out loud rather than folded into a bare False.
+        log.warning("Health check rejected with HTTP %s (gated instance without the secret?)", e.code)
+        return False
     except (urllib.error.URLError, OSError, TimeoutError):
         return False
 
@@ -171,19 +212,23 @@ def wait_for_server_health(port: int, timeout: float = 10.0) -> bool:
 # Server info helpers (thin wrappers around config.py)
 # ---------------------------------------------------------------------------
 
+
 def _load_info() -> dict:
     from flow_sdk.config import load_server_info
+
     return load_server_info()
 
 
 def _save_info(data: dict) -> None:
     from flow_sdk.config import save_server_info
+
     save_server_info(data)
 
 
 # ---------------------------------------------------------------------------
 # Monitor core
 # ---------------------------------------------------------------------------
+
 
 def _is_ancestor(pid: int) -> bool:
     """Check if *pid* is an ancestor of the current process.
@@ -230,7 +275,7 @@ def monitor_loop(port: int, interval: float = 30.0) -> None:
     while True:
         # Sleep with backoff
         if consecutive_failures >= 3:
-            backoff = min(2 ** consecutive_failures, max_backoff)
+            backoff = min(2**consecutive_failures, max_backoff)
             log.warning("Backoff: sleeping %.1fs after %d failures", backoff, consecutive_failures)
             time.sleep(backoff)
         else:
@@ -330,6 +375,7 @@ def launch_monitor(port: int) -> None:
 # CLI helpers (called from flow_cli.py)
 # ---------------------------------------------------------------------------
 
+
 def start_monitor_detached(port: int) -> int:
     """Launch the monitor as a detached process. Returns monitor PID.
 
@@ -345,11 +391,14 @@ def start_monitor_detached(port: int) -> int:
     # Write port + launch time so CLI can discover the server,
     # but leave monitor_pid for the monitor to set itself.
     from flow_sdk.config import set_server_info
-    set_server_info({
-        "port": port,
-        "monitor_pid": pid,
-        "launch_iso_time": datetime.now(timezone.utc).isoformat(),
-    })
+
+    set_server_info(
+        {
+            "port": port,
+            "monitor_pid": pid,
+            "launch_iso_time": datetime.now(timezone.utc).isoformat(),
+        }
+    )
 
     return pid
 
@@ -370,6 +419,7 @@ def stop_all() -> tuple[bool, bool]:
 
     # Clear PIDs from server.json
     from flow_sdk.config import clear_server_info
+
     clear_server_info()
 
     return monitor_killed, server_killed

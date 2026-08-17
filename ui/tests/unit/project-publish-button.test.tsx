@@ -43,6 +43,7 @@ const mocks = vi.hoisted(() => ({
   hubPageUrl: vi.fn(),
   success: vi.fn(),
   error: vi.fn(),
+  info: vi.fn(),
   hubMode: false,
 }));
 
@@ -93,7 +94,7 @@ vi.mock('@src/navigation/hub-runtime', () => ({
 }));
 
 vi.mock('@src/notifications', () => ({
-  notify: { success: mocks.success, error: mocks.error },
+  notify: { success: mocks.success, error: mocks.error, info: mocks.info },
 }));
 
 vi.mock('@src/components/share-to-conversation/GitShareGateDialog', () => ({
@@ -192,6 +193,86 @@ describe('ProjectPublishButton', () => {
     expect(mocks.preflight.refetch).toHaveBeenCalled();
   });
 
+  it('hands the screen to the setup wizard instead of sitting on top of it', async () => {
+    // The wizard finishes its work and then waits for the user to press Done, so
+    // `launchWizard` stays pending meanwhile — modelled here by a promise that
+    // does not resolve. The gate must be OUT OF THE WAY for that whole time: it
+    // used to stay up in its `checking` face (the one face with no action), so
+    // the user watched an unchanging spinner while the wizard that needed them
+    // was behind it — and because only that user can close the wizard, nothing
+    // could ever resolve it.
+    let finishWizard: (result: { status: string }) => void = () => {};
+    mocks.launchWizard.mockReturnValue(
+      new Promise<{ status: string }>((resolve) => {
+        finishWizard = resolve;
+      }),
+    );
+    mocks.preflight.available = false;
+    mocks.preflight.code = 'missing-remote';
+    render(<ProjectPublishButton project={project} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Set up Git' }));
+
+    await waitFor(() => expect(mocks.launchWizard).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('git-share-gate')).not.toBeInTheDocument();
+
+    // And the handoff is not a dead end: finishing the wizard still re-checks.
+    finishWizard({ status: 'done' });
+    await waitFor(() => expect(mocks.preflight.refetch).toHaveBeenCalled());
+  });
+
+  it('says how the setup wizard ended, whichever way it ends', async () => {
+    // The wizard runs on its own surface, so this button is off-screen when it
+    // lands. Every exit has to speak for itself or the user is back to guessing.
+    mocks.preflight.available = false;
+    mocks.preflight.code = 'missing-remote';
+
+    // Cancelled: the publish they asked for is simply not happening.
+    mocks.launchWizard.mockResolvedValue({ status: 'cancel' });
+    const first = render(<ProjectPublishButton project={project} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Set up Git' }));
+    await waitFor(() =>
+      expect(mocks.info).toHaveBeenCalledWith(expect.objectContaining({ title: 'Git setup cancelled' })),
+    );
+    first.unmount();
+
+    // Finished: say so, and say what happens next.
+    mocks.launchWizard.mockResolvedValue({ status: 'done' });
+    render(<ProjectPublishButton project={project} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Set up Git' }));
+    await waitFor(() =>
+      expect(mocks.success).toHaveBeenCalledWith(expect.objectContaining({ title: 'Git is set up' })),
+    );
+  });
+
+  it('does not leave the "linking…" promise hanging when the re-check still says no', async () => {
+    // Setup reports success, the re-check disagrees. Before, the flag just sat
+    // there and nothing further happened — the same silence as the stuck gate,
+    // only now we had already told the user we were linking.
+    mocks.preflight.available = false;
+    mocks.preflight.code = 'missing-remote';
+    mocks.preflight.reason = 'A GitHub origin is required.';
+    mocks.launchWizard.mockResolvedValue({ status: 'done' });
+    render(<ProjectPublishButton project={project} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Set up Git' }));
+
+    await waitFor(() =>
+      expect(mocks.error).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Still can't link this project",
+          message: 'A GitHub origin is required.',
+        }),
+      ),
+    );
+    // And it did NOT quietly publish anyway.
+    expect(mocks.project.share).not.toHaveBeenCalled();
+  });
+
   it('uses the shared whole-repository push path for dirty or unpushed Git state', async () => {
     mocks.preflight.available = false;
     mocks.preflight.code = 'dirty';
@@ -214,9 +295,7 @@ describe('ProjectPublishButton', () => {
     expect(mocks.oauthConnect).toHaveBeenCalledWith('github');
     expect(mocks.oauthEventOn).toHaveBeenCalledWith(OAuthEventType.OAUTH_FLOW_COMPLETE, expect.any(Function));
     act(() => {
-      mocks.oauthEventHandlers
-        .at(-1)
-        ?.({ provider: 'github', status: OAuthStatus.SUCCESS, attachSuccess: null });
+      mocks.oauthEventHandlers.at(-1)?.({ provider: 'github', status: OAuthStatus.SUCCESS, attachSuccess: null });
     });
     await waitFor(() => expect(mocks.project.share).toHaveBeenCalledTimes(1));
     expect(mocks.oauthStatus).toHaveBeenCalledTimes(2);

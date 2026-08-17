@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 
-import requests
 from enum import Enum
+
+import requests
+
 from flow_sdk.cli.cli_command import CLICommand
-from flow_sdk.cli.config_manager import get_config_value, setup_defaults
+from flow_sdk.cli.commands._common import local_get as _local_get
 from flow_sdk.cli.commands.setup_cmd.claude_code_setup.setup_claude import setup_claude_code
+from flow_sdk.cli.config_manager import get_config_value, setup_defaults
 
 
 class AgentType(Enum):
     """Enum for supported coding agents"""
+
     CLAUDE_CODE = "claude-code"
     GITHUB_COPILOT = "github-copilot"
     CURSOR = "cursor"
@@ -22,14 +26,12 @@ AGENT_KEYWORD_MAP = {
     "claudecode": AgentType.CLAUDE_CODE,
     "claude code": AgentType.CLAUDE_CODE,
     "claude": AgentType.CLAUDE_CODE,
-
     # GitHub Copilot variations
     "github-copilot": AgentType.GITHUB_COPILOT,
     "github_copilot": AgentType.GITHUB_COPILOT,
     "githubcopilot": AgentType.GITHUB_COPILOT,
     "github copilot": AgentType.GITHUB_COPILOT,
     "copilot": AgentType.GITHUB_COPILOT,
-
     # Cursor variations
     "cursor": AgentType.CURSOR,
 }
@@ -75,7 +77,11 @@ def healthcheck_api_server():
         api_url = api_host
 
     try:
-        response = requests.get(api_url, timeout=5)
+        # ``local_get`` and not a bare ``requests.get``: ``api_url`` is usually
+        # this machine's own server, which refuses keyless callers when gated.
+        # It can also be a configured remote host, and the header is attached to
+        # loopback URLs only — so this stays correct in both cases.
+        response = _local_get(api_url, timeout=5)
         return response.status_code, response.status_code == 200
     except requests.exceptions.RequestException as e:
         print(f"Error connecting to API server: {e}")

@@ -820,6 +820,16 @@ the durable citation.
 - **Maps to:** _____________________
 - **Effort if missing:** S
 
+### `FLOWPAD_PYTHON` env injection
+- **Need:** Skills that run Flowpad's own Python (flow-diagnose's `report.py`, and any co-located script that does `import flow_sdk`) get an absolute path to the interpreter that can import it. Resolution by name is not available to a worker: `uv run` walks up from the working directory — a user workspace — and finds no Flowpad; bare `python`/`python3` is subject to the capability bin folder being prepended after our PATH pin at spawn time, and a Windows venv ships no `python3.exe`.
+- **Claude:** `env["FLOWPAD_PYTHON"] = sys.executable` in `apply_worker_env`, the shared chokepoint (cli_worker_base_driver.py:437-460; claude/driver.py:168). Assigned, not `setdefault`-ed — a stale value persisted in `cli_config["env_vars"]` would outlive the install it points at.
+- **Codex:** Same path — `apply_worker_env` is driver-agnostic (codex/driver.py:141, copilot/driver.py:127)
+- **Required:** Yes
+- **Vendor must expose:** ability to set arbitrary env vars at launch time (covered by env-var passthrough)
+- [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
+- **Maps to:** _____________________
+- **Effort if missing:** S
+
 ### `--add-dir <path>` (repeatable) for skill / agent discovery
 - **Need:** Mount additional roots so the worker discovers Flowpad-shipped skills/agents plus caller-supplied `additional_dirs`; must register the Flowpad Assistant project root when `ServiceConfig.load_flowpad_assistant` is True.
 - **Claude:** repeated `--add-dir <path>` flags built from `[flowpad_assistant_project_root()] + additional_dirs` (claude/driver.py:82-87; claude/cli.py:133-134, 244-245; flow_sdk/config.py:64, 626)

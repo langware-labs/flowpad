@@ -185,6 +185,17 @@ class Project(Entity):
         description="Last UI view mode used in this project (vibe|standard|advanced|dev). "
         "Applied on project load so the mode is remembered per project.",
     )
+    # TRAVELS to the hub (unlike `last_mode` next to it, which is per-device UI
+    # state). The language a project is worked in is a property of the WORK, not
+    # of the machine reading it: a recipient of a shared project — including the
+    # box behind a sandbox handover — opens it in the language its author chose.
+    locale: str | None = APIField(
+        default=None,
+        description="UI language for this project, as a supported locale code (see "
+        "flow_sdk.i18n.supported_locales — en-US|he|ar). Applied on project load so "
+        "the app switches language when you enter a project that reads differently. "
+        "Shared: travels with the project so a recipient opens it in the same language.",
+    )
     fs_storage_provider: StorageProvider | None = EntityField(default=StorageProvider.SANDBOX, sharing=Sharing.PRIVATE)
     fs_storage_mount_path: str | None = APIField(
         default=None, description="Full path to the project folder", sharing=Sharing.PRIVATE
@@ -1094,9 +1105,7 @@ class Project(Entity):
         attached = [record for record in installed if record.get("url") in legacy_urls]
         failed = [record for record in install_failed if record.get("url") in legacy_urls]
         content_projects = [record for record in installed if record.get("url") not in legacy_urls]
-        content_projects_failed = [
-            record for record in install_failed if record.get("url") not in legacy_urls
-        ]
+        content_projects_failed = [record for record in install_failed if record.get("url") not in legacy_urls]
 
         return ApiSuccessResponse(
             data={
@@ -2091,10 +2100,7 @@ class Project(Entity):
             requested = (str(origin.branch or ""), dependency.scope)
             if previous is not None and previous != requested:
                 return ApiFailResponse(
-                    message=(
-                        f"Content project {origin.clone_url()} has conflicting "
-                        "branches or scopes"
-                    ),
+                    message=(f"Content project {origin.clone_url()} has conflicting branches or scopes"),
                     status_code=409,
                 )
             if previous is not None:
@@ -2162,9 +2168,7 @@ class Project(Entity):
             )
 
         install_status = (
-            "installed"
-            if any(record["status"] == "installed" for record in installed)
-            else "already_installed"
+            "installed" if any(record["status"] == "installed" for record in installed) else "already_installed"
         )
         roots = list(dict.fromkeys(record["path"] for record in installed if record["path"]))
 
@@ -2203,9 +2207,7 @@ class Project(Entity):
         desks = assets_in_roots(all_desks)
 
         declared_journeys = [
-            (root, preferred)
-            for root in roots
-            if (preferred := read_bootstrap_manifest(Path(root)).autolaunch_journey)
+            (root, preferred) for root in roots if (preferred := read_bootstrap_manifest(Path(root)).autolaunch_journey)
         ]
         journey_matches = {
             selector: next(

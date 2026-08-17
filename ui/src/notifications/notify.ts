@@ -22,6 +22,11 @@ import { renderToast } from './NotificationOutlet';
  * ALERTS (`warning` / `error`) are special: they always go to the alert log
  * behind the footer warnings popover, and they only pop as a toast in Dev mode.
  * Users were drowning in them; developers still want them in their face.
+ *
+ * `forceToast` opts a SINGLE alert back into toasting in every mode. Reserve it
+ * for the case where the alert is the only feedback that an action the user just
+ * took did nothing — a silent no-op reads as a broken button. Don't reach for it
+ * to make an alert louder; that is how everyone ends up drowning again.
  */
 
 const DEFAULT_DURATION_MS: Record<NotificationLevel, number | null> = {
@@ -60,7 +65,7 @@ function dispatch(input: NotificationInput): string {
   // spinner running forever.
   if (isAlertLevel(data.level)) {
     useAlertStore.getState().push(data);
-    if (getEffectiveViewMode() !== ViewMode.Dev) {
+    if (!data.forceToast && getEffectiveViewMode() !== ViewMode.Dev) {
       sonnerToast.dismiss(id);
       return id;
     }

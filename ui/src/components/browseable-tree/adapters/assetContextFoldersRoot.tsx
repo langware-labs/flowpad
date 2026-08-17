@@ -1,3 +1,6 @@
+import { t } from '@lingui/core/macro';
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
 import { Folder, FolderPlus, FolderTree, GitBranch, Trash2 } from 'lucide-react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import apiClient from '@sdk/client';
@@ -94,9 +97,9 @@ function typeRowChildren(dir: string, typeName: string, selfId: string) {
     const params = new URLSearchParams({ folder: dir, record_type: typeName, limit: '200' });
     let entities: ByPathEntity[] = [];
     try {
-      const data = (await apiClient.get(`/assets/by-path?${params.toString()}`)) as
-        | { entities?: ByPathEntity[] }
-        | null;
+      const data = (await apiClient.get(`/assets/by-path?${params.toString()}`)) as {
+        entities?: ByPathEntity[];
+      } | null;
       entities = data?.entities ?? [];
     } catch (err) {
       console.error('[assetContextFoldersRoot] by-path lookup failed', err);
@@ -122,11 +125,7 @@ function typeRowChildren(dir: string, typeName: string, selfId: string) {
  *  built from, so a type hidden in the current view mode (e.g. a dev-only one
  *  under Standard) can't reappear here. The menu payload carries no view-mode
  *  tier of its own precisely so this decision has one home. */
-function typeRows(
-  dir: string,
-  node: ProjectMenuNode | undefined,
-  visibleTypes?: ReadonlySet<string>,
-): Browseable[] {
+function typeRows(dir: string, node: ProjectMenuNode | undefined, visibleTypes?: ReadonlySet<string>): Browseable[] {
   if (!node) return [];
   return (node.groups ?? [])
     .filter((g) => g.count > 0 && (!visibleTypes || visibleTypes.has(g.type_name)))
@@ -216,11 +215,7 @@ interface DirRow {
   depth: number;
 }
 
-function dirNode(
-  row: DirRow,
-  deps: AssetContextFoldersRootDeps,
-  locatorTypeId: TypeId,
-): Browseable {
+function dirNode(row: DirRow, deps: AssetContextFoldersRootDeps, locatorTypeId: TypeId): Browseable {
   const { fsTypeId, onRemove, onDropItem, onExternalDrop, projectId, menuByPath } = deps;
   const dir = row.path;
   const isGit = row.origin_kind === 'git';
@@ -229,13 +224,7 @@ function dirNode(
   // same cache as the body's file manager); without one it stays a leaf.
   // Its whole subtree accepts drops, each folder bound to its own path.
   const fsNode = fsTypeId
-    ? assetsFsFolderNode(
-        fsTypeId,
-        rel,
-        undefined,
-        subfolderDrop(onDropItem, onExternalDrop),
-        locatorTypeId,
-      )
+    ? assetsFsFolderNode(fsTypeId, rel, undefined, subfolderDrop(onDropItem, onExternalDrop), locatorTypeId)
     : null;
   // Menu rows for this folder: its per-type groups, then the context folders it
   // owns in turn (this folder is itself a Project). Both come pre-materialized
@@ -294,7 +283,7 @@ function dirNode(
             {
               id: 'remove',
               icon: <Trash2 className="h-3 w-3" />,
-              label: 'Remove context folder',
+              label: t`Remove context folder`,
               run: () => onRemove(dir),
             },
           ]
@@ -308,43 +297,30 @@ export function assetContextFoldersRoot(deps: AssetContextFoldersRootDeps): Brow
   const root: BrowseableRoot = {
     id: ASSET_CONTEXT_FOLDERS_ROOT_ID,
     kind: 'root',
-    label: 'Context folders',
+    label: i18n._(msg`Context folders`),
     icon: <FolderTree className="h-4 w-4 flex-shrink-0 text-muted-foreground" />,
     hasChildren: dirs.length > 0,
     pointer: null,
     listChildren: (): Promise<Browseable[]> =>
-      Promise.resolve(
-        dirs.map((info) =>
-          dirNode({ ...info, depth: 1 }, deps, locatorTypeId),
-        ),
-      ),
+      Promise.resolve(dirs.map((info) => dirNode({ ...info, depth: 1 }, deps, locatorTypeId))),
     toolbar: [
       {
         id: 'add',
         icon: <FolderPlus className="h-3.5 w-3.5" />,
-        label: 'Add context folder',
+        label: t`Add context folder`,
         run: onAdd,
       },
     ],
     ownsPointer: (pointer) => {
       const resource = pointer.resourceVfsPath;
-      return (
-        !!resource?.typeId?.equals(locatorTypeId) &&
-        !!matchContextDir(dirs, normalizeRel(resource.entitySubPath))
-      );
+      return !!resource?.typeId?.equals(locatorTypeId) && !!matchContextDir(dirs, normalizeRel(resource.entitySubPath));
     },
     pathFor: (p) => {
       const resource = p.resourceVfsPath;
-      const rel =
-        resource?.typeId?.equals(locatorTypeId)
-          ? normalizeRel(resource.entitySubPath)
-          : '';
+      const rel = resource?.typeId?.equals(locatorTypeId) ? normalizeRel(resource.entitySubPath) : '';
       const match = matchContextDir(dirs, rel);
       if (!match) return Promise.resolve([root]);
-      const chain: Browseable[] = [
-        root,
-        dirNode({ ...match, depth: 1 }, deps, locatorTypeId),
-      ];
+      const chain: Browseable[] = [root, dirNode({ ...match, depth: 1 }, deps, locatorTypeId)];
       // Deep-link below the context dir: chain the intermediate fs folder
       // nodes (same ids listChildren produces) so the tree auto-expands.
       if (fsTypeId) {
@@ -354,13 +330,7 @@ export function assetContextFoldersRoot(deps: AssetContextFoldersRootDeps): Brow
         for (const seg of extra ? extra.split('/') : []) {
           cur = `${cur}/${seg}`;
           chain.push(
-            assetsFsFolderNode(
-              fsTypeId,
-              cur,
-              seg,
-              subfolderDrop(deps.onDropItem, deps.onExternalDrop),
-              locatorTypeId,
-            ),
+            assetsFsFolderNode(fsTypeId, cur, seg, subfolderDrop(deps.onDropItem, deps.onExternalDrop), locatorTypeId),
           );
         }
       }

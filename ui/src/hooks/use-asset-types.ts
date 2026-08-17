@@ -4,6 +4,7 @@ import { dataManager } from '@sdk';
 import { isBrowseableIn, type ViewMode } from '@sdk/FlowSync/schema';
 import { useViewMode } from '@src/contexts/view-mode-context';
 import { isHubOnly } from '@src/navigation/hub-runtime';
+import { translateTypeLabel } from '@src/i18n/type-labels';
 
 export interface AssetTypeVault {
   typeid: string;
@@ -64,7 +65,10 @@ function staticAssetTypes(mode: ViewMode): AssetTypeInfo[] {
     .filter((t) => isBrowseableIn(t.browseable_by, mode))
     .map((t) => ({
       type_name: t.type_name,
-      label: humanize(t.type_name),
+      // Same two-step as `labelForType`: the registry picks the word, i18n picks
+      // the language. Without it the asset browser's type rows stayed English on
+      // a Hebrew screen even where the rest of the pane had translated.
+      label: translateTypeLabel(t.type_name, humanize(t.type_name)),
       icon: t.icon,
       creatable: t.creatable,
       browseable_by: t.browseable_by,
@@ -87,9 +91,7 @@ function staticAssetTypes(mode: ViewMode): AssetTypeInfo[] {
  */
 export function useAssetTypes(options: UseAssetTypesOptions = {}): { types: AssetTypeInfo[]; isLoading: boolean } {
   const currentMode = useViewMode();
-  const mode: ViewMode = options.vibeAsStandard && currentMode === 'vibe'
-    ? 'standard'
-    : currentMode;
+  const mode: ViewMode = options.vibeAsStandard && currentMode === 'vibe' ? 'standard' : currentMode;
   const withVaults = options.withVaults ?? true;
   const [vaults, setVaults] = useState<AssetTypeVault[]>([]);
   const [isLoading, setIsLoading] = useState(withVaults);
@@ -107,7 +109,7 @@ export function useAssetTypes(options: UseAssetTypesOptions = {}): { types: Asse
     apiClient
       .get<{ types: AssetTypeInfo[] }>('/assets/types')
       .then((res) => {
-        (window as any).__DBG_TYPES += (cancelled ? 'resolved-cancelled;' : 'resolved-set;');
+        (window as any).__DBG_TYPES += cancelled ? 'resolved-cancelled;' : 'resolved-set;';
         if (cancelled) return;
         setVaults(res?.types?.find((t) => t.type_name === 'markdown')?.vaults || []);
         setIsLoading(false);
@@ -125,10 +127,7 @@ export function useAssetTypes(options: UseAssetTypesOptions = {}): { types: Asse
   // runtime markdown vaults arrive; merge the vaults onto the markdown entry.
   // folder_backed is already on each entry (sync, from the registry).
   const types = useMemo(
-    () =>
-      staticAssetTypes(mode).map((t) =>
-        t.type_name === 'markdown' ? { ...t, vaults } : t,
-      ),
+    () => staticAssetTypes(mode).map((t) => (t.type_name === 'markdown' ? { ...t, vaults } : t)),
     [mode, vaults],
   );
 

@@ -232,7 +232,6 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     setCurrentContext({ viewerOptions: focus.port ? { port: focus.port } : {} });
   }, [shown, focus.viewType, focus.port, setCurrentContext]);
 
-
   // Webapp host — resolved from the shown port (no artifact needed) so the
   // display can mount a BARE iframe under the two-tier toolbar instead of the
   // artifact-driven WebappViewer. Hooks run unconditionally; null port → ''.
@@ -362,17 +361,21 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
             <Trans>Nothing to display yet — try one to get started</Trans>
           </p>
           <div className="flex max-w-md flex-wrap justify-center gap-2">
-            {VIBE_STARTER_PROMPTS.map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => void submitStarterPrompt(p)}
-                data-testid="display-starter-chip"
-                className="rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                {p}
-              </button>
-            ))}
+            {VIBE_STARTER_PROMPTS.map((descriptor) => {
+              // One resolution per chip: label, key and submitted prompt alike.
+              const p = t(descriptor);
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => void submitStarterPrompt(p)}
+                  data-testid="display-starter-chip"
+                  className="rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  {p}
+                </button>
+              );
+            })}
           </div>
         </div>
       );

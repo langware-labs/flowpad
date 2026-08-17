@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { WorkerModelTier } from '@sdk';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWizardRun } from '@src/hooks/use-wizard-run';
@@ -50,7 +51,7 @@ export function useWebappFix({ verdict, port, url, workdir, targetTypeId, onFini
     successMessage: 'Your app should be working now',
     errorTitle: 'Could not fix the app',
     buildRequest: () => ({
-      title: 'Fix the web app',
+      title: t`Fix the web app`,
       model: WorkerModelTier.SM,
       targetTypeId: targetTypeId ?? undefined,
       payload: {
@@ -60,7 +61,7 @@ export function useWebappFix({ verdict, port, url, workdir, targetTypeId, onFini
         url,
         workdir: workdir ?? null,
       },
-      resultShape: { fixed: '<true|false>', summary: '<what was wrong and what you did>' },
+      resultShape: { fixed: '<true|false>', summary: t`<what was wrong and what you did>` },
     }),
     onResult: () => onFinished(),
   });

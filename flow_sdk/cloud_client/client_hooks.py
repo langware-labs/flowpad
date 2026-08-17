@@ -18,6 +18,22 @@ class HubAuthExpiredError(httpx.RequestError):
     """Raised when a request is aborted before network due to local expiry."""
 
 
+# Request-extension marker set by ``CloudProxy``: this response's body is streamed
+# straight back to the caller, so the hooks must not read it. Reading consumes the
+# stream, and the proxy's ``aiter_raw()`` then raises ``StreamConsumed`` *after* the
+# headers (carrying the hub's Content-Length) have already gone out — the caller
+# gets a zero-byte body against a non-zero Content-Length, which the browser
+# reports as a bare "Network Error" instead of the hub's real status and message.
+PASSTHROUGH_EXTENSION = "flowpad_passthrough"
+
+
+def _is_passthrough(response: httpx.Response) -> bool:
+    try:
+        return bool(response.request.extensions.get(PASSTHROUGH_EXTENSION))
+    except RuntimeError:  # no request bound to the response
+        return False
+
+
 def build_event_hooks() -> dict[str, list[Any]]:
     """Build httpx async event hooks for the hub client."""
     return {"request": [_on_request], "response": [_on_response]}
@@ -84,6 +100,7 @@ async def _on_request(request: httpx.Request) -> None:
         return
 
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
     api_key = get_instance_settings().cloud_api_key
     if api_key:
         request.headers["Authorization"] = f"Bearer {api_key}"
@@ -102,15 +119,18 @@ async def _on_request(request: httpx.Request) -> None:
 
 async def _on_response(response: httpx.Response) -> None:
     status_code = response.status_code
+    # A proxied response belongs to the caller downstream — inspect status only.
+    passthrough = _is_passthrough(response)
     if status_code < 400:
-        if await _is_auth_failure_envelope(response):
+        if not passthrough and await _is_auth_failure_envelope(response):
             # HTTP-layer auth failure (envelope status=fail with auth marker).
             # This is a real credential rejection from the hub's identity
             # check, not a WS-handshake reject — drop login state.
             await invalidate_hub_login("rejected")
         return
 
-    await response.aread()
+    if not passthrough:
+        await response.aread()
     # Every hub 4xx/5xx — including 401/402/424 — is surfaced through the
     # error reporter so it becomes a HubClientErrorInfo warning in the UI
     # (createHubRequestFailedWarning), carrying method/path/status/message
@@ -124,7 +144,9 @@ async def _on_response(response: httpx.Response) -> None:
         status_code=status_code,
         method=response.request.method,
         path=request_path(response.request.url),
-        message=_response_message(response),
+        # The body is off-limits on a passthrough; the status still gets reported,
+        # and the caller receives the hub's message verbatim in the proxied body.
+        message=f"HTTP {status_code}" if passthrough else _response_message(response),
     )
 
 

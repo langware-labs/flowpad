@@ -22,7 +22,7 @@ export function DockLoadErrorView({ error }: DockLoadErrorViewProps) {
           <div className="flex items-center gap-2">
             {error.retryable ? (
               <Button size="sm" variant="outline" onClick={() => window.location.reload()}>
-                <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                <RefreshCw className="me-1 h-3.5 w-3.5" />
                 Retry
               </Button>
             ) : null}

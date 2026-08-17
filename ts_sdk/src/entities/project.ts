@@ -1,4 +1,5 @@
 import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
+import type { IEntity } from '../IEntity';
 import apiClient from '../client';
 import { QueryRequest } from '../FlowSync/query';
 import { ActionInfo, TypeId, gitOriginFromUrl, type GitOrigin } from '../models';
@@ -332,6 +333,9 @@ export class Project extends APIEntity<Project> {
   /** Last UI view mode used in this project (vibe|standard|advanced|dev);
    *  applied on project load so the mode is remembered per project. */
   last_mode: string | null = null;
+  /** UI language for this project, as a supported locale code (en-US|he|ar);
+   *  applied on project load so entering the project switches the app language. */
+  locale: string | null = null;
   // ── Collaboration overlay (merged from the former CollaborationSpace) ──
   session_code: string | null = null;
   host_member_id: string | null = null;
@@ -358,6 +362,7 @@ export class Project extends APIEntity<Project> {
     this.git_origin = (entity.git_origin as GitOrigin | null | undefined) ?? null;
     this.hub_published_at = (entity.hub_published_at as string | null | undefined) ?? null;
     this.last_mode = (entity.last_mode as string | null | undefined) ?? null;
+    this.locale = (entity.locale as string | null | undefined) ?? null;
     this.session_code = (entity.session_code as string | null | undefined) ?? null;
     this.host_member_id = (entity.host_member_id as string | null | undefined) ?? null;
     this.presence = (entity.presence as ProjectMember[] | undefined) ?? [];

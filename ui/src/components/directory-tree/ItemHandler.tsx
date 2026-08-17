@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import type { FSEntry } from '@sdk';
 import { ExternalLink, File, FilePlus, Folder, FolderPlus, Link, Play, RefreshCw, Trash2 } from 'lucide-react';
 import type { ComponentType, CSSProperties, ReactNode } from 'react';
@@ -244,7 +245,7 @@ export class ItemHandler {
     return {
       name: 'create-file',
       icon: FilePlus,
-      tooltip: 'New file',
+      tooltip: t`New file`,
       isVisible: (item) => item.is_dir ?? false,
       onClick,
     };
@@ -260,7 +261,7 @@ export class ItemHandler {
     return {
       name: 'create-folder',
       icon: FolderPlus,
-      tooltip: 'New folder',
+      tooltip: t`New folder`,
       isVisible: (item) => item.is_dir ?? false,
       onClick,
     };
@@ -276,7 +277,7 @@ export class ItemHandler {
     return {
       name: 'delete',
       icon: Trash2,
-      tooltip: 'Delete',
+      tooltip: t`Delete`,
       isVisible: () => true,
       onClick,
     };
@@ -292,7 +293,7 @@ export class ItemHandler {
     return {
       name: 'refresh',
       icon: RefreshCw,
-      tooltip: 'Refresh',
+      tooltip: t`Refresh`,
       isVisible: (item) => item.is_dir ?? false,
       onClick,
     };
@@ -308,7 +309,7 @@ export class ItemHandler {
     return {
       name: 'open',
       icon: ExternalLink,
-      tooltip: 'Open folder',
+      tooltip: t`Open folder`,
       isVisible: (item) => item.is_dir ?? false,
       onClick,
     };
@@ -324,7 +325,7 @@ export class ItemHandler {
     return {
       name: 'run-skill',
       icon: Play,
-      tooltip: 'Run',
+      tooltip: t`Run`,
       isVisible: (item) => {
         if (item.is_dir || !item.name) return false;
         const fileName = item.name.toLowerCase();

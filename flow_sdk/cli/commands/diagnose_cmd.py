@@ -22,6 +22,11 @@ import typer
 
 from flow_sdk.agentic_run_consts import DEFAULT_TRANSCRIPT_TIMEOUT_S
 from flow_sdk.agentic_warmup import await_worker_started
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
+
+# The id keys report.py's result JSON carries. ``diagnosis_id`` is always an id;
+# the support pair is either both ids (an issue) or both ``None`` (a clean sweep).
+_REPORT_ID_KEYS = ("diagnosis_id", "conversation_id", "flow_message_id")
 
 
 def _extract_report_result(text: str) -> dict | None:
@@ -30,7 +35,22 @@ def _extract_report_result(text: str) -> dict | None:
     the agent's ``tool_result`` (and the agent usually echoes it in text too), so
     the parent can detect completion + read the ids from the stream it is already
     consuming — no cross-process DB read or marker file. Returns the parsed dict,
-    or None if not present."""
+    or None if not present.
+
+    **The ids are validated on adopt**, because this scrapes a MODEL-produced
+    stream: a JSON-shaped blob the agent composed itself — a hallucinated id, a
+    report template it echoed — is indistinguishable by shape alone from the
+    reporter's stdout. report.py mints every id through ``mint_uuid`` and prints
+    "UUIDs/booleans only", so a blob whose ids are not conforming entity ids is
+    NOT report.py's output: reject it, leave the run un-recorded, and let the
+    nudge path make the agent actually run the reporter.
+
+    Without this gate a phantom id is accepted as the completion signal and
+    stamped onto the Feed card's ``MessageSuggest.diagnosis_id``, and every UI
+    surface that renders that card then dies constructing
+    ``new TypeId('flowpad_diagnosis', <phantom>)`` — the "Invalid type-id:
+    flowpad_diagnosis, flowpad_diagnostic_<timestamp>" crash.
+    """
     if not text or "diagnosis_id" not in text:
         return None
     for m in re.finditer(r'\{[^{}]*"diagnosis_id"[^{}]*\}', text):
@@ -38,8 +58,12 @@ def _extract_report_result(text: str) -> dict | None:
             d = json.loads(m.group(0))
         except ValueError:
             continue
-        if isinstance(d, dict) and d.get("diagnosis_id"):
-            return d
+        if not isinstance(d, dict) or not is_valid_entity_id(d.get("diagnosis_id")):
+            continue
+        # The support ids are optional (None on a clean sweep) but never free text.
+        if any(d.get(k) is not None and not is_valid_entity_id(d.get(k)) for k in _REPORT_ID_KEYS[1:]):
+            continue
+        return d
     return None
 
 

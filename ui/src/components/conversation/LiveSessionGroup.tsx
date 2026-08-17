@@ -58,11 +58,7 @@ export function LiveSessionGroup({
           </button>
         )}
       </div>
-      {open && (
-        <div className="ml-3 flex flex-col gap-3 border-l-2 border-violet-400/25 pl-3">
-          {children}
-        </div>
-      )}
+      {open && <div className="ms-3 flex flex-col gap-3 border-s-2 border-violet-400/25 ps-3">{children}</div>}
     </div>
   );
 }
@@ -73,10 +69,7 @@ export function LiveSessionGroup({
  */
 export function SessionEventLine({ text }: { text: string }) {
   return (
-    <div
-      data-testid="session-event-line"
-      className="py-0.5 text-center text-[11px] italic text-muted-foreground/80"
-    >
+    <div data-testid="session-event-line" className="py-0.5 text-center text-[11px] italic text-muted-foreground/80">
       {text}
     </div>
   );

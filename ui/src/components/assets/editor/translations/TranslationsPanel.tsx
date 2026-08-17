@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useMemo, useState } from 'react';
 import { Check, FileText, Loader2, Plus } from 'lucide-react';
 import { cn } from '@src/lib/utils';
@@ -60,7 +61,7 @@ export function TranslationsPanel({
         type="button"
         onClick={() => onOpen(null)}
         className={cn(
-          'flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent',
+          'flex items-center gap-2 rounded-md px-2 py-1.5 text-start transition-colors hover:bg-accent',
           activeLang === null && 'bg-accent font-medium',
         )}
       >
@@ -79,7 +80,7 @@ export function TranslationsPanel({
             type="button"
             onClick={() => onOpen(tr.lang)}
             className={cn(
-              'flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent',
+              'flex items-center gap-2 rounded-md px-2 py-1.5 text-start transition-colors hover:bg-accent',
               active && 'bg-accent font-medium',
             )}
           >
@@ -104,7 +105,7 @@ export function TranslationsPanel({
           <button
             type="button"
             disabled={isAdding || available.length === 0}
-            className="mt-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+            className="mt-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-start text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
           >
             {isAdding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             <span>Add translation</span>
@@ -112,10 +113,10 @@ export function TranslationsPanel({
         </PopoverTrigger>
         <PopoverContent align="start" className="w-64 p-0">
           <Command>
-            <CommandInput placeholder="Search languages…" />
+            <CommandInput placeholder={t`Search languages…`} />
             <CommandList>
               <CommandEmpty>No languages found.</CommandEmpty>
-              <CommandGroup heading="Translate to">
+              <CommandGroup heading={t`Translate to`}>
                 {available.map((target) => (
                   <CommandItem
                     key={target.code}

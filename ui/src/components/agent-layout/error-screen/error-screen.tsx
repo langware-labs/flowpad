@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp, Home } from 'lucide-react';
 import { useState } from 'react';
 import { useRouteError } from 'react-router';
 import { isBackendUnreachable } from '@sdk';
+import { DiagnoseIconButton } from '@src/notifications/diagnose/DiagnoseIconButton';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 /** The loosely-typed shape this screen reads off an unknown route error. */
@@ -104,7 +105,7 @@ const ErrorScreen = () => {
             </p>
           </div>
           <Button onClick={() => (window.location.href = '/')} className="w-full">
-            <Home className="mr-2 h-4 w-4" />
+            <Home className="me-2 h-4 w-4" />
             <Trans>Go to Homepage</Trans>
           </Button>
         </div>
@@ -164,10 +165,20 @@ const ErrorScreen = () => {
           <p className="text-muted-foreground">{errorMessage}</p>
         </div>
 
-        <Button onClick={handleGoHome} className="flex w-full items-center justify-center">
-          <Home className="mr-2 h-4 w-4" />
-          <Trans>Go to Homepage</Trans>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={handleGoHome} className="flex flex-1 items-center justify-center">
+            <Home className="me-2 h-4 w-4" />
+            <Trans>Go to Homepage</Trans>
+          </Button>
+          {/* Same stethoscope, same confirm-then-stream modal as an error row in
+              the warnings popover — the crash IS the subject, so it is seeded
+              with the message plus the stack shown under "Details". */}
+          <DiagnoseIconButton
+            subject={{ level: 'error', title: errorMessage, message: errorDetails }}
+            iconClassName="h-4 w-4"
+            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md border border-input bg-background text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+          />
+        </div>
 
         <div className="mb-6 mt-4">
           <button
@@ -180,7 +191,7 @@ const ErrorScreen = () => {
         </div>
       </div>
       {showDetails && (
-        <div className="absolute left-1/2 top-[calc(50%+12rem)] w-[calc(100vw-2rem)] max-w-7xl -translate-x-1/2 rounded-md border bg-muted p-4 text-left">
+        <div className="absolute left-1/2 top-[calc(50%+12rem)] w-[calc(100vw-2rem)] max-w-7xl -translate-x-1/2 rounded-md border bg-muted p-4 text-start">
           <pre className="mb-4 overflow-auto whitespace-pre-wrap break-words text-xs text-foreground">
             {errorDetails}
           </pre>

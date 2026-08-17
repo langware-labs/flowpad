@@ -20,10 +20,7 @@ export function HelpdeskGuides({ projectId, mountPath }: { projectId: string; mo
   const { navigation } = useDockNavigation();
   // Spread the default: `applyFilterToParams` reads `tags`/`filters`/`query`
   // unguarded, so a partial filter throws before the request is built.
-  const filter = useMemo(
-    () => ({ ...DEFAULT_ASSET_FILTER, scope: projectScope(projectId) }),
-    [projectId],
-  );
+  const filter = useMemo(() => ({ ...DEFAULT_ASSET_FILTER, scope: projectScope(projectId) }), [projectId]);
   const { results, isLoading } = useAssetSearch({
     recordType: 'markdown',
     filter,
@@ -50,13 +47,13 @@ export function HelpdeskGuides({ projectId, mountPath }: { projectId: string; mo
       byCategory.set(category, list);
     }
 
-    return [...byCategory.entries()]
-      .map(([name, articles]) => ({ name, articles: articles.sort((a, b) => a.title.localeCompare(b.title)) }))
-      // Ungrouped articles last — they read as loose ends next to named
-      // sections. Two-key sort rather than a nested ternary.
-      .sort(
-        (a, b) => Number(a.name === '') - Number(b.name === '') || a.name.localeCompare(b.name),
-      );
+    return (
+      [...byCategory.entries()]
+        .map(([name, articles]) => ({ name, articles: articles.sort((a, b) => a.title.localeCompare(b.title)) }))
+        // Ungrouped articles last — they read as loose ends next to named
+        // sections. Two-key sort rather than a nested ternary.
+        .sort((a, b) => Number(a.name === '') - Number(b.name === '') || a.name.localeCompare(b.name))
+    );
   }, [results, mountPath]);
 
   if (isLoading || categories.length === 0) return null;
@@ -79,7 +76,7 @@ export function HelpdeskGuides({ projectId, mountPath }: { projectId: string; mo
                   <button
                     type="button"
                     onClick={() => navigation.openDock(DockPointer.forHelpdesk(projectId, a.path))}
-                    className="flex w-full items-center gap-2 rounded px-1 py-1 text-left text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+                    className="flex w-full items-center gap-2 rounded px-1 py-1 text-start text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
                     data-testid="helpdesk-guide-link"
                   >
                     <FileText className="h-3 w-3 shrink-0 opacity-60" />

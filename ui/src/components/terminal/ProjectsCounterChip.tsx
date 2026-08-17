@@ -374,7 +374,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ curren
                   type="button"
                   aria-current="true"
                   onClick={() => void handleSelectGlobal()}
-                  className="flex w-full items-center gap-2 rounded bg-violet-500/10 px-2 py-1.5 text-left text-sm font-medium hover:bg-violet-500/15"
+                  className="flex w-full items-center gap-2 rounded bg-violet-500/10 px-2 py-1.5 text-start text-sm font-medium hover:bg-violet-500/15"
                   data-testid="projects-counter-global"
                 >
                   <Globe className="h-3.5 w-3.5 shrink-0 text-violet-500" />
