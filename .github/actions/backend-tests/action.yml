@@ -35,13 +35,4 @@ runs:
     - name: pytest tests/api
       run: >-
         uv run pytest tests/api -q
-        --ignore=tests/api/test_fs_records_scan_search.py
-        --ignore=tests/api/test_agentic_process_actions.py
-        --ignore=tests/api/test_agentic_process_resume_after_restart.py
-        --ignore=tests/api/test_process_status_lifecycle.py
-        --ignore=tests/api/test_pty_process_e2e.py
-        --ignore=tests/api/test_pty_stream_endpoint.py
-        --ignore=tests/api/test_workflows_run_cli_mode.py
-        --ignore=tests/api/test_capability_api.py
-        --ignore=tests/api/test_agent_hook.py
       shell: bash
