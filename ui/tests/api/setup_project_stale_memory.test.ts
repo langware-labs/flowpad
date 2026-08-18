@@ -16,27 +16,67 @@
  * OFFICIAL CLIENT ONLY (rca skill rule 6): apiTestSetup + the tier's own config,
  * backend resolved from `.env.<FLOW_INSTANCE>.local`.
  *
- * SETUP THE ASSERTION DEPENDS ON. `default_project` must differ from
- * `projects[0]`, or the fix and the bug give the same answer and a green here
- * would prove nothing — the first test throws rather than pass vacuously. The
- * generic project query orders by `updated_date`, so the shape to build is a
- * project that was OPENED last and a different one that was TOUCHED last:
+ * SELF-SEEDING, deliberately. The assertion needs `default_project` to differ from
+ * `projects[0]`, or the fix and the bug give the same answer and a green here would
+ * prove nothing. Rather than demand that of whoever runs the suite, the test builds
+ * the shape itself through the real endpoints: materialize project A and ACTIVATE it
+ * (so it is the most recently OPENED), then materialize project B and leave it alone
+ * (so it is the most recently UPDATED, which is what this query sorts by), then
+ * re-bootstrap to pick up the recomputed `default_project`.
  *
- *     scripts/instance_ctl.sh launch dev-1
- *     # against that instance, in order:
- *     #   1. materialize project A, POST project/<A>/activate   → last OPENED
- *     #   2. materialize project B, do NOT activate it          → last TOUCHED
- *     FLOW_INSTANCE=dev-1 npx vitest run --project api \
- *         tests/api/setup_project_stale_memory.test.ts
- *
- * That split is the real incident in miniature: on the reported sandbox a
- * background git scan kept bumping `my_first_project`'s row while the user's
- * actual project sat untouched, so "most recently updated" and "where the user
- * was" pointed at different projects.
+ * That split is the reported incident in miniature: a background git scan kept
+ * bumping `my_first_project`'s row while the user's actual project sat untouched for
+ * two days, so "most recently updated" and "where the user was" pointed at different
+ * projects.
  */
-import { ContextEntitiesEnum, dataContext, Project, QueryRequest, TypeId, User } from '@sdk';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+import { ActionInfo, ContextEntitiesEnum, dataContext, dataManager, Project, QueryRequest, TypeId, User } from '@sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
+import { installCleanup, testEntityName, trackTypeId } from '../_cleanup';
+
+// This file CREATES REAL PROJECTS on the target backend to build its fixture, so it
+// opts into the cleanup registry the headless/hub tiers use. The api tier installs a
+// leak tripwire only (`apiSetup.ts`), on the assumption that api tests write to a
+// temp-isolated records root — `materialize-project` breaks that assumption: it
+// writes into the real workspace and the real DB. Untracked, these piled up.
+installCleanup({ sweepTypes: ['project'] });
+
+/**
+ * FAIL CLOSED on the target backend. This file materializes REAL projects, so an
+ * unintended target is not a wrong assertion — it is writing into someone's live
+ * instance. That is not hypothetical: on 2026-08-18 this tier resolved to the
+ * desktop app (`LOCAL_SERVER_PORT=9007` exported in the shell beats `.env.local`
+ * in vite's `loadEnv`) and test projects landed in it.
+ *
+ * Two checks, because either alone is insufficient:
+ *   1. an instance must be NAMED — `.env.local` is never a live-test fallback
+ *      (the same rule `tests/react/reactSetup.ts:17` enforces for its tier);
+ *   2. the backend must AGREE it is that instance — the name is a request, the
+ *      bootstrap payload is what actually answered, and step 1 cannot catch a
+ *      config that silently points elsewhere.
+ */
+const SELECTED_INSTANCE = process.env.FLOW_INSTANCE?.trim() || '';
+if (!SELECTED_INSTANCE) {
+  throw new Error(
+    'setup_project_stale_memory requires FLOW_INSTANCE=<disposable-name>: it creates real ' +
+      'projects, and `.env.local` is never a live-test fallback',
+  );
+}
+
+/** Refuse a backend that is not the disposable one that was asked for. */
+function assertDisposableTarget(): void {
+  const served = dataContext.bootstrapInfo?.env?.instance_name as string | undefined;
+  if (served !== SELECTED_INSTANCE) {
+    throw new Error(
+      `refusing to create projects: asked for instance '${SELECTED_INSTANCE}' but the backend ` +
+        `reports '${served ?? 'unknown'}' — check VITE_API_URL and any exported LOCAL_SERVER_PORT`,
+    );
+  }
+}
 
 const STORAGE_KEY = 'flowpad-state';
 
@@ -49,6 +89,40 @@ function rememberProject(typeid: string | null): void {
 
 async function listProjects(): Promise<Project[]> {
   return await Project.query(new QueryRequest({ type: Project.type, name: 'stale-memory test list' }), true);
+}
+
+/** Materialize a project on the @local compute node through the real action. */
+async function materialize(kind: string): Promise<string> {
+  const cnId = dataContext.bootstrapInfo?.default_compute_node?.id as string;
+  // `e2etest-…` names, so the leak sweep can find anything the registry misses.
+  const name = testEntityName(kind);
+  const staging = path.join(os.tmpdir(), `${name}`);
+  mkdirSync(staging, { recursive: true });
+  writeFileSync(path.join(staging, 'README.md'), `# ${name}\n`);
+  const info = new ActionInfo('materialize-project', 'compute_node', cnId, 'POST');
+  // The body rides on the ActionInfo — `callAction` takes no payload argument.
+  info.bodyParameters = { staging_path: staging, name };
+  const res = await dataManager.callAction<never, { project: { id: string } }>(info);
+  // Registered for teardown: the project is reached via a raw action rather than an
+  // entity handle, so `trackTypeId` is the seam rather than `trackForCleanup`.
+  trackTypeId(Project.type, res.project.id);
+  return res.project.id;
+}
+
+/**
+ * Build "opened last" and "touched last" as two DIFFERENT projects, and return the
+ * one the server should choose. Re-bootstraps so `bootstrapInfo.default_project`
+ * reflects the activation — it is stamped per-caller, so a fresh call recomputes it.
+ */
+async function seedDivergentProjects(): Promise<string> {
+  const opened = await materialize('opened-last');
+  // `Project.activateById` is what the product posts on every project switch
+  // (`context.ts:846`), so the recency stamp is made the same way the real app
+  // makes it rather than by a hand-built request.
+  await Project.activateById(opened);
+  await materialize('touched-last');
+  dataContext.bootstrapInfo = await dataManager.bootstrap(window.location.hostname, true);
+  return opened;
 }
 
 // flowpad:capsule tag
@@ -68,6 +142,7 @@ describe('setupProject with a stale browser memory', () => {
     // `apiTestSetup` builds the @local user without putting it there. This is the
     // same two lines `initSdk` runs (`ts_sdk/src/main.ts:139-141`) — the real
     // precondition of the code under test, not a stand-in for it.
+    assertDisposableTarget();
     const bootUser = dataContext.bootstrapInfo?.user;
     expect(bootUser, 'bootstrap served no @local user').toBeTruthy();
     const user = new User(bootUser);
@@ -76,20 +151,15 @@ describe('setupProject with a stale browser memory', () => {
   });
 
   it('defers to the server rather than grabbing the first project on the list', async () => {
-    const serverChoice = dataContext.bootstrapInfo?.default_project?.id as string | undefined;
-    expect(serverChoice, 'bootstrap served no default_project').toBeTruthy();
+    const serverChoice = await seedDivergentProjects();
+    expect(dataContext.bootstrapInfo?.default_project?.id).toBe(serverChoice);
 
     const projects = await listProjects();
     expect(projects.length).toBeGreaterThan(1);
-    if (projects[0].id === serverChoice) {
-      // Nothing has been activated on this backend, so both answers coincide and
-      // the assertion could not tell the fix from the bug. Fail loudly rather
-      // than report a green that proves nothing.
-      throw new Error(
-        `Backend unfit for this test: projects[0] === default_project (${serverChoice}). ` +
-          `Activate a non-@local project on the target instance first.`,
-      );
-    }
+    // The seeding above is what makes this assertion meaningful; if the two ever
+    // coincide the test can no longer tell the fix from the bug, so say so loudly
+    // rather than report a green that proves nothing.
+    expect(projects[0].id, 'seeding failed: projects[0] === default_project').not.toBe(serverChoice);
 
     // Order matters: `setContextEntityTypeId(..., null)` DELETES the localStorage
     // key (`context.ts:847`), so clearing the context after writing storage would
@@ -113,9 +183,15 @@ describe('setupProject with a stale browser memory', () => {
   }, 20000);
 
   it('still prefers the browser when the remembered project DOES resolve', async () => {
+    // Seeds its own project rather than reusing whatever the instance happens to
+    // hold, so this case does not depend on the other test having run first — the
+    // order-dependence trap this ticket already tripped over once.
+    const serverChoice = await seedDivergentProjects();
+    const mineId = await materialize('my-own-pick');
     const projects = await listProjects();
-    const mine = projects.find((p) => p.id !== dataContext.bootstrapInfo?.default_project?.id);
-    expect(mine, 'need a project other than the server choice').toBeTruthy();
+    const mine = projects.find((p) => p.id === mineId);
+    expect(mine, 'seeded project missing from the list').toBeTruthy();
+    expect(mineId, 'seeded project must differ from the server choice').not.toBe(serverChoice);
 
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
     rememberProject(mine!.typeId.toString());
