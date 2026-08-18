@@ -4,7 +4,7 @@ A driver answers two questions and nothing else: *which streams does this source
 have*, and *what has changed in one stream since we last looked*. It never
 writes an entity, never emits an event, never advances a cursor.
 
-**The cursor state it receives is its own.** ``StreamCursorView.state`` is an
+**The cursor state it receives is its own.** ``SegmentCursorView.state`` is an
 opaque dict the sync loop carries but never reads. That is what lets one loop
 serve two genuinely different sync shapes:
 
@@ -108,7 +108,7 @@ class SetupVerdict:
 
 
 @dataclass(frozen=True)
-class StreamRef:
+class SegmentRef:
     """One syncable unit within a source — a feed URL, a channel."""
 
     key: str
@@ -116,14 +116,14 @@ class StreamRef:
 
 
 @dataclass(frozen=True)
-class StreamCursorView:
+class SegmentCursorView:
     """What a driver is told about where it left off.
 
     ``window_start`` is the "since last pull" floor, already resolved. Drivers
     apply it as a filter on what they fetched; they do not compute it.
     """
 
-    stream_key: str
+    segment_key: str
     state: dict = field(default_factory=dict)
     window_start: Optional[str] = None
     first_run: bool = True
@@ -249,11 +249,11 @@ class IngestDriver(Protocol):
         """
         ...
 
-    def streams(self, source: "DataSource") -> list[StreamRef]:
+    def segments(self, source: "DataSource") -> list[SegmentRef]:
         """The syncable units of ``source``, derived from its config."""
         ...
 
-    async def fetch(self, source: "DataSource", cursor: StreamCursorView) -> FetchResult:
+    async def fetch(self, source: "DataSource", cursor: SegmentCursorView) -> FetchResult:
         """Fetch one stream. Raise ``SourceError`` to classify a failure."""
         ...
 

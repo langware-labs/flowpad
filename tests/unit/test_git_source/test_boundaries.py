@@ -7,7 +7,7 @@ import pytest
 
 from flow_sdk.builtin.git_origin import GitOrigin
 from flow_sdk.ingest.change_event import change_tag, emit_change, handle_change, subscribe
-from flow_sdk.ingest.driver import StreamCursorView, get_driver
+from flow_sdk.ingest.driver import SegmentCursorView, get_driver
 from flow_sdk.ingest.reflect import ReflectMode, origin_id_for
 from flow_sdk.ingest.sync import sync_source
 from flow_sdk.utils.git import git_remote_url
@@ -48,7 +48,7 @@ async def test_the_driver_never_walks_the_filesystem(git_db, asset_repo, make_so
     real_walk = _os.walk
     monkeypatch.setattr(_os, "walk", lambda *a, **k: (walked.append(str(a[0])), real_walk(*a, **k))[1])
 
-    await get_driver("git").fetch(source, StreamCursorView(stream_key="main", state={}))
+    await get_driver("git").fetch(source, SegmentCursorView(segment_key="main", state={}))
 
     assert walked == [], f"the driver walked: {walked}"
 

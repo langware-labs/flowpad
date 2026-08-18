@@ -167,7 +167,7 @@ class DataSource(Entity):
     #: missing capability — reads 0 even if it has cursors from an earlier life.
     #: That is the honest reading: those failures happen before the driver is
     #: ever asked what its streams are.
-    stream_count: int = APIField(default=0)
+    segment_count: int = APIField(default=0)
 
     # ── health, rolled up worst-of from this source's cursors ──
     health: str = APIField(default=SourceHealth.NEVER_SYNCED.value)

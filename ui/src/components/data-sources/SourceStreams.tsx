@@ -28,8 +28,8 @@ export function SourceStreams({ cursors }: { cursors: readonly DataSourceCursor[
         return (
           <li key={cursor.id} className="flex items-center gap-2 text-xs">
             <Antenna className="size-3 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate" title={cursor.stream_key}>
-              {cursor.stream_label || cursor.stream_key}
+            <span className="min-w-0 flex-1 truncate" title={cursor.segment_key}>
+              {cursor.segment_label || cursor.segment_key}
             </span>
             {/* A failing stream is the reason a healthy-looking source returns
                 nothing, so the count is worth its own chip. */}

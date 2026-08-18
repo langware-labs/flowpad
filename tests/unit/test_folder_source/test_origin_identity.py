@@ -41,7 +41,7 @@ async def test_re_observing_the_same_origin_keeps_one_entity(
     from flow_sdk.builtin.data_source_cursor import DataSourceCursor
 
     cursor = await DataSourceCursor.get_one(
-        {"data_source_id": source.id, "stream_key": "root"}
+        {"data_source_id": source.id, "segment_key": "root"}
     )
     cursor.state = {}
     await cursor.save()
@@ -75,7 +75,7 @@ async def test_switching_reflect_mode_keeps_one_entity(
     from flow_sdk.builtin.data_source_cursor import DataSourceCursor
 
     cursor = await DataSourceCursor.get_one(
-        {"data_source_id": source.id, "stream_key": "root"}
+        {"data_source_id": source.id, "segment_key": "root"}
     )
     cursor.state = {}
     await cursor.save()

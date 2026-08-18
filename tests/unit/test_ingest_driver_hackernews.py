@@ -19,7 +19,7 @@ import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped drivers
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
 from flow_sdk.builtin.source_item import SourceItem
-from flow_sdk.ingest.driver import StreamCursorView
+from flow_sdk.ingest.driver import SegmentCursorView
 from flow_sdk.ingest.drivers.hackernews import STREAM_KEY, HackerNewsDriver
 from flow_sdk.ingest.health import SourceError, SourceHealth
 from flow_sdk.ingest.sync import sync_source
@@ -78,16 +78,16 @@ async def _source(base: str, **config) -> DataSource:
     return src
 
 
-def _view(state=None) -> StreamCursorView:
-    return StreamCursorView(
-        stream_key=STREAM_KEY,
+def _view(state=None) -> SegmentCursorView:
+    return SegmentCursorView(
+        segment_key=STREAM_KEY,
         state=state or {},
         window_start=(NOW - timedelta(days=7)).isoformat(),
     )
 
 
 def test_hacker_news_has_exactly_one_stream():
-    refs = HackerNewsDriver().streams(None)
+    refs = HackerNewsDriver().segments(None)
     assert [r.key for r in refs] == [STREAM_KEY], (
         "HN has no per-channel partition; one stream also proves the per-stream "
         "machinery tolerates a source that has only one"

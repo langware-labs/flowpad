@@ -29,12 +29,12 @@ import {
   accountKeyFor,
   buildConfig,
   emptyDraft,
-  PROVIDERS,
-  providerSpec,
+  specFields,
   validateDraft,
-  type ProviderField,
   type SourceDraft,
-} from './provider-catalog';
+} from './source-form';
+import { useSourceSpecs } from './use-source-specs';
+import type { DataSourceSpec, SpecConfigField } from '@sdk';
 
 /**
  * The switch's boolean → a lifecycle status.
@@ -49,10 +49,10 @@ function statusFor(enabled: boolean, current: SourceStatus): SourceStatus {
 }
 
 /** Config value → the string its input shows. Arrays rejoin the way they split. */
-function fieldValue(field: ProviderField, config: Record<string, unknown>): string {
-  const raw = config?.[field.key];
+function fieldValue(key: string, field: SpecConfigField, config: Record<string, unknown>): string {
+  const raw = config?.[key];
   if (raw === undefined || raw === null) return '';
-  if (Array.isArray(raw)) return raw.join(field.kind === 'lines' ? '\n' : ', ');
+  if (Array.isArray(raw)) return raw.join(field.type === 'lines' ? '\n' : ', ');
   // Only scalars round-trip through an input. A nested object in config means
   // the driver grew a shape this form does not model — show nothing rather than
   // "[object Object]", which would be saved back verbatim and corrupt it.
@@ -61,11 +61,10 @@ function fieldValue(field: ProviderField, config: Record<string, unknown>): stri
   return '';
 }
 
-function draftFrom(source: DataSource): SourceDraft {
-  const spec = providerSpec(source.provider);
+function draftFrom(source: DataSource, spec?: DataSourceSpec): SourceDraft {
   const fields: Record<string, string> = {};
-  for (const field of spec?.fields ?? []) {
-    fields[field.key] = fieldValue(field, source.config ?? {});
+  for (const [key, field] of specFields(spec)) {
+    fields[key] = fieldValue(key, field, source.config ?? {});
   }
   return {
     name: source.name,
@@ -93,18 +92,21 @@ export function DataSourceDialog({
   editing?: DataSource | null;
 }) {
   const { t } = useLingui();
+  // Whatever is INSTALLED, not a hardcoded list: a source added as an asset
+  // shows up here with no frontend release.
+  const { specs, specFor } = useSourceSpecs();
   const [draft, setDraft] = useState<SourceDraft>(() => emptyDraft());
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setDraft(editing ? draftFrom(editing) : emptyDraft());
+    setDraft(editing ? draftFrom(editing, specFor(editing.provider)) : emptyDraft(specs[0]?.name));
     setShowAdvanced(false);
-  }, [open, editing]);
+  }, [open, editing, specFor, specs]);
 
-  const spec = providerSpec(draft.provider);
-  const problems = useMemo(() => validateDraft(draft), [draft]);
+  const spec = specFor(draft.provider);
+  const problems = useMemo(() => validateDraft(draft, spec), [draft, spec]);
 
   const setField = (key: string, value: string) => setDraft((d) => ({ ...d, fields: { ...d.fields, [key]: value } }));
 
@@ -112,8 +114,8 @@ export function DataSourceDialog({
     if (problems.length) return;
     setBusy(true);
     try {
-      const config = buildConfig(draft);
-      const account = accountKeyFor(draft);
+      const config = buildConfig(draft, spec);
+      const account = accountKeyFor(draft, spec);
       if (editing) {
         const nextName = draft.name.trim();
         const nextStatus = statusFor(draft.enabled, editing.status);
@@ -157,29 +159,29 @@ export function DataSourceDialog({
     }
   };
 
-  const renderField = (field: ProviderField) => {
-    const value = draft.fields[field.key] ?? '';
+  const renderField = ([key, field]: [string, SpecConfigField]) => {
+    const value = draft.fields[key] ?? '';
     return (
-      <div key={field.key} className="space-y-1">
-        <Label htmlFor={`ds-${field.key}`}>
-          {t(field.label)}
+      <div key={key} className="space-y-1">
+        <Label htmlFor={`ds-${key}`}>
+          {field.label || key}
           {field.required && <span className="ms-1 text-destructive">*</span>}
         </Label>
-        {field.kind === 'lines' ? (
+        {field.type === 'lines' ? (
           <Textarea
-            id={`ds-${field.key}`}
+            id={`ds-${key}`}
             rows={3}
             value={value}
             placeholder={field.placeholder ? t(field.placeholder) : undefined}
-            onChange={(e) => setField(field.key, e.target.value)}
+            onChange={(e) => setField(key, e.target.value)}
           />
         ) : (
           <Input
-            id={`ds-${field.key}`}
+            id={`ds-${key}`}
             type={field.kind === 'password' ? 'password' : field.kind === 'number' ? 'number' : 'text'}
             value={value}
             placeholder={field.placeholder ? t(field.placeholder) : undefined}
-            onChange={(e) => setField(field.key, e.target.value)}
+            onChange={(e) => setField(key, e.target.value)}
           />
         )}
         {field.hint && <p className="text-xs text-muted-foreground">{t(field.hint)}</p>}
@@ -204,18 +206,18 @@ export function DataSourceDialog({
                 <Trans>Provider</Trans>
               </Label>
               <div className="grid grid-cols-2 gap-2">
-                {PROVIDERS.map((p) => (
+                {specs.map((p) => (
                   <button
-                    key={p.id}
+                    key={p.name}
                     type="button"
-                    data-testid={`provider-${p.id}`}
-                    onClick={() => setDraft(emptyDraft(p.id))}
+                    data-testid={`provider-${p.name}`}
+                    onClick={() => setDraft(emptyDraft(p.name))}
                     className={`rounded border p-2 text-start text-xs ${
-                      draft.provider === p.id ? 'border-primary bg-primary/5' : 'border-border'
+                      draft.provider === p.name ? 'border-primary bg-primary/5' : 'border-border'
                     }`}
                   >
-                    <span className="block font-medium">{t(p.label)}</span>
-                    <span className="block text-muted-foreground">{t(p.blurb)}</span>
+                    <span className="block font-medium">{p.title || p.name}</span>
+                    <span className="block text-muted-foreground">{p.description}</span>
                   </button>
                 ))}
               </div>
@@ -230,12 +232,12 @@ export function DataSourceDialog({
             <Input
               id="ds-name"
               value={draft.name}
-              placeholder={spec ? t(spec.label) : undefined}
+              placeholder={spec?.title || undefined}
               onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
             />
           </div>
 
-          {(spec?.fields ?? []).filter((f) => !f.advanced).map(renderField)}
+          {specFields(spec).filter(([, f]) => !f.advanced).map(renderField)}
 
           <div className="flex items-center justify-between rounded border p-2">
             <Label htmlFor="ds-enabled" className="text-sm">
@@ -299,7 +301,7 @@ export function DataSourceDialog({
                   <Trans>This source&apos;s remote identity — one source per account.</Trans>
                 </p>
               </div>
-              {(spec?.fields ?? []).filter((f) => f.advanced).map(renderField)}
+              {specFields(spec).filter(([, f]) => f.advanced).map(renderField)}
             </div>
           )}
 

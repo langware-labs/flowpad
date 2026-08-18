@@ -28,6 +28,7 @@ from typing import Optional
 GITHUB = "github"
 ANTHROPIC = "anthropic"
 SLACK = "slack"
+GOOGLE = "google"
 
 
 class OAuthFlowKind(str, Enum):
@@ -150,6 +151,34 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # Anthropic's authorize step wants a bare `code=true` alongside
         # `response_type=code`. Provider-specific and must not leak.
         extra_authorize_params=(("code", "true"),),
+        token_shape=TokenShape.CREDENTIAL_DICT,
+    ),
+    GOOGLE: LocalOAuthProvider(
+        name=GOOGLE,
+        display_name="Google",
+        user_credentials_name="google_credentials",
+        icon="Google",
+        # Google's "Desktop app" client type is exactly this grant: authorize in
+        # the browser, redirect to a loopback port, exchange with PKCE.
+        kind=OAuthFlowKind.LOOPBACK,
+        # Read-only Drive, which is all `GoogleDriveDriver` asks for. Listed here
+        # AND in the source manifest because this is what the consent screen
+        # requests while the manifest is what the source declares it needs; the
+        # verify path asserts the granted set covers the requested one.
+        scopes=("https://www.googleapis.com/auth/drive.readonly",),
+        endpoints=OAuthEndpoints(
+            authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
+            token_url="https://oauth2.googleapis.com/token",
+        ),
+        # No default: unlike GitHub and Anthropic, this repo has no registered
+        # Google client to fall back on. Set GOOGLE_CLIENT_ID from a Google Cloud
+        # OAuth client of type "Desktop app". Until then `client_id_for` returns
+        # None and the flow reports a missing client instead of half-running.
+        client_id_env="GOOGLE_CLIENT_ID",
+        client_id_default=None,
+        pkce=True,
+        # Google returns access_token + refresh_token + expiry, and the refresh
+        # token is the half that matters — an access token lasts an hour.
         token_shape=TokenShape.CREDENTIAL_DICT,
     ),
     SLACK: LocalOAuthProvider(

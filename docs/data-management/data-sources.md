@@ -10,13 +10,18 @@ the same graph. One `DataSource` owns the relationship with one remote account
 or tree: which driver, what it needs to run, how often, and where its payload
 becomes locally present.
 
+A **segment** is the unit of sync: one bucket with its own bookmark — a feed
+URL, a Slack channel, a git branch, a Drive shared drive. It is the noun the
+whole subsystem is keyed on, and it is deliberately not called a scope or a
+stream, both of which already mean something else here.
+
 Two entities carry the state. A `DataSourceCursor` is "since last pull", **one
-row per stream** — a dict on the source would make every stream's advance a
-read-modify-write of the same row, and leave nowhere to record per-stream
+row per segment** — a dict on the source would make every segment's advance a
+read-modify-write of the same row, and leave nowhere to record per-segment
 health. A `SourceItem` is one ingested record.
 
 ```
-DataSource ──(one per stream)──> DataSourceCursor
+DataSource ──(one per segment)──> DataSourceCursor
      │
      └─ driver.fetch() ──> items ──> ingest_items()  ──> SourceItem   (record)
                        └─> refs  ──> reflect_refs()  ──> files        (asset)
@@ -27,7 +32,7 @@ DataSource ──(one per stream)──> DataSourceCursor
 | Stage | File | Contract |
 |---|---|---|
 | dispatch | `ingest/poller.py` | One heartbeat task, never a job per source |
-| one cycle | `ingest/sync.py` | Per-stream isolation, records before cursor, a budget not a backoff |
+| one cycle | `ingest/sync.py` | Per-segment isolation, records before cursor, a budget not a backoff |
 | the write | `ingest/ingestor.py` | **The single chokepoint** for `SourceItem` — record, index, emit, in that order |
 
 **Why a heartbeat and not a scheduled job per source.** Per-entity jobstore rows
@@ -36,12 +41,12 @@ what is due, hands each source to its own task, and returns in milliseconds.
 `_inflight` is the entire concurrency control: one poll per source, no locks and
 no backoff.
 
-**Three properties `sync_source` exists to guarantee.** A stream that fails
+**Three properties `sync_source` exists to guarantee.** A segment that fails
 leaves its cursor *unadvanced* and its siblings running — re-delivery is a
 digest-gate no-op, so re-fetching is free and losing a window is not. The cursor
 advances only after the write returns, so a crash costs a partial re-fetch and
 can never open a gap. And where a provider caps us, a run spends a fixed number
-of requests on the streams that waited longest; the cadence *is* the retry rate.
+of requests on the segments that waited longest; the cadence *is* the retry rate.
 
 **The digest gate is the performance story.** An unchanged item costs one indexed
 read and nothing else — no save, no metadata write, no FTS write, no broadcast,
@@ -52,11 +57,11 @@ and re-firing triggers.
 ## The driver contract
 
 Implemented once per provider in `ingest/drivers/`, registered into a
-kind-keyed registry. A driver answers *which streams does this source have* and
-*what changed in one stream* — it never writes an entity, emits an event, or
+kind-keyed registry. A driver answers *which segments does this source have* and
+*what changed in one segment* — it never writes an entity, emits an event, or
 advances a cursor.
 
-**The cursor state it receives is its own.** `StreamCursorView.state` is an
+**The cursor state it receives is its own.** `SegmentCursorView.state` is an
 opaque dict the loop carries and never reads. That is what lets one loop serve
 conditional-GET (RSS keeps `{etag, last_modified}`), changed-ids (Hacker News
 keeps an update pointer) and a commit sha (git) without a branch.
@@ -71,7 +76,7 @@ can actually promise, and the engine composes behaviour from that.
 |---|---|---|
 | `provider` | — | Registry key. Distinct from `channel`, the user-facing name |
 | `record_kind` | — | Ontology kind stamped on each item. Decides inbox membership: the projection admits `content.message.*` and nothing else |
-| `stream_budget` | 5 | Streams per run. Slack declares 1 — one history call a minute |
+| `segment_budget` | 5 | Segments per run. Slack declares 1 — one history call a minute |
 | `stamps_identity` | `True` | Whether this source's bytes are ours to write to |
 | `origin_id_for()` | path | The source's own name for an asset |
 | `source_root()` | — | Where the source's tree begins, so relative structure survives reflection |
@@ -79,7 +84,13 @@ can actually promise, and the engine composes behaviour from that.
 | `send()` | — | Can this driver push a message back to its channel? |
 
 Shipped drivers: `rss`, `hackernews`, `slack`, `agent`, `agentmail`,
-`cloud_email`, `folder`, `git`.
+`cloud_email`, `folder`, `git`, `gdrive`.
+
+**What a driver is, and what it is not.** The driver is Python and ships with the
+SDK. Everything a *person* sees about a source — its title, its glyph, the fields
+the create form renders — comes from a `data_source_spec` **asset**, one folder
+per source under `agentic-assets/data_source/`. That split is what lets a source
+be added without a frontend release; see [the data-source asset](data-source-asset.md).
 
 ## Status, health, and what stops a poll
 
@@ -140,6 +151,7 @@ promise:
 |---|---|---|
 | `folder` | inode (`st_dev:st_ino`) | yes, within a volume |
 | `git` | `GitOrigin.key()` — `uuid5(remote : rel_path)` | via the reported rename pair |
+| `gdrive` | Drive's `fileId` | yes — and a move, and a content replacement |
 | fallback | source-relative path | no — a new path is a new origin |
 
 A folder's handle is re-read after every index pass: stamping a capsule rewrites
@@ -187,9 +199,9 @@ asserting an outcome straight after an emit races it.
 
 ## Adding a source
 
-1. Implement a driver in `ingest/drivers/` — `streams()` and `fetch()` are the
+1. Implement a driver in `ingest/drivers/` — `segments()` and `fetch()` are the
    whole required surface. Register it in that package's `__init__`.
-2. Choose the scope unit. **Never key it on a mutable grouping**: `stream_key`
+2. Choose the segment unit. **Never key it on a mutable grouping**: `segment_key`
    participates in the natural key, so a folder or a space that items move
    between produces duplicates nothing cleans up.
 3. Put resumption state in the opaque `state` dict. Nothing outside the driver
@@ -200,6 +212,8 @@ asserting an outcome straight after an emit races it.
    `refs`/`tombstones` and never produces a `SourceItem`.
 6. If the bytes are not yours to write, set `stamps_identity = False` and supply
    an `origin_id_for`.
+7. Write the manifest — `agentic-assets/data_source/<name>/data_source.json`. The
+   create form is generated from its `config` block; nothing in `ui/` is edited.
 
 ## Known gaps
 
@@ -218,6 +232,7 @@ asserting an outcome straight after an emit races it.
 
 ## Related
 
+- [The data-source asset](data-source-asset.md) — the manifest a source ships as
 - [Items & origins](items_origins.md) — the locators a source resolves against
 - [Asset capsules](asset-capsules.md) — identity carriers, and when not to write one
 - [Record model](record-model.md) — the `FSRecord` a reflected asset becomes

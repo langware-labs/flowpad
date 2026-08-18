@@ -480,9 +480,9 @@ class SQLiteDBDriver(DBDriver):
         # every minute, forever.
         await conn.execute(
             text(
-                "CREATE INDEX IF NOT EXISTS ix_entities_source_item_natural_key "
+                "CREATE INDEX IF NOT EXISTS ix_entities_source_item_natural_key_v2 "
                 "ON entities(json_extract(data, '$.data_source_id'), "
-                "json_extract(data, '$.stream_key'), "
+                "json_extract(data, '$.segment_key'), "
                 "json_extract(data, '$.external_id')) "
                 "WHERE type = 'source_item'"
             )
