@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import secrets
 import ssl
 import uuid
 from contextlib import asynccontextmanager
@@ -150,9 +151,10 @@ async def connect_hub_websocket(
     *,
     connection_id: str | None = None,
     open_timeout: float = 10.0,
+    credentials: UserHubCredentials | None = None,
 ):
     """Connect to the authenticated hub WebSocket with stored credentials."""
-    creds = await _load_ws_credentials()
+    creds = credentials or await _load_ws_credentials()
 
     api_base_url = (config or ApiConfig.from_env()).api_base_url
     url = build_hub_ws_url(api_base_url, connection_id)
@@ -169,7 +171,11 @@ async def connect_hub_websocket(
             url,
             additional_headers=headers,
             open_timeout=open_timeout,
-            proxy=None,
+            # Honor the standard HTTPS_PROXY/WSS proxy discovery used by the
+            # REST client. Hardened cloud sandboxes intentionally have no
+            # direct DNS or Internet route; forcing proxy=None made HTTPS login
+            # work while the matching Hub WebSocket failed before handshake.
+            proxy=True,
             ssl=ssl_context,
         ) as websocket:
             # The hub accepts the WS upgrade FIRST, then either sends a
@@ -186,8 +192,17 @@ async def connect_hub_websocket(
                 pass  # no greeting within the window (older hub) — proceed
             except (ConnectionClosedError, ConnectionClosed) as exc:
                 if getattr(exc, "code", None) in AUTH_WS_CLOSE_CODES:
-                    creds = load_credentials()
-                    reason = "expired" if (creds and creds.is_expired(EXPIRY_LEEWAY_SECONDS)) else "rejected"
+                    current_creds = load_credentials()
+                    # A login can rotate the machine-bound API key while an
+                    # older socket is still open. Its expected 1008 close must
+                    # never erase the newer login that replaced it.
+                    if current_creds and not secrets.compare_digest(current_creds.api_key, creds.api_key):
+                        raise
+                    reason = (
+                        "expired"
+                        if (current_creds and current_creds.is_expired(EXPIRY_LEEWAY_SECONDS))
+                        else "rejected"
+                    )
                     await invalidate_hub_login(reason)
                     raise HubWebSocketAuthError("hub websocket auth rejected") from exc
                 raise
@@ -472,7 +487,12 @@ class HubWebSocketManager:
                     # ``_connection_id`` doc: a reused id collides with a stale
                     # hub-side ghost handler and is rejected as a duplicate).
                     self._connection_id = str(uuid.uuid4())
-                    async with connect_hub_websocket(self.config, connection_id=self._connection_id) as websocket:
+                    connection_credentials = await _load_ws_credentials()
+                    async with connect_hub_websocket(
+                        self.config,
+                        connection_id=self._connection_id,
+                        credentials=connection_credentials,
+                    ) as websocket:
                         backoff = self.reconnect_initial_seconds
                         attempts_at_level = 0
                         await self._set_state(
@@ -553,7 +573,10 @@ class HubWebSocketManager:
                     return
                 except (ConnectionClosedError, ConnectionClosed) as exc:
                     self._fail_pending(exc)
-                    if await self._handle_closed_connection(exc):
+                    if await self._handle_closed_connection(
+                        exc,
+                        rejected_api_key=connection_credentials.api_key,
+                    ):
                         return
                     await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error=None)
                 except Exception as exc:
@@ -575,9 +598,21 @@ class HubWebSocketManager:
             if self._stop_requested:
                 await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error=None)
 
-    async def _handle_closed_connection(self, exc: ConnectionClosed) -> bool:
+    async def _handle_closed_connection(
+        self,
+        exc: ConnectionClosed,
+        *,
+        rejected_api_key: str | None = None,
+    ) -> bool:
         if exc.code in AUTH_WS_CLOSE_CODES:
             creds = load_credentials()
+            if (
+                rejected_api_key
+                and creds
+                and not secrets.compare_digest(creds.api_key, rejected_api_key)
+            ):
+                logger.info("Ignoring auth close for a superseded Hub API key; reconnecting with the current key")
+                return False
             locally_expired = bool(creds and creds.is_expired(EXPIRY_LEEWAY_SECONDS))
             reason = "expired" if locally_expired else "rejected"
             # Hub-side auth close — treat as canonical credential loss whether
