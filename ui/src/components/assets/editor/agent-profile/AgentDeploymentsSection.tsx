@@ -2,10 +2,11 @@ import { Agent, Deployment, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useMemo, useState } from 'react';
-import { Cloud, ExternalLink, Loader2, PauseCircle } from 'lucide-react';
+import { Cloud, ExternalLink, Loader2, PauseCircle, Trash2 } from 'lucide-react';
 
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
+import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 
 
 interface AgentDeploymentsSectionProps {
@@ -36,6 +37,7 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
   const { t } = useLingui();
   const [deploying, setDeploying] = useState(false);
   const [pausing, setPausing] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const request = useMemo(
     () =>
@@ -97,6 +99,27 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
     [refetch, t],
   );
 
+  const remove = useCallback(
+    (deployment: Deployment) => {
+      showDeleteAssetModal({
+        name: deployment.name,
+        description:
+          'This permanently destroys the deployment machine and removes its placement record. This cannot be undone.',
+        onConfirm: async () => {
+          setDeleting(deployment.id);
+          try {
+            await deployment.delete();
+            await refetch();
+            notify.success({ title: t`Deployment deleted`, message: deployment.name });
+          } finally {
+            setDeleting(null);
+          }
+        },
+      });
+    },
+    [refetch, t],
+  );
+
   return (
     <section>
       <p className="mb-3 text-xs text-muted-foreground">
@@ -138,6 +161,19 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
                   )}
                 </Button>
               )}
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={deleting === deployment.id}
+                onClick={() => remove(deployment)}
+                title={t`Delete this deployment`}
+              >
+                {deleting === deployment.id ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5" />
+                )}
+              </Button>
             </div>
           );
         })}

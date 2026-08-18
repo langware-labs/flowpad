@@ -182,7 +182,10 @@ class UserMachineWorker:
                     self.ws_url,
                     additional_headers=self.headers,
                     open_timeout=15,
-                    proxy=None,
+                    # Use the same standard HTTP(S)_PROXY discovery as Hub
+                    # REST traffic. Restricted cloud sandboxes intentionally
+                    # have no direct DNS or Internet route.
+                    proxy=True,
                     ssl=self.ssl_context,
                     max_size=64 * 1024 * 1024,
                 ) as ws:

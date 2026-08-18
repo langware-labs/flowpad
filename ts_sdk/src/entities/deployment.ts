@@ -22,7 +22,7 @@ export const KIND_NODE = 'compute.node';
  * names that node. An inventoried `gcp` resource is not node-backed — its
  * `external_id` is the provider's own resource name.
  */
-export const NODE_PROVIDERS: ReadonlySet<string> = new Set(['local', 'e2b', 'user_machine']);
+export const NODE_PROVIDERS: ReadonlySet<string> = new Set(['local', 'e2b', 'docker', 'gcp_vm']);
 
 /** Provider-normalized signal; unavailable data is represented explicitly, never as zero. */
 export interface DeploymentObservation {
