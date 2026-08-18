@@ -1,5 +1,5 @@
 import { t } from '@lingui/core/macro';
-import type { DataSourceSpec, SpecConfigField } from '@sdk';
+import { FieldType, type DataSourceSpec, type SpecConfigField } from '@sdk';
 
 /**
  * The create form's logic, over a manifest the BACKEND supplies.
@@ -41,7 +41,7 @@ export function specFields(spec?: DataSourceSpec): [string, SpecConfigField][] {
   return Object.entries(spec?.config_schema ?? {});
 }
 
-export function emptyDraft(provider = 'rss'): SourceDraft {
+export function emptyDraft(provider: string): SourceDraft {
   return {
     name: '',
     provider,
@@ -61,6 +61,20 @@ const splitLines = (raw: string): string[] =>
 const splitCsv = (raw: string): string[] =>
   raw.split(',').map((s) => s.trim()).filter(Boolean);
 
+/** Compiled patterns, keyed by the pattern itself. `validateDraft` re-runs on
+ *  every keystroke, and a manifest's patterns are immutable, so compiling per
+ *  call was pure waste. */
+const PATTERNS = new Map<string, RegExp>();
+
+function patternFor(pattern: string): RegExp {
+  let re = PATTERNS.get(pattern);
+  if (!re) {
+    re = new RegExp(pattern);
+    PATTERNS.set(pattern, re);
+  }
+  return re;
+}
+
 /**
  * The driver-specific half of the entity.
  *
@@ -77,9 +91,9 @@ export function buildConfig(draft: SourceDraft, spec?: DataSourceSpec): Record<s
   for (const [key, field] of specFields(spec)) {
     const raw = (draft.fields[key] ?? '').trim();
     if (!raw) continue;
-    if (field.type === 'lines') config[key] = splitLines(raw);
-    else if (field.type === 'csv') config[key] = splitCsv(raw);
-    else if (field.type === 'number') {
+    if (field.type === FieldType.LINES) config[key] = splitLines(raw);
+    else if (field.type === FieldType.CSV) config[key] = splitCsv(raw);
+    else if (field.type === FieldType.NUMBER) {
       const n = Number(raw);
       if (!Number.isNaN(n)) config[key] = n;
     } else config[key] = raw;
@@ -102,7 +116,7 @@ export function accountKeyFor(draft: SourceDraft, spec?: DataSourceSpec): string
   const raw = (draft.fields[named[0]] ?? '').trim();
   // A multi-value field names the account by its FIRST value: appending a feed
   // must not silently rename the source.
-  return named[1].type === 'lines' ? (splitLines(raw)[0] ?? '') : raw;
+  return named[1].type === FieldType.LINES ? (splitLines(raw)[0] ?? '') : raw;
 }
 
 /**
@@ -128,8 +142,9 @@ export function validateDraft(draft: SourceDraft, spec?: DataSourceSpec): string
     if (!raw || !field.pattern) continue;
     // One regex, applied per value, so a multi-line field reports the exact
     // entries at fault rather than "something is wrong".
-    const re = new RegExp(field.pattern);
-    const values = field.type === 'lines' ? splitLines(raw) : field.type === 'csv' ? splitCsv(raw) : [raw];
+    const re = patternFor(field.pattern);
+    const values =
+      field.type === FieldType.LINES ? splitLines(raw) : field.type === FieldType.CSV ? splitCsv(raw) : [raw];
     const bad = values.filter((v) => !re.test(v));
     if (bad.length) problems.push(`${label}: not valid — ${bad.join(', ')}`);
   }

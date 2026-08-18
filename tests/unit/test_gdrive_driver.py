@@ -22,18 +22,17 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.driver import SegmentCursorView
 from flow_sdk.ingest.drivers.gdrive import GoogleDriveDriver
 from flow_sdk.ingest.health import SourceError
-from tests.unit._ingest_helpers import local_http_server
+from tests.unit._ingest_helpers import local_http_server, make_data_source
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 
-def _source(tmp_path, base: str, **config) -> DataSource:
-    return DataSource(
-        provider="gdrive",
+def _source(tmp_path, base: str, **config):
+    return make_data_source(
+        "gdrive",
         name="Drive test",
         config={"base_url": base, "cache_root": str(tmp_path / "cache"), **config},
     )

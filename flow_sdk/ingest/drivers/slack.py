@@ -274,39 +274,10 @@ class SlackDriver:
         raise SourceError.config(error, f"Slack refused the request: {error}")
 
     async def _token(self, source) -> Optional[str]:
-        """The Slack token, wherever it ended up.
+        """This machine's Slack token. The precedence lives in one place."""
+        from flow_sdk.core.oauth.provider_registry import SLACK, token_for  # noqa: PLC0415
 
-        Local SOD first — connection sharing copies the hub's token down, so on
-        a set-up machine it is here — then the hub, for the window before a
-        desktop has adopted it.
-        """
-        from flow_sdk.core.oauth.provider_probe import token_from_credential  # noqa: PLC0415
-        from flow_sdk.core.oauth.provider_registry import SLACK, user_credentials_name  # noqa: PLC0415
-
-        name = user_credentials_name(SLACK)
-        try:
-            from flow_sdk.builtin.user import User  # noqa: PLC0415
-            from flow_sdk.request_context.methods import get_user_credentials  # noqa: PLC0415
-
-            user = await User.get_local()
-            if user is not None and name:
-                stored = await get_user_credentials(user, name, user.id)
-                token = token_from_credential(stored)
-                if token:
-                    return token
-        except Exception:  # noqa: BLE001 — absence is the normal case, not an error
-            logger.debug("slack: no local credential", exc_info=True)
-
-        try:
-            from flow_sdk.core.oauth.hub_oauth import (  # noqa: PLC0415
-                hub_credential_value,
-                hub_credentials_name_for,
-            )
-
-            return token_from_credential(await hub_credential_value(hub_credentials_name_for(SLACK)))
-        except Exception:  # noqa: BLE001
-            logger.debug("slack: no hub credential", exc_info=True)
-            return None
+        return await token_for(SLACK)
 
     async def _read_probe(self, token: str, channel: str) -> Optional[str]:
         """None when the channel is readable, else Slack's error code.
