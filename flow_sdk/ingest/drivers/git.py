@@ -167,26 +167,26 @@ class GitDriver:
         renames: dict[str, str] = {}
 
         # `-z` because a path may contain anything, newlines included. Records
-        # are NUL-separated and a rename spends THREE of them (status, old, new),
-        # so this walks with an index rather than iterating pairs.
-        parts = [p for p in raw.split("\0") if p != ""]
-        i = 0
-        while i < len(parts):
-            status = parts[i]
+        # are NUL-separated and a rename spends THREE of them (status, old,
+        # new), so this consumes an ITERATOR — `next()` takes the extra field
+        # only when the status says there is one, which is what keeps the two
+        # record shapes from needing index arithmetic to tell apart.
+        fields = iter(part for part in raw.split("\0") if part)
+        for status in fields:
             code = status[:1]
-            if code == "R" and i + 2 < len(parts):
-                old, new = parts[i + 1], parts[i + 2]
-                refs.append(str(repo / new))
-                renames[str(repo / new)] = str(repo / old)
-                i += 3
+            if code == "R":
+                old_path, new_path = next(fields, ""), next(fields, "")
+                if not new_path:
+                    break
+                refs.append(str(repo / new_path))
+                renames[str(repo / new_path)] = str(repo / old_path)
                 continue
-            if i + 1 >= len(parts):
+            path = next(fields, "")
+            if not path:
                 break
-            path = parts[i + 1]
             if code == "D":
                 tombstones.append(str(repo / path))
-            else:  # A, M, C, T — all "this path now has content worth indexing"
+            else:  # A, M, C, T — this path now has content worth indexing
                 refs.append(str(repo / path))
-            i += 2
 
         return refs, tombstones, renames

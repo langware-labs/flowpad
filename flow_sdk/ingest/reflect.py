@@ -90,8 +90,6 @@ class ReflectReport:
 class Reflector(Protocol):
     """One placement policy. Holds no state and reaches no subsystem."""
 
-    mode: str
-
     def place(self, source: "DataSource", ref: str) -> Optional[str]:
         """The local path the indexer should be told about, or None to skip."""
         ...
@@ -125,6 +123,18 @@ def source_root(source: "DataSource") -> Optional[Path]:
         return None
 
 
+def _remove(path: Path) -> None:
+    """Delete a placed asset root, whatever shape it is.
+
+    `is_symlink` first and deliberately: a link to a directory answers True to
+    `is_dir`, and `rmtree` would then delete the TARGET — the user's own tree.
+    """
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
+        shutil.rmtree(path)
+
+
 def _target_root(source: "DataSource") -> Optional[Path]:
     """The project directory reflected assets land under.
 
@@ -142,7 +152,6 @@ def _target_root(source: "DataSource") -> Optional[Path]:
 class InPlaceReflector:
     """``none`` — the source's own tree IS the indexed tree."""
 
-    mode = ReflectMode.NONE.value
 
     def place(self, source: "DataSource", ref: str) -> Optional[str]:
         return ref
@@ -159,7 +168,6 @@ class _ProjectionReflector:
     the replace-existing rule live here once.
     """
 
-    mode = ""
 
     def _dest(self, source: "DataSource", ref: str) -> Optional[Path]:
         root = _target_root(source)
@@ -201,10 +209,7 @@ class _ProjectionReflector:
         dest.parent.mkdir(parents=True, exist_ok=True)
         # Replace rather than merge: a partially-updated asset root is a state
         # nothing downstream can reason about.
-        if dest.is_symlink() or dest.is_file():
-            dest.unlink()
-        elif dest.is_dir():
-            shutil.rmtree(dest)
+        _remove(dest)
         self._emplace(src, dest)
         return str(dest)
 
@@ -212,17 +217,13 @@ class _ProjectionReflector:
         dest = self._dest(source, ref)
         if dest is None:
             return None
-        if dest.is_symlink() or dest.is_file():
-            dest.unlink()
-        elif dest.is_dir():
-            shutil.rmtree(dest)
+        _remove(dest)
         return str(dest)
 
 
 class CopyReflector(_ProjectionReflector):
     """``copy`` — duplicate the asset root into the project."""
 
-    mode = ReflectMode.COPY.value
 
     def _emplace(self, src: Path, dest: Path) -> None:
         if src.is_dir():
@@ -241,7 +242,6 @@ class SymlinkReflector(_ProjectionReflector):
     would hide it somewhere harder to find.
     """
 
-    mode = ReflectMode.SYMLINK.value
 
     def _emplace(self, src: Path, dest: Path) -> None:
         dest.symlink_to(src, target_is_directory=src.is_dir())
@@ -265,23 +265,6 @@ class SymlinkReflector(_ProjectionReflector):
         return ref if super().unplace(source, ref) else None
 
 
-class GitInPlaceReflector(InPlaceReflector):
-    """``in-place`` — the asset repo is the project. Same behaviour as `none`.
-
-    A distinct mode rather than an alias because the NAME is the contract: a
-    source configured `in-place` is asserting one repository, and reading
-    `none` there would invite someone to pair it with a `reflect_into`.
-    """
-
-    mode = ReflectMode.IN_PLACE.value
-
-
-class VendorReflector(CopyReflector):
-    """``vendor`` — copy into the receiving repo's tracked tree."""
-
-    mode = ReflectMode.VENDOR.value
-
-
 class MaterializeReflector:
     """``materialize`` — mirror the asset repo into a local cache.
 
@@ -294,40 +277,32 @@ class MaterializeReflector:
     clone — which is why this reflector does no per-file IO at all.
     """
 
-    mode = ReflectMode.MATERIALIZE.value
-
-    def _clone_root(self, source: "DataSource") -> Optional[Path]:
-        root = _target_root(source)
-        return root
 
     def _sync_clone(self, source: "DataSource") -> Optional[Path]:
-        import subprocess  # noqa: PLC0415
+        # `_run_git` rather than a bare `subprocess.run`: it carries the house
+        # timeout (an unbounded git call can hang a poll forever) and it is what
+        # the git driver beside this already uses, so the package has one way to
+        # run git rather than two.
+        from flow_sdk.utils.git import _git_err, _run_git  # noqa: PLC0415
 
-        root = self._clone_root(source)
-        origin = Path((source.config or {}).get("repo", "")).expanduser()
-        if root is None or not origin.exists():
+        root = _target_root(source)
+        origin = source_root(source)
+        if root is None or origin is None or not origin.exists():
             return None
-        try:
-            if not (root / ".git").exists():
-                root.parent.mkdir(parents=True, exist_ok=True)
-                subprocess.run(
-                    ["git", "clone", "-q", str(origin), str(root)],
-                    capture_output=True, text=True, check=True,
-                )
-            else:
-                subprocess.run(
-                    ["git", "pull", "-q", "--ff-only"],
-                    cwd=root, capture_output=True, text=True, check=True,
-                )
-        except Exception:  # noqa: BLE001 — a failed refresh is a poll problem
-            logger.warning("[reflect] could not refresh clone at %s", root, exc_info=True)
+        if not (root / ".git").exists():
+            root.parent.mkdir(parents=True, exist_ok=True)
+            result = _run_git(["git", "clone", "-q", str(origin), str(root)], str(root.parent))
+        else:
+            result = _run_git(["git", "pull", "-q", "--ff-only"], str(root))
+        if result.returncode != 0:
+            logger.warning("[reflect] %s", _git_err(result, "refresh clone"))
             return None
         return root
 
     def _mapped(self, source: "DataSource", ref: str) -> Optional[str]:
-        root = self._clone_root(source)
-        origin = Path((source.config or {}).get("repo", "")).expanduser()
-        if root is None:
+        root = _target_root(source)
+        origin = source_root(source)
+        if root is None or origin is None:
             return None
         try:
             rel = Path(ref).resolve().relative_to(origin.resolve())
@@ -361,8 +336,8 @@ class MaterializeReflector:
 _REGISTRY: dict[str, Reflector] = {}
 
 
-def register_reflector(reflector: Reflector) -> Reflector:
-    _REGISTRY[reflector.mode] = reflector
+def register_reflector(mode: str, reflector: Reflector) -> Reflector:
+    _REGISTRY[mode] = reflector
     return reflector
 
 
@@ -370,12 +345,21 @@ def get_reflector(mode: str) -> Optional[Reflector]:
     return _REGISTRY.get(mode or ReflectMode.RECORD.value)
 
 
-register_reflector(InPlaceReflector())
-register_reflector(CopyReflector())
-register_reflector(SymlinkReflector())
-register_reflector(GitInPlaceReflector())
-register_reflector(VendorReflector())
-register_reflector(MaterializeReflector())
+# Two names per behaviour where the vocabulary differs but the mechanism does
+# not: `in-place` is `none` said in git, `vendor` is `copy` said in git. Stating
+# the aliasing in one table is what makes it visible — as subclasses it had to
+# be inferred from two declarations that changed nothing but a string.
+#
+# `record` is deliberately absent: it is the OTHER destination (`ingest_items`),
+# and a lookup that silently returned an in-place reflector for it would route
+# message payloads onto the filesystem.
+_IN_PLACE, _COPY = InPlaceReflector(), CopyReflector()
+for _mode in (ReflectMode.NONE, ReflectMode.IN_PLACE):
+    register_reflector(_mode.value, _IN_PLACE)
+for _mode in (ReflectMode.COPY, ReflectMode.VENDOR):
+    register_reflector(_mode.value, _COPY)
+register_reflector(ReflectMode.SYMLINK.value, SymlinkReflector())
+register_reflector(ReflectMode.MATERIALIZE.value, MaterializeReflector())
 
 
 def origin_id_for(source: "DataSource", ref: str) -> str:
@@ -408,10 +392,17 @@ def origin_id_for(source: "DataSource", ref: str) -> str:
 
 
 def default_origin_id(source: "DataSource", ref: str) -> str:
-    """Source-relative path. The weakest handle that is still always correct."""
-    root = Path((source.config or {}).get("root", "")).expanduser()
+    """Source-relative path. The weakest handle that is still always correct.
+
+    The root comes from `source_root`, not from a config key: `root` is the
+    folder driver's spelling and `repo` is git's, so reading either directly
+    makes the fallback silently wrong for the other — `relative_to` raises and
+    "always correct" quietly degrades to a bare filename that collides across
+    directories.
+    """
+    root = source_root(source)
     try:
-        rel = Path(ref).relative_to(root).as_posix()
+        rel = Path(ref).relative_to(root).as_posix() if root else Path(ref).name
     except ValueError:
         rel = Path(ref).name
     return f"{source.provider}:{source.id}:path:{rel}"
@@ -460,10 +451,7 @@ def _retire_stale_placement(source: "DataSource", known, placed: str) -> None:
     except ValueError:
         return  # not ours to remove
     try:
-        if old.is_symlink() or old.is_file():
-            old.unlink()
-        elif old.is_dir():
-            shutil.rmtree(old)
+        _remove(old)
     except OSError:
         logger.debug("[reflect] could not retire %s", old, exc_info=True)
 
@@ -504,43 +492,6 @@ def _stamps_identity(source: "DataSource") -> bool:
     from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
 
     return bool(getattr(get_driver(source.provider), "stamps_identity", True))
-
-
-async def _mint_without_stamping(paths: list[str]) -> None:
-    """Create rows for new assets without touching the files.
-
-    `reindex_paths` cannot serve this: its mint branch calls
-    `discover_record_by_path` in stamping mode, and a read-only resolve there
-    would find no carrier, derive nothing, and return None — so nothing would be
-    created at all.
-
-    A fresh id is minted through `mint_uuid` and passed as `proposed_id`, reaching
-    `owner_id` inside the resolver. That is the `SourceItem.find_existing`
-    discipline applied to files: ordinary v4 ids, with convergence coming from
-    the `origin_id` lookup rather than from an id derived out of the bytes.
-    """
-    from flow_sdk.builtin.faas.fs_records_actions import discover_record_by_path  # noqa: PLC0415
-    # The extension→type map. Imported rather than restated so a type added
-    # there is minted here too; private only because nothing outside the
-    # incremental path needed it before now.
-    from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
-    from flow_sdk.fs_store.reindex import _mint_candidates  # noqa: PLC0415
-
-    for path in paths:
-        for candidate in _mint_candidates(path):
-            try:
-                record = await discover_record_by_path(
-                    candidate,
-                    path,
-                    notify=True,
-                    proposed_id=str(mint_uuid()),
-                    stamp=False,
-                )
-            except Exception:  # noqa: BLE001 — one bad type must not sink the page
-                logger.debug("[reflect] mint %s as %s failed", path, candidate, exc_info=True)
-                continue
-            if record is not None:
-                break
 
 
 async def _reload(entity):
@@ -596,84 +547,75 @@ async def reflect_refs(
     # the re-stamp at the end of the loop free to dirty the file after all.
     from flow_sdk.fs_store.fs_record import carrier_writes_suppressed  # noqa: PLC0415
 
-    guard = carrier_writes_suppressed() if not _stamps_identity(source) else nullcontext()
-    with guard:
-        return await _reflect_page(source, reflector, refs, tombstones, renames, report)
-
-
-async def _reflect_page(source, reflector, refs, tombstones, renames, report):
-    """The body of one reflection pass. Split out so the suppression guard can
-    wrap it as a whole rather than each write inside it."""
     from flow_sdk.builtin.faas.fs_records_actions import discover_record_by_path  # noqa: PLC0415
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
     from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
 
+    guard = carrier_writes_suppressed() if not _stamps_identity(source) else nullcontext()
+    with guard:
 
-    # A reflector that needs per-page setup (a clone refresh) gets it once,
-    # here — never inside the per-ref loop.
-    prepare = getattr(reflector, "prepare", None)
-    if callable(prepare) and not prepare(source):
-        report.skipped.extend(refs)
-        return report
+        # A reflector that needs per-page setup (a clone refresh) gets it once,
+        # here — never inside the per-ref loop.
+        prepare = getattr(reflector, "prepare", None)
+        if callable(prepare) and not prepare(source):
+            report.skipped.extend(refs)
+            return report
 
-    fresh: list[tuple[str, str]] = []
-    for ref in refs:
-        placed = reflector.place(source, ref)
-        if not placed:
-            report.skipped.append(ref)
-            continue
-        origin_id = origin_id_for(source, ref)
-        known = await _find_by_origin(origin_id)
-        if known is None and (renames or {}).get(ref):
-            # The source says this path IS the old one, moved. Its identity
-            # lives under the ORIGIN IT HAD — for git that is computable even
-            # though the old path no longer exists, because the handle is
-            # repo-relative rather than a property of the file on disk.
-            known = await _find_by_origin(origin_id_for(source, renames[ref]))
-        if known is None:
-            fresh.append((placed, ref))
-            continue
-        # Known origin: re-parse onto the row it already names. `proposed_id` is
-        # what stops a re-parse from forking — the same thread `_resync` uses
-        # when the path is unchanged, applied here when only the PATH moved.
-        #
-        # Clear the previous placement FIRST. After a rename, `copy` has put the
-        # same bytes at a second path while the old copy is still there, and the
-        # asset-occurrence rules then read the pair as a duplicate and keep the
-        # ORIGINAL as primary — so the re-parse is discarded and the row stays
-        # pointing at a file we are about to remove. One origin owns one
-        # placement; retiring the old one is what makes that true.
-        _retire_stale_placement(source, known, placed)
-        await discover_record_by_path(
-            known.type,
-            placed,
-            notify=True,
-            proposed_id=str(known.id),
-            stamp=_stamps_identity(source),
-        )
-        await _stamp_origin(await _reload(known), source, ref)
-        report.placed.append(placed)
-
-    if fresh:
-        if _stamps_identity(source):
-            # New origins take the ordinary incremental path, so type
-            # inference, containment and consent stay in one place.
-            await reindex_paths([path for path, _ in fresh], [], mint=True)
-        else:
-            await _mint_without_stamping([path for path, _ in fresh])
-        for path, ref in fresh:
-            entity = await Entity.get_by_asset_ref(path, resolve_containing=True)
-            if entity is None:
-                report.skipped.append(path)
+        fresh: list[tuple[str, str]] = []
+        for ref in refs:
+            placed = reflector.place(source, ref)
+            if not placed:
+                report.skipped.append(ref)
                 continue
-            await _stamp_origin(entity, source, ref)
-            report.placed.append(path)
+            origin_id = origin_id_for(source, ref)
+            known = await _find_by_origin(origin_id)
+            if known is None and (renames or {}).get(ref):
+                # The source says this path IS the old one, moved. Its identity
+                # lives under the ORIGIN IT HAD — for git that is computable even
+                # though the old path no longer exists, because the handle is
+                # repo-relative rather than a property of the file on disk.
+                known = await _find_by_origin(origin_id_for(source, renames[ref]))
+            if known is None:
+                fresh.append((placed, ref))
+                continue
+            # Known origin: re-parse onto the row it already names. `proposed_id` is
+            # what stops a re-parse from forking — the same thread `_resync` uses
+            # when the path is unchanged, applied here when only the PATH moved.
+            #
+            # Clear the previous placement FIRST. After a rename, `copy` has put the
+            # same bytes at a second path while the old copy is still there, and the
+            # asset-occurrence rules then read the pair as a duplicate and keep the
+            # ORIGINAL as primary — so the re-parse is discarded and the row stays
+            # pointing at a file we are about to remove. One origin owns one
+            # placement; retiring the old one is what makes that true.
+            _retire_stale_placement(source, known, placed)
+            await discover_record_by_path(
+                known.type,
+                placed,
+                notify=True,
+                proposed_id=str(known.id),
+            )
+            await _stamp_origin(await _reload(known), source, ref)
+            report.placed.append(placed)
 
-    for ref in tombstones or []:
-        removed = reflector.unplace(source, ref)
-        if removed:
-            report.removed.append(removed)
-    for path in report.removed:
-        await _retire_row(path)
+        if fresh:
+            # One path for both. Under suppression `discover_record_by_path`
+            # resolves read-only and mints its own id, so type inference,
+            # containment and consent stay in one place either way.
+            await reindex_paths([path for path, _ in fresh], [], mint=True)
+            for path, ref in fresh:
+                entity = await Entity.get_by_asset_ref(path, resolve_containing=True)
+                if entity is None:
+                    report.skipped.append(path)
+                    continue
+                await _stamp_origin(entity, source, ref)
+                report.placed.append(path)
 
-    return report
+        for ref in tombstones or []:
+            removed = reflector.unplace(source, ref)
+            if removed:
+                report.removed.append(removed)
+        for path in report.removed:
+            await _retire_row(path)
+
+        return report

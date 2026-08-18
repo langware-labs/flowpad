@@ -2560,7 +2560,6 @@ async def discover_record_by_path(
     scope: str | None = None,
     project_id: str | None = None,
     strict_owner: bool = False,
-    stamp: bool = True,
 ):
     """Find-or-recover ONE record by absolute path — the interactive fast path.
 
@@ -2597,6 +2596,8 @@ async def discover_record_by_path(
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415 — trigger auto-registration
     from flow_sdk.fs_store.fs_ref import FSRef as _FSRef  # noqa: PLC0415
     from flow_sdk.fs_store.indexer.roots import classify_path  # noqa: PLC0415
+    from flow_sdk.fs_store.fs_record import carrier_writes_are_suppressed  # noqa: PLC0415
+    from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
     from flow_sdk.fs_store.record_list import RecordList  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType as _RT  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
@@ -2642,24 +2643,31 @@ async def discover_record_by_path(
                 _owner_id = proposed_id or await owner_id_for(
                     record_type, expanded, strict=strict_owner
                 )
-                # `stamp=False` is the READ-ONLY resolution mode: `derive=False`
-                # answers only from evidence already present and `overwrite=False`
-                # commits nothing, so the source file is never rewritten.
+                # When the operation forbids touching the source bytes, resolve
+                # READ-ONLY: `derive=False` answers only from evidence already
+                # present and `overwrite=False` commits nothing.
                 #
-                # It exists for sources whose bytes are not ours to touch. A git
-                # working tree is the clear case: stamping an identity capsule
-                # into a tracked file dirties the tree, gets committed, and
-                # propagates our metadata to everyone who pulls. Such a source
-                # resolves identity by an `origin_id` lookup and passes the
-                # answer in as `proposed_id`, which still reaches `owner_id`
-                # below — so resolution succeeds without `derive`.
+                # Read from the operation's context rather than taken as an
+                # argument. The same policy as a parameter would have to be
+                # threaded correctly by every caller, and a caller that forgot
+                # would stamp a capsule into bytes that are not ours — a git
+                # working tree, where it is then committed and pushed to
+                # everyone who pulls.
+                #
+                # A suppressed resolve has no carrier to fall back on, so a
+                # genuinely new asset is given a fresh id here. Identity for
+                # such a source converges through an `origin_id` lookup, not
+                # through anything derived from the bytes.
+                _suppressed = carrier_writes_are_suppressed()
                 resolved_id = _info.mint_entity_id(
                     one_ref,
                     owner_id=_owner_id,
                     proposed_id=proposed_id,
-                    derive=stamp,
-                    overwrite=stamp,
+                    derive=not _suppressed,
+                    overwrite=not _suppressed,
                 )
+                if _suppressed and not resolved_id:
+                    resolved_id = str(mint_uuid())
 
                 # Match the full indexer's deterministic primary ranking. A
                 # non-primary path remains observable but is neither parsed nor
