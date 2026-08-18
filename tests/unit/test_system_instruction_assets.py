@@ -45,7 +45,8 @@ async def test_embedded_assets_default_none_then_materialized(records_root, tmp_
     assert process.embedded_assets is not None
     assert process.embedded_assets.os_path == process._record_dir() / "execution" / "assets"
     assert assets.assets_dir == process.embedded_assets.os_path
-    assert str(assets.assets_dir) in process.additional_dirs
+    assert str(assets.assets_dir) not in process.additional_dirs
+    assert str(assets.assets_dir) in process.resolved_add_dirs
 
     claude_md = assets.assets_dir / "CLAUDE.md"
     agents_md = assets.assets_dir / "AGENTS.md"
@@ -87,9 +88,7 @@ async def test_no_system_instructions_leaves_assets_uncreated(records_root, tmp_
     "worker_type",
     [WorkerType.CLAUDE_CODE, WorkerType.CODEX, WorkerType.COPILOT],
 )
-async def test_system_instruction_assets_applied_to_worker_options(
-    records_root, tmp_path, worker_type
-):
+async def test_system_instruction_assets_applied_to_worker_options(records_root, tmp_path, worker_type):
     prompt = "Your name is TEST_AGENT and the time is 2026-07-04T12:34:56Z."
     process = _process(worker_type, tmp_path, context_data={"instructions": prompt})
 
@@ -111,36 +110,31 @@ async def test_system_instruction_assets_applied_to_worker_options(
 
 
 @pytest.mark.asyncio
-async def test_load_embedded_agent_materializes_into_instruction_assets(
-    records_root, tmp_path, monkeypatch
-):
+async def test_load_embedded_subagent_materializes_into_instruction_assets(records_root, tmp_path, monkeypatch):
     async def _save_noop(self):
         return self
 
     monkeypatch.setattr(AgenticProcess, "save", _save_noop)
     agent_md = tmp_path / "persona-probe.md"
     agent_md.write_text(
-        "---\n"
-        "name: persona-probe\n"
-        "description: Test persona probe\n"
-        "---\n\n"
-        "Always answer as PERSONA_PROBE.\n",
+        "---\nname: persona-probe\ndescription: Test persona probe\n---\n\nAlways answer as PERSONA_PROBE.\n",
         encoding="utf-8",
     )
     process = _process(WorkerType.CLAUDE_CODE, tmp_path)
 
-    result = await process.load_embedded_agent_action(str(agent_md))
+    result = await process.load_embedded_subagent_action(str(agent_md))
     assert result.status == "SUCCESS"
     assert result.data["ok"] is True
     assert result.data["name"] == "persona-probe"
-    # Identity is persisted as the agent's ENTITY ref, not a legacy name entry.
+    # Identity is persisted as the sub-agent's ENTITY ref, not a legacy name entry.
     from flow_sdk.fs_store.fs_ref import FSRef
     from flow_sdk.fs_store.indexer.functions.subagent import subagent_peek_entity_id
     from flow_sdk.fs_store.record_types import RecordType
+
     expected_ref = f"subagent-{subagent_peek_entity_id(FSRef(agent_md, record_type=RecordType.SUBAGENT))}"
     assert result.data["ref"] == expected_ref
     assert [str(r) for r in process.embedded_asset_refs] == [expected_ref]
-    assert not process.embedded_agent_ids
+    assert not process.embedded_subagent_ids
 
     materialized = process.embedded_assets.os_path / ".claude" / "agents" / "persona-probe.md"
     assert materialized.exists()
@@ -184,9 +178,9 @@ async def test_persona_survives_fresh_entity_instance(records_root, tmp_path, mo
             **extra,
         )
 
-    # Instance A: the request that handled load-embedded-agent (UI embed call).
+    # Instance A: the request that handled load-embedded-subagent (UI embed call).
     proc_a = make_process()
-    result = await proc_a.load_embedded_agent_action(str(agent_md))
+    result = await proc_a.load_embedded_subagent_action(str(agent_md))
     assert result.status == "SUCCESS"
 
     # Instance B: the fresh instance the prompt/launch request operates on,

@@ -78,8 +78,8 @@ interface EntityExecutionPanelProps {
   className?: string;
   /**
    * Invoked once, right after the backing `AgenticProcess` is created and before
-   * the first `prompt()`. Use to pre-configure the process (e.g. for agent files,
-   * `(proc) => proc.loadEmbeddedAgent(path)`). Not called when an existing process
+   * the first `prompt()`. Use to pre-configure the process (e.g. for sub-agent files,
+   * `(proc) => proc.loadEmbeddedSubagent(path)`). Not called when an existing process
    * is picked up from `useProcessesForTarget`.
    */
   onProcessCreated?: (process: AgenticProcess) => Promise<void> | void;
@@ -969,7 +969,7 @@ function ExecutionHistoryHeader({
   const iconBtn =
     'flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
   const pillBtn =
-    'inline-flex h-6 items-center gap-1 rounded-full border border-border px-2 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
+    'inline-flex h-7 flex-shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
 
   const historyDropdown = (
     <DropdownMenu>

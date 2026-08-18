@@ -183,7 +183,7 @@ def _read_copilot_workspace_cwd(path: Path) -> str | None:
 
 def iter_copilot_project_paths(include_temp: bool = False) -> Iterator[Path]:
     """Yield canonical Copilot workspace cwds from ``~/.copilot/session-state``."""
-    root = get_instance_settings().user_home / ".copilot" / "session-state"
+    root = get_instance_settings().copilot_session_state_dir
     if not root.is_dir():
         return
     seen: set[str] = set()

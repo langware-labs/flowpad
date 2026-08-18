@@ -96,7 +96,7 @@ describe('HubHome sandbox secrets button', () => {
     expect(h.openPage).toHaveBeenCalledWith(PageId.HUB, ViewType.CREDENTIALS, 'environment');
   });
 
-  it('opens a project on its canonical Hub page', async () => {
+  it('does not list projects on the hub home — the current project lives in the address bar and footer', () => {
     h.projects.push({ id: '12345678-0000-4000-8000-000000000000', displayName: 'Project One' });
     render(
       <TooltipProvider>
@@ -104,49 +104,8 @@ describe('HubHome sandbox secrets button', () => {
       </TooltipProvider>,
     );
 
-    await userEvent.click(screen.getByText('Project One'));
-
-    expect(h.openDock).toHaveBeenCalledOnce();
-    expect(h.openDock.mock.calls[0][0].toUrl()).toBe('/dock/hub/project/12345678-0000-4000-8000-000000000000');
-  });
-
-  it('asks before deleting a project, and never on the way to opening one', async () => {
-    h.projects.push({ id: '12345678-0000-4000-8000-000000000000', displayName: 'Project One' });
-    render(
-      <TooltipProvider>
-        <HubHome />
-      </TooltipProvider>,
-    );
-
-    await userEvent.click(screen.getByTestId('hub-project-delete'));
-
-    // Nothing is destroyed on the click itself — the confirm is the gate.
-    expect(h.deleteEntity).not.toHaveBeenCalled();
-    expect(screen.getByText(/will be deleted for everyone/).textContent).toContain('Project One');
-
-    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
-
-    // The hub has no `delete-with-children` action (that is a flow_sdk route),
-    // so this must be the generic entity DELETE.
-    expect(h.deleteEntity).toHaveBeenCalledOnce();
-    const typeId = h.deleteEntity.mock.calls[0][0] as { type: string; id: string };
-    expect(typeId.type).toBe('project');
-    expect(typeId.id).toBe('12345678-0000-4000-8000-000000000000');
-    // Deleting is not a navigation — the card's open path must not have fired.
-    expect(h.openDock).not.toHaveBeenCalled();
-  });
-
-  it('backs out of the confirm without deleting', async () => {
-    h.projects.push({ id: '12345678-0000-4000-8000-000000000000', displayName: 'Project One' });
-    render(
-      <TooltipProvider>
-        <HubHome />
-      </TooltipProvider>,
-    );
-
-    await userEvent.click(screen.getByTestId('hub-project-delete'));
-    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-
-    expect(h.deleteEntity).not.toHaveBeenCalled();
+    // A long project list buried the sandboxes; the section keeps only its actions.
+    expect(screen.queryByText('Project One')).toBeNull();
+    expect(screen.queryByTestId('hub-project-card')).toBeNull();
   });
 });

@@ -43,6 +43,16 @@ from flow_sdk.instance_settings.base_settings import SecretsNotEnabledError
 
 _SECRET_NAME = "cookie_gate"
 
+
+class DesktopGateRefused(ValueError):
+    """Raised when arming is attempted on a desktop-managed instance.
+
+    A ``ValueError`` subclass so the CLI's existing handler reports it like any
+    other bad argument, while ``/auth/login_callback`` can catch this case
+    specifically and drop it without failing the login.
+    """
+
+
 # In-process cache of the secret. The gate check runs on EVERY request and an
 # uncached ``sod.read`` is a file read + Fernet decrypt + json.loads, so this is
 # mandatory rather than nice-to-have.
@@ -135,10 +145,28 @@ def set_cookie_gate(value: str) -> None:
     Raises ``ValueError`` on an empty value — arming on ``""`` would store a
     secret that ``is_gated()`` reads as unset, leaving the instance open while
     looking locked.
+
+    Raises ``DesktopGateRefused`` on a desktop-managed instance. The gate exempts
+    no path, so arming one is indistinguishable from bricking the app: the
+    Electron shell's own ``/health/status`` poll gets the 403 like everyone else,
+    never sees the backend it just spawned come up, and kills it after 120s. The
+    gate exists to protect a sandbox's public URL; a desktop install has no
+    public URL to protect, so there is no case where arming one is correct.
+
+    The check lives here, in the single writer, rather than in either caller —
+    the CLI command and ``/auth/login_callback`` are both writers today and a
+    rule enforced in one of them is a rule the other can still break.
     """
     if not value:
         raise ValueError("cookie-gate secret must be non-empty")
     settings = get_instance_settings()
+    if settings.desktop_marker_path.exists():
+        raise DesktopGateRefused(
+            f"Refusing to arm the cookie-gate on desktop-managed instance "
+            f"{settings.instance_name!r}: the gate exempts no path, so it would "
+            f"reject the desktop app's own health check and prevent it from "
+            f"launching. The gate is for sandboxes reachable at a public URL."
+        )
     # sod.write has no mkdir of its own, and its FileLock needs the dir to exist.
     # It does today only because _finalize_login runs enable_secrets() first —
     # not something a public setter should depend on. Same shape as

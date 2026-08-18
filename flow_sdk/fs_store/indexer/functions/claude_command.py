@@ -80,13 +80,6 @@ def command_identity_key(ref: FSRef | Path) -> str:
     return f"{RecordType.COMMAND}:{scope}:{path.stem}"
 
 
-def command_id(ref: FSRef) -> str:
-    """Cheap id: a pinned frontmatter id (shared command) wins; else the
-    deterministic uuid5 of the natural key ``<scope>:<command_name>``."""
-    existing = _read_command_frontmatter_id(ref._path)
-    return existing if existing else _command_id_from_key(ref)
-
-
 def extract_claude_command(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a single ``.md`` command file into a Record.
 

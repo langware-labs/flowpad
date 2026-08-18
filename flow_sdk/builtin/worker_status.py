@@ -42,10 +42,10 @@ class WorkerStatus(StrEnum):
     IDLE = "idle"
 
     # Terminal — session ended, cannot resume
-    COMPLETE     = "complete"     # finished cleanly (end_turn / last-prompt)
-    ERROR        = "error"        # abnormal end (stop_sequence / crash)
-    INTERRUPTED  = "interrupted"  # user interrupted (Escape / Ctrl-C)
-    INACTIVE     = "inactive"     # raw: stale file >5 min with no terminal signal
+    COMPLETE = "complete"  # finished cleanly (end_turn / last-prompt)
+    ERROR = "error"  # abnormal end (stop_sequence / crash)
+    INTERRUPTED = "interrupted"  # user interrupted (Escape / Ctrl-C)
+    INACTIVE = "inactive"  # raw: stale file >5 min with no terminal signal
 
     # Raw: an unresolved user-input tool (AskUserQuestion / ExitPlanMode) sits at
     # the tail — the worker asked and handed control back to the user. Surfaced as
@@ -55,16 +55,16 @@ class WorkerStatus(StrEnum):
     PENDING_USER = "pending_user"
 
     # Active — transcript-derivable
-    WORKING      = "working"      # input received, Claude is producing a reply (pre-first-token lull through streaming)
-    THINKING     = "thinking"     # assistant streaming / generating text
-    TOOL_CALL    = "tool_call"    # Claude finished its turn and dispatched tool(s)
-    TOOL_RUNNING = "tool_running" # tool is actively executing (progress events)
-    API_ERROR    = "api_error"    # Anthropic API returned an error (e.g. 529); Claude is retrying — mid-turn
-    API_TIMEOUT  = "api_timeout"  # JSONL stalled in WORKING state — connection hang / model slow to start
+    WORKING = "working"  # input received, Claude is producing a reply (pre-first-token lull through streaming)
+    THINKING = "thinking"  # assistant streaming / generating text
+    TOOL_CALL = "tool_call"  # Claude finished its turn and dispatched tool(s)
+    TOOL_RUNNING = "tool_running"  # tool is actively executing (progress events)
+    API_ERROR = "api_error"  # Anthropic API returned an error (e.g. 529); Claude is retrying — mid-turn
+    API_TIMEOUT = "api_timeout"  # JSONL stalled in WORKING state — connection hang / model slow to start
 
     # Parse fallback — the last JSONL entry did not match any known pattern. Surfaces
     # bugs (new Claude event types, malformed writes) instead of hiding them as "RUNNING".
-    UNKNOWN      = "unknown"
+    UNKNOWN = "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -75,35 +75,39 @@ class WorkerStatus(StrEnum):
 # loading ``test_fixtures/status_sets.json``.
 # ---------------------------------------------------------------------------
 
-_RUNNING_STATUSES: frozenset[WorkerStatus] = frozenset({
-    WorkerStatus.WORKING,
-    WorkerStatus.THINKING,
-    WorkerStatus.TOOL_CALL,
-    WorkerStatus.TOOL_RUNNING,
-    WorkerStatus.API_ERROR,  # mid-turn retry — still running from the user's POV
-})
+_RUNNING_STATUSES: frozenset[WorkerStatus] = frozenset(
+    {
+        WorkerStatus.WORKING,
+        WorkerStatus.THINKING,
+        WorkerStatus.TOOL_CALL,
+        WorkerStatus.TOOL_RUNNING,
+        WorkerStatus.API_ERROR,  # mid-turn retry — still running from the user's POV
+    }
+)
 
-_TERMINAL_STATUSES: frozenset[WorkerStatus] = frozenset({
-    WorkerStatus.COMPLETE,
-    WorkerStatus.ERROR,
-    WorkerStatus.INTERRUPTED,
-    WorkerStatus.INACTIVE,
-    WorkerStatus.API_TIMEOUT,  # stuck — needs intervention, not resumable as-is
-})
+_TERMINAL_STATUSES: frozenset[WorkerStatus] = frozenset(
+    {
+        WorkerStatus.COMPLETE,
+        WorkerStatus.ERROR,
+        WorkerStatus.INTERRUPTED,
+        WorkerStatus.INACTIVE,
+        WorkerStatus.API_TIMEOUT,  # stuck — needs intervention, not resumable as-is
+    }
+)
 
 
-_ERROR_STATUSES: frozenset[WorkerStatus] = frozenset({
-    WorkerStatus.ERROR,
-    WorkerStatus.API_TIMEOUT,
-    WorkerStatus.INACTIVE,
-})
+_ERROR_STATUSES: frozenset[WorkerStatus] = frozenset(
+    {
+        WorkerStatus.ERROR,
+        WorkerStatus.API_TIMEOUT,
+        WorkerStatus.INACTIVE,
+    }
+)
 
 # Live process-lifecycle states. String literals (not ProcessStatus) keep this a
 # true leaf module. ``running`` is the single live value on both realms now (no
 # more ``ready`` / ``busy`` projection).
-_LIVE_PROCESS_STATUSES: frozenset[str] = frozenset(
-    {"running", "starting"}
-)
+_LIVE_PROCESS_STATUSES: frozenset[str] = frozenset({"running", "starting"})
 
 
 class ExecutionMode(StrEnum):
@@ -113,10 +117,10 @@ class ExecutionMode(StrEnum):
     Derived, never stored. ``EXTERNAL`` is server-only (OS-scanned).
     """
 
-    INTERACTIVE = "interactive"   # PTY worker (pty_mode=true)
-    BACKGROUND = "background"     # headless CLI worker (pty_mode=false)
-    ERROR = "error"              # error/dead state
-    EXTERNAL = "external"        # running outside the app (OS-scanned)
+    INTERACTIVE = "interactive"  # PTY worker (pty_mode=true)
+    BACKGROUND = "background"  # headless CLI worker (pty_mode=false)
+    ERROR = "error"  # error/dead state
+    EXTERNAL = "external"  # running outside the app (OS-scanned)
 
 
 def classify_execution_mode(
@@ -189,18 +193,20 @@ _TAIL_MAX_BYTES = 2 * 1024 * 1024
 # future Claude format-drift — which is exactly how ``mode`` / ``agent-name`` /
 # ``bridge-session`` slipped in and regressed this set to masking real status as
 # UNKNOWN — can't silently happen again.
-_IGNORED_TYPES: frozenset[str] = frozenset({
-    "file-history-snapshot",
-    "queue-operation",
-    "custom-title",
-    "ai-title",
-    "pr-link",
-    "attachment",
-    "permission-mode",
-    "mode",
-    "agent-name",
-    "bridge-session",
-})
+_IGNORED_TYPES: frozenset[str] = frozenset(
+    {
+        "file-history-snapshot",
+        "queue-operation",
+        "custom-title",
+        "ai-title",
+        "pr-link",
+        "attachment",
+        "permission-mode",
+        "mode",
+        "agent-name",
+        "bridge-session",
+    }
+)
 
 
 # Tools whose ``tool_use`` block BLOCKS on a human response. While one is pending
@@ -208,10 +214,12 @@ _IGNORED_TYPES: frozenset[str] = frozenset({
 # has handed control back to the user and is idle awaiting them, NOT executing a
 # tool. Surfacing that as PENDING_USER ("Idle", no spinner) instead of
 # TOOL_CALL/TOOL_RUNNING is the whole point of ``_pending_user_input_tool``.
-_USER_INPUT_TOOLS: frozenset[str] = frozenset({
-    "AskUserQuestion",
-    "ExitPlanMode",
-})
+_USER_INPUT_TOOLS: frozenset[str] = frozenset(
+    {
+        "AskUserQuestion",
+        "ExitPlanMode",
+    }
+)
 
 
 # Synthetic "user" entries Claude Code injects when the human aborts a turn
@@ -305,8 +313,7 @@ def _has_pending_tool_use(chunk: str) -> bool:
         elif t == "user" and pending:
             content = msg.get("content")
             if isinstance(content, list) and any(
-                isinstance(b, dict) and b.get("type") == "tool_result"
-                for b in content
+                isinstance(b, dict) and b.get("type") == "tool_result" for b in content
             ):
                 pending = False
         elif t == "file-history-snapshot" and pending:
@@ -335,10 +342,7 @@ def _last_user_is_tool_result(chunk: str) -> bool:
         msg = entry.get("message", {}) if isinstance(entry.get("message"), dict) else {}
         content = msg.get("content")
         if isinstance(content, list):
-            return any(
-                isinstance(b, dict) and b.get("type") == "tool_result"
-                for b in content
-            )
+            return any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content)
         return False
     return False
 
@@ -357,9 +361,7 @@ def _last_user_text(chunk: str) -> str:
             msg = entry.get("message", {})
             content = msg.get("content", "") if isinstance(msg, dict) else str(msg)
             if isinstance(content, list):
-                return " ".join(
-                    c.get("text", "") for c in content if c.get("type") == "text"
-                )
+                return " ".join(c.get("text", "") for c in content if c.get("type") == "text")
             return str(content)
     return ""
 
@@ -416,9 +418,7 @@ def _scan_reversed(
                 ts_str = entry.get("timestamp", "")
                 if ts_str:
                     try:
-                        last_user_ts = _datetime.fromisoformat(
-                            ts_str.replace("Z", "+00:00")
-                        ).timestamp()
+                        last_user_ts = _datetime.fromisoformat(ts_str.replace("Z", "+00:00")).timestamp()
                     except Exception:
                         pass
             break
@@ -433,6 +433,67 @@ def _scan_reversed(
         last_user_ts,
         reached_user_boundary,
     )
+
+
+def tail_status_detail(path: "str | _Path") -> str | None:
+    """The CLI's OWN words for the most recent synthetic error, or ``None``.
+
+    :data:`WorkerStatus.ERROR` is a single token, and collapsing into it throws
+    away a message the CLI already wrote for the user. Claude Code's synthetic
+    error entries are genuinely good — ``"Not logged in · Please run /login"``,
+    ``"You've hit your session limit · resets 7:50pm"`` — and every one of them
+    was reaching users as the bare word "Error", which tells them nothing and
+    sends them hunting. This recovers the sentence.
+
+    Deliberately cheap and best-effort: one bounded tail read, no widening, and
+    every failure returns ``None`` so a status can never depend on it. Callers
+    should only ask when the status is already terminal-error, since it costs a
+    second read of the same file.
+    """
+    p = _Path(path)
+    try:
+        sz = p.stat().st_size
+        # Same ceiling ``_tail_status`` widens to. A single read rather than its
+        # doubling loop: the error we want is the entry that PRODUCED the status
+        # we were handed, so it is near the end — the ceiling only covers a turn
+        # whose tool results pushed it back.
+        window = min(sz, _TAIL_MAX_BYTES)
+        with open(p, "rb") as f:
+            if sz > window:
+                f.seek(sz - window)
+            chunk = f.read().decode("utf-8", errors="replace")
+    except OSError:
+        return None
+    for line in reversed(chunk.splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        # Scoped to the newest user turn, exactly as ``_scan_reversed`` scopes
+        # its terminal evidence — and for the same reason. A signed-out turn
+        # leaves "Not logged in · Please run /login" in the transcript forever;
+        # without this boundary a later, perfectly healthy turn would still
+        # report it, and anything keyed on the text (the harness-login prompt)
+        # would fire at a user who is signed in. An error only describes THIS
+        # turn if it comes after the last thing the user said.
+        try:
+            entry = json.loads(line)
+        except Exception:
+            continue
+        if entry.get("type") == "user":
+            return None
+        if not entry.get("isApiErrorMessage"):
+            continue
+        content = (entry.get("message") or {}).get("content")
+        if isinstance(content, str):
+            text = content
+        elif isinstance(content, list):
+            text = " ".join(b.get("text", "") for b in content if isinstance(b, dict))
+        else:
+            continue
+        text = text.strip()
+        if text:
+            return text
+    return None
 
 
 def _tail_status(path: "str | _Path") -> WorkerStatus:
@@ -500,9 +561,7 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
         if window >= sz or read_bytes >= _TAIL_MAX_BYTES:
             break
         need_wider = last_type is None or (
-            last_type == "last-prompt"
-            and last_stop_reason is None
-            and not reached_user_boundary
+            last_type == "last-prompt" and last_stop_reason is None and not reached_user_boundary
         )
         if not need_wider:
             break
@@ -578,7 +637,6 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
         return WorkerStatus.COMPLETE
     if last_stop_reason == "stop_sequence":
         return WorkerStatus.ERROR
-
 
     # Stale file with no clean termination signal → assumed dead
     if not is_active:

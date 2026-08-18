@@ -184,6 +184,9 @@ def test_copilot_project_iterator_rejects_home_but_keeps_subdir(
     patched = dataclasses.replace(
         isettings.get_instance_settings(),
         user_home=home,
+        copilot_home=home / ".copilot",
+        copilot_session_state_dir=sessions,
+        copilot_config_path=home / ".copilot" / "config.json",
     )
     monkeypatch.setattr(isettings, "get_instance_settings", lambda: patched)
     monkeypatch.setattr(ap, "get_instance_settings", lambda: patched)

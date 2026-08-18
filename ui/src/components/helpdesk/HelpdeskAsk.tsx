@@ -31,11 +31,11 @@ export function HelpdeskAsk({ project }: { project: Project }) {
     async (proc: AgenticProcess) => {
       if (!agent?.asset_ref) return;
       try {
-        await proc.loadEmbeddedAgent(agent.asset_ref);
+        await proc.loadEmbeddedSubagent(agent.asset_ref);
       } catch (err) {
         // A persona-less session still answers, just genericly — worth a log,
         // not worth blocking the user's question.
-        console.error('[HelpdeskAsk] could not bind the support agent', err);
+        console.error('[HelpdeskAsk] could not bind the support sub-agent', err);
       }
     },
     [agent?.asset_ref],

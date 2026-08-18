@@ -35,6 +35,7 @@ from flow_sdk.schema.types import EntityType
 from flow_sdk.utils.serialization import iso_to_datetime
 
 from .query import QueryFilter
+from flow_sdk.api.api_types.identifier import mint_uuid
 
 RecordType = TypeVar("RecordType", bound="DBBaseRecord")
 RecordRelationshipType = TypeVar("RecordRelationshipType", bound="DBBaseRelationship")
@@ -95,7 +96,7 @@ class DBBaseRecord(BaseModel):
     def __init__(self, **data):
         super().__init__(**data)
         if not self.id:
-            self.id = str(uuid.uuid4())
+            self.id = mint_uuid()
         for expansion_field in QueryFilter.available_expansions():
             self.exclude_from_db(expansion_field)
 

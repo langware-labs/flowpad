@@ -1,8 +1,8 @@
 /**
- * loadEmbeddedAgent SubAgent Integration Test
+ * loadEmbeddedSubagent SubAgent Integration Test
  *
  * Verifies that:
- *   1. loadEmbeddedAgent records the SubAgent ENTITY ref (subagent-<uuid>) in
+ *   1. loadEmbeddedSubagent records the SubAgent ENTITY ref (subagent-<uuid>) in
  *      embedded_asset_refs (durable across requests) and getAssets() reports
  *      it as an EMBEDDED descriptor
  *   2. executeInstruction on a process with an embedded SubAgent produces CHAT/TEXT FlowData output
@@ -59,7 +59,7 @@ async function collectOutput(proc: AgenticProcess, timeoutMs: number): Promise<F
 // Suite
 // ---------------------------------------------------------------------------
 
-describe('AgenticProcess loadEmbeddedAgent', () => {
+describe('AgenticProcess loadEmbeddedSubagent', () => {
   let workdir: string;
   let agentFilePath: string;
 
@@ -79,7 +79,7 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
   it('records the SubAgent entity ref in embedded_asset_refs (persisted)', async () => {
     const proc = await new AgenticProcess({ workdir }).save([]);
 
-    await proc.loadEmbeddedAgent(agentFilePath);
+    await proc.loadEmbeddedSubagent(agentFilePath);
 
     // Fetch fresh from server to confirm persistence. Backend persists the
     // ref then pushes the updated entity via WebSocket; the cached entity
@@ -102,7 +102,7 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
       if (refs.some(isSubAgentUuidRef)) break;
       await new Promise((r) => setTimeout(r, 50));
     }
-    expect(refreshed, 'Process not found in dataManager after loadEmbeddedAgent').not.toBeNull();
+    expect(refreshed, 'Process not found in dataManager after loadEmbeddedSubagent').not.toBeNull();
     expect(
       refs.map(String),
       'Expected a subagent-<uuid> entry in embedded_asset_refs',
@@ -115,12 +115,12 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
     expect(embedded.length, 'getAssets should surface the embedded SubAgent').toBeGreaterThan(0);
     expect(embedded.every((d) => d.source === 'embedded')).toBe(true);
 
-    console.log('[load_embedded_agent] embedded_asset_refs:', refs.map(String).join(', '));
+    console.log('[load_embedded_subagent] embedded_asset_refs:', refs.map(String).join(', '));
   }, TIMEOUT);
 
   it('executeInstruction produces CHAT/TEXT output', async (context: any) => {
     const proc = await new AgenticProcess({ workdir, pty_mode: false, visible: false }).save([]);
-    await proc.loadEmbeddedAgent(agentFilePath);
+    await proc.loadEmbeddedSubagent(agentFilePath);
     await proc.watch();
 
     const collectPromise = collectOutput(proc, 160_000);
@@ -129,11 +129,11 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
     const outputs = await collectPromise;
 
     const content = chatContent(outputs);
-    console.log('[load_embedded_agent] element types:', outputs.map((o) => o.elementType).join(', '));
-    console.log('[load_embedded_agent] chat content:', content);
+    console.log('[load_embedded_subagent] element types:', outputs.map((o) => o.elementType).join(', '));
+    console.log('[load_embedded_subagent] chat content:', content);
 
     if (isClaudeUnavailable(content)) {
-      context.skip(`Claude unavailable for loadEmbeddedAgent executeInstruction test: ${content.slice(0, 240)}`);
+      context.skip(`Claude unavailable for loadEmbeddedSubagent executeInstruction test: ${content.slice(0, 240)}`);
     }
     expect(outputs.length, 'Expected at least one FlowData item').toBeGreaterThan(0);
     expect(content.length, 'Expected non-empty CHAT/TEXT content').toBeGreaterThan(0);
@@ -156,7 +156,7 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
     await fresh!.loadHistory({ force: true });
     const restored = fresh!.flowDataStream.items;
     console.log(
-      '[load_embedded_agent] restored element types:',
+      '[load_embedded_subagent] restored element types:',
       restored.map((o) => o.elementType).join(', '),
     );
     expect(restored.length, 'loadHistory should populate the stream').toBeGreaterThan(0);
@@ -182,7 +182,7 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
 
   it('multi-turn: second executeInstruction on the same process produces output', async (context: any) => {
     const proc = await new AgenticProcess({ workdir, pty_mode: false, visible: false }).save([]);
-    await proc.loadEmbeddedAgent(agentFilePath);
+    await proc.loadEmbeddedSubagent(agentFilePath);
     await proc.watch();
 
     // Turn 1 — collect output via output() generator
@@ -191,9 +191,9 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
     const turn1Outputs = await collectPromise1;
 
     const turn1Content = chatContent(turn1Outputs);
-    console.log('[load_embedded_agent] turn1 content:', turn1Content);
+    console.log('[load_embedded_subagent] turn1 content:', turn1Content);
     if (isClaudeUnavailable(turn1Content)) {
-      context.skip(`Claude unavailable for loadEmbeddedAgent multi-turn test: ${turn1Content.slice(0, 240)}`);
+      context.skip(`Claude unavailable for loadEmbeddedSubagent multi-turn test: ${turn1Content.slice(0, 240)}`);
     }
     expect(turn1Content.length, 'Turn 1: expected non-empty chat content').toBeGreaterThan(0);
 
@@ -217,9 +217,9 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
     ]);
     const turn2Items = proc.flowDataStream.items.slice(afterTurn1Count);
     const turn2Content = chatContent(turn2Items);
-    console.log('[load_embedded_agent] turn2 content:', turn2Content);
+    console.log('[load_embedded_subagent] turn2 content:', turn2Content);
     if (isClaudeUnavailable(turn2Content)) {
-      context.skip(`Claude unavailable for loadEmbeddedAgent multi-turn test: ${turn2Content.slice(0, 240)}`);
+      context.skip(`Claude unavailable for loadEmbeddedSubagent multi-turn test: ${turn2Content.slice(0, 240)}`);
     }
     expect(turn2Content.length, 'Turn 2: expected non-empty chat content').toBeGreaterThan(0);
   }, TIMEOUT);

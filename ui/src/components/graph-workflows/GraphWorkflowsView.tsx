@@ -35,19 +35,30 @@ type PanelTab = (typeof PANEL_TABS)[number];
 const PERSIST_DEBOUNCE_MS = 750;
 
 /** Debounced last-write-wins persister for one folder file (whiteboard pattern). */
-function useFilePersister(ref: FSRef | null, onWritten?: (ref: FSRef) => void) {
+function useFilePersister(
+  ref: FSRef | null,
+  onWritten?: (ref: FSRef) => void,
+  onEdit?: () => void,
+) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastWritten = useRef<string | null>(null);
+  const lastObserved = useRef<string | null>(null);
   const pending = useRef<string | null>(null);
   useEffect(() => {
     lastWritten.current = null;
+    lastObserved.current = null;
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
   }, [ref]);
   return useCallback(
     (serialized: string) => {
-      if (!ref || serialized === lastWritten.current) return;
+      if (!ref) return;
+      if (serialized !== lastObserved.current) {
+        lastObserved.current = serialized;
+        onEdit?.();
+      }
+      if (serialized === lastWritten.current) return;
       pending.current = serialized;
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => {
@@ -60,7 +71,7 @@ function useFilePersister(ref: FSRef | null, onWritten?: (ref: FSRef) => void) {
           .catch((e) => console.error('flow persist failed', e));
       }, PERSIST_DEBOUNCE_MS);
     },
-    [ref, onWritten],
+    [ref, onEdit, onWritten],
   );
 }
 
@@ -99,8 +110,9 @@ export function GraphWorkflowsView() {
   // counts) tracks canvas edits; display.json is excluded from the asset hash,
   // so its writes never reindex.
   const reindexGraph = useCallback((r: FSRef) => reindexAfterWrite(`/${r.path}`), []);
-  const persistGraph = useFilePersister(graphRef, reindexGraph);
-  const persistDisplay = useFilePersister(displayRef);
+  const markFlowEdited = useCallback(() => flow?.markEdit(), [flow]);
+  const persistGraph = useFilePersister(graphRef, reindexGraph, markFlowEdited);
+  const persistDisplay = useFilePersister(displayRef, undefined, markFlowEdited);
 
   const doc = useStudio((s) => s.doc);
   const flowId = useStudio((s) => s.flowId);

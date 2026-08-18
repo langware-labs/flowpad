@@ -138,8 +138,6 @@ class BootstrapInfo(BaseModel):
     default_compute_node: Optional[Dict[str, Any]] = None
     sandbox_available: bool = False
     sandbox_compute_node: Optional[Dict[str, Any]] = None
-    docker_available: bool = False
-    docker_compute_nodes: List[Dict[str, Any]] = []
     env: Optional[EnvInfo] = None
     # What this app is running as — the single signal every surface reads.
     # Stamped onto the response per REQUEST (it depends on the caller's

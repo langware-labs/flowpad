@@ -279,6 +279,7 @@ class CodexCLIStreamWorker(AgenticWorker):
         opts.add_dirs = list(context.add_dirs or [])
         opts.developer_instructions = context.developer_instructions
         opts.extra_config_overrides = list(context.extra_config_overrides or [])
+        opts.bypass_hook_trust = context.bypass_hook_trust
         # Asset-backed system instructions ride developer_instructions; the
         # legacy system_prompt_append path remains unused for new launches.
         argv, env_from_opts, stdin = opts.to_spawn(instruction=prompt, system_prompt_append=context.instructions)

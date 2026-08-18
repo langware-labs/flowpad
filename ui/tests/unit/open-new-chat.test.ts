@@ -2,17 +2,29 @@ import { ContextEntitiesEnum, dataContext, DockPointerData, Shell, ViewType } fr
 import { NavigationActions } from '@src/navigation/NavigationActions';
 import { openNewChat } from '@src/navigation/open-new-chat';
 import * as viewMode from '@src/contexts/view-mode-context';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// The persona embed is the seam the chat surface routes through. Spy on it: the
+// real helper resolves its ref through the backend, so asserting the low-level
+// loadEmbeddedSubagent would need a live server.
+const embedMock = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('@src/navigation/embed-standard-agent', () => ({ embedStandardAgent: embedMock }));
 
 describe('openNewChat + NavigationActions', () => {
+  beforeEach(() => {
+    embedMock.mockClear();
+    embedMock.mockResolvedValue(undefined);
+  });
+
   afterEach(() => {
     NavigationActions.resetPendingNavigationForTests();
     vi.restoreAllMocks();
   });
 
-  /** The view mode decides BOTH halves of the launch: transport (only the
-   *  terminal surface runs a PTY) and surface. These pin the createProcess args
-   *  per mode so the one chain can't drift back to a hardcoded transport. */
+  /** The view mode decides ALL THREE halves of the launch: transport (only the
+   *  terminal surface runs a PTY), surface, and persona (only the chat surface
+   *  embeds the `standard` agent). These pin the createProcess args per mode so
+   *  the one chain can't drift back to a hardcoded transport. */
   function stubComputeNode() {
     const startSpy = vi.fn();
     const createProcessSpy = vi.fn().mockResolvedValue({
@@ -49,6 +61,8 @@ describe('openNewChat + NavigationActions', () => {
     expect(startSpy).not.toHaveBeenCalled();
     expect(process?.id).toBe('process-123');
     expect(openShell).toHaveBeenCalledWith('process-123', { viewMode: 'advanced' });
+    // Terminal is a raw PTY passthrough — the user drives the CLI directly.
+    expect(embedMock).not.toHaveBeenCalled();
   });
 
   it('launches a Chat-mode chat headless', async () => {
@@ -57,13 +71,18 @@ describe('openNewChat + NavigationActions', () => {
     const navigation = new NavigationActions(vi.fn(), null);
     const openShell = vi.spyOn(navigation, 'openShellProcess').mockResolvedValue(null);
 
-    await openNewChat(navigation);
+    const process = await openNewChat(navigation);
 
     expect(createProcessSpy).toHaveBeenCalledWith(
       { workdir: '/tmp/project', outputFormat: 'stream-json' },
       { watchProcess: false, visible: false, pty_mode: false },
     );
     expect(openShell).toHaveBeenCalledWith('process-123', { viewMode: 'standard' });
+    // FLOWPAD-1993: a chat-surface session boots WITH the `standard` persona.
+    // Without it the worker gets no system instructions at all and falls back to
+    // describing deliverables in prose instead of `flow show`-ing them.
+    expect(embedMock).toHaveBeenCalledTimes(1);
+    expect(embedMock).toHaveBeenCalledWith(process);
   });
 
   it('launches a vibe chat headless and carries the vibe view mode', async () => {
@@ -79,7 +98,22 @@ describe('openNewChat + NavigationActions', () => {
       { watchProcess: false, visible: false, pty_mode: false },
     );
     expect(openShell).toHaveBeenCalledWith('process-123', { viewMode: 'vibe' });
+    // Vibe embeds its own persona through createVibeProcessForProject; this
+    // chain must not layer the chat one on top.
+    expect(embedMock).not.toHaveBeenCalled();
   });
+
+  it('does not embed the chat persona in Dev mode', async () => {
+    stubComputeNode();
+    vi.spyOn(viewMode, 'getViewMode').mockReturnValue(viewMode.ViewMode.Dev);
+    const navigation = new NavigationActions(vi.fn(), null);
+    vi.spyOn(navigation, 'openShellProcess').mockResolvedValue(null);
+
+    await openNewChat(navigation);
+
+    expect(embedMock).not.toHaveBeenCalled();
+  });
+
 
   it('creates a plain shell without eagerly starting it', async () => {
     const startSpy = vi.fn();

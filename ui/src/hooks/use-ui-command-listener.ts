@@ -1,6 +1,17 @@
-import { editorForPath, ConnectionManager, DockPointerData, dataManager, PageId, TypeId, ViewType, type IDockPointer, type UiCommandMessage } from '@sdk';
+import {
+  editorForPath,
+  ConnectionManager,
+  DockPointerData,
+  dataManager,
+  PageId,
+  TypeId,
+  ViewType,
+  type IDockPointer,
+  type UiCommandMessage,
+} from '@sdk';
 import { useEffect } from 'react';
 import { NavigationActions } from '@src/navigation/NavigationActions';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import {
   dockPointerForClickTarget,

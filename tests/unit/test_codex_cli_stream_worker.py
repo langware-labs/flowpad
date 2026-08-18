@@ -205,9 +205,7 @@ async def test_turn_completed_yields_result_and_end(tmp_path: Path, monkeypatch:
 
 
 @pytest.mark.asyncio
-async def test_single_jsonl_event_larger_than_asyncio_default_limit(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+async def test_single_jsonl_event_larger_than_asyncio_default_limit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     oversized_started = {**THREAD_STARTED, "payload": "x" * (96 * 1024)}
     assert len(json.dumps(oversized_started).encode("utf-8")) > 64 * 1024
 
@@ -304,7 +302,7 @@ async def test_headless_prompt_missing_binary_ends_process_failed(tmp_path: Path
         def get_agents_json(self) -> None:
             return None
 
-        def _instruction_context_kwargs(self, _assets) -> dict:
+        def _process_asset_context_kwargs(self, _assets) -> dict:
             return {}
 
         def make_turn_session_adopter(self, _log_prefix: str):
@@ -319,8 +317,8 @@ async def test_headless_prompt_missing_binary_ends_process_failed(tmp_path: Path
         async def get_project(self) -> None:
             return None
 
-        async def prepare_system_instruction_assets(self) -> list:
-            return []
+        async def prepare_process_assets(self) -> object:
+            return object()
 
         async def save(self) -> None:
             pass

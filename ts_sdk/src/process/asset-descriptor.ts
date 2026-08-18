@@ -9,7 +9,7 @@
  */
 export type AssetSource =
   | 'embedded'        // materialized via embedded_asset_refs
-  | 'inline'          // cli_config.agents_json / embedded_agent_ids — no file
+  | 'inline'          // cli_config.agents_json / embedded_subagent_ids — no file
   | 'project_dir'     // under project.fs_storage_mount_path
   | 'user_dir'        // under user_home
   | 'workdir'         // process workdir if distinct from project/user

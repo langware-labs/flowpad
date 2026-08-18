@@ -6,7 +6,7 @@ import { BrowseableTree } from '@src/components/browseable-tree/BrowseableTree';
 
 // The tree resolves clicks through openBrowseable, which needs no provider; the
 // only ambient dependency is the open-tab set.
-vi.mock('@src/tabs/useTabs', () => ({ useOpenTabHashes: () => new Set<string>() }));
+vi.mock('@src/tabs/use-tab-manager', () => ({ useOpenTabHashes: () => new Set<string>() }));
 
 /** The row element that owns the hover handlers — `pointerenter` does not
  *  bubble, so firing on the label would no-op and every negative assertion here

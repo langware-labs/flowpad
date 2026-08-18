@@ -214,16 +214,14 @@ export async function waitForOutput(page: Page, text: string, timeout = 15_000) 
  */
 export async function openTabViaMenu(
   page: Page,
-  openerId: 'claude' | 'terminal' | 'sandbox' | 'docker' | 'history' | 'claude-resume-by-id',
+  openerId: 'claude' | 'terminal' | 'sandbox' | 'history' | 'claude-resume-by-id',
 ) {
   const inline =
     openerId === 'terminal'
       ? page.locator('[data-testid="open-terminal-tab-button"]')
       : openerId === 'sandbox'
         ? page.locator('[data-testid="open-sandbox-tab-button"]')
-        : openerId === 'docker'
-          ? page.locator('[data-testid^="open-docker-tab-button"]').first()
-          : page.locator(`[data-testid="opener-inline-${openerId}"]`);
+        : page.locator(`[data-testid="opener-inline-${openerId}"]`);
   if (await inline.isVisible({ timeout: 500 }).catch(() => false)) {
     await inline.click();
     return;

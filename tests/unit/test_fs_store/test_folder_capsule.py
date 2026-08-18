@@ -38,11 +38,11 @@ _CAPSULE_INFO = TypeInfo(
 
 
 def _folder_mint(path: Path) -> str:
-    return _CAPSULE_INFO.mint_id(path)
+    return _CAPSULE_INFO.mint_entity_id(path, derive=True, overwrite=True)
 
 
 def _skill_mint(path: Path) -> str:
-    return SchemaRegistry.get("skill").mint_id(FSRef(path))
+    return SchemaRegistry.get("skill").mint_entity_id(FSRef(path), derive=True, overwrite=True)
 
 
 def _ver(u: str) -> int:

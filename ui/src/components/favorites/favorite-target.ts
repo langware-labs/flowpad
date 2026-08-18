@@ -1,6 +1,5 @@
-import type { APIEntity, TypeId } from '@sdk';
+import { tabManager, type APIEntity, type TypeId } from '@sdk';
 import type { DockPointer } from '@src/navigation/DockPointer';
-import { getAllTabsSnapshot } from '@src/tabs/all-tabs-store';
 import type { FavoriteRef } from '@src/hooks/use-favorites';
 
 /**
@@ -32,7 +31,7 @@ export function favoriteTargetForDock(
     };
   }
   if (!dock?.tabHash) return null;
-  const tab = getAllTabsSnapshot().find((t) => t.getKey() === dock.tabHash);
+  const tab = tabManager.findByDockKey(dock.tabHash);
   return {
     entityType: 'dock',
     entityId: dock.tabHash,

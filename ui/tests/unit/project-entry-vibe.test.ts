@@ -1,7 +1,6 @@
-import { AgenticProcess, Shell, Tab, type TabRow } from '@sdk';
+import { AgenticProcess, Shell, Tab, tabManager, type TabRow } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { agenticProcessIdForProjectEntry } from '@src/tabs/project-entry';
-import { applyAllTabs } from '@src/tabs/all-tabs-store';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const PROJECT_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -46,7 +45,7 @@ function row(overrides: Partial<TabRow>): TabRow {
 describe('Vibe project entry resolver', () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    applyAllTabs([]);
+    tabManager.adoptGlobal([]);
   });
 
   it('returns the active AgenticProcess tab for the destination project only', async () => {

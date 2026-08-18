@@ -136,11 +136,6 @@ def codex_session_stable_key(ref: FSRef | Path) -> str:
     return f"{RecordType.CODEX_SESSION}:{codex_session_identity_key(ref)}"
 
 
-def codex_session_id(ref: FSRef) -> str:
-    existing = codex_session_id_from_file(ref)
-    return existing or mint_uuid(codex_session_stable_key(ref), namespace=uuid.NAMESPACE_DNS)
-
-
 def extract_codex_session(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a rollout JSONL into a Record (head fields only — stats lazy)."""
     return [extract_codex_session_from_path(ref._path, resolved_id=resolved_id)]

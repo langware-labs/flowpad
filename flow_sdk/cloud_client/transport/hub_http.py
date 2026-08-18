@@ -154,7 +154,7 @@ async def get_info() -> Optional[dict[str, Any]]:
 
 
 def hub_graph_url(
-    entity_type: BuiltinEntityType,
+    entity_type: BuiltinEntityType | str,
     entity_id: str | None = None,
     action: str | None = None,
     sub_path: str | None = None,
@@ -178,7 +178,9 @@ def hub_graph_url(
       hub_graph_url("page", "pg-456", scope=[("workspace", "ws-123")])
         → ".../api/v1/graph/workspace/ws-123/page/pg-456"           (scoped entity)
     """
-    entity_type_str = entity_type.value
+    # A plain string is a TYPELESS hub action (``machine-enroll``): the hub's graph
+    # router matches those the same way, and the desktop has no entity to name.
+    entity_type_str = getattr(entity_type, "value", entity_type)
     if sub_path and not action:
         raise ValueError(
             f"sub_path '{sub_path}' requires an action "
@@ -205,7 +207,7 @@ def hub_graph_url(
 
 
 async def hub_get(
-    entity_type: BuiltinEntityType,
+    entity_type: BuiltinEntityType | str,
     entity_id: str | None = None,
     action: str | None = None,
     sub_path: str | None = None,
@@ -381,7 +383,7 @@ async def hub_resolve_by_typeid(typeid: Any) -> tuple[HubResolveState, Optional[
 
 
 async def hub_post(
-    entity_type: BuiltinEntityType,
+    entity_type: BuiltinEntityType | str,
     payload: dict[str, Any],
     entity_id: str | None = None,
     action: str | None = None,

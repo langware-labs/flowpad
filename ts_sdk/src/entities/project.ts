@@ -1,4 +1,5 @@
 import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
+import type { IEntity } from '../IEntity';
 import apiClient from '../client';
 import { QueryRequest } from '../FlowSync/query';
 import { ActionInfo, TypeId, gitOriginFromUrl, type GitOrigin } from '../models';

@@ -2,7 +2,19 @@ import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useEffect, useMemo, useState } from 'react';
 import { LayoutGrid, type LucideIcon } from 'lucide-react';
-import { APIEntity, dataManager, Project, Tab, TypeId, Wiki, WikiEntry } from '@sdk';
+import {
+  APIEntity,
+  dataManager,
+  Organization,
+  PageId,
+  Project,
+  tabManager,
+  TypeId,
+  ViewType,
+  Wiki,
+  WikiEntry,
+  WorldViewProjection,
+} from '@sdk';
 import { DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
 import { wikiAuthorityForPage } from '@src/components/wiki/resolve-wiki';
 import { useWikiResolveResult } from '@src/routes/loaders/wiki-resolve-store';
@@ -10,7 +22,6 @@ import { buildDockPointer } from '@src/components/conversation/EntityChip';
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { resolveAncestorChain, type AncestorNode } from '@src/navigation/entity-ancestors';
-import { getAllTabsSnapshot } from '@src/tabs/all-tabs-store';
 import { useContext } from '@src/hooks/useContext';
 
 /**
@@ -32,7 +43,7 @@ import { useContext } from '@src/hooks/useContext';
  *   Phase 0 (sync, first frame) — project from context, current entity from the
  *     URL's own target. If the dock target is already the context's active
  *     entity, its display name is in hand immediately.
- *   Phase 1 (microtask on a warm cache) — `Tab.resolveDockTarget` upgrades the
+ *   Phase 1 (microtask on a warm cache) — `tabManager.resolveDockTarget` upgrades the
  *     label and covers path-addressed docks the URL alone can't name.
  *   Phase 2 — the ancestor walk fills the middle in.
  *
@@ -115,6 +126,9 @@ const HOME_CRUMB_LABEL = msg`Start`;
 /** What the last crumb says on the project's own page, where the target IS the
  *  leading crumb and repeating the name would read "Acme › Acme". */
 const PROJECT_HOME_CRUMB_LABEL = msg`Home`;
+/** The org graph addresses as "Organization › Graph" — see the crumb builder. */
+const ORGANIZATION_CRUMB_LABEL = msg`Organization`;
+const GRAPH_CRUMB_LABEL = msg`Graph`;
 
 /** Basename of an `asset_ref`, trailing separators ignored. */
 function basename(ref: string | null): string | null {
@@ -131,7 +145,7 @@ function basename(ref: string | null): string | null {
  *  shell). The open tab already carries the app's canonical name for it. */
 function viewLabel(dock: DockPointer | null): string {
   if (!dock) return i18n._(HOME_CRUMB_LABEL);
-  const tab = getAllTabsSnapshot().find((t) => t.getKey() === dock.tabHash);
+  const tab = tabManager.findByDockKey(dock.tabHash);
   return tab?.name?.trim() || labelForType(dock.viewType ?? '') || i18n._(HOME_CRUMB_LABEL);
 }
 
@@ -214,7 +228,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
               targetTypeId: wikiPageTypeId,
               target: await dataManager.getByTypeId<APIEntity<any>>(wikiPageTypeId).catch(() => null),
             }
-          : await Tab.resolveDockTarget(dock);
+          : await tabManager.resolveDockTarget(dock);
         if (!live) return;
         setResolved({ typeId: targetTypeId ?? null, entity: (target as APIEntity<any>) ?? null });
 
@@ -304,6 +318,22 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
       });
     }
 
+    // The organization GRAPH is a lens on the People & teams screen, not a
+    // separate destination — so it addresses as "Organization › Graph" with the
+    // first segment navigating back to the screen. Without this the trail read
+    // "Worldview", which names the widget rather than the thing being looked at
+    // and left the graph as a dead end you could only leave with the back button.
+    const isOrgGraph = dock?.viewType === ViewType.WORLDVIEW && dock?.pointer === WorldViewProjection.ORGANIZATION;
+    if (isOrgGraph) {
+      out.push({
+        key: 'organization',
+        label: i18n._(ORGANIZATION_CRUMB_LABEL),
+        Icon: iconForType(Organization.type),
+        pointer: new DockPointer(ViewType.ORGANIZATION, undefined, undefined, undefined, PageId.HUB),
+        kind: 'ancestor',
+      });
+    }
+
     // On the project's OWN page the target is the project, so naming it again
     // would read "Acme › Acme". It's the same shape as a site's root crumb — the
     // trail still needs a last segment, it just isn't the name a second time.
@@ -334,7 +364,11 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
           }
         : {
             key: 'view',
-            label: isProjectHome ? i18n._(PROJECT_HOME_CRUMB_LABEL) : targetTitle,
+            label: isProjectHome
+              ? i18n._(PROJECT_HOME_CRUMB_LABEL)
+              : isOrgGraph
+                ? i18n._(GRAPH_CRUMB_LABEL)
+                : targetTitle,
             // A wiki word that hasn't resolved yet (or resolves to nothing) is
             // still a wiki word, not an unidentified view — the registry has a
             // glyph for exactly that. `iconForType`, so it moves with TypeInfo.

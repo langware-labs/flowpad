@@ -25,6 +25,11 @@ import { toplog } from '../services/toplog';
 
 /** Elapsed ms since `t0` formatted for `process_load` trace lines. */
 const msSince = (t0: number): string => (performance.now() - t0).toFixed(1);
+
+function parseFsRef(value: FSRef | FSRefJson | null | undefined): FSRef | null {
+  if (!value) return null;
+  return value instanceof FSRef ? value : FSRef.fromJson(value);
+}
 import type { AssetDescriptor } from './asset-descriptor';
 import { DockPointerData } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
@@ -47,6 +52,14 @@ import type {
   TranscriptFormat as TranscriptFormatType,
   TranscriptSource as TranscriptSourceType,
 } from '../transcript-analyzer';
+import {
+  clearProcessHookCallbacks,
+  dispatchProcessHook,
+  registerProcessHookCallback,
+  type AgentHookData,
+  type ProcessHookCallback,
+} from './process-hooks';
+import type { HookEventType } from '../claude_hook_events/event-types';
 
 // Connection membership and PTY recovery are now fully backend-owned:
 //   - membership: PtyRegistry.on_ws_connect/on_ws_disconnect (park/resume) wired
@@ -294,6 +307,9 @@ export interface IAgenticProcess extends IEntity {
   asset_ref?: string;
   workdir?: string | null;
   context_data?: Record<string, unknown>;
+  /** The `Deployment` this run was launched through (`Deployment.launch`);
+   *  null for a process not spawned from an Agent. */
+  deployment_id?: string | null;
   // ``shared_context_entities`` is inherited from IEntity (wire shape).
   // ``privateContextEntities`` is exposed by the APIEntity getter — no
   // field is declared here for it (local-only, never on the wire).
@@ -354,6 +370,8 @@ export interface IAgenticProcess extends IEntity {
   load_flowpad_assistant?: boolean | null;
   /** TypeIds of entities materialized under the process's assets dir. */
   embedded_asset_refs?: TypeId[];
+  /** Canonical process-local hook events configured by the backend. */
+  process_hook_events?: HookEventType[];
   /** Owning project ID */
   project_id?: string | null;
   /** CollaborationRoom this process was spawned in, if any */
@@ -387,7 +405,7 @@ export interface IAgenticProcess extends IEntity {
   input_folder?: FSRefJson | null;
   /** `<exe_folder>/output/` — artifacts the agent writes back. */
   output_folder?: FSRefJson | null;
-  /** `<exe_folder>/assets/` — materialised embedded agents / skills. */
+  /** `<exe_folder>/assets/` — materialised embedded sub-agents / skills. */
   assets_folder?: FSRefJson | null;
   /**
    * Absolute path to the latest plan markdown produced by this process,
@@ -882,6 +900,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Persisted context data for session restoration */
   context_data?: Record<string, unknown>;
 
+  /** The Deployment (→ Agent) this run was launched through, if any. */
+  deployment_id?: string | null;
+
   // TypeIds of entities this process is contextually about (task /
   // conversation / spec / project / …) now live on the base APIEntity as
   // ``sharedContextEntities`` (wire-bound) and ``privateContextEntities``
@@ -1018,8 +1039,41 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** `<exe_folder>/output/` — where the agent writes artifacts back. */
   output_folder: FSRef | null = null;
 
-  /** `<exe_folder>/assets/` — materialised embedded agents / skills. */
+  /** `<exe_folder>/assets/` — materialised embedded sub-agents / skills. */
   assets_folder: FSRef | null = null;
+
+  /** Process-local worker hook intent, persisted by the backend. */
+  process_hook_events: HookEventType[] = [];
+
+  async setHook(event: HookEventType): Promise<boolean> {
+    const action = new ActionInfo('set-hook', AgenticProcess.type, this.id, 'POST');
+    action.bodyParameters = { event };
+    const response = await dataManager.callAction<{ event: HookEventType }, { changed: boolean }>(action);
+    return response.changed;
+  }
+
+  async removeHook(event: HookEventType): Promise<boolean> {
+    const action = new ActionInfo('remove-hook', AgenticProcess.type, this.id, 'POST');
+    action.bodyParameters = { event };
+    const response = await dataManager.callAction<{ event: HookEventType }, { changed: boolean }>(action);
+    return response.changed;
+  }
+
+  registerCallback(callback: ProcessHookCallback): () => void {
+    return registerProcessHookCallback(this.id, callback);
+  }
+
+  override async delete(): Promise<void> {
+    await super.delete();
+    clearProcessHookCallbacks(this.id);
+  }
+
+  async onHook(data: AgentHookData): Promise<void> {
+    if (data.agentic_process_id !== this.id) {
+      throw new Error(`agent hook target ${data.agentic_process_id} does not match process ${this.id}`);
+    }
+    await dispatchProcessHook(this.id, data);
+  }
 
   /** Deserialize cli_config into a live worker-specific CLI options instance.
    *
@@ -1498,6 +1552,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.asset_ref = entity.asset_ref;
     this.context = entity.context;
     this.context_data = entity.context_data;
+    this.deployment_id = entity.deployment_id ?? null;
     this.favorite_index = entity.favorite_index;
     this.status = (entity.status as ProcessStatus) ?? ProcessStatus.NEW;
     this.busy = entity.busy ?? false;
@@ -1523,10 +1578,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.project_id = entity.project_id ?? null;
     this.collaboration_room_id = entity.collaboration_room_id ?? null;
     this.target_typeid_str = entity.target_typeid_str ?? null;
-    this.exe_folder = entity.exe_folder ? FSRef.fromJson(entity.exe_folder) : null;
-    this.input_folder = entity.input_folder ? FSRef.fromJson(entity.input_folder) : null;
-    this.output_folder = entity.output_folder ? FSRef.fromJson(entity.output_folder) : null;
-    this.assets_folder = entity.assets_folder ? FSRef.fromJson(entity.assets_folder) : null;
+    this.exe_folder = parseFsRef(entity.exe_folder);
+    this.input_folder = parseFsRef(entity.input_folder);
+    this.output_folder = parseFsRef(entity.output_folder);
+    this.assets_folder = parseFsRef(entity.assets_folder);
+    this.process_hook_events = [...(entity.process_hook_events ?? [])];
     this.plan_path = entity.plan_path ?? null;
     this.markdown_docs = entity.markdown_docs ?? [];
     // Persisted snapshot mirror — only overwrite when the field is present so a
@@ -1689,15 +1745,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
     if (flowData.elementType === FlowElementTypes.ERROR) {
       this._observedTurnError = new Error(String(flowData.content || 'Headless process error'));
-    } else if (
-      flowData.elementType === FlowElementTypes.STATUS &&
-      flowData.attributes?.subtype === 'exit-error'
-    ) {
+    } else if (flowData.elementType === FlowElementTypes.STATUS && flowData.attributes?.subtype === 'exit-error') {
       this._observedTurnError = new Error(String(flowData.content || 'Headless process exited with an error'));
-    } else if (
-      flowData.elementType === FlowElementTypes.RESULT &&
-      flowData.attributes?.outcome === 'error'
-    ) {
+    } else if (flowData.elementType === FlowElementTypes.RESULT && flowData.attributes?.outcome === 'error') {
       this._observedTurnError = new Error('Headless process reported an error result');
     }
 
@@ -1731,7 +1781,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    *   console.log(`[${flowData.elementType}]`, flowData.data);
    * }
    * ```
-  */
+   */
   async *output(): AsyncGenerator<FlowData, void, unknown> {
     // Subscribe before yielding the existing snapshot. Every yield returns
     // control to the event loop; subscribing afterwards would lose frames that
@@ -2088,12 +2138,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * ```
    */
   /**
-   * Load an agent from a VFS path and embed it into this process.
-   * Mirrors the Python `process.load_embedded_agent()` API.
-   * The agent spec is merged into cli_config on the backend and persisted.
+   * Load a sub-agent from a VFS path and embed it into this process.
+   * Mirrors the Python `process.load_embedded_subagent()` API.
+   * The sub-agent spec is merged into cli_config on the backend and persisted.
    */
-  async loadEmbeddedAgent(sourcePath: string): Promise<void> {
-    const actionInfo = new ActionInfo('load-embedded-agent', AgenticProcess.type, this.id, 'POST');
+  async loadEmbeddedSubagent(sourcePath: string): Promise<void> {
+    const actionInfo = new ActionInfo('load-embedded-subagent', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = { asset_ref: sourcePath };
     await dataManager.callAction(actionInfo);
   }
@@ -2976,6 +3026,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * FlowData falls through to the base handler unchanged.
    */
   handleFlowData(flowData: FlowData): void {
+    if (flowData.attributes?.kind === 'process_hook') {
+      void this.onHook(flowData.data as AgentHookData).catch((error) => {
+        console.error(`[AgenticProcess.handleFlowData] invalid process hook for ${this.id}`, error);
+      });
+      return;
+    }
     if (
       flowData.elementType === FlowElementTypes.PROGRESS_REPORT &&
       flowData.attributes?.kind === PROCESS_STATUS_KIND
@@ -3174,6 +3230,32 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   protected onEntityUpdate(data: Partial<IAgenticProcess>): void {
     const wasBusy = this.busy;
     let workerStatusChanged = false;
+    // The constructor turns wire-shaped folder references into FSRef instances,
+    // but cached entities bypass the constructor. Normalize them here and strip
+    // the raw values before DataManager's following deepAssign, otherwise a
+    // WebSocket/REST refresh replaces methods such as child() with plain JSON.
+    if ('exe_folder' in data) {
+      this.exe_folder = parseFsRef(data.exe_folder);
+      delete data.exe_folder;
+    }
+    if ('input_folder' in data) {
+      this.input_folder = parseFsRef(data.input_folder);
+      delete data.input_folder;
+    }
+    if ('output_folder' in data) {
+      this.output_folder = parseFsRef(data.output_folder);
+      delete data.output_folder;
+    }
+    if ('assets_folder' in data) {
+      this.assets_folder = parseFsRef(data.assets_folder);
+      delete data.assets_folder;
+    }
+    // Hook intent is another replace-only array. Removing the final event must
+    // not leave a stale entry through deepAssign's index-wise array merge.
+    if ('process_hook_events' in data) {
+      this.process_hook_events = [...(data.process_hook_events ?? [])];
+      delete data.process_hook_events;
+    }
     // Reflected ``queue`` must REPLACE, not merge. ``deepAssign`` (which runs
     // right after this hook) recurses into arrays and merges them by index,
     // never shrinking the target — so a dequeue/clear would leave stale tail
@@ -3323,7 +3405,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * call site in ``onEntityUpdate`` is gated by ``newValue !== oldValue`` so
    * this is naturally one-per-edge.
    * @internal
-  */
+   */
   _handleComplete(): void {
     if (this._turnOutcome === 'complete' || this._turnOutcome === 'error') return;
     this._turnOutcome = 'complete';
@@ -3340,7 +3422,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * state. Same authority model as ``_handleComplete``: backend decides;
    * SDK reacts.
    * @internal
-  */
+   */
   _handleError(error: Error): void {
     if (this._turnOutcome === 'complete' || this._turnOutcome === 'error') return;
     this._turnOutcome = 'error';
