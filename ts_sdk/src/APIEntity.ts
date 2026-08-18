@@ -944,15 +944,58 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   public async inviteMember(
     email: string,
     role: string = 'member',
-    opts?: { callbackOverride?: string; transfer?: boolean; roleToKeep?: string | null },
+    opts?: {
+      callbackOverride?: string;
+      transfer?: boolean;
+      roleToKeep?: string | null;
+      /**
+       * Entities to grant ALONGSIDE this one, in the same invitation.
+       *
+       * `invitation_targets` has always been a list the hub grants in full, and
+       * ONE invitation means one email landing on one place — which is why a
+       * thing that is only usable together with something else says so here
+       * rather than being chased with a second invitation.
+       *
+       * Safe to combine with `transfer`: the hub decides the grant kind per
+       * TARGET (the entity invited at `owner` is the one handed over), so a
+       * companion granted at a lower role rides along as an ordinary
+       * membership instead of being refused.
+       */
+      extraTargets?: { typeid: string; role: string }[];
+    },
   ): Promise<void> {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
     info.hubReflect = true; // membership change is hub-owned — reflect to the hub
     info.bodyParameters = {
       recipient_email: normalizeEmail(email) ?? '',
-      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }],
+      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }, ...(opts?.extraTargets ?? [])],
       ...(opts?.callbackOverride ? { callback_override: opts.callbackOverride } : {}),
       ...(opts?.transfer ? { transfer: true, role_to_keep: opts.roleToKeep ?? null } : {}),
+    };
+    const res = await dataManager.callAction<unknown, EntityMember[]>(info);
+    this._membersCache = Array.isArray(res) ? res : undefined;
+  }
+
+  /**
+   * Grant a role to a GROUP principal (a Team or an Organization) on this entity —
+   * POST ``<type>/<id>/members`` with ``{principal, invitation_targets}``.
+   *
+   * The group counterpart of {@link inviteMember}, and deliberately a separate
+   * method: a person is *invited* (an Invitation is minted, an email goes out, the
+   * grant lands only on accept), whereas a group is *granted* immediately — it has
+   * no mailbox, no account to provision and nothing to accept. The hub refuses a
+   * body carrying both a `recipient_email` and a `principal` for exactly that
+   * reason, so the two paths never blur.
+   *
+   * Direction, since it is easy to get backwards: this makes `principal` a MEMBER
+   * OF this entity (a class inside a school), not the other way round.
+   */
+  public async addGroupMember(principal: TypeId, role: string = 'member'): Promise<void> {
+    const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
+    info.hubReflect = true; // membership change is hub-owned — reflect to the hub
+    info.bodyParameters = {
+      principal: `${principal.type}-${principal.id}`,
+      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }],
     };
     const res = await dataManager.callAction<unknown, EntityMember[]>(info);
     this._membersCache = Array.isArray(res) ? res : undefined;

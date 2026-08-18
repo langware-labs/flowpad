@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useMemo } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import type { LucideIcon } from 'lucide-react';
@@ -91,7 +92,7 @@ export function ContextProcessButton({
         if (project.id) launchWithProject(project.id);
       } catch (err) {
         console.error('[ContextProcessButton] project select failed', err);
-        notify.error({ title: 'Failed to set project' });
+        notify.error({ title: t`Failed to set project` });
       }
     },
     [ensureProject, launchWithProject, projectItems],

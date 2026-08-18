@@ -31,7 +31,13 @@ interface AnchoredSurfaceProps {
  * data-line `offsetTop` aligns directly with track-column markers without
  * any cross-frame translation.
  */
-export function AnchoredSurface({ provider, leftTracks = [], rightTracks = [], children, className }: AnchoredSurfaceProps) {
+export function AnchoredSurface({
+  provider,
+  leftTracks = [],
+  rightTracks = [],
+  children,
+  className,
+}: AnchoredSurfaceProps) {
   return (
     <LineAnchorProviderCtx.Provider value={provider}>
       <div className={cn('flex flex-row items-stretch', className)} data-testid="anchored-surface">
@@ -60,7 +66,7 @@ function TrackColumn({ track }: { track: AnchoredTrack }) {
     <aside
       className={cn(
         'relative flex-shrink-0',
-        track.side === 'left' ? 'border-r border-border/40' : 'border-l border-border/40',
+        track.side === 'left' ? 'border-e border-border/40' : 'border-s border-border/40',
       )}
       style={{ width: track.width }}
       data-testid={`anchored-track-${track.id}`}

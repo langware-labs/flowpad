@@ -3,6 +3,7 @@ import { useDataStreamText } from '@sdk/react/hooks';
 import { DotPulse } from '@src/components/dot-pulse';
 import { workerIcon, workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 import { MarkdownView } from '@src/components/markdown-view';
+import { translateCliMessage } from '@src/i18n/cli-messages';
 import { cn } from '@src/lib/utils';
 import { User } from 'lucide-react';
 import React, { useMemo } from 'react';
@@ -18,7 +19,13 @@ interface ExecutionMessageProps {
   worker?: string;
 }
 
-const ExecutionMessage: React.FC<ExecutionMessageProps> = ({ flowData, isUser, animateIn = false, className, worker }) => {
+const ExecutionMessage: React.FC<ExecutionMessageProps> = ({
+  flowData,
+  isUser,
+  animateIn = false,
+  className,
+  worker,
+}) => {
   const { t } = useLingui();
   // Determine if this message type should stream
   // Must check both elementType AND dataType since useDataStreamText only supports string data
@@ -76,8 +83,15 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({ flowData, isUser, a
         </span>
         <span className="text-[13px] font-semibold text-foreground">{name}</span>
       </div>
-      <div className={cn('min-w-0 break-words pl-7 text-[15px] leading-7', accent.body)}>
-        <MarkdownView value={currentContent} compact />
+      <div className={cn('min-w-0 break-words ps-7 text-[15px] leading-7', accent.body)}>
+        {/*
+          Worker messages pass through the CLI-sentence whitelist: a signed-out
+          Claude Code answers "Not logged in · Please run /login", which is the
+          one error the user can act on and so the one worth reading in their own
+          language. Anything not on the whitelist renders exactly as written, and
+          a user's own message is never rewritten.
+        */}
+        <MarkdownView value={isUser ? currentContent : translateCliMessage(currentContent)} compact />
         {isStreaming && (
           <span className="mt-1 inline-flex" aria-label={t`Assistant is responding`}>
             <DotPulse />

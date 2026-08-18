@@ -88,7 +88,7 @@ const NEW_CONVERSATION = '__new__';
 /** Shared styling for a selectable conversation row; `dashed` marks the "new" row. */
 const rowClasses = (isSelected: boolean, dashed = false) =>
   cn(
-    'flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-xs text-foreground disabled:pointer-events-none disabled:opacity-50',
+    'flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-start text-xs text-foreground disabled:pointer-events-none disabled:opacity-50',
     dashed && 'border-dashed',
     isSelected ? 'border-primary bg-primary/10 ring-1 ring-primary/40' : 'border-input bg-background hover:bg-muted/50',
   );
@@ -326,7 +326,7 @@ export function ShareToConversationDialog({
       <DialogContent className="sm:max-w-md" data-testid="share-to-conversation-dialog">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Send className="h-5 w-5 text-primary" />
+            <Send className="h-5 w-5 text-primary rtl:-scale-x-100" />
             {heading ?? <Trans>Share</Trans>}
           </DialogTitle>
         </DialogHeader>
@@ -486,7 +486,7 @@ export function ShareToConversationDialog({
                     )}
                   >
                     <GitBranch className="h-3.5 w-3.5 shrink-0" />
-                    <span className="flex-1 text-left">
+                    <span className="flex-1 text-start">
                       <Trans>Share using Git origin</Trans>
                     </span>
                     <span
@@ -579,7 +579,7 @@ export function ShareToConversationDialog({
                   the backend may summarize an attached session transcript before the
                   message is even pushed. Always treat it as attachment-bearing. */}
               <SendProgressNotice busy={busy} hasAttachments />
-              <div className="ml-auto flex gap-2">
+              <div className="ms-auto flex gap-2">
                 <Button variant="outline" onClick={onClose} disabled={busy}>
                   <Trans>Cancel</Trans>
                 </Button>
@@ -589,7 +589,7 @@ export function ShareToConversationDialog({
                   data-testid="share-submit"
                   className="gap-1.5"
                 >
-                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 rtl:-scale-x-100" />}
                   {busy ? t`Sharing…` : (submitLabel ?? t`Share`)}
                 </Button>
               </div>

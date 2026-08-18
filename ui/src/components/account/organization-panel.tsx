@@ -5,16 +5,8 @@ import { Loader2 } from 'lucide-react';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks/useEntitiesQuery';
 import { useMembers } from '@src/hooks/use-members';
-import {
-  avatarColorForParticipant,
-} from '@src/components/conversation/avatar-color';
-import {
-  canInviteMembers,
-  participantInitials,
-  participantLabel,
-  participantRoleLabel,
-} from '@src/components/conversation/participant-display';
-import type { EntityMember } from '@sdk';
+import { canInviteMembers } from '@src/components/conversation/participant-display';
+import { MemberSection } from '@src/components/organization/member-list';
 import { notify } from '@src/notifications';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -35,7 +27,10 @@ export function OrganizationPanel({ user }: OrganizationPanelProps) {
   if (!orgId) {
     return (
       <div className="p-4 text-sm text-muted-foreground">
-        <Trans>You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here.</Trans>
+        <Trans>
+          You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your
+          organization and its members appear here.
+        </Trans>
       </div>
     );
   }
@@ -51,10 +46,7 @@ function OrganizationBody({ user, orgId }: { user: User; orgId: string }) {
 
   // The caller's own member row drives the invite gate (the hub re-checks
   // server-side, so a spoofed client can't actually over-invite).
-  const me = useMemo(
-    () => members.find((m) => m.user_id === user.id) ?? null,
-    [members, user.id],
-  );
+  const me = useMemo(() => members.find((m) => m.user_id === user.id) ?? null, [members, user.id]);
   const canInvite = canInviteMembers(me as any);
 
   return (
@@ -71,11 +63,7 @@ function OrganizationBody({ user, orgId }: { user: User; orgId: string }) {
         updating={updating}
         stale={stale}
         selfId={user.id}
-        invite={
-          canInvite
-            ? { entityTypeId: orgTypeId, onInvited: () => void refresh() }
-            : undefined
-        }
+        footer={canInvite ? <InviteBox entityTypeId={orgTypeId} onInvited={() => void refresh()} /> : undefined}
       />
 
       <TeamsSection user={user} />
@@ -93,7 +81,9 @@ function TeamsSection({ user }: { user: User }) {
   if (list.length === 0) return null;
   return (
     <div className="flex flex-col gap-3">
-      <div className="text-sm font-semibold text-muted-foreground"><Trans>Teams</Trans></div>
+      <div className="text-sm font-semibold text-muted-foreground">
+        <Trans>Teams</Trans>
+      </div>
       {list.map((team) => (
         <TeamRow key={team.id} team={team} selfId={user.id} />
       ))}
@@ -112,82 +102,8 @@ function TeamRow({ team, selfId }: { team: APIEntity<any>; selfId: string }) {
         <TeamIcon className="h-4 w-4" />
         <div className="text-sm font-medium">{(team as any).name || t`Team`}</div>
       </div>
-      <MemberSection members={members} ready={ready} updating={updating} stale={stale} selfId={selfId} compact />
+      <MemberSection members={members} ready={ready} updating={updating} stale={stale} selfId={selfId} />
     </div>
-  );
-}
-
-function MemberSection({
-  title,
-  members,
-  ready,
-  updating,
-  stale,
-  selfId,
-  invite,
-  compact,
-}: {
-  title?: string;
-  members: EntityMember[];
-  ready: boolean;
-  /** Refresh in flight over the shown cache → "updating…". */
-  updating?: boolean;
-  /** Signed in but the refresh failed → "can't update — showing last synced". */
-  stale?: boolean;
-  selfId: string;
-  invite?: { entityTypeId: TypeId; onInvited: () => void };
-  compact?: boolean;
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      {title && (
-        <div className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">
-          <span>{title}</span>
-          {updating && <Loader2 className="h-3 w-3 animate-spin" />}
-        </div>
-      )}
-      {!ready && members.length === 0 ? (
-        <div className="text-sm text-muted-foreground"><Trans>Loading members…</Trans></div>
-      ) : members.length === 0 ? (
-        <div className="text-sm text-muted-foreground"><Trans>No members yet.</Trans></div>
-      ) : (
-        <ul className="flex flex-col gap-1.5">
-          {members.map((m, i) => (
-            <MemberRow key={m.user_id ?? m.email ?? i} member={m} isSelf={m.user_id === selfId} />
-          ))}
-        </ul>
-      )}
-      {stale && (
-        <div className="text-[11px] text-muted-foreground">
-          <Trans>Can't update — showing last synced</Trans>
-        </div>
-      )}
-      {/* Invite is hidden while offline (stale) — it would only 409. */}
-      {invite && !compact && !stale && <InviteBox entityTypeId={invite.entityTypeId} onInvited={invite.onInvited} />}
-    </div>
-  );
-}
-
-function MemberRow({ member, isSelf }: { member: EntityMember; isSelf: boolean }) {
-  const color = avatarColorForParticipant(member as any);
-  const label = participantLabel(member as any);
-  const initials = participantInitials(member as any);
-  const role = participantRoleLabel(member as any);
-  const pending = (member.status || '').toLowerCase() === 'pending';
-  return (
-    <li className="flex items-center gap-2">
-      <span
-        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white ${color}`}
-      >
-        {initials}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-sm">
-        {label}
-        {isSelf && <span className="text-muted-foreground"><Trans> (you)</Trans></span>}
-      </span>
-      {role && <span className="text-xs text-muted-foreground">{role}</span>}
-      {pending && <span className="text-xs italic text-muted-foreground"><Trans>pending</Trans></span>}
-    </li>
   );
 }
 

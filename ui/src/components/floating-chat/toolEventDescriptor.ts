@@ -1,8 +1,6 @@
+import { t } from '@lingui/core/macro';
 import { FlowData, isTypeId, type ReceiveShowTarget, TypeId } from '@sdk';
-import {
-  describeToolInput,
-  describeToolName,
-} from '@src/components/flowdata-renderer/ToolCallMessageComponent';
+import { describeToolInput, describeToolName } from '@src/components/flowdata-renderer/ToolCallMessageComponent';
 import {
   Bot,
   FileDiff,
@@ -95,7 +93,7 @@ export function describeEvent(fd: FlowData): EventDescriptor {
       return {
         kind,
         icon: Sparkles,
-        label: 'Using skill',
+        label: t`Using skill`,
         detail: name,
         // Display-only here: the clickable skill affordance is the top-level
         // meta chip (which has the skill's folder path to resolve with).
@@ -106,7 +104,7 @@ export function describeEvent(fd: FlowData): EventDescriptor {
       return {
         kind,
         icon: Terminal,
-        label: 'Run',
+        label: t`Run`,
         detail: str(entry?.command) || describeToolInput(fd.data),
         target: null,
       };
@@ -122,17 +120,17 @@ export function describeEvent(fd: FlowData): EventDescriptor {
       return {
         kind,
         icon: Globe,
-        label: 'Fetch',
+        label: t`Fetch`,
         detail: str(entry?.url) || str(entry?.query) || describeToolInput(fd.data),
         target: null,
       };
     case 'todo_update':
-      return { kind, icon: ListTodo, label: 'Todos', detail: '', target: null };
+      return { kind, icon: ListTodo, label: t`Todos`, detail: '', target: null };
     case 'agent_spawn':
       return {
         kind,
         icon: Bot,
-        label: 'SubAgent',
+        label: t`SubAgent`,
         detail: str(entry?.agent_type) || str(entry?.description),
         target: null,
       };

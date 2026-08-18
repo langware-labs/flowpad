@@ -12,8 +12,12 @@ import {
   QueryRequest,
   TypeId,
   VFSPath,
+  type Agent,
   type AssetDescriptor,
 } from '@sdk';
+import { AvatarValue } from '@src/lib/avatar-value';
+import { colorForIdentityKey } from '@src/components/conversation/avatar-color';
+import { initialsFromLabel } from '@src/components/conversation/participant-display';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 import {
@@ -142,6 +146,12 @@ export interface AssetManagerPopoverProps {
    * is present.
    */
   assets?: UseProcessAssetsResult;
+  /**
+   * The Agent this process was launched through (`useLaunchingAgent`). Pinned
+   * at the top of the list as the run's principal — avatar + name, click opens
+   * the agent. Absent for a process not spawned from an Agent.
+   */
+  agent?: Agent | null;
   /** Restrict the visible candidates. Default: everything the source returned. */
   filter?: (descriptor: AssetDescriptor) => boolean;
 
@@ -225,6 +235,7 @@ export function AssetManagerPopover({
   centered = false,
   searchPlaceholder,
   assets,
+  agent = null,
   filter,
   selectedTypeIds = NONE,
   onPick,
@@ -430,6 +441,11 @@ export function AssetManagerPopover({
     ].filter((s) => s.groups.length > 0);
   }, [browsingAssistant, canImprove, entityVersion, filter, listDescriptors, listFilter, selectedTypeIds, sortBy, t]);
 
+  // Pinned rows (the launching agent, the assistant marker) sit above the
+  // sections and are not filterable — they hide while a filter is typed and in
+  // the assistant drill-down.
+  const showPinnedRows = !browsingAssistant && !listFilter.trim();
+
   const filteredDirs = useMemo(() => {
     const q = listFilter.trim().toLowerCase();
     if (!q) return additionalDirs;
@@ -482,7 +498,7 @@ export function AssetManagerPopover({
         {view !== 'list' && (
           <button
             type="button"
-            className="-ml-1 flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted"
+            className="-ms-1 flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted"
             onClick={backToList}
             title={t`Back`}
             data-testid="asset-manager-back"
@@ -515,7 +531,7 @@ export function AssetManagerPopover({
           )}
         </span>
         {view === 'list' && (
-          <div className="ml-auto flex items-center gap-1">
+          <div className="ms-auto flex items-center gap-1">
             {onToggleAssistant && (
               <button
                 type="button"
@@ -566,7 +582,7 @@ export function AssetManagerPopover({
                       }}
                       data-testid="asset-manager-add-folder"
                     >
-                      <FolderOpen className="mr-2 h-3.5 w-3.5" />
+                      <FolderOpen className="me-2 h-3.5 w-3.5" />
                       <Trans>Folder…</Trans>
                     </DropdownMenuItem>
                   )}
@@ -578,7 +594,7 @@ export function AssetManagerPopover({
                       }}
                       data-testid="asset-manager-add-project-folder"
                     >
-                      <FolderPlus className="mr-2 h-3.5 w-3.5" />
+                      <FolderPlus className="me-2 h-3.5 w-3.5" />
                       <Trans>Project folder…</Trans>
                     </DropdownMenuItem>
                   )}
@@ -619,16 +635,18 @@ export function AssetManagerPopover({
             <ArrowDownAZ className="h-3 w-3 flex-shrink-0 text-muted-foreground" aria-hidden />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto" data-testid="asset-manager-list">
+            {/* The run's principal — the Agent it was launched through. */}
+            {showPinnedRows && agent && <LaunchingAgentRow agent={agent} />}
             {/* Flowpad Assistant location marker — its assets live inside the
                   installed package and are mounted via --add-dir, so they don't
                   show as individual rows. A light-bordered location row marks
                   where the flowpad assets come from when the toggle is on, and
                   descends into them on click. */}
-            {!browsingAssistant && assistantEnabled && !listFilter.trim() && (
+            {showPinnedRows && assistantEnabled && (
               <button
                 type="button"
                 onClick={openAssistant}
-                className="m-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded border border-primary/40 bg-primary/5 px-2.5 py-1.5 text-left hover:bg-primary/10"
+                className="m-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded border border-primary/40 bg-primary/5 px-2.5 py-1.5 text-start hover:bg-primary/10"
                 data-testid="asset-manager-flowpad-location"
                 title={t`Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them.`}
               >
@@ -801,7 +819,7 @@ function ProjectPickRow({
   return (
     <button
       type="button"
-      className="flex w-full items-center gap-2 border-b px-3 py-1.5 text-left last:border-b-0 hover:bg-muted/50"
+      className="flex w-full items-center gap-2 border-b px-3 py-1.5 text-start last:border-b-0 hover:bg-muted/50"
       onClick={() => void onPick(path)}
       data-testid={`asset-manager-project-pick-${path}`}
     >
@@ -817,6 +835,51 @@ function ProjectPickRow({
     </button>
   );
 }
+
+/**
+ * The run's principal, pinned above every asset section: the Agent this process
+ * was launched through. Avatar (image / emoji / icon) with the name's initial
+ * as the fallback, then the name; the row opens the agent.
+ */
+function LaunchingAgentRow({ agent }: { agent: Agent }) {
+  const { t } = useLingui();
+  const { navigation } = useDockNavigation();
+  const name = agent.displayName;
+  const avatarImageUrl = agent.avatarImageUrl;
+
+  return (
+    <button
+      type="button"
+      onClick={() => navigation.openDock(agent.dockPointer)}
+      className="m-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded border border-border bg-muted/30 px-2.5 py-1.5 text-start hover:bg-muted"
+      data-testid="asset-manager-launching-agent"
+      title={t`Open ${name}`}
+    >
+      <span
+        className={cn(
+          'flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full text-[11px] font-semibold text-white',
+          colorForIdentityKey(agent.name || agent.id),
+        )}
+        data-testid="asset-manager-launching-agent-avatar"
+      >
+        <AvatarValue
+          value={agent.avatar}
+          imageUrl={avatarImageUrl}
+          alt={t`${name} avatar`}
+          className={avatarImageUrl ? 'h-full w-full object-cover' : 'h-3.5 w-3.5 text-sm'}
+          fallback={<span>{initialsFromLabel(name, 1)}</span>}
+        />
+      </span>
+      <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground" data-testid="asset-manager-launching-agent-name">
+        {name}
+      </span>
+      <span className="flex-shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+        <Trans>agent</Trans>
+      </span>
+    </button>
+  );
+}
+
 
 export function AssetRow({
   descriptor,

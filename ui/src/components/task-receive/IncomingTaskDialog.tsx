@@ -17,15 +17,7 @@ import { AlertTriangle, CheckCircle2, FolderOpen, GitBranch, Loader2 } from 'luc
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
-type Step =
-  | 'checking'
-  | 'found'
-  | 'not_found'
-  | 'pulling'
-  | 'cloning'
-  | 'conflict'
-  | 'success'
-  | 'error';
+type Step = 'checking' | 'found' | 'not_found' | 'pulling' | 'cloning' | 'conflict' | 'success' | 'error';
 
 interface KnownProject {
   name: string;
@@ -155,13 +147,20 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, gitOri
   const knownProjects = findResult?.known_projects ?? [];
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) handleClose(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) handleClose();
+      }}
+    >
       <DialogContent className="max-w-lg">
         {/* Checking */}
         {step === 'checking' && (
           <>
             <DialogHeader>
-              <DialogTitle><Trans>Looking up project…</Trans></DialogTitle>
+              <DialogTitle>
+                <Trans>Looking up project…</Trans>
+              </DialogTitle>
               <DialogDescription>
                 <Trans>Checking if you have a local clone of the repository.</Trans>
               </DialogDescription>
@@ -176,17 +175,21 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, gitOri
         {step === 'found' && (
           <>
             <DialogHeader>
-              <DialogTitle><Trans>Pull and open task</Trans></DialogTitle>
+              <DialogTitle>
+                <Trans>Pull and open task</Trans>
+              </DialogTitle>
               <DialogDescription>
                 <Trans>
                   <strong>{senderName}</strong> shared <em>{taskTitle}</em> with you.
                 </Trans>
               </DialogDescription>
             </DialogHeader>
-            <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
+            <div className="space-y-1 rounded-md border bg-muted/40 p-3 text-sm">
               {originLabel && (
                 <div className="flex items-center gap-2 text-muted-foreground">
-                  <span className="shrink-0"><Trans>Repo:</Trans></span>
+                  <span className="shrink-0">
+                    <Trans>Repo:</Trans>
+                  </span>
                   <code className="truncate text-foreground">{originLabel}</code>
                 </div>
               )}
@@ -204,8 +207,12 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, gitOri
               )}
             </div>
             <DialogFooter>
-              <Button variant="ghost" onClick={handleClose}><Trans>Cancel</Trans></Button>
-              <Button onClick={() => void handleConfirmPull()}><Trans>Pull &amp; Open</Trans></Button>
+              <Button variant="ghost" onClick={handleClose}>
+                <Trans>Cancel</Trans>
+              </Button>
+              <Button onClick={() => void handleConfirmPull()}>
+                <Trans>Pull &amp; Open</Trans>
+              </Button>
             </DialogFooter>
           </>
         )}
@@ -214,7 +221,9 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, gitOri
         {step === 'pulling' && (
           <>
             <DialogHeader>
-              <DialogTitle><Trans>Pulling…</Trans></DialogTitle>
+              <DialogTitle>
+                <Trans>Pulling…</Trans>
+              </DialogTitle>
             </DialogHeader>
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -226,24 +235,28 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, gitOri
         {step === 'not_found' && (
           <>
             <DialogHeader>
-              <DialogTitle><Trans>Project not found locally</Trans></DialogTitle>
+              <DialogTitle>
+                <Trans>Project not found locally</Trans>
+              </DialogTitle>
               <DialogDescription>
                 <Trans>
-                  <strong>{senderName}</strong> shared <em>{taskTitle}</em> with you, but we couldn't
-                  find a local clone of the repository. Clone it to see the task.
+                  <strong>{senderName}</strong> shared <em>{taskTitle}</em> with you, but we couldn't find a local clone
+                  of the repository. Clone it to see the task.
                 </Trans>
               </DialogDescription>
             </DialogHeader>
 
             {knownProjects.length > 0 && (
               <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground"><Trans>Known projects (click to clone alongside):</Trans></p>
+                <p className="text-xs font-medium text-muted-foreground">
+                  <Trans>Known projects (click to clone alongside):</Trans>
+                </p>
                 <div className="max-h-28 overflow-y-auto rounded-md border text-xs">
                   {knownProjects.map((p) => (
                     <button
                       key={p.path}
                       type="button"
-                      className="w-full px-3 py-1.5 text-left hover:bg-accent truncate"
+                      className="w-full truncate px-3 py-1.5 text-start hover:bg-accent"
                       onClick={() => setCloneTarget(p.path.replace(/[/\\][^/\\]+$/, ''))}
                     >
                       <span className="font-medium">{p.name}</span>{' '}
@@ -269,7 +282,9 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, gitOri
             </div>
 
             <DialogFooter>
-              <Button variant="ghost" onClick={handleClose}><Trans>Cancel</Trans></Button>
+              <Button variant="ghost" onClick={handleClose}>
+                <Trans>Cancel</Trans>
+              </Button>
               <Button onClick={() => void handleConfirmClone()} disabled={!cloneTarget}>
                 <Trans>Clone &amp; Open</Trans>
               </Button>
@@ -281,7 +296,9 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, gitOri
         {step === 'cloning' && (
           <>
             <DialogHeader>
-              <DialogTitle><Trans>Cloning…</Trans></DialogTitle>
+              <DialogTitle>
+                <Trans>Cloning…</Trans>
+              </DialogTitle>
             </DialogHeader>
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -297,7 +314,9 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, gitOri
                 <CheckCircle2 className="h-5 w-5 text-emerald-500" />
                 <Trans>Done!</Trans>
               </DialogTitle>
-              <DialogDescription><Trans>Opening task…</Trans></DialogDescription>
+              <DialogDescription>
+                <Trans>Opening task…</Trans>
+              </DialogDescription>
             </DialogHeader>
           </>
         )}
@@ -317,8 +336,12 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, gitOri
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button variant="ghost" onClick={handleClose}><Trans>Close</Trans></Button>
-              <Button onClick={() => void handleConfirmPull()}><Trans>Retry pull</Trans></Button>
+              <Button variant="ghost" onClick={handleClose}>
+                <Trans>Close</Trans>
+              </Button>
+              <Button onClick={() => void handleConfirmPull()}>
+                <Trans>Retry pull</Trans>
+              </Button>
             </DialogFooter>
           </>
         )}
@@ -333,7 +356,7 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, gitOri
               </DialogTitle>
               <DialogDescription asChild>
                 <div>
-                  <pre className="mt-2 max-h-32 overflow-auto rounded bg-muted px-3 py-2 text-xs text-foreground whitespace-pre-wrap">
+                  <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-muted px-3 py-2 text-xs text-foreground">
                     {errorMsg}
                   </pre>
                   <p className="mt-3 text-sm text-muted-foreground">
@@ -343,8 +366,12 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, gitOri
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button variant="ghost" onClick={handleClose}><Trans>Close</Trans></Button>
-              <Button onClick={() => void handleConfirmPull()}><Trans>Retry</Trans></Button>
+              <Button variant="ghost" onClick={handleClose}>
+                <Trans>Close</Trans>
+              </Button>
+              <Button onClick={() => void handleConfirmPull()}>
+                <Trans>Retry</Trans>
+              </Button>
             </DialogFooter>
           </>
         )}

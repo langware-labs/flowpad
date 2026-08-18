@@ -30,7 +30,7 @@ export {
   supportedExecutionModes,
 } from './agentic-types';
 export type { ParsedUIUri, ProcessIconKey, UIComponentPayload, StatusBearingProcess, WorkerType } from './agentic-types';
-export { WORKER_STATUS_LABEL, PROCESS_STATUS_LABEL } from './status-labels';
+export { WORKER_STATUS_LABEL, PROCESS_STATUS_LABEL, workerStatusText } from './status-labels';
 
 export { AgenticProcess, AgenticProcessEventName } from './agentic-process';
 export type {
@@ -40,6 +40,7 @@ export type {
   ProcessState,
   SpawnResult,
 } from './agentic-process';
+export type { AgentHookData, ProcessHookCallback } from './process-hooks';
 export { ProcessCounters, parseStatusReport } from './process-status-report';
 export type { ProcessStatusReport, ProcessCountersData, FocusedAsset } from './process-status-report';
 export { ProcessKind, ProcessType } from './process-types';

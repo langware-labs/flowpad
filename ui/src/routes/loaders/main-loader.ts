@@ -20,6 +20,7 @@ import {
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DockPointer } from '@src/navigation';
 import { canonicalProcessDockPath } from '@src/navigation/process-dock-canonicalization';
+import { canonicalWorkspaceDisplayPath } from '@src/navigation/workspace-display-canonicalization';
 import { canonicalCredentialsDockPath } from '@src/navigation/credentials-dock-canonicalization';
 import { canonicalWorldViewDockPath } from '@src/navigation/worldview-dock-canonicalization';
 import { pageRedirectUrl } from '@src/navigation/supported-pages';
@@ -173,6 +174,15 @@ export async function loadAgentApp(args: LoaderArgs) {
     t.done(slowThresholdSeconds);
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw redirect(canonical);
+  }
+
+  // The workspace host is only meaningful with the display pane on screen: in
+  // standard mode a shown document falls back to its natural asset address.
+  const canonicalDisplay = canonicalWorkspaceDisplayPath(requestUrl.pathname, requestUrl.search);
+  if (canonicalDisplay) {
+    t.done(slowThresholdSeconds);
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw redirect(canonicalDisplay);
   }
 
   const canonicalWorldView = canonicalWorldViewDockPath(requestUrl.pathname, requestUrl.search);

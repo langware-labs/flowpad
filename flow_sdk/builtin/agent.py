@@ -103,7 +103,7 @@ class Agent(Entity):
         description="SubAgent NAMES this agent may delegate to. Names, not TypeIds, because a "
         "shipped agent.md is authored before the SubAgent it references has ever been indexed. "
         "DECLARED ONLY — nothing projects these into --agents yet; wire through "
-        "AgenticProcess.load_embedded_agent(name) when a caller needs it.",
+        "AgenticProcess.load_embedded_subagent(name) when a caller needs it.",
     )
     additional_dirs: list[str] = APIField(default_factory=list)
     load_flowpad_assistant: bool = APIField(default=False)
@@ -362,6 +362,32 @@ class Agent(Entity):
                 "process_typeid": str(process.typeid),
                 "deployment_id": deployment.id,
                 "compute_node_id": deployment.compute_node_id,
+            }
+        )
+
+    # ── the use verb (HTTP) ───────────────────────────────────────────────
+
+    @action.post(action_name="use")
+    async def use_action(self):
+        """Open a session as this agent. `POST /agent/<id>/use` → process id.
+
+        No prompt: the process is created and shown, and the human types the
+        first message. Local placement only — same routing rule as ``run``.
+        """
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if not self.enabled:
+            return ApiFailResponse(message=f"agent {self.name!r} is disabled")
+        deployment = await self.local_deployment()
+        try:
+            process = await deployment.use()
+        except Exception as exc:  # noqa: BLE001
+            return ApiFailResponse(message=f"use failed: {exc}")
+        return ApiSuccessResponse(
+            data={
+                "process_id": process.id,
+                "process_typeid": str(process.typeid),
+                "deployment_id": deployment.id,
             }
         )
 

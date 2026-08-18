@@ -93,7 +93,7 @@ function ConnectingFallback() {
       data-testid="whiteboard-loading"
       className="flex h-full items-center justify-center text-sm text-muted-foreground"
     >
-      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+      <RefreshCw className="me-2 h-4 w-4 animate-spin" />
       <Trans>Loading whiteboard…</Trans>
     </div>
   );
@@ -233,9 +233,11 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
 
       try {
         const lib = await loadExcalidrawLib();
-        const exportToSvg = (lib as unknown as {
-          exportToSvg: (opts: { elements: unknown; appState: unknown; files: unknown }) => Promise<SVGElement>;
-        }).exportToSvg;
+        const exportToSvg = (
+          lib as unknown as {
+            exportToSvg: (opts: { elements: unknown; appState: unknown; files: unknown }) => Promise<SVGElement>;
+          }
+        ).exportToSvg;
         const svg = await exportToSvg({
           elements,
           appState: { ...cleanAppState, exportBackground: true },
@@ -271,17 +273,20 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
     };
   }, []);
 
-  const handleApi = useCallback((api: ExcalidrawAPI) => {
-    apiRef.current = api;
-    if (import.meta.env.DEV) {
-      const w = window as unknown as Record<string, unknown>;
-      w.__whiteboardApi = api;
-      w.__whiteboardOnChange = onChange;
-      void loadExcalidrawLib().then((lib) => {
-        w.__excalidrawLib = lib;
-      });
-    }
-  }, [onChange]);
+  const handleApi = useCallback(
+    (api: ExcalidrawAPI) => {
+      apiRef.current = api;
+      if (import.meta.env.DEV) {
+        const w = window as unknown as Record<string, unknown>;
+        w.__whiteboardApi = api;
+        w.__whiteboardOnChange = onChange;
+        void loadExcalidrawLib().then((lib) => {
+          w.__excalidrawLib = lib;
+        });
+      }
+    },
+    [onChange],
+  );
 
   const downloadBlob = useCallback(async (blob: Blob, filename: string) => {
     // Data URL (not blob:) — Chrome drops the download attr on blob: URLs
@@ -317,14 +322,23 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
         const files = apiRef.current.getFiles();
         let blob: Blob;
         if (fmt === 'png') {
-          const exportToBlob = (lib as unknown as {
-            exportToBlob: (opts: { elements: unknown; appState: unknown; files: unknown; mimeType: string }) => Promise<Blob>;
-          }).exportToBlob;
+          const exportToBlob = (
+            lib as unknown as {
+              exportToBlob: (opts: {
+                elements: unknown;
+                appState: unknown;
+                files: unknown;
+                mimeType: string;
+              }) => Promise<Blob>;
+            }
+          ).exportToBlob;
           blob = await exportToBlob({ elements, appState, files, mimeType: 'image/png' });
         } else {
-          const exportToSvg = (lib as unknown as {
-            exportToSvg: (opts: { elements: unknown; appState: unknown; files: unknown }) => Promise<SVGElement>;
-          }).exportToSvg;
+          const exportToSvg = (
+            lib as unknown as {
+              exportToSvg: (opts: { elements: unknown; appState: unknown; files: unknown }) => Promise<SVGElement>;
+            }
+          ).exportToSvg;
           const svg = await exportToSvg({ elements, appState, files });
           blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' });
         }
@@ -347,15 +361,19 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
       // convertToExcalidrawElements to materialize bindings + text children,
       // else rectangles render as "Untitled" and arrows lose endpoint bindings.
       const mermaidMod = await import('@excalidraw/mermaid-to-excalidraw');
-      const parseMermaidToExcalidraw = (mermaidMod as unknown as {
-        parseMermaidToExcalidraw: (text: string) => Promise<{ elements: unknown[]; files?: Record<string, unknown> }>;
-      }).parseMermaidToExcalidraw;
+      const parseMermaidToExcalidraw = (
+        mermaidMod as unknown as {
+          parseMermaidToExcalidraw: (text: string) => Promise<{ elements: unknown[]; files?: Record<string, unknown> }>;
+        }
+      ).parseMermaidToExcalidraw;
       const result = await parseMermaidToExcalidraw(importText);
 
       const excalMod = await loadExcalidrawLib();
-      const convertToExcalidrawElements = (excalMod as unknown as {
-        convertToExcalidrawElements: (skel: unknown[]) => unknown[];
-      }).convertToExcalidrawElements;
+      const convertToExcalidrawElements = (
+        excalMod as unknown as {
+          convertToExcalidrawElements: (skel: unknown[]) => unknown[];
+        }
+      ).convertToExcalidrawElements;
       const elements = convertToExcalidrawElements(result.elements);
 
       apiRef.current.updateScene({ elements });
@@ -391,28 +409,13 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
         onRevealInFinder={handleRevealInFinder}
         actions={
           <>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setImportOpen(true)}
-              data-testid="open-import-mermaid"
-            >
+            <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} data-testid="open-import-mermaid">
               <Trans>Import mermaid → board</Trans>
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void exportAs('png')}
-              data-testid="export-png"
-            >
+            <Button size="sm" variant="outline" onClick={() => void exportAs('png')} data-testid="export-png">
               <Trans>Export PNG</Trans>
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void exportAs('svg')}
-              data-testid="export-svg"
-            >
+            <Button size="sm" variant="outline" onClick={() => void exportAs('svg')} data-testid="export-svg">
               <Trans>Export SVG</Trans>
             </Button>
             {loadError && (
@@ -439,14 +442,16 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
       <Dialog open={importOpen} onOpenChange={setImportOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle><Trans>Import mermaid → board</Trans></DialogTitle>
+            <DialogTitle>
+              <Trans>Import mermaid → board</Trans>
+            </DialogTitle>
             <DialogDescription>
               <Trans>Paste Mermaid syntax to replace the current board.</Trans>
             </DialogDescription>
           </DialogHeader>
           <textarea
             data-testid="mermaid-import-textarea"
-            className="w-full min-h-[160px] rounded border bg-background p-2 font-mono text-sm"
+            className="min-h-[160px] w-full rounded border bg-background p-2 font-mono text-sm"
             placeholder="flowchart TD&#10;  A[Foo] --> B[Bar]"
             value={importText}
             onChange={(e) => setImportText(e.target.value)}

@@ -67,11 +67,19 @@ export function DisplayHistoryButton({ stack, onOpen }: DisplayHistoryButtonProp
             </PopoverTrigger>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="bg-popover text-popover-foreground">
-            <p><Trans>Display history</Trans></p>
+            <p>
+              <Trans>Display history</Trans>
+            </p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
-      <PopoverContent align="end" side="bottom" sideOffset={6} className="w-72 p-1" data-testid="display-history-popover">
+      <PopoverContent
+        align="end"
+        side="bottom"
+        sideOffset={6}
+        className="w-72 p-1"
+        data-testid="display-history-popover"
+      >
         <ul className="flex max-h-80 flex-col overflow-y-auto">
           {rows.map((entry, i) => {
             const ago = formatTimeAgo(entry.shown_at);
@@ -83,14 +91,12 @@ export function DisplayHistoryButton({ stack, onOpen }: DisplayHistoryButtonProp
                     setOpen(false);
                     onOpen(entry);
                   }}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-sm hover:bg-muted"
                   data-testid="display-history-row"
                 >
                   <EntryIcon entry={entry} />
                   <span className="min-w-0 flex-1 truncate">{entryLabel(entry)}</span>
-                  {ago ? (
-                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{ago}</span>
-                  ) : null}
+                  {ago ? <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{ago}</span> : null}
                 </button>
               </li>
             );

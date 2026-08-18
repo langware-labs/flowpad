@@ -1,4 +1,3 @@
-import type { ComputeNode } from '@sdk';
 import type { LucideIcon } from 'lucide-react';
 import type { ComponentType, SVGProps } from 'react';
 
@@ -10,7 +9,6 @@ export type OpenerId =
   | 'claude-resume-by-id'
   | 'terminal'
   | 'sandbox'
-  | 'docker'
   | 'history'
   | 'open-context';
 
@@ -25,7 +23,6 @@ export const VALID_OPENER_IDS: OpenerId[] = [
   'claude-resume-by-id',
   'terminal',
   'sandbox',
-  'docker',
   'history',
   'open-context',
 ];
@@ -55,6 +52,4 @@ export interface OpenerDescriptor {
   capabilityKind?: string;
   pendingInline?: boolean;
   disabled?: boolean;
-  dockerNodes?: ComputeNode[];
-  onDockerNodeSelect?: (node: ComputeNode) => void;
 }

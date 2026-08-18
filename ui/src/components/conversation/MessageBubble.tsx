@@ -317,7 +317,7 @@ export function MessageBubble({
           {time && (
             <span className="text-[10px] text-muted-foreground">
               {time}
-              {ago && <span className="ml-1 opacity-70">· {ago}</span>}
+              {ago && <span className="ms-1 opacity-70">· {ago}</span>}
             </span>
           )}
           {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} />}

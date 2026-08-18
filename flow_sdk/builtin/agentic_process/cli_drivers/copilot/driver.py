@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Sequence
 from uuid import uuid4
 
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
+from flow_sdk.builtin.agent_hook import HookEventType
+from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import render_shell_command
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
-    DeviceLoginSpec,
     AgenticProcessContextKey,
-    WorkerAuthResult,
     AgentOptions,
+    DeviceLoginSpec,
+    ProcessHookRuntime,
+    WorkerAuthResult,
     apply_worker_env,
     apply_worker_secret_env,
     restart_payload_from_cli_options,
@@ -38,7 +44,13 @@ from flow_sdk.builtin.agentic_process.cli_drivers.copilot.status import copilot_
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.stream_worker import (
     CopilotCLIStreamWorker,
 )
+from flow_sdk.builtin.agentic_process.process_hooks import (
+    build_process_hook_snapshot,
+    normalize_process_hook_events,
+)
+from flow_sdk.builtin.flowpad_runner_wrapper import get_installed_flow_invocation
 from flow_sdk.builtin.worker_status import WorkerStatus
+from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.responses.response import ApiFailResponse
 from flow_sdk.transcript_analyzer import (
@@ -54,11 +66,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_PROCESS_HOOK_PLUGIN = Path(".flowpad/plugins/copilot/flowpad-process-hooks")
+
 
 class CopilotDriver:
     """Vendor glue for GitHub Copilot CLI."""
 
     name = WorkerType.COPILOT.value
+    supports_process_hooks = True
+    process_hooks_use_assets = True
     preassign_interactive_session_id = True
     # Copilot's TUI treats a pasted prompt ending in \r as literal text — needs
     # a discrete Enter after the paste settles (Shell.write_then_submit).
@@ -93,6 +109,94 @@ class CopilotDriver:
     ) -> dict:
         return restart_payload_from_cli_options(options)
 
+    def process_hook_snapshot(self, events: Sequence["HookEventType"]) -> dict[str, Any]:
+        return build_process_hook_snapshot(events, provider=self.name)
+
+    def prepare_process_hooks(
+        self,
+        assets: "AssetDir",
+        process_id: str,
+        events: Sequence["HookEventType"],
+    ) -> ProcessHookRuntime:
+        normalized = normalize_process_hook_events(events, provider=self.name)
+        if not is_valid_entity_id(process_id):
+            raise ValueError(f"Invalid agentic process id: {process_id!r}")
+        if not normalized:
+            assets.remove(_PROCESS_HOOK_PLUGIN)
+            return ProcessHookRuntime()
+
+        command, prefix_args = get_installed_flow_invocation()
+        flow_argv = [
+            command,
+            *prefix_args,
+            "hooks",
+            "report",
+            "--process-id",
+            process_id,
+        ]
+        hooks = {
+            "hooks": {
+                "userPromptSubmitted": [
+                    {
+                        "type": "command",
+                        "bash": render_shell_command(flow_argv, "linux"),
+                        "powershell": render_shell_command(flow_argv, "win32"),
+                    }
+                ]
+            },
+            "version": 1,
+        }
+        manifest = {
+            "author": {"name": "Flowpad"},
+            "description": "Flowpad process-scoped hooks",
+            "hooks": "hooks.json",
+            "name": "flowpad-process-hooks",
+            "version": "1.0.0",
+        }
+
+        assets.remove(_PROCESS_HOOK_PLUGIN)
+        plugin = assets.subdir(_PROCESS_HOOK_PLUGIN)
+        plugin.load_asset(
+            "plugin.json",
+            content=json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        )
+        plugin.load_asset(
+            "hooks.json",
+            content=json.dumps(hooks, indent=2, sort_keys=True) + "\n",
+        )
+        return ProcessHookRuntime(plugin_dirs=(str(plugin.os_path),))
+
+    def normalize_process_hook_data(
+        self,
+        process_id: str,
+        raw_hook_data: dict[str, Any],
+    ) -> "AgentHookData":
+        if not is_valid_entity_id(process_id):
+            raise ValueError(f"Invalid agentic process id: {process_id!r}")
+        raw = dict(raw_hook_data)
+        supplied_event = raw.get("hook_event_name")
+        if supplied_event is not None and supplied_event != HookEventType.USER_PROMPT_SUBMIT.value:
+            raise ValueError(f"Unsupported Copilot process hook event: {supplied_event}")
+
+        hook_data: dict[str, Any] = {
+            "hook_event_name": HookEventType.USER_PROMPT_SUBMIT.value,
+        }
+        if "session_id" in raw:
+            hook_data["session_id"] = raw["session_id"]
+        elif "sessionId" in raw:
+            hook_data["session_id"] = raw["sessionId"]
+        for key in ("prompt", "cwd", "timestamp"):
+            if key in raw:
+                hook_data[key] = raw[key]
+        # Copilot's headless stdin transport submits by appending one ``\n``;
+        # its native hook echoes that transport terminator in ``prompt``. Keep
+        # the native payload losslessly in ``raw_hook_data``, but remove the
+        # terminator from the canonical cross-worker prompt value.
+        if "sessionId" in raw and isinstance(hook_data.get("prompt"), str):
+            hook_data["prompt"] = hook_data["prompt"].removesuffix("\n")
+        hook_data["raw_hook_data"] = raw
+        return AgentHookData(agentic_process_id=process_id, hook_data=hook_data)
+
     async def headless_prompt(
         self,
         process: "AgenticProcess",
@@ -102,7 +206,7 @@ class CopilotDriver:
             await process.get_project()
         except Exception:
             logger.debug("CopilotDriver.headless_prompt: get_project failed", exc_info=True)
-        instruction_assets = await process.prepare_system_instruction_assets()
+        process_assets = await process.prepare_process_assets()
         if not process.workdir:
             return ApiFailResponse(message="copilot prompt: workdir is not set")
 
@@ -133,7 +237,7 @@ class CopilotDriver:
             add_dirs=list(process.resolved_add_dirs or []),
             session_id=process.session_id if not resumable else None,
             resume_session_id=process.session_id if resumable else None,
-            **process._instruction_context_kwargs(instruction_assets),
+            **process._process_asset_context_kwargs(process_assets),
         )
 
         worker = CopilotCLIStreamWorker.for_process(process.id)
@@ -166,8 +270,9 @@ class CopilotDriver:
         (``~/.copilot/session-state/<id>/events.jsonl``) is the canonical, complete
         transcript — user-message entries AND assistant output. The process-local
         file is only the tee'd stdout (assistant output, no user-message entry), so
-        ``transcript/prompts`` came back empty for headless. Prefer the session
-        record; fall back to the stdout tee only before the session id resolves.
+        ``transcript/prompts`` came back empty for headless. Prefer the exact session
+        record for an assigned id; use bounded latest-session discovery only for a
+        legacy process without an id, then fall back to that process's stdout tee.
         """
         session = self._session_descriptor(process)
         if session is not None:
@@ -195,10 +300,9 @@ class CopilotDriver:
         )
 
     def _session_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
-        path: Path | None = None
         if process.session_id:
             path = find_copilot_session_jsonl(process.session_id)
-        if path is None:
+        else:
             path = find_latest_copilot_session_jsonl(
                 cwd=process.workdir,
                 started_at=self._worker_started_at(process),
@@ -249,7 +353,4 @@ class CopilotDriver:
     def _has_session(self, process: "AgenticProcess") -> bool:
         if not process.session_id:
             return False
-        if find_copilot_session_jsonl(process.session_id):
-            return True
-        local = copilot_transcript_path_for_process(process.id)
-        return local.exists() and local.stat().st_size > 0
+        return find_copilot_session_jsonl(process.session_id) is not None

@@ -12,14 +12,21 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Sequence
 
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
+from flow_sdk.builtin.agent_hook import HookEventType
+from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import (
+    render_shell_command,
+)
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
-    DeviceLoginSpec,
     AgenticProcessContextKey,
-    WorkerAuthResult,
     AgentOptions,
+    DeviceLoginSpec,
+    ProcessHookRuntime,
+    WorkerAuthResult,
     apply_worker_env,
     apply_worker_secret_env,
     restart_payload_from_cli_options,
@@ -43,7 +50,13 @@ from flow_sdk.builtin.agentic_process.cli_drivers.codex.status import codex_tail
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.stream_worker import (
     CodexCLIStreamWorker,
 )
+from flow_sdk.builtin.agentic_process.process_hooks import (
+    build_process_hook_snapshot,
+    normalize_process_hook_events,
+)
+from flow_sdk.builtin.flowpad_runner_wrapper import get_installed_flow_invocation
 from flow_sdk.builtin.worker_status import WorkerStatus
+from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.responses.response import ApiFailResponse
 from flow_sdk.transcript_analyzer import (
@@ -64,6 +77,8 @@ class CodexDriver:
     """Vendor glue for OpenAI Codex. Implements the ``WorkerDriver`` Protocol."""
 
     name = WorkerType.CODEX.value
+    supports_process_hooks = True
+    process_hooks_use_assets = False
     # Codex's TUI needs a discrete Enter after the paste settles, not a
     # trailing \r in the pasted text (Shell.write_then_submit).
     pty_submits_on_paste = False
@@ -83,7 +98,7 @@ class CodexDriver:
         """Build a Codex CLI command for ``process``.
 
         Codex doesn't accept inline ``--agents`` like Claude. We surface the
-        embedded agent names as ``skill_names`` so ``cmd_line`` reflects them
+        embedded sub-agent names as ``skill_names`` so ``cmd_line`` reflects them
         (some tests assert on this); the instruction bodies are delivered via
         generated process instruction assets.
         """
@@ -112,6 +127,71 @@ class CodexDriver:
     ) -> dict:
         return restart_payload_from_cli_options(options)
 
+    def process_hook_snapshot(self, events: Sequence[HookEventType]) -> dict[str, Any]:
+        return build_process_hook_snapshot(events, provider=self.name)
+
+    def prepare_process_hooks(
+        self,
+        assets: AssetDir,
+        process_id: str,
+        events: Sequence[HookEventType],
+    ) -> ProcessHookRuntime:
+        normalized = normalize_process_hook_events(events, provider=self.name)
+        if not normalized:
+            return ProcessHookRuntime()
+        if not is_valid_entity_id(process_id):
+            raise ValueError(f"Invalid agentic process id: {process_id!r}")
+
+        command, prefix_args = get_installed_flow_invocation()
+        flow_argv = [
+            command,
+            *prefix_args,
+            "hooks",
+            "report",
+            "--process-id",
+            process_id,
+        ]
+        handler = {
+            "type": "command",
+            "command": render_shell_command(flow_argv, "linux"),
+            "commandWindows": render_shell_command(flow_argv, "win32"),
+        }
+        return ProcessHookRuntime(
+            config_overrides=(
+                ("features.hooks", True),
+                (
+                    "hooks.UserPromptSubmit",
+                    [{"hooks": [handler]}],
+                ),
+            ),
+            bypass_hook_trust=True,
+        )
+
+    def normalize_process_hook_data(
+        self,
+        process_id: str,
+        raw_hook_data: dict[str, Any],
+    ) -> AgentHookData:
+        if not is_valid_entity_id(process_id):
+            raise ValueError(f"Invalid agentic process id: {process_id!r}")
+        raw = dict(raw_hook_data)
+        event = raw.get("hook_event_name")
+        if event != HookEventType.USER_PROMPT_SUBMIT.value:
+            raise ValueError(f"Unsupported Codex process hook event: {event!r}")
+        canonical_fields = (
+            "hook_event_name",
+            "prompt",
+            "session_id",
+            "cwd",
+            "transcript_path",
+            "turn_id",
+            "permission_mode",
+            "model",
+        )
+        hook_data = {key: raw[key] for key in canonical_fields if key in raw}
+        hook_data["raw_hook_data"] = raw
+        return AgentHookData(agentic_process_id=process_id, hook_data=hook_data)
+
     # ── Per-turn execution ───────────────────────────────────────────────────
 
     async def headless_prompt(
@@ -129,7 +209,7 @@ class CodexDriver:
             await process.get_project()
         except Exception:
             logger.debug("CodexDriver.headless_prompt: get_project failed", exc_info=True)
-        instruction_assets = await process.prepare_system_instruction_assets()
+        process_assets = await process.prepare_process_assets()
         if not process.workdir:
             return ApiFailResponse(message="codex prompt: workdir is not set")
 
@@ -152,7 +232,7 @@ class CodexDriver:
             # the stream below and persisted back onto ``process.session_id``.
             resume_session_id=process.session_id if self.has_resumable_session(process) else None,
             add_dirs=list(process.resolved_add_dirs or []),
-            **process._instruction_context_kwargs(instruction_assets),
+            **process._process_asset_context_kwargs(process_assets),
         )
 
         worker = CodexCLIStreamWorker.for_process(process.id)

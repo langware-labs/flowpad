@@ -51,6 +51,8 @@ vi.mock('@src/hooks/use-sandboxes', () => ({
     isLoading: false,
     refetch: vi.fn(),
     createSandbox: vi.fn(),
+    launchSandbox: vi.fn(),
+    launchingId: null,
     launch: vi.fn(),
     creating: false,
     steps: [],
@@ -61,9 +63,14 @@ vi.mock('@src/hooks/use-sandboxes', () => ({
     deletingId: null,
     details: {},
   }),
+  // The real rule, not a stub: which button a card shows is exactly this
+  // question, and a mock that always answered "launched" would let the
+  // unlaunched card rot untested.
+  isLaunched: (node: { node_provider_id?: string }) => !!node.node_provider_id,
   nextSandboxName: () => 'Sandbox 2',
 }));
 vi.mock('@src/pages/hub-home/NewSandboxDialog', () => ({ NewSandboxDialog: () => null }));
+vi.mock('@src/pages/hub-home/LaunchSandboxDialog', () => ({ LaunchSandboxDialog: () => null }));
 vi.mock('@src/pages/hub-home/ShareSandboxDialog', () => ({ ShareSandboxDialog: () => null }));
 
 import { dataContext } from '@sdk';
@@ -83,7 +90,9 @@ beforeEach(() => {
   h.sandboxesEnabled = true;
   (dataContext as unknown as { bootstrapInfo: unknown }).bootstrapInfo = { sandboxes_enabled: true };
   h.sandboxes.length = 0;
-  h.sandboxes.push({ id: 'node-1', name: 'Sandbox One' });
+  // A LAUNCHED box: `node_provider_id` is what `ops/setup` writes, and its
+  // presence is the whole difference between an Open card and a Launch one.
+  h.sandboxes.push({ id: 'node-1', name: 'Sandbox One', node_provider_id: 'sbx-1' });
 });
 afterEach(() => cleanup());
 
@@ -119,6 +128,41 @@ describe('the Open button', () => {
 
     await userEvent.click(open);
     expect(h.openSandbox).not.toHaveBeenCalled();
+  });
+});
+
+describe('a sandbox that was never launched', () => {
+  beforeEach(() => {
+    // Created, never booted: this is what `createSandbox` now leaves behind.
+    h.sandboxes[0] = { id: 'node-2', name: 'Sandbox Two' };
+  });
+
+  it('offers Launch instead of Open', async () => {
+    renderHome();
+
+    expect(await screen.findByTestId('sandbox-launch')).toBeTruthy();
+    // Open would be a button that 409s: the hub refuses `open-service` for a
+    // node with no provider id ("this machine has not been set up yet").
+    expect(screen.queryByTestId('sandbox-open')).toBeNull();
+  });
+
+  it('does not open anything when Launch is clicked — it asks first', async () => {
+    renderHome();
+
+    await userEvent.click(await screen.findByTestId('sandbox-launch'));
+
+    // Booting is what starts costing money, and auto-login can only be chosen
+    // before the box signs anyone in. Both go through the launch dialog.
+    expect(h.openSandbox).not.toHaveBeenCalled();
+  });
+
+  it('says it is not started rather than probing a machine that does not exist', async () => {
+    renderHome();
+
+    expect((await screen.findByTestId('sandbox-not-launched')).textContent).toMatch(/not started/i);
+    // "Checking…" would be a probe that is never coming: `ops/status` has no
+    // provider id to ask about.
+    expect(screen.queryByText(/Checking/)).toBeNull();
   });
 });
 

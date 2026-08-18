@@ -175,10 +175,7 @@ export async function sendCommand(page: Page, cmd: string) {
   // data-active="true" to be absent and panels to briefly unmount. We use 'attached' state
   // (DOM presence, not CSS visibility) so rapid command loops don't stall when React is
   // mid-re-render. The force:true click below handles any remaining visibility issues.
-  await page
-    .locator('[data-testid="terminal-panel"]')
-    .first()
-    .waitFor({ state: 'attached', timeout: 10_000 });
+  await page.locator('[data-testid="terminal-panel"]').first().waitFor({ state: 'attached', timeout: 10_000 });
   await terminalPanel.click({ force: true });
 
   // Small delay to ensure focus is set
@@ -215,15 +212,16 @@ export async function waitForOutput(page: Page, text: string, timeout = 15_000) 
  * only render when the opener has been pinned; the always-present affordance
  * is the plus button + dropdown menu row.
  */
-export async function openTabViaMenu(page: Page, openerId: 'claude' | 'terminal' | 'sandbox' | 'docker' | 'history' | 'claude-resume-by-id') {
+export async function openTabViaMenu(
+  page: Page,
+  openerId: 'claude' | 'terminal' | 'sandbox' | 'history' | 'claude-resume-by-id',
+) {
   const inline =
     openerId === 'terminal'
       ? page.locator('[data-testid="open-terminal-tab-button"]')
       : openerId === 'sandbox'
         ? page.locator('[data-testid="open-sandbox-tab-button"]')
-        : openerId === 'docker'
-          ? page.locator('[data-testid^="open-docker-tab-button"]').first()
-          : page.locator(`[data-testid="opener-inline-${openerId}"]`);
+        : page.locator(`[data-testid="opener-inline-${openerId}"]`);
   if (await inline.isVisible({ timeout: 500 }).catch(() => false)) {
     await inline.click();
     return;
@@ -356,7 +354,7 @@ export function terminalTabChips(page: Page) {
  * unscoped locator resolves to 2+ elements and trips strict mode.
  */
 export function getSideWindow(page: Page) {
-  return activePanel(page).locator('.w-80.flex-col.border-l');
+  return activePanel(page).locator('.w-80.flex-col.border-s');
 }
 
 /**
@@ -366,8 +364,11 @@ export function getSideWindow(page: Page) {
  */
 export async function ensureSideTabOpen(page: Page, buttonIndex: number, tabLabel: string) {
   const tabStrip = getSideWindow(page).locator('.border-b').first();
-  const already = await tabStrip.getByText(tabLabel, { exact: true }).isVisible({ timeout: 1_000 }).catch(() => false);
-  if (!already) await activePanel(page).locator('.border-t .ml-auto button').nth(buttonIndex).click();
+  const already = await tabStrip
+    .getByText(tabLabel, { exact: true })
+    .isVisible({ timeout: 1_000 })
+    .catch(() => false);
+  if (!already) await activePanel(page).locator('.border-t .ms-auto button').nth(buttonIndex).click();
   await tabStrip.getByText(tabLabel, { exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
 }
 

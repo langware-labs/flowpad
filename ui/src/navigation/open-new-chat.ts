@@ -1,5 +1,6 @@
 import { AgenticProcess, dataContext, type ComputeNode } from '@sdk';
-import { getViewMode, viewModePtyMode } from '@src/contexts/view-mode-context';
+import { getViewMode, surfaceForViewMode, viewModePtyMode } from '@src/contexts/view-mode-context';
+import { embedStandardAgent } from './embed-standard-agent';
 import type { NavigationActions } from './NavigationActions';
 
 export interface OpenNewChatOptions {
@@ -18,11 +19,14 @@ export interface OpenNewChatOptions {
  * recovery): those pin their own transport and must never follow a UI
  * preference.
  *
- * The view mode is the one read, and decides both halves:
+ * The view mode is the one read, and decides all three of:
  *   - TRANSPORT: only the terminal surface runs an interactive PTY; vibe and
  *     chat are headless print-mode.
  *   - SURFACE: the mode rides `?viewMode=` on the process's own shell URL, so the
  *     URL alone reproduces what the user sees.
+ *   - PERSONA: only the chat surface embeds the `standard` agent, which carries
+ *     the `flow show` presentation contract. Terminal is a raw passthrough, and
+ *     vibe embeds `vibe` through its own creation path.
  */
 export async function openNewChat(
   navigation: Pick<NavigationActions, 'openShellProcess'>,
@@ -53,5 +57,16 @@ export async function openNewChat(
   );
 
   await navigation.openShellProcess(process.id, { viewMode: mode });
+  // Chat surface only: terminal is a raw PTY passthrough where the user drives
+  // the CLI directly, and vibe embeds its own persona via
+  // createVibeProcessForProject. Awaited before returning so a caller that
+  // prompts on the returned process can't race the load-embedded-subagent round
+  // trip — the persona has to be on disk before the FIRST turn, since
+  // prepare_system_instruction_assets() builds the system prompt per turn.
+  // Never throws (see embedStandardAgent), so the `void openNewChat(...)`
+  // callers keep their existing failure semantics.
+  if (surfaceForViewMode(mode) === 'chat') {
+    await embedStandardAgent(process);
+  }
   return process;
 }

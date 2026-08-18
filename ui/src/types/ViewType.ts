@@ -1,3 +1,6 @@
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { DOCK_KEYWORD, ViewType } from '@sdk';
 
 /**
@@ -53,7 +56,7 @@ export const EVENTS_VIEW_TYPES: ReadonlySet<ViewType> = new Set([
  * Single source of truth for all viewer information
  */
 export interface ViewerMeta {
-  title: string;
+  title: MessageDescriptor;
   /** Icon component name (string to avoid JSX in shared package) */
   iconName:
     | 'LifeBuoy'
@@ -125,7 +128,7 @@ export interface ViewerMeta {
 
 export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   [ViewType.HOME]: {
-    title: 'Home',
+    title: msg`Home`,
     iconName: 'Home',
     tabLocation: 'dedicated',
     canAddAsTab: true,
@@ -134,116 +137,116 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   // Hub entity list by type (page=hub). Standard workspace chrome; the pointer
   // (the OSS entity type) selects which list, so it stays part of tab identity.
   [ViewType.HUB_RECORDS]: {
-    title: 'Records',
+    title: msg`Records`,
     iconName: 'ListChecks',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   // Hub single-entity viewer (page=hub). Pointer = `<type>/<id>`.
   [ViewType.HUB_ENTITY]: {
-    title: 'Entity',
+    title: msg`Entity`,
     iconName: 'FileText',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.SYSTEM_PROFILE]: {
-    title: 'System Profile',
+    title: msg`System Profile`,
     iconName: 'Activity',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.ANALYSIS]: {
-    title: 'Analysis',
+    title: msg`Analysis`,
     iconName: 'Sparkles',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.CHAT]: {
-    title: 'Chat',
+    title: msg`Chat`,
     iconName: 'MessageSquare',
     tabLocation: 'overview',
     canAddAsTab: false,
   },
   [ViewType.SHELL]: {
-    title: 'Worker',
+    title: msg`Worker`,
     iconName: 'Terminal',
     tabLocation: 'overview',
     canAddAsTab: true,
   },
   [ViewType.EDITOR]: {
-    title: 'Code Editor',
+    title: msg`Code Editor`,
     iconName: 'Code',
     tabLocation: 'overview',
     canAddAsTab: true,
   },
   [ViewType.WEB_APP]: {
-    title: 'Web App',
+    title: msg`Web App`,
     iconName: 'Globe',
     tabLocation: 'overview',
     canAddAsTab: true,
   },
   [ViewType.DIFF]: {
-    title: 'Diff Viewer',
+    title: msg`Diff Viewer`,
     iconName: 'GitCompare',
     tabLocation: 'overview',
     canAddAsTab: false, // Only opened via checkpoint clicks, not manually
   },
   [ViewType.ARTIFACTS]: {
-    title: 'Artifacts',
+    title: msg`Artifacts`,
     iconName: 'ListCheck',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.REASONING]: {
-    title: 'Reasoning',
+    title: msg`Reasoning`,
     iconName: 'Brain',
     tabLocation: 'overview',
     canAddAsTab: false,
   },
   [ViewType.UNSUPPORTED]: {
-    title: 'Unsupported',
+    title: msg`Unsupported`,
     iconName: 'FileQuestion',
     tabLocation: 'overview',
     canAddAsTab: false,
   },
   [ViewType.MARKDOWN]: {
-    title: 'Markdown',
+    title: msg`Markdown`,
     iconName: 'FileText',
     tabLocation: 'overview',
     canAddAsTab: false,
   },
   [ViewType.DOCS]: {
-    title: 'Docs',
+    title: msg`Docs`,
     iconName: 'BookOpen',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.ASSISTANCE]: {
-    title: 'Assistance',
+    title: msg`Assistance`,
     iconName: 'Hand',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.SURVEY]: {
-    title: 'Survey',
+    title: msg`Survey`,
     iconName: 'ListChecks',
     tabLocation: 'overview',
     canAddAsTab: false,
   },
   [ViewType.HOOKS]: {
-    title: 'Hooks',
+    title: msg`Hooks`,
     iconName: 'Webhook',
     tabLocation: 'dedicated',
     canAddAsTab: false, // Only accessible via dev menu, not as dock tab
   },
   [ViewType.MACHINE]: {
-    title: 'Machine',
+    title: msg`Machine`,
     iconName: 'Cpu',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.EXPLORER]: {
-    title: 'Files',
+    title: msg`Files`,
     iconName: 'FolderOpen',
     tabLocation: 'dedicated',
     canAddAsTab: true,
@@ -254,37 +257,43 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   // back-compat with persisted DockPointers but the registry no longer
   // surfaces it as a navigable view.
   [ViewType.AI_CONFIG]: {
-    title: 'AI Configuration',
+    title: msg`AI Configuration`,
     iconName: 'Settings',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.SHOW]: {
-    title: 'Show',
+    title: msg`Show`,
     iconName: 'Eye',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
   [ViewType.APPS]: {
-    title: 'App',
+    title: msg`App`,
     iconName: 'Sparkles',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
   [ViewType.GRAPH]: {
-    title: 'Graph',
+    title: msg`Graph`,
     iconName: 'Workflow',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.WORLDVIEW]: {
-    title: 'WorldView',
+    title: msg`WorldView`,
     iconName: 'GitGraph',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
+  [ViewType.ORGANIZATION]: {
+    title: msg`Organization`,
+    iconName: 'Building2',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
   [ViewType.TAG]: {
-    title: 'Tag Graph',
+    title: msg`Tag Graph`,
     iconName: 'Hash',
     tabLocation: 'dedicated',
     canAddAsTab: false,
@@ -293,7 +302,7 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     foldsPointer: true,
   },
   [ViewType.CREDENTIALS]: {
-    title: 'Credentials',
+    title: msg`Credentials`,
     iconName: 'KeyRound',
     tabLocation: 'dedicated',
     canAddAsTab: false,
@@ -303,20 +312,20 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     foldsPointer: true,
   },
   [ViewType.SUBGRAPH]: {
-    title: 'Subgraph',
+    title: msg`Subgraph`,
     iconName: 'Workflow',
     tabLocation: 'dedicated',
     canAddAsTab: false,
     foldsPointer: true,
   },
   [ViewType.K_BROWSER]: {
-    title: 'Knowledge Browser',
+    title: msg`Knowledge Browser`,
     iconName: 'Brain',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.LENS]: {
-    title: 'Lens',
+    title: msg`Lens`,
     iconName: 'Eye',
     tabLocation: 'dedicated',
     canAddAsTab: false,
@@ -324,38 +333,38 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   // ViewType.SESSION removed — legacy /dock/session URLs redirect to
   // /dock/shell/<agentic_process>. The old live-workflow viewer is gone.
   [ViewType.TASKS]: {
-    title: 'Tasks',
+    title: msg`Tasks`,
     iconName: 'CheckSquare',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
   [ViewType.SETTINGS]: {
-    title: 'Settings',
+    title: msg`Settings`,
     iconName: 'Settings',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
   [ViewType.PREFERENCES]: {
-    title: 'Preferences',
+    title: msg`Preferences`,
     iconName: 'Settings',
     tabLocation: 'dedicated',
     canAddAsTab: false,
     foldsPointer: true,
   },
   [ViewType.AGENTIC_PROCESS]: {
-    title: 'Process',
+    title: msg`Process`,
     iconName: 'Monitor',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
   [ViewType.LIVE_SESSION]: {
-    title: 'Live Session',
+    title: msg`Live Session`,
     iconName: 'Activity',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
   [ViewType.HELPDESK]: {
-    title: 'Help desk',
+    title: msg`Help desk`,
     iconName: 'LifeBuoy',
     tabLocation: 'dedicated',
     canAddAsTab: true,
@@ -365,38 +374,38 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     foldsPointer: true,
   },
   [ViewType.SEARCH]: {
-    title: 'Search',
+    title: msg`Search`,
     iconName: 'SearchIcon',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
   [ViewType.EVENTS]: {
-    title: 'Events',
+    title: msg`Events`,
     iconName: 'RadioTower',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   // Aliases of EVENTS — same screen, kept so old URLs and old tabs resolve.
   [ViewType.TRIGGERS]: {
-    title: 'Events',
+    title: msg`Events`,
     iconName: 'RadioTower',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.CAPABILITIES]: {
-    title: 'Capabilities',
+    title: msg`Capabilities`,
     iconName: 'BadgeCheck',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.GRAPH_WORKFLOWS]: {
-    title: 'Graph Workflows',
+    title: msg`Graph Workflows`,
     iconName: 'Workflow',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.SIGNALS]: {
-    title: 'Events',
+    title: msg`Events`,
     iconName: 'RadioTower',
     tabLocation: 'dedicated',
     canAddAsTab: true,
@@ -404,74 +413,74 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   // `Antenna` matches DATA_SOURCE.icon in the backend TypeInfo, so the tab chip
   // and the type glyph (which comes from the registry via iconForType) agree.
   [ViewType.DATA_SOURCES]: {
-    title: 'Data sources',
+    title: msg`Data sources`,
     iconName: 'Antenna',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.PROCESS_RUNS]: {
-    title: 'Runs',
+    title: msg`Runs`,
     iconName: 'History',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.PLAN]: {
-    title: 'Plan',
+    title: msg`Plan`,
     iconName: 'FileText',
     tabLocation: 'overview',
     canAddAsTab: false,
   },
   [ViewType.CRON]: {
-    title: 'Events',
+    title: msg`Events`,
     iconName: 'RadioTower',
     tabLocation: 'dedicated',
     canAddAsTab: false, // Only accessible via direct URL /dock/cron
   },
   [ViewType.ASSETS]: {
-    title: 'Assets',
+    title: msg`Assets`,
     iconName: 'BookOpen',
     tabLocation: 'dedicated',
     canAddAsTab: true,
     scopeKeyed: true,
   },
   [ViewType.PROJECT]: {
-    title: 'Collaboration',
+    title: msg`Collaboration`,
     iconName: 'Users',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.INBOX]: {
-    title: 'Inbox',
+    title: msg`Inbox`,
     iconName: 'Mail',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
   [ViewType.CONVERSATION]: {
-    title: 'Conversation',
+    title: msg`Conversation`,
     iconName: 'MessageSquare',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
   [ViewType.SPEC]: {
-    title: 'Spec',
+    title: msg`Spec`,
     iconName: 'FileText',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
   [ViewType.GRAPH_CONTEXT]: {
-    title: 'Context',
+    title: msg`Context`,
     iconName: 'BrainCircuit',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
   [ViewType.DIAGNOSIS]: {
-    title: 'Diagnosis',
+    title: msg`Diagnosis`,
     iconName: 'Stethoscope',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
   [ViewType.DESKTOP]: {
-    title: 'Desktop',
+    title: msg`Desktop`,
     iconName: 'LayoutGrid',
     tabLocation: 'dedicated',
     canAddAsTab: true,
@@ -481,3 +490,17 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     scopeKeyed: true,
   },
 };
+
+/**
+ * The view's display title, translated.
+ *
+ * `VIEWER_REGISTRY` is module-level, so its titles are held as lazy `msg`
+ * descriptors — an eager macro out there would bind the language at import and
+ * never follow a locale switch. Read a title through here rather than off
+ * `.title`, so the resolution happens once, at render, in one place.
+ */
+export function viewerTitle(viewType: ViewType | string | null | undefined): string | undefined {
+  if (!viewType) return undefined;
+  const descriptor = VIEWER_REGISTRY[viewType as ViewType]?.title;
+  return descriptor ? i18n._(descriptor) : undefined;
+}

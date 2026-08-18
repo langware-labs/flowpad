@@ -23,7 +23,7 @@ const NEW_CONVERSATION = '__new__';
 /** Same selectable-row styling as ShareToConversationDialog. */
 const rowClasses = (isSelected: boolean, dashed = false) =>
   cn(
-    'flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-xs text-foreground disabled:pointer-events-none disabled:opacity-50',
+    'flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-start text-xs text-foreground disabled:pointer-events-none disabled:opacity-50',
     dashed && 'border-dashed',
     isSelected ? 'border-primary bg-primary/10 ring-1 ring-primary/40' : 'border-input bg-background hover:bg-muted/50',
   );

@@ -1006,33 +1006,6 @@ def is_sandbox_available() -> bool:
         return False
 
 
-async def get_docker_compute_nodes() -> list:
-    """Return @docker-* ComputeNode entities for every live worker in the registry.
-
-    Only returns nodes that both (a) exist in the DB and (b) have an active
-    WS connection — i.e. the container is currently reachable.
-    """
-    try:
-        from flow_sdk.compute.providers.docker import docker_registry  # noqa: PLC0415
-    except Exception:
-        return []
-
-    live_machine_ids = [w["machine_id"] for w in docker_registry.list_workers()]
-    if not live_machine_ids:
-        return []
-
-    # Resolve by provider id directly — avoids fetching every @docker-* CN.
-    results = []
-    for mid in live_machine_ids:
-        try:
-            cn = await ComputeNode.get_by_prop("node_provider_id", mid, "compute_node")
-        except Exception:
-            continue
-        if cn is not None:
-            results.append(cn)
-    return results
-
-
 async def get_or_create_sandbox_compute_node(
     local_project: Optional[Entity] = None,
     desktop_user: Optional[Entity] = None,
@@ -1825,6 +1798,24 @@ def entity_to_dict(entity) -> dict:
     }
 
 
+def project_to_dict(project) -> dict:
+    """``entity_to_dict`` plus the project fields the client boots ON.
+
+    The generic dict above is the identity projection every entity shares, so a
+    project-only field must not be added to it. But a Project handed out at
+    bootstrap is not just a label to display: `initSdk` makes it CURRENT before
+    any route runs, and the app then reads properties off it.
+
+    ``locale`` is one of those, and its absence was a real bug: a provisioned
+    sandbox adopts `default_project` on its very first load, so the app saw a
+    project with no language and correctly opened in English — while the row in
+    the database said Hebrew. It only came right on a refresh, when the full
+    entity was fetched. "Correctly, from what it could see" is exactly how a
+    missing field fails: silently, and looking like a timing bug.
+    """
+    return {**entity_to_dict(project), "locale": getattr(project, "locale", None)}
+
+
 # ---------------------------------------------------------------------------
 # Bootstrap endpoint
 # ---------------------------------------------------------------------------
@@ -1871,10 +1862,12 @@ async def _with_runtime(info: BootstrapInfo, electron: bool) -> ApiSuccessRespon
     whichever client happened to miss the cache first to everyone else for the
     next 30 seconds.
 
-    ``default_project`` is per-caller for a different reason: a freshly
-    provisioned box carries a one-shot instruction to open the project the hub
-    just set up, and it must reach exactly one bootstrap. Through the cached
-    payload it would either be served repeatedly for 30s or skipped entirely.
+    ``default_project`` is per-caller for a different reason: a provisioned box
+    carries a one-shot instruction to open the project the hub just set up, and
+    it must reach exactly one bootstrap. Through the cached payload it would
+    either be served repeatedly for 30s or skipped entirely. (A shared box's
+    second reader gets their own turn because the hub re-arms the instruction
+    before handing them the machine — not because anything here counts people.)
 
     ``model_copy`` leaves the cached object untouched — mutating ``info`` in
     place would write through to the cache, which is the same bug wearing a
@@ -1910,7 +1903,7 @@ async def _take_opening_project() -> Optional[dict]:
     if project is None:
         logging.warning(f"[bootstrap] pending default project {project_id} no longer exists")
         return None
-    return entity_to_dict(project)
+    return project_to_dict(project)
 
 
 @router.get("/api/v1/graph/bootstrap")
@@ -2023,16 +2016,6 @@ async def bootstrap(electron: bool = False) -> ApiSuccessResponse[BootstrapInfo]
                 sandbox_available = False
         _t.time("get_or_create_sandbox_compute_node")
 
-        # Docker: one @docker-<name> CN per live worker. No env gate — only the
-        # presence of a registered worker in docker_registry flips availability.
-        try:
-            docker_cns = await get_docker_compute_nodes()
-        except Exception as e:
-            logging.warning(f"[bootstrap] Failed to list docker compute nodes: {e}")
-            docker_cns = []
-        docker_available = len(docker_cns) > 0
-        _t.time("get_docker_compute_nodes")
-
         # Desktop info (LLM providers, installed agents, cloud-login, paths),
         # scan info (DB index-status), and harness state are independent —
         # fetch them concurrently.
@@ -2112,13 +2095,11 @@ async def bootstrap(electron: bool = False) -> ApiSuccessResponse[BootstrapInfo]
             user=entity_to_dict(user),
             domain=None,
             visitor=None,
-            default_project=entity_to_dict(project),
+            default_project=project_to_dict(project),
             default_workspace=entity_to_dict(workspace),
             default_compute_node=entity_to_dict(compute_node),
             sandbox_available=sandbox_available,
             sandbox_compute_node=entity_to_dict(sandbox_compute_node) if sandbox_compute_node else None,
-            docker_available=docker_available,
-            docker_compute_nodes=[entity_to_dict(cn) for cn in docker_cns],
             env=EnvInfo(
                 env_name="desktop",
                 cloud_api_url=get_instance_settings().cloud_api_url,

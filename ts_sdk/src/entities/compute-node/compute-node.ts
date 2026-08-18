@@ -25,7 +25,13 @@ import {
 } from '../../flow_processing';
 import { IEntity } from '../../IEntity';
 import { ActionInfo } from '../../models';
-import { ComputeProviderType, type NodeStatus, RuntimeEnvironment, type WorkspaceReady } from './compute-node-types';
+import {
+  ComputeProviderType,
+  type NodeStatus,
+  RuntimeEnvironment,
+  SANDBOX_PROVIDERS,
+  type WorkspaceReady,
+} from './compute-node-types';
 import type { MachineStatus, ProcessInfo } from './machine-status';
 import { ServiceControlError, type ServiceRuntimeDescriptor } from './service-control';
 import { Shell } from '../shell';
@@ -124,8 +130,9 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   private machineSessionCallback: MachineSessionCallback | null = null;
 
   /** Bound handler for WebSocket data ops (for cleanup) */
-  private boundDataOpHandler: ((toEntity: string, op: string, data: { active_pty_sessions?: string[] }) => void) | null =
-    null;
+  private boundDataOpHandler:
+    | ((toEntity: string, op: string, data: { active_pty_sessions?: string[] }) => void)
+    | null = null;
 
   constructor(entity: Partial<IComputeNode> = {}) {
     super(entity);
@@ -136,6 +143,14 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     this.node_config = entity.node_config;
     this.fs_storage_mount_path = entity.fs_storage_mount_path ?? undefined;
     this.home_dir = entity.home_dir ?? undefined;
+    // Declaring these as class fields is NOT enough to carry them. Under the
+    // app's `useDefineForClassFields: true`, a declared-but-unassigned field is
+    // DEFINED as `undefined` at construction — overwriting whatever `super`
+    // copied off the payload. So the server sent `logged_in_user`, the entity
+    // dropped it, and every card rendered "signed out". Every other field here
+    // is assigned for the same reason; these two were simply missed.
+    this.auto_login = entity.auto_login;
+    this.logged_in_user = entity.logged_in_user;
   }
 
   /**
@@ -215,7 +230,15 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     const action = new ActionInfo('createProcess', ComputeNode.type, this.id, 'POST');
     action.bodyParameters = {
       context: serializeAgenticContext(context),
-      ...(options?.result ? { result: { uname: options.result.uname, resultType: options.result.resultType, sourceSessionId: options.result.sourceSessionId } } : {}),
+      ...(options?.result
+        ? {
+            result: {
+              uname: options.result.uname,
+              resultType: options.result.resultType,
+              sourceSessionId: options.result.sourceSessionId,
+            },
+          }
+        : {}),
       ...(options?.visible !== undefined ? { visible: options.visible } : {}),
       ...(options?.pty_mode !== undefined ? { pty_mode: options.pty_mode } : {}),
       ...(options?.launchPrompt ? { launch_prompt: options.launchPrompt } : {}),
@@ -243,10 +266,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * @param workerType - Optional hint to skip the other indexer.
    * @returns Descriptor on hit, `null` on 404 (session not found in either history).
    */
-  async findSession(
-    sessionId: string,
-    workerType?: WorkerKind,
-  ): Promise<FindSessionResult | null> {
+  async findSession(sessionId: string, workerType?: WorkerKind): Promise<FindSessionResult | null> {
     const action = new ActionInfo('findSession', ComputeNode.type, this.id, 'GET');
     action.queryParameters = {
       session_id: sessionId,
@@ -519,12 +539,12 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * `node_config` blob, so every surface that wanted the question had to know
    * that blob's shape. The rule is one thing; it belongs in one place.
    *
-   * The predicate is deliberately unchanged — this moves where the question is
-   * answered, not which boxes answer yes. Worth knowing before touching it: the
+   * Worth knowing before touching it: the
    * hub stopped reading `flavor` for TEMPLATE selection ("one family, one axis,
    * no client-derived input" — `setup_node`), which reads like the marker is
    * dead. It is not: the sandbox UI writes it at create time and nothing clears
-   * it, so it remains the only thing separating the two kinds of E2B box.
+   * it, so it remains the marker separating an interactive workspace from a
+   * provider's other compute nodes.
    *
    * The provider field is read tolerantly because the hub spells it
    * `node_provider` and this entity types it `node_provider_type`.
@@ -532,7 +552,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   get isSandbox(): boolean {
     const provider = (this as unknown as { node_provider?: string }).node_provider ?? this.node_provider_type;
     const flavor = (this.node_config as { flavor?: string } | undefined)?.flavor;
-    return provider === ComputeProviderType.E2B && flavor === WORKSPACE_FLAVOR;
+    return SANDBOX_PROVIDERS.has(provider ?? '') && flavor === WORKSPACE_FLAVOR;
   }
 
   // ── lifecycle ────────────────────────────────────────────────────────
@@ -611,6 +631,30 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
 
   async setDefaultProject(projectId: string): Promise<unknown> {
     return this.ops('set-default-project', { project_id: projectId });
+  }
+
+  /**
+   * Sign the box out of the cloud, clearing the credentials stored ON it.
+   *
+   * Deliberately NOT the same thing as turning `auto_login` off. That also
+   * revokes the node-bound API key, which is a change to how the box behaves
+   * from now on; this is just "end the session that is running in there", and
+   * leaves the setting alone. The consequence is worth knowing: with
+   * `auto_login` on, the next open signs the box straight back in — which is the
+   * correct behaviour for "log me out of it now", not a gap.
+   *
+   * Signing the box out never touches the caller's OWN hub session: the
+   * credentials live on the box's disk, and this asks the box to clear them.
+   */
+  async logoutUser(): Promise<unknown> {
+    return this.ops('logout-user');
+  }
+
+  /** Who the box is signed in as, asked of the box itself. The cached
+   *  `logged_in_user` field is the cheap answer; this is the authoritative one
+   *  and costs a round-trip to a machine that may be paused. */
+  async loginStatus(): Promise<{ logged_in: boolean; logged_in_user?: string | null }> {
+    return this.ops('login-status');
   }
 
   /**
@@ -780,11 +824,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     // Kill the process
     const killResult = await this.runShell(`kill ${process.pid}`);
     if (killResult.includes('No such process')) {
-      throw new ServiceControlError(
-        `Failed to kill process ${process.pid}: No such process`,
-        service.id || '',
-        'stop',
-      );
+      throw new ServiceControlError(`Failed to kill process ${process.pid}: No such process`, service.id || '', 'stop');
     }
 
     return process;
@@ -921,7 +961,6 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   git(workDir: string): GitWorkdir {
     return new GitWorkdir(workDir, this.id);
   }
-
 
   /** Which of a project's declared secrets this node may see: `{project_id: [ENV_VAR]}`.
    *  Value-free — the token IS the env var name. An ABSENT project key means

@@ -85,7 +85,7 @@ export function QuickCreateModal({ open, onOpenChange, panelProps }: QuickCreate
             </DialogDescription>
           </DialogHeader>
 
-          <div className="min-h-0 overflow-y-auto pr-1">
+          <div className="min-h-0 overflow-y-auto pe-1">
             <QuickCreatePanel {...panelProps} sections={sections} onDone={() => onOpenChange(false)} />
           </div>
         </DialogContent>

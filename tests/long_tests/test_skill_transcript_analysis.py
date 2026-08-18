@@ -34,13 +34,13 @@ import pytest
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.transcript_analyzer import EntryKind
+from tests.long_tests._model_tier import small_model_for
 from tests.long_tests._transcript_helpers import (
     ANALYZER_WORKER_KEY,
     assert_prompt_ok,
     await_transcript,
     safe_exit,
 )
-from tests.long_tests._model_tier import small_model_for
 from tests.test_settings import test_service_config
 
 pytestmark = [
@@ -129,11 +129,7 @@ def _skill_call_entries(transcript, skill_name: str) -> list:
     ``SKILL.md`` file-load), so this is worker-agnostic: filter the dedicated
     kind and match the skill name.
     """
-    return [
-        e
-        for e in transcript.filter(kind=EntryKind.SKILL_CALL)
-        if getattr(e, "skill_name", "") == skill_name
-    ]
+    return [e for e in transcript.filter(kind=EntryKind.SKILL_CALL) if getattr(e, "skill_name", "") == skill_name]
 
 
 @pytest.mark.asyncio
@@ -141,8 +137,13 @@ def _skill_call_entries(transcript, skill_name: str) -> list:
 # do not increase timeout without approval
 @pytest.mark.timeout(120)
 async def test_skill_usage_visible_in_transcript(
-    worker_type, cli_name, temp_skill, tmp_path, _workers_discovered,
-    local_project, local_compute_node,
+    worker_type,
+    cli_name,
+    temp_skill,
+    tmp_path,
+    _workers_discovered,
+    local_project,
+    local_compute_node,
 ):
     if shutil.which(cli_name) is None:
         pytest.skip(f"{cli_name} CLI not installed")
@@ -162,14 +163,12 @@ async def test_skill_usage_visible_in_transcript(
         worker_type=worker_type,
         workdir=str(tmp_path),
         additional_dirs=[str(skills_parent)],
-        # Cheapest model the worker can resolve (Copilot stays unset — its auto
-        # mode already picks its small tier). Assertions are model-agnostic.
+        # Persist sm for every worker; native Copilot resolves it to vendor auto.
+        # Assertions are model-agnostic.
         cli_config=({"model": m} if (m := small_model_for(worker_type)) else {}),
         visible=False,
     ).save()
-    instruction = (
-        f"Run the {skill_name} skill now and follow its instructions exactly."
-    )
+    instruction = f"Run the {skill_name} skill now and follow its instructions exactly."
     try:
         # Headless prompt is fire-and-forget; the worker streams its turn into a
         # JSONL transcript in the background and assigns process.session_id.
@@ -204,9 +203,7 @@ async def test_skill_usage_visible_in_transcript(
             # differently-named skill — emitting nothing for OUR name to normalize.
             # That is LLM non-compliance, downgraded to a skip exactly like the
             # latency case above (never a flaky-marker, never a weakened assertion).
-            regressed_skill_tooluse = list(
-                transcript.filter(kind=EntryKind.TOOL_USE, tool_name="skill")
-            )
+            regressed_skill_tooluse = list(transcript.filter(kind=EntryKind.TOOL_USE, tool_name="skill"))
             if not regressed_skill_tooluse:
                 pytest.skip(
                     f"{cli_name} produced a transcript but did not surface a native "

@@ -22,6 +22,8 @@ dependencies = [
     # Installed transitively by typer, but `flow instance ctl` imports it
     # directly to render instance/group tables — declare what we import.
     "rich",
+    # Terminal QR for `flow connect` device-code enrollment (pure python).
+    "segno>=1.6",
     "python-dotenv",
     "keyring",
     "keyrings.alt",
@@ -141,6 +143,10 @@ extend-select = [
 "flow_sdk/server/app.py" = ["T20", "E402"]
 "examples/*" = ["T20"]
 "flow_sdk/db/drivers/sqlite/sqlite_driver.py" = ["E402"]
+# Registers its sub-typers at the BOTTOM of the file, each import immediately
+# above its own `app.add_typer` so the two cannot drift apart. Same shape, and
+# same exemption, as run.py and app.py above.
+"flow_sdk/cli/flow_cli.py" = ["E402"]
 "flow_sdk/fs_store/schema_registry.py" = ["F821"]
 
 [tool.pyright]

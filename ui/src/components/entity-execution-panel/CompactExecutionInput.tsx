@@ -289,7 +289,7 @@ export function CompactExecutionInput({
           )}
           {leadingSlot}
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div className="ms-auto flex shrink-0 items-center gap-2">
           {statusSlot}
           {/* While running, Send stays available for non-empty drafts (it
               enqueues); Stop sits beside it. */}
@@ -306,7 +306,7 @@ export function CompactExecutionInput({
               className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-primary"
               data-testid="entity-execution-send"
             >
-              <Send className="h-3.5 w-3.5" />
+              <Send className="h-3.5 w-3.5 rtl:-scale-x-100" />
             </button>
           )}
           {showStop && (

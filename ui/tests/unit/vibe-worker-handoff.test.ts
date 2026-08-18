@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => {
     id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
     project_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     prompt,
-    loadEmbeddedAgent: vi.fn().mockResolvedValue(undefined),
+    loadEmbeddedSubagent: vi.fn().mockResolvedValue(undefined),
     watch: vi.fn().mockResolvedValue(undefined),
   };
   return {

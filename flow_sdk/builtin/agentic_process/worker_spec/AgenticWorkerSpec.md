@@ -29,7 +29,7 @@ the durable citation.
 3. Transcript on Disk (location + JSONL schema)
 4. Status Determination from Transcript Tail
 5. Session Lifecycle (id, resume, fork, cancel, restart)
-6. Context Injection (workdir, env, add-dir, embedded agents, permissions)
+6. Context Injection (workdir, env, add-dir, embedded sub-agents, permissions)
 7. Agent Hooks (PreToolUse / PostToolUse / SessionStart / ...)
 8. Token Usage & Cost
 9. Semantic Tool Entries (Plan / TodoWrite / Task)
@@ -122,11 +122,11 @@ the durable citation.
 - **Maps to:** _____________________
 - **Effort if missing:** M
 
-### Embedded agents and process instructions
-- **Need:** Deliver per-process instructions and embedded-agent persona/body text without mutating the user prompt.
+### Embedded sub-agents and process instructions
+- **Need:** Deliver per-process instructions and embedded sub-agent persona/body text without mutating the user prompt.
 - **Flowpad mechanism:** materialize `<record_dir>/execution/assets/` through `AssetDir`, write `CLAUDE.md`, `AGENTS.md`, `.agents`, and `.github/instructions/flowpad.instructions.md`, then include the assets dir in `additional_dirs`.
 - **Claude:** receives `--append-system-prompt-file <assets>/CLAUDE.md`; legacy `--agents <json>` can still be emitted for existing `cli_config.agents_json`.
-- **Codex:** receives `-c developer_instructions=<generated text>`; embedded-agent names may be surfaced as `skill_names` for command visibility.
+- **Codex:** receives `-c developer_instructions=<generated text>`; embedded sub-agent names may be surfaced as `skill_names` for command visibility.
 - **Copilot:** receives `COPILOT_CUSTOM_INSTRUCTIONS_DIRS=<assets>`; the generated `.github/instructions/flowpad.instructions.md` is the custom instruction source.
 - **Required:** Yes
 - **Vendor must expose:** one reliable per-turn instruction sink (file flag, config override, or custom-instruction directory) plus a way to mount the generated assets dir when directory discovery is required.
@@ -820,6 +820,16 @@ the durable citation.
 - **Maps to:** _____________________
 - **Effort if missing:** S
 
+### `FLOWPAD_PYTHON` env injection
+- **Need:** Skills that run Flowpad's own Python (flow-diagnose's `report.py`, and any co-located script that does `import flow_sdk`) get an absolute path to the interpreter that can import it. Resolution by name is not available to a worker: `uv run` walks up from the working directory — a user workspace — and finds no Flowpad; bare `python`/`python3` is subject to the capability bin folder being prepended after our PATH pin at spawn time, and a Windows venv ships no `python3.exe`.
+- **Claude:** `env["FLOWPAD_PYTHON"] = sys.executable` in `apply_worker_env`, the shared chokepoint (cli_worker_base_driver.py:437-460; claude/driver.py:168). Assigned, not `setdefault`-ed — a stale value persisted in `cli_config["env_vars"]` would outlive the install it points at.
+- **Codex:** Same path — `apply_worker_env` is driver-agnostic (codex/driver.py:141, copilot/driver.py:127)
+- **Required:** Yes
+- **Vendor must expose:** ability to set arbitrary env vars at launch time (covered by env-var passthrough)
+- [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
+- **Maps to:** _____________________
+- **Effort if missing:** S
+
 ### `--add-dir <path>` (repeatable) for skill / agent discovery
 - **Need:** Mount additional roots so the worker discovers Flowpad-shipped skills/agents plus caller-supplied `additional_dirs`; must register the Flowpad Assistant project root when `ServiceConfig.load_flowpad_assistant` is True.
 - **Claude:** repeated `--add-dir <path>` flags built from `[flowpad_assistant_project_root()] + additional_dirs` (claude/driver.py:82-87; claude/cli.py:133-134, 244-245; flow_sdk/config.py:64, 626)
@@ -840,9 +850,9 @@ the durable citation.
 - **Maps to:** _____________________
 - **Effort if missing:** S
 
-### Embedded agents via process instruction assets
-- **Need:** Make embedded agent definitions affect the worker while preserving the exact user instruction.
-- **Flowpad mechanism:** `load-embedded-agent` materializes the agent markdown under `<assets>/.claude/agents/<name>.md`; `prepare_system_instruction_assets()` parses materialized/legacy agents and writes persona/dispatch instructions into the generated instruction files.
+### Embedded sub-agents via process instruction assets
+- **Need:** Make embedded sub-agent definitions affect the worker while preserving the exact user instruction.
+- **Flowpad mechanism:** `load-embedded-subagent` materializes the sub-agent markdown under `<assets>/.claude/agents/<name>.md`; `prepare_system_instruction_assets()` parses materialized/legacy sub-agents and writes persona/dispatch instructions into the generated instruction files.
 - **Claude:** generated file is passed with `--append-system-prompt-file`; legacy `--agents <json>` remains a compatibility path.
 - **Codex:** generated text is passed through `developer_instructions`; no prompt inlining.
 - **Copilot:** generated `.github/instructions/flowpad.instructions.md` is discovered through `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`; no prompt inlining.
@@ -1208,10 +1218,10 @@ generic icon, Sonnet pricing) rather than loudly.
 - **Effort if missing:** S
 
 ### Model tiers
-- **Need:** `sm`/`md`/`lg` must resolve to a concrete model for this vendor, so prompts/tests stay portable.
-- **Claude:** `CLAUDE_MODEL_TIERS` (haiku/sonnet/opus); **Codex/Copilot:** `CODEX_MODEL_TIERS` / `COPILOT_MODEL_TIERS` — all in `agentic_process/model_tiers.py`, consumed via the options class's `MODEL_TIERS` and resolved once in the `model` setter.
+- **Need:** `sm`/`md`/`lg` must resolve to a valid selection for this vendor, so prompts/tests stay portable.
+- **Claude/Codex:** `CLAUDE_MODEL_TIERS` (haiku/sonnet/opus) and `CODEX_MODEL_TIERS` (concrete GPT models). **Native Copilot:** `COPILOT_MODEL_TIERS` maps all tiers to vendor auto (`None`, omitting `--model`) because device-account availability is vendor-managed. All maps live in `agentic_process/model_tiers.py`, preserve the raw persisted tier, and resolve only when the command is emitted.
 - **Required:** Yes
-- **Vendor must expose:** three model names spanning small/medium/large. An empty map means pass-through only, and every tier-valued config breaks.
+- **Vendor must expose:** three valid tier outcomes: concrete model names or an explicit vendor-auto/no-flag outcome. An empty map means pass-through only, and every tier-valued config breaks.
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
 - **Maps to:** _____________________
 - **Effort if missing:** S

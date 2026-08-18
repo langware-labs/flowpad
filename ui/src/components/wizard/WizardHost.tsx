@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import {
   AgenticProcess,
   awaitWizardResult,
@@ -91,7 +92,7 @@ export function WizardHost() {
     try {
       await completeWizard(active.process, { status, data: null, errorStr: null });
     } catch (err) {
-      notify.error({ title: 'Wizard close failed', message: err instanceof Error ? err.message : String(err) });
+      notify.error({ title: t`Wizard close failed`, message: err instanceof Error ? err.message : String(err) });
       active.resolve({ status: 'error', data: null, errorStr: err instanceof Error ? err.message : String(err) });
       setActive(null);
     }

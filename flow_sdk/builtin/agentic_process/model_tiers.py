@@ -1,9 +1,11 @@
-"""Worker-agnostic model **tiers** (sm / md / lg) → concrete per-worker model.
+"""Worker-agnostic model **tiers** (sm / md / lg) → per-worker selection.
 
 A caller picks a *size* (small / medium / large) instead of hard-coding a vendor
-model name; each worker driver maps the tier to its own model family. This keeps
-prompts/tests/configs portable across workers ("use the small model") and is the
-single place that knows, e.g., that claude's small model is ``haiku``.
+model name; each worker driver maps the tier to its own model family or to
+``None`` when the vendor should choose automatically. This keeps prompts/tests/
+configs portable across workers ("use the small model") and is the single place
+that knows, e.g., that claude's small model is ``haiku`` while native Copilot
+must omit ``--model``.
 
 Resolution is authoritative on the backend (driver ``cli_options``), so a tier
 that was persisted into ``cli_config['model']`` still resolves correctly on
@@ -27,9 +29,9 @@ class ModelTier(StrEnum):
     LG = "lg"
 
 
-# Per-worker tier → concrete model string. Each worker's CLI-options class owns
-# its own map and resolves only when emitting the worker command; persisted
-# AgenticProcess.cli_config keeps the portable tier.
+# Per-worker tier → concrete model or vendor-auto outcome. Each worker's
+# CLI-options class owns its own map and resolves only when emitting the worker
+# command; persisted AgenticProcess.cli_config keeps the portable tier.
 CLAUDE_MODEL_TIERS: dict[str, str] = {
     ModelTier.SM.value: "haiku",
     ModelTier.MD.value: "sonnet",
@@ -42,10 +44,10 @@ CODEX_MODEL_TIERS: dict[str, str] = {
     ModelTier.LG.value: "gpt-5.5",
 }
 
-COPILOT_MODEL_TIERS: dict[str, str] = {
-    ModelTier.SM.value: "gpt-5.4-mini",
-    ModelTier.MD.value: "gpt-5.4",
-    ModelTier.LG.value: "gpt-5.5",
+COPILOT_MODEL_TIERS: dict[str, str | None] = {
+    ModelTier.SM.value: None,
+    ModelTier.MD.value: None,
+    ModelTier.LG.value: None,
 }
 
 # OpenCode is provider-agnostic: every model is addressed as ``provider/model``
@@ -59,12 +61,13 @@ OPENCODE_MODEL_TIERS: dict[str, str] = {
 }
 
 
-def resolve_model_tier(tier_map: dict[str, str], model: str | None) -> str | None:
-    """Map a tier (``sm``/``md``/``lg``) to a concrete model via *tier_map*.
+def resolve_model_tier(tier_map: dict[str, str | None], model: str | None) -> str | None:
+    """Map a tier to a concrete model or vendor-auto via *tier_map*.
 
     Idempotent and pass-through: a non-tier value (a real model name, or a tier
-    absent from *tier_map*) is returned unchanged. The worker supplies its own
-    *tier_map* so the size→model knowledge stays worker-local.
+    absent from *tier_map*) is returned unchanged. A present key mapped to
+    ``None`` means vendor auto and suppresses the model flag. The worker supplies
+    its own *tier_map* so the size→selection knowledge stays worker-local.
     """
     if not model:
         return model

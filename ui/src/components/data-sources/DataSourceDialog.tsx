@@ -106,8 +106,7 @@ export function DataSourceDialog({
   const spec = providerSpec(draft.provider);
   const problems = useMemo(() => validateDraft(draft), [draft]);
 
-  const setField = (key: string, value: string) =>
-    setDraft((d) => ({ ...d, fields: { ...d.fields, [key]: value } }));
+  const setField = (key: string, value: string) => setDraft((d) => ({ ...d, fields: { ...d.fields, [key]: value } }));
 
   const submit = async () => {
     if (problems.length) return;
@@ -163,15 +162,15 @@ export function DataSourceDialog({
     return (
       <div key={field.key} className="space-y-1">
         <Label htmlFor={`ds-${field.key}`}>
-          {field.label}
-          {field.required && <span className="ml-1 text-destructive">*</span>}
+          {t(field.label)}
+          {field.required && <span className="ms-1 text-destructive">*</span>}
         </Label>
         {field.kind === 'lines' ? (
           <Textarea
             id={`ds-${field.key}`}
             rows={3}
             value={value}
-            placeholder={field.placeholder}
+            placeholder={field.placeholder ? t(field.placeholder) : undefined}
             onChange={(e) => setField(field.key, e.target.value)}
           />
         ) : (
@@ -179,11 +178,11 @@ export function DataSourceDialog({
             id={`ds-${field.key}`}
             type={field.kind === 'password' ? 'password' : field.kind === 'number' ? 'number' : 'text'}
             value={value}
-            placeholder={field.placeholder}
+            placeholder={field.placeholder ? t(field.placeholder) : undefined}
             onChange={(e) => setField(field.key, e.target.value)}
           />
         )}
-        {field.hint && <p className="text-xs text-muted-foreground">{field.hint}</p>}
+        {field.hint && <p className="text-xs text-muted-foreground">{t(field.hint)}</p>}
       </div>
     );
   };
@@ -194,9 +193,7 @@ export function DataSourceDialog({
         <DialogHeader>
           <DialogTitle>{editing ? t`Edit data source` : t`Add a data source`}</DialogTitle>
           <DialogDescription>
-            <Trans>
-              A source is one remote account or feed set. The poller syncs it on the heartbeat.
-            </Trans>
+            <Trans>A source is one remote account or feed set. The poller syncs it on the heartbeat.</Trans>
           </DialogDescription>
         </DialogHeader>
 
@@ -213,12 +210,12 @@ export function DataSourceDialog({
                     type="button"
                     data-testid={`provider-${p.id}`}
                     onClick={() => setDraft(emptyDraft(p.id))}
-                    className={`rounded border p-2 text-left text-xs ${
+                    className={`rounded border p-2 text-start text-xs ${
                       draft.provider === p.id ? 'border-primary bg-primary/5' : 'border-border'
                     }`}
                   >
-                    <span className="block font-medium">{p.label}</span>
-                    <span className="block text-muted-foreground">{p.blurb}</span>
+                    <span className="block font-medium">{t(p.label)}</span>
+                    <span className="block text-muted-foreground">{t(p.blurb)}</span>
                   </button>
                 ))}
               </div>
@@ -228,12 +225,12 @@ export function DataSourceDialog({
           <div className="space-y-1">
             <Label htmlFor="ds-name">
               <Trans>Name</Trans>
-              <span className="ml-1 text-destructive">*</span>
+              <span className="ms-1 text-destructive">*</span>
             </Label>
             <Input
               id="ds-name"
               value={draft.name}
-              placeholder={spec?.label}
+              placeholder={spec ? t(spec.label) : undefined}
               onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
             />
           </div>
@@ -270,9 +267,7 @@ export function DataSourceDialog({
                   type="number"
                   min={60}
                   value={draft.poll_interval_seconds}
-                  onChange={(e) =>
-                    setDraft((d) => ({ ...d, poll_interval_seconds: Number(e.target.value) }))
-                  }
+                  onChange={(e) => setDraft((d) => ({ ...d, poll_interval_seconds: Number(e.target.value) }))}
                 />
                 <p className="text-xs text-muted-foreground">
                   <Trans>Minimum 60 — the heartbeat only ticks once a minute.</Trans>

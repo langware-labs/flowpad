@@ -1,9 +1,7 @@
-import {
-  cloudManager,
-  HubConnectionStatus,
-  HubLoginStatus,
-  User,
-} from '@sdk';
+import { i18n } from '@lingui/core';
+import type { MessageDescriptor } from '@lingui/core';
+import { msg, t } from '@lingui/core/macro';
+import { cloudManager, HubConnectionStatus, HubLoginStatus, User } from '@sdk';
 import { useCloudStatus, useContext } from '@sdk/react/hooks';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
@@ -18,27 +16,35 @@ interface UserInfoProps {
   user: User;
 }
 
+/**
+ * `text` is a lazy {@link MessageDescriptor}, not a string: these maps are
+ * module-level, so a `t` macro here would freeze the boot locale's wording, and
+ * the previous `<Trans>{visual.text}</Trans>` extracted as the placeholder-only
+ * message `{0}` — the badge printed the raw English through a translated app.
+ * The descriptor is resolved at render (`i18n._`), which is also what re-reads
+ * it after a locale switch.
+ */
 type BadgeVisual = {
-  text: string;
+  text: MessageDescriptor;
   variant: 'destructive' | 'secondary' | 'outline';
   icon: typeof Loader2;
   iconClassName?: string;
 };
 
 const LOGIN_VISUAL: Record<HubLoginStatus, BadgeVisual> = {
-  logged_in:    { text: 'Logged in',  variant: 'secondary', icon: CheckCircle2 },
-  logging_in:   { text: 'Signing in', variant: 'outline',   icon: Loader2, iconClassName: 'animate-spin' },
-  login_failed: { text: 'Login failed', variant: 'destructive', icon: AlertCircle },
-  logged_out:   { text: 'Logged out', variant: 'outline',   icon: CloudOff },
+  logged_in: { text: msg`Logged in`, variant: 'secondary', icon: CheckCircle2 },
+  logging_in: { text: msg`Signing in`, variant: 'outline', icon: Loader2, iconClassName: 'animate-spin' },
+  login_failed: { text: msg`Login failed`, variant: 'destructive', icon: AlertCircle },
+  logged_out: { text: msg`Logged out`, variant: 'outline', icon: CloudOff },
 };
 
 const CONNECTION_VISUAL: Record<HubConnectionStatus, BadgeVisual> = {
-  verified:      { text: 'Connection verified', variant: 'secondary',   icon: CheckCircle2 },
-  connected:     { text: 'Connected',           variant: 'outline',     icon: Cloud },
-  connecting:    { text: 'Connecting',          variant: 'outline',     icon: Loader2, iconClassName: 'animate-spin' },
-  auth_rejected: { text: 'Connection rejected', variant: 'destructive', icon: AlertCircle },
-  error:         { text: 'Connection error',    variant: 'destructive', icon: AlertCircle },
-  disconnected:  { text: 'Not connected',       variant: 'outline',     icon: CloudOff },
+  verified: { text: msg`Connection verified`, variant: 'secondary', icon: CheckCircle2 },
+  connected: { text: msg`Connected`, variant: 'outline', icon: Cloud },
+  connecting: { text: msg`Connecting`, variant: 'outline', icon: Loader2, iconClassName: 'animate-spin' },
+  auth_rejected: { text: msg`Connection rejected`, variant: 'destructive', icon: AlertCircle },
+  error: { text: msg`Connection error`, variant: 'destructive', icon: AlertCircle },
+  disconnected: { text: msg`Not connected`, variant: 'outline', icon: CloudOff },
 };
 
 type ButtonAction = 'sign_in' | 'reconnect' | 'verify' | 'disconnect' | null;
@@ -48,23 +54,23 @@ function computeButton(
   connection: HubConnectionStatus,
 ): { label: string; action: ButtonAction; disabled: boolean; busy: boolean } {
   if (login === 'logged_out' || login === 'login_failed') {
-    return { label: 'Sign in', action: 'sign_in', disabled: false, busy: false };
+    return { label: t`Sign in`, action: 'sign_in', disabled: false, busy: false };
   }
   if (login === 'logging_in') {
-    return { label: 'Signing in…', action: null, disabled: true, busy: true };
+    return { label: t`Signing in…`, action: null, disabled: true, busy: true };
   }
   // login === 'logged_in'
   if (connection === 'connecting') {
-    return { label: 'Connecting…', action: null, disabled: true, busy: true };
+    return { label: t`Connecting…`, action: null, disabled: true, busy: true };
   }
   if (connection === 'verified') {
-    return { label: 'Disconnect', action: 'disconnect', disabled: false, busy: false };
+    return { label: t`Disconnect`, action: 'disconnect', disabled: false, busy: false };
   }
   if (connection === 'connected') {
-    return { label: 'Verify', action: 'verify', disabled: false, busy: false };
+    return { label: t`Verify`, action: 'verify', disabled: false, busy: false };
   }
   // disconnected | error | auth_rejected
-  return { label: 'Reconnect', action: 'reconnect', disabled: false, busy: false };
+  return { label: t`Reconnect`, action: 'reconnect', disabled: false, busy: false };
 }
 
 export function UserInfo({ user }: UserInfoProps) {
@@ -92,7 +98,11 @@ export function UserInfo({ user }: UserInfoProps) {
       } else if (action === 'reconnect') {
         const result = await cloudManager.connectHubWs();
         if (result.hub_ws_verified) {
-          notify.success({ title: t`Reconnected`, message: t`Hub WebSocket profile verified.`, id: 'cloud-conn-action' });
+          notify.success({
+            title: t`Reconnected`,
+            message: t`Hub WebSocket profile verified.`,
+            id: 'cloud-conn-action',
+          });
         } else {
           notify.success({ title: t`Connected`, message: t`Hub WebSocket connected.`, id: 'cloud-conn-action' });
         }
@@ -103,11 +113,15 @@ export function UserInfo({ user }: UserInfoProps) {
         }
       } else if (action === 'disconnect') {
         await cloudManager.disconnectHubWs();
-        notify.success({ title: t`Disconnected`, message: t`Hub WebSocket listener stopped.`, id: 'cloud-conn-action' });
+        notify.success({
+          title: t`Disconnected`,
+          message: t`Hub WebSocket listener stopped.`,
+          id: 'cloud-conn-action',
+        });
       }
     } catch (err) {
       notify.error({
-        title: button.label + ' failed',
+        title: t`${button.label} failed`,
         message: err instanceof Error ? err.message : t`Unknown error.`,
         id: 'cloud-conn-action',
       });
@@ -140,12 +154,16 @@ export function UserInfo({ user }: UserInfoProps) {
   return (
     <div className="flex flex-col gap-4 p-4">
       <div className="flex flex-col gap-1">
-        <label className="text-sm font-semibold text-muted-foreground"><Trans>Name:</Trans></label>
+        <label className="text-sm font-semibold text-muted-foreground">
+          <Trans>Name:</Trans>
+        </label>
         <div className="text-base">{user.displayName}</div>
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-sm font-semibold text-muted-foreground"><Trans>Email:</Trans></label>
+        <label className="text-sm font-semibold text-muted-foreground">
+          <Trans>Email:</Trans>
+        </label>
         <div className="flex items-center gap-2">
           <div className="min-w-0 break-all text-base">{user.email || t`N/A`}</div>
           {user.email && (
@@ -164,7 +182,9 @@ export function UserInfo({ user }: UserInfoProps) {
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-sm font-semibold text-muted-foreground"><Trans>User ID:</Trans></label>
+        <label className="text-sm font-semibold text-muted-foreground">
+          <Trans>User ID:</Trans>
+        </label>
         <div className="flex items-center gap-2">
           <div className="font-mono text-sm text-muted-foreground">{user.id}</div>
           <Button
@@ -183,19 +203,23 @@ export function UserInfo({ user }: UserInfoProps) {
       <div className="flex flex-col gap-3 rounded-md border p-3">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <label className="text-sm font-semibold text-muted-foreground"><Trans>Flowpad Cloud:</Trans></label>
+            <label className="text-sm font-semibold text-muted-foreground">
+              <Trans>Flowpad Cloud:</Trans>
+            </label>
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <Badge variant={loginVisual.variant} className="gap-1">
                 <LoginIcon className={`h-3 w-3 ${loginVisual.iconClassName ?? ''}`.trim()} />
-                <Trans>{loginVisual.text}</Trans>
+                {i18n._(loginVisual.text)}
               </Badge>
               <Badge variant={connectionVisual.variant} className="gap-1">
                 <ConnectionIcon className={`h-3 w-3 ${connectionVisual.iconClassName ?? ''}`.trim()} />
-                <Trans>{connectionVisual.text}</Trans>
+                {i18n._(connectionVisual.text)}
               </Badge>
             </div>
             {cloudUrl && (
-              <div className="mt-1 text-xs text-muted-foreground break-all"><Trans>Hub: {cloudUrl}</Trans></div>
+              <div className="mt-1 break-all text-xs text-muted-foreground">
+                <Trans>Hub: {cloudUrl}</Trans>
+              </div>
             )}
           </div>
           {connectionControlsAvailable && (
@@ -208,27 +232,30 @@ export function UserInfo({ user }: UserInfoProps) {
               }}
             >
               {buttonBusy && <Loader2 className="h-4 w-4 animate-spin" />}
-              <Trans>{button.label}</Trans>
+              {/* Already localized: `computeButton` resolves it with `t` at render time. */}
+              {button.label}
             </Button>
           )}
         </div>
 
         {connection.status === 'auth_rejected' && (
-          <div className="text-xs text-destructive">
-            {connection.error ?? t`The hub refused this client.`}
-          </div>
+          <div className="text-xs text-destructive">{connection.error ?? t`The hub refused this client.`}</div>
         )}
         {connection.status === 'error' && connection.error && (
           <div className="text-xs text-destructive">{connection.error}</div>
         )}
         {login.status === 'login_failed' && login.reason && (
-          <div className="text-xs text-destructive"><Trans>Login: {login.reason}</Trans></div>
+          <div className="text-xs text-destructive">
+            <Trans>Login: {login.reason}</Trans>
+          </div>
         )}
       </div>
 
       {user.organization_id && (
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-semibold text-muted-foreground"><Trans>Organization:</Trans></label>
+          <label className="text-sm font-semibold text-muted-foreground">
+            <Trans>Organization:</Trans>
+          </label>
           <div className="flex flex-wrap gap-2">
             <OrganizationChip orgId={user.organization_id} role={user.organization_role} />
           </div>
@@ -237,28 +264,36 @@ export function UserInfo({ user }: UserInfoProps) {
 
       {user.picture && (
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-semibold text-muted-foreground"><Trans>Profile Picture:</Trans></label>
+          <label className="text-sm font-semibold text-muted-foreground">
+            <Trans>Profile Picture:</Trans>
+          </label>
           <img src={user.picture} alt={t`Profile`} className="h-16 w-16 rounded-full border-2 object-cover" />
         </div>
       )}
 
       {user.last_login && (
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-semibold text-muted-foreground"><Trans>Last Login:</Trans></label>
+          <label className="text-sm font-semibold text-muted-foreground">
+            <Trans>Last Login:</Trans>
+          </label>
           <div className="text-base">{new Date(user.last_login).toLocaleString()}</div>
         </div>
       )}
 
       {version && (
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-semibold text-muted-foreground"><Trans>Version:</Trans></label>
+          <label className="text-sm font-semibold text-muted-foreground">
+            <Trans>Version:</Trans>
+          </label>
           <div className="font-mono text-sm text-muted-foreground">v{version}</div>
         </div>
       )}
 
       {user.labels && user.labels.length > 0 && (
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-semibold text-muted-foreground"><Trans>Labels:</Trans></label>
+          <label className="text-sm font-semibold text-muted-foreground">
+            <Trans>Labels:</Trans>
+          </label>
           <div className="flex flex-wrap gap-2">
             {user.labels.map((label) => (
               <Chip key={label} label={label} selected={false} onClick={() => {}} />

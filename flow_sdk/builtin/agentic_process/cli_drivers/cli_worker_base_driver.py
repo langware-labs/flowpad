@@ -39,7 +39,7 @@ import sys
 import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Protocol
+from typing import TYPE_CHECKING, Any, AsyncIterator, Protocol, Sequence
 
 import psutil
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -60,9 +60,12 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
 from flow_sdk.transcript_analyzer import TranscriptDescriptor
 
 if TYPE_CHECKING:
+    from flow_sdk.builtin.agent_hook import HookEventType
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
     from flow_sdk.builtin.agentic_process.events import AgenticProcessEventName
     from flow_sdk.builtin.worker_status import WorkerStatus
+    from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
     from flow_sdk.responses.response import ApiResponse
 
 
@@ -425,6 +428,17 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
 
     * ``FLOWPAD_EXECUTION_SCOPE`` — process identity, so worker `flow`
       commands (show/record/context/…) resolve their calling process.
+    * ``FLOWPAD_PYTHON`` — the interpreter that can ``import flow_sdk``, named
+      outright so a worker never has to resolve one. Skills that run Flowpad's
+      own Python (e.g. flow-diagnose's ``report.py``) cannot use ``uv run``:
+      uv ignores PATH and resolves an environment by walking up from the
+      working directory, which for a worker is a user workspace with no
+      Flowpad in it. Nor can they use bare ``python``/``python3`` — the
+      capability bin folder is prepended AFTER our PATH pin at spawn time
+      (see :meth:`AgenticProcess.start_pty` and
+      :func:`build_worker_spawn_env`), so the name can resolve to an unrelated
+      interpreter, and a Windows venv ships no ``python3.exe`` at all. An
+      absolute path is the only form immune to both.
     * ``PATH`` — pinned to this backend's `flow` CLI (version-skew guard,
       see :func:`flow_cli_env_path`).
     * ``CLAUDE_CONFIG_DIR`` — for explicitly configured Claude roots, pinned
@@ -434,6 +448,13 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
 
     ``setdefault`` semantics for the scope (an explicit override wins);
     mutates and returns ``env``.
+
+    The interpreter is assigned rather than ``setdefault``-ed on purpose: it is
+    derived machine state, not launch config, and its value moves whenever the
+    install does (upgrade, reinstall). A stale one persisted in a process's
+    ``cli_config["env_vars"]`` would silently point workers at an interpreter
+    that no longer exists — the same failure this var was added to remove. Same
+    reasoning as ``FLOW_INSTANCE`` in ``ClaudeCLIWorker.build_env``.
     """
     import json as _json  # noqa: PLC0415
 
@@ -441,6 +462,7 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
         "FLOWPAD_EXECUTION_SCOPE",
         _json.dumps([{"type": process.get_type(), "id": process.id}]),
     )
+    env["FLOWPAD_PYTHON"] = sys.executable
     if process.driver.name == "claude":
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         from flow_sdk.instance_settings.base_settings import (  # noqa: PLC0415
@@ -550,8 +572,18 @@ def flow_cli_env_path(existing_path: str | None = None) -> str | None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# AgenticContext — execution context handed to workers
+# ProcessHookRuntime / AgenticContext — launch context handed to workers
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+class ProcessHookRuntime(BaseModel):
+    """Immutable, launch-only artifacts prepared from persisted hook intent."""
+
+    model_config = ConfigDict(frozen=True)
+
+    plugin_dirs: tuple[str, ...] = ()
+    config_overrides: tuple[tuple[str, Any], ...] = ()
+    bypass_hook_trust: bool = False
 
 
 class AgenticContext(BaseModel):
@@ -596,6 +628,8 @@ class AgenticContext(BaseModel):
     # Claude's ``--add-dir``). Drivers populate this from process configuration
     # so print-mode workers see the same skill/agent surface as PTY-mode runs.
     add_dirs: list[str] = Field(default_factory=list)
+    # Prepared process-local plugins. Runtime-only: never persisted or hashed.
+    plugin_dirs: list[str] = Field(default_factory=list)
     system_prompt_file: str | None = None
     developer_instructions: str | None = None
     custom_instruction_dirs: list[str] = Field(default_factory=list)
@@ -605,7 +639,10 @@ class AgenticContext(BaseModel):
     # so — like fork/resume — excluded from the restart hash. Same name as
     # CodexAgentOptions.extra_config_overrides so apply_api_model_to_options can
     # stamp either object.
-    extra_config_overrides: list[tuple[str, str]] = Field(default_factory=list)
+    extra_config_overrides: list[tuple[str, Any]] = Field(default_factory=list)
+    # One-launch acknowledgement for CLIs that gate dynamically supplied hooks
+    # behind an explicit trust flag (currently Codex). Never persisted.
+    bypass_hook_trust: bool = False
 
     @model_validator(mode="after")
     def set_defaults(self) -> "AgenticContext":
@@ -616,7 +653,15 @@ class AgenticContext(BaseModel):
         return self
 
     def to_persistable_dict(self) -> dict[str, Any]:
-        data = self.model_dump(exclude={"compute_node", "stack_frame"})
+        data = self.model_dump(
+            exclude={
+                "compute_node",
+                "stack_frame",
+                "plugin_dirs",
+                "extra_config_overrides",
+                "bypass_hook_trust",
+            }
+        )
         if self.compute_node is not None:
             data["compute_node_id"] = self.compute_node.id
         return data
@@ -704,9 +749,9 @@ class AgentOptions:
     model name is always passed through.
     """
 
-    # Per-worker tier→model map; empty in the base (pass-through). See
+    # Per-worker tier→model/auto map; empty in the base (pass-through). See
     # ``flow_sdk/builtin/agentic_process/model_tiers.py``.
-    MODEL_TIERS: dict[str, str] = {}
+    MODEL_TIERS: dict[str, str | None] = {}
 
     # ── Vendor spec (declarative; overridden per worker) ─────────────────────
     # The bare executable name (claude/codex/copilot). ``_resolve_binary`` may
@@ -909,6 +954,9 @@ def restart_payload_from_cli_options(options: AgentOptions) -> dict[str, Any]:
 
     Runtime-only env vars are injected after the process identity is known but
     are not user launch config, so they must not force a restart prompt.
+    ``FLOWPAD_PYTHON`` is stripped for the same reason and one of its own: it is
+    derived from this backend's ``sys.executable``, so it changes on every
+    reinstall/upgrade and would light a phantom restart glow on every process.
 
     ``resume`` is derived from (session_id, transcript-on-disk) by the driver's
     ``cli_options`` and flips False→True as soon as the worker writes its first
@@ -927,6 +975,7 @@ def restart_payload_from_cli_options(options: AgentOptions) -> dict[str, Any]:
     data = dict(options.to_json())
     env_vars = dict(data.get("env_vars") or {})
     env_vars.pop("FLOWPAD_EXECUTION_SCOPE", None)
+    env_vars.pop("FLOWPAD_PYTHON", None)
     data["env_vars"] = env_vars
     data.pop("resume", None)
     data.pop("fork_session_id", None)
@@ -955,7 +1004,6 @@ def worker_capability_kind(worker_type: str) -> str:
     from flow_sdk.core.capabilities.mcp import harness_kind_for_worker_type
 
     return harness_kind_for_worker_type(worker_type) or f"harness.{worker_type}.cli"
-
 
 
 def worker_bin_folder(worker_type: str) -> str | None:
@@ -1053,9 +1101,7 @@ async def run_worker_auth_probe(worker_type: str) -> WorkerAuthResult:
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
         copilot_home = get_instance_settings().copilot_home
-    return await asyncio.to_thread(
-        probe_worker_auth, worker_type, path, env, Path.home(), copilot_home
-    )
+    return await asyncio.to_thread(probe_worker_auth, worker_type, path, env, Path.home(), copilot_home)
 
 
 def build_worker_spawn_env(
@@ -1251,6 +1297,8 @@ class WorkerDriver(Protocol):
     """
 
     name: str  # wire id: "claude" | "codex" | "copilot"
+    supports_process_hooks: bool
+    process_hooks_use_assets: bool
     preassign_interactive_session_id: bool
     # The byte sequence that INTERRUPTS an in-flight turn in this vendor's
     # interactive TUI, leaving the session alive. Ctrl-C for claude/codex/copilot;
@@ -1294,6 +1342,27 @@ class WorkerDriver(Protocol):
         options: AgentOptions,
     ) -> dict[str, Any]:
         """Return this worker's canonical launch payload for restart hashing."""
+        ...
+
+    def process_hook_snapshot(self, events: Sequence["HookEventType"]) -> dict[str, Any]:
+        """Return a pure semantic snapshot for persisted process-hook intent."""
+        ...
+
+    def prepare_process_hooks(
+        self,
+        assets: "AssetDir",
+        process_id: str,
+        events: Sequence["HookEventType"],
+    ) -> ProcessHookRuntime:
+        """Materialize launch artifacts once and return their runtime inputs."""
+        ...
+
+    def normalize_process_hook_data(
+        self,
+        process_id: str,
+        raw_hook_data: dict[str, Any],
+    ) -> "AgentHookData":
+        """Normalize one vendor-native report into canonical hook data."""
         ...
 
     # ── Per-turn execution ───────────────────────────────────────────────────
@@ -1481,6 +1550,7 @@ __all__ = [
     "AgenticProcessContextKey",
     "AgenticWorker",
     "AgentOptions",
+    "ProcessHookRuntime",
     "WorkerExecutionInfo",
     "WorkerDriver",
     "WorkerSpawnError",

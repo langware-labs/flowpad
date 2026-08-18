@@ -105,8 +105,8 @@ def test_file_canonical_id_is_adopted_unchanged_without_write(
     _frontmatter(path, canonical=existing)
     before = path.read_bytes()
     info = _info(type_name)
-    assert info.extract_id(path) == existing
-    assert info.mint_id(path) == existing
+    assert info.mint_entity_id(path) == existing
+    assert info.mint_entity_id(path, derive=True, overwrite=True) == existing
     assert path.read_bytes() == before
 
 
@@ -117,7 +117,7 @@ def test_file_invalid_canonical_does_not_mask_valid_legacy(
     path = tmp_path / "asset.md"
     _frontmatter(path, canonical=V7, legacy=V5)
     before = path.read_bytes()
-    assert _info(type_name).mint_id(path) == V5
+    assert _info(type_name).mint_entity_id(path, derive=True, overwrite=True) == V5
     assert path.read_bytes() == before, "legacy adoption never cleans/backfills"
 
 
@@ -128,10 +128,10 @@ def test_missing_portable_file_mints_persists_and_is_idempotent(
     path = tmp_path / "asset.md"
     path.write_text("body", encoding="utf-8")
     info = _info(type_name)
-    first = info.mint_id(path)
+    first = info.mint_entity_id(path, derive=True, overwrite=True)
     assert uuid.UUID(first).version == 4
     assert AssetCapsule.from_path(path).read("identity").data["id"] == first
-    assert info.mint_id(path) == first
+    assert info.mint_entity_id(path, derive=True, overwrite=True) == first
 
 
 @pytest.mark.parametrize("type_name", FRONTMATTER_STABLE)
@@ -142,7 +142,7 @@ def test_missing_stable_file_mints_exact_path_v5_and_persists(
     path.write_text("body", encoding="utf-8")
     expected = str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
     info = _info(type_name)
-    assert info.mint_id(path) == expected
+    assert info.mint_entity_id(path, derive=True, overwrite=True) == expected
 
 
 def test_missing_command_uses_scope_natural_key_dns_v5_and_persists(tmp_path: Path) -> None:
@@ -151,9 +151,9 @@ def test_missing_command_uses_scope_natural_key_dns_v5_and_persists(tmp_path: Pa
     ref = FSRef(path, scope="project")
     expected = str(uuid.uuid5(uuid.NAMESPACE_DNS, "command:project:deploy"))
     info = _info("command")
-    assert info.mint_id(ref) == expected
+    assert info.mint_entity_id(ref, derive=True, overwrite=True) == expected
     assert AssetCapsule.from_path(path).read("identity").data["id"] == expected
-    assert info.mint_id(path) == expected
+    assert info.mint_entity_id(path, derive=True, overwrite=True) == expected
 
 
 @pytest.mark.parametrize("type_name", FOLDER_PORTABLE)
@@ -167,8 +167,8 @@ def test_folder_capsule_adopted_unchanged_without_write(
     capsule.write_text(existing + "\n", encoding="utf-8")
     before = capsule.read_bytes()
     info = _info(type_name)
-    assert info.extract_id(folder) == existing
-    assert info.mint_id(folder) == existing
+    assert info.mint_entity_id(folder) == existing
+    assert info.mint_entity_id(folder, derive=True, overwrite=True) == existing
     assert capsule.read_bytes() == before
 
 
@@ -179,10 +179,10 @@ def test_missing_folder_id_mints_persists_and_is_idempotent(
     folder = tmp_path / type_name
     folder.mkdir()
     info = _info(type_name)
-    first = info.mint_id(folder)
+    first = info.mint_entity_id(folder, derive=True, overwrite=True)
     assert uuid.UUID(first).version == 4
     assert AssetCapsule.from_path(folder).read("identity").data["id"] == first
-    assert info.mint_id(folder) == first
+    assert info.mint_entity_id(folder, derive=True, overwrite=True) == first
 
 
 def _folder_with_legacy(root: Path, type_name: str) -> Path:
@@ -214,7 +214,7 @@ def test_invalid_folder_capsule_falls_through_to_valid_legacy_without_backfill(
     folder = _folder_with_legacy(tmp_path, type_name)
     capsule = folder / ".flow" / "id"
     before = capsule.read_bytes()
-    assert _info(type_name).mint_id(folder) == V5
+    assert _info(type_name).mint_entity_id(folder, derive=True, overwrite=True) == V5
     assert capsule.read_bytes() == before
 
 
@@ -237,8 +237,8 @@ def test_json_canonical_id_is_adopted_unchanged(
     path.write_text(json.dumps({"id": existing, "name": "R"}) + "\n", encoding="utf-8")
     before = path.read_bytes()
     info = _info(type_name)
-    assert info.extract_id(path) == existing
-    assert info.mint_id(path) == existing
+    assert info.mint_entity_id(path) == existing
+    assert info.mint_entity_id(path, derive=True, overwrite=True) == existing
     assert path.read_bytes() == before
 
 
@@ -250,7 +250,7 @@ def test_missing_json_id_mints_exact_path_v5_and_persists(
     path.write_text('{"name": "R"}\n', encoding="utf-8")
     expected = str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
     info = _info(type_name)
-    assert info.mint_id(path) == expected
+    assert info.mint_entity_id(path, derive=True, overwrite=True) == expected
     assert json.loads(path.read_text(encoding="utf-8"))["id"] == expected
 
 
@@ -321,9 +321,9 @@ DETERMINISTIC_TYPES = (
 def test_deterministic_provider_exact_v5_matrix(tmp_path: Path, type_name: str) -> None:
     ref, stable_key, namespace = _deterministic_case(tmp_path, type_name)
     info = _info(type_name)
-    assert info.extract_id(ref) is None
+    assert info.mint_entity_id(ref) is None
     assert info.id_stable_key_fn(ref) == stable_key
-    assert info.mint_id(ref) == str(uuid.uuid5(namespace, stable_key))
+    assert info.mint_entity_id(ref, derive=True, overwrite=True) == str(uuid.uuid5(namespace, stable_key))
 
 
 @pytest.mark.parametrize("type_name", ("claude_session", "codex_session", "copilot_session", "dynamic_workflow", "secret_origin"))
@@ -345,4 +345,4 @@ def test_provider_embedded_valid_id_is_adopted(tmp_path: Path, type_name: str) -
     else:
         path.write_text(json.dumps({"data": {"id": V4}}))
         ref = FSRef(path)
-    assert _info(type_name).mint_id(ref) == V4
+    assert _info(type_name).mint_entity_id(ref, derive=True, overwrite=True) == V4

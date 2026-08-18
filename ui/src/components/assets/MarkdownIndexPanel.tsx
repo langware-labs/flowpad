@@ -109,7 +109,9 @@ export function MarkdownIndexPanel({ folderAbsPath }: Props) {
     >
       <ScrollArea className="h-full">
         {state === 'loading' && (
-          <div className="p-4 text-xs text-muted-foreground"><Trans>Loading…</Trans></div>
+          <div className="p-4 text-xs text-muted-foreground">
+            <Trans>Loading…</Trans>
+          </div>
         )}
         {state === 'empty' && (
           <div className="flex flex-col gap-2 p-4 text-xs">
@@ -126,7 +128,10 @@ export function MarkdownIndexPanel({ folderAbsPath }: Props) {
               <Trans>Open LLM Indexers</Trans>
             </Button>
             <p className="text-[10px] text-muted-foreground">
-              <Trans>Run a rebuild for this folder there; the JSON appears at <code className="ml-1">index.md.json</code> in this folder.</Trans>
+              <Trans>
+                Run a rebuild for this folder there; the JSON appears at <code className="ms-1">index.md.json</code> in
+                this folder.
+              </Trans>
             </p>
           </div>
         )}
@@ -141,8 +146,12 @@ export function MarkdownIndexPanel({ folderAbsPath }: Props) {
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <Trans>Self-Summary</Trans>
               </h3>
-              <blockquote className="mt-1 border-l-2 pl-2 text-xs italic text-foreground/80">
-                {data.self_summary || <span className="text-muted-foreground"><Trans>(empty)</Trans></span>}
+              <blockquote className="mt-1 border-s-2 ps-2 text-xs italic text-foreground/80">
+                {data.self_summary || (
+                  <span className="text-muted-foreground">
+                    <Trans>(empty)</Trans>
+                  </span>
+                )}
               </blockquote>
             </section>
 
@@ -162,7 +171,9 @@ export function MarkdownIndexPanel({ folderAbsPath }: Props) {
                   </li>
                 ))}
                 {data.files.length === 0 && (
-                  <li className="text-xs text-muted-foreground"><Trans>No files</Trans></li>
+                  <li className="text-xs text-muted-foreground">
+                    <Trans>No files</Trans>
+                  </li>
                 )}
               </ul>
             </section>
@@ -183,14 +194,20 @@ export function MarkdownIndexPanel({ folderAbsPath }: Props) {
                   </li>
                 ))}
                 {data.subfolders.length === 0 && (
-                  <li className="text-xs text-muted-foreground"><Trans>No subfolders</Trans></li>
+                  <li className="text-xs text-muted-foreground">
+                    <Trans>No subfolders</Trans>
+                  </li>
                 )}
               </ul>
             </section>
 
             <footer className="border-t pt-2 text-[10px] text-muted-foreground">
-              <div>typeid: <code>{data.typeid.slice(0, 32)}…</code></div>
-              <div>inputs_hash: <code>{data.inputs_hash.slice(0, 12)}…</code></div>
+              <div>
+                typeid: <code>{data.typeid.slice(0, 32)}…</code>
+              </div>
+              <div>
+                inputs_hash: <code>{data.inputs_hash.slice(0, 12)}…</code>
+              </div>
               <div>generated: {new Date(data.generated_at).toLocaleString()}</div>
             </footer>
           </div>

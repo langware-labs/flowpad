@@ -197,6 +197,31 @@ def test_headless_bypass_does_not_add_interactive_trust_override():
 
     assert not any("trust_level" in arg for arg in argv)
     assert "check_for_update_on_startup=false" not in argv
+    assert "--dangerously-bypass-hook-trust" not in argv
+
+
+@pytest.mark.parametrize("json_stream", [False, True])
+def test_process_hook_trust_and_structured_overrides_are_launch_only_argv(json_stream):
+    cmd = CodexAgentOptions(json_stream=json_stream, bypass_hook_trust=True)
+    cmd.extra_config_overrides = [
+        ("features.hooks", True),
+        (
+            "hooks.UserPromptSubmit",
+            [{"hooks": [{"type": "command", "command": "flow hooks report"}]}],
+        ),
+    ]
+
+    argv, _ = cmd.to_spawn_args()
+
+    assert argv.count("--dangerously-bypass-hook-trust") == 1
+    overrides = [argv[index + 1] for index, value in enumerate(argv[:-1]) if value == "-c"]
+    assert "features.hooks=true" in overrides
+    hook_override = next(value for value in overrides if value.startswith("hooks.UserPromptSubmit="))
+    assert tomllib.loads(hook_override) == {
+        "hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": "flow hooks report"}]}]}
+    }
+    assert "bypass_hook_trust" not in cmd.to_json()
+    assert "extra_config_overrides" not in cmd.to_json()
 
 
 def test_interactive_non_bypass_does_not_add_trust_override():
@@ -278,6 +303,7 @@ def test_to_json_roundtrip():
     cmd.system_prompt_file = "/tmp/system-prompt"
     cmd.developer_instructions = "launch derived"
     cmd.extra_config_overrides = [("provider.name", "runtime")]
+    cmd.bypass_hook_trust = True
     data = cmd.to_json()
     loaded = CodexAgentOptions.from_json(data)
 
@@ -304,7 +330,7 @@ def test_launch_only_config_fields_emit_process_local_overrides():
 
     argv, _env = cmd.to_spawn_args()
 
-    assert 'developer_instructions="Review O\'Brien\'s change"' in argv
+    assert "developer_instructions=\"Review O'Brien's change\"" in argv
     assert 'model_provider="openrouter"' in argv
 
 

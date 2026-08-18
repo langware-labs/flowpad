@@ -13,7 +13,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import (
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
 from flow_sdk.transcript_analyzer import TranscriptFormat
 
-from .event_to_flowdata import _element_type_for_kind
+from .event_to_flowdata import _element_type_for_kind, flowpad_terminal_event_frames
 
 logger = logging.getLogger(__name__)
 
@@ -156,14 +156,27 @@ def load_transcript_history(
     *,
     transcript_format: TranscriptFormat | str | None = None,
 ) -> list[FlowData]:
-    """This vendor's format guess + mapping over the shared replay envelope."""
+    """This vendor's format guess + mapping over the shared replay envelope.
+
+    ``_terminal_frames`` keeps copilot's own expansion of the ``flowpad.*``
+    terminal events its tee writes — those are FlowPad envelopes, not copilot
+    entries, so they bypass the standard replay envelope entirely.
+    """
     return shared_load_transcript_history(
         "copilot",
         transcript,
         _element_type_for_kind,
         transcript_format=transcript_format or _format_for_path(transcript),
         logger=logger,
+        entry_frames=_terminal_frames,
     )
+
+
+def _terminal_frames(entry, fmt) -> list[FlowData] | None:
+    if fmt is not TranscriptFormat.COPILOT_STREAM:
+        return None
+    return flowpad_terminal_event_frames(getattr(entry, "payload", {}))
+
 
 def _format_for_path(path: Path) -> TranscriptFormat:
     if "session-state" in path.parts:

@@ -2,10 +2,7 @@ import { createContext, useContext, type ReactNode } from 'react';
 
 import { CapabilityKinds } from '@sdk';
 import { useCapability, type UseCapabilityResult } from '@sdk/react/hooks';
-import {
-  normalizeWorkerType,
-  type WorkerType,
-} from '@src/components/workers/worker-types';
+import { normalizeWorkerType, type WorkerType } from '@src/components/workers/worker-types';
 
 /**
  * Single owner of the default/Claude/Codex/Copilot harness capability
@@ -49,6 +46,22 @@ export const HarnessCapabilitiesProvider = ({ children }: { children: ReactNode 
 
   return <HarnessCapabilitiesContext.Provider value={value}>{children}</HarnessCapabilitiesContext.Provider>;
 };
+
+/**
+ * The shared snapshots when a provider is mounted, else null.
+ *
+ * For components that are ALSO rendered outside the app tree (isolated
+ * component tests, storybook-style renders). The throwing accessor below is the
+ * right contract for surfaces that only ever live under `App`; making a shared,
+ * low-level component throw when no provider is present would force every test
+ * of every surface that embeds it to mount the provider — which subscribes to
+ * the manager singleton and fires `capabilityManager.load()`, so each of those
+ * tests would need a mocked backend. Consumers read the absence as "unknown"
+ * and fail open, which is the same rule they apply to an unchecked capability.
+ */
+export function useOptionalHarnessCapabilities(): HarnessCapabilitiesValue | null {
+  return useContext(HarnessCapabilitiesContext);
+}
 
 /** Read the shared Claude/Codex/Copilot/OpenCode capability snapshots. */
 export function useHarnessCapabilities(): HarnessCapabilitiesValue {

@@ -1,10 +1,18 @@
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { PrefKey } from '@sdk';
 import { useContext } from '@sdk/react/hooks';
 import { useEventFilterMask } from '@src/hooks/use-event-filter-mask';
 import { usePreference } from '@src/hooks/use-preference';
 import { type SnifferEvent } from '@src/hooks/use-hooks-sniffer';
 import { useSnifferContext } from '@src/contexts/SnifferContext';
-import { useSnifferPipeline, parsePipelineFilters, SnifferLevel, type PipelineFilters } from '@src/hooks/use-sniffer-pipeline';
+import {
+  useSnifferPipeline,
+  parsePipelineFilters,
+  SnifferLevel,
+  type PipelineFilters,
+} from '@src/hooks/use-sniffer-pipeline';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -23,11 +31,11 @@ import { EventTooltipContent, getEventColor, getEventIcon, navigateToTranscript 
 type TimeSpan = '10s' | '1M' | '10' | '60' | '1D';
 
 const TIME_SPANS: { value: TimeSpan; ms: number; tooltip: string }[] = [
-  { value: '10s', ms: 10_000, tooltip: 'Time span: 10 seconds' },
-  { value: '1M', ms: 60_000, tooltip: 'Time span: 1 minute' },
-  { value: '10', ms: 600_000, tooltip: 'Time span: 10 minutes' },
-  { value: '60', ms: 3_600_000, tooltip: 'Time span: 60 minutes' },
-  { value: '1D', ms: 86_400_000, tooltip: 'Time span: 1 day' },
+  { value: '10s', ms: 10_000, tooltip: msg`Time span: 10 seconds` },
+  { value: '1M', ms: 60_000, tooltip: msg`Time span: 1 minute` },
+  { value: '10', ms: 600_000, tooltip: msg`Time span: 10 minutes` },
+  { value: '60', ms: 3_600_000, tooltip: msg`Time span: 60 minutes` },
+  { value: '1D', ms: 86_400_000, tooltip: msg`Time span: 1 day` },
 ];
 
 // ---------------------------------------------------------------------------
@@ -148,10 +156,7 @@ export function EventSnifferChip() {
   const [timeSpan, setTimeSpan] = usePreference<TimeSpan>(PrefKey.SNIFFER_TIME_SPAN);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [storedFilters, setStoredFilters] = usePreference<PipelineFilters>(PrefKey.SNIFFER_FILTERS);
-  const filters = useMemo<PipelineFilters>(
-    () => parsePipelineFilters(JSON.stringify(storedFilters)),
-    [storedFilters],
-  );
+  const filters = useMemo<PipelineFilters>(() => parsePipelineFilters(JSON.stringify(storedFilters)), [storedFilters]);
   const levelClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleFilterChange = useCallback(
@@ -226,9 +231,7 @@ export function EventSnifferChip() {
       </button>
 
       {/* Event count + popover trigger */}
-      {filteredEvents.length > 0 && (
-        <span className="text-xs text-muted-foreground">({filteredEvents.length})</span>
-      )}
+      {filteredEvents.length > 0 && <span className="text-xs text-muted-foreground">({filteredEvents.length})</span>}
 
       {/* Event list popover (via expand button) */}
       <Popover
@@ -285,15 +288,15 @@ export function EventSnifferChip() {
                     timeSpan === span.value
                       ? 'bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:text-foreground',
-                    i === 0 && 'rounded-l-[5px]',
-                    i === TIME_SPANS.length - 1 && 'rounded-r-[5px]',
+                    i === 0 && 'rounded-s-[5px]',
+                    i === TIME_SPANS.length - 1 && 'rounded-e-[5px]',
                   )}
                   onClick={() => handleTimeSpan(span.value)}
                 >
                   {span.value}
                 </button>
               </TooltipTrigger>
-              <TooltipContent>{span.tooltip}</TooltipContent>
+              <TooltipContent>{i18n._(span.tooltip)}</TooltipContent>
             </Tooltip>
           ))}
         </div>

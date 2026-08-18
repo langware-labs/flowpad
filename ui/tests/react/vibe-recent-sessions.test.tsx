@@ -11,6 +11,7 @@ const openDockPointer = vi.fn();
 const navigateToResult = vi.fn();
 const useRecentActivitySpy = vi.fn();
 let activityItems: RecentActivityItem[] = [];
+let hasMore = false;
 let projectId: string | null = 'proj-1';
 
 vi.mock('@sdk', async (importOriginal) => {
@@ -33,7 +34,7 @@ vi.mock('@sdk/react/hooks', async (importOriginal) => {
 vi.mock('@src/pages/flow-page/use-recent-activity', () => ({
   useRecentActivity: (...args: unknown[]) => {
     useRecentActivitySpy(...args);
-    return { items: activityItems, isLoading: false, error: null, hasMore: false };
+    return { items: activityItems, isLoading: false, error: null, hasMore };
   },
 }));
 
@@ -95,6 +96,7 @@ describe('VibeRecentSessions', () => {
     vi.clearAllMocks();
     getByIdFromCache.mockReturnValue(null);
     activityItems = [];
+    hasMore = false;
     projectId = 'proj-1';
   });
 
@@ -173,6 +175,35 @@ describe('VibeRecentSessions', () => {
     expect(useRecentActivitySpy).toHaveBeenLastCalledWith(
       { mode: 'project', activeProjectId: 'proj-1' },
       expect.any(Number),
+    );
+  });
+
+  it('loads the next activity page inside the full dialog', async () => {
+    const user = userEvent.setup();
+    activityItems = [entityItem(1)];
+    hasMore = true;
+    render(<VibeRecentSessions />);
+
+    await user.click(screen.getByTestId('vibe-recent-show-more'));
+    await user.click(screen.getByTestId('recent-activity-load-more'));
+
+    expect(useRecentActivitySpy).toHaveBeenLastCalledWith(
+      { mode: 'project', activeProjectId: 'proj-1' },
+      100,
+    );
+  });
+
+  it('can expand the full dialog across all projects', async () => {
+    const user = userEvent.setup();
+    activityItems = [entityItem(1)];
+    render(<VibeRecentSessions />);
+
+    await user.click(screen.getByTestId('vibe-recent-show-more'));
+    await user.click(screen.getByTestId('recent-activity-all-projects'));
+
+    expect(useRecentActivitySpy).toHaveBeenLastCalledWith(
+      { mode: 'all' },
+      50,
     );
   });
 });

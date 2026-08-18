@@ -10,10 +10,10 @@ export const CODEX_MODEL_TIERS: Record<string, string> = {
   lg: 'gpt-5.5',
 }
 
-export const COPILOT_MODEL_TIERS: Record<string, string> = {
-  sm: 'gpt-5.4-mini',
-  md: 'gpt-5.4',
-  lg: 'gpt-5.5',
+export const COPILOT_MODEL_TIERS: Record<string, string | null> = {
+  sm: null,
+  md: null,
+  lg: null,
 }
 
 // OpenCode is provider-agnostic: every id carries its provider prefix, and
@@ -25,6 +25,10 @@ export const OPENCODE_MODEL_TIERS: Record<string, string> = {
   lg: 'openrouter/z-ai/glm-5.2',
 }
 
-export function resolveModelTier(tierMap: Record<string, string>, model?: string | null): string | undefined {
-  return model ? (tierMap[model] ?? model) : undefined
+export function resolveModelTier(
+  tierMap: Record<string, string | null>,
+  model?: string | null,
+): string | undefined {
+  if (!model) return undefined
+  return Object.prototype.hasOwnProperty.call(tierMap, model) ? (tierMap[model] ?? undefined) : model
 }

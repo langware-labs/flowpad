@@ -13,6 +13,17 @@
 
 ## Testing Environment
 
+- Focused run (2026-08-18, Claude quota recovery in Vibe): dedicated `vibe-18`
+  backend `http://localhost:6018`, frontend `http://localhost:5018`, local Hub
+  `http://localhost:8093`, and Chromium through the standard Playwright MCP on
+  macOS. The isolated instance stayed the sole browser/write target. Claude
+  rendered its normalized unavailable notice, the visible worker selector
+  continued the conversation with Codex, and the exact response
+  `VIBE_CODEX_READY` rendered in the browser. The unified exec harness reaped
+  detached launcher children after two launch attempts; the documented
+  continuous-session workaround kept the final instance healthy. Results:
+  `ui/tests/manual_regression/_results/2026-08-17T22-01-01Z/`.
+
 - Full cycle (2026-08-04, branch `agent-q`): host darwin, 14 cores, load 3.6-16 across the run.
   User's own (never cleared; :9008 died mid-cycle on its own and was restarted DETACHED, DB
   untouched): backend `http://localhost:9008`, frontend `http://localhost:4098`. Local hub
@@ -20,9 +31,7 @@
   skip without `TESTING=true`). Instances launched AND killed by the cycle: `qa-cycle`
   (be 6001 / fe 5003 — phases 3,5,6,7,8), `dev-1`/`dev-2`/`dev-3` (be 6001/6002/6003 —
   phases 9,10), `qa11-7` (be 6007 / fe 5007 — the Phase 11 sweep). Python 3.10.17, Node
-  via npx, Playwright Chromium headless. `sqlite3` present at /usr/bin/sqlite3. Docker daemon
-  running but NO disposable flow compute node was provisioned (the 3 docker terminal tests
-  need `flow compute connect <container> --start`; all running containers were the user's).
+  via npx, Playwright Chromium headless. `sqlite3` present at /usr/bin/sqlite3.
   Results: `ui/tests/manual_regression/_results/2026-08-03T22-19-50Z/`.
 
 - Focused run (2026-08-04, Agent create → Project/Agent publish → Hub
@@ -70,6 +79,22 @@
 - Last cycle (2026-05-30, record-removal branch): backend 9008 + frontend 4098 both reachable (HTTP 200) throughout. Phases 1-4 green (1522 / 441 / 51 / 907). 1 real fix (bootstrap `types` shape, 4 tests). No port conflicts this run.
 
 ## Learnings
+
+### 2026-08-18 — Vibe Claude quota recovery to Codex
+
+- A real Claude quota failure is normalized into the visible `Claude is
+  unavailable` / `Choose another worker` notice. Selecting Codex and choosing
+  `Continue this conversation` creates a new Codex-backed Vibe process, keeps
+  the project/workdir, forwards the original user turn through the continuation
+  prompt, and navigates to the new canonical `agentic_process-*?viewMode=vibe`
+  route. Validate both the rendered answer and the new process entity's
+  `worker_type=codex`; the old Claude process alone is not evidence of recovery.
+- On this execution harness, `scripts/instance_ctl.sh launch` and current-source
+  `flow instance reset --relaunch` both reached readiness but their detached
+  children were reaped when the command session closed. Two identical failures
+  triggered the circuit breaker. Keeping launch and browser validation in one
+  continuous exec session produced a stable instance without changing any
+  wait/timeout budget.
 
 ### 2026-08-04 — Full QA cycle (branch `agent-q`)
 
@@ -160,13 +185,8 @@ Phase 12 vacuous (zero orphans). 11 test-side fixes + 1 REAL PRODUCT FIX. Result
   rename to `unified-tab-strip.handleRename`, which had no validation; (4) the `agent`→
   `subagent` split left an asset test on the reserved `agent` type.
 
-- **The docker terminal tests are runnable — provision a disposable container.**
-  `docker run -d --name qa-flowpad-docker python:3.12-slim sleep infinity` then
-  `FLOW_INSTANCE=<inst> flow compute connect qa-flowpad-docker --start`. First connect installs
-  the wheel (~1 min); RE-connect after a DB clear is ~6s. The per-file clear wipes the
-  `@docker-<name>` ComputeNode, so the sweep must re-register before each `docker_*` file.
-  Never connect the user's own containers — connect installs flow_sdk INTO the target.
-
+- **Docker containers are enrolled into the hub with `flow connect --docker <container>`** (there is no
+  desktop-local docker compute node any more). Never enroll the user's own containers — it installs flow_sdk INTO the target.
 - **`flow instance reset` is doing real work:** it flushed 11 leaked child PIDs after Phase 7
   and 26 after Phase 8. Note `--backend-only` also took the frontend down on this host (the
   instance CLI is under active development — be patient with it).

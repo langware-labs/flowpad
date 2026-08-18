@@ -1,13 +1,7 @@
 import { useMemo, useState } from 'react';
 import { MessagesSquare, ShieldCheck, Trash2, User as UserIcon } from 'lucide-react';
 import { ActionInfo, PermissionAction, type User } from '@sdk';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@src/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
@@ -95,10 +89,7 @@ function ContactConversations({ user, active }: { user: User; active: boolean })
   // from every conversation it appears in AND returns those conversations. The
   // backend matches by email OR user_id OR local id (more robust than a purely
   // client-side participant-key match), so the returned list is authoritative.
-  const scanInfo = useMemo(
-    () => (user.id ? new ActionInfo('conversations', 'user', user.id, 'GET') : null),
-    [user.id],
-  );
+  const scanInfo = useMemo(() => (user.id ? new ActionInfo('conversations', 'user', user.id, 'GET') : null), [user.id]);
   const { data, loading } = useAction<ScannedConversation[]>(scanInfo, { enabled: active });
   const conversations = data ?? [];
 
@@ -127,11 +118,7 @@ function ContactConversations({ user, active }: { user: User; active: boolean })
 }
 
 /** Permissions tab: the receiver's local prompt policy for this contact. */
-function ContactPermissions({
-  contact,
-}: {
-  contact: ContactKey & { name?: string | null };
-}) {
+function ContactPermissions({ contact }: { contact: ContactKey & { name?: string | null } }) {
   const { permissions, refetch } = useContactPermissions(contact);
   const [busy, setBusy] = useState(false);
   const who = contact.name?.trim() || contact.email?.trim() || 'this contact';
@@ -164,9 +151,7 @@ function ContactPermissions({
   return (
     <div className="flex flex-col gap-4 text-sm">
       <fieldset className="flex flex-col gap-2">
-        <legend className="text-[11px] uppercase tracking-widest text-muted-foreground">
-          All projects
-        </legend>
+        <legend className="text-[11px] uppercase tracking-widest text-muted-foreground">All projects</legend>
         {([PermissionAction.EXECUTE_PROMPT, PermissionAction.AUTO_REPLY] as const).map((action) => (
           <label key={action} className="flex items-center gap-2">
             <Checkbox
@@ -175,16 +160,16 @@ function ContactPermissions({
               disabled={busy}
               data-testid={`contact-perm-global-${action}`}
             />
-            <span>{ACTION_LABEL[action]} from {who}</span>
+            <span>
+              {ACTION_LABEL[action]} from {who}
+            </span>
           </label>
         ))}
       </fieldset>
 
       {projectRows.length > 0 && (
         <fieldset className="flex flex-col gap-2">
-          <legend className="text-[11px] uppercase tracking-widest text-muted-foreground">
-            Per-project
-          </legend>
+          <legend className="text-[11px] uppercase tracking-widest text-muted-foreground">Per-project</legend>
           {projectRows.map((row) => (
             <div key={row.id} className="rounded-md border border-border px-2 py-1.5">
               <div className="truncate font-mono text-[10px] text-muted-foreground" title={row.project_id ?? ''}>
@@ -216,8 +201,7 @@ function ContactPermissions({
 
       {permissions.length === 0 && (
         <p className="text-xs text-muted-foreground">
-          No permissions yet. Grant them here, or from the Execute dialog when a
-          prompt arrives.
+          No permissions yet. Grant them here, or from the Execute dialog when a prompt arrives.
         </p>
       )}
     </div>
@@ -230,17 +214,23 @@ function ContactPermissions({
  * permissions-only dialog, unchanged.
  */
 export function ContactPermissionsDialog({ open, onClose, contact, user }: ContactPermissionsDialogProps) {
-  const [tab, setTab] = useState<'details' | 'conversations' | 'permissions'>(
-    user ? 'details' : 'permissions',
-  );
+  const [tab, setTab] = useState<'details' | 'conversations' | 'permissions'>(user ? 'details' : 'permissions');
   // One identity source: derive the permissions key from ``user`` when the
   // caller passed the full entity, else use the ``contact`` key it supplied.
-  const contactKey: ContactKey & { name?: string | null } =
-    contact ?? { userId: user?.id, email: user?.email, name: user?.name };
+  const contactKey: ContactKey & { name?: string | null } = contact ?? {
+    userId: user?.id,
+    email: user?.email,
+    name: user?.name,
+  };
   const who = contactKey.name?.trim() || contactKey.email?.trim() || 'this contact';
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+    >
       <DialogContent className="sm:max-w-md" data-testid="contact-permissions-dialog">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -256,11 +246,11 @@ export function ContactPermissionsDialog({ open, onClose, contact, user }: Conta
                 Details
               </TabsTrigger>
               <TabsTrigger value="conversations" data-testid="contact-tab-conversations">
-                <MessagesSquare className="mr-1 h-3.5 w-3.5" />
+                <MessagesSquare className="me-1 h-3.5 w-3.5" />
                 Conversations
               </TabsTrigger>
               <TabsTrigger value="permissions" data-testid="contact-tab-permissions">
-                <ShieldCheck className="mr-1 h-3.5 w-3.5" />
+                <ShieldCheck className="me-1 h-3.5 w-3.5" />
                 Permissions
               </TabsTrigger>
             </TabsList>

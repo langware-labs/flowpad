@@ -154,7 +154,7 @@ def project_asset_tree(
 
     parser_path = info.asset_ref_for(resolved_asset) if info.main_layout == "folder" else resolved_asset
     parser_ref = FSRef(parser_path, record_type=entity_type, read_only=True)
-    observed_id = info.extract_id(parser_ref)
+    observed_id = info.mint_entity_id(parser_ref)
     if observed_id != expected_id:
         raise ValueError("asset identity does not match the requested entity")
     records = list(info.from_disk_fn(parser_ref, expected_id))

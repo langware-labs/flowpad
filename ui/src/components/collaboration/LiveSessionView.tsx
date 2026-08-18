@@ -199,7 +199,9 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
               {status === RemoteWorkerSessionStatus.PENDING ? (
                 <Trans>{guestName} wants to run prompts on your machine.</Trans>
               ) : (
-                <Trans>Live session with {guestName} on your machine · {status}</Trans>
+                <Trans>
+                  Live session with {guestName} on your machine · {status}
+                </Trans>
               )}
             </span>
           </div>
@@ -212,7 +214,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
                   disabled={!!busy}
                   data-testid="live-session-approve"
                 >
-                  <CircleCheck className="mr-1.5 h-4 w-4" />
+                  <CircleCheck className="me-1.5 h-4 w-4" />
                   <Trans>Approve</Trans>
                 </Button>
                 <Button
@@ -222,7 +224,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
                   disabled={!!busy}
                   data-testid="live-session-decline"
                 >
-                  <CircleX className="mr-1.5 h-4 w-4" />
+                  <CircleX className="me-1.5 h-4 w-4" />
                   <Trans>Decline</Trans>
                 </Button>
               </>
@@ -235,7 +237,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
                 disabled={!!busy}
                 data-testid="live-session-pause"
               >
-                <Pause className="mr-1.5 h-4 w-4" />
+                <Pause className="me-1.5 h-4 w-4" />
                 <Trans>Pause</Trans>
               </Button>
             )}
@@ -246,7 +248,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
                 disabled={!!busy}
                 data-testid="live-session-resume"
               >
-                <Play className="mr-1.5 h-4 w-4" />
+                <Play className="me-1.5 h-4 w-4" />
                 <Trans>Resume</Trans>
               </Button>
             )}
@@ -258,7 +260,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
                 disabled={!!busy}
                 data-testid="live-session-disconnect"
               >
-                <PlugZap className="mr-1.5 h-4 w-4" />
+                <PlugZap className="me-1.5 h-4 w-4" />
                 <Trans>Disconnect</Trans>
               </Button>
             )}

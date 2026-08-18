@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { ViewType, WorldViewProjection } from '@sdk';
 import { Building2, Globe, KeyRound, Mail } from 'lucide-react';
 import type React from 'react';
@@ -67,11 +68,13 @@ export function buildHubRailItems(t: (s: TemplateStringsArray) => string): reado
       pointer: WorldViewProjection.WORLD,
     },
     {
+      // The plain people-and-teams screen. The org WORLDVIEW shows the same data
+      // as a graph and is reachable from inside it — the graph is the advanced
+      // view, not the front door.
       id: 'organization',
       title: t`Organization`,
       icon: Building2,
-      viewType: ViewType.WORLDVIEW,
-      pointer: WorldViewProjection.ORGANIZATION,
+      viewType: ViewType.ORGANIZATION,
     },
     // Last: everything above is a place to look at content and stays contiguous;
     // this is a settings-flavoured destination.

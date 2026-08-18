@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 from typing import Any
 
@@ -18,6 +17,22 @@ class HubAuthExpiredError(httpx.RequestError):
     """Raised when a request is aborted before network due to local expiry."""
 
 
+# Request-extension marker set by ``CloudProxy``: this response's body is streamed
+# straight back to the caller, so the hooks must not read it. Reading consumes the
+# stream, and the proxy's ``aiter_raw()`` then raises ``StreamConsumed`` *after* the
+# headers (carrying the hub's Content-Length) have already gone out — the caller
+# gets a zero-byte body against a non-zero Content-Length, which the browser
+# reports as a bare "Network Error" instead of the hub's real status and message.
+PASSTHROUGH_EXTENSION = "flowpad_passthrough"
+
+
+def _is_passthrough(response: httpx.Response) -> bool:
+    try:
+        return bool(response.request.extensions.get(PASSTHROUGH_EXTENSION))
+    except RuntimeError:  # no request bound to the response
+        return False
+
+
 def build_event_hooks() -> dict[str, list[Any]]:
     """Build httpx async event hooks for the hub client."""
     return {"request": [_on_request], "response": [_on_response]}
@@ -29,17 +44,12 @@ def _is_public_auth_path(path: str) -> bool:
 
 @lru_cache(maxsize=1)
 def _local_machine_id() -> str:
-    """This machine's id, derived exactly like the hub's probe derives it.
+    """This machine's id, a stable per-host fingerprint sent as ``X-Machine-ID``.
 
-    Must stay byte-identical to ComputeNode.get_machine_id's script on the hub:
-    the hub machine-binds the workspace sandbox's login key to the value ITS
-    probe computed, and the header we send is compared against that (hashed).
-    Computed locally rather than read from env because the hub's set_env lands
-    in ~/.bashrc, which the non-interactive service process never sources.
+    Sent on every hub call so a hub that chooses to machine-bind a key has
+    something to compare against; the workspace login key is not machine-bound
+    today, so a hub without an allowlist simply ignores it.
     """
-    machine_id = os.environ.get("FLOWPAD_MACHINE_ID")
-    if machine_id:
-        return machine_id
     import hashlib  # noqa: PLC0415
     import platform  # noqa: PLC0415
     import uuid  # noqa: PLC0415
@@ -68,9 +78,8 @@ def _local_machine_id() -> str:
 def attach_machine_id(headers) -> None:
     """Send this machine's id on every hub call.
 
-    The hub machine-binds the workspace sandbox's delegating login key; without
-    the X-Machine-ID header those requests fail closed. On machines whose keys
-    carry no machine allowlist (normal desktops) the header is simply ignored.
+    Harmless when the key carries no machine allowlist (the normal case): the hub
+    ignores the header. Kept so a machine-bound key can still be honoured.
     """
     try:
         headers["X-Machine-ID"] = _local_machine_id()
@@ -84,6 +93,7 @@ async def _on_request(request: httpx.Request) -> None:
         return
 
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
     api_key = get_instance_settings().cloud_api_key
     if api_key:
         request.headers["Authorization"] = f"Bearer {api_key}"
@@ -102,15 +112,18 @@ async def _on_request(request: httpx.Request) -> None:
 
 async def _on_response(response: httpx.Response) -> None:
     status_code = response.status_code
+    # A proxied response belongs to the caller downstream — inspect status only.
+    passthrough = _is_passthrough(response)
     if status_code < 400:
-        if await _is_auth_failure_envelope(response):
+        if not passthrough and await _is_auth_failure_envelope(response):
             # HTTP-layer auth failure (envelope status=fail with auth marker).
             # This is a real credential rejection from the hub's identity
             # check, not a WS-handshake reject — drop login state.
             await invalidate_hub_login("rejected")
         return
 
-    await response.aread()
+    if not passthrough:
+        await response.aread()
     # Every hub 4xx/5xx — including 401/402/424 — is surfaced through the
     # error reporter so it becomes a HubClientErrorInfo warning in the UI
     # (createHubRequestFailedWarning), carrying method/path/status/message
@@ -124,7 +137,9 @@ async def _on_response(response: httpx.Response) -> None:
         status_code=status_code,
         method=response.request.method,
         path=request_path(response.request.url),
-        message=_response_message(response),
+        # The body is off-limits on a passthrough; the status still gets reported,
+        # and the caller receives the hub's message verbatim in the proxied body.
+        message=f"HTTP {status_code}" if passthrough else _response_message(response),
     )
 
 
