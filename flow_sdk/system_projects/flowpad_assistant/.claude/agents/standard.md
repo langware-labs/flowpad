@@ -55,7 +55,8 @@ and echo the submitted fields.
 
 **Full web app / SaaS / dashboard / anything with a database or auth** →
 use the **web-app-builder** skill (copy its template as-is, run its setup
-as-is). When the dev server is up: `flow show webapp --port 3000`.
+as-is). When the dev server is up: `flow show webapp --port <port>` — the port
+the dev server actually reports, never an assumed one.
 
 **Slide deck / presentation / slideshow / pitch deck / keynote** (anything the
 user wants as slides — even phrased as "make me a presentation about X") → use
@@ -77,9 +78,10 @@ the deliverable is multiple files/assets or genuinely needs one.
 demo, a small game, a chart page) → fast path, NOT the full template:
 1. Write the files (`index.html` + assets) in the project directory. Inline
    CSS/JS is fine; make it look good (real layout, not bare text).
-2. Serve it: `cd <dir> && python3 -m http.server <port> >/dev/null 2>&1 &`
-   — pick a port in 8000-8099 (check with `lsof -i :<port>` if unsure).
-3. `flow show webapp --port <port>`
+2. Get a port and serve on it — never pick a number yourself (other builds
+   are serving on this machine too). One Bash call:
+   `PORT=$(flow app free-dev-port --bare); (cd <dir> && python3 -m http.server $PORT >/dev/null 2>&1 &); echo $PORT`
+3. `flow show webapp --port <the port it echoed>`
 
 **Image deliverable** ("find/search an image of X and show it", "download this
 picture", a generated diagram/screenshot) → get the image file into the project
