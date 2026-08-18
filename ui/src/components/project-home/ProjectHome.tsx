@@ -8,6 +8,7 @@ import type { GitShareGate } from '@src/hooks/use-git-share-gate';
 import apiClient from '@sdk/client';
 import { launchWizard, CapabilityKinds } from '@sdk';
 import { QuickCreatePanel, useQuickCreatePick } from '@src/components/quick-create';
+import { ProjectAgentsStrip } from '@src/components/agents/ProjectAgentsStrip';
 import type { PanelHandlers } from '@src/components/quick-create';
 import { EnvLocalCard } from './EnvLocalCard';
 import { SecretsCard } from './SecretsCard';
@@ -88,6 +89,9 @@ const CreateTab: React.FC<{
 }> = ({ projectId, spawnProjectId, panelProps }) => (
   <div className="flex flex-col gap-6">
     {projectId && <SessionTiles spawnProjectId={spawnProjectId} panelProps={panelProps} />}
+    {/* The project's own agents, right under the vendor session tiles: both
+        answer "start something", and an agent IS a session starter. */}
+    <ProjectAgentsStrip projectId={projectId} />
     <QuickCreatePanel {...panelProps} sections={['asset', 'folder']} />
   </div>
 );
