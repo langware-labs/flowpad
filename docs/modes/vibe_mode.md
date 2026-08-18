@@ -115,7 +115,7 @@ not overwritten.
    - `loadFlowpadAssistant` mounts the **web-app-builder** skill (via `--add-dir`)
      so "build me a web app" scaffolds a running dev server.
    - The message is sent verbatim — no forced build nudge — so "hi" is just a chat.
-   - `embedVibeAgent` embeds the persona that carries the `flow show` contract:
+   - `embedVibeSubagent` embeds the persona that carries the `flow show` contract:
      the **SubAgent** `vibe` (`.claude/agents/vibe.md`, `scope: system`) — NOT the
      launchable **Agent** of the same name (`agentic-assets/agent/vibe/agent.md`),
      a ~20-line haiku front in the internal-agents family. Two assets, one word;

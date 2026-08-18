@@ -225,7 +225,7 @@ optional CLI keys). `worker_type` is keyed to the **driver name** (`"claude"`), 
 `.value` — not Python's default `"WorkerType.CLAUDE_CODE"` `__str__` form (the original
 ~700ms-after-start false flip).
 
-Tracked signals include `cli_config.*`, `additional_dirs`, `embedded_agent_ids`,
+Tracked signals include `cli_config.*`, `additional_dirs`, `embedded_subagent_ids`,
 `shell_mode`, `load_flowpad_assistant` (rides on worker `add_dirs`), and `pty_mode` for Codex
 (interactive vs `codex exec --json` shapes differ). Explicitly **not** tracked: `name`,
 `tags`, `labels`, `visible`, `plan_path`, `favorite_index`. `workdir` is frozen post-start

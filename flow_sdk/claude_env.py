@@ -549,24 +549,24 @@ class ClaudeProjectEnvManager:
     # -- Agent management -----------------------------------------------------
 
     def load_subagent(self, agent: "AgentRecord | str | Path") -> None:
-        """Copy an agent definition into ``.claude/agents/``.
+        """Copy a sub-agent definition into ``.claude/agents/``.
 
         Accepts:
-          - ``Record`` (AGENT type): renders via ``render_subagent_markdown`` and writes it
-          - ``str``: treated as agent name, loaded via ``load_subagent`` from operations
+          - ``Record`` (SUBAGENT type): renders via ``render_subagent_markdown`` and writes it
+          - ``str``: treated as sub-agent name, loaded via ``load_subagent`` from operations
           - ``Path``: path to a ``.md`` file, copied directly
         """
         from flow_sdk.fs_store.operations.subagent import (  # noqa: PLC0415
-            load_subagent as _load_agent,
+            load_subagent as _load_subagent,
         )
 
         if isinstance(agent, Path):
             dest = self.agents_dir / agent.name
             dest.write_text(agent.read_text(encoding="utf-8"), encoding="utf-8")
         elif isinstance(agent, str):
-            loaded = _load_agent(agent)
+            loaded = _load_subagent(agent)
             if loaded is None:
-                raise FileNotFoundError(f"Agent {agent!r} not found")
+                raise FileNotFoundError(f"SubAgent {agent!r} not found")
             self._write_agent_md(loaded)
         else:
             self._write_agent_md(agent)

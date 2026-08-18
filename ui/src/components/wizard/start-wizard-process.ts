@@ -82,12 +82,12 @@ export async function startWizardProcess<T = unknown>(
   // Subscribe for the close event BEFORE embedding/prompting so we can't miss it.
   const wizardClosed = awaitWizardResult<T>(process);
 
-  // Embed the driving agent before the prompt so it handles the turn.
+  // Embed the driving sub-agent before the prompt so it handles the turn.
   try {
     const agentRef = await resolveWizardAgentRef(request.wizardName);
-    if (agentRef) await process.loadEmbeddedAgent(agentRef);
+    if (agentRef) await process.loadEmbeddedSubagent(agentRef);
   } catch (e) {
-    console.warn(`[startWizardProcess] failed to embed wizard agent ${request.wizardName}`, e);
+    console.warn(`[startWizardProcess] failed to embed wizard sub-agent ${request.wizardName}`, e);
   }
 
   // `result` resolves on the FIRST of:

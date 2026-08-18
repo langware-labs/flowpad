@@ -62,7 +62,7 @@ vi.mock('@src/pages/flow-page/VibeAssignTaskButton', () => ({
 vi.mock('@src/pages/flow-page/use-start-vibe-session', () => ({
   createVibeProcessForProject: mocks.createProcess,
   continueVibeSessionForProject: mocks.continueProcess,
-  embedVibeAgent: vi.fn().mockResolvedValue(undefined),
+  embedVibeSubagent: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { VibeChatPane } from '@src/pages/flow-page/vibe-chat-pane';

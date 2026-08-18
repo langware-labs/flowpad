@@ -8,7 +8,6 @@ from .bootstrap import router as bootstrap_router
 from .capabilities import router as capabilities_router
 from .chat import router as chat_router
 from .cloud import router as cloud_router
-from .compute_register import compute_register_router
 from .debug import router as debug_router
 from .dep_graph import router as dep_graph_router
 from .detection import router as detection_router
@@ -65,7 +64,6 @@ __all__ = [
     "watch_router",
     "assets_router",
     "project_router",
-    "compute_register_router",
     "debug_router",
     "ingest_router",
     "runs_router",

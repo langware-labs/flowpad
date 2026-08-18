@@ -36,6 +36,12 @@ subagents, and our entity is a thin wrapper over its `.claude/agents/*.md` contr
 `Agent` names Flowpad's launchable principal instead; it may reference SubAgents without
 absorbing their provider-owned format.
 
+**The verbs, pinned.** **load/embed a SubAgent** = write its persona into
+`cli_config.agents_json` (Claude Code `--agents`) — prompt text only; **use/run an Agent** =
+`Deployment.build/launch` — the whole launch bundle (worker, model, permissions, system
+prompt via `context_data.instructions`, dirs, `deployment_id`). "Load an agent" means the
+Agent entity; the persona embed is always "sub-agent".
+
 **The type renamed; the directory did not.** `.claude/agents/` is a **provider-owned path**
 — Claude Code reads it directly — so `family` stays `"agents"` and the frontmatter spec
 (`AGENTS_SPEC_FIELDS`) still mirrors its `--agents` JSON verbatim. Entity `subagent`,

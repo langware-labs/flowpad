@@ -44,7 +44,7 @@ side-effect · ❌ none.
 | `execute-plan` / `update-plan` | ✅ test_execute_plan_prompt, test_plan_auto_approve | ✅ test_agentic_process_plan_actions | ❌ | ❌ |
 | `transcript` (plan/prompts/full) | ◐ test_codex_transcript_resolution | ✅ test_agentic_process_actions (prompts/full/plan; unknown subpath fails) | ❌ | ❌ |
 | `get-plan` | ◐ | ✅ test_agentic_process_actions (alias, no session) | ✅L plan_detection | ❌ |
-| `load-embedded-agent` | ❌ | ❌ | ✅L load_embedded_agent | ❌ |
+| `load-embedded-subagent` | ❌ | ❌ | ✅L load_embedded_subagent | ❌ |
 | `load-embedded-skill` | ✅ test_agentic_process_skill_loading | ❌ | ✅L system_skills | ❌ |
 | `attach-`/`detach-`/`list-embedded-assets` | ❌ | ✅ test_agentic_process_actions (`list`); attach/detach ❌ | ✅L embedded_assets (attach+detach) | ❌ |
 | `get-assets` | ✅ test_agentic_process_get_assets | ❌ | ✅ project_context_dir | ❌ |
@@ -67,7 +67,7 @@ TS methods: `appendUserMessage` and `getOutputs` now covered by
 null-on-404/workflow-run short-circuit). Still uncovered: `wait` /
 `waitForComplete` / `waitForIdle` (only `waitForReady`, long-only).
 
-**Long-ONLY actions** (no fast-suite coverage on ANY front): `load-embedded-agent`,
+**Long-ONLY actions** (no fast-suite coverage on ANY front): `load-embedded-subagent`,
 `attach-`/`detach-embedded-asset`, `set-graph-context`. (Previously also
 switch-mode/fork/set-visible/input/submit/execute/prompt/get-plan — all now have
 fast api coverage via `test_agentic_process_actions.py` /
@@ -142,7 +142,7 @@ set-env persist/remove/update/special-chars.
 | `load_history` / parsers (U) | ✅ + drift guards (ai-title) | ✅ static fixtures + naming-event-is-meta (test_codex_parser) | ✅ static fixtures + session-title-is-meta (test_copilot_parser) |
 | **`has_resumable_session`** | ✅ test_cli_driver_contract (jsonl present/absent/no-session-id) | ✅ test_cli_driver_contract (rollout present/absent/no-session-id) | ✅ test_cli_driver_contract (session-file / process-local tee / absent / no-session-id) |
 | plan mode | ✅ all four fronts | ✅ test_cli_driver_contract (does-not-support) | ✅ test_cli_driver_contract (does-not-support) |
-| `compose_prompt` (embedded agents) | ✅ test_cli_driver_contract (passthrough) | — (shared) | — (shared) |
+| `compose_prompt` (embedded sub-agents) | ✅ test_cli_driver_contract (passthrough) | — (shared) | — (shared) |
 | System instruction assets | ✅ test_system_instruction_assets + test_cli_options_system_prompt | ✅ same | ✅ same |
 
 Shared: `AgentOptions` round-trips ✅, system-instruction sink ✅, `build_env`
@@ -194,7 +194,7 @@ Most of the formerly high-risk holes are closed as of 2026-07-02. Remaining/upda
 3. **Long-only CLI matrix beyond claude** — codex/copilot real-CLI is now
    `test_cli_driver_binary_smoke.py` but stays DEEP_TESTING + binary-gated; a
    missing binary still leaves zero signal.
-4. **`load-embedded-agent`, `attach-`/`detach-embedded-asset`, `set-graph-context`** —
+4. **`load-embedded-subagent`, `attach-`/`detach-embedded-asset`, `set-graph-context`** —
    fast suites still blind (long-only).
 
 ### Now covered (was zero-coverage, high-risk)
@@ -217,7 +217,7 @@ Most of the formerly high-risk holes are closed as of 2026-07-02. Remaining/upda
 
 ### Long-test-only coverage (fast suites still blind)
 
-`load-embedded-agent`, embedded asset attach/detach, `set-graph-context`,
+`load-embedded-subagent`, embedded asset attach/detach, `set-graph-context`,
 chat⇄terminal switching under load. `execute`/`prompt`/queue-drain now have fast
 api coverage in addition to the long suites.
 

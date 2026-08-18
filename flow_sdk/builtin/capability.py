@@ -423,14 +423,26 @@ class Capability(Entity):
 
             provider = self.api_provider or spec.default_provider.value
             has_key = bool(get_lm_api(provider))
+            details: dict = {"provider": provider}
+            if provider == "flowpad":
+                # The hub's LLMEndpoint: "key" = hub login, presence = bound + logged in.
+                from flow_sdk.instance_settings.llm_endpoint import get_hub_llm_endpoint
+
+                bound = get_hub_llm_endpoint()
+                details["hub_endpoint"] = bound.endpoint_typeid if bound else None
+                message = (
+                    "Using FlowPad hub endpoint"
+                    if has_key
+                    else ("FlowPad hub endpoint bound but box is not logged in" if bound else "No FlowPad hub endpoint bound")
+                )
+            else:
+                message = f"Using {provider} API key" if has_key else f"No {provider} API key configured"
             result = WorkerAuthResult(
                 status=WorkerAuthStatus.LOGGED_IN if has_key else WorkerAuthStatus.LOGGED_OUT,
                 verified=False,
                 auth_mode="api",
-                message=(
-                    f"Using {provider} API key" if has_key else f"No {provider} API key configured"
-                ),
-                details={"provider": provider},
+                message=message,
+                details=details,
             )
         else:
             result = await get_driver(worker_type).auth_probe()

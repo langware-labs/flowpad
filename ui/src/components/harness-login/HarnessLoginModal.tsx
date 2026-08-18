@@ -46,18 +46,24 @@ const workerOf = (kind: string) => kind.split('.')[1] as Worker;
  *  Python specs; the Select renders only these, so the modal offers only
  *  possible outcomes. */
 const HARNESS_SUPPORTED_PROVIDERS: Record<Worker, LMApiProvider[]> = {
-  // OpenRouter-only until the backend ApiAuthSpec routes non-OpenRouter providers
-  // (base_env is provider-agnostic today). Keep in sync with the Python specs.
-  claude: [LMApiProvider.OpenRouter],
-  codex: [LMApiProvider.OpenRouter],
-  copilot: [LMApiProvider.OpenRouter],
+  // OpenRouter directly, or the FlowPad hub's LLMEndpoint (a hub-side passthrough
+  // to it, bound by the hub after login). Keep in sync with the Python specs.
+  claude: [LMApiProvider.OpenRouter, LMApiProvider.FlowPad],
+  codex: [LMApiProvider.OpenRouter, LMApiProvider.FlowPad],
+  copilot: [LMApiProvider.OpenRouter, LMApiProvider.FlowPad],
 };
 
 const PROVIDER_LABEL: Record<string, string> = {
   [LMApiProvider.OpenRouter]: 'OpenRouter',
   [LMApiProvider.Anthropic]: 'Anthropic',
   [LMApiProvider.OpenAI]: 'OpenAI',
+  [LMApiProvider.FlowPad]: 'FlowPad Hub endpoint',
 };
+
+/** Providers with no key to paste: configured (or not) by something other than
+ *  the user — today only the FlowPad hub endpoint, which the hub binds and the
+ *  box's hub login authenticates. */
+const MANAGED_PROVIDERS: ReadonlySet<string> = new Set([LMApiProvider.FlowPad]);
 
 /** Display name for a provider value, falling back to the raw value. */
 const providerLabel = (provider: string) => PROVIDER_LABEL[provider] ?? provider;
@@ -209,8 +215,12 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
   const authBadge =
     authMode === 'api'
       ? apiAvailable
-        ? { label: t`LLM key`, tone: 'emerald' as const }
-        : { label: t`Key not set`, tone: 'amber' as const }
+        ? MANAGED_PROVIDERS.has(activeProvider)
+          ? { label: t`Hub endpoint`, tone: 'emerald' as const }
+          : { label: t`LLM key`, tone: 'emerald' as const }
+        : MANAGED_PROVIDERS.has(activeProvider)
+          ? { label: t`Hub endpoint unavailable`, tone: 'amber' as const }
+          : { label: t`Key not set`, tone: 'amber' as const }
       : { label: t`Device login`, tone: 'sky' as const };
 
   return {
@@ -354,7 +364,9 @@ function HarnessListRow({
  *  harnesses only consume these keys (they never enter them). */
 function LlmKeysSection({ keys, refreshKeys }: { keys: LmApiKeySummary[]; refreshKeys: () => Promise<void> }) {
   const { t } = useLingui();
-  const allProviders = Object.values(LMApiProvider);
+  // Only providers a user can key by hand go in the paste-a-key select; managed
+  // ones (the FlowPad hub endpoint) appear in the configured list when bound.
+  const allProviders = Object.values(LMApiProvider).filter((p) => !MANAGED_PROVIDERS.has(p));
   const [provider, setProvider] = useState<string>(allProviders[0]);
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -445,6 +457,16 @@ function LlmKeysSection({ keys, refreshKeys }: { keys: LmApiKeySummary[]; refres
               >
                 <span className="flex items-center gap-2">
                   {providerLabel(k.provider)}
+                  {k.managed && (
+                    <Badge
+                      variant="outline"
+                      className={`gap-1 ${AUTH_BADGE_TONE.sky}`}
+                      title={k.detail ?? undefined}
+                      data-testid={`keys-managed-${k.provider}`}
+                    >
+                      <Trans>via hub login</Trans>
+                    </Badge>
+                  )}
                   {v && (
                     <Badge
                       variant="outline"
@@ -466,15 +488,17 @@ function LlmKeysSection({ keys, refreshKeys }: { keys: LmApiKeySummary[]; refres
                   >
                     {testing === k.provider ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trans>Test</Trans>}
                   </Button>
-                  <button
-                    type="button"
-                    aria-label={t`Delete key`}
-                    data-testid={`keys-delete-${k.provider}`}
-                    className="text-muted-foreground hover:text-destructive"
-                    onClick={() => setConfirmDelete(k.provider)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  {!k.managed && (
+                    <button
+                      type="button"
+                      aria-label={t`Delete key`}
+                      data-testid={`keys-delete-${k.provider}`}
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={() => setConfirmDelete(k.provider)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </span>
               </li>
             );
@@ -591,7 +615,11 @@ function HarnessDetail({ kind, onBack, keys }: { kind: string; onBack: () => voi
               </Select>
               <span className="flex items-center gap-1.5 text-sm text-emerald-500">
                 <Check className="h-4 w-4" />
-                <Trans>Using {providerLabel(activeProvider)} key</Trans>
+                {MANAGED_PROVIDERS.has(activeProvider) ? (
+                  <Trans>Using {providerLabel(activeProvider)}</Trans>
+                ) : (
+                  <Trans>Using {providerLabel(activeProvider)} key</Trans>
+                )}
               </span>
             </div>
           )}

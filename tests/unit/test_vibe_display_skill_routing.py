@@ -1,4 +1,4 @@
-"""VIBE-001 contract: the vibe agent forbids ``flow navigate`` for presentation,
+"""VIBE-001 contract: the vibe sub-agent forbids ``flow navigate`` for presentation,
 so no skill co-loaded in the same flowpad_assistant session may teach
 ``flow navigate`` as the recipe for *opening a file*.
 

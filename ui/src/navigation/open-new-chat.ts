@@ -60,7 +60,7 @@ export async function openNewChat(
   // Chat surface only: terminal is a raw PTY passthrough where the user drives
   // the CLI directly, and vibe embeds its own persona via
   // createVibeProcessForProject. Awaited before returning so a caller that
-  // prompts on the returned process can't race the load-embedded-agent round
+  // prompts on the returned process can't race the load-embedded-subagent round
   // trip — the persona has to be on disk before the FIRST turn, since
   // prepare_system_instruction_assets() builds the system prompt per turn.
   // Never throws (see embedStandardAgent), so the `void openNewChat(...)`

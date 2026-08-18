@@ -1,6 +1,6 @@
 """VIBE-002 contract: an ``.html`` file must never index as a MARKDOWN record.
 
-When the vibe agent is asked to open an existing ``public/open-me.html``, one
+When the vibe sub-agent is asked to open an existing ``public/open-me.html``, one
 observed failure ran ``flow record index <file>.html --types markdown``. That
 routes to ``discover_record_by_path("markdown", …)`` → ``extract_markdown``,
 which reads any UTF-8 text file and emits a MARKDOWN record — with no check that
