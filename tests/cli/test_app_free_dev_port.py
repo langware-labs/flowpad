@@ -57,6 +57,13 @@ def test_bare_prints_only_the_number():
     assert port in app_cmd._STATIC_PORT_RANGE
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.dev_port_picking.rules: FAILING? read this tag's rules first -
+#       one probe per invocation, or the backlog is spent
+# flowpad:endcapsule tag
 def test_skips_a_port_something_is_listening_on():
     # Take the lowest free band port ourselves and LISTEN on it — exactly what a
     # sibling build's `http.server` looks like — then the picker must move on.
