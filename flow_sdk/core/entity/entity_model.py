@@ -1098,6 +1098,38 @@ class Entity(DBEntity):
                 )
             )
 
+    def fs_origin(self) -> "FSOriginField | None":
+        """The typed view of ``git_origin`` — THE read seam for the base field.
+
+        ``git_origin`` stays a ``dict`` because it is a WIRE FORMAT: the field is
+        ``Sharing.SHARED`` and reaches a hub pinned to a released ``flow_sdk``,
+        so its exact key set and key order are load-bearing (see
+        ``docs/data-management/items_origins.md``). Callers that want behaviour —
+        ``clone_url()``, ``matches_checkout()``, a ``kind`` test — come through
+        here instead of hand-rolling ``GitOrigin.model_validate`` and getting a
+        subtly different tolerance for legacy shapes.
+
+        Returns ``None`` for an absent or unparseable origin rather than raising:
+        a malformed provenance stamp must not break the entity carrying it.
+
+        Use the raw ``git_origin`` dict when passing the value through to the
+        wire UNCHANGED — validating and re-dumping a legacy kind-less dict adds
+        ``kind``/``project_id``/``head_commit`` and rewrites bytes a released
+        receiver is already reading.
+        """
+        raw = self.git_origin
+        if not raw:
+            return None
+        from flow_sdk.builtin.fs_origin_field import FS_ORIGIN_ADAPTER  # noqa: PLC0415
+
+        try:
+            return FS_ORIGIN_ADAPTER.validate_python(raw)
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "unparseable git_origin on %s; treating as absent", self.id, exc_info=True
+            )
+            return None
+
     async def get_record(self) -> "FSRecord | None":
         """Return the fs-record associated with this entity, or None if none exists."""
         from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415 — lazy
