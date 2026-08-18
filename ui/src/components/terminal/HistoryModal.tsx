@@ -261,9 +261,11 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
         }}
       >
         <DialogHeader>
-          <div className="flex items-center justify-between gap-2 pr-7">
+          <div className="flex items-center justify-between gap-2 pe-7">
             <div className="flex items-center gap-3">
-              <DialogTitle className="text-sm font-semibold"><Trans>Recent Sessions</Trans></DialogTitle>
+              <DialogTitle className="text-sm font-semibold">
+                <Trans>Recent Sessions</Trans>
+              </DialogTitle>
               <label
                 className="flex cursor-pointer select-none items-center gap-1 text-[11px] text-muted-foreground"
                 title={currentProject ? undefined : t`No active project`}
@@ -275,7 +277,9 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                   onCheckedChange={(v) => setAllProjects(v === true)}
                   disabled={!currentProject}
                 />
-                <span><Trans>All projects</Trans></span>
+                <span>
+                  <Trans>All projects</Trans>
+                </span>
               </label>
             </div>
             <div className="flex items-center gap-0.5">
@@ -367,7 +371,9 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
           )}
           data-testid="history-selection-bar"
         >
-          <span className="text-[11px] text-muted-foreground"><Trans>{selectedKeys.size} selected</Trans></span>
+          <span className="text-[11px] text-muted-foreground">
+            <Trans>{selectedKeys.size} selected</Trans>
+          </span>
           <div className="flex items-center gap-1.5">
             <button
               type="button"
@@ -390,7 +396,9 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
         <div className="flex min-h-0 flex-1">
           <div className="flex min-w-0 flex-1 flex-col">
             {isLoading && visible.length === 0 ? (
-              <p className="py-4 text-center text-xs text-muted-foreground"><Trans>Loading…</Trans></p>
+              <p className="py-4 text-center text-xs text-muted-foreground">
+                <Trans>Loading…</Trans>
+              </p>
             ) : visible.length === 0 ? (
               <p className="py-4 text-center text-xs text-muted-foreground">
                 {query.trim() ? <Trans>No matching sessions</Trans> : <Trans>No recent sessions</Trans>}
@@ -409,7 +417,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                       <li
                         key={key}
                         className={cn(
-                          'flex min-w-0 items-center gap-1.5 rounded pl-1 hover:bg-muted',
+                          'flex min-w-0 items-center gap-1.5 rounded ps-1 hover:bg-muted',
                           isPeeking && 'bg-muted',
                         )}
                         data-testid="history-row"
@@ -424,7 +432,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                           />
                         </span>
                         <button
-                          className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden rounded px-1.5 py-1.5 text-left text-sm"
+                          className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden rounded px-1.5 py-1.5 text-start text-sm"
                           onClick={() => {
                             if (selectedKeys.size > 0) {
                               // Selection mode: a click adds/removes this row from the
@@ -475,7 +483,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                             ) : null}
                           </span>
                           <span
-                            className="ml-2 flex shrink-0 flex-col items-end leading-tight text-muted-foreground"
+                            className="ms-2 flex shrink-0 flex-col items-end leading-tight text-muted-foreground"
                             data-testid="history-row-time"
                           >
                             <span className="text-xs">{timeAgo(entry.last_active_time)}</span>
@@ -485,7 +493,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                         <button
                           type="button"
                           className={cn(
-                            'mr-1 inline-flex h-6 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium shadow-sm transition-colors',
+                            'me-1 inline-flex h-6 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium shadow-sm transition-colors',
                             isPeeking
                               ? 'border-primary bg-primary text-primary-foreground hover:bg-primary/90'
                               : 'border-border bg-background text-foreground hover:border-muted-foreground/40 hover:bg-muted-foreground/10 hover:text-foreground',
@@ -497,7 +505,9 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                           data-testid="history-row-prompts-button"
                         >
                           <MessageSquare className="h-3 w-3" />
-                          <span><Trans>Prompts</Trans></span>
+                          <span>
+                            <Trans>Prompts</Trans>
+                          </span>
                         </button>
                       </li>
                     );
@@ -519,9 +529,13 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
             >
               <div className="flex h-full min-h-0 flex-col">
                 {peekResolving || (peekPromptsLoading && peekPromptEntries.length === 0) ? (
-                  <p className="px-3 py-4 text-center text-xs text-muted-foreground"><Trans>Loading prompts…</Trans></p>
+                  <p className="px-3 py-4 text-center text-xs text-muted-foreground">
+                    <Trans>Loading prompts…</Trans>
+                  </p>
                 ) : peekPromptEntries.length === 0 ? (
-                  <p className="px-3 py-4 text-center text-xs text-muted-foreground"><Trans>No prompts found</Trans></p>
+                  <p className="px-3 py-4 text-center text-xs text-muted-foreground">
+                    <Trans>No prompts found</Trans>
+                  </p>
                 ) : (
                   <PromptIndexPanel
                     prompts={peekPromptEntries}

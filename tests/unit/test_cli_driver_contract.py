@@ -72,14 +72,17 @@ def _write_claude_session(projects_dir: Path, session_id: str) -> Path:
     path = projects_dir / encoded / f"{session_id}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps({
-            "type": "user",
-            "uuid": "00000000-0000-4000-8000-0000000000aa",
-            "sessionId": session_id,
-            "cwd": cwd,
-            "timestamp": "2026-05-06T21:39:48.000Z",
-            "message": {"role": "user", "content": "hi"},
-        }) + "\n",
+        json.dumps(
+            {
+                "type": "user",
+                "uuid": "00000000-0000-4000-8000-0000000000aa",
+                "sessionId": session_id,
+                "cwd": cwd,
+                "timestamp": "2026-05-06T21:39:48.000Z",
+                "message": {"role": "user", "content": "hi"},
+            }
+        )
+        + "\n",
         encoding="utf-8",
     )
     return path
@@ -112,11 +115,14 @@ def _write_codex_rollout(sessions_root: Path, thread_id: str) -> Path:
     path = sessions_root / "2026" / "05" / "06" / f"rollout-2026-05-06T21-39-48-{thread_id}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps({
-            "timestamp": "2026-05-06T21:39:48.000Z",
-            "type": "session_meta",
-            "payload": {"id": thread_id, "cwd": "/repo"},
-        }) + "\n",
+        json.dumps(
+            {
+                "timestamp": "2026-05-06T21:39:48.000Z",
+                "type": "session_meta",
+                "payload": {"id": thread_id, "cwd": "/repo"},
+            }
+        )
+        + "\n",
         encoding="utf-8",
     )
     return path
@@ -177,11 +183,10 @@ def test_copilot_has_resumable_true_when_session_file_present(copilot_session_ro
     assert proc.driver.has_resumable_session(proc) is True
 
 
-def test_copilot_has_resumable_true_when_process_local_tee_nonempty(
-    copilot_session_root, isolated_records_root
-):
-    # ``_has_session`` also counts a non-empty process-local stdout tee as
-    # resumable, even with no ``~/.copilot`` session file.
+def test_copilot_has_resumable_false_when_only_process_local_tee_exists(copilot_session_root, isolated_records_root):
+    # A stdout tee is Flowpad's replay record, not Copilot's resumable session
+    # state. Treating it as resumable emits ``--resume=<id>`` for a session the
+    # vendor never created (notably after a launch-time model failure).
     from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
         copilot_transcript_path_for_process,
     )
@@ -190,7 +195,7 @@ def test_copilot_has_resumable_true_when_process_local_tee_nonempty(
     tee = copilot_transcript_path_for_process(proc.id)
     tee.write_text('{"type":"result"}\n', encoding="utf-8")
 
-    assert proc.driver.has_resumable_session(proc) is True
+    assert proc.driver.has_resumable_session(proc) is False
 
 
 def test_copilot_has_resumable_false_when_absent(copilot_session_root, isolated_records_root):

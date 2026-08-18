@@ -15,7 +15,7 @@ const ANNOTATION_LABEL_DISPLAY: Record<string, string> = {
 };
 
 export function getSearchResultBadgeLabel(result: { record_type: string; labels?: string[] }): string {
-  if (result.record_type === RecordType.ANNOTATION && result.labels?.length) {
+  if (result.record_type === String(RecordType.ANNOTATION) && result.labels?.length) {
     const key = result.labels[0].replace(/:$/, '');
     return ANNOTATION_LABEL_DISPLAY[key] ?? key;
   }
@@ -76,8 +76,6 @@ export interface UseRecordSearchResult {
 export interface RecordSearchRequestOptions {
   /** Backend page size. Search keeps its established default when omitted. */
   limit?: number;
-  /** Suppress the request while required scope context is unresolved. */
-  enabled?: boolean;
 }
 
 const LS_CALIBRATION_KEY = 'flowpad-search-calibration';
@@ -88,7 +86,7 @@ export function loadStoredCalibration(): SearchCalibration {
 }
 
 export function saveCalibration(c: SearchCalibration) {
-  try { localStorage.setItem(LS_CALIBRATION_KEY, JSON.stringify(c)); } catch {}
+  try { localStorage.setItem(LS_CALIBRATION_KEY, JSON.stringify(c)); } catch { /* Best effort. */ }
 }
 
 const TIME_OFFSETS: Record<string, number> = { '1h': 3_600_000, '1d': 86_400_000, '1w': 604_800_000 };
@@ -126,18 +124,11 @@ export function useRecordSearch(
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { col_weights, recency_boost, recency_factor, overfetch, type_scores } = calibration;
-  const { limit = DEFAULT_SEARCH_LIMIT, enabled = true } = requestOptions;
+  const { limit = DEFAULT_SEARCH_LIMIT } = requestOptions;
 
   useEffect(() => {
     let cancelled = false;
     if (timerRef.current) clearTimeout(timerRef.current);
-
-    if (!enabled) {
-      setResults([]);
-      setTotal(0);
-      setIsLoading(false);
-      return;
-    }
 
     // `filters.scope` is intentionally excluded — it no longer drives the
     // request (the canonical ScopeFilter does that). Gating on it here used
@@ -195,7 +186,7 @@ export function useRecordSearch(
       cancelled = true;
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [query, filters.record_type, filters.status, filters.time_preset, filters.time_start, filters.time_end, filters.include_system, filters.sort_by, scopeFilter ? scopeFilterKey(scopeFilter) : null, col_weights, recency_boost, recency_factor, overfetch, type_scores, debounceMs, enabled, limit]);
+  }, [query, filters.record_type, filters.status, filters.time_preset, filters.time_start, filters.time_end, filters.include_system, filters.sort_by, scopeFilter ? scopeFilterKey(scopeFilter) : null, col_weights, recency_boost, recency_factor, overfetch, type_scores, debounceMs, limit]);
 
   return { results, total, isLoading, error, indexerReady, latencyMs };
 }

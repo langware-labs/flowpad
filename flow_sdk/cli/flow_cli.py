@@ -112,8 +112,10 @@ def ping(
 
     # Send ping to local server
     try:
+        from flow_sdk.cli.commands._common import local_get
+
         url = f"http://127.0.0.1:{port}/ping"
-        response = requests.get(url, params={"ping_str": ping_str}, timeout=5)
+        response = local_get(url, params={"ping_str": ping_str}, timeout=5)
 
         if response.status_code == 200:
             typer.echo(f"Ping sent successfully: {ping_str}")
@@ -520,6 +522,131 @@ def auth_logout():
         typer.echo("⚠ Not currently logged in")
 
 
+# --- what the hub configures on a box it launched -------------------------
+#
+# These three exist so the hub has a channel into a running box that does NOT
+# require the box's HTTP server to be up and answering. The loopback
+# `/auth/login_callback` curl needs a healthy app to accept anything, which is
+# exactly what cannot be relied on while a box is starting, restarting, or
+# refusing keyless callers. `run_command` always works.
+#
+# All three are hub-driven and idempotent. None is meant to be typed by a human,
+# which is why they say so in their help rather than pretending otherwise.
+
+
+@auth_app.command("set-cookie-gate")
+def auth_set_cookie_gate(
+    value: Annotated[str, typer.Argument(help="The gate secret, minted by the hub for this box")],
+):
+    """
+    Arm this instance's request gate. Hub-driven; not for interactive use.
+
+    Once armed the instance answers NOTHING without the secret — not the UI, not
+    the API, not a WebSocket, and not /health/status. That total coverage is the
+    point (see docs/cookie-gate.md); it is also why the supervisor in
+    server/launch.py has to present the secret on its own probes.
+
+    Refused on a desktop-managed instance, where that same total coverage would
+    reject the Electron shell's own startup health poll and stop the app from
+    launching at all.
+
+    Example: flow auth set-cookie-gate <secret>
+    """
+    from flow_sdk.instance_settings.cookie_gate import set_cookie_gate
+
+    try:
+        set_cookie_gate(value)
+    except ValueError as e:
+        # Empty value: arming on "" would store a secret that reads as unset,
+        # leaving the instance open while looking locked. Or DesktopGateRefused:
+        # this instance is the desktop app's, which the gate would brick.
+        typer.echo(f"✗ {e}", err=True)
+        raise typer.Exit(1)
+    typer.echo("✓ Cookie gate armed")
+
+
+@auth_app.command("clear-cookie-gate")
+def auth_clear_cookie_gate():
+    """
+    Disarm this instance's request gate. Hub-driven; not for interactive use.
+
+    Example: flow auth clear-cookie-gate
+    """
+    from flow_sdk.instance_settings.cookie_gate import clear_cookie_gate
+
+    if clear_cookie_gate():
+        typer.echo("✓ Cookie gate cleared")
+    else:
+        # Distinguished from success on purpose: "already open" and "I just
+        # opened it" are different facts about the machine.
+        typer.echo("⚠ Cookie gate was not armed")
+
+
+@auth_app.command("hub-login")
+def auth_hub_login(
+    api_key: Annotated[str, typer.Argument(help="The node-bound key the hub minted for this box")],
+):
+    """
+    Sign this instance in with a hub-minted key. Hub-driven; not for interactive use.
+
+    Deliberately NOT `flow auth login`, which is the human path and does
+    something materially different: it stores the key and the user and stops
+    there. This mirrors what `/auth/login_callback` does, because the box's
+    logged-in state is built from more than a stored key —
+    ``_finalize_login`` also broadcasts the OAuth SUCCESS that unblocks a
+    watching UI, folds the hub-resolved organization id/role into the user, and
+    invalidates the bootstrap cache. A box signed in through the shorter path
+    looks logged in locally while reporting something different about itself.
+
+    Unlike the HTTP route this needs no in-band credential check before it acts.
+    That check exists there because the endpoint is reachable by anyone until
+    the gate arms; a command inside the box is already proof of access to the
+    box.
+
+    Example: flow auth hub-login fp_live_...
+    """
+    import asyncio
+
+    from flow_sdk.cli.auth.cloud_login import _finalize_login
+    from flow_sdk.cli.auth.hub_login import validate_api_key_async
+    from flow_sdk.cloud_client.api.auth import LoginData
+
+    async def _run() -> dict:
+        user_info = await validate_api_key_async(api_key)
+        await _finalize_login(LoginData(token=api_key, expires=None, refresh_token=None, user=user_info))
+        return user_info
+
+    try:
+        user_info = asyncio.run(_run())
+    except Exception as e:
+        typer.echo(f"✗ Login failed: {e}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"✓ Signed in as {user_info.get('email') or user_info.get('id') or 'unknown'}")
+
+
+@auth_app.command("set-runtime")
+def auth_set_runtime(
+    kind: Annotated[str, typer.Argument(help="What the hub launched this instance as: sandbox | agent")],
+):
+    """
+    Record what this instance was launched AS. Hub-driven; not for interactive use.
+
+    The box cannot work this out for itself: a sandbox a human opens and a box an
+    agent was deployed into are byte-for-byte identical from inside. The value
+    only exists because the hub says so.
+
+    Example: flow auth set-runtime sandbox
+    """
+    from flow_sdk.instance_settings.runtime import set_assigned_runtime
+
+    try:
+        assigned = set_assigned_runtime(kind)
+    except ValueError as e:
+        typer.echo(f"✗ {e}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"✓ Runtime set to {assigned.value if hasattr(assigned, 'value') else assigned}")
+
+
 @auth_app.command("test")
 def auth_test(delay: Annotated[int, typer.Option(help="Delay in seconds before allowing login")] = 5):
     """
@@ -717,6 +844,9 @@ def hooks_report(
     hook_entry_id: Annotated[
         Optional[str], typer.Option("--hook-entry-id", help="Hook entry ID for metadata lookup")
     ] = None,
+    process_id: Annotated[
+        Optional[str], typer.Option("--process-id", help="AgenticProcess ID for a process-local hook")
+    ] = None,
     name: Annotated[Optional[str], typer.Option("--name", help="Hook name (e.g. flowpad_sniffer)")] = None,
     wait_for_response: Annotated[
         bool, typer.Option("--wait-for-response", help="Wait synchronously for response (for PermissionRequest)")
@@ -735,6 +865,21 @@ def hooks_report(
     import json
     import sys
     from pathlib import Path
+
+    if process_id and hook_entry_id:
+        raise typer.BadParameter("--process-id and --hook-entry-id are mutually exclusive")
+    if process_id:
+        from flow_sdk.api.api_types.identifier import is_valid_entity_id
+
+        if not is_valid_entity_id(process_id):
+            raise typer.BadParameter("--process-id must be a canonical UUID v4 or v5")
+        last_resp = _report_process_hook(process_id)
+        if not wait_for_response:
+            raise typer.Exit(0)
+        data = (last_resp.json().get("data") or {}) if last_resp and last_resp.text else {}
+        if data:
+            typer.echo(json.dumps(data))
+        raise typer.Exit(0)
 
     def find_hook_metadata(
         entry_id: Optional[str], hook_name: Optional[str] = None
@@ -817,7 +962,7 @@ def hooks_report(
                 typer.echo(f"\nTarget: POST {report_url}")
                 typer.echo(f"\nPayload:\n{json.dumps(flow_data_payload, indent=2)}")
             try:
-                last_resp = requests.post(report_url, json=flow_data_payload, timeout=5)
+                last_resp = _post_hook_report(report_url, flow_data_payload)
                 if verbose:
                     typer.echo(f"\nResponse: {last_resp.status_code} {last_resp.text[:200]}")
             except requests.exceptions.RequestException as e:
@@ -851,7 +996,12 @@ def hooks_report(
                     if verbose:
                         typer.echo(f"\nReporting to server at port {s.port}")
                     try:
-                        last_resp = requests.post(s.url, json=fallback_payload, timeout=5)
+                        # Broadcast: `s.url` may be ANOTHER instance, whose gate
+                        # secret differs from this one's. Attaching ours is
+                        # harmless — that instance refuses it exactly as it
+                        # refuses a keyless call today — and it is what makes
+                        # the report land on the gated instance that is ours.
+                        last_resp = _post_hook_report(s.url, fallback_payload)
                         if verbose:
                             typer.echo(f"  Response: {last_resp.status_code} {last_resp.text[:200]}")
                     except requests.exceptions.RequestException as e:
@@ -863,7 +1013,7 @@ def hooks_report(
                 if verbose:
                     typer.echo(f"\nNo server.json found, using legacy fallback (port {port})")
                 try:
-                    last_resp = requests.post(fallback_url, json=report_payload, timeout=5)
+                    last_resp = _post_hook_report(fallback_url, report_payload)
                     if verbose:
                         typer.echo(f"\nResponse: {last_resp.status_code} {last_resp.text[:200]}")
                 except requests.exceptions.RequestException as e:
@@ -886,6 +1036,58 @@ def hooks_report(
     if data:
         typer.echo(json.dumps(data))
     raise typer.Exit(0)
+
+
+def _post_hook_report(url: str, payload: dict):
+    """POST a hook report using the command's established request policy.
+
+    Goes through ``local_post`` so the instance's cookie-gate secret rides
+    along: a gated backend refuses a keyless report, and this is the one seam
+    every hook-report call site shares.
+    """
+    from flow_sdk.cli.commands._common import local_post
+
+    return local_post(url, json=payload, timeout=5)
+
+
+def _report_process_hook(process_id: str):
+    """Forward one native hook payload to its FLOW_INSTANCE-pinned backend.
+
+    This is deliberately separate from the legacy AgentHook transport above:
+    process-local hooks never inspect global hook metadata, an override URL, or
+    the all-instance discovery list.
+    """
+    import json
+    import sys
+
+    from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData, WebhookPayload
+    from flow_sdk.discovery.flowpad_discovery import resolve_cli_port
+
+    verbose = sys.stdin.isatty()
+    try:
+        input_data = {"hook_event_name": "test_ping", "source": "manual_cli"} if verbose else json.load(sys.stdin)
+        # The CLI owns transport, not vendor normalization.  Preserve Claude's
+        # native object exactly once; the selected process driver converts it
+        # into canonical AgentHookData at the listen boundary.
+        agent_hook = AgentHookData(
+            agentic_process_id=process_id,
+            hook_data={"raw_hook_data": input_data},
+        )
+        payload = WebhookPayload(
+            webhook_type="agent_hook",
+            webhook_payload=agent_hook.model_dump(mode="json"),
+        ).model_dump(mode="json")
+        url = f"http://127.0.0.1:{resolve_cli_port()}/api/v1/webhook/listen"
+        if verbose:
+            typer.echo(f"\nTarget: POST {url}")
+            typer.echo(f"\nPayload:\n{json.dumps(payload, indent=2)}")
+        return _post_hook_report(url, payload)
+    except json.JSONDecodeError:
+        return None
+    except Exception as exc:
+        if verbose:
+            typer.echo(f"Error: {exc}")
+        return None
 
 
 @hooks_app.command("list")
@@ -960,9 +1162,9 @@ def hooks_list(
 log_app = typer.Typer(help="View and replay CLI invocation logs")
 app.add_typer(log_app, name="log")
 
-from flow_sdk.cli.commands.compute_cmd import compute_app
+from flow_sdk.cli.commands.connect_cmd import connect as _connect_command
 
-app.add_typer(compute_app, name="compute")
+app.command("connect")(_connect_command)
 
 from flow_sdk.cli.commands.navigate_cmd import navigate_app
 

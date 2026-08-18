@@ -41,21 +41,29 @@ export const AIConfigView: React.FC = () => {
       <div className="border-b bg-muted/30 px-4 py-3">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-base font-semibold"><Trans>AI Configuration</Trans></h2>
-            <p className="text-xs text-muted-foreground"><Trans>Manage LLM providers and CLI integrations</Trans></p>
+            <h2 className="text-base font-semibold">
+              <Trans>AI Configuration</Trans>
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              <Trans>Manage LLM providers and CLI integrations</Trans>
+            </p>
           </div>
           <div className="flex gap-4 text-xs">
             <div className="flex items-center gap-2">
               <Settings className="h-4 w-4 text-muted-foreground" />
               <div>
-                <div className="font-medium"><Trans>Default LLM</Trans></div>
+                <div className="font-medium">
+                  <Trans>Default LLM</Trans>
+                </div>
                 <div className="text-muted-foreground">{defaultLLM}</div>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <Terminal className="h-4 w-4 text-muted-foreground" />
               <div>
-                <div className="font-medium"><Trans>Default CLI</Trans></div>
+                <div className="font-medium">
+                  <Trans>Default CLI</Trans>
+                </div>
                 <div className="text-muted-foreground">{defaultCLI}</div>
               </div>
             </div>
@@ -66,7 +74,7 @@ export const AIConfigView: React.FC = () => {
       {/* Toolbar with Configure LLM button */}
       <div className="border-b bg-background px-4 py-2">
         <Button variant="default" size="sm" onClick={handleConfigureLLM}>
-          <Key className="mr-1.5 h-4 w-4" />
+          <Key className="me-1.5 h-4 w-4" />
           <Trans>Manage API keys</Trans>
         </Button>
       </div>
@@ -76,11 +84,11 @@ export const AIConfigView: React.FC = () => {
         <div className="border-b px-2">
           <TabsList className="h-8">
             <TabsTrigger value={AIConfigSubview.LLM_APIS} className="h-7 text-xs">
-              <Key className="mr-1.5 h-3.5 w-3.5" />
+              <Key className="me-1.5 h-3.5 w-3.5" />
               <Trans>LLM APIs</Trans>
             </TabsTrigger>
             <TabsTrigger value={AIConfigSubview.CLIS} className="h-7 text-xs">
-              <Terminal className="mr-1.5 h-3.5 w-3.5" />
+              <Terminal className="me-1.5 h-3.5 w-3.5" />
               <Trans>Harnesses</Trans>
             </TabsTrigger>
           </TabsList>

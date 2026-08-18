@@ -54,7 +54,7 @@ vi.mock('@sdk', async (importOriginal) => {
   return {
     ...actual,
     ActionInfo: FakeActionInfo,
-    dataContext: { workspaceTypeId: null },
+    dataContext: { workspaceTypeId: null, bootstrapInfo: { default_compute_provider: 'gcp_vm' } },
     dataManager: {
       save: vi.fn(() => Promise.resolve(undefined)),
       callAction: vi.fn((info: FakeActionInfo) => {
@@ -74,20 +74,21 @@ vi.mock('@sdk/react/hooks', () => ({
 
 vi.mock('@src/notifications', () => ({ notify: { warning: vi.fn(), error: vi.fn() } }));
 
-import { ComputeNode } from '@sdk';
+import { ComputeNode, dataManager } from '@sdk';
 import { useSandboxes } from '@src/hooks/use-sandboxes';
 
 // The one choke point every `ops/<name>` command goes through, so a single spy
 // records the conversation in order. `ops` is private to TypeScript only; at
 // runtime it is an ordinary prototype method, and it is deliberately the ONLY
 // place a client builds an ops url.
-vi.spyOn(ComputeNode.prototype as unknown as { ops: unknown } as never, 'ops' as never).mockImplementation(
-  (async (op: string, body?: Record<string, unknown>) => {
-    h.calls.push({ action: 'ops', op, body });
-    const answer = h.responses.get(op);
-    return answer ? await answer() : { status: 'ok' };
-  }) as never,
-);
+vi.spyOn(ComputeNode.prototype as unknown as { ops: unknown } as never, 'ops' as never).mockImplementation((async (
+  op: string,
+  body?: Record<string, unknown>,
+) => {
+  h.calls.push({ action: 'ops', op, body });
+  const answer = h.responses.get(op);
+  return answer ? await answer() : { status: 'ok' };
+}) as never);
 
 const ORIGIN = { provider: 'github', owner: 'langware-labs', name: 'flowpad-hub', branch: 'main', rel_path: '.' };
 const PROJECT_ID = 'a4acdbfb-3ad0-45ac-a8d1-812485a376ce';
@@ -146,14 +147,23 @@ const launchWithGit = (overrides: Record<string, unknown> = {}) =>
   launchWith({ name: 'flowpad-hub', gitOrigin: ORIGIN, ...overrides });
 
 /** A sandbox project with no repository behind it — nothing to clone. */
-const launchWithoutRepo = (overrides: Record<string, unknown> = {}) =>
-  launchWith({ name: 'scratch', ...overrides });
+const launchWithoutRepo = (overrides: Record<string, unknown> = {}) => launchWith({ name: 'scratch', ...overrides });
 
 function rows(result: { current: { steps: { id: string }[] } }): string[] {
   return result.current.steps.map((s) => s.id);
 }
 
 describe('sandbox provisioning composes computeNodeTools', () => {
+  it('creates the node on the provider selected by Hub bootstrap', async () => {
+    await launchWithoutRepo();
+
+    expect(dataManager.save).toHaveBeenCalledWith(
+      expect.anything(),
+      [],
+      expect.objectContaining({ node_provider: 'gcp_vm' }),
+    );
+  });
+
   it('runs the commands in order: validate before clone, default before open', async () => {
     await launchWithGit();
 
@@ -289,16 +299,7 @@ describe('sandbox provisioning composes computeNodeTools', () => {
 
     // A git-backed project can declare context projects only the clone reveals,
     // so its `context` row is planned even when none turn up.
-    expect(rows(result)).toEqual([
-      'launch',
-      'health',
-      'validate',
-      'clone',
-      'index',
-      'context',
-      'default',
-      'open',
-    ]);
+    expect(rows(result)).toEqual(['launch', 'health', 'validate', 'clone', 'index', 'context', 'default', 'open']);
   });
 
   it('plans a context row for a repo-less project only when assets were asked for', async () => {
@@ -312,6 +313,82 @@ describe('sandbox provisioning composes computeNodeTools', () => {
 
     expect(rows(result)).toContain('context');
     expect(bodyOf('attach-context-project')).toMatchObject({ project_id: PROJECT_ID, scope: 'shared' });
+  });
+
+  it('creates without booting: one save, and no ops at all', async () => {
+    const { result } = renderHook(() => useSandboxes());
+
+    let node: ComputeNode | null = null;
+    await act(async () => {
+      node = await result.current.createSandbox({ name: 'Sandbox 9', sandboxProject: { name: 'scratch' } });
+    });
+
+    // `ops/setup` is what creates a billable VM. A create that runs it charges
+    // for a machine the user may never open — the whole reason for the split.
+    expect(ops()).toEqual([]);
+    expect(node!.node_provider_id).toBeFalsy();
+    // What the first launch owes is written down on the node, not held in a
+    // dialog: creating with a project and launching from the card days later
+    // must still get that project.
+    expect(node!.node_config?.pending_setup).toMatchObject({ name: 'scratch' });
+  });
+
+  it('launches from what the node was created with, with nothing passed in', async () => {
+    answers({ 'init-empty-project': { project: { id: PROJECT_ID }, path: '/root/workspace/scratch' } });
+    const { result } = renderHook(() => useSandboxes());
+
+    // A node as the LIST hands it back — the card's Launch button has no dialog
+    // state to draw on, only this.
+    const node = new ComputeNode({
+      id: '11111111-2222-4333-8444-555555555001',
+      name: 'Sandbox 9',
+      node_config: { flavor: 'workspace', pending_setup: { name: 'scratch' } },
+    } as never);
+
+    await act(async () => {
+      await result.current.launchSandbox(node);
+    });
+
+    expect(ops()).toEqual(['setup', 'workspace-ready', 'init-empty-project', 'set-default-project']);
+    expect(bodyOf('set-default-project')?.project_id).toBe(PROJECT_ID);
+    // Launching does not open anything: that is the caller's separate click.
+    expect(h.openedUrl).toBeNull();
+  });
+
+  it('turns auto-login off before the box signs anyone in', async () => {
+    const { result } = renderHook(() => useSandboxes());
+    const node = new ComputeNode({
+      id: '11111111-2222-4333-8444-555555555002',
+      name: 'Sandbox 9',
+      node_config: { flavor: 'workspace' },
+    } as never);
+
+    await act(async () => {
+      await result.current.launchSandbox(node, { autoLogin: false });
+    });
+
+    const autoLogin = h.calls.findIndex((c) => c.action === 'auto-login');
+    const health = h.calls.findIndex((c) => c.op === 'workspace-ready');
+    expect(h.calls[autoLogin]?.body).toEqual({ auto_login: false });
+    // Order is the point: `workspace-ready` is what signs the box in, so
+    // flipping the flag after it would leave the opted-out session running.
+    expect(autoLogin).toBeLessThan(health);
+  });
+
+  it('does not spend a round trip re-asserting the default', async () => {
+    const { result } = renderHook(() => useSandboxes());
+    const node = new ComputeNode({
+      id: '11111111-2222-4333-8444-555555555003',
+      name: 'Sandbox 9',
+      node_config: { flavor: 'workspace' },
+    } as never);
+
+    await act(async () => {
+      await result.current.launchSandbox(node, { autoLogin: true });
+    });
+
+    // `true` is the hub's default for a fresh node.
+    expect(h.calls.some((c) => c.action === 'auto-login')).toBe(false);
   });
 
   it('skips every git command when launching a bare sandbox', async () => {

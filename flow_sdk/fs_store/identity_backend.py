@@ -9,7 +9,7 @@ import json
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Protocol, runtime_checkable
+from typing import Any, Callable, ClassVar, Protocol, runtime_checkable
 
 from flow_sdk.capsules import (
     AssetCapsule,
@@ -43,6 +43,13 @@ class IdentityObservation:
 
 @runtime_checkable
 class IdentityBackend(Protocol):
+    #: True when this backend actually COMMITS an id to the source. Only a
+    #: persisting backend may be handed an owning row's id to re-stamp — a
+    #: derived/provider identity is a pure function of the file, so overriding
+    #: it with a DB row's id would let a stale row hijack a genuinely different
+    #: asset that happens to sit at the same (e.g. rotated) path.
+    persists_identity: bool
+
     def observe(self, path: Path) -> IdentityObservation: ...
 
     def store_if_absent(self, path: Path, entity_id: str) -> IdentityObservation: ...
@@ -63,6 +70,8 @@ class CapsuleIdentityBackend:
     legacy_readers: tuple[IdentityReader, ...] = ()
     capsule_name: str = "identity"
     capsule_version: int = 1
+
+    persists_identity: ClassVar[bool] = True
 
     def _legacy(self, path: Path) -> IdentityObservation:
         first_invalid: IdentityObservation | None = None
@@ -155,6 +164,8 @@ class CapsuleIdentityBackend:
 class NativeJsonIdentityBackend:
     """Preserve report/trace root-JSON identity storage."""
 
+    persists_identity: ClassVar[bool] = True
+
     def observe(self, path: Path) -> IdentityObservation:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
@@ -184,6 +195,10 @@ class DerivedIdentityBackend:
     """Read-only provider/natural identity candidate."""
 
     reader: IdentityReader | None = None
+
+    #: A derived identity is a pure function of the source — there is nothing to
+    #: commit, so ``resolve_id`` must never hand it an owning row's id.
+    persists_identity: ClassVar[bool] = False
 
     def observe(self, path: Path) -> IdentityObservation:
         if self.reader is None:

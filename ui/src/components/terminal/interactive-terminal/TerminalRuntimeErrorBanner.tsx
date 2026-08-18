@@ -1,20 +1,10 @@
+import { i18n } from '@lingui/core';
+import type { MessageDescriptor } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import {
-  AlertTriangle,
-  PlayCircle,
-  Plug,
-  RefreshCw,
-  Wand2,
-  type LucideIcon,
-} from 'lucide-react';
-import {
-  AgenticProcess,
-  Project,
-  TypeId,
-  dataContext,
-  type TerminalRuntimeError,
-} from '@sdk';
+import { AlertTriangle, PlayCircle, Plug, RefreshCw, Wand2, type LucideIcon } from 'lucide-react';
+import { AgenticProcess, Project, TypeId, dataContext, type TerminalRuntimeError } from '@sdk';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 import { useContext as useDataContext } from '@src/hooks/useContext';
@@ -31,12 +21,17 @@ import { useContext as useDataContext } from '@src/hooks/useContext';
  */
 interface KindConfig {
   icon: LucideIcon;
+  /**
+   * Copy is held as lazy {@link MessageDescriptor}s, resolved with `i18n._` at
+   * render. This table is module-level, so a `t` macro would resolve once at
+   * import — before a catalog is active — and freeze the boot locale's English.
+   */
   /** Compact one-line headline shown on the banner. */
-  title: string;
+  title: MessageDescriptor;
   /** Subtext under the title (optional). */
-  detail?: string;
+  detail?: MessageDescriptor;
   /** Action button label + handler factory. */
-  actionLabel: string;
+  actionLabel: MessageDescriptor;
   actionIcon: LucideIcon;
   /** Async — returns true on success so the banner can self-dismiss. */
   action: (processId: string) => Promise<boolean>;
@@ -53,7 +48,7 @@ async function loadProcessById(processId: string): Promise<AgenticProcess | null
 }
 
 /**
- * Retry ``process.start({visible:true})``. Used by both
+ * Retry `)`process.start({visible:true})``. Used by both
  * ``runtime_terminated`` (the process stopped) and ``pty_attach_failed``
  * (PTY died) — the same backend `open` action is idempotent and handles
  * both cases, so the recovery code path is shared.
@@ -61,16 +56,19 @@ async function loadProcessById(processId: string): Promise<AgenticProcess | null
 async function retryStart(processId: string): Promise<boolean> {
   const process = await loadProcessById(processId);
   if (!process) {
-    notify.error({ title: 'Couldn’t resolve this process.', id: `terminal-recover:${processId}` });
+    notify.error({ title: i18n._(msg`Couldn’t resolve this process.`), id: `terminal-recover:${processId}` });
     return false;
   }
   try {
     await process.start({ visible: true });
-    notify.success({ title: 'Reconnected.', id: `terminal-recover:${processId}` });
+    notify.success({ title: i18n._(msg`Reconnected.`), id: `terminal-recover:${processId}` });
     dataContext.setTerminalRuntimeError(null);
     return true;
   } catch (err) {
-    notify.error({ title: err instanceof Error ? err.message : 'Reconnect failed.', id: `terminal-recover:${processId}` });
+    notify.error({
+      title: err instanceof Error ? err.message : 'Reconnect failed.',
+      id: `terminal-recover:${processId}`,
+    });
     return false;
   }
 }
@@ -85,12 +83,12 @@ async function retryStart(processId: string): Promise<boolean> {
 export async function retryFailedStart(processId: string): Promise<boolean> {
   const process = await loadProcessById(processId);
   if (!process) {
-    notify.error({ title: 'Couldn’t resolve this process.', id: `terminal-recover:${processId}` });
+    notify.error({ title: i18n._(msg`Couldn’t resolve this process.`), id: `terminal-recover:${processId}` });
     return false;
   }
   try {
     await process.start({ visible: true, retry: true });
-    notify.success({ title: 'Relaunched.', id: `terminal-recover:${processId}` });
+    notify.success({ title: i18n._(msg`Relaunched.`), id: `terminal-recover:${processId}` });
     dataContext.setTerminalRuntimeError(null);
     return true;
   } catch (err) {
@@ -102,13 +100,16 @@ export async function retryFailedStart(processId: string): Promise<boolean> {
 async function recoverProject(processId: string): Promise<boolean> {
   const process = await loadProcessById(processId);
   if (!process) {
-    notify.error({ title: 'Couldn’t resolve this process.', id: `terminal-recover:${processId}` });
+    notify.error({ title: i18n._(msg`Couldn’t resolve this process.`), id: `terminal-recover:${processId}` });
     return false;
   }
   try {
     const recovered = await process.recoverProject();
     if (!recovered) {
-      notify.error({ title: 'Project not recoverable from this workdir.', id: `terminal-recover:${processId}` });
+      notify.error({
+        title: i18n._(msg`Project not recoverable from this workdir.`),
+        id: `terminal-recover:${processId}`,
+      });
       return false;
     }
     await dataContext.setContextEntityTypeId(
@@ -117,79 +118,83 @@ async function recoverProject(processId: string): Promise<boolean> {
       'CurrentProjectTypeId' as never,
       new TypeId(Project.type, recovered.id),
     );
-    notify.success({ title: 'Project recovered.', id: `terminal-recover:${processId}` });
+    notify.success({ title: i18n._(msg`Project recovered.`), id: `terminal-recover:${processId}` });
     dataContext.setTerminalRuntimeError(null);
     return true;
   } catch (err) {
-    notify.error({ title: err instanceof Error ? err.message : 'Project recovery failed.', id: `terminal-recover:${processId}` });
+    notify.error({
+      title: err instanceof Error ? err.message : 'Project recovery failed.',
+      id: `terminal-recover:${processId}`,
+    });
     return false;
   }
 }
 
-async function retryNetwork(_processId: string): Promise<boolean> {
+// Not `async`: there is nothing to await, and the reload ends this page anyway.
+// The Promise return keeps it assignable to `KindConfig.action` alongside the
+// handlers that genuinely are async.
+function retryNetwork(): Promise<boolean> {
   // The simplest reliable retry is a full reload. Anything finer-grained
   // would need to know which fetch failed; ``network_error`` says only
   // "the entity fetch threw". A reload re-runs the route loader.
   window.location.reload();
-  return true;
+  return Promise.resolve(true);
 }
 
 const KIND_CONFIG: Record<TerminalRuntimeError['kind'], KindConfig> = {
   runtime_terminated: {
     icon: AlertTriangle,
-    title: 'This process has stopped.',
-    detail: 'Click Restart to spawn a fresh PTY.',
-    actionLabel: 'Restart',
+    title: msg`This process has stopped.`,
+    detail: msg`Click Restart to spawn a fresh PTY.`,
+    actionLabel: msg`Restart`,
     actionIcon: PlayCircle,
     action: retryStart,
   },
   pty_attach_failed: {
     icon: Plug,
-    title: 'PTY disconnected.',
-    detail: 'The backend may have restarted. Click to reattach.',
-    actionLabel: 'Reconnect',
+    title: msg`PTY disconnected.`,
+    detail: msg`The backend may have restarted. Click to reattach.`,
+    actionLabel: msg`Reconnect`,
     actionIcon: Plug,
     action: retryStart,
   },
   shell_entity_missing: {
     icon: AlertTriangle,
-    title: 'Shell record is missing for this process.',
-    detail: 'A fresh shell needs to be allocated. (Backend action coming — for now Restart will retry.)',
-    actionLabel: 'Restart',
+    title: msg`Shell record is missing for this process.`,
+    detail: msg`A fresh shell needs to be allocated. (Backend action coming — for now Restart will retry.)`,
+    actionLabel: msg`Restart`,
     actionIcon: PlayCircle,
     action: retryStart,
   },
   project_missing: {
     icon: Wand2,
-    title: 'This process points to a deleted project.',
-    detail: 'Recover it from the workdir, or pick a new project via the project chip.',
-    actionLabel: 'Recover project',
+    title: msg`This process points to a deleted project.`,
+    detail: msg`Recover it from the workdir, or pick a new project via the project chip.`,
+    actionLabel: msg`Recover project`,
     actionIcon: Wand2,
     action: recoverProject,
   },
   network_error: {
     icon: RefreshCw,
-    title: 'Couldn’t reach the backend.',
-    detail: 'The fetch failed. Retry once the backend is up.',
-    actionLabel: 'Retry',
+    title: msg`Couldn’t reach the backend.`,
+    detail: msg`The fetch failed. Retry once the backend is up.`,
+    actionLabel: msg`Retry`,
     actionIcon: RefreshCw,
     action: retryNetwork,
   },
   project_mismatch: {
     icon: AlertTriangle,
-    title: 'This session belongs to a different project.',
-    detail:
-      'The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project.',
-    actionLabel: 'Reload',
+    title: msg`This session belongs to a different project.`,
+    detail: msg`The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project.`,
+    actionLabel: msg`Reload`,
     actionIcon: RefreshCw,
     action: retryNetwork,
   },
   failed_to_start: {
     icon: AlertTriangle,
-    title: 'Failed to start.',
-    detail:
-      'The worker exited immediately after launch, so auto-relaunch is paused. Retry to launch it again.',
-    actionLabel: 'Retry',
+    title: msg`Failed to start.`,
+    detail: msg`The worker exited immediately after launch, so auto-relaunch is paused. Retry to launch it again.`,
+    actionLabel: msg`Retry`,
     actionIcon: RefreshCw,
     action: retryFailedStart,
   },
@@ -218,12 +223,11 @@ export function TerminalRuntimeErrorBanner() {
   // Prefer it over the generic copy when the process is in cache.
   const latchedReason =
     terminalRuntimeError.kind === 'failed_to_start'
-      ? AgenticProcess.getByIdFromCache<AgenticProcess>(terminalRuntimeError.processId)
-          ?.start_failure
+      ? AgenticProcess.getByIdFromCache<AgenticProcess>(terminalRuntimeError.processId)?.start_failure
       : null;
   const detail = latchedReason
-    ? `${latchedReason} Auto-relaunch is paused — Retry to launch again.`
-    : cfg.detail;
+    ? t`${latchedReason} Auto-relaunch is paused — Retry to launch again.`
+    : cfg.detail && i18n._(cfg.detail);
 
   const Icon = cfg.icon;
   const ActionIcon = cfg.actionIcon;
@@ -236,7 +240,7 @@ export function TerminalRuntimeErrorBanner() {
     >
       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
       <div className="min-w-0 flex-1">
-        <div className="font-medium">{cfg.title}</div>
+        <div className="font-medium">{i18n._(cfg.title)}</div>
         {detail && <div className="text-[11px] opacity-80">{detail}</div>}
       </div>
       <Button
@@ -244,19 +248,23 @@ export function TerminalRuntimeErrorBanner() {
         size="sm"
         variant="default"
         disabled={busy}
-        onClick={async () => {
-          setBusy(true);
-          try {
-            await cfg.action(terminalRuntimeError.processId);
-          } finally {
-            setBusy(false);
-          }
+        onClick={() => {
+          // `onClick` wants a void return, so the async work is fired rather
+          // than returned — an unhandled rejection here would be invisible.
+          void (async () => {
+            setBusy(true);
+            try {
+              await cfg.action(terminalRuntimeError.processId);
+            } finally {
+              setBusy(false);
+            }
+          })();
         }}
         data-testid="terminal-runtime-error-banner-action"
         className="shrink-0"
       >
         <ActionIcon className="h-3.5 w-3.5" />
-        {busy ? t`Working…` : cfg.actionLabel}
+        {busy ? t`Working…` : i18n._(cfg.actionLabel)}
       </Button>
       <Button
         type="button"

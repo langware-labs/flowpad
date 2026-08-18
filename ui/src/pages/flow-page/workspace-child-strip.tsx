@@ -33,11 +33,7 @@ interface WorkspaceChildStripProps {
  * (`parent_tab_id`) is minted by the opener context at the tab chokepoint, and
  * vibe-mode continuity by the navigation layer — so this component stays dumb.
  */
-export function WorkspaceChildStrip({
-  processTab,
-  processDock,
-  projectId,
-}: WorkspaceChildStripProps) {
+export function WorkspaceChildStrip({ processTab, processDock, projectId }: WorkspaceChildStripProps) {
   const { t } = useLingui();
   const { currentDock, navigation } = useDockNavigation();
   const allTabs = useAllTabs();
@@ -97,9 +93,7 @@ export function WorkspaceChildStrip({
     if (next?.dockPointer) navigation.openDock(next.dockPointer);
     else if (projectId) navigation.openDock(DockPointer.forProject(projectId));
     else navigation.closeDock();
-    void Promise.allSettled(closing.map((t) => closeTabWithLifecycle(t))).finally(
-      () => void tabManager.refresh(),
-    );
+    void Promise.allSettled(closing.map((t) => closeTabWithLifecycle(t))).finally(() => void tabManager.refresh());
   }, [processTab, children, allTabs, projectId, navigation]);
 
   return (
@@ -113,7 +107,7 @@ export function WorkspaceChildStrip({
         title={processTab?.name || t`Display`}
         aria-current={processActive ? 'true' : undefined}
         data-testid="workspace-display-tab"
-        className={`relative flex h-9 w-9 shrink-0 items-center justify-center border-r border-border transition-colors ${
+        className={`relative flex h-9 w-9 shrink-0 items-center justify-center border-e border-border transition-colors ${
           processActive
             ? // Match the child tabs' active treatment (TabStrip): raised body
               // surface + shadow + a primary top accent. The narrow square loses
@@ -124,9 +118,7 @@ export function WorkspaceChildStrip({
       >
         {/* Active accent — mirrors the tab chip's top bar so the Display reads
             as the selected tab it is; absolute so it never shifts the icon. */}
-        {processActive && (
-          <span className="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-primary" />
-        )}
+        {processActive && <span className="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-primary" />}
         <Monitor className="h-4 w-4" />
       </button>
       <div className="min-w-0 flex-1">
@@ -143,7 +135,7 @@ export function WorkspaceChildStrip({
           display + every child tab). Sized/styled to match the display
           toolbar's icon buttons. */}
       {processTab && (
-        <div className="flex shrink-0 items-center border-l border-border px-1">
+        <div className="flex shrink-0 items-center border-s border-border px-1">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

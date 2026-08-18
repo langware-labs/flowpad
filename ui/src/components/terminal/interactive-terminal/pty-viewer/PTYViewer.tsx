@@ -22,19 +22,22 @@ interface Props {
 
 // Tag categories for coloring
 const TAG_COLORS = {
-  clear: 'text-red-400',       // destructive: clear screen, scrollback
-  cursor: 'text-blue-400',     // cursor movement: home, up, down, left, right
-  sync: 'text-emerald-400',    // sync update: BSU/ESU
-  scroll: 'text-orange-400',   // scroll region, scroll up/down
-  mode: 'text-purple-400',     // mode set/reset, alt screen
-  title: 'text-yellow-400',    // terminal title
+  clear: 'text-red-400', // destructive: clear screen, scrollback
+  cursor: 'text-blue-400', // cursor movement: home, up, down, left, right
+  sync: 'text-emerald-400', // sync update: BSU/ESU
+  scroll: 'text-orange-400', // scroll region, scroll up/down
+  mode: 'text-purple-400', // mode set/reset, alt screen
+  title: 'text-yellow-400', // terminal title
   incomplete: 'text-pink-400', // split escape sequence
-  text: '',                    // plain text — no color
+  text: '', // plain text — no color
 } as const;
 
 type TagCategory = keyof typeof TAG_COLORS;
 
-interface Segment { text: string; category: TagCategory }
+interface Segment {
+  text: string;
+  category: TagCategory;
+}
 
 /** Translate a CSI sequence to { text, category }. Returns null only for SGR (colors). */
 function csiToTag(params: string, final: string): Segment | null {
@@ -46,7 +49,8 @@ function csiToTag(params: string, final: string): Segment | null {
     return { text: `[INCOMPLETE: ESC[${params}${final}...]`, category: 'incomplete' };
   }
   switch (final) {
-    case 'H': return { text: params === '' || params === '1;1' ? '[CURSOR HOME]' : `[CURSOR ${params}]`, category: 'cursor' };
+    case 'H':
+      return { text: params === '' || params === '1;1' ? '[CURSOR HOME]' : `[CURSOR ${params}]`, category: 'cursor' };
     case 'J': {
       if (p === '2') return { text: '[CLEAR SCREEN]', category: 'clear' };
       if (p === '3') return { text: '[CLEAR SCROLLBACK]', category: 'clear' };
@@ -59,10 +63,14 @@ function csiToTag(params: string, final: string): Segment | null {
       if (p === '2') return { text: '[CLEAR LINE]', category: 'clear' };
       return { text: `[ERASE LINE ${p}]`, category: 'clear' };
     }
-    case 'A': return { text: `[UP ${p}]`, category: 'cursor' };
-    case 'B': return { text: `[DOWN ${p}]`, category: 'cursor' };
-    case 'C': return { text: `[RIGHT ${p}]`, category: 'cursor' };
-    case 'D': return { text: `[LEFT ${p}]`, category: 'cursor' };
+    case 'A':
+      return { text: `[UP ${p}]`, category: 'cursor' };
+    case 'B':
+      return { text: `[DOWN ${p}]`, category: 'cursor' };
+    case 'C':
+      return { text: `[RIGHT ${p}]`, category: 'cursor' };
+    case 'D':
+      return { text: `[LEFT ${p}]`, category: 'cursor' };
     case 'h': {
       if (params === '?2026') return { text: '[BEGIN SYNC UPDATE]', category: 'sync' };
       if (params === '?1049') return { text: '[ALT SCREEN ON]', category: 'mode' };
@@ -75,12 +83,18 @@ function csiToTag(params: string, final: string): Segment | null {
       if (params === '?25') return { text: '[CURSOR HIDE]', category: 'mode' };
       return { text: `[MODE OFF ${params}]`, category: 'mode' };
     }
-    case 'r': return { text: `[SCROLL REGION ${params}]`, category: 'scroll' };
-    case 'S': return { text: `[SCROLL UP ${p}]`, category: 'scroll' };
-    case 'T': return { text: `[SCROLL DOWN ${p}]`, category: 'scroll' };
-    case 'G': return { text: `[COLUMN ${p}]`, category: 'cursor' };
-    case 'd': return { text: `[ROW ${p}]`, category: 'cursor' };
-    default: return { text: `[CSI ${params}${final}]`, category: 'mode' };
+    case 'r':
+      return { text: `[SCROLL REGION ${params}]`, category: 'scroll' };
+    case 'S':
+      return { text: `[SCROLL UP ${p}]`, category: 'scroll' };
+    case 'T':
+      return { text: `[SCROLL DOWN ${p}]`, category: 'scroll' };
+    case 'G':
+      return { text: `[COLUMN ${p}]`, category: 'cursor' };
+    case 'd':
+      return { text: `[ROW ${p}]`, category: 'cursor' };
+    default:
+      return { text: `[CSI ${params}${final}]`, category: 'mode' };
   }
 }
 
@@ -130,7 +144,12 @@ function decodeChunkSegments(b64: string): Segment[] {
     const bytes = atob(b64);
     const segments: Segment[] = [];
     let textBuf = '';
-    const flushText = () => { if (textBuf) { segments.push({ text: textBuf, category: 'text' }); textBuf = ''; } };
+    const flushText = () => {
+      if (textBuf) {
+        segments.push({ text: textBuf, category: 'text' });
+        textBuf = '';
+      }
+    };
 
     let i = 0;
     while (i < bytes.length) {
@@ -147,7 +166,10 @@ function decodeChunkSegments(b64: string): Segment[] {
           const final = i < bytes.length ? bytes[i] : '';
           i++;
           const tag = csiToTag(params, final);
-          if (tag) { flushText(); segments.push(tag); }
+          if (tag) {
+            flushText();
+            segments.push(tag);
+          }
         } else if (i < bytes.length && bytes[i] === ']') {
           i++;
           let osc = '';
@@ -183,7 +205,9 @@ function decodeChunkSegments(b64: string): Segment[] {
         else if ((c & 0xf8) === 0xf0) len = 4;
         try {
           const slice = bytes.slice(i, i + len);
-          const decoded = new TextDecoder().decode(Uint8Array.from(slice.split('').map((ch: string) => ch.charCodeAt(0))));
+          const decoded = new TextDecoder().decode(
+            Uint8Array.from(slice.split('').map((ch: string) => ch.charCodeAt(0))),
+          );
           textBuf += decoded;
         } catch {
           textBuf += `[${c.toString(16)}]`;
@@ -207,19 +231,19 @@ function SegmentRenderer({ segments, showCursor }: { segments: Segment[]; showCu
       {segments.map((seg, i) => {
         if (!showCursor && seg.category === 'cursor') return null;
         const color = TAG_COLORS[seg.category];
-        return color
-          ? <span key={i} className={`${color} font-semibold`}>{seg.text} </span>
-          : <span key={i}>{seg.text}</span>;
+        return color ? (
+          <span key={i} className={`${color} font-semibold`}>
+            {seg.text}{' '}
+          </span>
+        ) : (
+          <span key={i}>{seg.text}</span>
+        );
       })}
     </>
   );
 }
 
-function buildLogText(
-  shellId: string,
-  data: PtyViewerData,
-  chunks: PtyMemoryChunk[],
-): string {
+function buildLogText(shellId: string, data: PtyViewerData, chunks: PtyMemoryChunk[]): string {
   const baseTimestamp = chunks[0]?.timestamp;
   const statsLine = `xterm memory: ${data.totalChunks} chunks (${formatBytes(data.totalSizeBytes)})`;
 
@@ -239,7 +263,7 @@ function buildLogText(
     const chunk = bySeq.get(row.seq);
     const time = formatTimestamp(row.timestamp, baseTimestamp);
     const size = formatBytes(row.size);
-    const eventStr = row.namedEvents.map(e => e.data ? `${e.name}(${e.data})` : e.name).join(' ');
+    const eventStr = row.namedEvents.map((e) => (e.data ? `${e.name}(${e.data})` : e.name)).join(' ');
     let preview = '';
     if (chunk?.data_b64) {
       const plain = decodePlainText(chunk.data_b64).replace(/\n/g, '↵').trim();
@@ -312,29 +336,40 @@ export function PTYViewer({ open, onClose, shell }: Props) {
   const baseTimestamp = chunks[0]?.timestamp;
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) { setSelectedChunk(null); onClose(); } }}>
-      <DialogContent className={`flex flex-col ${expanded ? 'max-w-[95vw] max-h-[95vh]' : 'max-w-4xl max-h-[85vh]'}`}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) {
+          setSelectedChunk(null);
+          onClose();
+        }
+      }}
+    >
+      <DialogContent className={`flex flex-col ${expanded ? 'max-h-[95vh] max-w-[95vw]' : 'max-h-[85vh] max-w-4xl'}`}>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 pr-8 text-sm">
+          <DialogTitle className="flex items-center gap-2 pe-8 text-sm">
             <Trans>PTY Viewer</Trans>
-            {shell && <span className="text-xs text-muted-foreground font-mono">{shell.id.slice(0, 8)}</span>}
-            <div className="ml-auto flex items-center gap-1">
+            {shell && <span className="font-mono text-xs text-muted-foreground">{shell.id.slice(0, 8)}</span>}
+            <div className="ms-auto flex items-center gap-1">
               {data && (
                 <TooltipProvider delayDuration={300}>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button
-                        onClick={handleCopyLog}
-                        className="text-muted-foreground hover:text-foreground"
-                      >
-                        {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <ClipboardList className="h-3.5 w-3.5" />}
+                      <button onClick={handleCopyLog} className="text-muted-foreground hover:text-foreground">
+                        {copied ? (
+                          <Check className="h-3.5 w-3.5 text-emerald-400" />
+                        ) : (
+                          <ClipboardList className="h-3.5 w-3.5" />
+                        )}
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent side="bottom" className="text-xs"><Trans>Copy as log</Trans></TooltipContent>
+                    <TooltipContent side="bottom" className="text-xs">
+                      <Trans>Copy as log</Trans>
+                    </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
               )}
-              <button onClick={() => setExpanded(e => !e)} className="text-muted-foreground hover:text-foreground">
+              <button onClick={() => setExpanded((e) => !e)} className="text-muted-foreground hover:text-foreground">
                 {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
               </button>
             </div>
@@ -350,27 +385,36 @@ export function PTYViewer({ open, onClose, shell }: Props) {
         {data && (
           <>
             {/* Summary stats */}
-            <div className="flex gap-4 text-xs text-muted-foreground border-b pb-2 mb-2">
-              <span><Trans>xterm memory: <b className="text-foreground">{data.totalChunks}</b> chunks ({formatBytes(data.totalSizeBytes)})</Trans></span>
+            <div className="mb-2 flex gap-4 border-b pb-2 text-xs text-muted-foreground">
+              <span>
+                <Trans>
+                  xterm memory: <b className="text-foreground">{data.totalChunks}</b> chunks (
+                  {formatBytes(data.totalSizeBytes)})
+                </Trans>
+              </span>
             </div>
 
-            <div ref={splitContainerRef} className="flex flex-1 min-h-0">
+            <div ref={splitContainerRef} className="flex min-h-0 flex-1">
               {/* Chunk table */}
               <div
-                className="overflow-auto min-h-0"
+                className="min-h-0 overflow-auto"
                 style={{ width: tableExpanded || !selectedChunk ? '100%' : `${splitPct}%`, flexShrink: 0 }}
               >
-                <table className="w-full text-xs font-mono">
+                <table className="w-full font-mono text-xs">
                   <thead className="sticky top-0 bg-background">
                     <tr className="border-b text-muted-foreground">
-                      <th className="text-left px-2 py-1 w-16">seq</th>
-                      <th className="text-left px-2 py-1 w-24">time</th>
-                      <th className="text-right px-2 py-1 w-16">size</th>
-                      <th className="text-left px-2 py-1">
+                      <th className="w-16 px-2 py-1 text-start">seq</th>
+                      <th className="w-24 px-2 py-1 text-start">time</th>
+                      <th className="w-16 px-2 py-1 text-end">size</th>
+                      <th className="px-2 py-1 text-start">
                         <span className="flex items-center gap-1">
                           <Trans>preview</Trans>
                           {tableExpanded && selectedChunk && (
-                            <button onClick={() => setTableExpanded(false)} className="hover:text-foreground" title={t`Show detail panel`}>
+                            <button
+                              onClick={() => setTableExpanded(false)}
+                              className="hover:text-foreground"
+                              title={t`Show detail panel`}
+                            >
                               <PanelLeftClose className="h-3 w-3" />
                             </button>
                           )}
@@ -380,32 +424,40 @@ export function PTYViewer({ open, onClose, shell }: Props) {
                   </thead>
                   <tbody>
                     {data.rows.map((row) => {
-                      const chunk = chunks.find(c => c.seq === row.seq);
+                      const chunk = chunks.find((c) => c.seq === row.seq);
                       const isSelected = selectedChunk?.seq === row.seq;
                       return (
                         <tr
                           key={row.seq}
-                          className={`border-b border-border/30 cursor-pointer ${isSelected ? 'bg-primary/10' : 'hover:bg-muted/30'}`}
+                          className={`cursor-pointer border-b border-border/30 ${isSelected ? 'bg-primary/10' : 'hover:bg-muted/30'}`}
                           onClick={() => setSelectedChunk(chunk ?? null)}
                         >
                           <td className="px-2 py-0.5">{row.seq}</td>
                           <td className="px-2 py-0.5">{formatTimestamp(row.timestamp, baseTimestamp)}</td>
-                          <td className="px-2 py-0.5 text-right">{formatBytes(row.size)}</td>
-                          <td className="px-2 py-0.5 truncate max-w-[300px] text-muted-foreground">
+                          <td className="px-2 py-0.5 text-end">{formatBytes(row.size)}</td>
+                          <td className="max-w-[300px] truncate px-2 py-0.5 text-muted-foreground">
                             {chunk?.data_b64 ? (
                               <TooltipProvider delayDuration={200}>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <span className="cursor-default">
-                                      <SegmentRenderer segments={decodeChunkSegments(chunk.data_b64).slice(0, 20)} showCursor={false} />
+                                      <SegmentRenderer
+                                        segments={decodeChunkSegments(chunk.data_b64).slice(0, 20)}
+                                        showCursor={false}
+                                      />
                                     </span>
                                   </TooltipTrigger>
-                                  <TooltipContent side="bottom" className="max-w-lg max-h-60 overflow-auto whitespace-pre-wrap break-all text-xs font-mono p-2">
+                                  <TooltipContent
+                                    side="bottom"
+                                    className="max-h-60 max-w-lg overflow-auto whitespace-pre-wrap break-all p-2 font-mono text-xs"
+                                  >
                                     <SegmentRenderer segments={decodeChunkSegments(chunk.data_b64)} showCursor={true} />
                                   </TooltipContent>
                                 </Tooltip>
                               </TooltipProvider>
-                            ) : ''}
+                            ) : (
+                              ''
+                            )}
                           </td>
                         </tr>
                       );
@@ -418,28 +470,34 @@ export function PTYViewer({ open, onClose, shell }: Props) {
               {selectedChunk && !tableExpanded && (
                 <div
                   onMouseDown={handleDragStart}
-                  className="w-1 shrink-0 cursor-col-resize bg-border hover:bg-primary/50 active:bg-primary transition-colors"
+                  className="w-1 shrink-0 cursor-col-resize bg-border transition-colors hover:bg-primary/50 active:bg-primary"
                 />
               )}
 
               {/* Detail panel — shows full decoded content of selected chunk */}
               {selectedChunk && !tableExpanded && (
-                <div className="flex-1 flex flex-col pl-2 min-h-0">
-                  <div className="flex items-center justify-between text-xs text-muted-foreground pb-1 border-b mb-1">
+                <div className="flex min-h-0 flex-1 flex-col ps-2">
+                  <div className="mb-1 flex items-center justify-between border-b pb-1 text-xs text-muted-foreground">
                     <span>
                       Chunk <b className="text-foreground">{selectedChunk.seq}</b> — {formatBytes(selectedChunk.size)}
                     </span>
                     <div className="flex items-center gap-2">
-                      <label className="flex items-center gap-1 cursor-pointer select-none">
+                      <label className="flex cursor-pointer select-none items-center gap-1">
                         <input
                           type="checkbox"
                           checked={showCursor}
                           onChange={(e) => setShowCursor(e.target.checked)}
                           className="h-3 w-3"
                         />
-                        <span className="text-[10px]"><Trans>cursor</Trans></span>
+                        <span className="text-[10px]">
+                          <Trans>cursor</Trans>
+                        </span>
                       </label>
-                      <button onClick={() => setTableExpanded(true)} className="hover:text-foreground" title={t`Expand table`}>
+                      <button
+                        onClick={() => setTableExpanded(true)}
+                        className="hover:text-foreground"
+                        title={t`Expand table`}
+                      >
                         <PanelLeftOpen className="h-3 w-3" />
                       </button>
                       <button onClick={() => setSelectedChunk(null)} className="hover:text-foreground">
@@ -447,7 +505,7 @@ export function PTYViewer({ open, onClose, shell }: Props) {
                       </button>
                     </div>
                   </div>
-                  <div className="flex-1 overflow-auto min-h-0 whitespace-pre-wrap break-all text-xs font-mono bg-muted/20 rounded p-2">
+                  <div className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-all rounded bg-muted/20 p-2 font-mono text-xs">
                     <SegmentRenderer segments={decodeChunkSegments(selectedChunk.data_b64)} showCursor={showCursor} />
                   </div>
                 </div>

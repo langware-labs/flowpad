@@ -8,7 +8,7 @@ import type { ReactNode } from 'react';
  * The Vibe workspace is bound to its process by URL (`/dock/shell/
  * agentic_process-<id>`). The vibe-home creation path
  * (`createVibeProcessForProject`) does three things when it makes a process:
- *   1. embeds the SDK `vibe` persona agent (`loadEmbeddedAgent`),
+ *   1. embeds the SDK `vibe` persona, a SubAgent (`loadEmbeddedSubagent`),
  *   2. rebinds the URL to the new process (`navigation.openShellProcess`),
  *   3. enables the Flowpad Assistant.
  *
@@ -16,7 +16,7 @@ import type { ReactNode } from 'react';
  * lazy-create and calls back through the vibe host's ONLY create hook,
  * `onProcessCreated={(p) => p.enableAssistant()}` (vibe-workspace.tsx). That
  * hook is a strict SUBSET — it enables the assistant but never embeds the vibe
- * agent and never navigates. So the new process P1 gets empty
+ * sub-agent and never navigates. So the new process P1 gets empty
  * `embedded_asset_refs` (facet 2) and the URL stays on P0, so a reload restores
  * P0 and discards P1's view (facet 1).
  *
@@ -42,7 +42,7 @@ const navMocks = vi.hoisted(() => ({
 // The shared vibe-persona embed is the seam both creation paths route through
 // (createVibeProcessForProject and the host's create hook). Spy on it — the
 // real embed resolves its ref through the backend, so asserting the low-level
-// loadEmbeddedAgent would need a live server; the shared helper is the
+// loadEmbeddedSubagent would need a live server; the shared helper is the
 // deterministic seam. Kept a spy so we can assert the host invokes it.
 const embedMock = vi.hoisted(() => vi.fn(async () => {}));
 const parentProcess = vi.hoisted(() => ({
@@ -56,7 +56,7 @@ const parentProcess = vi.hoisted(() => ({
 }));
 vi.mock('@src/pages/flow-page/use-start-vibe-session', async (orig) => ({
   ...(await orig<typeof import('@src/pages/flow-page/use-start-vibe-session')>()),
-  embedVibeAgent: embedMock,
+  embedVibeSubagent: embedMock,
 }));
 
 // The execution panel is a collaborator, not the unit under test. Render its
@@ -140,7 +140,7 @@ function makeCreatedProcess() {
 }
 
 describe('VIBE-006 — New must reach parity with the vibe-home creation path', () => {
-  it('embeds the vibe agent and rebinds the URL when the New path creates a process', async () => {
+  it('embeds the vibe sub-agent and rebinds the URL when the New path creates a process', async () => {
     const session = {
       processTab: null,
       processDock: {} as never,
@@ -167,7 +167,7 @@ describe('VIBE-006 — New must reach parity with the vibe-home creation path', 
     // Facet 2 — attachment parity: the new process must be routed through the
     // shared vibe-persona embed, exactly like createVibeProcessForProject.
     // Currently the host hook only enables the assistant, so this is absent.
-    expect(embedMock, 'New-path process must embed the vibe persona agent (attachment parity)').toHaveBeenCalledWith(
+    expect(embedMock, 'New-path process must embed the vibe persona, a SubAgent (attachment parity)').toHaveBeenCalledWith(
       created,
     );
 

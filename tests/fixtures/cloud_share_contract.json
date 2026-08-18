@@ -53,6 +53,7 @@
       "labels",
       "last_active_at",
       "last_edited_at",
+      "locale",
       "namespace",
       "parent_type_id",
       "root_vfs_path",

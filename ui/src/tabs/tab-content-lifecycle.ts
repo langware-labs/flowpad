@@ -67,24 +67,19 @@ async function materializeTab(
     `materializeTab tabManager.listAll took ${(performance.now() - t0).toFixed(1)}ms (${existing.length} tabs) dock=${dock.tabHash}`,
   );
   const existingTab = tabForDockKey(existing, dock.tabHash);
-  // A workspace surface (the vibe workspace) may have registered its process
-  // tab as the parent for tabs materialized right now. Only workspace CONTENT
-  // is adoptable — content assets/files and a plain terminal (a shell opened
-  // from inside the workspace belongs in its display, like a file). A
-  // process/project/assets-list dock is a navigation *away* from the workspace
-  // (its loader runs before the workspace unmounts and clears the slot), and
-  // adopting those was how nested-workspace / process-under-process corruption
-  // arose. This is the ONLY grouping seam; no navigation call site knows about
-  // children, and the backend enforces the same invariant
+  // The URL says which workspace, if any, is hosting this dock. Only workspace
+  // CONTENT may be adopted — content assets/files and a plain terminal (a shell
+  // opened from inside the workspace belongs in its display, like a file). A
+  // process/project/assets-list dock is a navigation *away* from the workspace,
+  // and adopting those was how nested-workspace / process-under-process
+  // corruption arose. This is the ONLY grouping seam; no navigation call site
+  // knows about children, and the backend enforces the same invariant
   // (`_PARENT_FORBIDDEN_TARGET_TYPES` + `_pointer_is_adoptable_child`) as the
-  // second belt. An adoptable tab takes a parent registered by a mounted
-  // workspace or supplied by its mounted-view adoption pass. Process
-  // lookup/creation is not awaited here: route loaders must stay fast, so
-  // AssetVibeWorkspace resolves that side effect after the URL-owned asset
-  // view mounts.
+  // second belt. Resolving the host is a pure store read, which is what makes it
+  // legal here at all: route loaders must stay fast.
   const addressesAdoptable = isAdoptableChildDock(dock);
   const parentTabId = addressesAdoptable
-    ? (options.parentTabId ?? tabManager.getActiveParentTabId())
+    ? (options.parentTabId ?? hostTabIdFromDock(dock))
     : null;
   // Mirror the backend's self-parent guard: a tab can never adopt itself, and
   // would otherwise re-resolve on every return navigation forever.
@@ -168,6 +163,24 @@ async function materializeTab(
   return { tab, tabs: all };
 }
 
+/**
+ * The tab id of the workspace this dock's URL says is hosting it, or null.
+ *
+ * A pure lookup in the already-loaded tab store — no network, so it is safe on
+ * the loader path. The host is a fact the caller spelled out, not one inferred
+ * from whatever workspace happened to be mounted when the loader ran.
+ *
+ * Null when the URL names no host, or when the host's own tab is not open yet
+ * (a cold open from a shared link) — the caller falls back, and the mounted
+ * workspace's adoption pass still stamps the edge.
+ */
+function hostTabIdFromDock(dock: DockPointer): string | null {
+  const host = dock.hostProcessId;
+  if (!host) return null;
+  const hostKey = DockPointer.forShell(host).tabHash;
+  return tabForDockKey(tabManager.getSnapshot(), hostKey)?.id ?? null;
+}
+
 function adapterFor(dock: DockPointer, options: SetupTabOptions): TabContentAdapter {
   if (options.setupContent) {
     const cleanupAdapter = options.adapter ?? defaultAdapter;
@@ -234,8 +247,8 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
   // Materialization is keyed by tab identity, not presentation options. A
   // rapid Standard → Vibe transition can arrive while the initial asset tab is
   // still opening; sharing that work avoids two concurrent writes to the same
-  // scoped tab. Vibe's process attachment/reparent is a mounted-view effect and
-  // therefore does not depend on a second loader materialization.
+  // scoped tab. The host arrives with the URL, so the parent edge is settled by
+  // this first materialization rather than by a later mounted-view pass.
   const inFlight = setupInFlight.get(key);
   if (inFlight) return inFlight;
 

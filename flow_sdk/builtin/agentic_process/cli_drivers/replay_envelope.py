@@ -34,7 +34,7 @@ Routing it through here would change every live claude frame.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData, FlowDataType
 from flow_sdk.transcript_analyzer import AgentTranscriptFile
@@ -43,6 +43,12 @@ from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 
 #: ``(entry_kind_value) -> FlowElementType``. Vendor-owned; see the module note.
 ElementTypeForKind = Callable[[str], str]
+
+#: ``(entry, transcript_format) -> frames | None``. A vendor hook consulted
+#: before the standard envelope: return frames to REPLACE this entry's, or None
+#: to fall through. Copilot uses it to expand its own ``flowpad.*`` terminal
+#: events, which are FlowPad-authored envelopes rather than vendor entries.
+EntryFrames = Callable[[Any, Any], "list[FlowData] | None"]
 
 
 def _envelope(entry, element_type_for_kind: ElementTypeForKind, kind: str) -> dict:
@@ -143,6 +149,7 @@ def load_transcript_history(
     *,
     logger,
     transcript_format=None,
+    entry_frames: EntryFrames | None = None,
 ) -> list[FlowData]:
     """Parse a transcript file and replay every entry through the envelope.
 
@@ -157,5 +164,10 @@ def load_transcript_history(
         return []
     history: list[FlowData] = []
     for entry in parsed.entries:
+        if entry_frames is not None:
+            override = entry_frames(entry, parsed.transcript_format)
+            if override is not None:
+                history.extend(override)
+                continue
         history.extend(entry_to_replay_flow_data(entry, element_type_for_kind))
     return history

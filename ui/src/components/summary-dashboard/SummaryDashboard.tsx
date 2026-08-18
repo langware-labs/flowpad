@@ -61,7 +61,9 @@ interface StatCardConfig {
 export function SummaryDashboard({ projectCwd, showProjectsCard = true, onNavigate }: SummaryDashboardProps) {
   // Fetch all resource types using the lazy loading hooks
   const { items: projects, isLoading: projectsLoading } = useResources<ProjectItem>(SystemResourceType.PROJECT);
-  const { items: sessions, isLoading: sessionsLoading } = useResources<ClaudeSessionRecordData>(SystemResourceType.SESSION);
+  const { items: sessions, isLoading: sessionsLoading } = useResources<ClaudeSessionRecordData>(
+    SystemResourceType.SESSION,
+  );
   const { items: hooks, isLoading: hooksLoading } = useResources<HookItem>(SystemResourceType.HOOK);
   const { items: skills, isLoading: skillsLoading } = useResources<SkillItem>(SystemResourceType.SKILL);
   const { items: commands, isLoading: commandsLoading } = useResources<CommandItem>(SystemResourceType.COMMAND);
@@ -232,7 +234,7 @@ export function SummaryDashboard({ projectCwd, showProjectsCard = true, onNaviga
               key={stat.id}
               onClick={() => stat.tab && onNavigate?.(stat.tab)}
               disabled={!isClickable}
-              className={`flex items-center gap-2 rounded-lg border border-border bg-card p-2 text-left transition-colors ${
+              className={`flex items-center gap-2 rounded-lg border border-border bg-card p-2 text-start transition-colors ${
                 isClickable ? 'cursor-pointer hover:border-primary hover:bg-primary/5' : 'cursor-default'
               }`}
             >

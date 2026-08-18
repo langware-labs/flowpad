@@ -9,10 +9,15 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
-from typing import Any, AsyncIterator, Literal, overload
+from typing import TYPE_CHECKING, Any, AsyncIterator, Literal, overload
 
 from fastapi import BackgroundTasks
-from pydantic import Field
+from pydantic import field_validator
+
+if TYPE_CHECKING:
+    # Runtime imports of Project stay function-local (circular import); this is
+    # only so the "Project" annotations below resolve for linters/type checkers.
+    from flow_sdk.builtin.project import Project
 
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
 from flow_sdk.api.type_id import TypeId
@@ -73,7 +78,15 @@ def build_dir_zip(local_path: str) -> BytesIO:
     return buf
 
 
-class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanActionsMixin, AnalyticsActionsMixin, DesktopActionsMixin, Entity):
+class ComputeNode(
+    PtyActionsMixin,
+    FsRecordsActionsMixin,
+    OpsActionsMixin,
+    ScanActionsMixin,
+    AnalyticsActionsMixin,
+    DesktopActionsMixin,
+    Entity,
+):
     _api_visible = True
     type: str = APIField(default=BuiltinEntityType.COMPUTE_NODE.value)
     name: str = APIField(default="")
@@ -85,6 +98,18 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
     template_version: str | None = APIField(default=None)
     # Track active PTY sessions for WebSocket notifications
     active_pty_sessions: list[str] = APIField(default_factory=list)
+
+    @field_validator("node_provider_type", mode="before")
+    @classmethod
+    def _tolerate_unknown_provider(cls, value: Any) -> Any:
+        """A provider this build no longer knows (e.g. the removed desktop ``docker``)
+        hydrates as ``None`` instead of failing every ``ComputeNode`` query. Using
+        such a node still raises a clear error in ``compute_provider``."""
+        if isinstance(value, str) and value not in {p.value for p in ComputeProviderType}:
+            logging.warning("compute node: unknown provider %r on hydration; treating as unset", value)
+            return None
+        return value
+
     # Which of a project's declared secrets this node may see, per project.
     #
     # Value-free by construction — the token IS the env var name and the project
@@ -174,7 +199,8 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
                     if rows:
                         logging.warning(
                             "[compute-node] %d @local rows found; using first %s",
-                            len(rows), rows[0].id,
+                            len(rows),
+                            rows[0].id,
                         )
                         return rows[0]
                 except Exception as list_exc:  # noqa: BLE001
@@ -259,9 +285,7 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
         except Exception as save_error:  # noqa: BLE001
             # Concurrent creator minted the same deterministic id — adopt it.
             if "already exist" in str(save_error).lower():
-                existing = await cls.get_by_id(local_id) or await cls.get_by_prop(
-                    "uname", _LOCAL_UNAME, "compute_node"
-                )
+                existing = await cls.get_by_id(local_id) or await cls.get_by_prop("uname", _LOCAL_UNAME, "compute_node")
                 if existing:
                     logging.info("[compute-node] @local create raced; adopting %s", existing.id)
                     return existing
@@ -290,11 +314,6 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
         self.template_version = self.compute_provider.get_template_version()
         if run_startup:
             await self.startup(self.node_config)
-            # Setup LM proxy access with machine-restricted API key
-            try:
-                await self.setup_lm_proxy_access()
-            except Exception as e:
-                logging.debug(f"LM proxy access setup skipped (local mode): {e}")
         return provider_node_id
 
     @property
@@ -627,58 +646,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         return machine_status
 
-    async def setup_lm_proxy_access(self) -> str:
-        """Setup LM proxy access for this compute node.
-
-        This method:
-        1. Gets the unique machine ID from the compute node
-        2. Creates an API key restricted to that machine ID
-        3. Stores the API key on the node as FLOWPAD_LM_PROXY_KEY environment variable
-
-        Returns:
-            The created API key (for logging/debugging purposes only)
-        """
-        from flow_sdk.builtin.api_key import ApiKey, generate_api_key
-
-        # Get the machine ID from the compute node
-        machine_id = await self.get_machine_id()
-        logging.info(f"ComputeNode {self.id}: Machine ID obtained: {machine_id[:16]}...")
-
-        # Generate API key
-        full_key, prefix = generate_api_key("live")
-        key_hash = ApiKey.hash_key(full_key)
-
-        # Create ApiKey entity targeting this compute node
-        api_key = ApiKey(
-            name=f"lm_proxy_key_{self.id}",
-            api_key_hash=key_hash,
-            bind_typeid=str(self.typeid),
-            is_active=True,
-        )
-        api_key.add_machine_id(machine_id)
-        await api_key.save()
-
-        # Store the API key on the compute node machine
-        await self.set_env("FLOWPAD_LM_PROXY_KEY", full_key)
-        # Also store the machine ID so the node can send it with requests
-        await self.set_env("FLOWPAD_MACHINE_ID", machine_id)
-        # Store the backend URL for API access (use service_external_host to support ngrok/localhost scenarios)
-        backend_url = self.current_config.service_urls_config.service_external_host
-        await self.set_env("FLOWPAD_BACKEND_URL", backend_url)
-
-        # TODO this is temporarily disabled
-        # lm_proxy_path = urls_service.api.build_entity_path(self.typeid, None, "lm-proxy")
-        # full_lm_proxy_url = f"{backend_url}{lm_proxy_path}"
-        # await self.compute_provider.configure_lm_proxy_env(
-        #     self.verified_node_provider_id, full_key, backend_url, full_lm_proxy_url, machine_id
-        # )
-
-        logging.info(f"ComputeNode {self.id}: LM proxy access configured with key {prefix}...")
-        return full_key
-
     async def send(self, msg_str: str) -> None:
         return await self.compute_provider.send(self.verified_node_provider_id, msg_str)
-
 
     # -- PTY actions (implementations in PtyActionsMixin) -----------------------
 
@@ -790,10 +759,12 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         )
 
     @action.post("terminal-command")
-    async def terminal_command(self): return await self._pty_terminal_command()
+    async def terminal_command(self):
+        return await self._pty_terminal_command()
 
     @action.get(action_name="list-shells")
-    async def _list_shells(self): return await self._pty_list_shells()
+    async def _list_shells(self):
+        return await self._pty_list_shells()
 
     @action.get(action_name="terminals")
     async def _terminals(self) -> ApiResponse:
@@ -910,6 +881,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 # now (synchronously) or the chip lingers if the background
                 # teardown is slow or fails.
                 from flow_sdk.builtin.tab import hide_tabs_for_target
+
                 await hide_tabs_for_target("agentic_process", entity_id)
                 if shell_id:
                     await self._mark_shell_closing(shell_id)
@@ -925,11 +897,13 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             accepted.append(canonical)
             background_tasks.add_task(self._close_shell_terminal_background, entity_id)
 
-        return ApiSuccessResponse(data={
-            "accepted": accepted,
-            "missing": missing,
-            "invalid": invalid,
-        })
+        return ApiSuccessResponse(
+            data={
+                "accepted": accepted,
+                "missing": missing,
+                "invalid": invalid,
+            }
+        )
 
     async def _close_agentic_terminal_background(self, process_id: str) -> None:
         try:
@@ -980,10 +954,12 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         existing = await Project.get_by_id(dangling_id)
         if existing is not None:
-            return ApiSuccessResponse(data={
-                "project": existing.model_dump(mode="json"),
-                "rebound": 0,
-            })
+            return ApiSuccessResponse(
+                data={
+                    "project": existing.model_dump(mode="json"),
+                    "rebound": 0,
+                }
+            )
 
         all_shells, all_processes = await asyncio.gather(
             ShellEntity.get_all(),
@@ -1029,10 +1005,12 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             )
             rebound = len(dep_shells) + len(dep_procs)
 
-        return ApiSuccessResponse(data={
-            "project": recovered.model_dump(mode="json"),
-            "rebound": rebound,
-        })
+        return ApiSuccessResponse(
+            data={
+                "project": recovered.model_dump(mode="json"),
+                "rebound": rebound,
+            }
+        )
 
     @action.post(action_name="create-project-from-git")
     async def _create_project_from_git(self) -> ApiResponse:
@@ -1068,6 +1046,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         # confusing error, and rejecting it here keeps the failure mode clean.
         if branch is not None:
             import re as _re
+
             _GIT_REF_RE = _re.compile(r"^(?!-)[A-Za-z0-9._/-]+$")
             if not isinstance(branch, str) or not _GIT_REF_RE.match(branch) or ".." in branch or "@{" in branch:
                 return ApiFailResponse(
@@ -1148,7 +1127,51 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         project = Project(name=target_dir, **({"id": project_id} if project_id else {}))
         await project.save()
         await project.setup_for_desktop()
+        if project_id:
+            await ComputeNode._adopt_hub_project_fields(project)
         return project
+
+    @staticmethod
+    async def _adopt_hub_project_fields(project: "Project") -> None:
+        """Bring the SHARED project's own state onto this box.
+
+        Minting above gives the row an identity and a folder — and nothing else.
+        Everything the author set (the language it is worked in, its helpdesk
+        config, its context folders) lives on the HUB row under the SAME id; the
+        same-id invariant is what makes this a lookup rather than a guess.
+        Without it the box opens a project that matches only in name — a Hebrew
+        project hands its recipient an English app.
+
+        The adopt itself is NOT reimplemented here: ``materialize_remote_
+        membership_entity`` is the one seam that already mirrors a hub
+        membership container locally (idempotent upsert, hub ``created_by`` and
+        dates preserved through ``remote_reflection`` rather than stamped with
+        the local sync user, plus context-folder and secret-origin
+        materialization). This is the same adopt the invitation-accept path
+        performs — a sandbox handover is the same event reached a different way,
+        so it must not grow a second, subtly different copy. Which fields cross
+        is that seam's ``_MIRRORED_FIELDS`` allow-list, deliberately explicit.
+
+        Best-effort — a box with no cloud login, or an id that was never
+        published, keeps the freshly minted row rather than failing a launch the
+        user has already paid for.
+        """
+        try:
+            from flow_sdk.app.actions.membership_sync import materialize_remote_membership_entity  # noqa: PLC0415
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+            from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+            from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+
+            creds = load_credentials()
+            if not creds or not creds.api_key:
+                return
+            async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+                hub_project = await client.get(f"/graph/project/{project.id}")
+            if not isinstance(hub_project, dict) or not hub_project.get("id"):
+                return
+            await materialize_remote_membership_entity(Project, hub_project)
+        except Exception as err:  # noqa: BLE001
+            logging.warning("[sandbox] could not adopt hub fields for project %s: %s", project.id, err)
 
     @staticmethod
     def _adopted_project_id(raw: object) -> str | None:
@@ -1217,7 +1240,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         body = (await request_info.get_post_data() if request_info else {}) or {}
         staging_path = body.get("staging_path")
         if not staging_path or not os.path.isdir(staging_path):
-            return ApiFailResponse(message="staging_path is required and must be an existing directory", status_code=400)
+            return ApiFailResponse(
+                message="staging_path is required and must be an existing directory", status_code=400
+            )
         leaf = (str(body.get("name") or os.path.basename(staging_path.rstrip("/")))).strip()
         if not leaf:
             return ApiFailResponse(message="could not derive a project name", status_code=400)
@@ -1287,8 +1312,12 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         only one that knows which of several projects the user actually asked
         for. It is an opening instruction, not a stored preference: bootstrap
         hands it out once and forgets it, so a later refresh cannot re-assert it
-        over whatever the user has since selected. See
-        ``flow_sdk/server/state.py``.
+        over whatever the user has since selected.
+
+        Called AGAIN, by the hub, whenever it hands the box to someone it has not
+        sent there yet — a shared sandbox's second reader is invisible from here
+        (one gate secret, every visitor). See ``flow_sdk/server/state.py`` and
+        ``ComputeNode._rearm_opening_project_for`` on the hub.
         """
         from flow_sdk.server.state import set_pending_default_project  # noqa: PLC0415
 
@@ -1313,6 +1342,32 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         logging.info(f"[provisioning] next bootstrap will open project {project_id}")
         return ApiSuccessResponse(data={"project_id": project_id})
 
+    @action.all(action_name="llm-endpoint", methods=["get", "post", "delete"])
+    async def _llm_endpoint_action(self) -> ApiResponse:
+        """GET status / POST bind / DELETE unbind of the hub ``LLMEndpoint`` this box's
+        harnesses route through -- see ``cli_drivers/hub_endpoint_binding`` for the
+        payload and status shapes. The hub calls this right after a verified login."""
+        from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import (  # noqa: PLC0415
+            HubEndpointBindError,
+            bind_hub_llm_endpoint,
+            hub_llm_endpoint_status,
+            unbind_hub_llm_endpoint,
+        )
+
+        request_info = get_current_request_info()
+        method = (request_info.request.method if request_info and request_info.request else "GET").upper()
+        try:
+            if method == "GET":
+                return ApiSuccessResponse(data=await hub_llm_endpoint_status())
+            if method == "POST":
+                body = (await request_info.get_post_data() if request_info else {}) or {}
+                return ApiSuccessResponse(data=await bind_hub_llm_endpoint(body))
+            if method == "DELETE":
+                return ApiSuccessResponse(data=await unbind_hub_llm_endpoint())
+            return ApiFailResponse(message=f"Method {method} not supported", status_code=405)
+        except HubEndpointBindError as exc:
+            return ApiFailResponse(message=str(exc), status_code=exc.status_code)
+
     @action.post(action_name="find-local-repo")
     async def _find_local_repo(self) -> ApiResponse:
         """Locate a local clone whose ``origin`` matches a GitOrigin.
@@ -1335,87 +1390,114 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         return ApiSuccessResponse(data={"found": bool(local_path), "local_path": local_path})
 
     @action.get(action_name="session-transcript")
-    async def _session_transcript(self): return await self._pty_session_transcript()
+    async def _session_transcript(self):
+        return await self._pty_session_transcript()
 
     @action.get(action_name="session-transcript-raw")
-    async def _session_transcript_raw(self): return await self._pty_session_transcript_raw()
+    async def _session_transcript_raw(self):
+        return await self._pty_session_transcript_raw()
 
     @action.get(action_name="discovery")
-    async def _discovery_action(self): return await self._pty_discovery_action()
+    async def _discovery_action(self):
+        return await self._pty_discovery_action()
 
     @action.post(action_name="reset-pty")
-    async def reset_pty(self): return await self._pty_reset_pty()
+    async def reset_pty(self):
+        return await self._pty_reset_pty()
 
     @action.post(action_name="update-shell")
-    async def _update_shell(self): return await self._pty_update_shell()
+    async def _update_shell(self):
+        return await self._pty_update_shell()
 
     @action.post("ops")
-    async def ops(self): return await self._ops_dispatch()
+    async def ops(self):
+        return await self._ops_dispatch()
 
     # -- ops actions -------------------------------------------------------------
 
     @action.all(action_name="get-host")
-    def get_host_action(self, port: int, redirect: bool = True): return self._desktop_get_host(port, redirect)
+    def get_host_action(self, port: int, redirect: bool = True):
+        return self._desktop_get_host(port, redirect)
 
     @action.all(action_name="get-machine-status")
-    async def get_machine_status_action(self): return await self._desktop_get_machine_status()
+    async def get_machine_status_action(self):
+        return await self._desktop_get_machine_status()
 
     @action.all(action_name="get-system-profile")
-    async def get_system_profile_action(self): return await self._desktop_get_system_profile()
+    async def get_system_profile_action(self):
+        return await self._desktop_get_system_profile()
 
     @action.post(action_name="open-external")
-    async def open_external_action(self): return await self._desktop_open_external()
+    async def open_external_action(self):
+        return await self._desktop_open_external()
 
     @action.post(action_name="open-terminal")
-    async def open_terminal_action(self): return await self._desktop_open_terminal()
+    async def open_terminal_action(self):
+        return await self._desktop_open_terminal()
 
     @action.post(action_name="pick-folder")
-    async def pick_folder_action(self): return await self._desktop_pick_folder()
+    async def pick_folder_action(self):
+        return await self._desktop_pick_folder()
 
     @action.all(action_name="get-json-file")
-    async def get_json_file_action(self): return await self._desktop_get_json_file()
+    async def get_json_file_action(self):
+        return await self._desktop_get_json_file()
 
     @action.post(action_name="save-json-file")
-    async def save_json_file_action(self): return await self._desktop_save_json_file()
+    async def save_json_file_action(self):
+        return await self._desktop_save_json_file()
 
     @action.post(action_name="generate-amd-plan")
-    async def generate_amd_plan_action(self): return await self._desktop_generate_amd_plan()
+    async def generate_amd_plan_action(self):
+        return await self._desktop_generate_amd_plan()
 
     @action.all(action_name="scan-resources")
-    async def scan_resources_action(self): return await self._scan_resources()
+    async def scan_resources_action(self):
+        return await self._scan_resources()
 
     @action.all(action_name="get-resource-summary")
-    async def get_resource_summary_action(self): return await self._scan_get_resource_summary()
+    async def get_resource_summary_action(self):
+        return await self._scan_get_resource_summary()
 
     @action.all(action_name="scan-item")
-    async def scan_item_action(self): return await self._scan_item()
+    async def scan_item_action(self):
+        return await self._scan_item()
 
     @action.all(action_name="get-cost-overview")
-    async def get_cost_overview_action(self): return await self._analytics_cost_overview()
+    async def get_cost_overview_action(self):
+        return await self._analytics_cost_overview()
 
     @action.all(action_name="get-claude-context")
-    async def get_claude_context_action(self): return await self._analytics_claude_context()
+    async def get_claude_context_action(self):
+        return await self._analytics_claude_context()
 
     @action.all(action_name="clear-skill-usage")
-    async def clear_skill_usage_action(self): return await self._scan_clear_skill_usage()
+    async def clear_skill_usage_action(self):
+        return await self._scan_clear_skill_usage()
 
     @action.all(action_name="clear-cli-log")
-    async def clear_cli_log_action(self): return await self._scan_clear_cli_log()
+    async def clear_cli_log_action(self):
+        return await self._scan_clear_cli_log()
 
     @action.all(action_name="list-projects")
-    async def list_projects_action(self): return await self._scan_list_projects()
+    async def list_projects_action(self):
+        return await self._scan_list_projects()
 
     @action.all(action_name="scan-project")
-    async def scan_project_action(self): return await self._scan_project()
+    async def scan_project_action(self):
+        return await self._scan_project()
 
     @action.post(action_name="createProcess")
-    async def create_process_action(self): return await self._scan_create_process()
+    async def create_process_action(self):
+        return await self._scan_create_process()
 
     @action.post(action_name="upsertSessionProcess")
-    async def upsert_session_process(self): return await self._scan_upsert_session_process()
+    async def upsert_session_process(self):
+        return await self._scan_upsert_session_process()
 
     @action.get(action_name="findSession")
-    async def find_session(self): return await self._scan_find_session()
+    async def find_session(self):
+        return await self._scan_find_session()
 
     @action.post(action_name="os-status-batch")
     async def _os_status_batch(self) -> ApiResponse:
@@ -1485,7 +1567,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     # -- fs-records action (implementation in FsRecordsActionsMixin) -------------
 
     @action.all(action_name="fs-records", methods=["get", "post", "put", "delete"])
-    async def fs_records_action(self): return await self._fs_records_action()
+    async def fs_records_action(self):
+        return await self._fs_records_action()
 
     @action.get(action_name="asset-usage")
     async def asset_usage_action(self) -> ApiResponse:
@@ -1599,14 +1682,16 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                     name=f"Fix: {rec_label}" if rec_label else "Cloud fix",
                 )
                 await agentic_process.save(owner=request_info.someone_typeid if request_info else None)
-                result = await agentic_process.open(instruction=fix_instruction)  # type: ignore[assignment]
+                await agentic_process.open(instruction=fix_instruction)
                 shell_id = agentic_process.shell_id or ""
-                spawned.append({
-                    "fingerprint": fp,
-                    "status": "spawned",
-                    "shell_id": shell_id,
-                    "worker_session_id": agentic_process.worker_session_id or "",
-                })
+                spawned.append(
+                    {
+                        "fingerprint": fp,
+                        "status": "spawned",
+                        "shell_id": shell_id,
+                        "worker_session_id": agentic_process.worker_session_id or "",
+                    }
+                )
             except Exception as e:
                 spawned.append({"fingerprint": fp, "status": "error", "message": str(e)})
 
@@ -1634,9 +1719,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         # present the limit is applied per-project, so a scoped client sees that
         # project's sessions instead of whatever survived a global top-N cut.
         project_ids_raw = request_info.get_param("project_ids") if request_info else None
-        project_ids = (
-            {p for p in project_ids_raw.split(",") if p.strip()} if project_ids_raw else None
-        )
+        project_ids = {p for p in project_ids_raw.split(",") if p.strip()} if project_ids_raw else None
         entries = await get_worker_history(limit, project_ids)
         return ApiSuccessResponse(data=[e.model_dump(mode="json") for e in entries])
 
@@ -1687,9 +1770,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         workdir = params.get("workdir")
         if not workdir:
             return ApiFailResponse(message="workdir parameter is required")
-        real_method = (request_info.request.method if request_info and request_info.request else method)
+        real_method = request_info.request.method if request_info and request_info.request else method
         query_params = {k: v for k, v in params.items() if k != "workdir"}
         from flow_sdk.builtin.faas.git_repo import GitRepo
+
         return await GitRepo(workdir, self).dispatch(segments[0] if segments else "", query_params, method=real_method)
 
     @asynccontextmanager

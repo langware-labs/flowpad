@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import inspect
+import logging
 import os
+import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
 
@@ -58,6 +60,7 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, TypeId
 from flow_sdk.db.drivers.db_driver import RelationshipDirection
 from flow_sdk.db.drivers.query import ExpressionNode, OrderType, QueryFilter, QueryOp
 from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
+from flow_sdk.fs_store.identifier import adopt_entity_id, is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.asset_occurrences import AssetOccurrence, asset_occurrence_dicts
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
@@ -781,29 +784,32 @@ class Entity(DBEntity):
 
     @classmethod
     def allocate_id(cls, data: dict) -> str:
-        """Return a stable UUID for this entity type given creation data.
+        """The id for a ROW-ONLY entity — one with no file behind it.
 
-        Validate-on-adopt + single minter:
-        - If data['id'] is a **conforming** entity id (UUID v4/v5) → keep it.
-        - Else if data['id'] is non-empty (a slug, or a foreign/non-conforming
-          uuid such as a v7) → derive a stable ``uuid5(type:id)`` (normalizes
-          it; a hand-authored v7 never survives as the id).
-        - If empty/absent → fresh random uuid4.
+        The row-side counterpart of ``TypeInfo.mint_entity_id``: same v4/v5
+        policy, different input (a creation dict, not an ``FSRef``). It lives
+        here rather than on the registry because the types that need it most —
+        ``flow_message``, ``conversation`` — have no ``TypeInfo`` at all, and
+        because ``cls`` is the authority on which policy applies. Routing it
+        through the registry by ``data["type"]`` would run a *different* type's
+        policy whenever the two disagree.
 
-        All cases route through ``mint_uuid`` so the version policy lives in one
-        place. Override in subclasses with a natural fs identity key (e.g.
-        Project uses fs_storage_mount_path).
+        Order: a per-type ``_row_id_policy`` if declared → adopt a conforming
+        (v4/v5) ``data['id']`` → normalize a foreign one to
+        ``uuid5(DNS, "<type>:<id>")`` so a hand-authored id never survives →
+        random v4. Construction always goes through ``mint_uuid``.
         """
-        import uuid as _uuid
+        policy = getattr(cls, "_row_id_policy", None)
+        if policy is not None and (decided := policy(data)):
+            return str(decided)
 
-        from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
-
-        rid = data.get("id") or ""
-        if rid and is_valid_entity_id(rid):
-            return rid
-        if rid:
-            type_str = data.get("type") or "record"
-            return mint_uuid(f"{type_str}:{rid}", namespace=_uuid.NAMESPACE_DNS)
+        # The one adoption gate — it also strips, so a padded id is adopted
+        # rather than re-hashed into a different v5.
+        if adopted := adopt_entity_id(data.get("id")):
+            return adopted
+        if data.get("id"):
+            type_str = data.get("type") or cls.get_type()
+            return mint_uuid(f"{type_str}:{data['id']}", namespace=uuid.NAMESPACE_DNS)
         return mint_uuid()
 
     @classmethod
@@ -836,6 +842,20 @@ class Entity(DBEntity):
             for _k in getattr(_mm, "model_fields", None) or {}:
                 if _k in _nested and _k not in data:
                     data[_k] = _nested[_k]
+        # Tripwire on the universal FS→DB path. An asset-backed record arrives
+        # here already resolved by ``TypeInfo.mint_entity_id``; if it ever does
+        # not, ``allocate_id`` would mint a SECOND id for a path the seam
+        # already owns — silently forking the entity. A no-op today (the id is
+        # always valid by this point), a permanent guard against the regression.
+        # An asset-backed record arrives already resolved by the seam; if not,
+        # `allocate_id` below would mint a SECOND id for a path it already owns.
+        asset_ref, rid = data.get("asset_ref"), data.get("id")
+        if asset_ref and not is_valid_entity_id(str(rid or "")):
+            logging.warning(
+                "[asset-id] %s for %s has no seam-resolved id (%r) — identity must come "
+                "from TypeInfo.mint_entity_id, not allocate_id.",
+                record_type, asset_ref, rid,
+            )
         entity_uuid = entity_cls.allocate_id(data)
         # Filter by the *record's* type, not entity_cls.get_type(). The latter
         # is "entity" when entity_cls falls back to base Entity (most types
@@ -1002,7 +1022,9 @@ class Entity(DBEntity):
         if info is None or info.from_disk_fn is None:
             return None
 
-        resolved_id = info.extract_id(ref) or info.mint_id(ref)
+        # DB-FREE by contract, so no owner lookup: with no owning row to consult
+        # this degrades to the historic carrier-or-mint.
+        resolved_id = info.mint_entity_id(ref, derive=True, overwrite=True)
         records = info.from_disk_fn(ref, resolved_id)
         if not records:
             return None

@@ -16,18 +16,27 @@ parse the outcome.
 
 from __future__ import annotations
 
+from typing import Optional
 
 import requests
 import typer
-from typing import Optional
 from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
+    bad_response_message as _bad_response_message,
+)
+from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
+)
+from flow_sdk.cli.commands._common import (
     fail as _fail,
+)
+from flow_sdk.cli.commands._common import (
+    local_post as _local_post,
+)
+from flow_sdk.cli.commands._common import (
     ok as _ok,
 )
-
 
 navigate_app = typer.Typer(
     name="navigate",
@@ -53,7 +62,7 @@ def _navigate(url: str, body: dict, success_keys: list[str], error_mapping: dict
     else (transport errors, non-JSON responses, the 200/ok branch) is identical.
     """
     try:
-        resp = requests.post(url, json=body, timeout=5)
+        resp = _local_post(url, json=body, timeout=5)
     except requests.exceptions.RequestException as e:
         _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
         return  # unreachable — _fail raises typer.Exit
@@ -62,11 +71,7 @@ def _navigate(url: str, body: dict, success_keys: list[str], error_mapping: dict
     try:
         rbody = resp.json()
     except ValueError:
-        _fail(
-            EXIT_CONNECTION_ERROR,
-            "CONNECTION_ERROR",
-            f"Unexpected server response (status {resp.status_code}): {resp.text[:200]}",
-        )
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", _bad_response_message(resp))
         return
 
     if resp.status_code == 200 and rbody.get("ok"):
@@ -132,9 +137,7 @@ def navigate_entity(
 def navigate_view(
     address: Annotated[
         str,
-        typer.Argument(
-            help="Dock address, e.g. 'events' or \"tag/graph/eng.db?view=tree\" (quote it if it has a ?)."
-        ),
+        typer.Argument(help="Dock address, e.g. 'events' or \"tag/graph/eng.db?view=tree\" (quote it if it has a ?)."),
     ],
     connection_id: Annotated[
         Optional[str],

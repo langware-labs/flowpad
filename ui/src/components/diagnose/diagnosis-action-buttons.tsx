@@ -85,9 +85,7 @@ export function DiagnosisActionButtons({
     if (forwardOpen) listRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [forwardOpen, conversations.length]);
 
-  const reportDisabledReason = !canReport
-    ? t`Diagnosis is not available yet`
-    : reportAvailability.disabledReason;
+  const reportDisabledReason = !canReport ? t`Diagnosis is not available yet` : reportAvailability.disabledReason;
   const reportDisabled = busy || !canReport || !reportAvailability.canReport;
 
   return (
@@ -136,7 +134,7 @@ export function DiagnosisActionButtons({
           <Trans>Forward</Trans>
         </Button>
         {showOpenInTerminal && diagnosisId && <OpenInTerminalButton diagnosisId={diagnosisId} />}
-        {trailing && <div className="ml-auto flex items-center">{trailing}</div>}
+        {trailing && <div className="ms-auto flex items-center">{trailing}</div>}
       </div>
 
       {forwardOpen && (
@@ -156,7 +154,7 @@ export function DiagnosisActionButtons({
                   type="button"
                   disabled={busy}
                   onClick={() => onForward(conv.id)}
-                  className="flex w-full items-center gap-2 rounded-md border border-input bg-background px-2 py-1.5 text-left text-xs text-foreground hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-50"
+                  className="flex w-full items-center gap-2 rounded-md border border-input bg-background px-2 py-1.5 text-start text-xs text-foreground hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-50"
                   data-testid={`feed-forward-conv-${conv.id}`}
                 >
                   <span className="flex-1 truncate text-foreground">{deriveConversationTitle(conv)}</span>
@@ -175,7 +173,7 @@ export function DiagnosisActionButtons({
                 type="button"
                 disabled={busy}
                 onClick={() => setShareOpen(true)}
-                className="flex w-full items-center gap-2 rounded-md border border-dashed border-input bg-background px-2 py-1.5 text-left text-xs text-foreground hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-50"
+                className="flex w-full items-center gap-2 rounded-md border border-dashed border-input bg-background px-2 py-1.5 text-start text-xs text-foreground hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-50"
                 data-testid="feed-forward-conv-new"
               >
                 <MessageSquarePlus className="h-3.5 w-3.5 shrink-0 text-primary" />

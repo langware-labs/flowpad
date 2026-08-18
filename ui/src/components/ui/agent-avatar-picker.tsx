@@ -44,12 +44,12 @@ export function AgentAvatarPicker({ value, onValueChange, onImageSelected }: Age
           }}
         />
         <Button type="button" size="sm" variant="outline" className="w-full" onClick={() => inputRef.current?.click()}>
-          <ImageUp className="mr-1.5 h-3.5 w-3.5" />
+          <ImageUp className="me-1.5 h-3.5 w-3.5" />
           <Trans>Upload image</Trans>
         </Button>
         {value ? (
           <Button type="button" size="sm" variant="ghost" className="w-full" onClick={() => void onValueChange(null)}>
-            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+            <Trash2 className="me-1.5 h-3.5 w-3.5" />
             <Trans>Remove avatar</Trans>
           </Button>
         ) : null}

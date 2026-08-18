@@ -31,7 +31,7 @@ V7 = "018f0000-0000-7000-8000-000000000000"  # valid syntax, foreign version
 def _mint(ref: FSRef) -> str:
     info = SchemaRegistry.get("markdown")
     assert info is not None
-    return info.mint_id(ref)
+    return info.mint_entity_id(ref, derive=True, overwrite=True)
 
 
 def _ver(u: str) -> int:

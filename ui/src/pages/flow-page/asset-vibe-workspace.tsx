@@ -2,14 +2,12 @@ import { AgenticProcess, dataContext, fsStore, TypeId, VFSPath } from '@sdk';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { isContentAssetDock } from '@src/navigation/content-asset-dock';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
 import { shellIdFromShowTarget } from '@src/navigation/shell-show-target';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@src/components/ui/resizable';
 import type { ImperativePanelGroupHandle, ImperativePanelHandle } from 'react-resizable-panels';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
 import { ContentPanel } from './content-panel/content-panel';
 import { WorkspaceChildStrip } from './workspace-child-strip';
 import { useProcessSurface } from '@src/components/terminal/interactive-terminal/use-process-surface';
@@ -17,8 +15,6 @@ import { VibeChatPane } from './vibe-chat-pane';
 import { type VibeWorkspaceSession, useVibeWorkspaceSessionHost } from './use-vibe-workspace-session';
 import { assetWorkContextForDock } from './asset-work-context';
 import type { DisplayShowTarget } from './display-annotation';
-import { setupTabAndAdopt } from '@src/tabs/tab-content-lifecycle';
-import { ensureAssetVibeParentTab, resolveAssetVibeHost } from '@src/tabs/vibe-parent';
 import { useEntityOps } from '@sdk/react/hooks';
 import type { IEntity } from '@sdk';
 
@@ -36,6 +32,11 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   const { currentDock, navigation } = useDockNavigation();
   const currentDockRef = useRef(currentDock);
   const navigationRef = useRef(navigation);
+  // The process doing the showing IS the host, and it is in scope on the very
+  // line that builds a `flow show` destination — stamping it there is what stops
+  // the arrival from re-deriving it (and possibly resolving a DIFFERENT process
+  // than the one that showed it).
+  const hostProcessIdRef = useRef<string | null>(null);
   currentDockRef.current = currentDock;
   navigationRef.current = navigation;
   const panelGroupRef = useRef<ImperativePanelGroupHandle>(null);
@@ -45,20 +46,16 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   const hasObservedLastShownRef = useRef(false);
   const handledLastShownKeyRef = useRef('');
   const [transitionsReady, setTransitionsReady] = useState(false);
-  const [provisionalSession, setProvisionalSession] = useState<{
-    dockKey: string;
-    session: VibeWorkspaceSession;
-    process: AgenticProcess;
-  } | null>(null);
-  const matchingProvisionalSession =
-    currentDock?.tabHash && provisionalSession?.dockKey === currentDock.tabHash ? provisionalSession.session : null;
-  // Render the chat as soon as the exact target-keyed process resolves. Tab
-  // materialization and child adoption continue behind it and replace this
-  // provisional shape through the all-tabs store when complete.
-  const effectiveSession = session ?? matchingProvisionalSession;
-  const watchedProcess = useVibeWorkspaceSessionHost(effectiveSession, isVibe);
-  const provisionalProcess = provisionalSession?.dockKey === currentDock?.tabHash ? provisionalSession.process : null;
-  const process = watchedProcess ?? provisionalProcess;
+  // The session resolves synchronously from the URL plus the tab store, so there
+  // is no unknown-host window to paper over and one process identity throughout.
+  const process = useVibeWorkspaceSessionHost(session, isVibe);
+  // Kept in a ref because `openShownTarget` is deliberately stable (see below):
+  // re-creating it would open a cleanup/re-subscribe gap against the process
+  // save that lands immediately before `on_show`.
+  // The pointer form (`agentic_process-<uuid>`), NOT the bare `processId`: the
+  // host is resolved back through `DockPointer.forShell(host)`, so a bare uuid
+  // silently matches no tab and the URL-carried host does nothing.
+  hostProcessIdRef.current = session?.processDock.pointer ?? null;
   // Vibe has no InteractiveTerminal, so this is where the session's transport
   // is kept aligned with the view mode while the workspace is on screen.
   useProcessSurface({ process });
@@ -108,62 +105,23 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
     setTransitionsReady(true);
   }, []);
 
-  // Session/process attachment is a mounted-view side effect, not a route
-  // loader dependency. This keeps URL → loader → asset render fast, then
-  // adopts the already-visible asset under its exact target-keyed Chat through
-  // the canonical tab seam.
-  useEffect(() => {
-    if (!isVibe || session || !currentDock || !isContentAssetDock(currentDock)) return;
-    let cancelled = false;
-    const dockKey = currentDock.tabHash;
-    void resolveAssetVibeHost(currentDock).then(async (host) => {
-      if (cancelled || !host || !dockKey) return;
-      // Commit the resolved chat before starting process-tab materialization.
-      // That request may queue behind other boot traffic; it must not hold the
-      // visible Standard → Vibe morph or chat controls behind it.
-      flushSync(() => {
-        setProvisionalSession({
-          dockKey,
-          process: host.process,
-          session: {
-            processTab: null,
-            processDock: new DockPointer(host.process.terminalDockPointer),
-            processId: host.process.id,
-            onProcessUrl: false,
-          },
-        });
-      });
-      const processTab = await ensureAssetVibeParentTab(host);
-      if (cancelled || !processTab) return;
-      setProvisionalSession({
-        dockKey,
-        process: host.process,
-        session: {
-          processTab,
-          processDock: new DockPointer(host.process.terminalDockPointer),
-          processId: host.process.id,
-          onProcessUrl: false,
-        },
-      });
-      await setupTabAndAdopt(currentDock, { parentTabId: processTab.id });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [currentDock, isVibe, session]);
+  // A document whose URL names no host is just a document at its natural asset
+  // address: nothing here infers or invents a workspace for it. Host identity
+  // arrives with the URL (`DockPointer.hostProcessId`).
 
   const openShownTarget = useCallback((target: DisplayShowTarget) => {
     try {
+      const host = hostProcessIdRef.current;
       // A terminal is hosted as a workspace child tab, not opened as an asset
       // — the same path the journey's open_terminal act takes.
       const shellId = shellIdFromShowTarget(target);
       if (shellId) {
-        void navigationRef.current.openShell(shellId, { viewMode: ViewMode.Vibe });
+        void navigationRef.current.openShell(shellId, { viewMode: ViewMode.Vibe, host: host ?? undefined });
         return;
       }
       const targetDock = dockForDisplayTarget(target);
       if (!targetDock || !isContentAssetDock(targetDock)) return;
-      const vibeDock = targetDock.withViewMode(ViewMode.Vibe);
+      const vibeDock = targetDock.withViewMode(ViewMode.Vibe).withHost(host);
       if (currentDockRef.current?.equals(vibeDock)) return;
       navigationRef.current.openDock(vibeDock);
     } catch (error) {
@@ -176,27 +134,25 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   // The callback is stable so the process save emitted immediately before
   // `on_show` cannot create a React cleanup/re-subscribe gap.
   useEffect(() => {
-    if (!isVibe || !effectiveSession) return;
-    const candidates = [...new Set([watchedProcess, provisionalProcess].filter(Boolean))];
-    const unsubscribes = candidates.map((candidate) => candidate!.onShow(openShownTarget));
-    return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
-  }, [effectiveSession, isVibe, openShownTarget, provisionalProcess, watchedProcess]);
+    if (!isVibe || !session || !process) return;
+    return process.onShow(openShownTarget);
+  }, [session, isVibe, openShownTarget, process]);
 
   useEffect(() => {
-    if (!isVibe || !effectiveSession?.processId) return;
+    if (!isVibe || !session?.processId) return;
     const manager = dataContext.dataManager;
     // Lightweight unit hosts can render the workspace before the SDK manager
     // is installed. The process-instance listener above remains sufficient in
     // that environment; the manager listener closes the live WS attach race.
     if (!manager) return;
-    const processTypeId = `${AgenticProcess.type}-${effectiveSession.processId}`;
+    const processTypeId = `${AgenticProcess.type}-${session.processId}`;
     const onEntityEvent = (typeId: TypeId, event: string, payload: Record<string, unknown>) => {
       if (typeId.toString() !== processTypeId || event !== 'on_show') return;
       openShownTarget(payload as DisplayShowTarget);
     };
     manager.on('on_entity_event', onEntityEvent);
     return () => manager.off('on_entity_event', onEntityEvent);
-  }, [effectiveSession?.processId, isVibe, openShownTarget]);
+  }, [session?.processId, isVibe, openShownTarget]);
 
   // `on_show` is persisted on the process before the transient entity event is
   // emitted. Consume that ordinary process update directly too: it is the
@@ -207,8 +163,8 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
     (typeId: TypeId, op: 'create' | 'update' | 'delete', data: IEntity) => {
       if (
         !isVibe ||
-        !effectiveSession?.processId ||
-        typeId.id !== effectiveSession.processId ||
+        !session?.processId ||
+        typeId.id !== session.processId ||
         (op !== 'create' && op !== 'update')
       ) {
         return;
@@ -220,23 +176,21 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
       handledLastShownKeyRef.current = key;
       openShownTarget(shown);
     },
-    [effectiveSession?.processId, isVibe, openShownTarget],
+    [session?.processId, isVibe, openShownTarget],
   );
   useEntityOps(processEntityTypes, onProcessEntityOp);
 
   // `on_show` is persisted before its ephemeral entity event is emitted. Replay
   // that durable pin when a late-mounted client finishes attaching its process
   // listener, closing the small watch-registered → React-effect race.
-  const lastShown = (
-    (watchedProcess?.context_data ?? provisionalProcess?.context_data) as { last_shown?: DisplayShowTarget } | undefined
-  )?.last_shown;
+  const lastShown = (process?.context_data as { last_shown?: DisplayShowTarget } | undefined)?.last_shown;
   const lastShownKey = lastShown ? JSON.stringify(lastShown) : '';
   const displayStack = process?.displayStack ?? [];
   const newestShownAt = displayStack[displayStack.length - 1]?.shown_at;
   const parsedNewestShownAt = newestShownAt ? Date.parse(newestShownAt) : Number.NaN;
   const newestShownAtMs = Number.isFinite(parsedNewestShownAt) ? parsedNewestShownAt : null;
   useEffect(() => {
-    if (!isVibe || !effectiveSession || !lastShown) return;
+    if (!isVibe || !session || !lastShown) return;
     if (!hasObservedLastShownRef.current) {
       hasObservedLastShownRef.current = true;
       // The URL that mounted this workspace is authoritative. Persisted show
@@ -251,7 +205,7 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
     if (handledLastShownKeyRef.current === lastShownKey) return;
     handledLastShownKeyRef.current = lastShownKey;
     openShownTarget(lastShown);
-  }, [effectiveSession, isVibe, lastShownKey, newestShownAtMs, openShownTarget]);
+  }, [session, isVibe, lastShownKey, newestShownAtMs, openShownTarget]);
 
   // Bridge live worker writes into the canonical FS invalidation channel. The
   // store keeps dirty cache entries, so this refreshes clean viewers without
@@ -314,10 +268,10 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
       <ResizablePanel id="asset-vibe-content" order={2} defaultSize={isVibe ? 64 : 100} minSize={45}>
         <div className="flex h-full flex-col">
           <div className={isVibe ? 'block' : 'hidden'}>
-            {effectiveSession ? (
+            {session ? (
               <WorkspaceChildStrip
-                processTab={effectiveSession.processTab}
-                processDock={effectiveSession.processDock}
+                processTab={session.processTab}
+                processDock={session.processDock}
                 projectId={project?.id ?? null}
               />
             ) : (

@@ -64,7 +64,7 @@ KIND_NODE = "compute.node"
 #: Providers that place a resource on a ComputeNode, so ``origin.external_id``
 #: names that node. An inventoried ``gcp`` resource is not node-backed — its
 #: ``external_id`` is the provider's own resource name.
-NODE_PROVIDERS = frozenset({"local", "e2b", "docker"})
+NODE_PROVIDERS = frozenset({"local", "e2b", "user_machine"})
 
 
 class Deployment(Entity):
@@ -383,6 +383,11 @@ class Deployment(Entity):
         # options bundle handed to a claude process.
         worker_override = options.pop("worker_type", None)
         opts = agent.to_agent_options(worker_type=worker_override)
+        # Transport, not identity: a chat surface streams JSON, a one-shot run
+        # prints. Only Claude's options carry the flag; other drivers ignore it.
+        output_format = options.pop("output_format", None)
+        if output_format and hasattr(opts, "output_format"):
+            opts.output_format = output_format
 
         # The agent's system prompt goes in via ``context_data.instructions`` —
         # the ONE channel ``resolve_system_instructions`` reads, which
@@ -436,6 +441,41 @@ class Deployment(Entity):
             raise RuntimeError(f"launch failed — {resp.message}")
         if wait:
             await proc.wait()
+        return proc
+
+    async def use(self, **options) -> "AgenticProcess":
+        """Open a session AS this agent: a visible, headless Chat process, saved,
+        with no first turn — the human types it.
+
+        The interactive counterpart of :meth:`launch`. Same bundle (worker,
+        model, permissions, system prompt, dirs, ``deployment_id``); what
+        differs is only the surface: ``process_type=chat`` and stream-json
+        output so the vibe/chat pane can render it, keyed to the agent through
+        ``target_typeid_str`` so "sessions of this agent" is one query.
+        Always a NEW process — using an agent starts a fresh session as it.
+        """
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.flowpad_types.enums import ProcessKind  # noqa: PLC0415
+
+        agent = await self.agent()
+        if agent is None:
+            raise RuntimeError(f"deployment {self.id}: agent {self.parent_type_id!r} not found")
+        workdir = options.pop("workdir", None)
+        if not workdir and agent.project_id:
+            project = await Project.get_by_id(agent.project_id)
+            workdir = getattr(project, "fs_storage_mount_path", None) if project else None
+        proc = await self.build(
+            "",
+            name=options.pop("name", None) or agent.title or agent.name or agent.id,
+            process_type=ProcessKind.CHAT.value,
+            visible=True,
+            pty_mode=False,
+            output_format="stream-json",
+            workdir=workdir,
+            target_typeid_str=str(agent.typeid),
+            **options,
+        )
+        await proc.save()
         return proc
 
     async def runs(self, limit: int = 50) -> list["AgenticProcess"]:

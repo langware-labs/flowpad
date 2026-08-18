@@ -3,19 +3,14 @@ import { VibeAssignTaskButton } from './VibeAssignTaskButton';
 import {
   continueVibeSessionForProject,
   createVibeProcessForProject,
-  embedVibeAgent,
+  embedVibeSubagent,
   vibeChatTargetForProject,
 } from './use-start-vibe-session';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
-import {
-  normalizeVibeModelTier,
-  VIBE_MODEL_DEFAULT,
-  VibeModelSelect,
-  type VibeModelTier,
-} from './vibe-model-select';
+import { normalizeVibeModelTier, VIBE_MODEL_DEFAULT, VibeModelSelect, type VibeModelTier } from './vibe-model-select';
 import { VibeWorkerSelect } from './vibe-worker-select';
 import { normalizeWorkerType, type WorkerType } from '@src/components/workers/worker-types';
 import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
@@ -25,10 +20,7 @@ import { useCallback, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import type { AssetWorkContext } from './asset-work-context';
 import { useKeyedAssetPromptContext } from './asset-work-context';
-import {
-  VibeWorkerSwitchDialog,
-  type VibeWorkerSwitchIntent,
-} from './VibeWorkerSwitchDialog';
+import { VibeWorkerSwitchDialog, type VibeWorkerSwitchIntent } from './VibeWorkerSwitchDialog';
 
 interface VibeChatPaneProps {
   process: AgenticProcess | null;
@@ -49,8 +41,7 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
     projectId: string | null;
     workdir: string | null | undefined;
   } | null>(null);
-  const [workerSwitchIntent, setWorkerSwitchIntent] =
-    useState<VibeWorkerSwitchIntent | null>(null);
+  const [workerSwitchIntent, setWorkerSwitchIntent] = useState<VibeWorkerSwitchIntent | null>(null);
 
   // A process created OUTSIDE the vibe flow — e.g. a plain shell/PTY tab opened
   // in vibe mode — carries no `target_typeid_str`, and a null target hard-disables
@@ -61,8 +52,7 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
   // that would lazily mint a session.
   const chatTarget = !process
     ? null
-    : process.target_typeid_str ??
-      (process.project_id ? vibeChatTargetForProject(process.project_id) : null);
+    : (process.target_typeid_str ?? (process.project_id ? vibeChatTargetForProject(process.project_id) : null));
 
   const handleActiveWorkerChange = useCallback(
     ({
@@ -89,47 +79,45 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
     [],
   );
 
-  const runWorkerSwitch = useCallback(async (intent: VibeWorkerSwitchIntent) => {
-    const pending = pendingWorkerSwitch;
-    if (!pending || !pending.projectId || workerSwitchIntent) return;
-    setWorkerSwitchIntent(intent);
-    const options = {
-      projectId: pending.projectId,
-      workdir: pending.workdir ?? undefined,
-      navigation,
-      model: pending.model,
-      workerType: pending.workerType,
-      targetVfsPath: pending.sourceProcess.target_typeid_str ?? undefined,
-    };
-    try {
-      if (intent === 'continue') {
-        await continueVibeSessionForProject({
-          ...options,
-          sourceProcess: pending.sourceProcess,
-        });
-      } else {
-        await createVibeProcessForProject(options);
+  const runWorkerSwitch = useCallback(
+    async (intent: VibeWorkerSwitchIntent) => {
+      const pending = pendingWorkerSwitch;
+      if (!pending || !pending.projectId || workerSwitchIntent) return;
+      setWorkerSwitchIntent(intent);
+      const options = {
+        projectId: pending.projectId,
+        workdir: pending.workdir ?? undefined,
+        navigation,
+        model: pending.model,
+        workerType: pending.workerType,
+        targetVfsPath: pending.sourceProcess.target_typeid_str ?? undefined,
+      };
+      try {
+        if (intent === 'continue') {
+          await continueVibeSessionForProject({
+            ...options,
+            sourceProcess: pending.sourceProcess,
+          });
+        } else {
+          await createVibeProcessForProject(options);
+        }
+        setPendingWorkerSwitch(null);
+      } catch (error) {
+        console.error('[Vibe] Failed to switch worker:', error);
+        notify.error({ title: t`Could not start`, message: t`Failed to start the build session.` });
+      } finally {
+        setWorkerSwitchIntent(null);
       }
-      setPendingWorkerSwitch(null);
-    } catch (error) {
-      console.error('[Vibe] Failed to switch worker:', error);
-      notify.error({ title: t`Could not start`, message: t`Failed to start the build session.` });
-    } finally {
-      setWorkerSwitchIntent(null);
-    }
-  }, [
-    navigation,
-    pendingWorkerSwitch,
-    t,
-    workerSwitchIntent,
-  ]);
+    },
+    [navigation, pendingWorkerSwitch, t, workerSwitchIntent],
+  );
 
   return (
     <>
       <EntityExecutionPanel
         target={chatTarget}
         processType={ProcessKind.Chat}
-        className="h-full border-r border-border"
+        className="h-full border-e border-border"
         dense
         allowAttachments
         leadingSlot={({ startNewSession }) => (
@@ -151,10 +139,7 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
         historyOnLeft
         showProcessNameBar
         afterHistorySlot={
-          <VibeAssignTaskButton
-            projectId={project?.id ?? null}
-            sessionTypeId={process?.typeId ?? null}
-          />
+          <VibeAssignTaskButton projectId={project?.id ?? null} sessionTypeId={process?.typeId ?? null} />
         }
         pastSessionsLabel={t`Past builds`}
         noPastSessionsLabel={t`No past builds`}
@@ -178,20 +163,14 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
         )}
         onActiveWorkerChange={handleActiveWorkerChange}
         initialProcessId={process?.id ?? null}
-        promptContext={
-          promptContext
-            ? { label: t`Working on ${promptContext.label}`, text: promptContext.text }
-            : null
-        }
-        onPromptContextConsumed={
-          promptContext ? () => consume(promptContext.key) : undefined
-        }
+        promptContext={promptContext ? { label: t`Working on ${promptContext.label}`, text: promptContext.text } : null}
+        onPromptContextConsumed={promptContext ? () => consume(promptContext.key) : undefined}
         onProcessSelected={(processId) => {
           void navigation.openShellProcess(processId, { viewMode: ViewMode.Vibe });
         }}
         onProcessCreated={async (newProcess) => {
           await newProcess.enableAssistant();
-          await embedVibeAgent(newProcess);
+          await embedVibeSubagent(newProcess);
           void navigation.openShellProcess(newProcess.id, { viewMode: ViewMode.Vibe });
         }}
       />

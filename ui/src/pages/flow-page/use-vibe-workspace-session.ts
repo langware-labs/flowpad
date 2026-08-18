@@ -105,12 +105,6 @@ export function useVibeWorkspaceSessionHost(
   });
 
   useEffect(() => {
-    if (!active || !session) return;
-    tabManager.setActiveParentTabId(session.processTab?.id ?? null);
-    return () => tabManager.setActiveParentTabId(null);
-  }, [active, session, session?.processTab?.id]);
-
-  useEffect(() => {
     if (!active || !session || session.processTab) return;
     void setupTabAndAdopt(session.processDock);
   }, [active, session, session?.processTab, session?.processDock]);

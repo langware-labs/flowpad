@@ -5,6 +5,7 @@
 #   docker cp <wheel> <container>:/tmp/
 #   docker cp install_flow_on_docker.sh <container>:/tmp/
 #   docker exec <container> bash /tmp/install_flow_on_docker.sh
+# (`flow connect --docker <container>` does all three for you.)
 #
 # Requirements: python3 >= 3.10, pip.
 set -euo pipefail
@@ -47,7 +48,7 @@ fi
 
 PIP_INSTALL_ARGS=(--quiet --no-cache-dir)
 if "$VENV_DIR/bin/pip" show flowpad >/dev/null 2>&1; then
-    # `flow compute connect` deliberately reprovisions an existing container.
+    # `flow connect --docker` deliberately reprovisions an existing container.
     # Development wheels commonly keep the same package version, so a normal
     # pip install would retain stale worker code even after copying a new wheel.
     # Dependencies are already present in this branch; replace only Flowpad.
@@ -55,9 +56,6 @@ if "$VENV_DIR/bin/pip" show flowpad >/dev/null 2>&1; then
 fi
 "$VENV_DIR/bin/pip" install "${PIP_INSTALL_ARGS[@]}" "$WHEEL" 2>&1 | tail -3
 echo "  Installed $(basename "$WHEEL")"
-
-# Also install websockets (required by the worker for dialling out)
-"$VENV_DIR/bin/pip" install --quiet --no-cache-dir websockets 2>&1 | tail -1
 
 # --- Prepare config dir -------------------------------------------------------
 
@@ -68,4 +66,4 @@ mkdir -p /etc/flowpad
 if ! ln -sf "$VENV_DIR/bin/flow" /usr/local/bin/flow 2>/dev/null; then
     echo "  Warning: could not symlink flow to /usr/local/bin/flow — call $VENV_DIR/bin/flow directly."
 fi
-echo "  flow_sdk installed. Run 'flow compute worker' to start the worker."
+echo "  flow_sdk installed. 'flow connect' inside the container enrolls it into the hub."

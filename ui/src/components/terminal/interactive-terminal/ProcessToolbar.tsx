@@ -269,7 +269,7 @@ export function ProcessToolbar({
               <span className="font-medium">
                 <Trans>Trace events</Trans>
               </span>
-              <span className="ml-1 text-muted-foreground">
+              <span className="ms-1 text-muted-foreground">
                 <Trans>— show trace event gutter</Trans>
               </span>
             </span>
@@ -283,7 +283,7 @@ export function ProcessToolbar({
               <span className="font-medium">
                 <Trans>Time gutter</Trans>
               </span>
-              <span className="ml-1 text-muted-foreground">
+              <span className="ms-1 text-muted-foreground">
                 <Trans>— show time/index gutter</Trans>
               </span>
             </span>
@@ -297,7 +297,7 @@ export function ProcessToolbar({
               <span className="font-medium">
                 <Trans>Annotations</Trans>
               </span>
-              <span className="ml-1 text-muted-foreground">
+              <span className="ms-1 text-muted-foreground">
                 <Trans>— show annotation gutter</Trans>
               </span>
             </span>
@@ -311,7 +311,7 @@ export function ProcessToolbar({
               <span className="font-medium">
                 <Trans>Prompt annotations</Trans>
               </span>
-              <span className="ml-1 text-muted-foreground">
+              <span className="ms-1 text-muted-foreground">
                 <Trans>— show prompt anchors in gutter</Trans>
               </span>
             </span>
@@ -543,12 +543,7 @@ export function ProcessToolbar({
       {embedded ? (
         advancedHeader
       ) : (
-        <ViewSwap
-          advanced={advancedHeader}
-          standard={
-            <StandardInteractiveTabHeader title={titleSlot} />
-          }
-        />
+        <ViewSwap advanced={advancedHeader} standard={<StandardInteractiveTabHeader title={titleSlot} />} />
       )}
 
       <PTYViewer open={showPtyViewer} onClose={() => setShowPtyViewer(false)} shell={shell ?? null} />
@@ -595,7 +590,7 @@ function RichCheckboxItem({
               href={docsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="ml-auto text-muted-foreground hover:text-foreground"
+              className="ms-auto text-muted-foreground hover:text-foreground"
               onClick={(e) => e.stopPropagation()}
               aria-label={t`${label} docs`}
             >

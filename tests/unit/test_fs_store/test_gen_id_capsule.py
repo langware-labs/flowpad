@@ -80,7 +80,7 @@ def _dataset(d: Path, cap_id: str | None):
 def _mint(type_name: str, ref: FSRef) -> str:
     info = SchemaRegistry.get(type_name)
     assert info is not None
-    return info.mint_id(ref)
+    return info.mint_entity_id(ref, derive=True, overwrite=True)
 
 
 SPECS = {

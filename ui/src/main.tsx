@@ -12,13 +12,13 @@ import '@src/contexts/view-mode-context';
 import { initLocale } from '@src/contexts/locale-context';
 import { getHistoryPosition } from '@src/navigation/history-position-store';
 import { LocaleProviders } from '@src/contexts/LocaleProviders';
+import { DiagnoseErrorModal } from '@src/notifications';
 import '@src/tabs/agentic-process-tab-adapter';
 import { router } from './router';
 import './styles/highlightjs.css';
 
-
 function defineGlobals() {
-  void import('@sdk').then(sdk => {
+  void import('@sdk').then((sdk) => {
     (window as any).AgenticProcess = sdk.AgenticProcess;
     (window as any).Shell = sdk.Shell;
   });
@@ -37,7 +37,7 @@ function bindMouseNavButtons() {
   // popstate already reaches react-router — which is what keeps the nav bar's
   // buttons in sync with a mouse click. The position store is consulted only to
   // guard the edges and to say WHY nothing happened in the trace.
-  window.addEventListener('mouseup', e => {
+  window.addEventListener('mouseup', (e) => {
     if (e.button === 3) {
       e.preventDefault();
       const { canGoBack, idx } = getHistoryPosition();
@@ -66,12 +66,12 @@ function bindMouseNavButtons() {
 // after a pushState. A single "back" gesture that produces two of these (or a
 // did-navigate pair in the Electron `[nav]` log) is the double-navigation bug.
 function bindNavigationTrace() {
-  window.addEventListener('popstate', e => {
-    toplog.log(
-      'navigation',
-      'popstate',
-      { url: location.pathname + location.search, state: e.state, historyLen: window.history.length },
-    );
+  window.addEventListener('popstate', (e) => {
+    toplog.log('navigation', 'popstate', {
+      url: location.pathname + location.search,
+      state: e.state,
+      historyLen: window.history.length,
+    });
   });
 }
 
@@ -103,6 +103,12 @@ async function init() {
               console.error('Error loading session:', error);
             }}
           />
+          {/* Outside the router on purpose: the root `errorElement`
+              (`<ErrorScreen/>`) REPLACES `<RootLayout>`, so anything mounted
+              inside `<App>` is gone exactly when a route blows up — which is
+              when the error screen's stethoscope needs this host. One instance
+              here serves both the app and every error boundary. */}
+          <DiagnoseErrorModal />
         </LocaleProviders>
       </ThemeProvider>
     </React.StrictMode>,

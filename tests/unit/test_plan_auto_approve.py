@@ -9,20 +9,19 @@ Tests the flag lifecycle for auto-approving ExitPlanMode PermissionRequests:
 """
 
 import json
-import pytest
-from io import StringIO
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from typer.testing import CliRunner
 
 from flow_sdk.app.actions.listen import (
     _plan_auto_approve_by_agentic_process,
-    set_plan_auto_approve,
     handle_agent_hook,
+    set_plan_auto_approve,
 )
+from flow_sdk.cli.flow_cli import app
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.responses.response import ApiSuccessResponse
-from flow_sdk.cli.flow_cli import app
-
 
 ENTITY_ID = "d96c2d97-0e9b-468f-9a84-35e9762acf14"
 
@@ -238,7 +237,9 @@ class TestPlanAutoApproveHookHandler:
 
             with patch("flow_sdk.app.actions.listen._create_prompt_annotation", new_callable=AsyncMock):
                 for event, tool in pre_flag_events:
-                    wd = self._create_webhook_data(hook_event=event, tool_name=tool, session_id=new_session, entity_id=ENTITY_ID)
+                    wd = self._create_webhook_data(
+                        hook_event=event, tool_name=tool, session_id=new_session, entity_id=ENTITY_ID
+                    )
                     await handle_agent_hook(wd)
 
         # Flag not set yet — UserPromptSubmit was a no-op
@@ -262,15 +263,19 @@ class TestPlanAutoApproveHookHandler:
             mock_agent_hook_cls.get_by_id = AsyncMock(return_value=mock_hook)
 
             for event, tool in tool_events:
-                wd = self._create_webhook_data(hook_event=event, tool_name=tool, session_id=new_session, entity_id=ENTITY_ID)
+                wd = self._create_webhook_data(
+                    hook_event=event, tool_name=tool, session_id=new_session, entity_id=ENTITY_ID
+                )
                 await handle_agent_hook(wd)
 
         assert ENTITY_ID in _plan_auto_approve_by_agentic_process
 
         # PermissionRequest:ExitPlanMode — auto-approved and flag consumed
         webhook_data = self._create_webhook_data(
-            hook_event="PermissionRequest", tool_name="ExitPlanMode",
-            session_id=new_session, entity_id=ENTITY_ID,
+            hook_event="PermissionRequest",
+            tool_name="ExitPlanMode",
+            session_id=new_session,
+            entity_id=ENTITY_ID,
         )
 
         with patch("flow_sdk.builtin.agent_hook.AgentHook") as mock_agent_hook_cls:
@@ -369,7 +374,7 @@ class TestHooksReportWaitForResponse:
             "tool_name": "ExitPlanMode",
         }
 
-        with patch("requests.post") as mock_post:
+        with patch("flow_sdk.cli.commands._common.local_post") as mock_post:
             mock_post.return_value = MagicMock(
                 status_code=200,
                 text='{"data": {"hookSpecificOutput": {"permissionDecision": "deny"}}}',
@@ -395,7 +400,7 @@ class TestHooksReportWaitForResponse:
         }
         allow_data = {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "allow"}}}
 
-        with patch("requests.post") as mock_post:
+        with patch("flow_sdk.cli.commands._common.local_post") as mock_post:
             mock_post.return_value = MagicMock(
                 status_code=200,
                 text=json.dumps({"data": allow_data}),
@@ -421,7 +426,7 @@ class TestHooksReportWaitForResponse:
             "tool_name": "ExitPlanMode",
         }
 
-        with patch("requests.post") as mock_post:
+        with patch("flow_sdk.cli.commands._common.local_post") as mock_post:
             mock_post.return_value = MagicMock(
                 status_code=200,
                 text='{"data": {"status": "received"}}',
@@ -448,7 +453,7 @@ class TestHooksReportWaitForResponse:
             "tool_name": "AskUserQuestion",
         }
 
-        with patch("requests.post") as mock_post:
+        with patch("flow_sdk.cli.commands._common.local_post") as mock_post:
             mock_post.return_value = MagicMock(
                 status_code=200,
                 text='{"data": {}}',
@@ -475,8 +480,9 @@ class TestHooksReportWaitForResponse:
             "tool_name": "ExitPlanMode",
         }
 
-        with patch("requests.post") as mock_post:
+        with patch("flow_sdk.cli.commands._common.local_post") as mock_post:
             import requests
+
             mock_post.side_effect = requests.exceptions.RequestException("Connection failed")
 
             result = runner.invoke(
@@ -489,5 +495,3 @@ class TestHooksReportWaitForResponse:
         # No decision JSON should be in stdout
         for line in result.output.strip().splitlines():
             assert not line.strip().startswith("{"), f"Unexpected JSON in output: {line}"
-
-

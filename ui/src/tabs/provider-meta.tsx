@@ -1,3 +1,5 @@
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 /**
  * Terminal provider presentation — the vendor chip glyph/label table and the
  * lazy process tooltip. Lives in its own module (not the controller) because both
@@ -26,11 +28,11 @@ export const PROVIDER_META: Record<
   'claude' | 'codex' | 'copilot' | 'opencode' | 'shell',
   { Icon: React.ComponentType<{ className?: string }>; iconClassName: string; label: string }
 > = {
-  claude: { Icon: ClaudeIcon, iconClassName: 'text-orange-500', label: 'Claude Code tab' },
-  codex: { Icon: CodexIcon, iconClassName: 'text-emerald-500', label: 'Codex tab' },
-  copilot: { Icon: CopilotIcon, iconClassName: 'text-sky-500', label: 'Copilot tab' },
-  opencode: { Icon: OpenCodeIcon, iconClassName: 'text-violet-500', label: 'OpenCode tab' },
-  shell: { Icon: SquareTerminal, iconClassName: 'text-muted-foreground', label: 'Shell tab' },
+  claude: { Icon: ClaudeIcon, iconClassName: 'text-orange-500', label: msg`Claude Code tab` },
+  codex: { Icon: CodexIcon, iconClassName: 'text-emerald-500', label: msg`Codex tab` },
+  copilot: { Icon: CopilotIcon, iconClassName: 'text-sky-500', label: msg`Copilot tab` },
+  opencode: { Icon: OpenCodeIcon, iconClassName: 'text-violet-500', label: msg`OpenCode tab` },
+  shell: { Icon: SquareTerminal, iconClassName: 'text-muted-foreground', label: msg`Shell tab` },
 };
 
 /** Resolve a vendor's presentation, falling back to Claude for an unknown one.

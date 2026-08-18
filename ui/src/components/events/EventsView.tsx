@@ -70,7 +70,7 @@ export function EventsView() {
 
   const selectedRule = useMemo<ITrigger | null>(() => {
     const id = currentDock?.options?.trigger;
-    return id ? triggers.find((t) => t.id === id) ?? null : null;
+    return id ? (triggers.find((t) => t.id === id) ?? null) : null;
   }, [currentDock, triggers]);
   const isCreatingSchedule = currentDock?.options?.creating === 'schedule';
   // Shared with the rules navigator through the URL — see DockPointer.forEvents.
@@ -107,10 +107,7 @@ export function EventsView() {
     setEvents((prev) => [...prev, event].slice(-cap));
   });
 
-  const rulesByName = useMemo(
-    () => new Map(triggers.map((t) => [t.name, t])),
-    [triggers],
-  );
+  const rulesByName = useMemo(() => new Map(triggers.map((t) => [t.name, t])), [triggers]);
 
   // Split from the events memo on purpose: `events` changes on EVERY arriving
   // envelope, and re-filtering the whole fire page on each one was pure waste.
@@ -135,10 +132,7 @@ export function EventsView() {
     [events, urlScope, project?.id, targetFilter],
   );
 
-  const rows = useMemo(
-    () => buildFeed(scopedEvents, scopedFires),
-    [scopedEvents, scopedFires],
-  );
+  const rows = useMemo(() => buildFeed(scopedEvents, scopedFires), [scopedEvents, scopedFires]);
 
   const clearTargetFilter = useCallback(() => {
     navigation.openDock(
@@ -162,9 +156,7 @@ export function EventsView() {
   const handleScheduleSaved = useCallback(
     (saved: ITrigger) => {
       if (saved.id)
-        navigation.openDock(
-          DockPointer.forEvents(saved.id, { system: includeSystem }).withScopeFilter(urlScope),
-        );
+        navigation.openDock(DockPointer.forEvents(saved.id, { system: includeSystem }).withScopeFilter(urlScope));
       else clearSelection();
     },
     [navigation, urlScope, clearSelection, includeSystem],
@@ -172,9 +164,7 @@ export function EventsView() {
 
   const renderSidePane = () => {
     if (isCreatingSchedule) {
-      return (
-        <ScheduleTriggerEditor trigger={null} onSaved={handleScheduleSaved} onCancel={clearSelection} />
-      );
+      return <ScheduleTriggerEditor trigger={null} onSaved={handleScheduleSaved} onCancel={clearSelection} />;
     }
     if (!selectedRule) {
       return (
@@ -196,13 +186,7 @@ export function EventsView() {
     }
     switch (selectedRule.trigger_type) {
       case 'schedule':
-        return (
-          <ScheduleTriggerEditor
-            trigger={selectedRule}
-            onSaved={handleScheduleSaved}
-            onCancel={clearSelection}
-          />
-        );
+        return <ScheduleTriggerEditor trigger={selectedRule} onSaved={handleScheduleSaved} onCancel={clearSelection} />;
       case 'fsop':
         return <FsopTriggerDetail key={selectedRule.id} trigger={selectedRule} />;
       case 'hook':
@@ -221,7 +205,7 @@ export function EventsView() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-r">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-e">
         <EventFeed
           rows={rows}
           cap={cap}

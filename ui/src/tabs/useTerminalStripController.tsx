@@ -5,7 +5,7 @@
  * the terminal body is `TabbedTerminal`; both derive order/label/active from the
  * one backend source. This hook owns only the chrome neither of them computes:
  *
- *   - spawn flows (claude/codex/copilot/terminal/sandbox/docker) + harness gating
+ *   - spawn flows (claude/codex/copilot/terminal/sandbox) + harness gating
  *   - the opener toolbar (`trailing`), the new-tab menu, and the empty-state
  *     spawn handlers
  *   - the `ProjectsCounterChip` (`leading`)
@@ -26,7 +26,7 @@ import {
   ViewType,
   type ComputeNode,
 } from '@sdk';
-import { type UseCapabilityResult } from '@sdk/react/hooks';
+import { harnessWarning } from '@src/components/workers/harness-availability';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useHarnessCapabilities } from '@src/contexts/HarnessCapabilitiesContext';
@@ -38,7 +38,7 @@ import { notify } from '@src/notifications';
 import { PROVIDER_META } from '@src/tabs/provider-meta';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openNewChat } from '@src/navigation/open-new-chat';
-import { Cloud, Container, History, SquareTerminal } from 'lucide-react';
+import { Cloud, History, SquareTerminal } from 'lucide-react';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
@@ -55,12 +55,6 @@ const ClaudeResumeIcon: React.FC<{ className?: string }> = ({ className }) => (
     <History className="absolute -bottom-0.5 -right-0.5 !h-2.5 !w-2.5 text-foreground/80" strokeWidth={3} />
   </span>
 );
-
-/** Opener warning for a harness: set when its backend capability check ran and failed. */
-function harnessWarning(capability: UseCapabilityResult): string | null {
-  if (!capability.checked || capability.available) return null;
-  return capability.result?.message ?? 'This harness is not available on this machine.';
-}
 
 export interface TerminalStripControllerOptions {
   /** Whether to expose the "Add Tab" opener toolbar as `trailing`. */
@@ -80,7 +74,7 @@ export interface TerminalStripController {
   trailing: React.ReactNode;
   /**
    * The spawn openers as descriptors (claude/codex/copilot/terminal/sandbox/
-   * docker/history/…). Exposed so a surface can render a *subset* itself —
+   * history/…). Exposed so a surface can render a *subset* itself —
    * e.g. the project home's launcher takes only `terminal` — instead of
    * re-deriving a button's label/icon/pending state from the raw handlers.
    */
@@ -243,7 +237,6 @@ export function useTerminalStripController({
     if (!sandboxNode) return;
     return startTerminalTab(sandboxNode);
   }, [startTerminalTab]);
-  const handleStartDocker = useCallback((dockerNode: ComputeNode) => startTerminalTab(dockerNode), [startTerminalTab]);
 
   // Use Ctrl key on Mac, Win key on Windows, Alt key on Linux (label only).
   const osPlatform: string =
@@ -257,7 +250,6 @@ export function useTerminalStripController({
   const isOpenCodeCreationPending = pendingTabCreation === 'opencode';
   const isTerminalCreationPending = pendingTabCreation === 'terminal';
   const sandboxAvailable = !!dataContext.bootstrapInfo?.sandbox_available && !!dataContext.sandboxComputeNode;
-  const dockerNodes = dataContext.dockerComputeNodes;
   const claudeWarning = harnessWarning(claudeCapability);
   const codexWarning = harnessWarning(codexCapability);
   const copilotWarning = harnessWarning(copilotCapability);
@@ -341,20 +333,6 @@ export function useTerminalStripController({
         disabled: isTabCreationPending,
       },
       {
-        id: 'docker',
-        label: t`Open docker terminal`,
-        Icon: Container,
-        iconClassName: 'text-blue-500',
-        onActivate: () => {
-          if (dockerNodes.length === 1) void handleStartDocker(dockerNodes[0]);
-        },
-        onDockerNodeSelect: (dockerNode) => void handleStartDocker(dockerNode),
-        available: dockerNodes.length > 0,
-        pendingInline: isTerminalCreationPending,
-        disabled: isTabCreationPending,
-        dockerNodes,
-      },
-      {
         id: 'history',
         label: t`Open from history`,
         Icon: History,
@@ -379,12 +357,10 @@ export function useTerminalStripController({
       handleStartOpenCode,
       handleStartTerminal,
       handleStartSandbox,
-      handleStartDocker,
       handleOpenContext,
       isAdvanced,
       ContextIcon,
       sandboxAvailable,
-      dockerNodes,
       claudeWarning,
       codexWarning,
       copilotWarning,

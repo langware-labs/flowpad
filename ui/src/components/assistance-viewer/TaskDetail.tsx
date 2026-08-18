@@ -22,7 +22,7 @@ export function TaskDetail({ task, onBack }: TaskDetailProps) {
     <div className="flex h-full flex-1 flex-col bg-background">
       {/* Header */}
       <div className="flex h-[52px] items-center border-b bg-muted/50 px-3">
-        <Button variant="ghost" size="icon" onClick={onBack} className="mr-2 h-8 w-8">
+        <Button variant="ghost" size="icon" onClick={onBack} className="me-2 h-8 w-8">
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">

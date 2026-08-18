@@ -69,17 +69,25 @@ function TriggerInline({ trigger, onEdit, onDelete, onRefresh }: TriggerInlinePr
           </Button>
         </div>
       </div>
-      <div className="mt-2 space-y-1 pl-7 text-xs text-muted-foreground">
+      <div className="mt-2 space-y-1 ps-7 text-xs text-muted-foreground">
         <div>
-          <span className="font-semibold"><Trans>Mask:</Trans></span>{' '}
+          <span className="font-semibold">
+            <Trans>Mask:</Trans>
+          </span>{' '}
           <code className="rounded bg-muted px-1">{JSON.stringify(trigger.mask)}</code>
         </div>
         <div>
-          <span className="font-semibold"><Trans>Action:</Trans></span> {trigger.action.action_type}
+          <span className="font-semibold">
+            <Trans>Action:</Trans>
+          </span>{' '}
+          {trigger.action.action_type}
         </div>
         {lastTriggered && (
           <div>
-            <span className="font-semibold"><Trans>Last:</Trans></span> {lastTriggered.toLocaleString()}
+            <span className="font-semibold">
+              <Trans>Last:</Trans>
+            </span>{' '}
+            {lastTriggered.toLocaleString()}
           </div>
         )}
       </div>
@@ -103,7 +111,12 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
   const { currentDock } = useDockNavigation();
   const { project } = useProject();
   const { snifferEnabled } = useContext();
-  const { isLoading: snifferLoading, isToggling: snifferToggling, enable: snifferEnable, disable: snifferDisable } = useSnifferContext();
+  const {
+    isLoading: snifferLoading,
+    isToggling: snifferToggling,
+    enable: snifferEnable,
+    disable: snifferDisable,
+  } = useSnifferContext();
 
   const fetchHooks = useCallback(async () => {
     try {
@@ -280,7 +293,9 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
           <div className="mb-3 h-12 w-12 animate-spin rounded-full border-4 border-muted border-t-primary" />
-          <p className="text-sm text-muted-foreground"><Trans>Loading hooks...</Trans></p>
+          <p className="text-sm text-muted-foreground">
+            <Trans>Loading hooks...</Trans>
+          </p>
         </div>
       </div>
     );
@@ -295,7 +310,9 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
             <div>
               <div className="flex items-center gap-2">
                 <Webhook className="h-6 w-6" />
-                <h2 className="text-2xl font-bold"><Trans>Hooks Manager</Trans></h2>
+                <h2 className="text-2xl font-bold">
+                  <Trans>Hooks Manager</Trans>
+                </h2>
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
                 <Trans>Configure Claude Code hooks and triggers to automate workflows</Trans>
@@ -316,7 +333,9 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
           {/* Hooks Browser */}
           <div className="rounded-lg border bg-card p-4">
             <div className="mb-3">
-              <h3 className="text-sm font-semibold text-foreground"><Trans>Hooks Browser</Trans></h3>
+              <h3 className="text-sm font-semibold text-foreground">
+                <Trans>Hooks Browser</Trans>
+              </h3>
               <p className="text-xs text-muted-foreground">
                 <Trans>Scans all hook resources from the system profile and lists every hook with full details.</Trans>
               </p>
@@ -331,8 +350,12 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
           {hooks.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-12 text-center">
               <Webhook className="mb-3 h-12 w-12 text-muted-foreground opacity-50" />
-              <p className="font-medium"><Trans>No agent hooks configured</Trans></p>
-              <p className="mt-1 text-sm text-muted-foreground"><Trans>Create your first hook to get started</Trans></p>
+              <p className="font-medium">
+                <Trans>No agent hooks configured</Trans>
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                <Trans>Create your first hook to get started</Trans>
+              </p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -349,17 +372,17 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
                           onClick={() => toggleHookExpanded(hook.id)}
                           className="text-muted-foreground hover:text-foreground"
                         >
-                          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          {isExpanded ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 rtl:-scale-x-100" />
+                          )}
                         </button>
                         <div className="flex flex-1 items-center gap-3">
-                          <div
-                            className={`h-2 w-2 rounded-full ${hook.enabled ? 'bg-green-500' : 'bg-gray-400'}`}
-                          />
+                          <div className={`h-2 w-2 rounded-full ${hook.enabled ? 'bg-green-500' : 'bg-gray-400'}`} />
                           <div className="flex-1">
                             <h3 className="font-semibold">{hook.displayName}</h3>
-                            {hook.description && (
-                              <p className="text-sm text-muted-foreground">{hook.description}</p>
-                            )}
+                            {hook.description && <p className="text-sm text-muted-foreground">{hook.description}</p>}
                           </div>
                           <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
                             {hook.hook_scope}
@@ -415,9 +438,11 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
                         {/* Triggers Section */}
                         <div className="border-t p-4">
                           <div className="mb-3 flex items-center justify-between">
-                            <h4 className="text-sm font-semibold text-muted-foreground"><Trans>Triggers</Trans></h4>
+                            <h4 className="text-sm font-semibold text-muted-foreground">
+                              <Trans>Triggers</Trans>
+                            </h4>
                             <Button variant="outline" size="sm" onClick={() => handleAddTriggerToHook(hook.id)}>
-                              <Plus className="mr-1 h-3 w-3" />
+                              <Plus className="me-1 h-3 w-3" />
                               <Trans>Add Trigger</Trans>
                             </Button>
                           </div>

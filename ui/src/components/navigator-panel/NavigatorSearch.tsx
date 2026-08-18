@@ -124,7 +124,7 @@ export function useNavigatorSearch(config: NavigatorSearchConfig | null | undefi
 
   const headerRow = (
     <>
-      <Search className="ml-0.5 h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+      <Search className="ms-0.5 h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
       <input
         ref={inputRef}
         value={query}
@@ -155,9 +155,7 @@ export function useNavigatorSearch(config: NavigatorSearchConfig | null | undefi
         </PopoverTrigger>
         <PopoverContent align="end" className="w-64 space-y-2 p-2" onOpenAutoFocus={(e) => e.preventDefault()}>
           <div>
-            <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              {t`Type`}
-            </div>
+            <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{t`Type`}</div>
             <EntityTypePopover value={entityType} onChange={setEntityType} allowedEntityTypes={recordTypes} />
           </div>
           <div>
@@ -197,7 +195,7 @@ export function useNavigatorSearch(config: NavigatorSearchConfig | null | undefi
             key={row.key}
             type="button"
             onClick={() => void handleSelect(row)}
-            className="flex w-full items-center gap-2 px-2 py-1.5 text-left hover:bg-muted"
+            className="flex w-full items-center gap-2 px-2 py-1.5 text-start hover:bg-muted"
             data-testid="navigator-search-result"
             data-record-type={row.recordType}
           >

@@ -108,7 +108,6 @@ export class TabManager {
   private broadcastHandler: ((message: BroadcastMessage) => void) | null = null;
   private attachedConnection: TabConnection | null = null;
   private pendingIntentKey: string | null = null;
-  private activeParentTabId: string | null = null;
 
   constructor(options: TabManagerOptions = {}) {
     this.gateway = options.gateway ?? Tab;
@@ -277,14 +276,6 @@ export class TabManager {
     return result.tab;
   }
 
-  setActiveParentTabId(tabId: string | null): void {
-    this.activeParentTabId = tabId;
-  }
-
-  getActiveParentTabId(): string | null {
-    return this.activeParentTabId;
-  }
-
   listAll(): Promise<Tab[]> {
     return this.gateway.listAll();
   }
@@ -413,7 +404,6 @@ export class TabManager {
     this.broadcastHandler = null;
     this.attachedConnection = null;
     this.pendingIntentKey = null;
-    this.activeParentTabId = null;
     this.lifecycle.resetForTests();
   }
 

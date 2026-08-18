@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useMemo, useState } from 'react';
 import { AgenticProcess, dataContext, ProcessKind, TypeId } from '@sdk';
 import { notify } from '@src/notifications';
@@ -72,7 +73,7 @@ export function useTranscriptSession(
           `${LOG} launch click did NOT open a session — the active project has no folder on this machine. ` +
             `project=${project?.id ?? 'null'} name=${project?.name ?? 'null'} fs_storage_mount_path=${String(project?.fs_storage_mount_path)}`,
         );
-        notify.error({ title: 'No active project', message: 'Open a project to analyze this transcript.' });
+        notify.error({ title: t`No active project`, message: t`Open a project to analyze this transcript.` });
         return;
       }
       setStarting(true);
@@ -93,7 +94,7 @@ export function useTranscriptSession(
         console.debug(`${LOG} launched process ${proc?.id ?? 'null'} — terminal dock opened`);
       } catch (err) {
         console.error(`${LOG} launch click did NOT open a session — AgenticProcess.launch threw`, err);
-        notify.error({ title: 'Failed to start session' });
+        notify.error({ title: t`Failed to start session` });
       } finally {
         setStarting(false);
       }

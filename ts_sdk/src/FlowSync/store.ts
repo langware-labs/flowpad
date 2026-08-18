@@ -53,6 +53,13 @@ interface PendingPromise<T> {
 /** One minute of inactivity before a user edit is stamped on the backend. */
 export const EDIT_MARK_DEBOUNCE_MS = 60_000;
 
+export interface RecentEntityEdit {
+  target: TypeId;
+  markedAt: number;
+}
+
+const RECENT_ENTITY_EDITS_CHANGED = 'recent_entity_edits_changed';
+
 interface PendingEditMark {
   target: TypeId;
   revision: number;
@@ -71,8 +78,17 @@ interface PendingEditMark {
  */
 class EntityEditMarker {
   private pending = new TypeIdMap<PendingEditMark>();
+  private recent = new TypeIdMap<RecentEntityEdit>();
+  private recentSnapshot: readonly RecentEntityEdit[] = [];
 
-  constructor(private readonly send: (target: TypeId) => Promise<unknown>) {}
+  constructor(
+    private readonly send: (target: TypeId) => Promise<unknown>,
+    private readonly onRecentChanged: () => void,
+  ) {}
+
+  getRecentSnapshot(): readonly RecentEntityEdit[] {
+    return this.recentSnapshot;
+  }
 
   mark(target: TypeId): void {
     let state = this.pending.get(target);
@@ -89,7 +105,11 @@ class EntityEditMarker {
     }
 
     state.revision += 1;
-    state.dueAt = Date.now() + EDIT_MARK_DEBOUNCE_MS;
+    const markedAt = Date.now();
+    state.dueAt = markedAt + EDIT_MARK_DEBOUNCE_MS;
+    this.recent.set(state.target, { target: state.target, markedAt });
+    this.recentSnapshot = [...this.recent.values()].sort((a, b) => b.markedAt - a.markedAt);
+    this.onRecentChanged();
     this.arm(state);
   }
 
@@ -98,6 +118,11 @@ class EntityEditMarker {
       if (state.timer) clearTimeout(state.timer);
     }
     this.pending.clear();
+    if (this.recentSnapshot.length > 0) {
+      this.recent.clear();
+      this.recentSnapshot = [];
+      this.onRecentChanged();
+    }
   }
 
   private arm(state: PendingEditMark): void {
@@ -203,13 +228,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
   constructor() {
     super();
-    this.editMarker = new EntityEditMarker(async (target) => {
-      // Local recency only in v1. A later explicit share can carry the stored
-      // field, but this delayed marker does not reflect an action to the Hub.
-      const action = new ActionInfo('mark-edit', target.type, target.id, 'POST');
-      const ref = this.getRef(target);
-      await this.enqueueEntityWrite(ref, () => this.callAction<undefined, unknown>(action));
-    });
+    this.editMarker = new EntityEditMarker(
+      async (target) => {
+        // Local recency only in v1. A later explicit share can carry the stored
+        // field, but this delayed marker does not reflect an action to the Hub.
+        const action = new ActionInfo('mark-edit', target.type, target.id, 'POST');
+        const ref = this.getRef(target);
+        await this.enqueueEntityWrite(ref, () => this.callAction<undefined, unknown>(action));
+      },
+      () => this.emit(RECENT_ENTITY_EDITS_CHANGED),
+    );
     this.attach_connection_manager(ConnectionManager.getInstance());
     // Schedule the repeated function call every 5 seconds
     //setInterval(() => this.onSaveAllDirty(), this.saveIntervalMs);
@@ -649,6 +677,20 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   /** Schedule one server-owned edit stamp after the entity becomes idle. */
   public markEdit(typeId: TypeId): void {
     this.editMarker.mark(typeId);
+  }
+
+  /**
+   * User edits observed in this client realm, including marks still waiting for
+   * their trailing server stamp. This is an ephemeral activity projection; it
+   * never mutates the backend-owned ``last_edited_at`` field.
+   */
+  public getRecentEntityEdits(): readonly RecentEntityEdit[] {
+    return this.editMarker.getRecentSnapshot();
+  }
+
+  public onRecentEntityEditsChange(callback: () => void): () => void {
+    this.on(RECENT_ENTITY_EDITS_CHANGED, callback);
+    return () => this.off(RECENT_ENTITY_EDITS_CHANGED, callback);
   }
 
   get apiStats() {

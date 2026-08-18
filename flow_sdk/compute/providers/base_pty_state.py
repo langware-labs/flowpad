@@ -1,6 +1,6 @@
 """BasePtySession — shared Pty handle body used by every provider.
 
-LocalPtySession, E2BPtySession, and DockerPtySession all wrap the shared
+LocalPtySession and E2BPtySession wrap the shared
 PtyRegistry in the exact same way; only the provider type attribute
 differs. This module holds the shared body; the per-provider subclasses are
 trivial type-annotation shells.

@@ -321,7 +321,7 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
                   {isExpanded ? (
                     <ChevronDown className="h-3 w-3 text-muted-foreground" />
                   ) : (
-                    <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                    <ChevronRight className="h-3 w-3 text-muted-foreground rtl:-scale-x-100" />
                   )}
                 </button>
               ) : (
@@ -402,11 +402,17 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
 
           {/* Empty state for folder */}
           {isExpanded && !isItemLoading && contents.length === 0 && (
-            <div className="ml-8 p-2 text-xs text-muted-foreground"><Trans>No files or folders</Trans></div>
+            <div className="ms-8 p-2 text-xs text-muted-foreground">
+              <Trans>No files or folders</Trans>
+            </div>
           )}
 
           {/* Loading state for folder */}
-          {isExpanded && isItemLoading && <div className="ml-8 p-2 text-xs text-muted-foreground"><Trans>Loading...</Trans></div>}
+          {isExpanded && isItemLoading && (
+            <div className="ms-8 p-2 text-xs text-muted-foreground">
+              <Trans>Loading...</Trans>
+            </div>
+          )}
         </div>
       );
     },
@@ -415,7 +421,11 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
 
   // Show loading state
   if (externalLoading) {
-    return <div className={`p-4 text-center text-xs text-muted-foreground ${className}`}><Trans>Loading...</Trans></div>;
+    return (
+      <div className={`p-4 text-center text-xs text-muted-foreground ${className}`}>
+        <Trans>Loading...</Trans>
+      </div>
+    );
   }
 
   // Show error state
@@ -428,7 +438,9 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
     return (
       <div className={`p-4 text-center ${className}`}>
         <Folder className="mx-auto h-8 w-8 text-muted-foreground/50" />
-        <p className="mt-2 text-xs text-muted-foreground"><Trans>No roots configured</Trans></p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          <Trans>No roots configured</Trans>
+        </p>
       </div>
     );
   }
@@ -457,7 +469,7 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
           )}
           {/* Filter dropdown */}
           {filterDefinitions && filterDefinitions.length > 0 && onEnabledFiltersChange && (
-            <div className="ml-auto">
+            <div className="ms-auto">
               <FilterDropdown
                 filters={filterDefinitions}
                 enabledFilters={enabledFilters ?? []}

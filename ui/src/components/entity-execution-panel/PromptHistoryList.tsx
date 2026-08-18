@@ -37,7 +37,7 @@ export function PromptHistoryList({
             onPick(i);
           }}
           className={cn(
-            'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
+            'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-start text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
             i === index && 'bg-primary/10 text-foreground',
           )}
           data-testid="entity-execution-history-item"

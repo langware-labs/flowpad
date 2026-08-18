@@ -20,27 +20,21 @@ close the production log shows. The sender pushes through the real
 
 Requires the two-user rig (see CLAUDE.md → ``scripts/instance_ctl.sh``)::
 
-    scripts/instance_ctl.sh launch wsa-5 --hub http://localhost:8093
-    scripts/instance_ctl.sh launch wsb-6 --hub http://localhost:8093
+    FLOWPAD_E2E_INSTANCE=<sender> FLOWPAD_E2E_PEER_INSTANCE=<recipient> pytest ...
 
 and one conversation both users belong to.
 """
 
 from __future__ import annotations
 
-import json
 import os
 import signal
 import subprocess
 import time
-from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 import requests
-
-SENDER = "wsa-5"
-RECIPIENT = "wsb-6"
-HUB_PORT = 8093
 
 #: How long we allow the hub's keepalive to notice the frozen client and drop
 #: the socket. NOT a tuning knob for flakiness — the test asserts the socket is
@@ -52,29 +46,20 @@ SOCKET_DEATH_LIMIT_S = 120
 DELIVERY_LIMIT_S = 90
 
 
-def _instance_port(name: str) -> int:
-    server_json = Path.home() / ".flow" / "instances" / name / "server.json"
-    if not server_json.exists():
-        pytest.skip(f"instance {name!r} is not running (no server.json)")
-    return int(json.loads(server_json.read_text())["port"])
-
-
-def _instance_pid(name: str) -> int:
-    pid_file = Path.home() / ".flow" / "instances" / name / "server.pid"
-    if not pid_file.exists():
-        pytest.skip(f"instance {name!r} has no server.pid")
-    return int(pid_file.read_text().strip())
-
-
 def _conversations(port: int) -> dict[str, dict]:
     resp = requests.get(f"http://127.0.0.1:{port}/api/v1/graph/conversation", timeout=30)
     resp.raise_for_status()
     return {c["id"]: c for c in (resp.json().get("data") or []) if c.get("id")}
 
 
-def _hub_socket_count() -> int:
+def _hub_socket_count(hub_port: int) -> int:
     """Established TCP connections to the hub, both endpoints counted."""
-    out = subprocess.run(["lsof", "-nP", f"-iTCP:{HUB_PORT}"], capture_output=True, text=True, check=False).stdout
+    out = subprocess.run(
+        ["lsof", "-nP", f"-iTCP:{hub_port}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout
     return sum(1 for line in out.splitlines() if "ESTABLISHED" in line)
 
 
@@ -86,50 +71,76 @@ def _has_message(port: int, fm_id: str) -> bool:
     return bool(resp.ok and (resp.json().get("data") or {}).get("id"))
 
 
-@pytest.fixture()
-def rig() -> dict:
-    try:
-        hub_ok = requests.get(f"http://127.0.0.1:{HUB_PORT}/api/v1/graph/bootstrap", timeout=10).ok
-    except requests.RequestException:
-        hub_ok = False
-    if not hub_ok:
-        pytest.skip(f"local hub is not serving on :{HUB_PORT}")
+def _local_hub_for_pair(sender, recipient) -> tuple[str, int]:
+    if sender.name == recipient.name:
+        pytest.fail("FLOWPAD_E2E_INSTANCE and FLOWPAD_E2E_PEER_INSTANCE must be distinct")
+    if not sender.hub_url or sender.hub_url != recipient.hub_url:
+        pytest.fail("selected E2E instances must use the same non-empty Hub URL")
 
-    sender_port, recipient_port = _instance_port(SENDER), _instance_port(RECIPIENT)
+    parsed = urlsplit(sender.hub_url)
+    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }:
+        pytest.fail(f"selected E2E instances must use a local Hub, got {sender.hub_url!r}")
     try:
-        shared = set(_conversations(sender_port)) & set(_conversations(recipient_port))
+        hub_port = parsed.port
+    except ValueError as exc:
+        pytest.fail(f"selected E2E instances have an invalid Hub URL: {exc}")
+    if hub_port is None:
+        pytest.fail(f"selected E2E instances' Hub URL has no explicit port: {sender.hub_url!r}")
+    return sender.hub_url, hub_port
+
+
+@pytest.fixture()
+def rig(resolve_live_e2e_instance) -> dict:
+    sender = resolve_live_e2e_instance("FLOWPAD_E2E_INSTANCE")
+    recipient = resolve_live_e2e_instance("FLOWPAD_E2E_PEER_INSTANCE")
+    hub_url, hub_port = _local_hub_for_pair(sender, recipient)
+
+    try:
+        hub_response = requests.get(f"{hub_url}/api/v1/graph/bootstrap", timeout=10)
+        hub_response.raise_for_status()
+    except requests.RequestException as exc:
+        pytest.fail(f"selected E2E rig's Hub is not reachable at {hub_url}: {exc}")
+
+    try:
+        shared = set(_conversations(sender.backend_port)) & set(_conversations(recipient.backend_port))
     except requests.RequestException as e:
-        pytest.skip(f"rig instance not reachable: {e}")
+        pytest.fail(f"selected E2E rig instance is not reachable: {e}")
     if not shared:
-        pytest.skip(f"{SENDER} and {RECIPIENT} share no conversation")
+        pytest.fail(f"{sender.name} and {recipient.name} share no conversation")
 
     return {
-        "sender_port": sender_port,
-        "recipient_port": recipient_port,
-        "recipient_pid": _instance_pid(RECIPIENT),
+        "sender": sender,
+        "recipient": recipient,
+        "hub_port": hub_port,
         "conversation_id": sorted(shared)[0],
     }
 
 
 def test_message_sent_during_a_socket_gap_arrives_after_reconnect(rig):
-    recipient_pid = rig["recipient_pid"]
+    sender = rig["sender"]
+    recipient = rig["recipient"]
+    recipient_pid = recipient.backend_pid
     resumed = False
 
     # Freeze the recipient. Its process stays alive and its conversation stays
     # open — only the socket goes, exactly as it does in production.
     os.kill(recipient_pid, signal.SIGSTOP)
     try:
-        baseline = _hub_socket_count()
+        baseline = _hub_socket_count(rig["hub_port"])
         deadline = time.monotonic() + SOCKET_DEATH_LIMIT_S
-        while time.monotonic() < deadline and _hub_socket_count() >= baseline:
+        while time.monotonic() < deadline and _hub_socket_count(rig["hub_port"]) >= baseline:
             time.sleep(2)
-        assert _hub_socket_count() < baseline, (
+        assert _hub_socket_count(rig["hub_port"]) < baseline, (
             "the hub never dropped the frozen recipient's socket, so there is no gap to test"
         )
 
         # Real send, real action, while the recipient is unreachable.
         sent = requests.post(
-            f"http://127.0.0.1:{rig['sender_port']}/api/v1/graph/conversation/{rig['conversation_id']}/add_message",
+            f"http://127.0.0.1:{sender.backend_port}/api/v1/graph/conversation/{rig['conversation_id']}/add_message",
             json={"text": "sent while the recipient's hub socket was down"},
             timeout=180,
         )
@@ -147,12 +158,12 @@ def test_message_sent_during_a_socket_gap_arrives_after_reconnect(rig):
 
     deadline = time.monotonic() + DELIVERY_LIMIT_S
     while time.monotonic() < deadline:
-        if _has_message(rig["recipient_port"], fm_id):
+        if _has_message(recipient.backend_port, fm_id):
             return
         time.sleep(2)
 
     pytest.fail(
-        f"message {fm_id} never reached {RECIPIENT} in {DELIVERY_LIMIT_S}s after its socket "
+        f"message {fm_id} never reached {recipient.name} in {DELIVERY_LIMIT_S}s after its socket "
         f"reconnected — the hub announced it once while the socket was down, and nothing "
         f"re-reads the conversation on reconnect, so it is lost until the user opens it"
     )

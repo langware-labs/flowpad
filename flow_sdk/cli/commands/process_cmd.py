@@ -30,9 +30,23 @@ from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
     EXIT_CONNECTION_ERROR,
+)
+from flow_sdk.cli.commands._common import (
+    bad_response_message as _bad_response_message,
+)
+from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
+)
+from flow_sdk.cli.commands._common import (
     fail as _fail,
+)
+from flow_sdk.cli.commands._common import (
+    local_post as _local_post,
+)
+from flow_sdk.cli.commands._common import (
     ok as _ok,
+)
+from flow_sdk.cli.commands._common import (
     resolve_process_id as _resolve_process_id,
 )
 
@@ -72,14 +86,14 @@ def restart_process(
     url = f"http://127.0.0.1:{port}/api/v1/graph/agentic_process/{process_id}/self-restart"
 
     try:
-        resp = requests.post(url, json={}, timeout=15)
+        resp = _local_post(url, json={}, timeout=15)
     except requests.exceptions.RequestException as e:
         _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
         return
     try:
         body = resp.json()
     except ValueError:
-        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Bad response: {resp.text[:200]}")
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", _bad_response_message(resp))
         return
 
     if resp.status_code != 200 or body.get("status") != "SUCCESS":

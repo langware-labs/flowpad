@@ -58,15 +58,22 @@ def test_spawn_args_support_session_id_resume_model_effort_and_add_dirs():
     assert env == {"FOO": "bar"}
 
 
-def test_model_tier_persists_raw_and_emits_resolved_model():
-    cmd = CopilotAgentOptions(model="lg", workdir="/repo")
+@pytest.mark.parametrize("tier", ["sm", "md", "lg"])
+def test_native_model_tier_persists_raw_and_delegates_to_copilot_auto(tier):
+    cmd = CopilotAgentOptions(model=tier, workdir="/repo")
 
-    assert cmd.model == "lg"
-    assert cmd.to_json()["model"] == "lg"
+    assert cmd.model == tier
+    assert cmd.to_json()["model"] == tier
 
     argv, _env = cmd.to_spawn_args()
-    assert argv[argv.index("--model") + 1] == "gpt-5.5"
-    assert "--model gpt-5.5" in cmd.to_shell_string()
+    assert "--model" not in argv
+    assert "--model" not in cmd.to_shell_string()
+
+
+def test_explicit_auto_model_passes_through():
+    argv, _env = CopilotAgentOptions(model="auto").to_spawn_args()
+
+    assert argv[argv.index("--model") + 1] == "auto"
 
 
 def test_fresh_session_id_uses_session_id_flag_not_resume():
@@ -97,6 +104,18 @@ def test_interactive_spawn_args_use_bare_copilot():
         "--resume=abc",
     ]
     assert env == {"COPILOT_ALLOW_ALL": "true"}
+
+
+@pytest.mark.parametrize("json_stream", [False, True])
+def test_process_plugin_dirs_are_repeatable_raw_runtime_flags(json_stream):
+    plugin_dirs = ["/plugins/one", "/plugins/two with 'quotes' and \U0001f600"]
+    cmd = CopilotAgentOptions(plugin_dirs=plugin_dirs, json_stream=json_stream)
+
+    argv, _env = cmd.to_spawn_args()
+
+    assert [argv[index + 1] for index, value in enumerate(argv[:-1]) if value == "--plugin-dir"] == plugin_dirs
+    assert "plugin_dirs" not in cmd.to_json()
+    assert CopilotAgentOptions.from_json({"plugin_dirs": ["/persisted"]}).plugin_dirs == []
 
 
 def test_interactive_non_bypass_does_not_inject_folder_trust_override():

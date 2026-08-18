@@ -185,6 +185,18 @@ def _pointer_is_adoptable_child(pointer: str | None) -> bool:
     if vt == 'project':
         # Project-rebased asset dock: ``<project-id>/<assetSubPointer>``.
         _, _, asset_sub = sub.partition('/')
+        # The vibe workspace HOST is spelled in the URL as
+        # ``<project-id>/process/<typeid>/display/<tail>`` but is carried to us in
+        # the client's URL options, never inside the stored pointer — that is what
+        # keeps tab identity (and this very check) unchanged. If one ever reaches
+        # here the client failed to lift it, and the row would be refused as a
+        # child SILENTLY: no error, the document just stops being part of its
+        # workspace on the next list read. Name it instead of swallowing it.
+        if asset_sub.startswith('process/'):
+            logger.error(
+                'Tab pointer carries a workspace host; the client should keep it in URL options: %s',
+                pointer,
+            )
         return asset_sub.startswith('editor/')
     if vt == 'shell':
         # A PLAIN terminal is workspace content. The process's own dock is the

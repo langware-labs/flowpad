@@ -61,14 +61,22 @@
   --afl-warn-dim: rgb(var(--warn-rgb) / 0.18);
   --afl-err: rgb(248 113 113);
 }
-.graph-workflows * { box-sizing: border-box; }
-.graph-workflows ::selection { background: var(--sel); }
+.graph-workflows * {
+  box-sizing: border-box;
+}
+.graph-workflows ::selection {
+  background: var(--sel);
+}
 
 /* React Flow canvas: paper only — the dots are the <Background> layer, which
  * rides the viewport transform (a static gradient here would sit still while
  * the nodes pan). */
-.graph-workflows .react-flow { background: var(--paper); }
-.graph-workflows .react-flow__attribution { display: none; }
+.graph-workflows .react-flow {
+  background: var(--paper);
+}
+.graph-workflows .react-flow__attribution {
+  display: none;
+}
 .graph-workflows .react-flow__controls {
   background: var(--paper);
   border: 1px solid var(--afl-edge);
@@ -82,7 +90,9 @@
   color: var(--ink-soft);
   fill: var(--ink-soft);
 }
-.graph-workflows .react-flow__controls-button:hover { background: var(--paper-3); }
+.graph-workflows .react-flow__controls-button:hover {
+  background: var(--paper-3);
+}
 
 /* ---- node cards (atlas .card language) ------------------------------- */
 .graph-workflows .afl-node {
@@ -100,7 +110,10 @@
   box-shadow:
     0 1px 0 hsl(var(--border) / 0.55),
     0 6px 18px -10px hsl(0 0% 0% / 0.35);
-  transition: border-color 0.16s, box-shadow 0.16s, transform 0.16s;
+  transition:
+    border-color 0.16s,
+    box-shadow 0.16s,
+    transform 0.16s;
 }
 .graph-workflows .afl-node:hover .card {
   border-color: var(--ink-faint);
@@ -121,10 +134,21 @@
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--afl-err) 18%, transparent);
 }
 @keyframes afl-heartbeat {
-  0%, 100% { box-shadow: 0 0 0 3px var(--rubric-dim), 0 12px 30px -12px hsl(0 0% 0% / 0.45); }
-  50% { box-shadow: 0 0 0 6px var(--rubric-dim), 0 0 22px 0 var(--rubric-dim); }
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 3px var(--rubric-dim),
+      0 12px 30px -12px hsl(0 0% 0% / 0.45);
+  }
+  50% {
+    box-shadow:
+      0 0 0 6px var(--rubric-dim),
+      0 0 22px 0 var(--rubric-dim);
+  }
 }
-.graph-workflows .afl-node.running .card { animation: afl-heartbeat 1.8s ease-in-out infinite; }
+.graph-workflows .afl-node.running .card {
+  animation: afl-heartbeat 1.8s ease-in-out infinite;
+}
 
 /* kicker type — shared by station cards and trigger cards; only the color and
  * the card's own spacing differ (see .afl-trigger .kic below). */
@@ -139,15 +163,25 @@
   align-items: center;
   gap: 6px;
 }
-.graph-workflows .afl-node .kic { margin-bottom: 5px; }
+.graph-workflows .afl-node .kic {
+  margin-bottom: 5px;
+}
 .graph-workflows .afl-node .kic .pip {
-  width: 5px; height: 5px; border-radius: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
   background: var(--rubric);
   flex: none;
 }
-.graph-workflows .afl-node .kic .pip.function { background: #7c5cff; }
-.graph-workflows .afl-node .kic .pip.skill { background: var(--rubric); }
-.graph-workflows .afl-node .kic .pip.instruction { background: var(--afl-warn); }
+.graph-workflows .afl-node .kic .pip.function {
+  background: #7c5cff;
+}
+.graph-workflows .afl-node .kic .pip.skill {
+  background: var(--rubric);
+}
+.graph-workflows .afl-node .kic .pip.instruction {
+  background: var(--afl-warn);
+}
 .graph-workflows .afl-node .ttl {
   font-size: 16px;
   line-height: 1.18;
@@ -181,13 +215,23 @@
 /* status tones — the color half of fmt.ts::nodeStatusLine's ladder. Every
  * tone reuses an existing token; running wears the same accent as the card's
  * running border, queued the same amber as every other caution on the surface. */
-.graph-workflows .stl-running { color: var(--rubric); }
-.graph-workflows .stl-failed { color: var(--afl-err); }
-.graph-workflows .stl-queued { color: var(--afl-warn); }
-.graph-workflows .stl-done { color: var(--ink-soft); }
-.graph-workflows .stl-idle { color: var(--ink-faint); }
+.graph-workflows .stl-running {
+  color: var(--rubric);
+}
+.graph-workflows .stl-failed {
+  color: var(--afl-err);
+}
+.graph-workflows .stl-queued {
+  color: var(--afl-warn);
+}
+.graph-workflows .stl-done {
+  color: var(--ink-soft);
+}
+.graph-workflows .stl-idle {
+  color: var(--ink-faint);
+}
 .graph-workflows .afl-node .stl .lnk {
-  margin-left: auto;
+  margin-inline-start: auto;
   color: var(--rubric);
   cursor: pointer;
   flex: none;
@@ -195,8 +239,10 @@
 /* queue/active badge — atlas .deg, top-right */
 .graph-workflows .afl-node .deg {
   position: absolute;
-  top: -7px; right: -7px;
-  min-width: 18px; height: 18px;
+  top: -7px;
+  right: -7px;
+  min-width: 18px;
+  height: 18px;
   padding: 0 5px;
   background: var(--rubric);
   color: hsl(var(--background));
@@ -207,10 +253,18 @@
   place-items: center;
   box-shadow: 0 2px 6px -1px hsl(0 0% 0% / 0.4);
 }
-.graph-workflows .afl-node .deg.queued { right: auto; left: -7px; background: var(--afl-warn); }
+.graph-workflows .afl-node .deg.queued {
+  right: auto;
+  left: -7px;
+  background: var(--afl-warn);
+}
 
 /* model-size selector (mono micro-buttons) */
-.graph-workflows .afl-node .sizes { display: inline-flex; gap: 2px; margin-left: auto; }
+.graph-workflows .afl-node .sizes {
+  display: inline-flex;
+  gap: 2px;
+  margin-inline-start: auto;
+}
 .graph-workflows .afl-node .sizes button {
   font-family: var(--mono);
   font-size: 9px;
@@ -236,10 +290,16 @@
   padding: 9px 16px;
   border-radius: 22px;
   text-align: center;
-  box-shadow: 0 1px 0 hsl(var(--border) / 0.55), 0 6px 18px -10px hsl(0 0% 0% / 0.3);
-  transition: border-color 0.16s, box-shadow 0.16s;
+  box-shadow:
+    0 1px 0 hsl(var(--border) / 0.55),
+    0 6px 18px -10px hsl(0 0% 0% / 0.3);
+  transition:
+    border-color 0.16s,
+    box-shadow 0.16s;
 }
-.graph-workflows .afl-tag:hover .card { border-color: var(--ink-faint); }
+.graph-workflows .afl-tag:hover .card {
+  border-color: var(--ink-faint);
+}
 .graph-workflows .afl-tag.selected .card {
   background: var(--rubric-dim);
   border-color: var(--rubric);
@@ -254,7 +314,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.graph-workflows .afl-tag .ttl .pfx { color: var(--ink-faint); }
+.graph-workflows .afl-tag .ttl .pfx {
+  color: var(--ink-faint);
+}
 /* The subscription's target filter, when it has one. */
 .graph-workflows .afl-tag .tgt {
   margin-top: 3px;
@@ -266,17 +328,27 @@
   text-overflow: ellipsis;
 }
 /* The injection door reads as a dashed opening, not a wired-up source. */
-.graph-workflows .afl-tag.external .card { border-style: dashed; }
+.graph-workflows .afl-tag.external .card {
+  border-style: dashed;
+}
 /* Lit while a matching event is entering — the flow's doorbell. */
 .graph-workflows .afl-tag.hot .card {
   border-color: var(--rubric);
-  box-shadow: 0 0 0 1px var(--rubric), 0 6px 20px -8px var(--rubric);
+  box-shadow:
+    0 0 0 1px var(--rubric),
+    0 6px 20px -8px var(--rubric);
   animation: afl-inlet-hit 0.5s ease-out;
 }
 @keyframes afl-inlet-hit {
-  0% { transform: scale(1); }
-  35% { transform: scale(1.045); }
-  100% { transform: scale(1); }
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.045);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 /* inline emit popover on a selected tag pill */
@@ -287,16 +359,20 @@
   border-radius: 10px;
   padding: 8px;
   box-shadow: 0 12px 28px -12px hsl(0 0% 0% / 0.45);
-  text-align: left;
+  text-align: start;
 }
 
 /* ---- edges ----------------------------------------------------------- */
-.graph-workflows .react-flow__edge-path { transition: stroke 0.2s; }
+.graph-workflows .react-flow__edge-path {
+  transition: stroke 0.2s;
+}
 
 /* ---- floating chrome (atlas topbar) ---------------------------------- */
 .graph-workflows .topbar {
   position: absolute;
-  top: 0; left: 0; right: 0;
+  top: 0;
+  left: 0;
+  right: 0;
   height: 56px;
   display: flex;
   align-items: center;
@@ -305,21 +381,35 @@
   pointer-events: none;
   z-index: 10;
 }
-.graph-workflows .topbar > * { pointer-events: auto; }
-.graph-workflows .brand { display: flex; align-items: center; gap: 11px; }
+.graph-workflows .topbar > * {
+  pointer-events: auto;
+}
+.graph-workflows .brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
 .graph-workflows .brand .mark {
-  width: 28px; height: 28px;
+  width: 28px;
+  height: 28px;
   border: 1.5px solid var(--ink-strong);
   border-radius: 50%;
-  display: grid; place-items: center;
+  display: grid;
+  place-items: center;
   background: var(--paper);
 }
 .graph-workflows .brand .mark::after {
   content: '';
-  width: 9px; height: 9px; border-radius: 50%;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
   background: var(--rubric);
 }
-.graph-workflows .brand b { font-weight: 500; font-size: 16px; color: var(--ink-strong); }
+.graph-workflows .brand b {
+  font-weight: 500;
+  font-size: 16px;
+  color: var(--ink-strong);
+}
 .graph-workflows .brand span {
   font-family: var(--mono);
   font-size: 9px;
@@ -329,10 +419,15 @@
   display: block;
   margin-top: 2px;
 }
-.graph-workflows .spacer { flex: 1; }
+.graph-workflows .spacer {
+  flex: 1;
+}
 .graph-workflows .chip {
-  display: flex; align-items: center; gap: 9px;
-  height: 34px; padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 34px;
+  padding: 0 12px;
   background: var(--paper);
   border: 1px solid var(--afl-edge);
   border-radius: 9px;
@@ -341,15 +436,30 @@
   font-family: var(--mono);
   font-size: 11px;
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
+  transition:
+    border-color 0.15s,
+    color 0.15s;
 }
-.graph-workflows .chip:hover { border-color: var(--ink-faint); }
-.graph-workflows .chip.on { color: var(--ink-strong); border-color: var(--ink-strong); }
-.graph-workflows .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--afl-err); }
-.graph-workflows .chip .dot.ok { background: var(--rubric); }
+.graph-workflows .chip:hover {
+  border-color: var(--ink-faint);
+}
+.graph-workflows .chip.on {
+  color: var(--ink-strong);
+  border-color: var(--ink-strong);
+}
+.graph-workflows .chip .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--afl-err);
+}
+.graph-workflows .chip .dot.ok {
+  background: var(--rubric);
+}
 .graph-workflows .hint {
   position: absolute;
-  bottom: 22px; left: 50%;
+  bottom: 22px;
+  left: 50%;
   transform: translateX(-50%);
   pointer-events: none;
   white-space: nowrap;
@@ -367,7 +477,9 @@
 /* ---- side panel (emit/journal/chain/wiring) --------------------------- */
 .graph-workflows .side {
   position: absolute;
-  top: 56px; right: 0; bottom: 0;
+  top: 56px;
+  right: 0;
+  bottom: 0;
   width: 360px;
   background: var(--paper);
   border-left: 1px solid var(--afl-edge);
@@ -395,16 +507,25 @@
 .graph-workflows .side input:focus,
 .graph-workflows .side textarea:focus,
 .graph-workflows .drawer input:focus,
-.graph-workflows .drawer textarea:focus { outline: 1px solid var(--rubric); }
+.graph-workflows .drawer textarea:focus {
+  outline: 1px solid var(--rubric);
+}
 .graph-workflows .side .row,
 .graph-workflows .side button.primary,
-.graph-workflows .side button.primary:disabled { opacity: 0.4; cursor: default; }
+.graph-workflows .side button.primary:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
 .graph-workflows .side button.mini,
 .graph-workflows .side .faint,
 .graph-workflows .side .err,
-.graph-workflows .side table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.graph-workflows .side table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
 .graph-workflows .side th {
-  text-align: left;
+  text-align: start;
   font-family: var(--mono);
   font-size: 9px;
   letter-spacing: 0.12em;
@@ -421,8 +542,12 @@
   cursor: pointer;
   color: var(--ink);
 }
-.graph-workflows .side tr.dropped td { color: var(--afl-err); }
-.graph-workflows .side tr.errored td { color: var(--afl-warn); }
+.graph-workflows .side tr.dropped td {
+  color: var(--afl-err);
+}
+.graph-workflows .side tr.errored td {
+  color: var(--afl-warn);
+}
 .graph-workflows .side code {
   background: var(--paper-2);
   border-radius: 4px;
@@ -433,8 +558,12 @@
 }
 .graph-workflows .side pre,
 .graph-workflows .side .hop,
-.graph-workflows .side .hop.dropped { border-color: var(--afl-err); }
-.graph-workflows .side .hop.errored { border-color: var(--afl-warn); }
+.graph-workflows .side .hop.dropped {
+  border-color: var(--afl-err);
+}
+.graph-workflows .side .hop.errored {
+  border-color: var(--afl-warn);
+}
 .graph-workflows .side .chain-chip {
   font-family: var(--mono);
   font-size: 9px;
@@ -443,9 +572,18 @@
   padding: 2px 9px;
   text-transform: uppercase;
 }
-.graph-workflows .side .chain-chip.running { background: var(--rubric); color: var(--paper); }
-.graph-workflows .side .chain-chip.complete { background: var(--paper-2); color: var(--ink-soft); }
-.graph-workflows .side .chain-chip.tripped { background: var(--afl-err); color: var(--paper); }
+.graph-workflows .side .chain-chip.running {
+  background: var(--rubric);
+  color: var(--paper);
+}
+.graph-workflows .side .chain-chip.complete {
+  background: var(--paper-2);
+  color: var(--ink-soft);
+}
+.graph-workflows .side .chain-chip.tripped {
+  background: var(--afl-err);
+  color: var(--paper);
+}
 
 /* ---- node drawer (atlas reading drawer) ------------------------------- */
 .graph-workflows .drawer-scrim {
@@ -457,10 +595,16 @@
   pointer-events: none;
   transition: opacity 0.25s;
 }
-.graph-workflows .drawer-scrim.open { opacity: 1; pointer-events: auto; }
+.graph-workflows .drawer-scrim.open {
+  opacity: 1;
+  pointer-events: auto;
+}
 .graph-workflows .drawer {
   position: absolute;
-  top: 0; right: 0; left: auto; bottom: 0;
+  top: 0;
+  right: 0;
+  left: auto;
+  bottom: 0;
   width: min(520px, 52%);
   z-index: 21;
   background: var(--paper);
@@ -472,7 +616,9 @@
   flex-direction: column;
   font-family: var(--serif);
 }
-.graph-workflows .drawer.open { transform: translateX(0); }
+.graph-workflows .drawer.open {
+  transform: translateX(0);
+}
 .graph-workflows .drawer-head {
   display: flex;
   align-items: flex-start;
@@ -496,18 +642,26 @@
   font-family: var(--serif);
 }
 .graph-workflows .drawer-x {
-  margin-left: auto;
+  margin-inline-start: auto;
   flex: none;
-  width: 32px; height: 32px;
+  width: 32px;
+  height: 32px;
   border: 1px solid var(--afl-edge);
   background: var(--paper-2);
   border-radius: 8px;
-  display: grid; place-items: center;
+  display: grid;
+  place-items: center;
   cursor: pointer;
   color: var(--ink-soft);
 }
-.graph-workflows .drawer-x:hover { color: var(--ink-strong); border-color: var(--ink-faint); }
-.graph-workflows .drawer-body { overflow-y: auto; padding: 18px 22px 60px; }
+.graph-workflows .drawer-x:hover {
+  color: var(--ink-strong);
+  border-color: var(--ink-faint);
+}
+.graph-workflows .drawer-body {
+  overflow-y: auto;
+  padding: 18px 22px 60px;
+}
 .graph-workflows .d-meta {
   display: flex;
   flex-wrap: wrap;
@@ -523,7 +677,11 @@
   text-transform: uppercase;
   color: var(--ink-faint);
 }
-.graph-workflows .d-meta .m .v { font-size: 14px; color: var(--ink-strong); margin-top: 2px; }
+.graph-workflows .d-meta .m .v {
+  font-size: 14px;
+  color: var(--ink-strong);
+  margin-top: 2px;
+}
 .graph-workflows .drawer h3 {
   font-family: var(--mono);
   font-size: 10px;
@@ -533,14 +691,20 @@
   margin: 20px 0 8px;
   font-weight: 500;
 }
-.graph-workflows .drawer table { width: 100%; border-collapse: collapse; }
+.graph-workflows .drawer table {
+  width: 100%;
+  border-collapse: collapse;
+}
 .graph-workflows .drawer td {
   padding: 4px 6px;
   border-top: 1px solid var(--edge-soft);
   font-family: var(--mono);
   font-size: 11px;
 }
-.graph-workflows .drawer .stl { font-family: var(--mono); font-size: 12px; }
+.graph-workflows .drawer .stl {
+  font-family: var(--mono);
+  font-size: 12px;
+}
 
 /* ==== v2 additions ===================================================== */
 
@@ -559,28 +723,57 @@
   text-transform: uppercase;
   color: var(--rubric);
 }
-.graph-workflows .afl-empty h2 { font-family: var(--serif); font-weight: 500; font-size: 26px; color: var(--ink-strong); margin: 0; }
-.graph-workflows .afl-empty p { color: var(--ink-soft); font-size: 14px; margin: 0; }
+.graph-workflows .afl-empty h2 {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 26px;
+  color: var(--ink-strong);
+  margin: 0;
+}
+.graph-workflows .afl-empty p {
+  color: var(--ink-soft);
+  font-size: 14px;
+  margin: 0;
+}
 
 /* trigger node — distinct output-only shape (angled leading edge) */
-.graph-workflows .afl-trigger { width: 200px; font-family: var(--serif); }
+.graph-workflows .afl-trigger {
+  width: 200px;
+  font-family: var(--serif);
+}
 .graph-workflows .afl-trigger .card {
   position: relative;
   background: var(--paper);
   border: 1px solid var(--rubric);
-  border-left-width: 4px;
+  border-inline-start-width: 4px;
   border-radius: 4px 16px 16px 4px;
   padding: 10px 14px 10px 12px;
-  transition: box-shadow 0.2s, border-color 0.2s;
+  transition:
+    box-shadow 0.2s,
+    border-color 0.2s;
 }
 .graph-workflows .afl-trigger:hover .card,
 .graph-workflows .afl-trigger.selected .card {
   box-shadow: 0 0 0 3px var(--rubric-dim);
 }
-.graph-workflows .afl-trigger.running .card { animation: afl-heartbeat 1.8s ease-in-out infinite; }
-.graph-workflows .afl-trigger .kic { color: var(--rubric); }
-.graph-workflows .afl-trigger .kic .pip.trigger { width: 7px; height: 7px; border-radius: 50%; background: var(--rubric); }
-.graph-workflows .afl-trigger .ttl { font-size: 15px; font-weight: 500; color: var(--ink-strong); margin-top: 3px; }
+.graph-workflows .afl-trigger.running .card {
+  animation: afl-heartbeat 1.8s ease-in-out infinite;
+}
+.graph-workflows .afl-trigger .kic {
+  color: var(--rubric);
+}
+.graph-workflows .afl-trigger .kic .pip.trigger {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--rubric);
+}
+.graph-workflows .afl-trigger .ttl {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink-strong);
+  margin-top: 3px;
+}
 .graph-workflows .afl-trigger .sub {
   font-family: var(--mono);
   font-size: 10px;
@@ -595,12 +788,13 @@
   font-size: 10px;
   letter-spacing: 0.1em;
   color: var(--ink-faint);
-  text-align: right;
+  text-align: end;
   margin-top: 4px;
 }
 .graph-workflows .afl-trigger .deg {
   position: absolute;
-  top: -7px; right: -7px;
+  top: -7px;
+  right: -7px;
   background: var(--rubric);
   color: var(--paper);
   font-family: var(--mono);
@@ -619,10 +813,19 @@
   font-size: 10.5px;
   font-weight: 500;
   font-family: var(--mono);
-  transition: background 200ms, color 200ms;
+  transition:
+    background 200ms,
+    color 200ms;
 }
-.graph-workflows .afl-evtchip.catchall { border-style: dashed; color: var(--ink-faint); }
-.graph-workflows .afl-evtchip.hot { background: var(--flow-hot); border-color: var(--flow-hot); color: var(--paper); }
+.graph-workflows .afl-evtchip.catchall {
+  border-style: dashed;
+  color: var(--ink-faint);
+}
+.graph-workflows .afl-evtchip.hot {
+  background: var(--flow-hot);
+  border-color: var(--flow-hot);
+  color: var(--paper);
+}
 .graph-workflows .afl-evtchip input {
   background: transparent;
   border: none;
@@ -634,7 +837,11 @@
 }
 
 /* shared side-panel body */
-.graph-workflows .afl-panel { display: flex; flex-direction: column; gap: 8px; }
+.graph-workflows .afl-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .graph-workflows .afl-panel .eye {
   font-family: var(--mono);
   font-size: 10px;
@@ -664,7 +871,9 @@
   text-transform: uppercase;
   color: var(--ink-faint);
 }
-.graph-workflows .afl-panel label { margin-top: 4px; }
+.graph-workflows .afl-panel label {
+  margin-top: 4px;
+}
 .graph-workflows .afl-panel input,
 .graph-workflows .afl-panel textarea,
 .graph-workflows .afl-panel select {
@@ -677,8 +886,15 @@
   font-size: 11.5px;
   font-family: var(--mono);
 }
-.graph-workflows .afl-note { font-size: 12px; color: var(--ink-soft); font-style: italic; margin: 0; }
-.graph-workflows .afl-note.warn { color: var(--afl-warn); }
+.graph-workflows .afl-note {
+  font-size: 12px;
+  color: var(--ink-soft);
+  font-style: italic;
+  margin: 0;
+}
+.graph-workflows .afl-note.warn {
+  color: var(--afl-warn);
+}
 .graph-workflows .afl-cta {
   margin-top: 6px;
   background: var(--rubric);
@@ -692,14 +908,19 @@
   text-transform: uppercase;
   cursor: pointer;
 }
-.graph-workflows .afl-cta:disabled { opacity: 0.4; cursor: default; }
+.graph-workflows .afl-cta:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
 .graph-workflows .afl-status {
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--ink-soft);
   word-break: break-all;
 }
-.graph-workflows .afl-status.warn { color: var(--afl-err); }
+.graph-workflows .afl-status.warn {
+  color: var(--afl-err);
+}
 
 /* palette */
 .graph-workflows .afl-pal-item {
@@ -711,16 +932,41 @@
   background: var(--paper);
   padding: 10px 12px;
   cursor: grab;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
-.graph-workflows .afl-pal-item:hover { border-color: var(--rubric); box-shadow: 0 0 0 3px var(--rubric-dim); }
-.graph-workflows .afl-pal-item:active { cursor: grabbing; }
-.graph-workflows .afl-pal-item .glyph { font-size: 18px; color: var(--rubric); line-height: 1.2; }
-.graph-workflows .afl-pal-item b { display: block; font-family: var(--serif); font-weight: 500; font-size: 14px; color: var(--ink-strong); }
-.graph-workflows .afl-pal-item span:not(.glyph) { font-size: 11px; color: var(--ink-soft); line-height: 1.35; }
+.graph-workflows .afl-pal-item:hover {
+  border-color: var(--rubric);
+  box-shadow: 0 0 0 3px var(--rubric-dim);
+}
+.graph-workflows .afl-pal-item:active {
+  cursor: grabbing;
+}
+.graph-workflows .afl-pal-item .glyph {
+  font-size: 18px;
+  color: var(--rubric);
+  line-height: 1.2;
+}
+.graph-workflows .afl-pal-item b {
+  display: block;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--ink-strong);
+}
+.graph-workflows .afl-pal-item span:not(.glyph) {
+  font-size: 11px;
+  color: var(--ink-soft);
+  line-height: 1.35;
+}
 
 /* runs */
-.graph-workflows .afl-runlist { display: flex; flex-direction: column; gap: 4px; }
+.graph-workflows .afl-runlist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 .graph-workflows .afl-runrow {
   display: flex;
   align-items: center;
@@ -733,17 +979,35 @@
   font-size: 11px;
   color: var(--ink-soft);
   cursor: pointer;
-  text-align: left;
+  text-align: start;
 }
-.graph-workflows .afl-runrow:hover { border-color: var(--ink-faint); }
-.graph-workflows .afl-runrow.on { border-color: var(--rubric); box-shadow: 0 0 0 2px var(--rubric-dim); }
-.graph-workflows .afl-runrow .g { flex: none; }
-.graph-workflows .afl-runrow.running .g { color: var(--rubric); }
+.graph-workflows .afl-runrow:hover {
+  border-color: var(--ink-faint);
+}
+.graph-workflows .afl-runrow.on {
+  border-color: var(--rubric);
+  box-shadow: 0 0 0 2px var(--rubric-dim);
+}
+.graph-workflows .afl-runrow .g {
+  flex: none;
+}
+.graph-workflows .afl-runrow.running .g {
+  color: var(--rubric);
+}
 .graph-workflows .afl-runrow.tripped .g,
-.graph-workflows .afl-runrow.failed .g { color: var(--afl-err); }
-.graph-workflows .afl-runrow .id { color: var(--ink-strong); }
-.graph-workflows .afl-runrow .meta { color: var(--ink-faint); }
-.graph-workflows .afl-runrow .when { margin-left: auto; color: var(--ink-faint); }
+.graph-workflows .afl-runrow.failed .g {
+  color: var(--afl-err);
+}
+.graph-workflows .afl-runrow .id {
+  color: var(--ink-strong);
+}
+.graph-workflows .afl-runrow .meta {
+  color: var(--ink-faint);
+}
+.graph-workflows .afl-runrow .when {
+  margin-inline-start: auto;
+  color: var(--ink-faint);
+}
 .graph-workflows .afl-journal {
   margin-top: 8px;
   border-top: 1px solid var(--afl-edge);
@@ -761,14 +1025,40 @@
   line-height: 1.5;
   align-items: baseline;
 }
-.graph-workflows .afl-jrow .k { flex: none; width: 74px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.06em; font-size: 9.5px; font-weight: 500; }
-.graph-workflows .afl-jrow.node_error .k, .graph-workflows .afl-jrow.tripped .k { color: var(--afl-err); }
-.graph-workflows .afl-jrow .n { color: var(--ink-strong); flex: none; }
-.graph-workflows .afl-jrow .d { color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.graph-workflows .afl-jrow .k {
+  flex: none;
+  width: 74px;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 9.5px;
+  font-weight: 500;
+}
+.graph-workflows .afl-jrow.node_error .k,
+.graph-workflows .afl-jrow.tripped .k {
+  color: var(--afl-err);
+}
+.graph-workflows .afl-jrow .n {
+  color: var(--ink-strong);
+  flex: none;
+}
+.graph-workflows .afl-jrow .d {
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* inspector */
-.graph-workflows .afl-inspector { display: flex; flex-direction: column; gap: 10px; }
-.graph-workflows .afl-field label { display: block; margin-bottom: 3px; }
+.graph-workflows .afl-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.graph-workflows .afl-field label {
+  display: block;
+  margin-bottom: 3px;
+}
 .graph-workflows .afl-field input:not([type='checkbox']),
 .graph-workflows .afl-field textarea,
 .graph-workflows .afl-field select {
@@ -792,7 +1082,10 @@
   white-space: pre-wrap;
   word-break: break-all;
 }
-.graph-workflows .afl-stdio .err { border-color: var(--afl-err); color: var(--afl-err); }
+.graph-workflows .afl-stdio .err {
+  border-color: var(--afl-err);
+  color: var(--afl-err);
+}
 .graph-workflows .afl-stdio .eye {
   font-family: var(--mono);
   font-size: 9px;
@@ -814,10 +1107,15 @@
   text-transform: uppercase;
   cursor: pointer;
 }
-.graph-workflows .afl-danger:hover { background: var(--afl-err); color: var(--paper); }
+.graph-workflows .afl-danger:hover {
+  background: var(--afl-err);
+  color: var(--paper);
+}
 
 /* navigator (Zone B) — lives OUTSIDE .graph-workflows, so scope by class only */
-.afl-nav-filter { padding: 6px 10px; }
+.afl-nav-filter {
+  padding: 6px 10px;
+}
 .afl-nav-filter input {
   width: 100%;
   font-size: 12px;
@@ -829,7 +1127,7 @@
 }
 .afl-nav-new {
   width: 100%;
-  text-align: left;
+  text-align: start;
   font-size: 12px;
   padding: 4px 8px;
   border: 1px dashed hsl(var(--border));
@@ -838,8 +1136,16 @@
   color: hsl(var(--muted-foreground));
   cursor: pointer;
 }
-.afl-nav-new:hover { color: hsl(var(--foreground)); border-color: hsl(var(--foreground) / 0.4); }
-.afl-nav-list { display: flex; flex-direction: column; padding: 4px 6px; gap: 2px; }
+.afl-nav-new:hover {
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--foreground) / 0.4);
+}
+.afl-nav-list {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 6px;
+  gap: 2px;
+}
 .afl-nav-row {
   display: flex;
   align-items: center;
@@ -851,15 +1157,32 @@
   color: hsl(var(--foreground) / 0.85);
   font-size: 12.5px;
   cursor: pointer;
-  text-align: left;
+  text-align: start;
 }
-.afl-nav-row:hover { background: hsl(var(--muted)); }
-.afl-nav-row.on { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
-.afl-nav-row .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: hsl(var(--muted-foreground) / 0.4); }
-.afl-nav-row .dot.ok { background: rgb(16 185 129); }
-.afl-nav-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.afl-nav-row:hover {
+  background: hsl(var(--muted));
+}
+.afl-nav-row.on {
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+.afl-nav-row .dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: hsl(var(--muted-foreground) / 0.4);
+}
+.afl-nav-row .dot.ok {
+  background: rgb(16 185 129);
+}
+.afl-nav-row .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .afl-nav-row .sys {
-  margin-left: auto;
+  margin-inline-start: auto;
   font-size: 9px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -870,7 +1193,12 @@
 }
 
 /* runs panel actions + journal row links (v3 GraphWorkflowFunction round) */
-.graph-workflows .afl-runactions { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.graph-workflows .afl-runactions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
 .graph-workflows .afl-jrow .lnk {
   color: var(--rubric);
   cursor: pointer;
@@ -879,11 +1207,17 @@
   white-space: nowrap;
   text-decoration: none;
 }
-.graph-workflows .afl-jrow .lnk:hover { text-decoration: underline; }
+.graph-workflows .afl-jrow .lnk:hover {
+  text-decoration: underline;
+}
 
 /* ---- execution artifacts (runs panel) ------------------------------- */
-.graph-workflows .afl-artifacts { margin-top: 12px; }
-.graph-workflows .afl-exec { margin-bottom: 8px; }
+.graph-workflows .afl-artifacts {
+  margin-top: 12px;
+}
+.graph-workflows .afl-exec {
+  margin-bottom: 8px;
+}
 .graph-workflows .afl-exechead {
   display: flex;
   align-items: baseline;
@@ -893,7 +1227,10 @@
   color: var(--ink-faint);
   padding: 2px 0;
 }
-.graph-workflows .afl-exechead .n { color: var(--ink-strong); font-weight: 600; }
+.graph-workflows .afl-exechead .n {
+  color: var(--ink-strong);
+  font-weight: 600;
+}
 .graph-workflows .afl-exechead .tagpill {
   font-size: 8.5px;
   letter-spacing: 0.08em;
@@ -910,21 +1247,40 @@
   padding: 2px 4px;
   background: none;
   border: 0;
-  border-left: 2px solid transparent;
+  border-inline-start: 2px solid transparent;
   color: inherit;
   font-family: var(--mono);
   font-size: 10.5px;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
-.graph-workflows .afl-filerow:hover:not(:disabled) { background: var(--paper-2); }
-.graph-workflows .afl-filerow:disabled { opacity: 0.45; cursor: default; }
-.graph-workflows .afl-filerow.on { border-left-color: var(--rubric); background: var(--paper-2); }
+.graph-workflows .afl-filerow:hover:not(:disabled) {
+  background: var(--paper-2);
+}
+.graph-workflows .afl-filerow:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.graph-workflows .afl-filerow.on {
+  border-inline-start-color: var(--rubric);
+  background: var(--paper-2);
+}
 /* Direction is the useful distinction: what came in vs what this made. */
-.graph-workflows .afl-filerow.output .fn { color: var(--ink-strong); }
-.graph-workflows .afl-filerow .dir { color: var(--ink-faint); }
-.graph-workflows .afl-filerow .fn { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
-.graph-workflows .afl-filerow .sz { color: var(--ink-faint); font-size: 9.5px; }
+.graph-workflows .afl-filerow.output .fn {
+  color: var(--ink-strong);
+}
+.graph-workflows .afl-filerow .dir {
+  color: var(--ink-faint);
+}
+.graph-workflows .afl-filerow .fn {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.graph-workflows .afl-filerow .sz {
+  color: var(--ink-faint);
+  font-size: 9.5px;
+}
 .graph-workflows .afl-filebody {
   margin: 2px 0 6px 10px;
   padding: 6px 8px;

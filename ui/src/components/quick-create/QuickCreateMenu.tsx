@@ -24,6 +24,7 @@ import { useProjects } from '@src/hooks/use-projects';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openNewChat } from '@src/navigation/open-new-chat';
+import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
 import { FolderOpen, FolderPlus, GitBranch } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useCallback, useMemo, useState } from 'react';
@@ -68,10 +69,7 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
   const [newLocalProjectOpen, setNewLocalProjectOpen] = useState(false);
   const [newGitProjectOpen, setNewGitProjectOpen] = useState(false);
 
-  const defaultWorkspacePath = useMemo(
-    () => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '',
-    [],
-  );
+  const defaultWorkspacePath = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '', []);
 
   const handlePickFolder = useCallback(async (): Promise<string | null> => {
     if (!computeNode) {
@@ -106,8 +104,16 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
     async (workerType: 'claude_code' | 'codex' | 'copilot' | 'opencode') => {
       onOpenChange(false);
       // openNewChat creates AND navigates (carrying the chat mode) — no second nav.
-      const process = await openNewChat(navigation, { workerType });
-      if (!process) notify.error({ title: t`Failed to start session` });
+      // The catch is load-bearing: this is invoked as `void handleStartSession(…)`,
+      // so a rejected create used to become an unhandled rejection and the user
+      // got no feedback at all in any view mode.
+      try {
+        const process = await openNewChat(navigation, { workerType });
+        if (!process) notify.error({ title: t`Failed to start session` });
+      } catch (err) {
+        console.error('[QuickCreateMenu] start session failed', err);
+        openCapabilitiesForWorker(navigation, workerType);
+      }
     },
     [navigation, onOpenChange, t],
   );
@@ -124,17 +130,17 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
   );
 
   const items = useMemo(() => {
-    const serverCreatable = new Set(
-      serverTypes.filter((t) => t.creatable).map((t) => t.type_name),
-    );
+    const serverCreatable = new Set(serverTypes.filter((t) => t.creatable).map((t) => t.type_name));
     // When server list is empty (still loading / older backend), fall back to the
     // full UI registry — it's the best-effort source of truth.
     const enforce = serverCreatable.size > 0;
     return QUICK_CREATE_REGISTRY.filter((d) => !enforce || serverCreatable.has(d.type)).map((d) => {
-      const label = d.label ?? serverTypes.find((t) => t.type_name === d.type)?.label;
+      // `t(d.label)` translates at render, so the menu re-labels on a language
+      // switch; the server's own label is the fallback for a descriptor without one.
+      const label = d.label ? t(d.label) : serverTypes.find((s) => s.type_name === d.type)?.label;
       return { ...d, displayLabel: label };
     });
-  }, [serverTypes]);
+  }, [serverTypes, t]);
 
   return (
     <>
@@ -159,7 +165,9 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
             </button>
           </div>
           <DropdownMenuSeparator />
-          <DropdownMenuLabel><Trans>New session</Trans></DropdownMenuLabel>
+          <DropdownMenuLabel>
+            <Trans>New session</Trans>
+          </DropdownMenuLabel>
           <DropdownMenuItem onSelect={() => void handleStartSession('claude_code')}>
             <VendorGlyph workerType="claude_code" />
             <Trans>Claude Code session</Trans>
@@ -177,14 +185,16 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
             <Trans>OpenCode session</Trans>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuLabel><Trans>New project</Trans></DropdownMenuLabel>
+          <DropdownMenuLabel>
+            <Trans>New project</Trans>
+          </DropdownMenuLabel>
           <DropdownMenuItem
             onSelect={() => {
               onOpenChange(false);
               setNewLocalProjectOpen(true);
             }}
           >
-            <FolderPlus className="mr-2 h-4 w-4" />
+            <FolderPlus className="me-2 h-4 w-4" />
             <Trans>Project (local)</Trans>
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -193,11 +203,13 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
               setNewGitProjectOpen(true);
             }}
           >
-            <GitBranch className="mr-2 h-4 w-4" />
+            <GitBranch className="me-2 h-4 w-4" />
             <Trans>From git</Trans>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuLabel><Trans>Create new…</Trans></DropdownMenuLabel>
+          <DropdownMenuLabel>
+            <Trans>Create new…</Trans>
+          </DropdownMenuLabel>
           {items.map((item) => {
             // Backend type registry owns the glyph (TypeInfo.icon).
             const Icon = iconForType(item.type);
@@ -209,13 +221,15 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
                   onPick(item.type);
                 }}
               >
-                <Icon className="mr-2 h-4 w-4" />
+                <Icon className="me-2 h-4 w-4" />
                 {item.displayLabel}
               </DropdownMenuItem>
             );
           })}
           {items.length === 0 && (
-            <DropdownMenuItem disabled><Trans>No creatable types available</Trans></DropdownMenuItem>
+            <DropdownMenuItem disabled>
+              <Trans>No creatable types available</Trans>
+            </DropdownMenuItem>
           )}
         </DropdownMenuContent>
       </DropdownMenu>

@@ -256,7 +256,7 @@ export function NewProjectFromGitDialog({
                   className="h-6 px-2 text-xs"
                   onClick={() => void handleConnectGithub()}
                 >
-                  <Github className="mr-1.5 h-3 w-3" />
+                  <Github className="me-1.5 h-3 w-3" />
                   <Trans>Connect</Trans>
                 </Button>
                 <SetupJourneyButton journeyId={SETUP_GITHUB_JOURNEY_ID} variant="ghost">
@@ -288,7 +288,7 @@ export function NewProjectFromGitDialog({
                 <span className="font-mono">{branch}</span>
                 <button
                   type="button"
-                  className="ml-1 text-muted-foreground hover:text-foreground"
+                  className="ms-1 text-muted-foreground hover:text-foreground"
                   onClick={() => setBranch(null)}
                   title={t`Clear branch (uses default)`}
                 >
@@ -315,7 +315,7 @@ export function NewProjectFromGitDialog({
                 <Button
                   size="sm"
                   variant="outline"
-                  className="ml-auto h-6 px-2 text-xs"
+                  className="ms-auto h-6 px-2 text-xs"
                   onClick={() => void submit(suggestion.suggestedName)}
                   disabled={isBusy}
                 >
@@ -370,7 +370,7 @@ export function NewProjectFromGitDialog({
             <Trans>Cancel</Trans>
           </Button>
           <Button onClick={() => void submit()} disabled={!canSubmit} data-testid="git-clone-submit">
-            {isBusy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            {isBusy && <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />}
             {branch ? <Trans>Clone @ {branch}</Trans> : <Trans>Clone</Trans>}
           </Button>
         </DialogFooter>

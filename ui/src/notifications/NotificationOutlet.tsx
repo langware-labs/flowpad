@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { toast as sonnerToast, Toaster as Sonner } from 'sonner';
 import { useTheme } from 'next-themes';
 import { AlertCircle, AlertTriangle, CheckCircle2, Info, Loader2, X, type LucideIcon } from 'lucide-react';
@@ -79,7 +80,7 @@ export function renderToast(data: NotificationData, toastId: string) {
         <DiagnoseIconButton subject={data} />
         <button
           onClick={() => sonnerToast.dismiss(toastId)}
-          aria-label="Dismiss notification"
+          aria-label={t`Dismiss notification`}
           className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
         >
           <X className="h-3.5 w-3.5" />

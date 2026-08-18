@@ -79,7 +79,7 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
                 className={cn(
                   'flex items-start gap-3 rounded-lg px-3 py-2.5',
                   current && 'bg-primary/5 ring-1 ring-primary/30',
-                  indent && 'ml-6',
+                  indent && 'ms-6',
                 )}
               >
                 <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
@@ -116,9 +116,7 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
               <div className="px-3 pb-0.5 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {section.group}
               </div>
-              <ol className="flex flex-col gap-1">
-                {section.indices.map((i) => renderStep(graph.steps[i], i, true))}
-              </ol>
+              <ol className="flex flex-col gap-1">{section.indices.map((i) => renderStep(graph.steps[i], i, true))}</ol>
             </li>
           );
         })}
@@ -133,7 +131,13 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
           data-testid="journey-start"
         >
           <Play className="h-4 w-4" />
-          {complete ? <Trans>Show journey</Trans> : journal ? <Trans>Continue journey</Trans> : <Trans>Start journey</Trans>}
+          {complete ? (
+            <Trans>Show journey</Trans>
+          ) : journal ? (
+            <Trans>Continue journey</Trans>
+          ) : (
+            <Trans>Start journey</Trans>
+          )}
         </Button>
 
         {journal && (
@@ -156,9 +160,7 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
             type="button"
             variant="ghost"
             disabled={busy}
-            onClick={() =>
-              history === null ? run(async () => setHistory(await journey.history())) : setHistory(null)
-            }
+            onClick={() => (history === null ? run(async () => setHistory(await journey.history())) : setHistory(null))}
             className="gap-2 text-muted-foreground"
             data-testid="journey-history"
           >
@@ -184,7 +186,7 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
                   <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   <span className="w-24 shrink-0 font-medium">{STATUS_LABEL[h.status ?? ''] ?? h.status}</span>
                   <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                    {(h.entries?.length ?? 0)} of {h.total_steps ?? graph.length} done
+                    {h.entries?.length ?? 0} of {h.total_steps ?? graph.length} done
                     {h.cursor ? ` · at ${h.cursor}` : ''}
                   </span>
                   <Button
@@ -193,7 +195,15 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
                     variant="outline"
                     disabled={busy || h.isActive}
                     title={t`Resume this run`}
-                    onClick={() => run(() => Journey.resume(h.id), () => { setHistory(null); show(); })}
+                    onClick={() =>
+                      run(
+                        () => Journey.resume(h.id),
+                        () => {
+                          setHistory(null);
+                          show();
+                        },
+                      )
+                    }
                     className="h-7 px-2 text-xs"
                     data-testid="journey-history-resume"
                   >

@@ -111,7 +111,7 @@ async def _find_flow(name: str) -> GraphWorkflow | None:
         if folder is None or info is None:
             continue
         try:
-            if info.extract_id(folder) == row.id:
+            if info.mint_entity_id(folder) == row.id:
                 return row
         except Exception:
             logger.warning("set_service_graph_workflows: unreadable identity for %s", folder, exc_info=True)

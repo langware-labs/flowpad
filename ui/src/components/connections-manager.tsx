@@ -417,7 +417,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
               <TableHead className="w-[180px]">
                 <Trans>Used by</Trans>
               </TableHead>
-              <TableHead className="w-[210px] text-right">
+              <TableHead className="w-[210px] text-end">
                 <Trans>Actions</Trans>
               </TableHead>
             </TableRow>
@@ -525,7 +525,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                     )}
                   </TableCell>
 
-                  <TableCell className="text-right">
+                  <TableCell className="text-end">
                     <div className="flex items-center justify-end gap-1">
                       {/* A probe spends the token, so it runs as whoever is
                           allowed to spend it — and the owner needs no grant to
@@ -590,7 +590,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                         >
                           {connectingConnectionId === connection.id ? (
                             <>
-                              <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                              <Loader2 className="me-1.5 h-3 w-3 animate-spin" />
                               <Trans>Connecting</Trans>
                             </>
                           ) : grant === GrantStatus.NEEDS_REAUTH ? (
@@ -627,7 +627,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                               }}
                               data-testid={`connection-delete-${connection.id}`}
                             >
-                              <Trash2 className="mr-2 h-3.5 w-3.5" />
+                              <Trash2 className="me-2 h-3.5 w-3.5" />
                               <Trans>Delete credential</Trans>
                             </DropdownMenuItem>
                           </DropdownMenuContent>

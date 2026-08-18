@@ -53,9 +53,9 @@ async def _workers_discovered():
 
 
 def _small_cli_config(worker_type: WorkerType) -> dict:
-    # Ask for the cheapest model the worker can actually resolve (see
-    # _model_tier.small_model_for — Copilot must stay unset). The test asserts
-    # only on the echoed name/time, never on the model, so this is safe.
+    # Persist the portable small tier for every worker. Native Copilot resolves
+    # it to vendor auto and omits --model. The test asserts only on the echoed
+    # name/time, never on the model, so this is safe.
     config = {"permission_mode": "bypassPermissions"}
     model = small_model_for(worker_type)
     if model:
@@ -90,9 +90,7 @@ async def test_system_prompt(worker_type, cli_name, tmp_path: Path, _workers_dis
         # Anchor transcript-freshness to just before the turn: anything on disk
         # older than this is a leftover session, not this run's output.
         turn_started = time.time()
-        result = await process.prompt(
-            "What is your name and what is the time? Reply with only the name and time."
-        )
+        result = await process.prompt("What is your name and what is the time? Reply with only the name and time.")
         assert getattr(result, "status", "SUCCESS") == "SUCCESS", result
 
         assets = process.embedded_assets
@@ -192,10 +190,7 @@ def _assistant_text(transcript: AgentTranscriptFile) -> str:
 def _transcript_dump(transcript: AgentTranscriptFile | None) -> str:
     if transcript is None:
         return ""
-    return "\n".join(
-        json.dumps(entry.to_dict(), sort_keys=True, default=str)
-        for entry in transcript.entries
-    )
+    return "\n".join(json.dumps(entry.to_dict(), sort_keys=True, default=str) for entry in transcript.entries)
 
 
 async def _await_assistant_text(

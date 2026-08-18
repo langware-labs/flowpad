@@ -24,7 +24,9 @@ export function ChatsFilterBar({ onNewChat, onResumeById }: ChatsFilterBarProps)
   return (
     <div className="flex flex-col gap-1.5 px-2 py-2">
       <div className="flex items-center gap-1.5">
-        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground"><Trans>New</Trans></span>
+        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+          <Trans>New</Trans>
+        </span>
         <div className="flex items-center gap-0.5">
           {WORKER_TYPES.map((value) => {
             const label = WORKER_LABELS[value];
@@ -49,7 +51,7 @@ export function ChatsFilterBar({ onNewChat, onResumeById }: ChatsFilterBarProps)
             onClick={onResumeById}
             title={t`Restore session by id`}
             aria-label={t`Restore session by id`}
-            className="ml-0.5 flex h-6 w-6 items-center justify-center rounded border-l pl-1.5 transition-colors hover:bg-muted"
+            className="ms-0.5 flex h-6 w-6 items-center justify-center rounded border-s ps-1.5 transition-colors hover:bg-muted"
             data-testid="chats-resume-by-id"
           >
             <FolderClock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />

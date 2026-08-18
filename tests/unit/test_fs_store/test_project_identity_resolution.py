@@ -42,7 +42,7 @@ async def test_existing_project_record_id_is_preserved(tmp_path: Path, existing_
     ref = _project_ref(tmp_path, cwd, encoded)
     info = PROJECT.to_type_info()
 
-    assert info.extract_id(ref) == existing_id
+    assert info.mint_entity_id(ref) == existing_id
     parsed = await extract_claude_project(ref, existing_id)
     assert parsed[0].id == existing_id
     assert FSRecord.discover(RecordType.PROJECT)[0].id == existing_id
@@ -55,8 +55,8 @@ async def test_missing_project_record_mints_and_persists_dns_v5() -> None:
     info = PROJECT.to_type_info()
     expected = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project-fsref:{Path(cwd).resolve().as_posix()}"))
 
-    assert info.extract_id(ref) is None
-    assert info.mint_id(ref) == expected
+    assert info.mint_entity_id(ref) is None
+    assert info.mint_entity_id(ref, derive=True, overwrite=True) == expected
     parsed = await extract_claude_project(ref, expected)
     assert parsed[0].id == expected
     assert FSRecord.discover(RecordType.PROJECT)[0].id == expected

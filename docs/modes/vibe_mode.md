@@ -115,6 +115,15 @@ not overwritten.
    - `loadFlowpadAssistant` mounts the **web-app-builder** skill (via `--add-dir`)
      so "build me a web app" scaffolds a running dev server.
    - The message is sent verbatim — no forced build nudge — so "hi" is just a chat.
+   - `embedVibeSubagent` embeds the persona that carries the `flow show` contract:
+     the **SubAgent** `vibe` (`.claude/agents/vibe.md`, `scope: system`) — NOT the
+     launchable **Agent** of the same name (`agentic-assets/agent/vibe/agent.md`),
+     a ~20-line haiku front in the internal-agents family. Two assets, one word;
+     resolving by bare name picked the wrong one and every session ran a generic
+     "you are the project assistant" prompt, presenting deliverables with
+     `open <file>` into the user's browser instead of `flow show`. Verify a
+     session by its materialized `CLAUDE.md`: it must read *"You are the 'vibe'
+     agent"*, not *"the 'agent' agent"*.
 2. `flow-page.tsx` sees `isVibe` + an active agentic-process dock and renders the
    **VibeWorkspace** split instead of the single content panel.
 
@@ -246,7 +255,8 @@ Projectless asset entry also requires a project before a Chat can be created.
 | The chat↔display split + focus reader | `ui/src/pages/flow-page/vibe-workspace.tsx` |
 | Stable asset chat↔content host | `ui/src/pages/flow-page/asset-vibe-workspace.tsx` |
 | Asset classification and process target | `ui/src/navigation/content-asset-dock.ts` |
-| Cold parent/process reuse | `ui/src/tabs/vibe-parent.ts`, `ui/src/pages/flow-page/vibe-process-resolver.ts` |
+| Host identity in the URL | `ui/src/navigation/DockPointer.ts` (`HOST_PARAM`, `withHost`), `ui/src/navigation/NavigationActions.ts` (sticky carry) |
+| Rail-resume chat lookup | `ui/src/pages/flow-page/vibe-process-resolver.ts` |
 | Live file revisions | `ts_sdk/src/stores/fsStore.ts`, `ui/src/hooks/useFS.ts` |
 | MCP UI host for `.mcp.html` display targets | `ui/src/components/mcp-app-preview/McpAppPreview.tsx` |
 | MCP UI resource and sandbox helpers | `ui/src/lib/mcp-app-resources.ts`, `ui/src/lib/mcp-sandbox.ts` |

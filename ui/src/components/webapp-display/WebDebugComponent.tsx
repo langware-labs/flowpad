@@ -46,13 +46,13 @@ export function WebDebugComponent({ verdict, fixRunning, toolCount, onFix, onRet
           <Button size="sm" onClick={onFix} disabled={fixRunning} data-testid="webapp-fix-button">
             {fixRunning ? (
               <>
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />
                 <Trans>Fixing…</Trans>
-                {toolCount > 0 && <span className="ml-1 opacity-70">{toolCount}</span>}
+                {toolCount > 0 && <span className="ms-1 opacity-70">{toolCount}</span>}
               </>
             ) : (
               <>
-                <Wrench className="mr-1.5 h-3.5 w-3.5" />
+                <Wrench className="me-1.5 h-3.5 w-3.5" />
                 <Trans>Fix it</Trans>
               </>
             )}
@@ -74,7 +74,7 @@ export function WebDebugComponent({ verdict, fixRunning, toolCount, onFix, onRet
         )}
         {showDetail && verdict.detail.length > 0 && (
           <pre
-            className="max-h-40 w-full overflow-auto rounded bg-muted p-2 text-left text-[11px] text-muted-foreground"
+            className="max-h-40 w-full overflow-auto rounded bg-muted p-2 text-start text-[11px] text-muted-foreground"
             data-testid="webapp-detail-body"
           >
             {verdict.detail.join('\n')}

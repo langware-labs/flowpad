@@ -772,7 +772,7 @@ export function TranscriptViewer({
                     isSelected
                       ? 'bg-primary/5 ring-1 ring-inset ring-primary/30'
                       : isCurrent
-                        ? 'border-l-[3px] border-primary/40 bg-muted/20'
+                        ? 'border-s-[3px] border-primary/40 bg-muted/20'
                         : undefined
                   }
                   onClick={() => {
@@ -850,7 +850,7 @@ export function TranscriptViewer({
                       isSelected
                         ? 'rounded bg-primary/10 ring-1 ring-primary'
                         : isCurrent
-                          ? 'border-l-[3px] border-primary/40 bg-muted/20'
+                          ? 'border-s-[3px] border-primary/40 bg-muted/20'
                           : undefined
                     }
                     onClick={() => {

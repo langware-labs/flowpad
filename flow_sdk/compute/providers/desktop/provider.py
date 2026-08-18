@@ -458,12 +458,6 @@ class LocalComputeProvider(ComputeProvider):
                 f"set_env command returned non-zero exit code: {result.exit_code}, stderr: {result.all_stderr}"
             )
 
-    async def configure_lm_proxy_env(
-        self, provider_node_id: str, api_key: str, backend_url: str, lm_proxy_url: str, machine_id: str
-    ) -> None:
-        # Intentionally do nothing - local machines should use their own Anthropic API keys
-        pass
-
     async def get_machine_status(self, provider_node_id: str) -> dict:
         """Get machine status (CPU, memory, processes, network).
 

@@ -130,7 +130,7 @@ function WarningItem({ warning, onClick }: WarningItemProps) {
 
   return (
     <div className={`${ITEM_CLASS} ${colors.border}`} data-testid="warnings-popover-warning">
-      <button type="button" onClick={onClick} className="flex min-w-0 flex-1 items-start gap-3 text-left">
+      <button type="button" onClick={onClick} className="flex min-w-0 flex-1 items-start gap-3 text-start">
         <div className={`rounded-md p-1.5 ${colors.bg}`}>
           <Icon className={`h-4 w-4 ${colors.text}`} />
         </div>

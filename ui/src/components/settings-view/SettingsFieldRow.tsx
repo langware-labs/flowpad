@@ -12,7 +12,9 @@ export function SettingsFieldRow({ field, showOverrides, highlighted }: Settings
   const hasOverrides =
     (field.projectValue !== undefined && field.scope !== 'project') ||
     (field.localValue !== undefined && field.scope !== 'local') ||
-    (field.userValue !== undefined && field.scope !== 'user' && (field.projectValue !== undefined || field.localValue !== undefined));
+    (field.userValue !== undefined &&
+      field.scope !== 'user' &&
+      (field.projectValue !== undefined || field.localValue !== undefined));
 
   return (
     <div className={cn('py-2', highlighted && 'rounded bg-accent/50')}>
@@ -21,7 +23,7 @@ export function SettingsFieldRow({ field, showOverrides, highlighted }: Settings
         <div className="min-w-[180px] shrink-0">
           <div>
             <span className="text-sm font-medium text-foreground">{field.label}</span>
-            <span className="ml-1.5 text-[11px] text-muted-foreground/60">{field.key}</span>
+            <span className="ms-1.5 text-[11px] text-muted-foreground/60">{field.key}</span>
           </div>
           {field.description && (
             <p className="mt-0.5 text-[11px] leading-tight text-muted-foreground/70">{field.description}</p>
@@ -31,7 +33,7 @@ export function SettingsFieldRow({ field, showOverrides, highlighted }: Settings
               {field.allowedValues.map((v) => (
                 <span
                   key={v}
-                  className="inline-flex rounded border border-muted px-1 py-px text-[10px] font-mono text-muted-foreground/70"
+                  className="inline-flex rounded border border-muted px-1 py-px font-mono text-[10px] text-muted-foreground/70"
                 >
                   {v}
                 </span>
@@ -53,7 +55,7 @@ export function SettingsFieldRow({ field, showOverrides, highlighted }: Settings
 
       {/* Override annotations */}
       {showOverrides && hasOverrides && (
-        <div className="ml-[180px] mt-1 space-y-0.5 pl-3 border-l-2 border-muted">
+        <div className="ms-[180px] mt-1 space-y-0.5 border-s-2 border-muted ps-3">
           {field.userValue !== undefined && field.scope !== 'user' && (
             <OverrideRow scope="user" value={field.userValue} fieldType={field.fieldType} />
           )}
@@ -84,7 +86,7 @@ function ValueDisplay({ value, fieldType }: { value: unknown; fieldType: string 
 
   if (fieldType === 'boolean' && typeof value === 'boolean') {
     return (
-      <span className={cn('text-sm font-mono', value ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground')}>
+      <span className={cn('font-mono text-sm', value ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground')}>
         {value.toString()}
       </span>
     );
@@ -92,11 +94,11 @@ function ValueDisplay({ value, fieldType }: { value: unknown; fieldType: string 
 
   if (fieldType === 'string' && typeof value === 'string') {
     if (!value) return <span className="text-sm italic text-muted-foreground/50">(not set)</span>;
-    return <span className="text-sm font-mono text-foreground">{value}</span>;
+    return <span className="font-mono text-sm text-foreground">{value}</span>;
   }
 
   if (fieldType === 'number' && typeof value === 'number') {
-    return <span className="text-sm font-mono text-foreground">{value.toString()}</span>;
+    return <span className="font-mono text-sm text-foreground">{value.toString()}</span>;
   }
 
   if (fieldType === 'string[]' && Array.isArray(value)) {
@@ -109,7 +111,7 @@ function ValueDisplay({ value, fieldType }: { value: unknown; fieldType: string 
         {arr.map((item, i) => (
           <span
             key={i}
-            className="inline-flex rounded bg-secondary px-1.5 py-0.5 text-xs font-mono text-secondary-foreground"
+            className="inline-flex rounded bg-secondary px-1.5 py-0.5 font-mono text-xs text-secondary-foreground"
           >
             {item}
           </span>
@@ -129,14 +131,12 @@ function ValueDisplay({ value, fieldType }: { value: unknown; fieldType: string 
         {entries.slice(0, 8).map(([k, v]) => (
           <span
             key={k}
-            className="inline-flex rounded bg-secondary px-1.5 py-0.5 text-xs font-mono text-secondary-foreground"
+            className="inline-flex rounded bg-secondary px-1.5 py-0.5 font-mono text-xs text-secondary-foreground"
           >
             {k}={stringifyPrimitive(v)}
           </span>
         ))}
-        {entries.length > 8 && (
-          <span className="text-xs text-muted-foreground">+{entries.length - 8} more</span>
-        )}
+        {entries.length > 8 && <span className="text-xs text-muted-foreground">+{entries.length - 8} more</span>}
       </div>
     );
   }
@@ -154,7 +154,7 @@ function ValueDisplay({ value, fieldType }: { value: unknown; fieldType: string 
     );
   }
 
-  return <span className="text-sm font-mono text-foreground">{stringifyPrimitive(value)}</span>;
+  return <span className="font-mono text-sm text-foreground">{stringifyPrimitive(value)}</span>;
 }
 
 // ── Override annotation row ─────────────────────────────
