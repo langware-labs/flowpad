@@ -202,3 +202,37 @@ def test_legacy_dict_roundtrip_is_not_identity():
     # Re-dumping the NORMALIZED form is stable — only the first pass moves it.
     again = _ORIGIN_ADAPTER.validate_python(normalized).model_dump(mode="python")
     assert again == normalized
+
+
+# ── Entity.fs_origin: the typed read seam over the wire dict ─────────────────
+
+
+def test_entity_fs_origin_reads_typed_without_touching_the_dict():
+    """``Entity.git_origin`` stays a dict (it is the hub wire format); callers
+    that want behaviour go through ``fs_origin()`` rather than hand-rolling a
+    validate and getting a different tolerance for legacy shapes."""
+    from flow_sdk.core.entity.entity_model import Entity
+
+    ent = Entity(type="task")
+    assert ent.fs_origin() is None, "absent origin reads as None, not an error"
+
+    dumped = GitOrigin(provider="github", owner="a", name="b",
+                       rel_path="x").model_dump(mode="python")
+    ent.git_origin = dumped
+    origin = ent.fs_origin()
+    assert isinstance(origin, GitOrigin) and origin.clone_url() == "https://github.com/a/b.git"
+    # The raw dict is untouched — it is what goes back on the wire.
+    assert ent.git_origin == dumped
+
+
+def test_entity_fs_origin_tolerates_legacy_and_fails_soft():
+    """A pre-``kind`` dict still resolves to git; a malformed one reads as
+    absent rather than breaking the entity that merely carries the stamp."""
+    from flow_sdk.core.entity.entity_model import Entity
+
+    ent = Entity(type="task")
+    ent.git_origin = {"provider": "github", "owner": "a", "name": "b", "rel_path": "x"}
+    assert isinstance(ent.fs_origin(), GitOrigin)
+
+    ent.git_origin = {"kind": "nonsense"}
+    assert ent.fs_origin() is None
