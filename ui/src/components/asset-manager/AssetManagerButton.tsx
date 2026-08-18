@@ -34,6 +34,7 @@ import {
   parseTypeid as _parseTypeid,
 } from './asset-row-helpers';
 import { useProcessAssets } from './useProcessAssets';
+import { useLaunchingAgent } from './use-launching-agent';
 import { AssetManagerPopover } from './AssetManagerPopover';
 
 function normalizeTranscriptWorker(workerType: string | null | undefined): TranscriptWorkerType {
@@ -163,6 +164,7 @@ export function AssetManagerButton({ process, trigger }: AssetManagerButtonProps
   }, [open, process, processSnapshot]);
 
   const assets = useProcessAssets(activeProcess, { enabled: open });
+  const launchingAgent = useLaunchingAgent(activeProcess?.deployment_id, { enabled: open });
   const { refresh } = assets;
   // Only the type registry is wanted; `withVaults` would fetch a payload we discard.
   const { types: assetTypes } = useAssetTypes({ withVaults: false });
@@ -428,6 +430,7 @@ export function AssetManagerButton({ process, trigger }: AssetManagerButtonProps
         open={open}
         onOpenChange={setOpen}
         assets={assets}
+        agent={launchingAgent}
         assistantEnabled={assistantEnabled}
         additionalDirs={additionalDirs}
         improveBusyKey={busyAssetKey}

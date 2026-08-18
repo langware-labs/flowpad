@@ -58,15 +58,22 @@ def test_spawn_args_support_session_id_resume_model_effort_and_add_dirs():
     assert env == {"FOO": "bar"}
 
 
-def test_model_tier_persists_raw_and_emits_resolved_model():
-    cmd = CopilotAgentOptions(model="lg", workdir="/repo")
+@pytest.mark.parametrize("tier", ["sm", "md", "lg"])
+def test_native_model_tier_persists_raw_and_delegates_to_copilot_auto(tier):
+    cmd = CopilotAgentOptions(model=tier, workdir="/repo")
 
-    assert cmd.model == "lg"
-    assert cmd.to_json()["model"] == "lg"
+    assert cmd.model == tier
+    assert cmd.to_json()["model"] == tier
 
     argv, _env = cmd.to_spawn_args()
-    assert argv[argv.index("--model") + 1] == "gpt-5.5"
-    assert "--model gpt-5.5" in cmd.to_shell_string()
+    assert "--model" not in argv
+    assert "--model" not in cmd.to_shell_string()
+
+
+def test_explicit_auto_model_passes_through():
+    argv, _env = CopilotAgentOptions(model="auto").to_spawn_args()
+
+    assert argv[argv.index("--model") + 1] == "auto"
 
 
 def test_fresh_session_id_uses_session_id_flag_not_resume():

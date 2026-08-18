@@ -78,8 +78,8 @@ interface EntityExecutionPanelProps {
   className?: string;
   /**
    * Invoked once, right after the backing `AgenticProcess` is created and before
-   * the first `prompt()`. Use to pre-configure the process (e.g. for agent files,
-   * `(proc) => proc.loadEmbeddedAgent(path)`). Not called when an existing process
+   * the first `prompt()`. Use to pre-configure the process (e.g. for sub-agent files,
+   * `(proc) => proc.loadEmbeddedSubagent(path)`). Not called when an existing process
    * is picked up from `useProcessesForTarget`.
    */
   onProcessCreated?: (process: AgenticProcess) => Promise<void> | void;

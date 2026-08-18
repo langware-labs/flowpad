@@ -62,7 +62,6 @@ from .routes import (
     capabilities_router,
     chat_router,
     cloud_router,
-    compute_register_router,
     debug_router,
     dep_graph_router,
     detection_router,
@@ -530,7 +529,6 @@ server.add_router(websocket_router)
 server.add_router(webhook_api_router)
 server.add_router(assets_router)
 server.add_router(project_router, prefix="/api/v1")
-server.add_router(compute_register_router)
 server.add_router(debug_router)
 server.add_router(ingest_router)
 server.add_router(runs_router)

@@ -86,7 +86,7 @@ The asymmetry is deliberate: `visible=True ⟹ pty_mode=True` is enforced (you c
 | `target_typeid_str`                                            | `str \| None`          | Serialized TypeId of the entity this process is attached to.                                                                                                                                                                                                                  |
 | `exe_folder`, `input_folder`, `output_folder`, `assets_folder` | `FSRef \| None`        | Per-process execution folders under the process record directory.                                                                                                                                                                                                             |
 | `additional_dirs`                                              | `list[str]`            | Extra directories exposed to the worker, passed as `--add-dir` where supported. The generated process assets dir is appended here when needed.                                                                                                                                |
-| `embedded_agent_ids`                                           | `list[str]`            | Names of embedded agents materialized into the process assets folder.                                                                                                                                                                                                         |
+| `embedded_subagent_ids`                                           | `list[str]`            | Names of embedded sub-agents materialized into the process assets folder.                                                                                                                                                                                                         |
 | `embedded_asset_refs`                                          | `list[TypeId]`         | Agent/skill refs materialized under the process assets folder.                                                                                                                                                                                                                |
 | `worker_type`                                                  | `WorkerType \| None`   | Optional worker selector. The `createProcess` action resolves `None` through the persisted `harness` capability reference; an explicit value overrides that selection. Raw backend-only constructors still require an explicit worker when they must not use the driver fallback. |
 
@@ -596,7 +596,7 @@ POST /api/v1/graph/compute_node/<id>/upsertSessionProcess
 | `execute-plan`          | `POST`     | Inject a plan execution prompt into an active PTY session.                                                   |
 | `update-plan`           | `POST`     | Inject a plan-update prompt into an active PTY session.                                                      |
 | `entity-event`          | `POST`     | Generic event ingress. Wizard completion posts `wizard.close` here, and the process emits `wizard.closed`.   |
-| `load-embedded-agent`   | `POST`     | Materialize agent markdown into `<assets>/.claude/agents/<name>.md`; generated instruction files include it. |
+| `load-embedded-subagent`   | `POST`     | Materialize sub-agent markdown into `<assets>/.claude/agents/<name>.md`; generated instruction files include it. |
 | `attach-embedded-asset` | `POST`     | Materialize an agent/skill under the process assets dir.                                                     |
 | `detach-embedded-asset` | `POST`     | Remove a materialized embedded asset.                                                                        |
 | `list-embedded-assets`  | `GET`      | Return current embedded asset TypeIds.                                                                       |
@@ -660,7 +660,7 @@ The current files are under `ts_sdk/src/process/`, not `ts_sdk/src/agentic_proce
 | `workdir`                                                      | Worker working directory.                                                                    |
 | `shell_mode`                                                   | Direct PTY spawn vs legacy shell intermediary.                                               |
 | `additional_dirs`                                              | Extra `--add-dir` directories, including generated process assets when present.              |
-| `embedded_asset_refs`                                          | Embedded agent/skill refs.                                                                   |
+| `embedded_asset_refs`                                          | Embedded sub-agent/skill refs.                                                                   |
 | `project_id`, `project_encoded_name`                           | Project linkage.                                                                             |
 | `exe_folder`, `input_folder`, `output_folder`, `assets_folder` | Execution folder refs.                                                                       |
 

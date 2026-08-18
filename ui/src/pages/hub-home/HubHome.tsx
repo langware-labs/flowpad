@@ -2,11 +2,8 @@ import {
   type ComputeNode,
   CredentialsSubview,
   dataContext,
-  dataManager,
   ExecutionEnvironmentStatus,
   PageId,
-  Project,
-  TypeId,
   ViewType,
   WorldViewProjection,
 } from '@sdk';
@@ -14,7 +11,6 @@ import { useAuth } from '@sdk/react/hooks';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { credentialsPointer } from '@src/components/credentials-view/credentials-pointer';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { useContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
 import { ProjectActionsRow } from '@src/components/open-project-component/project-actions-row';
@@ -24,10 +20,9 @@ import { StepList } from '@src/components/ui/step-list';
 import { NewSandboxDialog } from './NewSandboxDialog';
 import { LaunchSandboxDialog } from './LaunchSandboxDialog';
 import { ShareSandboxDialog } from './ShareSandboxDialog';
+import { AddMachineDialog } from '@src/components/hub/AddMachineDialog';
 import { MembershipInvitations } from '@src/components/inbox-view/MembershipInvitations';
-import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
-import { notify } from '@src/notifications';
-import { Building2, FolderGit2, Globe, KeyRound, Loader2, LogOut, Monitor, Trash2, UserPlus } from 'lucide-react';
+import { Building2, Globe, KeyRound, Laptop, Loader2, LogOut, Monitor, Trash2, UserPlus } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { consumeInboundParams } from '@src/navigation/inbound-link';
@@ -242,7 +237,7 @@ export function HubHome() {
   // Current project is the same source the footer's StatusBar reads
   // (dataContext.project), so the highlighted card and the footer always agree.
   const { project: currentProject } = useContext();
-  const { projects, refetch: refetchProjects } = useProjects();
+  const { projects } = useProjects();
   const {
     sandboxes,
     createSandbox,
@@ -267,35 +262,6 @@ export function HubHome() {
 
   // Deleting a project. Held as the whole entity, not an id, so the confirm can
   // name what it is about to destroy.
-  const [confirmDeleteProject, setConfirmDeleteProject] = useState<Project | null>(null);
-  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
-
-  /**
-   * Delete a project on the hub.
-   *
-   * `dataManager.delete` and NOT `Project.deleteWithChildren()`: that action is
-   * a flow_sdk route the hub does not register, so it would 404 here. The hub's
-   * generic entity DELETE is what exists (`graph_crud_actions.handle_delete_by_id`,
-   * owner-only), and it drops the project row itself.
-   */
-  const deleteProject = async (project: Project) => {
-    setDeletingProjectId(project.id);
-    try {
-      await dataManager.delete(new TypeId(Project.type, project.id));
-      await refetchProjects();
-      notify.success({ title: t`Deleted ${project.displayName}` });
-    } catch (e) {
-      // The hub refuses a delete the caller doesn't own with a message worth
-      // reading, so surface it instead of failing silently.
-      const ax = e as { response?: { data?: { message?: string } }; message?: string };
-      notify.error({
-        title: t`Couldn't delete the project.`,
-        message: ax.response?.data?.message ?? ax.message,
-      });
-    } finally {
-      setDeletingProjectId(null);
-    }
-  };
 
   // Inline rename: single-click a sandbox name to edit it.
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -330,9 +296,12 @@ export function HubHome() {
     if (pendingInviteCount < prevPendingInvites.current) void refetch();
     prevPendingInvites.current = pendingInviteCount;
   }, [pendingInviteCount, refetch]);
+  // `flow connect` device-code approval: null = closed, '' = open blank, 'XXXX-XXXX' = prefilled.
+  const [addMachineCode, setAddMachineCode] = useState<string | null>(null);
   useEffect(() => {
     // Read-and-scrub in one call, so a refresh cannot re-open the dialog.
-    const { setup_git: gitUrl } = consumeInboundParams(['setup_git']);
+    const { setup_git: gitUrl, connect_code: connectCode } = consumeInboundParams(['setup_git', 'connect_code']);
+    if (connectCode) setAddMachineCode(connectCode);
     if (!gitUrl) return;
     setNewSandbox({ gitUrl });
   }, []);
@@ -341,6 +310,9 @@ export function HubHome() {
 
   const openWorldView = (projection: WorldViewProjection) =>
     navigation.openPage(PageId.HUB, ViewType.WORLDVIEW, projection);
+
+  // People & teams is a plain screen, not a projection of the graph.
+  const openOrganization = () => navigation.openPage(PageId.HUB, ViewType.ORGANIZATION);
 
   return (
     <div className="flex h-full flex-col overflow-auto">
@@ -379,7 +351,7 @@ export function HubHome() {
 
           <button
             type="button"
-            onClick={() => openWorldView(WorldViewProjection.ORGANIZATION)}
+            onClick={() => openOrganization()}
             data-testid="hub-home-organization"
             className="group flex flex-col items-start gap-2 rounded-xl border border-border bg-card p-5 text-start transition-colors hover:bg-accent"
           >
@@ -403,53 +375,8 @@ export function HubHome() {
             <Trans>Projects</Trans>
           </h2>
           <ProjectActionsRow variant="tiles" />
-          {!!projects?.length && (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {/* The card is a div wrapping the open button, not a button
-                  itself: the delete control lives inside it, and a button
-                  nested in a button is invalid and eats its own clicks. Same
-                  shape the sandbox cards below already use. */}
-              {projects.map((p) => {
-                const isCurrent = currentProject?.id === p.id;
-                const deleting = deletingProjectId === p.id;
-                return (
-                  <div
-                    key={p.id}
-                    data-testid="hub-project-card"
-                    className={`group flex items-center gap-3 rounded-lg border px-4 py-3 transition-colors hover:bg-accent ${
-                      isCurrent ? 'border-primary bg-primary/5' : 'border-border bg-card'
-                    }`}
-                  >
-                    <FolderGit2
-                      className={`h-4 w-4 shrink-0 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`}
-                    />
-                    <button
-                      type="button"
-                      aria-pressed={isCurrent}
-                      // Clicking opens the project dock, which sets CurrentProject
-                      // context — the same navigation the footer's name button uses,
-                      // so the footer follows the click. URL-first: only openDock.
-                      onClick={() => navigation.openDock(DockPointer.forProject(p.id).withPage(PageId.HUB))}
-                      className="min-w-0 flex-1 truncate text-start text-sm"
-                      title={p.displayName}
-                    >
-                      {p.displayName || t`Untitled project`}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDeleteProject(p)}
-                      disabled={deleting}
-                      aria-label={t`Delete project`}
-                      data-testid="hub-project-delete"
-                      className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
-                    >
-                      {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          {/* No project grid here on purpose: the current project is in the address
+              bar and the footer, and a long list only buries the sandboxes below. */}
         </div>
 
         {/* Pending invitations.
@@ -489,6 +416,25 @@ export function HubHome() {
                 {!sandboxesEnabled ? <Trans>Sandbox unavailable</Trans> : <Trans>Sign in to create sandboxes</Trans>}
               </TooltipContent>
             )}
+          </Tooltip>
+          {/* Add machine — approve a `flow connect` code from your own computer/server. */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DesktopTile
+                Icon={Laptop}
+                label={t`Add Machine`}
+                disabled={!currentUser}
+                onClick={() => setAddMachineCode('')}
+                data-testid="add-machine-button"
+              />
+            </TooltipTrigger>
+            <TooltipContent>
+              {currentUser ? (
+                <Trans>Run `flow connect` on a machine and enter its code here</Trans>
+              ) : (
+                <Trans>Sign in to add machines</Trans>
+              )}
+            </TooltipContent>
           </Tooltip>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -664,6 +610,14 @@ export function HubHome() {
       </div>
 
       {/* New-sandbox modal: name + optional git repo (with the connect-GitHub gate). */}
+      <AddMachineDialog
+        open={addMachineCode !== null}
+        initialCode={addMachineCode || null}
+        onOpenChange={(o) => {
+          if (!o) setAddMachineCode(null);
+        }}
+        onApproved={() => void refetch()}
+      />
       <NewSandboxDialog
         open={!!newSandbox}
         onOpenChange={(o) => {
@@ -716,21 +670,6 @@ export function HubHome() {
 
       {/* Deleting a project is not undoable and it is shared — the people it was
           shared with lose it too — so it asks first, unlike the sandbox rows. */}
-      <ConfirmDialog
-        open={!!confirmDeleteProject}
-        onOpenChange={(o) => {
-          if (!o) setConfirmDeleteProject(null);
-        }}
-        title={t`Delete project?`}
-        description={t`"${confirmDeleteProject?.displayName ?? ''}" will be deleted for everyone it is shared with. This cannot be undone.`}
-        confirmLabel={t`Delete`}
-        variant="destructive"
-        onConfirm={() => {
-          const project = confirmDeleteProject;
-          setConfirmDeleteProject(null);
-          if (project) void deleteProject(project);
-        }}
-      />
     </div>
   );
 }

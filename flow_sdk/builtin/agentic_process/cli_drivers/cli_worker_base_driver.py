@@ -743,9 +743,9 @@ class AgentOptions:
     model name is always passed through.
     """
 
-    # Per-worker tier→model map; empty in the base (pass-through). See
+    # Per-worker tier→model/auto map; empty in the base (pass-through). See
     # ``flow_sdk/builtin/agentic_process/model_tiers.py``.
-    MODEL_TIERS: dict[str, str] = {}
+    MODEL_TIERS: dict[str, str | None] = {}
 
     # ── Vendor spec (declarative; overridden per worker) ─────────────────────
     # The bare executable name (claude/codex/copilot). ``_resolve_binary`` may

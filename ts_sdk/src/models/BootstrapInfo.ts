@@ -143,10 +143,6 @@ export interface BootstrapInfo {
    *  Renamed from `desktops_enabled` with NO alias — hub and app ship together.
    *  Absent means an older hub, which is treated as enabled by the caller. */
   sandboxes_enabled?: boolean;
-  /** True iff at least one docker worker is currently connected. */
-  docker_available?: boolean;
-  /** Raw ComputeNode payloads for each live @docker-<name> node. Hydrate via dataContext.dockerComputeNodes. */
-  docker_compute_nodes?: ComputeNode[];
   env?: EnvInfo;
   /**
    * What this app is running as — the single signal every surface reads.

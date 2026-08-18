@@ -79,3 +79,7 @@ export type {
   TodoEntry,
   TodoFileItem,
 } from './system-profile';
+
+// Export the `flow connect` device-code approval calls (hub typeless action `machine-enroll`)
+export { approveMachine, denyMachine, formatMachineCode, lookupMachineCode } from './machine-enroll';
+export type { MachineApproval, MachineEnrollmentView } from './machine-enroll';

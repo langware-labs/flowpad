@@ -52,8 +52,8 @@ class HubWebSocketVerificationError(RuntimeError):
     """Raised when hub WebSocket verification fails without invalidating login."""
 
 
-def build_hub_ws_url(api_base_url: str | None = None, connection_id: str | None = None) -> str:
-    """Build the hub WebSocket URL from an API base URL."""
+def build_hub_ws_path_url(api_base_url: str | None, path: str) -> str:
+    """``https://hub/api/v1`` + ``/some/ws/path`` → ``wss://hub/api/v1/some/ws/path``."""
     base_url = api_base_url or ApiConfig.from_env().api_base_url
     if not base_url:
         raise ValueError("hub API base URL is not configured")
@@ -68,8 +68,12 @@ def build_hub_ws_url(api_base_url: str | None = None, connection_id: str | None 
     else:
         raise ValueError(f"unsupported hub URL scheme: {parsed.scheme}")
 
-    path = f"{parsed.path.rstrip('/')}/connect/ws/{connection_id or uuid.uuid4()}"
-    return urlunsplit((scheme, parsed.netloc, path, "", ""))
+    return urlunsplit((scheme, parsed.netloc, f"{parsed.path.rstrip('/')}/{path.lstrip('/')}", "", ""))
+
+
+def build_hub_ws_url(api_base_url: str | None = None, connection_id: str | None = None) -> str:
+    """Build the hub WebSocket URL from an API base URL."""
+    return build_hub_ws_path_url(api_base_url, f"/connect/ws/{connection_id or uuid.uuid4()}")
 
 
 @lru_cache(maxsize=1)

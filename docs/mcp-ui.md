@@ -132,7 +132,7 @@ origin does not execute generated MCP UI code directly.
 | Sandbox proxy HTML | `ui/public/sandbox_proxy.html` |
 | Backend sandbox route and CSP headers | `flow_sdk/server/routes/ui.py` |
 | Agent-facing MCP UI contract | `flow_sdk/system_projects/flowpad_assistant/.claude/skills/mcp-ui/SKILL.md` |
-| Vibe agent routing to the skill | `flow_sdk/system_projects/flowpad_assistant/.claude/agents/vibe.md` |
+| Vibe sub-agent persona routing to the skill | `flow_sdk/system_projects/flowpad_assistant/.claude/agents/vibe.md` |
 
 ## Debug Checklist
 

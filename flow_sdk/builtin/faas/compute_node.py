@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, Literal, overload
 
 from fastapi import BackgroundTasks
+from pydantic import field_validator
 
 if TYPE_CHECKING:
     # Runtime imports of Project stay function-local (circular import); this is
@@ -97,6 +98,18 @@ class ComputeNode(
     template_version: str | None = APIField(default=None)
     # Track active PTY sessions for WebSocket notifications
     active_pty_sessions: list[str] = APIField(default_factory=list)
+
+    @field_validator("node_provider_type", mode="before")
+    @classmethod
+    def _tolerate_unknown_provider(cls, value: Any) -> Any:
+        """A provider this build no longer knows (e.g. the removed desktop ``docker``)
+        hydrates as ``None`` instead of failing every ``ComputeNode`` query. Using
+        such a node still raises a clear error in ``compute_provider``."""
+        if isinstance(value, str) and value not in {p.value for p in ComputeProviderType}:
+            logging.warning("compute node: unknown provider %r on hydration; treating as unset", value)
+            return None
+        return value
+
     # Which of a project's declared secrets this node may see, per project.
     #
     # Value-free by construction — the token IS the env var name and the project
@@ -301,11 +314,6 @@ class ComputeNode(
         self.template_version = self.compute_provider.get_template_version()
         if run_startup:
             await self.startup(self.node_config)
-            # Setup LM proxy access with machine-restricted API key
-            try:
-                await self.setup_lm_proxy_access()
-            except Exception as e:
-                logging.debug(f"LM proxy access setup skipped (local mode): {e}")
         return provider_node_id
 
     @property
@@ -637,55 +645,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             machine_status.status_msg = str(e)
 
         return machine_status
-
-    async def setup_lm_proxy_access(self) -> str:
-        """Setup LM proxy access for this compute node.
-
-        This method:
-        1. Gets the unique machine ID from the compute node
-        2. Creates an API key restricted to that machine ID
-        3. Stores the API key on the node as FLOWPAD_LM_PROXY_KEY environment variable
-
-        Returns:
-            The created API key (for logging/debugging purposes only)
-        """
-        from flow_sdk.builtin.api_key import ApiKey, generate_api_key
-
-        # Get the machine ID from the compute node
-        machine_id = await self.get_machine_id()
-        logging.info(f"ComputeNode {self.id}: Machine ID obtained: {machine_id[:16]}...")
-
-        # Generate API key
-        full_key, prefix = generate_api_key("live")
-        key_hash = ApiKey.hash_key(full_key)
-
-        # Create ApiKey entity targeting this compute node
-        api_key = ApiKey(
-            name=f"lm_proxy_key_{self.id}",
-            api_key_hash=key_hash,
-            bind_typeid=str(self.typeid),
-            is_active=True,
-        )
-        api_key.add_machine_id(machine_id)
-        await api_key.save()
-
-        # Store the API key on the compute node machine
-        await self.set_env("FLOWPAD_LM_PROXY_KEY", full_key)
-        # Also store the machine ID so the node can send it with requests
-        await self.set_env("FLOWPAD_MACHINE_ID", machine_id)
-        # Store the backend URL for API access (use service_external_host to support ngrok/localhost scenarios)
-        backend_url = self.current_config.service_urls_config.service_external_host
-        await self.set_env("FLOWPAD_BACKEND_URL", backend_url)
-
-        # TODO this is temporarily disabled
-        # lm_proxy_path = urls_service.api.build_entity_path(self.typeid, None, "lm-proxy")
-        # full_lm_proxy_url = f"{backend_url}{lm_proxy_path}"
-        # await self.compute_provider.configure_lm_proxy_env(
-        #     self.verified_node_provider_id, full_key, backend_url, full_lm_proxy_url, machine_id
-        # )
-
-        logging.info(f"ComputeNode {self.id}: LM proxy access configured with key {prefix}...")
-        return full_key
 
     async def send(self, msg_str: str) -> None:
         return await self.compute_provider.send(self.verified_node_provider_id, msg_str)
@@ -1375,6 +1334,32 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         set_pending_default_project(project_id)
         logging.info(f"[provisioning] next bootstrap will open project {project_id}")
         return ApiSuccessResponse(data={"project_id": project_id})
+
+    @action.all(action_name="llm-endpoint", methods=["get", "post", "delete"])
+    async def _llm_endpoint_action(self) -> ApiResponse:
+        """GET status / POST bind / DELETE unbind of the hub ``LLMEndpoint`` this box's
+        harnesses route through -- see ``cli_drivers/hub_endpoint_binding`` for the
+        payload and status shapes. The hub calls this right after a verified login."""
+        from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import (  # noqa: PLC0415
+            HubEndpointBindError,
+            bind_hub_llm_endpoint,
+            hub_llm_endpoint_status,
+            unbind_hub_llm_endpoint,
+        )
+
+        request_info = get_current_request_info()
+        method = (request_info.request.method if request_info and request_info.request else "GET").upper()
+        try:
+            if method == "GET":
+                return ApiSuccessResponse(data=await hub_llm_endpoint_status())
+            if method == "POST":
+                body = (await request_info.get_post_data() if request_info else {}) or {}
+                return ApiSuccessResponse(data=await bind_hub_llm_endpoint(body))
+            if method == "DELETE":
+                return ApiSuccessResponse(data=await unbind_hub_llm_endpoint())
+            return ApiFailResponse(message=f"Method {method} not supported", status_code=405)
+        except HubEndpointBindError as exc:
+            return ApiFailResponse(message=str(exc), status_code=exc.status_code)
 
     @action.post(action_name="find-local-repo")
     async def _find_local_repo(self) -> ApiResponse:

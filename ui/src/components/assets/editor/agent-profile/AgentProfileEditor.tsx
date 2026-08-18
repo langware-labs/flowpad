@@ -1,7 +1,7 @@
-import { Agent, AGENT_AVATAR_REF, FSRef } from '@sdk';
+import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, FSRef } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Play } from 'lucide-react';
+import { Loader2, Sparkles } from 'lucide-react';
 
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
@@ -15,10 +15,11 @@ import { Textarea } from '@src/components/ui/textarea';
 import { Switch } from '@src/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Button } from '@src/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 
 import { AgentDeploymentsSection } from './AgentDeploymentsSection';
 import { AgentListField, AgentSection, AgentSelectField } from './AgentProfileFields';
-import { AgentRunDialog } from './AgentRunDialog';
+import { useUseAgent } from './use-agent';
 import { AGENT_EFFORTS, AGENT_MODEL_TIERS, AGENT_PERMISSION_MODES, AGENT_WORKER_TYPES } from './agent-vocabularies';
 import { AgentDocumentPatch, patchAgentDocument } from './agent-document';
 
@@ -55,8 +56,8 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
   const [name, setName] = useState(agent?.name ?? '');
   const [description, setDescription] = useState(agent?.description ?? '');
   const [prompt, setPrompt] = useState(agent?.system_prompt ?? '');
-  const [runOpen, setRunOpen] = useState(false);
   const [avatarRevision, setAvatarRevision] = useState(0);
+  const { use, busy: using } = useUseAgent(agent);
 
   useEffect(() => {
     setTitle(agent?.title ?? '');
@@ -127,52 +128,55 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
   const identityKey = agent.name || agent.id;
   const ringColor = colorForIdentityKey(identityKey);
   const AgentIcon = iconForType(Agent.type);
-  const avatarImageUrl = agent.avatar === AGENT_AVATAR_REF ? mainRef.parent.child('avatar.png').getDownloadUrl() : null;
+  // Through `mainRef`, not `agent.avatarImageUrl`: the router hands the editor
+  // the authoritative ref (local mount OR hub entity storage), while the SDK
+  // getter resolves off `asset_ref` — same file here, but this one is exact.
+  const avatarImageUrl = agent.avatar === AGENT_AVATAR_REF ? mainRef.parent.child(AGENT_AVATAR_FILE).getDownloadUrl() : null;
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-3xl px-6 py-8">
-        {/* ── header band ─────────────────────────────────────────────── */}
-        <div className="flex items-start gap-5">
-          <Popover>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                aria-label={t`Change avatar`}
-                className={cn(
-                  'flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full',
-                  'text-3xl text-white shadow-sm transition hover:opacity-90',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  ringColor,
-                )}
-              >
-                <AvatarValue
-                  key={`${agent.avatar ?? 'none'}:${avatarRevision}`}
-                  value={agent.avatar}
-                  imageUrl={avatarImageUrl}
-                  alt={agent.name ? t`${agent.name} avatar` : t`Agent avatar`}
-                  className={avatarImageUrl ? 'h-full w-full object-cover' : 'h-9 w-9 text-3xl'}
-                  fallback={<AgentIcon className="h-9 w-9" />}
-                />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-3" align="start">
-              <AgentAvatarPicker
+    <div className="flex h-full min-h-0 flex-col">
+      {/* ── header band: identity + the two verbs ─────────────────────── */}
+      <div className="flex shrink-0 items-start gap-5 border-b border-border px-6 pb-5 pt-6">
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label={t`Change avatar`}
+              className={cn(
+                'flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full',
+                'text-3xl text-white shadow-sm transition hover:opacity-90',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                ringColor,
+              )}
+            >
+              <AvatarValue
+                key={`${agent.avatar ?? 'none'}:${avatarRevision}`}
                 value={agent.avatar}
-                onValueChange={(value) => save({ avatar: value })}
-                onImageSelected={handleAvatarImage}
+                imageUrl={avatarImageUrl}
+                alt={agent.name ? t`${agent.name} avatar` : t`Agent avatar`}
+                className={avatarImageUrl ? 'h-full w-full object-cover' : 'h-9 w-9 text-3xl'}
+                fallback={<AgentIcon className="h-9 w-9" />}
               />
-            </PopoverContent>
-          </Popover>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-3" align="start">
+            <AgentAvatarPicker
+              value={agent.avatar}
+              onValueChange={(value) => save({ avatar: value })}
+              onImageSelected={handleAvatarImage}
+            />
+          </PopoverContent>
+        </Popover>
 
-          <div className="min-w-0 flex-1 space-y-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-3">
             <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               onBlur={() => commit('title', title.trim(), agent.title ?? '')}
               placeholder={t`Agent title`}
               aria-label={t`Agent title`}
-              className="h-auto border-0 bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
+              className="h-auto min-w-0 flex-1 border-0 bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
             />
             <Input
               value={name}
@@ -180,139 +184,158 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
               onBlur={() => commit('name', name.trim(), agent.name ?? '')}
               placeholder={t`agent-name`}
               aria-label={t`Agent name`}
-              className="h-7 border-0 bg-transparent px-0 font-mono text-sm text-muted-foreground shadow-none focus-visible:ring-0"
-            />
-            <Textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              onBlur={() => commit('description', description.trim(), agent.description ?? '')}
-              placeholder={t`What is this agent for?`}
-              aria-label={t`Description`}
-              className="min-h-0 resize-none border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
-              rows={2}
+              className="h-7 w-48 shrink-0 border-0 bg-transparent px-0 text-end font-mono text-sm text-muted-foreground shadow-none focus-visible:ring-0"
             />
           </div>
-
-          <div className="flex shrink-0 items-center gap-3 pt-2">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">
-                {agent.enabled ? <Trans>Enabled</Trans> : <Trans>Disabled</Trans>}
-              </span>
-              <Switch
-                checked={agent.enabled}
-                onCheckedChange={(v) => void save({ enabled: v })}
-                aria-label={t`Enabled`}
-              />
-            </div>
-            <Button size="sm" disabled={!agent.enabled} onClick={() => setRunOpen(true)}>
-              <Play className="me-1.5 h-3.5 w-3.5" />
-              <Trans>Run</Trans>
-            </Button>
-          </div>
+          <Textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            onBlur={() => commit('description', description.trim(), agent.description ?? '')}
+            placeholder={t`What is this agent for?`}
+            aria-label={t`Description`}
+            className="mt-1 min-h-0 resize-none border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
+            rows={2}
+          />
         </div>
 
-        <AgentRunDialog agent={agent} open={runOpen} onOpenChange={setRunOpen} />
+        <div className="flex shrink-0 items-center gap-3 pt-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">
+              {agent.enabled ? <Trans>Enabled</Trans> : <Trans>Disabled</Trans>}
+            </span>
+            <Switch
+              checked={agent.enabled}
+              onCheckedChange={(v) => void save({ enabled: v })}
+              aria-label={t`Enabled`}
+            />
+          </div>
+          <Button size="sm" disabled={!agent.enabled || using} onClick={() => void use()} data-testid="agent-use">
+            {using ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="me-1.5 h-3.5 w-3.5" />}
+            <Trans>Use</Trans>
+          </Button>
+        </div>
+      </div>
 
-        {/* ── behaviour ───────────────────────────────────────────────── */}
-        <AgentSection title={t`Behaviour`} hint={t`Who this agent is. Becomes its system prompt.`}>
+      {/* ── body: the prompt owns the left, settings sit in a tabbed rail ── */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <section className="flex min-h-0 flex-col px-6 py-5">
+          <div className="mb-2 flex items-baseline justify-between">
+            <h2 className="text-sm font-semibold">
+              <Trans>Behaviour</Trans>
+            </h2>
+            <span className="text-xs text-muted-foreground">
+              <Trans>Who this agent is — its system prompt.</Trans>
+            </span>
+          </div>
           <Textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             onBlur={() => commit('system_prompt', prompt, agent.system_prompt ?? '')}
-            placeholder={t`You investigate a reported problem and prove the root cause…`}
+            placeholder={t`Describe who this agent is, what it does, and what it must never do…`}
             aria-label={t`System prompt`}
-            className="min-h-40 font-mono text-sm"
+            className="min-h-40 flex-1 resize-none font-mono text-sm leading-relaxed"
           />
-        </AgentSection>
+        </section>
 
-        {/* ── model & runtime ─────────────────────────────────────────── */}
-        <AgentSection title={t`Model & runtime`}>
-          <div className="grid grid-cols-2 gap-4">
-            <AgentSelectField
-              label={t`Worker`}
-              value={agent.worker_type}
-              options={AGENT_WORKER_TYPES}
-              placeholder={t`claude`}
-              onCommit={(v) => void save({ worker_type: v })}
-            />
-            <AgentSelectField
-              label={t`Model`}
-              value={agent.model}
-              options={AGENT_MODEL_TIERS}
-              placeholder={t`sm / md / lg, or a model id`}
-              onCommit={(v) => void save({ model: v })}
-            />
-            <AgentSelectField
-              label={t`Permissions`}
-              value={agent.permission_mode}
-              options={AGENT_PERMISSION_MODES}
-              onCommit={(v) => void save({ permission_mode: v })}
-            />
-            <AgentSelectField
-              label={t`Effort`}
-              value={agent.effort}
-              options={AGENT_EFFORTS}
-              onCommit={(v) => void save({ effort: v })}
-            />
-            <AgentSelectField
-              label={t`Max turns`}
-              value={agent.max_turns == null ? '' : String(agent.max_turns)}
-              placeholder={t`unlimited`}
-              onCommit={(v) => {
-                const n = v == null ? undefined : Number(v);
-                if (n !== undefined && Number.isNaN(n)) return;
-                void save({ max_turns: n });
-              }}
-            />
-          </div>
-        </AgentSection>
+        <aside className="min-h-0 overflow-y-auto border-t border-border px-4 py-4 lg:border-s lg:border-t-0">
+          <Tabs defaultValue="runtime">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="runtime">
+                <Trans>Runtime</Trans>
+              </TabsTrigger>
+              <TabsTrigger value="deploy">
+                <Trans>Deploy</Trans>
+              </TabsTrigger>
+              <TabsTrigger value="advanced">
+                <Trans>Advanced</Trans>
+              </TabsTrigger>
+            </TabsList>
 
-        {/* ── capabilities ────────────────────────────────────────────── */}
-        <AgentSection title={t`Capabilities`} hint={t`Declared on the agent's card. Not yet applied to the worker.`}>
-          <div className="space-y-4">
-            <AgentListField label={t`Tools`} value={agent.tools} onCommit={(v) => void save({ tools: v })} />
-            <AgentListField
-              label={t`Disallowed tools`}
-              value={agent.disallowed_tools}
-              onCommit={(v) => void save({ disallowed_tools: v })}
-            />
-            <AgentListField
-              label={t`Sub-agents`}
-              value={agent.subagents}
-              onCommit={(v) => void save({ subagents: v ?? [] })}
-            />
-            <AgentListField label={t`Skills`} value={agent.skills} onCommit={(v) => void save({ skills: v ?? [] })} />
-            <AgentListField
-              label={t`MCP servers`}
-              value={agent.mcp_servers}
-              onCommit={(v) => void save({ mcp_servers: v ?? [] })}
-            />
-          </div>
-        </AgentSection>
+            <TabsContent value="runtime" className="mt-4">
+              <div className="grid grid-cols-2 gap-3">
+                <AgentSelectField
+                  label={t`Worker`}
+                  value={agent.worker_type}
+                  options={AGENT_WORKER_TYPES}
+                  placeholder={t`claude`}
+                  onCommit={(v) => void save({ worker_type: v })}
+                />
+                <AgentSelectField
+                  label={t`Model`}
+                  value={agent.model}
+                  options={AGENT_MODEL_TIERS}
+                  placeholder={t`sm / md / lg`}
+                  onCommit={(v) => void save({ model: v })}
+                />
+                <AgentSelectField
+                  label={t`Permissions`}
+                  value={agent.permission_mode}
+                  options={AGENT_PERMISSION_MODES}
+                  onCommit={(v) => void save({ permission_mode: v })}
+                />
+                <AgentSelectField
+                  label={t`Effort`}
+                  value={agent.effort}
+                  options={AGENT_EFFORTS}
+                  onCommit={(v) => void save({ effort: v })}
+                />
+              </div>
+              <div className="mt-4 flex items-center justify-between rounded-md border border-border px-3 py-2">
+                <span className="text-sm">
+                  <Trans>Load Flowpad assistant</Trans>
+                </span>
+                <Switch
+                  checked={agent.load_flowpad_assistant}
+                  onCheckedChange={(v) => void save({ load_flowpad_assistant: v })}
+                  aria-label={t`Load Flowpad assistant`}
+                />
+              </div>
+            </TabsContent>
 
-        {/* ── deployment ──────────────────────────────────────────────── */}
-        <AgentDeploymentsSection agent={agent} />
+            <TabsContent value="deploy" className="mt-4">
+              <AgentDeploymentsSection agent={agent} />
+            </TabsContent>
 
-        {/* ── advanced ────────────────────────────────────────────────── */}
-        <AgentSection title={t`Advanced`}>
-          <div className="space-y-4">
-            <AgentListField
-              label={t`Additional directories`}
-              value={agent.additional_dirs}
-              onCommit={(v) => void save({ additional_dirs: v ?? [] })}
-            />
-            <div className="flex items-center justify-between">
-              <span className="text-sm">
-                <Trans>Load Flowpad assistant</Trans>
-              </span>
-              <Switch
-                checked={agent.load_flowpad_assistant}
-                onCheckedChange={(v) => void save({ load_flowpad_assistant: v })}
-                aria-label={t`Load Flowpad assistant`}
-              />
-            </div>
-          </div>
-        </AgentSection>
+            <TabsContent value="advanced" className="mt-4">
+              <AgentSection hint={t`Declared on the agent's card. Not yet applied to the worker.`}>
+                <div className="space-y-3">
+                  <AgentSelectField
+                    label={t`Max turns`}
+                    value={agent.max_turns == null ? '' : String(agent.max_turns)}
+                    placeholder={t`unlimited`}
+                    onCommit={(v) => {
+                      const n = v == null ? undefined : Number(v);
+                      if (n !== undefined && Number.isNaN(n)) return;
+                      void save({ max_turns: n });
+                    }}
+                  />
+                  <AgentListField label={t`Tools`} value={agent.tools} onCommit={(v) => void save({ tools: v })} />
+                  <AgentListField
+                    label={t`Disallowed tools`}
+                    value={agent.disallowed_tools}
+                    onCommit={(v) => void save({ disallowed_tools: v })}
+                  />
+                  <AgentListField
+                    label={t`Sub-agents`}
+                    value={agent.subagents}
+                    onCommit={(v) => void save({ subagents: v ?? [] })}
+                  />
+                  <AgentListField label={t`Skills`} value={agent.skills} onCommit={(v) => void save({ skills: v ?? [] })} />
+                  <AgentListField
+                    label={t`MCP servers`}
+                    value={agent.mcp_servers}
+                    onCommit={(v) => void save({ mcp_servers: v ?? [] })}
+                  />
+                  <AgentListField
+                    label={t`Additional directories`}
+                    value={agent.additional_dirs}
+                    onCommit={(v) => void save({ additional_dirs: v ?? [] })}
+                  />
+                </div>
+              </AgentSection>
+            </TabsContent>
+          </Tabs>
+        </aside>
       </div>
     </div>
   );
