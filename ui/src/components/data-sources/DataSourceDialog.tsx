@@ -34,7 +34,7 @@ import {
   type SourceDraft,
 } from './source-form';
 import { useSourceSpecs } from './use-source-specs';
-import type { DataSourceSpec, SpecConfigField } from '@sdk';
+import { FieldType, type DataSourceSpec, type SpecConfigField } from '@sdk';
 
 /**
  * The switch's boolean → a lifecycle status.
@@ -52,7 +52,7 @@ function statusFor(enabled: boolean, current: SourceStatus): SourceStatus {
 function fieldValue(key: string, field: SpecConfigField, config: Record<string, unknown>): string {
   const raw = config?.[key];
   if (raw === undefined || raw === null) return '';
-  if (Array.isArray(raw)) return raw.join(field.type === 'lines' ? '\n' : ', ');
+  if (Array.isArray(raw)) return raw.join(field.type === FieldType.LINES ? '\n' : ', ');
   // Only scalars round-trip through an input. A nested object in config means
   // the driver grew a shape this form does not model — show nothing rather than
   // "[object Object]", which would be saved back verbatim and corrupt it.
@@ -95,13 +95,13 @@ export function DataSourceDialog({
   // Whatever is INSTALLED, not a hardcoded list: a source added as an asset
   // shows up here with no frontend release.
   const { specs, specFor } = useSourceSpecs();
-  const [draft, setDraft] = useState<SourceDraft>(() => emptyDraft());
+  const [draft, setDraft] = useState<SourceDraft>(() => emptyDraft(''));
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setDraft(editing ? draftFrom(editing, specFor(editing.provider)) : emptyDraft(specs[0]?.name));
+    setDraft(editing ? draftFrom(editing, specFor(editing.provider)) : emptyDraft(specs[0]?.name ?? ''));
     setShowAdvanced(false);
   }, [open, editing, specFor, specs]);
 
@@ -167,7 +167,7 @@ export function DataSourceDialog({
           {field.label || key}
           {field.required && <span className="ms-1 text-destructive">*</span>}
         </Label>
-        {field.type === 'lines' ? (
+        {field.type === FieldType.LINES ? (
           <Textarea
             id={`ds-${key}`}
             rows={3}
@@ -178,7 +178,7 @@ export function DataSourceDialog({
         ) : (
           <Input
             id={`ds-${key}`}
-            type={field.kind === 'password' ? 'password' : field.kind === 'number' ? 'number' : 'text'}
+            type={field.type === FieldType.NUMBER ? 'number' : 'text'}
             value={value}
             placeholder={field.placeholder ? t(field.placeholder) : undefined}
             onChange={(e) => setField(key, e.target.value)}

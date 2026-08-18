@@ -13,9 +13,23 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 
+/**
+ * What a config field renders as. Mirrors `FieldType` in
+ * `flow_sdk/ingest/manifest.py`, which validates it at parse time — so a typo
+ * is a manifest load error there and a compile error at the three comparison
+ * sites here, instead of silently rendering a text input.
+ */
+export enum FieldType {
+  TEXT = 'text',
+  LINES = 'lines',
+  CSV = 'csv',
+  NUMBER = 'number',
+  PATH = 'path',
+}
+
 /** One field of the create form, as the manifest declares it. */
 export interface SpecConfigField {
-  type?: string;
+  type?: FieldType;
   required?: boolean;
   label?: string;
   hint?: string;
@@ -83,7 +97,15 @@ export class DataSourceSpec extends APIEntity<DataSourceSpec> implements IDataSo
    * fields at all.
    *
    * `Team`, `Group` and `Prompt` carry hand-written constructors for the same
-   * reason. This does it in one line instead of one per field.
+   * reason — this is the fourth, and copies do not scale: they protect only the
+   * classes that remembered. The real home for the fix is
+   * `FlowSync/store.ts::castAndDeepAssign`, whose cache-HIT branch already does
+   * the careful thing (onEntityUpdate, the `state` guard, the
+   * `asset_occurrences` array-replace, `_rehydrateContextEntities`) while its
+   * cache-MISS branch is a bare `new entityConstructor(source)` that gets none
+   * of it. Fixing it there must land alone: `deepAssign` merges arrays by index
+   * (the reason the `asset_occurrences` special case exists), so it is safe over
+   * an empty default and would UNION for any class with a non-empty one.
    */
   constructor(json: IDataSourceSpec | undefined = undefined) {
     super(json as never);

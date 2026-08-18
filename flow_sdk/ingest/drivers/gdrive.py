@@ -34,10 +34,13 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Any, Optional
 
+import httpx
+
+from flow_sdk.capsules.atomic import atomic_write
+from flow_sdk.ingest import http
 from flow_sdk.ingest.driver import FetchResult, SegmentCursorView, SegmentRef, SetupVerdict
 from flow_sdk.ingest.health import SourceError
 
@@ -101,6 +104,12 @@ class GoogleDriveDriver:
     #: into one of these files survives exactly until the file changes upstream.
     stamps_identity = False
 
+    def __init__(self) -> None:
+        # Keyed by sidecar path, so one registered driver instance serves every
+        # source without them sharing an entry. See `_read_index`.
+        self._index_cache: dict[Path, tuple[int, int]] = {}
+        self._index_by_path: dict[Path, dict[str, str]] = {}
+
     # ── addressing ────────────────────────────────────────────────────────
 
     def cache_root(self, source) -> Path:
@@ -138,24 +147,40 @@ class GoogleDriveDriver:
         keep an asset's identity where a local folder source (holding only an
         inode) cannot.
         """
-        rel = str(Path(ref).resolve().relative_to(self.cache_root(source)))
+        root = self.cache_root(source)
+        rel = str(Path(ref).resolve().relative_to(root))
         file_id = self._read_index(source).get(rel)
         if not file_id:
             raise KeyError(rel)  # caller falls back to the path
         return f"gdrive:{file_id}"
 
     def _read_index(self, source) -> dict[str, str]:
+        """The sidecar, cached on its own (mtime, size).
+
+        Reflection asks for an origin TWICE per ref, and the sidecar holds every
+        file the source has ever seen — so re-reading and re-parsing it per call
+        is quadratic in the size of the drive. `_write_index` replaces the file
+        atomically, so the stat pair moves whenever the contents do and the
+        cache cannot go stale.
+        """
+        path = self.index_path(source)
         try:
-            return dict(json.loads(self.index_path(source).read_text(encoding="utf-8")))
+            st = path.stat()
+        except OSError:
+            return {}
+        stamp = (st.st_mtime_ns, st.st_size)
+        if self._index_cache.get(path) == stamp:
+            return self._index_by_path[path]
+        try:
+            loaded = dict(json.loads(path.read_text(encoding="utf-8")))
         except (OSError, ValueError):
             return {}
+        self._index_cache[path] = stamp
+        self._index_by_path[path] = loaded
+        return loaded
 
     def _write_index(self, source, index: dict[str, str]) -> None:
-        path = self.index_path(source)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(f".{path.name}.part")
-        tmp.write_text(json.dumps(index, indent=2), encoding="utf-8")
-        os.replace(tmp, path)
+        atomic_write(self.index_path(source), json.dumps(index, indent=2).encode("utf-8"))
 
     def segments(self, source) -> list[SegmentRef]:
         """One segment per configured drive, defaulting to the user's own.
@@ -184,7 +209,8 @@ class GoogleDriveDriver:
                 "No Google credential on this machine. Connect Google, then verify the source."
             )
         try:
-            await self._call(source, token, "/about", {"fields": "user(emailAddress)"})
+            async with http.client() as client:
+                await self._call(client, source, token, "/about", {"fields": "user(emailAddress)"})
         except SourceError as exc:
             return SetupVerdict.waiting(
                 f"Google refused the stored credential ({exc}). Reconnect Google, "
@@ -204,23 +230,35 @@ class GoogleDriveDriver:
 
         state = dict(cursor.state or {})
         page_token = state.get("page_token")
-        if page_token:
-            changed, removed, next_token = await self._delta(source, token, cursor.segment_key, page_token)
-        else:
-            changed, removed, next_token = await self._first_pass(source, token, cursor.segment_key)
-
         root = self.cache_root(source)
         index = dict(state.get("index") or {})
-
         refs: list[str] = []
         skipped = 0
-        for meta in changed:
-            placed = await self._download(source, token, meta, root)
-            if placed is None:
-                skipped += 1
-                continue
-            refs.append(str(placed))
-            index[str(placed.relative_to(root))] = meta["id"]
+
+        # ONE client for the whole poll. A first pass over a large drive is
+        # hundreds of requests, and a client per request pays a fresh TCP+TLS
+        # handshake for each — `hackernews` and `rss` already thread one client
+        # through a fetch for exactly this reason.
+        async with http.client() as client:
+            if page_token:
+                changed, removed, next_token = await self._delta(
+                    client, source, token, cursor.segment_key, page_token
+                )
+            else:
+                changed, removed, next_token = await self._first_pass(
+                    client, source, token, cursor.segment_key
+                )
+
+            # The layout is flat (`_safe_name` collapses separators), so the
+            # destination directory is loop-invariant.
+            root.mkdir(parents=True, exist_ok=True)
+            for meta in changed:
+                placed = await self._download(client, source, token, meta, root)
+                if placed is None:
+                    skipped += 1
+                    continue
+                refs.append(str(placed))
+                index[str(placed.relative_to(root))] = meta["id"]
 
         # A removal is OBSERVED here — Drive says a file was trashed or deleted,
         # it is not inferred from absence. That is what lets this driver fill
@@ -250,24 +288,27 @@ class GoogleDriveDriver:
             refs=refs,
             tombstones=tombstones,
             next_state={"page_token": next_token, "index": index},
-            high_water=str(len(index)),
+            # Deliberately no `high_water`: `sync.py` folds it into `was_clean`,
+            # so any value at all writes the cursor row on every tick — the
+            # once-per-feed-per-minute floor that design exists to avoid. The
+            # file count is observable from the sidecar.
             unchanged=not refs and not tombstones,
         )
 
     # ── Drive's two list calls ────────────────────────────────────────────
 
-    async def _first_pass(self, source, token: str, segment: str):
+    async def _first_pass(self, client, source, token: str, segment: str):
         """Enumerate once, then ask Drive where the change log starts.
 
         The start token is taken AFTER the enumeration, never before: a file
         created while the pages were being walked is then reported by the first
         delta instead of falling into the gap between the two calls.
         """
-        files = await self._list_files(source, token, segment)
-        start = await self._call(source, token, "/changes/startPageToken", self._drive_params(segment))
+        files = await self._list_files(client, source, token, segment)
+        start = await self._call(client, source, token, "/changes/startPageToken", self._drive_params(segment))
         return files, [], str(start.get("startPageToken") or "")
 
-    async def _list_files(self, source, token: str, segment: str) -> list[dict]:
+    async def _list_files(self, client, source, token: str, segment: str) -> list[dict]:
         out: list[dict] = []
         params = {
             "q": "trashed = false",
@@ -279,13 +320,13 @@ class GoogleDriveDriver:
         while True:
             if page:
                 params["pageToken"] = page
-            body = await self._call(source, token, "/files", params)
+            body = await self._call(client, source, token, "/files", params)
             out.extend(f for f in (body.get("files") or []) if f.get("mimeType") != FOLDER_MIME)
             page = body.get("nextPageToken")
             if not page:
                 return out
 
-    async def _delta(self, source, token: str, segment: str, page_token: str):
+    async def _delta(self, client, source, token: str, segment: str, page_token: str):
         """What moved since `page_token`.
 
         Drive's change log is authoritative about deletion, which is the whole
@@ -302,7 +343,7 @@ class GoogleDriveDriver:
             **self._drive_params(segment),
         }
         while True:
-            body = await self._call(source, token, "/changes", params)
+            body = await self._call(client, source, token, "/changes", params)
             for change in body.get("changes") or []:
                 meta = change.get("file") or {}
                 if change.get("removed") or meta.get("trashed"):
@@ -328,7 +369,7 @@ class GoogleDriveDriver:
 
     # ── bytes ─────────────────────────────────────────────────────────────
 
-    async def _download(self, source, token: str, meta: dict, root: Path) -> Optional[Path]:
+    async def _download(self, client, source, token: str, meta: dict, root: Path) -> Optional[Path]:
         """One file into the cache. `None` when Drive has no bytes to give.
 
         A Google-native document is not a file — it is a document Drive renders
@@ -353,14 +394,11 @@ class GoogleDriveDriver:
             endpoint = f"/files/{meta['id']}"
 
         dest = root / name
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        content = await self._get(source, token, endpoint, path_params)
-        # Write through a temp file in the same directory and rename over: a
-        # poll that dies mid-download must not leave a half file that the
-        # indexer then types as the real asset.
-        tmp = dest.with_name(f".{dest.name}.part")
-        tmp.write_bytes(content)
-        os.replace(tmp, dest)
+        content = await self._get(client, source, token, endpoint, path_params)
+        # Atomic: a poll that dies mid-download must not leave a half file that
+        # the indexer then types as the real asset. `atomic_write` also cleans
+        # its temp file up on failure, which a hand-rolled rename does not.
+        atomic_write(dest, content)
         return dest
 
     # ── transport ─────────────────────────────────────────────────────────
@@ -368,80 +406,29 @@ class GoogleDriveDriver:
     def _base(self, source) -> str:
         return str((source.config or {}).get("base_url") or DRIVE_API_BASE).rstrip("/")
 
-    async def _get(self, source, token: str, path: str, params: dict) -> bytes:
-        """One authenticated GET. Metadata and bytes differ only in how the
-        caller reads the body, so the request itself is written once."""
-        import httpx  # noqa: PLC0415
+    async def _get(self, client, source, token: str, path: str, params: dict) -> bytes:
+        """One authenticated GET through the house transport.
 
-        from flow_sdk.ingest.http import REQUEST_TIMEOUT_SECONDS  # noqa: PLC0415
-
-        try:
-            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
-                response = await client.get(
-                    f"{self._base(source)}{path}",
-                    params=params,
-                    headers={"Authorization": f"Bearer {token}"},
-                )
-        except httpx.HTTPError as exc:
-            raise SourceError.transient("network_error", str(exc)) from exc
-
-        self._raise_for_status(response.status_code, response.text)
+        `http.get` owns the request ceiling, turns a transport failure into a
+        classified error, and maps the status through `SourceError.for_status` —
+        THE status→health table. A second table here is how Drive would miss the
+        next rule added to it, and it had already drifted: this driver read 429
+        as a generic `http_429` where the canonical table calls it
+        `rate_limited`.
+        """
+        url = httpx.URL(f"{self._base(source)}{path}").copy_merge_params(params)
+        response = await http.get(client, str(url), headers={"Authorization": f"Bearer {token}"})
         return response.content
 
-    async def _call(self, source, token: str, path: str, params: dict) -> dict[str, Any]:
-        raw = await self._get(source, token, path, params)
+    async def _call(self, client, source, token: str, path: str, params: dict) -> dict[str, Any]:
+        raw = await self._get(client, source, token, path, params)
         try:
             return json.loads(raw)
         except ValueError as exc:
             raise SourceError.transient("bad_json", str(exc)) from exc
 
-    @staticmethod
-    def _raise_for_status(status: int, detail: str) -> None:
-        """Drive's status codes, split the way health cares about them.
-
-        401/403 need a person (reconnect, or grant the scope) and must park the
-        source; 429 and 5xx are the provider having a moment and must not. The
-        split is the difference between a source that recovers on its own and
-        one that stays broken until somebody notices.
-        """
-        if status in (401, 403):
-            raise SourceError.config("credential_refused", detail[:400] or f"HTTP {status}")
-        if status == 404:
-            raise SourceError.config("not_found", detail[:400] or "HTTP 404")
-        if status >= 400:
-            raise SourceError.transient(f"http_{status}", detail[:400] or f"HTTP {status}")
-
     async def _token(self, source) -> Optional[str]:
-        """The Google token, wherever it ended up.
+        """This machine's Google token. The precedence lives in one place."""
+        from flow_sdk.core.oauth.provider_registry import GOOGLE, token_for  # noqa: PLC0415
 
-        Local SOD first, then the hub — the same order and the same reason as
-        `SlackDriver._token`: connection sharing copies a hub token down, so on
-        a set-up machine it is already local, and the hub covers the window
-        before a desktop has adopted it.
-        """
-        from flow_sdk.core.oauth.provider_probe import token_from_credential  # noqa: PLC0415
-        from flow_sdk.core.oauth.provider_registry import GOOGLE, user_credentials_name  # noqa: PLC0415
-
-        name = user_credentials_name(GOOGLE)
-        try:
-            from flow_sdk.builtin.user import User  # noqa: PLC0415
-            from flow_sdk.request_context.methods import get_user_credentials  # noqa: PLC0415
-
-            user = await User.get_local()
-            if user is not None and name:
-                token = token_from_credential(await get_user_credentials(user, name, user.id))
-                if token:
-                    return token
-        except Exception:  # noqa: BLE001 — absence is the normal case, not an error
-            logger.debug("gdrive: no local credential", exc_info=True)
-
-        try:
-            from flow_sdk.core.oauth.hub_oauth import (  # noqa: PLC0415
-                hub_credential_value,
-                hub_credentials_name_for,
-            )
-
-            return token_from_credential(await hub_credential_value(hub_credentials_name_for(GOOGLE)))
-        except Exception:  # noqa: BLE001
-            logger.debug("gdrive: no hub credential", exc_info=True)
-            return None
+        return await token_for(GOOGLE)

@@ -29,21 +29,23 @@ import { errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
 import { WikiButton } from '@src/components/wiki-tip';
 import { healthStyle } from './health-style';
-import { useSourceSpecs } from './use-source-specs';
 import { statusStyle } from './status-style';
 import { SourceMenu } from './SourceMenu';
 import { SourceStreams } from './SourceStreams';
 
 interface Props {
   source: DataSource;
+  /** From this source's spec. Passed in rather than queried here: the specs are
+   *  one global query, and a card per source asking separately is N identical
+   *  subscriptions to the same rows. The view already owns the grid. */
+  setupWiki?: string;
   onEdit: (source: DataSource) => void;
   onReplay: (source: DataSource) => void;
   onDelete: (source: DataSource) => void;
 }
 
-export function DataSourceCard({ source, onEdit, onReplay, onDelete }: Props) {
+export function DataSourceCard({ source, setupWiki, onEdit, onReplay, onDelete }: Props) {
   const { t } = useLingui();
-  const { specFor } = useSourceSpecs();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const Icon = iconForType(DataSource.type);
@@ -145,7 +147,7 @@ export function DataSourceCard({ source, onEdit, onReplay, onDelete }: Props) {
   const chip = source.isActive ? health : status;
   // The setup page comes from the source's own manifest, so a new source
   // brings its own help rather than needing an entry in a frontend map.
-  const wiki = specFor(source.provider)?.setup_wiki || undefined;
+  const wiki = setupWiki || undefined;
 
   return (
     <Card

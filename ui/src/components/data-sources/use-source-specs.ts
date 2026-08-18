@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { DataSourceSpec, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 
@@ -18,14 +18,15 @@ const specsQuery = new QueryRequest({
   name: 'data-sources:specs',
 });
 
+/** Stable while loading — a fresh `[]` per render would change `specFor`'s
+ *  identity and re-trigger the dialog effect that depends on it. */
+const EMPTY: DataSourceSpec[] = [];
+
 export function useSourceSpecs() {
-  const { data: specs = [] } = useEntitiesQuery<DataSourceSpec>(specsQuery);
-  (window as any).__specsProbe = specs;
+  const { data: specs = EMPTY } = useEntitiesQuery<DataSourceSpec>(specsQuery);
   // `name` is the registry key AND the folder name AND the asset id — one noun,
   // so a lookup needs nothing else.
-  const specFor = useCallback(
-    (provider: string) => specs.find((s) => s.name === provider),
-    [specs],
-  );
+  const byName = useMemo(() => new Map(specs.map((s) => [s.name, s])), [specs]);
+  const specFor = useCallback((provider: string) => byName.get(provider), [byName]);
   return { specs, specFor };
 }

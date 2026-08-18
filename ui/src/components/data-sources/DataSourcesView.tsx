@@ -31,6 +31,7 @@ import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
 import { DataSourceCard } from './DataSourceCard';
+import { useSourceSpecs } from './use-source-specs';
 import { DataSourceDialog } from './DataSourceDialog';
 import { ReplayDialog } from './ReplayDialog';
 
@@ -43,6 +44,7 @@ const sourcesQuery = new QueryRequest({
 export function DataSourcesView() {
   const { t } = useLingui();
   const { data: sources = [], refetch } = useEntitiesQuery<DataSource>(sourcesQuery);
+  const { specFor } = useSourceSpecs();
 
   // A separate flag, not the `null = closed` idiom its two neighbours use:
   // `editing === null` is the legitimate "add new" state, so it cannot double
@@ -112,6 +114,7 @@ export function DataSourcesView() {
           <DataSourceCard
             key={source.id}
             source={source}
+            setupWiki={specFor(source.provider)?.setup_wiki}
             onEdit={openEdit}
             onReplay={setReplaying}
             onDelete={setDeleting}

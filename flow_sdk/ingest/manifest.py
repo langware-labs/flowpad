@@ -62,6 +62,22 @@ class IdUniqueness(StrEnum):
     SOURCE = "source"
 
 
+class FieldType(StrEnum):
+    """What a config field renders as, and how its raw string is typed.
+
+    An enum rather than a bare string because `_config_from` already rejects an
+    unknown KEY — accepting any `type` value meant a typo silently rendered a
+    text input and stored a scalar where the driver expected a list, with no
+    load error to point at it.
+    """
+
+    TEXT = "text"
+    LINES = "lines"
+    CSV = "csv"
+    NUMBER = "number"
+    PATH = "path"
+
+
 class ManifestError(ValueError):
     """A manifest that cannot be loaded. The message is shown to an author."""
 
@@ -71,7 +87,7 @@ class ConfigField:
     """One field of the user-facing form — the whole reason the frontend can
     stop hardcoding a catalog per provider."""
 
-    type: str = "text"
+    type: FieldType = FieldType.TEXT
     required: bool = False
     label: str = ""
     hint: str = ""
@@ -174,6 +190,14 @@ def _config_from(raw: Any) -> dict[str, ConfigField]:
         unknown = set(spec) - set(ConfigField.__dataclass_fields__)
         if unknown:
             raise ManifestError(f"config.{key} has unknown keys: {sorted(unknown)}")
+        field_type = spec.get("type", FieldType.TEXT)
+        try:
+            spec = {**spec, "type": FieldType(field_type)}
+        except ValueError as exc:
+            raise ManifestError(
+                f"config.{key}.type {field_type!r} is not one of "
+                f"{[t.value for t in FieldType]}"
+            ) from exc
         out[str(key)] = ConfigField(**spec)
     return out
 

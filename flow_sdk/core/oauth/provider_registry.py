@@ -264,3 +264,49 @@ def prefers_hub_flow(name: str) -> bool:
     if local is None:
         return True
     return local.endpoints is None or local.kind == OAuthFlowKind.DEVICE
+
+
+async def token_for(provider: str) -> Optional[str]:
+    """This machine's bearer token for ``provider``, or ``None``.
+
+    Local SOD first, then the hub. That order is not arbitrary: connection
+    sharing copies a hub-held token down, so on a set-up machine it is already
+    local, and the hub covers the window before a desktop has adopted it.
+
+    One copy, because the precedence IS the policy. It lived twice — once in
+    `SlackDriver._token` and once in `GoogleDriveDriver._token` — and a third
+    connector would have copied it again, so a change to the order, or a new
+    fallback tier, would have reached one driver and not the others.
+
+    Absence is the normal case for a provider nobody connected, so neither
+    lookup failing is an error worth raising.
+    """
+    import logging  # noqa: PLC0415
+
+    from flow_sdk.core.oauth.provider_probe import token_from_credential  # noqa: PLC0415
+
+    logger = logging.getLogger(__name__)
+    name = user_credentials_name(provider)
+
+    try:
+        from flow_sdk.builtin.user import User  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_user_credentials  # noqa: PLC0415
+
+        user = await User.get_local()
+        if user is not None and name:
+            token = token_from_credential(await get_user_credentials(user, name, user.id))
+            if token:
+                return token
+    except Exception:  # noqa: BLE001
+        logger.debug("%s: no local credential", provider, exc_info=True)
+
+    try:
+        from flow_sdk.core.oauth.hub_oauth import (  # noqa: PLC0415
+            hub_credential_value,
+            hub_credentials_name_for,
+        )
+
+        return token_from_credential(await hub_credential_value(hub_credentials_name_for(provider)))
+    except Exception:  # noqa: BLE001
+        logger.debug("%s: no hub credential", provider, exc_info=True)
+        return None
