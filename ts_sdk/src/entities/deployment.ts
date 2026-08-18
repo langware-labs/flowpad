@@ -54,8 +54,6 @@ export interface DeploymentTarget {
 export interface CloudOrigin {
   kind: string;
   provider: string;
-  data_source_id?: string;
-  source_item_id?: string;
   external_id: string;
   url?: string;
 }
@@ -122,8 +120,6 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
       ? {
           kind: deployment.origin.kind ?? '',
           provider: deployment.origin.provider ?? '',
-          data_source_id: deployment.origin.data_source_id ?? '',
-          source_item_id: deployment.origin.source_item_id ?? '',
           external_id: deployment.origin.external_id ?? '',
           url: deployment.origin.url ?? '',
         }

@@ -124,7 +124,7 @@ async def project_source_item(item, *, source=None, notify: bool = True, recount
         ensure_conversation_entity,
         materialize_flow_message,
     )
-    from flow_sdk.builtin.cloud_origin import CloudOrigin  # noqa: PLC0415
+    from flow_sdk.builtin.cloud_origin import CloudOrigin, CloudOriginLocal  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
@@ -179,13 +179,18 @@ async def project_source_item(item, *, source=None, notify: bool = True, recount
         "origin": CloudOrigin(
             kind=channel,
             provider=str(getattr(source, "provider", "") or ""),
-            data_source_id=item.data_source_id or "",
-            source_item_id=item.id or "",
             external_id=item.external_id or "",
             # The connector's link when it gives one; otherwise the channel's
             # own address formula, so "Open in Gmail" works for records whose
             # provider never supplied a URL.
             url=item.permalink or permalink_for(channel, item.external_id or "", key),
+        ).model_dump(),
+        # The half that stays home. Written alongside, refreshed alongside, but
+        # carried by a PRIVATE field so a shared message does not ship row ids
+        # that only resolve here.
+        "origin_local": CloudOriginLocal(
+            data_source_id=item.data_source_id or "",
+            source_item_id=item.id or "",
         ).model_dump(),
     }
     if item.reply_to_external_id:
@@ -224,6 +229,7 @@ _PROJECTED_MESSAGE_FIELDS = (
     "thread_id",
     "reply_to_id",
     "origin",
+    "origin_local",
 )
 
 
@@ -249,9 +255,10 @@ async def _refresh_projected_fields(fm, payload: dict, *, notify: bool) -> None:
             continue
         wanted = payload[field]
         current = getattr(fm, field, None)
-        # `origin` round-trips as a model; compare on the wire shape so a
-        # pydantic instance and its dump don't read as different every poll.
-        if field == "origin" and current is not None and not isinstance(current, dict):
+        # `origin` / `origin_local` round-trip as models; compare on the wire
+        # shape so a pydantic instance and its dump don't read as different
+        # every poll.
+        if field in ("origin", "origin_local") and current is not None and not isinstance(current, dict):
             current = current.model_dump()
         if current != wanted:
             setattr(fm, field, wanted)

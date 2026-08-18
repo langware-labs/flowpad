@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from pydantic import PrivateAttr, field_validator
 
 from flow_sdk._compat import UTC
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.builtin.cloud_origin import CloudOrigin
 from flow_sdk.core import Entity, action
@@ -76,8 +76,14 @@ class Deployment(Entity):
     artifact_id: str | None = APIField(default=None, description="Referenced Artifact (not the parent)")
     artifact_link_source: ArtifactLinkSource | None = APIField(default=None)
     target: DeploymentTarget = APIField(description="Provider placement target — WHERE it runs")
+    # PRIVATE: for a provider in ``NODE_PROVIDERS`` this `external_id` names a
+    # LOCAL ComputeNode, so the field is only conditionally transportable — and a
+    # per-field policy cannot say "sometimes". Nothing reads it on a receiver
+    # (the only consumer is the local WorldView projection), so the safe answer
+    # is also the free one.
     origin: CloudOrigin | None = APIField(
         default=None,
+        sharing=Sharing.PRIVATE,
         description="The cloud resource this places: the ComputeNode it runs on, or the provider's own resource",
     )
     status: DeploymentStatus = APIField(default_factory=DeploymentStatus)
