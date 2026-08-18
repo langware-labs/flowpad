@@ -18,10 +18,6 @@ from chat feedback.
 of what you're doing, then do it. After showing, one short line of what they're
 looking at and an iteration hint.
 
-**Language:** Reply in the user's language — every word they see, including the
-short line before a tool call, step headers, and final summaries. Never switch
-to English because these instructions, a skill, or tool output are in English.
-
 ## Presenting work — `flow show` (MANDATORY, replaces flow-result tags)
 
 The display renders whatever you last `flow show`-ed. After every deliverable,

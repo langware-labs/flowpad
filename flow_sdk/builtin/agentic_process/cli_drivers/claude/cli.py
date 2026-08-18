@@ -73,6 +73,7 @@ class ClaudeAgentOptions(AgentOptions):
         verbose: bool = False,
         effort: str | None = None,
         plugin_dirs: list[str] | None = None,
+        settings_json: dict | None = None,
     ) -> None:
         super().__init__(workdir=workdir, env_vars=env_vars)
         self.session_id = session_id
@@ -105,6 +106,13 @@ class ClaudeAgentOptions(AgentOptions):
         # Prepared process-local plugins. Launch-only: deliberately excluded
         # from to_json()/from_json() and restart persistence.
         self.plugin_dirs: list[str] = list(plugin_dirs or [])
+        # ``--settings <json>`` — an ADDITIONAL settings layer for this process
+        # only; the on-disk user/project settings (and the hooks
+        # ``claude_settings_sync`` writes there) still apply. Currently carries
+        # ``{"language": …}`` so the CLI builds its own ``# Language`` system-prompt
+        # section. Launch-only, like ``plugin_dirs``: excluded from
+        # to_json()/from_json() so it cannot churn the restart hash.
+        self.settings_json = settings_json
 
         # Auto-inject CLAUDE_PROJECT_DIR from workdir
         if workdir:
@@ -162,6 +170,8 @@ class ClaudeAgentOptions(AgentOptions):
             flags.extend(["--effort", self.effort])
         if self.agents_json:
             flags.extend(["--agents", serialize_json_cli_value(self.agents_json)])
+        if self.settings_json:
+            flags.extend(["--settings", serialize_json_cli_value(self.settings_json)])
         for directory in self.plugin_dirs:
             flags.extend(["--plugin-dir", directory])
         if self.print_mode:
