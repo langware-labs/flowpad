@@ -136,6 +136,14 @@ One legacy type registry shim remains: the Entity `type_registry` (`schema/entit
 
 ## Sub-documents
 
+### [Items & Origins](data-management/items_origins.md)
+
+Where the real thing lives. The three parallel origin families — `FSOrigin` (an asset's **bytes**), `CloudOrigin` (a record's **truth**), `SecretOrigin` (a **value**, resolved at worker launch and never persisted) — and why they are deliberately not one type. Covers the `FSOrigin` model and its `kind`-tagged discriminated union (`git`, `local`), the kind-keyed driver registry (`materialize`/`matches`/`detect`/`key`), the tolerant kind-less-reads-as-git rule, and `key()` as a cross-machine dedup handle that is an entity id in exactly one place (`Folder.id_for_origin`). Also documents the four *different jobs* origin-shaped fields do (polymorphic `FSOriginField` on Folder/Artifact, deliberately git-narrow on Project/Task, the SHARED hub wire dict on `Entity`, a raw bundle buffer on `MessageAttachment`), the byte-exact wire contract that dict carries, and the checklist for adding a new kind.
+
+**Key source files:** `flow_sdk/builtin/fs_origin.py`, `fs_origin_field.py`, `fs_origin_driver.py`, `git_origin.py`, `local_origin.py`, `flow_sdk/builtin/drivers/`, `flow_sdk/assets/git_origin.py`, `flow_sdk/builtin/flow_message_bundle.py`
+
+***
+
 ### [Record Model](data-management/record-model.md)
 
 The `FSRecord` base class (formerly `Record`): on-disk manifest at `<records_root>/<type>/<type>-@<id>/metadata.json`, free-form meta fields as instance attributes (typed `meta_model` opt-in via `TypeInfo`), `asset_ref`/`self_ref` FSRefs, the `<epoch>_<digest>.hash` index sentinel, per-type behavior via free functions on `TypeInfo`, `StorageLayout` (FILE/FOLDER), entity-side auto-registration via `DBBaseRecord.__init_subclass__` → `SchemaRegistry`, `RecordRef`/`RecordDataRef`, `RecordList`, `RecordQuery` filtering, and `CollectionManifest` for O(1) staleness checks. (The removed `Record` machinery — `_data` dict, `_META_FIELDS`, `RecordStatus`, `RecordState`/`state.json`, `ResourceRecordList`/`SourceFileRecordList`, `data.json`/`_data.json` split — no longer applies; see the `FSRecord` module docstring for the full removal list.)
@@ -291,3 +299,6 @@ The webhook listener (`POST /api/v1/webhook/listen`) that drives real-time entit
 | Why don't webhook entities appear in search?                              | [Entity-Index Sync](data-management/entity-index-sync.md) / [Record Search](data-management/record-search.md)                                               |
 | How do I trigger backup/clear/scan/index from the UI?                     | [System Tools (Frontend)](data-management/system-tools.md)                                                                                                  |
 | How does the search refresh button work?                                  | [System Tools (Frontend)](data-management/system-tools.md)                                                                                                  |
+| Where does an asset's bytes / a record's truth / a secret's value live?   | [Items & Origins](data-management/items_origins.md)                                                                                                         |
+| How do I add a new origin kind (s3, gdrive)?                              | [Items & Origins](data-management/items_origins.md#adding-a-kind)                                                                                           |
+| Why is `Entity.git_origin` a dict and not a typed model?                  | [Items & Origins](data-management/items_origins.md#the-wire-contract)                                                                                       |
