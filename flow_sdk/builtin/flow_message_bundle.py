@@ -124,11 +124,53 @@ _HEADER_SERIALIZED_TYPES = frozenset(
 )
 
 
-def _is_git_origin_dict(raw) -> bool:
-    """A persisted origin dict is git iff its kind is git (or absent — legacy)."""
-    from flow_sdk.builtin.fs_origin import DEFAULT_ORIGIN_KIND, resolve_origin_kind  # noqa: PLC0415
+#: Distinguishes "parsed to null" from "could not be parsed" in _read_json.
+_UNREADABLE = object()
 
-    return isinstance(raw, dict) and resolve_origin_kind(raw) == DEFAULT_ORIGIN_KIND
+
+def _write_origin_files(root: Path, origins: dict) -> None:
+    """Write the origin map to the bundle root — canonical file plus the legacy
+    dual-write.
+
+    THE wire seam for origins, extracted so it can be asserted directly: before
+    this existed, ``fs_origins.json`` appeared nowhere in ``tests/`` and the
+    dual-write could be deleted with the suite staying green.
+
+    Values are written through unchanged. They are already-dumped FSOrigin dicts
+    and a legacy kind-less dict must reach the file byte-identical — normalizing
+    here would add ``kind``/``project_id``/``head_commit`` and rewrite bytes a
+    released receiver is reading.
+    """
+    from flow_sdk.builtin.fs_origin import is_legacy_visible_origin  # noqa: PLC0415
+
+    if not origins:
+        return
+    _write_json(root / _FS_ORIGINS_FILE, origins)
+    # Transition dual-write: legacy receivers only read git_origins.json. Which
+    # kinds may appear there is the ORIGIN's call, not the bundle's.
+    legacy_origins = {k: v for k, v in origins.items() if is_legacy_visible_origin(v)}
+    if legacy_origins:
+        _write_json(root / _LEGACY_ORIGINS_FILE, legacy_origins)
+
+
+def _read_origin_map(root: Path) -> dict:
+    """Read the origin map from a bundle root: canonical first, legacy fallback.
+
+    First READABLE file wins — an unparseable canonical file falls through to the
+    legacy one rather than failing the unpack. Returns ``{}`` when neither is
+    present, which is the ordinary case for a bundle with no git-backed assets.
+    """
+    for name in (_FS_ORIGINS_FILE, _LEGACY_ORIGINS_FILE):
+        path = root / name
+        if not path.is_file():
+            continue
+        # Sentinel, not None: a file holding literal ``null`` parsed fine and
+        # must still count as read (-> {}), not fall through as unreadable.
+        data = _read_json(path, _UNREADABLE)
+        if data is not _UNREADABLE:
+            return data or {}
+        logger.warning("[bundle] unreadable %s; ignoring", name)
+    return {}
 
 
 def _json_default(obj):
@@ -2083,19 +2125,7 @@ async def pack_bundle(
             (tmp_root / _ENTITIES_FILE).write_text(
                 json.dumps(entities, default=_json_default, ensure_ascii=False), encoding="utf-8"
             )
-        if origins:
-            (tmp_root / _FS_ORIGINS_FILE).write_text(
-                json.dumps(origins, default=_json_default, ensure_ascii=False), encoding="utf-8"
-            )
-            # Transition dual-write: legacy receivers only read git_origins.json.
-            # Non-git kinds never go in the legacy file (an old receiver can't
-            # materialize them anyway and would mis-handle the entry).
-            legacy_origins = {k: v for k, v in origins.items() if _is_git_origin_dict(v)}
-            if legacy_origins:
-                (tmp_root / _LEGACY_ORIGINS_FILE).write_text(
-                    json.dumps(legacy_origins, default=_json_default, ensure_ascii=False),
-                    encoding="utf-8",
-                )
+        _write_origin_files(tmp_root, origins)
         if transfers:
             (tmp_root / _GIT_TRANSFERS_FILE).write_text(
                 json.dumps(transfers, default=_json_default, ensure_ascii=False), encoding="utf-8"
@@ -2127,6 +2157,15 @@ async def _pack_flow_message_entry(fm_id: str, attachment_dir: Path) -> None:
     )
     (fm_dir / "header.json").write_text(
         json.dumps(fm_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def _write_json(path: Path, data) -> None:
+    """Serialize ``data`` to ``path``. The write counterpart to ``_read_json``,
+    holding the three encoding decisions (``_json_default`` for Enums, no ASCII
+    escaping, utf-8) in one place so a bundle file cannot drift from the rest."""
+    path.write_text(
+        json.dumps(data, default=_json_default, ensure_ascii=False), encoding="utf-8"
     )
 
 
@@ -2551,15 +2590,7 @@ async def unpack_bundle(
         # Origin map: prefer the canonical fs_origins.json, fall back to the
         # legacy git_origins.json (old sender). Values are kind-tagged FSOrigin
         # dicts (a legacy dict with no ``kind`` reads as git downstream).
-        git_origins_map: dict = {}
-        for _origins_name in (_FS_ORIGINS_FILE, _LEGACY_ORIGINS_FILE):
-            _go_path = tmp_root / _origins_name
-            if _go_path.exists():
-                try:
-                    git_origins_map = json.loads(_go_path.read_text(encoding="utf-8")) or {}
-                    break
-                except Exception:
-                    logger.warning("[bundle] unreadable %s; ignoring", _origins_name, exc_info=True)
+        git_origins_map: dict = _read_origin_map(tmp_root)
 
         git_transfers_map: dict = {}
         _gt_path = tmp_root / _GIT_TRANSFERS_FILE
