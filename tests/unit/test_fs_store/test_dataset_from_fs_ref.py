@@ -35,7 +35,7 @@ pytestmark = pytest.mark.timeout(5)
 
 
 def _extract(ref: FSRef):
-    return extract_dataset(ref, SchemaRegistry.get("dataset").mint_id(ref))
+    return extract_dataset(ref, SchemaRegistry.get("dataset").mint_entity_id(ref, derive=True, overwrite=True))
 
 # A real v4 uuid for manifest-id adoption tests.
 VALID_V4 = "a3f1c2d4-5b6e-4f7a-8c9d-0e1f2a3b4c5d"
@@ -111,7 +111,7 @@ def _assert_indexer_compatible(ds_path: Path) -> Dataset:
     # (TypeInfo resolves identity before the extractor). The loader + cold-path extractor
     # then adopt that same capsule id (a fresh v4 when the dataset carries no id).
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
-    gen = SchemaRegistry.get("dataset").mint_id(ref)
+    gen = SchemaRegistry.get("dataset").mint_entity_id(ref, derive=True, overwrite=True)
     loaded = Dataset.from_fs_ref(ref)
     assert loaded is not None, "from_fs_ref returned None for a real dataset"
     assert isinstance(loaded, Dataset)

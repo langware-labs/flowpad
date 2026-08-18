@@ -221,62 +221,34 @@ def test_preflight_connects_then_reads_status_for_each_instance(monkeypatch, tmp
     ]
 
 
-def test_provider_validation_requires_live_sandbox_and_docker_nodes(monkeypatch, tmp_path) -> None:
+def test_provider_validation_requires_a_live_sandbox_node(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
         phase11,
         "_request_json",
         lambda *_args, **_kwargs: {
             "status": "SUCCESS",
-            "data": {
-                "sandbox_available": True,
-                "sandbox_compute_node": {"id": "sandbox-id"},
-                "docker_available": True,
-                "docker_compute_nodes": [{"id": "docker-id"}],
-            },
+            "data": {"sandbox_available": True, "sandbox_compute_node": {"id": "sandbox-id"}},
         },
     )
     output = tmp_path / "providers.json"
 
     phase11.validate_providers(
-        SimpleNamespace(
-            api_url="http://localhost:6034",
-            require_sandbox=True,
-            require_docker=True,
-            output=str(output),
-        )
+        SimpleNamespace(api_url="http://localhost:6034", require_sandbox=True, output=str(output))
     )
 
-    assert json.loads(output.read_text()) == {
-        "docker_node_count": 1,
-        "docker_ready": True,
-        "sandbox_ready": True,
-        "status": "ready",
-    }
+    assert json.loads(output.read_text()) == {"sandbox_ready": True, "status": "ready"}
 
 
-def test_provider_validation_fails_closed_when_docker_worker_is_absent(monkeypatch, tmp_path) -> None:
+def test_provider_validation_fails_closed_when_the_sandbox_is_absent(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
         phase11,
         "_request_json",
-        lambda *_args, **_kwargs: {
-            "status": "SUCCESS",
-            "data": {
-                "sandbox_available": True,
-                "sandbox_compute_node": {"id": "sandbox-id"},
-                "docker_available": False,
-                "docker_compute_nodes": [],
-            },
-        },
+        lambda *_args, **_kwargs: {"status": "SUCCESS", "data": {"sandbox_available": False}},
     )
 
-    with pytest.raises(phase11.Phase11Error, match="live Docker compute node"):
+    with pytest.raises(phase11.Phase11Error, match="live sandbox compute node"):
         phase11.validate_providers(
-            SimpleNamespace(
-                api_url="http://localhost:6034",
-                require_sandbox=True,
-                require_docker=True,
-                output=str(tmp_path / "providers.json"),
-            )
+            SimpleNamespace(api_url="http://localhost:6034", require_sandbox=True, output=str(tmp_path / "p.json"))
         )
 
 

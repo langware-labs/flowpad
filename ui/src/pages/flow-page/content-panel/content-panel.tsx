@@ -39,8 +39,8 @@ import { TabbedTerminal } from '@src/components/terminal';
 import { WebappViewer } from '@src/components/webapp-viewer';
 import { useActiveViewer } from '@src/hooks/flow-hooks';
 import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
-import { Tab } from '@sdk';
-import { useTerminalTabs } from '@src/tabs/useTabs';
+import { Tab, tabForDockKey } from '@sdk';
+import { useTerminalTabs, useTabLifecycle } from '@src/tabs/use-tab-manager';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { NavigatorSlot } from '@src/navigation/NavigatorSlot';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -48,10 +48,11 @@ import { SpecRoute } from '@src/pages/spec/SpecRoute';
 import { GraphContextViewer } from '@src/components/graph-context/GraphContextViewer';
 import { DiagnosisViewer } from '@src/components/diagnosis-viewer/DiagnosisViewer';
 import { useSurveyStore } from '@src/store/use-survey-store';
-import { TabLifecycleState, useTabLifecycle } from '@src/tabs/tab-lifecycle';
+import { TabLifecycleState } from '@sdk';
 import { DockLoadErrorView } from '@src/components/agent-layout/DockLoadErrorView';
 import { useDockLoadError } from '@src/routes/loaders/dock-load-error-store';
 import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
+import { OrganizationPage } from '@src/components/organization/organization-page';
 import { useIsVibe } from '@src/components/view-mode';
 import { AlertTriangle } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
@@ -89,22 +90,14 @@ const GenericSubgraphView = lazy(() =>
 const GraphWorkflowsView = lazy(() =>
   import('@src/components/graph-workflows/GraphWorkflowsView').then((m) => ({ default: m.GraphWorkflowsView })),
 );
-const EventsView = lazy(() =>
-  import('@src/components/events/EventsView').then((m) => ({ default: m.EventsView })),
-);
+const EventsView = lazy(() => import('@src/components/events/EventsView').then((m) => ({ default: m.EventsView })));
 const DataSourcesView = lazy(() =>
   import('@src/components/data-sources/DataSourcesView').then((m) => ({ default: m.DataSourcesView })),
 );
 const RunsView = lazy(() => import('@src/components/runs/RunsView').then((m) => ({ default: m.RunsView })));
-const SurveyView = lazy(() =>
-  import('@src/components/survey/SurveyView').then((m) => ({ default: m.SurveyView })),
-);
-const ShowView = lazy(() =>
-  import('@src/components/show-view/ShowView').then((m) => ({ default: m.ShowView })),
-);
-const AppHost = lazy(() =>
-  import('@src/components/app-host/AppHost').then((m) => ({ default: m.AppHost })),
-);
+const SurveyView = lazy(() => import('@src/components/survey/SurveyView').then((m) => ({ default: m.SurveyView })));
+const ShowView = lazy(() => import('@src/components/show-view/ShowView').then((m) => ({ default: m.ShowView })));
+const AppHost = lazy(() => import('@src/components/app-host/AppHost').then((m) => ({ default: m.AppHost })));
 const DocsGraphView = lazy(() =>
   import('@src/components/graph-view/DocsGraphView').then((m) => ({ default: m.DocsGraphView })),
 );
@@ -180,7 +173,7 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
   // resolves the default target), so we only act when a tab matches the URL.
   useEffect(() => {
     if (currentDock?.viewType !== ViewType.SHELL || !currentDock.pointer) return;
-    const active = terminalTabs.find((t) => t.dockPointer?.tabHash === currentDock.tabHash);
+    const active = tabForDockKey(terminalTabs, currentDock.tabHash);
     if (active?.is_disabled) {
       const alive = terminalTabs.find((t) => t.id !== active.id && !t.is_disabled);
       if (alive) navigateToTab(alive);
@@ -239,6 +232,8 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
             <WorldView />
           </Suspense>
         );
+      case ViewType.ORGANIZATION:
+        return <OrganizationPage />;
       case ViewType.HUB_RECORDS:
         return <HubRecordsView type={currentDock?.pointer} />;
       case ViewType.HUB_ENTITY:

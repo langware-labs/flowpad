@@ -98,12 +98,6 @@ def load_actions():
     # the graph catch-all's handle_request() to consume the request body
     # before the handler reads it, leading to a hang.
 
-    # Import lm-proxy action to register it
-    try:
-        from flow_sdk.app.actions import lm_proxy  # noqa: F401
-    except ImportError:
-        pass  # LM proxy action not available
-
     # Import repo action to register it
     try:
         from flow_sdk.app.actions import repo_actions  # noqa: F401

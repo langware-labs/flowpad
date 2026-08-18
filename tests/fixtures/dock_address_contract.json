@@ -9,7 +9,8 @@
     "home", "system_profile", "analysis", "chat", "shell", "editor", "web-app",
     "environment", "connections", "artifacts", "reasoning", "diff", "unsupported",
     "markdown", "docs", "assistance", "survey", "api-keys", "hooks", "machine",
-    "explorer", "skills", "ai-config", "show", "apps", "graph", "worldview", "tag",
+    "explorer", "skills", "ai-config", "show", "apps", "graph", "worldview",
+    "organization", "tag",
     "subgraph", "k-browser", "lens", "session", "tasks", "settings", "preferences",
     "agentic_process", "search", "events", "triggers", "capabilities",
     "graph-workflows", "signals", "data-sources", "process-runs", "plan", "cron",
@@ -21,7 +22,7 @@
   "subview_vocabularies": {
     "credentials": ["environment", "connections", "api-keys"],
     "web-app": ["webapp-shell", "webapp-artifacts"],
-    "machine": ["processes", "network", "gateway", "metrics", "logs", "secrets"],
+    "machine": ["processes", "network", "metrics", "logs", "secrets"],
     "ai-config": ["llm-apis", "clis"]
   },
 
@@ -59,6 +60,7 @@
     "apps":            { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
     "graph":           { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
     "worldview":       { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
+    "organization":    { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
     "tag":             { "addressable": true,  "pointer": "required", "folds_pointer": true,  "scope_keyed": false, "chrome": "workspace" },
     "subgraph":        { "addressable": true,  "pointer": "required", "folds_pointer": true,  "scope_keyed": false, "chrome": "workspace" },
     "k-browser":       { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },

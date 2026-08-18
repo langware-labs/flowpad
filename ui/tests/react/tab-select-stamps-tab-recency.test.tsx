@@ -43,8 +43,8 @@ import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesCo
 import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { loadAgentApp } from '@src/routes/loaders/main-loader';
-import { applyAllTabs } from '@src/tabs/all-tabs-store';
-import { resetTabLifecycleForTests } from '@src/tabs/tab-lifecycle';
+import { tabManager } from '@sdk';
+import { resetTabContentLifecycleForTests } from '@src/tabs/tab-content-lifecycle';
 
 const PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const COMPUTE_NODE_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -195,8 +195,8 @@ describe('selecting a tab stamps recency on the Tab entity', () => {
     window.localStorage.clear();
     setViewMode(ViewMode.Advanced);
     await dataManager.clearCache();
-    applyAllTabs([]);
-    resetTabLifecycleForTests();
+    tabManager.adoptGlobal([]);
+    resetTabContentLifecycleForTests();
     seedCapabilities();
     seedConnectedWebSocket();
     releaseNewProcessOpen = null;
@@ -330,8 +330,8 @@ describe('selecting a tab stamps recency on the Tab entity', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    applyAllTabs([]);
-    resetTabLifecycleForTests();
+    tabManager.adoptGlobal([]);
+    resetTabContentLifecycleForTests();
     (capabilityManager as unknown as { capabilities: Capability[] }).capabilities = [];
     (connectionManager as unknown as { socket: unknown }).socket = null;
     setViewMode(ViewMode.Vibe);

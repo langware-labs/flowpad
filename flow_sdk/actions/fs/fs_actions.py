@@ -597,6 +597,14 @@ async def write(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
 
         await autoversion_commit_local(storage, fs_info.vpath.abs_vfspath, content if isinstance(content, str) else "")
 
+        # The file IS the record for a file-backed entity (agent.md, SKILL.md,
+        # a task's folder…), so a write here must land in the row too — else
+        # every reader of the entity (an Agent's `system_prompt` at launch, the
+        # card, search) keeps the pre-edit values until some sweep happens to
+        # walk this path. One-path resync through the same seam the indexer and
+        # the SubAgent writer use; a non-asset path is a cheap no-op there.
+        await _resync_entity_from_disk(storage, fs_info.vpath.abs_vfspath)
+
         # Return FSEntry
         fs_item = FSEntry(
             vfs_abs_path=fs_info.vpath.abs_vfspath,
@@ -612,6 +620,22 @@ async def write(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
             return _permission_denied_response(fs_info.vpath.entity_sub_path)
         logger.error(f"Write error: {e}")
         return ApiFailResponse(message=f"Failed to write file: {str(e)}")
+
+
+async def _resync_entity_from_disk(storage, vfs_abs_path: str) -> None:
+    """Re-extract whatever entity the just-written local file backs. Best-effort."""
+    try:
+        from flow_sdk.actions.fs.asset_versioning import _real_path  # noqa: PLC0415
+        from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
+
+        real = _real_path(storage, vfs_abs_path)
+        if not real:
+            logger.debug("[fs-write] resync: no local path for %s (%s)", vfs_abs_path, type(storage).__name__)
+            return  # remote/sandbox storage — the box's own indexer owns it
+        result = await reindex_paths([str(real)])
+        logger.debug("[fs-write] resync %s -> %s", real, result)
+    except Exception as e:  # noqa: BLE001 — a resync failure must never fail the save
+        logger.warning("[fs-write] entity resync skipped (non-fatal): %s", e)
 
 
 async def rename(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[FSEntry]:

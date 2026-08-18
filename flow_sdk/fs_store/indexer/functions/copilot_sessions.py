@@ -77,11 +77,6 @@ def copilot_session_stable_key(ref: FSRef | Path) -> str:
     return f"{RecordType.COPILOT_SESSION}:{copilot_session_identity_key(ref)}"
 
 
-def copilot_session_id(ref: FSRef) -> str:
-    existing = copilot_session_id_from_file(ref)
-    return existing or mint_uuid(copilot_session_stable_key(ref), namespace=uuid.NAMESPACE_DNS)
-
-
 def extract_copilot_session(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     return [extract_copilot_session_from_path(ref._path, resolved_id=resolved_id)]
 

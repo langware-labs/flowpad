@@ -149,11 +149,6 @@ def claude_session_id_from_file(ref: FSRef | Path) -> str | None:
 def claude_session_stable_key(ref: FSRef | Path) -> str:
     return f"{RecordType.CLAUDE_SESSION}:{claude_session_identity_key(ref)}"
 
-
-def claude_session_id(ref: FSRef) -> str:
-    existing = claude_session_id_from_file(ref)
-    return existing or mint_uuid(claude_session_stable_key(ref), namespace=uuid.NAMESPACE_DNS)
-
 # ── Extractor (head + tail read, no stat parse) ──────────────────────────────
 
 def extract_claude_session(ref: FSRef, resolved_id: str) -> list[FSRecord]:

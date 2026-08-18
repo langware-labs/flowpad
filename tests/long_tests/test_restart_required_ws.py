@@ -179,7 +179,7 @@ def _resync_hash(tc, proc_id: str) -> None:
 GENERIC_TRACKED_MUTATIONS: list[tuple[str, dict[str, Any]]] = [
     ("workdir",                    {"workdir": "/tmp/restart_required_test"}),
     ("additional_dirs",            {"additional_dirs": ["/tmp/restart_required_extra"]}),
-    ("embedded_agent_ids",         {"embedded_agent_ids": ["legacy_persona"]}),
+    ("embedded_subagent_ids",      {"embedded_subagent_ids": ["legacy_persona"]}),
     ("shell_mode",                 {"shell_mode": True}),
     ("session_id",                 {"session_id": str(uuid.uuid4())}),
 ]

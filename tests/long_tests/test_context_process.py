@@ -6,13 +6,14 @@ it WITHOUT reading the message. The worker's answer is found by watching for the
 NEW transcript it writes under the real ``~/.claude/projects`` (not the driver's
 existence-gated computed path). Registered in this dir's conftest
 ``_REAL_HOME_TEST_MODULES`` so the CLI subprocess gets the real HOME (creds +
-transcript location). Skips when the claude CLI or the dev backend is unavailable.
+transcript location). Skips when the claude CLI or explicit E2E instance
+selector is unavailable; an explicitly selected unsafe target fails closed.
 """
+
 import asyncio
 import glob
 import os
 import shutil
-import socket
 
 import pytest
 
@@ -20,31 +21,19 @@ pytestmark = pytest.mark.asyncio
 MSG_ID = "11111111-1111-4111-8111-111111111111"
 
 
-def _oss_backend_up() -> bool:
-    s = socket.socket()
-    s.settimeout(0.5)
-    try:
-        s.connect(("localhost", int(os.environ.get("LOCAL_SERVER_PORT", "9008"))))
-        return True
-    except OSError:
-        return False
-    finally:
-        s.close()
-
-
 @pytest.mark.skipif(shutil.which("claude") is None, reason="claude CLI not installed")
-@pytest.mark.skipif(not _oss_backend_up(), reason="oss dev backend not running")
-async def test_message_id_echoed_from_context(tmp_path, monkeypatch):
+async def test_message_id_echoed_from_context(tmp_path, monkeypatch, resolve_live_e2e_instance):
+    primary = resolve_live_e2e_instance("FLOWPAD_E2E_INSTANCE")
     # The spawned claude worker's `flow` hooks must reach a RUNNING backend or it
     # stalls at startup; pytest's `test` instance has none. Target the warm dev
-    # instance (gated above on it being up) so the turn is ~4-6s.
-    monkeypatch.setenv("FLOW_INSTANCE", "oss")
-    from flow_sdk.core.capabilities.discovery import ensure_discovered
-    from flow_sdk.migrations.runner import _bootstrap_local
+    # instance validated above so the turn is ~4-6s.
+    monkeypatch.setenv("FLOW_INSTANCE", primary.name)
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
     from flow_sdk.builtin.flow_message import FlowMessage
     from flow_sdk.builtin.graph_context import GraphContext
+    from flow_sdk.core.capabilities.discovery import ensure_discovered
+    from flow_sdk.migrations.runner import _bootstrap_local
 
     await _bootstrap_local()
     await ensure_discovered()
@@ -53,7 +42,9 @@ async def test_message_id_echoed_from_context(tmp_path, monkeypatch):
     gc = await GraphContext(context_typeids=[str(msg.typeid)]).save()
     ap = AgenticProcess(
         cli_config={"permission_mode": "bypassPermissions", "model": ModelTier.SM.value},
-        workdir=str(tmp_path), visible=False, pty_mode=False,
+        workdir=str(tmp_path),
+        visible=False,
+        pty_mode=False,
     )
     ap.set_graph_context(gc)
 
@@ -65,9 +56,7 @@ async def test_message_id_echoed_from_context(tmp_path, monkeypatch):
     pattern = os.path.expanduser("~/.claude/projects/*/*.jsonl")
     before = set(glob.glob(pattern))
 
-    res = await ap.prompt(
-        "Do NOT use any tools. Answer ONLY with the flow_message id shown in your context summary."
-    )
+    res = await ap.prompt("Do NOT use any tools. Answer ONLY with the flow_message id shown in your context summary.")
     assert not getattr(res, "is_error", False), f"prompt failed to start: {res}"
 
     text = ""

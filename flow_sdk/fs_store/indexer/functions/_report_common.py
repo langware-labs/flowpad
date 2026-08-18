@@ -22,8 +22,3 @@ def load_report(path: Path) -> dict:
 def report_id_from_path(path: Path) -> str:
     from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
     return mint_uuid(str(path.resolve()))
-
-
-def adopt_doc_id(data: dict) -> str | None:
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
-    return adopt_entity_id(data.get("id"))

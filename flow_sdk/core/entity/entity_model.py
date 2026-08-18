@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import inspect
+import logging
 import os
+import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
 
@@ -58,6 +60,7 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, TypeId
 from flow_sdk.db.drivers.db_driver import RelationshipDirection
 from flow_sdk.db.drivers.query import ExpressionNode, OrderType, QueryFilter, QueryOp
 from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
+from flow_sdk.fs_store.identifier import adopt_entity_id, is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.asset_occurrences import AssetOccurrence, asset_occurrence_dicts
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
@@ -294,8 +297,8 @@ class Entity(DBEntity):
         ),
     )
     # Tab-strip membership is no longer a base-Entity flag — it is the `Tab`
-    # entity (docs/tab-management.md). `tab_order`/`last_active_at` remain
-    # generic (used by the Tab entity + the `activate` action).
+    # entity (docs/tab-management.md). `tab_order` and the activity timestamps
+    # remain generic so every entity type shares the same recency contract.
     tab_order: int = APIField(
         default=0,
         persist=Persist.FALSE,
@@ -317,12 +320,21 @@ class Entity(DBEntity):
             "legacy rows are parsed tolerantly on load."
         ),
     )
+    last_edited_at: int | None = APIField(
+        default=None,
+        description=(
+            "Epoch-ms of this entity's last content edit. This is the generic "
+            "recency field for edit tracking and future recent-activity "
+            "surfaces; edit flows that own a successful mutation are "
+            "responsible for stamping it. ISO-string values are parsed "
+            "tolerantly on load."
+        ),
+    )
 
-    @field_validator("last_active_at", mode="before")
+    @field_validator("last_active_at", "last_edited_at", mode="before")
     @classmethod
-    def _last_active_at_epoch_ms(cls, value):
-        """Legacy rows stored ISO strings; the field is epoch-ms. Parse
-        tolerantly (via ``_as_datetime``) so no data migration is needed."""
+    def _activity_timestamp_epoch_ms(cls, value):
+        """Activity fields use epoch-ms; tolerate legacy/external ISO values."""
         if isinstance(value, str):
             dt = cls._as_datetime(value)
             return int(dt.timestamp() * 1000) if dt else None
@@ -548,21 +560,72 @@ class Entity(DBEntity):
     @classmethod
     async def browse(
         cls,
-        record_type: str,
-        limit: int = DEFAULT_BROWSE_LIMIT,
+        record_type: str | None,
+        limit: int | None = DEFAULT_BROWSE_LIMIT,
         status: str | None = None,
+        *,
+        offset: int = 0,
+        sort_by: Literal["updated_date", "last_edited_at"] = "updated_date",
+        entity_types: Sequence[str] | None = None,
     ) -> list[Entity]:
-        """List entities of a type with FTS metadata, ordered by recency.
+        """Browse entities with FTS metadata using a typed recency order.
 
-        Used for filter-only browsing (no search query). Returns fts_title
-        populated so callers can display meaningful names without filesystem reads.
+        The ordinary filter-only search path supplies ``record_type`` and keeps
+        the historical ``updated_date`` order.  Server-owned mixed projections
+        may instead supply an explicit ``entity_types`` eligibility set; callers
+        never provide that set over the wire.
         """
         from flow_sdk.db import get_db_driver
 
         driver = get_db_driver()
         if not hasattr(driver, "browse_by_type"):
             return []
-        return await driver.browse_by_type(entity_type=record_type, limit=limit, status=status)
+        return await driver.browse_by_type(
+            entity_type=record_type,
+            limit=limit,
+            status=status,
+            offset=offset,
+            sort_by=sort_by,
+            entity_types=entity_types,
+        )
+
+    @classmethod
+    async def browse_page(
+        cls,
+        record_type: str | None,
+        *,
+        limit: int | None,
+        offset: int = 0,
+        status: str | None = None,
+        sort_by: Literal["updated_date", "last_edited_at"] = "updated_date",
+        entity_types: Sequence[str] | None = None,
+        scope: object | None = None,
+        include_system: bool = True,
+    ) -> tuple[list[Entity], int]:
+        """Browse one SQL-paged projection and its pre-page total."""
+        from flow_sdk.db import get_db_driver
+
+        driver = get_db_driver()
+        if not hasattr(driver, "browse_page"):
+            entities = await cls.browse(
+                record_type,
+                limit,
+                status,
+                offset=offset,
+                sort_by=sort_by,
+                entity_types=entity_types,
+            )
+            return entities, len(entities)
+        return await driver.browse_page(
+            entity_type=record_type,
+            limit=limit,
+            status=status,
+            offset=offset,
+            sort_by=sort_by,
+            entity_types=entity_types,
+            scope=scope,
+            include_system=include_system,
+        )
 
     @classmethod
     async def assets_by_path(cls, opts: PathQueryOptions) -> list["Entity"]:
@@ -721,29 +784,32 @@ class Entity(DBEntity):
 
     @classmethod
     def allocate_id(cls, data: dict) -> str:
-        """Return a stable UUID for this entity type given creation data.
+        """The id for a ROW-ONLY entity — one with no file behind it.
 
-        Validate-on-adopt + single minter:
-        - If data['id'] is a **conforming** entity id (UUID v4/v5) → keep it.
-        - Else if data['id'] is non-empty (a slug, or a foreign/non-conforming
-          uuid such as a v7) → derive a stable ``uuid5(type:id)`` (normalizes
-          it; a hand-authored v7 never survives as the id).
-        - If empty/absent → fresh random uuid4.
+        The row-side counterpart of ``TypeInfo.mint_entity_id``: same v4/v5
+        policy, different input (a creation dict, not an ``FSRef``). It lives
+        here rather than on the registry because the types that need it most —
+        ``flow_message``, ``conversation`` — have no ``TypeInfo`` at all, and
+        because ``cls`` is the authority on which policy applies. Routing it
+        through the registry by ``data["type"]`` would run a *different* type's
+        policy whenever the two disagree.
 
-        All cases route through ``mint_uuid`` so the version policy lives in one
-        place. Override in subclasses with a natural fs identity key (e.g.
-        Project uses fs_storage_mount_path).
+        Order: a per-type ``_row_id_policy`` if declared → adopt a conforming
+        (v4/v5) ``data['id']`` → normalize a foreign one to
+        ``uuid5(DNS, "<type>:<id>")`` so a hand-authored id never survives →
+        random v4. Construction always goes through ``mint_uuid``.
         """
-        import uuid as _uuid
+        policy = getattr(cls, "_row_id_policy", None)
+        if policy is not None and (decided := policy(data)):
+            return str(decided)
 
-        from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
-
-        rid = data.get("id") or ""
-        if rid and is_valid_entity_id(rid):
-            return rid
-        if rid:
-            type_str = data.get("type") or "record"
-            return mint_uuid(f"{type_str}:{rid}", namespace=_uuid.NAMESPACE_DNS)
+        # The one adoption gate — it also strips, so a padded id is adopted
+        # rather than re-hashed into a different v5.
+        if adopted := adopt_entity_id(data.get("id")):
+            return adopted
+        if data.get("id"):
+            type_str = data.get("type") or cls.get_type()
+            return mint_uuid(f"{type_str}:{data['id']}", namespace=uuid.NAMESPACE_DNS)
         return mint_uuid()
 
     @classmethod
@@ -776,6 +842,20 @@ class Entity(DBEntity):
             for _k in getattr(_mm, "model_fields", None) or {}:
                 if _k in _nested and _k not in data:
                     data[_k] = _nested[_k]
+        # Tripwire on the universal FS→DB path. An asset-backed record arrives
+        # here already resolved by ``TypeInfo.mint_entity_id``; if it ever does
+        # not, ``allocate_id`` would mint a SECOND id for a path the seam
+        # already owns — silently forking the entity. A no-op today (the id is
+        # always valid by this point), a permanent guard against the regression.
+        # An asset-backed record arrives already resolved by the seam; if not,
+        # `allocate_id` below would mint a SECOND id for a path it already owns.
+        asset_ref, rid = data.get("asset_ref"), data.get("id")
+        if asset_ref and not is_valid_entity_id(str(rid or "")):
+            logging.warning(
+                "[asset-id] %s for %s has no seam-resolved id (%r) — identity must come "
+                "from TypeInfo.mint_entity_id, not allocate_id.",
+                record_type, asset_ref, rid,
+            )
         entity_uuid = entity_cls.allocate_id(data)
         # Filter by the *record's* type, not entity_cls.get_type(). The latter
         # is "entity" when entity_cls falls back to base Entity (most types
@@ -942,7 +1022,9 @@ class Entity(DBEntity):
         if info is None or info.from_disk_fn is None:
             return None
 
-        resolved_id = info.extract_id(ref) or info.mint_id(ref)
+        # DB-FREE by contract, so no owner lookup: with no owning row to consult
+        # this degrades to the historic carrier-or-mint.
+        resolved_id = info.mint_entity_id(ref, derive=True, overwrite=True)
         records = info.from_disk_fn(ref, resolved_id)
         if not records:
             return None
@@ -3287,7 +3369,6 @@ async def _http_activate(self: Entity):
     resolver's recency seed (docs/tab-management.md Part 3 §4). Loaders call
     this fire-and-forget on tab activation. Never touches membership:
     membership promotion is explicit-only (``tabs/open``)."""
-    from flow_sdk.api.api_types.messages import DataOpMessage, OperationType  # noqa: PLC0415
     from flow_sdk.fs_store.fs_record import record_sync_guard  # noqa: PLC0415
     from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
     from flow_sdk.utils.serialization import now_epoch_ms  # noqa: PLC0415
@@ -3324,23 +3405,10 @@ async def _http_activate(self: Entity):
 
                     from_exception(record, exc, trigger="activate").save()
 
-        # Keep the action receiver coherent without clearing any unrelated
-        # pending mutation it may carry.  The DB write above is deliberately
-        # recency-only.
-        was_dirty = self._dirty
-        self.last_active_at = stamped_at
-        self._dirty = was_dirty
-
         # Publish before releasing the record guard, so a newer normal save
         # cannot emit first and then be followed by this older full-row update.
         # The payload is the freshly persisted row, never stale ``self``.
-        change = DataOpMessage(
-            data=persisted,
-            op=OperationType.UPDATE,
-            to_entity=self.typeid,
-        )
-        await self.add_entity_op_notification(change)
-        self._notify_observers(change)
+        await _publish_server_managed_field_update(self, persisted, "last_active_at")
         return ApiSuccessResponse(data={"last_active_at": stamped_at})
 
 
@@ -3348,6 +3416,64 @@ _action_registry.register(
     action_name="activate",
     function_name="activate",
     handler=_http_activate,
+    methods="post",
+    types="all",
+)
+
+
+async def _publish_server_managed_field_update(
+    receiver: Entity,
+    persisted: Entity,
+    field_name: str,
+) -> None:
+    """Reflect and publish one authoritative field without dirtying a receiver."""
+    from flow_sdk.api.api_types.messages import DataOpMessage, OperationType  # noqa: PLC0415
+
+    was_dirty = receiver._dirty
+    setattr(receiver, field_name, getattr(persisted, field_name))
+    receiver._dirty = was_dirty
+    change = DataOpMessage(
+        data=persisted,
+        op=OperationType.UPDATE,
+        to_entity=receiver.typeid,
+    )
+    await receiver.add_entity_op_notification(change)
+    receiver._notify_observers(change)
+
+
+async def _http_mark_edit(self: Entity):
+    """Stamp ``last_edited_at`` from the server clock after a real UI edit.
+
+    The SDK coalesces user-input calls before invoking this action. The backend
+    owns only the durable, update-only stamp: it never rewrites the request's
+    potentially stale entity snapshot or mirrors this DB recency field to disk.
+    """
+    from flow_sdk.fs_store.fs_record import record_sync_guard  # noqa: PLC0415
+    from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+    from flow_sdk.utils.serialization import now_epoch_ms  # noqa: PLC0415
+
+    async with record_sync_guard(self.get_type(), self.id):
+        stamped_at = now_epoch_ms()
+        persisted, did_stamp = await self._db.update_existing_data_field(
+            self.id,
+            self.get_type(),
+            "last_edited_at",
+            stamped_at,
+        )
+        if persisted is None or not did_stamp:
+            return ApiFailResponse(message=f"Entity no longer exists: {self.typeid}", status_code=404)
+
+        # Publish the canonical post-write row while normal entity saves are
+        # still excluded by the record guard. ``updated_date`` remains the
+        # content write's clock; this delayed recency stamp does not advance it.
+        await _publish_server_managed_field_update(self, persisted, "last_edited_at")
+        return ApiSuccessResponse(data={"last_edited_at": persisted.last_edited_at})
+
+
+_action_registry.register(
+    action_name="mark-edit",
+    function_name="mark_edit",
+    handler=_http_mark_edit,
     methods="post",
     types="all",
 )

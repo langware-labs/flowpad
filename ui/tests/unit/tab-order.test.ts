@@ -16,7 +16,7 @@ import {
   computeInsertNew,
   computeReorder,
   filterForProject,
-} from '@src/tabs/tab-order';
+} from '@sdk/tabs';
 
 type Case = {
   name: string;
@@ -28,12 +28,12 @@ type Case = {
   expectedFiltered?: Record<string, string[]>;
 };
 
-const cases = matrix.cases as Case[];
+const cases = matrix.cases as unknown as Case[];
 
 function projectMap(c: Case): Record<string, string | null> {
   const m: Record<string, string | null> = {};
   for (const t of c.tabs) m[t.id] = t.project;
-  if (c.op === 'new_tab') m[c.args.new_id as string] = (c.args.project ?? null) as string | null;
+  if (c.op === 'new_tab') m[c.args.new_id as string] = c.args.project ?? null;
   return m;
 }
 

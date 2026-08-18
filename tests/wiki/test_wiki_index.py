@@ -50,13 +50,13 @@ class MarkdownRecord:
     @staticmethod
     def from_file(p):
         ref = _FSRef(p)
-        return extract_markdown(ref, SchemaRegistry.get("markdown").mint_id(ref))[0]
+        return extract_markdown(ref, SchemaRegistry.get("markdown").mint_entity_id(ref, derive=True, overwrite=True))[0]
 
     @staticmethod
     def from_fsref(ref):
         # async-compat: the real indexer awaits this; the test will too.
         async def _aw():
-            return extract_markdown(ref, SchemaRegistry.get("markdown").mint_id(ref))
+            return extract_markdown(ref, SchemaRegistry.get("markdown").mint_entity_id(ref, derive=True, overwrite=True))
         return _aw()
 
     @staticmethod
@@ -66,7 +66,7 @@ class MarkdownRecord:
 
     @staticmethod
     def genId(ref):
-        return SchemaRegistry.get("markdown").mint_id(ref)
+        return SchemaRegistry.get("markdown").mint_entity_id(ref, derive=True, overwrite=True)
   # alias for tests; uses extract_markdown for parsing
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions, build_default_indexer

@@ -222,19 +222,19 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   // then goes to the next step as soon as the gate opens — immediately when the
   // step has no gate. Pressing is the commitment; the gate only decides WHEN the
   // press completes, never whether the journey moves on its own.
-  const [waiting, setWaiting] = useState(false);
-  useEffect(() => setWaiting(false), [stepNumber]);
+  // The press names the STEP it was made for, rather than setting a bare flag.
+  //
+  // Landing changes the URL, which re-mints `navigation` → `goToStep` → `land`,
+  // so the effect below re-fires as a direct consequence of the action it just
+  // performed. A boolean plus a shadow ref could hold that closed; naming the
+  // step makes it fall out of one state transition instead — `pending` stops
+  // matching the moment the cursor moves, which also covers Back and an
+  // externally edited `?journeyStep=` with no separate reset effect.
+  const [pending, setPending] = useState<number | null>(null);
 
-  // The step this manager has already moved on from. Landing is idempotent per
-  // step: `land` runs from an effect, and an effect whose deps churn would
-  // otherwise re-enter it — each re-entry recording again and re-rendering,
-  // which is what produced the render loop that froze the tab.
-  const landed = useRef<number | null>(null);
   const land = useCallback(
     (event: 'done' | 'skipped' = 'done') => {
-      if (!currentStep || stepNumber === null || landed.current === stepNumber) return;
-      landed.current = stepNumber;
-      setWaiting(false);
+      if (!currentStep || stepNumber === null) return;
       record(currentStep.node_id, event);
       if (stepNumber < graph.length) {
         goToStep(stepNumber + 1);
@@ -248,19 +248,20 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
     [currentStep, stepNumber, graph.length, record, goToStep, navigation],
   );
 
-  // The press does the step's work and records the intent to move on. Landing
-  // itself has ONE caller — the effect below — so there is a single place that
-  // decides what "move on" means, whether the gate was already open or opened a
-  // second later.
+  // The press does the step's work and records the intent to move on; the effect
+  // below is what lands, whether the gate was already open or opened a second
+  // later. (`skip` lands directly — it bypasses both the act and the gate.)
   const next = useCallback(() => {
-    if (!currentStep) return;
+    if (!currentStep || stepNumber === null) return;
     if (act && !actRan.current) doAct();
-    setWaiting(true);
-  }, [currentStep, act, doAct]);
+    setPending(stepNumber);
+  }, [currentStep, stepNumber, act, doAct]);
 
   useEffect(() => {
-    if (waiting && gate.satisfied) land();
-  }, [waiting, gate.satisfied, land]);
+    if (pending === null || pending !== stepNumber || !gate.satisfied) return;
+    setPending(null);
+    land();
+  }, [pending, stepNumber, gate.satisfied, land]);
 
   const back = useCallback(() => {
     if (stepNumber !== null && stepNumber > 1) goToStep(stepNumber - 1);
@@ -269,5 +270,5 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   const skip = useCallback(() => land('skipped'), [land]);
   const start = useCallback(() => goToStep(1), [goToStep]);
 
-  return { start, next, back, skip, canGoBack: (stepNumber ?? 1) > 1, waiting: waiting && !gate.satisfied };
+  return { start, next, back, skip, canGoBack: (stepNumber ?? 1) > 1, waiting: pending === stepNumber && !gate.satisfied };
 }

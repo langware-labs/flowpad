@@ -40,8 +40,8 @@ import {
 import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesContext';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { applyAllTabs } from '@src/tabs/all-tabs-store';
-import { resetTabLifecycleForTests } from '@src/tabs/tab-lifecycle';
+import { tabManager } from '@sdk';
+import { resetTabContentLifecycleForTests } from '@src/tabs/tab-content-lifecycle';
 
 const PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const COMPUTE_NODE_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -141,8 +141,8 @@ describe('PTY title mirror vs program identity titles', () => {
 
     window.localStorage.clear();
     await dataManager.clearCache();
-    applyAllTabs([]);
-    resetTabLifecycleForTests();
+    tabManager.adoptGlobal([]);
+    resetTabContentLifecycleForTests();
     const fakeSocket = { readyState: WebSocket.OPEN, send: () => {} };
     (connectionManager as unknown as { socket: Pick<WebSocket, 'readyState' | 'send'> | null }).socket = fakeSocket;
     // shell.connected (ptyConnection.isLive) requires dataContext.isConnected —
@@ -283,8 +283,8 @@ describe('PTY title mirror vs program identity titles', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    applyAllTabs([]);
-    resetTabLifecycleForTests();
+    tabManager.adoptGlobal([]);
+    resetTabContentLifecycleForTests();
     (connectionManager as unknown as { socket: unknown }).socket = null;
     dataContext.connection = null;
     dataContext.setActiveShellId('');
@@ -295,7 +295,7 @@ describe('PTY title mirror vs program identity titles', () => {
   it("does not adopt the worker's startup title 'claude' over a tag-derived name", async () => {
     // Seed the tab store with the session's tab (what the route loader's
     // setupTab would have materialized) and navigate straight to it.
-    applyAllTabs([new Tab(tabRow())]);
+    tabManager.adoptGlobal([new Tab(tabRow())]);
 
     render(
       <HarnessCapabilitiesProvider>

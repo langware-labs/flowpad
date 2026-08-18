@@ -39,7 +39,7 @@ beforeEach(() => {
   fakeProcess = {
     id: 'proc-1',
     target_typeid_str: 'wizard:task-analyze:1',
-    loadEmbeddedAgent: vi.fn().mockResolvedValue(undefined),
+    loadEmbeddedSubagent: vi.fn().mockResolvedValue(undefined),
     prompt: vi.fn(
       () =>
         new Promise<void>((res, rej) => {

@@ -824,7 +824,7 @@ def _mint_rendered_asset_identity(info, body_path: Path, entry_type: str, entry_
 
     asset_path = info.asset_ref_for(body_path.parent) if info.main_layout == "folder" else body_path
     ref = FSRef(asset_path, record_type=RecordType(entry_type))
-    return info.mint_id(ref, proposed_id=entry_id)
+    return info.mint_entity_id(ref, proposed_id=entry_id, derive=True, overwrite=True)
 
 
 def _safe_entity_name(entity) -> str:

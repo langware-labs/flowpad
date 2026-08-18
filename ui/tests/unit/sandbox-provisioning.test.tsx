@@ -54,7 +54,7 @@ vi.mock('@sdk', async (importOriginal) => {
   return {
     ...actual,
     ActionInfo: FakeActionInfo,
-    dataContext: { workspaceTypeId: null },
+    dataContext: { workspaceTypeId: null, bootstrapInfo: { default_compute_provider: 'gcp_vm' } },
     dataManager: {
       save: vi.fn(() => Promise.resolve(undefined)),
       callAction: vi.fn((info: FakeActionInfo) => {
@@ -74,7 +74,7 @@ vi.mock('@sdk/react/hooks', () => ({
 
 vi.mock('@src/notifications', () => ({ notify: { warning: vi.fn(), error: vi.fn() } }));
 
-import { ComputeNode } from '@sdk';
+import { ComputeNode, dataManager } from '@sdk';
 import { useSandboxes } from '@src/hooks/use-sandboxes';
 
 // The one choke point every `ops/<name>` command goes through, so a single spy
@@ -154,6 +154,16 @@ function rows(result: { current: { steps: { id: string }[] } }): string[] {
 }
 
 describe('sandbox provisioning composes computeNodeTools', () => {
+  it('creates the node on the provider selected by Hub bootstrap', async () => {
+    await launchWithoutRepo();
+
+    expect(dataManager.save).toHaveBeenCalledWith(
+      expect.anything(),
+      [],
+      expect.objectContaining({ node_provider: 'gcp_vm' }),
+    );
+  });
+
   it('runs the commands in order: validate before clone, default before open', async () => {
     await launchWithGit();
 

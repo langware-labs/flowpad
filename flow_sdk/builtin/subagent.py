@@ -18,21 +18,21 @@ if TYPE_CHECKING:
 
 
 class SubAgent(Entity):
-    """Filesystem-backed agent entity. Source: ``<scope>/.claude/agents/<name>.md``."""
+    """Filesystem-backed sub-agent entity. Source: ``<scope>/.claude/agents/<name>.md``."""
 
     type: str = APIField(default=BuiltinEntityType.SUBAGENT.value)
     name: str | None = APIField(default=None)
     description: str | None = APIField(default=None)
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
-    # How the agent is used. HARNESS (default) = a normal sub-agent; VIBE = a
-    # vibe persona layered on top of the standard vibe agent (embedded after it
-    # on vibe process start). Sourced from the `.claude/agents/*.md` frontmatter
+    # How the sub-agent is used. HARNESS (default) = a normal sub-agent; VIBE =
+    # a vibe persona layered on top of the standard vibe sub-agent (embedded
+    # after it on vibe process start). Sourced from the `.claude/agents/*.md` frontmatter
     # `kind:` key (see AGENTS_SPEC_FIELDS).
     kind: SubAgentKind = APIField(default=SubAgentKind.HARNESS)
 
     @action.post(action_name="set-kind")
     async def set_kind_action(self, kind: str = "") -> "ApiResponse":
-        """Set this agent's ``kind`` frontmatter (mark/unmark as a vibe agent),
+        """Set this sub-agent's ``kind`` frontmatter (mark/unmark as a vibe sub-agent),
         preserving every OTHER frontmatter field, then reindex so queries and
         the entity reflect it. The full-frontmatter re-render is why this is a
         backend action, not a client-side FrontMatterFsRef.save (which drops
@@ -52,7 +52,9 @@ class SubAgent(Entity):
         except ValueError:
             return ApiFailResponse(message=f"invalid kind: {kind!r}")
         ref = self.asset_ref or ""
-        path = Path("/" + ref.lstrip("/")) if ref else None
+        # `Path(ref).resolve()` — FSRef's own construction. Rooting it with
+        # `Path("/" + ref)` corrupted Windows refs (`C:\...` → `\C:\...`).
+        path = Path(ref).resolve() if ref else None
         if path is None or not path.exists():
             return ApiFailResponse(message="agent source file not found", status_code=404)
         rec = extract_subagent_from_path(path)

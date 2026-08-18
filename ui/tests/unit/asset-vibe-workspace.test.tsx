@@ -15,8 +15,6 @@ let currentDock = new DockPointer(ViewType.EDITOR, '/workspace/src/app.ts');
 const openDock = vi.fn();
 const setupMocks = vi.hoisted(() => ({
   setupTabAndAdopt: vi.fn().mockResolvedValue(undefined),
-  resolveAssetVibeHost: vi.fn(),
-  ensureAssetVibeParentTab: vi.fn(),
 }));
 let showListener: ((target: Record<string, unknown>) => void) | null = null;
 let entityEventListener:
@@ -45,12 +43,9 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   // module made every consumer of it throw "No useCurrentDock export".
   useCurrentDock: () => currentDock,
 }));
-vi.mock('@src/tabs/setup-tab-and-adopt', () => ({
+vi.mock('@src/tabs/tab-content-lifecycle', async (orig) => ({
+  ...(await orig<typeof import('@src/tabs/tab-content-lifecycle')>()),
   setupTabAndAdopt: setupMocks.setupTabAndAdopt,
-}));
-vi.mock('@src/tabs/vibe-parent', () => ({
-  resolveAssetVibeHost: setupMocks.resolveAssetVibeHost,
-  ensureAssetVibeParentTab: setupMocks.ensureAssetVibeParentTab,
 }));
 vi.mock('@src/pages/flow-page/use-vibe-workspace-session', async () => {
   const actual = await vi.importActual<
@@ -63,7 +58,9 @@ vi.mock('@src/pages/flow-page/use-vibe-workspace-session', async () => {
   };
 });
 vi.mock('@src/pages/flow-page/vibe-chat-pane', () => ({
-  VibeChatPane: () => <div data-testid="vibe-chat-pane" />,
+  VibeChatPane: ({ process: bound }: { process: AgenticProcess | null }) => (
+    <div data-testid="vibe-chat-pane" data-process={bound?.id ?? ''} />
+  ),
 }));
 vi.mock('@src/pages/flow-page/workspace-child-strip', () => ({
   WorkspaceChildStrip: () => <div data-testid="workspace-child-strip" />,
@@ -121,8 +118,6 @@ afterEach(() => {
   currentDock = new DockPointer(ViewType.EDITOR, '/workspace/src/app.ts');
   openDock.mockReset();
   setupMocks.setupTabAndAdopt.mockClear();
-  setupMocks.resolveAssetVibeHost.mockReset();
-  setupMocks.ensureAssetVibeParentTab.mockReset();
   showListener = null;
   entityEventListener = null;
   process.context_data = {};
@@ -144,18 +139,16 @@ describe('AssetVibeWorkspace', () => {
     expect(screen.getByTestId('vibe-chat-pane')).toBeTruthy();
   });
 
-  it('shows the exact asset chat before process-tab adoption finishes', async () => {
-    setupMocks.resolveAssetVibeHost.mockResolvedValue({
-      process,
-      projectId: '6e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      targetVfsPath: 'compute_node-@local/workspace/src/app.ts',
-    });
-    setupMocks.ensureAssetVibeParentTab.mockReturnValue(new Promise(() => {}));
-
+  it('invents no workspace for a document whose URL names no host', () => {
+    // A document's home is its asset address. What used to happen here was a
+    // project resolve, a query for a Chat discussing this asset, and CREATING a
+    // process when none matched — which is why a reload could land on a
+    // different process than the one that showed it. The host is now a fact of
+    // the URL, so its absence simply means "just a document".
     render(<AssetVibeWorkspace isVibe session={null} />);
 
-    await waitFor(() => expect(screen.getByTestId('vibe-chat-pane')).toBeTruthy());
-    expect(setupMocks.ensureAssetVibeParentTab).toHaveBeenCalledTimes(1);
+    // No process is resolved or created, and nothing is adopted as a child.
+    expect(screen.getByTestId('vibe-chat-pane').dataset.process).toBe('');
     expect(setupMocks.setupTabAndAdopt).not.toHaveBeenCalled();
   });
 

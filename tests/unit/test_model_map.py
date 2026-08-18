@@ -65,8 +65,8 @@ async def _set_harness(worker: str, *, provider="openrouter", model_map=None) ->
 
 
 async def test_override_replaces_tier_default(env) -> None:
-    from flow_sdk.lm_api import set_lm_api, LMApiProvider
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.lm_api import LMApiProvider, set_lm_api
 
     set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
     await _set_harness("claude", model_map={"openrouter": {"sm": "z-ai/glm-4.6"}})
@@ -76,8 +76,8 @@ async def test_override_replaces_tier_default(env) -> None:
 
 
 async def test_custom_named_entry_resolves(env) -> None:
-    from flow_sdk.lm_api import set_lm_api, LMApiProvider
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.lm_api import LMApiProvider, set_lm_api
 
     set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
     await _set_harness("claude", model_map={"openrouter": {"coding": "z-ai/glm-4.6"}})
@@ -87,8 +87,8 @@ async def test_custom_named_entry_resolves(env) -> None:
 
 
 async def test_unmapped_tier_falls_back_to_spec(env) -> None:
-    from flow_sdk.lm_api import set_lm_api, LMApiProvider
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.lm_api import LMApiProvider, set_lm_api
 
     set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
     # Override only sm; md must still resolve to the spec default.
@@ -99,8 +99,8 @@ async def test_unmapped_tier_falls_back_to_spec(env) -> None:
 
 
 async def test_override_scoped_per_provider(env) -> None:
-    from flow_sdk.lm_api import set_lm_api, LMApiProvider
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.lm_api import LMApiProvider, set_lm_api
 
     set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
     # An override under a DIFFERENT provider must not apply to openrouter.
@@ -110,14 +110,52 @@ async def test_override_scoped_per_provider(env) -> None:
     assert auth.model_slug == "anthropic/claude-haiku-4.5"  # spec default, not the anthropic override
 
 
-def test_models_endpoint_table_covers_all_providers() -> None:
-    from flow_sdk.cli.auth.lm_api_keys import _MODELS_ENDPOINTS
+def test_models_endpoint_resolver_covers_all_providers(env) -> None:
+    """Every provider resolves to a catalog target -- statically for the vendor
+    ones, and for FLOWPAD only once the hub has bound an endpoint (unbound is
+    ``None``, never a KeyError)."""
+    from flow_sdk.cli.auth.lm_api_keys import _MODELS_ENDPOINTS, _models_endpoint
     from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
+    from flow_sdk.instance_settings import llm_endpoint
 
+    llm_endpoint.reset_cache()
     for provider in LMApiProvider:
+        resolved = _models_endpoint(provider)
+        if provider is LMApiProvider.FLOWPAD:
+            assert resolved is None  # unbound: nothing to ask
+            continue
         assert provider.value in _MODELS_ENDPOINTS
-        url, needs_key = _MODELS_ENDPOINTS[provider.value]
+        url, needs_key = resolved
         assert url.startswith("https://")
         assert isinstance(needs_key, bool)
     # OpenRouter's catalog is public.
     assert _MODELS_ENDPOINTS[LMApiProvider.OPENROUTER.value][1] is False
+
+    llm_endpoint.set_hub_llm_endpoint("llm_endpoint:ep1", "/api/v1/graph/llm_endpoint/ep1/invoke")
+    url, needs_key = _models_endpoint(LMApiProvider.FLOWPAD)
+    assert url.endswith("/api/v1/graph/llm_endpoint/ep1/invoke/v1/models")
+    assert needs_key is True
+    llm_endpoint.clear_hub_llm_endpoint()
+
+
+async def test_override_scoped_flowpad_provider(env, monkeypatch) -> None:
+    """A model_map override under ``flowpad`` applies when the harness is bound to
+    the hub endpoint (and the openrouter one does not)."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.cli.auth.hub_login import set_api_key
+    from flow_sdk.config import default_service_config
+    from flow_sdk.instance_settings import llm_endpoint
+
+    monkeypatch.setattr(default_service_config, "flowpad_hub_url", "https://hub.test")
+    set_api_key("fp-hub-key")
+    llm_endpoint.reset_cache()
+    llm_endpoint.set_hub_llm_endpoint("llm_endpoint:ep1", "/api/v1/graph/llm_endpoint/ep1/invoke")
+    try:
+        await _set_harness(
+            "claude", provider="flowpad", model_map={"flowpad": {"sm": "z-ai/glm-4.6"}, "openrouter": {"sm": "x/y"}}
+        )
+        auth = await resolve_worker_api_auth(_proc("claude", "sm"))
+        assert auth.model_slug == "z-ai/glm-4.6"
+        assert auth.env["ANTHROPIC_AUTH_TOKEN"] == "fp-hub-key"
+    finally:
+        llm_endpoint.clear_hub_llm_endpoint()

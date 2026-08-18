@@ -79,6 +79,25 @@ def test_set_cookie_gate_requires_a_value():
     assert result.exit_code != 0
 
 
+def test_set_cookie_gate_takes_a_dash_leading_secret_after_the_separator():
+    """The hub generates the secret with `token_urlsafe`, whose alphabet includes
+    `-`, so about one secret in thirty begins with one. Typer reads a leading `-`
+    as an option and the command dies on `No such option` -- a box that came up
+    with NO gate in front of its public url.
+
+    The hub's fix is to send `--` first. This pins the other half of that
+    contract: the CLI must keep treating everything after `--` as the value. It is
+    a real risk because the separator is invisible in the signature -- nothing in
+    `set_cookie_gate`'s definition mentions it, so a later refactor (custom
+    parsing, an eager option, `allow_interspersed_args`) could drop the behaviour
+    with nothing here to notice."""
+    with patch("flow_sdk.instance_settings.cookie_gate.set_cookie_gate") as arm:
+        result = runner.invoke(app, ["auth", "set-cookie-gate", "--", "-9tNyP6uJ6GaI_QoUw8D"])
+
+    assert result.exit_code == 0
+    arm.assert_called_once_with("-9tNyP6uJ6GaI_QoUw8D")
+
+
 # ── clear-cookie-gate ─────────────────────────────────────────────────────────
 
 
@@ -192,3 +211,19 @@ def test_set_runtime_requires_a_kind():
     result = runner.invoke(app, ["auth", "set-runtime"])
 
     assert result.exit_code != 0
+
+
+def test_set_runtime_accepts_the_end_of_options_separator():
+    """`sandbox`/`agent` never start with a dash, so `--` buys nothing here on its
+    own. It is pinned because the hub sends it -- the same `_configure_box` loop
+    arms the gate and sets the runtime, and it passes `--` to both rather than
+    depend on which values happen to be dash-free. If the CLI ever stopped
+    tolerating the separator, launch would break on this command too."""
+    with patch(
+        "flow_sdk.instance_settings.runtime.set_assigned_runtime",
+        return_value=RuntimeKind("sandbox"),
+    ) as assign:
+        result = runner.invoke(app, ["auth", "set-runtime", "--", "sandbox"])
+
+    assert result.exit_code == 0
+    assign.assert_called_once_with("sandbox")

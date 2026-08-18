@@ -10,9 +10,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import { Tab, type ITab } from '@sdk';
+import { Tab, tabManager, type ITab } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { applyAllTabs, getAllTabsSnapshot } from '@src/tabs/all-tabs-store';
 import { ViewType } from '@src/types/ViewType';
 import { useVibeWorkspaceSession } from '@src/pages/flow-page/use-vibe-workspace-session';
 
@@ -23,12 +22,12 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 }));
 
 beforeEach(() => {
-  vi.spyOn(Tab, 'listAll').mockImplementation(async () => getAllTabsSnapshot());
+  vi.spyOn(Tab, 'listAll').mockImplementation(() => Promise.resolve([...tabManager.getSnapshot()]));
 });
 
 afterEach(() => {
   currentDock = null;
-  applyAllTabs([]);
+  tabManager.adoptGlobal([]);
   vi.restoreAllMocks();
 });
 
@@ -69,7 +68,7 @@ const childRowFor = (dock: DockPointer) =>
 
 describe('useVibeWorkspaceSession', () => {
   it('Case 1: shell agentic_process dock resolves a process-URL session', () => {
-    applyAllTabs([row(PROCESS_TAB_ID)]);
+    tabManager.adoptGlobal([row(PROCESS_TAB_ID)]);
     currentDock = new DockPointer(ViewType.SHELL, `agentic_process-${AP}`);
 
     const { result } = renderHook(() => useVibeWorkspaceSession());
@@ -81,7 +80,7 @@ describe('useVibeWorkspaceSession', () => {
   });
 
   it('Case 1: session resolves with processTab null before the row lands in the store', () => {
-    applyAllTabs([]);
+    tabManager.adoptGlobal([]);
     currentDock = new DockPointer(ViewType.SHELL, `agentic_process-${AP}`);
 
     const { result } = renderHook(() => useVibeWorkspaceSession());
@@ -101,7 +100,7 @@ describe('useVibeWorkspaceSession', () => {
     // null on the non-process pointer and the terminal takes over the surface
     // instead of rendering in the workspace's display pane.
     currentDock = new DockPointer(ViewType.SHELL, 'shell-abc123');
-    applyAllTabs([
+    tabManager.adoptGlobal([
       row(PROCESS_TAB_ID),
       { ...childRowFor(currentDock), target_type: 'shell', target_id: 'abc123' },
     ]);
@@ -115,7 +114,7 @@ describe('useVibeWorkspaceSession', () => {
 
   it('Case 2: a child tab URL resolves its parent process session', () => {
     currentDock = new DockPointer(ViewType.ASSETS, 'editor/markdown/typeid/markdown-child');
-    applyAllTabs([row(PROCESS_TAB_ID), childRowFor(currentDock)]);
+    tabManager.adoptGlobal([row(PROCESS_TAB_ID), childRowFor(currentDock)]);
 
     const { result } = renderHook(() => useVibeWorkspaceSession());
     expect(result.current).not.toBeNull();
@@ -126,7 +125,7 @@ describe('useVibeWorkspaceSession', () => {
 
   it('Case 2: a child whose parent is hidden resolves no session', () => {
     currentDock = new DockPointer(ViewType.ASSETS, 'editor/markdown/typeid/markdown-child');
-    applyAllTabs([row(PROCESS_TAB_ID, { visible: false }), childRowFor(currentDock)]);
+    tabManager.adoptGlobal([row(PROCESS_TAB_ID, { visible: false }), childRowFor(currentDock)]);
 
     const { result } = renderHook(() => useVibeWorkspaceSession());
     expect(result.current).toBeNull();

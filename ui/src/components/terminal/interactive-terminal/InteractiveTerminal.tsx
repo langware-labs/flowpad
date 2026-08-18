@@ -2,6 +2,8 @@
 import '@src/styles/xterm.css';
 import '@xterm/xterm/css/xterm.css';
 
+import { useLingui } from '@lingui/react/macro';
+
 import {
   AgenticProcessEventName,
   connectionManager,
@@ -155,6 +157,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // _flow is used only in the React.memo comparator below
   void _flow;
 
+  const { t } = useLingui();
   const { agenticProcessTypeId, agenticProcess: contextProcess } = useContext();
   // Prop takes precedence (e.g. WorkflowsPage passes an explicit process).
   // For TabbedTerminal, no prop is passed — fall back to the context process
@@ -1594,7 +1597,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           ),
         };
       }),
-    [sideWindowTabs, lastPromptText, mergedPrompts.length],
+    [sideWindowTabs, lastPromptText, mergedPrompts.length, t],
   );
 
   return (

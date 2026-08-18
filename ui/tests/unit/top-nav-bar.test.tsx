@@ -38,11 +38,19 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openDock }, currentDock: { tabHash: 'h1' } }),
 }));
 /** The active project, when there is one — drives the project button's presence. */
-const activeProject = vi.hoisted(() => ({ current: null as { id: string } | null }));
+const activeProject = vi.hoisted(() => ({
+  current: null as { id: string; displayName?: string; fs_storage_mount_path?: string } | null,
+}));
+const activeComputeNode = vi.hoisted(() => ({ current: null as { typeId: unknown } | null }));
+const copyToClipboard = vi.hoisted(() => vi.fn());
+const openFolder = vi.hoisted(() => vi.fn());
 vi.mock('@src/hooks/useContext', () => ({
   useContext: () => ({
     runtimeKind: runtimeKind.current,
     project: activeProject.current,
+    computeNode: activeComputeNode.current,
+    desktopInfo: null,
+    workdir: null,
     activeEntity: null,
     activeEntityTypeId: null,
   }),
@@ -65,10 +73,15 @@ vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn(
 // The single writer of URL-derived context — a crumb click must never touch it.
 vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@sdk')>();
-  return { ...actual, dataContext: { ...actual.dataContext, setContextEntityTypeId: setContext } };
+  return {
+    ...actual,
+    copyToClipboard,
+    fsManager: { ...actual.fsManager, open: openFolder },
+    dataContext: { ...actual.dataContext, setContextEntityTypeId: setContext },
+  };
 });
 
-import { RuntimeKind } from '@sdk';
+import { RuntimeKind, TypeId } from '@sdk';
 import { TopNavBar } from '@src/components/top-nav-bar/TopNavBar';
 import { RUNTIME_CLASS } from '@src/components/top-nav-bar/runtime-appearance';
 import { TooltipProvider } from '@src/components/ui/tooltip';
@@ -97,6 +110,7 @@ const crumb = (key: string, kind: string, pointer: unknown = null) => ({
 beforeEach(() => {
   runtimeKind.current = RuntimeKind.SANDBOX;
   activeProject.current = null;
+  activeComputeNode.current = null;
   nav.canGoBack = true;
   nav.canGoForward = false;
   crumbs.current = [crumb('Acme', 'project'), crumb('Design notes', 'current')];
@@ -202,6 +216,7 @@ describe('the navigation bar', () => {
     // The one crumb that does not navigate: it inherited the project chip's
     // job, which was choosing a project. Opening the project itself is the
     // briefcase button in the nav cluster.
+    activeProject.current = { id: PROJECT_ID, displayName: 'Acme' };
     const user = userEvent.setup();
     renderBar();
 
@@ -210,6 +225,23 @@ describe('the navigation bar', () => {
 
     expect(screen.getByTestId('project-switcher')).toBeTruthy();
     expect(openDock).not.toHaveBeenCalled();
+  });
+
+  it('shows and operates on the active project location from the project crumb', async () => {
+    const user = userEvent.setup();
+    const projectPath = '/Users/me/Flowpad workspace/Acme';
+    const computeNodeTypeId = new TypeId('compute_node', '@local');
+    activeProject.current = { id: PROJECT_ID, displayName: 'Acme', fs_storage_mount_path: projectPath };
+    activeComputeNode.current = { typeId: computeNodeTypeId };
+    renderBar();
+
+    await user.hover(screen.getByText('Acme'));
+    expect((await screen.findByTestId('top-nav-project-details')).textContent).toContain(projectPath);
+    await user.click(screen.getByTestId('top-nav-project-copy-path'));
+    await user.click(screen.getByTestId('top-nav-project-open-folder'));
+
+    expect(copyToClipboard).toHaveBeenCalledWith(projectPath);
+    expect(openFolder).toHaveBeenCalledWith(computeNodeTypeId, 'Users/me/Flowpad workspace/Acme');
   });
 
   it('leaves the current crumb unclickable', async () => {
@@ -233,6 +265,17 @@ describe('the navigation bar', () => {
     expect(screen.queryByTestId('top-nav-address')).toBeNull();
 
     await user.keyboard('{Escape}');
+
+    expect(screen.getByTestId('top-nav-address')).toBeTruthy();
+    expect(screen.queryByTestId('top-nav-search-input')).toBeNull();
+  });
+
+  it('gives the address back when the user clicks outside search', async () => {
+    const user = userEvent.setup();
+    renderBar();
+
+    await user.click(screen.getByTestId('top-nav-search-open'));
+    await user.click(document.body);
 
     expect(screen.getByTestId('top-nav-address')).toBeTruthy();
     expect(screen.queryByTestId('top-nav-search-input')).toBeNull();

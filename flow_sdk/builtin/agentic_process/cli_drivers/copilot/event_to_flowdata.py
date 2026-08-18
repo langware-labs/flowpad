@@ -18,6 +18,7 @@ from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 
 logger = logging.getLogger(__name__)
 
+
 class CopilotEventConverter:
     """Stateful converter for one live Copilot stream."""
 
@@ -29,19 +30,12 @@ class CopilotEventConverter:
 
     def convert_event(self, event: dict[str, Any]) -> list[FlowData]:
         event_type = event.get("type")
+        flowpad_terminal = flowpad_terminal_event_frames(event)
+        if flowpad_terminal is not None:
+            return flowpad_terminal
         if event_type == "result":
             self._capture_session(event)
             return _result(event)
-        if event_type == "flowpad.interrupted":
-            # User-requested cancel is not an error: emit the canonical
-            # turn-abort STATUS (``turn-terminated``) so the chat marks the
-            # in-flight tool calls terminated instead of painting a crash.
-            from flow_sdk.builtin.agentic_process.turn_abort import abort_status_frame  # noqa: PLC0415 — avoid import cycle at module load
-
-            return [abort_status_frame(), final_end_frame()]
-        if event_type == "flowpad.error":
-            message = str(event.get("message") or "copilot exited with an error")
-            return [_error(message), final_end_frame()]
         if event_type == "assistant.message_delta":
             return self._message_delta(event)
         if event_type == "assistant.reasoning_delta":
@@ -146,6 +140,23 @@ def final_end_frame() -> FlowData:
             "data-type": FlowDataType.TEXT,
         },
     )
+
+
+def flowpad_terminal_event_frames(event: dict[str, Any]) -> list[FlowData] | None:
+    """Convert a Flowpad-authored Copilot terminal marker for live or replay."""
+    event_type = event.get("type")
+    if event_type == "flowpad.interrupted":
+        from flow_sdk.builtin.agentic_process.turn_abort import (
+            abort_status_frame,  # noqa: PLC0415 — avoid import cycle at module load
+        )
+
+        # User-requested cancel is not an error: emit the canonical turn-abort
+        # STATUS so in-flight tool calls terminate instead of painting a crash.
+        return [abort_status_frame(), final_end_frame()]
+    if event_type == "flowpad.error":
+        message = str(event.get("message") or "copilot exited with an error")
+        return [_error(message), final_end_frame()]
+    return None
 
 
 def _wrap_live(entry) -> FlowData:

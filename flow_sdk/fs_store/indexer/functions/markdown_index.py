@@ -28,16 +28,6 @@ from flow_sdk.fs_store.fs_ref import FSRef
 
 # ── Id helpers ────────────────────────────────────────────────────────────────
 
-def markdown_index_id(ref: FSRef) -> str:
-    """Derive the record id for an index.md file.
-
-    Uses the same uuid5(NAMESPACE_URL, resolved_path) formula as the base
-    ``Record.getId`` default.  Exposed here for tests + explicitness.
-    """
-    from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
-    path = getattr(ref, "_path", ref)
-    return mint_uuid(str(Path(path).resolve()))
-
 def markdown_index_identity_key(ref: FSRef | Path) -> str:
     return str(Path(getattr(ref, "_path", ref)).resolve())
 

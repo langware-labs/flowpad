@@ -151,13 +151,24 @@ export function canInviteMembers(me: ConversationParticipant | null | undefined)
   return rank !== null && rank <= (roleRank('admin') as number);
 }
 
-/** First-letter initials for the avatar fallback. Strips non-letters and
- *  caps at two characters. Falls back to "?" so the avatar never goes blank. */
+/** Initials of any display label — the avatar fallback for participants AND
+ *  non-participant identities (an Agent). Splits on separators, caps at
+ *  `maxChars`, and falls back to "?" so the avatar never goes blank. */
+export function initialsFromLabel(label: string | null | undefined, maxChars: 1 | 2 = 2): string {
+  const text = (label ?? '').trim();
+  if (!text) return '?';
+  const parts = text.split(/[\s@._-]+/).filter(Boolean);
+  const initials =
+    parts.length === 0
+      ? text.slice(0, 1)
+      : parts.length === 1
+        ? parts[0].slice(0, maxChars)
+        : parts[0][0] + parts[1][0];
+  return initials.slice(0, maxChars).toUpperCase();
+}
+
+/** First-letter initials for the participant avatar fallback. */
 export function participantInitials(participant: ConversationParticipant | null | undefined): string {
   const label = participantLabel(participant);
-  if (!label || label === 'unknown') return '?';
-  const parts = label.split(/[\s@._-]+/).filter(Boolean);
-  if (parts.length === 0) return label.slice(0, 1).toUpperCase();
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
+  return !label || label === 'unknown' ? '?' : initialsFromLabel(label);
 }

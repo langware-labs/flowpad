@@ -151,6 +151,17 @@ export class Agent extends APIEntity<Agent> {
   }
 
   /**
+   * Download URL of the uploaded avatar image, or null when the avatar is an
+   * emoji / icon name (render `avatar` through `AvatarValue` then). THE one
+   * predicate for "does this agent have a picture" — every surface that draws
+   * an agent avatar reads this, so they cannot disagree on it.
+   */
+  get avatarImageUrl(): string | null {
+    if (this.avatar !== AGENT_AVATAR_REF) return null;
+    return this.doc?.parent.child(AGENT_AVATAR_FILE).getDownloadUrl() ?? null;
+  }
+
+  /**
    * Create an Agent in the selected project, or in user scope when null.
    * Placement remains backend-owned; the optional folder is intentionally
    * reserved for compatibility with the shared Quick Create interface.
@@ -178,6 +189,16 @@ export class Agent extends APIEntity<Agent> {
     const action = new ActionInfo('run', Agent.type, this.id, 'POST');
     action.bodyParameters = { prompt };
     return (await dataManager.callAction(action)) as AgentRunResult;
+  }
+
+  /**
+   * Open a session AS this agent: a new, visible, headless Chat process built
+   * from the agent's local deployment, with no first turn — the human types it.
+   * `POST /agent/<id>/use`. The counterpart of `run` (one prompt, headless).
+   */
+  async use(): Promise<AgentUseResult> {
+    const action = new ActionInfo('use', Agent.type, this.id, 'POST');
+    return (await dataManager.callAction(action)) as AgentUseResult;
   }
 
   /**
@@ -217,6 +238,13 @@ export interface AgentDeployResult {
 }
 
 /** What `POST /agent/<id>/run` hands back. */
+/** What `POST /agent/<id>/use` hands back — the session opened as the agent. */
+export interface AgentUseResult {
+  process_id: string;
+  process_typeid: string;
+  deployment_id: string;
+}
+
 export interface AgentRunResult {
   process_id: string;
   process_typeid: string;

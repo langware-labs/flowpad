@@ -62,7 +62,6 @@ from .routes import (
     capabilities_router,
     chat_router,
     cloud_router,
-    compute_register_router,
     debug_router,
     dep_graph_router,
     detection_router,
@@ -461,6 +460,13 @@ async def _shutdown_extras():
     """Clean up server.json and stop cron scheduler."""
     from flow_sdk.config import clear_server_info
 
+    try:
+        from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks
+
+        clear_process_hook_callbacks()
+    except Exception:
+        pass
+
     # Close the process-shared outbound hub HTTP client (kept alive across calls
     # so its TLS context isn't rebuilt per request — see hub_http._hub_client).
     try:
@@ -523,7 +529,6 @@ server.add_router(websocket_router)
 server.add_router(webhook_api_router)
 server.add_router(assets_router)
 server.add_router(project_router, prefix="/api/v1")
-server.add_router(compute_register_router)
 server.add_router(debug_router)
 server.add_router(ingest_router)
 server.add_router(runs_router)

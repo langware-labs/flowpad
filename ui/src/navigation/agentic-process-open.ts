@@ -1,7 +1,6 @@
 import { t } from '@lingui/core/macro';
-import { AgenticProcess, ClaudeSession, Shell, TypeId } from '@sdk';
+import { AgenticProcess, ClaudeSession, Shell, tabManager, TypeId } from '@sdk';
 import { notify } from '@src/notifications';
-import { setPendingIntent } from '@src/tabs/pending-intent';
 import type { NavigationActions } from './NavigationActions';
 
 /** The two related ids the name resolver reads off an AgenticProcess. */
@@ -119,7 +118,7 @@ export async function openAgenticProcess(
       // self-heal resolver would re-pick the new project's default tab instead of
       // the clicked agent. resolveActive honors this intent, then consumes it once
       // the agent lands in the strip.
-      setPendingIntent(new TypeId(AgenticProcess.type, processId).toString());
+      tabManager.setPendingIntent(new TypeId(AgenticProcess.type, processId).toString());
       const opened = await navigation.openShellProcess(processId);
       if (!opened) {
         notify.error({
