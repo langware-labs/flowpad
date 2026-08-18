@@ -26,7 +26,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from flow_sdk.ingest.driver import FetchResult, SetupVerdict, StreamCursorView, StreamRef
+from flow_sdk.ingest.driver import FetchResult, SetupVerdict, SegmentCursorView, SegmentRef
 from flow_sdk.ingest.health import SourceError
 from flow_sdk.utils.git import _run_git, git_current_branch, git_remote_url
 
@@ -100,7 +100,7 @@ class GitDriver:
             return ""
         return str(origin.key())
 
-    def streams(self, source) -> list[StreamRef]:
+    def segments(self, source) -> list[SegmentRef]:
         """One scope per branch.
 
         Not per subdirectory: a directory is a mutable grouping, and a path that
@@ -111,7 +111,7 @@ class GitDriver:
         if not raw:
             return []
         branch = (source.config or {}).get("branch") or "HEAD"
-        return [StreamRef(key=str(branch), label=str(raw))]
+        return [SegmentRef(key=str(branch), label=str(raw))]
 
     async def verify(self, source) -> SetupVerdict:
         raw = (source.config or {}).get("repo") or ""
@@ -126,7 +126,7 @@ class GitDriver:
             return SetupVerdict.waiting(f"{repo} has no commits yet.")
         return SetupVerdict.ok()
 
-    async def fetch(self, source, cursor: StreamCursorView) -> FetchResult:
+    async def fetch(self, source, cursor: SegmentCursorView) -> FetchResult:
         repo = _repo_of(source)
         if not (repo / ".git").exists():
             # Needs a person, not a retry.

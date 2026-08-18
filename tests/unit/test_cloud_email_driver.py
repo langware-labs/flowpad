@@ -64,7 +64,7 @@ def _source(**config) -> SimpleNamespace:
 
 def _cursor(state=None, window_start=None) -> SimpleNamespace:
     return SimpleNamespace(
-        stream_key=AGENT_ID, state=state or {}, window_start=window_start, first_run=not state
+        segment_key=AGENT_ID, state=state or {}, window_start=window_start, first_run=not state
     )
 
 
@@ -110,9 +110,9 @@ class TestItIsAPluggableDriver:
         assert CloudEmailDriver().channel_for(_source()) == "email"
 
     def test_the_stream_is_keyed_on_the_agent_not_the_address(self):
-        """`stream_key` is a third of a SourceItem's natural key. The address is
+        """`segment_key` is a third of a SourceItem's natural key. The address is
         allocated and can change; the agent id cannot."""
-        stream = CloudEmailDriver().streams(_source())[0]
+        stream = CloudEmailDriver().segments(_source())[0]
         assert stream.key == AGENT_ID
         assert stream.label == ADDRESS, "the address is still what a human reads"
 
@@ -131,7 +131,7 @@ class TestMapping:
         assert item.title == "Round trip"
         assert item.occurred_at == "2026-08-04T08:28:47.206Z"
         assert item.kind == "content.message.email"
-        assert item.stream_key == AGENT_ID
+        assert item.segment_key == AGENT_ID
         assert item.reply_to_external_id is None
 
     @pytest.mark.asyncio

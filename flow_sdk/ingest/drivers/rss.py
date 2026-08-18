@@ -22,7 +22,7 @@ from typing import Optional
 from xml.etree import ElementTree
 
 from flow_sdk.ingest import http
-from flow_sdk.ingest.driver import FetchResult, StreamCursorView, StreamRef
+from flow_sdk.ingest.driver import FetchResult, SegmentCursorView, SegmentRef
 from flow_sdk.ingest.health import SourceError
 from flow_sdk.ingest.models import IngestItem
 from flow_sdk.utils.serialization import iso_to_datetime
@@ -35,15 +35,15 @@ class RssDriver:
     kind = "datasource.feed.rss"
     record_kind = "content.feed.item"
 
-    def streams(self, source) -> list[StreamRef]:
+    def segments(self, source) -> list[SegmentRef]:
         urls = (source.config or {}).get("feed_urls") or []
-        return [StreamRef(key=str(u), label=str(u)) for u in urls]
+        return [SegmentRef(key=str(u), label=str(u)) for u in urls]
 
-    async def fetch(self, source, cursor: StreamCursorView) -> FetchResult:
+    async def fetch(self, source, cursor: SegmentCursorView) -> FetchResult:
         async with http.client() as client:
             response = await http.get(
                 client,
-                cursor.stream_key,
+                cursor.segment_key,
                 headers=_conditional_headers(cursor.state),
                 ok_statuses=(304,),
                 hint="check the feed URL",
@@ -52,7 +52,7 @@ class RssDriver:
         if response.status_code == 304:
             return FetchResult(items=[], next_state=dict(cursor.state or {}), unchanged=True)
 
-        entries = _parse(response.text, cursor.stream_key)
+        entries = _parse(response.text, cursor.segment_key)
         floor = _parse_iso(cursor.window_start)
 
         items: list[IngestItem] = []
@@ -68,8 +68,8 @@ class RssDriver:
                     source_id=source.id,
                     provider=self.provider,
                     kind=self.record_kind,
-                    stream_key=cursor.stream_key,
-                    stream_label=cursor.stream_key,
+                    segment_key=cursor.segment_key,
+                    segment_label=cursor.segment_key,
                     external_id=entry["external_id"],
                     title=entry.get("title") or "",
                     body=entry.get("body") or "",

@@ -15,7 +15,7 @@
  * It deliberately does NOT query cursors. Watching that type live would put a
  * permanent subscription on the highest-churn rows on the instance — one write
  * per stream per poll — and repaint the whole grid every tick. The stream COUNT
- * rides on the source (`stream_count`, rolled up by the poller); the rows
+ * rides on the source (`segment_count`, rolled up by the poller); the rows
  * themselves are fetched by a card only while it is expanded.
  *
  * Before this, sources rendered only inside the dev-only Signals pane and could
@@ -88,7 +88,7 @@ export function DataSourcesView() {
   );
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto p-6">
+    <div data-testid="data-sources-view" className="flex h-full flex-col overflow-y-auto p-6">
       <header className="mb-1 flex items-center gap-2">
         <Icon className="size-5 text-muted-foreground" />
         <h1 className="text-lg font-semibold">

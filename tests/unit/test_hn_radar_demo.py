@@ -148,7 +148,7 @@ async def _item(*, external_id: str, occurred_at, score: int, title: str) -> Sou
         data_source_id=source_id,
         provider="hackernews",
         kind="content.feed.item",
-        stream_key="updates",
+        segment_key="updates",
         external_id=external_id,
         name=title,
         body="https://example.test/x",

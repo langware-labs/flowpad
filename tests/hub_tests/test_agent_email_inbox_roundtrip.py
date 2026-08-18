@@ -138,7 +138,7 @@ async def test_a_real_mailbox_is_allocated_used_and_released(published_agent):
         config={"agent_id": published_agent.id, "address": address},
     )
     cursor = SimpleNamespace(
-        stream_key=published_agent.id, state={}, window_start=None, first_run=True
+        segment_key=published_agent.id, state={}, window_start=None, first_run=True
     )
 
     result = await CloudEmailDriver().fetch(source, cursor)

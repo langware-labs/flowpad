@@ -1,0 +1,40 @@
+"""Isolated DB for data-source asset tests.
+
+Same driver swap the folder-source package uses: a matrix that mints and deletes
+entities must not leak rows into its neighbours.
+"""
+import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — registers every TypeInfo
+import flow_sdk.models.entities  # noqa: F401 — registers every Entity CLASS (asset_owner_classes)
+
+import flow_sdk.db.drivers.db_driver as db_driver_mod
+import pytest_asyncio
+from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.db.drivers.db_driver import DBConfig
+from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver
+
+
+@pytest_asyncio.fixture
+async def folder_db(tmp_path):
+    """Isolated driver bound to ``Entity`` — same swap/restore as fs_store."""
+    cfg = DBConfig()
+    cfg.database = str(tmp_path / "folder_source.db")
+    driver = SQLiteDBDriver(cfg)
+    await driver.open()
+
+    old_instances = db_driver_mod._driver_instances.copy()
+    db_driver_mod._driver_instances["sqlite"] = driver
+    old_db = Entity.__dict__.get("_db")
+    Entity._db = driver
+
+    yield driver
+
+    db_driver_mod._driver_instances.clear()
+    db_driver_mod._driver_instances.update(old_instances)
+    if old_db is None:
+        if "_db" in Entity.__dict__:
+            delattr(Entity, "_db")
+    else:
+        Entity._db = old_db
+    await driver.close()
+
+

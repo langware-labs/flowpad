@@ -12,10 +12,10 @@ rather than ``ingest_items``. The ``SourceItem`` chokepoint is untouched by this
 driver — it never produces one.
 
 **One scope, deliberately.** A subdirectory is a MUTABLE grouping and
-``stream_key`` participates in the natural key, so keying scopes on
+``segment_key`` participates in the natural key, so keying scopes on
 subdirectories reproduces the duplicate-on-move trap exactly: move a file
 between folders and it becomes a second row that nothing cleans up. One scope
-sidesteps it, and makes ``stream_budget`` moot.
+sidesteps it, and makes ``segment_budget`` moot.
 
 **The manifest is the whole cursor.** ``state`` holds ``{rel_path: [mtime,
 size, inode]}`` from the last pass. Diffing it is what produces deletions — and
@@ -34,13 +34,13 @@ import os
 from pathlib import Path
 from typing import Iterator
 
-from flow_sdk.ingest.driver import FetchResult, SetupVerdict, StreamCursorView, StreamRef
+from flow_sdk.ingest.driver import FetchResult, SetupVerdict, SegmentCursorView, SegmentRef
 from flow_sdk.ingest.health import SourceError
 
 #: The single scope key. A constant rather than the root path: the root is
 #: config, and a cursor keyed on it would be silently orphaned by an edit
 #: instead of diffing against it.
-ROOT_STREAM = "root"
+ROOT_SEGMENT = "root"
 
 #: Directory names never descended. Not a .gitignore implementation — the
 #: indexer already owns that for the walk it does. This is the minimum that
@@ -106,9 +106,9 @@ class FolderDriver:
         st = Path(ref).stat()  # OSError → the caller falls back to the path
         return f"{self.provider}:{source.id}:ino:{st.st_dev}:{st.st_ino}"
 
-    def streams(self, source) -> list[StreamRef]:
+    def segments(self, source) -> list[SegmentRef]:
         root = (source.config or {}).get("root") or ""
-        return [StreamRef(key=ROOT_STREAM, label=str(root))] if root else []
+        return [SegmentRef(key=ROOT_SEGMENT, label=str(root))] if root else []
 
     async def verify(self, source) -> SetupVerdict:
         """Can this source actually read what it was configured for?
@@ -129,7 +129,7 @@ class FolderDriver:
             return SetupVerdict.waiting(f"{root} is not readable.")
         return SetupVerdict.ok()
 
-    async def fetch(self, source, cursor: StreamCursorView) -> FetchResult:
+    async def fetch(self, source, cursor: SegmentCursorView) -> FetchResult:
         raw = (source.config or {}).get("root") or ""
         if not raw:
             raise SourceError.config("no_root", "config.root is not set")

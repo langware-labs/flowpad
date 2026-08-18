@@ -58,7 +58,7 @@ class IngestItem:
     source_id: str
     provider: str
     kind: str
-    stream_key: str
+    segment_key: str
     external_id: str
 
     # ── body ──
@@ -70,7 +70,7 @@ class IngestItem:
     permalink: Optional[str] = None
     thread_key: Optional[str] = None
     reply_to_external_id: Optional[str] = None
-    stream_label: str = ""
+    segment_label: str = ""
     raw: Optional[dict] = None
 
 
