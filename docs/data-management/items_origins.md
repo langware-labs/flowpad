@@ -82,7 +82,10 @@ the same repo yields the same key on every machine — that is what lets
 
 `key()` is used as an **entity id in exactly one place**: `Folder.id_for_origin`,
 where the folder id *is* the origin's key. Everywhere else it is dedup,
-reconciliation comparison, or a scratch directory name.
+reconciliation comparison, or a scratch directory name — including
+`Entity.origin_id`, where a git data source persists it so re-observations of
+the same repo position resolve to one row by lookup rather than by re-deriving
+an id.
 
 **It must not change.** It is pinned to a literal in
 `tests/unit/test_fs_origin.py` and is a live Folder id reconciled across

@@ -240,6 +240,23 @@ class Entity(DBEntity):
     # Portable Git provenance + placement for a file-backed asset. The value is
     # shared with the Hub, while ``persist=TRUE`` writes only backend record
     # metadata — never the user-facing asset frontmatter/body.
+    #: WHERE this entity came from, as the source itself names it — the handle
+    #: identity is resolved by, so the same remote thing converges on one row no
+    #: matter where its bytes were placed locally.
+    #:
+    #: A LOOKUP key, never id arithmetic: the same discipline as
+    #: `SourceItem.find_existing`. Two copies of one source asset (indexed in
+    #: place and again inside a project) share an `origin_id` and therefore an
+    #: entity, without either file having to carry an identity capsule.
+    #:
+    #: PRIVATE: it names the local source that produced this row, which is
+    #: meaningless — and misleading — on a receiver.
+    origin_id: str = APIField(
+        sharing=Sharing.PRIVATE,
+        default="",
+        persist=Persist.TRUE,
+        description="Source-supplied identity this row was consolidated on.",
+    )
     git_origin: dict | None = APIField(
         sharing=Sharing.SHARED,
         default=None,

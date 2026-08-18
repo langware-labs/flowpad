@@ -134,6 +134,28 @@ class FetchResult:
     """What a driver found, plus the state it wants carried to next time."""
 
     items: list["IngestItem"] = field(default_factory=list)
+    #: Asset ROOTS that changed, for drivers whose payload is already local and
+    #: whose destination is the filesystem rather than a ``SourceItem`` — the
+    #: folder driver today. A path here is the asset root in the sense
+    #: ``FSOrigin.rel_path`` already means: a FOLDER for folder-layout types, a
+    #: FILE for file-layout ones.
+    #:
+    #: Deliberately separate from ``items`` rather than a variant of it. Reading
+    #: a file's bytes into an ``IngestItem`` only to write them straight back to
+    #: disk is pure waste, and a driver that returns refs is announcing that its
+    #: destination is ``reflect``, not ``ingest_items``.
+    refs: list[str] = field(default_factory=list)
+    #: Asset roots the source no longer has. Only a driver that can actually
+    #: OBSERVE absence may fill this — an enumerate-diff can, a lossy watcher
+    #: cannot, and "I did not see it" must never reach here (the rule
+    #: ``rss.py`` states as "absence is never deletion").
+    tombstones: list[str] = field(default_factory=list)
+    #: ``{new_path: old_path}`` for refs the source reports as MOVED rather than
+    #: replaced. Only a transport that can actually observe a move may fill this
+    #: — git can (``--find-renames``), a lossy watcher cannot — and it is what
+    #: lets identity travel with the asset instead of being destroyed at the old
+    #: path and re-minted at the new one.
+    renames: dict[str, str] = field(default_factory=dict)
     next_state: dict = field(default_factory=dict)
     #: Greatest ordinal covered, recorded on the cursor for operators. Purely
     #: observability — resumption is driven by ``state``, so a driver must not
@@ -162,6 +184,14 @@ class IngestDriver(Protocol):
     #: membership — the inbox projection accepts `content.message.*` and
     #: nothing else (`flow_sdk/inbox/projection.py MESSAGE_KIND_ROOT`).
     record_kind: str
+
+    #: Whether this source's bytes are OURS to write to. False means indexing
+    #: must not stamp an identity capsule into the file — a git working tree is
+    #: the clear case, where a stamp dirties the tree, gets committed, and
+    #: propagates to everyone who pulls. Such a source resolves identity by
+    #: `origin_id` lookup instead. Defaults True, which is what every
+    #: workspace-backed type has always done.
+    stamps_identity: bool = True
 
     #: Whether this driver can push a message back to its channel. Discovered
     #: the same way ``channel_for`` is — a driver that cannot send simply omits

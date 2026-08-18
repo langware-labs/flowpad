@@ -2560,6 +2560,7 @@ async def discover_record_by_path(
     scope: str | None = None,
     project_id: str | None = None,
     strict_owner: bool = False,
+    stamp: bool = True,
 ):
     """Find-or-recover ONE record by absolute path — the interactive fast path.
 
@@ -2641,8 +2642,23 @@ async def discover_record_by_path(
                 _owner_id = proposed_id or await owner_id_for(
                     record_type, expanded, strict=strict_owner
                 )
+                # `stamp=False` is the READ-ONLY resolution mode: `derive=False`
+                # answers only from evidence already present and `overwrite=False`
+                # commits nothing, so the source file is never rewritten.
+                #
+                # It exists for sources whose bytes are not ours to touch. A git
+                # working tree is the clear case: stamping an identity capsule
+                # into a tracked file dirties the tree, gets committed, and
+                # propagates our metadata to everyone who pulls. Such a source
+                # resolves identity by an `origin_id` lookup and passes the
+                # answer in as `proposed_id`, which still reaches `owner_id`
+                # below — so resolution succeeds without `derive`.
                 resolved_id = _info.mint_entity_id(
-                    one_ref, owner_id=_owner_id, proposed_id=proposed_id, derive=True, overwrite=True
+                    one_ref,
+                    owner_id=_owner_id,
+                    proposed_id=proposed_id,
+                    derive=stamp,
+                    overwrite=stamp,
                 )
 
                 # Match the full indexer's deterministic primary ranking. A

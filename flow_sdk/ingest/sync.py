@@ -32,6 +32,7 @@ from flow_sdk.ingest.health import SourceHealth, classify, worst_of
 from flow_sdk.ingest.ingest_on_tag import emit_sync_tag
 from flow_sdk.ingest.ingestor import ingest_items
 from flow_sdk.ingest.models import IngestMode, IngestReport
+from flow_sdk.ingest.reflect import reflect_refs
 
 logger = logging.getLogger(__name__)
 
@@ -121,10 +122,26 @@ async def _sync_stream(source, driver, cursor: DataSourceCursor, now: datetime) 
         logger.warning("[ingest] %s stream %s failed: %s", source.provider, cursor.stream_key, code)
         return report
 
+    # ── the two destinations ───────────────────────────────────────────────
+    #
+    # A driver's payload lands EITHER in the graph as a record or on disk as an
+    # asset, never both. `ingest_items` stays the single chokepoint for
+    # SourceItem writes — reflection is a second destination beside it, not a
+    # branch inside it, so that invariant survives a source whose payload is a
+    # file.
+    #
+    # Which one is chosen by the SOURCE (`reflect`), not the driver: the same
+    # folder could reasonably be mirrored as records or as assets, and a driver
+    # that decided this would be deciding a policy question with only transport
+    # knowledge.
     if not result.unchanged and result.items:
         report = await ingest_items(
             result.items,
             mode=IngestMode.for_run(first_run=view.first_run, item_count=len(result.items)),
+        )
+    if not result.unchanged and (result.refs or result.tombstones):
+        await reflect_refs(
+            source, list(result.refs), list(result.tombstones), dict(result.renames)
         )
 
     # ── records are committed; only now does the cursor move ──
