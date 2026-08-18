@@ -1,4 +1,4 @@
-import { FlowData, FlowElementTypes, PrefKey } from '@sdk';
+import { FlowData, FlowElementTypes, PrefKey, type Agent } from '@sdk';
 import { Fragment, memo } from 'react';
 import { ToolEntryRow } from '@src/components/floating-chat/ToolEntryRow';
 import type { TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
@@ -30,10 +30,13 @@ function TurnDivider() {
 export function TurnGroupsList({
   groups,
   worker,
+  agent,
   onWorkerChange,
 }: {
   groups: TurnGroup[];
   worker?: string;
+  /** The Agent the process runs as — signs assistant turns (avatar + name). */
+  agent?: Agent | null;
   onWorkerChange?: (worker: WorkerType) => void | Promise<void>;
 }) {
   // "Show tool calls" (default off) gates the dense tool/reasoning/status chips.
@@ -73,7 +76,7 @@ export function TurnGroupsList({
         return (
           <Fragment key={key}>
             {i > 0 && <TurnDivider />}
-            <TurnGroupRow group={g} worker={worker} onWorkerChange={onWorkerChange} />
+            <TurnGroupRow group={g} worker={worker} agent={agent} onWorkerChange={onWorkerChange} />
           </Fragment>
         );
       })}
@@ -90,10 +93,12 @@ export function TurnGroupsList({
 const TurnGroupRow = memo(function TurnGroupRow({
   group,
   worker,
+  agent,
   onWorkerChange,
 }: {
   group: TurnGroup;
   worker?: string;
+  agent?: Agent | null;
   onWorkerChange?: (worker: WorkerType) => void | Promise<void>;
 }) {
   const isUser =
@@ -106,7 +111,7 @@ const TurnGroupRow = memo(function TurnGroupRow({
       group.flowData.attributes?.['is-meta'] === 'true' ? (
         <MetaMessageChip flowData={group.flowData} skillName={group.skillName} />
       ) : (
-        <ExecutionMessage flowData={group.flowData} worker={worker} isUser={isUser} />
+        <ExecutionMessage flowData={group.flowData} worker={worker} agent={agent} isUser={isUser} />
       )
     ) : (
       <ToolEntryRow events={group.events} />

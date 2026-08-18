@@ -1,7 +1,8 @@
-import { FlowData, FlowDataType, FlowElementTypes } from '@sdk';
+import { FlowData, FlowDataType, FlowElementTypes, type Agent } from '@sdk';
 import { useDataStreamText } from '@sdk/react/hooks';
 import { DotPulse } from '@src/components/dot-pulse';
 import { workerIcon, workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
+import { AgentAvatar } from '@src/components/agents/AgentAvatar';
 import { MarkdownView } from '@src/components/markdown-view';
 import { translateCliMessage } from '@src/i18n/cli-messages';
 import { cn } from '@src/lib/utils';
@@ -17,6 +18,12 @@ interface ExecutionMessageProps {
   className?: string;
   /** Assistant vendor (claude_code/codex/copilot) — picks the worker icon + label. */
   worker?: string;
+  /**
+   * The Agent this process runs AS (`useLaunchingAgent`). When present the
+   * assistant turn is signed by the agent — its avatar and name — not by the
+   * vendor: the vendor is plumbing, the agent is who is talking.
+   */
+  agent?: Agent | null;
 }
 
 const ExecutionMessage: React.FC<ExecutionMessageProps> = ({
@@ -25,6 +32,7 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({
   animateIn = false,
   className,
   worker,
+  agent,
 }) => {
   const { t } = useLingui();
   // Determine if this message type should stream
@@ -65,7 +73,7 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({
   // identity row (colored icon + name) over the message body — no left/right
   // bubble split. User = blue, worker = emerald, so the two read distinctly.
   const Icon = isUser ? User : workerIcon(worker);
-  const name = isUser ? t`You` : workerLabel(worker);
+  const name = isUser ? t`You` : agent ? agent.displayName : workerLabel(worker);
   const accent = isUser
     ? { circle: 'bg-blue-500/15 text-blue-600 dark:text-blue-400', body: 'text-blue-700 dark:text-blue-200' }
     : { circle: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400', body: 'text-foreground' };
@@ -78,10 +86,14 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({
       aria-live={isStreaming ? 'polite' : undefined}
     >
       <div className="mb-1 flex items-center gap-2">
-        <span className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full', accent.circle)}>
-          <Icon className="h-3 w-3" />
-        </span>
-        <span className="text-[13px] font-semibold text-foreground">{name}</span>
+        {!isUser && agent ? (
+          <AgentAvatar agent={agent} className="h-5 w-5 text-[10px]" glyphClassName="h-3 w-3 text-xs" data-testid="execution-message-agent-avatar" />
+        ) : (
+          <span className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full', accent.circle)}>
+            <Icon className="h-3 w-3" />
+          </span>
+        )}
+        <span className="text-[13px] font-semibold text-foreground" data-testid="execution-message-name">{name}</span>
       </div>
       <div className={cn('min-w-0 break-words ps-7 text-[15px] leading-7', accent.body)}>
         {/*
