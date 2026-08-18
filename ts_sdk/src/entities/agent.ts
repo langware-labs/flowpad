@@ -107,6 +107,16 @@ export class Agent extends APIEntity<Agent> {
     this.asset_ref = entity.asset_ref;
   }
 
+  /**
+   * An agent is addressed by its slug (`name`) but PRESENTED by its title — the
+   * chat identity row, the pinned asset row, lists. Falls back to the default
+   * chain (name → uname → …) when no title was authored.
+   */
+  override getDisplayName(): string | null {
+    const title = this.title?.trim();
+    return title ? title : null;
+  }
+
   /** Default open target: the agent profile editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
     return this.assetEditorPointer('agent') ?? super.dockPointer;
