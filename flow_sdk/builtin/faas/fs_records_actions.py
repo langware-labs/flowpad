@@ -2559,6 +2559,7 @@ async def discover_record_by_path(
     proposed_id: str | None = None,
     scope: str | None = None,
     project_id: str | None = None,
+    strict_owner: bool = False,
 ):
     """Find-or-recover ONE record by absolute path — the interactive fast path.
 
@@ -2637,7 +2638,9 @@ async def discover_record_by_path(
                 # not fork a new entity. ``live_ids=None`` (single path, no
                 # per-type id set) means a VALID carrier always wins here; only
                 # the full walk may conclude a carrier names no entity.
-                _owner_id = proposed_id or await owner_id_for(record_type, expanded)
+                _owner_id = proposed_id or await owner_id_for(
+                    record_type, expanded, strict=strict_owner
+                )
                 resolved_id = _info.mint_entity_id(
                     one_ref, owner_id=_owner_id, proposed_id=proposed_id, derive=True, overwrite=True
                 )

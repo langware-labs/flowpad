@@ -69,6 +69,29 @@ class FtsEntry:
     description: str | None = None
     content: str | None = None
 
+    @classmethod
+    def from_record(cls, entity_id: str, entity_type: str, name: str | None, record) -> "FtsEntry":
+        """Build the entry from an ``FSRecord`` — the ONLY way callers should.
+
+        ``title`` and ``description`` carry bm25 weights 8 and 3 (production is
+        ``bm25(entities_fts, 0, 0, 10, 8, 3, 1)``), so a writer that omits them
+        silently ranks its rows below identical content written elsewhere. Three
+        call sites used to hand-roll this constructor and two of them had drifted
+        to name+content only; funnelling them here makes "all four text columns"
+        structural instead of a convention.
+
+        Empty strings collapse to None so a record with no text anywhere still
+        fails ``has_content`` and is skipped, exactly as before.
+        """
+        return cls(
+            entity_id=entity_id,
+            entity_type=entity_type,
+            name=name or None,
+            title=record.search_title or None,
+            description=record.search_description or None,
+            content=record.search_content or None,
+        )
+
     @property
     def has_content(self) -> bool:
         return any(v is not None for v in (self.name, self.title, self.description, self.content))

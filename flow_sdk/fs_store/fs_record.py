@@ -724,9 +724,18 @@ class FSRecord(Generic[M]):
 
     @property
     def orphan(self) -> bool:
-        """True when the record's source asset no longer exists on disk."""
+        """True when the record's source asset is genuinely GONE from disk.
+
+        Absence alone is not enough: an unmounted volume or a disconnected share
+        makes every file under it stat as missing. ``source_unreachable`` keeps
+        those out — see its docstring for the parent-directory rule.
+        """
         ar = self._asset_ref
-        return ar is not None and not ar.exists()
+        if ar is None or ar.exists():
+            return False
+        from flow_sdk.fs_store.path_utils import source_unreachable  # noqa: PLC0415
+
+        return not source_unreachable(ar.path)
 
     def write_hash(self) -> None:
         """Stamp the current source hash + now as the index sentinel, replacing
@@ -944,13 +953,8 @@ class FSRecord(Generic[M]):
                 await asyncio.to_thread(self.sync_from_entity, entity)
 
                 # FTS — read directly from instance attrs, no per-record parse.
-                entry = FtsEntry(
-                    entity_id=entity.id,
-                    entity_type=entity.type,
-                    name=self.__dict__.get("name") or None,
-                    title=self.search_title,
-                    description=self.search_description,
-                    content=self.search_content,
+                entry = FtsEntry.from_record(
+                    entity.id, entity.type, self.__dict__.get("name"), self
                 )
                 if fts_batch is not None:
                     fts_batch.append(entry)

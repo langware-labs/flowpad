@@ -14,7 +14,10 @@ Two shapes, for the two callers:
 from __future__ import annotations
 
 import functools
+import logging
 import unicodedata
+
+from flow_sdk.fs_store.exceptions import AssetRefLookupError
 from collections.abc import Iterable, Mapping
 
 
@@ -134,13 +137,19 @@ class PathOwnerIndex:
         return bool(self._by_type)
 
 
-async def owner_id_for(type_name: str, path: str) -> str | None:
+async def owner_id_for(type_name: str, path: str, *, strict: bool = False) -> str | None:
     """Single-path owner lookup for targeted discovery (``discover_record_by_path``).
 
     Queries the ONE type asked for rather than going through
     ``Entity.get_by_asset_ref``, which fans out a query per asset-owning class
     (~30) and then discards every result of another type. This runs on the
     watcher path, once per changed file.
+
+    ``strict`` raises :class:`~flow_sdk.core.entity.entity_model.AssetRefLookupError`
+    when a spelling probe ERRORED rather than genuinely missing. Callers that MINT
+    on a miss must pass it: a swallowed ``database is locked`` here reads as "no
+    owner", and the mint then rewrites the file's on-disk identity capsule with a
+    fresh id, permanently orphaning the existing row.
     """
     from pathlib import Path  # noqa: PLC0415
 
@@ -159,12 +168,19 @@ async def owner_id_for(type_name: str, path: str) -> str | None:
         if candidate not in spellings:
             spellings.append(candidate)
 
+    failed = False
     for spelling in spellings:
         try:
             entity = await cls.get_one({"asset_ref": spelling})
         except Exception:
+            failed = True
             continue
         entity_id = getattr(entity, "id", None) if entity is not None else None
         if entity_id:
             return str(entity_id)
+
+    if failed:
+        logging.getLogger(__name__).warning("owner lookup failed for %s at %s", type_name, path)
+    if strict and failed:
+        raise AssetRefLookupError(f"owner lookup incomplete for {type_name} at {path}")
     return None

@@ -106,9 +106,17 @@ async def resolve_reply_target(conversation_id: str) -> ReplyTarget:
 
     # Defensive reads end here: these are typed entities.
     origin = target.origin
+    # The row pointers live on the PRIVATE half. A message RECEIVED from another
+    # machine has none — its `origin` crossed the wire, its `origin_local` did
+    # not — which is a different condition from a local record that was deleted,
+    # and has to read as one.
+    local = target.origin_local
+    if local is None:
+        raise ChannelSendUnavailable("this message was shared from another machine")
+
     source, item = await asyncio.gather(
-        DataSource.get_one({"id": origin.data_source_id}),
-        SourceItem.get_one({"id": origin.source_item_id}),
+        DataSource.get_one({"id": local.data_source_id}),
+        SourceItem.get_one({"id": local.source_item_id}),
     )
     if source is None:
         raise ChannelSendUnavailable("the data source this arrived through is gone")

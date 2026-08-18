@@ -62,6 +62,7 @@ from flow_sdk.db.drivers.query import ExpressionNode, OrderType, QueryFilter, Qu
 from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
 from flow_sdk.fs_store.identifier import adopt_entity_id, is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.asset_occurrences import AssetOccurrence, asset_occurrence_dicts
+from flow_sdk.fs_store.exceptions import AssetRefLookupError
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 from .blob_index_entity_model import BLOB_INDEX_VFS_PATH, BlobIndexEntity
@@ -706,7 +707,9 @@ class Entity(DBEntity):
         ]
 
     @classmethod
-    async def get_by_asset_ref(cls, path: "str | Path", *, resolve_containing: bool = False) -> "Entity | None":
+    async def get_by_asset_ref(
+        cls, path: "str | Path", *, resolve_containing: bool = False, strict: bool = False
+    ) -> "Entity | None":
         """Resolve the single entity whose ``asset_ref`` equals ``path``.
 
         ``asset_ref`` is globally unique (one entity per file path across all
@@ -723,6 +726,11 @@ class Entity(DBEntity):
         deepest hit wins, e.g. any file under ``.claude/skills/foo/`` resolves
         to the ``foo`` Skill. Exact match always wins over containment.
         Returns ``None`` when no entity owns the path.
+
+        ``strict`` raises :class:`AssetRefLookupError` when any candidate query
+        ERRORED, instead of reporting the path as unowned. Pass it from every
+        caller that WRITES on a miss (minting, deleting) — see ``fs_store/reindex.py``.
+        Read-only callers can keep the lenient default.
         """
         import asyncio  # noqa: PLC0415
 
@@ -735,15 +743,30 @@ class Entity(DBEntity):
         # type registered before it and silently wrong for one registered after.
         candidates = cls.asset_owner_classes()
 
-        async def _try(ecls: type) -> "Entity | None":
-            try:
-                return await ecls.get_one({"asset_ref": path_str})
-            except Exception:
-                return None
-
-        for result in await asyncio.gather(*[_try(c) for c in candidates]):
-            if result is not None:
+        # `return_exceptions` keeps the per-candidate resilience — one broken type
+        # must not sink the fan-out — while still telling a failed probe apart
+        # from one that genuinely found nothing.
+        results = await asyncio.gather(
+            *[c.get_one({"asset_ref": path_str}) for c in candidates], return_exceptions=True
+        )
+        failed = sum(1 for r in results if isinstance(r, BaseException))
+        for result in results:
+            if result is not None and not isinstance(result, BaseException):
                 return result
+
+        if failed:
+            # Once for the whole fan-out. The usual cause is a contended writer,
+            # which fails EVERY candidate at once — ~26 of them — so logging per
+            # candidate turns one locked database into 26 tracebacks per path.
+            logging.getLogger(__name__).warning(
+                "asset_ref lookup failed for %d/%d types on %s", failed, len(results), path_str
+            )
+            # A partial failure makes "not found" unreliable, so a strict caller
+            # is told rather than handed a None it would act on — and before the
+            # containment fallback, since a fan-out we could not trust makes a
+            # containment miss untrustworthy too.
+            if strict:
+                raise AssetRefLookupError(f"asset_ref lookup incomplete for {path_str}")
 
         if not resolve_containing:
             return None
@@ -1082,20 +1105,19 @@ class Entity(DBEntity):
             object.__setattr__(entity, "asset_ref", data["asset_ref"])
         return entity
 
-    async def _fts_upsert(self, type_name: str, content: str) -> None:
-        """Upsert this entity into the FTS5 table with the given content."""
+    async def _fts_upsert(self, type_name: str, record) -> None:
+        """Upsert this entity into the FTS5 table from its ``FSRecord``.
+
+        The column list lives in ``FtsEntry.from_record`` — see there for why a
+        writer must never assemble one by hand.
+        """
         from flow_sdk.db import get_db_driver
         from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry
 
         driver = get_db_driver()
         if hasattr(driver, "fts_upsert"):
             await driver.fts_upsert(
-                FtsEntry(
-                    entity_id=self.id,
-                    entity_type=type_name,
-                    name=getattr(self, "name", None) or None,
-                    content=content,
-                )
+                FtsEntry.from_record(self.id, type_name, getattr(self, "name", None), record)
             )
 
     def fs_origin(self) -> "FSOriginField | None":
@@ -1159,10 +1181,9 @@ class Entity(DBEntity):
         record = await self.get_record()
         if record is None:
             return
-        content = record.search_content
-        if content is None:
+        if record.search_content is None:
             return
-        await self._fts_upsert(self.get_type(), content)
+        await self._fts_upsert(self.get_type(), record)
 
     async def removeSearchIndex(self) -> None:
         """Remove this entity from the FTS5 table."""
@@ -1264,9 +1285,8 @@ class Entity(DBEntity):
             from_exception(record, exc, trigger="store").save()
             return None
         # Immediately index into FTS5 so the entity is searchable without a scan.
-        content = record.search_content
-        if content is not None:
-            await entity._fts_upsert(type_name, content)
+        if record.search_content is not None:
+            await entity._fts_upsert(type_name, record)
         return record
 
     async def _resolve_scope_project(self) -> "Entity | None":
