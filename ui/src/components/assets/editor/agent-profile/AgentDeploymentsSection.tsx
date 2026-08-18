@@ -7,7 +7,6 @@ import { Cloud, ExternalLink, Loader2, PauseCircle } from 'lucide-react';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 
-import { AgentSection } from './AgentProfileFields';
 
 interface AgentDeploymentsSectionProps {
   agent: Agent;
@@ -99,7 +98,10 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
   );
 
   return (
-    <AgentSection hint={t`Publish this agent to the cloud and give it a machine that logs in as itself.`}>
+    <section>
+      <p className="mb-3 text-xs text-muted-foreground">
+        <Trans>Publish this agent to the cloud and give it a machine that logs in as itself.</Trans>
+      </p>
       <div className="flex flex-col gap-2">
         {deployments.map((deployment) => {
           const url = deployment.origin?.url || deployment.target.location;
@@ -157,6 +159,6 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
           )}
         </div>
       </div>
-    </AgentSection>
+    </section>
   );
 }

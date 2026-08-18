@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
-import { Agent, AgenticProcess, dataManager, TypeId } from '@sdk';
+import { Agent, AgenticProcess } from '@sdk';
 
 import { notify } from '@src/notifications';
 import { ViewMode } from '@src/contexts/view-mode-context';
@@ -16,7 +16,9 @@ import { embedVibeSubagent } from '@src/pages/flow-page/use-start-vibe-session';
  *   embed vibe   →  the vibe SubAgent persona layered UNDER the agent, so the
  *                   vibe pane's `flow show` / mcp-ui contract still applies —
  *                   the agent stays the principal, vibe stays the display
- *                   contract (same call every vibe start path makes)
+ *                   contract (same call every vibe start path makes). Awaited
+ *                   BEFORE the pane opens: here the human types turn 1, so
+ *                   nothing else stands between "open" and "first prompt".
  *   open         →  the vibe workspace for that process
  *
  * No prompt dialog: using an agent is starting a conversation with it.
@@ -27,15 +29,19 @@ export function useUseAgent(agent: Agent): { use: () => Promise<void>; busy: boo
   const [busy, setBusy] = useState(false);
 
   const use = useCallback(async () => {
-    if (busy) return;
     setBusy(true);
     try {
       const result = await agent.use();
-      const proc = await dataManager.getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, result.process_id));
-      // Open first — the pane must be mounted to catch anything the agent shows;
-      // the persona only has to be embedded before the first prompt.
+      const proc = await AgenticProcess.getById<AgenticProcess>(result.process_id);
+      if (proc) {
+        // Watcher-scoped events (status, turns) reach the pane only for a
+        // watched process — same as every other vibe start path.
+        void proc.watch().catch((e) => console.warn('[use-agent] watch failed; live updates degraded', e));
+        await embedVibeSubagent(proc);
+      } else {
+        console.warn('[use-agent] process not readable after use(); vibe persona not embedded', result.process_id);
+      }
       await navigation.openShellProcess(result.process_id, { viewMode: ViewMode.Vibe });
-      if (proc) await embedVibeSubagent(proc);
     } catch (e) {
       notify.error({
         title: t`Could not use ${agent.displayName}`,
@@ -44,7 +50,7 @@ export function useUseAgent(agent: Agent): { use: () => Promise<void>; busy: boo
     } finally {
       setBusy(false);
     }
-  }, [agent, busy, navigation, t]);
+  }, [agent, navigation, t]);
 
   return { use, busy };
 }

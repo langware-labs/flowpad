@@ -1,4 +1,6 @@
+import type React from 'react';
 import type { Agent } from '@sdk';
+import { useLingui } from '@lingui/react/macro';
 
 import { cn } from '@src/lib/utils';
 import { AvatarValue } from '@src/lib/avatar-value';
@@ -11,6 +13,14 @@ interface AgentAvatarProps {
   className?: string;
   /** Size classes for a glyph/emoji avatar (an image always fills the circle). */
   glyphClassName?: string;
+  /**
+   * Caller-resolved image URL. Defaults to `agent.avatarImageUrl`; the profile
+   * editor passes the URL off its router-provided ref (authoritative for hub
+   * entity storage), everyone else lets the entity resolve it.
+   */
+  imageUrl?: string | null;
+  /** Rendered when the agent has neither image nor glyph. Default: the name's initial. */
+  fallback?: React.ReactNode;
   'data-testid'?: string;
 }
 
@@ -20,9 +30,16 @@ interface AgentAvatarProps {
  * the initial of its display name. Used wherever an agent is named as an
  * actor: the pinned row of a process's asset list, the chat identity row.
  */
-export function AgentAvatar({ agent, className, glyphClassName = 'h-3.5 w-3.5 text-sm', ...rest }: AgentAvatarProps) {
+export function AgentAvatar({
+  agent,
+  className,
+  glyphClassName = 'h-3.5 w-3.5 text-sm',
+  imageUrl = agent.avatarImageUrl,
+  fallback,
+  ...rest
+}: AgentAvatarProps) {
+  const { t } = useLingui();
   const name = agent.displayName;
-  const imageUrl = agent.avatarImageUrl;
   return (
     <span
       className={cn(
@@ -35,9 +52,9 @@ export function AgentAvatar({ agent, className, glyphClassName = 'h-3.5 w-3.5 te
       <AvatarValue
         value={agent.avatar}
         imageUrl={imageUrl}
-        alt={`${name} avatar`}
+        alt={t`${name} avatar`}
         className={imageUrl ? 'h-full w-full object-cover' : glyphClassName}
-        fallback={<span>{initialsFromLabel(name, 1)}</span>}
+        fallback={fallback ?? <span>{initialsFromLabel(name, 1)}</span>}
       />
     </span>
   );

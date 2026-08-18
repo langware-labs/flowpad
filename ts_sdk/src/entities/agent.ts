@@ -31,7 +31,11 @@ export { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
  *    `FrontMatterFsRef.save()` — it reconstructs frontmatter from `name` and
  *    `description` alone and would drop `avatar` and everything else — and do
  *    not write it through the markdown editor's frontmatter buffer, whose
- *    line-regex parser flattens list and nested values.
+ *    line-regex parser flattens list and nested values. The one sanctioned
+ *    file-level writer besides `save()` is the profile editor's
+ *    `patchAgentDocument`, which edits the YAML document in place (keeping
+ *    unknown keys and comments `save()` would drop) and re-attaches the
+ *    identity capsule; the backend resyncs the row from disk on that write.
  *  - `system_prompt` IS the markdown body.
  */
 @registerEntity
@@ -113,8 +117,7 @@ export class Agent extends APIEntity<Agent> {
    * chain (name → uname → …) when no title was authored.
    */
   override getDisplayName(): string | null {
-    const title = this.title?.trim();
-    return title ? title : null;
+    return this.title?.trim() || null;
   }
 
   /** Default open target: the agent profile editor (URL-first navigate target). */
@@ -247,14 +250,10 @@ export interface AgentDeployResult {
   agent_definition_error?: string;
 }
 
-/** What `POST /agent/<id>/run` hands back. */
 /** What `POST /agent/<id>/use` hands back — the session opened as the agent. */
-export interface AgentUseResult {
-  process_id: string;
-  process_typeid: string;
-  deployment_id: string;
-}
+export type AgentUseResult = Omit<AgentRunResult, 'compute_node_id'>;
 
+/** What `POST /agent/<id>/run` hands back. */
 export interface AgentRunResult {
   process_id: string;
   process_typeid: string;

@@ -73,8 +73,13 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({
   // Stacked, left-aligned turns (ChatGPT / Gemini / Claude-Code style): a leading
   // identity row (colored icon + name) over the message body — no left/right
   // bubble split. User = blue, worker = emerald, so the two read distinctly.
-  const Icon = isUser ? User : workerIcon(worker);
   const name = isUser ? t`You` : agent ? agent.displayName : workerLabel(worker);
+  const WorkerIcon = workerIcon(worker);
+  const nameNode = (
+    <span className="text-[13px] font-semibold text-foreground" data-testid="execution-message-name">
+      {name}
+    </span>
+  );
   const accent = isUser
     ? { circle: 'bg-blue-500/15 text-blue-600 dark:text-blue-400', body: 'text-blue-700 dark:text-blue-200' }
     : { circle: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400', body: 'text-foreground' };
@@ -99,15 +104,15 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({
               title={t`About ${name}`}
             >
               <AgentAvatar agent={agent} className="h-5 w-5 text-[10px]" glyphClassName="h-3 w-3 text-xs" data-testid="execution-message-agent-avatar" />
-              <span className="text-[13px] font-semibold text-foreground" data-testid="execution-message-name">{name}</span>
+              {nameNode}
             </button>
           </AgentIntroCard>
         ) : (
           <>
             <span className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full', accent.circle)}>
-              <Icon className="h-3 w-3" />
+              {isUser ? <User className="h-3 w-3" /> : <WorkerIcon className="h-3 w-3" />}
             </span>
-            <span className="text-[13px] font-semibold text-foreground" data-testid="execution-message-name">{name}</span>
+            {nameNode}
           </>
         )}
       </div>

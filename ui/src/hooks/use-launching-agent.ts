@@ -9,9 +9,9 @@ import { useEntity } from '@src/hooks/entity-hooks';
  * hops through `useEntity` (cache-first, live-updating — a rename or a new
  * avatar repaints). A process with no deployment issues no request at all.
  *
- * `enabled` follows the caller's popover state, like `useProcessAssets`: the
- * row this feeds only renders inside the open list, so a closed toolbar must
- * not pay for it.
+ * `enabled` lets a caller that only shows the agent on demand (the Assets
+ * popover) defer the two lookups until it is open; the execution panel, which
+ * signs every turn with it, leaves it on.
  */
 export function useLaunchingAgent(deploymentId: string | null | undefined, options?: { enabled?: boolean }): Agent | null {
   const enabled = options?.enabled !== false;
