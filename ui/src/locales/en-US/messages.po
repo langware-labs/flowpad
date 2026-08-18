@@ -4363,6 +4363,7 @@ msgid "created"
 msgstr "created"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
+#: src/components/entity-execution-panel/TurnFilesChips.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Created"
 msgstr "Created"
@@ -5663,6 +5664,10 @@ msgstr "Edit Trigger"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Edit your draft…"
 msgstr "Edit your draft…"
+
+#: src/components/entity-execution-panel/TurnFilesChips.tsx
+msgid "Edited"
+msgstr "Edited"
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "Edited items could not be loaded. Chat sessions are still shown."
@@ -11114,6 +11119,11 @@ msgstr "Open"
 msgid "Open .env.local at this line"
 msgstr "Open .env.local at this line"
 
+#. placeholder {0}: file.path
+#: src/components/entity-execution-panel/TurnFilesChips.tsx
+msgid "Open {0}"
+msgstr "Open {0}"
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Open {label}"
 msgstr "Open {label}"
@@ -14950,6 +14960,10 @@ msgstr "Show system projects"
 #: src/i18n/pref-labels.ts
 msgid "Show system skills"
 msgstr "Show system skills"
+
+#: src/components/entity-execution-panel/TurnFilesChips.tsx
+msgid "Show the other files this turn touched"
+msgstr "Show the other files this turn touched"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Show timing info for each turn"
