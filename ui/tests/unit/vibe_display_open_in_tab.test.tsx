@@ -165,4 +165,29 @@ describe('vibe display → promoting a shown document to its own tab', () => {
     expect(label).toBe(DOC_NAME);
     expect(reopened.pointer ?? '').toContain(DOC_NAME);
   });
+
+  it('a running-app history row re-pins the Display pane instead of navigating', () => {
+    // A doc is on the display; an app (port) show sits older in the history.
+    process.context_data = {
+      display_stack: [
+        { kind: 'webapp', port: 3000, shown_at: 1 },
+        { kind: 'vfs', path: DOC_PATH, shown_at: 2 },
+      ],
+    } as never;
+    render(
+      <Wrap>
+        <VibeWorkspace session={session as never} />
+      </Wrap>,
+    );
+    act(() => showListener?.({ kind: 'vfs', path: DOC_PATH }));
+    expect(screen.queryByTestId('vibe-webapp-frame')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('display-history'));
+    fireEvent.click(screen.getAllByTestId('display-history-row')[1]); // the webapp entry
+
+    // The popover only exists on the process dock, so re-opening that dock was
+    // a no-op — the pane must switch by itself, without any navigation.
+    expect(openDock).not.toHaveBeenCalled();
+    expect(screen.getByTestId('vibe-webapp-frame')).toBeTruthy();
+  });
 });
