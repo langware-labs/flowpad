@@ -1,6 +1,9 @@
-import { FlowData, FlowElementTypes } from '@sdk';
+import { type FileEditEntry, type FileWriteEntry, FlowData, FlowElementTypes } from '@sdk';
+
+import { basename, normalizePath } from '@src/components/asset-manager/asset-row-helpers';
 
 import { getToolUseId, type TurnGroup } from './groupTurnEvents';
+import { describeEvent } from './toolEventDescriptor';
 import { transcriptEntry } from './transcriptEntry';
 
 /**
@@ -14,19 +17,20 @@ import { transcriptEntry } from './transcriptEntry';
  * of what the chat already has.
  *
  * Two kinds, kept apart because they answer different questions ("what is new
- * here?" vs "what changed?"):
+ * here?" vs "what changed?"). The vocabulary is the transcript's own — the
+ * SDK's `FileWriteEntry` / `FileEditEntry` kinds — not a parallel one:
  *
- *   - `create` — a `file_write` entry (Claude `Write`, Codex `apply_patch ***
- *     Add File`). Note the backend hardcodes `is_new=True` on every
+ *   - `file_write` (Claude `Write`, Codex `apply_patch *** Add File`) renders
+ *     as "Created". Note the backend hardcodes `is_new=True` on every
  *     `FileWriteEntry`, so re-writing an existing file also reads as a
  *     creation; the guard below is defensive, not a real did-not-exist test.
- *   - `edit` — a `file_edit` entry (Claude `Edit`/`MultiEdit`/`NotebookEdit`,
- *     Codex `apply_patch *** Update File`).
+ *   - `file_edit` (Claude `Edit`/`MultiEdit`/`NotebookEdit`, Codex
+ *     `apply_patch *** Update File`) renders as "Edited".
  *
  * A `flow artifact` registration is deliberately NOT here — it already has its
  * own chip in the bottom ribbon.
  */
-export type FileChange = 'create' | 'edit';
+export type TurnFileKind = (FileWriteEntry | FileEditEntry)['kind'];
 
 export interface TurnFile {
   /**
@@ -35,75 +39,40 @@ export interface TurnFile {
    * `turnFileVfsPath`'s job, not this module's.
    */
   path: string;
-  /** Display label: the basename, split on both separators (Windows paths). */
+  /** Display label: the basename (`normalizePath` first, so Windows paths split too). */
   name: string;
-  change: FileChange;
+  kind: TurnFileKind;
 }
 
 const NO_FILES: readonly TurnFile[] = Object.freeze([]);
 
-/**
- * Basename, splitting on `/` AND `\`.
- *
- * Deliberately not `asset-row-helpers`' `basename`, which only knows `/`:
- * Claude on Windows emits `C:\Users\…\x.ts` verbatim, and that helper would
- * hand the whole absolute path back as the chip label.
- */
-function fileNameOf(path: string): string {
-  const trimmed = path.replace(/[\\/]+$/, '');
-  const cut = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
-  return cut >= 0 ? trimmed.slice(cut + 1) : trimmed;
-}
-
-const CHANGE_OF_KIND: Record<string, FileChange> = {
-  file_write: 'create',
-  file_edit: 'edit',
-};
-
-/**
- * The file path off a tool call's own input — the LIVE-stream source.
- *
- * Both `file_write` and `file_edit` put it at `input.file_path` / `args.file_path`
- * (`TranscriptEntry._tool_flow_data`). Read only that key, never the generic
- * `describeToolInput`, which also yields commands and queries — a `Run` frame
- * must never be able to chip its command line as a path.
- */
-function toolInputPath(data: unknown): string {
-  if (typeof data !== 'object' || !data) return '';
-  const root = data as Record<string, unknown>;
-  const input = (root.input ?? root.args) as Record<string, unknown> | undefined;
-  if (!input || typeof input !== 'object') return '';
-  return typeof input.file_path === 'string' ? input.file_path : '';
-}
+const isTurnFileKind = (kind: string): kind is TurnFileKind => kind === 'file_write' || kind === 'file_edit';
 
 /**
  * What a frame did to a file, or null when it touched no file.
  *
- * Reads the typed transcript entry FIRST, then falls back to the frame's own
- * attributes and value — and the fallback is load-bearing, not belt-and-braces.
- * `processEntry` is a nested dict populated ONLY by `FlowData.fromJSON`, i.e.
- * the history path. A live turn streams as XML, where only attributes and the
- * flow value survive, so every live frame arrives with `processEntry === null`.
- * Depending on it alone is why the chips used to appear only after a reload.
- * The semantic `subtype` attribute and the tool input are what the live frame
- * actually carries — the same fallback chain `describeEvent` uses.
+ * `describeEvent` owns the kind/path resolution: the typed transcript entry
+ * FIRST, then the frame's own `subtype` attribute and tool input — and that
+ * fallback is load-bearing, not belt-and-braces. `processEntry` is a nested
+ * dict populated ONLY by `FlowData.fromJSON`, i.e. the history path. A live
+ * turn streams as XML, where only attributes and the flow value survive, so
+ * every live frame arrives with `processEntry === null`. Depending on it alone
+ * is why the chips used to appear only after a reload. The kind gate is what
+ * keeps a `Run` frame from ever chipping its command line as a path.
  */
 function fileTouchedBy(event: FlowData): TurnFile | null {
   if (event.elementType !== FlowElementTypes.TOOL_CALL) return null;
-  const entry = transcriptEntry(event);
-  const entryKind = entry?.kind;
-  const kind = typeof entryKind === 'string' && entryKind ? entryKind : (event.attributes['subtype'] ?? '');
-  const change = CHANGE_OF_KIND[kind];
-  if (!change) return null;
+  const { kind, detail: path } = describeEvent(event);
+  if (!isTurnFileKind(kind)) return null;
   // A failed operation changed nothing; `is_new: false` on a write would mean a
   // plain overwrite rather than a creation. Both are replay-only signals (they
   // are folded in from the paired tool result), so live failures are caught by
   // the result correlation in `filesInGroup` instead.
+  const entry = transcriptEntry(event);
   if (entry?.is_error === true) return null;
-  if (change === 'create' && entry?.is_new === false) return null;
-  const path = typeof entry?.path === 'string' && entry.path ? entry.path : toolInputPath(event.data);
+  if (kind === 'file_write' && entry?.is_new === false) return null;
   if (!path) return null;
-  return { path, name: fileNameOf(path), change };
+  return { path, name: basename(normalizePath(path)), kind };
 }
 
 /**
@@ -138,7 +107,7 @@ function collect(into: Map<string, TurnFile>, files: Iterable<TurnFile>): void {
     const seen = into.get(file.path);
     if (!seen) {
       into.set(file.path, file);
-    } else if (seen.change === 'edit' && file.change === 'create') {
+    } else if (seen.kind === 'file_edit' && file.kind === 'file_write') {
       into.set(file.path, file);
     }
   }
@@ -273,12 +242,12 @@ export function planTurnFiles(
 }
 
 /** Split a row's files into the two groups the chip row renders. */
-export function partitionByChange(files: readonly TurnFile[]): {
+export function partitionByKind(files: readonly TurnFile[]): {
   created: readonly TurnFile[];
   edited: readonly TurnFile[];
 } {
   return {
-    created: files.filter((f) => f.change === 'create'),
-    edited: files.filter((f) => f.change === 'edit'),
+    created: files.filter((f) => f.kind === 'file_write'),
+    edited: files.filter((f) => f.kind === 'file_edit'),
   };
 }

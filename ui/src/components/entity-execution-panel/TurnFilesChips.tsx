@@ -1,9 +1,9 @@
 import { Trans, useLingui } from '@lingui/react/macro';
 import type { AgenticProcess } from '@sdk';
-import { FileDiff, FilePlus, type LucideIcon } from 'lucide-react';
 import { memo } from 'react';
 
-import { partitionByChange, type FileChange, type TurnFile } from '@src/components/floating-chat/turnFiles';
+import { FILE_OPS } from '@src/components/floating-chat/toolEventDescriptor';
+import { partitionByKind, type TurnFile } from '@src/components/floating-chat/turnFiles';
 import { useOpenTurnFile, type TurnFileOpener } from '@src/components/floating-chat/useOpenTurnFile';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 
@@ -19,14 +19,6 @@ const CHIP_CREATE =
 const CHIP_EDIT =
   'border-border/60 bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground';
 const CHIP_INERT = 'border-border/60 bg-muted/40 text-muted-foreground disabled:cursor-default disabled:opacity-70';
-
-const ICON_OF: Record<FileChange, LucideIcon> = {
-  // The same glyphs the tool-call descriptor already assigns to file_write /
-  // file_edit. These are filesystem files, not entity types, so the "icons come
-  // from the backend type registry" rule does not apply here.
-  create: FilePlus,
-  edit: FileDiff,
-};
 
 /**
  * The "files this turn touched" row, rendered under an ended turn in the
@@ -50,7 +42,7 @@ export const TurnFilesChips = memo(function TurnFilesChips({
   const opener = useOpenTurnFile(process);
   if (files.length === 0) return null;
 
-  const { created, edited } = partitionByChange(files);
+  const { created, edited } = partitionByKind(files);
 
   return (
     <div className="my-1 flex flex-wrap items-center gap-1.5" data-testid="turn-files">
@@ -91,17 +83,20 @@ function FileGroup({
 function FileChip({ file, opener }: { file: TurnFile; opener: TurnFileOpener }) {
   const { t } = useLingui();
   const openable = opener.resolve(file.path) !== null;
-  const Icon = ICON_OF[file.change];
+  // The glyph the tool-call row already uses for this kind. These are
+  // filesystem files, not entity types, so the "icons come from the backend
+  // type registry" rule does not apply here.
+  const [Icon] = FILE_OPS[file.kind];
   return (
     <button
       type="button"
       data-testid="turn-file-chip"
       data-path={file.path}
-      data-change={file.change}
+      data-kind={file.kind}
       disabled={!openable}
       onClick={() => opener.open(file.path)}
       title={openable ? t`Open ${file.path}` : file.path}
-      className={`${CHIP_BASE} ${!openable ? CHIP_INERT : file.change === 'create' ? CHIP_CREATE : CHIP_EDIT}`}
+      className={`${CHIP_BASE} ${!openable ? CHIP_INERT : file.kind === 'file_write' ? CHIP_CREATE : CHIP_EDIT}`}
     >
       <Icon className="h-3.5 w-3.5 flex-shrink-0" />
       <span className="truncate font-medium">{file.name}</span>
@@ -139,21 +134,21 @@ function OverflowChip({
       <PopoverContent align="start" side="top" className="max-h-72 w-72 overflow-y-auto p-1">
         <div className="flex flex-col gap-0.5">
           {files.map((file) => {
-            const Icon = ICON_OF[file.change];
+            const [Icon] = FILE_OPS[file.kind];
             return (
               <button
                 key={file.path}
                 type="button"
                 data-testid="turn-file-chip"
                 data-path={file.path}
-                data-change={file.change}
+                data-kind={file.kind}
                 disabled={opener.resolve(file.path) === null}
                 onClick={() => opener.open(file.path)}
                 title={file.path}
                 className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-start hover:bg-accent disabled:cursor-default disabled:opacity-70"
               >
                 <Icon
-                  className={`h-3.5 w-3.5 flex-shrink-0 ${file.change === 'create' ? 'text-blue-500' : 'text-muted-foreground'}`}
+                  className={`h-3.5 w-3.5 flex-shrink-0 ${file.kind === 'file_write' ? 'text-blue-500' : 'text-muted-foreground'}`}
                 />
                 <span className="min-w-0 flex-1 truncate text-xs text-foreground">{file.name}</span>
               </button>
