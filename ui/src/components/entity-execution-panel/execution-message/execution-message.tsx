@@ -3,6 +3,7 @@ import { useDataStreamText } from '@sdk/react/hooks';
 import { DotPulse } from '@src/components/dot-pulse';
 import { workerIcon, workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 import { AgentAvatar } from '@src/components/agents/AgentAvatar';
+import { AgentIntroCard } from '@src/components/agents/AgentIntroCard';
 import { MarkdownView } from '@src/components/markdown-view';
 import { translateCliMessage } from '@src/i18n/cli-messages';
 import { cn } from '@src/lib/utils';
@@ -87,13 +88,28 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({
     >
       <div className="mb-1 flex items-center gap-2">
         {!isUser && agent ? (
-          <AgentAvatar agent={agent} className="h-5 w-5 text-[10px]" glyphClassName="h-3 w-3 text-xs" data-testid="execution-message-agent-avatar" />
+          // The identity row is the agent's handle: click it for the intro card
+          // (who this is, what it is for, open it) — the same card everywhere
+          // an agent is named as an actor.
+          <AgentIntroCard agent={agent}>
+            <button
+              type="button"
+              className="flex items-center gap-2 rounded-full pe-2 hover:bg-muted/60"
+              data-testid="execution-message-agent"
+              title={t`About ${name}`}
+            >
+              <AgentAvatar agent={agent} className="h-5 w-5 text-[10px]" glyphClassName="h-3 w-3 text-xs" data-testid="execution-message-agent-avatar" />
+              <span className="text-[13px] font-semibold text-foreground" data-testid="execution-message-name">{name}</span>
+            </button>
+          </AgentIntroCard>
         ) : (
-          <span className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full', accent.circle)}>
-            <Icon className="h-3 w-3" />
-          </span>
+          <>
+            <span className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full', accent.circle)}>
+              <Icon className="h-3 w-3" />
+            </span>
+            <span className="text-[13px] font-semibold text-foreground" data-testid="execution-message-name">{name}</span>
+          </>
         )}
-        <span className="text-[13px] font-semibold text-foreground" data-testid="execution-message-name">{name}</span>
       </div>
       <div className={cn('min-w-0 break-words ps-7 text-[15px] leading-7', accent.body)}>
         {/*
