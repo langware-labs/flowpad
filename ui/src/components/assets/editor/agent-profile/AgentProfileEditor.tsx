@@ -19,7 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tab
 
 import { AgentDeploymentsSection } from './AgentDeploymentsSection';
 import { AgentListField, AgentSelectField } from './AgentProfileFields';
-import { useUseAgent } from './use-agent';
+import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
 import { AGENT_EFFORTS, AGENT_MODEL_TIERS, AGENT_PERMISSION_MODES, AGENT_WORKER_TYPES } from './agent-vocabularies';
 import { AgentDocumentPatch, patchAgentDocument } from './agent-document';
 
@@ -57,7 +57,8 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
   const [description, setDescription] = useState(agent?.description ?? '');
   const [prompt, setPrompt] = useState(agent?.system_prompt ?? '');
   const [avatarRevision, setAvatarRevision] = useState(0);
-  const { use, busy: using } = useUseAgent(agent);
+  const { launch, busyId } = useAgentLauncher();
+  const using = busyId === agent?.id;
 
   useEffect(() => {
     setTitle(agent?.title ?? '');
@@ -209,7 +210,7 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
               aria-label={t`Enabled`}
             />
           </div>
-          <Button size="sm" disabled={!agent.enabled || using} onClick={() => void use()} data-testid="agent-use">
+          <Button size="sm" disabled={!agent.enabled || using} onClick={() => void launch(agent)} data-testid="agent-use">
             {using ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="me-1.5 h-3.5 w-3.5" />}
             <Trans>Use</Trans>
           </Button>
