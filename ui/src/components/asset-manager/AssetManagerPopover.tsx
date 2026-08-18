@@ -16,6 +16,7 @@ import {
   type AssetDescriptor,
 } from '@sdk';
 import { AgentAvatar } from '@src/components/agents/AgentAvatar';
+import { AgentTypeChip } from '@src/components/agents/AgentIntroCard';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 import {
@@ -856,9 +857,7 @@ function LaunchingAgentRow({ agent }: { agent: Agent }) {
       <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground" data-testid="asset-manager-launching-agent-name">
         {name}
       </span>
-      <span className="flex-shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-        <Trans>agent</Trans>
-      </span>
+      <AgentTypeChip className="flex-shrink-0" />
     </button>
   );
 }

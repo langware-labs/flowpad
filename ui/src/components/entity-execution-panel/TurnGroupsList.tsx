@@ -76,7 +76,16 @@ export function TurnGroupsList({
         return (
           <Fragment key={key}>
             {i > 0 && <TurnDivider />}
-            <TurnGroupRow group={g} worker={worker} agent={agent} onWorkerChange={onWorkerChange} />
+            <TurnGroupRow
+              group={g}
+              worker={worker}
+              agent={agent}
+              // useEntity keeps ONE object per entity and mutates it, so `agent`
+              // is referentially stable across a rename / new avatar; the memo
+              // needs a value that moves with the row to repaint.
+              agentVersion={agent?.updated_date ?? null}
+              onWorkerChange={onWorkerChange}
+            />
           </Fragment>
         );
       })}
@@ -99,6 +108,8 @@ const TurnGroupRow = memo(function TurnGroupRow({
   group: TurnGroup;
   worker?: string;
   agent?: Agent | null;
+  /** Memo key only — see the call site. */
+  agentVersion?: unknown;
   onWorkerChange?: (worker: WorkerType) => void | Promise<void>;
 }) {
   const isUser =

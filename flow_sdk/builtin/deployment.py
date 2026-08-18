@@ -359,6 +359,16 @@ class Deployment(Entity):
         element = await self.element()
         return element if isinstance(element, Agent) else None
 
+    async def _require_agent(self) -> "Agent":
+        """The placed Agent, or a loud error — a launch site naming a missing or
+        disabled agent is a bug we want to see, not a silent no-op."""
+        agent = await self.agent()
+        if agent is None:
+            raise RuntimeError(f"deployment {self.id}: agent {self.parent_type_id!r} not found")
+        if not agent.enabled:
+            raise RuntimeError(f"agent {agent.name!r} is disabled")
+        return agent
+
     async def build(self, prompt: str = "", **options) -> "AgenticProcess":
         """Project the deployed agent onto an AgenticProcess. Not saved, not started.
 
@@ -377,23 +387,16 @@ class Deployment(Entity):
         from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
         from flow_sdk.flowpad_types.enums import ProcessKind  # noqa: PLC0415
 
-        agent = await self.agent()
-        if agent is None:
-            raise RuntimeError(f"deployment {self.id}: agent {self.parent_type_id!r} not found")
-        if not agent.enabled:
-            raise RuntimeError(f"agent {agent.name!r} is disabled")
+        agent = await self._require_agent()
 
         # A per-run worker override has to reach BOTH sides — the options object
         # (dispatched on the driver key) and the process field (a WorkerType
         # enum value). Applying it to only one is how you get a codex-flavoured
         # options bundle handed to a claude process.
         worker_override = options.pop("worker_type", None)
-        opts = agent.to_agent_options(worker_type=worker_override)
         # Transport, not identity: a chat surface streams JSON, a one-shot run
-        # prints. Only Claude's options carry the flag; other drivers ignore it.
-        output_format = options.pop("output_format", None)
-        if output_format and hasattr(opts, "output_format"):
-            opts.output_format = output_format
+        # prints. Goes through the constructor (see ``to_agent_options``).
+        opts = agent.to_agent_options(worker_type=worker_override, output_format=options.pop("output_format", None))
 
         # The agent's system prompt goes in via ``context_data.instructions`` —
         # the ONE channel ``resolve_system_instructions`` reads, which
@@ -463,16 +466,22 @@ class Deployment(Entity):
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
         from flow_sdk.flowpad_types.enums import ProcessKind  # noqa: PLC0415
 
-        agent = await self.agent()
-        if agent is None:
-            raise RuntimeError(f"deployment {self.id}: agent {self.parent_type_id!r} not found")
+        # Same routing rule as ``run``: a session opens on the node the agent is
+        # placed on, and a remote placement is refused rather than quietly
+        # opened here (see ``agent_run.dispatch_agent_run``).
+        if not self.is_local:
+            raise NotImplementedError(
+                f"this agent is deployed on compute node {self.compute_node_id}, "
+                "which cannot be reached from here yet."
+            )
+        agent = await self._require_agent()  # ``build`` re-reads it from the memoized ``_element``
         workdir = options.pop("workdir", None)
         if not workdir and agent.project_id:
             project = await Project.get_by_id(agent.project_id)
             workdir = getattr(project, "fs_storage_mount_path", None) if project else None
         proc = await self.build(
             "",
-            name=options.pop("name", None) or agent.title or agent.name or agent.id,
+            name=options.pop("name", None) or agent.display_name,
             process_type=ProcessKind.CHAT.value,
             visible=True,
             pty_mode=False,

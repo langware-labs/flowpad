@@ -5,8 +5,8 @@ import { Loader2, Sparkles } from 'lucide-react';
 
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
-import { AvatarValue } from '@src/lib/avatar-value';
 import { colorForIdentityKey } from '@src/components/conversation/avatar-color';
+import { AgentAvatar } from '@src/components/agents/AgentAvatar';
 import { AgentAvatarPicker } from '@src/components/ui/agent-avatar-picker';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { prepareAvatarImage } from '@src/lib/prepare-avatar-image';
@@ -18,7 +18,7 @@ import { Button } from '@src/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 
 import { AgentDeploymentsSection } from './AgentDeploymentsSection';
-import { AgentListField, AgentSection, AgentSelectField } from './AgentProfileFields';
+import { AgentListField, AgentSelectField } from './AgentProfileFields';
 import { useUseAgent } from './use-agent';
 import { AGENT_EFFORTS, AGENT_MODEL_TIERS, AGENT_PERMISSION_MODES, AGENT_WORKER_TYPES } from './agent-vocabularies';
 import { AgentDocumentPatch, patchAgentDocument } from './agent-document';
@@ -149,12 +149,12 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
                 ringColor,
               )}
             >
-              <AvatarValue
+              <AgentAvatar
                 key={`${agent.avatar ?? 'none'}:${avatarRevision}`}
-                value={agent.avatar}
+                agent={agent}
                 imageUrl={avatarImageUrl}
-                alt={agent.name ? t`${agent.name} avatar` : t`Agent avatar`}
-                className={avatarImageUrl ? 'h-full w-full object-cover' : 'h-9 w-9 text-3xl'}
+                className="h-full w-full bg-transparent text-3xl"
+                glyphClassName="h-9 w-9 text-3xl"
                 fallback={<AgentIcon className="h-9 w-9" />}
               />
             </button>
@@ -297,7 +297,10 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
             </TabsContent>
 
             <TabsContent value="advanced" className="mt-4">
-              <AgentSection hint={t`Declared on the agent's card. Not yet applied to the worker.`}>
+              <section>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  <Trans>Declared on the agent's card. Not yet applied to the worker.</Trans>
+                </p>
                 <div className="space-y-3">
                   <AgentSelectField
                     label={t`Max turns`}
@@ -332,7 +335,7 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
                     onCommit={(v) => void save({ additional_dirs: v ?? [] })}
                   />
                 </div>
-              </AgentSection>
+              </section>
             </TabsContent>
           </Tabs>
         </aside>
