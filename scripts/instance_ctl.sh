@@ -124,15 +124,28 @@ cmd_gc() {
   local ps_env_dump
   ps_env_dump="$(ps eww -ax -o command= 2>/dev/null || true)"
 
-  # bash-3.2-safe accumulation (no arrays under set -u): names are plain tokens.
-  local candidates="" count=0 d name
+  # An ARRAY, not a whitespace-joined string. The previous accumulation assumed
+  # "names are plain tokens" and word-split on read, which destroyed a live
+  # instance on 2026-08-18: a mis-quoted launch had left a directory literally
+  # named `prod TESTING=true SQLITE_DATABASE_PATH=/tmp/flowpad_test.db`. It
+  # passed the protection check (that full string is not in the list), then the
+  # delete loop split it on spaces and `rm -rf`'d the FIRST word — the real
+  # `prod` instance, database included. `launch` runs `cmd_gc --yes`, so it
+  # happened with no prompt.
+  local candidates=() count=0 d name
   for d in "$root"/*/; do
     [ -d "$d" ] || continue
     name="$(basename "$d")"
+    # A well-formed instance name is one plain token. Anything else is residue
+    # from a mis-quoted launch and is NEVER a gc candidate: it cannot be deleted
+    # by name safely, and its words may name real instances.
+    case "$name" in
+      *[[:space:]]*|*/*) log "gc: skipping malformed instance dir: $name"; continue;;
+    esac
     in_list "$name" "$PROTECTED_INSTANCES" && continue
     [[ "$ps_env_dump" =~ (^|[[:space:]])FLOW_INSTANCE=$name([[:space:]]|$) ]] && continue
     [ -n "$(find "$d" -type f -mtime "-$age_days" -print -quit 2>/dev/null)" ] && continue
-    candidates="$candidates $name"; count=$((count + 1))
+    candidates[${#candidates[@]}]="$name"; count=$((count + 1))
   done
 
   if [ "$count" = 0 ]; then
@@ -142,7 +155,7 @@ cmd_gc() {
 
   log "gc: dead instances idle >${age_days}d:"
   local n
-  for n in $candidates; do echo "    $n"; done
+  for n in "${candidates[@]}"; do echo "    $n"; done
 
   if [ "$yes" != 1 ]; then
     printf 'Delete these %d instance dir(s)? [y/N] ' "$count"
@@ -150,7 +163,14 @@ cmd_gc() {
     case "$reply" in y|Y|yes) ;; *) log "gc: aborted"; return 0;; esac
   fi
 
-  for n in $candidates; do
+  for n in "${candidates[@]}"; do
+    # Re-checked at the point of deletion, not only at selection. This is the
+    # last gate before an irreversible `rm -rf`, so it must not rely on the
+    # selection loop having been right.
+    if in_list "$n" "$PROTECTED_INSTANCES"; then
+      log "gc: refusing to delete protected instance '$n'"
+      continue
+    fi
     rm -rf "$(instance_dir "$n")"
     rm -f "$(env_file "$n")"
   done
