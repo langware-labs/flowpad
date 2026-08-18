@@ -19,7 +19,7 @@ import { describe, expect, it } from 'vitest';
 
 import { FlowData } from '@sdk/flow_processing/flow-data';
 import { FlowElementTypes } from '@sdk/flow_processing/flow-element-types';
-import { filesInGroup, isTurnStart, partitionByChange, planTurnFiles } from '@src/components/floating-chat/turnFiles';
+import { filesInGroup, isTurnStart, partitionByKind, planTurnFiles } from '@src/components/floating-chat/turnFiles';
 import type { TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
 
 let seq = 0;
@@ -107,19 +107,19 @@ const allVisible = (groups: readonly TurnGroup[]) => groups.map(() => true);
 const messagesOnly = (groups: readonly TurnGroup[]) => groups.map((g) => g.kind !== 'dense');
 
 const paths = (files: readonly { path: string }[] | undefined) => (files ?? []).map((f) => f.path);
-const marks = (files: readonly { path: string; change: string }[] | undefined) =>
-  (files ?? []).map((f) => `${f.change}:${f.path}`);
+const marks = (files: readonly { path: string; kind: string }[] | undefined) =>
+  (files ?? []).map((f) => `${f.kind}:${f.path}`);
 
 describe('filesInGroup', () => {
   it('reports a written file as a creation, with its basename', () => {
     expect(filesInGroup(dense(wrote('/repo/src/new.tsx')))).toEqual([
-      { path: '/repo/src/new.tsx', name: 'new.tsx', change: 'create' },
+      { path: '/repo/src/new.tsx', name: 'new.tsx', kind: 'file_write' },
     ]);
   });
 
   it('reports an edited file as an edit', () => {
     expect(filesInGroup(dense(edited('/repo/src/a.ts')))).toEqual([
-      { path: '/repo/src/a.ts', name: 'a.ts', change: 'edit' },
+      { path: '/repo/src/a.ts', name: 'a.ts', kind: 'file_edit' },
     ]);
   });
 
@@ -158,8 +158,8 @@ describe('filesInGroup', () => {
   });
 
   it('lets a creation outrank an edit of the same path, in either order', () => {
-    expect(marks(filesInGroup(dense(wrote('/a.ts'), edited('/a.ts'))))).toEqual(['create:/a.ts']);
-    expect(marks(filesInGroup(dense(edited('/a.ts'), wrote('/a.ts'))))).toEqual(['create:/a.ts']);
+    expect(marks(filesInGroup(dense(wrote('/a.ts'), edited('/a.ts'))))).toEqual(['file_write:/a.ts']);
+    expect(marks(filesInGroup(dense(edited('/a.ts'), wrote('/a.ts'))))).toEqual(['file_write:/a.ts']);
   });
 
   it('never sees a frame the grouper retracted', () => {
@@ -179,12 +179,12 @@ describe('filesInGroup — the LIVE frame shape (no process_entry)', () => {
     // The regression this exists for: chips appeared only after a reload,
     // because a live frame carries no `process_entry` to read the kind from.
     expect(filesInGroup(dense(liveFrame('file_write', '/repo/live.ts')))).toEqual([
-      { path: '/repo/live.ts', name: 'live.ts', change: 'create' },
+      { path: '/repo/live.ts', name: 'live.ts', kind: 'file_write' },
     ]);
   });
 
   it('reads a live edit the same way', () => {
-    expect(marks(filesInGroup(dense(liveFrame('file_edit', '/repo/live.ts'))))).toEqual(['edit:/repo/live.ts']);
+    expect(marks(filesInGroup(dense(liveFrame('file_edit', '/repo/live.ts'))))).toEqual(['file_edit:/repo/live.ts']);
   });
 
   it('still ignores a live frame that touched no file', () => {
@@ -254,7 +254,7 @@ describe('planTurnFiles', () => {
     const { byRow } = planTurnFiles(groups, messagesOnly(groups), { lastTurnEnded: true });
 
     // rows: 0 = user, 1 = assistant (the dense group renders nothing)
-    expect(marks(byRow.get(1))).toEqual(['edit:/a.ts']);
+    expect(marks(byRow.get(1))).toEqual(['file_edit:/a.ts']);
   });
 
   it('keeps each turn\u2019s files on its own turn', () => {
@@ -271,8 +271,8 @@ describe('planTurnFiles', () => {
 
     // The same file created in turn 1 and edited in turn 2 reports honestly in
     // both — dedupe is per turn, because each turn describes what IT did.
-    expect(marks(byRow.get(2))).toEqual(['create:/one.ts']);
-    expect(marks(byRow.get(5))).toEqual(['edit:/one.ts', 'create:/two.ts']);
+    expect(marks(byRow.get(2))).toEqual(['file_write:/one.ts']);
+    expect(marks(byRow.get(5))).toEqual(['file_edit:/one.ts', 'file_write:/two.ts']);
   });
 
   it('lets a creation outrank an edit across groups of one turn', () => {
@@ -285,7 +285,7 @@ describe('planTurnFiles', () => {
 
     const { byRow } = planTurnFiles(groups, allVisible(groups), { lastTurnEnded: true });
 
-    expect(marks(byRow.get(3))).toEqual(['create:/a.ts']);
+    expect(marks(byRow.get(3))).toEqual(['file_write:/a.ts']);
   });
 
   it('does not split a turn on a framework injection', () => {
@@ -302,7 +302,7 @@ describe('planTurnFiles', () => {
     const { byRow } = planTurnFiles(groups, allVisible(groups), { lastTurnEnded: true });
 
     expect(byRow.size).toBe(1);
-    expect(marks(byRow.get(4))).toEqual(['create:/before.ts', 'edit:/after.ts']);
+    expect(marks(byRow.get(4))).toEqual(['file_write:/before.ts', 'file_edit:/after.ts']);
   });
 
   it('treats the start of the stream as a turn start', () => {
@@ -358,12 +358,12 @@ describe('planTurnFiles', () => {
   });
 });
 
-describe('partitionByChange', () => {
+describe('partitionByKind', () => {
   it('splits the row into creations and edits, each in encounter order', () => {
     const groups = [userMessage('go'), dense(edited('/a.ts'), wrote('/b.ts'), edited('/c.ts'), wrote('/d.ts'))];
 
     const files = planTurnFiles(groups, allVisible(groups), { lastTurnEnded: true }).byRow.get(1)!;
-    const { created, edited: edits } = partitionByChange(files);
+    const { created, edited: edits } = partitionByKind(files);
 
     expect(paths(created)).toEqual(['/b.ts', '/d.ts']);
     expect(paths(edits)).toEqual(['/a.ts', '/c.ts']);

@@ -159,10 +159,10 @@ describe('TurnGroupsList — turn-files chip row', () => {
     });
 
     const chips = screen.getAllByTestId('turn-file-chip');
-    expect(chips.map((c) => [c.getAttribute('data-change'), c.textContent])).toEqual([
-      ['create', 'new.ts'],
-      ['edit', 'old.ts'],
-      ['edit', 'other.ts'],
+    expect(chips.map((c) => [c.getAttribute('data-kind'), c.textContent])).toEqual([
+      ['file_write', 'new.ts'],
+      ['file_edit', 'old.ts'],
+      ['file_edit', 'other.ts'],
     ]);
     expect(screen.getByTestId('turn-files').textContent).toContain('Created');
     expect(screen.getByTestId('turn-files').textContent).toContain('Edited');
@@ -175,7 +175,7 @@ describe('TurnGroupsList — turn-files chip row', () => {
 
     const chips = screen.getAllByTestId('turn-file-chip');
     expect(chips).toHaveLength(1);
-    expect(chips[0].getAttribute('data-change')).toBe('create');
+    expect(chips[0].getAttribute('data-kind')).toBe('file_write');
   });
 
   it('omits the Created group entirely when the turn only edited', () => {
