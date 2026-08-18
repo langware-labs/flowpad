@@ -144,6 +144,14 @@ Where the real thing lives. The three parallel origin families — `FSOrigin` (a
 
 ***
 
+### [Data Sources](data-management/data-sources.md)
+
+How something that is not the local filesystem gets into the graph. The `DataSource` → `DataSourceCursor` → driver shape, the heartbeat-not-jobs dispatcher, and the three properties one poll cycle guarantees (per-stream isolation, records before cursor, a budget rather than a backoff). Covers the driver contract and its *declared* traits (`stream_budget`, `stamps_identity`, `origin_id_for`, `source_root`, `verify`, `send`), the opaque cursor `state` that lets one loop serve conditional-GET, changed-ids and a commit sha without branching, and the separation of `status` (should this run) from `health` (is it working) with `config_error` as the only thing that parks a scope. Documents the **two destinations** — `ingest_items` as the single `SourceItem` chokepoint versus reflection onto disk — the seven reflect modes and the two warts in them (`none` and `in-place` are one behaviour, `symlink` is an addressing no-op), identity resolved by `origin_id` lookup rather than read out of the bytes, and the change envelope whose `refs` are an optimization and never a guarantee.
+
+**Key source files:** `flow_sdk/builtin/data_source.py`, `data_source_cursor.py`, `source_item.py`, `flow_sdk/ingest/`
+
+***
+
 ### [Record Model](data-management/record-model.md)
 
 The `FSRecord` base class (formerly `Record`): on-disk manifest at `<records_root>/<type>/<type>-@<id>/metadata.json`, free-form meta fields as instance attributes (typed `meta_model` opt-in via `TypeInfo`), `asset_ref`/`self_ref` FSRefs, the `<epoch>_<digest>.hash` index sentinel, per-type behavior via free functions on `TypeInfo`, `StorageLayout` (FILE/FOLDER), entity-side auto-registration via `DBBaseRecord.__init_subclass__` → `SchemaRegistry`, `RecordRef`/`RecordDataRef`, `RecordList`, `RecordQuery` filtering, and `CollectionManifest` for O(1) staleness checks. (The removed `Record` machinery — `_data` dict, `_META_FIELDS`, `RecordStatus`, `RecordState`/`state.json`, `ResourceRecordList`/`SourceFileRecordList`, `data.json`/`_data.json` split — no longer applies; see the `FSRecord` module docstring for the full removal list.)
@@ -302,3 +310,7 @@ The webhook listener (`POST /api/v1/webhook/listen`) that drives real-time entit
 | Where does an asset's bytes / a record's truth / a secret's value live?   | [Items & Origins](data-management/items_origins.md)                                                                                                         |
 | How do I add a new origin kind (s3, gdrive)?                              | [Items & Origins](data-management/items_origins.md#adding-a-kind)                                                                                           |
 | Why is `Entity.git_origin` a dict and not a typed model?                  | [Items & Origins](data-management/items_origins.md#the-wire-contract)                                                                                       |
+| How does a feed / mailbox / repo get into the graph?                      | [Data Sources](data-management/data-sources.md)                                                                                                             |
+| How do I add a new data source?                                           | [Data Sources](data-management/data-sources.md#adding-a-source)                                                                                             |
+| Does a source copy files, or index them where they are?                   | [Data Sources](data-management/data-sources.md#the-two-destinations)                                                                                        |
+| Why doesn't indexing a git repo dirty the working tree?                   | [Data Sources](data-management/data-sources.md#identity)                                                                                                    |

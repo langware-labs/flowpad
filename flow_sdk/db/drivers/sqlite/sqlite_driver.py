@@ -488,6 +488,25 @@ class SQLiteDBDriver(DBDriver):
             )
         )
 
+        # Identity for a source-backed asset is resolved by ORIGIN, not by a
+        # derived id — `reflect._find_by_origin` asks every file-backed type
+        # whether it holds this handle, on every observed ref. There is no
+        # cross-type query path (an untyped `get_all` returns nothing), so the
+        # fan-out is unavoidable and each arm must at least be indexed;
+        # otherwise one changed file costs ~26 full type scans.
+        #
+        # Neither type-partial nor value-partial, deliberately. The fan-out
+        # spans every owner type, so one expression index serves all of them —
+        # and a `WHERE origin_id != ''` predicate is NOT provably implied by an
+        # equality lookup, so SQLite silently declines the partial index and
+        # falls back to the type scan. Verified with EXPLAIN QUERY PLAN.
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_entities_origin_id "
+                "ON entities(json_extract(data, '$.origin_id'))"
+            )
+        )
+
         # The same lookup for cursors: `ensure_for` resolves one per stream per
         # source on every poll, and `data_source_id` alone is selective enough
         # (a source has streams in the tens, not thousands).
