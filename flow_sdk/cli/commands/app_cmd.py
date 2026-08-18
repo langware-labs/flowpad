@@ -153,6 +153,24 @@ def serve_app(
     )
 
 
+@app_app.command("free-dev-port", help="Print a free local port for a dev server (8000-8099, else OS-assigned).")
+def free_dev_port(
+    bare: Annotated[bool, typer.Option("--bare", help="Print only the number (for PORT=$(...)).")] = False,
+) -> None:
+    """The port picker `flow app open` uses for static apps, exposed on its own.
+
+    Agents that start their own server (``python3 -m http.server``, a dev
+    server) call this instead of choosing a number: same band, same probe, so
+    a port this prints is one ``flow app open`` would have picked too. No
+    lease is taken — the caller binds it next.
+    """
+    port = _choose_static_port()
+    if bare:
+        typer.echo(str(port))
+        return
+    _ok({"port": port, "in_range": _STATIC_PORT_RANGE.start <= port < _STATIC_PORT_RANGE.stop})
+
+
 def _resolve_root(root: str | None) -> Path:
     path = Path(root or os.getcwd()).expanduser().resolve()
     if not path.exists() or not path.is_dir():
@@ -402,8 +420,11 @@ def _deployment_labels(artifact: dict) -> dict:
     return labels if isinstance(labels, dict) else {}
 
 
+_STATIC_PORT_RANGE = range(8000, 8100)
+
+
 def _choose_static_port() -> int:
-    for port in range(8000, 8100):
+    for port in _STATIC_PORT_RANGE:
         if not _port_open(port):
             return port
     return _find_free_port()
