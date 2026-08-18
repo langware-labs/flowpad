@@ -88,6 +88,16 @@ _SUPPRESS_CARRIER_WRITE: "ContextVar[bool]" = ContextVar(
 )
 
 
+def carrier_writes_are_suppressed() -> bool:
+    """Whether this operation must leave the source bytes alone.
+
+    Public so the resolvers can ASK rather than be TOLD. A policy threaded as a
+    parameter has to be passed correctly by every caller; one read from the
+    operation's own context cannot be forgotten.
+    """
+    return _SUPPRESS_CARRIER_WRITE.get()
+
+
 @contextmanager
 def carrier_writes_suppressed():
     """Resolve identity without stamping it into the asset."""

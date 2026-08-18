@@ -18,7 +18,7 @@ between folders and it becomes a second row that nothing cleans up. One scope
 sidesteps it, and makes ``stream_budget`` moot.
 
 **The manifest is the whole cursor.** ``state`` holds ``{rel_path: [mtime,
-size]}`` from the last pass. Diffing it is what produces deletions — and
+size, inode]}`` from the last pass. Diffing it is what produces deletions — and
 deletions are the reason this driver enumerates at all rather than trusting a
 watcher, which cannot observe what it did not receive. That is the same
 enumerate-as-backstop rule a Confluence source needs for the same reason.
@@ -58,7 +58,7 @@ def _iter_files(root: Path) -> Iterator[Path]:
 
 
 def _manifest(root: Path) -> dict:
-    """``{rel_path: [mtime, size]}`` for everything under ``root``.
+    """``{rel_path: [mtime, size, inode]}`` for everything under ``root``.
 
     mtime+size rather than a content hash: it is what the filesystem indexer's
     own freshness check uses, so a source that disagreed with it would make
@@ -83,10 +83,8 @@ class FolderDriver:
 
     def source_root(self, source):
         """The watched directory — the base every ref is relative to."""
-        from pathlib import Path as _Path  # noqa: PLC0415
-
         raw = (source.config or {}).get("root") or ""
-        return _Path(raw).expanduser().resolve() if raw else None
+        return Path(raw).expanduser().resolve() if raw else None
 
     def origin_id_for(self, source, ref: str) -> str:
         """The filesystem's own handle for this file: its inode.
@@ -105,9 +103,7 @@ class FolderDriver:
         a new inode and is read as a new file. And an inode means nothing off
         its volume — hence the source scoping, and hence never sharing it.
         """
-        from pathlib import Path as _Path  # noqa: PLC0415
-
-        st = _Path(ref).stat()  # OSError → the caller falls back to the path
+        st = Path(ref).stat()  # OSError → the caller falls back to the path
         return f"{self.provider}:{source.id}:ino:{st.st_dev}:{st.st_ino}"
 
     def streams(self, source) -> list[StreamRef]:
@@ -167,11 +163,11 @@ class FolderDriver:
         # Inodes are stable across a rename within a volume, which is precisely
         # the case this distinguishes. An editor that saves atomically produces a
         # new inode and is honestly reported as a new file.
-        live_inodes = {stamp[2] for stamp in current.values() if len(stamp) > 2}
+        live_inodes = {stamp[2] for stamp in current.values()}
         removed = [
             rel
             for rel, stamp in previous.items()
-            if rel not in current and not (len(stamp) > 2 and stamp[2] in live_inodes)
+            if rel not in current and stamp[2] not in live_inodes
         ]
 
         return FetchResult(
