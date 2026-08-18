@@ -222,6 +222,40 @@ async def _catch_up_after_reconnect() -> None:
         logger.warning("hub WS reconnect catch-up failed (non-fatal): %s", e)
 
 
+def _renew_stale_worker_credentials() -> None:
+    """Replace a spent worker-CLI credential HERE, where nobody is waiting.
+
+    The alternative is the first turn after the gap, where somebody is: a worker
+    CLI's stored token can expire on a far shorter clock than a hibernated
+    sandbox's idle window, so a wake commonly lands on a dead one and the renewal
+    used to be paid for by whoever typed first.
+
+    This connect is the right place because it is the box's OWN signal. A sandbox
+    resumed from hibernation reconnects this socket within seconds of waking,
+    whatever woke it — and only one of the several paths that can wake a sandbox
+    also logs it in, so a hub-side login hook would miss the rest.
+
+    Not a poll, and no cadence is added: the call returns without doing anything
+    on a healthy credential, and this socket already reconnects on a ~10-minute
+    production cadence for its own reasons.
+
+    WHICH workers this covers, and what each one's credential looks like, is the
+    driver layer's business and deliberately not visible from here — see
+    ``cli_drivers.credential_renewal``.
+
+    Local import: the driver layer imports this package, so binding it at module
+    scope would close the cycle.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.credential_renewal import (
+        renew_stale_worker_credentials,
+    )
+
+    try:
+        renew_stale_worker_credentials()
+    except Exception as e:  # noqa: BLE001 — a credential errand must never fell the socket
+        logger.warning("worker credential renewal check failed (non-fatal): %s", e)
+
+
 class HubWebSocketManager:
     """Small background manager for the desktop-to-hub WebSocket session."""
 
@@ -507,6 +541,7 @@ class HubWebSocketManager:
                             self._connection_id,
                         )
                         asyncio.create_task(_catch_up_after_reconnect())
+                        _renew_stale_worker_credentials()
                         # Fresh queue per connection — prior queued frames from
                         # a dead session don't leak across reconnects.
                         self._outbound = asyncio.Queue(maxsize=HUB_WS_OUTBOUND_QUEUE_MAX)
