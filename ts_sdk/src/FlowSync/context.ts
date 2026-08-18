@@ -1085,11 +1085,40 @@ class DataContext extends EventEmitter {
       return;
     }
 
-    // Restore persisted project if it exists, otherwise fall back to first available
-    let targetProject = persistedProjectTypeId
+    // The browser is checked FIRST and still wins whenever it resolves. That order is
+    // load-bearing, not a preference: `last_active_at` — what `default_project` falls
+    // back to — is machine-wide, so on a box two people share, always preferring the
+    // server would hand you whoever opened last rather than your own project. The
+    // browser's memory is the more SPECIFIC signal (this person, this browser); the
+    // server's is the broader one (this machine, anyone).
+    const remembered = persistedProjectTypeId
       ? projects.find((project) => project.typeId.equals(persistedProjectTypeId))
       : null;
-    targetProject ??= projects[0];
+
+    // Not resolvable here — a project deleted since, a database rebuilt with fresh ids,
+    // or storage carried over from a different machine. A dead id carries no information,
+    // so it has to get out of the way rather than decide anything. The previous
+    // `targetProject ??= projects[0]` let it do the opposite: suppress the server's
+    // answer AND then answer a different question. This query orders by `updated_date`,
+    // so `projects[0]` is whatever row was TOUCHED last — on the reported sandbox a
+    // background git scan bumped `my_first_project` every ten minutes while the user's
+    // project sat untouched for two days, so a stale entry landed them in the starter
+    // project. (The open-recency sort from `c9c3c64f2` covers `list-projects` and the
+    // UI pickers, NOT this query. The two do not agree.)
+    //
+    // Deferring to `default_project` keeps ONE ordering rule, and it lives server-side
+    // (`bootstrap.py::_with_runtime`: the hub's opening instruction, then the most
+    // recently active non-system project, then @local). Re-deriving "most recently
+    // active" here would be the same rule in two places, free to drift apart.
+    const serverChoiceId = this.bootstrapInfo?.default_project?.id;
+    const targetProject =
+      remembered ?? (serverChoiceId ? projects.find((project) => project.typeId.id === serverChoiceId) : null);
+
+    // Nothing valid to adopt. Leaving the context alone beats picking arbitrarily:
+    // whatever a loader resolves next is a better answer than a project nobody chose.
+    if (!targetProject) {
+      return;
+    }
 
     await this.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, targetProject.typeId);
   }

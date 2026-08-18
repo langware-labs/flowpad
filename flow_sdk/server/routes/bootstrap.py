@@ -1869,6 +1869,12 @@ async def _with_runtime(info: BootstrapInfo, electron: bool) -> ApiSuccessRespon
     second reader gets their own turn because the hub re-arms the instruction
     before handing them the machine — not because anything here counts people.)
 
+    Once that instruction is spent, ``default_project`` is the project the
+    machine was last used in (``_last_active_project``). It has to be stamped
+    here too, and for the same cache reason: baked into the payload builder, one
+    caller's project would be handed to everyone who bootstrapped within the
+    next 30 seconds.
+
     ``model_copy`` leaves the cached object untouched — mutating ``info`` in
     place would write through to the cache, which is the same bug wearing a
     different hat.
@@ -1876,7 +1882,13 @@ async def _with_runtime(info: BootstrapInfo, electron: bool) -> ApiSuccessRespon
     from flow_sdk.instance_settings.runtime import resolve_runtime  # noqa: PLC0415
 
     update: dict = {"runtime": resolve_runtime(electron=electron)}
-    opening_project = await _take_opening_project()
+    # Two sources, in priority order, and the order is the whole point: a box the
+    # hub has just set up opens on the project it was BUILT for, and every load
+    # after that opens where the user actually left off. Both are per-caller for
+    # the same reason as ``runtime`` — through the 30s cache the first would be
+    # served repeatedly or skipped, and the second would pin one caller's project
+    # onto everyone else who bootstrapped in the same half-minute.
+    opening_project = await _take_opening_project() or await _last_active_project()
     if opening_project is not None:
         update["default_project"] = opening_project
     return ApiSuccessResponse[BootstrapInfo](data=info.model_copy(update=update))
@@ -1904,6 +1916,45 @@ async def _take_opening_project() -> Optional[dict]:
         logging.warning(f"[bootstrap] pending default project {project_id} no longer exists")
         return None
     return project_to_dict(project)
+
+
+async def _last_active_project() -> Optional[dict]:
+    """The project this machine was last used in, resolved to an entity dict.
+
+    THE RETURNING USER, which nothing else covered. The one-shot instruction
+    above is spent by the first load it reaches, and `initSdk` only remembers a
+    project in the browser's localStorage — per-origin, per-profile. So someone
+    coming back to a box days later, in a browser that has never seen it, had no
+    source at all and fell through to the `@local` starter project. That is the
+    ordinary way a shared sandbox is opened: a link from the hub, often on a
+    different machine from the one that opened it last.
+
+    `last_active_at` is the answer and it was already being recorded — stamped
+    server-side by the `activate` action on every project switch, which is the
+    single choke point every "user is now in this project" path funnels through.
+    The boot path simply never read it. Nothing new is stored here.
+
+    Deliberately NOT `get_cached_projects()`, the cached sibling used by the
+    scope resolver: that cache is invalidated when a project is CREATED, not
+    when one is activated, so it can hand back an entity carrying a stale
+    `last_active_at` — and a stale recency stamp is precisely the value this
+    decision turns on. Bootstrap runs at app start rather than per request, so
+    it can afford the fresh read.
+    """
+    try:
+        projects = await Project.get_all() or []
+    except Exception as e:  # noqa: BLE001
+        logging.warning(f"[bootstrap] could not resolve the last active project: {e}")
+        return None
+    # ``system`` projects are excluded — the shipped Flowpad Assistant is one, and
+    # it is a browsable project like any other, so glancing at its docs stamps
+    # ``last_active_at`` on it. Without this filter that one visit would make it
+    # the project every fresh browser opens into, forever. `_ensure_system_projects`
+    # is what stamps the flag; the entity carries the answer.
+    active = [p for p in projects if p.last_active_at and not p.system]
+    if not active:
+        return None
+    return project_to_dict(max(active, key=lambda p: p.last_active_at))
 
 
 @router.get("/api/v1/graph/bootstrap")
