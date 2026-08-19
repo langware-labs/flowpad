@@ -441,6 +441,10 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
       absolute path is the only form immune to both.
     * ``PATH`` — pinned to this backend's `flow` CLI (version-skew guard,
       see :func:`flow_cli_env_path`).
+    * ``CLOUDSDK_CORE_PROJECT`` / ``GOOGLE_CLOUD_PROJECT`` / ``GCLOUD_PROJECT``
+      — gcloud/client-library default project, pinned to the isolated
+      deployment project (``gcp_deployment_project_id``) so agent-improvised
+      GCP deployments never land in the production project.
     * ``CLAUDE_CONFIG_DIR`` — for explicitly configured Claude roots, pinned
       to the same canonical root Flowpad uses for transcript discovery. The
       native default stays unset because Claude keeps ``~/.claude.json`` beside
@@ -463,6 +467,16 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
         _json.dumps([{"type": process.get_type(), "id": process.id}]),
     )
     env["FLOWPAD_PYTHON"] = sys.executable
+    from flow_sdk.config import default_service_config  # noqa: PLC0415
+
+    deploy_project = default_service_config.gcp_deployment_project_id
+    if deploy_project:
+        # Agent-driven GCP deployments must land in the isolated playground
+        # project, never in the production project a user's ambient gcloud
+        # login defaults to. setdefault: an explicit per-process override wins.
+        env.setdefault("CLOUDSDK_CORE_PROJECT", deploy_project)
+        env.setdefault("GOOGLE_CLOUD_PROJECT", deploy_project)
+        env.setdefault("GCLOUD_PROJECT", deploy_project)
     if process.driver.name == "claude":
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         from flow_sdk.instance_settings.base_settings import (  # noqa: PLC0415
@@ -986,6 +1000,9 @@ def restart_payload_from_cli_options(options: AgentOptions) -> dict[str, Any]:
     env_vars = dict(data.get("env_vars") or {})
     env_vars.pop("FLOWPAD_EXECUTION_SCOPE", None)
     env_vars.pop("FLOWPAD_PYTHON", None)
+    env_vars.pop("CLOUDSDK_CORE_PROJECT", None)
+    env_vars.pop("GOOGLE_CLOUD_PROJECT", None)
+    env_vars.pop("GCLOUD_PROJECT", None)
     data["env_vars"] = env_vars
     data.pop("resume", None)
     data.pop("fork_session_id", None)
