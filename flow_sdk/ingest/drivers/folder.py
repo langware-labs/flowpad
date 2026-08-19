@@ -77,9 +77,6 @@ def _manifest(root: Path) -> dict:
 class FolderDriver:
     provider = "folder"
     kind = "datasource.fs.folder"
-    #: Declared for protocol symmetry only. Nothing stamps it, because this
-    #: driver never produces an IngestItem — its payload lands as files.
-    record_kind = ""
 
     def source_root(self, source):
         """The watched directory — the base every ref is relative to."""

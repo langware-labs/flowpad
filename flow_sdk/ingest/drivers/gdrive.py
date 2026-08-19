@@ -96,9 +96,6 @@ def _safe_name(name: str) -> str:
 class GoogleDriveDriver:
     provider = "gdrive"
     kind = "datasource.fs.gdrive"
-    #: Declared for protocol symmetry. Like `folder`, this driver never produces
-    #: an IngestItem — its payload lands as files.
-    record_kind = ""
 
     #: The cache is OURS, and the next download overwrites it. A capsule stamped
     #: into one of these files survives exactly until the file changes upstream.

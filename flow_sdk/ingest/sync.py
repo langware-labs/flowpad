@@ -161,7 +161,14 @@ async def _sync_stream(source, driver, cursor: DataSourceCursor, now: datetime) 
         cursor.health == SourceHealth.OK.value
         and not cursor.consecutive_failures
         and (cursor.state or {}) == (result.next_state or {})
-        and not result.high_water
+        # COMPARE, don't test truthiness. A driver that reports an unchanged
+        # high-water on an idle poll — `folder` returns its file count, `git`
+        # returns the unmoved head — would otherwise fail this check forever and
+        # rewrite its cursor row every tick. For `folder` that row carries the
+        # whole directory manifest, so a large watched tree meant megabytes of
+        # identical JSON through the writer lock once a minute. `gdrive` omits
+        # `high_water` entirely to dodge this; comparing fixes it for all three.
+        and cursor.high_water == result.high_water
     )
     cursor.state = result.next_state or {}
     if result.high_water:
