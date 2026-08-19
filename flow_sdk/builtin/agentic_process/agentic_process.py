@@ -42,6 +42,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     apply_worker_secret_env,
     get_driver,
     latch_spawn_failure,
+    resolve_worker_language,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import ProcessHookRuntime
 from flow_sdk.builtin.agentic_process.process_hooks import (
@@ -3602,6 +3603,7 @@ class AgenticProcess(Entity):
                 add_dirs=list(self.resolved_add_dirs or []),
                 session_id=self.session_id if (self.session_id and not resumable) else None,
                 resume_session_id=self.session_id if resumable else None,
+                language=await resolve_worker_language(self),
                 **self._process_asset_context_kwargs(process_assets),
             )
 
