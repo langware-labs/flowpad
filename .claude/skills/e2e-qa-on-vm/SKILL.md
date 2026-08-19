@@ -247,8 +247,17 @@ nested `claude` run **whose working directory is the checkout**:
 
 ```bash
 cd "$APP_DIR"
-claude -p "/e2e-qa qa cycle" --dangerously-skip-permissions
+claude -p "/e2e-qa qa cycle" --dangerously-skip-permissions \
+  --output-format stream-json --verbose
 ```
+
+`--output-format stream-json --verbose` is not decoration. Plain `claude -p`
+emits the **final result only** — nothing while it works. Under
+`flowpad-qa.service` that means an empty journal for the whole cycle, so a run
+that wedges gives you `TimeoutStartSec=4h` of silence and then a poweroff, and
+the journal tail `qa-finalize.sh` mails you contains nothing about where it
+stopped. Streaming puts each step in the journal as it happens, which is the
+only forensic record an unattended run leaves behind.
 
 Not `Skill(skill="e2e-qa", …)` from this process. Two reasons, and both bite:
 
