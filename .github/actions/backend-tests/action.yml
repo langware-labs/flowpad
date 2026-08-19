@@ -1,5 +1,9 @@
-name: 'Backend tests (pytest unit + api)'
-description: 'uv sync, pip-audit (advisory), pytest tests/unit and tests/api'
+name: 'Backend tests (pytest)'
+description: 'uv sync, then one pytest tier (unit or api); pip-audit + Claude CLI install where relevant'
+inputs:
+  tier:
+    description: "Which pytest tier to run: 'unit' or 'api'"
+    required: true
 runs:
   using: 'composite'
   steps:
@@ -15,25 +19,28 @@ runs:
 
     # Advisory-only: a new CVE in a pinned transitive dep must not block PRs
     # (or, through the deploy gate, PyPI releases). Failures show as a red
-    # step icon in the log without failing the job.
+    # step icon in the log without failing the job. Runs once, in the unit
+    # tier, so the parallel api job doesn't duplicate it.
     - name: pip-audit (advisory, non-blocking)
+      if: ${{ inputs.tier == 'unit' }}
       continue-on-error: true
       run: uv tool run pip-audit --desc
       shell: bash
 
-    # Separate steps per tier so a failure is attributable at a glance.
     # pytest.ini enforces --timeout=30 per test; never raise it.
     - name: pytest tests/unit
+      if: ${{ inputs.tier == 'unit' }}
       run: uv run pytest tests/unit -q
       shell: bash
 
     # tests/api includes files that spawn or probe a real Claude CLI (worker
     # lifecycle, PTY, capability tests) — install it so the full tier runs.
     - name: Install Claude Code
+      if: ${{ inputs.tier == 'api' }}
       run: npm install -g @anthropic-ai/claude-code
       shell: bash
 
     - name: pytest tests/api
-      run: >-
-        uv run pytest tests/api -q
+      if: ${{ inputs.tier == 'api' }}
+      run: uv run pytest tests/api -q
       shell: bash
