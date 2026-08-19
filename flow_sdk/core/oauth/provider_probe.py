@@ -80,6 +80,16 @@ _PROBES: dict[str, ProviderProbe] = {
         headers=lambda token: {"Authorization": f"Bearer {token}", "anthropic-version": "2023-06-01"},
         unverified=True,
     ),
+    "google": ProviderProbe(
+        # The stable per-account id. `email` is the readable one but a Google
+        # account can change its primary address; `sub` never does, and this
+        # field exists to notice a re-authorization as somebody else.
+        account_key=lambda body: str(body["sub"]) if body.get("sub") else None,
+        # OpenID's own "who is this token" endpoint. Read-only, and covered by
+        # the profile scope every Google consent grants.
+        url="https://www.googleapis.com/oauth2/v3/userinfo",
+        identity=lambda body: body.get("email") or body.get("name"),
+    ),
     "slack": ProviderProbe(
         # `auth.test` returns team_id + user_id; the pair is the account, because
         # one user across two workspaces is two different connections.

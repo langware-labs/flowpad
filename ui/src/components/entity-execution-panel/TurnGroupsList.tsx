@@ -1,4 +1,4 @@
-import { AgenticProcess, FlowData, FlowElementTypes, PrefKey } from '@sdk';
+import { AgenticProcess, FlowData, FlowElementTypes, PrefKey, type Agent } from '@sdk';
 import { Fragment, memo, useMemo } from 'react';
 import { ToolEntryRow } from '@src/components/floating-chat/ToolEntryRow';
 import { planTurnFiles } from '@src/components/floating-chat/turnFiles';
@@ -65,6 +65,7 @@ export function isRenderedGroup(g: TurnGroup, showTools: boolean): boolean {
 export function TurnGroupsList({
   groups,
   worker,
+  agent,
   onWorkerChange,
   showTurnFiles = false,
   process,
@@ -72,6 +73,8 @@ export function TurnGroupsList({
 }: {
   groups: TurnGroup[];
   worker?: string;
+  /** The Agent the process runs as — signs assistant turns (avatar + name). */
+  agent?: Agent | null;
   onWorkerChange?: (worker: WorkerType) => void | Promise<void>;
   /**
    * Opt-in: render a "files this turn touched" chip row under each ended turn.
@@ -127,11 +130,20 @@ export function TurnGroupsList({
         return (
           <Fragment key={key}>
             {i > 0 && <TurnDivider />}
-            {/* TurnGroupRow's props are deliberately untouched — its memo is
-                what keeps a live frame from re-rendering the whole history
-                (QA D10). The chip row is a sibling, and it sits BEFORE the next
-                divider so it reads as part of the turn that produced it. */}
-            <TurnGroupRow group={g} worker={worker} onWorkerChange={onWorkerChange} />
+            {/* TurnGroupRow stays memoized — that memo is what keeps a live
+                frame from re-rendering the whole history (QA D10). The chip row
+                is a sibling, and it sits BEFORE the next divider so it reads as
+                part of the turn that produced it. */}
+            <TurnGroupRow
+              group={g}
+              worker={worker}
+              agent={agent}
+              // useEntity keeps ONE object per entity and mutates it, so `agent`
+              // is referentially stable across a rename / new avatar; the memo
+              // needs a value that moves with the row to repaint.
+              agentVersion={agent?.updated_date ?? null}
+              onWorkerChange={onWorkerChange}
+            />
             {chipsForRow(i)}
           </Fragment>
         );
@@ -149,10 +161,14 @@ export function TurnGroupsList({
 const TurnGroupRow = memo(function TurnGroupRow({
   group,
   worker,
+  agent,
   onWorkerChange,
 }: {
   group: TurnGroup;
   worker?: string;
+  agent?: Agent | null;
+  /** Memo key only — see the call site. */
+  agentVersion?: unknown;
   onWorkerChange?: (worker: WorkerType) => void | Promise<void>;
 }) {
   const isUser =
@@ -165,7 +181,7 @@ const TurnGroupRow = memo(function TurnGroupRow({
       group.flowData.attributes?.['is-meta'] === 'true' ? (
         <MetaMessageChip flowData={group.flowData} skillName={group.skillName} />
       ) : (
-        <ExecutionMessage flowData={group.flowData} worker={worker} isUser={isUser} />
+        <ExecutionMessage flowData={group.flowData} worker={worker} agent={agent} isUser={isUser} />
       )
     ) : (
       <ToolEntryRow events={group.events} />

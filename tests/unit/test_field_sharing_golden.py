@@ -133,6 +133,7 @@ BASE_BUNDLE_EXCLUDE = [
     "installed_root",
     "members",
     "message_count",
+    "origin_id",
     "path",
     "private_context_entities",
     "private_context_entities_",
@@ -156,6 +157,7 @@ BASE_HUB_EXCLUDE = [
     "fetched_at",
     "members",
     "message_count",
+    "origin_id",
     "private_context_entities",
     "private_context_entities_",
     "private_context_entity_data",
@@ -265,7 +267,10 @@ def test_the_two_egress_seams_now_agree():
             "flow_sdk.builtin.flow_message",
             "FlowMessage",
             {"text": "t"},
-            [],
+            # `origin_local` holds the DataSource/SourceItem row ids behind a
+            # cached cloud record. PRIVATE, while its sibling `origin` (channel +
+            # permalink) stays SHARED so a received message keeps its badge.
+            ["origin_local"],
             # Per-device inbox state: travels outward, but a hub refresh must not reset it.
             [
                 "asset_occurrences",
@@ -295,6 +300,7 @@ def test_the_two_egress_seams_now_agree():
                 "last_active_at",
                 "last_edited_at",
                 "origin",
+                "origin_local",
                 "private_context_entities_",
                 "shared_context_entities",
             ],

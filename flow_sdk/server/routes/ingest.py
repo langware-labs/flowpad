@@ -34,7 +34,7 @@ MAX_ITEMS_PER_REQUEST = 500
 def _to_item(raw: dict[str, Any]):
     from flow_sdk.ingest.models import IngestItem  # noqa: PLC0415
 
-    missing = [k for k in ("source_id", "provider", "kind", "stream_key", "external_id")
+    missing = [k for k in ("source_id", "provider", "kind", "segment_key", "external_id")
                if not str(raw.get(k) or "").strip()]
     if missing:
         raise ValueError(f"missing required field(s): {', '.join(missing)}")

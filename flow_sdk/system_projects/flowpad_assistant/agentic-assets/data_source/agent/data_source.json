@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "name": "agent",
+  "title": "Agent transport",
+  "icon_name": "Bot",
+  "description": "Reaches a channel through a local agent harness \u2014 how Gmail is read today.",
+  "config": {
+    "connector": {
+      "type": "text",
+      "required": true,
+      "label": "Connector",
+      "placeholder": "gmail",
+      "account_key": true,
+      "hint": "This is the CHANNEL, and half of every thread key. Leaving it empty forks every thread in the mailbox \u2014 permanently."
+    },
+    "harness": {
+      "type": "text",
+      "required": true,
+      "label": "Harness",
+      "placeholder": "claude",
+      "hint": "The worker CLI that runs the fetch. Without a launchable one the source parks on config_error."
+    },
+    "segments": {
+      "type": "csv",
+      "label": "Segments",
+      "placeholder": "INBOX"
+    },
+    "agent": {
+      "type": "text",
+      "advanced": true,
+      "label": "Agent"
+    },
+    "subagent": {
+      "type": "text",
+      "advanced": true,
+      "label": "Subagent"
+    },
+    "max_items": {
+      "type": "number",
+      "advanced": true,
+      "label": "Max items per run"
+    }
+  }
+}

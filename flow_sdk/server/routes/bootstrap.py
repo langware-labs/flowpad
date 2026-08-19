@@ -1322,11 +1322,11 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
                     search_content = rec.search_content
                     if search_content is not None:
                         fts_entries.append(
-                            FtsEntry(
-                                entity_id=entity.id,
-                                entity_type=str(rec.type or rec._record_type),
-                                name=getattr(entity, "name", None) or None,
-                                content=search_content,
+                            FtsEntry.from_record(
+                                entity.id,
+                                str(rec.type or rec._record_type),
+                                getattr(entity, "name", None),
+                                rec,
                             )
                         )
                 except Exception as e:

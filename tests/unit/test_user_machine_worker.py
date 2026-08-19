@@ -124,6 +124,38 @@ def test_ws_url_is_derived_from_the_api_base_url():
     )
 
 
+async def test_worker_honors_standard_proxy_discovery(monkeypatch, tmp_path):
+    """Restricted sandboxes reach the Hub command channel via HTTPS_PROXY."""
+    captured = {}
+
+    class StopAfterConnect:
+        async def __aenter__(self):
+            captured["entered"] = True
+            raise asyncio.CancelledError
+
+        async def __aexit__(self, *args):
+            return False
+
+    def fake_connect(*args, **kwargs):
+        captured.update(kwargs)
+        return StopAfterConnect()
+
+    monkeypatch.setattr(websockets, "connect", fake_connect)
+    worker = UserMachineWorker(
+        node_id="node-1",
+        machine_id="machine-1",
+        ws_url="wss://hub.example/api/v1/compute-node/node-1/ws",
+        headers={"Authorization": "Bearer test"},
+        home_dir=str(tmp_path),
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await worker.run_forever()
+
+    assert captured["entered"] is True
+    assert captured["proxy"] is True
+
+
 async def test_hello_describes_this_machine_and_names_the_node(tmp_path):
     hub, worker, task = await _connected_worker(tmp_path)
     try:

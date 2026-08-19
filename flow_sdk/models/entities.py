@@ -29,6 +29,11 @@ except ImportError as e:
     print(f"[WARN] Failed to import Wiki entities: {e}")
 
 try:
+    from flow_sdk.builtin.data_source_spec import DataSourceSpec  # noqa: F401
+except Exception as e:
+    print(f"[WARN] Failed to import DataSourceSpec: {e}")
+
+try:
     from flow_sdk.builtin.secret_origin import SecretOrigin  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import SecretOrigin: {e}")

@@ -21,7 +21,7 @@ Config on the DataSource::
 The hub addresses a mailbox by AGENT, never by address — one inbox per agent is
 its model (`flowpad/hub/builtin/email_inbox.py`). So `agent_id` is the stream
 key: it is immutable, it is the thing without which nothing can poll, and
-`stream_key` is one third of a SourceItem's natural key, so keying on the
+`segment_key` is one third of a SourceItem's natural key, so keying on the
 allocated address would orphan every row the day an inbox is re-provisioned.
 """
 
@@ -35,8 +35,8 @@ from flow_sdk.ingest.driver import (
     FetchResult,
     SendOutcome,
     SendStatus,
-    StreamCursorView,
-    StreamRef,
+    SegmentCursorView,
+    SegmentRef,
 )
 from flow_sdk.ingest.health import SourceError
 from flow_sdk.ingest.models import IngestItem
@@ -76,12 +76,12 @@ class CloudEmailDriver:
         """
         return "email"
 
-    def streams(self, source) -> list[StreamRef]:
-        return [StreamRef(key=self._agent_id(source), label=self._address(source))]
+    def segments(self, source) -> list[SegmentRef]:
+        return [SegmentRef(key=self._agent_id(source), label=self._address(source))]
 
     # ── fetch ────────────────────────────────────────────────────────────────
 
-    async def fetch(self, source, cursor: StreamCursorView) -> FetchResult:
+    async def fetch(self, source, cursor: SegmentCursorView) -> FetchResult:
         state = dict(cursor.state or {})
         floor = str(state.get("high_water") or cursor.window_start or "")
         seen_at_floor = set(state.get("boundary_ids") or [])
@@ -161,8 +161,8 @@ class CloudEmailDriver:
             source_id=source.id,
             provider=self.provider,
             kind=self.record_kind,
-            stream_key=self._agent_id(source),
-            stream_label=self._address(source),
+            segment_key=self._agent_id(source),
+            segment_label=self._address(source),
             external_id=str(msg.get("message_id") or ""),
             title=str(msg.get("subject") or ""),
             body=_body_of(msg),

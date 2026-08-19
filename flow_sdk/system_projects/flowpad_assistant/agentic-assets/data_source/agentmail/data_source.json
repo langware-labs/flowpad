@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "name": "agentmail",
+  "title": "AgentMail",
+  "icon_name": "Mail",
+  "description": "A hosted mailbox over its HTTP API.",
+  "auth": {
+    "env": [
+      "AGENTMAIL_API_KEY"
+    ]
+  },
+  "config": {
+    "inbox": {
+      "type": "text",
+      "required": true,
+      "label": "Inbox",
+      "placeholder": "you@agentmail.to",
+      "account_key": true
+    },
+    "base_url": {
+      "type": "text",
+      "advanced": true,
+      "label": "API base URL"
+    }
+  }
+}

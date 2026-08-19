@@ -62,14 +62,25 @@ def _mint_candidates(path: str) -> tuple[str, ...]:
 async def reindex_paths(
     paths: Iterable[str],
     deleted_paths: Iterable[str] = (),
+    *,
+    mint: bool = True,
 ) -> ReindexResult:
     """Force-reindex ``paths`` (changed/created) and reconcile ``deleted_paths``.
 
     Returns a :class:`ReindexResult` with the per-bucket path lists. Each path
     is handled independently; failures are logged and counted as ``skipped``.
+
+    ``mint=False`` makes this resolution-only: a path with no owning entity is
+    left alone instead of minting one. Callers that resync a file a user just
+    wrote (``fs/write``) must pass it — minting there stamps an identity capsule
+    INTO the bytes the caller just saved, mutating arbitrary markdown that was
+    never an asset. New-file discovery belongs to the indexer, which owns root
+    scoping and consent.
     """
     from flow_sdk.builtin.faas.fs_records_actions import discover_record_by_path  # noqa: PLC0415
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import source_unreachable  # noqa: PLC0415
+    from flow_sdk.fs_store.orphan_removal import remove_orphan_row  # noqa: PLC0415
 
     result = ReindexResult()
 
@@ -92,17 +103,20 @@ async def reindex_paths(
 
     for path in changed:
         try:
-            entity = await Entity.get_by_asset_ref(path, resolve_containing=True)
+            entity = await Entity.get_by_asset_ref(path, resolve_containing=True, strict=True)
             if entity is not None:
                 found = await _resync(entity, path)
                 (result.reindexed if found is not None else result.skipped).append(path)
                 continue
 
             # No owning entity — attempt a type-inferred mint (new file).
+            if not mint:
+                result.skipped.append(path)
+                continue
             minted = False
             for cand in _mint_candidates(path):
                 try:
-                    if await discover_record_by_path(cand, path, notify=True) is not None:
+                    if await discover_record_by_path(cand, path, notify=True, strict_owner=True) is not None:
                         result.minted.append(path)
                         minted = True
                         break
@@ -116,12 +130,16 @@ async def reindex_paths(
 
     for path in removed:
         try:
-            exact = await Entity.get_by_asset_ref(path, resolve_containing=False)
+            exact = await Entity.get_by_asset_ref(path, resolve_containing=False, strict=True)
             if exact is not None:
                 rec = await exact.get_record()
                 if rec is not None and rec.orphan:
-                    await type(exact).delete_by_id(str(exact.id))
+                    await remove_orphan_row(str(exact.id), exact.get_type())
                     result.orphaned.append(path)
+                elif rec is not None and source_unreachable(path):
+                    # `rec.orphan` already declined; without this we would fall
+                    # through to a resync on the same unreadable path.
+                    result.skipped.append(path)
                 else:
                     # Source still present (shouldn't be in deleted) — resync.
                     await _resync(exact, path)
@@ -129,7 +147,7 @@ async def reindex_paths(
                 continue
 
             # Inner file removed from a still-present folder asset → resync folder.
-            folder = await Entity.get_by_asset_ref(path, resolve_containing=True)
+            folder = await Entity.get_by_asset_ref(path, resolve_containing=True, strict=True)
             if folder is not None:
                 await _resync(folder, path)
                 result.reindexed.append(path)
