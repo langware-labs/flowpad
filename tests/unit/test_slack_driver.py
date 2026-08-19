@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 import pytest
 
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.ingest.driver import StreamCursorView
+from flow_sdk.ingest.driver import SegmentCursorView
 from flow_sdk.ingest.drivers import slack as slack_module
 from flow_sdk.ingest.drivers.slack import SlackDriver
 from flow_sdk.ingest.health import SourceError, SourceHealth
@@ -40,9 +40,9 @@ def _source(**config) -> DataSource:
     )
 
 
-def _view(state: dict | None = None, window_start: str | None = None) -> StreamCursorView:
-    return StreamCursorView(
-        stream_key=CHANNEL,
+def _view(state: dict | None = None, window_start: str | None = None) -> SegmentCursorView:
+    return SegmentCursorView(
+        segment_key=CHANNEL,
         state=state or {},
         window_start=window_start,
         first_run=not state,
@@ -100,13 +100,13 @@ def test_streams_key_on_the_channel_id_not_its_name():
     source = _source()
     source.config = {"channels": [{"id": CHANNEL, "name": "engineering"}]}
 
-    (stream,) = driver.streams(source)
+    (stream,) = driver.segments(source)
     assert stream.key == CHANNEL
     assert stream.label == "engineering"
 
 
 def test_a_bare_string_channel_is_accepted_as_the_id():
-    (stream,) = SlackDriver().streams(_source())
+    (stream,) = SlackDriver().segments(_source())
     assert stream.key == CHANNEL
 
 

@@ -49,8 +49,8 @@ _SNAPSHOT_FIELDS: dict[str, str] = {
     "kind": "kind",
     "provider": "provider",
     "data_source_id": "source_id",
-    "stream_key": "stream_key",
-    "stream_label": "stream_label",
+    "segment_key": "segment_key",
+    "segment_label": "segment_label",
     "external_id": "external_id",
     "thread_key": "thread_key",
     "reply_to_external_id": "reply_to_external_id",
@@ -79,13 +79,13 @@ async def ingest_item(
     on rows written before ids were v4, because nothing here re-derives an id.
     """
     digest = content_digest(item)
-    key = (item.source_id, item.stream_key, item.external_id)
+    key = (item.source_id, item.segment_key, item.external_id)
 
     if known is not None:
         existing = known.get(key)
     else:
         existing = await SourceItem.find_existing(
-            item.source_id, item.stream_key, item.external_id
+            item.source_id, item.segment_key, item.external_id
         )
 
     # ── the gate ──────────────────────────────────────────────────────────
@@ -165,17 +165,17 @@ async def _load_existing(
         return {}
     groups: dict[tuple[str, str], set[str]] = {}
     for item in items:
-        groups.setdefault((item.source_id, item.stream_key), set()).add(item.external_id)
+        groups.setdefault((item.source_id, item.segment_key), set()).add(item.external_id)
 
     known: dict[tuple[str, str, str], SourceItem] = {}
-    for (source_id, stream_key), external_ids in groups.items():
+    for (source_id, segment_key), external_ids in groups.items():
         rows = await SourceItem.get_all(
             QueryFilter(match=ExpressionNode(op=QueryOp.AND, operands=[
                 ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", source_id]),
-                ExpressionNode(op=QueryOp.EQ, operands=["stream_key", stream_key]),
+                ExpressionNode(op=QueryOp.EQ, operands=["segment_key", segment_key]),
                 ExpressionNode(op=QueryOp.IN, operands=["external_id", list(external_ids)]),
             ]))
         )
         for row in rows:
-            known[(source_id, stream_key, str(row.external_id))] = row
+            known[(source_id, segment_key, str(row.external_id))] = row
     return known

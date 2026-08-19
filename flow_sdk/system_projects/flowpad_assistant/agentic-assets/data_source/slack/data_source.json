@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "name": "slack",
+  "title": "Slack",
+  "icon_name": "Slack",
+  "description": "Channels in a connected Slack workspace. Connect Slack first, then invite the bot to each channel and press Verify.",
+  "setup_wiki": "Slack channels",
+  "auth": {
+    "connector": "slack"
+  },
+  "config": {
+    "channels": {
+      "type": "lines",
+      "required": true,
+      "label": "Channel IDs",
+      "placeholder": "C0123456789",
+      "pattern": "^[CGD][A-Z0-9]{6,}$",
+      "hint": "One per line, and the ID \u2014 not the name. A renamed channel keeps its ID; keying on the name would fork its history."
+    }
+  }
+}

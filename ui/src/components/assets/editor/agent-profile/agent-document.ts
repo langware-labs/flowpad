@@ -78,9 +78,27 @@ export function patchAgentDocument(source: string, patch: AgentDocumentPatch): s
     }
   }
 
+  // The body carries the identity capsule (`<!-- flowpad:capsule identity … -->`)
+  // at its tail, and the prompt buffer never does — the extractor strips it.
+  // A prompt edit therefore swaps the DOMAIN text and re-attaches the capsule
+  // blocks, mirroring the Python owned-writer (`restore_capsule_blocks`):
+  // dropping them would strip the entity's id from disk on every prompt save.
   const nextBody = Object.prototype.hasOwnProperty.call(patch, 'system_prompt')
-    ? String(patch.system_prompt ?? '')
+    ? restoreCapsuleBlocks(String(patch.system_prompt ?? ''), snapshotCapsuleBlocks(body))
     : body;
   const renderedYaml = document.toString({ lineWidth: 0 }).trimEnd();
   return `---\n${renderedYaml}\n---\n\n${nextBody.replace(/^\n+/, '').replace(/\n*$/, '\n')}`;
+}
+
+/** Whole-line delimiters of a code-comment capsule block (see flow_sdk/capsules/code_comment.py). */
+const CAPSULE_BLOCK = /^<!-- flowpad:capsule [a-z][a-z0-9_-]{0,63}\n[\s\S]*?^flowpad:endcapsule [a-z][a-z0-9_-]{0,63} -->$/gm;
+
+function snapshotCapsuleBlocks(text: string): string[] {
+  return text.match(CAPSULE_BLOCK) ?? [];
+}
+
+function restoreCapsuleBlocks(text: string, blocks: string[]): string {
+  const base = text.replace(CAPSULE_BLOCK, '').replace(/\n*$/, '');
+  if (blocks.length === 0) return base;
+  return `${base}${base ? '\n\n' : ''}${blocks.join('\n\n')}\n`;
 }

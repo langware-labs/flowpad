@@ -136,7 +136,7 @@ async def test_purge_items_removes_only_this_sources_records():
     for src in (mine, theirs):
         item = SourceItem(
             data_source_id=src.id, provider="rss", kind="content.feed.item",
-            stream_key="s", external_id="x1", name="hello", body="body",
+            segment_key="s", external_id="x1", name="hello", body="body",
         )
         await item.save()
 
@@ -163,7 +163,7 @@ async def test_purged_records_are_rebuilt_and_local_state_is_the_cost():
     src = await _source()
     item = SourceItem(
         data_source_id=src.id, provider="rss", kind="content.feed.item",
-        stream_key="s", external_id="x1", name="hello", body="body", read=True,
+        segment_key="s", external_id="x1", name="hello", body="body", read=True,
     )
     await item.save()
     original = item.id
@@ -174,7 +174,7 @@ async def test_purged_records_are_rebuilt_and_local_state_is_the_cost():
 
     rebuilt = SourceItem(
         data_source_id=src.id, provider="rss", kind="content.feed.item",
-        stream_key="s", external_id="x1", name="hello", body="body",
+        segment_key="s", external_id="x1", name="hello", body="body",
     )
     await rebuilt.save()
 
@@ -193,7 +193,7 @@ async def test_purged_records_are_rebuilt_and_local_state_is_the_cost():
 async def _item(src, *, external_id: str, occurred_at: str | None) -> SourceItem:
     row = SourceItem(
         data_source_id=src.id, provider="rss", kind="content.feed.item",
-        stream_key="s", external_id=external_id, name=external_id, body="body",
+        segment_key="s", external_id=external_id, name=external_id, body="body",
         occurred_at=occurred_at,
     )
     await row.save()

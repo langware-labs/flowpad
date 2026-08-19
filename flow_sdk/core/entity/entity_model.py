@@ -62,6 +62,7 @@ from flow_sdk.db.drivers.query import ExpressionNode, OrderType, QueryFilter, Qu
 from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
 from flow_sdk.fs_store.identifier import adopt_entity_id, is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.asset_occurrences import AssetOccurrence, asset_occurrence_dicts
+from flow_sdk.fs_store.exceptions import AssetRefLookupError
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 from .blob_index_entity_model import BLOB_INDEX_VFS_PATH, BlobIndexEntity
@@ -239,6 +240,23 @@ class Entity(DBEntity):
     # Portable Git provenance + placement for a file-backed asset. The value is
     # shared with the Hub, while ``persist=TRUE`` writes only backend record
     # metadata — never the user-facing asset frontmatter/body.
+    #: WHERE this entity came from, as the source itself names it — the handle
+    #: identity is resolved by, so the same remote thing converges on one row no
+    #: matter where its bytes were placed locally.
+    #:
+    #: A LOOKUP key, never id arithmetic: the same discipline as
+    #: `SourceItem.find_existing`. Two copies of one source asset (indexed in
+    #: place and again inside a project) share an `origin_id` and therefore an
+    #: entity, without either file having to carry an identity capsule.
+    #:
+    #: PRIVATE: it names the local source that produced this row, which is
+    #: meaningless — and misleading — on a receiver.
+    origin_id: str = APIField(
+        sharing=Sharing.PRIVATE,
+        default="",
+        persist=Persist.TRUE,
+        description="Source-supplied identity this row was consolidated on.",
+    )
     git_origin: dict | None = APIField(
         sharing=Sharing.SHARED,
         default=None,
@@ -706,7 +724,9 @@ class Entity(DBEntity):
         ]
 
     @classmethod
-    async def get_by_asset_ref(cls, path: "str | Path", *, resolve_containing: bool = False) -> "Entity | None":
+    async def get_by_asset_ref(
+        cls, path: "str | Path", *, resolve_containing: bool = False, strict: bool = False
+    ) -> "Entity | None":
         """Resolve the single entity whose ``asset_ref`` equals ``path``.
 
         ``asset_ref`` is globally unique (one entity per file path across all
@@ -723,6 +743,11 @@ class Entity(DBEntity):
         deepest hit wins, e.g. any file under ``.claude/skills/foo/`` resolves
         to the ``foo`` Skill. Exact match always wins over containment.
         Returns ``None`` when no entity owns the path.
+
+        ``strict`` raises :class:`AssetRefLookupError` when any candidate query
+        ERRORED, instead of reporting the path as unowned. Pass it from every
+        caller that WRITES on a miss (minting, deleting) — see ``fs_store/reindex.py``.
+        Read-only callers can keep the lenient default.
         """
         import asyncio  # noqa: PLC0415
 
@@ -734,20 +759,66 @@ class Entity(DBEntity):
         # would be decided by SchemaRegistry iteration order, i.e. correct for a
         # type registered before it and silently wrong for one registered after.
         candidates = cls.asset_owner_classes()
-
-        async def _try(ecls: type) -> "Entity | None":
-            try:
-                return await ecls.get_one({"asset_ref": path_str})
-            except Exception:
-                return None
-
-        for result in await asyncio.gather(*[_try(c) for c in candidates]):
-            if result is not None:
-                return result
+        hit = await cls.first_across_asset_owners(
+            "asset_ref", path_str, strict=strict, candidates=candidates
+        )
+        if hit is not None:
+            return hit
 
         if not resolve_containing:
             return None
         return await cls._get_by_containing_folder(path_str, candidates)
+
+    @classmethod
+    async def first_across_asset_owners(
+        cls,
+        field: str,
+        value: str,
+        *,
+        strict: bool = False,
+        candidates: "list[type[Entity]] | None" = None,
+    ) -> "Entity | None":
+        """First row across every asset-owning type whose ``field`` equals ``value``.
+
+        The fan-out itself, held once: a base-class query does not reach
+        concrete-type rows, so any "which entity does this handle name" question
+        — ``asset_ref``, ``origin_id`` — has to ask each owner. Shared so a
+        second caller cannot re-acquire the swallow-and-return-None behaviour
+        this one deliberately gave up.
+
+        ``strict`` raises :class:`AssetRefLookupError` when any candidate query
+        ERRORED, instead of reporting the handle as unowned. Pass it from every
+        caller that WRITES on a miss (minting, deleting).
+        """
+        import asyncio  # noqa: PLC0415
+
+        candidates = cls.asset_owner_classes() if candidates is None else candidates
+
+        # `return_exceptions` keeps the per-candidate resilience — one broken type
+        # must not sink the fan-out — while still telling a failed probe apart
+        # from one that genuinely found nothing.
+        results = await asyncio.gather(
+            *[c.get_one({field: value}) for c in candidates], return_exceptions=True
+        )
+        failed = sum(1 for r in results if isinstance(r, BaseException))
+        for result in results:
+            if result is not None and not isinstance(result, BaseException):
+                return result
+
+        if failed:
+            # Once for the whole fan-out. The usual cause is a contended writer,
+            # which fails EVERY candidate at once — ~26 of them — so logging per
+            # candidate turns one locked database into 26 tracebacks per path.
+            logging.getLogger(__name__).warning(
+                "%s lookup failed for %d/%d types on %s", field, failed, len(results), value
+            )
+            # A partial failure makes "not found" unreliable, so a strict caller
+            # is told rather than handed a None it would act on — and before any
+            # fallback, since a fan-out we could not trust makes a fallback miss
+            # untrustworthy too.
+            if strict:
+                raise AssetRefLookupError(f"{field} lookup incomplete for {value}")
+        return None
 
     @classmethod
     async def _get_by_containing_folder(cls, path_str: str, candidates: list[type]) -> "Entity | None":
@@ -1082,21 +1153,52 @@ class Entity(DBEntity):
             object.__setattr__(entity, "asset_ref", data["asset_ref"])
         return entity
 
-    async def _fts_upsert(self, type_name: str, content: str) -> None:
-        """Upsert this entity into the FTS5 table with the given content."""
+    async def _fts_upsert(self, type_name: str, record) -> None:
+        """Upsert this entity into the FTS5 table from its ``FSRecord``.
+
+        The column list lives in ``FtsEntry.from_record`` — see there for why a
+        writer must never assemble one by hand.
+        """
         from flow_sdk.db import get_db_driver
         from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry
 
         driver = get_db_driver()
         if hasattr(driver, "fts_upsert"):
             await driver.fts_upsert(
-                FtsEntry(
-                    entity_id=self.id,
-                    entity_type=type_name,
-                    name=getattr(self, "name", None) or None,
-                    content=content,
-                )
+                FtsEntry.from_record(self.id, type_name, getattr(self, "name", None), record)
             )
+
+    def fs_origin(self) -> "FSOriginField | None":
+        """The typed view of ``git_origin`` — THE read seam for the base field.
+
+        ``git_origin`` stays a ``dict`` because it is a WIRE FORMAT: the field is
+        ``Sharing.SHARED`` and reaches a hub pinned to a released ``flow_sdk``,
+        so its exact key set and key order are load-bearing (see
+        ``docs/data-management/items_origins.md``). Callers that want behaviour —
+        ``clone_url()``, ``matches_checkout()``, a ``kind`` test — come through
+        here instead of hand-rolling ``GitOrigin.model_validate`` and getting a
+        subtly different tolerance for legacy shapes.
+
+        Returns ``None`` for an absent or unparseable origin rather than raising:
+        a malformed provenance stamp must not break the entity carrying it.
+
+        Use the raw ``git_origin`` dict when passing the value through to the
+        wire UNCHANGED — validating and re-dumping a legacy kind-less dict adds
+        ``kind``/``project_id``/``head_commit`` and rewrites bytes a released
+        receiver is already reading.
+        """
+        raw = self.git_origin
+        if not raw:
+            return None
+        from flow_sdk.builtin.fs_origin_field import FS_ORIGIN_ADAPTER  # noqa: PLC0415
+
+        try:
+            return FS_ORIGIN_ADAPTER.validate_python(raw)
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "unparseable git_origin on %s; treating as absent", self.id, exc_info=True
+            )
+            return None
 
     async def get_record(self) -> "FSRecord | None":
         """Return the fs-record associated with this entity, or None if none exists."""
@@ -1127,10 +1229,9 @@ class Entity(DBEntity):
         record = await self.get_record()
         if record is None:
             return
-        content = record.search_content
-        if content is None:
+        if record.search_content is None:
             return
-        await self._fts_upsert(self.get_type(), content)
+        await self._fts_upsert(self.get_type(), record)
 
     async def removeSearchIndex(self) -> None:
         """Remove this entity from the FTS5 table."""
@@ -1232,9 +1333,8 @@ class Entity(DBEntity):
             from_exception(record, exc, trigger="store").save()
             return None
         # Immediately index into FTS5 so the entity is searchable without a scan.
-        content = record.search_content
-        if content is not None:
-            await entity._fts_upsert(type_name, content)
+        if record.search_content is not None:
+            await entity._fts_upsert(type_name, record)
         return record
 
     async def _resolve_scope_project(self) -> "Entity | None":

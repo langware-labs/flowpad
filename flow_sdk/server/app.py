@@ -311,6 +311,13 @@ async def _start_fsop_watcher() -> None:
         from flow_sdk.inbox.projection import start_inbox_projection
 
         start_inbox_projection()
+        # Arm the data-source change lane. Any producer — a webhook relay, a
+        # CLI, a scheduler — announces a change with the same envelope, and this
+        # is what makes the bus the way in rather than each producer needing a
+        # private path to the ingest subsystem.
+        from flow_sdk.ingest.change_event import subscribe as subscribe_source_changes
+
+        subscribe_source_changes()
         print(f"  FSOp watcher: started ({len(fsop_watcher)} trigger(s))")
     except Exception:
         logging.getLogger(__name__).exception("FSOp watcher: failed to start")

@@ -901,6 +901,21 @@ class Project(Entity):
             }
         return payload
 
+    async def ensure_on_hub(self) -> bool:
+        """Publish this Project once and persist the local publication marker.
+
+        Deploying a Project or one of its repository-backed assets is a single
+        user operation. Callers must not have to manually publish the Project
+        first merely to satisfy the asset publisher's parent-before-child
+        ordering requirement.
+        """
+        if self.remote:
+            return False
+        await self.share()
+        self.remote = True
+        await self.save()
+        return True
+
     async def share(self, recipients: Optional[List[str]] = None) -> "Project":
         """Publish this project to the hub as a shared unit + invite recipients.
 
@@ -1909,10 +1924,7 @@ class Project(Entity):
         if not actor:
             return ApiFailResponse(message="deploy requires an authenticated user", status_code=401)
         try:
-            if not self.remote:
-                await self.share()
-                self.remote = True
-                await self.save()
+            await self.ensure_on_hub()
             data = await deploy_entity_to_cloud(self)
         except Exception as exc:
             return ApiFailResponse(message=f"deploy failed: {exc}")

@@ -15,9 +15,8 @@ import {
   type Agent,
   type AssetDescriptor,
 } from '@sdk';
-import { AvatarValue } from '@src/lib/avatar-value';
-import { colorForIdentityKey } from '@src/components/conversation/avatar-color';
-import { initialsFromLabel } from '@src/components/conversation/participant-display';
+import { AgentAvatar } from '@src/components/agents/AgentAvatar';
+import { AgentTypeChip } from '@src/components/agents/AgentIntroCard';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 import {
@@ -845,7 +844,6 @@ function LaunchingAgentRow({ agent }: { agent: Agent }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const name = agent.displayName;
-  const avatarImageUrl = agent.avatarImageUrl;
 
   return (
     <button
@@ -855,27 +853,11 @@ function LaunchingAgentRow({ agent }: { agent: Agent }) {
       data-testid="asset-manager-launching-agent"
       title={t`Open ${name}`}
     >
-      <span
-        className={cn(
-          'flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full text-[11px] font-semibold text-white',
-          colorForIdentityKey(agent.name || agent.id),
-        )}
-        data-testid="asset-manager-launching-agent-avatar"
-      >
-        <AvatarValue
-          value={agent.avatar}
-          imageUrl={avatarImageUrl}
-          alt={t`${name} avatar`}
-          className={avatarImageUrl ? 'h-full w-full object-cover' : 'h-3.5 w-3.5 text-sm'}
-          fallback={<span>{initialsFromLabel(name, 1)}</span>}
-        />
-      </span>
+      <AgentAvatar agent={agent} className="h-6 w-6 text-[11px]" data-testid="asset-manager-launching-agent-avatar" />
       <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground" data-testid="asset-manager-launching-agent-name">
         {name}
       </span>
-      <span className="flex-shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-        <Trans>agent</Trans>
-      </span>
+      <AgentTypeChip className="flex-shrink-0" />
     </button>
   );
 }

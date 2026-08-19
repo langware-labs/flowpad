@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "name": "folder",
+  "title": "Local folder",
+  "icon_name": "Folder",
+  "description": "A directory on this machine. Enumerates and diffs; no credentials.",
+  "reflect": [
+    "none",
+    "copy",
+    "symlink"
+  ],
+  "config": {
+    "root": {
+      "type": "path",
+      "required": true,
+      "label": "Folder",
+      "account_key": true,
+      "hint": "Every file under it becomes an asset."
+    }
+  }
+}

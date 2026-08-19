@@ -10,10 +10,10 @@ from typing import Any, Awaitable, Callable, ClassVar, Optional
 # An async progress callback: ``await on_progress(bytes_done, bytes_total)``.
 ProgressCallback = Callable[[int, int], Awaitable[None]]
 
-from pydantic import BaseModel, SerializerFunctionWrapHandler, model_serializer
+from pydantic import BaseModel, SerializerFunctionWrapHandler, model_serializer, model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
-from flow_sdk.builtin.cloud_origin import CloudOrigin
+from flow_sdk.builtin.cloud_origin import CloudOrigin, CloudOriginLocal
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.type_id import TypeId
 
@@ -365,6 +365,45 @@ class FlowMessage(Entity):
     origin: Optional[CloudOrigin] = APIField(
         None, description="The cloud record this message caches; None = Flowpad-native"
     )
+    # SHARED above, PRIVATE here, deliberately. `origin` is transportable — the
+    # receiver renders the badge and the "Open in ..." link from it. These two are
+    # row ids in OUR database; shipping them let a receiver dereference ids that
+    # cannot resolve, which `outbound` then reported as a deleted record rather
+    # than a foreign one.
+    origin_local: Optional[CloudOriginLocal] = APIField(
+        None,
+        sharing=Sharing.PRIVATE,
+        description="Local row pointers behind `origin`; never leaves this machine",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _lift_legacy_origin_ids(cls, data):
+        """Rows written before the split carry the row ids INSIDE ``origin``.
+
+        ``CloudOrigin`` no longer declares them, so without this they are dropped
+        on parse and the message can never be replied to again — and unlike a
+        re-poll, which repairs any message still inside the provider's window,
+        nothing repairs one that has fallen out of it. The values are still in
+        the stored dict; this just moves them to the field that now owns them.
+
+        Same shape as ``DataSource._adopt_legacy_enabled``: read-side only, no
+        migration pass, and a no-op once the row is next saved.
+        """
+        if not isinstance(data, dict) or data.get("origin_local"):
+            return data
+        origin = data.get("origin")
+        if not isinstance(origin, dict):
+            return data
+        ds_id, item_id = origin.get("data_source_id"), origin.get("source_item_id")
+        if not (ds_id or item_id):
+            return data
+        data = dict(data)
+        data["origin_local"] = {
+            "data_source_id": ds_id or "",
+            "source_item_id": item_id or "",
+        }
+        return data
     # The MessageThread this belongs to. None = ungrouped, which is how every
     # existing message renders — flat, exactly as before.
     thread_id: Optional[str] = APIField(None, description="MessageThread id; None = flat (no thread grouping)")

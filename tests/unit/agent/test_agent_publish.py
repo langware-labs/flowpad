@@ -1,7 +1,10 @@
 """Publishing an agent to the hub — Git-backed, id verbatim, once."""
 
+from unittest.mock import AsyncMock
+
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.project import Project
 from flow_sdk.fs_store.identifier import mint_uuid
 
 
@@ -52,6 +55,45 @@ async def test_legacy_remote_without_git_origin_is_republished(monkeypatch):
 
     assert await agent.ensure_on_hub(TypeId(type="user", id=mint_uuid())) is True
     assert calls == [1]
+
+
+async def test_fresh_agent_publishes_owning_project_before_asset(monkeypatch):
+    """One Deploy click establishes the required parent-before-child order."""
+    events: list[str] = []
+    project = Project(id=mint_uuid(), name="flowpad-os", remote=False)
+    agent = Agent(id=mint_uuid(), name="joe", project_id=project.id)
+
+    async def _ensure_project(_project):
+        events.append("project")
+        _project.remote = True
+        return True
+
+    async def _publish_asset(_entity, _actor):
+        events.append("agent")
+
+    monkeypatch.setattr("flow_sdk.assets._publish_service.owning_project", AsyncMock(return_value=project))
+    monkeypatch.setattr(Project, "ensure_on_hub", _ensure_project)
+    monkeypatch.setattr("flow_sdk.assets.git_publish.publish_git_asset", _publish_asset)
+
+    assert await agent.ensure_on_hub(TypeId(type="user", id=mint_uuid())) is True
+    assert events == ["project", "agent"]
+
+
+async def test_project_ensure_on_hub_is_persisted_and_idempotent(monkeypatch):
+    project = Project(id=mint_uuid(), name="flowpad-os", remote=False)
+    share = AsyncMock(return_value=project)
+    save = AsyncMock(return_value=project)
+    monkeypatch.setattr(Project, "share", share)
+    monkeypatch.setattr(Project, "save", save)
+
+    assert await project.ensure_on_hub() is True
+    assert project.remote is True
+    share.assert_awaited_once_with()
+    save.assert_awaited_once_with()
+
+    assert await project.ensure_on_hub() is False
+    share.assert_awaited_once_with()
+    save.assert_awaited_once_with()
 
 
 def test_local_path_never_travels_to_the_hub():

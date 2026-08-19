@@ -140,12 +140,12 @@ def test_source_error_carries_its_own_classification():
 async def test_cursor_ensure_for_is_get_or_create_and_never_resets_position():
     ds_id = f"ds-{uuid.uuid4().hex[:8]}"
 
-    first = await DataSourceCursor.ensure_for(ds_id, "https://a.test/feed", stream_label="A")
+    first = await DataSourceCursor.ensure_for(ds_id, "https://a.test/feed", segment_label="A")
     first.high_water = "2026-07-30T00:00:00Z"
     first.state = {"etag": 'W/"abc"'}
     await first.save()
 
-    again = await DataSourceCursor.ensure_for(ds_id, "https://a.test/feed", stream_label="A")
+    again = await DataSourceCursor.ensure_for(ds_id, "https://a.test/feed", segment_label="A")
     assert again.id == first.id
     assert again.high_water == "2026-07-30T00:00:00Z", "re-declaring a stream reset its cursor"
     assert again.state == {"etag": 'W/"abc"'}

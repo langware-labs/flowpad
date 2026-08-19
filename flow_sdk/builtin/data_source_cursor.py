@@ -19,8 +19,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import ClassVar, Optional
 
+from pydantic import model_validator
+
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
+from flow_sdk.core.entity.legacy_fields import adopt_renamed
 from flow_sdk.ingest.health import SourceHealth
 from flow_sdk.schema.types import EntityType
 
@@ -29,8 +32,8 @@ class DataSourceCursor(Entity):
     type: str = APIField(default=EntityType.DATA_SOURCE_CURSOR.value)
 
     data_source_id: str = APIField(default="")
-    stream_key: str = APIField(default="", description="Feed URL, channel id — the unit of sync")
-    stream_label: str = APIField(default="")
+    segment_key: str = APIField(default="", description="Feed URL, channel id — the unit of sync")
+    segment_label: str = APIField(default="")
     enabled: bool = APIField(default=True)
 
     # ── operator-facing — recorded, never read back as sync input ──
@@ -51,11 +54,25 @@ class DataSourceCursor(Entity):
 
     _api_visible: ClassVar[bool] = True
 
+    @model_validator(mode="before")
+    @classmethod
+    def _adopt_legacy_stream_key(cls, data):
+        """Rows written before the segment rename carry ``stream_key``.
+
+        Without this they load with an empty ``segment_key``, so a pre-rename
+        cursor reads as a segment that was never polled and the next fetch
+        re-walks it from the start. Same shape as
+        ``DataSource._adopt_legacy_enabled``.
+        """
+        return adopt_renamed(
+            data, {"stream_key": "segment_key", "stream_label": "segment_label"}
+        )
+
     @classmethod
     async def ensure_for(
-        cls, data_source_id: str, stream_key: str, *, stream_label: str = ""
+        cls, data_source_id: str, segment_key: str, *, segment_label: str = ""
     ) -> "DataSourceCursor":
-        """Get-or-create, keyed on ``(data_source_id, stream_key)``.
+        """Get-or-create, keyed on ``(data_source_id, segment_key)``.
 
         Never resets an existing cursor's position — re-declaring a stream finds
         the row that already tracks it, so adding a feed twice cannot lose sync
@@ -64,17 +81,17 @@ class DataSourceCursor(Entity):
         """
         existing = await cls.get_one({
             "data_source_id": data_source_id,
-            "stream_key": stream_key,
+            "segment_key": segment_key,
         })
         if existing is not None:
-            if stream_label and existing.stream_label != stream_label:
-                existing.stream_label = stream_label
+            if segment_label and existing.segment_label != segment_label:
+                existing.segment_label = segment_label
                 await existing.save()
             return existing
         row = cls(
             data_source_id=data_source_id,
-            stream_key=stream_key,
-            stream_label=stream_label,
+            segment_key=segment_key,
+            segment_label=segment_label,
         )
         await row.save()
         return row
