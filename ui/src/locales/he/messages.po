@@ -2547,6 +2547,7 @@ msgstr "שינויים ({0})"
 msgid "Chat"
 msgstr "צ'אט"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Chat history"
 msgstr "היסטוריית צ'אט"
@@ -2562,6 +2563,10 @@ msgstr "כלי צ'אט"
 #: src/components/lens-viewer/shared/ViewModeToggle.tsx
 msgid "Chat view"
 msgstr "תצוגת צ׳אט"
+
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+msgid "Chat with this deployed agent"
+msgstr ""
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
@@ -4975,6 +4980,10 @@ msgstr "פרוסו לענן"
 #: src/components/version-popover/version-popover.tsx
 msgid "Deployed"
 msgstr "פורסם"
+
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+msgid "Deployed agent"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deployed without its definition"
@@ -9501,6 +9510,10 @@ msgstr "כתוב הודעה לסוכן"
 msgid "Message the agent…"
 msgstr "שלחו הודעה לסוכן…"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+msgid "Message this deployed agent…"
+msgstr ""
+
 #: src/i18n/type-labels.ts
 msgid "Message Thread"
 msgstr "שרשור הודעות"
@@ -9800,6 +9813,7 @@ msgstr "תיקיית סימניות חדשה"
 msgid "New build"
 msgstr "בנייה חדשה"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "New chat"
 msgstr "צ'אט חדש"
@@ -10391,6 +10405,7 @@ msgstr "עדיין אין עמוד בשם זה."
 msgid "No past builds"
 msgstr "אין בניות קודמות"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "No past chats"
 msgstr "אין צ'אטים קודמים"
@@ -11767,6 +11782,7 @@ msgstr "ניתוחים קודמים"
 msgid "Past builds"
 msgstr "בניות קודמות"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Past chats"
 msgstr "צ'אטים קודמים"
@@ -14436,6 +14452,10 @@ msgstr "שלח הודעה תחילה — יצירת ענף דורשת היסטו
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Send a message first — no transcript yet"
 msgstr "שלח הודעה תחילה — אין עדיין תמלול"
+
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+msgid "Send a message to this deployed agent."
+msgstr ""
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Send a PROMPT to the recipient asking for a status summary"

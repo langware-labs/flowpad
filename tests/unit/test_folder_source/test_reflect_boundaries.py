@@ -67,7 +67,9 @@ async def test_the_driver_produces_refs_and_never_items(folder_db, watched, make
 
     assert result.refs, "driver produced no refs"
     assert result.items == [], "a file source must not produce IngestItems"
-    assert driver.record_kind == "", "a file source has no record kind to stamp"
+    # A file source has no record kind at all — it never stamps one, so it does
+    # not carry the attribute a record-emitting driver declares.
+    assert not hasattr(driver, "record_kind"), "a file source has no record kind"
 
 
 async def test_record_mode_never_reaches_the_reflector(folder_db, watched, make_source):

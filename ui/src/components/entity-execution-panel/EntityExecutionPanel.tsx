@@ -78,6 +78,14 @@ interface EntityExecutionPanelProps {
   processType: ProcessKind;
   className?: string;
   /**
+   * Optional host-owned process creation seam. Omit to keep the established
+   * local ComputeNode.createProcess flow. Deployed Agent chat injects the
+   * Hub's Agent.useDeployment flow and still returns a normal AgenticProcess.
+   */
+  createProcess?: () => Promise<AgenticProcess>;
+  /** Constrain process discovery to one cloud Deployment. */
+  deploymentId?: string;
+  /**
    * Invoked once, right after the backing `AgenticProcess` is created and before
    * the first `prompt()`. Use to pre-configure the process (e.g. for sub-agent files,
    * `(proc) => proc.loadEmbeddedSubagent(path)`). Not called when an existing process
@@ -138,6 +146,12 @@ interface EntityExecutionPanelProps {
    * image paste. Off by default so other panel surfaces are unchanged.
    */
   allowAttachments?: boolean;
+  /** Whether pasted images may upload into the process input directory. */
+  allowImagePaste?: boolean;
+  /** Show the process Asset Manager control. */
+  showAssetManager?: boolean;
+  /** Show the project selector inside Settings. */
+  showProjectSetting?: boolean;
   /**
    * Render TOOL_CALL/TOOL_RESULT/REASONING/STATUS/ERROR events as compact
    * "dense" rows between text messages, with an expand toggle that reveals
@@ -241,6 +255,8 @@ export function EntityExecutionPanel({
   target,
   processType,
   className,
+  createProcess,
+  deploymentId,
   onProcessCreated,
   cursorLine,
   settingsLabel = 'Settings',
@@ -257,6 +273,9 @@ export function EntityExecutionPanel({
   leadingSlot,
   placeholder,
   allowAttachments = false,
+  allowImagePaste = true,
+  showAssetManager = true,
+  showProjectSetting = true,
   dense = false,
   defaultProjectId,
   defaultWorkdir,
@@ -278,7 +297,10 @@ export function EntityExecutionPanel({
   const targetStr = target ?? '';
 
   // 1. Pull all processes attached to this target; sort newest-first for picker + auto-select.
-  const { processes, isLoading: listLoading } = useProcessesForTarget(targetStr, { processType });
+  const { processes, isLoading: listLoading } = useProcessesForTarget(targetStr, {
+    processType,
+    deploymentId,
+  });
   const sortedProcesses = useMemo(() => {
     return [...processes].sort((a, b) => {
       const ta = new Date(a.updated_date || a.created_date || 0).getTime();
@@ -594,26 +616,31 @@ export function EntityExecutionPanel({
           if (createInFlightRef.current) return;
           createInFlightRef.current = true;
           try {
-            const computeNode = await ComputeNode.getById('@local');
-            if (!computeNode) throw new Error('No local compute node');
-            const newProcess = await computeNode.createProcess(
-              {
-                workdir: effectiveWorkdir ?? undefined,
-                projectId: pendingProjectId ?? effectiveProjectId ?? undefined,
-                targetVfsPath: targetStr,
-                processType,
-                ...(effectiveModel ? { model: effectiveModel } : {}),
-                ...(effectiveWorkerType ? { workerType: effectiveWorkerType } : {}),
-                // pty-poll: interactive PTY worker, no stream-json print mode.
-                ...(isPtyPoll ? {} : { outputFormat: 'stream-json' }),
-              },
-              // pty-poll: spawn the interactive PTY right away (visible=true
-              // auto-start) so the first prompt() lands on a live worker.
-              // print: declare the headless transport (pty_mode=false) — the
-              // backend defaults pty_mode to true when omitted, which would put
-              // the print-mode chat on a PTY worker.
-              isPtyPoll ? { visible: true } : { pty_mode: false },
-            );
+            let newProcess: AgenticProcess;
+            if (createProcess) {
+              newProcess = await createProcess();
+            } else {
+              const computeNode = await ComputeNode.getById('@local');
+              if (!computeNode) throw new Error('No local compute node');
+              newProcess = await computeNode.createProcess(
+                {
+                  workdir: effectiveWorkdir ?? undefined,
+                  projectId: pendingProjectId ?? effectiveProjectId ?? undefined,
+                  targetVfsPath: targetStr,
+                  processType,
+                  ...(effectiveModel ? { model: effectiveModel } : {}),
+                  ...(effectiveWorkerType ? { workerType: effectiveWorkerType } : {}),
+                  // pty-poll: interactive PTY worker, no stream-json print mode.
+                  ...(isPtyPoll ? {} : { outputFormat: 'stream-json' }),
+                },
+                // pty-poll: spawn the interactive PTY right away (visible=true
+                // auto-start) so the first prompt() lands on a live worker.
+                // print: declare the headless transport (pty_mode=false) — the
+                // backend defaults pty_mode to true when omitted, which would put
+                // the print-mode chat on a PTY worker.
+                isPtyPoll ? { visible: true } : { pty_mode: false },
+              );
+            }
             if (onProcessCreated) await onProcessCreated(newProcess);
             for (const ref of pendingAttachedRefs) {
               try {
@@ -645,6 +672,7 @@ export function EntityExecutionPanel({
     },
     [
       activeProcess,
+      createProcess,
       sending,
       targetStr,
       effectiveProjectId,
@@ -818,13 +846,14 @@ export function EntityExecutionPanel({
         noPastSessionsLabel={noPastSessionsLabel}
         settingsSlot={
           <>
-            <AssetManagerButton process={activeProcess} />
+            {showAssetManager && <AssetManagerButton process={activeProcess} />}
             <ExecutionSettingsPopover
               activeProcess={activeProcess}
               projectId={
                 activeProcess ? (activeProcess.project_id ?? null) : (pendingProjectId ?? effectiveProjectId ?? null)
               }
               onProjectChange={setPendingProjectId}
+              showProject={showProjectSetting}
               modelControl={modelSettingsNode}
               workerControl={workerSettingsNode}
               trigger={
@@ -897,7 +926,7 @@ export function EntityExecutionPanel({
         onStop={handleStop}
         statusSlot={statusSlot}
         placeholder={placeholder}
-        onPasteImages={handlePasteImages}
+        onPasteImages={allowImagePaste ? handlePasteImages : undefined}
         allowAttachments={allowAttachments}
         leadingSlot={<QueueChip process={activeProcess} />}
         history={inputHistory}

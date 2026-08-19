@@ -48,20 +48,6 @@ class Runtime(StrEnum):
     AGENT = "agent"
 
 
-class IdUniqueness(StrEnum):
-    """Whether a provider's id is unique within a segment or across the source.
-
-    The default is SEGMENT, and the asymmetry is the reason this exists at all:
-    a wrong SOURCE **merges** two distinct records — a Slack `ts` repeats across
-    channels — and a merge cannot be undone. A wrong SEGMENT only duplicates,
-    and an enumerate-diff sweep reaps duplicates. The default is the
-    lossy-but-recoverable side on purpose.
-    """
-
-    SEGMENT = "segment"
-    SOURCE = "source"
-
-
 class FieldType(StrEnum):
     """What a config field renders as, and how its raw string is typed.
 
@@ -122,7 +108,6 @@ class Traits:
 
     emits: str = ""
     channel: str = ""
-    id_unique_within: IdUniqueness = IdUniqueness.SEGMENT
     owns_bytes: bool = True
 
 
@@ -207,13 +192,15 @@ def _traits_from(raw: Any) -> Optional[Traits]:
         return None
     if not isinstance(raw, dict):
         raise ManifestError("traits must be an object")
-    unknown = set(raw) - {"emits", "channel", "id_unique_within", "owns_bytes"}
+    # `id_unique_within` is deliberately NOT accepted: the natural key is always
+    # (source_id, segment_key, external_id), so declaring it would promise a
+    # behaviour nothing implements. It becomes a load error until something reads it.
+    unknown = set(raw) - {"emits", "channel", "owns_bytes"}
     if unknown:
         raise ManifestError(f"traits has unknown keys: {sorted(unknown)}")
     return Traits(
         emits=str(raw.get("emits") or ""),
         channel=str(raw.get("channel") or ""),
-        id_unique_within=IdUniqueness(raw.get("id_unique_within") or IdUniqueness.SEGMENT.value),
         owns_bytes=bool(raw.get("owns_bytes", True)),
     )
 
@@ -253,6 +240,16 @@ def parse_manifest(data: Any, *, files: Optional[set[str]] = None) -> Manifest:
         raise ManifestError(f"unsupported schema {schema}; this build reads {CURRENT_SCHEMA}")
 
     runtime = runtime_for(files or set())
+    if runtime is Runtime.AGENT:
+        # Derived, storable, and dispatched by nothing: `driver_for_spec` builds
+        # an adapter for SCRIPT only. A folder with FETCH.md would index as a
+        # valid spec and then fail every poll with `unknown_provider`, which is
+        # exactly the silent-load this module refuses elsewhere. Reserved, not
+        # supported — say so where the author can read it.
+        raise ManifestError(
+            f"{AGENT_FILE} (agent runtime) is reserved but not implemented — "
+            f"use {SCRIPT_FILE} instead"
+        )
     traits = _traits_from(data.get("traits"))
 
     # The driver class is authoritative for a builtin, and `sync_source` stamps
