@@ -6,7 +6,6 @@ import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { DesktopTile, TileSection } from '@src/components/quick-create/QuickCreatePanel';
 import { useProjectAgents } from '@src/hooks/use-project-agents';
-import { useMemo } from 'react';
 import { cn } from '@src/lib/utils';
 
 /**
@@ -24,11 +23,11 @@ import { cn } from '@src/lib/utils';
  * would be a third way to do one thing.
  */
 export function ProjectAgentsStrip({ projectId, className }: { projectId?: string | null; className?: string }) {
-  // The PROJECT, not just its id: the agent lookup needs its mount path and its
-  // context-folder roots. A `projectId` pins a specific project (Project Home
-  // passes its own); `undefined` resolves the active one.
-  const pinned = useMemo(() => (projectId ? new TypeId(Project.type, projectId) : null), [projectId]);
-  const { project } = useProject(pinned);
+  // The PROJECT, not just its id: the agent lookup needs its context roots. A
+  // `projectId` pins a specific project (Project Home passes its own);
+  // `undefined` resolves the active one. No memo on the TypeId — `useEntity`
+  // keys on its type/id STRINGS, not object identity.
+  const { project } = useProject(projectId ? new TypeId(Project.type, projectId) : null);
   const { agents } = useProjectAgents(project);
   const { launch, busyId } = useAgentLauncher();
 
@@ -53,7 +52,9 @@ export function ProjectAgentsStrip({ projectId, className }: { projectId?: strin
               // a launch navigates away — so while one is starting, every tile
               // goes inert rather than racing it.
               disabled={!agent.enabled || !!busyId}
-              onClick={() => void launch(agent)}
+              // The project the STRIP resolved, not the active one: a pinned
+              // strip lists this project's agents and must launch into it too.
+              onClick={() => void launch(agent, project?.id ?? null)}
               data-testid="project-agent-tile"
               data-agent-name={agent.name}
             />

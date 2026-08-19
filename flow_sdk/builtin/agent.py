@@ -114,6 +114,49 @@ class Agent(Entity):
         "capability an agent needs stays visible on its card instead of living at a call site.",
     )
 
+    # ── email ─────────────────────────────────────────────────────────────
+    #
+    # The mailbox itself is NOT pointed at from here — `EmailInbox.agent_typeid`
+    # is the authoritative link, and the hub's own notes give the reason (a
+    # pointer field would duplicate drift-prone state and foreclose an agent
+    # holding several inboxes). What lives here is POLICY, which is ours: who
+    # may drive this agent by mail.
+    #
+    # On the Agent rather than the Deployment because the hub allocates one
+    # inbox per AGENT. The same agent deployed to `local` and to `e2b` shares a
+    # single address, so a per-placement policy would let two rows disagree
+    # about who may write to one mailbox.
+    email_enabled: bool = APIField(
+        default=False,
+        description="Whether inbound mail to this agent's mailbox may drive it.",
+    )
+    #: Addresses permitted to drive this agent. **Empty means nobody** — closed,
+    #: not open. The address is public, permanent and publicly writable, so the
+    #: default that cannot leak an agent holding tools is the safe one.
+    #:
+    #: PRIVATE: these are third parties' personal addresses and have no business
+    #: on a receiver or on the hub.
+    email_allowed_senders: list[str] = APIField(
+        default_factory=list,
+        sharing=Sharing.PRIVATE,
+        description="Addresses allowed to drive this agent by email; empty allows none.",
+    )
+
+    def may_email(self, address: str) -> bool:
+        """Whether *address* is permitted to drive this agent.
+
+        Case- and whitespace-insensitive: an address is an identifier a human
+        types, and `Alice@Example.com ` is the same correspondent as
+        `alice@example.com`. Nothing normalizes on the way in, so it happens
+        here — the one place the comparison is made.
+        """
+        if not self.email_enabled:
+            return False
+        candidate = (address or "").strip().lower()
+        if not candidate:
+            return False
+        return any(candidate == (a or "").strip().lower() for a in self.email_allowed_senders)
+
     # ── lifecycle ─────────────────────────────────────────────────────────
     enabled: bool = APIField(default=True, description="Kill switch — a disabled agent refuses to launch.")
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
@@ -378,14 +421,9 @@ class Agent(Entity):
         No prompt: the process is created and shown, and the human types the
         first message. Local placement only — same routing rule as ``run``.
 
-        The optional body ``project_id`` names **the project the session acts
-        in**, which is not always the project the agent lives in. An agent
-        supplied by a help desk attached as a context folder belongs to the
-        desk's checkout, but a session with it has to open on the customer's
-        project — their files as cwd, their rules in force, the desk mounted as
-        context. Same body key every other "act in this project" action uses
-        (``Entity._http_setup``). Omitted, it falls back to the agent's own
-        project, which is right for an agent the project itself owns.
+        The optional body ``project_id`` names the project the session ACTS IN,
+        which is not always the project the agent lives in — see ``Agent.use``
+        in the TS SDK for why. Omitted, it falls back to the agent's own project.
         """
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415

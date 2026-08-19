@@ -475,15 +475,13 @@ class Deployment(Entity):
                 "which cannot be reached from here yet."
             )
         agent = await self._require_agent()  # ``build`` re-reads it from the memoized ``_element``
-        # The project the session ACTS IN — the caller's when given, else the
-        # agent's own. It has to drive the workdir too, not just the process
-        # field: an agent supplied by a help desk attached as a context folder
-        # lives in the desk's checkout, and resolving cwd from ``agent.project_id``
-        # would open the session inside the vendor's repo instead of the
-        # customer's project, with the customer's own rules and files nowhere in
-        # scope. Popped here so ``build`` receives it exactly once.
-        project_id = options.pop("project_id", None) or agent.project_id
+        # Peeked, not popped — ``build`` stays the one owner of the
+        # caller-else-agent fallback. It is read here because the acting project
+        # has to drive the WORKDIR too: resolving cwd from ``agent.project_id``
+        # would open a help-desk agent's session inside the vendor's checkout
+        # rather than the customer's project.
         workdir = options.pop("workdir", None)
+        project_id = options.get("project_id") or agent.project_id
         if not workdir and project_id:
             project = await Project.get_by_id(project_id)
             workdir = getattr(project, "fs_storage_mount_path", None) if project else None
@@ -495,7 +493,6 @@ class Deployment(Entity):
             pty_mode=False,
             output_format="stream-json",
             workdir=workdir,
-            project_id=project_id,
             target_typeid_str=str(agent.typeid),
             **options,
         )

@@ -1,4 +1,4 @@
-import { Agent, Project, QueryFilter, QueryRequest } from '@sdk';
+import { Agent, ExpressionNode, Project, QueryFilter, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useMemo } from 'react';
 
@@ -8,18 +8,17 @@ import { useMemo } from 'react';
  *  one fact rather than a render-time trim. */
 const MAX_HOME_AGENTS = 8;
 
-/** The project's own root followed by its context-folder roots — the same
- *  boundary `Project.direct_context_roots()` draws server-side for the other
- *  features that must see into an attached project (helpdesk resolution,
- *  journey auto-launch). Sorted and de-duped because this list becomes part of
- *  the query, and the query IS the cache key. */
-function agentSearchDirs(project?: Project | null): string[] {
-  const raw = [project?.fs_storage_mount_path, ...(project?.include_dirs ?? [])];
-  const dirs = raw
-    .filter((d): d is string => typeof d === 'string' && d.length > 0)
-    .map((d) => d.replace(/\/+$/, ''))
-    .filter(Boolean);
-  return [...new Set(dirs)].sort();
+/** One `asset_ref` prefix range — the half-open `[<dir>/, <dir>0)` pair
+ *  `Entity.assets_by_path` uses server-side (`/` is 0x2F, `0` the next
+ *  codepoint), so a dir matches exactly its strict descendants. */
+function underDir(dir: string): ExpressionNode {
+  return new ExpressionNode({
+    op: '$AND',
+    operands: [
+      new ExpressionNode({ op: '$GE', operands: ['asset_ref', `${dir}/`] }),
+      new ExpressionNode({ op: '$LT', operands: ['asset_ref', `${dir}0`] }),
+    ],
+  });
 }
 
 /**
@@ -37,54 +36,49 @@ function agentSearchDirs(project?: Project | null): string[] {
  * id). A `project_id` match therefore cannot see a desk's agents at all — and
  * misses some of the project's OWN agents too, since only the create path
  * writes the `is_child` edge a project-scoped query walks. An asset_ref under
- * one of these roots is the thing that actually means "this project can use it".
+ * one of `project.context_roots` is what actually means "this project can use
+ * it", which is why those roots come from the server rather than being
+ * re-derived here.
  *
- * This is the same half-open lex range `Entity.assets_by_path` uses server-side
- * (`asset_ref >= "<dir>/" AND asset_ref < "<dir>0"`, OR'd across dirs), built
- * here instead of called through `/assets/by-path` because that route returns a
- * slim projection — no `avatar`, `title` or `enabled`, which is most of what a
- * tile renders. Pushed down to the existing index on
- * `json_extract(data,'$.asset_ref')`.
+ * The range tree is built client-side rather than called through
+ * `/assets/by-path` because that route returns a slim projection — no `avatar`,
+ * `title` or `enabled`, which is most of what a tile renders — and is a one-shot
+ * read with no subscription. `$OR` of `$AND`, never `$IN`: the client-side
+ * re-validator that keeps a watched query live only evaluates `$IN` in its
+ * array-field (`$PROP`) form, so a scalar `$IN` would silently stop new agents
+ * from appearing until a refetch. Range leaves re-validate correctly, so a desk
+ * attached while home is open makes its tile appear on its own.
  *
- * `$OR` of `$AND`, never `$IN`: the client-side re-validator that keeps a
- * watched query live only evaluates `$IN` in its array-field (`$PROP`) form, so
- * a scalar `$IN` would silently stop new agents from appearing until a refetch.
- * Range leaves re-validate correctly, so a freshly indexed desk agent shows up
- * on its own — which is exactly the "attach the desk, the tile appears" moment.
+ * The request must also be IDENTICAL across mounts: `VibeSwap` keeps both home
+ * branches mounted (`display:none`, not a conditional), so the strip mounts
+ * twice at once on `/`. `QueryRequest.key` is built from `type`/`query`/`scope`
+ * — `name` is not part of it — so matching those three is what makes the two
+ * share one fetch and one subscription.
  */
 export function useProjectAgents(project?: Project | null) {
-  const dirs = agentSearchDirs(project);
-  // The dirs drive both the query and its identity, so key the memo on their
-  // content — a new array each render would rebuild the request forever.
-  const dirsKey = dirs.join('|');
+  // Content-keyed: the roots drive both the query and its identity, and a fresh
+  // array each render would rebuild the request forever.
+  const rootsKey = (project?.context_roots ?? []).join('|');
+  const roots = useMemo(() => (rootsKey ? rootsKey.split('|') : []), [rootsKey]);
   const request = useMemo(
     () =>
       new QueryRequest({
         type: Agent.type,
         scope: [],
-        name: `projectAgents:${dirsKey}`,
+        name: `projectAgents:${project?.id ?? 'none'}`,
         // `order_by`/`limit` belong INSIDE QueryFilter: `QueryFilter.parse`
         // wraps a bare dict wholesale into `match`, so a top-level key would
         // silently become a field predicate matching nothing. Alphabetical, not
         // created-date — a launcher that reshuffles as agents are added is
         // disorienting.
         query: new QueryFilter({
-          match: {
-            op: '$OR',
-            operands: dirsKey.split('|').map((dir) => ({
-              op: '$AND',
-              operands: [
-                { op: '$GE', operands: ['asset_ref', `${dir}/`] },
-                { op: '$LT', operands: ['asset_ref', `${dir}0`] },
-              ],
-            })),
-          } as unknown as Record<string, unknown>,
+          match: new ExpressionNode({ op: '$OR', operands: roots.map(underDir) }),
           order_by: { name: 'asc' },
           limit: MAX_HOME_AGENTS,
         }),
       }),
-    [dirsKey],
+    [roots, project?.id],
   );
-  const { data: agents = [] } = useEntitiesQuery<Agent>(request, { enabled: dirsKey.length > 0 });
+  const { data: agents = [] } = useEntitiesQuery<Agent>(request, { enabled: roots.length > 0 });
   return { agents };
 }

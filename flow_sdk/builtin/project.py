@@ -333,6 +333,18 @@ class Project(Entity):
                 out.append(p)
         return out
 
+    @computed_field
+    @property
+    def context_roots(self) -> list[str]:
+        """API mirror of :meth:`direct_context_roots` — see it for the rule.
+
+        Serialized because the boundary has frontend consumers now (the home
+        agent tiles ask "which directories count as this project's?"), and a
+        client re-deriving mount + ``include_dirs`` would be a fourth copy of
+        the rule that canonicalizes differently from the three server-side ones.
+        """
+        return self.direct_context_roots()
+
     def direct_context_roots(self) -> list[str]:
         """Canonical Project root followed by its direct context roots.
 
@@ -835,6 +847,7 @@ class Project(Entity):
             "host_member_id",
             "presence",
             "include_dirs",
+            "context_roots",
             "context_dir_infos",
             "secret_origins",
             "shared_secret_origins",
