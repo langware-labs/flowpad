@@ -1,0 +1,55 @@
+name: 'Backend tests (pytest)'
+description: 'uv sync, then one pytest tier (unit or api); pip-audit + Claude CLI install where relevant'
+inputs:
+  tier:
+    description: "Which pytest tier to run: 'unit' or 'api'"
+    required: true
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up uv + Python 3.10
+      uses: astral-sh/setup-uv@v10.0.1
+      with:
+        python-version: '3.10'
+        enable-cache: true
+
+    # setup-uv registers GitHub's Python problem matcher, which promotes any
+    # traceback-shaped log line to an error annotation — including the benign
+    # teardown warnings in pytest's WARNINGS SUMMARY (e.g. aiosqlite's worker
+    # thread racing session-loop close, "Event loop is closed"), stamping red
+    # annotations on green runs. pytest's exit code is the real signal.
+    - name: Disable Python problem matcher (annotates warnings as errors)
+      run: echo "::remove-matcher owner=python::"
+      shell: bash
+
+    - name: Install dependencies
+      run: uv sync --dev --frozen
+      shell: bash
+
+    # Advisory-only: a new CVE in a pinned transitive dep must not block PRs
+    # (or, through the deploy gate, PyPI releases). Failures show as a red
+    # step icon in the log without failing the job. Runs once, in the unit
+    # tier, so the parallel api job doesn't duplicate it.
+    - name: pip-audit (advisory, non-blocking)
+      if: ${{ inputs.tier == 'unit' }}
+      continue-on-error: true
+      run: uv tool run pip-audit --desc
+      shell: bash
+
+    # pytest.ini enforces --timeout=30 per test; never raise it.
+    - name: pytest tests/unit
+      if: ${{ inputs.tier == 'unit' }}
+      run: uv run pytest tests/unit -q
+      shell: bash
+
+    # tests/api includes files that spawn or probe a real Claude CLI (worker
+    # lifecycle, PTY, capability tests) — install it so the full tier runs.
+    - name: Install Claude Code
+      if: ${{ inputs.tier == 'api' }}
+      run: npm install -g @anthropic-ai/claude-code
+      shell: bash
+
+    - name: pytest tests/api
+      if: ${{ inputs.tier == 'api' }}
+      run: uv run pytest tests/api -q
+      shell: bash
