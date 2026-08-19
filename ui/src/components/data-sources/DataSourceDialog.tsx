@@ -10,7 +10,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DataSource, type SourceStatus } from '@sdk';
-import { Trans } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 import {
@@ -91,6 +91,7 @@ export function DataSourceDialog({
   /** When set, the form edits this source instead of creating one. */
   editing?: DataSource | null;
 }) {
+  const { t } = useLingui();
   // Whatever is INSTALLED, not a hardcoded list: a source added as an asset
   // shows up here with no frontend release.
   const { specs, specFor } = useSourceSpecs();
