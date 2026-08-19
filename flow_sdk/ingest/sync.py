@@ -21,7 +21,6 @@ anywhere in this path.
 """
 from __future__ import annotations
 
-import inspect
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -79,7 +78,19 @@ async def sync_source(
 
     emit_sync_tag(source.provider, source.id, "started")
 
-    cursors = await _cursors_for(source, driver)
+    # Enumerating segments can fail for the same reasons a fetch can — a driver
+    # that has to reach the provider to answer (any authored source does) can
+    # raise here. This function promises never to raise, so the failure is
+    # recorded as health like any other rather than reaching the poller's
+    # "this is a bug" catch, where it left the source stuck on `never_synced`
+    # with no error to show.
+    try:
+        cursors = await _cursors_for(source, driver)
+    except Exception as exc:  # noqa: BLE001 — classified below, never re-raised
+        health, code, detail = classify(exc)
+        await _fail_source(source, code, detail, health=health)
+        emit_sync_tag(source.provider, source.id, "completed", report=combined)
+        return combined
     # The driver's ceiling is a limit, not a preference — `min`, so a caller
     # asking for more streams cannot spend a budget the provider does not have.
     due = _round_robin(cursors, min(budget, getattr(driver, "segment_budget", budget)))
@@ -183,13 +194,7 @@ async def _cursors_for(source: DataSource, driver) -> list[DataSourceCursor]:
         for c in await DataSourceCursor.get_all({"data_source_id": source.id})
     }
     out: list[DataSourceCursor] = []
-    # A builtin answers synchronously from config; a script-backed source has to
-    # spawn its module to know. Tolerating both here keeps the Protocol's sync
-    # signature true for the nine classes that satisfy it.
-    refs = driver.segments(source)
-    if inspect.isawaitable(refs):
-        refs = await refs
-    for ref in refs:
+    for ref in await driver.segments(source):
         cursor = existing.get(ref.key)
         if cursor is None:
             cursor = await DataSourceCursor.ensure_for(
@@ -231,8 +236,18 @@ async def _roll_up(source: DataSource, cursors: list[DataSourceCursor], now: dat
     await source.save()
 
 
-async def _fail_source(source: DataSource, code: str, detail: str) -> None:
-    source.health = SourceHealth.CONFIG_ERROR.value
+async def _fail_source(
+    source: DataSource,
+    code: str,
+    detail: str,
+    *,
+    health: SourceHealth = SourceHealth.CONFIG_ERROR,
+) -> None:
+    """Record a whole-source failure. Defaults to CONFIG_ERROR — the callers that
+    predate the parameter all name a cause a person has to fix — but enumerating
+    segments can fail for a transient reason, and parking a source over one
+    network blip is the mistake `SourceError.for_status` exists to prevent."""
+    source.health = health.value
     source.error_code = code
     source.error_detail = detail
     emit_sync_tag(

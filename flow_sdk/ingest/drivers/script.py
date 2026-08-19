@@ -35,6 +35,7 @@ from typing import Any, Optional
 
 from flow_sdk.ingest.driver import FetchResult, SegmentCursorView, SegmentRef, SetupVerdict
 from flow_sdk.ingest.health import SourceError
+from flow_sdk.ingest.manifest import Traits
 from flow_sdk.ingest.models import IngestItem
 from flow_sdk.utils.module_rpc import ModuleFailure, call_module
 
@@ -68,8 +69,8 @@ class ScriptSource:
     #: send" rather than spawning something that does not exist.
     sends = False
 
-    def __init__(self, *, name: str, folder: str, traits: Optional[dict] = None, env: tuple[str, ...] = ()):
-        traits = dict(traits or {})
+    def __init__(self, *, name: str, folder: str, traits: Optional["Traits"] = None, env=()):
+        traits = traits or Traits()
         self.provider = name
         self.folder = folder
         #: The ontology kind for the SOURCE row. Derived, not declared: it is a
@@ -77,10 +78,10 @@ class ScriptSource:
         self.kind = f"datasource.{name}"
         #: Stamped on every item. Decides inbox membership — the projection
         #: admits `content.message.*` and nothing else.
-        self.record_kind = str(traits.get("emits") or "")
-        self.stamps_identity = bool(traits.get("owns_bytes", True))
-        self._channel = str(traits.get("channel") or "")
-        self._env_names = tuple(env)
+        self.record_kind = traits.emits
+        self.stamps_identity = traits.owns_bytes
+        self._channel = traits.channel
+        self._env_names = tuple(str(e) for e in env)
 
     # ── the Protocol ──────────────────────────────────────────────────────
 
@@ -181,13 +182,6 @@ class ScriptSource:
         script = os.path.join(self.folder, MODULE_FILE)
         executor = await self._executor()
 
-        # A deleted or never-written module must PARK the source, not retry
-        # forever. The executor reports a spawn failure as exit 127, which
-        # `module_rpc._classify` reads as transient — correctly, since it did not
-        # define that code. So the check belongs here, where the file is known.
-        if not await executor.exists(script):
-            raise SourceError.config("missing_module", f"{MODULE_FILE} is missing from {self.folder}")
-
         env = self._env(source)
         request = {
             "protocol": PROTOCOL,
@@ -218,6 +212,15 @@ class ScriptSource:
                     argv_prefix=[sys.executable],
                 )
         except ModuleFailure as exc:
+            # A module that is not there will never appear by retrying, and the
+            # exit code does not say so — the interpreter exists, so a missing
+            # script is exit 2, not a spawn failure. The distinction is drawn
+            # HERE, on the failure path, rather than by stat-ing before every
+            # successful call.
+            if not await executor.exists(script):
+                raise SourceError.config(
+                    "missing_module", f"{MODULE_FILE} is missing from {self.folder}"
+                ) from exc
             detail = f"{exc}{f' — {exc.logs[-500:]}' if exc.logs else ''}"
             if exc.kind == "config":
                 raise SourceError.config("module_config", detail) from exc
@@ -277,6 +280,18 @@ class ScriptSourceWithSetup(ScriptSource):
         return SetupVerdict.ok(detail) if data.get("ready") else SetupVerdict.waiting(detail, pending)
 
 
+def _traits_of(spec) -> "Traits":
+    """The spec's `traits` dict back as the dataclass the manifest validated.
+
+    `id_unique_within` is carried but consumed by nobody: the natural key is
+    always `(source_id, segment_key, external_id)`. Reconstructing it anyway
+    keeps one definition of what a trait is.
+    """
+    raw = dict(getattr(spec, "traits", None) or {})
+    known = {f for f in Traits.__dataclass_fields__}
+    return Traits(**{k: v for k, v in raw.items() if k in known})
+
+
 def driver_for_spec(spec) -> Optional[ScriptSource]:
     """An adapter for one `DataSourceSpec`, or None when it needs no driver.
 
@@ -285,15 +300,23 @@ def driver_for_spec(spec) -> Optional[ScriptSource]:
     """
     if str(getattr(spec, "runtime", "") or "") != "script":
         return None
-    folder = str(getattr(spec, "asset_ref", "") or "")
+    # `asset_ref` is declared `Optional[str]` but arrives as an `FSRef` on the
+    # in-process path, so handle both. `.path` is FSRef's public accessor;
+    # `str(ref)` on one yields `FSRef('/path')`, which would silently produce a
+    # module path that cannot exist.
+    ref = getattr(spec, "asset_ref", None)
+    folder = str(getattr(ref, "path", ref) or "")
     if not folder:
         return None
-    traits = dict(getattr(spec, "traits", None) or {})
-    auth = dict(getattr(spec, "auth", None) or {})
     cls = ScriptSourceWithSetup if str(getattr(spec, "setup_wiki", "") or "") else ScriptSource
     return cls(
         name=str(spec.name),
         folder=folder,
-        traits=traits,
-        env=tuple(str(e) for e in (auth.get("env") or [])),
+        # Reconstructed through the manifest's own dataclass rather than read by
+        # string key: the row stores a plain dict, so a renamed trait would
+        # otherwise default silently — an `emits` rename means a blank
+        # `record_kind`, and records land outside the inbox projection with
+        # nothing raising.
+        traits=_traits_of(spec),
+        env=(getattr(spec, "auth", None) or {}).get("env") or (),
     )

@@ -461,7 +461,7 @@ class DataSource(Entity):
             # it would send a source that HAS a setup step straight to ACTIVE.
             from flow_sdk.ingest.spec_registry import refresh_spec_drivers  # noqa: PLC0415
 
-            await refresh_spec_drivers()
+            await refresh_spec_drivers(self.provider)
             driver = self._driver()
             if driver is not None and callable(getattr(driver, "verify", None)):
                 self.status = SourceStatus.SETUP.value

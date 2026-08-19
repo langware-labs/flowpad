@@ -31,10 +31,26 @@ def _api() -> str:
     return f"http://127.0.0.1:{discover_port()}/api/v1"
 
 
-def _get(path: str) -> Any:
+def _get(path: str, **params: Any) -> Any:
+    """GET a graph path. `params` are FILTERED SERVER-SIDE.
+
+    The list routes parse a `filter` JSON param and honour a top-level `limit`,
+    so asking for one source's rows costs one source's rows. Pulling the whole
+    collection and filtering here would scale with everything the instance has
+    ever ingested — and `observe` reads on a loop.
+    """
+    from urllib.parse import urlencode  # noqa: PLC0415
+
     from flow_sdk.cli.commands._common import local_get  # noqa: PLC0415
 
-    return (local_get(f"{_api()}{path}").json() or {}).get("data")
+    limit = params.pop("limit", None)
+    query = {}
+    if params:
+        query["filter"] = json.dumps(params)
+    if limit is not None:
+        query["limit"] = str(limit)
+    url = f"{_api()}{path}" + (f"?{urlencode(query)}" if query else "")
+    return (local_get(url).json() or {}).get("data")
 
 
 def _post(path: str, body: dict | None = None) -> Any:
@@ -43,7 +59,14 @@ def _post(path: str, body: dict | None = None) -> Any:
     return (local_post(f"{_api()}{path}", json=body or {}).json() or {}).get("data")
 
 
+#: Ceiling for a "how many landed" read. High enough that a normal source is
+#: counted exactly, low enough that the observe loop never drags a corpus.
+COUNT_CEILING = 500
+
+
 def _sources() -> list[dict]:
+    # Unfiltered on purpose: `_one` needs the whole set to detect an ambiguous
+    # name, and this table has one row per configured source.
     return list(_get("/graph/data_source") or [])
 
 
@@ -67,12 +90,20 @@ def _one(ref: str) -> dict:
 
 
 def _cursors(source_id: str) -> list[dict]:
-    return [c for c in (_get("/graph/data_source_cursor") or []) if c.get("data_source_id") == source_id]
+    return list(_get("/graph/data_source_cursor", data_source_id=source_id) or [])
 
 
 def _items(source_id: str, limit: int = 20) -> list[dict]:
-    rows = [i for i in (_get("/graph/source_item") or []) if i.get("data_source_id") == source_id]
-    return rows[:limit]
+    return list(_get("/graph/source_item", data_source_id=source_id, limit=limit) or [])
+
+
+def _item_count(source_id: str) -> int:
+    """How many records this source has produced.
+
+    Bounded rather than unbounded: the gates only ever ask "did it grow", and an
+    exact count of a large corpus is not worth transferring on a poll loop.
+    """
+    return len(_items(source_id, limit=COUNT_CEILING))
 
 
 # ── verbs ────────────────────────────────────────────────────────────────
@@ -168,13 +199,13 @@ def cmd_observe(args) -> dict:
     """
     source = _one(args.source)
     sid = source["id"]
-    before = len(_items(sid, limit=10_000))
+    before = _item_count(sid)
     deadline = time.monotonic() + args.wait
     row: dict = source
     while True:
         row = _get(f"/graph/data_source/{sid}") or {}
         cursors = _cursors(sid)
-        count = len(_items(sid, limit=10_000))
+        count = _item_count(sid)
         advanced = any(c.get("last_synced_at") for c in cursors)
         if count > before:
             outcome = "items"
@@ -214,13 +245,8 @@ def cmd_snapshot(args) -> dict:
     return {
         "source": {k: source.get(k) for k in ("id", "name", "provider", "status", "health", "error_code", "error_detail", "setup_detail", "segment_count", "poll_interval_seconds", "window_days", "reflect", "reflect_into", "required_capabilities", "last_synced_at", "verified_at", "next_poll_at")},
         "cursors": [{k: c.get(k) for k in ("segment_key", "segment_label", "health", "error_code", "error_detail", "last_synced_at", "consecutive_failures")} for c in _cursors(sid)],
-        "item_count": len(_items(sid, limit=10_000)),
+        "item_count": _item_count(sid),
     }
-
-
-def cmd_cursors(args) -> dict:
-    source = _one(args.source)
-    return {"id": source["id"], "cursors": _cursors(source["id"])}
 
 
 def cmd_items(args) -> dict:
@@ -237,11 +263,13 @@ def cmd_delete(args) -> dict:
     """Destructive: cascades cursors AND every record. Requires --yes."""
     if not args.yes:
         raise RuntimeError("refusing to delete without --yes (this also deletes every record it ingested)")
-    from flow_sdk.cli.commands._common import local_get  # noqa: PLC0415
-    import requests  # noqa: PLC0415
+    from flow_sdk.cli.commands._common import local_request  # noqa: PLC0415
 
     source = _one(args.source)
-    resp = requests.delete(f"{_api()}/graph/data_source/{source['id']}", headers=dict(local_get.__defaults__ or {}) or {}, timeout=30)
+    # `local_request`, not a bare `requests.delete`: the cookie gate has no path
+    # and no loopback exemption, so a hand-built call takes the gate's 403 HTML
+    # while every other verb here works.
+    resp = local_request("DELETE", f"{_api()}/graph/data_source/{source['id']}", timeout=30)
     return {"id": source["id"], "deleted": resp.ok}
 
 
@@ -253,7 +281,6 @@ VERBS = {
     "poll": (cmd_poll, [("source", {})]),
     "observe": (cmd_observe, [("source", {}), ("--wait", {"type": int, "default": 150}), ("--interval", {"type": int, "default": 10})]),
     "snapshot": (cmd_snapshot, [("source", {})]),
-    "cursors": (cmd_cursors, [("source", {})]),
     "items": (cmd_items, [("source", {}), ("--limit", {"type": int, "default": 20})]),
     "delete": (cmd_delete, [("source", {}), ("--yes", {"action": "store_true"})]),
 }

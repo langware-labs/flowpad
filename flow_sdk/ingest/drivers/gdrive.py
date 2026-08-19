@@ -182,7 +182,7 @@ class GoogleDriveDriver:
     def _write_index(self, source, index: dict[str, str]) -> None:
         atomic_write(self.index_path(source), json.dumps(index, indent=2).encode("utf-8"))
 
-    def segments(self, source) -> list[SegmentRef]:
+    async def segments(self, source) -> list[SegmentRef]:
         """One segment per configured drive, defaulting to the user's own.
 
         A shared drive is a genuinely separate change log — `changes.list` takes
