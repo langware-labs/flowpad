@@ -11,6 +11,7 @@ def test_demo_uses_the_existing_sdk_surface_only() -> None:
         "agent.use()",
         "sdk.AgenticProcess.getById",
         ".prompt(message)",
+        ".enqueue(message)",
         "state.process.observeTurn",
         ".loadHistory({ force: true })",
         ".cancelPrompt()",
