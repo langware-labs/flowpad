@@ -2,12 +2,14 @@ import { Agent, Deployment, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useMemo, useState } from 'react';
-import { Cloud, ExternalLink, Loader2, PauseCircle, Trash2 } from 'lucide-react';
+import { Cloud, ExternalLink, Loader2, MessageSquare, PauseCircle, Trash2 } from 'lucide-react';
 
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 
+import { DeployedAgentChatPanel } from './DeployedAgentChatPanel';
 
 interface AgentDeploymentsSectionProps {
   agent: Agent;
@@ -38,6 +40,8 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
   const [deploying, setDeploying] = useState(false);
   const [pausing, setPausing] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [chatDeploymentId, setChatDeploymentId] = useState<string | null>(null);
+  const hubMode = isHubOnly();
 
   const request = useMemo(
     () =>
@@ -109,6 +113,7 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
           setDeleting(deployment.id);
           try {
             await deployment.delete();
+            setChatDeploymentId((current) => (current === deployment.id ? null : current));
             await refetch();
             notify.success({ title: t`Deployment deleted`, message: deployment.name });
           } finally {
@@ -128,52 +133,68 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
       <div className="flex flex-col gap-2">
         {deployments.map((deployment) => {
           const url = deployment.origin?.url || deployment.target.location;
+          const chatOpen = chatDeploymentId === deployment.id;
           return (
-            <div key={deployment.id} className="flex items-center gap-2 rounded-md border p-2 text-sm">
-              <span
-                className={`h-2 w-2 shrink-0 rounded-full ${
-                  STATUS_COLOR[deployment.status.sync_state] ?? 'bg-muted-foreground'
-                }`}
-              />
-              <span className="min-w-0 flex-1 truncate">{deployment.name}</span>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                {deployment.status.provider_state ?? deployment.target.provider}
-              </span>
-              {url && (
-                <Button size="sm" variant="ghost" asChild>
-                  <a href={url} target="_blank" rel="noreferrer">
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                </Button>
-              )}
-              {deployment.target.provider !== 'local' && (
+            <div key={deployment.id} className="overflow-hidden rounded-md border text-sm">
+              <div className="flex items-center gap-2 p-2">
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${
+                    STATUS_COLOR[deployment.status.sync_state] ?? 'bg-muted-foreground'
+                  }`}
+                />
+                <span className="min-w-0 flex-1 truncate">{deployment.name}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {deployment.status.provider_state ?? deployment.target.provider}
+                </span>
+                {hubMode && (
+                  <Button
+                    size="sm"
+                    variant={chatOpen ? 'secondary' : 'ghost'}
+                    onClick={() => setChatDeploymentId(chatOpen ? null : deployment.id)}
+                    title={t`Chat with this deployed agent`}
+                    aria-expanded={chatOpen}
+                    data-testid={`deployment-chat-${deployment.id}`}
+                  >
+                    <MessageSquare className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+                {url && (
+                  <Button size="sm" variant="ghost" asChild>
+                    <a href={url} target="_blank" rel="noreferrer">
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  </Button>
+                )}
+                {deployment.target.provider !== 'local' && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={pausing === deployment.id}
+                    onClick={() => void pause(deployment)}
+                    title={t`Pause this machine`}
+                  >
+                    {pausing === deployment.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <PauseCircle className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="ghost"
-                  disabled={pausing === deployment.id}
-                  onClick={() => void pause(deployment)}
-                  title={t`Pause this machine`}
+                  disabled={deleting === deployment.id}
+                  onClick={() => remove(deployment)}
+                  title={t`Delete this deployment`}
                 >
-                  {pausing === deployment.id ? (
+                  {deleting === deployment.id ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <PauseCircle className="h-3.5 w-3.5" />
+                    <Trash2 className="h-3.5 w-3.5" />
                   )}
                 </Button>
-              )}
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={deleting === deployment.id}
-                onClick={() => remove(deployment)}
-                title={t`Delete this deployment`}
-              >
-                {deleting === deployment.id ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Trash2 className="h-3.5 w-3.5" />
-                )}
-              </Button>
+              </div>
+              {chatOpen && <DeployedAgentChatPanel agent={agent} deployment={deployment} />}
             </div>
           );
         })}
