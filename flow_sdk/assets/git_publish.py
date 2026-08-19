@@ -21,6 +21,44 @@ class AssetPublishCode(StrEnum):
     HUB_PUBLISH_FAILED = "hub_publish_failed"
 
 
+#: What each failure means over HTTP, and what the person should DO about it.
+#:
+#: One table, beside the codes it describes, because both the share action and
+#: the agent deploy action answer the same question and a second copy drifts.
+#: The remedy matters as much as the status: "Asset has no owning Project" names
+#: the problem and leaves the reader stuck, which is exactly how a deploy button
+#: ends up looking broken.
+_PUBLISH_FAILURE: dict[str, tuple[int, str]] = {
+    AssetPublishCode.NOT_GIT_BACKED: (
+        400,
+        "Create it inside a project — publishing goes through that project's repository.",
+    ),
+    AssetPublishCode.PROJECT_NOT_PUBLISHED: (
+        409,
+        "Publish its project first — the asset travels inside that repository.",
+    ),
+    AssetPublishCode.GITHUB_NOT_CONNECTED: (
+        409,
+        "Publishing pushes the asset to its project's repository, so the connection must exist first.",
+    ),
+    AssetPublishCode.ORIGIN_INVALID: (409, "Check the project's git remote."),
+    AssetPublishCode.BRANCH_AHEAD: (409, "Push the project's branch first."),
+    AssetPublishCode.BRANCH_DIVERGED: (409, "Reconcile the project's branch with its remote first."),
+    AssetPublishCode.PUSH_REJECTED: (502, "The remote refused the push — check access to the repository."),
+    AssetPublishCode.HUB_PUBLISH_FAILED: (502, "The hub could not accept it; try again shortly."),
+}
+
+
+def publish_failure_status(code: AssetPublishCode) -> int:
+    """The HTTP status for a publish failure. Unknown codes are a server fault."""
+    return _PUBLISH_FAILURE.get(code, (500, ""))[0]
+
+
+def publish_failure_remedy(code: AssetPublishCode) -> str:
+    """One sentence telling the reader what to do. Empty when there is nothing useful."""
+    return _PUBLISH_FAILURE.get(code, (500, ""))[1]
+
+
 class AssetPublishError(RuntimeError):
     """Typed, intentionally secret-free asset publication failure."""
 
@@ -28,6 +66,12 @@ class AssetPublishError(RuntimeError):
         super().__init__(message)
         self.code = code
         self.data = data or {}
+
+    @property
+    def actionable(self) -> str:
+        """The failure and its remedy in one sentence a person can act on."""
+        remedy = publish_failure_remedy(self.code)
+        return f"{self} — {remedy}" if remedy else str(self)
 
 
 class GitAuthor(BaseModel):
