@@ -504,6 +504,40 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
     return env
 
 
+async def resolve_worker_language(process: "AgenticProcess") -> str | None:
+    """English name of the language this worker must reply in, or ``None``.
+
+    Read from the owning project's ``locale`` — the value the footer language
+    selector already writes and that already travels with a shared project.
+    ``None`` (unset, or English) leaves the worker on its default behaviour of
+    inferring the language from the conversation. That default is what drifts to
+    English mid-session; naming the language outright is the fix.
+
+    Resolution only. How a language reaches a given CLI is that vendor's business:
+    Claude has a first-class ``language`` setting, Codex has none and takes the
+    text in its developer message, Copilot has neither.
+
+    Headless turns only. The PTY/interactive seam deliberately does not consult the
+    locale — a visible terminal session is the user driving the CLI directly.
+    """
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.i18n.supported_locales import language_name  # noqa: PLC0415
+
+    project_id = getattr(process, "project_id", None)
+    if not project_id:
+        return None
+    try:
+        project = await Project.get_by_id(project_id)
+    except Exception:
+        logger.debug("language: project lookup failed", exc_info=True)
+        return None
+    locale = getattr(project, "locale", None) if project else None
+    name = language_name(locale)
+    if name:
+        logger.info("[lang] process=%s locale=%s language=%s", process.id, locale, name)
+    return name
+
+
 async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess") -> dict[str, str]:
     """Resolve project SecretOrigin pointers into this transient worker env.
 
@@ -633,6 +667,12 @@ class AgenticContext(BaseModel):
     system_prompt_file: str | None = None
     developer_instructions: str | None = None
     custom_instruction_dirs: list[str] = Field(default_factory=list)
+    # English name of the language the worker must reply in, from the project
+    # locale (see resolve_worker_language). Vendor-neutral on purpose: each stream
+    # worker maps it to its own channel — Claude to ``--settings {"language": …}``,
+    # Codex to a ``# Language`` block on its developer message, Copilot to nothing.
+    # Re-derived on every spawn, so — like plugin_dirs — never persisted.
+    language: str | None = None
 
     # Extra `-c key=val` config overrides for API-key auth (currently codex's
     # OpenRouter provider block). Derived per-spawn from the harness Capability,
@@ -660,6 +700,7 @@ class AgenticContext(BaseModel):
                 "plugin_dirs",
                 "extra_config_overrides",
                 "bypass_hook_trust",
+                "language",
             }
         )
         if self.compute_node is not None:
@@ -743,9 +784,9 @@ class AgentOptions:
     model name is always passed through.
     """
 
-    # Per-worker tier→model map; empty in the base (pass-through). See
+    # Per-worker tier→model/auto map; empty in the base (pass-through). See
     # ``flow_sdk/builtin/agentic_process/model_tiers.py``.
-    MODEL_TIERS: dict[str, str] = {}
+    MODEL_TIERS: dict[str, str | None] = {}
 
     # ── Vendor spec (declarative; overridden per worker) ─────────────────────
     # The bare executable name (claude/codex/copilot). ``_resolve_binary`` may

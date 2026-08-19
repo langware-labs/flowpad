@@ -8,7 +8,7 @@ looked (`fetch`).
 non-Marketplace app ONE `conversations.history` request per minute, returning at
 most 15 messages. That is not a detail to tune around — it is the reason this
 driver reads one page per stream per poll and never paginates, and the reason
-`stream_budget` is 1 so a source with five channels visits one channel per tick
+`segment_budget` is 1 so a source with five channels visits one channel per tick
 instead of spending five requests inside a one-request minute. A busy channel is
 therefore sampled, not mirrored; the Events API is the answer to that, and it is
 a separate piece of work. What is here is honest about which it is.
@@ -32,7 +32,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from flow_sdk.ingest.driver import FetchResult, SetupVerdict, StreamCursorView, StreamRef
+from flow_sdk.ingest.driver import FetchResult, SetupVerdict, SegmentCursorView, SegmentRef
 from flow_sdk.ingest.health import SourceError
 from flow_sdk.ingest.models import IngestItem
 
@@ -72,21 +72,21 @@ class SlackDriver:
     #: five-channel source would spend five requests inside a minute that allows
     #: one, and Slack would 429 four of them. `sync_source` round-robins by
     #: `last_attempted_at`, so every channel is still reached — one per tick.
-    stream_budget = 1
+    segment_budget = 1
 
     def channel_for(self, source) -> str:
         return "slack"
 
-    def streams(self, source) -> list[StreamRef]:
+    def segments(self, source) -> list[SegmentRef]:
         """One stream per Slack channel.
 
         Keyed by channel ID, never by name: a renamed channel is the same
-        channel, and keying on the name would fork its history. `stream_label`
+        channel, and keying on the name would fork its history. `segment_label`
         carries the display name and self-heals on each poll.
         """
         config = getattr(source, "config", None) or {}
         channels = config.get("channels") or []
-        refs: list[StreamRef] = []
+        refs: list[SegmentRef] = []
         for entry in channels:
             if isinstance(entry, dict):
                 key = str(entry.get("id") or "").strip()
@@ -95,10 +95,10 @@ class SlackDriver:
                 key = str(entry).strip()
                 label = key
             if key:
-                refs.append(StreamRef(key=key, label=label))
+                refs.append(SegmentRef(key=key, label=label))
         return refs
 
-    async def fetch(self, source, cursor: StreamCursorView) -> FetchResult:
+    async def fetch(self, source, cursor: SegmentCursorView) -> FetchResult:
         """One page of one channel, from where we left off.
 
         The cursor state is a single Slack `ts` — which is both a timestamp and
@@ -120,7 +120,7 @@ class SlackDriver:
         state = dict(cursor.state or {})
         oldest = state.get("last_ts") or _epoch_str(cursor.window_start)
         params: dict[str, Any] = {
-            "channel": cursor.stream_key,
+            "channel": cursor.segment_key,
             "limit": HISTORY_PAGE,
             "inclusive": "false",
         }
@@ -154,8 +154,8 @@ class SlackDriver:
                     source_id=source.id,
                     provider=self.provider,
                     kind=self.record_kind,
-                    stream_key=cursor.stream_key,
-                    stream_label=cursor.stream_key,
+                    segment_key=cursor.segment_key,
+                    segment_label=cursor.segment_key,
                     # `ts` is unique within a channel and the channel IS the
                     # stream, so it is already the natural key.
                     external_id=ts,
@@ -165,7 +165,7 @@ class SlackDriver:
                     author_external_id=str(message.get("user") or message.get("bot_id") or "")
                     or None,
                     author_display=str(message.get("username") or "") or None,
-                    permalink=_permalink(cursor.stream_key, ts),
+                    permalink=_permalink(cursor.segment_key, ts),
                     # A threaded reply carries its parent's ts; a top-level
                     # message is its own thread root. Either way the whole
                     # thread converges on one conversation.
@@ -186,7 +186,7 @@ class SlackDriver:
         is worse than one that refuses to start: it looks like it is working, so
         nobody goes looking for the two that are missing.
         """
-        channels = self.streams(source)
+        channels = self.segments(source)
         if not channels:
             return SetupVerdict.waiting(
                 "No channels selected yet — pick at least one for this source to read."
@@ -274,39 +274,10 @@ class SlackDriver:
         raise SourceError.config(error, f"Slack refused the request: {error}")
 
     async def _token(self, source) -> Optional[str]:
-        """The Slack token, wherever it ended up.
+        """This machine's Slack token. The precedence lives in one place."""
+        from flow_sdk.core.oauth.provider_registry import SLACK, token_for  # noqa: PLC0415
 
-        Local SOD first — connection sharing copies the hub's token down, so on
-        a set-up machine it is here — then the hub, for the window before a
-        desktop has adopted it.
-        """
-        from flow_sdk.core.oauth.provider_probe import token_from_credential  # noqa: PLC0415
-        from flow_sdk.core.oauth.provider_registry import SLACK, user_credentials_name  # noqa: PLC0415
-
-        name = user_credentials_name(SLACK)
-        try:
-            from flow_sdk.builtin.user import User  # noqa: PLC0415
-            from flow_sdk.request_context.methods import get_user_credentials  # noqa: PLC0415
-
-            user = await User.get_local()
-            if user is not None and name:
-                stored = await get_user_credentials(user, name, user.id)
-                token = token_from_credential(stored)
-                if token:
-                    return token
-        except Exception:  # noqa: BLE001 — absence is the normal case, not an error
-            logger.debug("slack: no local credential", exc_info=True)
-
-        try:
-            from flow_sdk.core.oauth.hub_oauth import (  # noqa: PLC0415
-                hub_credential_value,
-                hub_credentials_name_for,
-            )
-
-            return token_from_credential(await hub_credential_value(hub_credentials_name_for(SLACK)))
-        except Exception:  # noqa: BLE001
-            logger.debug("slack: no hub credential", exc_info=True)
-            return None
+        return await token_for(SLACK)
 
     async def _read_probe(self, token: str, channel: str) -> Optional[str]:
         """None when the channel is readable, else Slack's error code.

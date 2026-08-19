@@ -18,9 +18,19 @@ CONVERSATION = "023f16d6-ba1d-5f8b-8337-78bf9a2e9264"
 
 
 def _message(sender_id: str, item_id: str, kind: str = "agentmail"):
+    # Two halves, mirroring the entity: `origin` travels, `origin_local` does not.
     return SimpleNamespace(
         sender_id=sender_id,
-        origin=SimpleNamespace(kind=kind, data_source_id="ds-1", source_item_id=item_id),
+        origin=SimpleNamespace(kind=kind),
+        origin_local=SimpleNamespace(data_source_id="ds-1", source_item_id=item_id),
+    )
+
+
+def _shared_message(sender_id: str, kind: str = "agentmail"):
+    return SimpleNamespace(
+        sender_id=sender_id,
+        origin=SimpleNamespace(kind=kind),
+        origin_local=None,
     )
 
 
@@ -105,7 +115,7 @@ class TestItRepliesToTheCorrespondent:
 class TestItRefusesRatherThanGuess:
     @pytest.mark.asyncio
     async def test_a_conversation_with_no_channel_origin(self, wire):
-        wire["messages"] = [SimpleNamespace(sender_id="x", origin=None)]
+        wire["messages"] = [SimpleNamespace(sender_id="x", origin=None, origin_local=None)]
         with pytest.raises(ChannelSendUnavailable, match="did not come from a channel"):
             await resolve_reply_target(CONVERSATION)
 
@@ -129,4 +139,19 @@ class TestItRefusesRatherThanGuess:
         wire["messages"] = [_message("agentmail:joe@x.to", "gone")]
         wire["items"] = {}
         with pytest.raises(ChannelSendUnavailable, match="record this arrived through is gone"):
+            await resolve_reply_target(CONVERSATION)
+
+    @pytest.mark.asyncio
+    async def test_a_message_shared_from_another_machine(self, wire):
+        """FOREIGN is not GONE, and the refusal has to say which.
+
+        A received message keeps `origin` (SHARED — that is what draws its badge)
+        and never carries `origin_local`, whose row ids only resolve on the
+        machine that ingested it. Before the split those ids travelled, so the
+        receiver dereferenced them, missed, and reported a record that was alive
+        and elsewhere as deleted.
+        """
+        wire["messages"] = [_shared_message("agentmail:joe@x.to")]
+        wire["items"] = {}
+        with pytest.raises(ChannelSendUnavailable, match="shared from another machine"):
             await resolve_reply_target(CONVERSATION)

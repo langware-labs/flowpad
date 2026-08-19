@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.i18n.supported_locales import SUPPORTED_LOCALES
+from flow_sdk.i18n.supported_locales import SUPPORTED_LOCALES, language_name, language_prompt_block
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _LOCALES_DIR = _REPO_ROOT / "ui" / "src" / "locales"
@@ -72,3 +72,22 @@ def test_backend_matches_lingui_config():
         f"  backend: {sorted(_backend_codes())}\n"
         f"  lingui:  {sorted(_lingui_codes())}"
     )
+
+
+def test_language_name_resolves_only_non_english_locales():
+    """``None`` is the signal for "add no directive" — it must cover every case
+    where naming a language would be wrong or meaningless."""
+    assert language_name("he") == "Hebrew"
+    assert language_name("ar") == "Arabic"
+    assert language_name("en-US") is None  # already the CLI default
+    assert language_name(None) is None  # locale never set on the project
+    assert language_name("") is None
+    assert language_name("zz") is None  # a code we do not ship
+
+
+def test_language_prompt_block_names_the_language_everywhere():
+    block = language_prompt_block("Hebrew")
+
+    assert block.startswith("# Language\n")
+    assert block.count("Hebrew") == 3
+    assert "{name}" not in block

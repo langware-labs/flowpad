@@ -340,8 +340,9 @@ class CopilotDriver:
         (``~/.copilot/session-state/<id>/events.jsonl``) is the canonical, complete
         transcript — user-message entries AND assistant output. The process-local
         file is only the tee'd stdout (assistant output, no user-message entry), so
-        ``transcript/prompts`` came back empty for headless. Prefer the session
-        record; fall back to the stdout tee only before the session id resolves.
+        ``transcript/prompts`` came back empty for headless. Prefer the exact session
+        record for an assigned id; use bounded latest-session discovery only for a
+        legacy process without an id, then fall back to that process's stdout tee.
         """
         session = self._session_descriptor(process)
         if session is not None:
@@ -369,10 +370,9 @@ class CopilotDriver:
         )
 
     def _session_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
-        path: Path | None = None
         if process.session_id:
             path = find_copilot_session_jsonl(process.session_id)
-        if path is None:
+        else:
             path = find_latest_copilot_session_jsonl(
                 cwd=process.workdir,
                 started_at=self._worker_started_at(process),
@@ -423,7 +423,4 @@ class CopilotDriver:
     def _has_session(self, process: "AgenticProcess") -> bool:
         if not process.session_id:
             return False
-        if find_copilot_session_jsonl(process.session_id):
-            return True
-        local = copilot_transcript_path_for_process(process.id)
-        return local.exists() and local.stat().st_size > 0
+        return find_copilot_session_jsonl(process.session_id) is not None

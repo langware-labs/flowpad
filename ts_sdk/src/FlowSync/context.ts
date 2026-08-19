@@ -26,12 +26,7 @@ import { defineGlobal } from '../utils/globals';
 import { isHubOnly } from '../utils/hub-runtime';
 import { RuntimeInfo, RuntimeKind } from '../utils/runtime';
 import { SnifferHook } from '../services/sniffer-hook';
-import {
-  HubConnectionStatus,
-  HubLoginStatus,
-  LocalConnectionStatus,
-  LocalLoginStatus,
-} from '../services/cloud_status';
+import { HubConnectionStatus, HubLoginStatus, LocalConnectionStatus, LocalLoginStatus } from '../services/cloud_status';
 import { sdkConfig } from '../config/index';
 import { ConnectionManager } from '../websocket';
 import { AuthError, AuthEventType, authManager } from './auth';
@@ -85,7 +80,6 @@ export enum ContextEntitiesEnum {
   CurrentProcessTypeId = 'CurrentProcessTypeId',
 }
 
-
 /**
  * Soft-runtime-failure descriptor for the currently-rendered terminal.
  * Kept in sync with ``ProcessLoadErrorKind`` (ui/src/routes/loaders/
@@ -124,7 +118,9 @@ class DataContext extends EventEmitter {
   _cloudLoggedIn = false;
   setCloudLoggedIn(v: boolean) {
     if (this._cloudLoggedIn === v) return;
-    runInAction(() => { this._cloudLoggedIn = v; });
+    runInAction(() => {
+      this._cloudLoggedIn = v;
+    });
   }
 
   private _contextEntitiesMap = observable.map<ContextEntitiesEnum, TypeId | null | undefined>([
@@ -176,25 +172,41 @@ class DataContext extends EventEmitter {
 
   setCloudLoginStatus(v: HubLoginStatus) {
     if (this._cloudLoginStatus === v) return;
-    runInAction(() => { this._cloudLoginStatus = v; });
+    runInAction(() => {
+      this._cloudLoginStatus = v;
+    });
   }
   setCloudConnectionStatus(v: HubConnectionStatus) {
     if (this._cloudConnectionStatus === v) return;
-    runInAction(() => { this._cloudConnectionStatus = v; });
+    runInAction(() => {
+      this._cloudConnectionStatus = v;
+    });
   }
   setLocalLoginStatus(v: LocalLoginStatus) {
     if (this._localLoginStatus === v) return;
-    runInAction(() => { this._localLoginStatus = v; });
+    runInAction(() => {
+      this._localLoginStatus = v;
+    });
   }
   setLocalConnectionStatus(v: LocalConnectionStatus) {
     if (this._localConnectionStatus === v) return;
-    runInAction(() => { this._localConnectionStatus = v; });
+    runInAction(() => {
+      this._localConnectionStatus = v;
+    });
   }
 
-  get cloudLoginStatus(): HubLoginStatus { return this._cloudLoginStatus; }
-  get cloudConnectionStatus(): HubConnectionStatus { return this._cloudConnectionStatus; }
-  get localLoginStatus(): LocalLoginStatus { return this._localLoginStatus; }
-  get localConnectionStatus(): LocalConnectionStatus { return this._localConnectionStatus; }
+  get cloudLoginStatus(): HubLoginStatus {
+    return this._cloudLoginStatus;
+  }
+  get cloudConnectionStatus(): HubConnectionStatus {
+    return this._cloudConnectionStatus;
+  }
+  get localLoginStatus(): LocalLoginStatus {
+    return this._localLoginStatus;
+  }
+  get localConnectionStatus(): LocalConnectionStatus {
+    return this._localConnectionStatus;
+  }
 
   /**
    * Get the desktop info from bootstrap
@@ -591,9 +603,8 @@ class DataContext extends EventEmitter {
     // realm and reject after teardown.  Initial adoption also covers a context
     // constructed after the socket has already begun connecting.
     this.setLocalConnectionStatus(connectionManager.connectionStatus);
-    connectionManager.on(
-      'connection_status_changed',
-      (slot: { status: LocalConnectionStatus }) => this.setLocalConnectionStatus(slot.status),
+    connectionManager.on('connection_status_changed', (slot: { status: LocalConnectionStatus }) =>
+      this.setLocalConnectionStatus(slot.status),
     );
 
     connectionManager.on('on_open', () => {
@@ -757,9 +768,7 @@ class DataContext extends EventEmitter {
     // Per-step perf prints tied to the shell-nav T0 marker set by tab clicks.
     // Lets us see exactly which awaited step inside the context-set tail eats
     // the milliseconds (load vs loadHistory vs loadContextEntity).
-    const w = (typeof window !== 'undefined' ? window : undefined) as
-      | { __shellNavT0?: number }
-      | undefined;
+    const w = (typeof window !== 'undefined' ? window : undefined) as { __shellNavT0?: number } | undefined;
     const t0 = w?.__shellNavT0;
     const stamp = (label: string, start: number) => {
       if (t0 === undefined) return;
@@ -921,20 +930,6 @@ class DataContext extends EventEmitter {
     return this._sandboxComputeNode;
   }
 
-  /** Lazily-hydrated @docker-<name> compute nodes from bootstrap. One entry per live worker. */
-  private _dockerComputeNodes: ComputeNode[] | null = null;
-  get dockerComputeNodes(): ComputeNode[] {
-    const raws = this.bootstrapInfo?.docker_compute_nodes ?? [];
-    if (this._dockerComputeNodes === null || this._dockerComputeNodes.length !== raws.length) {
-      this._dockerComputeNodes = raws.map((r) => {
-        const cn = new ComputeNode(r as any);
-        cn.markAsExpanded();
-        return cn;
-      });
-    }
-    return this._dockerComputeNodes;
-  }
-
   get domainTypeId(): TypeId | null {
     return this.getContextEntityTypeId(ContextEntitiesEnum.CurrentDomainTypeId) ?? null;
   }
@@ -1090,11 +1085,40 @@ class DataContext extends EventEmitter {
       return;
     }
 
-    // Restore persisted project if it exists, otherwise fall back to first available
-    let targetProject = persistedProjectTypeId
+    // The browser is checked FIRST and still wins whenever it resolves. That order is
+    // load-bearing, not a preference: `last_active_at` — what `default_project` falls
+    // back to — is machine-wide, so on a box two people share, always preferring the
+    // server would hand you whoever opened last rather than your own project. The
+    // browser's memory is the more SPECIFIC signal (this person, this browser); the
+    // server's is the broader one (this machine, anyone).
+    const remembered = persistedProjectTypeId
       ? projects.find((project) => project.typeId.equals(persistedProjectTypeId))
       : null;
-    targetProject ??= projects[0];
+
+    // Not resolvable here — a project deleted since, a database rebuilt with fresh ids,
+    // or storage carried over from a different machine. A dead id carries no information,
+    // so it has to get out of the way rather than decide anything. The previous
+    // `targetProject ??= projects[0]` let it do the opposite: suppress the server's
+    // answer AND then answer a different question. This query orders by `updated_date`,
+    // so `projects[0]` is whatever row was TOUCHED last — on the reported sandbox a
+    // background git scan bumped `my_first_project` every ten minutes while the user's
+    // project sat untouched for two days, so a stale entry landed them in the starter
+    // project. (The open-recency sort from `c9c3c64f2` covers `list-projects` and the
+    // UI pickers, NOT this query. The two do not agree.)
+    //
+    // Deferring to `default_project` keeps ONE ordering rule, and it lives server-side
+    // (`bootstrap.py::_with_runtime`: the hub's opening instruction, then the most
+    // recently active non-system project, then @local). Re-deriving "most recently
+    // active" here would be the same rule in two places, free to drift apart.
+    const serverChoiceId = this.bootstrapInfo?.default_project?.id;
+    const targetProject =
+      remembered ?? (serverChoiceId ? projects.find((project) => project.typeId.id === serverChoiceId) : null);
+
+    // Nothing valid to adopt. Leaving the context alone beats picking arbitrarily:
+    // whatever a loader resolves next is a better answer than a project nobody chose.
+    if (!targetProject) {
+      return;
+    }
 
     await this.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, targetProject.typeId);
   }

@@ -69,6 +69,29 @@ class FtsEntry:
     description: str | None = None
     content: str | None = None
 
+    @classmethod
+    def from_record(cls, entity_id: str, entity_type: str, name: str | None, record) -> "FtsEntry":
+        """Build the entry from an ``FSRecord`` — the ONLY way callers should.
+
+        ``title`` and ``description`` carry bm25 weights 8 and 3 (production is
+        ``bm25(entities_fts, 0, 0, 10, 8, 3, 1)``), so a writer that omits them
+        silently ranks its rows below identical content written elsewhere. Three
+        call sites used to hand-roll this constructor and two of them had drifted
+        to name+content only; funnelling them here makes "all four text columns"
+        structural instead of a convention.
+
+        Empty strings collapse to None so a record with no text anywhere still
+        fails ``has_content`` and is skipped, exactly as before.
+        """
+        return cls(
+            entity_id=entity_id,
+            entity_type=entity_type,
+            name=name or None,
+            title=record.search_title or None,
+            description=record.search_description or None,
+            content=record.search_content or None,
+        )
+
     @property
     def has_content(self) -> bool:
         return any(v is not None for v in (self.name, self.title, self.description, self.content))
@@ -457,11 +480,30 @@ class SQLiteDBDriver(DBDriver):
         # every minute, forever.
         await conn.execute(
             text(
-                "CREATE INDEX IF NOT EXISTS ix_entities_source_item_natural_key "
+                "CREATE INDEX IF NOT EXISTS ix_entities_source_item_natural_key_v2 "
                 "ON entities(json_extract(data, '$.data_source_id'), "
-                "json_extract(data, '$.stream_key'), "
+                "json_extract(data, '$.segment_key'), "
                 "json_extract(data, '$.external_id')) "
                 "WHERE type = 'source_item'"
+            )
+        )
+
+        # Identity for a source-backed asset is resolved by ORIGIN, not by a
+        # derived id — `reflect._find_by_origin` asks every file-backed type
+        # whether it holds this handle, on every observed ref. There is no
+        # cross-type query path (an untyped `get_all` returns nothing), so the
+        # fan-out is unavoidable and each arm must at least be indexed;
+        # otherwise one changed file costs ~26 full type scans.
+        #
+        # Neither type-partial nor value-partial, deliberately. The fan-out
+        # spans every owner type, so one expression index serves all of them —
+        # and a `WHERE origin_id != ''` predicate is NOT provably implied by an
+        # equality lookup, so SQLite silently declines the partial index and
+        # falls back to the type scan. Verified with EXPLAIN QUERY PLAN.
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_entities_origin_id "
+                "ON entities(json_extract(data, '$.origin_id'))"
             )
         )
 

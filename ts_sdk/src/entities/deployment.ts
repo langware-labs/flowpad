@@ -3,6 +3,7 @@ import type { IEntity } from '../IEntity';
 import { ActionInfo } from '../models';
 import { DockPointerData } from '../models/DockPointer';
 import { normalizeKind } from '../models/Kind';
+import { isTypeId, TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
 import { WorldViewProjection } from '../worldview/projection';
 
@@ -21,7 +22,7 @@ export const KIND_NODE = 'compute.node';
  * names that node. An inventoried `gcp` resource is not node-backed — its
  * `external_id` is the provider's own resource name.
  */
-export const NODE_PROVIDERS: ReadonlySet<string> = new Set(['local', 'e2b', 'docker']);
+export const NODE_PROVIDERS: ReadonlySet<string> = new Set(['local', 'e2b', 'docker', 'gcp_vm']);
 
 /** Provider-normalized signal; unavailable data is represented explicitly, never as zero. */
 export interface DeploymentObservation {
@@ -53,8 +54,6 @@ export interface DeploymentTarget {
 export interface CloudOrigin {
   kind: string;
   provider: string;
-  data_source_id?: string;
-  source_item_id?: string;
   external_id: string;
   url?: string;
 }
@@ -121,8 +120,6 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
       ? {
           kind: deployment.origin.kind ?? '',
           provider: deployment.origin.provider ?? '',
-          data_source_id: deployment.origin.data_source_id ?? '',
-          source_item_id: deployment.origin.source_item_id ?? '',
           external_id: deployment.origin.external_id ?? '',
           url: deployment.origin.url ?? '',
         }
@@ -145,6 +142,14 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
       focus: `${Deployment.type}-${this.id}`,
       selected: `${Deployment.type}-${this.id}`,
     });
+  }
+
+  /** The Agent this places, or null when the deployed element is something else. */
+  get agentTypeId(): TypeId | null {
+    const parent = this.parent_type_id;
+    if (!parent || !isTypeId(parent)) return null;
+    const typeId = new TypeId(parent);
+    return typeId.type === 'agent' ? typeId : null;
   }
 
   /** The machine this runs on, or null when the placement is not node-backed. */

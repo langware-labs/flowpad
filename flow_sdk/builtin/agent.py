@@ -103,7 +103,7 @@ class Agent(Entity):
         description="SubAgent NAMES this agent may delegate to. Names, not TypeIds, because a "
         "shipped agent.md is authored before the SubAgent it references has ever been indexed. "
         "DECLARED ONLY — nothing projects these into --agents yet; wire through "
-        "AgenticProcess.load_embedded_agent(name) when a caller needs it.",
+        "AgenticProcess.load_embedded_subagent(name) when a caller needs it.",
     )
     additional_dirs: list[str] = APIField(default_factory=list)
     load_flowpad_assistant: bool = APIField(default=False)
@@ -189,8 +189,12 @@ class Agent(Entity):
         if self.remote and self.git_origin:
             return False
 
+        from flow_sdk.assets._publish_service import owning_project  # noqa: PLC0415
         from flow_sdk.assets.git_publish import publish_git_asset  # noqa: PLC0415
 
+        project = await owning_project(self)
+        if project is not None:
+            await project.ensure_on_hub()
         await publish_git_asset(self, actor)
         return True
 
@@ -365,9 +369,41 @@ class Agent(Entity):
             }
         )
 
+    # ── the use verb (HTTP) ───────────────────────────────────────────────
+
+    @action.post(action_name="use")
+    async def use_action(self):
+        """Open a session as this agent. `POST /agent/<id>/use` → process id.
+
+        No prompt: the process is created and shown, and the human types the
+        first message. Local placement only — same routing rule as ``run``.
+        """
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        deployment = await self.local_deployment()
+        try:
+            process = await deployment.use()
+        except NotImplementedError as exc:
+            return ApiFailResponse(message=str(exc))
+        except Exception as exc:  # noqa: BLE001 — incl. the disabled-agent refusal from build()
+            return ApiFailResponse(message=f"use failed: {exc}")
+        return ApiSuccessResponse(
+            data={
+                "process_id": process.id,
+                "process_typeid": str(process.typeid),
+                "deployment_id": deployment.id,
+            }
+        )
+
     # ── projection into the launch bundle ─────────────────────────────────
 
-    def to_agent_options(self, worker_type: Optional[str] = None) -> "AgentOptions":
+    @property
+    def display_name(self) -> str:
+        """How the agent is PRESENTED — the authored title, else the slug, else the id.
+        Mirrors ``Agent.getDisplayName`` in ts_sdk so both tiers name it alike."""
+        return (self.title or "").strip() or self.name or self.id
+
+    def to_agent_options(self, worker_type: Optional[str] = None, **cli_extra) -> "AgentOptions":
         """Build the vendor options object this agent launches with.
 
         Only ever sets keys that already exist in ``to_json()`` — the serialized
@@ -380,6 +416,11 @@ class Agent(Entity):
         ``cmd.add_dirs`` with ``AgenticProcess.resolved_add_dirs`` at spawn, so a
         copy here would be dead on arrival AND would perturb the very hash this
         docstring is protecting. The process field is the single source.
+
+        ``cli_extra`` are per-launch transport keys (``output_format`` for a chat
+        surface) that go through the CONSTRUCTOR: ``ClaudeAgentOptions`` derives
+        ``verbose`` from ``output_format`` there, so setting the field after the
+        fact would persist an inconsistent pair into ``cli_config``.
         """
         from flow_sdk.builtin.agentic_process.cli_drivers import factory  # noqa: PLC0415
 
@@ -393,5 +434,6 @@ class Agent(Entity):
         ):
             if value is not None:
                 cli_json[key] = value
+        cli_json.update({k: v for k, v in cli_extra.items() if v is not None})
 
         return factory(cli_json, driver_key(worker_type or self.worker_type))

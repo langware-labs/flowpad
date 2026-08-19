@@ -415,26 +415,10 @@ def validate_providers(args: argparse.Namespace) -> None:
         "bootstrap",
     )
     sandbox_node = bootstrap.get("sandbox_compute_node")
-    docker_nodes = bootstrap.get("docker_compute_nodes")
     sandbox_ready = bootstrap.get("sandbox_available") is True and isinstance(sandbox_node, dict)
-    docker_ready = (
-        bootstrap.get("docker_available") is True
-        and isinstance(docker_nodes, list)
-        and any(isinstance(node, dict) for node in docker_nodes)
-    )
     if args.require_sandbox and not sandbox_ready:
         raise Phase11Error("bootstrap did not expose a live sandbox compute node")
-    if args.require_docker and not docker_ready:
-        raise Phase11Error("bootstrap did not expose a live Docker compute node")
-    _atomic_json(
-        Path(args.output),
-        {
-            "status": "ready",
-            "sandbox_ready": sandbox_ready,
-            "docker_ready": docker_ready,
-            "docker_node_count": len(docker_nodes) if isinstance(docker_nodes, list) else 0,
-        },
-    )
+    _atomic_json(Path(args.output), {"status": "ready", "sandbox_ready": sandbox_ready})
 
 
 def clear_for_file(args: argparse.Namespace) -> None:
@@ -969,7 +953,6 @@ def build_parser() -> argparse.ArgumentParser:
     cmd = sub.add_parser("providers")
     cmd.add_argument("--api-url", required=True)
     cmd.add_argument("--require-sandbox", action="store_true")
-    cmd.add_argument("--require-docker", action="store_true")
     cmd.add_argument("--output", required=True)
     cmd.set_defaults(func=validate_providers)
 

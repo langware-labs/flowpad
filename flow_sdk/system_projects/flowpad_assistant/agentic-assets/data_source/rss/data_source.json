@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "name": "rss",
+  "title": "RSS / Atom",
+  "icon_name": "Rss",
+  "description": "One segment per feed URL. No credentials \u2014 the simplest source there is.",
+  "config": {
+    "feed_urls": {
+      "type": "lines",
+      "required": true,
+      "label": "Feed URLs",
+      "placeholder": "https://example.com/feed.xml",
+      "pattern": "^https?://",
+      "hint": "One per line. Each URL becomes its own segment with its own cursor and health."
+    }
+  }
+}

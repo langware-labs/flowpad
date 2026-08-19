@@ -26,7 +26,7 @@ export interface HelpdeskAgentState {
   /**
    * False until the query has answered. **Callers must not render the chat
    * before this flips**: `onProcessCreated` fires once, at creation, and the
-   * agent spec is persisted into the process's `cli_config` — so a send that
+   * sub-agent spec is persisted into the process's `cli_config` — so a send that
    * beats the query births a session that is permanently persona-less.
    */
   ready: boolean;

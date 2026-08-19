@@ -230,6 +230,9 @@ class EntityType(StrEnum):
     # One independently-checkpointed stream within a DataSource — a feed URL, a
     # channel. DB-only: written every poll, so it must never touch disk.
     DATA_SOURCE_CURSOR = "data_source_cursor"
+    #: The AUTHORED half of a source — a folder asset describing what a source
+    #: is. ``DATA_SOURCE`` is the configured instance; this is its definition.
+    DATA_SOURCE_SPEC = "data_source_spec"
     # One thread of ingested cloud messages (a Gmail thread, a Slack
     # `thread_ts`). MANY threads may point at ONE conversation — that is the
     # merge seam, and why the conversation id is not derived from the thread.

@@ -204,28 +204,7 @@ while IFS=$'\t' read -r category file config source_sha config_sha <&3; do
     emit_blocked_summary "desktop_clear_or_bootstrap_validation_failed"
   fi
 
-  if [[ "$scenario_rel" == terminal/docker_*.md.ts ]]; then
-    docker_log="$artifact/docker-connect.log"
-    provider_json="$artifact/providers.json"
-    log "provision disposable Docker worker for $scenario_rel"
-    set +e
-    (
-      cd "$REPO"
-      FLOW_INSTANCE="$INSTANCE" FLOWPAD_HUB_URL="$FLOWPAD_HUB_URL" \
-        uv run flow compute connect "$QA_DOCKER_CONTAINER" --start
-    ) >"$docker_log" 2>&1
-    docker_rc=$?
-    set -e
-    if [ "$docker_rc" -ne 0 ]; then
-      emit_blocked_summary "docker_provider_provision_failed"
-    fi
-    if ! python3 "$HELPER" providers \
-      --api-url "$ALICE_API" \
-      --require-docker \
-      --output "$provider_json"; then
-      emit_blocked_summary "docker_provider_validation_failed"
-    fi
-  elif [[ "$scenario_rel" == terminal/sandbox_*.md.ts ]]; then
+  if [[ "$scenario_rel" == terminal/sandbox_*.md.ts ]]; then
     provider_json="$artifact/providers.json"
     if ! python3 "$HELPER" providers \
       --api-url "$ALICE_API" \

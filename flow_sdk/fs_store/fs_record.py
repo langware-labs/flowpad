@@ -33,6 +33,7 @@ import json
 import logging
 import uuid
 from contextlib import asynccontextmanager
+from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
@@ -70,6 +71,43 @@ _SYSTEM_ATTRS: frozenset[str] = frozenset({"type", "id", "_asset_ref"})
 _RECORD_SYNC_LOCKS: "WeakValueDictionary[tuple[object, str, str], asyncio.Lock]" = (
     WeakValueDictionary()
 )
+#: "Do not write into the source bytes during this operation."
+#:
+#: Some sources own their bytes and some only READ them. A git working tree is
+#: the clear second case: stamping an identity capsule into a tracked file
+#: dirties the tree, is committed, and propagates our metadata to everyone who
+#: pulls. Such a source resolves identity by an `origin_id` lookup instead, so
+#: the carrier write is not merely unwanted — it is redundant.
+#:
+#: A ContextVar rather than a parameter because the write happens four layers
+#: below the decision (`reflect` → `Entity.save` → `_store` → `upsert_main_ref`),
+#: and threading a flag through all four would put a "may I write" argument on
+#: methods that have no business asking. Same mechanism as the sync guard above.
+_SUPPRESS_CARRIER_WRITE: "ContextVar[bool]" = ContextVar(
+    "_SUPPRESS_CARRIER_WRITE", default=False
+)
+
+
+def carrier_writes_are_suppressed() -> bool:
+    """Whether this operation must leave the source bytes alone.
+
+    Public so the resolvers can ASK rather than be TOLD. A policy threaded as a
+    parameter has to be passed correctly by every caller; one read from the
+    operation's own context cannot be forgotten.
+    """
+    return _SUPPRESS_CARRIER_WRITE.get()
+
+
+@contextmanager
+def carrier_writes_suppressed():
+    """Resolve identity without stamping it into the asset."""
+    token = _SUPPRESS_CARRIER_WRITE.set(True)
+    try:
+        yield
+    finally:
+        _SUPPRESS_CARRIER_WRITE.reset(token)
+
+
 _HELD_RECORD_SYNC_KEYS: "ContextVar[frozenset[tuple[object, str, str]]]" = ContextVar(
     "_held_record_sync_keys", default=frozenset()
 )
@@ -724,9 +762,18 @@ class FSRecord(Generic[M]):
 
     @property
     def orphan(self) -> bool:
-        """True when the record's source asset no longer exists on disk."""
+        """True when the record's source asset is genuinely GONE from disk.
+
+        Absence alone is not enough: an unmounted volume or a disconnected share
+        makes every file under it stat as missing. ``source_unreachable`` keeps
+        those out — see its docstring for the parent-directory rule.
+        """
         ar = self._asset_ref
-        return ar is not None and not ar.exists()
+        if ar is None or ar.exists():
+            return False
+        from flow_sdk.fs_store.path_utils import source_unreachable  # noqa: PLC0415
+
+        return not source_unreachable(ar.path)
 
     def write_hash(self) -> None:
         """Stamp the current source hash + now as the index sentinel, replacing
@@ -895,6 +942,11 @@ class FSRecord(Generic[M]):
         entity_id = getattr(entity, "id", None)
         if info is None or info.identity_backend is None or not entity_id:
             return None
+        if carrier_writes_are_suppressed():
+            # The caller resolves identity elsewhere (an `origin_id` lookup), so
+            # the carrier is neither consulted nor written. Return the id we were
+            # given: there is no commit that could disagree with it.
+            return str(entity_id)
         committed_id = info.mint_entity_id(
             ar, proposed_id=str(entity_id), derive=True, overwrite=True
         )
@@ -944,13 +996,8 @@ class FSRecord(Generic[M]):
                 await asyncio.to_thread(self.sync_from_entity, entity)
 
                 # FTS — read directly from instance attrs, no per-record parse.
-                entry = FtsEntry(
-                    entity_id=entity.id,
-                    entity_type=entity.type,
-                    name=self.__dict__.get("name") or None,
-                    title=self.search_title,
-                    description=self.search_description,
-                    content=self.search_content,
+                entry = FtsEntry.from_record(
+                    entity.id, entity.type, self.__dict__.get("name"), self
                 )
                 if fts_batch is not None:
                     fts_batch.append(entry)

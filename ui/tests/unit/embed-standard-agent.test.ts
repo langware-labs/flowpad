@@ -29,7 +29,7 @@ async function freshEmbed() {
 }
 
 function fakeProcess() {
-  return { loadEmbeddedAgent: vi.fn().mockResolvedValue(undefined) } as any;
+  return { loadEmbeddedSubagent: vi.fn().mockResolvedValue(undefined) } as any;
 }
 
 describe('embedStandardAgent', () => {
@@ -55,7 +55,7 @@ describe('embedStandardAgent', () => {
 
     // The system asset, NOT the same-named project one that would shadow it,
     // and not the same-scoped `vibe` one.
-    expect(proc.loadEmbeddedAgent).toHaveBeenCalledWith('/sdk/.claude/agents/standard.md');
+    expect(proc.loadEmbeddedSubagent).toHaveBeenCalledWith('/sdk/.claude/agents/standard.md');
   });
 
   it('queries the subagent route with system assets included', async () => {
@@ -92,7 +92,7 @@ describe('embedStandardAgent', () => {
     await embed(second);
 
     expect(apiMock.get).toHaveBeenCalledTimes(2);
-    expect(second.loadEmbeddedAgent).toHaveBeenCalledWith('/sdk/.claude/agents/standard.md');
+    expect(second.loadEmbeddedSubagent).toHaveBeenCalledWith('/sdk/.claude/agents/standard.md');
   });
 
   it('degrades without throwing when the agent is not indexed', async () => {
@@ -102,7 +102,7 @@ describe('embedStandardAgent', () => {
 
     await expect(embed(proc)).resolves.toBeUndefined();
 
-    expect(proc.loadEmbeddedAgent).not.toHaveBeenCalled();
+    expect(proc.loadEmbeddedSubagent).not.toHaveBeenCalled();
     expect(console.warn).toHaveBeenCalled();
   });
 
@@ -120,7 +120,7 @@ describe('embedStandardAgent', () => {
       { name: 'standard', scope: 'system', asset_ref: '/sdk/.claude/agents/standard.md' },
     ]);
     const embed = await freshEmbed();
-    const proc = { loadEmbeddedAgent: vi.fn().mockRejectedValue(new Error('500')) } as any;
+    const proc = { loadEmbeddedSubagent: vi.fn().mockRejectedValue(new Error('500')) } as any;
 
     await expect(embed(proc)).resolves.toBeUndefined();
 

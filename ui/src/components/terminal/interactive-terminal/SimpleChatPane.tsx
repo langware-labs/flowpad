@@ -8,6 +8,7 @@ import { useStickyActivity } from '@src/components/entity-execution-panel/hooks/
 import { useTurnActivity } from '@src/components/entity-execution-panel/hooks/useTurnActivity';
 import { splitLiveGroup, useTurnGroups } from '@src/components/floating-chat/groupTurnEvents';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
+import { useViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { cn } from '@src/lib/utils';
 import { Trans } from '@lingui/react/macro';
 import { MessageSquare } from 'lucide-react';
@@ -59,6 +60,11 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
   // so the memoized rows below only re-render the trailing group (QA D10).
   const turnGroups = useTurnGroups(items);
   const activity = useTurnActivity(process);
+  // Skin layer: this pane also serves a HEADLESS process in Advanced/Dev (see
+  // `showSimpleChat` in InteractiveTerminal), so "the chat pane is mounted"
+  // does NOT imply Standard. The per-turn file chips are a Standard affordance,
+  // so the mode is read explicitly.
+  const viewMode = useViewMode();
 
   // Same named-operation readout the vibe chat shows ("Editing · foo.ts").
   // Only `liveEvents` is taken from the split — unlike the vibe pane, this one
@@ -112,7 +118,13 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
           </div>
         ) : (
           <div className="w-full px-4 py-3">
-            <TurnGroupsList groups={turnGroups} worker={process.worker_type ?? undefined} />
+            <TurnGroupsList
+              groups={turnGroups}
+              worker={process.worker_type ?? undefined}
+              showTurnFiles={viewMode === ViewMode.Standard}
+              process={process}
+              turnActive={activity.active}
+            />
             <ChatActivityLine
               process={process}
               active={activity.active}

@@ -172,6 +172,10 @@ def test_view_types_shadowing_a_real_entity_type_are_pinned():
         "conversation",
         "graph_context",
         "markdown",
+        # People & teams. Its pointer IS an organization id, so minting
+        # TypeId("organization", <id>) from a bare pointer is precisely the
+        # intent — a deep link to one organization's roster.
+        "organization",
         "plan",
         "project",
         "shell",

@@ -141,7 +141,7 @@ the `AgenticProcess` entity and is finalized into an actual command
 | `session_id` | entity field | Injected at read time; drives `--resume`. Not stored in `cli_config`. |
 | `additional_dirs` | entity field | Becomes `--add-dir`; injected into `cliOptions.addDirs`. |
 | `load_flowpad_assistant` | entity field | Adds the assistant mount to the resolved `--add-dir` set. |
-| `embedded_asset_refs` / `embedded_agent_ids` | entity fields | Materialized skills/agents mounted for the worker. |
+| `embedded_asset_refs` / `embedded_subagent_ids` | entity fields | Materialized skills/sub-agents mounted for the worker. |
 
 Frontend read/write is through the `cliOptions` accessor: the getter
 deserializes `cli_config` and injects `workdir` + `session_id` +
@@ -204,7 +204,7 @@ MD5-hashed:
 
 - **generic** (`_generic_restart_snapshot_payload`): `worker_type`,
   `shell_mode`, `workdir`, `session_id`, `additional_dirs`,
-  `embedded_asset_refs`, `embedded_agent_ids`.
+  `embedded_asset_refs`, `embedded_subagent_ids`.
 - **worker** (driver `restart_snapshot`): the finalized `AgentOptions` JSON —
   `model`, `permission_mode`, `chrome`, `debug`, `env_vars`, etc.
 

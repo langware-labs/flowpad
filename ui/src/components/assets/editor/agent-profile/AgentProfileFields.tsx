@@ -1,25 +1,6 @@
-import { ReactNode, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Input } from '@src/components/ui/input';
-
-/** A titled block in the profile page. */
-export function AgentSection({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  hint?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="mt-8 border-t border-border pt-6">
-      <h2 className="text-sm font-semibold">{title}</h2>
-      {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
-      <div className="mt-4">{children}</div>
-    </section>
-  );
-}
 
 /**
  * A suggestion-backed text field: the vocabulary is advisory, so the control

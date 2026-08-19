@@ -1,6 +1,7 @@
 import { t } from '@lingui/core/macro';
 import { PrefDataType, PrefInfo, PrefOption, soundService } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
+import { translatePrefDescription, translatePrefLabel, translatePrefOptionLabel } from '@src/i18n/pref-labels';
 import { SettingRow } from '@src/components/settings/settings-card';
 import { Input } from '@src/components/ui/input';
 import { Textarea } from '@src/components/ui/textarea';
@@ -16,7 +17,11 @@ import { useEffect, useMemo, useState } from 'react';
  * can't live in the SDK) and carries a previewUrl for the play affordance.
  */
 function resolveOptions(info: PrefInfo): PrefOption[] {
-  if (info.options) return info.options;
+  // Static labels are registry English; swap in the localized wording where the
+  // i18n layer has one (unmapped options keep the registry's text).
+  if (info.options) {
+    return info.options.map((o) => ({ ...o, label: translatePrefOptionLabel(info.key, o.value, o.label) }));
+  }
   if (info.optionsSource === 'notification_sounds') {
     return NOTIFICATION_SOUNDS.map((s) => ({ value: s.key, label: s.displayName, previewUrl: s.url }));
   }
@@ -31,7 +36,13 @@ export function PrefControl({ info }: { info: PrefInfo }) {
   const [value, setValue] = usePreference<unknown>(info.key);
   const id = `pref-${info.key}`;
   const row = (control: React.ReactNode, block = false) => (
-    <SettingRow label={info.label} description={info.description} htmlFor={id} control={control} block={block} />
+    <SettingRow
+      label={translatePrefLabel(info.key, info.label)}
+      description={translatePrefDescription(info.key, info.description)}
+      htmlFor={id}
+      control={control}
+      block={block}
+    />
   );
 
   switch (info.dataType) {
@@ -145,7 +156,7 @@ function JsonControl({ id, value, onChange }: { id: string; value: unknown; onCh
             setError(null);
             onChange(parsed);
           } catch {
-            setError('Invalid JSON — not saved');
+            setError(t`Invalid JSON — not saved`);
           }
         }}
       />

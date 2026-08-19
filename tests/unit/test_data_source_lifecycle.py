@@ -24,7 +24,7 @@ class _NeedsSetupDriver:
     record_kind = "content.message.chat"
     verdict = SetupVerdict.waiting("invite the bot", ("C1",))
 
-    def streams(self, source):
+    def segments(self, source):
         return []
 
     async def fetch(self, source, cursor):  # pragma: no cover - never reached here
@@ -39,7 +39,7 @@ class _NoSetupDriver:
     kind = "datasource.test.plain"
     record_kind = "content.feed.item"
 
-    def streams(self, source):
+    def segments(self, source):
         return []
 
     async def fetch(self, source, cursor):  # pragma: no cover

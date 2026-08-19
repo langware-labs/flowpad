@@ -12,8 +12,8 @@ import type { SourceHealth } from './data-source';
 
 export interface IDataSourceCursor extends IEntity {
   data_source_id?: string;
-  stream_key?: string;
-  stream_label?: string;
+  segment_key?: string;
+  segment_label?: string;
   enabled?: boolean;
   high_water?: string | null;
   state?: Record<string, unknown>;
@@ -30,8 +30,8 @@ export class DataSourceCursor extends APIEntity<DataSourceCursor> implements IDa
   static type: string = 'data_source_cursor';
 
   data_source_id: string = '';
-  stream_key: string = '';
-  stream_label: string = '';
+  segment_key: string = '';
+  segment_label: string = '';
   enabled: boolean = true;
   high_water: string | null = null;
   state: Record<string, unknown> = {};
@@ -45,8 +45,8 @@ export class DataSourceCursor extends APIEntity<DataSourceCursor> implements IDa
   constructor(entity: Partial<IDataSourceCursor> = {}) {
     super(entity);
     this.data_source_id = entity.data_source_id ?? this.data_source_id;
-    this.stream_key = entity.stream_key ?? this.stream_key;
-    this.stream_label = entity.stream_label ?? this.stream_label;
+    this.segment_key = entity.segment_key ?? this.segment_key;
+    this.segment_label = entity.segment_label ?? this.segment_label;
     this.enabled = entity.enabled ?? this.enabled;
     this.high_water = entity.high_water ?? this.high_water;
     this.state = entity.state ?? this.state;

@@ -21,10 +21,11 @@ import { useCallback } from 'react';
 import { VIBE_MODEL_DEFAULT, type VibeModelTier } from './vibe-model-select';
 import type { WorkerType } from '@src/components/workers/worker-types';
 
-// The vibe agent's asset_ref is stable for the app's lifetime — resolve once,
-// reuse across builds. Raw graph route (not useEntitiesQuery) because system
-// (SDK-shipped) agents only surface with include_system=true. Failed lookups
-// are NOT cached so a late-indexed agent is picked up on the next submit.
+// The vibe sub-agent's asset_ref is stable for the app's lifetime — resolve
+// once, reuse across builds. Raw graph route (not useEntitiesQuery) because
+// system (SDK-shipped) sub-agents only surface with include_system=true. Failed
+// lookups are NOT cached so a late-indexed sub-agent is picked up on the next
+// submit.
 //
 // The SUBAGENT named `vibe` (`.claude/agents/vibe.md`) — the persona carrying
 // the `flow show` presentation contract — NOT the `agent` of the same name.
@@ -36,17 +37,17 @@ import type { WorkerType } from '@src/components/workers/worker-types';
 // deliverable by shelling `open <file>` — straight into the user's browser —
 // instead of `flow show`. `scope: 'system'` pins it to the SDK-shipped asset so
 // a project subagent someone names `vibe` can't shadow it. This also matches
-// what the seam expects: `load_embedded_agent_action` parses the file with
+// what the seam expects: `load_embedded_subagent_action` parses the file with
 // `extract_subagent_from_path`, and the Agent asset has no subagent `name`, so
 // it materialized as a nameless "you are the 'agent' agent".
-let vibeAgentRefCache: string | null = null;
-async function resolveVibeAgentRef(): Promise<string | null> {
-  if (vibeAgentRefCache) return vibeAgentRefCache;
+let vibeSubagentRefCache: string | null = null;
+async function resolveVibeSubagentRef(): Promise<string | null> {
+  if (vibeSubagentRefCache) return vibeSubagentRefCache;
   const rows = await apiClient.get<{ name?: string; scope?: string; asset_ref?: string }[]>(
     '/graph/subagent?include_system=true',
   );
-  vibeAgentRefCache = (rows ?? []).find((r) => r.name === 'vibe' && r.scope === 'system')?.asset_ref ?? null;
-  return vibeAgentRefCache;
+  vibeSubagentRefCache = (rows ?? []).find((r) => r.name === 'vibe' && r.scope === 'system')?.asset_ref ?? null;
+  return vibeSubagentRefCache;
 }
 
 /** Minimal navigation surface the launcher needs (from useDockNavigation). */
@@ -69,35 +70,35 @@ export function vibeChatTargetForProject(projectId: string): string {
  * (creator routing + the `flow show` presentation contract) is active. Shared
  * by BOTH vibe process-creation paths — the vibe-home launcher here and the
  * in-workspace `New` control (EntityExecutionPanel's onProcessCreated hook) —
- * so a process born either way carries the same persona. An un-indexed agent
+ * so a process born either way carries the same persona. An un-indexed sub-agent
  * degrades to a plain assistant session (logged, never thrown).
  */
-export async function embedVibeAgent(proc: AgenticProcess): Promise<void> {
+export async function embedVibeSubagent(proc: AgenticProcess): Promise<void> {
   try {
-    const vibeRef = await resolveVibeAgentRef();
-    if (vibeRef) await proc.loadEmbeddedAgent(vibeRef);
-    else console.warn('[Vibe] vibe agent not indexed; continuing without persona');
+    const vibeRef = await resolveVibeSubagentRef();
+    if (vibeRef) await proc.loadEmbeddedSubagent(vibeRef);
+    else console.warn('[Vibe] vibe sub-agent not indexed; continuing without persona');
   } catch (e) {
-    console.warn('[Vibe] failed to embed vibe agent; continuing without persona', e);
+    console.warn('[Vibe] failed to embed vibe sub-agent; continuing without persona', e);
   }
-  // Layer the project's kind==vibe agents ON TOP of the standard vibe agent.
-  // Embedding after the vibe agent, in created-date order, makes them render
+  // Layer the project's kind==vibe sub-agents ON TOP of the standard vibe
+  // sub-agent. Embedding after it, in created-date order, makes them render
   // after it in the instructions (embed order == render order, see backend
   // _load_materialized_agents_json). Best-effort — a failed extra embed degrades.
   try {
-    await embedVibeKindAgents(proc);
+    await embedVibeKindSubagents(proc);
   } catch (e) {
-    console.warn('[Vibe] failed to embed kind==vibe agents', e);
+    console.warn('[Vibe] failed to embed kind==vibe sub-agents', e);
   }
 }
 
 /**
- * Embed the "relevant ones only" — the project's `kind==vibe` agent assets, in
- * created-date order — as extra personas after the standard vibe agent. Part of
+ * Embed the "relevant ones only" — the project's `kind==vibe` sub-agent assets,
+ * in created-date order — as extra personas after the standard vibe sub-agent. Part of
  * the generic vibe process start; a plain query (not the process's special-asset
  * list), scoped to the process's project.
  */
-async function embedVibeKindAgents(proc: AgenticProcess): Promise<void> {
+async function embedVibeKindSubagents(proc: AgenticProcess): Promise<void> {
   const projectId = proc.project_id;
   if (!projectId) return;
   const req = new QueryRequest({
@@ -108,7 +109,7 @@ async function embedVibeKindAgents(proc: AgenticProcess): Promise<void> {
   });
   const agents = await SubAgent.query<SubAgent>(req);
   for (const agent of agents) {
-    if (agent.asset_ref) await proc.loadEmbeddedAgent(agent.asset_ref);
+    if (agent.asset_ref) await proc.loadEmbeddedSubagent(agent.asset_ref);
   }
 }
 
@@ -158,14 +159,14 @@ export async function createVibeProcessForProject(opts: {
   // the first prompt — which every caller awaits — so neither belongs ahead of
   // the navigation.
   if (open) navigation?.openShellProcess(proc.id, { viewMode: ViewMode.Vibe });
-  await embedVibeAgent(proc);
+  await embedVibeSubagent(proc);
   return proc;
 }
 
 /**
  * Start a Vibe session bound to a SPECIFIC project (not necessarily the active
  * one): lazily create a headless Chat process, embed the SDK-shipped `vibe`
- * persona agent, open its workspace in Vibe mode, then fire the first prompt.
+ * persona (a SubAgent), open its workspace in Vibe mode, then fire the first prompt.
  * The `vibe` persona rides every turn so the driver's directive (creator
  * routing + the mcp-ui / `flow show` presentation contract) is active; an
  * un-indexed agent degrades to a plain assistant session.

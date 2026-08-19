@@ -307,6 +307,9 @@ export interface IAgenticProcess extends IEntity {
   asset_ref?: string;
   workdir?: string | null;
   context_data?: Record<string, unknown>;
+  /** The `Deployment` this run was launched through (`Deployment.launch`);
+   *  null for a process not spawned from an Agent. */
+  deployment_id?: string | null;
   // ``shared_context_entities`` is inherited from IEntity (wire shape).
   // ``privateContextEntities`` is exposed by the APIEntity getter — no
   // field is declared here for it (local-only, never on the wire).
@@ -402,7 +405,7 @@ export interface IAgenticProcess extends IEntity {
   input_folder?: FSRefJson | null;
   /** `<exe_folder>/output/` — artifacts the agent writes back. */
   output_folder?: FSRefJson | null;
-  /** `<exe_folder>/assets/` — materialised embedded agents / skills. */
+  /** `<exe_folder>/assets/` — materialised embedded sub-agents / skills. */
   assets_folder?: FSRefJson | null;
   /**
    * Absolute path to the latest plan markdown produced by this process,
@@ -897,6 +900,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Persisted context data for session restoration */
   context_data?: Record<string, unknown>;
 
+  /** The Deployment (→ Agent) this run was launched through, if any. */
+  deployment_id?: string | null;
+
   // TypeIds of entities this process is contextually about (task /
   // conversation / spec / project / …) now live on the base APIEntity as
   // ``sharedContextEntities`` (wire-bound) and ``privateContextEntities``
@@ -1033,7 +1039,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** `<exe_folder>/output/` — where the agent writes artifacts back. */
   output_folder: FSRef | null = null;
 
-  /** `<exe_folder>/assets/` — materialised embedded agents / skills. */
+  /** `<exe_folder>/assets/` — materialised embedded sub-agents / skills. */
   assets_folder: FSRef | null = null;
 
   /** Process-local worker hook intent, persisted by the backend. */
@@ -1546,6 +1552,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.asset_ref = entity.asset_ref;
     this.context = entity.context;
     this.context_data = entity.context_data;
+    this.deployment_id = entity.deployment_id ?? null;
     this.favorite_index = entity.favorite_index;
     this.status = (entity.status as ProcessStatus) ?? ProcessStatus.NEW;
     this.busy = entity.busy ?? false;
@@ -2131,12 +2138,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * ```
    */
   /**
-   * Load an agent from a VFS path and embed it into this process.
-   * Mirrors the Python `process.load_embedded_agent()` API.
-   * The agent spec is merged into cli_config on the backend and persisted.
+   * Load a sub-agent from a VFS path and embed it into this process.
+   * Mirrors the Python `process.load_embedded_subagent()` API.
+   * The sub-agent spec is merged into cli_config on the backend and persisted.
    */
-  async loadEmbeddedAgent(sourcePath: string): Promise<void> {
-    const actionInfo = new ActionInfo('load-embedded-agent', AgenticProcess.type, this.id, 'POST');
+  async loadEmbeddedSubagent(sourcePath: string): Promise<void> {
+    const actionInfo = new ActionInfo('load-embedded-subagent', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = { asset_ref: sourcePath };
     await dataManager.callAction(actionInfo);
   }

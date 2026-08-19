@@ -16,6 +16,7 @@ import { useGraphUrlState, type SubgraphCodec } from './url-state';
 import { SURFACE, type GraphSurface } from './surfaces';
 import type { WorldViewColorMode } from '@src/types/WorldViewColorMode';
 import { WorldViewProjection } from '@sdk';
+import { OrgNodeManagement } from '@src/components/organization/org-node-management';
 import type { GraphPresentation } from '@src/types/GraphPresentation';
 import { Network, Orbit, RotateCcw, ZoomIn, ZoomOut, X } from 'lucide-react';
 import './graph-view.css';
@@ -147,24 +148,24 @@ export function GraphView({
 
   useEffect(() => {
     if (!containerRef.current || !graph) return;
-    const renderer: GraphRenderer = spec.presentation && urlState.presentation === 'atlas'
-      // One `layout` request, two renderers: a hierarchical layout means the
-      // Atlas tree arrangement, anything else its radial one.
-      ? new AtlasGraphRenderer(graph, layout === 'dagre' ? 'tree' : 'radial')
-      : new GraphEngine(graph, layout);
+    const renderer: GraphRenderer =
+      spec.presentation && urlState.presentation === 'atlas'
+        ? // One `layout` request, two renderers: a hierarchical layout means the
+          // Atlas tree arrangement, anything else its radial one.
+          new AtlasGraphRenderer(graph, layout === 'dagre' ? 'tree' : 'radial')
+        : new GraphEngine(graph, layout);
     engineRef.current = renderer;
     const unsubscribeSelect = renderer.onNodeSelect(navigateSelection);
     const unsubscribeDoubleClick = renderer.onNodeDoubleClick(navigateFocus);
     const requested = urlStateRef.current;
-    renderer.setColorMode(
-      spec.signals && projection === WorldViewProjection.DEPLOYMENT ? requested.signal : 'type',
-    );
+    renderer.setColorMode(spec.signals && projection === WorldViewProjection.DEPLOYMENT ? requested.signal : 'type');
     renderer.init(containerRef.current);
     renderer.setTheme(themeRef.current);
     renderer.setHiddenTypes(requested.hidden);
-    const local = requested.focus && graph.hasNode(requested.focus)
-      ? renderer.setLocalMode(requested.focus, requested.depth)
-      : renderer.setLocalMode(null);
+    const local =
+      requested.focus && graph.hasNode(requested.focus)
+        ? renderer.setLocalMode(requested.focus, requested.depth)
+        : renderer.setLocalMode(null);
     setLocalVisibleCount(local.visibleCount);
     renderer.selectNode(requested.selected && graph.hasNode(requested.selected) ? requested.selected : null);
     return () => {
@@ -252,7 +253,10 @@ export function GraphView({
 
   const handleDepth = useCallback((depth: number) => setUrlState({ depth }), [setUrlState]);
   const handleColorMode = useCallback((signal: WorldViewColorMode) => setUrlState({ signal }), [setUrlState]);
-  const handlePresentation = useCallback((presentation: GraphPresentation) => setUrlState({ presentation }), [setUrlState]);
+  const handlePresentation = useCallback(
+    (presentation: GraphPresentation) => setUrlState({ presentation }),
+    [setUrlState],
+  );
   const handleExitLocal = useCallback(() => setUrlState({ focus: null }), [setUrlState]);
   const handleSearch = useCallback((query: string) => {
     if (query !== urlStateRef.current.query) setUrlStateRef.current({ query });
@@ -348,44 +352,82 @@ export function GraphView({
               <div className="graph-controls-cluster">
                 {surfaceControls}
                 {spec.presentation && (
-              <div className="graph-segmented-toggle" role="group" aria-label={t`Graph presentation`}>
-                <button
-                  type="button"
-                  data-testid="worldview-view-sigma"
-                  className={urlState.presentation === 'sigma' ? 'active' : ''}
-                  aria-pressed={urlState.presentation === 'sigma'}
-                  onClick={() => handlePresentation('sigma')}
-                  title={t`Sigma graph view`}
-                >
-                  <Network size={15} />
-                  <span>Sigma</span>
-                </button>
-                <button
-                  type="button"
-                  data-testid="worldview-view-atlas"
-                  className={urlState.presentation === 'atlas' ? 'active' : ''}
-                  aria-pressed={urlState.presentation === 'atlas'}
-                  onClick={() => handlePresentation('atlas')}
-                  title={t`Atlas map view`}
-                >
-                  <Orbit size={15} />
-                  <span>Atlas</span>
-                </button>
-              </div>
+                  <div className="graph-segmented-toggle" role="group" aria-label={t`Graph presentation`}>
+                    <button
+                      type="button"
+                      data-testid="worldview-view-sigma"
+                      className={urlState.presentation === 'sigma' ? 'active' : ''}
+                      aria-pressed={urlState.presentation === 'sigma'}
+                      onClick={() => handlePresentation('sigma')}
+                      title={t`Sigma graph view`}
+                    >
+                      <Network size={15} />
+                      <span>Sigma</span>
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="worldview-view-atlas"
+                      className={urlState.presentation === 'atlas' ? 'active' : ''}
+                      aria-pressed={urlState.presentation === 'atlas'}
+                      onClick={() => handlePresentation('atlas')}
+                      title={t`Atlas map view`}
+                    >
+                      <Orbit size={15} />
+                      <span>Atlas</span>
+                    </button>
+                  </div>
                 )}
               </div>
             )}
             {atlasActive && (
               <div className="atlas-controls" aria-label={t`Atlas controls`}>
-                <button type="button" onClick={() => (engineRef.current as AtlasGraphRenderer | null)?.setMode('radial')} title={t`Radial layout`}><Orbit size={15} /></button>
-                <button type="button" onClick={() => (engineRef.current as AtlasGraphRenderer | null)?.setMode('tree')} title={t`Tree layout`}><Network size={15} /></button>
-                <button type="button" onClick={() => (engineRef.current as AtlasGraphRenderer | null)?.zoomBy(1.2)} title={t`Zoom in`}><ZoomIn size={15} /></button>
-                <button type="button" onClick={() => (engineRef.current as AtlasGraphRenderer | null)?.zoomBy(0.8)} title={t`Zoom out`}><ZoomOut size={15} /></button>
-                <button type="button" onClick={() => (engineRef.current as AtlasGraphRenderer | null)?.fit()} title={t`Fit Atlas`}><RotateCcw size={15} /></button>
+                <button
+                  type="button"
+                  onClick={() => (engineRef.current as AtlasGraphRenderer | null)?.setMode('radial')}
+                  title={t`Radial layout`}
+                >
+                  <Orbit size={15} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => (engineRef.current as AtlasGraphRenderer | null)?.setMode('tree')}
+                  title={t`Tree layout`}
+                >
+                  <Network size={15} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => (engineRef.current as AtlasGraphRenderer | null)?.zoomBy(1.2)}
+                  title={t`Zoom in`}
+                >
+                  <ZoomIn size={15} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => (engineRef.current as AtlasGraphRenderer | null)?.zoomBy(0.8)}
+                  title={t`Zoom out`}
+                >
+                  <ZoomOut size={15} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => (engineRef.current as AtlasGraphRenderer | null)?.fit()}
+                  title={t`Fit Atlas`}
+                >
+                  <RotateCcw size={15} />
+                </button>
               </div>
             )}
             {atlasActive && (
-              <AtlasDrawer node={selected} localRootKey={urlState.focus} onClose={() => navigateSelection(null)} onNeighborClick={navigateSelection} onFocus={navigateFocus} />
+              <AtlasDrawer
+                node={selected}
+                projection={surface === 'worldview' ? projection : null}
+                localRootKey={urlState.focus}
+                onClose={() => navigateSelection(null)}
+                onNeighborClick={navigateSelection}
+                onFocus={navigateFocus}
+                onStructureChanged={() => setReloadKey((k) => k + 1)}
+              />
             )}
             {loading && (
               <div className="overlay">
@@ -418,18 +460,27 @@ export function GraphView({
   );
 }
 
+/** Node types the Organization WorldView lets you administer in place. A ``user``
+ *  node is deliberately absent: people are managed from the org or class they
+ *  belong to, and the hub refuses a user as a membership target outright. */
+const MANAGEABLE_ORG_TYPES = new Set(['organization', 'team']);
+
 function AtlasDrawer({
   node,
+  projection,
   localRootKey,
   onClose,
   onNeighborClick,
   onFocus,
+  onStructureChanged,
 }: {
   node: NodeData | null;
+  projection: WorldViewProjection | null;
   localRootKey: string | null;
   onClose: () => void;
   onNeighborClick: (key: string) => void;
   onFocus: (key: string) => void;
+  onStructureChanged?: () => void;
 }) {
   const { t } = useLingui();
   if (!node) return null;
@@ -439,15 +490,76 @@ function AtlasDrawer({
       <aside className="atlas-drawer open" data-testid="atlas-drawer">
         <>
           <div className="atlas-drawer-header">
-            <div><span className="atlas-drawer-kicker">{node.type}</span><h2>{node.label}</h2></div>
-            <button type="button" className="atlas-drawer-close" onClick={onClose} aria-label={t`Close details`}><X size={16} /></button>
+            <div>
+              <span className="atlas-drawer-kicker">{node.type}</span>
+              <h2>{node.label}</h2>
+            </div>
+            <button type="button" className="atlas-drawer-close" onClick={onClose} aria-label={t`Close details`}>
+              <X size={16} />
+            </button>
           </div>
-          <button type="button" className="atlas-drawer-focus" onClick={() => onFocus(node.key)} disabled={localRootKey === node.key}>
+          <button
+            type="button"
+            className="atlas-drawer-focus"
+            onClick={() => onFocus(node.key)}
+            disabled={localRootKey === node.key}
+          >
             {localRootKey === node.key ? <Trans>Focused</Trans> : <Trans>Focus local graph</Trans>}
           </button>
-          <div className="atlas-drawer-section"><h3><Trans>Identity</Trans></h3><div className="atlas-drawer-row"><span>id</span><code>{node.id}</code></div><div className="atlas-drawer-row"><span>degree</span><strong>{node.degree}</strong></div></div>
-          <div className="atlas-drawer-section"><h3><Trans>Edges</Trans></h3>{Object.entries(node.edgeCounts).map(([kind, count]) => <div className="atlas-drawer-row" key={kind}><span>{kind}</span><strong>{count}</strong></div>)}</div>
-          {node.neighbors.length > 0 && <div className="atlas-drawer-section"><h3><Trans>Neighbors</Trans></h3>{node.neighbors.slice(0, 20).map((neighbor) => <button type="button" className="atlas-drawer-neighbor" key={`${neighbor.key}-${neighbor.edgeKind}`} onClick={() => onNeighborClick(neighbor.key)}><span>{neighbor.label}</span><small>{neighbor.edgeKind}</small></button>)}</div>}
+          {/* Management, not graph debug: on the ORGANIZATION projection a school or
+              class node is a thing you administer, so its roster and controls come
+              first. Every other projection (and a user node) keeps the drawer purely
+              informational. */}
+          {projection === WorldViewProjection.ORGANIZATION && MANAGEABLE_ORG_TYPES.has(node.type) && (
+            <OrgNodeManagement
+              nodeType={node.type}
+              nodeId={node.id}
+              nodeLabel={node.label}
+              onStructureChanged={onStructureChanged}
+            />
+          )}
+          <div className="atlas-drawer-section">
+            <h3>
+              <Trans>Identity</Trans>
+            </h3>
+            <div className="atlas-drawer-row">
+              <span>id</span>
+              <code>{node.id}</code>
+            </div>
+            <div className="atlas-drawer-row">
+              <span>degree</span>
+              <strong>{node.degree}</strong>
+            </div>
+          </div>
+          <div className="atlas-drawer-section">
+            <h3>
+              <Trans>Edges</Trans>
+            </h3>
+            {Object.entries(node.edgeCounts).map(([kind, count]) => (
+              <div className="atlas-drawer-row" key={kind}>
+                <span>{kind}</span>
+                <strong>{count}</strong>
+              </div>
+            ))}
+          </div>
+          {node.neighbors.length > 0 && (
+            <div className="atlas-drawer-section">
+              <h3>
+                <Trans>Neighbors</Trans>
+              </h3>
+              {node.neighbors.slice(0, 20).map((neighbor) => (
+                <button
+                  type="button"
+                  className="atlas-drawer-neighbor"
+                  key={`${neighbor.key}-${neighbor.edgeKind}`}
+                  onClick={() => onNeighborClick(neighbor.key)}
+                >
+                  <span>{neighbor.label}</span>
+                  <small>{neighbor.edgeKind}</small>
+                </button>
+              ))}
+            </div>
+          )}
         </>
       </aside>
     </>

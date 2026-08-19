@@ -34,13 +34,28 @@ def resolve_origin_kind(value: Any) -> str:
     """The ``kind`` of a raw origin (dict or model), defaulting to git.
 
     Single home for the "a pointer with no ``kind`` is a legacy git origin"
-    rule — shared by the union discriminator (``fs_origin_field.py``) and the
-    bundle dual-write filter (``flow_message_bundle._is_git_origin_dict``) so
-    the legacy default lives in exactly one place.
+    rule — shared by the union discriminator (``fs_origin_field.py``) and by
+    ``is_legacy_visible_origin`` below, so the legacy default lives in exactly
+    one place.
     """
     if isinstance(value, dict):
         return str(value.get("kind") or DEFAULT_ORIGIN_KIND)
     return str(getattr(value, "kind", DEFAULT_ORIGIN_KIND) or DEFAULT_ORIGIN_KIND)
+
+
+def is_legacy_visible_origin(raw: Any) -> bool:
+    """Whether a persisted origin may be shown to a receiver that predates kinds.
+
+    A capability of the KIND, which is why it lives with the model rather than
+    with the transport that happens to consume it. An old receiver can only
+    materialize git, so anything else must stay out of the legacy share file —
+    it could not act on the entry and would mis-handle it.
+
+    Stated as a question about the kind so a NEW kind cannot be added without
+    answering it: a cloud or secret origin inheriting exclusion silently is the
+    failure mode this name exists to prevent.
+    """
+    return isinstance(raw, dict) and resolve_origin_kind(raw) == DEFAULT_ORIGIN_KIND
 
 
 def is_safe_rel_path(rel_path: str) -> bool:

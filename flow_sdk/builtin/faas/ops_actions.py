@@ -79,22 +79,6 @@ class OpsActionsMixin:
         except Exception as e:
             return ApiFailResponse(message=str(e))
 
-    async def _setup_lm_proxy_op(self) -> ApiResponse:
-        """Setup LM proxy access for the compute node."""
-        from flow_sdk.builtin.compute_node import ComputeNode
-        try:
-            # Reload the node from DB to ensure all fields are hydrated
-            hydrated: ComputeNode = await ComputeNode.get_by_id(self.id)
-            if not hydrated:
-                return ApiFailResponse(message="Compute node not found in DB.")
-            api_key = await hydrated.setup_lm_proxy_access()
-            return ApiSuccessResponse(data={"message": "LM proxy access configured", "key_prefix": api_key[:8] + "..."})
-        except Exception as e:
-            import traceback
-
-            logging.error(f"_setup_lm_proxy_op error: {e}\n{traceback.format_exc()}")
-            return ApiFailResponse(message=str(e))
-
     async def _resume_op(self) -> ApiResponse:
         """Resume the compute node."""
         if not self.node_provider_id:
@@ -406,8 +390,6 @@ class OpsActionsMixin:
                 return await self._status_op()
             elif op == "command":
                 return await self._command_op()
-            elif op == "setup-lm-proxy":
-                return await self._setup_lm_proxy_op()
             elif op == "metrics":
                 return await self._get_metrics_op()
             elif op == "logs":

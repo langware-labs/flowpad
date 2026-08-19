@@ -27,26 +27,27 @@ from typing import Optional
 
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
-from flow_sdk.ingest.driver import StreamCursorView, channel_of_driver, get_driver
+from flow_sdk.ingest.driver import SegmentCursorView, channel_of_driver, get_driver
 from flow_sdk.ingest.health import SourceHealth, classify, worst_of
 from flow_sdk.ingest.ingest_on_tag import emit_sync_tag
 from flow_sdk.ingest.ingestor import ingest_items
 from flow_sdk.ingest.models import IngestMode, IngestReport
+from flow_sdk.ingest.reflect import reflect_refs
 
 logger = logging.getLogger(__name__)
 
 #: Streams fetched per run by default. A provider with a hard request ceiling
-#: (Slack: one history call a minute) declares a smaller ``stream_budget`` on
+#: (Slack: one history call a minute) declares a smaller ``segment_budget`` on
 #: its driver; the loop then round-robins by ``last_attempted_at`` so every
 #: stream still converges, just over more ticks.
-DEFAULT_STREAM_BUDGET = 5
+DEFAULT_SEGMENT_BUDGET = 5
 
 
 async def sync_source(
     source: DataSource,
     *,
     now: Optional[datetime] = None,
-    budget: int = DEFAULT_STREAM_BUDGET,
+    budget: int = DEFAULT_SEGMENT_BUDGET,
 ) -> IngestReport:
     """Run one cycle. Never raises: a failure is recorded as health, not thrown."""
     now = now or datetime.now(timezone.utc)
@@ -80,7 +81,7 @@ async def sync_source(
     cursors = await _cursors_for(source, driver)
     # The driver's ceiling is a limit, not a preference — `min`, so a caller
     # asking for more streams cannot spend a budget the provider does not have.
-    due = _round_robin(cursors, min(budget, getattr(driver, "stream_budget", budget)))
+    due = _round_robin(cursors, min(budget, getattr(driver, "segment_budget", budget)))
 
     for cursor in due:
         combined.outcomes.extend((await _sync_stream(source, driver, cursor, now)).outcomes)
@@ -101,8 +102,8 @@ async def _sync_stream(source, driver, cursor: DataSourceCursor, now: datetime) 
     report = IngestReport()
     cursor.last_attempted_at = now
 
-    view = StreamCursorView(
-        stream_key=cursor.stream_key,
+    view = SegmentCursorView(
+        segment_key=cursor.segment_key,
         state=dict(cursor.state or {}),
         window_start=source.window_floor(now).isoformat(),
         first_run=cursor.last_synced_at is None,
@@ -118,13 +119,29 @@ async def _sync_stream(source, driver, cursor: DataSourceCursor, now: datetime) 
         cursor.consecutive_failures = (cursor.consecutive_failures or 0) + 1
         # Cursor position deliberately NOT advanced.
         await cursor.save()
-        logger.warning("[ingest] %s stream %s failed: %s", source.provider, cursor.stream_key, code)
+        logger.warning("[ingest] %s stream %s failed: %s", source.provider, cursor.segment_key, code)
         return report
 
+    # ── the two destinations ───────────────────────────────────────────────
+    #
+    # A driver's payload lands EITHER in the graph as a record or on disk as an
+    # asset, never both. `ingest_items` stays the single chokepoint for
+    # SourceItem writes — reflection is a second destination beside it, not a
+    # branch inside it, so that invariant survives a source whose payload is a
+    # file.
+    #
+    # Which one is chosen by the SOURCE (`reflect`), not the driver: the same
+    # folder could reasonably be mirrored as records or as assets, and a driver
+    # that decided this would be deciding a policy question with only transport
+    # knowledge.
     if not result.unchanged and result.items:
         report = await ingest_items(
             result.items,
             mode=IngestMode.for_run(first_run=view.first_run, item_count=len(result.items)),
+        )
+    if not result.unchanged and (result.refs or result.tombstones):
+        await reflect_refs(
+            source, list(result.refs), list(result.tombstones), dict(result.renames)
         )
 
     # ── records are committed; only now does the cursor move ──
@@ -161,15 +178,15 @@ async def _cursors_for(source: DataSource, driver) -> list[DataSourceCursor]:
     budget only fetches a few of them.
     """
     existing = {
-        c.stream_key: c
+        c.segment_key: c
         for c in await DataSourceCursor.get_all({"data_source_id": source.id})
     }
     out: list[DataSourceCursor] = []
-    for ref in driver.streams(source):
+    for ref in driver.segments(source):
         cursor = existing.get(ref.key)
         if cursor is None:
             cursor = await DataSourceCursor.ensure_for(
-                source.id, ref.key, stream_label=ref.label
+                source.id, ref.key, segment_label=ref.label
             )
         out.append(cursor)
     return [c for c in out if c.enabled]
@@ -193,7 +210,7 @@ def _round_robin(cursors: list[DataSourceCursor], budget: int) -> list[DataSourc
 async def _roll_up(source: DataSource, cursors: list[DataSourceCursor], now: datetime) -> None:
     # Free: this row is being written anyway, and it saves every list surface
     # from watching the cursor table live just to render a count.
-    source.stream_count = len(cursors)
+    source.segment_count = len(cursors)
     health = worst_of([c.health for c in cursors])
     source.health = health.value
     offender = next(

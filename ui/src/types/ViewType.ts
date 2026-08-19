@@ -286,6 +286,12 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
+  [ViewType.ORGANIZATION]: {
+    title: msg`Organization`,
+    iconName: 'Building2',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
   [ViewType.TAG]: {
     title: msg`Tag Graph`,
     iconName: 'Hash',

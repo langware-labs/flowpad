@@ -170,7 +170,7 @@ async def commit_asset_change(real_path: str) -> dict | None:
     return await _bump_version_and_commit(real_path, Path(real_path).read_text(encoding="utf-8"))
 
 
-async def autoversion_commit_local(storage, vfs_abs_path: str, content: str) -> None:
+async def autoversion_commit_local(storage, vfs_abs_path: str, content: str, *, real_path: str | None = None) -> None:
     """Bump frontmatter ``version`` and commit on save, for frontmatter-bearing
     files in a git repo on local storage. The bump is written directly to the real
     path (not back through the ``write`` action), so it never re-enters this hook.
@@ -178,7 +178,7 @@ async def autoversion_commit_local(storage, vfs_abs_path: str, content: str) -> 
     try:
         if not isinstance(content, str):
             return
-        real = _real_path(storage, vfs_abs_path)
+        real = real_path if real_path is not None else _real_path(storage, vfs_abs_path)
         if not real:
             return  # remote/sandbox storage — no local git tree
         await _bump_version_and_commit(real, content)
