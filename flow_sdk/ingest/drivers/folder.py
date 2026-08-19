@@ -77,9 +77,6 @@ def _manifest(root: Path) -> dict:
 class FolderDriver:
     provider = "folder"
     kind = "datasource.fs.folder"
-    #: Declared for protocol symmetry only. Nothing stamps it, because this
-    #: driver never produces an IngestItem — its payload lands as files.
-    record_kind = ""
 
     def source_root(self, source):
         """The watched directory — the base every ref is relative to."""
@@ -106,7 +103,7 @@ class FolderDriver:
         st = Path(ref).stat()  # OSError → the caller falls back to the path
         return f"{self.provider}:{source.id}:ino:{st.st_dev}:{st.st_ino}"
 
-    def segments(self, source) -> list[SegmentRef]:
+    async def segments(self, source) -> list[SegmentRef]:
         root = (source.config or {}).get("root") or ""
         return [SegmentRef(key=ROOT_SEGMENT, label=str(root))] if root else []
 

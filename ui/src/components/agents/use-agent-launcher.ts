@@ -29,16 +29,19 @@ import { embedVibeSubagent } from '@src/pages/flow-page/use-start-vibe-session';
  * controller for the whole list rather than a hook per row, so `busy` is the
  * id of the agent being launched (the shape `VibeAgentsCard` already uses).
  */
-export function useAgentLauncher(): { launch: (agent: Agent) => Promise<void>; busyId: string | null } {
+export function useAgentLauncher(): {
+  launch: (agent: Agent, projectId?: string | null) => Promise<void>;
+  busyId: string | null;
+} {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const launch = useCallback(
-    async (agent: Agent) => {
+    async (agent: Agent, projectId?: string | null) => {
       setBusyId(agent.id);
       try {
-        const result = await agent.use();
+        const result = await agent.use(projectId ?? null);
         const proc = await AgenticProcess.getById<AgenticProcess>(result.process_id);
         if (proc) {
           // Watcher-scoped events (status, turns) reach the pane only for a

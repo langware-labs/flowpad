@@ -25,7 +25,7 @@ context ref resolves. Local origins keep the legacy path-derived v5 id
 links are untouched (zero migration).
 """
 
-from typing import Optional
+from typing import ClassVar, Optional
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.builtin.fs_origin import FSOrigin, is_safe_rel_path
@@ -33,7 +33,7 @@ from flow_sdk.builtin.fs_origin_field import FSOriginField
 from flow_sdk.builtin.local_origin import LocalOrigin
 from flow_sdk.core import Entity, action
 from flow_sdk.fs_store.identifier import mint_uuid
-from flow_sdk.fs_store.path_utils import canonical_posix_path
+from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under
 from flow_sdk.schema.types import EntityType
 
 
@@ -51,6 +51,11 @@ class Folder(Entity):
     # LOCAL resolved-path cache on THIS machine (see module docstring). Not the
     # transportable identity; set at add time (sender) or on resolve (receiver).
     path: Optional[str] = APIField(default=None, description="Local resolved path of the directory (per-machine cache)", sharing=Sharing.PRIVATE)
+
+    #: Memoized borrowed-checkout roots (see ``borrowed_checkout_paths``).
+    #: Declared here so the attribute exists rather than being conjured by the
+    #: first write and read back through ``getattr(..., None)``.
+    _borrowed_cache: ClassVar[Optional[set]] = None
 
     def __init__(self, **data):
         # Tolerant backfill: an old row / bundle may carry a legacy ``path`` or
@@ -176,6 +181,17 @@ class Folder(Entity):
         origin = await cls.detect_origin(canonical)
         return await cls.mint_for_origin(origin, local_path=canonical)
 
+    async def save(self, owner=None, notify: bool = True) -> "Folder":
+        """Persist, then drop the borrowed-paths memo this row feeds.
+
+        Attaching, detaching or re-materializing a folder is exactly what
+        changes the answer to "may I write here?", so the memo is invalidated
+        where that happens rather than being given a lifetime to expire on.
+        """
+        saved = await super().save(owner, notify)
+        type(self)._invalidate_borrowed_cache()
+        return saved
+
     @classmethod
     async def borrowed_checkout_paths(cls) -> set:
         """Canonical paths of every directory we materialized from a TRANSPORTABLE
@@ -196,13 +212,45 @@ class Folder(Entity):
         (there are at least three: context-folder add, folder resolve, and the
         project walk that owns a checkout it did not attach).
         """
+        if cls._borrowed_cache is not None:
+            return cls._borrowed_cache
         paths = set()
         for folder in await cls.get_all():
             origin = folder.origin
             if origin is None or not origin.transportable or not folder.path:
                 continue
             paths.add(canonical_posix_path(folder.path))
+        cls._borrowed_cache = paths
         return paths
+
+    @classmethod
+    async def is_borrowed_path(cls, path: str) -> bool:
+        """Is ``path`` inside a checkout of somebody else's repo?
+
+        The per-path form of :meth:`borrowed_checkout_paths`, for the callers
+        that hold one path rather than a list of roots to filter. Asked on the
+        entity-save path, so it reads through the cache below rather than
+        re-scanning the Folder table (and re-``realpath``-ing every row) for
+        every save.
+        """
+        if not path:
+            return False
+        roots = await cls.borrowed_checkout_paths()
+        canonical = canonical_posix_path(path)
+        return any(is_path_under(canonical, root) for root in roots)
+
+    @classmethod
+    def _invalidate_borrowed_cache(cls) -> None:
+        """Drop the memoized borrowed set. Called whenever a Folder is written.
+
+        The set changes only when a folder is attached, detached or
+        re-materialized — a handful of times per session — while it is READ on
+        every save of a file-backed entity. Memoizing it turns an unbounded
+        ``get_all()`` + one ``realpath`` per row into a set-membership test;
+        invalidating on write is what keeps that correct rather than merely
+        fast.
+        """
+        cls._borrowed_cache = None
 
     # ── Materialize ──────────────────────────────────────────────────────────
 

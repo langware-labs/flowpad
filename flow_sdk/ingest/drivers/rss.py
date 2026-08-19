@@ -35,7 +35,7 @@ class RssDriver:
     kind = "datasource.feed.rss"
     record_kind = "content.feed.item"
 
-    def segments(self, source) -> list[SegmentRef]:
+    async def segments(self, source) -> list[SegmentRef]:
         urls = (source.config or {}).get("feed_urls") or []
         return [SegmentRef(key=str(u), label=str(u)) for u in urls]
 

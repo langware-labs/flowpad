@@ -130,7 +130,12 @@ async def helpdesk_ensure(project_id: str = "") -> ApiResponse:
 
     if project_id:
         adopted = await resolve_adopted_helpdesk(project_id)
-        if adopted is not None:
+        # ``portal_project_id`` is what the caller navigates to, so the adopted
+        # shortcut only applies when the checkout has a Project of its own. A
+        # desk adopted by path still routes TICKETS (that needs only the queue
+        # id) — it just cannot be opened as a project home, so opening falls
+        # through to the instance-wide desk below.
+        if adopted is not None and adopted.portal_project_id:
             return ApiSuccessResponse(
                 data={
                     "project_id": adopted.portal_project_id,
