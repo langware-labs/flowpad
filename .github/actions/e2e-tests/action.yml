@@ -24,6 +24,13 @@ runs:
       shell: bash
       working-directory: ui
 
+    # The live-backend vitest tiers spawn real claude workers (createProcess
+    # refuses with "Claude CLI is not installed" otherwise) — same install the
+    # backend-api job does.
+    - name: Install Claude Code
+      run: npm install -g @anthropic-ai/claude-code
+      shell: bash
+
     # ---- Instance contract (see ui/tests/headless/_backend.ts) ----
     # The headless tier requires FLOW_INSTANCE, .env.<name>.local at the repo
     # root, and $FLOW_HOME/instances/<name>/launcher.json with the LIVE
