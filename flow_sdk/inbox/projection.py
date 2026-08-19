@@ -30,6 +30,8 @@ import logging
 import re
 from typing import Any, Optional
 
+from pydantic import BaseModel
+
 logger = logging.getLogger(__name__)
 
 #: How many un-projected items one reconcile pass will catch up. A first Gmail
@@ -255,10 +257,11 @@ async def _refresh_projected_fields(fm, payload: dict, *, notify: bool) -> None:
             continue
         wanted = payload[field]
         current = getattr(fm, field, None)
-        # `origin` / `origin_local` round-trip as models; compare on the wire
+        # A model-valued field round-trips as its dump; compare on the wire
         # shape so a pydantic instance and its dump don't read as different
-        # every poll.
-        if field in ("origin", "origin_local") and current is not None and not isinstance(current, dict):
+        # every poll. Keyed on what the value IS, not on which names happen to
+        # be model-valued today — a third one must not have to be listed here.
+        if isinstance(current, BaseModel):
             current = current.model_dump()
         if current != wanted:
             setattr(fm, field, wanted)

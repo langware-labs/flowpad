@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import type { Agent } from '@sdk';
+import { Agent } from '@sdk';
 import { ExternalLink } from 'lucide-react';
 
 import { Badge } from '@src/components/ui/badge';
@@ -9,6 +9,7 @@ import { workerLabel } from '@src/components/lens-viewer/shared/transcript-featu
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@src/components/ui/hover-card';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { cn } from '@src/lib/utils';
 import { AgentAvatar } from './AgentAvatar';
 
@@ -111,11 +112,13 @@ export function AgentIntroCard({ agent, children, trigger = 'click' }: AgentIntr
   );
 }
 
-/** The small uppercase "agent" type chip shown beside an agent's name. */
+/** The small uppercase type chip shown beside an agent's name. The word comes
+ *  from the type registry (`TypeInfo.display_name`), the same choke point the
+ *  section heading uses — a literal here would fork the type's own name. */
 export function AgentTypeChip({ className }: { className?: string }) {
   return (
     <Badge variant="outline" className={cn('text-[10px] font-normal uppercase tracking-wider text-muted-foreground', className)}>
-      <Trans>agent</Trans>
+      {labelForType(Agent.type)}
     </Badge>
   );
 }

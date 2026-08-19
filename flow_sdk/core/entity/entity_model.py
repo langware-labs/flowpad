@@ -759,12 +759,46 @@ class Entity(DBEntity):
         # would be decided by SchemaRegistry iteration order, i.e. correct for a
         # type registered before it and silently wrong for one registered after.
         candidates = cls.asset_owner_classes()
+        hit = await cls.first_across_asset_owners(
+            "asset_ref", path_str, strict=strict, candidates=candidates
+        )
+        if hit is not None:
+            return hit
+
+        if not resolve_containing:
+            return None
+        return await cls._get_by_containing_folder(path_str, candidates)
+
+    @classmethod
+    async def first_across_asset_owners(
+        cls,
+        field: str,
+        value: str,
+        *,
+        strict: bool = False,
+        candidates: "list[type[Entity]] | None" = None,
+    ) -> "Entity | None":
+        """First row across every asset-owning type whose ``field`` equals ``value``.
+
+        The fan-out itself, held once: a base-class query does not reach
+        concrete-type rows, so any "which entity does this handle name" question
+        — ``asset_ref``, ``origin_id`` — has to ask each owner. Shared so a
+        second caller cannot re-acquire the swallow-and-return-None behaviour
+        this one deliberately gave up.
+
+        ``strict`` raises :class:`AssetRefLookupError` when any candidate query
+        ERRORED, instead of reporting the handle as unowned. Pass it from every
+        caller that WRITES on a miss (minting, deleting).
+        """
+        import asyncio  # noqa: PLC0415
+
+        candidates = cls.asset_owner_classes() if candidates is None else candidates
 
         # `return_exceptions` keeps the per-candidate resilience — one broken type
         # must not sink the fan-out — while still telling a failed probe apart
         # from one that genuinely found nothing.
         results = await asyncio.gather(
-            *[c.get_one({"asset_ref": path_str}) for c in candidates], return_exceptions=True
+            *[c.get_one({field: value}) for c in candidates], return_exceptions=True
         )
         failed = sum(1 for r in results if isinstance(r, BaseException))
         for result in results:
@@ -776,18 +810,15 @@ class Entity(DBEntity):
             # which fails EVERY candidate at once — ~26 of them — so logging per
             # candidate turns one locked database into 26 tracebacks per path.
             logging.getLogger(__name__).warning(
-                "asset_ref lookup failed for %d/%d types on %s", failed, len(results), path_str
+                "%s lookup failed for %d/%d types on %s", field, failed, len(results), value
             )
             # A partial failure makes "not found" unreliable, so a strict caller
-            # is told rather than handed a None it would act on — and before the
-            # containment fallback, since a fan-out we could not trust makes a
-            # containment miss untrustworthy too.
+            # is told rather than handed a None it would act on — and before any
+            # fallback, since a fan-out we could not trust makes a fallback miss
+            # untrustworthy too.
             if strict:
-                raise AssetRefLookupError(f"asset_ref lookup incomplete for {path_str}")
-
-        if not resolve_containing:
-            return None
-        return await cls._get_by_containing_folder(path_str, candidates)
+                raise AssetRefLookupError(f"{field} lookup incomplete for {value}")
+        return None
 
     @classmethod
     async def _get_by_containing_folder(cls, path_str: str, candidates: list[type]) -> "Entity | None":

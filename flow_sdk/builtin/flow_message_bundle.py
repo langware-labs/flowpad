@@ -219,9 +219,7 @@ def _write_top_level_header(flow_message: "FlowMessage", tmp_root: Path) -> None
         raw = att.get("data", "")
         if raw.startswith((FILE_VFS_PREFIX, PROMPT_FILE_VFS_PREFIX)):
             att["data"] = f"attachment/files/{Path(raw).name}"
-    (tmp_root / _FLOW_MESSAGE_FILE).write_text(
-        json.dumps(msg_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
-    )
+    _write_json(tmp_root / _FLOW_MESSAGE_FILE, msg_data)
 
 
 def _pack_file_attachment(entry, flow_message: "FlowMessage", attachment_dir: Path) -> None:
@@ -289,9 +287,7 @@ async def _pack_flowpad_diagnosis_attachment(entry_id: str, attachment_dir: Path
         },
         context={"skip_api_serializer": True},
     )
-    (diag_dir / "header.json").write_text(
-        json.dumps(diag_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
-    )
+    _write_json(diag_dir / "header.json", diag_data)
 
 
 async def _pack_remote_worker_session_attachment(entry_id: str, attachment_dir: Path) -> None:
@@ -318,9 +314,7 @@ async def _pack_remote_worker_session_attachment(entry_id: str, attachment_dir: 
         include=set(RemoteWorkerSession.SNAPSHOT_FIELDS),
         context={"skip_api_serializer": True},
     )
-    (rws_dir / "header.json").write_text(
-        json.dumps(rws_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
-    )
+    _write_json(rws_dir / "header.json", rws_data)
 
 
 async def _pack_conversation_attachment(
@@ -373,10 +367,7 @@ async def _pack_conversation_attachment(
         # stores it on the local Conversation so both sides render the same row.
         "title": (conv.title or None),
     }
-    (conv_dir / "header.json").write_text(
-        json.dumps(conv_header, default=_json_default, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    _write_json(conv_dir / "header.json", conv_header)
     await _pack_flow_message_entry(flow_message.id, attachment_dir)
 
 
@@ -533,10 +524,7 @@ def _write_git_transfer_metadata(
     rel = PurePosixPath("metadata") / key / "metadata.json"
     dest = tmp_root / rel
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(
-        json.dumps(_read_file_backed_metadata(entry_type, entry_id, ent), default=_json_default, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    _write_json(dest, _read_file_backed_metadata(entry_type, entry_id, ent))
     return rel.as_posix()
 
 
@@ -569,14 +557,7 @@ def _write_graph_git_transfer_metadata(
     rel = PurePosixPath("metadata") / key / "metadata.json"
     dest = tmp_root / rel
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(
-        json.dumps(
-            _read_graph_entity_metadata(entry_type, entry_id, ent, strip=strip),
-            default=_json_default,
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
+    _write_json(dest, _read_graph_entity_metadata(entry_type, entry_id, ent, strip=strip))
     return rel.as_posix()
 
 
@@ -2122,18 +2103,12 @@ async def pack_bundle(
             )
             await _collect_attachment_envelopes(entry, entities)
         if entities:
-            (tmp_root / _ENTITIES_FILE).write_text(
-                json.dumps(entities, default=_json_default, ensure_ascii=False), encoding="utf-8"
-            )
+            _write_json(tmp_root / _ENTITIES_FILE, entities)
         _write_origin_files(tmp_root, origins)
         if transfers:
-            (tmp_root / _GIT_TRANSFERS_FILE).write_text(
-                json.dumps(transfers, default=_json_default, ensure_ascii=False), encoding="utf-8"
-            )
+            _write_json(tmp_root / _GIT_TRANSFERS_FILE, transfers)
         if create_bookmark:
-            (tmp_root / _SHARE_OPTIONS_FILE).write_text(
-                json.dumps({"create_bookmark": True}, ensure_ascii=False), encoding="utf-8"
-            )
+            _write_json(tmp_root / _SHARE_OPTIONS_FILE, {"create_bookmark": True})
         return _zip_bundle(tmp_root, dest_dir, flow_message.id)
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)
@@ -2155,9 +2130,7 @@ async def _pack_flow_message_entry(fm_id: str, attachment_dir: Path) -> None:
         include=_FM_FIELDS,
         context={"skip_api_serializer": True},
     )
-    (fm_dir / "header.json").write_text(
-        json.dumps(fm_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
-    )
+    _write_json(fm_dir / "header.json", fm_data)
 
 
 def _write_json(path: Path, data) -> None:

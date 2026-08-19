@@ -23,6 +23,7 @@ from pydantic import model_validator
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
+from flow_sdk.core.entity.legacy_fields import adopt_renamed
 from flow_sdk.ingest.health import SourceHealth
 from flow_sdk.schema.types import EntityType
 
@@ -58,22 +59,14 @@ class DataSourceCursor(Entity):
     def _adopt_legacy_stream_key(cls, data):
         """Rows written before the segment rename carry ``stream_key``.
 
-        Without this they load with an empty ``segment_key`` — and for
-        ``SourceItem`` that is part of the natural key, so every pre-rename
-        record would fail to resolve and the next poll would mint a duplicate
-        of it. Same shape as ``DataSource._adopt_legacy_enabled``.
+        Without this they load with an empty ``segment_key``, so a pre-rename
+        cursor reads as a segment that was never polled and the next fetch
+        re-walks it from the start. Same shape as
+        ``DataSource._adopt_legacy_enabled``.
         """
-        if not isinstance(data, dict):
-            return data
-        renamed = {"stream_key": "segment_key", "stream_label": "segment_label"}
-        if not any(k in data for k in renamed):
-            return data
-        data = dict(data)
-        for old_key, new_key in renamed.items():
-            value = data.pop(old_key, None)
-            if value is not None and not data.get(new_key):
-                data[new_key] = value
-        return data
+        return adopt_renamed(
+            data, {"stream_key": "segment_key", "stream_label": "segment_label"}
+        )
 
     @classmethod
     async def ensure_for(

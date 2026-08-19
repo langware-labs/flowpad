@@ -23,12 +23,13 @@ costs nothing.
 """
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
 from flow_sdk.ingest.driver import FetchResult, SetupVerdict, SegmentCursorView, SegmentRef
 from flow_sdk.ingest.health import SourceError
-from flow_sdk.utils.git import _run_git, git_current_branch, git_remote_url
+from flow_sdk.utils.git import _run_git, git_remote_url
 
 #: Git's empty tree. Diffing against it yields "everything currently present",
 #: so a first run needs no separate listing path — one code path, and the
@@ -41,10 +42,27 @@ RENAME_SIMILARITY = "50%"
 
 
 def _repo_of(source) -> Path:
+    """The repository root, normalized once. ``GitDriver.source_root`` is the
+    optional-valued view of this, so both spellings resolve identically — a
+    driver that held an unresolved path while ``reflect`` held a resolved one
+    would compute ``relative_to`` against a different prefix than it stamps."""
     raw = (source.config or {}).get("repo") or ""
     if not raw:
         raise SourceError.config("no_repo", "config.repo is not set")
-    return Path(raw).expanduser()
+    return Path(raw).expanduser().resolve()
+
+
+@lru_cache(maxsize=64)
+def _remote_url(repo: str) -> str:
+    """``git config --get remote.origin.url``, resolved once per repository.
+
+    ``origin_id_for`` runs per changed ref and the URL is a property of the
+    repository, not of the ref — spawning a subprocess per file made a 50-file
+    commit pay 50 of them on the event loop. Cached for the process: a remote
+    that is re-pointed mid-run keeps minting against the URL the run started
+    with, which is the stable answer anyway.
+    """
+    return git_remote_url(repo)
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -74,8 +92,9 @@ class GitDriver:
 
     def source_root(self, source):
         """The repository root — refs are repo-relative, and must stay so."""
-        raw = (source.config or {}).get("repo") or ""
-        return Path(raw).expanduser().resolve() if raw else None
+        if not ((source.config or {}).get("repo") or ""):
+            return None
+        return _repo_of(source)
 
     def origin_id_for(self, source, ref: str) -> str:
         """``GitOrigin.key()`` — the repo-relative position of this asset.
@@ -92,8 +111,8 @@ class GitDriver:
         from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
 
         repo = _repo_of(source)
-        rel = Path(ref).resolve().relative_to(repo.resolve()).as_posix()
-        origin = GitOrigin.from_url(git_remote_url(str(repo)), rel_path=rel)
+        rel = Path(ref).resolve().relative_to(repo).as_posix()
+        origin = GitOrigin.from_url(_remote_url(str(repo)), rel_path=rel)
         if origin is None:
             # No parseable remote — fall through to the generic path handle
             # rather than inventing a second git-shaped key.
@@ -117,7 +136,7 @@ class GitDriver:
         raw = (source.config or {}).get("repo") or ""
         if not raw:
             return SetupVerdict.waiting("Set the repository to track.")
-        repo = Path(raw).expanduser()
+        repo = _repo_of(source)
         if not (repo / ".git").exists():
             return SetupVerdict.waiting(f"{repo} is not a git repository.")
         try:

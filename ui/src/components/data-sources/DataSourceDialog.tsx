@@ -8,9 +8,9 @@
  * corrected later. For the agent transport the channel IS `config.connector`,
  * which the form does set — through the field that owns it.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { DataSource, type SourceStatus } from '@sdk';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Trans } from '@lingui/react/macro';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 import {
@@ -91,7 +91,6 @@ export function DataSourceDialog({
   /** When set, the form edits this source instead of creating one. */
   editing?: DataSource | null;
 }) {
-  const { t } = useLingui();
   // Whatever is INSTALLED, not a hardcoded list: a source added as an asset
   // shows up here with no frontend release.
   const { specs, specFor } = useSourceSpecs();
@@ -99,11 +98,19 @@ export function DataSourceDialog({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // Seed the form once per opening, keyed on WHAT is being edited. `specs` /
+  // `specFor` change identity on every live `DataSourceSpec` emission, and
+  // depending on them re-seeded the draft mid-typing — discarding whatever had
+  // been entered. The spec is read through a ref so the seed still sees the
+  // current one without subscribing the effect to it.
+  const seedRef = useRef({ specFor, specs });
+  seedRef.current = { specFor, specs };
   useEffect(() => {
     if (!open) return;
-    setDraft(editing ? draftFrom(editing, specFor(editing.provider)) : emptyDraft(specs[0]?.name ?? ''));
+    const { specFor: lookup, specs: available } = seedRef.current;
+    setDraft(editing ? draftFrom(editing, lookup(editing.provider)) : emptyDraft(available[0]?.name ?? ''));
     setShowAdvanced(false);
-  }, [open, editing, specFor, specs]);
+  }, [open, editing]);
 
   const spec = specFor(draft.provider);
   const problems = useMemo(() => validateDraft(draft, spec), [draft, spec]);
@@ -172,7 +179,7 @@ export function DataSourceDialog({
             id={`ds-${key}`}
             rows={3}
             value={value}
-            placeholder={field.placeholder ? t(field.placeholder) : undefined}
+            placeholder={field.placeholder || undefined}
             onChange={(e) => setField(key, e.target.value)}
           />
         ) : (
@@ -180,11 +187,11 @@ export function DataSourceDialog({
             id={`ds-${key}`}
             type={field.type === FieldType.NUMBER ? 'number' : 'text'}
             value={value}
-            placeholder={field.placeholder ? t(field.placeholder) : undefined}
+            placeholder={field.placeholder || undefined}
             onChange={(e) => setField(key, e.target.value)}
           />
         )}
-        {field.hint && <p className="text-xs text-muted-foreground">{t(field.hint)}</p>}
+        {field.hint && <p className="text-xs text-muted-foreground">{field.hint}</p>}
       </div>
     );
   };
