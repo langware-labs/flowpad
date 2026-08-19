@@ -177,6 +177,36 @@ git clone --branch "$BASE_BRANCH" --single-branch "$CLONE_URL"
 
 `.env.local` is restored in Phase 4, once the QA branch exists.
 
+### Refresh the user-level copy of this skill
+
+This skill must exist **outside** the workspace, because `flowpad-qa.service`
+runs `claude` with `WorkingDirectory=/home/claudeuser` — project-skill
+discovery therefore looks in `~/.claude/skills/`, not in the checkout. A copy
+that lives only in the repo is invisible to the unit, and Phase 2 deletes the
+checkout anyway, so pointing the cwd at it is not an option either.
+
+That leaves a second copy, and a second copy drifts. Re-sync it from the clone
+that was *just* fetched, so every run picks up whatever `release/v0.2` now says:
+
+```bash
+USER_SKILL="$HOME/.claude/skills/e2e-qa-on-vm"
+rm -rf "$USER_SKILL"
+mkdir -p "$USER_SKILL"
+cp -a "$APP_DIR/.claude/skills/e2e-qa-on-vm/." "$USER_SKILL/"
+```
+
+`cp -a` after a `rm -rf`, not `rsync --delete`: the QA image has no `rsync`, and
+a plain `cp -a` over an existing directory would leave files behind that the
+skill has since deleted.
+
+The refresh lands here, after the clone, rather than at the start: it takes
+effect from the **next** run, since the current process already loaded the
+version it is executing. That is intentional — a run always finishes under the
+skill it started with, and never swaps its own instructions mid-flight.
+
+On a VM built from a fresh image the user-level copy must be seeded once by
+hand, or the very first run has no skill to invoke.
+
 ---
 
 ## Phase 4 — Cut the QA branch
