@@ -119,7 +119,7 @@ class GitDriver:
             return ""
         return str(origin.key())
 
-    def segments(self, source) -> list[SegmentRef]:
+    async def segments(self, source) -> list[SegmentRef]:
         """One scope per branch.
 
         Not per subdirectory: a directory is a mutable grouping, and a path that

@@ -23,6 +23,7 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.ingest.driver import SegmentCursorView
 from flow_sdk.ingest.drivers.script import ScriptSource, ScriptSourceWithSetup, driver_for_spec
 from flow_sdk.ingest.health import SourceError
@@ -31,12 +32,17 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase t
 
 
 class _Spec:
-    """The fields `driver_for_spec` reads off a spec row / FSRecord."""
+    """The fields `driver_for_spec` reads off a spec row / FSRecord.
+
+    `asset_ref` is an **FSRef**, not a string: that is what the entity carries on
+    the in-process path, and a string stub is why a real instance once looked for
+    `fetch.py` inside a folder literally named `FSRef('/…')`.
+    """
 
     def __init__(self, folder: Path, **over):
         self.name = over.get("name", "acme")
         self.runtime = over.get("runtime", "script")
-        self.asset_ref = str(folder)
+        self.asset_ref = FSRef(folder)
         self.traits = over.get("traits", {"emits": "content.doc"})
         self.auth = over.get("auth", {})
         self.setup_wiki = over.get("setup_wiki", "")
@@ -207,6 +213,19 @@ async def test_traits_become_the_declared_attributes(tmp_path):
     assert driver.channel_for(_Source()) == "acme"
     # A source mirroring somebody else's tree must not stamp identity into it.
     assert driver.stamps_identity is False
+
+
+async def test_a_plain_string_asset_ref_also_resolves(tmp_path):
+    # The entity declares `asset_ref` as `Optional[str]`, so a row hydrated over
+    # HTTP carries a string while the in-process one carries an FSRef. Both have
+    # to find the module.
+    _module(tmp_path, "print(json.dumps({'segments':[{'key':'a'}]}))")
+    spec = _Spec(tmp_path)
+    spec.asset_ref = str(tmp_path)
+
+    refs = await driver_for_spec(spec).segments(_Source())
+
+    assert [r.key for r in refs] == ["a"]
 
 
 async def test_a_builtin_runtime_spec_gets_no_adapter(tmp_path):

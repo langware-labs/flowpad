@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.ingest.digest import content_digest
 from flow_sdk.ingest.driver import SegmentCursorView
 from flow_sdk.ingest.drivers.rss import RssDriver
@@ -78,7 +79,7 @@ class _Spec:
     def __init__(self, folder: Path, name: str):
         self.name = name
         self.runtime = "script"
-        self.asset_ref = str(folder)
+        self.asset_ref = FSRef(folder)
         # `emits` must match what the builtin stamps, or the digest differs on
         # `kind` alone and the comparison would be vacuous.
         self.traits = {"emits": RssDriver.record_kind}
@@ -121,6 +122,6 @@ async def test_the_authored_source_enumerates_the_same_segments(tmp_path):
         source = make_data_source("rss_authored", config={"feed_urls": [feed]})
 
         authored = await driver_for_spec(_Spec(tmp_path / "rss_authored", "rss_authored")).segments(source)
-        builtin = RssDriver().segments(make_data_source("rss", config={"feed_urls": [feed]}))
+        builtin = await RssDriver().segments(make_data_source("rss", config={"feed_urls": [feed]}))
 
     assert [s.key for s in authored] == [s.key for s in builtin] == [feed]

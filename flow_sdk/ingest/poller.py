@@ -104,9 +104,8 @@ async def _heartbeat_dispatch() -> None:
     import flow_sdk.ingest.drivers  # noqa: F401, PLC0415 — register shipped drivers
     from flow_sdk.ingest.spec_registry import refresh_spec_drivers  # noqa: PLC0415
 
-    # Authored sources come from rows, not imports. This is the backstop that
-    # makes a spec edited on disk live within one cadence; the post-sync hook
-    # normally beats it to the punch.
+    # Authored sources come from rows, not imports, so the registry is swept
+    # here — a spec written or edited on disk is live within one cadence.
     await refresh_spec_drivers()
 
     dispatched = await dispatch_due_sources()

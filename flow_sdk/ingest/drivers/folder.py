@@ -106,7 +106,7 @@ class FolderDriver:
         st = Path(ref).stat()  # OSError → the caller falls back to the path
         return f"{self.provider}:{source.id}:ino:{st.st_dev}:{st.st_ino}"
 
-    def segments(self, source) -> list[SegmentRef]:
+    async def segments(self, source) -> list[SegmentRef]:
         root = (source.config or {}).get("root") or ""
         return [SegmentRef(key=ROOT_SEGMENT, label=str(root))] if root else []
 

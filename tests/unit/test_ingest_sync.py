@@ -65,7 +65,7 @@ class _FakeDriver:
         self._behaviour = behaviour
         self.calls: list[str] = []
 
-    def segments(self, source):
+    async def segments(self, source):
         return [SegmentRef(key=k, label=k) for k in self._streams]
 
     async def fetch(self, source, cursor):

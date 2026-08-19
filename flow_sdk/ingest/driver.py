@@ -249,8 +249,14 @@ class IngestDriver(Protocol):
         """
         ...
 
-    def segments(self, source: "DataSource") -> list[SegmentRef]:
-        """The syncable units of ``source``, derived from its config."""
+    async def segments(self, source: "DataSource") -> list[SegmentRef]:
+        """The syncable units of ``source``.
+
+        Async for every driver, not because the nine builtins need it — they
+        answer from ``source.config`` — but because a source whose driver is an
+        authored module has to SPAWN it to know, and one signature that is true
+        for all ten beats nine truths and a special case at the call site.
+        """
         ...
 
     async def fetch(self, source: "DataSource", cursor: SegmentCursorView) -> FetchResult:
