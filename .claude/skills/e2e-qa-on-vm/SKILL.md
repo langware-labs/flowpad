@@ -35,11 +35,13 @@ default identity has no access.
 
 ---
 
-## Phase 0 — Preflight (all three must pass)
+## Phase 0 — Preflight (all four must pass)
 
-Run all three before touching the filesystem. **If any fails, report which one
-and stop.** Phase 2 deletes the working tree; never reach it on a VM that
-cannot finish the run.
+Run all four before touching the filesystem. **If any fails, report which one
+and stop.** Phase 2 deletes the workspace; never reach it on a VM that cannot
+finish the run. Each check proves a capability the run depends on *later* —
+write access, a working mail credential, the app, the ports file — because
+every one of those failing after Phase 2 costs the whole cycle.
 
 ### 0.1 Git write permission
 
@@ -63,7 +65,7 @@ behind:
 git ls-remote --heads "$CLONE_URL" 'qa-write-probe*'   # must print nothing
 ```
 
-### 0.2 SendGrid API key present
+### 0.2 SendGrid API key present **and valid**
 
 ```bash
 [[ -f "$MAIL_ENV" ]] || { echo "FAIL: $MAIL_ENV missing"; exit 1; }
@@ -71,6 +73,21 @@ set -a; source "$MAIL_ENV"; set +a
 [[ -n "${SMTP_PASS:-}" && -n "${SMTP_URL:-}" && -n "${SMTP_FROM:-}" ]] \
   || { echo "FAIL: SMTP_* incomplete in $MAIL_ENV"; exit 1; }
 ```
+
+A non-empty variable only proves a key was written, not that it still works —
+and a rotated or revoked key would then fail in Phase 6, after the whole cycle
+has run and the VM is about to stop. Authenticate for real. `-X "NOOP"` does
+EHLO + AUTH and disconnects, so this **sends no mail**:
+
+```bash
+curl --silent --show-error --ssl-reqd --url "$SMTP_URL" \
+  --user "${SMTP_USER}:${SMTP_PASS}" -X "NOOP" --max-time 30 -v 2>&1 \
+  | sed "s/${SMTP_PASS}/***/g" | grep -qE '^< 235 ' \
+  || { echo "FAIL: SendGrid rejected the key (no 235)"; exit 1; }
+```
+
+Same reasoning as the `--dry-run` push probe in 0.1: prove the credential works
+now, not after the expensive part.
 
 Never echo `SMTP_PASS`. The file is `0600` and holds a live SendGrid key;
 mask it (`sed "s/${SMTP_PASS}/***/g"`) in any command output you surface.
@@ -89,6 +106,23 @@ from the checkout below.
 which flow && flow --help >/dev/null 2>&1 || { echo "FAIL: flow not installed"; exit 1; }
 uv tool list | grep -m1 flowpad
 ```
+
+### 0.4 Preserved `.env.local` is available
+
+Phase 4 restores `~/sod/.env.local` into the fresh clone, and the e2e-qa skill
+cannot start without the ports it carries. Check it **here**, before Phase 2
+deletes anything — otherwise the run wipes the workspace and only then
+discovers it has nothing to restore.
+
+```bash
+[[ -f "$SOD_DIR/.env.local" ]] || { echo "FAIL: $SOD_DIR/.env.local missing"; exit 1; }
+grep -qE '^LOCAL_SERVER_PORT=' "$SOD_DIR/.env.local" \
+  && grep -qE '^VITE_PORT=' "$SOD_DIR/.env.local" \
+  || { echo "FAIL: $SOD_DIR/.env.local lacks LOCAL_SERVER_PORT / VITE_PORT"; exit 1; }
+```
+
+On a VM built from a fresh image this file will not exist until it is seeded
+once — see Phase 4.
 
 ---
 
