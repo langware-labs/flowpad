@@ -35,6 +35,7 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.folder import Folder
 from flow_sdk.builtin.git_origin import GitOrigin
 from flow_sdk.builtin.helpdesk import Helpdesk
@@ -53,11 +54,32 @@ MANIFEST = {
 }
 
 
+AGENT_MD = """---
+name: cloudnsite-support
+title: CloudNSite Support
+description: Grounded answers from CloudNSite's engineering method.
+avatar: ./avatar.png
+worker_type: claude
+enabled: true
+---
+
+You are the CloudNSite support agent.
+"""
+
+
 def _make_vendor_repo(root: Path) -> Path:
-    """A vendor capability repo: a help-desk manifest plus a skill."""
+    """A vendor capability repo: a help-desk manifest, a skill, and an agent.
+
+    The agent is what the customer actually LAUNCHES, so it is the asset most
+    at risk from a stray write — see the save-after-attach regression below.
+    """
     desk = root / "agentic-assets" / "helpdesk" / "cloudnsite"
     desk.mkdir(parents=True)
     (desk / "helpdesk.json").write_text(json.dumps(MANIFEST), encoding="utf-8")
+
+    agent = root / "agentic-assets" / "agent" / "cloudnsite-support"
+    agent.mkdir(parents=True)
+    (agent / "agent.md").write_text(AGENT_MD, encoding="utf-8")
 
     skill = root / ".claude" / "skills" / "triage-ticket"
     skill.mkdir(parents=True)
@@ -197,6 +219,48 @@ async def test_a_borrowed_checkout_is_known_to_be_unwritable(
         "a checkout materialized from a transportable origin must be reported "
         "as borrowed, or the project walk will write into it"
     )
+
+
+@pytest.mark.asyncio
+async def test_saving_a_vendor_agent_does_not_dirty_the_checkout(
+    tmp_path: Path, vendor_repo: str
+) -> None:
+    """The regression the INDEX-time flag cannot reach.
+
+    ``read_only`` is a construction-time flag on ``FSRef`` and is never
+    serialized — ``meta_dict`` persists only the path — so every reload rebuilds
+    the ref writable. For an ``owns_main_ref`` type that is enough to lose the
+    guard entirely: ``Agent`` re-renders ``agent.md`` on EVERY save, so one
+    ``save()`` after the attach (an Enabled toggle in the profile editor is
+    enough) rewrites a tracked file in the vendor's checkout and their next
+    ``git pull`` aborts on "local changes would be overwritten".
+
+    The attach path was already clean; this pins the step AFTER it.
+    """
+    project = await _project(tmp_path, "customer-a")
+    response = await project.add_context_dir_from_git(vendor_repo, scope="private")
+    assert response.status == "SUCCESS", response
+    checkout = Path(response.data["path"])
+    agent_md = checkout / "agentic-assets" / "agent" / "cloudnsite-support" / "agent.md"
+    before = agent_md.read_text(encoding="utf-8")
+
+    agents = [a for a in await Agent.get_all() if a.asset_ref == canonical_posix_path(str(agent_md))]
+    assert agents, "indexing the clone should have discovered the vendor's agent"
+    await agents[0].save()
+
+    tracked = [
+        line
+        for line in subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=checkout, capture_output=True, text=True, timeout=20,
+        ).stdout.splitlines()
+        if not line.startswith("??")
+    ]
+    assert tracked == [], (
+        f"saving a vendor-supplied agent must leave the checkout pullable; "
+        f"these tracked files were modified: {tracked}"
+    )
+    assert agent_md.read_text(encoding="utf-8") == before
 
     # A directory the user actually owns must NOT be reported — flagging every
     # folder read-only would stop the user's own assets from ever minting ids.

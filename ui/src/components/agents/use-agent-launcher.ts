@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { Agent, AgenticProcess } from '@sdk';
+import { useProject } from '@sdk/react/hooks';
 
 import { notify } from '@src/notifications';
 import { ViewMode } from '@src/contexts/view-mode-context';
@@ -32,13 +33,18 @@ import { embedVibeSubagent } from '@src/pages/flow-page/use-start-vibe-session';
 export function useAgentLauncher(): { launch: (agent: Agent) => Promise<void>; busyId: string | null } {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
+  const { project } = useProject();
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const launch = useCallback(
     async (agent: Agent) => {
       setBusyId(agent.id);
       try {
-        const result = await agent.use();
+        // The ACTIVE project, not the agent's own: a help desk's agent lives in
+        // the desk checkout, but a session with it opens on the project the user
+        // is in — their files as cwd, their rules in force, the desk mounted as
+        // context.
+        const result = await agent.use(project?.id ?? null);
         const proc = await AgenticProcess.getById<AgenticProcess>(result.process_id);
         if (proc) {
           // Watcher-scoped events (status, turns) reach the pane only for a
@@ -61,7 +67,7 @@ export function useAgentLauncher(): { launch: (agent: Agent) => Promise<void>; b
         setBusyId(null);
       }
     },
-    [navigation, t],
+    [navigation, project?.id, t],
   );
 
   return { launch, busyId };

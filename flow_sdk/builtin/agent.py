@@ -377,12 +377,26 @@ class Agent(Entity):
 
         No prompt: the process is created and shown, and the human types the
         first message. Local placement only — same routing rule as ``run``.
+
+        The optional body ``project_id`` names **the project the session acts
+        in**, which is not always the project the agent lives in. An agent
+        supplied by a help desk attached as a context folder belongs to the
+        desk's checkout, but a session with it has to open on the customer's
+        project — their files as cwd, their rules in force, the desk mounted as
+        context. Same body key every other "act in this project" action uses
+        (``Entity._http_setup``). Omitted, it falls back to the agent's own
+        project, which is right for an agent the project itself owns.
         """
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        project_id = str((body or {}).get("project_id") or "").strip() or None
 
         deployment = await self.local_deployment()
         try:
-            process = await deployment.use()
+            process = await deployment.use(project_id=project_id)
         except NotImplementedError as exc:
             return ApiFailResponse(message=str(exc))
         except Exception as exc:  # noqa: BLE001 — incl. the disabled-agent refusal from build()
