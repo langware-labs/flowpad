@@ -149,12 +149,17 @@ mkdir -p "$SOD_DIR"
 [[ -f "$APP_DIR/.env.local" ]] && cp -a "$APP_DIR/.env.local" "$SOD_DIR/.env.local"
 [[ -f "$SOD_DIR/.env.local" ]] || { echo "FAIL: no .env.local to restore later"; exit 1; }
 
-rm -rf "$WORKSPACE_DIR"/*
+echo "=== will delete ==="; find "$WORKSPACE_DIR" -mindepth 1 -maxdepth 1 ! -name '.*'
+find "$WORKSPACE_DIR" -mindepth 1 -maxdepth 1 ! -name '.*' -exec rm -rf {} +
 ```
 
-Note the quoting: the glob must sit **outside** the quotes. `"$WORKSPACE_DIR/*"`
-quotes the asterisk and matches nothing, while an unquoted
-`~/Flowpad workspace/*` splits on the space and would target `~/Flowpad`.
+**Use this `find` form, not `rm -rf "$WORKSPACE_DIR"/*`.** The glob form is
+routinely refused by command-safety guards as an unset-variable-to-root risk,
+and a run that gets blocked mid-phase forces the agent to improvise a
+replacement — which is exactly where a destructive step should have no
+improvisation. `find` with an explicit `-maxdepth 1 ! -name '.*'` has identical
+semantics (non-dotfiles, one level), states them in the command itself, and
+lists what it will remove first.
 
 > **Destructive and irreversible.** This clears the entire workspace, not just
 > the checkout — every FlowPad project directory beside `flowpad` goes with it,
@@ -250,6 +255,21 @@ cd "$APP_DIR"
 claude -p "/e2e-qa qa cycle" --dangerously-skip-permissions \
   --output-format stream-json --verbose
 ```
+
+> **Run this in the FOREGROUND and block on it. Do not background it, do not
+> poll it, and do not end your turn while it is running.**
+>
+> This is not a style preference — it is the failure that killed the
+> 2026-08-19T20:28 run. That agent launched the nested cycle with
+> `run_in_background`, then ended its turn intending to report "when the cycle
+> finishes". `claude -p` is **single-turn**: it exits the moment the turn ends.
+> systemd then tore down the service cgroup and killed the nested run 20
+> seconds after it started. The unit reported `success`, `ExecStopPost` powered
+> the VM off, and the whole cycle — Phases 5 and 6 — never happened. Nothing was
+> committed, pushed or emailed, and the exit code was 0.
+>
+> Your turn must not end until this command returns. Everything after it in
+> this file depends on it having actually finished.
 
 `--output-format stream-json --verbose` is not decoration. Plain `claude -p`
 emits the **final result only** — nothing while it works. Under
