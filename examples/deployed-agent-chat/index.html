@@ -1,0 +1,726 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FlowPad deployed agent chat</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+        background: #090b11;
+        color: #edf0f7;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: radial-gradient(circle at top, #171b2a, #090b11 48%);
+      }
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:disabled {
+        cursor: default;
+        opacity: 0.45;
+      }
+      .shell {
+        width: min(1120px, calc(100% - 28px));
+        margin: 24px auto;
+      }
+      header {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 20px;
+        margin-bottom: 18px;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(1.45rem, 3vw, 2.2rem);
+        letter-spacing: -0.04em;
+      }
+      .subtitle {
+        margin: 6px 0 0;
+        color: #9299aa;
+        font-size: 0.92rem;
+      }
+      .badge {
+        padding: 7px 11px;
+        border: 1px solid #2e3445;
+        border-radius: 999px;
+        color: #aeb5c7;
+        font-size: 0.78rem;
+        white-space: nowrap;
+      }
+      .badge.ok {
+        border-color: #24684e;
+        color: #7ee2b8;
+        background: #0d2a21;
+      }
+      .badge.error {
+        border-color: #74303a;
+        color: #ff9aa8;
+        background: #2b1116;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 330px minmax(0, 1fr);
+        gap: 16px;
+        min-height: 690px;
+      }
+      .panel {
+        border: 1px solid #252a39;
+        border-radius: 16px;
+        background: rgba(17, 20, 29, 0.92);
+        box-shadow: 0 20px 80px rgba(0, 0, 0, 0.28);
+      }
+      .setup {
+        padding: 18px;
+      }
+      .setup h2 {
+        margin: 0 0 14px;
+        font-size: 0.95rem;
+        color: #cbd1de;
+      }
+      .group {
+        margin-bottom: 15px;
+      }
+      label {
+        display: block;
+        margin: 0 0 6px;
+        color: #9299aa;
+        font-size: 0.75rem;
+        font-weight: 650;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      input,
+      textarea {
+        width: 100%;
+        border: 1px solid #303648;
+        border-radius: 9px;
+        background: #0c0f16;
+        color: #edf0f7;
+        padding: 10px 11px;
+        outline: none;
+      }
+      input:focus,
+      textarea:focus {
+        border-color: #7486ff;
+        box-shadow: 0 0 0 3px rgba(116, 134, 255, 0.12);
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      button {
+        border: 1px solid #343a4c;
+        border-radius: 9px;
+        background: #1a1f2d;
+        color: #e8ebf3;
+        padding: 9px 12px;
+      }
+      button:hover:not(:disabled) {
+        background: #232a3c;
+      }
+      button.primary {
+        border-color: #6576ee;
+        background: #6576ee;
+        color: white;
+      }
+      button.primary:hover:not(:disabled) {
+        background: #7282f5;
+      }
+      button.danger {
+        color: #ff9aa8;
+      }
+      .note {
+        color: #767e91;
+        font-size: 0.76rem;
+        line-height: 1.45;
+      }
+      .route {
+        margin-top: 18px;
+        padding-top: 16px;
+        border-top: 1px solid #242938;
+      }
+      .route dl {
+        margin: 0;
+        display: grid;
+        grid-template-columns: 72px minmax(0, 1fr);
+        gap: 7px;
+        font-size: 0.77rem;
+      }
+      .route dt {
+        color: #6f778a;
+      }
+      .route dd {
+        margin: 0;
+        color: #b6bdcc;
+        overflow-wrap: anywhere;
+      }
+      .log {
+        margin-top: 14px;
+        min-height: 42px;
+        color: #8991a3;
+        font-size: 0.75rem;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .chat {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        overflow: hidden;
+      }
+      .chat-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 15px 18px;
+        border-bottom: 1px solid #252a39;
+      }
+      .chat-title {
+        font-weight: 700;
+      }
+      .chat-status {
+        color: #8f98ad;
+        font:
+          12px ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+        text-align: right;
+      }
+      .messages {
+        padding: 20px;
+        overflow-y: auto;
+        min-height: 420px;
+      }
+      .empty {
+        height: 100%;
+        min-height: 300px;
+        display: grid;
+        place-items: center;
+        color: #666f83;
+        text-align: center;
+      }
+      .message {
+        margin: 0 0 14px;
+        padding: 11px 13px;
+        border: 1px solid #2b3040;
+        border-radius: 11px;
+        background: #131722;
+      }
+      .message.user-message,
+      .message.user {
+        margin-left: 15%;
+        border-color: #3e4a8b;
+        background: #182044;
+      }
+      .message.assistant-message,
+      .message.assistant {
+        margin-right: 8%;
+      }
+      .message .kind {
+        margin-bottom: 6px;
+        color: #80899d;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+      }
+      .message .content {
+        margin: 0;
+        color: #e5e8ef;
+        line-height: 1.48;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .composer {
+        padding: 14px;
+        border-top: 1px solid #252a39;
+      }
+      .composer textarea {
+        min-height: 78px;
+        resize: vertical;
+      }
+      .composer-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 9px;
+      }
+      .hint {
+        color: #697185;
+        font-size: 0.72rem;
+      }
+      @media (max-width: 780px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+        .chat {
+          min-height: 650px;
+        }
+      }
+    </style>
+    <script>
+      (function configureSdkBeforeLoad() {
+        var params = new URLSearchParams(location.search);
+        var hub = params.get('hub') || localStorage.getItem('flowpad-chat.hub') || '';
+        if (hub) window.__FLOWPAD_API_URL__ = hub.replace(/\/+$/, '');
+      })();
+    </script>
+    <script src="../../flow_sdk/server/static/sdk/flowpad-sdk.js"></script>
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <div>
+          <h1>Deployed agent chat</h1>
+          <p class="subtitle">Plain HTML → existing TypeScript SDK → Hub → deployment :9007 → agent process</p>
+        </div>
+        <div id="connection-badge" class="badge">Not connected</div>
+      </header>
+
+      <div class="layout">
+        <section class="panel setup">
+          <h2>Hub login and route</h2>
+          <div class="group">
+            <label for="hub-url">Hub URL</label>
+            <input id="hub-url" type="url" placeholder="https://hub.example.com" autocomplete="url" />
+          </div>
+          <div class="row">
+            <div class="group">
+              <label for="email">Email</label>
+              <input id="email" type="email" autocomplete="username" />
+            </div>
+            <div class="group">
+              <label for="password">Password</label>
+              <input id="password" type="password" autocomplete="current-password" />
+            </div>
+          </div>
+          <div class="group actions">
+            <button id="login" class="primary">Log in</button>
+            <button id="reload-hub">Apply Hub URL</button>
+          </div>
+          <p class="note">
+            Credentials and bearer tokens are kept in memory only. Applying a different Hub URL reloads the SDK because
+            its API origin is fixed when the script loads.
+          </p>
+
+          <div class="group">
+            <label for="agent-id">Agent ID</label>
+            <input id="agent-id" placeholder="UUID from the Hub agent page" />
+          </div>
+          <div class="group actions">
+            <button id="new-chat" class="primary" disabled>New chat</button>
+          </div>
+
+          <div class="group">
+            <label for="process-id">Process ID</label>
+            <input id="process-id" placeholder="Created by Agent.use()" />
+          </div>
+          <div class="group actions">
+            <button id="reconnect" disabled>Reconnect</button>
+            <button id="history" disabled>Reload history</button>
+            <button id="refresh-status" disabled>Status</button>
+            <button id="stop" class="danger" disabled>Stop</button>
+          </div>
+
+          <div class="route">
+            <dl>
+              <dt>Agent</dt>
+              <dd id="route-agent">—</dd>
+              <dt>Process</dt>
+              <dd id="route-process">—</dd>
+              <dt>Deploy</dt>
+              <dd id="route-deployment">—</dd>
+              <dt>FlowData</dt>
+              <dd id="route-flowdata">0 items</dd>
+            </dl>
+          </div>
+          <div id="log" class="log">Load the page with ?hub=&lt;Hub URL&gt;, or enter it and click Apply Hub URL.</div>
+        </section>
+
+        <section class="panel chat">
+          <div class="chat-head">
+            <span class="chat-title">Conversation</span>
+            <span id="process-status" class="chat-status">offline</span>
+          </div>
+          <div id="messages" class="messages">
+            <div class="empty">Log in, enter a deployed agent ID, then start a chat.</div>
+          </div>
+          <form id="composer" class="composer">
+            <textarea id="prompt" placeholder="Message the deployed agent…" disabled></textarea>
+            <div class="composer-actions">
+              <span class="hint">Enter to send · Shift+Enter for a new line</span>
+              <button id="send" class="primary" type="submit" disabled>Send</button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </main>
+
+    <script>
+      (function deployedAgentChat() {
+        'use strict';
+
+        var sdk = window.FlowpadSdk;
+        var state = {
+          loggedIn: false,
+          process: null,
+          promptInFlight: false,
+          observeInFlight: false,
+          streamListener: null,
+        };
+        var boundItems = new WeakSet();
+        var renderQueued = false;
+
+        var el = {};
+        [
+          'hub-url',
+          'email',
+          'password',
+          'login',
+          'reload-hub',
+          'agent-id',
+          'new-chat',
+          'process-id',
+          'reconnect',
+          'history',
+          'refresh-status',
+          'stop',
+          'route-agent',
+          'route-process',
+          'route-deployment',
+          'route-flowdata',
+          'log',
+          'messages',
+          'process-status',
+          'composer',
+          'prompt',
+          'send',
+          'connection-badge',
+        ].forEach(function (id) {
+          el[id] = document.getElementById(id);
+        });
+
+        var params = new URLSearchParams(location.search);
+        el['hub-url'].value = params.get('hub') || localStorage.getItem('flowpad-chat.hub') || '';
+        el['agent-id'].value = params.get('agent') || localStorage.getItem('flowpad-chat.agent') || '';
+        el['process-id'].value = params.get('process') || localStorage.getItem('flowpad-chat.process') || '';
+        el['route-agent'].textContent = el['agent-id'].value || '—';
+
+        function log(message, isError) {
+          el.log.textContent = message;
+          el.log.style.color = isError ? '#ff9aa8' : '#8991a3';
+          if (isError) console.error(message);
+        }
+
+        function errorText(error) {
+          return (
+            (error && (error.message || (error.response && error.response.data && error.response.data.detail))) ||
+            String(error)
+          );
+        }
+
+        function setConnected(connected, text) {
+          el['connection-badge'].textContent = text;
+          el['connection-badge'].className = 'badge' + (connected ? ' ok' : ' error');
+        }
+
+        function updateControls() {
+          var hasProcess = Boolean(state.process);
+          el['new-chat'].disabled = !state.loggedIn || !el['agent-id'].value.trim();
+          el.reconnect.disabled = !state.loggedIn || !el['process-id'].value.trim();
+          el.history.disabled = !hasProcess;
+          el['refresh-status'].disabled = !hasProcess;
+          el.stop.disabled = !hasProcess;
+          el.prompt.disabled = !hasProcess || state.promptInFlight;
+          el.send.disabled = !hasProcess || state.promptInFlight || !el.prompt.value.trim();
+        }
+
+        function contentText(item) {
+          var content = item && item.content;
+          if (content == null && item && item.rawData != null) content = item.rawData;
+          if (typeof content === 'string') return content;
+          if (content == null) return '';
+          try {
+            return JSON.stringify(content, null, 2);
+          } catch (_) {
+            return String(content);
+          }
+        }
+
+        function scheduleRender() {
+          if (renderQueued) return;
+          renderQueued = true;
+          requestAnimationFrame(function () {
+            renderQueued = false;
+            renderMessages();
+          });
+        }
+
+        function bindFlowDataItem(item) {
+          if (!item || typeof item.on !== 'function' || boundItems.has(item)) return;
+          boundItems.add(item);
+          item.on('chunk', scheduleRender);
+          item.on('ready', scheduleRender);
+        }
+
+        function renderMessages() {
+          if (!state.process) return;
+          var items = Array.from(state.process.flowDataStream.items || []);
+          items.forEach(bindFlowDataItem);
+          el['route-flowdata'].textContent = items.length + (items.length === 1 ? ' item' : ' items');
+          el.messages.replaceChildren();
+          if (!items.length) {
+            var empty = document.createElement('div');
+            empty.className = 'empty';
+            empty.textContent = 'Connected. Send the first message.';
+            el.messages.appendChild(empty);
+            return;
+          }
+          items.forEach(function (item) {
+            var role = item.attributes && item.attributes.role;
+            var kind = role || item.elementType || 'flow-data';
+            var card = document.createElement('article');
+            card.className =
+              'message ' +
+              String(kind)
+                .replace(/[^a-z0-9_-]/gi, '-')
+                .toLowerCase();
+            var label = document.createElement('div');
+            label.className = 'kind';
+            label.textContent = kind;
+            var body = document.createElement('pre');
+            body.className = 'content';
+            body.textContent = contentText(item) || '…';
+            card.append(label, body);
+            el.messages.appendChild(card);
+          });
+          el.messages.scrollTop = el.messages.scrollHeight;
+        }
+
+        function attachProcess(process, receipt) {
+          if (state.process && state.streamListener)
+            state.process.flowDataStream.removeListener('data', state.streamListener);
+          state.process = process;
+          state.streamListener = function (items) {
+            (items || []).forEach(bindFlowDataItem);
+            scheduleRender();
+          };
+          state.process.flowDataStream.on('data', state.streamListener);
+          el['process-id'].value = process.id;
+          localStorage.setItem('flowpad-chat.process', process.id);
+          el['route-process'].textContent = process.id;
+          el['route-deployment'].textContent = (receipt && receipt.deployment_id) || process.deployment_id || '—';
+          updateControls();
+          renderMessages();
+        }
+
+        async function fetchStatus() {
+          if (!state.process) return null;
+          var action = new sdk.ActionInfo('status', sdk.AgenticProcess.type, state.process.id, 'GET');
+          var status = await sdk.dataManager.callAction(action);
+          el['process-status'].textContent = [status.status, status.busy ? 'busy' : 'idle', status.worker_status]
+            .filter(Boolean)
+            .join(' · ');
+          if (status.busy && !state.promptInFlight && !state.observeInFlight) observeCurrentTurn();
+          return status;
+        }
+
+        async function observeCurrentTurn() {
+          if (!state.process || state.observeInFlight || state.promptInFlight) return;
+          state.observeInFlight = true;
+          try {
+            await state.process.observeTurn();
+            await state.process.loadHistory({ force: true });
+            renderMessages();
+          } catch (error) {
+            log('Observe failed: ' + errorText(error), true);
+          } finally {
+            state.observeInFlight = false;
+            fetchStatus().catch(function () {});
+          }
+        }
+
+        async function reconnect() {
+          var id = el['process-id'].value.trim();
+          if (!id) return;
+          log('Loading Hub process route…');
+          var process = await sdk.AgenticProcess.getById(id);
+          if (!process) throw new Error('Process route not found');
+          attachProcess(process);
+          await process.loadHistory({ force: true });
+          renderMessages();
+          await fetchStatus();
+          log('Reconnected through the Hub.');
+        }
+
+        async function login() {
+          if (!sdk)
+            throw new Error(
+              'FlowpadSdk did not load. Build the IIFE SDK and serve this page from the repository root.',
+            );
+          var hub = el['hub-url'].value.trim().replace(/\/+$/, '');
+          if (!hub) throw new Error('Hub URL is required');
+          if (window.__FLOWPAD_API_URL__ !== hub) throw new Error('Click Apply Hub URL before logging in.');
+          log('Logging in to the Hub…');
+          var loginData = await sdk.authManager.login({
+            email: el.email.value.trim(),
+            password: el.password.value,
+            remember_me: false,
+          });
+          sdk.apiClient.testUserToken = loginData.token;
+          await sdk.initSdk({ setupWorkspace: false });
+          state.loggedIn = true;
+          el.password.value = '';
+          localStorage.setItem('flowpad-chat.hub', hub);
+          setConnected(true, 'Hub authenticated');
+          updateControls();
+          log('Authenticated. Start a new chat or reconnect to an existing process.');
+        }
+
+        el['reload-hub'].addEventListener('click', function () {
+          var hub = el['hub-url'].value.trim().replace(/\/+$/, '');
+          if (!hub) return log('Hub URL is required.', true);
+          localStorage.setItem('flowpad-chat.hub', hub);
+          var next = new URL(location.href);
+          next.searchParams.set('hub', hub);
+          if (el['agent-id'].value.trim()) next.searchParams.set('agent', el['agent-id'].value.trim());
+          location.href = next.toString();
+        });
+
+        el.login.addEventListener('click', function () {
+          login().catch(function (error) {
+            setConnected(false, 'Login failed');
+            log(errorText(error), true);
+          });
+        });
+
+        el['agent-id'].addEventListener('input', function () {
+          var id = el['agent-id'].value.trim();
+          localStorage.setItem('flowpad-chat.agent', id);
+          el['route-agent'].textContent = id || '—';
+          updateControls();
+        });
+
+        el['process-id'].addEventListener('input', function () {
+          localStorage.setItem('flowpad-chat.process', el['process-id'].value.trim());
+          updateControls();
+        });
+
+        el['new-chat'].addEventListener('click', function () {
+          (async function () {
+            var agentId = el['agent-id'].value.trim();
+            log('Calling Agent.use() through the Hub…');
+            var agent = await sdk.Agent.getById(agentId);
+            if (!agent) throw new Error('Agent not found');
+            var receipt = await agent.use();
+            var process = await sdk.AgenticProcess.getById(receipt.process_id);
+            if (!process) throw new Error('Hub created the process but its route could not be loaded');
+            attachProcess(process, receipt);
+            await process.loadHistory({ force: true });
+            await fetchStatus();
+            log('New deployed-agent chat is ready.');
+          })().catch(function (error) {
+            log(errorText(error), true);
+          });
+        });
+
+        el.reconnect.addEventListener('click', function () {
+          reconnect().catch(function (error) {
+            log(errorText(error), true);
+          });
+        });
+        el.history.addEventListener('click', function () {
+          state.process
+            .loadHistory({ force: true })
+            .then(renderMessages)
+            .catch(function (error) {
+              log(errorText(error), true);
+            });
+        });
+        el['refresh-status'].addEventListener('click', function () {
+          fetchStatus().catch(function (error) {
+            log(errorText(error), true);
+          });
+        });
+        el.stop.addEventListener('click', function () {
+          if (!state.process) return;
+          state.process
+            .cancelPrompt()
+            .then(function () {
+              log('Cancellation sent to the deployed process.');
+            })
+            .catch(function (error) {
+              log(errorText(error), true);
+            });
+        });
+        el.prompt.addEventListener('input', updateControls);
+        el.prompt.addEventListener('keydown', function (event) {
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            el.composer.requestSubmit();
+          }
+        });
+        el.composer.addEventListener('submit', function (event) {
+          event.preventDefault();
+          var message = el.prompt.value.trim();
+          if (!message || !state.process || state.promptInFlight) return;
+          el.prompt.value = '';
+          state.promptInFlight = true;
+          updateControls();
+          log('Streaming FlowData from the deployed process…');
+          state.process
+            .prompt(message)
+            .then(function () {
+              log('Turn complete.');
+            })
+            .catch(function (error) {
+              log('Prompt failed: ' + errorText(error), true);
+            })
+            .finally(function () {
+              state.promptInFlight = false;
+              updateControls();
+              fetchStatus().catch(function () {});
+            });
+        });
+
+        if (!sdk) {
+          setConnected(false, 'SDK missing');
+          log('The SDK script did not load. Run npm run build:sdk in ui/, then serve the repository root.', true);
+          return;
+        }
+        setConnected(false, window.__FLOWPAD_API_URL__ ? 'Ready to log in' : 'Hub URL needed');
+        updateControls();
+        setInterval(function () {
+          if (state.process) fetchStatus().catch(function () {});
+        }, 3000);
+      })();
+    </script>
+  </body>
+</html>
