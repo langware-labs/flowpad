@@ -2,17 +2,15 @@ import { AgenticProcess } from '@sdk';
 import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/AutoScrollContainer';
 import { ChatActivityLine } from '@src/components/entity-execution-panel/ChatActivityLine';
 import { TurnGroupsList } from '@src/components/entity-execution-panel/TurnGroupsList';
-import { describeCurrentActivity } from '@src/components/entity-execution-panel/current-activity';
 import { useObservedTurn } from '@src/components/entity-execution-panel/hooks/useObservedTurn';
-import { useStickyActivity } from '@src/components/entity-execution-panel/hooks/useStickyActivity';
 import { useTurnActivity } from '@src/components/entity-execution-panel/hooks/useTurnActivity';
-import { splitLiveGroup, useTurnGroups } from '@src/components/floating-chat/groupTurnEvents';
+import { useTurnGroups } from '@src/components/floating-chat/groupTurnEvents';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { useViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { cn } from '@src/lib/utils';
 import { Trans } from '@lingui/react/macro';
 import { MessageSquare } from 'lucide-react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { PlanInteractionBar } from './PlanInteractionBar';
 import { useTurnCompletionReconcile } from './useTurnCompletionReconcile';
 
@@ -66,24 +64,6 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
   // so the mode is read explicitly.
   const viewMode = useViewMode();
 
-  // Same named-operation readout the vibe chat shows ("Editing · foo.ts").
-  // Only `liveEvents` is taken from the split — unlike the vibe pane, this one
-  // deliberately keeps rendering EVERY group inline, tool rows included, since
-  // that is what Standard mode is for. The line reports what is happening now;
-  // the rows below remain the record of what happened.
-  const currentActivity = useStickyActivity(
-    useMemo(
-      () =>
-        describeCurrentActivity(
-          splitLiveGroup(turnGroups, activity.active).liveEvents,
-          activity.startedAt,
-          activity.status,
-        ),
-      [turnGroups, activity.active, activity.startedAt, activity.status],
-    ),
-    activity.startedAt,
-  );
-
   const scrollRef = useRef<AutoScrollContainerHandle>(null);
   useEffect(() => {
     scrollRef.current?.scrollToBottom();
@@ -102,13 +82,7 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
               <MessageSquare className="h-6 w-6" />
             </div>
             {activity.active ? (
-              <ChatActivityLine
-                process={process}
-                active={activity.active}
-                startedAt={activity.startedAt}
-                status={activity.status}
-                activity={currentActivity}
-              />
+              <ChatActivityLine process={process} />
             ) : (
               <div>
                 <p className="text-[15px] font-medium text-foreground"><Trans>Start a conversation</Trans></p>
@@ -125,13 +99,7 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
               process={process}
               turnActive={activity.active}
             />
-            <ChatActivityLine
-              process={process}
-              active={activity.active}
-              startedAt={activity.startedAt}
-              status={activity.status}
-              activity={currentActivity}
-            />
+            <ChatActivityLine process={process} />
           </div>
         )}
       </AutoScrollContainer>
