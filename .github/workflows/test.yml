@@ -51,14 +51,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  backend-tests:
-    name: backend (pytest unit + api)
+  # Split into two parallel jobs so neither brushes the timeout: the api tier
+  # grew when the Claude CLI install let its worker/PTY tests actually run.
+  # Isolation is safe — jobs are separate VMs, and tests/conftest.py roots the
+  # DB/records/home under a per-process mkdtemp anyway.
+  backend-unit:
+    name: backend (pytest unit)
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.backend-tests }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/backend-tests
+        with:
+          tier: unit
+
+  backend-api:
+    name: backend (pytest api)
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.backend-tests }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/backend-tests
+        with:
+          tier: api
 
   frontend-tests:
     name: frontend (tsc + vitest unit + i18n)
@@ -73,12 +90,13 @@ jobs:
 
   e2e-tests:
     name: 'e2e (live backend: vitest headless/api/react + playwright)'
-    needs: [backend-tests, frontend-tests]
+    needs: [backend-unit, backend-api, frontend-tests]
     # !cancelled() + per-result checks so a dispatch-toggled-off upstream job
     # (result == 'skipped') doesn't auto-skip e2e; a FAILED upstream still does.
     if: >-
       ${{ !cancelled()
-          && (needs.backend-tests.result == 'success' || needs.backend-tests.result == 'skipped')
+          && (needs.backend-unit.result == 'success' || needs.backend-unit.result == 'skipped')
+          && (needs.backend-api.result == 'success' || needs.backend-api.result == 'skipped')
           && (needs.frontend-tests.result == 'success' || needs.frontend-tests.result == 'skipped')
           && (github.event_name != 'workflow_dispatch' || inputs.e2e-tests) }}
     runs-on: ubuntu-latest
