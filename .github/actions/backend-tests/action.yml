@@ -8,10 +8,19 @@ runs:
   using: 'composite'
   steps:
     - name: Set up uv + Python 3.10
-      uses: astral-sh/setup-uv@v5
+      uses: astral-sh/setup-uv@v10
       with:
         python-version: '3.10'
         enable-cache: true
+
+    # setup-uv registers GitHub's Python problem matcher, which promotes any
+    # traceback-shaped log line to an error annotation — including the benign
+    # teardown warnings in pytest's WARNINGS SUMMARY (e.g. aiosqlite's worker
+    # thread racing session-loop close, "Event loop is closed"), stamping red
+    # annotations on green runs. pytest's exit code is the real signal.
+    - name: Disable Python problem matcher (annotates warnings as errors)
+      run: echo "::remove-matcher owner=python::"
+      shell: bash
 
     - name: Install dependencies
       run: uv sync --dev --frozen
