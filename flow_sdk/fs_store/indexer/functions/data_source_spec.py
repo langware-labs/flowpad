@@ -16,7 +16,13 @@ from pathlib import Path
 
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.ingest.manifest import MANIFEST_FILE, ManifestError, parse_manifest
+from flow_sdk.ingest.manifest import (
+    AGENT_FILE,
+    MANIFEST_FILE,
+    SCRIPT_FILE,
+    ManifestError,
+    parse_manifest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +44,11 @@ def extract_data_source_spec(ref: FSRef, resolved_id: str) -> list:
         return []
 
     try:
-        manifest = parse_manifest(raw, files={p.name for p in folder.iterdir()})
+        # Only the two runtime markers are asked about, so stat exactly those:
+        # listing the folder cost one syscall per entry for a source that
+        # vendors an implementation tree beside its manifest.
+        markers = {name for name in (SCRIPT_FILE, AGENT_FILE) if (folder / name).is_file()}
+        manifest = parse_manifest(raw, files=markers)
     except ManifestError as exc:
         logger.warning("[data_source] %s rejected: %s", manifest_path, exc)
         return []

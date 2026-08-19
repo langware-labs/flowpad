@@ -942,7 +942,7 @@ class FSRecord(Generic[M]):
         entity_id = getattr(entity, "id", None)
         if info is None or info.identity_backend is None or not entity_id:
             return None
-        if _SUPPRESS_CARRIER_WRITE.get():
+        if carrier_writes_are_suppressed():
             # The caller resolves identity elsewhere (an `origin_id` lookup), so
             # the carrier is neither consulted nor written. Return the id we were
             # given: there is no commit that could disagree with it.

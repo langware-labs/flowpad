@@ -411,27 +411,18 @@ def default_origin_id(source: "DataSource", ref: str) -> str:
 async def _find_by_origin(origin_id: str):
     """The row this origin already names, across every file-backed type.
 
-    Fans out over ``Entity.asset_owner_classes()`` — the same candidate set and
-    the same reason as ``get_by_asset_ref``: a base-class query does not reach
-    concrete-type rows, and only a type that OWNS its asset may answer who owns
-    an origin. Reusing that helper means a newly registered type is searchable
-    here the moment it is registered, with nothing to keep in step.
+    ``Entity.first_across_asset_owners`` is the fan-out — the same candidate set
+    and the same reason as ``get_by_asset_ref``: a base-class query does not
+    reach concrete-type rows, and only a type that OWNS its asset may answer who
+    owns an origin. Sharing it means a newly registered type is searchable here
+    the moment it is registered, and a fan-out that failed on a contended DB
+    says so in the log instead of reading as "this origin is new".
     """
-    import asyncio  # noqa: PLC0415
-
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
 
     if not origin_id:
         return None
-
-    async def _try(ecls: type):
-        try:
-            return await ecls.get_one({"origin_id": origin_id})
-        except Exception:  # noqa: BLE001 — one broken type must not sink the fan-out
-            return None
-
-    results = await asyncio.gather(*[_try(c) for c in Entity.asset_owner_classes()])
-    return next((r for r in results if r is not None), None)
+    return await Entity.first_across_asset_owners("origin_id", origin_id)
 
 
 def _retire_stale_placement(source: "DataSource", known, placed: str) -> None:

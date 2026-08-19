@@ -26,6 +26,7 @@ from pydantic import model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.core import Entity
+from flow_sdk.core.entity.legacy_fields import adopt_renamed
 from flow_sdk.schema.types import EntityType
 
 
@@ -84,17 +85,9 @@ class SourceItem(Entity):
         record would fail to resolve and the next poll would mint a duplicate
         of it. Same shape as ``DataSource._adopt_legacy_enabled``.
         """
-        if not isinstance(data, dict):
-            return data
-        renamed = {"stream_key": "segment_key", "stream_label": "segment_label"}
-        if not any(k in data for k in renamed):
-            return data
-        data = dict(data)
-        for old_key, new_key in renamed.items():
-            value = data.pop(old_key, None)
-            if value is not None and not data.get(new_key):
-                data[new_key] = value
-        return data
+        return adopt_renamed(
+            data, {"stream_key": "segment_key", "stream_label": "segment_label"}
+        )
 
     @classmethod
     async def find_existing(

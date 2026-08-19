@@ -1248,7 +1248,11 @@ class Shell(Entity):
         if not vars_dict:
             return ApiFailResponse(message="vars is required")
         await self.set_env(**vars_dict)
-        return ApiSuccessResponse(data={"vars": list(vars_dict.keys())})
+        # Return the MERGED env, not just the keys we were handed: the server owns
+        # the merge, so the caller can apply the authoritative result to its local
+        # instance instead of waiting on the `data_op_msg` WS round-trip (which is
+        # a race for anyone reading `shell.env` right after the await).
+        return ApiSuccessResponse(data={"env": dict(self.env or {})})
 
     # ── Tab integration (docs/tab-management.md) ──────────────────────────────
     async def teardown_for_tab(self) -> None:
