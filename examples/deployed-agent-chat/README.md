@@ -6,7 +6,7 @@ This is a no-framework HTML client for the existing FlowPad TypeScript SDK. It e
 browser HTML -> Agent.use() / AgenticProcess.* -> Hub -> deployment :9007 -> agent process
 ```
 
-It uses the existing `Agent`, `AgenticProcess`, `FlowDataStream`, `ActionInfo`, and `dataManager` exports. The page supports Hub login, a new session, reconnect, transcript reload, live FlowData streaming, status, cancellation, and the existing prompt queue. Sending another message while a turn is running calls `AgenticProcess.enqueue()` just like the standard chat UI.
+The tester intentionally has only two buttons: **Connect** and **Send**. Connect logs in and either reconnects the `process` URL parameter or creates a process with `Agent.use()`. Send streams the normal FlowData response; pressing it again while a turn is active uses the existing prompt queue.
 
 ## Run
 
@@ -22,12 +22,12 @@ python3 -m http.server 4173
 Open:
 
 ```text
-http://localhost:4173/examples/deployed-agent-chat/?hub=https://YOUR-HUB-ORIGIN
+http://localhost:4173/examples/deployed-agent-chat/?hub=https://YOUR-HUB-ORIGIN&agent=AGENT_UUID
 ```
 
-Log in to the Hub and enter the ID of an agent that has a cloud deployment. **New chat** calls `Agent.use()`; the returned process ID can be used later with **Reconnect**.
+Enter the Hub login and click **Connect**, then type a message and click **Send**. The page adds the returned process ID to its URL, so refreshing that URL reconnects the same chat.
 
 Use `localhost` as shown (rather than the numeric loopback address), because it
 is part of the Hub's existing development-origin allowlist.
 
-The page stores only the Hub URL, agent ID, and process ID in local storage. It never stores the password or bearer token. The Hub URL must be known before the SDK script loads, so **Apply Hub URL** reloads the page.
+The page stores nothing in local or session storage. The password and bearer token remain in memory only. The Hub and Agent are URL parameters because the SDK must know its API origin before it loads.
