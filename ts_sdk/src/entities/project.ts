@@ -287,6 +287,7 @@ interface ProjectAssetMenuResponse {
 
 interface ProjectContextFolderResolveResponse {
   include_dirs?: unknown;
+  context_roots?: unknown;
   context_folder_results?: unknown;
 }
 
@@ -346,6 +347,11 @@ export class Project extends APIEntity<Project> {
    *  --add-dir set and browseable in the Explorer as their own root. Mirrors
    *  the backend Project.include_dirs. */
   include_dirs: string[] = [];
+  /** The project's own root followed by its context roots, canonicalized —
+   *  mirror of the backend computed `Project.context_roots`. The one answer to
+   *  "which directories count as this project's"; do NOT re-derive it from
+   *  `fs_storage_mount_path` + `include_dirs`, which canonicalizes differently. */
+  context_roots: string[] = [];
   /** Per-context-folder info (path + origin_kind). Mirrors the backend
    *  computed Project.context_dir_infos — same paths/order as include_dirs. */
   context_dir_infos: ProjectContextDirInfo[] = [];
@@ -367,6 +373,7 @@ export class Project extends APIEntity<Project> {
     this.host_member_id = (entity.host_member_id as string | null | undefined) ?? null;
     this.presence = (entity.presence as ProjectMember[] | undefined) ?? [];
     this.include_dirs = (entity.include_dirs as string[] | undefined) ?? [];
+    this.context_roots = (entity.context_roots as string[] | undefined) ?? [];
     this.context_dir_infos = (entity.context_dir_infos as ProjectContextDirInfo[] | undefined) ?? [];
     this.secret_origins = (entity.secret_origins as ProjectSecretOriginSummary[] | undefined) ?? [];
     this.customization = (entity.customization as ProjectCustomization | undefined) ?? {};

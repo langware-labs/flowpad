@@ -1320,13 +1320,18 @@ class Entity(DBEntity):
         ar_str = getattr(entity, "asset_ref", None)
         if ar_str:
             payload["asset_ref"] = ar_str
-        await _mark_borrowed_asset_ref_read_only(record, type_name)
         import asyncio
 
+        # A borrowed checkout is somebody else's repository: mirror the entity to
+        # the shadow store, but SKIP the source-file write. Skipping rather than
+        # letting the read-only FSRef raise keeps the metadata sync (and avoids
+        # stamping a RecordError) on every save of a vendor-supplied asset.
+        borrowed = await _asset_ref_is_borrowed(record)
         try:
             # upsert_main_ref writes default_body iff main_ref doesn't exist
             # — write goes through the FSRef contract, never raw Path.write_text.
-            await asyncio.to_thread(record.upsert_main_ref, entity)
+            if not borrowed:
+                await asyncio.to_thread(record.upsert_main_ref, entity)
             await asyncio.to_thread(record.save_metadata, payload)
         except Exception as exc:
             from flow_sdk.fs_store.operations.record_error import from_exception  # lazy (circular-safe)
@@ -3580,46 +3585,35 @@ _action_registry.register(
 )
 
 
-async def _mark_borrowed_asset_ref_read_only(record, type_name: str) -> None:
-    """Re-flag a record's ``asset_ref`` read-only when it lives in a borrowed checkout.
+async def _asset_ref_is_borrowed(record) -> bool:
+    """Does this record's ``asset_ref`` live inside somebody else's checkout?
 
-    ``FSRef.read_only`` is a construction-time flag and is never serialized:
-    ``meta_dict`` persists only ``ar.path``, so every reload rebuilds the ref
-    WRITABLE. That is harmless for most types, but an ``owns_main_ref`` type
-    re-renders its source file on every single save — so one ``Agent.save()``
-    (an Enabled toggle in the profile editor is enough) rewrites ``agent.md``
-    inside a cloned help-desk checkout, and the vendor's next ``git pull``
-    aborts on "local changes would be overwritten". The indexer already guards
-    the WALK with ``read_only=True``; this is the same guard on the SAVE, which
-    the walk-time flag never reaches.
+    Asked before the disk mirror because ``FSRef.read_only`` does not survive a
+    round trip: ``FSRecord.meta_dict`` persists only ``ar.path``, so a ref the
+    indexer deliberately created read-only comes back WRITABLE on the next load.
+    For an ``owns_main_ref`` type that loses the guard completely — ``Agent``
+    re-renders ``agent.md`` on every save, so one Enabled toggle would rewrite a
+    tracked file inside a cloned help desk and break the vendor's next
+    ``git pull``.
 
-    ``Folder.borrowed_checkout_paths()`` is the authoritative answer — the
-    Folder row IS the record of "this directory came from elsewhere", and its
-    docstring names this exact question. Only ``owns_main_ref`` types pay the
-    lookup, because they are the only ones that write on every save.
+    (The deeper fix is to carry ``read_only`` through ``FSRecord``'s dict form,
+    which ``FSRef.to_dict``/``from_dict`` already support; until then this asks
+    the authoritative source directly.)
     """
     ar = getattr(record, "asset_ref", None)
-    if ar is None or getattr(ar, "read_only", False):
-        return
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-    info = SchemaRegistry.get(type_name)
-    if info is None or not getattr(info, "owns_main_ref", False):
-        return
+    if ar is None or ar.read_only:
+        return False
     try:
-        from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
-        from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
-        from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under  # noqa: PLC0415
+        from flow_sdk.builtin.folder import Folder  # noqa: PLC0415 — circular at module level
 
-        borrowed = await Folder.borrowed_checkout_paths()
-        if not borrowed:
-            return
-        path = canonical_posix_path(ar.path)
-        if any(is_path_under(path, root) for root in borrowed):
-            record.asset_ref = FSRef(ar.path, read_only=True)
-    except Exception:  # noqa: BLE001 — a lookup failure must not block the save
-        logging.getLogger(__name__).debug(
-            "[entity] borrowed-checkout check failed for %s", type_name, exc_info=True
+        return await Folder.is_borrowed_path(ar.path)
+    except Exception:
+        # Fail OPEN deliberately: a Folder-table hiccup must not turn every save
+        # of a file-backed entity into a failure. Logged at warning, not debug,
+        # because the cost of being wrong here is a dirtied vendor checkout.
+        logging.getLogger(__name__).warning(
+            "[entity] borrowed-checkout check failed; writing %s anyway",
+            getattr(ar, "path", "?"),
+            exc_info=True,
         )
-
-
+        return False

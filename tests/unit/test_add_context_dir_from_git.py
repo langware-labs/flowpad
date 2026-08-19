@@ -96,6 +96,24 @@ def _make_vendor_repo(root: Path) -> Path:
     return root
 
 
+def _tracked_changes(repo: Path) -> list[str]:
+    """Porcelain lines for TRACKED files only.
+
+    Untracked entries are ignored on purpose: the harness points
+    ``FS_RECORD_PATH`` at ``tmp_path/records``, so the shadow store lands inside
+    the fixture. What must not happen is a write to a file the repo TRACKS —
+    that is what breaks ``git pull``.
+    """
+    return [
+        line
+        for line in subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=repo, capture_output=True, text=True, timeout=20,
+        ).stdout.splitlines()
+        if not line.startswith("??")
+    ]
+
+
 async def _project(tmp_path: Path, name: str) -> Project:
     work = tmp_path / name
     work.mkdir()
@@ -178,14 +196,7 @@ async def test_attaching_leaves_the_vendors_checkout_pullable(
     assert response.status == "SUCCESS", response
 
     checkout = Path(response.data["path"])
-    tracked = [
-        line
-        for line in subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=checkout, capture_output=True, text=True, timeout=20,
-        ).stdout.splitlines()
-        if not line.startswith("??")  # untracked: the test-only shadow store
-    ]
+    tracked = _tracked_changes(checkout)
     assert tracked == [], (
         f"attaching a repo must leave it pullable; these tracked files were "
         f"modified: {tracked}"
@@ -220,6 +231,13 @@ async def test_a_borrowed_checkout_is_known_to_be_unwritable(
         "as borrowed, or the project walk will write into it"
     )
 
+    # A directory the user actually owns must NOT be reported — flagging every
+    # folder read-only would stop the user's own assets from ever minting ids.
+    own = tmp_path / "my-own-notes"
+    own.mkdir()
+    await project.add_context_dir(str(own), scope="private")
+    assert canonical_posix_path(str(own)) not in await Folder.borrowed_checkout_paths()
+
 
 @pytest.mark.asyncio
 async def test_saving_a_vendor_agent_does_not_dirty_the_checkout(
@@ -242,32 +260,16 @@ async def test_saving_a_vendor_agent_does_not_dirty_the_checkout(
     assert response.status == "SUCCESS", response
     checkout = Path(response.data["path"])
     agent_md = checkout / "agentic-assets" / "agent" / "cloudnsite-support" / "agent.md"
-    before = agent_md.read_text(encoding="utf-8")
 
     agents = [a for a in await Agent.get_all() if a.asset_ref == canonical_posix_path(str(agent_md))]
     assert agents, "indexing the clone should have discovered the vendor's agent"
     await agents[0].save()
 
-    tracked = [
-        line
-        for line in subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=checkout, capture_output=True, text=True, timeout=20,
-        ).stdout.splitlines()
-        if not line.startswith("??")
-    ]
+    tracked = _tracked_changes(checkout)
     assert tracked == [], (
         f"saving a vendor-supplied agent must leave the checkout pullable; "
         f"these tracked files were modified: {tracked}"
     )
-    assert agent_md.read_text(encoding="utf-8") == before
-
-    # A directory the user actually owns must NOT be reported — flagging every
-    # folder read-only would stop the user's own assets from ever minting ids.
-    own = tmp_path / "my-own-notes"
-    own.mkdir()
-    await project.add_context_dir(str(own), scope="private")
-    assert canonical_posix_path(str(own)) not in await Folder.borrowed_checkout_paths()
 
 
 @pytest.mark.asyncio
