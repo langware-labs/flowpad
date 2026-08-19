@@ -458,8 +458,9 @@
           el.history.disabled = !hasProcess;
           el['refresh-status'].disabled = !hasProcess;
           el.stop.disabled = !hasProcess;
-          el.prompt.disabled = !hasProcess || state.promptInFlight;
-          el.send.disabled = !hasProcess || state.promptInFlight || !el.prompt.value.trim();
+          el.prompt.disabled = !hasProcess;
+          el.send.textContent = state.promptInFlight ? 'Queue' : 'Send';
+          el.send.disabled = !hasProcess || !el.prompt.value.trim();
         }
 
         function contentText(item) {
@@ -690,8 +691,20 @@
         el.composer.addEventListener('submit', function (event) {
           event.preventDefault();
           var message = el.prompt.value.trim();
-          if (!message || !state.process || state.promptInFlight) return;
+          if (!message || !state.process) return;
           el.prompt.value = '';
+          if (state.promptInFlight) {
+            updateControls();
+            state.process
+              .enqueue(message)
+              .then(function () {
+                log('Message queued on the deployed process.');
+              })
+              .catch(function (error) {
+                log('Queue failed: ' + errorText(error), true);
+              });
+            return;
+          }
           state.promptInFlight = true;
           updateControls();
           log('Streaming FlowData from the deployed process…');
