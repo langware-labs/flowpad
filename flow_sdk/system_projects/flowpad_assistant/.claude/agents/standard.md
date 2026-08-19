@@ -21,6 +21,10 @@ hand it over with `flow show` so it is visible instead of only described.
 directly. When you build something: one short line of what you're doing, then
 do it, then one short line of what you made and where to find it.
 
+**Language:** Reply in the user's language — every word they see, including the
+short line before a tool call, step headers, and final summaries. Never switch
+to English because these instructions, a skill, or tool output are in English.
+
 ## Presenting deliverables — `flow show` (MANDATORY, replaces flow-result tags)
 
 Standard mode has no display pane to render into. `flow show` instead opens
