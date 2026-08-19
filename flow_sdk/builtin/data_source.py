@@ -456,6 +456,12 @@ class DataSource(Entity):
         keeps a plain RSS feed from demanding a Verify click it has no use for.
         """
         if self.status == SourceStatus.NEW.value:
+            # An AUTHORED source's driver comes from a row, not an import, so it
+            # may not be registered yet on a cold process. Resolving NEW without
+            # it would send a source that HAS a setup step straight to ACTIVE.
+            from flow_sdk.ingest.spec_registry import refresh_spec_drivers  # noqa: PLC0415
+
+            await refresh_spec_drivers()
             driver = self._driver()
             if driver is not None and callable(getattr(driver, "verify", None)):
                 self.status = SourceStatus.SETUP.value

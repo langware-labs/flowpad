@@ -13,6 +13,7 @@ from typing import Optional
 
 from flow_sdk.fs_store.indexer.functions.data_source_spec import extract_data_source_spec
 from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
+from flow_sdk.ingest.spec_registry import on_spec_synced
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
@@ -49,6 +50,10 @@ DATA_SOURCE_SPEC = TypeMetadata(
     # every machine. Stamping one into the manifest would also make a shared
     # source arrive carrying the sender's id.
     identity_backend=derived_identity(),
+    # An authored source's driver is built from this row, so indexing one must
+    # make it runnable — otherwise the user writes a spec, creates a source, and
+    # watches it park as `unknown_provider` until the next heartbeat.
+    post_sync_fn=on_spec_synced,
     index_fields=["name", "title", "runtime"],
     meta_model=DataSourceSpecMeta,
 )
