@@ -29,6 +29,10 @@ vi.mock('@sdk/react/hooks', () => ({
   // so an empty, settled result keeps the row in its no-projects state without
   // pulling a live query into this render.
   useEntitiesQuery: () => EMPTY_ENTITIES_QUERY,
+  // ProjectAgentsStrip (rendered by VibeNewChat) resolves the active project
+  // via `useProject()`; no project keeps the strip empty, which is fine — the
+  // assertions below are about the submitted model tier.
+  useProject: () => ({ project: null }),
 }));
 
 vi.mock('@src/components/open-project-component/open-project-component', () => ({
