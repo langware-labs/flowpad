@@ -1,4 +1,4 @@
-import { Agent } from '@sdk';
+import { Agent, Project, TypeId } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { AgentAvatar } from '@src/components/agents/AgentAvatar';
 import { AgentIntroCard } from '@src/components/agents/AgentIntroCard';
@@ -6,6 +6,7 @@ import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { DesktopTile, TileSection } from '@src/components/quick-create/QuickCreatePanel';
 import { useProjectAgents } from '@src/hooks/use-project-agents';
+import { useMemo } from 'react';
 import { cn } from '@src/lib/utils';
 
 /**
@@ -23,10 +24,12 @@ import { cn } from '@src/lib/utils';
  * would be a third way to do one thing.
  */
 export function ProjectAgentsStrip({ projectId, className }: { projectId?: string | null; className?: string }) {
-  const { project } = useProject();
-  // `undefined` means "the active project" — Project Home passes its own pin.
-  const resolvedId = projectId ?? project?.id ?? null;
-  const { agents } = useProjectAgents(resolvedId);
+  // The PROJECT, not just its id: the agent lookup needs its mount path and its
+  // context-folder roots. A `projectId` pins a specific project (Project Home
+  // passes its own); `undefined` resolves the active one.
+  const pinned = useMemo(() => (projectId ? new TypeId(Project.type, projectId) : null), [projectId]);
+  const { project } = useProject(pinned);
+  const { agents } = useProjectAgents(project);
   const { launch, busyId } = useAgentLauncher();
 
   if (agents.length === 0) return null;

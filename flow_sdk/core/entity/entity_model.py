@@ -1320,6 +1320,7 @@ class Entity(DBEntity):
         ar_str = getattr(entity, "asset_ref", None)
         if ar_str:
             payload["asset_ref"] = ar_str
+        await _mark_borrowed_asset_ref_read_only(record, type_name)
         import asyncio
 
         try:
@@ -3577,3 +3578,48 @@ _action_registry.register(
     methods="post",
     types="all",
 )
+
+
+async def _mark_borrowed_asset_ref_read_only(record, type_name: str) -> None:
+    """Re-flag a record's ``asset_ref`` read-only when it lives in a borrowed checkout.
+
+    ``FSRef.read_only`` is a construction-time flag and is never serialized:
+    ``meta_dict`` persists only ``ar.path``, so every reload rebuilds the ref
+    WRITABLE. That is harmless for most types, but an ``owns_main_ref`` type
+    re-renders its source file on every single save — so one ``Agent.save()``
+    (an Enabled toggle in the profile editor is enough) rewrites ``agent.md``
+    inside a cloned help-desk checkout, and the vendor's next ``git pull``
+    aborts on "local changes would be overwritten". The indexer already guards
+    the WALK with ``read_only=True``; this is the same guard on the SAVE, which
+    the walk-time flag never reaches.
+
+    ``Folder.borrowed_checkout_paths()`` is the authoritative answer — the
+    Folder row IS the record of "this directory came from elsewhere", and its
+    docstring names this exact question. Only ``owns_main_ref`` types pay the
+    lookup, because they are the only ones that write on every save.
+    """
+    ar = getattr(record, "asset_ref", None)
+    if ar is None or getattr(ar, "read_only", False):
+        return
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(type_name)
+    if info is None or not getattr(info, "owns_main_ref", False):
+        return
+    try:
+        from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
+        from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+        from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under  # noqa: PLC0415
+
+        borrowed = await Folder.borrowed_checkout_paths()
+        if not borrowed:
+            return
+        path = canonical_posix_path(ar.path)
+        if any(is_path_under(path, root) for root in borrowed):
+            record.asset_ref = FSRef(ar.path, read_only=True)
+    except Exception:  # noqa: BLE001 — a lookup failure must not block the save
+        logging.getLogger(__name__).debug(
+            "[entity] borrowed-checkout check failed for %s", type_name, exc_info=True
+        )
+
+
