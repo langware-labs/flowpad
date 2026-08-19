@@ -3,16 +3,19 @@
  *
  * The requested end-to-end check, in a real browser:
  *   1. Create a temp folder with a dummy skill (`.claude/skills/<n>/SKILL.md`).
- *   2. Create a fresh project on dev-1 and add the folder as a context folder
- *      via the real backend action (`project.addContextDir`) — which persists
+ *   2. Create a fresh project and add the folder as a context folder via the
+ *      real backend action (`project.addContextDir`) — which persists
  *      include_dirs and indexes the skill.
- *   3. Load the project home in the browser and assert the ProjectHome
- *      "Context folders" section renders the added folder.
+ *   3. Load the project in the browser and assert the Assets navigator's
+ *      "Context folders" root lists the added folder.
  *
- * Backend seeding uses the dev-1 HTTP graph API directly (create project +
- * add-context-dir action). The browser then renders against dev-1's frontend.
+ * (The original assertion target — the ProjectHome "Context folders" card —
+ * was removed in the July project-home redesign (8d6b05d98/80b55a972); the
+ * feature now surfaces as the `asset-context-folders-root` row of the Assets
+ * navigator tree, backed by the same include_dirs.)
  *
- * Prereq: dev-1 is launched (frontend :5002, backend :6001).
+ * Backend seeding uses the HTTP graph API directly (create project +
+ * add-context-dir action). The browser then renders against the frontend.
  */
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
@@ -77,18 +80,27 @@ test.afterAll(async () => {
   if (tmpRoot) await fs.rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
 });
 
-test('ProjectHome shows the added context folder', async ({ page }) => {
+test('Assets navigator lists the added context folder', async ({ page }) => {
   await page.goto(`/dock/project/${projectId}`);
 
-  // ProjectHome renders on an empty project home; its context-folders section
-  // + the added folder row must appear.
-  const section = page.getByTestId('project-context-folders');
-  await expect(section).toBeVisible();
+  // The project view hosts the Assets navigator; its "Context folders" root
+  // must render (the project is in scope even before any expansion).
+  const root = page.getByText('Context folders', { exact: true });
+  await expect(root).toBeVisible();
 
-  const row = page.getByTestId(`context-folder-row-${contextDir}`);
-  await expect(row).toBeVisible();
-  await expect(row).toContainText('ctx'); // basename of the context folder
+  // A fresh instance auto-opens the Chat Settings dialog over the project
+  // view — asynchronously, AFTER first paint — and its Radix overlay swallows
+  // pointer events. Poll-dismiss with Escape until the overlay is gone.
+  const overlay = page.locator('div[data-state="open"].fixed.inset-0');
+  await expect(async () => {
+    if ((await overlay.count()) > 0) {
+      await page.keyboard.press('Escape');
+      throw new Error('overlay still open');
+    }
+  }).toPass({ timeout: 15_000 });
 
-  // The dropzone (drop a folder / click to add) is wired.
-  await expect(page.getByTestId('context-folder-dropzone')).toBeVisible();
+  // Expand the root (chevron id = the stable ASSET_CONTEXT_FOLDERS_ROOT_ID)
+  // and assert the added folder appears as a child row, labeled by basename.
+  await page.getByTestId('browseable-chevron-asset-context-folders-root').click();
+  await expect(page.getByText('ctx', { exact: true })).toBeVisible();
 });
