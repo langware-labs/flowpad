@@ -1,10 +1,13 @@
 import { AgenticProcess, WORKER_STATUS_LABEL, WorkerStatus } from '@sdk';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { DotPulse } from '@src/components/dot-pulse';
 import { getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
 import { formatClock } from '@src/components/lens-viewer/shared/format-utils';
 import { useHarnessLoginOnAuthError } from '@src/components/harness-login/use-harness-login-on-auth-error';
-import type { CurrentActivity } from './current-activity';
+import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
+import { describeCurrentActivity } from './current-activity';
+import { useStickyActivity } from './hooks/useStickyActivity';
+import { useTurnActivity } from './hooks/useTurnActivity';
 
 /**
  * Worker statuses that describe a FINISHED turn. Seeing one while the activity
@@ -32,21 +35,40 @@ function isTerminalStatus(status: WorkerStatus | null | undefined): boolean {
 }
 
 interface ChatActivityLineProps {
+  /** The only input. Everything the line shows is derived from this entity. */
   process: AgenticProcess;
-  /** From `useTurnActivity` — whether a turn is in flight. */
-  active: boolean;
-  /** Epoch ms the current turn started (for the elapsed clock). */
-  startedAt: number | null;
-  /** Live worker status for the phase label. */
-  status: WorkerStatus | null;
-  /** The operation in flight right now, from `describeCurrentActivity`. When
-   *  set it replaces the generic phase label with "Editing · foo.ts". Null
-   *  between tools, and absent on surfaces that render their live events
-   *  inline (they already show the operation). */
-  activity?: CurrentActivity | null;
   /** Optional content rendered inline right after the elapsed clock. Only
    *  rendered while the line itself is visible (active). */
   trailing?: ReactNode;
+}
+
+/**
+ * Everything the line needs, sourced from the process itself.
+ *
+ * The line used to be handed `active` / `startedAt` / `status` / `activity` as
+ * props, each computed in whichever pane rendered it. That coupled the readout
+ * to the CHAT GROUPER: the panes fed it `splitLiveGroup(useTurnGroups(items))`,
+ * and the grouper deliberately drops frames the chat represents elsewhere — a
+ * skill call, which `MetaMessageChip` already shows — so those operations could
+ * never be named here no matter what `describeEvent` knew about them.
+ *
+ * Subscribing to `flowDataStream` instead reads what the agent actually did,
+ * before any rendering concern has filtered it. Grouping is for the transcript;
+ * this line is not the transcript. Nothing below is new logic — it is the exact
+ * composition the two panes each performed, moved to the one component that
+ * consumes it.
+ *
+ * Not exported and not in `hooks/`: it has exactly one caller, and a module of
+ * its own would be indirection with nothing to justify it.
+ */
+function useLiveActivity(process: AgenticProcess) {
+  const turn = useTurnActivity(process);
+  const items = useAgenticProcessStream(process);
+  const current = useMemo(
+    () => describeCurrentActivity(items, turn.startedAt, turn.status),
+    [items, turn.startedAt, turn.status],
+  );
+  return { ...turn, activity: useStickyActivity(current, turn.startedAt) };
 }
 
 /**
@@ -56,10 +78,12 @@ interface ChatActivityLineProps {
  * The label prefers the CONCRETE operation in flight ("Editing · foo.ts",
  * "Running · npm test") and falls back to the coarse worker phase (Thinking /
  * Using tool / …) between tools, so the line always says something and says the
- * most specific thing it can. Renders nothing when idle. Driven by
- * `useTurnActivity` (lifted to the pane so the list can scroll it into view).
+ * most specific thing it can. Renders nothing when idle.
+ *
+ * Takes the process and nothing else — see {@link useLiveActivity}.
  */
-export function ChatActivityLine({ process, active, startedAt, status, activity, trailing }: ChatActivityLineProps) {
+export function ChatActivityLine({ process, trailing }: ChatActivityLineProps) {
+  const { active, startedAt, status, activity } = useLiveActivity(process);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {

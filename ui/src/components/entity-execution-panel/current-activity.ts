@@ -1,6 +1,6 @@
 import { t } from '@lingui/core/macro';
 import { FlowData, FlowElementTypes, WorkerStatus } from '@sdk';
-import type { LucideIcon } from 'lucide-react';
+import { Sparkles, type LucideIcon } from 'lucide-react';
 
 import { getToolUseId } from '@src/components/floating-chat/groupTurnEvents';
 import { describeEvent } from '@src/components/floating-chat/toolEventDescriptor';
@@ -46,6 +46,40 @@ const FILE_KINDS = new Set(['file_read', 'file_write', 'file_edit']);
 const HIDDEN_DETAIL_KINDS = new Set(['shell_command']);
 
 /**
+ * "The agent is reasoning" as a first-class readout.
+ *
+ * A function, not a module constant: `t` must run per call, after
+ * `i18n.activate()`. Evaluated at module scope it throws on import.
+ *
+ * Both thinking signals used to return null and lean on the caller's fallback
+ * phase label to say "Thinking". It does not say that. The phase label reads
+ * `worker_status`, which the backend derives by tailing the transcript, and
+ * that tail only yields THINKING when the newest entry is an assistant entry
+ * with NO stop_reason (`worker_status.py`) — but a completed assistant message
+ * always carries one, and while the model is actually reasoning there is
+ * usually no new entry at all. So the tail still describes the PREVIOUS entry
+ * and the line reads "Working" / "Using tool" straight through the thinking.
+ *
+ * Naming it here makes the signal that actually fires — the REASONING frame —
+ * the one that renders, instead of deferring to a status that in practice
+ * never arrives.
+ *
+ * The key is constant so consecutive reasoning frames are ONE operation to the
+ * display latch: a refinement, not a new activity restarting the floor.
+ */
+function thinkingActivity(): CurrentActivity {
+  return {
+    key: 'reasoning',
+    // Same glyph the dense tool row already uses for a reasoning frame
+    // (`ToolEntryRow.tsx`), so the two surfaces read as the same event.
+    icon: Sparkles,
+    label: t`Thinking`,
+    detail: '',
+    title: '',
+  };
+}
+
+/**
  * Describe what the agent is doing in the CURRENT turn: the newest operation,
  * or null when the newest thing it did was think (or it has done neither).
  *
@@ -75,13 +109,14 @@ export function describeCurrentActivity(
   turnStartedAt: number | null,
   workerStatus: WorkerStatus | null = null,
 ): CurrentActivity | null {
-  // The worker saying THINKING is the authoritative "that operation is over".
-  // A reasoning FRAME is the same news, but only arrives when the model emits a
-  // thinking block — plenty of turns think without one, and then the newest
-  // frame stays the finished tool call and the line sits on "Reading" for as
-  // long as the model deliberates. The status moves either way, so it is the
-  // signal that actually unsticks the readout.
-  if (workerStatus === WorkerStatus.THINKING) return null;
+  // Two independent signals say "that operation is over, the agent is
+  // reasoning", and BOTH are kept: the worker status, and a REASONING frame.
+  // Neither subsumes the other — a turn can think without ever emitting a
+  // thinking block (no frame), and the transcript tail frequently fails to
+  // report THINKING at all (no status; see thinkingActivity). Deleting either
+  // one leaves the line stuck on the last tool for as long as the model
+  // deliberates, which is the bug each was added to fix.
+  if (workerStatus === WorkerStatus.THINKING) return thinkingActivity();
 
   const scoped = currentTurnSlice(events, turnStartedAt);
 
@@ -90,11 +125,18 @@ export function describeCurrentActivity(
     // Thinking supersedes the operation before it. Once the agent is reasoning
     // again, the last tool it ran is no longer what is happening — leaving
     // "Reading · foo.ts" up would keep asserting an operation that has already
-    // finished. Returning null hands the line back to the generic phase label
-    // ("Thinking"), and the caller's minimum-display window still applies, so
-    // the operation cannot be cut short by a reasoning frame that lands
-    // immediately after it.
-    if (event.elementType === FlowElementTypes.REASONING) return null;
+    // finished. The caller's minimum-display window still applies, so a
+    // reasoning frame landing immediately after an operation cannot cut it
+    // short.
+    if (event.elementType === FlowElementTypes.REASONING) return thinkingActivity();
+    // An assistant message is the same news by a different route: the agent has
+    // stopped operating and started explaining, so the last tool it ran is no
+    // longer the story. This used to arrive for free — the line was fed the
+    // trailing group of the turn grouper, which yielded nothing once that group
+    // was a message. The line reads the process stream directly now, so the rule
+    // lives here, next to the reasoning rule it mirrors. Without it the readout
+    // holds a finished operation up through the entire written reply.
+    if (event.elementType === FlowElementTypes.CHAT || event.elementType === FlowElementTypes.TEXT) return null;
     if (event.elementType !== FlowElementTypes.TOOL_CALL) continue;
     const { kind, icon, label, detail } = describeEvent(event);
     const hideDetail = HIDDEN_DETAIL_KINDS.has(kind);

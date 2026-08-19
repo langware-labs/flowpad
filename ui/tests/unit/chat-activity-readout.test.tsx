@@ -93,23 +93,43 @@ describe('describeCurrentActivity', () => {
     expect(first?.key).not.toBe(second?.key);
   });
 
-  it('hands back to the phase label once the agent is reasoning again', () => {
-    // Otherwise the line freezes on the last file the agent touched.
+  it('says Thinking once the agent is reasoning again', () => {
+    // Otherwise the line freezes on the last file the agent touched. This used
+    // to return null and lean on the caller's phase label to say "Thinking" —
+    // it does not: that label reads `worker_status`, which the transcript tail
+    // rarely resolves to THINKING (see thinkingActivity), so the line showed
+    // "Working" / "Using tool" straight through the reasoning instead.
     const activity = describeCurrentActivity(
       [toolCall('file_edit', { path: '/repo/foo.ts' }, { ts: 0 }), reasoning(10)],
       T0,
     );
-    expect(activity).toBeNull();
+    expect(activity?.label).toBe('Thinking');
+    // No object to name, and nothing half-shown from the superseded operation.
+    expect(activity?.detail).toBe('');
+    expect(activity?.title).toBe('');
   });
 
-  it('hands back when the WORKER reports thinking, with no reasoning frame at all', () => {
+  it('says Thinking when the WORKER reports it, with no reasoning frame at all', () => {
     // The frame-based rule above only fires when the model emits a thinking
     // block. Plenty of turns think without one — the newest frame stays the
     // finished tool call and the line sat on "Reading" for as long as the model
-    // deliberated. The status is the signal that moves either way.
+    // deliberated. The status is the signal that moves either way. Both signals
+    // are kept precisely because each covers the other's blind spot.
     const events = [toolCall('file_read', { path: '/repo/stuck.ts' })];
     expect(describeCurrentActivity(events, T0, WorkerStatus.TOOL_RUNNING)?.detail).toBe('stuck.ts');
-    expect(describeCurrentActivity(events, T0, WorkerStatus.THINKING)).toBeNull();
+    expect(describeCurrentActivity(events, T0, WorkerStatus.THINKING)?.label).toBe('Thinking');
+  });
+
+  it('keys every reasoning frame the same, so thinking is ONE operation', () => {
+    // The display latch keys on `key`. If consecutive reasoning frames produced
+    // different keys each one would restart the minimum-display floor and the
+    // readout would stutter; as one key they are a refinement of the same
+    // activity, and a real operation after them still wins on its own key.
+    const first = describeCurrentActivity([reasoning(10)], T0);
+    const second = describeCurrentActivity([reasoning(10), reasoning(20)], T0);
+    expect(first?.key).toBe(second?.key);
+    expect(describeCurrentActivity([reasoning(10), toolCall('file_read', { path: '/a.ts' }, { ts: 30 })], T0)?.key)
+      .not.toBe(first?.key);
   });
 
   it('ignores replayed history, so a resumed session reports nothing stale', () => {
@@ -135,6 +155,76 @@ describe('describeCurrentActivity', () => {
     const fd = toolCall('file_read', { path: '/repo/kept.ts' });
     (fd as unknown as { timestamp: string }).timestamp = 'not-a-date';
     expect(describeCurrentActivity([fd], T0)?.detail).toBe('kept.ts');
+  });
+
+  // A skill call reaches this function only because the line reads the process
+  // stream directly. The chat grouper drops the Skill TOOL_CALL/TOOL_RESULT pair
+  // on purpose (MetaMessageChip already shows it, and keeping it inline rendered
+  // duplicate chips), so for as long as the line was fed the grouper's output
+  // the `skill_call` branch of `gerundFor` was unreachable.
+  it('names a skill by the skill it is running', () => {
+    const activity = describeCurrentActivity(
+      [toolCall('skill_call', { skill_name: 'flowpad-assistance' })],
+      T0,
+    );
+    expect(activity?.label).toBe('Using skill');
+    // Not basenamed and not hidden: a skill name is already short and IS the
+    // information, unlike a path (basenamed) or a shell command (withheld).
+    expect(activity?.detail).toBe('flowpad-assistance');
+    expect(activity?.title).toBe('flowpad-assistance');
+  });
+
+  // `emit_flow_data` does not forward `process_entry`, so a LIVE frame has no
+  // typed transcript entry — only attributes. Every driver stamps `subtype` and
+  // `skill-name` on them for exactly this reason. If one stops, this fails here
+  // instead of silently degrading to a nameless "Using skill" in production.
+  it('names a live skill frame from attributes alone (no process_entry)', () => {
+    const fd = new FlowData(FlowElementTypes.TOOL_CALL, JSON.stringify({ tool_call_id: 'tu-skill' }), {
+      t: at(0),
+      subtype: 'skill_call',
+      'observation-kind': 'live',
+      'tool-name': 'Skill',
+      'tool-use-id': 'tu-skill',
+      'skill-name': 'rca',
+    });
+    const activity = describeCurrentActivity([fd], T0);
+    expect(activity?.label).toBe('Using skill');
+    expect(activity?.detail).toBe('rca');
+    expect(activity?.key).toBe('tu-skill');
+  });
+
+  // Previously free: the line was handed the grouper's trailing group, which
+  // went empty once that group was a message. Reading the raw stream, the rule
+  // has to be stated — without it the readout holds the last tool up through
+  // the whole written reply.
+  it('stops naming the operation once the agent starts replying', () => {
+    const events = [
+      toolCall('file_edit', { path: '/repo/foo.ts' }),
+      new FlowData(FlowElementTypes.CHAT, 'Here is what I changed…', { t: at(10), role: 'assistant' }),
+    ];
+    expect(describeCurrentActivity(events, T0)).toBeNull();
+  });
+
+  it('still reports a tool the agent ran after replying', () => {
+    // Order is what matters, not the mere presence of a message: the agent
+    // narrating and THEN acting is the common multi-step turn.
+    const events = [
+      new FlowData(FlowElementTypes.CHAT, 'Let me check that file.', { t: at(0), role: 'assistant' }),
+      toolCall('file_read', { path: '/repo/bar.ts' }, { ts: 10 }),
+    ];
+    expect(describeCurrentActivity(events, T0)?.detail).toBe('bar.ts');
+  });
+
+  // The whole point of the change: the line is handed the process's entire
+  // buffer, not a pre-filtered live group, so the scoping has to hold on its
+  // own against replayed history AND a previous turn in the same session.
+  it('stays turn-scoped when handed the full stream, history included', () => {
+    const events = [
+      toolCall('file_write', { path: '/repo/replayed.ts' }, { observation: 'replay', ts: -600_000, id: 'r1' }),
+      toolCall('file_read', { path: '/repo/previous-turn.ts' }, { ts: -5_000, id: 'p1' }),
+      toolCall('file_edit', { path: '/repo/current.ts' }, { ts: 20, id: 'c1' }),
+    ];
+    expect(describeCurrentActivity(events, T0)?.detail).toBe('current.ts');
   });
 });
 
