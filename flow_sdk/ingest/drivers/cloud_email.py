@@ -252,7 +252,13 @@ class CloudEmailDriver:
 
     @staticmethod
     def _agent_id(source) -> str:
-        agent_id = str((getattr(source, "config", None) or {}).get("agent_id") or "").strip()
+        """The mailbox's agent, required. Reads through `inbox.projection`'s
+        `agent_id_of` — that key is load-bearing for thread scoping, sender
+        attribution and the runner's gate, and a second spelling of the lookup
+        would fix one lane and not the others."""
+        from flow_sdk.inbox.projection import agent_id_of  # noqa: PLC0415
+
+        agent_id = agent_id_of(source)
         if not agent_id:
             raise SourceError.config("no_agent", "config.agent_id is required")
         return agent_id

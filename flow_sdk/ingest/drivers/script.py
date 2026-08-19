@@ -60,8 +60,6 @@ DEADLINES = {"segments": 30, "fetch": 120, "verify": 30}
 class ScriptSource:
     """One authored source. Constructed per spec, registered like any driver."""
 
-    #: This source's bytes are ours unless the manifest says otherwise.
-    stamps_identity = True
     #: Authored sources do not send. `inbox/outbound.py` then reports "cannot
     #: send" rather than spawning something that does not exist.
     sends = False

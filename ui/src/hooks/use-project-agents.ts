@@ -59,10 +59,10 @@ export function useProjectAgents(project?: Project | null) {
   // Content-keyed: the roots drive both the query and its identity, and a fresh
   // array each render would rebuild the request forever.
   const rootsKey = (project?.context_roots ?? []).join('|');
-  const roots = useMemo(() => (rootsKey ? rootsKey.split('|') : []), [rootsKey]);
   const request = useMemo(
-    () =>
-      new QueryRequest({
+    () => {
+      const roots = rootsKey ? rootsKey.split('|') : [];
+      return new QueryRequest({
         type: Agent.type,
         scope: [],
         name: `projectAgents:${project?.id ?? 'none'}`,
@@ -76,9 +76,13 @@ export function useProjectAgents(project?: Project | null) {
           order_by: { name: 'asc' },
           limit: MAX_HOME_AGENTS,
         }),
-      }),
-    [roots, project?.id],
+      });
+    },
+    // Keyed on the joined string, not on a split array rebuilt from it — the
+    // array was only ever derived. `project?.id` stays because the request's
+    // `name` embeds it, though it cannot change `QueryRequest.key`.
+    [rootsKey, project?.id],
   );
-  const { data: agents = [] } = useEntitiesQuery<Agent>(request, { enabled: roots.length > 0 });
+  const { data: agents = [] } = useEntitiesQuery<Agent>(request, { enabled: rootsKey.length > 0 });
   return { agents };
 }

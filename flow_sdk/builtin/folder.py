@@ -25,7 +25,7 @@ context ref resolves. Local origins keep the legacy path-derived v5 id
 links are untouched (zero migration).
 """
 
-from typing import Optional
+from typing import ClassVar, Optional
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.builtin.fs_origin import FSOrigin, is_safe_rel_path
@@ -51,6 +51,11 @@ class Folder(Entity):
     # LOCAL resolved-path cache on THIS machine (see module docstring). Not the
     # transportable identity; set at add time (sender) or on resolve (receiver).
     path: Optional[str] = APIField(default=None, description="Local resolved path of the directory (per-machine cache)", sharing=Sharing.PRIVATE)
+
+    #: Memoized borrowed-checkout roots (see ``borrowed_checkout_paths``).
+    #: Declared here so the attribute exists rather than being conjured by the
+    #: first write and read back through ``getattr(..., None)``.
+    _borrowed_cache: ClassVar[Optional[set]] = None
 
     def __init__(self, **data):
         # Tolerant backfill: an old row / bundle may carry a legacy ``path`` or
@@ -207,9 +212,8 @@ class Folder(Entity):
         (there are at least three: context-folder add, folder resolve, and the
         project walk that owns a checkout it did not attach).
         """
-        cached = getattr(cls, "_borrowed_cache", None)
-        if cached is not None:
-            return cached
+        if cls._borrowed_cache is not None:
+            return cls._borrowed_cache
         paths = set()
         for folder in await cls.get_all():
             origin = folder.origin
@@ -232,8 +236,6 @@ class Folder(Entity):
         if not path:
             return False
         roots = await cls.borrowed_checkout_paths()
-        if not roots:
-            return False
         canonical = canonical_posix_path(path)
         return any(is_path_under(canonical, root) for root in roots)
 

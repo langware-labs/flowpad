@@ -19,10 +19,6 @@ handler, so it reads no thread and drops the message with a warning nobody sees.
 """
 from __future__ import annotations
 
-import logging
-
-logger = logging.getLogger(__name__)
-
 
 def emit_projected_tag(item) -> None:
     """Announce one message's placement in a conversation.

@@ -100,10 +100,13 @@ async def handle_inbound(item) -> bool:
     if source is None:
         return False
 
+    # The loop guard first: it is pure string work, and the hub files every
+    # reply this agent sends back into the same mailbox — so without this order
+    # every outgoing message pays an Agent row read on its way to being ignored.
+    if _is_own_outgoing(item, source):
+        return False
     agent = await _agent_for(source)
     if agent is None:
-        return False
-    if _is_own_outgoing(item, source):
         return False
     if not agent.may_email(item.author_external_id or ""):
         logger.info("[agent-mail] ignoring mail to %s from unlisted sender", agent.name or agent.id)
