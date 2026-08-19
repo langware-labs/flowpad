@@ -2547,6 +2547,7 @@ msgstr "Changes ({0})"
 msgid "Chat"
 msgstr "Chat"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Chat history"
 msgstr "Chat history"
@@ -2562,6 +2563,10 @@ msgstr "Chat tools"
 #: src/components/lens-viewer/shared/ViewModeToggle.tsx
 msgid "Chat view"
 msgstr "Chat view"
+
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+msgid "Chat with this deployed agent"
+msgstr "Chat with this deployed agent"
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
@@ -4975,6 +4980,10 @@ msgstr "Deploy to cloud"
 #: src/components/version-popover/version-popover.tsx
 msgid "Deployed"
 msgstr "Deployed"
+
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+msgid "Deployed agent"
+msgstr "Deployed agent"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deployed without its definition"
@@ -9501,6 +9510,10 @@ msgstr "Message the agent"
 msgid "Message the agent…"
 msgstr "Message the agent…"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+msgid "Message this deployed agent…"
+msgstr "Message this deployed agent…"
+
 #: src/i18n/type-labels.ts
 msgid "Message Thread"
 msgstr "Message Thread"
@@ -9800,6 +9813,7 @@ msgstr "New bookmark folder"
 msgid "New build"
 msgstr "New build"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "New chat"
 msgstr "New chat"
@@ -10391,6 +10405,7 @@ msgstr "No page exists with this name yet."
 msgid "No past builds"
 msgstr "No past builds"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "No past chats"
 msgstr "No past chats"
@@ -11767,6 +11782,7 @@ msgstr "Past analyses"
 msgid "Past builds"
 msgstr "Past builds"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Past chats"
 msgstr "Past chats"
@@ -14436,6 +14452,10 @@ msgstr "Send a message first — fork requires conversation history"
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Send a message first — no transcript yet"
 msgstr "Send a message first — no transcript yet"
+
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+msgid "Send a message to this deployed agent."
+msgstr "Send a message to this deployed agent."
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Send a PROMPT to the recipient asking for a status summary"

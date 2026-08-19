@@ -120,7 +120,7 @@ class AgentDriver:
         """
         return str((source.config or {}).get("connector") or "").strip()
 
-    def segments(self, source) -> list[SegmentRef]:
+    async def segments(self, source) -> list[SegmentRef]:
         config = getattr(source, "config", None) or {}
         keys = config.get("streams") or [config.get("stream") or "INBOX"]
         return [SegmentRef(key=str(k), label=str(k)) for k in keys]

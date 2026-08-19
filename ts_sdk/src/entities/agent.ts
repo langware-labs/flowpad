@@ -208,9 +208,30 @@ export class Agent extends APIEntity<Agent> {
    * Open a session AS this agent: a new, visible, headless Chat process built
    * from the agent's local deployment, with no first turn — the human types it.
    * `POST /agent/<id>/use`. The counterpart of `run` (one prompt, headless).
+   *
+   * `projectId` is the project the session should ACT IN, which is not always
+   * the project the agent lives in: an agent supplied by a help desk attached
+   * as a context folder belongs to the desk's checkout, but the session has to
+   * open on the customer's project. Omit it and the backend falls back to the
+   * agent's own project.
    */
-  async use(): Promise<AgentUseResult> {
+  async use(projectId?: string | null): Promise<AgentUseResult> {
     const action = new ActionInfo('use', Agent.type, this.id, 'POST');
+    action.bodyParameters = { project_id: projectId ?? null };
+    return (await dataManager.callAction(action)) as AgentUseResult;
+  }
+
+  /**
+   * Open a chat on one exact cloud Deployment of this Agent.
+   *
+   * The Hub validates that the placement belongs to this Agent and creates the
+   * real AgenticProcess on that machine. The returned process id is addressed
+   * through the ordinary AgenticProcess SDK; callers do not need a second
+   * remote-chat transport.
+   */
+  async useDeployment(deploymentId: string): Promise<AgentUseResult> {
+    const action = new ActionInfo('use', Agent.type, this.id, 'POST');
+    action.bodyParameters = { deployment_id: deploymentId };
     return (await dataManager.callAction(action)) as AgentUseResult;
   }
 

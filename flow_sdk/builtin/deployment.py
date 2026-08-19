@@ -475,9 +475,15 @@ class Deployment(Entity):
                 "which cannot be reached from here yet."
             )
         agent = await self._require_agent()  # ``build`` re-reads it from the memoized ``_element``
+        # Peeked, not popped — ``build`` stays the one owner of the
+        # caller-else-agent fallback. It is read here because the acting project
+        # has to drive the WORKDIR too: resolving cwd from ``agent.project_id``
+        # would open a help-desk agent's session inside the vendor's checkout
+        # rather than the customer's project.
         workdir = options.pop("workdir", None)
-        if not workdir and agent.project_id:
-            project = await Project.get_by_id(agent.project_id)
+        project_id = options.get("project_id") or agent.project_id
+        if not workdir and project_id:
+            project = await Project.get_by_id(project_id)
             workdir = getattr(project, "fs_storage_mount_path", None) if project else None
         proc = await self.build(
             "",

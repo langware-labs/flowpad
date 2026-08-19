@@ -19,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tab
 
 import { AgentDeploymentsSection } from './AgentDeploymentsSection';
 import { AgentListField, AgentSelectField } from './AgentProfileFields';
+import { useProject } from '@sdk/react/hooks';
 import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
 import { AGENT_EFFORTS, AGENT_MODEL_TIERS, AGENT_PERMISSION_MODES, AGENT_WORKER_TYPES } from './agent-vocabularies';
 import { AgentDocumentPatch, patchAgentDocument } from './agent-document';
@@ -57,6 +58,10 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
   const [description, setDescription] = useState(agent?.description ?? '');
   const [prompt, setPrompt] = useState(agent?.system_prompt ?? '');
   const [avatarRevision, setAvatarRevision] = useState(0);
+  // The ACTIVE project is the one a session opened from here acts in — an
+  // agent supplied by an attached help desk lives in the desk's checkout, and
+  // launching into THAT would open the session in the vendor's repo.
+  const { project: activeProject } = useProject();
   const { launch, busyId } = useAgentLauncher();
   const using = busyId === agent?.id;
 
@@ -132,7 +137,8 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
   // Through `mainRef`, not `agent.avatarImageUrl`: the router hands the editor
   // the authoritative ref (local mount OR hub entity storage), while the SDK
   // getter resolves off `asset_ref` — same file here, but this one is exact.
-  const avatarImageUrl = agent.avatar === AGENT_AVATAR_REF ? mainRef.parent.child(AGENT_AVATAR_FILE).getDownloadUrl() : null;
+  const avatarImageUrl =
+    agent.avatar === AGENT_AVATAR_REF ? mainRef.parent.child(AGENT_AVATAR_FILE).getDownloadUrl() : null;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -210,8 +216,17 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
               aria-label={t`Enabled`}
             />
           </div>
-          <Button size="sm" disabled={!agent.enabled || using} onClick={() => void launch(agent)} data-testid="agent-use">
-            {using ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="me-1.5 h-3.5 w-3.5" />}
+          <Button
+            size="sm"
+            disabled={!agent.enabled || using}
+            onClick={() => void launch(agent, activeProject?.id ?? null)}
+            data-testid="agent-use"
+          >
+            {using ? (
+              <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="me-1.5 h-3.5 w-3.5" />
+            )}
             <Trans>Use</Trans>
           </Button>
         </div>
@@ -324,7 +339,11 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
                     value={agent.subagents}
                     onCommit={(v) => void save({ subagents: v ?? [] })}
                   />
-                  <AgentListField label={t`Skills`} value={agent.skills} onCommit={(v) => void save({ skills: v ?? [] })} />
+                  <AgentListField
+                    label={t`Skills`}
+                    value={agent.skills}
+                    onCommit={(v) => void save({ skills: v ?? [] })}
+                  />
                   <AgentListField
                     label={t`MCP servers`}
                     value={agent.mcp_servers}

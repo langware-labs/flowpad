@@ -111,6 +111,8 @@ def count_unread(
 ) -> int:
     """The unread formula — pure, over entity rows (the fetch lives in
     ``_load_and_count``). Mirrors the FE ``conversationFacets`` exactly."""
+    from flow_sdk.inbox.projection import is_agent_sender  # noqa: PLC0415
+
     pending = [inv for inv in invitations if invitation_is_pending(inv, viewer_email, now)]
 
     # Every pending invitation is one actionable unread item, counted DIRECTLY —
@@ -144,7 +146,17 @@ def count_unread(
             # Not materialized yet — don't fall back to an older message; the
             # post-materialization recompute picks it up.
             continue
-        if not latest.is_read and latest.sender_id and latest.sender_id not in self_ids:
+        # An agent's reply is OURS, not unread mail from a stranger — and the
+        # `agent:` prefix says so by itself. Enumerating agent rows to build the
+        # set instead would run a table scan per recount AND give a different
+        # answer over time: an agent whose mail is later switched off would drop
+        # out, and its past replies would start counting as unread.
+        if (
+            not latest.is_read
+            and latest.sender_id
+            and latest.sender_id not in self_ids
+            and not is_agent_sender(latest.sender_id)
+        ):
             unread += 1
 
     return unread
@@ -175,6 +187,36 @@ async def _load_and_count() -> int:
         viewer_email=email,
         now=datetime.now(timezone.utc),
     )
+
+
+_INBOX_STARTED = False
+
+
+def start_inbox() -> None:
+    """Arm every inbox lane, in the order they depend on each other.
+
+    ONE entry point because the order is a contract, not a preference: the agent
+    runner keys off `inbox.*.message.projected`, which only the projection
+    emits, so a process that armed the runner alone ingests mail and answers
+    nothing. Stating that once here means a caller cannot get it wrong, and a
+    third lane added later reaches every caller — where two hand-ordered call
+    sites would leave the second one silently half-wired.
+
+    Idempotent, and it has to own that itself: `start_inbox_projection` carries
+    its own `_started` guard but `subscribe()` is a plain `on_tag` that returns
+    an unsubscriber, so arming twice would attach the runner twice and every
+    message would drive two turns.
+    """
+    global _INBOX_STARTED
+    if _INBOX_STARTED:
+        return
+    _INBOX_STARTED = True
+
+    from flow_sdk.inbox.agent_runner import subscribe as subscribe_agent_mail  # noqa: PLC0415
+    from flow_sdk.inbox.projection import start_inbox_projection  # noqa: PLC0415
+
+    start_inbox_projection()
+    subscribe_agent_mail()
 
 
 # ── public surface ───────────────────────────────────────────────────────────
