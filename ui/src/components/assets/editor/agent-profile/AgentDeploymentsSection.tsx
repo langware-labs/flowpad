@@ -4,6 +4,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useMemo, useState } from 'react';
 import { Cloud, ExternalLink, Loader2, MessageSquare, PauseCircle, Trash2 } from 'lucide-react';
 
+import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
@@ -78,12 +79,14 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
     } catch (e) {
       notify.error({
         title: t`Could not deploy`,
-        message: e instanceof Error ? e.message : t`Deploy failed.`,
+        // `errorMessage`, not `e.message`: an AxiosError IS an Error whose
+        // message is the useless status line, carrying the server's actual
+        // explanation at `response.data`. That is the whole reason the helper
+        // checks the envelope first.
+        message: errorMessage(e, t`Deploy failed.`),
         // The ONE case `forceToast` is documented for: this alert is the only
-        // feedback that Deploy did anything. Alerts are otherwise toasted in Dev
-        // mode only, so outside Dev the button reported nothing at all — the
-        // agent has no owning project, or its project has no GitHub connection,
-        // and the user sees a button that silently does nothing.
+        // feedback that Deploy did anything. Alerts toast in Dev mode only, so
+        // outside Dev the button reported nothing at all.
         forceToast: true,
       });
     } finally {
@@ -100,7 +103,10 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
       } catch (e) {
         notify.error({
           title: t`Could not pause`,
-          message: e instanceof Error ? e.message : t`Pause failed.`,
+          message: errorMessage(e, t`Pause failed.`),
+          // Same shape as deploy: pressing Pause and seeing nothing reads as a
+          // broken button.
+          forceToast: true,
         });
       } finally {
         setPausing(null);

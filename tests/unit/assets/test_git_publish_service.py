@@ -134,34 +134,28 @@ async def test_publish_sends_project_id_only_and_updates_only_asset_cache(tmp_pa
 # ── the failure table: status AND remedy, in one place ───────────────────
 
 
-def test_every_publish_code_has_a_status_and_a_remedy():
+def test_every_publish_code_has_a_row():
     """A code with no row falls back to 500 and says nothing.
 
-    The table exists because two call sites — sharing an asset and deploying an
-    agent — answer the same question, and a second copy drifts. A new code added
-    without a row would silently become a server error with no guidance, which is
-    the state this replaced.
+    Asserted as MEMBERSHIP rather than through `status != 500`: the day a code
+    genuinely deserves a 500, the proxy would start failing on a correct table
+    and its own message would be a lie.
     """
-    from flow_sdk.assets.git_publish import (
-        AssetPublishCode,
-        publish_failure_remedy,
-        publish_failure_status,
-    )
+    from flow_sdk.assets.git_publish import _PUBLISH_FAILURE, AssetPublishCode
 
-    for code in AssetPublishCode:
-        assert publish_failure_status(code) != 500, f"{code} has no status row"
-        assert publish_failure_remedy(code), f"{code} tells the reader nothing to do"
+    assert set(_PUBLISH_FAILURE) == set(AssetPublishCode)
+    assert all(row.remedy for row in _PUBLISH_FAILURE.values()), "a code that tells the reader nothing to do"
 
 
 def test_a_precondition_is_a_client_status_not_a_server_fault():
     """These are the caller's state. Reporting them as 500 both mislabels them in
     logs and, on the wire, loses the sentence that says what to do."""
-    from flow_sdk.assets.git_publish import AssetPublishCode, publish_failure_status
+    from flow_sdk.assets.git_publish import AssetPublishCode, publish_failure
 
-    assert publish_failure_status(AssetPublishCode.NOT_GIT_BACKED) == 400
-    assert publish_failure_status(AssetPublishCode.GITHUB_NOT_CONNECTED) == 409
+    assert publish_failure(AssetPublishCode.NOT_GIT_BACKED).status == 400
+    assert publish_failure(AssetPublishCode.GITHUB_NOT_CONNECTED).status == 409
     # A push the remote refused is genuinely upstream, not the caller.
-    assert publish_failure_status(AssetPublishCode.PUSH_REJECTED) == 502
+    assert publish_failure(AssetPublishCode.PUSH_REJECTED).status == 502
 
 
 def test_actionable_carries_the_failure_and_the_remedy():

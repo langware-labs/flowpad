@@ -122,17 +122,6 @@ function initApiClient(client: ApiAxiosInstance) {
       }
 
       const msg = error.response?.data?.detail || error.response?.data?.message || error.message;
-      // Carry the backend's own sentence on the error, not just to the console.
-      // The `{status:'FAIL', message}` envelope is where every actionable reason
-      // lives — "Connect GitHub before publishing an asset", "no token yet" —
-      // and throwing the raw AxiosError meant every caller reading `e.message`
-      // got "Request failed with status code 500" instead. Four call sites had
-      // each hand-rolled this same unwrap and said so in a comment; this is the
-      // seam they were working around. The error object is otherwise untouched,
-      // so `response`, `status` and `code` still read exactly as before.
-      if (msg && msg !== error.message) {
-        error.message = msg;
-      }
       if (error.response?.status === 422) {
         throw error;
       }

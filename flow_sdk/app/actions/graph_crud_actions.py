@@ -346,7 +346,7 @@ async def handle_create_entity(request: Request):
                 # and the caller only finds out much later (a deploy that says
                 # "Asset has no owning Project"). The UI already uses the scoped
                 # route; this only reaches a hand-built call.
-                if value not in (None, "", {}, []):
+                if value:  # the caller actually asked for a placement
                     raise HTTPException(
                         status_code=400,
                         detail=(
