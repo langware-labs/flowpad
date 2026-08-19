@@ -198,3 +198,26 @@ async def test_persona_survives_fresh_entity_instance(records_root, tmp_path, mo
     claude_text = assets.claude_file.read_text(encoding="utf-8")
     assert "# You are the 'vibe-probe' agent" in claude_text
     assert "Always run flow show after every deliverable." in claude_text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "worker_type",
+    [WorkerType.CLAUDE_CODE, WorkerType.CODEX, WorkerType.COPILOT],
+)
+async def test_pty_seam_never_applies_the_project_language(records_root, tmp_path, worker_type):
+    """A visible terminal session is the user driving the CLI directly — it does not
+    take the project locale. Only headless turns do, via AgenticContext.language."""
+    prompt = "Your name is TEST_AGENT."
+    process = _process(worker_type, tmp_path, context_data={"instructions": prompt})
+    assets = await process.prepare_system_instruction_assets()
+
+    cmd = process.driver.cli_options(process)
+    process._apply_system_instruction_assets(cmd, assets)
+
+    assert getattr(cmd, "settings_json", None) is None
+    if worker_type is WorkerType.CLAUDE_CODE:
+        argv, _env, _stdin = cmd.to_spawn(instruction="hi")
+        assert "--settings" not in argv
+    if worker_type is WorkerType.CODEX:
+        assert cmd.developer_instructions == prompt
