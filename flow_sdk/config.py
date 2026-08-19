@@ -740,6 +740,10 @@ class ServiceConfig(BaseSettings):
     default_e2b_version: str = "v0-27-3"
     default_e2b_size: str = "sm"
     job_runner_type: Literal["local", "gcp"] = "local"
+    #: GCP project agent-driven deployments target (pinned into worker env as
+    #: CLOUDSDK_CORE_PROJECT et al). Isolated from google_cloud_project_id,
+    #: which is LLM/secrets infra. Empty string disables the pin.
+    gcp_deployment_project_id: str = "flowpad-playground"
     mcp_connector_pool_size: int = 5
 
     # Email (stub for desktop)
