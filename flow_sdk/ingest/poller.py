@@ -102,6 +102,12 @@ async def _run_poll(source: DataSource, now: datetime) -> None:
 @register_heartbeat_task("data_source_poll")
 async def _heartbeat_dispatch() -> None:
     import flow_sdk.ingest.drivers  # noqa: F401, PLC0415 — register shipped drivers
+    from flow_sdk.ingest.spec_registry import refresh_spec_drivers  # noqa: PLC0415
+
+    # Authored sources come from rows, not imports. This is the backstop that
+    # makes a spec edited on disk live within one cadence; the post-sync hook
+    # normally beats it to the punch.
+    await refresh_spec_drivers()
 
     dispatched = await dispatch_due_sources()
     if dispatched:

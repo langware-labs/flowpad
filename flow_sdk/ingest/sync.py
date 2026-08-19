@@ -21,6 +21,7 @@ anywhere in this path.
 """
 from __future__ import annotations
 
+import inspect
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -182,7 +183,13 @@ async def _cursors_for(source: DataSource, driver) -> list[DataSourceCursor]:
         for c in await DataSourceCursor.get_all({"data_source_id": source.id})
     }
     out: list[DataSourceCursor] = []
-    for ref in driver.segments(source):
+    # A builtin answers synchronously from config; a script-backed source has to
+    # spawn its module to know. Tolerating both here keeps the Protocol's sync
+    # signature true for the nine classes that satisfy it.
+    refs = driver.segments(source)
+    if inspect.isawaitable(refs):
+        refs = await refs
+    for ref in refs:
         cursor = existing.get(ref.key)
         if cursor is None:
             cursor = await DataSourceCursor.ensure_for(
