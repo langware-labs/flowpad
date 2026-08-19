@@ -148,14 +148,19 @@ class Agent(Entity):
         Case- and whitespace-insensitive: an address is an identifier a human
         types, and `Alice@Example.com ` is the same correspondent as
         `alice@example.com`. Nothing normalizes on the way in, so it happens
-        here — the one place the comparison is made.
+        here — through `normalize_email`, the funnel every other email
+        comparison in the system uses. This is a gate that decides who may drive
+        an agent with tools, so it must keep agreeing with `is_self_address`
+        rather than carrying its own casefold.
         """
+        from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
+
         if not self.email_enabled:
             return False
-        candidate = (address or "").strip().lower()
+        candidate = normalize_email(address)
         if not candidate:
             return False
-        return any(candidate == (a or "").strip().lower() for a in self.email_allowed_senders)
+        return any(candidate == normalize_email(a) for a in self.email_allowed_senders)
 
     # ── lifecycle ─────────────────────────────────────────────────────────
     enabled: bool = APIField(default=True, description="Kill switch — a disabled agent refuses to launch.")

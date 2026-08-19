@@ -31,12 +31,13 @@ logger = logging.getLogger(__name__)
 #: refresh runs — before any adapter has been registered.
 _BUILTIN_NAMES: set[str] = set()
 
-#: Providers already announced, so a once-a-minute sweep does not repeat itself
-#: in the log. Deliberately NOT a staleness key: re-registering is a few
-#: attribute reads and a dict write, and keying on a stamp is how an edited spec
-#: silently keeps its old driver — the exact failure the heartbeat exists to
-#: prevent.
-_ANNOUNCED: set[str] = set()
+#: Spec-backed providers this process has registered. Two jobs, deliberately:
+#: it suppresses a repeat log line on the once-a-minute sweep, and it is the
+#: ledger `_forget` diffs against to unregister a spec that left the disk.
+#: Deliberately NOT a staleness key: re-registering is a few attribute reads
+#: and a dict write, and keying on a stamp is how an edited spec silently keeps
+#: its old driver — the exact failure the heartbeat exists to prevent.
+_REGISTERED: set[str] = set()
 
 
 def _remember_builtins() -> set[str]:
@@ -49,8 +50,8 @@ def _remember_builtins() -> set[str]:
     return _BUILTIN_NAMES
 
 
-async def refresh_spec_drivers(name: Optional[str] = None) -> int:
-    """Register an adapter per script-runtime spec. Returns how many.
+async def refresh_spec_drivers(name: Optional[str] = None) -> None:
+    """Register an adapter per script-runtime spec.
 
     Pass `name` to resolve ONE provider — the create path knows which one it
     needs, and asking for the whole type on a request a person is waiting on is
@@ -67,9 +68,8 @@ async def refresh_spec_drivers(name: Optional[str] = None) -> int:
         specs = await _all_specs(name)
     except Exception:  # noqa: BLE001 — absence of the table is not a poller failure
         logger.debug("[ingest] could not list data_source_spec", exc_info=True)
-        return 0
+        return
 
-    count = 0
     seen: set[str] = set()
     for row in specs:
         spec_name = str(getattr(row, "name", "") or "")
@@ -88,26 +88,24 @@ async def refresh_spec_drivers(name: Optional[str] = None) -> int:
         # than being pinned by whatever was registered first.
         register_driver(driver)
         seen.add(spec_name)
-        count += 1
-        if spec_name not in _ANNOUNCED:
-            _ANNOUNCED.add(spec_name)
+        if spec_name not in _REGISTERED:
+            _REGISTERED.add(spec_name)
             logger.info("[ingest] registered authored source %r from %s", spec_name, driver.folder)
 
     # A spec deleted or renamed on disk must stop answering. Only on a FULL
     # sweep: a name-scoped refresh saw one row and knows nothing about the rest.
     if name is None:
         _forget(seen)
-    return count
 
 
 def _forget(seen: set[str]) -> None:
     """Drop adapters whose spec is gone, so a deleted source stops resolving."""
     from flow_sdk.ingest.driver import _REGISTRY  # noqa: PLC0415
 
-    for stale in _ANNOUNCED - seen:
+    for stale in _REGISTERED - seen:
         _REGISTRY.pop(stale, None)
         logger.info("[ingest] authored source %r is gone; unregistered", stale)
-    _ANNOUNCED.intersection_update(seen)
+    _REGISTERED.intersection_update(seen)
 
 
 async def _all_specs(name: Optional[str] = None) -> list:

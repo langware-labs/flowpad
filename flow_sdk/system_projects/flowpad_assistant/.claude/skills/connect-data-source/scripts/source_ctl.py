@@ -22,13 +22,37 @@ import argparse
 import json
 import sys
 import time
+from functools import lru_cache
 from typing import Any
 
 
+@lru_cache(maxsize=1)
 def _api() -> str:
+    """Base URL, resolved once. `discover_port` reads `server.json` off disk and
+    the port cannot change inside one invocation — `observe` alone would have
+    re-read it three times per loop iteration."""
     from flow_sdk.cli.commands._common import discover_port  # noqa: PLC0415
 
     return f"http://127.0.0.1:{discover_port()}/api/v1"
+
+
+def _envelope(resp) -> Any:
+    """The SUCCESS envelope's `data`, or a described failure.
+
+    A body that is not JSON is the cookie gate's HTML 403, which used to surface
+    from here as a bare `JSONDecodeError` — unactionable, and stdout JSON is the
+    only evidence this skill's caller gets. `bad_response_message` is the same
+    sentence the CLI shows for it.
+    """
+    from flow_sdk.cli.commands._common import bad_response_message  # noqa: PLC0415
+
+    try:
+        body = resp.json() or {}
+    except ValueError:
+        # RuntimeError, not SystemExit: `main` turns an Exception into the
+        # one-JSON-object contract, and a BaseException would escape it.
+        raise RuntimeError(bad_response_message(resp))
+    return body.get("data")
 
 
 def _get(path: str, **params: Any) -> Any:
@@ -50,13 +74,13 @@ def _get(path: str, **params: Any) -> Any:
     if limit is not None:
         query["limit"] = str(limit)
     url = f"{_api()}{path}" + (f"?{urlencode(query)}" if query else "")
-    return (local_get(url).json() or {}).get("data")
+    return _envelope(local_get(url))
 
 
 def _post(path: str, body: dict | None = None) -> Any:
     from flow_sdk.cli.commands._common import local_post  # noqa: PLC0415
 
-    return (local_post(f"{_api()}{path}", json=body or {}).json() or {}).get("data")
+    return _envelope(local_post(f"{_api()}{path}", json=body or {}))
 
 
 #: Ceiling for a "how many landed" read. High enough that a normal source is
