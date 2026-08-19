@@ -110,7 +110,9 @@ def channel_of(source) -> str:
     return (getattr(source, "channel", "") or getattr(source, "provider", "") or "").strip()
 
 
-async def project_source_item(item, *, source=None, notify: bool = True, recount: bool = True) -> Optional[str]:
+async def project_source_item(
+    item, *, source=None, notify: bool = True, recount: bool = True, announce: bool = True
+) -> Optional[str]:
     """Project one SourceItem into its conversation. Returns the FlowMessage id.
 
     Idempotent: the ids are derived, so a second call upserts the same rows.
@@ -120,6 +122,17 @@ async def project_source_item(item, *, source=None, notify: bool = True, recount
     ``recount=False`` defers the thread recount to the caller. A sweep sets it:
     recounting per item is quadratic in thread depth, because each recount
     reloads the whole thread.
+
+    ``announce=False`` suppresses the projected tag. A sweep sets it when the
+    batch itself would be a storm, for the reason `IngestMode` encodes one layer
+    down: the caps are 30/min and raising them is not an option. Announcing each
+    of a 500-item import would put 500 events into that cap — and on an agent
+    mailbox each surviving one spends a real turn answering months-old mail.
+
+    The announcement still fires from HERE rather than from a lane, because the
+    two lanes race and either may do the write; the incremental lane calls this
+    function whether or not the sweep got there first, so the announcement
+    lands exactly once without a lane having to know who won.
     """
     from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
     from flow_sdk.app.actions.materialize_flow_message import (  # noqa: PLC0415
@@ -218,6 +231,10 @@ async def project_source_item(item, *, source=None, notify: bool = True, recount
     await _refresh_projected_fields(fm, payload, notify=notify)
     if recount:
         await recompute_thread_projection(thread_id, thread=thread, notify=notify)
+    if announce:
+        from flow_sdk.inbox.inbox_on_tag import emit_projected_tag  # noqa: PLC0415
+
+        emit_projected_tag(item)
     return fm_id
 
 
@@ -328,11 +345,75 @@ async def _sender_for(item, source, channel: str) -> tuple[str, str]:
 
     address = (item.author_external_id or "").strip()
     display = display_name_of(item.author_display or "", address)
-    if address and _fold(address) in self_addresses(source):
+    if is_self_address(source, address):
+        # An AGENT's mailbox is not the user's. Attributing its sent copies to
+        # the human would put words in their mouth — the owner would appear to
+        # have written replies they never saw. Same reasoning as
+        # `ConversationKind.HELPDESK`, where a reply carries one non-human
+        # identity rather than the individual who happened to send it.
+        agent_sender = await _agent_sender_for(source)
+        if agent_sender:
+            return agent_sender[0], agent_sender[1] or display or "Agent"
         local = await User.get_local()
         if local and local.id:
             return str(local.id), display or "You"
     return (f"{channel}:{address}" if address else f"{channel}:unknown"), display or channel
+
+
+#: Sender-id prefix for a hosted agent. Deliberately NOT a bare entity id: a
+#: sender id is compared against user ids, and an agent that looked like one
+#: would be indistinguishable from a person in every consumer.
+AGENT_SENDER_PREFIX = "agent"
+
+
+def agent_sender_id(agent_id: str) -> str:
+    return f"{AGENT_SENDER_PREFIX}:{agent_id}"
+
+
+def is_agent_sender(sender_id: str) -> bool:
+    """Was this message written by an agent whose mailbox we hold?
+
+    The prefix IS the answer — that is the whole reason `agent_sender_id` uses
+    one instead of a bare entity id. Consumers that instead enumerate agent rows
+    to build a set get a different answer over time: an agent whose mail is
+    later switched off drops out of the set, and its past replies start counting
+    as unread mail from a stranger.
+    """
+    return (sender_id or "").startswith(f"{AGENT_SENDER_PREFIX}:")
+
+
+def agent_id_of(source) -> str:
+    """The agent whose mailbox this source is, or ``""``.
+
+    `config.agent_id` is the cloud-mailbox driver's one load-bearing key — the
+    address is allocated and may change, the agent id cannot — so every reader
+    of it comes here rather than re-spelling the lookup. `config` really is an
+    untyped dict, which is why the defensive read is justified here and nowhere
+    else in this file.
+    """
+    return str((getattr(source, "config", None) or {}).get("agent_id") or "").strip()
+
+
+def is_self_address(source, address: str) -> bool:
+    """Is this address one of OUR account's on that source?
+
+    The one place the folding rule is applied. `self_addresses` is public but
+    `_fold` is not, and a second caller reaching for the private half is how the
+    normalization funnel starts to diverge.
+    """
+    folded = (address or "").strip()
+    return bool(folded) and _fold(folded) in self_addresses(source)
+
+
+async def _agent_sender_for(source) -> "tuple[str, str] | None":
+    """``(sender_id, display)`` when this source is an agent's own mailbox."""
+    agent_id = agent_id_of(source)
+    if not agent_id:
+        return None
+    from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
+
+    agent = await Agent.get_by_id(agent_id)
+    return agent_sender_id(agent_id), str(getattr(agent, "name", "") or "")
 
 
 async def recompute_thread_projection(thread_id: str, *, thread=None, notify: bool = True) -> None:
@@ -403,13 +484,31 @@ async def reconcile_source(data_source_id: str, *, limit: int = RECONCILE_BATCH)
     # Oldest first, so conversation pointers land in message order even though
     # a provider hands them back newest-first.
     missing.sort(key=lambda i: i.occurred_at or "")
+
+    # Announce per item only when this sweep is not itself a storm. The cap is
+    # the real condition — NOT "is this the first sync". A mailbox's first poll
+    # is always a backfill by `IngestMode`, and gating on that would mean an
+    # agent never answers the first mail it ever receives, while a genuine
+    # 500-message import would still need silencing. Size answers both.
+    from flow_sdk.ingest.models import STORM_CAP_PER_MINUTE  # noqa: PLC0415
+
+    announce = len(missing) <= STORM_CAP_PER_MINUTE
+    if not announce:
+        # Said out loud: a silent cap reads downstream as "nothing arrived".
+        logger.info(
+            "[inbox] %d items exceed the %d/min cap — projecting %s without per-item events",
+            len(missing),
+            STORM_CAP_PER_MINUTE,
+            data_source_id,
+        )
+
     projected = 0
     touched: set[str] = set()
     for item in missing:
         try:
             # Defer the recount: doing it per item reloads the whole thread each
             # time, which is quadratic in thread depth over a backfill.
-            if await project_source_item(item, source=source, recount=False):
+            if await project_source_item(item, source=source, recount=False, announce=announce):
                 projected += 1
                 touched.add(
                     MessageThread.allocate_deterministic_id(channel_of(source), thread_key_for(item, item.name or ""))
@@ -451,7 +550,15 @@ async def _on_item(event) -> None:
         item = await SourceItem.get_one({"id": entity_id})
         if item is None:
             return
-        await project_source_item(item)
+        # Announce ARRIVAL, not every write. This lane is armed for `.created`
+        # AND `.updated`, and `project_source_item` is an idempotent upsert — so
+        # announcing on an update re-announces a message that is already placed,
+        # and a consumer that acts on the announcement acts twice. For the agent
+        # runner that means a second billable turn answering mail it already
+        # answered. The ingest lane draws the same line one level down, where
+        # `emit_item_tag` returns early on `unchanged`.
+        first_placement = event.tag.rsplit(".", 1)[-1] == "created"
+        await project_source_item(item, announce=first_placement)
         _touch()
     except Exception:  # noqa: BLE001 — never fail the ingest that triggered us
         logger.exception("[inbox] projection failed for source_item %s", entity_id)
