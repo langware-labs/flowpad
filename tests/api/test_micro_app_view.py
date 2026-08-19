@@ -55,6 +55,43 @@ async def test_serves_index_with_api_origin_injected(bootstrapped_client, user, 
     assert "<base" in body
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.served_html_encoding.rules: FAILING? read this tag's rules before
+#       editing — a 200 is not a pass, assert the served text matches disk
+# flowpad:endcapsule tag
+@pytest.mark.asyncio
+async def test_non_ascii_index_is_served_intact(bootstrapped_client, user, tmp_path):
+    """A UTF-8 document must survive being served, whatever the host's codepage.
+
+    App HTML is UTF-8 by definition; the host's locale is an accident of the
+    machine. Serving must not consult it. On a Windows box whose ANSI codepage
+    is cp1252 this is not a cosmetic issue: the Hebrew below decodes to mojibake
+    at best, and ``א`` (UTF-8 ``D7 90``) hits a byte cp1252 leaves undefined, so
+    the read raises and the whole view 500s.
+    """
+    dist = tmp_path / "tasks-app" / "dist"
+    dist.mkdir(parents=True)
+    # encoding= on purpose: the fixture must be UTF-8 on disk like a real app's
+    # build output, not whatever the test host would have written by default.
+    (dist / "index.html").write_text(
+        '<html lang="he" dir="rtl"><head><meta charset="utf-8" />'
+        "<title>ניהול משימות</title></head>"
+        "<body><h1>אין משימות</h1></body></html>",
+        encoding="utf-8",
+    )
+    app = MicroApp(name="Tasks", location_type=AppLocationType.Artifact, location_root=str(dist))
+    await app.save()
+
+    resp = await bootstrapped_client.get(_view_url(app))
+
+    assert resp.status_code == 200, resp.text
+    assert "ניהול משימות" in resp.text
+    assert "אין משימות" in resp.text
+
+
 @pytest.mark.asyncio
 async def test_asset_carries_etag_and_revalidates(bootstrapped_client, user, tmp_path):
     app = await _make_app(tmp_path)

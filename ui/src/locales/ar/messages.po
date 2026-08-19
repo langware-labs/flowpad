@@ -4363,6 +4363,7 @@ msgid "created"
 msgstr "تم الإنشاء"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
+#: src/components/entity-execution-panel/TurnFilesChips.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Created"
 msgstr "تاريخ الإنشاء"
@@ -5663,6 +5664,10 @@ msgstr "تعديل المشغّل"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Edit your draft…"
 msgstr "تعديل مسودتك…"
+
+#: src/components/entity-execution-panel/TurnFilesChips.tsx
+msgid "Edited"
+msgstr "تم التعديل"
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "Edited items could not be loaded. Chat sessions are still shown."
@@ -11114,6 +11119,11 @@ msgstr "فتح"
 msgid "Open .env.local at this line"
 msgstr "فتح .env.local عند هذا السطر"
 
+#. placeholder {0}: file.path
+#: src/components/entity-execution-panel/TurnFilesChips.tsx
+msgid "Open {0}"
+msgstr "افتح {0}"
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Open {label}"
 msgstr "فتح {label}"
@@ -14950,6 +14960,10 @@ msgstr "عرض مشاريع النظام"
 #: src/i18n/pref-labels.ts
 msgid "Show system skills"
 msgstr "عرض مهارات النظام"
+
+#: src/components/entity-execution-panel/TurnFilesChips.tsx
+msgid "Show the other files this turn touched"
+msgstr "عرض بقية الملفات التي مسّها هذا الدور"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Show timing info for each turn"

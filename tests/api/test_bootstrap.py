@@ -50,7 +50,17 @@ async def test_bootstrap_returns_local_user_and_schemas(client):
     assert data["domain"] is None
     assert data["visitor"] is None
 
-    _assert_local_entity(data["default_project"], "project")
+    # NOT `_assert_local_entity`: `default_project` is the project the client
+    # opens, and @local is only its FLOOR — a pending opening instruction, or the
+    # project this machine was last used in, both outrank it (see
+    # `bootstrap.py::_with_runtime` and `test_default_project_once.py`, which owns
+    # that ordering). Pinning `uname == "local"` here made this test pass or fail
+    # on the order the suite happened to run in: any earlier test that activated a
+    # project changed the answer. What is invariant is that it is a well-formed
+    # project the caller can open.
+    default_project = data["default_project"]
+    assert default_project["id"]
+    assert default_project["type"] == "project"
     _assert_local_entity(data["default_workspace"], "workspace")
 
     env = data["env"]

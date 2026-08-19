@@ -47,9 +47,10 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 /**
  * The three file kinds differ only in glyph and verb — everything else (the
- * path, the file target) is one rule, so it lives in one place.
+ * path, the file target) is one rule, so it lives in one place. Exported so the
+ * per-turn file chips (`TurnFilesChips`) draw the same glyph for the same kind.
  */
-const FILE_OPS: Record<string, [LucideIcon, string]> = {
+export const FILE_OPS: Record<string, [LucideIcon, string]> = {
   file_read: [FileText, 'Read'],
   file_write: [FilePlus, 'Write'],
   file_edit: [FileDiff, 'Edit'],

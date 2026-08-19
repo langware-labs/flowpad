@@ -99,7 +99,8 @@ async def serve_ui():
     """
     for candidate in _get_index_candidates():
         if candidate.exists():
-            return serve_index_html(candidate.read_text())
+            # encoding= on purpose: the shell is UTF-8, the host codepage is not.
+            return serve_index_html(candidate.read_text(encoding="utf-8"))
     return HTMLResponse(
         content="<h1>Flow UI not built. Run: python build_ui.py</h1>",
         status_code=404,
