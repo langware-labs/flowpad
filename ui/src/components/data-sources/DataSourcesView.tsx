@@ -114,7 +114,7 @@ export function DataSourcesView() {
           <DataSourceCard
             key={source.id}
             source={source}
-            setupWiki={specFor(source.provider)?.setup_wiki}
+            spec={specFor(source.provider)}
             onEdit={openEdit}
             onReplay={setReplaying}
             onDelete={setDeleting}

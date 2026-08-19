@@ -14,6 +14,14 @@ const mocks = vi.hoisted(() => ({
   success: vi.fn(),
 }));
 
+vi.mock('@src/navigation/hub-runtime', () => ({ isHubOnly: () => true }));
+
+vi.mock('@src/components/assets/editor/agent-profile/DeployedAgentChatPanel', () => ({
+  DeployedAgentChatPanel: ({ deployment }: { deployment: Deployment }) => (
+    <div data-testid="deployed-agent-chat">Chat on {deployment.name}</div>
+  ),
+}));
+
 vi.mock('@sdk/react/hooks', () => ({
   useEntitiesQuery: () => ({ data: mocks.deployments, refetch: mocks.refetch }),
 }));
@@ -28,6 +36,41 @@ beforeEach(() => {
 });
 
 describe('AgentDeploymentsSection', () => {
+  it('opens one exact deployment chat at a time on the Hub', async () => {
+    const first = new Deployment({
+      id: '00000000-0000-4000-8000-000000000002',
+      name: 'First GCP box',
+      kind: 'runtime.agent',
+      parent_type_id: 'agent-00000000-0000-4000-8000-000000000001',
+      target: { provider: 'gcp_vm', scope: 'agent-00000000-0000-4000-8000-000000000001' },
+      status: { sync_state: 'current', provider_state: 'running' },
+    });
+    const second = new Deployment({
+      id: '00000000-0000-4000-8000-000000000003',
+      name: 'Second GCP box',
+      kind: 'runtime.agent',
+      parent_type_id: 'agent-00000000-0000-4000-8000-000000000001',
+      target: { provider: 'gcp_vm', scope: 'agent-00000000-0000-4000-8000-000000000001' },
+      status: { sync_state: 'current', provider_state: 'running' },
+    });
+    mocks.deployments = [first, second];
+    const agent = new Agent({
+      id: '00000000-0000-4000-8000-000000000001',
+      name: 'GCP agent',
+      enabled: true,
+    });
+    const user = userEvent.setup();
+
+    render(<AgentDeploymentsSection agent={agent} />);
+
+    await user.click(screen.getByTestId(`deployment-chat-${first.id}`));
+    expect(screen.getByTestId('deployed-agent-chat')).toHaveTextContent('First GCP box');
+
+    await user.click(screen.getByTestId(`deployment-chat-${second.id}`));
+    expect(screen.getAllByTestId('deployed-agent-chat')).toHaveLength(1);
+    expect(screen.getByTestId('deployed-agent-chat')).toHaveTextContent('Second GCP box');
+  });
+
   it('confirms and deletes a deployment through the existing entity DELETE contract', async () => {
     const deployment = new Deployment({
       id: '00000000-0000-4000-8000-000000000002',

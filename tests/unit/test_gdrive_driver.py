@@ -216,8 +216,8 @@ async def test_a_server_error_is_transient(driver, tmp_path):
 
 async def test_shared_drives_are_separate_segments(driver, tmp_path):
     source = _source(tmp_path, "", drives=["D1", "D2"])
-    assert [s.key for s in driver.segments(source)] == ["D1", "D2"]
-    assert [s.key for s in driver.segments(_source(tmp_path, ""))] == ["root"]
+    assert [s.key for s in await driver.segments(source)] == ["D1", "D2"]
+    assert [s.key for s in await driver.segments(_source(tmp_path, ""))] == ["root"]
 
 
 async def test_the_cache_is_never_stamped():

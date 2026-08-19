@@ -93,20 +93,20 @@ async def _ready(value):
 # ── streams ──────────────────────────────────────────────────────────────────
 
 
-def test_streams_key_on_the_channel_id_not_its_name():
+async def test_streams_key_on_the_channel_id_not_its_name():
     """A rename is the same channel. Keyed on the name it would fork its history
     and every message would re-ingest as new."""
     driver = SlackDriver()
     source = _source()
     source.config = {"channels": [{"id": CHANNEL, "name": "engineering"}]}
 
-    (stream,) = driver.segments(source)
+    (stream,) = await driver.segments(source)
     assert stream.key == CHANNEL
     assert stream.label == "engineering"
 
 
-def test_a_bare_string_channel_is_accepted_as_the_id():
-    (stream,) = SlackDriver().segments(_source())
+async def test_a_bare_string_channel_is_accepted_as_the_id():
+    (stream,) = await SlackDriver().segments(_source())
     assert stream.key == CHANNEL
 
 

@@ -1322,10 +1322,16 @@ class Entity(DBEntity):
             payload["asset_ref"] = ar_str
         import asyncio
 
+        # A borrowed checkout is somebody else's repository: mirror the entity to
+        # the shadow store, but SKIP the source-file write. Skipping rather than
+        # letting the read-only FSRef raise keeps the metadata sync (and avoids
+        # stamping a RecordError) on every save of a vendor-supplied asset.
+        borrowed = await _asset_ref_is_borrowed(record)
         try:
             # upsert_main_ref writes default_body iff main_ref doesn't exist
             # — write goes through the FSRef contract, never raw Path.write_text.
-            await asyncio.to_thread(record.upsert_main_ref, entity)
+            if not borrowed:
+                await asyncio.to_thread(record.upsert_main_ref, entity)
             await asyncio.to_thread(record.save_metadata, payload)
         except Exception as exc:
             from flow_sdk.fs_store.operations.record_error import from_exception  # lazy (circular-safe)
@@ -3577,3 +3583,37 @@ _action_registry.register(
     methods="post",
     types="all",
 )
+
+
+async def _asset_ref_is_borrowed(record) -> bool:
+    """Does this record's ``asset_ref`` live inside somebody else's checkout?
+
+    Asked before the disk mirror because ``FSRef.read_only`` does not survive a
+    round trip: ``FSRecord.meta_dict`` persists only ``ar.path``, so a ref the
+    indexer deliberately created read-only comes back WRITABLE on the next load.
+    For an ``owns_main_ref`` type that loses the guard completely — ``Agent``
+    re-renders ``agent.md`` on every save, so one Enabled toggle would rewrite a
+    tracked file inside a cloned help desk and break the vendor's next
+    ``git pull``.
+
+    (The deeper fix is to carry ``read_only`` through ``FSRecord``'s dict form,
+    which ``FSRef.to_dict``/``from_dict`` already support; until then this asks
+    the authoritative source directly.)
+    """
+    ar = getattr(record, "asset_ref", None)
+    if ar is None or ar.read_only:
+        return False
+    try:
+        from flow_sdk.builtin.folder import Folder  # noqa: PLC0415 — circular at module level
+
+        return await Folder.is_borrowed_path(ar.path)
+    except Exception:
+        # Fail OPEN deliberately: a Folder-table hiccup must not turn every save
+        # of a file-backed entity into a failure. Logged at warning, not debug,
+        # because the cost of being wrong here is a dirtied vendor checkout.
+        logging.getLogger(__name__).warning(
+            "[entity] borrowed-checkout check failed; writing %s anyway",
+            getattr(ar, "path", "?"),
+            exc_info=True,
+        )
+        return False
