@@ -14,7 +14,6 @@ def test_demo_uses_the_existing_sdk_surface_only() -> None:
         ".enqueue(message)",
         "state.process.observeTurn",
         ".loadHistory({ force: true })",
-        ".cancelPrompt()",
         "new sdk.ActionInfo('status'",
     )
     for call in expected_calls:
@@ -34,14 +33,14 @@ def test_demo_configures_the_hub_before_loading_the_sdk() -> None:
 
 def test_demo_does_not_persist_credentials_or_tokens() -> None:
     source = DEMO.read_text()
-    persisted_keys = {
-        line.split("localStorage.setItem(", 1)[1].split(",", 1)[0].strip(" '\"")
-        for line in source.splitlines()
-        if "localStorage.setItem(" in line
-    }
 
-    assert persisted_keys == {
-        "flowpad-chat.agent",
-        "flowpad-chat.hub",
-        "flowpad-chat.process",
-    }
+    assert "localStorage" not in source
+    assert "sessionStorage" not in source
+
+
+def test_demo_has_exactly_two_buttons() -> None:
+    source = DEMO.read_text()
+
+    assert source.count("<button ") == 2
+    assert 'id="connect"' in source
+    assert 'id="send"' in source
