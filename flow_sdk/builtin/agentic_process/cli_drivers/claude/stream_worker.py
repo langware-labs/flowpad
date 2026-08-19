@@ -381,6 +381,11 @@ class ClaudeCLIStreamWorker(AgenticWorker):
             effort=context.effort,
             add_dirs=list(context.add_dirs),
             plugin_dirs=list(context.plugin_dirs),
+            # Claude has a first-class ``language`` setting and builds its own
+            # ``# Language`` system-prompt section from it — so it needs the name,
+            # not the text. Additional layer only: the on-disk user/project
+            # settings (and the hooks claude_settings_sync writes there) still apply.
+            settings_json={"language": context.language} if context.language else None,
             # Debug is ALWAYS on for the headless per-turn spawn, redirected to
             # a file we own. This is not a tuning knob: the CLI's own auth /
             # token-refresh failures are only ever explained by this stream,
