@@ -200,14 +200,23 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   // to a WEB_APP dock — right for a tab-based mode, wrong here, because in vibe
   // the Display pane IS where a running app renders. Sending the user to a
   // separate tab would walk them out of the workspace to see something the pane
-  // beside them already shows, so a port entry re-focuses the Display instead.
+  // beside them can show, so a port entry re-PINS the Display instead — the same
+  // write a live `flow show` does (the stack entry IS that show's payload), with
+  // the nonce bump so a same-port re-show reloads the frame. Merely re-opening
+  // the process dock is a no-op (the popover only exists on that dock), which
+  // is why the pane used to stay on whatever it last showed.
   const onOpenHistoryEntry = useCallback(
     (entry: DisplayEntry) => {
       const isPortTarget = entry.kind === 'webapp' || entry.kind === 'app';
+      if (isPortTarget) {
+        setShown(entry);
+        setShowNonce((n) => n + 1);
+        return;
+      }
       // Same promotion as the toolbar's "open in a new tab": this opens a past
       // display as its OWN tab, so the assets-shaped dock must be rebased or the
       // chip collapses onto the scope-keyed Assets tab.
-      const ptr = isPortTarget ? null : dockForDisplayTarget(entry);
+      const ptr = dockForDisplayTarget(entry);
       const own = ptr ? DockPointer.rebaseAssetsOntoProject(ptr, projectId) : null;
       navigation.openDock(own ?? session.processDock);
     },
