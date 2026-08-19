@@ -4621,10 +4621,10 @@
           "workdir": null,
           "worker_type": "copilot"
         },
-        "shell_dash": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --model gpt-5.5 -- $'-rf danger'",
-        "shell_instr": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --model gpt-5.5 -- $'fix the bug'",
-        "shell_multi": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --model gpt-5.5 -- $'line one\\nline two'",
-        "shell_none": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --model gpt-5.5",
+        "shell_dash": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -- $'-rf danger'",
+        "shell_instr": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -- $'fix the bug'",
+        "shell_multi": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -- $'line one\\nline two'",
+        "shell_none": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all",
         "spawn_dash": {
           "argv": [
             "copilot",
@@ -4633,9 +4633,7 @@
             "--no-ask-user",
             "--no-auto-update",
             "--no-custom-instructions",
-            "--allow-all",
-            "--model",
-            "gpt-5.5"
+            "--allow-all"
           ],
           "env": {}
         },
@@ -4647,9 +4645,7 @@
             "--no-ask-user",
             "--no-auto-update",
             "--no-custom-instructions",
-            "--allow-all",
-            "--model",
-            "gpt-5.5"
+            "--allow-all"
           ],
           "env": {}
         },
@@ -4661,9 +4657,7 @@
             "--no-ask-user",
             "--no-auto-update",
             "--no-custom-instructions",
-            "--allow-all",
-            "--model",
-            "gpt-5.5"
+            "--allow-all"
           ],
           "env": {}
         },
@@ -4675,9 +4669,7 @@
             "--no-ask-user",
             "--no-auto-update",
             "--no-custom-instructions",
-            "--allow-all",
-            "--model",
-            "gpt-5.5"
+            "--allow-all"
           ],
           "env": {}
         }
@@ -4700,10 +4692,10 @@
           "workdir": null,
           "worker_type": "copilot"
         },
-        "shell_dash": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --model gpt-5.5 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
-        "shell_instr": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --model gpt-5.5 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
-        "shell_multi": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --model gpt-5.5 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
-        "shell_none": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --model gpt-5.5",
+        "shell_dash": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all",
         "spawn_dash": {
           "argv": [
             "copilot",
@@ -4712,9 +4704,7 @@
             "--no-ask-user",
             "--no-auto-update",
             "--no-custom-instructions",
-            "--allow-all",
-            "--model",
-            "gpt-5.5"
+            "--allow-all"
           ],
           "env": {}
         },
@@ -4726,9 +4716,7 @@
             "--no-ask-user",
             "--no-auto-update",
             "--no-custom-instructions",
-            "--allow-all",
-            "--model",
-            "gpt-5.5"
+            "--allow-all"
           ],
           "env": {}
         },
@@ -4740,9 +4728,7 @@
             "--no-ask-user",
             "--no-auto-update",
             "--no-custom-instructions",
-            "--allow-all",
-            "--model",
-            "gpt-5.5"
+            "--allow-all"
           ],
           "env": {}
         },
@@ -4754,9 +4740,7 @@
             "--no-ask-user",
             "--no-auto-update",
             "--no-custom-instructions",
-            "--allow-all",
-            "--model",
-            "gpt-5.5"
+            "--allow-all"
           ],
           "env": {}
         }

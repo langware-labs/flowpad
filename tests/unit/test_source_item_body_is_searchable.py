@@ -26,11 +26,11 @@ from flow_sdk.builtin.source_item import SourceItem
 def _item(**kw) -> SourceItem:
     """A SourceItem carrying the natural key the ingestor resolves rows by."""
     data_source_id = kw.pop("data_source_id", "ds-test")
-    stream_key = kw.pop("stream_key", "stream-test")
+    segment_key = kw.pop("segment_key", "stream-test")
     external_id = kw.pop("external_id", uuid.uuid4().hex)
     return SourceItem(
         data_source_id=data_source_id,
-        stream_key=stream_key,
+        segment_key=segment_key,
         external_id=external_id,
         kind="content.feed.item",
         provider="rss",

@@ -35,8 +35,8 @@ ITERATIONS = 10
 # conftest sandboxes HOME; the CLIs need their REAL home (auth + transcript dir).
 _REAL_HOME = os.environ.get("FLOWPAD_PRE_SANDBOX_HOME") or os.path.expanduser("~")
 
-# worker_type → CLI binary. The model is the cheapest tier each worker can resolve
-# (see ``_model_tier.small_model_for`` — Copilot must stay unset).
+# worker_type → CLI binary. Persist the portable small tier for every worker;
+# native Copilot resolves it to vendor auto and omits --model.
 WORKERS = {
     "claude_code": {"bin": "claude", "model": small_model_for("claude_code")},
     "codex": {"bin": "codex", "model": small_model_for("codex")},

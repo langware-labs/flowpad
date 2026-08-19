@@ -59,8 +59,16 @@ const TILE_TIP_DELAY = 500;
 type TileIcon = ComponentType<{ className?: string }>;
 
 export type DesktopTileProps = {
-  Icon: TileIcon;
+  /** The type/action glyph. Optional only because `iconSlot` can stand in for
+   *  it; pass exactly one. */
+  Icon?: TileIcon;
   label: string;
+  /** A ready-made face to draw INSTEAD of `Icon` — for a tile whose glyph is
+   *  bound to one entity rather than to a type (an agent's avatar). An inline
+   *  `Icon={(p) => <Avatar …/>}` adapter would have a new component identity on
+   *  every render and remount its `<img>` each time; a node does not. `loading`
+   *  still wins over both. */
+  iconSlot?: ReactNode;
   iconClassName?: string;
   disabled?: boolean;
   /** In-flight: show a spinner instead of `Icon` and refuse clicks. Lives here
@@ -84,7 +92,7 @@ export type DesktopTileProps = {
  * with it, and an unavailable tile is exactly the one worth explaining.
  */
 export const DesktopTile = forwardRef<HTMLButtonElement, DesktopTileProps>(function DesktopTile(
-  { Icon, label, iconClassName, disabled, loading, className, onClick, ...rest },
+  { Icon, iconSlot, label, iconClassName, disabled, loading, className, onClick, ...rest },
   ref,
 ) {
   const inert = disabled || loading;
@@ -108,7 +116,8 @@ export const DesktopTile = forwardRef<HTMLButtonElement, DesktopTileProps>(funct
       {loading ? (
         <Loader2 className={cn('h-7 w-7 animate-spin', iconClassName)} />
       ) : (
-        <Icon className={cn('h-7 w-7', iconClassName)} />
+        // `iconSlot` owns its own sizing — `iconClassName` is the Icon's.
+        (iconSlot ?? (Icon ? <Icon className={cn('h-7 w-7', iconClassName)} /> : null))
       )}
       {/* Two lines, not one truncated one: a multi-word label ("Folder on this
           computer") is unreadable clipped, and two 10px lines still clear the

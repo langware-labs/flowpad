@@ -17,8 +17,10 @@ def get_scheduler():
     if _scheduler is None:
         try:
             from pathlib import Path
-            from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
             from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+            from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
             from flow_sdk.db.drivers.sqlite.connection import get_database_path
 
             # Persist scheduler jobs in their OWN SQLite file, NOT the app DB.
@@ -31,9 +33,7 @@ def get_scheduler():
             jobstore_path = str(Path(get_database_path()).with_name("scheduler_jobs.db"))
 
             _scheduler = AsyncIOScheduler(
-                jobstores={
-                    "default": SQLAlchemyJobStore(url=f"sqlite:///{jobstore_path}")
-                },
+                jobstores={"default": SQLAlchemyJobStore(url=f"sqlite:///{jobstore_path}")},
                 job_defaults={"misfire_grace_time": 60},
             )
         except ImportError as e:
@@ -42,12 +42,27 @@ def get_scheduler():
     return _scheduler
 
 
+def _log_missed_job(event) -> None:
+    """A missed run is the one in-process signal that the event loop stalled.
+
+    APScheduler notices the miss as soon as the loop comes back, so this fires
+    from inside the stall window — the moment worth measuring. The job itself is
+    rarely the problem; record what the machine looked like instead.
+    """
+    from flow_sdk.server.memory_probe import memory_snapshot
+
+    logger.warning("Scheduler job %s missed its run time | %s", event.job_id, memory_snapshot())
+
+
 def start_scheduler():
     """Start the scheduler if not already running."""
     scheduler = get_scheduler()
     if scheduler is None:
         return
     if not scheduler.running:
+        from apscheduler.events import EVENT_JOB_MISSED
+
+        scheduler.add_listener(_log_missed_job, EVENT_JOB_MISSED)
         scheduler.start()
         logger.info("CronEvent scheduler started")
 
@@ -97,9 +112,7 @@ async def prune_orphan_scheduler_jobs() -> int:
         from flow_sdk.builtin.cron_event import CronEvent
         from flow_sdk.builtin.trigger import Trigger, TriggerType
 
-        valid_ids: set[str] = {
-            t.id for t in await Trigger.list_by_type(TriggerType.SCHEDULE) if t.id
-        }
+        valid_ids: set[str] = {t.id for t in await Trigger.list_by_type(TriggerType.SCHEDULE) if t.id}
         valid_ids.update(c.id for c in await CronEvent.get_all() if getattr(c, "id", None))
     except Exception:
         logger.exception("prune_orphan_scheduler_jobs: could not resolve live job ids; skipping prune")

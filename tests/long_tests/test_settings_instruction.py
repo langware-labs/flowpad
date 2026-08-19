@@ -102,13 +102,11 @@ def _resolve_claude_transcript_from_real_cli_home(monkeypatch):
     from flow_sdk.transcript_analyzer import resolver
 
     real_home = Path(os.environ.get("FLOWPAD_PRE_SANDBOX_HOME") or os.path.expanduser("~"))
-    monkeypatch.setattr(
-        resolver, "_claude_projects_dir", lambda: real_home / ".claude" / "projects"
-    )
+    monkeypatch.setattr(resolver, "_claude_projects_dir", lambda: real_home / ".claude" / "projects")
 
 
 def _small_cli_config(worker_type: WorkerType) -> dict:
-    # Cheapest resolvable model (haiku tier); Copilot must stay unset.
+    # Persist sm for every worker; native Copilot resolves it to vendor auto.
     config = {"permission_mode": "bypassPermissions"}
     model = small_model_for(worker_type)
     if model:
@@ -124,8 +122,7 @@ def _make_marker_and_prompt() -> tuple[str, str]:
     """
     marker = f"foobar-{uuid.uuid4().hex[:8]}"
     system_prompt = (
-        f"Always finish your answer with the exact token {marker} "
-        "on its own final line, no matter what is asked."
+        f"Always finish your answer with the exact token {marker} on its own final line, no matter what is asked."
     )
     return marker, system_prompt
 
@@ -153,9 +150,7 @@ async def _await_and_assert_marker(
     label: str = "",
 ) -> None:
     """Poll for the marker; skip on no-live-turn / infra error, else assert obedience."""
-    body, saw_fresh = await _await_marker(
-        process, worker_type, marker=marker, deadline_s=20, min_mtime=turn_started
-    )
+    body, saw_fresh = await _await_marker(process, worker_type, marker=marker, deadline_s=20, min_mtime=turn_started)
     if not saw_fresh:
         pytest.skip(
             f"{cli_name} wrote no fresh transcript within 20s — no live{label} turn "
@@ -170,9 +165,7 @@ async def _await_and_assert_marker(
 
 
 @pytest.mark.parametrize("worker_type, cli_name", _WORKERS)
-async def test_settings_instruction_is_obeyed(
-    worker_type, cli_name, tmp_path: Path, _workers_discovered
-):
+async def test_settings_instruction_is_obeyed(worker_type, cli_name, tmp_path: Path, _workers_discovered):
     if shutil.which(cli_name) is None:
         pytest.skip(f"{cli_name} CLI not installed")
 
@@ -196,7 +189,7 @@ async def test_settings_instruction_is_obeyed(
         # If this fails, delivery (not obedience) is broken.
         assets = process.embedded_assets
         assert assets is not None
-        assert str(assets.os_path) in process.additional_dirs
+        assert str(assets.os_path) in process.resolved_add_dirs
         _assert_assets_materialized(assets, system_prompt)
 
         await _await_and_assert_marker(
@@ -331,10 +324,7 @@ def _assistant_text(transcript: AgentTranscriptFile) -> str:
 def _transcript_dump(transcript: AgentTranscriptFile | None) -> str:
     if transcript is None:
         return ""
-    return "\n".join(
-        json.dumps(entry.to_dict(), sort_keys=True, default=str)
-        for entry in transcript.entries
-    )
+    return "\n".join(json.dumps(entry.to_dict(), sort_keys=True, default=str) for entry in transcript.entries)
 
 
 async def _await_marker(

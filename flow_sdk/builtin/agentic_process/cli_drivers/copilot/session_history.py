@@ -11,7 +11,7 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData, FlowDataT
 from flow_sdk.transcript_analyzer import AgentTranscriptFile, TranscriptFormat
 from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 
-from .event_to_flowdata import _element_type_for_kind
+from .event_to_flowdata import _element_type_for_kind, flowpad_terminal_event_frames
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +162,11 @@ def load_transcript_history(
         return []
     history: list[FlowData] = []
     for entry in parsed.entries:
+        if parsed.transcript_format is TranscriptFormat.COPILOT_STREAM:
+            terminal_frames = flowpad_terminal_event_frames(getattr(entry, "payload", {}))
+            if terminal_frames is not None:
+                history.extend(terminal_frames)
+                continue
         history.extend(_entry_to_replay_flow_data(entry))
     return history
 

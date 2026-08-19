@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from flow_sdk.ingest.driver import StreamCursorView
+from flow_sdk.ingest.driver import SegmentCursorView
 from flow_sdk.ingest.drivers.rss import RssDriver
 from flow_sdk.ingest.health import SourceError, SourceHealth
 from tests.unit._ingest_helpers import fixture_bytes, local_http_server, make_data_source
@@ -47,9 +47,9 @@ def _source(url: str):
     return make_data_source("rss", name="fixture feed", config={"feed_urls": [url]})
 
 
-def _view(url: str, *, state=None, window_days: int = 7) -> StreamCursorView:
-    return StreamCursorView(
-        stream_key=url,
+def _view(url: str, *, state=None, window_days: int = 7) -> SegmentCursorView:
+    return SegmentCursorView(
+        segment_key=url,
         state=state or {},
         window_start=(NOW - timedelta(days=window_days)).isoformat(),
     )
@@ -58,7 +58,7 @@ def _view(url: str, *, state=None, window_days: int = 7) -> StreamCursorView:
 def test_streams_come_from_config():
     src = _source("https://a.test/f")
     src.config = {"feed_urls": ["https://a.test/f", "https://b.test/f"]}
-    keys = [s.key for s in RssDriver().streams(src)]
+    keys = [s.key for s in RssDriver().segments(src)]
     assert keys == ["https://a.test/f", "https://b.test/f"]
 
 

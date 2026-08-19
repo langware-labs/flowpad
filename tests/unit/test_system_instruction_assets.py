@@ -110,7 +110,7 @@ async def test_system_instruction_assets_applied_to_worker_options(records_root,
 
 
 @pytest.mark.asyncio
-async def test_load_embedded_agent_materializes_into_instruction_assets(records_root, tmp_path, monkeypatch):
+async def test_load_embedded_subagent_materializes_into_instruction_assets(records_root, tmp_path, monkeypatch):
     async def _save_noop(self):
         return self
 
@@ -122,11 +122,11 @@ async def test_load_embedded_agent_materializes_into_instruction_assets(records_
     )
     process = _process(WorkerType.CLAUDE_CODE, tmp_path)
 
-    result = await process.load_embedded_agent_action(str(agent_md))
+    result = await process.load_embedded_subagent_action(str(agent_md))
     assert result.status == "SUCCESS"
     assert result.data["ok"] is True
     assert result.data["name"] == "persona-probe"
-    # Identity is persisted as the agent's ENTITY ref, not a legacy name entry.
+    # Identity is persisted as the sub-agent's ENTITY ref, not a legacy name entry.
     from flow_sdk.fs_store.fs_ref import FSRef
     from flow_sdk.fs_store.indexer.functions.subagent import subagent_peek_entity_id
     from flow_sdk.fs_store.record_types import RecordType
@@ -134,7 +134,7 @@ async def test_load_embedded_agent_materializes_into_instruction_assets(records_
     expected_ref = f"subagent-{subagent_peek_entity_id(FSRef(agent_md, record_type=RecordType.SUBAGENT))}"
     assert result.data["ref"] == expected_ref
     assert [str(r) for r in process.embedded_asset_refs] == [expected_ref]
-    assert not process.embedded_agent_ids
+    assert not process.embedded_subagent_ids
 
     materialized = process.embedded_assets.os_path / ".claude" / "agents" / "persona-probe.md"
     assert materialized.exists()
@@ -178,9 +178,9 @@ async def test_persona_survives_fresh_entity_instance(records_root, tmp_path, mo
             **extra,
         )
 
-    # Instance A: the request that handled load-embedded-agent (UI embed call).
+    # Instance A: the request that handled load-embedded-subagent (UI embed call).
     proc_a = make_process()
-    result = await proc_a.load_embedded_agent_action(str(agent_md))
+    result = await proc_a.load_embedded_subagent_action(str(agent_md))
     assert result.status == "SUCCESS"
 
     # Instance B: the fresh instance the prompt/launch request operates on,
@@ -198,3 +198,26 @@ async def test_persona_survives_fresh_entity_instance(records_root, tmp_path, mo
     claude_text = assets.claude_file.read_text(encoding="utf-8")
     assert "# You are the 'vibe-probe' agent" in claude_text
     assert "Always run flow show after every deliverable." in claude_text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "worker_type",
+    [WorkerType.CLAUDE_CODE, WorkerType.CODEX, WorkerType.COPILOT],
+)
+async def test_pty_seam_never_applies_the_project_language(records_root, tmp_path, worker_type):
+    """A visible terminal session is the user driving the CLI directly — it does not
+    take the project locale. Only headless turns do, via AgenticContext.language."""
+    prompt = "Your name is TEST_AGENT."
+    process = _process(worker_type, tmp_path, context_data={"instructions": prompt})
+    assets = await process.prepare_system_instruction_assets()
+
+    cmd = process.driver.cli_options(process)
+    process._apply_system_instruction_assets(cmd, assets)
+
+    assert getattr(cmd, "settings_json", None) is None
+    if worker_type is WorkerType.CLAUDE_CODE:
+        argv, _env, _stdin = cmd.to_spawn(instruction="hi")
+        assert "--settings" not in argv
+    if worker_type is WorkerType.CODEX:
+        assert cmd.developer_instructions == prompt

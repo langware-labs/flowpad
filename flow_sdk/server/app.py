@@ -62,7 +62,6 @@ from .routes import (
     capabilities_router,
     chat_router,
     cloud_router,
-    compute_register_router,
     debug_router,
     dep_graph_router,
     detection_router,
@@ -312,6 +311,13 @@ async def _start_fsop_watcher() -> None:
         from flow_sdk.inbox.projection import start_inbox_projection
 
         start_inbox_projection()
+        # Arm the data-source change lane. Any producer — a webhook relay, a
+        # CLI, a scheduler — announces a change with the same envelope, and this
+        # is what makes the bus the way in rather than each producer needing a
+        # private path to the ingest subsystem.
+        from flow_sdk.ingest.change_event import subscribe as subscribe_source_changes
+
+        subscribe_source_changes()
         print(f"  FSOp watcher: started ({len(fsop_watcher)} trigger(s))")
     except Exception:
         logging.getLogger(__name__).exception("FSOp watcher: failed to start")
@@ -530,7 +536,6 @@ server.add_router(websocket_router)
 server.add_router(webhook_api_router)
 server.add_router(assets_router)
 server.add_router(project_router, prefix="/api/v1")
-server.add_router(compute_register_router)
 server.add_router(debug_router)
 server.add_router(ingest_router)
 server.add_router(runs_router)
@@ -674,7 +679,8 @@ async def _spa_fallback(request: _Request, full_path: str):
         if candidate.exists():
             # Inject the runtime API origin so deep links (e.g. /dock/shell/…)
             # hit the serving backend, not the bundle's baked URL.
-            return serve_index_html(candidate.read_text())
+            # encoding= on purpose: the shell is UTF-8, the host codepage is not.
+            return serve_index_html(candidate.read_text(encoding="utf-8"))
     return _HTMLResponse(content="UI not found", status_code=404)
 
 

@@ -112,10 +112,11 @@ injection or subprocess spawn. Subclasses declare a vendor spec and override `_e
   codex+copilot), `SYSTEM_PROMPT_FLAG` (legacy inline append, claude
   `--append-system-prompt`; `None` ⇒ prepend into the prompt body),
   `SYSTEM_PROMPT_FILE_FLAG` (claude `--append-system-prompt-file`), `MODEL_TIERS`
-  (tier→model map; empty base = pass-through).
-- **Model-tier resolution lives here, once:** the `model` setter runs the value through
-  `MODEL_TIERS` via `resolve_model_tier`, so `sm`/`md`/`lg` become the concrete model the
-  moment they're set, no matter which path built the options. A concrete name passes through.
+  (tier→model/auto map; empty base = pass-through).
+- **Model-tier resolution lives here, once:** `model` preserves the raw persisted intent;
+  `resolved_model` runs it through `MODEL_TIERS` only when the command is emitted. A tier
+  may resolve to a concrete model or to vendor auto (`None`, so no model flag); a concrete
+  name passes through.
 - **argv is the single source of truth.** `cli_cmd(instruction, system_prompt_append)` →
   argv; `stdin_text(...)` → the stdin string (or `None` for argv-channel vendors);
   `to_spawn(...)` → the one IO contract `(argv, env, stdin|None)`; `to_spawn_args(...)` →
@@ -229,7 +230,7 @@ and a `cli_worker.py`/`code_agentic_worker.py` PTY pair; codex adds `session_det
 | Headless flags | `-p --input-format stream-json --output-format stream-json --verbose` | `exec --skip-git-repo-check --ephemeral --json -c model_reasoning_effort=low … -` | `--output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions` |
 | Bypass-permissions flag | `--dangerously-skip-permissions` | `--dangerously-bypass-approvals-and-sandbox` | `--allow-all` (gated on `bypassPermissions`) |
 | Session-id semantics | Honours preassigned `--session-id`; `--resume <id>` on multi-turn | Mints its **own** rollout id; ignores a preassigned id — captured from stream, persisted back | Accepts caller `--session-id` on fresh start; `--resume=<id>` when a session file exists |
-| Resume gate (`has_resumable_session`) | `get_claude_session(session_id) is not None` (`claude_sessions.py:430`) | `find_codex_session_jsonl(session_id) is not None` (`session_history.py:74`) | `_has_session` → `find_copilot_session_jsonl(session_id)` (`session_history.py:60`) or a non-empty process-local tee |
+| Resume gate (`has_resumable_session`) | `get_claude_session(session_id) is not None` (`claude_sessions.py:430`) | `find_codex_session_jsonl(session_id) is not None` (`session_history.py:74`) | `_has_session` → `find_copilot_session_jsonl(session_id) is not None` (`session_history.py:67`) |
 | Plan mode (`supports_plan_mode`) | **Yes** — `--permission-mode plan` + `ExitPlanMode`/`AskUserQuestion` | No (follow-up) | No (follow-up) |
 | Fork | **Yes** — `--resume <src> --fork-session --session-id <new>`; gated by `pins_resume_cwd` | No | No |
 | `pty_submits_on_paste` | True | False | False |
@@ -239,7 +240,7 @@ and a `cli_worker.py`/`code_agentic_worker.py` PTY pair; codex adds `session_det
 | Login flow (`device_login_spec`) | auth-code + PKCE — the browser shows a code the user pastes back into the CLI | RFC-8628 device flow (URL + one-time code, CLI polls) | RFC-8628 device flow |
 | Config dir | `claude_home` (`FLOWPAD_CLAUDE_HOME`/`CLAUDE_CONFIG_DIR`, default `~/.claude`) with `projects/`, `skills/`, `agents/`, `settings.json`, … | `codex_home` + `codex_sessions_dir`/`codex_config_path` (`CODEX_HOME`) | `copilot_home` + `copilot_session_state_dir`/`copilot_config_path` (`FLOWPAD_COPILOT_HOME` — copilot ships no home env var of its own) |
 | Skills root | `assets_dir/.claude/skills` (mounted via `--add-dir`) | `$CODEX_HOME/skills` (global, not per-process) | `assets_dir/.claude/skills` (mounted via `--add-dir`) |
-| Embedded agents | materialized under `assets/.claude/agents/`; legacy `--agents <json>` still emitted when `cli_config.agents_json` exists | materialized into process instruction assets; names surfaced as `skill_names` for command visibility | materialized into process instruction assets; names surfaced as `skill_names` for command visibility |
+| Embedded sub-agents | materialized under `assets/.claude/agents/`; legacy `--agents <json>` still emitted when `cli_config.agents_json` exists | materialized into process instruction assets; names surfaced as `skill_names` for command visibility | materialized into process instruction assets; names surfaced as `skill_names` for command visibility |
 | Transcript location | `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl` | rollout `~/.codex/sessions/…rollout-*.jsonl`, else process-local stdout tee | session `~/.copilot/session-state/<id>/events.jsonl`, else process-local stdout tee |
 | Transcript format | `CLAUDE_JSONL` | `CODEX_ROLLOUT` (canonical) / `CODEX_STREAM` (tee) | `COPILOT_EVENTS` (canonical) / `COPILOT_STREAM` (tee) |
 | `external_session_dirs` probe | `~/.claude/projects/` entries containing `flow-records-agentic` | `~/.codex/sessions/**/rollout-*.jsonl` names | `~/.copilot/session-state/` dir names |
@@ -270,8 +271,8 @@ falling back to the device-login picker.
   `~/.codex/config.toml` so turns stay inside the test budget.
 - **Copilot** mirrors codex's transport-intent argv toggle and rollout-vs-tee descriptor
   preference. Fresh start passes the caller-provided `--session-id` (copilot accepts it);
-  resume uses `--resume=<id>` only when a session file exists. `_has_session` also counts a
-  non-empty process-local tee as resumable.
+  resume uses `--resume=<id>` only when the exact vendor session file exists. A process-local
+  tee remains available for Flowpad replay but is not Copilot-resumable state.
 
 ---
 
@@ -287,7 +288,7 @@ a lookup keyed by the wire name, so "add the vendor" means "add a row", never "a
 | Worker type | `flow_sdk/flowpad_types/enums/worker_enums.py` (`WorkerType`), plus the driver-side `WorkerType` in `flow_sdk/builtin/worker_history.py` | the wire name |
 | Driver resolution | `get_driver` registry + alias map, and `factory()`'s string keys (`cli_worker_base_driver.py`) | name → driver / options class |
 | Install discovery | `CapabilityKind.<VENDOR>_CLI` (`core/capabilities/models.py`), a `CapabilitySpec` (name, `icon`, `homepage_url`) in `get_default_capability_specs`, and a `CliCapabilityRunner(executable=…, worker_type=…)` in `_build_default_registry` (`core/capabilities/registry.py`) | `harness.<vendor>.cli`, which is what `worker_capability_kind`/`worker_path_env` resolve the spawn PATH from |
-| Model tiers | `<VENDOR>_MODEL_TIERS` in `agentic_process/model_tiers.py` | `sm`/`md`/`lg` → concrete models, consumed via the options class's `MODEL_TIERS` |
+| Model tiers | `<VENDOR>_MODEL_TIERS` in `agentic_process/model_tiers.py` | `sm`/`md`/`lg` → concrete models or vendor auto/no flag, consumed via the options class's `MODEL_TIERS` |
 | Transcript parsing | `TranscriptFormat` members (`transcript_analyzer/formats.py`), a parser module + the `PARSERS` map (`transcript_analyzer/parsers/`), `_resolve_<vendor>` and the worker→record-type map (`transcript_analyzer/resolver.py`), and the path sniff in `transcript_streamer/registry.py::_infer_worker_type` | one format per canonical shape (a rollout/events file and a stdout tee usually need two) |
 | Pricing | `transcript_analyzer/pricing/<vendor>.py` (`<VENDOR>_PRICING` + `pricing_for`) wired into `pricing/__init__.py` | else the model silently inherits the Sonnet default table |
 | Session entity | `EntityType.<VENDOR>_SESSION` (`schema/types.py`), `schema/type_info/<vendor>_session_type_info.py` (this is where the entity's `icon` name lives), an indexer function under `fs_store/indexer/functions/`, its import in `indexer/registrations.py` and `add_function` call in `indexer/builtin.py` | vendor sessions expand under `USER_HOME_FOLDER`, not under a project (`indexer/roots.py`) |

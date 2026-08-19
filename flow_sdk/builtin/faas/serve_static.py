@@ -153,7 +153,10 @@ async def serve_app_bytes(
     if requested_file.suffix == ".html":
         # Async read to match the asset path below: every SPA deep link lands
         # here on index.html, so a blocking read would stall the loop routinely.
-        async with await anyio.open_file(str(requested_file), "r") as f:
+        # encoding= is not optional: app HTML is UTF-8, while the default here is
+        # the host's locale codepage — cp1252 on a Windows box, where a UTF-8
+        # Hebrew page decodes to mojibake or dies outright on an undefined byte.
+        async with await anyio.open_file(str(requested_file), "r", encoding="utf-8") as f:
             html = await f.read()
         if inject_base:
             html = inject_base_tag(html, _base_url_for(request, api_url_scheme))

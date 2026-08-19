@@ -29,7 +29,7 @@ the durable citation.
 3. Transcript on Disk (location + JSONL schema)
 4. Status Determination from Transcript Tail
 5. Session Lifecycle (id, resume, fork, cancel, restart)
-6. Context Injection (workdir, env, add-dir, embedded agents, permissions)
+6. Context Injection (workdir, env, add-dir, embedded sub-agents, permissions)
 7. Agent Hooks (PreToolUse / PostToolUse / SessionStart / ...)
 8. Token Usage & Cost
 9. Semantic Tool Entries (Plan / TodoWrite / Task)
@@ -122,11 +122,11 @@ the durable citation.
 - **Maps to:** _____________________
 - **Effort if missing:** M
 
-### Embedded agents and process instructions
-- **Need:** Deliver per-process instructions and embedded-agent persona/body text without mutating the user prompt.
+### Embedded sub-agents and process instructions
+- **Need:** Deliver per-process instructions and embedded sub-agent persona/body text without mutating the user prompt.
 - **Flowpad mechanism:** materialize `<record_dir>/execution/assets/` through `AssetDir`, write `CLAUDE.md`, `AGENTS.md`, `.agents`, and `.github/instructions/flowpad.instructions.md`, then include the assets dir in `additional_dirs`.
 - **Claude:** receives `--append-system-prompt-file <assets>/CLAUDE.md`; legacy `--agents <json>` can still be emitted for existing `cli_config.agents_json`.
-- **Codex:** receives `-c developer_instructions=<generated text>`; embedded-agent names may be surfaced as `skill_names` for command visibility.
+- **Codex:** receives `-c developer_instructions=<generated text>`; embedded sub-agent names may be surfaced as `skill_names` for command visibility.
 - **Copilot:** receives `COPILOT_CUSTOM_INSTRUCTIONS_DIRS=<assets>`; the generated `.github/instructions/flowpad.instructions.md` is the custom instruction source.
 - **Required:** Yes
 - **Vendor must expose:** one reliable per-turn instruction sink (file flag, config override, or custom-instruction directory) plus a way to mount the generated assets dir when directory discovery is required.
@@ -850,9 +850,9 @@ the durable citation.
 - **Maps to:** _____________________
 - **Effort if missing:** S
 
-### Embedded agents via process instruction assets
-- **Need:** Make embedded agent definitions affect the worker while preserving the exact user instruction.
-- **Flowpad mechanism:** `load-embedded-agent` materializes the agent markdown under `<assets>/.claude/agents/<name>.md`; `prepare_system_instruction_assets()` parses materialized/legacy agents and writes persona/dispatch instructions into the generated instruction files.
+### Embedded sub-agents via process instruction assets
+- **Need:** Make embedded sub-agent definitions affect the worker while preserving the exact user instruction.
+- **Flowpad mechanism:** `load-embedded-subagent` materializes the sub-agent markdown under `<assets>/.claude/agents/<name>.md`; `prepare_system_instruction_assets()` parses materialized/legacy sub-agents and writes persona/dispatch instructions into the generated instruction files.
 - **Claude:** generated file is passed with `--append-system-prompt-file`; legacy `--agents <json>` remains a compatibility path.
 - **Codex:** generated text is passed through `developer_instructions`; no prompt inlining.
 - **Copilot:** generated `.github/instructions/flowpad.instructions.md` is discovered through `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`; no prompt inlining.
@@ -1218,10 +1218,10 @@ generic icon, Sonnet pricing) rather than loudly.
 - **Effort if missing:** S
 
 ### Model tiers
-- **Need:** `sm`/`md`/`lg` must resolve to a concrete model for this vendor, so prompts/tests stay portable.
-- **Claude:** `CLAUDE_MODEL_TIERS` (haiku/sonnet/opus); **Codex/Copilot:** `CODEX_MODEL_TIERS` / `COPILOT_MODEL_TIERS` — all in `agentic_process/model_tiers.py`, consumed via the options class's `MODEL_TIERS` and resolved once in the `model` setter.
+- **Need:** `sm`/`md`/`lg` must resolve to a valid selection for this vendor, so prompts/tests stay portable.
+- **Claude/Codex:** `CLAUDE_MODEL_TIERS` (haiku/sonnet/opus) and `CODEX_MODEL_TIERS` (concrete GPT models). **Native Copilot:** `COPILOT_MODEL_TIERS` maps all tiers to vendor auto (`None`, omitting `--model`) because device-account availability is vendor-managed. All maps live in `agentic_process/model_tiers.py`, preserve the raw persisted tier, and resolve only when the command is emitted.
 - **Required:** Yes
-- **Vendor must expose:** three model names spanning small/medium/large. An empty map means pass-through only, and every tier-valued config breaks.
+- **Vendor must expose:** three valid tier outcomes: concrete model names or an explicit vendor-auto/no-flag outcome. An empty map means pass-through only, and every tier-valued config breaks.
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
 - **Maps to:** _____________________
 - **Effort if missing:** S

@@ -29,8 +29,8 @@ class SourceItemMeta(BaseMeta):
     kind: Optional[str] = None
     provider: Optional[str] = None
     data_source_id: Optional[str] = None
-    stream_key: Optional[str] = None
-    stream_label: Optional[str] = None
+    segment_key: Optional[str] = None
+    segment_label: Optional[str] = None
     external_id: Optional[str] = None
     thread_key: Optional[str] = None
     reply_to_external_id: Optional[str] = None
@@ -54,6 +54,6 @@ SOURCE_ITEM = TypeMetadata(
     # Minted by the ingestor from a provider payload, never from a "new entity"
     # button — there is nothing meaningful to create by hand.
     creatable=False,
-    index_fields=["name", "provider", "data_source_id", "stream_key", "occurred_at"],
+    index_fields=["name", "provider", "data_source_id", "segment_key", "occurred_at"],
     meta_model=SourceItemMeta,
 )

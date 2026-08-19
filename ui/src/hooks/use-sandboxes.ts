@@ -598,8 +598,7 @@ export function useSandboxes() {
 
       try {
         await run('launch', async () => {
-          // A bare workspace needs no LM-proxy key, and minting one costs round-trips.
-          const providerId = await node.setup({ skip_lm_proxy: true });
+          const providerId = await node.setup();
           if (!providerId) throw new Error('setup returned no provider id (provider was dropped)');
           // Only when turning it OFF: `true` is the hub's default for a fresh
           // node, so asking for it again is a round trip that changes nothing.

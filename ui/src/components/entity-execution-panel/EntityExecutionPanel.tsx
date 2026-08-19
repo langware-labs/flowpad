@@ -51,6 +51,7 @@ import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerH
 import { useProcessesForTarget } from './hooks/useProcessesForTarget';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { AssetManagerButton } from '@src/components/asset-manager';
+import { useLaunchingAgent } from '@src/hooks/use-launching-agent';
 import { normalizeWorkerType, type WorkerType } from '@src/components/workers/worker-types';
 import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
 
@@ -78,8 +79,8 @@ interface EntityExecutionPanelProps {
   className?: string;
   /**
    * Invoked once, right after the backing `AgenticProcess` is created and before
-   * the first `prompt()`. Use to pre-configure the process (e.g. for agent files,
-   * `(proc) => proc.loadEmbeddedAgent(path)`). Not called when an existing process
+   * the first `prompt()`. Use to pre-configure the process (e.g. for sub-agent files,
+   * `(proc) => proc.loadEmbeddedSubagent(path)`). Not called when an existing process
    * is picked up from `useProcessesForTarget`.
    */
   onProcessCreated?: (process: AgenticProcess) => Promise<void> | void;
@@ -348,6 +349,9 @@ export function EntityExecutionPanel({
 
   const activeProcess: AgenticProcess | null =
     forceNew && !resolvedMatchesLocal ? localProcess : (resolvedProcess ?? localProcess);
+  // The Agent this process runs AS — signs its assistant turns. Cache-first,
+  // live (a rename / new avatar repaints); null for a plain session.
+  const launchingAgent = useLaunchingAgent(activeProcess?.deployment_id);
 
   // Hydrate history on first resolution. Per AgenticProcess.loadHistory, safe to
   // call repeatedly — internally guarded by `_historyLoaded`.
@@ -845,6 +849,7 @@ export function EntityExecutionPanel({
             <TurnGroupsList
               groups={inlineGroups}
               worker={activeProcess?.worker_type ?? undefined}
+              agent={launchingAgent}
               onWorkerChange={handleWorkerChange}
             />
             {activeProcess && (
@@ -864,6 +869,7 @@ export function EntityExecutionPanel({
               key={m.id ?? m.timestamp}
               flowData={m}
               worker={activeProcess?.worker_type ?? undefined}
+              agent={launchingAgent}
               isUser={m.elementType === FlowElementTypes.USER_MESSAGE || (m.attributes && m.attributes.role === 'user')}
             />
           ))

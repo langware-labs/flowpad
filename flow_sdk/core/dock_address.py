@@ -43,7 +43,6 @@ from urllib.parse import quote, unquote, urlencode
 
 from flow_sdk._compat import StrEnum
 
-
 # ──────────────────────────────────────────────────────────────────────────
 # Layout / page — the two segments in front of the viewType
 # ──────────────────────────────────────────────────────────────────────────
@@ -120,6 +119,9 @@ class ViewType(StrEnum):
     APPS = "apps"  # Skill UI apps - /dock/apps/<uname>/<router>
     GRAPH = "graph"  # Dep-graph viewer - /dock/graph/<type>/<id>
     WORLDVIEW = "worldview"  # /dock[/hub]/worldview/<world|organization|deployment>
+    # People-and-teams admin. The org WORLDVIEW is the same data drawn as a graph
+    # and stays the advanced view; this is the plain screen.
+    ORGANIZATION = "organization"  # /dock/hub/organization
     TAG = "tag"  # Tag taxonomy - /dock/tag/graph[/<dot.name>]?view=tree
     SUBGRAPH = "subgraph"  # /dock/subgraph/<projection>[/<focusKey>]
     K_BROWSER = "k-browser"  # Docs knowledge browser - /dock/k-browser/<vfs|typeid>/<value>
@@ -181,7 +183,6 @@ class MachineSubview(StrEnum):
 
     PROCESSES = "processes"
     NETWORK = "network"
-    GATEWAY = "gateway"
     METRICS = "metrics"  # E2B only — CPU/Memory charts
     LOGS = "logs"  # E2B only — sandbox logs
     SECRETS = "secrets"  # NOT E2B-gated; the local desktop node needs it too
@@ -311,6 +312,10 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.APPS: _m(_REQ),
     ViewType.GRAPH: _m(_REQ),
     ViewType.WORLDVIEW: _m(_REQ),
+    # OPTIONAL, not REQUIRED like the graph beside it: the screen opens on the
+    # organization you belong to, and only carries a pointer when you deep-link to
+    # a particular team.
+    ViewType.ORGANIZATION: _m(_OPT),
     ViewType.TAG: _m(_REQ, folds_pointer=True),
     ViewType.SUBGRAPH: _m(_REQ, folds_pointer=True),
     ViewType.K_BROWSER: _m(_REQ),

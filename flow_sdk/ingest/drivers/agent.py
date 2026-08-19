@@ -45,8 +45,8 @@ from flow_sdk.ingest.driver import (
     FetchResult,
     SendOutcome,
     SendStatus,
-    StreamCursorView,
-    StreamRef,
+    SegmentCursorView,
+    SegmentRef,
     ingest_run_context,
 )
 from flow_sdk.ingest.health import SourceError
@@ -120,12 +120,12 @@ class AgentDriver:
         """
         return str((source.config or {}).get("connector") or "").strip()
 
-    def streams(self, source) -> list[StreamRef]:
+    def segments(self, source) -> list[SegmentRef]:
         config = getattr(source, "config", None) or {}
         keys = config.get("streams") or [config.get("stream") or "INBOX"]
-        return [StreamRef(key=str(k), label=str(k)) for k in keys]
+        return [SegmentRef(key=str(k), label=str(k)) for k in keys]
 
-    async def fetch(self, source, cursor: StreamCursorView) -> FetchResult:
+    async def fetch(self, source, cursor: SegmentCursorView) -> FetchResult:
         config = getattr(source, "config", None) or {}
         harness = config.get("harness") or None
         deadline = int(config.get("deadline_seconds") or DEFAULT_DEADLINE_SECONDS)
@@ -388,7 +388,7 @@ class AgentDriver:
 
     # ── the spawn ─────────────────────────────────────────────────────────────
 
-    async def _run_agent(self, source, cursor: StreamCursorView, config: dict, harness) -> dict[str, Any]:
+    async def _run_agent(self, source, cursor: SegmentCursorView, config: dict, harness) -> dict[str, Any]:
         """Launch through the NAMED agent, the way every preset launch now does.
 
         `deployment.launch(prompt, wait=True)` is the shipped one-shot: it
@@ -432,10 +432,10 @@ class AgentDriver:
         return self._read_receipt(receipt_path)
 
     @staticmethod
-    def _launch_options(source, cursor: StreamCursorView, harness) -> dict[str, Any]:
+    def _launch_options(source, cursor: SegmentCursorView, harness) -> dict[str, Any]:
         """Only what this run overrides. Worker and model come from the Agent."""
         options: dict[str, Any] = {
-            "name": f"ingest {source.name or source.id[:8]} · {cursor.stream_key}",
+            "name": f"ingest {source.name or source.id[:8]} · {cursor.segment_key}",
             "visible": False,
             # The run's only handle. An ingest worker has no spawning entity to
             # browse from, so without this it is unreachable from the Runs list
@@ -446,7 +446,7 @@ class AgentDriver:
             options["worker_type"] = harness
         return options
 
-    def _instruction(self, source, cursor: StreamCursorView, config: dict, receipt_path: Path) -> str:
+    def _instruction(self, source, cursor: SegmentCursorView, config: dict, receipt_path: Path) -> str:
         """The agent md leads; only the runtime addendum is built here — the
         shipped convention (see `asset_cleanup`)."""
         from flow_sdk.fs_store.operations.subagent import load_subagent  # noqa: PLC0415
@@ -472,7 +472,7 @@ class AgentDriver:
             f"## This run\n\n"
             f"- data-source id (`source_id`): `{source.id}`\n"
             f"- provider: `{config.get('connector') or 'gmail'}`\n"
-            f"- mailbox (`stream_key`): `{cursor.stream_key}`\n"
+            f"- mailbox (`segment_key`): `{cursor.segment_key}`\n"
             f"- fetch messages newer than: `{seen or window}`\n"
             f"- record at most {int(config.get('max_items') or 25)} messages, newest first\n"
             f"- receipt path: `{receipt_path}`\n"
@@ -504,7 +504,7 @@ class AgentDriver:
         return data
 
     @staticmethod
-    def _result_from(receipt: dict[str, Any], cursor: StreamCursorView) -> FetchResult:
+    def _result_from(receipt: dict[str, Any], cursor: SegmentCursorView) -> FetchResult:
         reported = receipt.get("error")
         if reported:
             # `no_connector` cannot be fixed by trying again; anything else the

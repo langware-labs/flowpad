@@ -1,4 +1,6 @@
-import { t } from '@lingui/core/macro';
+import { i18n } from '@lingui/core';
+import type { MessageDescriptor } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
 import {
   Capability,
   capabilityManager,
@@ -44,18 +46,24 @@ const workerOf = (kind: string) => kind.split('.')[1] as Worker;
  *  Python specs; the Select renders only these, so the modal offers only
  *  possible outcomes. */
 const HARNESS_SUPPORTED_PROVIDERS: Record<Worker, LMApiProvider[]> = {
-  // OpenRouter-only until the backend ApiAuthSpec routes non-OpenRouter providers
-  // (base_env is provider-agnostic today). Keep in sync with the Python specs.
-  claude: [LMApiProvider.OpenRouter],
-  codex: [LMApiProvider.OpenRouter],
-  copilot: [LMApiProvider.OpenRouter],
+  // OpenRouter directly, or the FlowPad hub's LLMEndpoint (a hub-side passthrough
+  // to it, bound by the hub after login). Keep in sync with the Python specs.
+  claude: [LMApiProvider.OpenRouter, LMApiProvider.FlowPad],
+  codex: [LMApiProvider.OpenRouter, LMApiProvider.FlowPad],
+  copilot: [LMApiProvider.OpenRouter, LMApiProvider.FlowPad],
 };
 
 const PROVIDER_LABEL: Record<string, string> = {
   [LMApiProvider.OpenRouter]: 'OpenRouter',
   [LMApiProvider.Anthropic]: 'Anthropic',
   [LMApiProvider.OpenAI]: 'OpenAI',
+  [LMApiProvider.FlowPad]: 'FlowPad Hub endpoint',
 };
+
+/** Providers with no key to paste: configured (or not) by something other than
+ *  the user — today only the FlowPad hub endpoint, which the hub binds and the
+ *  box's hub login authenticates. */
+const MANAGED_PROVIDERS: ReadonlySet<string> = new Set([LMApiProvider.FlowPad]);
 
 /** Display name for a provider value, falling back to the raw value. */
 const providerLabel = (provider: string) => PROVIDER_LABEL[provider] ?? provider;
@@ -76,6 +84,24 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
   const capabilityId = snapshot.capability?.id ?? null;
   const typeId = useMemo(() => (capabilityId ? new TypeId(Capability.type, capabilityId) : null), [capabilityId]);
   const { data: capability } = useEntity<Capability>(typeId, { enabled: !!typeId, watch: true });
+  // The badge below reads ``login_state``, a PERSISTED field written by the last
+  // device login or auth test — and nothing invalidates it when the user signs
+  // out of the CLI in a terminal. So the modal would open claiming "Signed in"
+  // over a harness that is demonstrably logged out, which is worse than saying
+  // nothing: it contradicts the very error that opened it.
+  //
+  // ``authStatus()`` re-runs the vendor's own probe and the backend mirrors the
+  // fresh result onto ``login_state`` and broadcasts it, so the watched row
+  // self-corrects. Silent by design — this is a refresh, not a user-invoked
+  // check, and the visible ``testAuth`` below keeps its toasts.
+  const modalOpen = useHarnessLoginStore((s) => s.open);
+  useEffect(() => {
+    if (!modalOpen || !capability) return;
+    void capability.authStatus().catch(() => undefined);
+    // Re-probe per open, per capability — not on every unrelated row update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalOpen, capabilityId]);
+
   const [busy, setBusy] = useState(false);
   // Separate from `busy` so re-testing auth doesn't compute status to 'busy'.
   const [testing, setTesting] = useState(false);
@@ -189,14 +215,18 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
   const authBadge =
     authMode === 'api'
       ? apiAvailable
-        ? { label: t`LLM key`, tone: 'emerald' as const }
-        : { label: t`Key not set`, tone: 'amber' as const }
+        ? MANAGED_PROVIDERS.has(activeProvider)
+          ? { label: t`Hub endpoint`, tone: 'emerald' as const }
+          : { label: t`LLM key`, tone: 'emerald' as const }
+        : MANAGED_PROVIDERS.has(activeProvider)
+          ? { label: t`Hub endpoint unavailable`, tone: 'amber' as const }
+          : { label: t`Key not set`, tone: 'amber' as const }
       : { label: t`Device login`, tone: 'sky' as const };
 
   return {
     capability,
     status,
-    statusText: STATUS_TEXT[status],
+    statusText: statusTextFor(status),
     name,
     account: FRIENDLY[worker]?.account,
     Icon,
@@ -243,29 +273,44 @@ function AuthBadge({
   );
 }
 
-const STATUS_TEXT: Record<Status, { label: string; dot: string; tone: string }> = {
+/**
+ * `label` is a lazy {@link MessageDescriptor}, not a `t` string. This table is
+ * module-level, so a `t` macro here runs ONCE at import — before any catalog is
+ * activated — and freezes the boot locale's English into the badge for the rest
+ * of the session. That is why "Signed in" / "Not installed" stayed English on a
+ * Hebrew screen while every in-component string next to them translated fine.
+ * {@link statusTextFor} resolves the descriptor at render instead, which is also
+ * what re-reads it after a locale switch.
+ */
+const STATUS_TEXT: Record<Status, { label: MessageDescriptor; dot: string; tone: string }> = {
   signedin: {
-    label: t`Signed in`,
+    label: msg`Signed in`,
     dot: 'bg-emerald-400 shadow-[0_0_7px] shadow-emerald-400/60',
     tone: 'text-emerald-500',
   },
   awaiting: {
-    label: t`Waiting for you…`,
+    label: msg`Waiting for you…`,
     dot: 'bg-sky-400 shadow-[0_0_7px] shadow-sky-400/60 animate-pulse',
     tone: 'text-sky-500',
   },
   busy: {
-    label: t`Starting…`,
+    label: msg`Starting…`,
     dot: 'bg-sky-400 shadow-[0_0_7px] shadow-sky-400/60 animate-pulse',
     tone: 'text-sky-500',
   },
   signedout: {
-    label: t`Not signed in`,
+    label: msg`Not signed in`,
     dot: 'bg-amber-400 shadow-[0_0_7px] shadow-amber-400/60',
     tone: 'text-amber-500',
   },
-  unavailable: { label: t`Not installed`, dot: 'bg-muted-foreground/40', tone: 'text-muted-foreground' },
+  unavailable: { label: msg`Not installed`, dot: 'bg-muted-foreground/40', tone: 'text-muted-foreground' },
 };
+
+/** A status's visuals with its label resolved in the ACTIVE locale. */
+function statusTextFor(status: Status): { label: string; dot: string; tone: string } {
+  const entry = STATUS_TEXT[status];
+  return { ...entry, label: i18n._(entry.label) };
+}
 
 /** Master list: one big, tappable row per assistant. */
 function HarnessListRow({
@@ -319,7 +364,9 @@ function HarnessListRow({
  *  harnesses only consume these keys (they never enter them). */
 function LlmKeysSection({ keys, refreshKeys }: { keys: LmApiKeySummary[]; refreshKeys: () => Promise<void> }) {
   const { t } = useLingui();
-  const allProviders = Object.values(LMApiProvider);
+  // Only providers a user can key by hand go in the paste-a-key select; managed
+  // ones (the FlowPad hub endpoint) appear in the configured list when bound.
+  const allProviders = Object.values(LMApiProvider).filter((p) => !MANAGED_PROVIDERS.has(p));
   const [provider, setProvider] = useState<string>(allProviders[0]);
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -410,6 +457,16 @@ function LlmKeysSection({ keys, refreshKeys }: { keys: LmApiKeySummary[]; refres
               >
                 <span className="flex items-center gap-2">
                   {providerLabel(k.provider)}
+                  {k.managed && (
+                    <Badge
+                      variant="outline"
+                      className={`gap-1 ${AUTH_BADGE_TONE.sky}`}
+                      title={k.detail ?? undefined}
+                      data-testid={`keys-managed-${k.provider}`}
+                    >
+                      <Trans>via hub login</Trans>
+                    </Badge>
+                  )}
                   {v && (
                     <Badge
                       variant="outline"
@@ -431,15 +488,17 @@ function LlmKeysSection({ keys, refreshKeys }: { keys: LmApiKeySummary[]; refres
                   >
                     {testing === k.provider ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trans>Test</Trans>}
                   </Button>
-                  <button
-                    type="button"
-                    aria-label={t`Delete key`}
-                    data-testid={`keys-delete-${k.provider}`}
-                    className="text-muted-foreground hover:text-destructive"
-                    onClick={() => setConfirmDelete(k.provider)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  {!k.managed && (
+                    <button
+                      type="button"
+                      aria-label={t`Delete key`}
+                      data-testid={`keys-delete-${k.provider}`}
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={() => setConfirmDelete(k.provider)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </span>
               </li>
             );
@@ -556,7 +615,11 @@ function HarnessDetail({ kind, onBack, keys }: { kind: string; onBack: () => voi
               </Select>
               <span className="flex items-center gap-1.5 text-sm text-emerald-500">
                 <Check className="h-4 w-4" />
-                <Trans>Using {providerLabel(activeProvider)} key</Trans>
+                {MANAGED_PROVIDERS.has(activeProvider) ? (
+                  <Trans>Using {providerLabel(activeProvider)}</Trans>
+                ) : (
+                  <Trans>Using {providerLabel(activeProvider)} key</Trans>
+                )}
               </span>
             </div>
           )}

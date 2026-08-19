@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class CopilotAgentOptions(AgentOptions):
     """Builds Copilot CLI argv for headless JSON streaming or visible PTY mode."""
 
-    # sm/md/lg → gpt-5.4-mini/gpt-5.4/gpt-5.5, applied when emitting command.
+    # Native sm/md/lg delegate to Copilot auto by omitting --model at emission.
     MODEL_TIERS = COPILOT_MODEL_TIERS
 
     def __init__(

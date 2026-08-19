@@ -468,7 +468,7 @@ async def _exchange_device_code(session: DesktopOAuthSession) -> dict:
         return {"kind": "error", "message": err}
     token = body.get("access_token")
     if not token:
-        return {"kind": "error", "message": f"No access_token in success body: {body}"}
+        return {"kind": "error", "message": f"No access_token in success body (keys: {sorted(body)})"}
     return {"kind": "success", "access_token": token, "token_type": body.get("token_type"), "scope": body.get("scope")}
 
 

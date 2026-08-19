@@ -177,8 +177,6 @@ paused sandbox without the hub in the path.
   sandbox URL.
 - **Rotation is in-process only.** The cache assumes a single writer. If the sod is rewritten out of
   band the running process serves the old secret until restart or `reset_cache()`.
-- **Docker compute workers break on a gated instance.** `flow compute worker` dials
-  `ws://host.docker.internal:{port}/api/v1/compute/ws` with no cookie-gate. No overlap today —
-  Docker compute and E2B workspaces are different flavors — but if they ever meet, thread the secret
-  into `/etc/flowpad/machine.env` and send it as `X-Cookie-Gate`.
+- **Enrolled machines (`flow connect`, incl. `flow connect --docker`) talk to the hub, not to a
+  gated desktop instance**, so the gate never sits between the hub and a machine's worker.
 - **Traffic still reaches the app.** It serves Forbidden rather than rejecting at the edge.

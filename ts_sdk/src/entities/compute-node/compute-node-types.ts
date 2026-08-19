@@ -10,6 +10,8 @@ export enum ComputeProviderType {
   LOCAL_MACHINE = 'local_machine',
   E2B = 'e2b',
   GCP_VM = 'gcp_vm',
+  /** A machine its owner enrolled with `flow connect`; driven by the hub over WS. */
+  USER_MACHINE = 'user_machine',
 }
 
 /**
@@ -27,6 +29,7 @@ export enum ComputeProviderType {
 export const SANDBOX_PROVIDERS: ReadonlySet<string> = new Set<string>([
   ComputeProviderType.E2B,
   ComputeProviderType.GCP_VM,
+  ComputeProviderType.USER_MACHINE,
 ]);
 
 /**

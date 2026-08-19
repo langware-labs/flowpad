@@ -750,7 +750,7 @@ record fields.
 
 `load_agent(name, project_dir=None)` searches project, user, and system agent
 locations. `agent_to_cli_json()` returns the legacy Claude `--agents` dict;
-current `AgenticProcess` launches materialize embedded agents into
+current `AgenticProcess` launches materialize embedded sub-agents into
 `<record_dir>/execution/assets/.claude/agents/` and deliver their instructions
 through generated process instruction assets.
 

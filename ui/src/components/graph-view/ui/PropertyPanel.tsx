@@ -1,5 +1,8 @@
 import { MousePointer2, Target } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { Agent, TypeId } from '@sdk';
+import { useEntity } from '@sdk/react/hooks';
+import { AgentDeploymentsSection } from '@src/components/assets/editor/agent-profile/AgentDeploymentsSection';
 import { EntityIcon } from './EntityIcon';
 import { hexForType } from './typeColors';
 import type { NodeData } from '../graph/graphEngine';
@@ -23,6 +26,18 @@ function formatProperty(value: unknown): string {
 
 function propertyLabel(key: string): string {
   return key.replaceAll('_', ' ');
+}
+
+function AgentDeploymentControls({ id }: { id: string }) {
+  const { data: agent } = useEntity<Agent>(new TypeId(Agent.type, id));
+  if (!agent) return null;
+
+  return (
+    <div className="section" data-testid="worldview-agent-deployments">
+      <h3><Trans>Deployments</Trans></h3>
+      <AgentDeploymentsSection agent={agent} />
+    </div>
+  );
 }
 
 export function PropertyPanel({
@@ -94,6 +109,8 @@ export function PropertyPanel({
             ))}
           </div>
         )}
+
+        {node.type === Agent.type && <AgentDeploymentControls id={node.id} />}
 
         <div className="section">
           <h3><Trans>Edges by kind</Trans></h3>
