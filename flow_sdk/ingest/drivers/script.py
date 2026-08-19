@@ -35,7 +35,7 @@ from typing import Any, Optional
 
 from flow_sdk.ingest.driver import FetchResult, SegmentCursorView, SegmentRef, SetupVerdict
 from flow_sdk.ingest.health import SourceError
-from flow_sdk.ingest.manifest import Traits
+from flow_sdk.ingest.manifest import SCRIPT_FILE, Runtime, Traits
 from flow_sdk.ingest.models import IngestItem
 from flow_sdk.utils.module_rpc import ModuleFailure, call_module
 
@@ -44,9 +44,6 @@ logger = logging.getLogger(__name__)
 #: The request envelope version. A module that does not understand the host it
 #: was handed exits 3 rather than guessing.
 PROTOCOL = 1
-
-#: The module file that makes a spec SCRIPT-runtime. Mirrors `manifest.runtime_for`.
-MODULE_FILE = "fetch.py"
 
 #: Concurrent module spawns across ALL script sources. The poller dispatches
 #: every due source on the same heartbeat tick, so without this N authored
@@ -86,10 +83,11 @@ class ScriptSource:
     # ── the Protocol ──────────────────────────────────────────────────────
 
     async def segments(self, source) -> list[SegmentRef]:
-        """Ask the module what it can sync.
+        """Ask the module what it can sync — one spawn.
 
-        Async, unlike the builtins' sync `segments` — a module has to be spawned
-        to answer. `sync.py` awaits whatever this returns.
+        The nine builtins answer from `source.config`; this one has to run the
+        module to know, which is why the Protocol declares the verb async for
+        all ten rather than making the call site guess.
         """
         data = await self._call(source, "segments", {})
         raw = data.get("segments") if isinstance(data, dict) else None
@@ -179,7 +177,7 @@ class ScriptSource:
     # ── transport ─────────────────────────────────────────────────────────
 
     async def _call(self, source, verb: str, extra: dict) -> Any:
-        script = os.path.join(self.folder, MODULE_FILE)
+        script = os.path.join(self.folder, SCRIPT_FILE)
         executor = await self._executor()
 
         env = self._env(source)
@@ -219,7 +217,7 @@ class ScriptSource:
             # successful call.
             if not await executor.exists(script):
                 raise SourceError.config(
-                    "missing_module", f"{MODULE_FILE} is missing from {self.folder}"
+                    "missing_module", f"{SCRIPT_FILE} is missing from {self.folder}"
                 ) from exc
             detail = f"{exc}{f' — {exc.logs[-500:]}' if exc.logs else ''}"
             if exc.kind == "config":
@@ -298,7 +296,7 @@ def driver_for_spec(spec) -> Optional[ScriptSource]:
     `runtime == builtin` means the manifest describes a driver that already
     exists as a class — registering anything for it would shadow the real one.
     """
-    if str(getattr(spec, "runtime", "") or "") != "script":
+    if str(getattr(spec, "runtime", "") or "") != Runtime.SCRIPT.value:
         return None
     # `asset_ref` is declared `Optional[str]` but arrives as an `FSRef` on the
     # in-process path, so handle both. `.path` is FSRef's public accessor;
