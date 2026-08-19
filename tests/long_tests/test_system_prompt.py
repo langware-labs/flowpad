@@ -95,7 +95,7 @@ async def test_system_prompt(worker_type, cli_name, tmp_path: Path, _workers_dis
 
         assets = process.embedded_assets
         assert assets is not None
-        assert str(assets.os_path) in process.additional_dirs
+        assert str(assets.os_path) in process.resolved_add_dirs
         for rel in (
             "CLAUDE.md",
             "AGENTS.md",

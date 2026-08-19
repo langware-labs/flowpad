@@ -339,7 +339,11 @@ export class Shell extends APIEntity<Shell> implements IShell {
   async setEnv(vars: Record<string, string>): Promise<void> {
     const action = new ActionInfo('set-env', Shell.type, this.id, 'POST');
     action.bodyParameters = { vars };
-    await dataManager.callAction<any, any>(action);
+    const result = await dataManager.callAction<any, any>(action);
+    // Apply the server's merged env locally (same convention as `open()`), so a
+    // read of `this.env` right after the await is correct without racing the
+    // `data_op_msg` WS delivery that would otherwise be the only writer.
+    if (result?.env) this.env = result.env as Record<string, string>;
   }
 
   // ── Static helpers ────────────────────────────────────────────────────────
