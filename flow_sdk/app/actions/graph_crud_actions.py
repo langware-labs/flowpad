@@ -339,6 +339,22 @@ async def handle_create_entity(request: Request):
                 and type_info.creatable
                 and type_info.owns_main_ref
             ):
+                # Placement comes from the URL for a type that owns its file —
+                # `POST /graph/project/<id>/<type>` — never from the body. But
+                # REFUSE rather than drop: silently ignoring a placement key
+                # returns 200 for an asset that landed somewhere else entirely,
+                # and the caller only finds out much later (a deploy that says
+                # "Asset has no owning Project"). The UI already uses the scoped
+                # route; this only reaches a hand-built call.
+                if value not in (None, "", {}, []):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"{key!r} cannot be set in the body for {request_info.direct_resource_type!r} — "
+                            f"it owns its file, so its placement comes from the URL. "
+                            f"POST to /api/v1/graph/project/<project_id>/{request_info.direct_resource_type} instead."
+                        ),
+                    )
                 continue
             if not entity_model.is_api_field(key):
                 service_log.highlighted_error(

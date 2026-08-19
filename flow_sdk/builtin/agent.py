@@ -364,8 +364,23 @@ class Agent(Entity):
         actor = request_info.someone_typeid if request_info else None
         if not actor:
             return ApiFailResponse(message="deploy requires an authenticated user", status_code=401)
+        from flow_sdk.assets.git_publish import (  # noqa: PLC0415
+            AssetPublishError,
+            publish_failure_status,
+        )
+
         try:
             data = await self.deploy_to_cloud(actor)
+        except AssetPublishError as exc:
+            # Deploy publishes the agent through git first, so every publish
+            # precondition is a deploy precondition. These are the caller's
+            # state, not a server fault — reporting them as 500 both mislabels
+            # them in logs and loses the sentence that says what to do.
+            return ApiFailResponse(
+                status_code=publish_failure_status(exc.code),
+                message=exc.actionable,
+                data={"code": str(exc.code), **exc.data},
+            )
         except Exception as exc:
             return ApiFailResponse(message=f"deploy failed: {exc}")
         return ApiSuccessResponse(data={"agent_id": self.id, **data})

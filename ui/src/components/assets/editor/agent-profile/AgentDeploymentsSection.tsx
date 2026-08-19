@@ -79,6 +79,12 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
       notify.error({
         title: t`Could not deploy`,
         message: e instanceof Error ? e.message : t`Deploy failed.`,
+        // The ONE case `forceToast` is documented for: this alert is the only
+        // feedback that Deploy did anything. Alerts are otherwise toasted in Dev
+        // mode only, so outside Dev the button reported nothing at all — the
+        // agent has no owning project, or its project has no GitHub connection,
+        // and the user sees a button that silently does nothing.
+        forceToast: true,
       });
     } finally {
       setDeploying(false);

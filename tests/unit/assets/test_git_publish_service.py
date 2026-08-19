@@ -129,3 +129,46 @@ async def test_publish_sends_project_id_only_and_updates_only_asset_cache(tmp_pa
     assert agent.git_origin == origin.model_dump(mode="json")
     save.assert_awaited_once_with(actor, notify=False)
     assert result.project == {"id": project.id}
+
+
+# ── the failure table: status AND remedy, in one place ───────────────────
+
+
+def test_every_publish_code_has_a_status_and_a_remedy():
+    """A code with no row falls back to 500 and says nothing.
+
+    The table exists because two call sites — sharing an asset and deploying an
+    agent — answer the same question, and a second copy drifts. A new code added
+    without a row would silently become a server error with no guidance, which is
+    the state this replaced.
+    """
+    from flow_sdk.assets.git_publish import (
+        AssetPublishCode,
+        publish_failure_remedy,
+        publish_failure_status,
+    )
+
+    for code in AssetPublishCode:
+        assert publish_failure_status(code) != 500, f"{code} has no status row"
+        assert publish_failure_remedy(code), f"{code} tells the reader nothing to do"
+
+
+def test_a_precondition_is_a_client_status_not_a_server_fault():
+    """These are the caller's state. Reporting them as 500 both mislabels them in
+    logs and, on the wire, loses the sentence that says what to do."""
+    from flow_sdk.assets.git_publish import AssetPublishCode, publish_failure_status
+
+    assert publish_failure_status(AssetPublishCode.NOT_GIT_BACKED) == 400
+    assert publish_failure_status(AssetPublishCode.GITHUB_NOT_CONNECTED) == 409
+    # A push the remote refused is genuinely upstream, not the caller.
+    assert publish_failure_status(AssetPublishCode.PUSH_REJECTED) == 502
+
+
+def test_actionable_carries_the_failure_and_the_remedy():
+    from flow_sdk.assets.git_publish import AssetPublishCode, AssetPublishError
+
+    exc = AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "Asset has no owning Project")
+
+    assert "Asset has no owning Project" in exc.actionable
+    # The half that was missing: the reader was told the problem and left stuck.
+    assert "inside a project" in exc.actionable
