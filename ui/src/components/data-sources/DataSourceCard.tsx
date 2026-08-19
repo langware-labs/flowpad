@@ -21,6 +21,7 @@ import { CheckCircle2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { lucideByName } from '@src/lib/lucide-by-name';
 import { timeSince, timeUntil } from '@src/utils/duration';
 import { Button } from '@src/components/ui/button';
 import { Card, CardContent, CardHeader } from '@src/components/ui/card';
@@ -39,16 +40,20 @@ interface Props {
    *  one global query, and a card per source asking separately is N identical
    *  subscriptions to the same rows. The view already owns the grid. */
   setupWiki?: string;
+  /** The spec's `icon_name`, resolved by the view that owns the grid. */
+  iconName?: string;
   onEdit: (source: DataSource) => void;
   onReplay: (source: DataSource) => void;
   onDelete: (source: DataSource) => void;
 }
 
-export function DataSourceCard({ source, setupWiki, onEdit, onReplay, onDelete }: Props) {
+export function DataSourceCard({ source, setupWiki, iconName, onEdit, onReplay, onDelete }: Props) {
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const Icon = iconForType(DataSource.type);
+  // The spec's glyph when one is installed, else the type's. A screen of
+  // sources is scanned by provider, not by 'these are all data sources'.
+  const Icon = iconName ? lucideByName(iconName) : iconForType(DataSource.type);
 
   // Gated on `open`: a collapsed card issues no request at all (the hook
   // returns before `watchQuery` when disabled), and the filter means one

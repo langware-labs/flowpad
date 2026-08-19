@@ -115,6 +115,7 @@ export function DataSourcesView() {
             key={source.id}
             source={source}
             setupWiki={specFor(source.provider)?.setup_wiki}
+            iconName={specFor(source.provider)?.icon_name}
             onEdit={openEdit}
             onReplay={setReplaying}
             onDelete={setDeleting}
