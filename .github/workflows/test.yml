@@ -101,11 +101,8 @@ jobs:
           && (github.event_name != 'workflow_dispatch' || inputs.e2e-tests) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # BURN-IN (added 2026-07-15): keep e2e failures visible but out of the
-    # PyPI deploy gate (`gh pr checks` sees success) while the job proves
-    # itself on real runners. Remove after ~1 week of green runs. NOTE:
-    # while this is present, e2e failures do NOT block deploys.
-    continue-on-error: true
+    # Burn-in ended 2026-08-19 (first full-green run, 32267242614): e2e
+    # failures now count in the PyPI deploy gate like every other job.
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/e2e-tests
