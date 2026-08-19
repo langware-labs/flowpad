@@ -88,24 +88,30 @@ You are a test agent.
     await proc.embeddedAssets.attach(subagentRef);
     expect(proc.embeddedAssets.list().map((r) => r.toString())).toEqual([subagentRef]);
 
-    // Read server-side to confirm persistence. Server appends the assets dir
-    // to ``additional_dirs`` and pushes the update via WebSocket; the cached
-    // entity reflects it once that WS message lands. Under suite load that
-    // can take a beat — poll briefly instead of asserting on a single snapshot
-    // so the test isn't racing a fan-out we can't observe directly.
+    // Read server-side to confirm persistence. The server persists the attached
+    // ref and pushes the update via WebSocket; the cached entity reflects it once
+    // that WS message lands. Under suite load that can take a beat — poll briefly
+    // instead of asserting on a single snapshot so the test isn't racing a
+    // fan-out we can't observe directly.
     const deadline = Date.now() + 5000;
     let refreshed: AgenticProcess | null = null;
     while (Date.now() < deadline) {
       refreshed = await dataManager.getByTypeId<AgenticProcess>(proc.typeId);
-      if ((refreshed?.additional_dirs ?? []).some((d) => d.endsWith('/assets'))) break;
+      if ((refreshed?.embedded_asset_refs ?? []).length > 0) break;
       await new Promise((r) => setTimeout(r, 50));
     }
     const refreshedRefs = (refreshed?.embedded_asset_refs ?? []).map((r) => r.toString());
     expect(refreshedRefs).toEqual([subagentRef]);
+    // The process assets dir is deliberately NOT stored in `additional_dirs` —
+    // it is folded into the launch-time `--add-dir` set by
+    // `AgenticProcess.resolved_add_dirs` (a computed property that is not part of
+    // the API payload). Keep asserting that separation here; the mount itself is
+    // owned by tests/unit/test_system_instruction_assets.py and the long-test
+    // system-prompt / settings-instruction pair.
     expect(
       (refreshed?.additional_dirs ?? []).some((d) => d.endsWith('/assets')),
-      `additional_dirs should contain the assets path after attach (got: ${JSON.stringify(refreshed?.additional_dirs)})`,
-    ).toBe(true);
+      `the process assets dir must stay out of additional_dirs (got: ${JSON.stringify(refreshed?.additional_dirs)})`,
+    ).toBe(false);
 
     // Detach
     await proc.embeddedAssets.detach(subagentRef);

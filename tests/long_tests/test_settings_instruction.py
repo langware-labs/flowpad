@@ -189,7 +189,7 @@ async def test_settings_instruction_is_obeyed(worker_type, cli_name, tmp_path: P
         # If this fails, delivery (not obedience) is broken.
         assets = process.embedded_assets
         assert assets is not None
-        assert str(assets.os_path) in process.additional_dirs
+        assert str(assets.os_path) in process.resolved_add_dirs
         _assert_assets_materialized(assets, system_prompt)
 
         await _await_and_assert_marker(
