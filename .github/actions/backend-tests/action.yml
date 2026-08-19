@@ -27,11 +27,12 @@ runs:
       run: uv run pytest tests/unit -q
       shell: bash
 
-    # Ignored files spawn or probe a real Claude CLI (absent on CI runners) —
-    # verified by running the tier with `claude` hidden from PATH.
-    # test_fs_records_scan_search is a TEMPORARY ignore: it fails on a real
-    # fs_store regression (create-skill → scan returns 0) on this branch;
-    # un-ignore once the fs_store scan pipeline is fixed.
+    # tests/api includes files that spawn or probe a real Claude CLI (worker
+    # lifecycle, PTY, capability tests) — install it so the full tier runs.
+    - name: Install Claude Code
+      run: npm install -g @anthropic-ai/claude-code
+      shell: bash
+
     - name: pytest tests/api
       run: >-
         uv run pytest tests/api -q
