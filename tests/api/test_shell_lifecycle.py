@@ -317,7 +317,10 @@ async def test_set_env_persists_on_entity(bootstrapped_client):
     )
     assert response.status_code == 200, response.text
     res = ApiResponse(**response.json())
-    assert res.status == "SUCCESS"
+    assert res.status == "SUCCESS", response.text
+    # Deterministic KeyError('vars') on CI (Linux) while green on macOS —
+    # carry the actual body so the failure explains itself there.
+    assert "vars" in res.data, f"set-env response has no 'vars': {response.text}"
     assert "FOO" in res.data["vars"]
 
     # Verify via GET
