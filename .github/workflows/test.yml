@@ -61,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/backend-tests
         with:
           tier: unit
@@ -72,7 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/backend-tests
         with:
           tier: api
@@ -83,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/frontend-tests
         with:
           tsc: false
@@ -104,5 +104,5 @@ jobs:
     # Burn-in ended 2026-08-19 (first full-green run, 32267242614): e2e
     # failures now count in the PyPI deploy gate like every other job.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/e2e-tests

@@ -4,12 +4,18 @@ runs:
   using: 'composite'
   steps:
     - name: Set up uv + Python 3.10
-      uses: astral-sh/setup-uv@v5
+      uses: astral-sh/setup-uv@v10
       with:
         python-version: '3.10'
         enable-cache: true
 
-    - uses: actions/setup-node@v4
+    # Same rationale as backend-tests: keep traceback-shaped WARNING lines in
+    # the backend log from becoming error annotations on green runs.
+    - name: Disable Python problem matcher (annotates warnings as errors)
+      run: echo "::remove-matcher owner=python::"
+      shell: bash
+
+    - uses: actions/setup-node@v7
       with:
         node-version: '22'
         cache: 'npm'
@@ -203,7 +209,7 @@ runs:
 
     # ---- Artifacts + teardown ----
     - name: Upload Playwright traces
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       if: ${{ !cancelled() }}
       with:
         name: playwright-traces
@@ -213,7 +219,7 @@ runs:
         overwrite: true
 
     - name: Upload server logs
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       if: ${{ !cancelled() }}
       with:
         name: e2e-server-logs
