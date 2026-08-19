@@ -318,21 +318,9 @@ async def test_set_env_persists_on_entity(bootstrapped_client):
     assert response.status_code == 200, response.text
     res = ApiResponse(**response.json())
     assert res.status == "SUCCESS", response.text
-    # Deterministic {"env": {...}} payload on CI (Linux) while macOS returns
-    # the handler's {"vars": [...]} — the app runs in-process, so name the
-    # actually-registered handler in the failure to identify the imposter.
-    from flow_sdk.actions.action_registry import action as _registry
-
-    _a = _registry.get_by_name("set-env", "shell")
-    _handler_info = (
-        f"{_a.function_name} from {getattr(_a.handler, '__module__', '?')}" if _a else "NOT REGISTERED"
-    )
-    _env_keys = sorted(k for k in _registry.function_registry if "env" in k)
-    assert "vars" in res.data, (
-        f"set-env response has no 'vars': {response.text}; "
-        f"resolved handler: {_handler_info}; env-ish registry keys: {_env_keys}"
-    )
-    assert "FOO" in res.data["vars"]
+    # The response carries the MERGED env (the server owns the merge; callers
+    # apply it locally instead of racing the data_op_msg WS delivery).
+    assert res.data["env"] == {"FOO": "bar"}, response.text
 
     # Verify via GET
     read_resp = await bootstrapped_client.get(f"/api/v1/graph/shell/{entity_id}")
