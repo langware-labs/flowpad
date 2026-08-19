@@ -72,6 +72,23 @@ logger = logging.getLogger(__name__)
 CANCEL_GRACE_SECONDS = 5.0
 
 
+def _with_language(instructions: str | None, language: str | None) -> str | None:
+    """Prepend the ``# Language`` block to codex's developer message.
+
+    Codex ships no language setting of its own, so unlike Claude it needs the
+    instruction text rather than the language name. The developer message it
+    already receives via ``-c developer_instructions=`` is the only system-level
+    channel available, so the block rides there — ahead of the generated
+    instructions, which are passed through unchanged.
+    """
+    if not language:
+        return instructions
+    from flow_sdk.i18n.supported_locales import language_prompt_block  # noqa: PLC0415
+
+    block = language_prompt_block(language)
+    return f"{block}\n\n{instructions}" if instructions else block
+
+
 class CodexCLIStreamWorker(AgenticWorker):
     """Streaming codex worker using ``codex exec --json``.
 
@@ -277,7 +294,7 @@ class CodexCLIStreamWorker(AgenticWorker):
             ephemeral=False,
         )
         opts.add_dirs = list(context.add_dirs or [])
-        opts.developer_instructions = context.developer_instructions
+        opts.developer_instructions = _with_language(context.developer_instructions, context.language)
         opts.extra_config_overrides = list(context.extra_config_overrides or [])
         opts.bypass_hook_trust = context.bypass_hook_trust
         # Asset-backed system instructions ride developer_instructions; the
