@@ -242,11 +242,35 @@ a space (`Flowpad workspace`), and an unquoted value breaks `source`.
 
 ## Phase 5 — Run the QA cycle
 
-Delegate to the sibling skill and let it own the test run:
+Delegate to the sibling skill and let it own the test run. Invoke it as a
+nested `claude` run **whose working directory is the checkout**:
 
+```bash
+cd "$APP_DIR"
+claude -p "/e2e-qa qa cycle" --dangerously-skip-permissions \
+  --output-format stream-json --verbose
 ```
-Skill(skill="e2e-qa", args="qa cycle")
-```
+
+`--output-format stream-json --verbose` is not decoration. Plain `claude -p`
+emits the **final result only** — nothing while it works. Under
+`flowpad-qa.service` that means an empty journal for the whole cycle, so a run
+that wedges gives you `TimeoutStartSec=4h` of silence and then a poweroff, and
+the journal tail `qa-finalize.sh` mails you contains nothing about where it
+stopped. Streaming puts each step in the journal as it happens, which is the
+only forensic record an unattended run leaves behind.
+
+Not `Skill(skill="e2e-qa", …)` from this process. Two reasons, and both bite:
+
+* **Discovery.** `e2e-qa` is a project skill living in
+  `$APP_DIR/.claude/skills/`. This process was started by `flowpad-qa.service`
+  with `WorkingDirectory=/home/claudeuser`, so it only ever sees
+  `~/.claude/skills/` — `e2e-qa` is not in its skill list and the call cannot
+  resolve.
+* **Relative paths.** `e2e-qa` reads `.env.local`, `ui/tests/manual_regression/`
+  and `.claude/skills/e2e-qa/e2e_qa_cleanup.py` as repo-relative. Copying it to
+  `~/.claude/skills/` would fix discovery and break every one of those paths.
+  It has to run *in* the checkout, which is exactly what the nested run gives
+  it.
 
 It writes results to `ui/tests/manual_regression/_results/<timestamp>/`,
 including `report.html` built from its `templates/report.html`. Capture that
