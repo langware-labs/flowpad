@@ -9487,6 +9487,7 @@ msgid "Message Attachment"
 msgstr "مرفق الرسالة"
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
+#: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 msgid "Message not queued"
 msgstr "تعذر إدراج الرسالة في الطابور"
 
