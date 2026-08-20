@@ -301,8 +301,17 @@ describe('file change → reindex → entity change → refresh', () => {
     const marker = 'AGENT_MARKER_123';
     const worker = await new sdk.AgenticProcess({ workdir, visible: false, pty_mode: false }).save([]);
     await worker.watch();
+    // Pin the TOOL, not just the outcome. The turn-end reindex sources its
+    // touched-path set from the transcript's structured file-op entries
+    // (`_iter_touched_paths` → FileWriteEntry / FileEditEntry). A model that
+    // satisfies "edit this file" with a Bash redirect (`printf … > foo.md`)
+    // produces no such entry, so nothing reindexes and this test fails for a
+    // reason that is pure model tool-choice — observed exactly that, twice.
+    // This does not weaken the assertion: the reindex path under test IS the
+    // structured-file-op path, and the marker check below still proves the edit.
     await worker.prompt(
-      `Edit the file ${target} and set its ENTIRE content to exactly:\n${marker}\nDo not add anything else.`,
+      `Use the Write tool (not Bash, not a shell redirect) to set the ENTIRE content of ` +
+        `${target} to exactly:\n${marker}\nDo not add anything else.`,
     );
 
     const chat = chatContent(worker.flowDataStream.items, sdk.FlowElementTypes);

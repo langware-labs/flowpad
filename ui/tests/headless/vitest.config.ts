@@ -48,6 +48,7 @@ export default mergeConfig(
       // time when the full app's module graph is evaluated — matching the react
       // tier's setup order.
       setupFiles: [
+        path.resolve(__dirname, '../_fetch_realm.ts'),
         path.resolve(__dirname, '../_lingui-mock.ts'),
         path.resolve(__dirname, '../react/reactSetup.ts'),
         path.resolve(__dirname, './_setup.ts'),

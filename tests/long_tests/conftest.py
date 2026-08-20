@@ -257,7 +257,10 @@ def pytest_runtest_makereport(item, call):
     if rep.when == "call" and rep.failed and call.excinfo is not None:
         if issubclass(call.excinfo.type, (ApiErrorTimeoutError, TimeoutError)):
             rep.outcome = "skipped"
-            rep.longrepr = ("", 0, f"Skipped: Anthropic API issue — {call.excinfo.value}")
+            # Name the downgraded test: without the nodeid the report shows a
+            # bare ``.:0`` and a whole class of real failures (a logic bug that
+            # merely SURFACES as a timeout) becomes invisible in the summary.
+            rep.longrepr = ("", 0, f"Skipped: Anthropic API issue — {item.nodeid} — {call.excinfo.value}")
 
 
 @pytest.fixture()

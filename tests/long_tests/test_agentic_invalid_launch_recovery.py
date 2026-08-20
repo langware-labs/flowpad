@@ -145,8 +145,14 @@ def _kill_process_group(process: subprocess.Popen[str]) -> None:
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="ptyprocess reproduction is POSIX-only")
+# Codex is an optional, separately-installed worker CLI (CapabilityKind.CODEX_CLI).
+# The regression needs the real binary to reach ptyprocess's fork/exec handshake, so
+# guard on availability the way every other codex-spawn test in the repo does
+# (tests/api/test_pty_process_e2e.py::requires_codex,
+# tests/long_tests/test_cli_driver_binary_smoke.py). Hard-asserting here turned a
+# missing optional dependency into a red failure on any host without codex.
+@pytest.mark.skipif(shutil.which("codex") is None, reason="codex CLI not installed")
 def test_malformed_codex_launch_returns_without_stranding_process(tmp_path: Path) -> None:
-    assert shutil.which("codex"), "real codex executable is required for this regression"
 
     child_root = tmp_path / "child"
     child_home = child_root / "home"

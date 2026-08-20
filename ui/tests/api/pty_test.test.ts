@@ -100,15 +100,24 @@ describe('pty_test', () => {
     // Watch the compute node for changes
     await computeNode.watch();
 
-    // Track received DataOp messages
-    let receivedData: any = null;
+    // Track received DataOp messages.
+    //
+    // Collect ALL compute-node data-ops rather than keeping only the latest: this
+    // backend emits a compute_node update for every PTY lifecycle event, including
+    // ones belonging to other tests/sessions on the same instance. Latching onto
+    // "the last notification seen" made the assertion depend on unrelated traffic —
+    // an `active_pty_sessions: []` op from some other session's teardown would land
+    // first, satisfy the wait, and fail the `toContain` check. In a full-suite run
+    // that is exactly what happened; in isolation nothing else was talking, so it
+    // passed. Wait for THIS session's notification instead.
+    const receivedOps: any[] = [];
 
     manager.on('on_data_op', (toEntity: string, _op: string, data: any) => {
       // on_data_op emits toEntity as a string (e.g. "compute_node-{uuid}")
       try {
         const parsedTypeId = new TypeId(toEntity);
         if (parsedTypeId.id === computeNode.id && parsedTypeId.type === 'compute_node') {
-          receivedData = data;
+          receivedOps.push(data);
         }
       } catch { /* ignore parse errors for other entity types */ }
     });
@@ -128,10 +137,17 @@ describe('pty_test', () => {
     // The data object should contain message_type 'response_msg'
     expect((response as any).message_type).toBe('response_msg');
 
-    // Wait for WebSocket notification with session data
+    // Wait for the WebSocket notification that carries THIS session (same 5s budget).
+    let receivedData: any = null;
     await vi.waitFor(
       () => {
-        if (!receivedData) throw new Error('Did not receive notification data');
+        receivedData = receivedOps.find((d) => d?.active_pty_sessions?.includes?.(sessionId)) ?? null;
+        if (!receivedData) {
+          throw new Error(
+            `Did not receive a notification containing ${sessionId} ` +
+              `(${receivedOps.length} compute_node op(s) seen)`,
+          );
+        }
       },
       {
         timeout: 5000,

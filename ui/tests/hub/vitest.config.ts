@@ -32,7 +32,7 @@ export default mergeConfig(
       // Reset the per-instance SDK realm override (__FLOWPAD_API_URL__) after
       // every file so a two-client file never leaks its backend target into a
       // subsequent single-client file (single-threaded -> shared globalThis).
-      setupFiles: [path.resolve(__dirname, '_setup.ts')],
+      setupFiles: [path.resolve(__dirname, '../_fetch_realm.ts'), path.resolve(__dirname, '_setup.ts')],
       exclude: ['**/node_modules/**'],
       pool: 'threads',
       poolOptions: {

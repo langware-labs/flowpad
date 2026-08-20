@@ -42,7 +42,7 @@ export default mergeConfig(
           url: port ? `http://localhost:${port}` : 'http://localhost',
         },
       },
-      setupFiles: [path.resolve(__dirname, '../_lingui-mock.ts'), path.resolve(__dirname, './reactSetup.ts')],
+      setupFiles: [path.resolve(__dirname, '../_fetch_realm.ts'), path.resolve(__dirname, '../_lingui-mock.ts'), path.resolve(__dirname, './reactSetup.ts')],
       exclude: ['**/old_flowpad_repo/**', '**/node_modules/**'],
       globals: true,
       css: false,

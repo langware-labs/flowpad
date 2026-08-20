@@ -39,6 +39,36 @@ from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_l
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
 
+@pytest.fixture(scope="module")
+async def _workers_discovered():
+    """One capability-discovery sweep so drivers resolve their CLI binaries.
+
+    The server runs this at boot; an in-process test must trigger it explicitly
+    or the headless spawn path fails with "<worker> CLI not found — no
+    harness.<worker>.cli installation discovered". Same fixture as
+    test_context_folder_worker / test_settings_instruction.
+    """
+    from flow_sdk.core.capabilities.discovery import ensure_discovered
+
+    await ensure_discovered()
+
+
+def _require_worker_binary(worker_id: str) -> None:
+    """Skip the row when the vendor CLI is not installed on this host.
+
+    Codex and Copilot are optional, separately-installed worker CLIs. Without
+    this guard the spawn fails with "Command not found", the run produces no
+    transcript, and the conftest's TimeoutError downgrade reports it as an
+    "Anthropic API issue" skip — hiding a plain missing-dependency. Mirrors
+    ``tests/long_tests/test_pty_mode_matrix.py::_require_binary``.
+    """
+    import shutil
+
+    binary = {"claude": "claude", "codex": "codex", "copilot": "copilot"}[worker_id]
+    if shutil.which(binary) is None:
+        pytest.skip(f"{binary} CLI not installed — skipping {worker_id} rows")
+
+
 def _xfail_if_codex(worker_id: str) -> None:
     """xfail on the known codex driver gap (NOT a timeout/latency issue).
 
@@ -70,6 +100,29 @@ def _seed_docs(root: Path) -> None:
         "# OAuth PKCE\n\nProof Key for Code Exchange flow used for native clients.\n",
         encoding="utf-8",
     )
+
+
+# The LLM Indexers panel spawns this rebuild through ``AgenticProcess.newHeadless``
+# (ts_sdk/src/process/agentic-process.ts) — ``pty_mode=False``, ``visible=False``.
+# ``pty_mode`` defaults to True on the entity, so a test that omits it silently
+# exercises the interactive PTY transport instead of the production one. Pin it
+# here so this test runs the code path its docstring claims.
+_HEADLESS_TRANSPORT = {"visible": False, "pty_mode": False}
+
+
+async def _reload(process):
+    """Re-read the process from the DB after ``prompt()``.
+
+    ``prompt()`` on a ``pty_mode`` process routes to ``start_pty()``, which runs
+    against a freshly-loaded copy under ``_OPEN_LOCKS`` and never mutates the
+    caller's object. The spawned ``session_id`` therefore lands only in the DB —
+    and the claude driver's ``transcript_descriptor()`` returns None without it,
+    so ``stream_transcript()`` spins on "transcript file did not appear" until
+    the timeout. Every other PTY long test does this same refetch.
+    """
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+
+    return await AgenticProcess.get_by_id(process.id)
 
 
 def _read_frontmatter(path: Path) -> dict:
@@ -105,9 +158,11 @@ def _rebuild_instruction(vault_root: Path, markdown_index_typeid: str) -> str:
 @pytest.mark.timeout(30)
 async def test_markdown_index_cold_build(
     make_process, local_project, local_compute_node, tmp_path, worker_id,
+    _workers_discovered,
 ):
     """Cold build: every folder gets an index.md with valid frontmatter."""
     _xfail_if_codex(worker_id)
+    _require_worker_binary(worker_id)
     assert local_compute_node is not None
     docs_root = tmp_path / "docs"
     _seed_docs(docs_root)
@@ -131,10 +186,16 @@ async def test_markdown_index_cold_build(
             "markdown_index_id": root_index.id,
         },
         workdir=str(docs_root),
+        **_HEADLESS_TRANSPORT,
     )
-    assert is_ready_for_input(process) is False
+    # Pre-state: the worker has not run yet. (``is_ready_for_input`` is NOT the
+    # probe for that on the production transport — its contract makes a fresh
+    # headless process ready by definition: ``status == NEW and not pty_mode``.
+    # No session JSONL exists until the worker actually runs.)
+    assert process.driver.transcript_path(process) is None
 
     await process.prompt(_rebuild_instruction(docs_root, str(root_index.typeid)))
+    process = await _reload(process)
 
     # do not increase timeout without approval
     async for entry in process.stream_transcript(timeout=28):
@@ -173,9 +234,11 @@ async def test_markdown_index_cold_build(
 @pytest.mark.timeout(30)
 async def test_markdown_index_incremental(
     make_process, local_project, local_compute_node, tmp_path, worker_id,
+    _workers_discovered,
 ):
     """Edit one file → only the chain from leaf to root rebuilds."""
     _xfail_if_codex(worker_id)
+    _require_worker_binary(worker_id)
     assert local_compute_node is not None
     docs_root = tmp_path / "docs"
     _seed_docs(docs_root)
@@ -199,8 +262,10 @@ async def test_markdown_index_incremental(
             "markdown_index_id": root_index.id,
         },
         workdir=str(docs_root),
+        **_HEADLESS_TRANSPORT,
     )
     await process.prompt(_rebuild_instruction(docs_root, str(root_index.typeid)))
+    process = await _reload(process)
     async for _ in process.stream_transcript(timeout=28):
         pass
 
@@ -223,8 +288,10 @@ async def test_markdown_index_incremental(
             "markdown_index_id": root_index.id,
         },
         workdir=str(docs_root),
+        **_HEADLESS_TRANSPORT,
     )
     await process2.prompt(_rebuild_instruction(docs_root, str(root_index.typeid)))
+    process2 = await _reload(process2)
     async for _ in process2.stream_transcript(timeout=28):
         pass
 

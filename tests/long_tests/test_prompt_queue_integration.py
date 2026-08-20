@@ -42,6 +42,13 @@ async def test_prompt_queue_drains_into_worker(bootstrapped_client, tmp_path, vi
         cli_config={"permission_mode": "bypassPermissions", "model": ModelTier.SM.value},
         workdir=str(tmp_path),
         visible=visible,
+        # ``pty_mode`` — not ``visible`` — is the transport routing key, and it
+        # defaults to True. Without setting it, the "headless" case builds a
+        # pty_mode=True process, so ``_queue_ready`` correctly withholds the
+        # cold start (that path belongs to the dock loader) and the drain
+        # no-ops with drain_check(not_ready). Keep the two in lock-step, the
+        # way launch seeds them.
+        pty_mode=visible,
     )
     await process.save()
 
@@ -59,6 +66,13 @@ async def test_prompt_queue_drains_into_worker(bootstrapped_client, tmp_path, vi
             # PTY: loader path. start_pty() with no instruction → _perform_open
             # pops the head as the launch arg.
             await process.start_pty()
+            # start_pty() runs against a freshly-loaded copy under _OPEN_LOCKS and
+            # never mutates this in-memory object, so the spawned session_id lands
+            # only in the DB. Without this refetch, self.session_id stays None, the
+            # claude driver's transcript_descriptor() returns None, and
+            # stream_transcript() spins on "transcript file did not appear" until the
+            # test's timeout — the same refetch the sibling PTY test does.
+            process = await AgenticProcess.get_by_id(process.id)
             inject_source = "launch"
         else:
             # Headless: enqueue would schedule this; await it deterministically.

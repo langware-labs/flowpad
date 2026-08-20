@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -620,6 +621,54 @@ def test_env_probe_resolves_against_captured_path(tmp_path, monkeypatch):
     assert result["path"] == str(bin_dir)
     assert result["executables"]["codex"] == str(exe)
     assert result["executables"]["missing-tool"] is None
+
+
+def test_capture_terminal_path_keeps_process_path_entries(tmp_path, monkeypatch):
+    """A CLI on the server's own PATH stays discoverable when dotfiles omit it.
+
+    The login shell only reports what its dotfiles build. A backend started
+    from a shell that exports PATH directly — or under a HOME with no dotfiles
+    at all, which is exactly what the pytest sandbox creates — would otherwise
+    report a perfectly runnable CLI as "not installed".
+    """
+    import os
+
+    from flow_sdk.core.capabilities import env_probe
+
+    if sys.platform == "win32":
+        pytest.skip("capture_terminal_path returns the process PATH directly on Windows")
+
+    shell_dir = tmp_path / "from-dotfiles"
+    process_dir = tmp_path / "from-process-env"
+    monkeypatch.setenv("PATH", os.pathsep.join([str(process_dir), "/usr/bin"]))
+    monkeypatch.setattr(
+        env_probe.subprocess,
+        "run",
+        lambda *a, **k: SimpleNamespace(returncode=0, stdout=os.pathsep.join([str(shell_dir), "/usr/bin"])),
+    )
+
+    captured = env_probe.capture_terminal_path().split(os.pathsep)
+
+    # The terminal PATH keeps the tie-break, the process PATH is only appended.
+    assert captured == [str(shell_dir), "/usr/bin", str(process_dir)]
+
+
+def test_capture_terminal_path_falls_back_when_shell_fails(tmp_path, monkeypatch):
+    import os
+
+    from flow_sdk.core.capabilities import env_probe
+
+    if sys.platform == "win32":
+        pytest.skip("capture_terminal_path returns the process PATH directly on Windows")
+
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    def _boom(*a, **k):
+        raise OSError("no shell")
+
+    monkeypatch.setattr(env_probe.subprocess, "run", _boom)
+
+    assert env_probe.capture_terminal_path() == str(tmp_path)
 
 
 # ── worker consumption ───────────────────────────────────────────────────────

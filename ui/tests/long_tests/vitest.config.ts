@@ -36,7 +36,7 @@ export default mergeConfig(
       // `useLingui`) so those render without an `I18nProvider`, exactly like the
       // `api`/`react` tiers do. long_tests do their own `apiTestSetup` in-body,
       // so only the lingui shim is needed here.
-      setupFiles: [path.resolve(__dirname, '../_lingui-mock.ts')],
+      setupFiles: [path.resolve(__dirname, '../_fetch_realm.ts'), path.resolve(__dirname, '../_lingui-mock.ts')],
       pool: 'threads',
       poolOptions: {
         threads: {
