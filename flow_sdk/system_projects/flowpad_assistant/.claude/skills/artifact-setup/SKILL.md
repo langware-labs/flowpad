@@ -68,8 +68,9 @@ flow app open "<artifact name>" --root "<artifact folder>"
   with `python3 -m http.server`. If discovery misses it, do it explicitly:
 
   ```bash
-  cd "<artifact folder>" && python3 -m http.server 8000 &   # background
-  flow show webapp --port 8000                              # renders it in the Vibe display (run ONCE)
+  PORT=$(flow app free-dev-port --bare)                     # never pick a number — other builds are serving too
+  (cd "<artifact folder>" && python3 -m http.server $PORT >/dev/null 2>&1 &); echo $PORT
+  flow show webapp --port <the port it echoed>              # renders it in the Vibe display (run ONCE)
   ```
 
 ## 3. Confirm it shows
