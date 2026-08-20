@@ -55,10 +55,10 @@ def _view(url: str, *, state=None, window_days: int = 7) -> SegmentCursorView:
     )
 
 
-def test_streams_come_from_config():
+async def test_streams_come_from_config():
     src = _source("https://a.test/f")
     src.config = {"feed_urls": ["https://a.test/f", "https://b.test/f"]}
-    keys = [s.key for s in RssDriver().segments(src)]
+    keys = [s.key for s in await RssDriver().segments(src)]
     assert keys == ["https://a.test/f", "https://b.test/f"]
 
 

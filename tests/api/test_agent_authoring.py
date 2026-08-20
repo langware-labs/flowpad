@@ -84,12 +84,19 @@ async def test_schema_invalid_agent_remains_bad_request(bootstrapped_client, tmp
     assert response.status_code == 400, response.text
 
 
-async def test_create_ignores_caller_asset_ref_and_uses_project_placement(bootstrapped_client, tmp_path):
+async def test_create_rejects_caller_asset_ref_and_uses_project_placement(bootstrapped_client, tmp_path):
+    """Placement for a file-owning asset comes from the URL scope, never the body.
+
+    A non-empty caller-supplied placement field is REFUSED with the route
+    remedy (0e124db3e — previously it was silently ignored, which is how the
+    deploy button's failure stayed invisible); a body without placement fields
+    derives everything from the addressed project.
+    """
     project_root = tmp_path / "project"
     project = await _create_project(bootstrapped_client, "agent-authoring-contained", project_root)
     outside = tmp_path / "caller-selected" / "agent.md"
 
-    response = await bootstrapped_client.post(
+    refused = await bootstrapped_client.post(
         f"/api/v1/graph/project/{project['id']}/agent",
         json={
             "type": "agent",
@@ -99,7 +106,13 @@ async def test_create_ignores_caller_asset_ref_and_uses_project_placement(bootst
             "scope": "user",
         },
     )
+    assert refused.status_code == 400, refused.text
+    assert "cannot be set in the body" in refused.text
 
+    response = await bootstrapped_client.post(
+        f"/api/v1/graph/project/{project['id']}/agent",
+        json={"type": "agent", "name": "Contained"},
+    )
     assert response.status_code == 200, response.text
     expected = project_root / "agentic-assets" / "agent" / "contained" / "agent.md"
     assert response.json()["data"]["asset_ref"] == str(expected)

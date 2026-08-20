@@ -180,10 +180,11 @@ class IngestDriver(Protocol):
     #: The ontology kind a DataSource using this driver carries. Stamped onto
     #: the row by ``sync_source`` so the driver is the single owner.
     kind: str
-    #: The ontology kind stamped on each IngestItem. NOTE: this decides inbox
-    #: membership — the inbox projection accepts `content.message.*` and
-    #: nothing else (`flow_sdk/inbox/projection.py MESSAGE_KIND_ROOT`).
-    record_kind: str
+    # NOTE: a record-emitting driver also carries `record_kind` — the ontology
+    # kind it stamps on each IngestItem, which decides inbox membership. It is
+    # deliberately NOT declared here: only the driver that stamps it ever reads
+    # it, and listing it made the three filesystem drivers carry an empty stub
+    # to satisfy a field the engine never consults.
 
     #: Whether this source's bytes are OURS to write to. False means indexing
     #: must not stamp an identity capsule into the file — a git working tree is
@@ -249,8 +250,14 @@ class IngestDriver(Protocol):
         """
         ...
 
-    def segments(self, source: "DataSource") -> list[SegmentRef]:
-        """The syncable units of ``source``, derived from its config."""
+    async def segments(self, source: "DataSource") -> list[SegmentRef]:
+        """The syncable units of ``source``.
+
+        Async for every driver, not because the nine builtins need it — they
+        answer from ``source.config`` — but because a source whose driver is an
+        authored module has to SPAWN it to know, and one signature that is true
+        for all ten beats nine truths and a special case at the call site.
+        """
         ...
 
     async def fetch(self, source: "DataSource", cursor: SegmentCursorView) -> FetchResult:

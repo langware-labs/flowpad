@@ -41,8 +41,8 @@ class TestItAcceptsAndSends:
     def test_it_is_its_own_channel(self):
         assert AgentMailDriver().channel_for(_source()) == "agentmail"
 
-    def test_one_inbox_is_one_stream(self):
-        streams = AgentMailDriver().segments(_source())
+    async def test_one_inbox_is_one_stream(self):
+        streams = await AgentMailDriver().segments(_source())
         assert [s.key for s in streams] == ["me@agentmail.to"]
 
 

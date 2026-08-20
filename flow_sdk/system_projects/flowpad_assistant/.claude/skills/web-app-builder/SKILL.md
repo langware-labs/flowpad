@@ -155,13 +155,24 @@ session route operations back through this skill and its contracts).
 
 ## Ports
 
-| Service           | Port  | URL                     |
-|-------------------|-------|--------------------------|
-| Frontend (next)   | 3000  | http://localhost:3000    |
-| Backend (FastAPI) | 8080  | http://localhost:8080    |
+| Service           | Port        | URL                             |
+|-------------------|-------------|----------------------------------|
+| Frontend (next)   | `<fe-port>` | http://localhost:`<fe-port>`     |
+| Backend (FastAPI) | `<be-port>` | http://localhost:`<be-port>`     |
 | Supabase API      | 54321 | http://127.0.0.1:54321   |
 | Supabase Postgres | 54322 | postgresql://…:54322     |
 | Supabase Studio   | 54323 | http://127.0.0.1:54323   |
+
+**Never assume a port** — other builds are serving on this machine, and the
+template's `npm run dev` hard-pins `--port 3000`, which fails with
+`EADDRINUSE` when another build owns it. Ask for each port right before you
+bind it, in this order: `<be-port>` from `flow app free-dev-port --bare`,
+start the backend on it, THEN `<fe-port>` from `flow app free-dev-port --bare`
+again (the backend now holds the first one, so you get a different port) and
+start the frontend with `npx next dev --port <fe-port>` instead of
+`npm run dev`. Set `BACKEND_URL=http://localhost:<be-port>` in
+`frontend/.env.local` so the rewrite follows the backend. `flow show webapp`
+gets the port `next dev` printed as `Local:` — never an assumed one.
 
 The frontend proxies `/api/*` to the backend via a Next.js rewrite
 (`next.config.ts`), so client code always fetches relative `/api/...` paths.
@@ -170,11 +181,14 @@ Next.js route handlers under `app/api/` take precedence over the proxy.
 ## Start the app
 
 ```bash
-# Backend
-cd backend && .venv/bin/uvicorn main:app --reload --port 8080
+# Backend — on a port the picker hands you
+BE_PORT=$(flow app free-dev-port --bare)
+cd backend && .venv/bin/uvicorn main:app --reload --port $BE_PORT
+# …then BACKEND_URL=http://localhost:$BE_PORT in frontend/.env.local
 
-# Frontend (separate terminal)
-cd frontend && npm run dev
+# Frontend (separate terminal) — pick again once the backend is up
+FE_PORT=$(flow app free-dev-port --bare)
+cd frontend && npx next dev --port $FE_PORT     # not `npm run dev` (pins 3000)
 
 # Database (optional for pure-UI work; needs Docker)
 supabase start
@@ -203,7 +217,7 @@ When running inside FlowPad, as soon as the frontend dev server is up, present
 it — this is what renders the live preview in the FlowPad display:
 
 ```bash
-flow show webapp --port 3000
+flow show webapp --port <fe-port>     # the port `next dev` printed, never an assumed one
 ```
 
 Run it exactly once (exit 0 = done). See the `flowpad-navigation` skill for the
@@ -211,11 +225,11 @@ full show/navigate contract. Optionally, ALSO register the services as results
 (the results list / restart controls — not the display driver):
 
 ```
-<flow-result name="Web App" port="3000" ref_type="FOLDER" path="frontend" type="webapp" start-cmd="cd frontend && npm run dev" health="/" description="Next.js 16 frontend with Tailwind v4 + shadcn/ui"/>
-<flow-result name="API Server" port="8080" path="backend/main.py" type="app_service" start-cmd="cd backend && .venv/bin/uvicorn main:app --reload --port 8080" health="/api/health" description="FastAPI backend service"/>
+<flow-result name="Web App" port="<fe-port>" ref_type="FOLDER" path="frontend" type="webapp" start-cmd="cd frontend && npm run dev" health="/" description="Next.js 16 frontend with Tailwind v4 + shadcn/ui"/>
+<flow-result name="API Server" port="<be-port>" path="backend/main.py" type="app_service" start-cmd="cd backend && .venv/bin/uvicorn main:app --reload --port <be-port>" health="/api/health" description="FastAPI backend service"/>
 ```
 
-Outside FlowPad, just print the URLs (http://localhost:3000, :8080).
+Outside FlowPad, just print the URLs (http://localhost:<fe-port>, :<be-port>).
 
 ## Testing the app — use the `web-tester` skill
 

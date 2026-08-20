@@ -16,11 +16,12 @@
  * because it is the thing an operator came here to press.
  */
 import { useCallback, useMemo, useState } from 'react';
-import { DataSource, DataSourceCursor, QueryRequest } from '@sdk';
+import { DataSource, DataSourceCursor, type DataSourceSpec, QueryRequest } from '@sdk';
 import { CheckCircle2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { lucideByName } from '@src/lib/lucide-by-name';
 import { timeSince, timeUntil } from '@src/utils/duration';
 import { Button } from '@src/components/ui/button';
 import { Card, CardContent, CardHeader } from '@src/components/ui/card';
@@ -35,20 +36,24 @@ import { SourceStreams } from './SourceStreams';
 
 interface Props {
   source: DataSource;
-  /** From this source's spec. Passed in rather than queried here: the specs are
-   *  one global query, and a card per source asking separately is N identical
-   *  subscriptions to the same rows. The view already owns the grid. */
-  setupWiki?: string;
+  /** This source's spec. Passed in rather than queried here: the specs are one
+   *  global query, and a card per source asking separately is N identical
+   *  subscriptions to the same rows. The view already owns the grid — and it
+   *  hands over the WHOLE spec, so a third field the card wants is not a third
+   *  prop and a third lookup. */
+  spec?: DataSourceSpec | null;
   onEdit: (source: DataSource) => void;
   onReplay: (source: DataSource) => void;
   onDelete: (source: DataSource) => void;
 }
 
-export function DataSourceCard({ source, setupWiki, onEdit, onReplay, onDelete }: Props) {
+export function DataSourceCard({ source, spec, onEdit, onReplay, onDelete }: Props) {
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const Icon = iconForType(DataSource.type);
+  // The spec's glyph when one is installed, else the type's. A screen of
+  // sources is scanned by provider, not by 'these are all data sources'.
+  const Icon = spec?.icon_name ? lucideByName(spec.icon_name) : iconForType(DataSource.type);
 
   // Gated on `open`: a collapsed card issues no request at all (the hook
   // returns before `watchQuery` when disabled), and the filter means one
@@ -147,7 +152,7 @@ export function DataSourceCard({ source, setupWiki, onEdit, onReplay, onDelete }
   const chip = source.isActive ? health : status;
   // The setup page comes from the source's own manifest, so a new source
   // brings its own help rather than needing an entry in a frontend map.
-  const wiki = setupWiki || undefined;
+  const wiki = spec?.setup_wiki || undefined;
 
   return (
     <Card
