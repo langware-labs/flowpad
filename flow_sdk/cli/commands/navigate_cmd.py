@@ -26,6 +26,9 @@ from flow_sdk.cli.commands._common import (
     bad_response_message as _bad_response_message,
 )
 from flow_sdk.cli.commands._common import (
+    caller_abs_path as _caller_abs_path,
+)
+from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
 )
 from flow_sdk.cli.commands._common import (
@@ -179,7 +182,12 @@ def navigate_view(
 def navigate_file(
     path: Annotated[
         str,
-        typer.Argument(help="File path, absolute or ~-relative (e.g. '~/Flowpad workspace/proj/hello.md')"),
+        typer.Argument(
+            help=(
+                "File path - absolute, ~-relative, or relative to YOUR cwd "
+                "(resolved here before it is sent; e.g. './hello.md')"
+            )
+        ),
     ],
     connection_id: Annotated[
         Optional[str],
@@ -196,7 +204,9 @@ def navigate_file(
         _fail(EXIT_INVALID_ARG, "INVALID_PATH", "Empty path")
 
     port = _discover_port()
-    body: dict = {"path": path}
+    # Absolutized in the CALLER's process: the server resolves in its own,
+    # and the caller's cwd never crosses the wire (`flow show file` likewise).
+    body: dict = {"path": _caller_abs_path(path)}
     if connection_id:
         body["connection_id"] = connection_id
 
