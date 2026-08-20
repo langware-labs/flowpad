@@ -96,9 +96,6 @@ def _safe_name(name: str) -> str:
 class GoogleDriveDriver:
     provider = "gdrive"
     kind = "datasource.fs.gdrive"
-    #: Declared for protocol symmetry. Like `folder`, this driver never produces
-    #: an IngestItem — its payload lands as files.
-    record_kind = ""
 
     #: The cache is OURS, and the next download overwrites it. A capsule stamped
     #: into one of these files survives exactly until the file changes upstream.
@@ -182,7 +179,7 @@ class GoogleDriveDriver:
     def _write_index(self, source, index: dict[str, str]) -> None:
         atomic_write(self.index_path(source), json.dumps(index, indent=2).encode("utf-8"))
 
-    def segments(self, source) -> list[SegmentRef]:
+    async def segments(self, source) -> list[SegmentRef]:
         """One segment per configured drive, defaulting to the user's own.
 
         A shared drive is a genuinely separate change log — `changes.list` takes

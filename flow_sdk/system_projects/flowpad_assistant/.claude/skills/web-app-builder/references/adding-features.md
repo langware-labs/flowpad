@@ -58,7 +58,7 @@ the `cn` helper from `@/lib/utils` for conditional classes.
 ## Adding an API endpoint — Next route handler vs FastAPI
 
 Both are reachable from the browser under `/api/*` (route handlers win;
-everything else is rewritten to FastAPI on :8080).
+everything else is rewritten to FastAPI on `BACKEND_URL`, i.e. :<be-port>).
 
 Pick **Next.js route handler** (`frontend/app/api/<name>/route.ts`) when the
 endpoint is thin web glue: session/auth-coupled reads, form submissions,
@@ -88,7 +88,7 @@ async def echo(req: EchoRequest) -> dict:
 ```
 
 FastAPI hot-reloads (`--reload`) and self-documents at
-http://localhost:8080/docs.
+http://localhost:<be-port>/docs.
 
 ## Calling APIs from the client
 
@@ -99,5 +99,5 @@ const res = await fetch("/api/health");
 const data = await res.json();
 ```
 
-Never hardcode `localhost:8080` in frontend code; that breaks the deployed
+Never hardcode `localhost:<be-port>` in frontend code; that breaks the deployed
 app (the rewrite destination comes from `BACKEND_URL`).
