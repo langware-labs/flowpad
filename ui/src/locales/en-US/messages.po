@@ -16382,6 +16382,10 @@ msgstr "They'll get an email, and the sandbox is already in their list."
 msgid "thinking"
 msgstr "thinking"
 
+#: src/components/entity-execution-panel/current-activity.ts
+msgid "Thinking"
+msgstr "Thinking"
+
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "Thinking:"
 msgstr "Thinking:"
