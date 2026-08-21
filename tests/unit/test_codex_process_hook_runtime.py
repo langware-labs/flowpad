@@ -82,7 +82,7 @@ def test_codex_process_hook_runtime_is_structured_fileless_and_deterministic(
     assert driver.process_hook_snapshot([HookEventType.USER_PROMPT_SUBMIT]) == {
         "events": ["UserPromptSubmit"],
         "provider": "codex",
-        "schema": 1,
+        "schema": 2,
     }
     assert not assets.os_path.exists()
 
@@ -282,7 +282,7 @@ def test_codex_session_snapshot_and_normalization_carry_lifecycle_fields():
     assert driver.process_hook_snapshot([HookEventType.SESSION_START, HookEventType.SESSION_END]) == {
         "events": ["SessionEnd", "SessionStart"],
         "provider": "codex",
-        "schema": 1,
+        "schema": 2,
     }
 
     start_raw = {
@@ -308,4 +308,3 @@ def test_codex_session_snapshot_and_normalization_carry_lifecycle_fields():
     }
     end = driver.normalize_process_hook_data(process_id, end_raw)
     assert end.hook_data == {**end_raw, "raw_hook_data": end_raw}
-    assert "prompt" not in start.hook_data and "prompt" not in end.hook_data

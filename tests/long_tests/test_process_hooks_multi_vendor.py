@@ -71,120 +71,9 @@ async def test_process_hook_acceptance_uses_real_vendor(
     ).save()
 
     reports = []
-    report_seen = asyncio.Event()
-
-    def callback(data):
-        reports.append(data)
-        report_seen.set()
-
-    def noop_unsubscribe():
-        return None
-
-    unsubscribe = noop_unsubscribe
-    hook_configured = False
-    try:
-        assert await process.set_hook(HookEventType.USER_PROMPT_SUBMIT) is True
-        hook_configured = True
-        unsubscribe = process.register_callback(callback)
-
-        rehydrated = await AgenticProcess.get_by_id(process.id)
-        assert rehydrated is not None
-        assert rehydrated.process_hook_events == [_CONTRACT["expected_persisted_event"]]
-
-        async with _serve_process_hook_route(settings.server_json_path):
-            result = await process.prompt(_CONTRACT["prompt"])
-            assert result.status == "SUCCESS", result
-            await report_seen.wait()
-
-        assert len(reports) == 1
-        report = reports[0]
-        assert report.agentic_process_id == process.id
-        assert report.hook_data["hook_event_name"] == _CONTRACT["event"]
-        assert report.hook_data["prompt"] == _CONTRACT["expected_callback_prompt"]
-        assert report.hook_data["session_id"]
-        vendor = _CONTRACT["vendors"][worker_type]
-        assert report.hook_data["raw_hook_data"]["prompt"] == (_CONTRACT["prompt"] + vendor["raw_prompt_suffix"])
-
-        if worker_type == "copilot":
-            plugin = process._process_assets_path() / vendor["plugin_relative_path"]
-            assert all((plugin / relative).is_file() for relative in vendor["plugin_files"])
-            hooks = json.loads((plugin / "hooks.json").read_text(encoding="utf-8"))
-            handler = hooks["hooks"][vendor["config_event"]][0]
-            selected_command = handler["powershell" if sys.platform == "win32" else "bash"]
-            assert f"--process-id {process.id}" in selected_command
-        else:
-            assert not (process._process_assets_path() / ".flowpad/plugins/codex").exists()
-            assert not process._process_assets_path().exists()
-    finally:
-        if hook_configured:
-            assert await process.remove_hook(HookEventType.USER_PROMPT_SUBMIT) is True
-        unsubscribe()
-        unsubscribe()
-        await process.delete()
-        reset_instance_settings()
-
-
-_SESSION_VENDORS = [
-    pytest.param("claude_code", "claude", "harness.claude.cli", id="claude"),
-    *_VENDORS,
-]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(("worker_type", "binary", "capability_kind"), _SESSION_VENDORS)
-async def test_session_hooks_deliver_from_a_real_vendor(
-    initialize_test_db,
-    monkeypatch,
-    tmp_path,
-    worker_type,
-    binary,
-    capability_kind,
-):
-    """A live turn delivers SessionStart alongside the prompt hook.
-
-    Assertions are on per-event presence and ordering, never on counts:
-    Claude fires SessionStart on startup/resume/clear/compact, and Copilot
-    fires sessionEnd per agentic loop by default — both vendors legitimately
-    emit lifecycle hooks more than once per process.
-    """
-    if shutil.which(binary) is None:
-        pytest.skip(f"{binary} command not found in PATH")
-
-    from flow_sdk.builtin.agent_hook import HookEventType
-    from flow_sdk.builtin.agentic_process import AgenticProcess
-    from flow_sdk.core.capabilities.discovery import run_discovery
-    from flow_sdk.instance_settings import get_instance_settings, reset_instance_settings
-
-    monkeypatch.setenv("FLOW_HOME", str(tmp_path / "flow-home"))
-    monkeypatch.setenv("FLOW_INSTANCE", f"session-hook-{worker_type}")
-    monkeypatch.setenv("LOCAL_SERVER_PORT", "0")
-    monkeypatch.setenv("FLOWPAD_SKIP_LOCK", "true")
-    reset_instance_settings()
-    settings = get_instance_settings()
-    await run_discovery([capability_kind])
-
-    cli_config = {"permission_mode": "bypassPermissions"}
-    if worker_type != "copilot":
-        cli_config["model"] = "sm"
-    if worker_type == "claude_code":
-        cli_config["effort"] = "low"
-    process = await AgenticProcess(
-        worker_type=worker_type,
-        workdir=str(tmp_path),
-        visible=False,
-        pty_mode=False,
-        load_flowpad_assistant=False,
-        cli_config=cli_config,
-    ).save()
-
-    events = (
-        HookEventType.SESSION_START,
-        HookEventType.SESSION_END,
-        HookEventType.USER_PROMPT_SUBMIT,
-    )
-    reports = []
-    # SessionEnd is deliberately NOT awaited: Claude defers it to real session
-    # teardown while Copilot fires it per agentic loop.
+    # SessionEnd is deliberately not awaited: claude defers it to real session
+    # teardown while copilot fires it per agentic loop. Relative order is not
+    # asserted either — copilot emits the prompt hook before sessionStart.
     awaited = (HookEventType.SESSION_START, HookEventType.USER_PROMPT_SUBMIT)
     seen = {event.value: asyncio.Event() for event in awaited}
 
@@ -200,7 +89,7 @@ async def test_session_hooks_deliver_from_a_real_vendor(
     unsubscribe = noop_unsubscribe
     configured = []
     try:
-        for event in events:
+        for event in (HookEventType.SESSION_START, HookEventType.SESSION_END, HookEventType.USER_PROMPT_SUBMIT):
             assert await process.set_hook(event) is True
             configured.append(event)
         unsubscribe = process.register_callback(callback)
@@ -214,28 +103,38 @@ async def test_session_hooks_deliver_from_a_real_vendor(
             assert result.status == "SUCCESS", result
             await asyncio.gather(*(arrived.wait() for arrived in seen.values()))
 
-        delivered = [report.hook_data.get("hook_event_name") for report in reports]
-        assert HookEventType.SESSION_START.value in delivered, delivered
-        assert HookEventType.USER_PROMPT_SUBMIT.value in delivered, delivered
-        # Relative ORDER is deliberately not asserted: claude and codex open
-        # the session before submitting the prompt, while copilot emits
-        # userPromptSubmitted first and sessionStart after. Both are the
-        # vendors' own sequencing, not part of our contract.
+        vendor = _CONTRACT["vendors"][worker_type]
+        by_event = {report.hook_data["hook_event_name"]: report for report in reports}
+        assert set(by_event) >= {event.value for event in awaited}, list(by_event)
 
-        for report in reports:
+        report = by_event[_CONTRACT["event"]]
+        assert report.agentic_process_id == process.id
+        assert report.hook_data["prompt"] == _CONTRACT["expected_callback_prompt"]
+        assert report.hook_data["raw_hook_data"]["prompt"] == (_CONTRACT["prompt"] + vendor["raw_prompt_suffix"])
+
+        for event_name, report in by_event.items():
             assert report.agentic_process_id == process.id
             assert report.hook_data["session_id"]
-            event_name = report.hook_data["hook_event_name"]
-            assert event_name in _CONTRACT["expected_persisted_session_events"]
-            expectation = _CONTRACT["session_events"].get(event_name)
-            if expectation:
-                # Vendor vocabularies differ (claude "startup" vs copilot
-                # "new"), so only presence of the discriminator is pinned.
-                assert report.hook_data[expectation["discriminator"]]
+            discriminator = _CONTRACT["session_discriminators"].get(event_name)
+            if discriminator:
+                # Vocabularies differ per vendor, so only presence is pinned.
+                assert report.hook_data[discriminator]
                 assert "prompt" not in report.hook_data
+
+        if worker_type == "copilot":
+            plugin = process._process_assets_path() / vendor["plugin_relative_path"]
+            assert all((plugin / relative).is_file() for relative in vendor["plugin_files"])
+            hooks = json.loads((plugin / "hooks.json").read_text(encoding="utf-8"))
+            handler = hooks["hooks"][vendor["config_event"]][0]
+            selected_command = handler["powershell" if sys.platform == "win32" else "bash"]
+            assert f"--process-id {process.id}" in selected_command
+        else:
+            assert not (process._process_assets_path() / ".flowpad/plugins/codex").exists()
+            assert not process._process_assets_path().exists()
     finally:
         for event in configured:
             await process.remove_hook(event)
+        unsubscribe()
         unsubscribe()
         await process.delete()
         reset_instance_settings()

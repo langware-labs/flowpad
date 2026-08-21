@@ -15,6 +15,7 @@ from itertools import count
 from threading import RLock
 from typing import Any
 
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.builtin.agent_hook import HookEventType
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 
@@ -63,8 +64,28 @@ def build_process_hook_snapshot(
     return {
         "events": [event.value for event in normalized],
         "provider": provider,
-        "schema": 1,
+        "schema": 2,
     }
+
+
+def build_canonical_hook_data(
+    process_id: str,
+    raw_hook_data: dict[str, Any],
+    *,
+    fields: Sequence[str],
+) -> AgentHookData:
+    """Project one vendor-native report onto the canonical hook fields.
+
+    Field NAMES are canonicalized here; VALUES never are — each vendor keeps
+    its own ``source``/``reason`` vocabulary, and the untouched native object
+    stays in ``raw_hook_data``.
+    """
+    if not is_valid_entity_id(process_id):
+        raise ValueError(f"Invalid agentic process id: {process_id!r}")
+    raw = dict(raw_hook_data)
+    hook_data: dict[str, Any] = {key: raw[key] for key in fields if key in raw}
+    hook_data["raw_hook_data"] = raw
+    return AgentHookData(agentic_process_id=process_id, hook_data=hook_data)
 
 
 def register_process_hook_callback(
@@ -121,6 +142,7 @@ def clear_process_hook_callbacks(process_id: str | None = None) -> None:
 __all__ = [
     "SUPPORTED_PROCESS_HOOK_EVENTS",
     "ProcessHookCallback",
+    "build_canonical_hook_data",
     "build_process_hook_snapshot",
     "clear_process_hook_callbacks",
     "dispatch_process_hook",

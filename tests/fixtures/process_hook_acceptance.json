@@ -32,17 +32,13 @@
       "plugin_files": []
     }
   },
-  "session_events": {
-    "SessionStart": {
-      "discriminator": "source"
-    },
-    "SessionEnd": {
-      "discriminator": "reason"
-    }
-  },
   "expected_persisted_session_events": [
     "SessionEnd",
     "SessionStart",
     "UserPromptSubmit"
-  ]
+  ],
+  "session_discriminators": {
+    "SessionStart": "source",
+    "SessionEnd": "reason"
+  }
 }

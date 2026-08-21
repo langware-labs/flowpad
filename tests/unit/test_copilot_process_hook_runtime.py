@@ -48,10 +48,7 @@ def test_process_hook_plugin_projection_is_deterministic_and_reconciles_stale_fi
         "name": "flowpad-process-hooks",
         "version": "1.0.0",
     }
-    # PascalCase (VS Code-compatible) keys are projected deliberately: Copilot
-    # rewrites them to its native camelCase names at config load and stamps
-    # ``_vsCodeCompat``, which is what makes the stdin payload carry
-    # ``hook_event_name``.
+    # See CopilotDriver.prepare_process_hooks for why the aliases are projected.
     assert json.loads((plugin / "hooks.json").read_text(encoding="utf-8")) == {
         "hooks": {
             "UserPromptSubmit": [
@@ -133,7 +130,7 @@ def test_process_hook_snapshot_is_semantic_and_does_not_materialize_assets(tmp_p
     assert driver.process_hook_snapshot([HookEventType.USER_PROMPT_SUBMIT]) == {
         "events": ["UserPromptSubmit"],
         "provider": "copilot",
-        "schema": 1,
+        "schema": 2,
     }
     assert not assets_path.exists()
 
@@ -263,10 +260,6 @@ def test_vs_code_compat_session_payloads_normalize_to_canonical_agent_hook_data(
         "reason": "complete",
         "raw_hook_data": end,
     }
-    # Copilot's own vocabularies are passed through, never translated to
-    # Claude's (which has no "new"/"complete").
-    assert start_data.hook_data["source"] == "new"
-    assert end_data.hook_data["reason"] == "complete"
 
 
 def test_transport_terminator_is_stripped_only_for_the_prompt_event() -> None:
@@ -295,7 +288,6 @@ def test_event_less_payload_is_rejected_unless_it_is_the_legacy_prompt_shape() -
     legacy = driver.normalize_process_hook_data(process_id, {"sessionId": "s", "prompt": "hi\n"})
     assert legacy.hook_data["hook_event_name"] == "UserPromptSubmit"
 
-    with pytest.raises(ValueError, match="carries no hook_event_name"):
-        driver.normalize_process_hook_data(process_id, {"sessionId": "s", "source": "startup"})
-    with pytest.raises(ValueError, match="carries no hook_event_name"):
-        driver.normalize_process_hook_data(process_id, {"sessionId": "s", "reason": "complete"})
+    for unattributable in ({"sessionId": "s", "source": "startup"}, {"sessionId": "s", "reason": "complete"}):
+        with pytest.raises(ValueError, match="Unsupported Copilot process hook event: None"):
+            driver.normalize_process_hook_data(process_id, unattributable)

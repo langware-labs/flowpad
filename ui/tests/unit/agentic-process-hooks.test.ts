@@ -150,8 +150,6 @@ describe('AgenticProcess process hooks', () => {
     unsubscribe();
 
     expect(received).toEqual([data]);
-    expect(received[0].hook_data.hook_event_name).toBe(event);
-    expect(received[0].hook_data.prompt).toBeUndefined();
   });
 
   it.each([HookEventType.SESSION_START, HookEventType.SESSION_END] as const)(
@@ -163,10 +161,10 @@ describe('AgenticProcess process hooks', () => {
       expect(await process.setHook(event)).toBe(true);
       expect(await process.removeHook(event)).toBe(true);
 
-      expect(callAction.mock.calls.map((call) => call[0].name)).toEqual(['set-hook', 'remove-hook']);
-      for (const call of callAction.mock.calls) {
-        expect(call[0].bodyParameters).toEqual({ event });
-      }
+      expect(callAction.mock.calls.map((call) => [call[0].name, call[0].bodyParameters])).toEqual([
+        ['set-hook', { event }],
+        ['remove-hook', { event }],
+      ]);
     },
   );
 

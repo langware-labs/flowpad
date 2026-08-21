@@ -46,6 +46,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.copilot.stream_worker import (
 )
 from flow_sdk.builtin.agentic_process.process_hooks import (
     SUPPORTED_PROCESS_HOOK_EVENTS,
+    build_canonical_hook_data,
     build_process_hook_snapshot,
     normalize_process_hook_events,
 )
@@ -68,6 +69,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _PROCESS_HOOK_PLUGIN = Path(".flowpad/plugins/copilot/flowpad-process-hooks")
+_CANONICAL_FIELDS = (
+    "hook_event_name",
+    "prompt",
+    "session_id",
+    "cwd",
+    "timestamp",
+    "source",
+    "reason",
+    "initial_prompt",
+)
+# Copilot is the one vendor emitting camelCase in its non-compat payloads.
+_CAMEL_ALIASES = {"session_id": "sessionId", "initial_prompt": "initialPrompt"}
 
 
 class CopilotDriver:
@@ -178,44 +191,28 @@ class CopilotDriver:
         process_id: str,
         raw_hook_data: dict[str, Any],
     ) -> "AgentHookData":
-        if not is_valid_entity_id(process_id):
-            raise ValueError(f"Invalid agentic process id: {process_id!r}")
-        raw = dict(raw_hook_data)
-        supported = {event.value for event in SUPPORTED_PROCESS_HOOK_EVENTS}
-        supplied_event = raw.get("hook_event_name")
-        if supplied_event is None:
-            # Native (non-compat) payload: no event field exists, and only the
-            # prompt hook has ever been projected that way. Anything else is a
-            # payload we cannot attribute to an event.
-            if "prompt" not in raw:
-                raise ValueError("Copilot process hook payload carries no hook_event_name")
+        supplied_event = raw_hook_data.get("hook_event_name")
+        if supplied_event is None and "prompt" in raw_hook_data:
+            # Pre-alias projection: the native payload has no event field, and
+            # only the prompt hook was ever projected that way. Retire this
+            # branch once no worker predating process-hook schema 2 can be live
+            # (see build_process_hook_snapshot).
             supplied_event = HookEventType.USER_PROMPT_SUBMIT.value
-        elif supplied_event not in supported:
+        if supplied_event not in SUPPORTED_PROCESS_HOOK_EVENTS:
             raise ValueError(f"Unsupported Copilot process hook event: {supplied_event}")
 
-        hook_data: dict[str, Any] = {"hook_event_name": supplied_event}
-        if "session_id" in raw:
-            hook_data["session_id"] = raw["session_id"]
-        elif "sessionId" in raw:
-            hook_data["session_id"] = raw["sessionId"]
-        # ``initial_prompt``/``initialPrompt`` is SessionStart's launch prompt,
-        # ``source``/``reason`` the lifecycle discriminators. Vocabularies stay
-        # Copilot's own; only field NAMES are canonicalized.
-        for key in ("prompt", "cwd", "timestamp", "source", "reason"):
-            if key in raw:
-                hook_data[key] = raw[key]
-        if "initial_prompt" in raw:
-            hook_data["initial_prompt"] = raw["initial_prompt"]
-        elif "initialPrompt" in raw:
-            hook_data["initial_prompt"] = raw["initialPrompt"]
+        data = build_canonical_hook_data(process_id, raw_hook_data, fields=_CANONICAL_FIELDS)
+        hook_data = data.hook_data
+        hook_data["hook_event_name"] = supplied_event
+        for canonical, camel in _CAMEL_ALIASES.items():
+            if canonical not in hook_data and camel in raw_hook_data:
+                hook_data[canonical] = raw_hook_data[camel]
         # Copilot's headless stdin transport submits by appending one ``\n``;
-        # its prompt hook echoes that transport terminator in ``prompt``. Keep
-        # the native payload losslessly in ``raw_hook_data``, but remove the
-        # terminator from the canonical cross-worker prompt value.
+        # its prompt hook echoes that terminator back in ``prompt``. The native
+        # payload stays lossless in ``raw_hook_data``.
         if supplied_event == HookEventType.USER_PROMPT_SUBMIT.value and isinstance(hook_data.get("prompt"), str):
             hook_data["prompt"] = hook_data["prompt"].removesuffix("\n")
-        hook_data["raw_hook_data"] = raw
-        return AgentHookData(agentic_process_id=process_id, hook_data=hook_data)
+        return data
 
     async def headless_prompt(
         self,

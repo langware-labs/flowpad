@@ -38,6 +38,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     run_worker_auth_probe,
 )
 from flow_sdk.builtin.agentic_process.process_hooks import (
+    build_canonical_hook_data,
     build_process_hook_snapshot,
     normalize_process_hook_events,
 )
@@ -59,6 +60,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _PROCESS_HOOK_PLUGIN = Path(".flowpad/plugins/claude/flowpad-process-hooks")
+_CANONICAL_FIELDS = (
+    "hook_event_name",
+    "prompt",
+    "session_id",
+    "cwd",
+    "transcript_path",
+    "source",
+    "reason",
+)
 # Module-level cache of in-flight workers (looked up for cancel-prompt).
 # Shared with the codex driver via ``AgenticProcess._PROMPT_WORKERS`` —
 # the entity owns the dict, drivers just register/deregister.
@@ -169,25 +179,7 @@ class ClaudeDriver:
         process_id: str,
         raw_hook_data: dict[str, Any],
     ) -> AgentHookData:
-        if not is_valid_entity_id(process_id):
-            raise ValueError(f"Invalid agentic process id: {process_id!r}")
-        raw = dict(raw_hook_data)
-        # ``source`` (SessionStart) and ``reason`` (SessionEnd) are the two
-        # lifecycle discriminators; every other vendor field stays in
-        # ``raw_hook_data``. Values are passed through, not translated — each
-        # vendor keeps its own ``source``/``reason`` vocabulary.
-        canonical_fields = (
-            "hook_event_name",
-            "prompt",
-            "session_id",
-            "cwd",
-            "transcript_path",
-            "source",
-            "reason",
-        )
-        hook_data = {key: raw[key] for key in canonical_fields if key in raw}
-        hook_data["raw_hook_data"] = raw
-        return AgentHookData(agentic_process_id=process_id, hook_data=hook_data)
+        return build_canonical_hook_data(process_id, raw_hook_data, fields=_CANONICAL_FIELDS)
 
     # ── Per-turn execution ───────────────────────────────────────────────────
 
