@@ -680,10 +680,23 @@ class FsRecordsActionsMixin:
         filter_type: str,
         types_filter,
         trigger: str,
-        scan_ms: float,
+        walk_ms: float,
+        started_at: float,
         scope_explicit: bool,
     ) -> ApiResponse:
-        """Project a completed walk into scan stats and persist its scan log."""
+        """Project a completed walk into scan stats and persist its scan log.
+
+        ``scan_ms`` in the response is the WHOLE request — the span an HTTP
+        caller experiences — measured from ``started_at``, which the handler
+        stamps on entry. It used to bracket only ``indexer.scan``, so a 34s
+        request advertised ``scan_ms: 0.5s``: the identity/diff projection below
+        and the scope resolution above were both outside the clock. A metric
+        that names an operation must cover that operation, otherwise it reports
+        that a slow endpoint is fast and nobody looks again. ``walk_ms`` keeps
+        the walk's own share so the split stays visible.
+        """
+        import time  # noqa: PLC0415
+
         from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
         from flow_sdk.fs_store.indexer import INDEXABLE_TYPES  # noqa: PLC0415
         from flow_sdk.fs_store.indexer.index_function import FSIndexer  # noqa: PLC0415
@@ -806,6 +819,10 @@ class FsRecordsActionsMixin:
                 ):
                     bucket.setdefault(key, 0)
 
+        # Everything above (the walk's projection, including per-record identity
+        # resolution) is part of what the caller waited for.
+        scan_ms = round((time.perf_counter() - started_at) * 1000, 1)
+
         per_type = list(by_type.values())
         grand_total = sum(bucket["count"] for bucket in per_type)
         grand_bytes = sum(bucket["total_bytes"] for bucket in per_type)
@@ -832,6 +849,7 @@ class FsRecordsActionsMixin:
                         "total_bytes": 0,
                         "avg_bytes": 0,
                         "scan_ms": scan_ms,
+                        "walk_ms": walk_ms,
                         "records": [],
                         "min_bytes": 0,
                         "max_bytes": 0,
@@ -847,6 +865,7 @@ class FsRecordsActionsMixin:
                     "total_bytes": bucket["total_bytes"],
                     "avg_bytes": bucket["avg_bytes"],
                     "scan_ms": scan_ms,
+                    "walk_ms": walk_ms,
                     "records": records,
                     "min_bytes": min(sizes),
                     "max_bytes": max(sizes),
@@ -866,6 +885,7 @@ class FsRecordsActionsMixin:
                 "types": types_for_log,
                 "grand_total": grand_total,
                 "scan_ms": scan_ms,
+                "walk_ms": walk_ms,
                 "grand_pending": grand_pending,
                 "grand_orphan": grand_orphan,
                 "diff_included": do_diff,
@@ -893,6 +913,10 @@ class FsRecordsActionsMixin:
             get_shared_indexer,
         )
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+        # Stamped BEFORE any work so `scan_ms` is the caller's own wall time —
+        # scope resolution below is part of the request too.
+        started_at = time.perf_counter()
 
         qp = request_info.request.query_params
         filter_type = qp.get("type", "").strip()
@@ -971,13 +995,14 @@ class FsRecordsActionsMixin:
                     roots=scoped_roots,
                 )
             )
-            scan_ms = round((time.perf_counter() - t0) * 1000, 1)
+            walk_ms = round((time.perf_counter() - t0) * 1000, 1)
             response = self._project_fs_records_scan(
                 nodes=nodes,
                 filter_type=filter_type,
                 types_filter=types_filter,
                 trigger=trigger,
-                scan_ms=scan_ms,
+                walk_ms=walk_ms,
+                started_at=started_at,
                 scope_explicit=scope_explicit,
             )
             if terminal_table is not None:
@@ -2559,6 +2584,7 @@ async def discover_record_by_path(
     proposed_id: str | None = None,
     scope: str | None = None,
     project_id: str | None = None,
+    strict_owner: bool = False,
 ):
     """Find-or-recover ONE record by absolute path — the interactive fast path.
 
@@ -2595,6 +2621,8 @@ async def discover_record_by_path(
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415 — trigger auto-registration
     from flow_sdk.fs_store.fs_ref import FSRef as _FSRef  # noqa: PLC0415
     from flow_sdk.fs_store.indexer.roots import classify_path  # noqa: PLC0415
+    from flow_sdk.fs_store.fs_record import carrier_writes_are_suppressed  # noqa: PLC0415
+    from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
     from flow_sdk.fs_store.record_list import RecordList  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType as _RT  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
@@ -2637,10 +2665,34 @@ async def discover_record_by_path(
                 # not fork a new entity. ``live_ids=None`` (single path, no
                 # per-type id set) means a VALID carrier always wins here; only
                 # the full walk may conclude a carrier names no entity.
-                _owner_id = proposed_id or await owner_id_for(record_type, expanded)
-                resolved_id = _info.mint_entity_id(
-                    one_ref, owner_id=_owner_id, proposed_id=proposed_id, derive=True, overwrite=True
+                _owner_id = proposed_id or await owner_id_for(
+                    record_type, expanded, strict=strict_owner
                 )
+                # When the operation forbids touching the source bytes, resolve
+                # READ-ONLY: `derive=False` answers only from evidence already
+                # present and `overwrite=False` commits nothing.
+                #
+                # Read from the operation's context rather than taken as an
+                # argument. The same policy as a parameter would have to be
+                # threaded correctly by every caller, and a caller that forgot
+                # would stamp a capsule into bytes that are not ours — a git
+                # working tree, where it is then committed and pushed to
+                # everyone who pulls.
+                #
+                # A suppressed resolve has no carrier to fall back on, so a
+                # genuinely new asset is given a fresh id here. Identity for
+                # such a source converges through an `origin_id` lookup, not
+                # through anything derived from the bytes.
+                _suppressed = carrier_writes_are_suppressed()
+                resolved_id = _info.mint_entity_id(
+                    one_ref,
+                    owner_id=_owner_id,
+                    proposed_id=proposed_id,
+                    derive=not _suppressed,
+                    overwrite=not _suppressed,
+                )
+                if _suppressed and not resolved_id:
+                    resolved_id = str(mint_uuid())
 
                 # Match the full indexer's deterministic primary ranking. A
                 # non-primary path remains observable but is neither parsed nor

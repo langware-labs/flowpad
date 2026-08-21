@@ -13,14 +13,22 @@ export interface ICloudOrigin {
   kind: string;
   /** Ingest driver key: agent | gmail_api | slack_api. */
   provider: string;
-  /** The configured DataSource this arrived through. */
-  data_source_id: string;
-  /** The local cache row, 1:1. */
-  source_item_id: string;
   /** The provider's own id for the record. */
   external_id: string;
   /** Permalink into the origin system — what "Open in Gmail" opens. */
   url: string;
+}
+
+/**
+ * The local row pointers behind a cached cloud record. Carried by a PRIVATE
+ * field, so it is ABSENT on any message received from another machine — these
+ * are row ids in one instance's database and resolve nowhere else.
+ */
+export interface ICloudOriginLocal {
+  /** The configured DataSource this arrived through. */
+  data_source_id: string;
+  /** The local cache row, 1:1. */
+  source_item_id: string;
 }
 
 /** Whether an origin can be opened in a browser. */

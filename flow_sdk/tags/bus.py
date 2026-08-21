@@ -99,6 +99,22 @@ class _Subscription:
         self.scope = scope
 
 
+#: Strong references to in-flight handler tasks.
+#:
+#: The event loop holds only WEAK references to tasks, so a bare
+#: ``ensure_future(...)`` whose Task nobody keeps can be garbage-collected while
+#: it is still awaiting — asyncio says so itself ("Save a reference to the result
+#: of this function, to avoid a task disappearing mid-execution") and announces
+#: the loss as ``Task was destroyed but it is pending!``. Short handlers usually
+#: finish inside one GC cycle and hide it; a handler that awaits real work — a
+#: spawned worker, an HTTP round trip — is the one that vanishes, and it vanishes
+#: SILENTLY as far as its caller is concerned, because Law 3 already means nobody
+#: is awaiting it. Holding the task here until it completes is what makes "emit
+#: never awaits consumers" mean "runs independently" rather than "runs if the
+#: collector does not get there first".
+_INFLIGHT: "set[asyncio.Task[Any]]" = set()
+
+
 def _log_task_exception(task: "asyncio.Task[Any]") -> None:
     try:
         exc = task.exception()
@@ -239,8 +255,12 @@ class TagEventBus:
             result = sub.handler(event)
             if inspect.iscoroutine(result):
                 # Law 3: emit never awaits consumers — async handlers become
-                # loop tasks whose failures are logged, never raised here.
-                asyncio.ensure_future(result).add_done_callback(_log_task_exception)
+                # loop tasks whose failures are logged, never raised here. The
+                # task is kept in `_INFLIGHT` until it finishes; see that set.
+                task = asyncio.ensure_future(result)
+                _INFLIGHT.add(task)
+                task.add_done_callback(_INFLIGHT.discard)
+                task.add_done_callback(_log_task_exception)
         except Exception:
             logger.exception("[EventBus] handler failed tag=%s target=%s",
                              event.tag, event.target)

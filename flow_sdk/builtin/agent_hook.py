@@ -240,8 +240,7 @@ class AgentHook(Entity):
 
         return matched_actions
 
-    async def handle_webhook(self, webhook_data: AgentHookData,
-                             *, actor: Optional[str] = None) -> WebhookHandleResult:
+    async def handle_webhook(self, webhook_data: AgentHookData) -> WebhookHandleResult:
         """
         Handle a webhook event for this agent hook.
 
@@ -258,9 +257,8 @@ class AgentHook(Entity):
         * ONE ``trigger.fired`` per MATCHED trigger, so a hook rule reads the
           same as a schedule or fsop rule on the events screen.
 
-        ``actor`` is the principal that caused the webhook (``agentic_process:<id>``),
-        resolved by the caller from the hook's execution scope — this method
-        cannot see it.
+        No ``actor`` is stamped on either envelope: a global hook is harness-wide,
+        so the process that happened to fire it is not a meaningful principal.
 
         In the old FlowPad cloud, this also created/looked up a Flow entity
         for session tracking via Flow.get_or_create_for_session().  In desktop
@@ -303,7 +301,6 @@ class AgentHook(Entity):
                         detail={"hook_event": str(hook_data.hook_event_name or ""),
                                 "agent_hook_id": self.id},
                         project_id=trigger.project_id,
-                        actor=actor,
                         scope_extra=[f"agent_hook:{self.id}"] if self.id else None,
                     )
 
@@ -313,7 +310,6 @@ class AgentHook(Entity):
             matched=len(matched_trigger_ids),
             matched_trigger_ids=matched_trigger_ids,
             session_id=session_id,
-            actor=actor,
         )
 
         return WebhookHandleResult(

@@ -561,10 +561,10 @@ export const MachineOverview: React.FC = () => {
                   size="icon"
                   className="h-7 w-7"
                   onClick={() => void handleRefresh()}
-                  disabled={isRefreshing || isLoading || configLoading}
+                  disabled={isRefreshing || isLoading}
                 >
                   <RefreshCw
-                    className={`h-4 w-4 ${isRefreshing || isLoading || configLoading ? 'animate-spin' : ''}`}
+                    className={`h-4 w-4 ${isRefreshing || isLoading ? 'animate-spin' : ''}`}
                   />
                 </Button>
               </TooltipTrigger>

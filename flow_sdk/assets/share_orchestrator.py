@@ -367,7 +367,16 @@ async def _publish(entity, actor, warnings: list[str]) -> dict:
     try:
         result = await publish_git_asset(entity, actor)
     except AssetPublishError as e:
-        raise ShareBlocked(code=str(e.code).upper(), message=str(e), data=dict(e.data or {})) from e
+        # `remediation` is the wire field the CLI already renders for git
+        # preflight failures (`_PREFLIGHT_REMEDIATION`). Publish failures were
+        # the one family arriving with it empty — the remedy exists, it just had
+        # nowhere to go until now.
+        raise ShareBlocked(
+            code=str(e.code).upper(),
+            message=str(e),
+            remediation=[e.remedy] if e.remedy else None,
+            data=dict(e.data or {}),
+        ) from e
     payload = result.model_dump(mode="json") if hasattr(result, "model_dump") else dict(result or {})
     if payload.get("local_cache_warning"):
         warnings.append(str(payload["local_cache_warning"]))

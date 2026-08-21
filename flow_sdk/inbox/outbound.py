@@ -54,6 +54,30 @@ class ReplyTarget:
     in_reply_to: str
 
 
+def _authored_here(message, local_id: str) -> bool:
+    """Did something on THIS machine write that message?
+
+    We have two outbound identities, not one. ``_sender_for`` stamps a message
+    we authored with the local user's id, EXCEPT on an agent's own mailbox,
+    where it stamps ``agent:<id>`` so the owner does not appear to have written
+    replies they never saw. External senders are always ``<channel>:<address>``.
+
+    Both of ours have to be recognised here, because this predicate chooses who
+    the reply is ADDRESSED to (`to` is the target message's sender). Knowing
+    only the user id, an agent's own ingested sent copy reads as a stranger and
+    the agent mails itself.
+
+    An unknown local user is "we cannot identify ourselves", NOT "everything is
+    ours". Folding those together made a missing user row report as "no one else
+    has written in this thread yet" — a thread full of strangers described as a
+    thread full of us, which points debugging at the wrong half of the system.
+    """
+    from flow_sdk.inbox.projection import is_agent_sender  # noqa: PLC0415
+
+    sender = str(message.sender_id or "")
+    return bool(sender) and (sender == local_id or is_agent_sender(sender))
+
+
 async def resolve_reply_target(conversation_id: str) -> ReplyTarget:
     """Everything a send needs, or raise saying which part is missing.
 
@@ -94,10 +118,7 @@ async def resolve_reply_target(conversation_id: str) -> ReplyTarget:
     # `<channel>:<address>`. So this is an exact test, not a heuristic.
     local = await User.get_local()
     local_id = str(getattr(local, "id", "") or "")
-    target = next(
-        (m for m in channel_messages if local_id and str(m.sender_id or "") != local_id),
-        None,
-    )
+    target = next((m for m in channel_messages if not _authored_here(m, local_id)), None)
     if target is None:
         # Every message here is ours — a thread we started and nobody answered.
         # The original recipient is not recorded anywhere, and guessing one is
@@ -106,9 +127,17 @@ async def resolve_reply_target(conversation_id: str) -> ReplyTarget:
 
     # Defensive reads end here: these are typed entities.
     origin = target.origin
+    # The row pointers live on the PRIVATE half. A message RECEIVED from another
+    # machine has none — its `origin` crossed the wire, its `origin_local` did
+    # not — which is a different condition from a local record that was deleted,
+    # and has to read as one.
+    local = target.origin_local
+    if local is None:
+        raise ChannelSendUnavailable("this message was shared from another machine")
+
     source, item = await asyncio.gather(
-        DataSource.get_one({"id": origin.data_source_id}),
-        SourceItem.get_one({"id": origin.source_item_id}),
+        DataSource.get_one({"id": local.data_source_id}),
+        SourceItem.get_one({"id": local.source_item_id}),
     )
     if source is None:
         raise ChannelSendUnavailable("the data source this arrived through is gone")

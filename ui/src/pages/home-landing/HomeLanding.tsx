@@ -5,6 +5,7 @@ import { RecentConversationsStrip } from '@src/components/project-activity-strip
 import { EventSnifferChip } from '@src/components/hooks/EventSnifferChip';
 import { MiniDesktop } from '@src/components/quick-create';
 import { ProjectActionsRow } from '@src/components/open-project-component/project-actions-row';
+import { ProjectAgentsStrip } from '@src/components/agents/ProjectAgentsStrip';
 import { SessionInput } from '@src/components/session-input/session-input';
 import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
 import { AdvancedOnly, VibeSwap } from '@src/components/view-mode';
@@ -153,6 +154,7 @@ export function HomeLanding() {
                     onSubmit={(msg, files) => void handleVibeSubmit(msg, files, vibeModel)}
                   />
                 </div>
+                <ProjectAgentsStrip />
               </div>
             </div>
           }
@@ -232,6 +234,7 @@ export function HomeLanding() {
                       {/* Same four project starting points as the Vibe hero —
                           one shared row, so the modes can't drift apart. */}
                       <ProjectActionsRow className="w-full self-start" />
+                      <ProjectAgentsStrip className="w-full self-start" />
                     </div>
                   </div>
 

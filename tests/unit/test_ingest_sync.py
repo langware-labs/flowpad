@@ -16,7 +16,7 @@ import pytest
 
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
-from flow_sdk.ingest.driver import FetchResult, StreamRef, register_driver
+from flow_sdk.ingest.driver import FetchResult, SegmentRef, register_driver
 from flow_sdk.ingest.health import SourceError, SourceHealth
 from flow_sdk.ingest.models import IngestItem
 from flow_sdk.ingest.sync import sync_source
@@ -65,24 +65,24 @@ class _FakeDriver:
         self._behaviour = behaviour
         self.calls: list[str] = []
 
-    def streams(self, source):
-        return [StreamRef(key=k, label=k) for k in self._streams]
+    async def segments(self, source):
+        return [SegmentRef(key=k, label=k) for k in self._streams]
 
     async def fetch(self, source, cursor):
-        self.calls.append(cursor.stream_key)
-        outcome = self._behaviour[cursor.stream_key]
+        self.calls.append(cursor.segment_key)
+        outcome = self._behaviour[cursor.segment_key]
         if isinstance(outcome, Exception):
             raise outcome
         return outcome
 
 
-def _item(source_id, stream_key, n) -> IngestItem:
+def _item(source_id, segment_key, n) -> IngestItem:
     return IngestItem(
         source_id=source_id,
         provider="faketest",
         kind="content.feed.item",
-        stream_key=stream_key,
-        external_id=f"{stream_key}-{n}",
+        segment_key=segment_key,
+        external_id=f"{segment_key}-{n}",
         title=f"item {n}",
         body=f"body {n}",
     )
@@ -134,7 +134,7 @@ async def test_one_failing_stream_does_not_stall_its_siblings():
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_rollup_records_the_stream_count():
+async def test_rollup_records_the_segment_count():
     """So a list can show it without watching the cursor table.
 
     Cursors are written once per stream per poll — the highest-churn rows on the
@@ -150,9 +150,9 @@ async def test_rollup_records_the_stream_count():
     await sync_source(src, now=NOW, budget=1)
 
     refreshed = await DataSource.get_one({"id": src.id})
-    assert refreshed.stream_count == 3, (
+    assert refreshed.segment_count == 3, (
         "the count must cover every stream the driver declares, not just the "
-        f"budgeted slice fetched this run (got {refreshed.stream_count})"
+        f"budgeted slice fetched this run (got {refreshed.segment_count})"
     )
 
 

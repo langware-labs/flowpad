@@ -1,0 +1,239 @@
+name: 'Live-backend E2E (vitest headless + api, Playwright)'
+description: 'Boot flow_sdk server, satisfy the headless instance contract, run live tiers'
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up uv + Python 3.10
+      uses: astral-sh/setup-uv@v10.0.1
+      with:
+        python-version: '3.10'
+        enable-cache: true
+
+    # Same rationale as backend-tests: keep traceback-shaped WARNING lines in
+    # the backend log from becoming error annotations on green runs.
+    - name: Disable Python problem matcher (annotates warnings as errors)
+      run: echo "::remove-matcher owner=python::"
+      shell: bash
+
+    - uses: actions/setup-node@v7
+      with:
+        node-version: '22'
+        cache: 'npm'
+        cache-dependency-path: ui/package-lock.json
+
+    - name: Install backend dependencies
+      run: uv sync --dev --frozen
+      shell: bash
+
+    - name: Install frontend dependencies
+      run: npm ci
+      shell: bash
+      working-directory: ui
+
+    # The live-backend vitest tiers spawn real claude workers (createProcess
+    # refuses with "Claude CLI is not installed" otherwise) — same install the
+    # backend-api job does.
+    - name: Install Claude Code
+      run: npm install -g @anthropic-ai/claude-code
+      shell: bash
+
+    # ---- Instance contract (see ui/tests/headless/_backend.ts) ----
+    # The headless tier requires FLOW_INSTANCE, .env.<name>.local at the repo
+    # root, and $FLOW_HOME/instances/<name>/launcher.json with the LIVE
+    # backend pid. instance_ctl.sh would set these up but needs a hub, so CI
+    # fabricates them and boots the server directly (it runs standalone).
+    # SOD_ENC_KEY (Fernet) keeps every secrets path off the runner's absent
+    # OS keyring. FLOWPAD_CLAUDE_HOME points the server's worker-history and
+    # the react tier's session fixtures at one scratch transcript root
+    # (tests/react/chats-open-recency.test.ts requires it to be set).
+    - name: Configure CI instance env
+      run: |
+        {
+          echo "FLOW_INSTANCE=ci-e2e"
+          echo "FLOW_HOME=$RUNNER_TEMP/flow-home"
+          echo "LOCAL_SERVER_PORT=6099"
+          echo "VITE_PORT=5099"
+          echo "SQLITE_DATABASE_PATH=$RUNNER_TEMP/flowpad_ci_e2e.db"
+          echo "FLOWPAD_CLAUDE_HOME=$RUNNER_TEMP/claude-home"
+          echo "CLAUDE_CONFIG_DIR=$RUNNER_TEMP/claude-home"
+          echo "SOD_ENC_KEY=$(uv run python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+        } >> "$GITHUB_ENV"
+      shell: bash
+
+    - name: Write .env.ci-e2e.local (headless tier reads it via loadEnv)
+      run: |
+        cat > .env.ci-e2e.local <<EOF
+        FLOW_INSTANCE=ci-e2e
+        LOCAL_SERVER_PORT=6099
+        VITE_PORT=5099
+        VITE_API_URL=http://localhost:6099
+        EOF
+      shell: bash
+
+    - name: Start backend
+      env:
+        MINIHUB_RELOAD: 'False'          # single process → stable PID
+        FLOWPAD_SKIP_DOTENV: 'true'      # env above is authoritative
+        FLOWPAD_SKIP_LOCK: 'true'        # isolated test server
+      run: |
+        # .venv/bin/python (not `uv run`) so $! IS the server PID —
+        # launcher.json's backend_pid liveness check kill-0s this exact pid.
+        nohup .venv/bin/python -m flow_sdk.server.run &> backend.log &
+        echo "BACKEND_PID=$!" >> "$GITHUB_ENV"
+      shell: bash
+
+    - name: Write launcher.json (headless instance identity check)
+      run: |
+        mkdir -p "$FLOW_HOME/instances/ci-e2e"
+        cat > "$FLOW_HOME/instances/ci-e2e/launcher.json" <<EOF
+        {
+          "name": "ci-e2e",
+          "backend_port": 6099,
+          "env_file": "$GITHUB_WORKSPACE/.env.ci-e2e.local",
+          "backend_pid": $BACKEND_PID
+        }
+        EOF
+      shell: bash
+
+    - name: Wait for backend readiness (bootstrap)
+      run: |
+        timeout=60   # seconds — do not raise; a slower boot is a bug to fix
+        elapsed=0
+        # Same predicate the headless tier enforces: HTTP 200 AND "types" present.
+        until curl -fsS http://localhost:6099/api/v1/graph/bootstrap | grep -q '"types"'; do
+          if [ "$elapsed" -ge "$timeout" ]; then
+            echo "Backend did not become ready within ${timeout}s."
+            tail -50 backend.log || true
+            exit 1
+          fi
+          sleep 1
+          elapsed=$((elapsed+1))
+        done
+        echo "Backend ready."
+      shell: bash
+
+    - name: vitest headless (in-process E2E, live backend)
+      run: npm run test:vitest:headless
+      shell: bash
+      working-directory: ui
+
+    - name: vitest api (live backend)
+      run: npm run test:vitest:api
+      shell: bash
+      working-directory: ui
+
+    # jsdom but live-SDK (entity writes, host-file actions): requires the same
+    # launcher-owned instance contract as headless (tests/react/_instance.ts).
+    - name: vitest react (live backend)
+      run: npm run test:vitest:react
+      shell: bash
+      working-directory: ui
+
+    # ---- Playwright scenario: context-folders (self-seeding, single spec) ----
+    # The vitest tiers above leave real entities behind (projects, tabs); that
+    # restored last-active state keeps ProjectHome from rendering for the URL
+    # the spec navigates to. Mirror the reference CI's between-suite DB
+    # cleanup: restart the backend on a fresh database.
+    - name: Reset backend state before Playwright
+      env:
+        MINIHUB_RELOAD: 'False'
+        FLOWPAD_SKIP_DOTENV: 'true'
+        FLOWPAD_SKIP_LOCK: 'true'
+      run: |
+        kill "$BACKEND_PID" 2>/dev/null || true
+        for i in $(seq 1 30); do kill -0 "$BACKEND_PID" 2>/dev/null || break; sleep 1; done
+        rm -f "$SQLITE_DATABASE_PATH"
+        rm -rf "$FLOW_HOME/instances/ci-e2e"
+        mkdir -p "$FLOW_HOME/instances/ci-e2e"
+        nohup .venv/bin/python -m flow_sdk.server.run >> backend.log 2>&1 &
+        NEW_PID=$!
+        echo "BACKEND_PID=$NEW_PID" >> "$GITHUB_ENV"
+        cat > "$FLOW_HOME/instances/ci-e2e/launcher.json" <<EOF
+        {
+          "name": "ci-e2e",
+          "backend_port": 6099,
+          "env_file": "$GITHUB_WORKSPACE/.env.ci-e2e.local",
+          "backend_pid": $NEW_PID
+        }
+        EOF
+        timeout=60
+        elapsed=0
+        until curl -fsS http://localhost:6099/api/v1/graph/bootstrap | grep -q '"types"'; do
+          if [ "$elapsed" -ge "$timeout" ]; then
+            echo "Backend did not come back within ${timeout}s."
+            tail -50 backend.log || true
+            exit 1
+          fi
+          sleep 1
+          elapsed=$((elapsed+1))
+        done
+        echo "Backend reset."
+      shell: bash
+
+    - name: Start vite dev server
+      run: |
+        # --mode ci-e2e → vite loadEnv picks .env.ci-e2e.local (VITE_API_URL :6099)
+        nohup npm run dev -- --mode ci-e2e --port 5099 &> ../vite.log &
+        echo "VITE_PID=$!" >> "$GITHUB_ENV"
+      shell: bash
+      working-directory: ui
+
+    - name: Wait for vite dev server
+      run: |
+        timeout=60
+        elapsed=0
+        until curl -fsS http://localhost:5099 > /dev/null 2>&1; do
+          if [ "$elapsed" -ge "$timeout" ]; then
+            echo "Vite dev server did not start within ${timeout}s."
+            tail -50 vite.log || true
+            exit 1
+          fi
+          sleep 1
+          elapsed=$((elapsed+1))
+        done
+        echo "Vite dev server ready."
+      shell: bash
+
+    - name: Install Playwright browsers
+      run: npx playwright install --with-deps chromium
+      shell: bash
+      working-directory: ui
+
+    - name: Playwright — context folders scenario
+      env:
+        CTX_FE_PORT: '5099'
+        CTX_BE_PORT: '6099'
+      run: npx playwright test --config tests/e2e/context-folders/playwright.config.ts --max-failures=1
+      shell: bash
+      working-directory: ui
+
+    # ---- Artifacts + teardown ----
+    - name: Upload Playwright traces
+      uses: actions/upload-artifact@v7
+      if: ${{ !cancelled() }}
+      with:
+        name: playwright-traces
+        path: ui/test-results/**/trace.zip
+        retention-days: 30
+        if-no-files-found: ignore
+        overwrite: true
+
+    - name: Upload server logs
+      uses: actions/upload-artifact@v7
+      if: ${{ !cancelled() }}
+      with:
+        name: e2e-server-logs
+        path: |
+          backend.log
+          vite.log
+        retention-days: 30
+        if-no-files-found: ignore
+        overwrite: true
+
+    - name: Stop servers
+      if: always()
+      run: |
+        [ -n "${VITE_PID:-}" ] && kill "$VITE_PID" 2>/dev/null || true
+        [ -n "${BACKEND_PID:-}" ] && kill "$BACKEND_PID" 2>/dev/null || true
+        pkill -f 'flow_sdk.server.run' 2>/dev/null || true
+      shell: bash

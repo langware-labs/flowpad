@@ -29,6 +29,7 @@ from flow_sdk.core import Entity
 from flow_sdk.core import action as core_action
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.ingest.health import SourceHealth
+from flow_sdk.ingest.reflect import ReflectMode
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.types import EntityType
@@ -121,6 +122,26 @@ class DataSource(Entity):
     # ── driver config — provider-opaque, the subsystem never reads inside ──
     config: dict = APIField(default_factory=dict)
 
+    # ── reflection — WHERE this source's payload becomes locally present ──
+    #
+    # Deliberately NOT inside `config`: `config` is provider-opaque and the
+    # subsystem never reads inside it, but this is read by `sync_source` to pick
+    # a destination. A setting the engine must read cannot live in the bag the
+    # engine promises not to open.
+    #
+    # Defaults to `record`, so every shipped driver keeps taking exactly the
+    # path it takes today.
+    reflect: str = APIField(
+        default=ReflectMode.RECORD.value,
+        description="record | none | copy | symlink",
+    )
+    #: The project directory reflected assets land under. Empty for `record`
+    #: and `none`. An absolute path, set explicitly by whoever configures the
+    #: source — NOT resolved from request context, because the heartbeat tick
+    #: that polls this row has none (the same trap this module's docstring flags
+    #: for project scoping).
+    reflect_into: str = APIField(default="")
+
     # ── lifecycle ──
     status: str = APIField(default=SourceStatus.NEW.value)
     #: What SETUP is waiting for, in the user's words. Empty in every other
@@ -146,7 +167,7 @@ class DataSource(Entity):
     #: missing capability — reads 0 even if it has cursors from an earlier life.
     #: That is the honest reading: those failures happen before the driver is
     #: ever asked what its streams are.
-    stream_count: int = APIField(default=0)
+    segment_count: int = APIField(default=0)
 
     # ── health, rolled up worst-of from this source's cursors ──
     health: str = APIField(default=SourceHealth.NEVER_SYNCED.value)
@@ -435,6 +456,17 @@ class DataSource(Entity):
         keeps a plain RSS feed from demanding a Verify click it has no use for.
         """
         if self.status == SourceStatus.NEW.value:
+            # An AUTHORED source's driver comes from a row, not an import, so it
+            # may not be registered yet on a cold process. Resolving NEW without
+            # it would send a source that HAS a setup step straight to ACTIVE.
+            from flow_sdk.ingest.driver import _REGISTRY  # noqa: PLC0415
+            from flow_sdk.ingest.spec_registry import refresh_spec_drivers  # noqa: PLC0415
+
+            # Only when the answer isn't already in hand: a shipped provider is
+            # registered at import, and warming the spec table for it is a DB
+            # round trip on a request a person is waiting on.
+            if self.provider not in _REGISTRY:
+                await refresh_spec_drivers(self.provider)
             driver = self._driver()
             if driver is not None and callable(getattr(driver, "verify", None)):
                 self.status = SourceStatus.SETUP.value

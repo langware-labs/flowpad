@@ -14,13 +14,25 @@ import pytest
 from flow_sdk.inbox.outbound import ChannelSendUnavailable, resolve_reply_target
 
 LOCAL_USER_ID = "9f0b1c2d-3e4f-4a5b-8c7d-6e5f4a3b2c1d"
+AGENT_ID = "5a1c9e77-0b2d-4f6a-9c3e-1d8b7a6f5e4c"
+AGENT_SENDER = f"agent:{AGENT_ID}"
 CONVERSATION = "023f16d6-ba1d-5f8b-8337-78bf9a2e9264"
 
 
 def _message(sender_id: str, item_id: str, kind: str = "agentmail"):
+    # Two halves, mirroring the entity: `origin` travels, `origin_local` does not.
     return SimpleNamespace(
         sender_id=sender_id,
-        origin=SimpleNamespace(kind=kind, data_source_id="ds-1", source_item_id=item_id),
+        origin=SimpleNamespace(kind=kind),
+        origin_local=SimpleNamespace(data_source_id="ds-1", source_item_id=item_id),
+    )
+
+
+def _shared_message(sender_id: str, kind: str = "agentmail"):
+    return SimpleNamespace(
+        sender_id=sender_id,
+        origin=SimpleNamespace(kind=kind),
+        origin_local=None,
     )
 
 
@@ -35,13 +47,16 @@ def _item(item_id: str, author: str, subject: str):
 def wire(monkeypatch):
     """Stub the four reads `resolve_reply_target` makes."""
     state: dict = {"messages": [], "items": {}, "sends": True, "source": SimpleNamespace(
-        id="ds-1", provider="agentmail", config={})}
+        id="ds-1", provider="agentmail", config={}),
+        # Overridable so a test can run with NO local user row — the state a
+        # process that never ran bootstrap is actually in.
+        "local": SimpleNamespace(id=LOCAL_USER_ID)}
 
     async def _get_all(_query):
         return state["messages"]
 
     async def _get_local():
-        return SimpleNamespace(id=LOCAL_USER_ID)
+        return state["local"]
 
     async def _source_one(_q):
         return state["source"]
@@ -105,7 +120,7 @@ class TestItRepliesToTheCorrespondent:
 class TestItRefusesRatherThanGuess:
     @pytest.mark.asyncio
     async def test_a_conversation_with_no_channel_origin(self, wire):
-        wire["messages"] = [SimpleNamespace(sender_id="x", origin=None)]
+        wire["messages"] = [SimpleNamespace(sender_id="x", origin=None, origin_local=None)]
         with pytest.raises(ChannelSendUnavailable, match="did not come from a channel"):
             await resolve_reply_target(CONVERSATION)
 
@@ -129,4 +144,82 @@ class TestItRefusesRatherThanGuess:
         wire["messages"] = [_message("agentmail:joe@x.to", "gone")]
         wire["items"] = {}
         with pytest.raises(ChannelSendUnavailable, match="record this arrived through is gone"):
+            await resolve_reply_target(CONVERSATION)
+
+    @pytest.mark.asyncio
+    async def test_a_message_shared_from_another_machine(self, wire):
+        """FOREIGN is not GONE, and the refusal has to say which.
+
+        A received message keeps `origin` (SHARED — that is what draws its badge)
+        and never carries `origin_local`, whose row ids only resolve on the
+        machine that ingested it. Before the split those ids travelled, so the
+        receiver dereferenced them, missed, and reported a record that was alive
+        and elsewhere as deleted.
+        """
+        wire["messages"] = [_shared_message("agentmail:joe@x.to")]
+        wire["items"] = {}
+        with pytest.raises(ChannelSendUnavailable, match="shared from another machine"):
+            await resolve_reply_target(CONVERSATION)
+
+
+class TestItKnowsBothOfOurIdentities:
+    """An agent's mailbox is ours too, even though it is not the local user.
+
+    ``_sender_for`` deliberately stamps an agent's own sent copies with
+    ``agent:<id>`` rather than the human's id, so the owner does not appear to
+    have written replies they never saw. A reply resolver that knows only the
+    user id therefore reads those copies as a stranger — and since the recipient
+    IS the target message's sender, the agent ends up mailing itself.
+    """
+
+    @pytest.mark.asyncio
+    async def test_an_agents_own_sent_copy_is_not_a_correspondent(self, wire):
+        # Newest first: the agent's own reply, then the mail it was answering.
+        wire["messages"] = [
+            _message(AGENT_SENDER, "agent_reply"),
+            _message("agentmail:joe@agentmail.to", "theirs"),
+        ]
+        wire["items"] = {
+            "agent_reply": _item("agent_reply", "bot@agentmail.to", "Re: Ping"),
+            "theirs": _item("theirs", "joe@agentmail.to", "Ping"),
+        }
+        target = await resolve_reply_target(CONVERSATION)
+
+        assert target.to == "joe@agentmail.to", "the agent addressed its own mailbox"
+
+    @pytest.mark.asyncio
+    async def test_a_thread_only_the_agent_has_written_in_refuses(self, wire):
+        wire["messages"] = [_message(AGENT_SENDER, "agent_only")]
+        wire["items"] = {"agent_only": _item("agent_only", "bot@agentmail.to", "Hello")}
+
+        with pytest.raises(ChannelSendUnavailable):
+            await resolve_reply_target(CONVERSATION)
+
+
+class TestAnUnknownLocalUserIsNotEveryone:
+    """No local user means "we cannot identify ourselves", not "all of this is ours".
+
+    Bootstrap creates the row, so this is the state of any process that has not
+    run it. Folding the two together made every message look like ours and the
+    resolver refuse with "no one else has written in this thread yet" — a thread
+    full of strangers described as a thread full of us.
+    """
+
+    @pytest.mark.asyncio
+    async def test_an_external_message_still_resolves(self, wire):
+        wire["local"] = None
+        wire["messages"] = [_message("agentmail:joe@agentmail.to", "theirs")]
+        wire["items"] = {"theirs": _item("theirs", "joe@agentmail.to", "Ping")}
+
+        assert (await resolve_reply_target(CONVERSATION)).to == "joe@agentmail.to"
+
+    @pytest.mark.asyncio
+    async def test_an_agents_own_copy_is_still_ours_without_a_local_user(self, wire):
+        # The agent id is ours by construction, so this check stands alone —
+        # it does not depend on a user row being present to compare against.
+        wire["local"] = None
+        wire["messages"] = [_message(AGENT_SENDER, "agent_only")]
+        wire["items"] = {"agent_only": _item("agent_only", "bot@agentmail.to", "Hello")}
+
+        with pytest.raises(ChannelSendUnavailable):
             await resolve_reply_target(CONVERSATION)

@@ -16,11 +16,12 @@
  * because it is the thing an operator came here to press.
  */
 import { useCallback, useMemo, useState } from 'react';
-import { DataSource, DataSourceCursor, QueryRequest } from '@sdk';
+import { DataSource, DataSourceCursor, type DataSourceSpec, QueryRequest } from '@sdk';
 import { CheckCircle2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { lucideByName } from '@src/lib/lucide-by-name';
 import { timeSince, timeUntil } from '@src/utils/duration';
 import { Button } from '@src/components/ui/button';
 import { Card, CardContent, CardHeader } from '@src/components/ui/card';
@@ -29,23 +30,30 @@ import { errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
 import { WikiButton } from '@src/components/wiki-tip';
 import { healthStyle } from './health-style';
-import { setupWiki } from './provider-catalog';
 import { statusStyle } from './status-style';
 import { SourceMenu } from './SourceMenu';
 import { SourceStreams } from './SourceStreams';
 
 interface Props {
   source: DataSource;
+  /** This source's spec. Passed in rather than queried here: the specs are one
+   *  global query, and a card per source asking separately is N identical
+   *  subscriptions to the same rows. The view already owns the grid — and it
+   *  hands over the WHOLE spec, so a third field the card wants is not a third
+   *  prop and a third lookup. */
+  spec?: DataSourceSpec | null;
   onEdit: (source: DataSource) => void;
   onReplay: (source: DataSource) => void;
   onDelete: (source: DataSource) => void;
 }
 
-export function DataSourceCard({ source, onEdit, onReplay, onDelete }: Props) {
+export function DataSourceCard({ source, spec, onEdit, onReplay, onDelete }: Props) {
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const Icon = iconForType(DataSource.type);
+  // The spec's glyph when one is installed, else the type's. A screen of
+  // sources is scanned by provider, not by 'these are all data sources'.
+  const Icon = spec?.icon_name ? lucideByName(spec.icon_name) : iconForType(DataSource.type);
 
   // Gated on `open`: a collapsed card issues no request at all (the hook
   // returns before `watchQuery` when disabled), and the filter means one
@@ -142,10 +150,17 @@ export function DataSourceCard({ source, onEdit, onReplay, onDelete }: Props) {
   // stale by construction — it describes the last time it ran, which for a
   // source that never has is "never synced", i.e. no information at all.
   const chip = source.isActive ? health : status;
-  const wiki = setupWiki(source.provider);
+  // The setup page comes from the source's own manifest, so a new source
+  // brings its own help rather than needing an entry in a frontend map.
+  const wiki = spec?.setup_wiki || undefined;
 
   return (
-    <Card className={cn('flex flex-col border-s-[3px]', chip.border)}>
+    <Card
+      data-testid="source-card"
+      data-provider={source.provider}
+      data-status={source.status}
+      className={cn('flex flex-col border-s-[3px]', chip.border)}
+    >
       <CardHeader className="flex flex-row items-start gap-2 space-y-0 p-3 pb-1.5">
         <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
 
@@ -236,7 +251,7 @@ export function DataSourceCard({ source, onEdit, onReplay, onDelete }: Props) {
             onClick={() => setOpen((o) => !o)}
           >
             {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-            <Plural value={source.stream_count} one="# stream" other="# streams" />
+            <Plural value={source.segment_count} one="# stream" other="# streams" />
           </button>
         </div>
 

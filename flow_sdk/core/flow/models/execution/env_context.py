@@ -7,6 +7,7 @@ from flow_sdk.builtin.user import User
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.entity_env.env_table import merge_env_tables
 from flow_sdk.core.entity.entity_env.env_types import EnvStatusEnum, EnvVar, EnvVarType
+from flow_sdk.core.entity.entity_env.env_utils import mask_confidential_value
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.request_context.methods import get_entity_credentials, get_user_credentials
 
@@ -97,7 +98,7 @@ async def get_env_vars_context(user: User, project: Entity) -> list[FlowEnv]:
                         )
                         value = await get_user_credentials(user, token_name, None)
                         if value:
-                            service_log.info(f"#### Found {var_type_str} {token_name} (prefix: {value[:20]}...) ####")
+                            service_log.info(f"#### Found {var_type_str} {token_name} ({mask_confidential_value(value)}) ####")
                             flow_env = FlowEnv.from_env_var(user_env_var, value)
                             env_vars.append(flow_env)
                             service_log.info(f"#### Added {var_type_str} {user_env_var.name} to env_vars ####")

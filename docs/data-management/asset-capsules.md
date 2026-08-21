@@ -108,6 +108,18 @@ create guards and publication assertions all depend on that `None` — a derived
 value would make two unstamped copies look identical. An INVALID carrier keeps
 its bytes even under `overwrite`; only an ABSENT one is stamped.
 
+A source may also declare that its bytes are not ours to write at all. A driver
+with `stamps_identity = False` — git, whose files are tracked — runs its
+reflection inside `carrier_writes_suppressed()` (`fs_store/fs_record.py`), and
+`upsert_main_ref` then returns the id it was given without consulting or
+committing to the carrier. Identity for such a source is resolved by an
+`Entity.origin_id` lookup instead, so the ladder above is not merely skipped, it
+is unnecessary. The flag is a ContextVar because the write happens four layers
+below the decision; a parameter would put "may I write" on methods with no
+business asking. Suppression is the reason a git working tree is clean after an
+index pass — a stamped capsule would be committed and pushed to everyone who
+pulls.
+
 Legacy Markdown `id`/`asset_id`, folder `.flow/id`, and manifest identities
 remain readable without cleanup, backfill, or dual-write. Types whose native
 format owns its root JSON identity continue using that carrier intentionally.

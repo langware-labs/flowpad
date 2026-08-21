@@ -5,8 +5,8 @@ import { Loader2, Sparkles } from 'lucide-react';
 
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
-import { AvatarValue } from '@src/lib/avatar-value';
 import { colorForIdentityKey } from '@src/components/conversation/avatar-color';
+import { AgentAvatar } from '@src/components/agents/AgentAvatar';
 import { AgentAvatarPicker } from '@src/components/ui/agent-avatar-picker';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { prepareAvatarImage } from '@src/lib/prepare-avatar-image';
@@ -18,8 +18,9 @@ import { Button } from '@src/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 
 import { AgentDeploymentsSection } from './AgentDeploymentsSection';
-import { AgentListField, AgentSection, AgentSelectField } from './AgentProfileFields';
-import { useUseAgent } from './use-agent';
+import { AgentListField, AgentSelectField } from './AgentProfileFields';
+import { useProject } from '@sdk/react/hooks';
+import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
 import { AGENT_EFFORTS, AGENT_MODEL_TIERS, AGENT_PERMISSION_MODES, AGENT_WORKER_TYPES } from './agent-vocabularies';
 import { AgentDocumentPatch, patchAgentDocument } from './agent-document';
 
@@ -57,7 +58,12 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
   const [description, setDescription] = useState(agent?.description ?? '');
   const [prompt, setPrompt] = useState(agent?.system_prompt ?? '');
   const [avatarRevision, setAvatarRevision] = useState(0);
-  const { use, busy: using } = useUseAgent(agent);
+  // The ACTIVE project is the one a session opened from here acts in — an
+  // agent supplied by an attached help desk lives in the desk's checkout, and
+  // launching into THAT would open the session in the vendor's repo.
+  const { project: activeProject } = useProject();
+  const { launch, busyId } = useAgentLauncher();
+  const using = busyId === agent?.id;
 
   useEffect(() => {
     setTitle(agent?.title ?? '');
@@ -131,7 +137,8 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
   // Through `mainRef`, not `agent.avatarImageUrl`: the router hands the editor
   // the authoritative ref (local mount OR hub entity storage), while the SDK
   // getter resolves off `asset_ref` — same file here, but this one is exact.
-  const avatarImageUrl = agent.avatar === AGENT_AVATAR_REF ? mainRef.parent.child(AGENT_AVATAR_FILE).getDownloadUrl() : null;
+  const avatarImageUrl =
+    agent.avatar === AGENT_AVATAR_REF ? mainRef.parent.child(AGENT_AVATAR_FILE).getDownloadUrl() : null;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -149,12 +156,12 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
                 ringColor,
               )}
             >
-              <AvatarValue
+              <AgentAvatar
                 key={`${agent.avatar ?? 'none'}:${avatarRevision}`}
-                value={agent.avatar}
+                agent={agent}
                 imageUrl={avatarImageUrl}
-                alt={agent.name ? t`${agent.name} avatar` : t`Agent avatar`}
-                className={avatarImageUrl ? 'h-full w-full object-cover' : 'h-9 w-9 text-3xl'}
+                className="h-full w-full bg-transparent text-3xl"
+                glyphClassName="h-9 w-9 text-3xl"
                 fallback={<AgentIcon className="h-9 w-9" />}
               />
             </button>
@@ -209,8 +216,17 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
               aria-label={t`Enabled`}
             />
           </div>
-          <Button size="sm" disabled={!agent.enabled || using} onClick={() => void use()} data-testid="agent-use">
-            {using ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="me-1.5 h-3.5 w-3.5" />}
+          <Button
+            size="sm"
+            disabled={!agent.enabled || using}
+            onClick={() => void launch(agent, activeProject?.id ?? null)}
+            data-testid="agent-use"
+          >
+            {using ? (
+              <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="me-1.5 h-3.5 w-3.5" />
+            )}
             <Trans>Use</Trans>
           </Button>
         </div>
@@ -297,7 +313,10 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
             </TabsContent>
 
             <TabsContent value="advanced" className="mt-4">
-              <AgentSection hint={t`Declared on the agent's card. Not yet applied to the worker.`}>
+              <section>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  <Trans>Declared on the agent's card. Not yet applied to the worker.</Trans>
+                </p>
                 <div className="space-y-3">
                   <AgentSelectField
                     label={t`Max turns`}
@@ -320,7 +339,11 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
                     value={agent.subagents}
                     onCommit={(v) => void save({ subagents: v ?? [] })}
                   />
-                  <AgentListField label={t`Skills`} value={agent.skills} onCommit={(v) => void save({ skills: v ?? [] })} />
+                  <AgentListField
+                    label={t`Skills`}
+                    value={agent.skills}
+                    onCommit={(v) => void save({ skills: v ?? [] })}
+                  />
                   <AgentListField
                     label={t`MCP servers`}
                     value={agent.mcp_servers}
@@ -332,7 +355,7 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
                     onCommit={(v) => void save({ additional_dirs: v ?? [] })}
                   />
                 </div>
-              </AgentSection>
+              </section>
             </TabsContent>
           </Tabs>
         </aside>

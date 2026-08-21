@@ -176,3 +176,89 @@ def test_process_hook_runtime_fields_are_launch_only() -> None:
 
 def _flag_values(argv: list[str], flag: str) -> list[str]:
     return [argv[index + 1] for index, value in enumerate(argv[:-1]) if value == flag]
+
+
+def test_claude_projection_emits_one_handler_per_configured_event(tmp_path, isolated_wrapper):
+    process_id = str(mint_uuid())
+    assets = AssetDir(tmp_path / "assets")
+    driver = ClaudeDriver()
+
+    driver.prepare_process_hooks(
+        assets,
+        process_id,
+        [HookEventType.SESSION_START, HookEventType.SESSION_END, HookEventType.USER_PROMPT_SUBMIT],
+    )
+    plugin = assets.os_path / ".flowpad/plugins/claude/flowpad-process-hooks"
+    hooks = json.loads((plugin / "hooks/hooks.json").read_text(encoding="utf-8"))["hooks"]
+
+    command, prefix = get_installed_flow_invocation()
+    expected = {
+        "args": [*prefix, "hooks", "report", "--process-id", process_id],
+        "command": command,
+        "type": "command",
+    }
+    assert sorted(hooks) == ["SessionEnd", "SessionStart", "UserPromptSubmit"]
+    for event, entries in hooks.items():
+        # Matcher-free: SessionStart/SessionEnd matchers select on
+        # source/reason, and omitting one means "every occurrence".
+        assert entries == [{"hooks": [expected]}], event
+
+
+def test_claude_removing_one_event_keeps_the_others_projected(tmp_path, isolated_wrapper):
+    process_id = str(mint_uuid())
+    assets = AssetDir(tmp_path / "assets")
+    driver = ClaudeDriver()
+    plugin = assets.os_path / ".flowpad/plugins/claude/flowpad-process-hooks"
+
+    driver.prepare_process_hooks(assets, process_id, [HookEventType.SESSION_START, HookEventType.SESSION_END])
+    driver.prepare_process_hooks(assets, process_id, [HookEventType.SESSION_END])
+
+    assert sorted(json.loads((plugin / "hooks/hooks.json").read_text(encoding="utf-8"))["hooks"]) == ["SessionEnd"]
+    assert driver.prepare_process_hooks(assets, process_id, []).plugin_dirs == ()
+    assert not plugin.exists()
+
+
+def test_claude_session_snapshot_and_normalization_carry_lifecycle_fields():
+    driver = ClaudeDriver()
+    process_id = str(mint_uuid())
+
+    assert driver.process_hook_snapshot([HookEventType.SESSION_END, HookEventType.SESSION_START]) == {
+        "events": ["SessionEnd", "SessionStart"],
+        "provider": "claude",
+        "schema": 1,
+    }
+
+    start_raw = {
+        "hook_event_name": "SessionStart",
+        "source": "resume",
+        "session_id": "session",
+        "transcript_path": "/tmp/session.jsonl",
+        "permission_mode": "plan",
+        "model": "sonnet",
+    }
+    start = driver.normalize_process_hook_data(process_id, start_raw)
+    assert start.hook_data == {
+        "hook_event_name": "SessionStart",
+        "session_id": "session",
+        "transcript_path": "/tmp/session.jsonl",
+        "source": "resume",
+        "raw_hook_data": start_raw,
+    }
+
+    end_raw = {
+        "hook_event_name": "SessionEnd",
+        "reason": "prompt_input_exit",
+        "session_id": "session",
+        "cwd": "/repo",
+        "transcript_path": "/tmp/session.jsonl",
+    }
+    end = driver.normalize_process_hook_data(process_id, end_raw)
+    assert end.hook_data == {
+        "hook_event_name": "SessionEnd",
+        "session_id": "session",
+        "cwd": "/repo",
+        "transcript_path": "/tmp/session.jsonl",
+        "reason": "prompt_input_exit",
+        "raw_hook_data": end_raw,
+    }
+    assert "prompt" not in start.hook_data and "prompt" not in end.hook_data

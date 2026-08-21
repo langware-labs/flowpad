@@ -25,7 +25,13 @@ ProcessHookCallback = Callable[[AgentHookData], Awaitable[None] | None]
 _lock = RLock()
 _next_token = count(1)
 _callbacks: dict[str, dict[int, ProcessHookCallback]] = {}
-_SUPPORTED_EVENTS = frozenset({HookEventType.USER_PROMPT_SUBMIT})
+SUPPORTED_PROCESS_HOOK_EVENTS = frozenset(
+    {
+        HookEventType.SESSION_START,
+        HookEventType.SESSION_END,
+        HookEventType.USER_PROMPT_SUBMIT,
+    }
+)
 
 
 def normalize_process_hook_events(
@@ -38,7 +44,7 @@ def normalize_process_hook_events(
         normalized = {event if isinstance(event, HookEventType) else HookEventType(event) for event in events}
     except ValueError as exc:
         raise ValueError(f"Unsupported {provider.capitalize()} process hook event: {events!r}") from exc
-    unsupported = normalized - _SUPPORTED_EVENTS
+    unsupported = normalized - SUPPORTED_PROCESS_HOOK_EVENTS
     if unsupported:
         names = ", ".join(sorted(event.value for event in unsupported))
         raise ValueError(f"Unsupported {provider.capitalize()} process hook event: {names}")
@@ -113,6 +119,7 @@ def clear_process_hook_callbacks(process_id: str | None = None) -> None:
 
 
 __all__ = [
+    "SUPPORTED_PROCESS_HOOK_EVENTS",
     "ProcessHookCallback",
     "build_process_hook_snapshot",
     "clear_process_hook_callbacks",

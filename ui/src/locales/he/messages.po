@@ -166,7 +166,7 @@ msgstr "{0, plural, one {# פריט} other {# פריטים}}"
 msgid "{0, plural, one {# person} other {# people}}"
 msgstr ""
 
-#. placeholder {0}: source.stream_count
+#. placeholder {0}: source.segment_count
 #: src/components/data-sources/DataSourceCard.tsx
 msgid "{0, plural, one {# stream} other {# streams}}"
 msgstr "{0, plural, one {# זרם} other {# זרמים}}"
@@ -201,10 +201,9 @@ msgstr "{0} הערות בשורה זו"
 msgid "{0} attachments"
 msgstr "{0} קבצים מצורפים"
 
-#. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "{0} avatar"
-msgstr "אווטר של {0}"
+#~ msgid "{0} avatar"
+#~ msgstr "אווטר של {0}"
 
 #. placeholder {0}: trigger.last_seen_size
 #: src/components/triggers-view/FsopTriggerDetail.tsx
@@ -462,7 +461,7 @@ msgstr "{indexedCount} מאונדקסים"
 msgid "{label} docs"
 msgstr "מסמכים {label}"
 
-#: src/components/data-sources/provider-catalog.ts
+#: src/components/data-sources/source-form.ts
 msgid "{label} is required."
 msgstr "{label} הוא שדה חובה."
 
@@ -474,7 +473,7 @@ msgstr "{label} רשומות"
 msgid "{latchedReason} Auto-relaunch is paused — Retry to launch again."
 msgstr "{latchedReason} ההפעלה מחדש האוטומטית מושהית — נסו שוב כדי להפעיל מחדש."
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/agents/AgentAvatar.tsx
 msgid "{name} avatar"
 msgstr ""
 
@@ -680,8 +679,8 @@ msgid "🤖 Prompt - Query AI (Claude Haiku)"
 msgstr "🤖 Prompt - בקש מ-AI (Claude Haiku)"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "0"
-msgstr "0"
+#~ msgid "0"
+#~ msgstr "0"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
@@ -758,8 +757,8 @@ msgid "A fresh shell needs to be allocated. (Backend action coming — for now R
 msgstr "יש להקצות מעטפת חדשה. (פעולת שרת בדרך — בינתיים \"הפעל מחדש\" ינסה שוב.)"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "A hosted mailbox over its HTTP API."
-msgstr "תיבת דואר מתארחת דרך ה-API של HTTP שלה."
+#~ msgid "A hosted mailbox over its HTTP API."
+#~ msgstr "תיבת דואר מתארחת דרך ה-API של HTTP שלה."
 
 #: src/components/conversation/ConversationView.tsx
 msgid "A live session is already running in this conversation"
@@ -772,6 +771,10 @@ msgstr "כבר קיים פרויקט בשם הזה"
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "A source is one remote account or feed set. The poller syncs it on the heartbeat."
 msgstr "מקור הוא חשבון מרחוק אחד או קבוצת הזנות אחת. הסנכרון מתבצע בכל דופק."
+
+#: src/components/entity-execution-panel/execution-message/execution-message.tsx
+msgid "About {name}"
+msgstr ""
 
 #: src/components/triggers-view/TriggersList.tsx
 msgid "About FSOp triggers"
@@ -1131,21 +1134,19 @@ msgstr "מתקדם"
 msgid "Advanced mode"
 msgstr "מצב מתקדם"
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "agent"
 msgstr "סוכן"
 
-#: src/components/data-sources/provider-catalog.ts
 #: src/components/quick-create/registry.ts
 #: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "Agent"
 msgstr "סוכן"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Agent avatar"
-msgstr "אווטר הסוכן"
+#~ msgid "Agent avatar"
+#~ msgstr "אווטר הסוכן"
 
 #: src/components/quick-create/registry.ts
 msgid "Agent created"
@@ -1173,8 +1174,8 @@ msgid "Agent Trace"
 msgstr "עקבת סוכן"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Agent transport"
-msgstr "תעבורת הסוכן"
+#~ msgid "Agent transport"
+#~ msgstr "תעבורת הסוכן"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "agent-name"
@@ -1194,8 +1195,8 @@ msgid "AgenticProcess ID this prompt annotation is linked to"
 msgstr "מזהה ה-AgenticProcess שאליו מקושרת הערת ההנחיה"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "AgentMail"
-msgstr "AgentMail"
+#~ msgid "AgentMail"
+#~ msgstr "AgentMail"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "agents"
@@ -1426,8 +1427,8 @@ msgid "Always Thinking Enabled"
 msgstr "חשיבה תמידית מופעלת"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "am_…"
-msgstr "am_…"
+#~ msgid "am_…"
+#~ msgstr "am_…"
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "An <0>orphan</0> is a row in the search index whose source file is gone from disk. The indexer detects them on every run and marks them with <1>orphan_since</1>. The file is already gone; sweeping just removes the stale row from search so results stay clean."
@@ -1570,16 +1571,16 @@ msgstr "כל מי שתשתפו איתו יכול לפתוח, להשתמש ולמ
 
 #: src/components/data-sources/provider-catalog.ts
 #: src/components/data-sources/provider-catalog.ts
-msgid "API base URL"
-msgstr "כתובת הבסיס של ה-API"
+#~ msgid "API base URL"
+#~ msgstr "כתובת הבסיס של ה-API"
 
 #: src/i18n/type-labels.ts
 msgid "Api Key"
 msgstr "מפתח API"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "API key"
-msgstr "מפתח API"
+#~ msgid "API key"
+#~ msgstr "מפתח API"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "API Key"
@@ -2283,8 +2284,8 @@ msgid "By scope"
 msgstr "לפי היקף"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "C0123456789"
-msgstr "C0123456789"
+#~ msgid "C0123456789"
+#~ msgstr "C0123456789"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "cache hit rate"
@@ -2537,8 +2538,8 @@ msgid "Changes ({0})"
 msgstr "שינויים ({0})"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Channel IDs"
-msgstr "מזהי ערוצים"
+#~ msgid "Channel IDs"
+#~ msgstr "מזהי ערוצים"
 
 #: src/components/lens-viewer/shared/ViewModeToggle.tsx
 #: src/i18n/pref-labels.ts
@@ -2546,6 +2547,7 @@ msgstr "מזהי ערוצים"
 msgid "Chat"
 msgstr "צ'אט"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Chat history"
 msgstr "היסטוריית צ'אט"
@@ -2561,6 +2563,10 @@ msgstr "כלי צ'אט"
 #: src/components/lens-viewer/shared/ViewModeToggle.tsx
 msgid "Chat view"
 msgstr "תצוגת צ׳אט"
+
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+msgid "Chat with this deployed agent"
+msgstr ""
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
@@ -2684,7 +2690,6 @@ msgid "classification.json"
 msgstr "classification.json"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-#: src/components/data-sources/provider-catalog.ts
 msgid "claude"
 msgstr "Claude"
 
@@ -3263,8 +3268,8 @@ msgid "coming soon"
 msgstr "בקרוב"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Comma separated: story, comment, job, poll. Defaults to story."
-msgstr "מופרד בפסיקים: story, comment, job, poll. ברירת המחדל היא story."
+#~ msgid "Comma separated: story, comment, job, poll. Defaults to story."
+#~ msgstr "מופרד בפסיקים: story, comment, job, poll. ברירת המחדל היא story."
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
@@ -3508,8 +3513,8 @@ msgid "Connections"
 msgstr "חיבורים"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Connector"
-msgstr "מחבר"
+#~ msgid "Connector"
+#~ msgstr "מחבר"
 
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
@@ -4119,7 +4124,7 @@ msgid "Could not upload avatar"
 msgstr "לא ניתן היה להעלות את התמונה"
 
 #. placeholder {0}: agent.displayName
-#: src/components/assets/editor/agent-profile/use-agent.ts
+#: src/components/agents/use-agent-launcher.ts
 msgid "Could not use {0}"
 msgstr ""
 
@@ -4363,6 +4368,7 @@ msgid "created"
 msgstr "נוצר"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
+#: src/components/entity-execution-panel/TurnFilesChips.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Created"
 msgstr "נוצר"
@@ -4905,6 +4911,10 @@ msgstr "מחק שיחה זו"
 msgid "Delete this data source?"
 msgstr "למחוק את מקור הנתונים הזה?"
 
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+msgid "Delete this deployment"
+msgstr ""
+
 #: src/components/account/system-diagnoses.tsx
 msgid "Delete this diagnosis? This cannot be undone."
 msgstr "מחק אבחנה זו? לא ניתן לבטל זאת."
@@ -4971,9 +4981,17 @@ msgstr "פרוסו לענן"
 msgid "Deployed"
 msgstr "פורסם"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+msgid "Deployed agent"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deployed without its definition"
 msgstr "פרוס ללא הגדרתו"
+
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+msgid "Deployment deleted"
+msgstr ""
 
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "Deployment details"
@@ -4983,6 +5001,7 @@ msgstr "פרטי הפריסה"
 msgid "Deployment WorldView"
 msgstr "מבט־על של הפריסה"
 
+#: src/components/graph-view/ui/PropertyPanel.tsx
 #: src/i18n/type-labels.ts
 msgid "Deployments"
 msgstr "פריסות"
@@ -5663,6 +5682,10 @@ msgstr "עריכת טריגר"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Edit your draft…"
 msgstr "ערוך את הטיוטה שלך…"
+
+#: src/components/entity-execution-panel/TurnFilesChips.tsx
+msgid "Edited"
+msgstr "נערך"
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "Edited items could not be loaded. Chat sessions are still shown."
@@ -6603,8 +6626,8 @@ msgid "Feed Entry"
 msgstr "רשומה בפיד"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Feed URLs"
-msgstr "כתובות פידים"
+#~ msgid "Feed URLs"
+#~ msgstr "כתובות פידים"
 
 #: src/components/floating-chat/toolEventDescriptor.ts
 msgid "Fetch"
@@ -7275,8 +7298,8 @@ msgid "Global Commands (~/.claude/commands/)"
 msgstr "פקודות גלובליות (~/.claude/commands/)"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "gmail"
-msgstr "gmail"
+#~ msgid "gmail"
+#~ msgstr "gmail"
 
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/spec-editor/SpecEditor.tsx
@@ -7401,8 +7424,8 @@ msgid "Guides"
 msgstr "מדריכים"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Hacker News"
-msgstr "Hacker News"
+#~ msgid "Hacker News"
+#~ msgstr "Hacker News"
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Hand it over"
@@ -7422,8 +7445,8 @@ msgid "Handed over to {0}"
 msgstr "הועבר ל-{0}"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Harness"
-msgstr "רתמה"
+#~ msgid "Harness"
+#~ msgstr "רתמה"
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Harness is required"
@@ -7782,8 +7805,8 @@ msgid "HTTPS proxy URL for network requests"
 msgstr "כתובת URL של פרוקסי HTTPS לבקשות רשת"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "https://example.com/feed.xml"
-msgstr "https://example.com/feed.xml"
+#~ msgid "https://example.com/feed.xml"
+#~ msgstr "https://example.com/feed.xml"
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "https://github.com/owner/repo"
@@ -7980,7 +8003,6 @@ msgid "Inactive"
 msgstr "לא פעיל"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-#: src/components/data-sources/provider-catalog.ts
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/types/ViewType.ts
@@ -7988,8 +8010,8 @@ msgid "Inbox"
 msgstr "תיבת דואר"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "INBOX"
-msgstr "INBOX"
+#~ msgid "INBOX"
+#~ msgstr "INBOX"
 
 #: src/i18n/type-labels.ts
 msgid "Inbox Manager"
@@ -8339,8 +8361,8 @@ msgid "Italic"
 msgstr "נטוי"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Item types"
-msgstr "סוגי פריטים"
+#~ msgid "Item types"
+#~ msgstr "סוגי פריטים"
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Its contents look like binary data (for example an image), so it can't be shown in the editor."
@@ -9312,8 +9334,8 @@ msgid "Matcher Pattern (optional)"
 msgstr "דפוס Matcher (אופציונלי)"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Max items per run"
-msgstr "מספר פריטים מרבי להרצה"
+#~ msgid "Max items per run"
+#~ msgstr "מספר פריטים מרבי להרצה"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Max Memory"
@@ -9488,6 +9510,10 @@ msgstr "כתוב הודעה לסוכן"
 msgid "Message the agent…"
 msgstr "שלחו הודעה לסוכן…"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+msgid "Message this deployed agent…"
+msgstr ""
+
 #: src/i18n/type-labels.ts
 msgid "Message Thread"
 msgstr "שרשור הודעות"
@@ -9523,8 +9549,8 @@ msgid "Minimum 60 — the heartbeat only ticks once a minute."
 msgstr "מינימום 60 — הדופק פועם פעם בדקה בלבד."
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Minimum score"
-msgstr "ציון מינימלי"
+#~ msgid "Minimum score"
+#~ msgstr "ציון מינימלי"
 
 #: src/components/assets/editor/agent-trace/simple/report-language.ts
 msgid "Minor"
@@ -9787,6 +9813,7 @@ msgstr "תיקיית סימניות חדשה"
 msgid "New build"
 msgstr "בנייה חדשה"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "New chat"
 msgstr "צ'אט חדש"
@@ -10130,6 +10157,10 @@ msgstr "עדיין לא נצפו פריסות"
 msgid "No description provided."
 msgstr "אין תיאור."
 
+#: src/components/agents/AgentIntroCard.tsx
+msgid "No description yet."
+msgstr ""
+
 #: src/pages/discover-page/discover-page.tsx
 msgid "No description."
 msgstr "אין תיאור."
@@ -10374,6 +10405,7 @@ msgstr "עדיין אין עמוד בשם זה."
 msgid "No past builds"
 msgstr "אין בניות קודמות"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "No past chats"
 msgstr "אין צ'אטים קודמים"
@@ -11073,16 +11105,16 @@ msgid "Onboarding reset"
 msgstr "איפוס הכנה ראשונית"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "One per line. Each URL becomes its own stream with its own cursor and health."
-msgstr "אחד בכל שורה. כל כתובת הופכת לזרם נפרד עם סמן ומצב תקינות משלו."
+#~ msgid "One per line. Each URL becomes its own stream with its own cursor and health."
+#~ msgstr "אחד בכל שורה. כל כתובת הופכת לזרם נפרד עם סמן ומצב תקינות משלו."
 
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records you can search, read and build flows on."
 msgstr "מקור אחד לכל הזנה חיצונית או חשבון. המנגנון מסנכרן כל מקור בהתאם לקצב הפעימות והופך את הממצאים לרשומות שניתן לחפש, לקרוא ולבנות איתן זרימות עבודה."
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "One stream per feed URL. No credentials — the simplest source there is."
-msgstr "זרם אחד לכל כתובת פיד. ללא פרטי התחברות — המקור הפשוט ביותר שיש."
+#~ msgid "One stream per feed URL. No credentials — the simplest source there is."
+#~ msgstr "זרם אחד לכל כתובת פיד. ללא פרטי התחברות — המקור הפשוט ביותר שיש."
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Only a sandbox's owner can start one. If you share it as it is, they'll get the link but won't be able to open it — they'll be told to ask you to start it first."
@@ -11114,12 +11146,21 @@ msgstr "פתח"
 msgid "Open .env.local at this line"
 msgstr "פתחו את .env.local בשורה זו"
 
+#. placeholder {0}: file.path
+#: src/components/entity-execution-panel/TurnFilesChips.tsx
+msgid "Open {0}"
+msgstr "פתח את {0}"
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Open {label}"
 msgstr "פתח {label}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Open {name}"
+msgstr ""
+
+#: src/components/agents/AgentIntroCard.tsx
+msgid "Open {title}"
 msgstr ""
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
@@ -11154,6 +11195,10 @@ msgstr "יש לפתוח פרויקט כדי לראות את הנכסים שלו.
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "Open address book"
 msgstr "פתח ספר כתובות"
+
+#: src/components/agents/AgentIntroCard.tsx
+msgid "Open agent"
+msgstr ""
 
 #: src/components/terminal/HistoryModal.tsx
 msgid "Open all"
@@ -11737,6 +11782,7 @@ msgstr "ניתוחים קודמים"
 msgid "Past builds"
 msgstr "בניות קודמות"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Past chats"
 msgstr "צ'אטים קודמים"
@@ -12701,8 +12747,8 @@ msgid "Re-scan now"
 msgstr "סרוק מחדש עכשיו"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Reaches a channel through a local agent harness — how Gmail is read today."
-msgstr "מגיע לערוץ דרך רתמה מקומית של סוכן — כך נקרא Gmail כיום."
+#~ msgid "Reaches a channel through a local agent harness — how Gmail is read today."
+#~ msgstr "מגיע לערוץ דרך רתמה מקומית של סוכן — כך נקרא Gmail כיום."
 
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -13601,8 +13647,8 @@ msgid "Row time range"
 msgstr "טווח זמן שורה"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "RSS / Atom"
-msgstr "RSS / Atom"
+#~ msgid "RSS / Atom"
+#~ msgstr "RSS / Atom"
 
 #: src/components/events/EventFeed.tsx
 msgid "rule: {ruleFilterName}"
@@ -14407,6 +14453,10 @@ msgstr "שלח הודעה תחילה — יצירת ענף דורשת היסטו
 msgid "Send a message first — no transcript yet"
 msgstr "שלח הודעה תחילה — אין עדיין תמלול"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+msgid "Send a message to this deployed agent."
+msgstr ""
+
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Send a PROMPT to the recipient asking for a status summary"
 msgstr "שלח הנחיה לנמען לסיכום מצב המשימה"
@@ -14951,6 +15001,10 @@ msgstr "הצג פרויקטי מערכת"
 msgid "Show system skills"
 msgstr "הצג מיומנויות מערכת"
 
+#: src/components/entity-execution-panel/TurnFilesChips.tsx
+msgid "Show the other files this turn touched"
+msgstr "הצג את שאר הקבצים שהתור הזה נגע בהם"
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Show timing info for each turn"
 msgstr "להציג מידע תזמון עבור כל סבב"
@@ -15232,8 +15286,8 @@ msgid "Skip Permissions Warmup"
 msgstr "דילוג על חימום ההרשאות"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Slack"
-msgstr "Slack"
+#~ msgid "Slack"
+#~ msgstr "Slack"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Slower. To wipe rows first, use Clear Index then Full."
@@ -15539,7 +15593,7 @@ msgstr "מתחיל תהליך ההתחברות…"
 msgid "Starting scan…"
 msgstr "מתחיל סריקה…"
 
-#: src/components/assets/editor/agent-profile/use-agent.ts
+#: src/components/agents/use-agent-launcher.ts
 msgid "Starting the session failed."
 msgstr ""
 
@@ -15664,8 +15718,8 @@ msgid "stored →"
 msgstr "שמור →"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Stored in this source’s config on this machine, including its metadata shadow on disk."
-msgstr "נשמר בתצורת המקור הזה במחשב הזה, כולל צל המטא-נתונים שלו בדיסק."
+#~ msgid "Stored in this source’s config on this machine, including its metadata shadow on disk."
+#~ msgstr "נשמר בתצורת המקור הזה במחשב הזה, כולל צל המטא-נתונים שלו בדיסק."
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -15673,12 +15727,12 @@ msgid "stored line"
 msgstr "שורה שמורה"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "story"
-msgstr "story"
+#~ msgid "story"
+#~ msgstr "story"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Streams"
-msgstr "זרמים"
+#~ msgid "Streams"
+#~ msgstr "זרמים"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 #: src/components/organization/organization-page.tsx
@@ -15710,8 +15764,8 @@ msgid "Sub-team name…"
 msgstr ""
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Subagent"
-msgstr "Subagent"
+#~ msgid "Subagent"
+#~ msgstr "Subagent"
 
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
@@ -16248,8 +16302,8 @@ msgid "The provider rejected the stored token."
 msgstr "הספק דחה את הטוקן השמור."
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "The public firehose, filtered. No credentials."
-msgstr "הזרם הציבורי המלא, מסונן. ללא פרטי התחברות."
+#~ msgid "The public firehose, filtered. No credentials."
+#~ msgstr "הזרם הציבורי המלא, מסונן. ללא פרטי התחברות."
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "The recipient will see a PROMPT to approve."
@@ -16312,8 +16366,8 @@ msgid "The wizard reported an error."
 msgstr "קוסם הניקיון דיווח על שגיאה."
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "The worker CLI that runs the fetch. Without a launchable one the source parks on config_error."
-msgstr "כלי שורת הפקודה של העובד שמריץ את השליפה. בלי כלי שניתן להפעיל, המקור נעצר במצב config_error."
+#~ msgid "The worker CLI that runs the fetch. Without a launchable one the source parks on config_error."
+#~ msgstr "כלי שורת הפקודה של העובד שמריץ את השליפה. בלי כלי שניתן להפעיל, המקור נעצר במצב config_error."
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The worker exited immediately after launch, so auto-relaunch is paused. Retry to launch it again."
@@ -16455,8 +16509,8 @@ msgid "This is its first start, so it takes a few minutes."
 msgstr "זו ההפעלה הראשונה שלו, ולכן זה עשוי להימשך כמה דקות."
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "This is the CHANNEL, and half of every thread key. Leaving it empty forks every thread in the mailbox — permanently."
-msgstr "זהו הערוץ, ומחצית מכל מפתח שרשור. השארתו ריק מפצלת כל שרשור בתיבת הדואר — לצמיתות."
+#~ msgid "This is the CHANNEL, and half of every thread key. Leaving it empty forks every thread in the mailbox — permanently."
+#~ msgstr "זהו הערוץ, ומחצית מכל מפתח שרשור. השארתו ריק מפצלת כל שרשור בתיבת הדואר — לצמיתות."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This link does not point at a sandbox."
@@ -17121,7 +17175,7 @@ msgid "Unknown Lens Type"
 msgstr "סוג עדשה לא ידוע"
 
 #. placeholder {0}: draft.provider
-#: src/components/data-sources/provider-catalog.ts
+#: src/components/data-sources/source-form.ts
 msgid "Unknown provider {0}."
 msgstr "ספק לא מוכר {0}."
 
@@ -18079,8 +18133,8 @@ msgid "You've been invited to a conversation"
 msgstr "הוזמנת לשיחה"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "you@agentmail.to"
-msgstr "you@agentmail.to"
+#~ msgid "you@agentmail.to"
+#~ msgstr "you@agentmail.to"
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Your API key for authenticating API requests to FlowPad"

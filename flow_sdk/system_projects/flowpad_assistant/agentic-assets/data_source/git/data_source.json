@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "name": "git",
+  "title": "Git repository",
+  "icon_name": "GitBranch",
+  "description": "A repository as a source. Diffs commits, never walks the tree.",
+  "reflect": [
+    "in-place",
+    "materialize",
+    "vendor"
+  ],
+  "config": {
+    "repo": {
+      "type": "path",
+      "required": true,
+      "label": "Repository",
+      "account_key": true
+    },
+    "branch": {
+      "type": "text",
+      "label": "Branch",
+      "default": "HEAD"
+    }
+  }
+}

@@ -51,6 +51,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.codex.stream_worker import (
     CodexCLIStreamWorker,
 )
 from flow_sdk.builtin.agentic_process.process_hooks import (
+    SUPPORTED_PROCESS_HOOK_EVENTS,
     build_process_hook_snapshot,
     normalize_process_hook_events,
 )
@@ -156,12 +157,18 @@ class CodexDriver:
             "command": render_shell_command(flow_argv, "linux"),
             "commandWindows": render_shell_command(flow_argv, "win32"),
         }
+        # Codex names its events exactly as we do, and ``hooks`` is a TOML
+        # table with one key per event — so each configured event becomes its
+        # own ``-c hooks.<Event>=<toml>`` slot.
         return ProcessHookRuntime(
             config_overrides=(
                 ("features.hooks", True),
-                (
-                    "hooks.UserPromptSubmit",
-                    [{"hooks": [handler]}],
+                *(
+                    (
+                        f"hooks.{event.value}",
+                        [{"hooks": [handler]}],
+                    )
+                    for event in normalized
                 ),
             ),
             bypass_hook_trust=True,
@@ -176,7 +183,7 @@ class CodexDriver:
             raise ValueError(f"Invalid agentic process id: {process_id!r}")
         raw = dict(raw_hook_data)
         event = raw.get("hook_event_name")
-        if event != HookEventType.USER_PROMPT_SUBMIT.value:
+        if event not in {supported.value for supported in SUPPORTED_PROCESS_HOOK_EVENTS}:
             raise ValueError(f"Unsupported Codex process hook event: {event!r}")
         canonical_fields = (
             "hook_event_name",
@@ -187,6 +194,8 @@ class CodexDriver:
             "turn_id",
             "permission_mode",
             "model",
+            "source",
+            "reason",
         )
         hook_data = {key: raw[key] for key in canonical_fields if key in raw}
         hook_data["raw_hook_data"] = raw

@@ -28,6 +28,7 @@ from typing import Optional
 GITHUB = "github"
 ANTHROPIC = "anthropic"
 SLACK = "slack"
+GOOGLE = "google"
 
 
 class OAuthFlowKind(str, Enum):
@@ -152,6 +153,34 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         extra_authorize_params=(("code", "true"),),
         token_shape=TokenShape.CREDENTIAL_DICT,
     ),
+    GOOGLE: LocalOAuthProvider(
+        name=GOOGLE,
+        display_name="Google",
+        user_credentials_name="google_credentials",
+        icon="Google",
+        # Google's "Desktop app" client type is exactly this grant: authorize in
+        # the browser, redirect to a loopback port, exchange with PKCE.
+        kind=OAuthFlowKind.LOOPBACK,
+        # Read-only Drive, which is all `GoogleDriveDriver` asks for. Listed here
+        # AND in the source manifest because this is what the consent screen
+        # requests while the manifest is what the source declares it needs; the
+        # verify path asserts the granted set covers the requested one.
+        scopes=("https://www.googleapis.com/auth/drive.readonly",),
+        endpoints=OAuthEndpoints(
+            authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
+            token_url="https://oauth2.googleapis.com/token",
+        ),
+        # No default: unlike GitHub and Anthropic, this repo has no registered
+        # Google client to fall back on. Set GOOGLE_CLIENT_ID from a Google Cloud
+        # OAuth client of type "Desktop app". Until then `client_id_for` returns
+        # None and the flow reports a missing client instead of half-running.
+        client_id_env="GOOGLE_CLIENT_ID",
+        client_id_default=None,
+        pkce=True,
+        # Google returns access_token + refresh_token + expiry, and the refresh
+        # token is the half that matters — an access token lasts an hour.
+        token_shape=TokenShape.CREDENTIAL_DICT,
+    ),
     SLACK: LocalOAuthProvider(
         name=SLACK,
         display_name="Slack",
@@ -235,3 +264,49 @@ def prefers_hub_flow(name: str) -> bool:
     if local is None:
         return True
     return local.endpoints is None or local.kind == OAuthFlowKind.DEVICE
+
+
+async def token_for(provider: str) -> Optional[str]:
+    """This machine's bearer token for ``provider``, or ``None``.
+
+    Local SOD first, then the hub. That order is not arbitrary: connection
+    sharing copies a hub-held token down, so on a set-up machine it is already
+    local, and the hub covers the window before a desktop has adopted it.
+
+    One copy, because the precedence IS the policy. It lived twice — once in
+    `SlackDriver._token` and once in `GoogleDriveDriver._token` — and a third
+    connector would have copied it again, so a change to the order, or a new
+    fallback tier, would have reached one driver and not the others.
+
+    Absence is the normal case for a provider nobody connected, so neither
+    lookup failing is an error worth raising.
+    """
+    import logging  # noqa: PLC0415
+
+    from flow_sdk.core.oauth.provider_probe import token_from_credential  # noqa: PLC0415
+
+    logger = logging.getLogger(__name__)
+    name = user_credentials_name(provider)
+
+    try:
+        from flow_sdk.builtin.user import User  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_user_credentials  # noqa: PLC0415
+
+        user = await User.get_local()
+        if user is not None and name:
+            token = token_from_credential(await get_user_credentials(user, name, user.id))
+            if token:
+                return token
+    except Exception:  # noqa: BLE001
+        logger.debug("%s: no local credential", provider, exc_info=True)
+
+    try:
+        from flow_sdk.core.oauth.hub_oauth import (  # noqa: PLC0415
+            hub_credential_value,
+            hub_credentials_name_for,
+        )
+
+        return token_from_credential(await hub_credential_value(hub_credentials_name_for(provider)))
+    except Exception:  # noqa: BLE001
+        logger.debug("%s: no hub credential", provider, exc_info=True)
+        return None

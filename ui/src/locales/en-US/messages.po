@@ -166,7 +166,7 @@ msgstr "{0, plural, one {# item} other {# items}}"
 msgid "{0, plural, one {# person} other {# people}}"
 msgstr "{0, plural, one {# person} other {# people}}"
 
-#. placeholder {0}: source.stream_count
+#. placeholder {0}: source.segment_count
 #: src/components/data-sources/DataSourceCard.tsx
 msgid "{0, plural, one {# stream} other {# streams}}"
 msgstr "{0, plural, one {# stream} other {# streams}}"
@@ -201,10 +201,9 @@ msgstr "{0} annotations on this row"
 msgid "{0} attachments"
 msgstr "{0} attachments"
 
-#. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "{0} avatar"
-msgstr "{0} avatar"
+#~ msgid "{0} avatar"
+#~ msgstr "{0} avatar"
 
 #. placeholder {0}: trigger.last_seen_size
 #: src/components/triggers-view/FsopTriggerDetail.tsx
@@ -462,7 +461,7 @@ msgstr "{indexedCount} indexed"
 msgid "{label} docs"
 msgstr "{label} docs"
 
-#: src/components/data-sources/provider-catalog.ts
+#: src/components/data-sources/source-form.ts
 msgid "{label} is required."
 msgstr "{label} is required."
 
@@ -474,7 +473,7 @@ msgstr "{label} records"
 msgid "{latchedReason} Auto-relaunch is paused — Retry to launch again."
 msgstr "{latchedReason} Auto-relaunch is paused — Retry to launch again."
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/agents/AgentAvatar.tsx
 msgid "{name} avatar"
 msgstr "{name} avatar"
 
@@ -680,8 +679,8 @@ msgid "🤖 Prompt - Query AI (Claude Haiku)"
 msgstr "🤖 Prompt - Query AI (Claude Haiku)"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "0"
-msgstr "0"
+#~ msgid "0"
+#~ msgstr "0"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
@@ -758,8 +757,8 @@ msgid "A fresh shell needs to be allocated. (Backend action coming — for now R
 msgstr "A fresh shell needs to be allocated. (Backend action coming — for now Restart will retry.)"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "A hosted mailbox over its HTTP API."
-msgstr "A hosted mailbox over its HTTP API."
+#~ msgid "A hosted mailbox over its HTTP API."
+#~ msgstr "A hosted mailbox over its HTTP API."
 
 #: src/components/conversation/ConversationView.tsx
 msgid "A live session is already running in this conversation"
@@ -772,6 +771,10 @@ msgstr "A project with that name exists"
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "A source is one remote account or feed set. The poller syncs it on the heartbeat."
 msgstr "A source is one remote account or feed set. The poller syncs it on the heartbeat."
+
+#: src/components/entity-execution-panel/execution-message/execution-message.tsx
+msgid "About {name}"
+msgstr "About {name}"
 
 #: src/components/triggers-view/TriggersList.tsx
 msgid "About FSOp triggers"
@@ -1131,21 +1134,19 @@ msgstr "Advanced"
 msgid "Advanced mode"
 msgstr "Advanced mode"
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "agent"
 msgstr "agent"
 
-#: src/components/data-sources/provider-catalog.ts
 #: src/components/quick-create/registry.ts
 #: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "Agent"
 msgstr "Agent"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Agent avatar"
-msgstr "Agent avatar"
+#~ msgid "Agent avatar"
+#~ msgstr "Agent avatar"
 
 #: src/components/quick-create/registry.ts
 msgid "Agent created"
@@ -1173,8 +1174,8 @@ msgid "Agent Trace"
 msgstr "Agent Trace"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Agent transport"
-msgstr "Agent transport"
+#~ msgid "Agent transport"
+#~ msgstr "Agent transport"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "agent-name"
@@ -1194,8 +1195,8 @@ msgid "AgenticProcess ID this prompt annotation is linked to"
 msgstr "AgenticProcess ID this prompt annotation is linked to"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "AgentMail"
-msgstr "AgentMail"
+#~ msgid "AgentMail"
+#~ msgstr "AgentMail"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "agents"
@@ -1426,8 +1427,8 @@ msgid "Always Thinking Enabled"
 msgstr "Always Thinking Enabled"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "am_…"
-msgstr "am_…"
+#~ msgid "am_…"
+#~ msgstr "am_…"
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "An <0>orphan</0> is a row in the search index whose source file is gone from disk. The indexer detects them on every run and marks them with <1>orphan_since</1>. The file is already gone; sweeping just removes the stale row from search so results stay clean."
@@ -1570,16 +1571,16 @@ msgstr "Anyone you share with can open, use and delete this sandbox."
 
 #: src/components/data-sources/provider-catalog.ts
 #: src/components/data-sources/provider-catalog.ts
-msgid "API base URL"
-msgstr "API base URL"
+#~ msgid "API base URL"
+#~ msgstr "API base URL"
 
 #: src/i18n/type-labels.ts
 msgid "Api Key"
 msgstr "Api Key"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "API key"
-msgstr "API key"
+#~ msgid "API key"
+#~ msgstr "API key"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "API Key"
@@ -2283,8 +2284,8 @@ msgid "By scope"
 msgstr "By scope"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "C0123456789"
-msgstr "C0123456789"
+#~ msgid "C0123456789"
+#~ msgstr "C0123456789"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "cache hit rate"
@@ -2537,8 +2538,8 @@ msgid "Changes ({0})"
 msgstr "Changes ({0})"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Channel IDs"
-msgstr "Channel IDs"
+#~ msgid "Channel IDs"
+#~ msgstr "Channel IDs"
 
 #: src/components/lens-viewer/shared/ViewModeToggle.tsx
 #: src/i18n/pref-labels.ts
@@ -2546,6 +2547,7 @@ msgstr "Channel IDs"
 msgid "Chat"
 msgstr "Chat"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Chat history"
 msgstr "Chat history"
@@ -2561,6 +2563,10 @@ msgstr "Chat tools"
 #: src/components/lens-viewer/shared/ViewModeToggle.tsx
 msgid "Chat view"
 msgstr "Chat view"
+
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+msgid "Chat with this deployed agent"
+msgstr "Chat with this deployed agent"
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
@@ -2684,7 +2690,6 @@ msgid "classification.json"
 msgstr "classification.json"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-#: src/components/data-sources/provider-catalog.ts
 msgid "claude"
 msgstr "claude"
 
@@ -3263,8 +3268,8 @@ msgid "coming soon"
 msgstr "coming soon"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Comma separated: story, comment, job, poll. Defaults to story."
-msgstr "Comma separated: story, comment, job, poll. Defaults to story."
+#~ msgid "Comma separated: story, comment, job, poll. Defaults to story."
+#~ msgstr "Comma separated: story, comment, job, poll. Defaults to story."
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
@@ -3508,8 +3513,8 @@ msgid "Connections"
 msgstr "Connections"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Connector"
-msgstr "Connector"
+#~ msgid "Connector"
+#~ msgstr "Connector"
 
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
@@ -4119,7 +4124,7 @@ msgid "Could not upload avatar"
 msgstr "Could not upload avatar"
 
 #. placeholder {0}: agent.displayName
-#: src/components/assets/editor/agent-profile/use-agent.ts
+#: src/components/agents/use-agent-launcher.ts
 msgid "Could not use {0}"
 msgstr "Could not use {0}"
 
@@ -4363,6 +4368,7 @@ msgid "created"
 msgstr "created"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
+#: src/components/entity-execution-panel/TurnFilesChips.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Created"
 msgstr "Created"
@@ -4905,6 +4911,10 @@ msgstr "Delete this conversation"
 msgid "Delete this data source?"
 msgstr "Delete this data source?"
 
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+msgid "Delete this deployment"
+msgstr "Delete this deployment"
+
 #: src/components/account/system-diagnoses.tsx
 msgid "Delete this diagnosis? This cannot be undone."
 msgstr "Delete this diagnosis? This cannot be undone."
@@ -4971,9 +4981,17 @@ msgstr "Deploy to cloud"
 msgid "Deployed"
 msgstr "Deployed"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+msgid "Deployed agent"
+msgstr "Deployed agent"
+
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deployed without its definition"
 msgstr "Deployed without its definition"
+
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+msgid "Deployment deleted"
+msgstr "Deployment deleted"
 
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "Deployment details"
@@ -4983,6 +5001,7 @@ msgstr "Deployment details"
 msgid "Deployment WorldView"
 msgstr "Deployment WorldView"
 
+#: src/components/graph-view/ui/PropertyPanel.tsx
 #: src/i18n/type-labels.ts
 msgid "Deployments"
 msgstr "Deployments"
@@ -5663,6 +5682,10 @@ msgstr "Edit Trigger"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Edit your draft…"
 msgstr "Edit your draft…"
+
+#: src/components/entity-execution-panel/TurnFilesChips.tsx
+msgid "Edited"
+msgstr "Edited"
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "Edited items could not be loaded. Chat sessions are still shown."
@@ -6603,8 +6626,8 @@ msgid "Feed Entry"
 msgstr "Feed Entry"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Feed URLs"
-msgstr "Feed URLs"
+#~ msgid "Feed URLs"
+#~ msgstr "Feed URLs"
 
 #: src/components/floating-chat/toolEventDescriptor.ts
 msgid "Fetch"
@@ -7275,8 +7298,8 @@ msgid "Global Commands (~/.claude/commands/)"
 msgstr "Global Commands (~/.claude/commands/)"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "gmail"
-msgstr "gmail"
+#~ msgid "gmail"
+#~ msgstr "gmail"
 
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/spec-editor/SpecEditor.tsx
@@ -7401,8 +7424,8 @@ msgid "Guides"
 msgstr "Guides"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Hacker News"
-msgstr "Hacker News"
+#~ msgid "Hacker News"
+#~ msgstr "Hacker News"
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Hand it over"
@@ -7422,8 +7445,8 @@ msgid "Handed over to {0}"
 msgstr "Handed over to {0}"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Harness"
-msgstr "Harness"
+#~ msgid "Harness"
+#~ msgstr "Harness"
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Harness is required"
@@ -7782,8 +7805,8 @@ msgid "HTTPS proxy URL for network requests"
 msgstr "HTTPS proxy URL for network requests"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "https://example.com/feed.xml"
-msgstr "https://example.com/feed.xml"
+#~ msgid "https://example.com/feed.xml"
+#~ msgstr "https://example.com/feed.xml"
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "https://github.com/owner/repo"
@@ -7980,7 +8003,6 @@ msgid "Inactive"
 msgstr "Inactive"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-#: src/components/data-sources/provider-catalog.ts
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/types/ViewType.ts
@@ -7988,8 +8010,8 @@ msgid "Inbox"
 msgstr "Inbox"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "INBOX"
-msgstr "INBOX"
+#~ msgid "INBOX"
+#~ msgstr "INBOX"
 
 #: src/i18n/type-labels.ts
 msgid "Inbox Manager"
@@ -8339,8 +8361,8 @@ msgid "Italic"
 msgstr "Italic"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Item types"
-msgstr "Item types"
+#~ msgid "Item types"
+#~ msgstr "Item types"
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Its contents look like binary data (for example an image), so it can't be shown in the editor."
@@ -9312,8 +9334,8 @@ msgid "Matcher Pattern (optional)"
 msgstr "Matcher Pattern (optional)"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Max items per run"
-msgstr "Max items per run"
+#~ msgid "Max items per run"
+#~ msgstr "Max items per run"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Max Memory"
@@ -9488,6 +9510,10 @@ msgstr "Message the agent"
 msgid "Message the agent…"
 msgstr "Message the agent…"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+msgid "Message this deployed agent…"
+msgstr "Message this deployed agent…"
+
 #: src/i18n/type-labels.ts
 msgid "Message Thread"
 msgstr "Message Thread"
@@ -9523,8 +9549,8 @@ msgid "Minimum 60 — the heartbeat only ticks once a minute."
 msgstr "Minimum 60 — the heartbeat only ticks once a minute."
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Minimum score"
-msgstr "Minimum score"
+#~ msgid "Minimum score"
+#~ msgstr "Minimum score"
 
 #: src/components/assets/editor/agent-trace/simple/report-language.ts
 msgid "Minor"
@@ -9787,6 +9813,7 @@ msgstr "New bookmark folder"
 msgid "New build"
 msgstr "New build"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "New chat"
 msgstr "New chat"
@@ -10130,6 +10157,10 @@ msgstr "No deployments observed yet"
 msgid "No description provided."
 msgstr "No description provided."
 
+#: src/components/agents/AgentIntroCard.tsx
+msgid "No description yet."
+msgstr "No description yet."
+
 #: src/pages/discover-page/discover-page.tsx
 msgid "No description."
 msgstr "No description."
@@ -10374,6 +10405,7 @@ msgstr "No page exists with this name yet."
 msgid "No past builds"
 msgstr "No past builds"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "No past chats"
 msgstr "No past chats"
@@ -11073,16 +11105,16 @@ msgid "Onboarding reset"
 msgstr "Onboarding reset"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "One per line. Each URL becomes its own stream with its own cursor and health."
-msgstr "One per line. Each URL becomes its own stream with its own cursor and health."
+#~ msgid "One per line. Each URL becomes its own stream with its own cursor and health."
+#~ msgstr "One per line. Each URL becomes its own stream with its own cursor and health."
 
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records you can search, read and build flows on."
 msgstr "One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records you can search, read and build flows on."
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "One stream per feed URL. No credentials — the simplest source there is."
-msgstr "One stream per feed URL. No credentials — the simplest source there is."
+#~ msgid "One stream per feed URL. No credentials — the simplest source there is."
+#~ msgstr "One stream per feed URL. No credentials — the simplest source there is."
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Only a sandbox's owner can start one. If you share it as it is, they'll get the link but won't be able to open it — they'll be told to ask you to start it first."
@@ -11114,6 +11146,11 @@ msgstr "Open"
 msgid "Open .env.local at this line"
 msgstr "Open .env.local at this line"
 
+#. placeholder {0}: file.path
+#: src/components/entity-execution-panel/TurnFilesChips.tsx
+msgid "Open {0}"
+msgstr "Open {0}"
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Open {label}"
 msgstr "Open {label}"
@@ -11121,6 +11158,10 @@ msgstr "Open {label}"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Open {name}"
 msgstr "Open {name}"
+
+#: src/components/agents/AgentIntroCard.tsx
+msgid "Open {title}"
+msgstr "Open {title}"
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Open {title} install page"
@@ -11154,6 +11195,10 @@ msgstr "Open a project to see its assets."
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "Open address book"
 msgstr "Open address book"
+
+#: src/components/agents/AgentIntroCard.tsx
+msgid "Open agent"
+msgstr "Open agent"
 
 #: src/components/terminal/HistoryModal.tsx
 msgid "Open all"
@@ -11737,6 +11782,7 @@ msgstr "Past analyses"
 msgid "Past builds"
 msgstr "Past builds"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Past chats"
 msgstr "Past chats"
@@ -12701,8 +12747,8 @@ msgid "Re-scan now"
 msgstr "Re-scan now"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Reaches a channel through a local agent harness — how Gmail is read today."
-msgstr "Reaches a channel through a local agent harness — how Gmail is read today."
+#~ msgid "Reaches a channel through a local agent harness — how Gmail is read today."
+#~ msgstr "Reaches a channel through a local agent harness — how Gmail is read today."
 
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -13601,8 +13647,8 @@ msgid "Row time range"
 msgstr "Row time range"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "RSS / Atom"
-msgstr "RSS / Atom"
+#~ msgid "RSS / Atom"
+#~ msgstr "RSS / Atom"
 
 #: src/components/events/EventFeed.tsx
 msgid "rule: {ruleFilterName}"
@@ -14407,6 +14453,10 @@ msgstr "Send a message first — fork requires conversation history"
 msgid "Send a message first — no transcript yet"
 msgstr "Send a message first — no transcript yet"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+msgid "Send a message to this deployed agent."
+msgstr "Send a message to this deployed agent."
+
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Send a PROMPT to the recipient asking for a status summary"
 msgstr "Send a PROMPT to the recipient asking for a status summary"
@@ -14951,6 +15001,10 @@ msgstr "Show system projects"
 msgid "Show system skills"
 msgstr "Show system skills"
 
+#: src/components/entity-execution-panel/TurnFilesChips.tsx
+msgid "Show the other files this turn touched"
+msgstr "Show the other files this turn touched"
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Show timing info for each turn"
 msgstr "Show timing info for each turn"
@@ -15232,8 +15286,8 @@ msgid "Skip Permissions Warmup"
 msgstr "Skip Permissions Warmup"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Slack"
-msgstr "Slack"
+#~ msgid "Slack"
+#~ msgstr "Slack"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Slower. To wipe rows first, use Clear Index then Full."
@@ -15539,7 +15593,7 @@ msgstr "Starting login…"
 msgid "Starting scan…"
 msgstr "Starting scan…"
 
-#: src/components/assets/editor/agent-profile/use-agent.ts
+#: src/components/agents/use-agent-launcher.ts
 msgid "Starting the session failed."
 msgstr "Starting the session failed."
 
@@ -15664,8 +15718,8 @@ msgid "stored →"
 msgstr "stored →"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Stored in this source’s config on this machine, including its metadata shadow on disk."
-msgstr "Stored in this source’s config on this machine, including its metadata shadow on disk."
+#~ msgid "Stored in this source’s config on this machine, including its metadata shadow on disk."
+#~ msgstr "Stored in this source’s config on this machine, including its metadata shadow on disk."
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -15673,12 +15727,12 @@ msgid "stored line"
 msgstr "stored line"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "story"
-msgstr "story"
+#~ msgid "story"
+#~ msgstr "story"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Streams"
-msgstr "Streams"
+#~ msgid "Streams"
+#~ msgstr "Streams"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 #: src/components/organization/organization-page.tsx
@@ -15710,8 +15764,8 @@ msgid "Sub-team name…"
 msgstr "Sub-team name…"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "Subagent"
-msgstr "Subagent"
+#~ msgid "Subagent"
+#~ msgstr "Subagent"
 
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
@@ -16248,8 +16302,8 @@ msgid "The provider rejected the stored token."
 msgstr "The provider rejected the stored token."
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "The public firehose, filtered. No credentials."
-msgstr "The public firehose, filtered. No credentials."
+#~ msgid "The public firehose, filtered. No credentials."
+#~ msgstr "The public firehose, filtered. No credentials."
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "The recipient will see a PROMPT to approve."
@@ -16312,8 +16366,8 @@ msgid "The wizard reported an error."
 msgstr "The wizard reported an error."
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "The worker CLI that runs the fetch. Without a launchable one the source parks on config_error."
-msgstr "The worker CLI that runs the fetch. Without a launchable one the source parks on config_error."
+#~ msgid "The worker CLI that runs the fetch. Without a launchable one the source parks on config_error."
+#~ msgstr "The worker CLI that runs the fetch. Without a launchable one the source parks on config_error."
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The worker exited immediately after launch, so auto-relaunch is paused. Retry to launch it again."
@@ -16455,8 +16509,8 @@ msgid "This is its first start, so it takes a few minutes."
 msgstr "This is its first start, so it takes a few minutes."
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "This is the CHANNEL, and half of every thread key. Leaving it empty forks every thread in the mailbox — permanently."
-msgstr "This is the CHANNEL, and half of every thread key. Leaving it empty forks every thread in the mailbox — permanently."
+#~ msgid "This is the CHANNEL, and half of every thread key. Leaving it empty forks every thread in the mailbox — permanently."
+#~ msgstr "This is the CHANNEL, and half of every thread key. Leaving it empty forks every thread in the mailbox — permanently."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This link does not point at a sandbox."
@@ -17121,7 +17175,7 @@ msgid "Unknown Lens Type"
 msgstr "Unknown Lens Type"
 
 #. placeholder {0}: draft.provider
-#: src/components/data-sources/provider-catalog.ts
+#: src/components/data-sources/source-form.ts
 msgid "Unknown provider {0}."
 msgstr "Unknown provider {0}."
 
@@ -18079,8 +18133,8 @@ msgid "You've been invited to a conversation"
 msgstr "You've been invited to a conversation"
 
 #: src/components/data-sources/provider-catalog.ts
-msgid "you@agentmail.to"
-msgstr "you@agentmail.to"
+#~ msgid "you@agentmail.to"
+#~ msgstr "you@agentmail.to"
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Your API key for authenticating API requests to FlowPad"
