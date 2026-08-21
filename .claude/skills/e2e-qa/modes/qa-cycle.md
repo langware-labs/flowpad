@@ -47,7 +47,7 @@ The loop keeps the cycle driving forward unattended; it naturally ends when the 
 - **Only ever kill/clear instances YOU launched.** You may freely `kill` + `launch` *your own* instance to recover it, and clear *its* DB. Track which instances the cycle started.
 - **At the end of every phase that launched an instance, and at the end of the cycle, kill the instances you launched** (`scripts/instance_ctl.sh kill <name>`). Leaving them running is what accumulates the stale-instance load that hurts the next run. Lifecycle is your responsibility.
 - **If the host is loaded by things you did NOT launch** — the user's main backend, their live `claude`/agentic sessions, GUI apps, OS daemons — that load is **not yours to kill.** Do not touch it. Record it as a host-load caveat on the affected timing verdicts (or `flag` the phase as host-bound), and proceed. A slow timing verdict caused by the user's own workload is reported honestly, never "fixed" by killing their processes.
-- **For browser-phase instances (Phases 11–12), verify authentication before running data-dependent scenarios.** A dedicated instance used for Phases 11/12 must be authenticated (hub up → cloud login succeeded) before its data-dependent browser failures can be trusted as regressions. Launch the instance, then verify: `B=$(curl -s http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap); echo "$B" | grep -q '"projects"' && ! echo "$B" | grep -q '"projects":\[\]'`. If bootstrap returns empty projects (unauthenticated instance), the hub is either down or cloud login failed — coordinate with Phase 9's hub bring-up. Data-independent test categories may run on unauthenticated instances; data/session/auth-dependent failures are environmental artifacts, not real bugs, and Phase 12 must not chase them. Flag the phase instead (reason: instance unauthenticated, hub dependency unmet).
+- **For browser-phase instances (Phases 11–12), verify authentication before running data-dependent scenarios.** A dedicated instance used for Phases 11/12 must be authenticated (hub up → cloud login succeeded) before its data-dependent browser failures can be trusted as regressions. Launch the instance, then verify against ITS port (`QA_BE=$(uv run flow instance ctl port <INSTANCE> --role backend)`, never `${LOCAL_SERVER_PORT}`): `B=$(curl -s http://localhost:${QA_BE}/api/v1/graph/bootstrap); echo "$B" | grep -q '"projects"' && ! echo "$B" | grep -q '"projects":\[\]'`. If bootstrap returns empty projects (unauthenticated instance), the hub is either down or cloud login failed — coordinate with Phase 9's hub bring-up. Data-independent test categories may run on unauthenticated instances; data/session/auth-dependent failures are environmental artifacts, not real bugs, and Phase 12 must not chase them. Flag the phase instead (reason: instance unauthenticated, hub dependency unmet).
 
 ```bash
 # correct pattern: a dedicated instance you own, cleaned up after
@@ -77,7 +77,8 @@ Never raise a timeout to mask host-load slowness, and never kill a process you d
   - No skipped failures allowed unless the user pre-approved skipping a specific test in the invocation. **Before reporting a phase complete, record an individual disposition for every failure** (fixed with evidence; flagged-with-reason in 1–10; BLOCKED-with-red-file in 11–12; or test-issue diagnosed) — a cluster-level classification ("N failures are all <class>") is never a verdict. Grouping by signature orders the work; it never substitutes for examining each member, because deterministic bugs hide behind plausible cluster narratives.
 - **On failure**: debug the failing test(s) one by one using the Debug Mode flow (see `modes/debug.md`). Do NOT re-run the full suite after every individual fix — fix all failures first, then re-run the phase once as a final verification.
 - **Never skip** a failing test without explicit user instruction given at invocation time. "It was already failing" is not a reason to move on. Mid-cycle, the only alternative to fixing is `flagged` (phases 1–10) or a BLOCKED phase (phases 11–12) — never a silent move-on.
-- **Backend/infra ownership**: For phases 2, 3, 5, and 7–12, you own the machine. You may restart the backend server (`uv run -m flow_sdk.server.run`), the frontend, named instances (`scripts/instance_ctl.sh`), and the local hub as needed between runs. **Before each backend-owning phase starts**, verify the backend's health by polling `/api/v1/graph/bootstrap` — confirm it returns a valid, non-empty payload with populated `projects` (same machine-readable check used in Phase 11/12 DB clears). If bootstrap returns empty, errors, or indicates the DB is implausibly small vs. recent backups, stop immediately, restore from the most recent backup, and re-verify bootstrap before proceeding — corruption undetected between phases poisons every verdict recorded against it.
+- **Backend/infra ownership**: every backend phase (2, 3, 5, 7–12) runs against an instance THIS CYCLE LAUNCHED — never the user's dev backend at `${LOCAL_SERVER_PORT}`. Within your own instances you may restart, clear and relaunch freely (`scripts/instance_ctl.sh`, `flow instance reset`). You may NOT restart, instrument, clear or otherwise mutate the user's backend, not even to reproduce a failure: **if a symptom appears only on the user's instance, clone the conditions onto an instance you own — do not mutate theirs.** (2026-08-20: this bullet previously read "you own the machine … restart the backend as needed", which contradicts Step 0.0; it was read as a licence, the user's backend was killed to reload instrumentation, and it stayed down until noticed.)
+- **Before each backend phase starts**, verify YOUR instance's health by polling its `/api/v1/graph/bootstrap` until it returns a valid payload containing `types`. (Do NOT gate on non-empty `projects`: a freshly launched instance legitimately reports `projects: []` until it is cloud-logged-in, and the user's own backend reports its projects only for the logged-in user — neither is a corruption signal.) A backend that never becomes ready is an infra failure for that phase, not a verdict.
 - **No flaky tolerance**: `retries` stays 0 everywhere. A test that passes on re-run with no code change is not green — it is evidence of a real race and is flag-worthy. Never add retries, reruns, or `@flaky` markers, and never raise any timeout (see CLAUDE.md non-negotiables).
 - **Integrity & resilience**: every verdict, destructive op, infra launch, and anomaly response is governed by SKILL.md, "Run Integrity & Resilience" — machine-read verdicts, one writer per instance, daemonized services, durable cycle state, circuit breaker.
 
@@ -94,14 +95,18 @@ python -m pytest tests/unit/ -v
 
 ## Phase 2 — pytest API tests (backend required)
 
-```bash
-# Ensure backend is running at localhost:${LOCAL_SERVER_PORT}
-uv run -m flow_sdk.server.run &   # restart if needed
+> **Target (non-negotiable): a cycle-owned instance, never `${LOCAL_SERVER_PORT}`.** Launch or reuse
+> one you own, then pass BOTH its realm and its port — the suite resolves its backend from them:
+> ```bash
+> uv run flow instance ctl is-up qa-cycle || scripts/instance_ctl.sh launch qa-cycle
+> QA_BE=$(uv run flow instance ctl port qa-cycle --role backend)
+> [ -n "$QA_BE" ] || { echo "FATAL: no live backend port for qa-cycle"; exit 1; }
+> ```
 
-python -m pytest tests/api/ -v
+```bash
+FLOW_INSTANCE=qa-cycle LOCAL_SERVER_PORT=${QA_BE} python -m pytest tests/api/ -v
 ```
 
-- You own the backend. Restart it if unhealthy before running.
 - **Gate**: all tests pass → proceed to Phase 3
 
 ## Phase 3 — pytest long tests (backend required)
@@ -142,12 +147,25 @@ cd ui && npm run test:vitest:unit
 
 ## Phase 5 — vitest API tests (backend required)
 
+> **Target (non-negotiable): a cycle-owned instance, never `${LOCAL_SERVER_PORT}`.** Launch or reuse
+> one you own, then pass BOTH its realm and its port — the suite resolves its backend from them:
+> ```bash
+> uv run flow instance ctl is-up qa-cycle || scripts/instance_ctl.sh launch qa-cycle
+> QA_BE=$(uv run flow instance ctl port qa-cycle --role backend)
+> [ -n "$QA_BE" ] || { echo "FATAL: no live backend port for qa-cycle"; exit 1; }
+> ```
+
 ```bash
-# Ensure backend is running at localhost:${LOCAL_SERVER_PORT}
-cd ui && npm run test:vitest:api
+cd ui && FLOW_INSTANCE=qa-cycle LOCAL_SERVER_PORT=${QA_BE} npm run test:vitest:api
 ```
 
-- Backend must be running (you own it — restart if needed).
+- **`FLOW_INSTANCE` is REQUIRED, not decoration.** `tests/api/setup_project_stale_memory.test.ts`
+  refuses to run without it ("it creates real projects, and `.env.local` is never a live-test
+  fallback") — that refusal is the tier telling you the target is wrong.
+- **The npm script carries `--bail 1`.** A bailed run reports the remaining files as *skipped*,
+  which reads like coverage but is an artifact — take the phase verdict from a NO-BAIL run
+  (`npx vitest run --project api`). If that exceeds the foreground budget, split it with
+  `--shard=1/4 … 4/4` (batching, NOT a timeout change) rather than backgrounding it.
 - **Gate**: all tests pass → proceed to Phase 6
 
 ## Phase 6 — vitest react tests
@@ -160,27 +178,39 @@ cd ui && npm run test:vitest:react
 
 ## Phase 7 — vitest long tests (backend required)
 
+> **Target (non-negotiable): a cycle-owned instance, never `${LOCAL_SERVER_PORT}`.** Launch or reuse
+> one you own, then pass BOTH its realm and its port — the suite resolves its backend from them:
+> ```bash
+> uv run flow instance ctl is-up qa-cycle || scripts/instance_ctl.sh launch qa-cycle
+> QA_BE=$(uv run flow instance ctl port qa-cycle --role backend)
+> [ -n "$QA_BE" ] || { echo "FATAL: no live backend port for qa-cycle"; exit 1; }
+> ```
+
 ```bash
-# Ensure backend is running at localhost:${LOCAL_SERVER_PORT}
-cd ui && npm run test:vitest:long
+cd ui && FLOW_INSTANCE=qa-cycle LOCAL_SERVER_PORT=${QA_BE} npm run test:vitest:long
 ```
 
-- Backend must be running (you own it — restart if needed).
 - **Gate**: all tests pass → proceed to Phase 8
 
 ## Phase 8 — vitest headless tests (backend required)
 
+> **Target (non-negotiable): a cycle-owned instance, never `${LOCAL_SERVER_PORT}`.** Launch or reuse
+> one you own, then pass BOTH its realm and its port — the suite resolves its backend from them:
+> ```bash
+> uv run flow instance ctl is-up qa-cycle || scripts/instance_ctl.sh launch qa-cycle
+> QA_BE=$(uv run flow instance ctl port qa-cycle --role backend)
+> [ -n "$QA_BE" ] || { echo "FATAL: no live backend port for qa-cycle"; exit 1; }
+> ```
+
 ```bash
-# Ensure backend is running at localhost:${LOCAL_SERVER_PORT}
-cd ui && npm run test:vitest:headless
+cd ui && FLOW_INSTANCE=qa-cycle LOCAL_SERVER_PORT=${QA_BE} npm run test:vitest:headless
 ```
 
 - Headless = the full app booted in jsdom + RTL against the LIVE backend, no mocks
   (the in-process E2E tier; see `ui/tests/headless/CLAUDE.md`). Single backend only — no
   hub/instances needed.
-- Backend must be running (you own it — restart if needed). The suite self-skips if the
-  backend is unreachable; a skip here is NOT a pass — bring the backend up and re-run
-  (zero infra-skips in a PASS).
+- The suite self-skips if the backend is unreachable; a skip here is NOT a pass — bring YOUR
+  instance up and re-run (zero infra-skips in a PASS).
 - To ADD coverage (e.g. a regression that needs the full app + a real backend but no
   browser), author a `*.test.tsx` here using the `setupLiveBackend`/`bootApp` harness —
   the recipe + tier rules are in `ui/tests/headless/CLAUDE.md` ("Authoring a new headless test").
@@ -264,14 +294,21 @@ The frontend reads `preferences.json` fresh via its VFS path at each app boot, s
    - The backend degradation is **cumulative across categories** (leaked PTY/claude children accumulate; `desktop-db/clear` never resets the *process*, so after ~4-5 heavy categories it starts timing out and mass-fails). A **full `flow instance reset` at the START of each category** flushes that accumulation — a fresh, non-degraded backend per category.
    - But a **cold-booted backend can't surface warm-state-dependent tests** (e.g. an asset picker's self-seeded agent won't appear in the tree on a just-restarted backend — proven: `assets/agent_execution_asset_picker` 8/8 after `desktop-db/clear` vs 9/9 FAIL right after a reset). So **within a category, use `desktop-db/clear` per file** (fresh DB, backend stays warm) — NOT another reset.
    ```bash
+   # --- resolve YOUR instance's port ONCE. `desktop-db/clear` WIPES the database it
+   # --- reaches: ${LOCAL_SERVER_PORT} is the USER'S dev backend, so it must never
+   # --- appear in these commands. Resolve the owned instance and fail closed.
+   QA_BE=$(uv run flow instance ctl port <INSTANCE> --role backend)
+   [ -n "$QA_BE" ] || { echo "FATAL: no live backend port for <INSTANCE> — refusing to clear"; exit 1; }
+   [ "$QA_BE" != "${LOCAL_SERVER_PORT}" ] || { echo "FATAL: resolved the user's backend — refusing to clear"; exit 1; }
+
    # --- once at the START of each category (fresh, warm backend) ---
    if ! uv run flow instance reset <INSTANCE> --keep-keychain --json | tee /dev/stderr | grep -q '"ready": true'; then
      echo "category reset not ready — aborting category"; exit 1
    fi
    # --- then, before EACH .md.ts file in the category ---
-   CLR=$(curl -s -X POST http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/compute_node/@local/desktop-db/clear)
+   CLR=$(curl -s -X POST http://localhost:${QA_BE}/api/v1/graph/compute_node/@local/desktop-db/clear)
    echo "$CLR" | grep -q '"backup_path"' || { echo "db clear failed: $CLR"; exit 1; }
-   for i in {1..30}; do curl -s http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap 2>/dev/null | grep -q '"types"' && break; sleep 1; done
+   for i in {1..30}; do curl -s http://localhost:${QA_BE}/api/v1/graph/bootstrap 2>/dev/null | grep -q '"types"' && break; sleep 1; done
 
    cd ui && VITE_PORT=${VITE_PORT} \
      PLAYWRIGHT_JSON_OUTPUT_NAME=<abs-results-dir>/<timestamp>/phase11--<category>--<file>.json \
@@ -309,7 +346,7 @@ Re-run **11a** end to end. **Phase 11 passes only when the manager's own re-run 
 
 Phase 11 now owns every failing `.md.ts`. Phase 12's sole remaining job is **specs with no executable test**: turn each `.md` that has no sibling `.md.ts` into a passing `.md.ts`, so Playwright coverage grows every cycle and a written spec can never sit un-executed. Team-based, full methodology — Run Mode steps 1–12 (see `modes/run.md`), Debug Mode lifecycle (see `modes/debug.md`), up to 3 qa-testers with the per-test tab protocol.
 
-**PREREQUISITE: Instance authentication (see Step 0.4).** Before running any Phase 12 scenario against a dedicated instance, verify the instance is authenticated: `B=$(curl -s http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap); echo "$B" | grep -q '"projects"' && ! echo "$B" | grep -q '"projects":\[\]'`. If bootstrap returns empty projects, the instance has no user-scoped data — hub is down or cloud login failed. Halt the phase and bring the hub/auth up before proceeding (reason: cannot run data-dependent browser scenarios without authenticated user data). Do not run scenarios against an unauthenticated instance; failures will be environmental artifacts, not regressions.
+**PREREQUISITE: Instance authentication (see Step 0.4).** Before running any Phase 12 scenario against a dedicated instance, verify the instance is authenticated against ITS port (never `${LOCAL_SERVER_PORT}`): `B=$(curl -s http://localhost:${QA_BE}/api/v1/graph/bootstrap); echo "$B" | grep -q '"projects"' && ! echo "$B" | grep -q '"projects":\[\]'`. If bootstrap returns empty projects, the instance has no user-scoped data — hub is down or cloud login failed. Halt the phase and bring the hub/auth up before proceeding (reason: cannot run data-dependent browser scenarios without authenticated user data). Do not run scenarios against an unauthenticated instance; failures will be environmental artifacts, not regressions.
 
 ### Coverage detection — filesystem diff (the authoritative orphan source)
 
@@ -337,9 +374,15 @@ That list IS Phase 12's complete scope. (A `.md.ts` with no `.md` is fine — Ph
 
 - **Once before the phase** (and any time the backend has degraded), `flow instance reset <INSTANCE> --keep-keychain` for a fresh, non-degraded, warm backend. **Then before each scenario**, `desktop-db/clear` for a fresh DB WITHOUT restarting the backend (a cold backend can't surface warm-state-dependent scenarios — see Phase 11 11a):
   ```bash
-  CLR=$(curl -s -X POST http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/compute_node/@local/desktop-db/clear)
+  # Same guard as 11a: this WIPES the database it reaches, and ${LOCAL_SERVER_PORT}
+  # is the USER'S backend. Resolve the owned instance and fail closed.
+  QA_BE=$(uv run flow instance ctl port <INSTANCE> --role backend)
+  [ -n "$QA_BE" ] || { echo "FATAL: no live backend port for <INSTANCE> — refusing to clear"; exit 1; }
+  [ "$QA_BE" != "${LOCAL_SERVER_PORT}" ] || { echo "FATAL: resolved the user's backend — refusing to clear"; exit 1; }
+
+  CLR=$(curl -s -X POST http://localhost:${QA_BE}/api/v1/graph/compute_node/@local/desktop-db/clear)
   echo "$CLR" | grep -q '"backup_path"' || { echo "db clear failed: $CLR"; exit 1; }
-  for i in {1..30}; do curl -s http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap 2>/dev/null | grep -q '"types"' && break; sleep 1; done
+  for i in {1..30}; do curl -s http://localhost:${QA_BE}/api/v1/graph/bootstrap 2>/dev/null | grep -q '"types"' && break; sleep 1; done
   ```
   Data-dependent scenarios must self-seed via API + `fs-records/index` after the clear (the DB starts empty; the reset re-seeds only system projects).
 - A scenario's task is complete only when all three sub-goals hold (`.md` ✓ AND a newly-authored `.md.ts` ✓ stable).
