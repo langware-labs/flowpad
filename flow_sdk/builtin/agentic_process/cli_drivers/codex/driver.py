@@ -52,6 +52,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.codex.stream_worker import (
 )
 from flow_sdk.builtin.agentic_process.process_hooks import (
     SUPPORTED_PROCESS_HOOK_EVENTS,
+    build_canonical_hook_data,
     build_process_hook_snapshot,
     normalize_process_hook_events,
 )
@@ -72,6 +73,20 @@ if TYPE_CHECKING:
     from flow_sdk.responses.response import ApiResponse
 
 logger = logging.getLogger(__name__)
+
+# Codex surfaces turn/permission/model context the other vendors do not.
+_CANONICAL_FIELDS = (
+    "hook_event_name",
+    "prompt",
+    "session_id",
+    "cwd",
+    "transcript_path",
+    "turn_id",
+    "permission_mode",
+    "model",
+    "source",
+    "reason",
+)
 
 
 class CodexDriver:
@@ -158,8 +173,7 @@ class CodexDriver:
             "commandWindows": render_shell_command(flow_argv, "win32"),
         }
         # Codex names its events exactly as we do, and ``hooks`` is a TOML
-        # table with one key per event — so each configured event becomes its
-        # own ``-c hooks.<Event>=<toml>`` slot.
+        # table with one key per event.
         return ProcessHookRuntime(
             config_overrides=(
                 ("features.hooks", True),
@@ -179,27 +193,10 @@ class CodexDriver:
         process_id: str,
         raw_hook_data: dict[str, Any],
     ) -> AgentHookData:
-        if not is_valid_entity_id(process_id):
-            raise ValueError(f"Invalid agentic process id: {process_id!r}")
-        raw = dict(raw_hook_data)
-        event = raw.get("hook_event_name")
-        if event not in {supported.value for supported in SUPPORTED_PROCESS_HOOK_EVENTS}:
+        event = raw_hook_data.get("hook_event_name")
+        if event not in SUPPORTED_PROCESS_HOOK_EVENTS:
             raise ValueError(f"Unsupported Codex process hook event: {event!r}")
-        canonical_fields = (
-            "hook_event_name",
-            "prompt",
-            "session_id",
-            "cwd",
-            "transcript_path",
-            "turn_id",
-            "permission_mode",
-            "model",
-            "source",
-            "reason",
-        )
-        hook_data = {key: raw[key] for key in canonical_fields if key in raw}
-        hook_data["raw_hook_data"] = raw
-        return AgentHookData(agentic_process_id=process_id, hook_data=hook_data)
+        return build_canonical_hook_data(process_id, raw_hook_data, fields=_CANONICAL_FIELDS)
 
     # ── Per-turn execution ───────────────────────────────────────────────────
 

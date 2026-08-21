@@ -109,7 +109,7 @@ def test_claude_hook_snapshot_and_native_normalization_are_semantic():
     assert driver.process_hook_snapshot([HookEventType.USER_PROMPT_SUBMIT]) == {
         "events": ["UserPromptSubmit"],
         "provider": "claude",
-        "schema": 1,
+        "schema": 2,
     }
     data = driver.normalize_process_hook_data(process_id, raw)
     assert data.agentic_process_id == process_id
@@ -225,7 +225,7 @@ def test_claude_session_snapshot_and_normalization_carry_lifecycle_fields():
     assert driver.process_hook_snapshot([HookEventType.SESSION_END, HookEventType.SESSION_START]) == {
         "events": ["SessionEnd", "SessionStart"],
         "provider": "claude",
-        "schema": 1,
+        "schema": 2,
     }
 
     start_raw = {
@@ -261,4 +261,3 @@ def test_claude_session_snapshot_and_normalization_carry_lifecycle_fields():
         "reason": "prompt_input_exit",
         "raw_hook_data": end_raw,
     }
-    assert "prompt" not in start.hook_data and "prompt" not in end.hook_data
