@@ -41,8 +41,8 @@ class TestItAcceptsAndSends:
     def test_it_is_its_own_channel(self):
         assert AgentMailDriver().channel_for(_source()) == "agentmail"
 
-    def test_one_inbox_is_one_stream(self):
-        streams = AgentMailDriver().streams(_source())
+    async def test_one_inbox_is_one_stream(self):
+        streams = await AgentMailDriver().segments(_source())
         assert [s.key for s in streams] == ["me@agentmail.to"]
 
 
@@ -83,7 +83,7 @@ class TestCursor:
 
         monkeypatch.setattr(driver, "_get", _get)
         cursor = SimpleNamespace(
-            stream_key="me@agentmail.to",
+            segment_key="me@agentmail.to",
             state={"high_water": "2026-08-02T00:00:00.000Z"},
             window_start=None,
             first_run=False,
@@ -101,7 +101,7 @@ class TestCursor:
             return {"messages": []}
 
         monkeypatch.setattr(driver, "_get", _get)
-        cursor = SimpleNamespace(stream_key="i", state={}, window_start=None, first_run=True)
+        cursor = SimpleNamespace(segment_key="i", state={}, window_start=None, first_run=True)
         assert (await driver.fetch(_source(), cursor)).unchanged is True
 
 

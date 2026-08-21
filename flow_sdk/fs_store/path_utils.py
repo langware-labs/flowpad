@@ -14,6 +14,36 @@ import unicodedata
 from pathlib import Path, PureWindowsPath
 
 
+def source_unreachable(path: Path | str) -> bool:
+    """True when we CANNOT TELL whether ``path`` is deleted or merely out of reach.
+
+    The orphan predicates ask "does this file still exist"; a bare stat answers
+    that question with ``False`` in two very different situations — the file was
+    deleted, or the filesystem it lives on went away (an unmounted volume, a
+    disconnected network share, a remote mount whose cache was evicted). Only the
+    first is a deletion, and treating the second as one reaps every row beneath
+    that root.
+
+    The rule is the parent directory: **a missing file whose parent still exists
+    is genuinely gone; a missing file whose parent is ALSO gone tells us nothing.**
+    One stat, no roots registry, no mount-table parsing.
+
+    The deliberate trade is that deleting a whole directory now leaves its rows
+    behind as garbage rather than reaping them. That is the safe direction — a
+    stale row is recoverable, a wrongly-deleted entity is not — and the default
+    ``OrphanAction.INDEX`` only counts orphans anyway.
+    """
+    try:
+        # os.path, not pathlib: both call sites already hold a str and this runs
+        # once per missing row during a sweep, where the Path object would be
+        # allocated and discarded immediately (measured ~2.3x the cost).
+        return not os.path.exists(os.path.dirname(str(path)))
+    except OSError:
+        # A stale handle or a permission error on the parent is the same answer:
+        # we could not look, so we do not know.
+        return True
+
+
 def canonical_posix_path(p: Path | str) -> str:
     """Canonical POSIX form of a filesystem path.
 

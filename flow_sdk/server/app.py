@@ -305,12 +305,20 @@ async def _start_fsop_watcher() -> None:
         from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
 
         await get_graph_workflow_manager().arm_all_flow_subscriptions()
-        # Arm the inbox projection (ingested cloud records → conversations).
-        # A backend subscriber rather than a GraphWorkflow on purpose: it must
-        # not be possible to break your inbox by editing a graph.
-        from flow_sdk.inbox.projection import start_inbox_projection
+        # Arm every inbox lane (ingested cloud records → conversations, and mail
+        # to an agent's own mailbox → that agent). Backend subscribers rather
+        # than GraphWorkflows on purpose: it must not be possible to break your
+        # inbox by editing a graph. `start_inbox` owns the order they depend on.
+        from flow_sdk.inbox import start_inbox
 
-        start_inbox_projection()
+        start_inbox()
+        # Arm the data-source change lane. Any producer — a webhook relay, a
+        # CLI, a scheduler — announces a change with the same envelope, and this
+        # is what makes the bus the way in rather than each producer needing a
+        # private path to the ingest subsystem.
+        from flow_sdk.ingest.change_event import subscribe as subscribe_source_changes
+
+        subscribe_source_changes()
         print(f"  FSOp watcher: started ({len(fsop_watcher)} trigger(s))")
     except Exception:
         logging.getLogger(__name__).exception("FSOp watcher: failed to start")
@@ -672,7 +680,8 @@ async def _spa_fallback(request: _Request, full_path: str):
         if candidate.exists():
             # Inject the runtime API origin so deep links (e.g. /dock/shell/…)
             # hit the serving backend, not the bundle's baked URL.
-            return serve_index_html(candidate.read_text())
+            # encoding= on purpose: the shell is UTF-8, the host codepage is not.
+            return serve_index_html(candidate.read_text(encoding="utf-8"))
     return _HTMLResponse(content="UI not found", status_code=404)
 
 

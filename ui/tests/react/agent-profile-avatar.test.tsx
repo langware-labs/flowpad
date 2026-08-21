@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -102,12 +103,14 @@ beforeEach(() => {
 describe('Agent profile avatar', () => {
   it('resolves a canonical bundle image through its asset FSRef and uses the TypeInfo fallback', () => {
     const withImage = qAgent(AGENT_AVATAR_REF);
-    const first = render(<AgentProfileEditor agent={withImage} mainRef={agentMainRef()} />);
-    const image = screen.getByRole('img', { name: 'Q avatar' });
+    const first = render(<MemoryRouter><AgentProfileEditor agent={withImage} mainRef={agentMainRef()} /></MemoryRouter>);
+    // Accessible name follows Agent.getDisplayName() — title over name
+    // ("assistant turns are signed by the Agent", 378e760f5).
+    const image = screen.getByRole('img', { name: 'QA manager avatar' });
     expect(image).toHaveAttribute('src', 'http://files.local/avatar.png');
     first.unmount();
 
-    render(<AgentProfileEditor agent={qAgent()} mainRef={agentMainRef()} />);
+    render(<MemoryRouter><AgentProfileEditor agent={qAgent()} mainRef={agentMainRef()} /></MemoryRouter>);
     expect(screen.getByTestId('registry-agent-icon')).toBeInTheDocument();
   });
 
@@ -134,7 +137,7 @@ describe('Agent profile avatar', () => {
     const agent = qAgent();
     const entitySave = vi.spyOn(agent, 'save');
 
-    render(<AgentProfileEditor agent={agent} mainRef={agentMainRef()} />);
+    render(<MemoryRouter><AgentProfileEditor agent={agent} mainRef={agentMainRef()} /></MemoryRouter>);
     fireEvent.change(screen.getByRole('textbox', { name: 'Agent title' }), {
       target: { value: 'Senior QA manager' },
     });
@@ -173,7 +176,7 @@ describe('Agent profile avatar', () => {
     });
     const agent = qAgent();
 
-    render(<AgentProfileEditor agent={agent} mainRef={agentMainRef()} />);
+    render(<MemoryRouter><AgentProfileEditor agent={agent} mainRef={agentMainRef()} /></MemoryRouter>);
     await chooseImage(new File([PNG_1X1], 'portrait.png', { type: 'image/png' }));
 
     await waitFor(() => expect(mocks.write).toHaveBeenCalled());
@@ -188,7 +191,7 @@ describe('Agent profile avatar', () => {
     mocks.uploadFile.mockRejectedValue(new Error('disk unavailable'));
     const agent = qAgent('Star');
 
-    render(<AgentProfileEditor agent={agent} mainRef={agentMainRef()} />);
+    render(<MemoryRouter><AgentProfileEditor agent={agent} mainRef={agentMainRef()} /></MemoryRouter>);
     await chooseImage(new File([PNG_1X1], 'portrait.png', { type: 'image/png' }));
 
     await waitFor(() => expect(mocks.notifyError).toHaveBeenCalled());
@@ -200,7 +203,7 @@ describe('Agent profile avatar', () => {
     const agent = qAgent('Star');
     const user = userEvent.setup();
 
-    render(<AgentProfileEditor agent={agent} mainRef={agentMainRef()} />);
+    render(<MemoryRouter><AgentProfileEditor agent={agent} mainRef={agentMainRef()} /></MemoryRouter>);
     await user.click(screen.getByRole('button', { name: 'Change avatar' }));
     await user.click(await screen.findByRole('tab', { name: 'Image' }));
     await user.click(screen.getByRole('button', { name: 'Remove avatar' }));
@@ -215,7 +218,7 @@ describe('Agent profile avatar', () => {
     const agent = qAgent('Star');
     mocks.write.mockRejectedValue(new Error('save unavailable'));
 
-    render(<AgentProfileEditor agent={agent} mainRef={agentMainRef()} />);
+    render(<MemoryRouter><AgentProfileEditor agent={agent} mainRef={agentMainRef()} /></MemoryRouter>);
     await chooseImage(new File([PNG_1X1], 'portrait.png', { type: 'image/png' }));
 
     await waitFor(() => expect(mocks.notifyError).toHaveBeenCalled());

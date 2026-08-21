@@ -4,7 +4,7 @@ A driver answers two questions and nothing else: *which streams does this source
 have*, and *what has changed in one stream since we last looked*. It never
 writes an entity, never emits an event, never advances a cursor.
 
-**The cursor state it receives is its own.** ``StreamCursorView.state`` is an
+**The cursor state it receives is its own.** ``SegmentCursorView.state`` is an
 opaque dict the sync loop carries but never reads. That is what lets one loop
 serve two genuinely different sync shapes:
 
@@ -108,7 +108,7 @@ class SetupVerdict:
 
 
 @dataclass(frozen=True)
-class StreamRef:
+class SegmentRef:
     """One syncable unit within a source — a feed URL, a channel."""
 
     key: str
@@ -116,14 +116,14 @@ class StreamRef:
 
 
 @dataclass(frozen=True)
-class StreamCursorView:
+class SegmentCursorView:
     """What a driver is told about where it left off.
 
     ``window_start`` is the "since last pull" floor, already resolved. Drivers
     apply it as a filter on what they fetched; they do not compute it.
     """
 
-    stream_key: str
+    segment_key: str
     state: dict = field(default_factory=dict)
     window_start: Optional[str] = None
     first_run: bool = True
@@ -134,6 +134,28 @@ class FetchResult:
     """What a driver found, plus the state it wants carried to next time."""
 
     items: list["IngestItem"] = field(default_factory=list)
+    #: Asset ROOTS that changed, for drivers whose payload is already local and
+    #: whose destination is the filesystem rather than a ``SourceItem`` — the
+    #: folder driver today. A path here is the asset root in the sense
+    #: ``FSOrigin.rel_path`` already means: a FOLDER for folder-layout types, a
+    #: FILE for file-layout ones.
+    #:
+    #: Deliberately separate from ``items`` rather than a variant of it. Reading
+    #: a file's bytes into an ``IngestItem`` only to write them straight back to
+    #: disk is pure waste, and a driver that returns refs is announcing that its
+    #: destination is ``reflect``, not ``ingest_items``.
+    refs: list[str] = field(default_factory=list)
+    #: Asset roots the source no longer has. Only a driver that can actually
+    #: OBSERVE absence may fill this — an enumerate-diff can, a lossy watcher
+    #: cannot, and "I did not see it" must never reach here (the rule
+    #: ``rss.py`` states as "absence is never deletion").
+    tombstones: list[str] = field(default_factory=list)
+    #: ``{new_path: old_path}`` for refs the source reports as MOVED rather than
+    #: replaced. Only a transport that can actually observe a move may fill this
+    #: — git can (``--find-renames``), a lossy watcher cannot — and it is what
+    #: lets identity travel with the asset instead of being destroyed at the old
+    #: path and re-minted at the new one.
+    renames: dict[str, str] = field(default_factory=dict)
     next_state: dict = field(default_factory=dict)
     #: Greatest ordinal covered, recorded on the cursor for operators. Purely
     #: observability — resumption is driven by ``state``, so a driver must not
@@ -158,10 +180,19 @@ class IngestDriver(Protocol):
     #: The ontology kind a DataSource using this driver carries. Stamped onto
     #: the row by ``sync_source`` so the driver is the single owner.
     kind: str
-    #: The ontology kind stamped on each IngestItem. NOTE: this decides inbox
-    #: membership — the inbox projection accepts `content.message.*` and
-    #: nothing else (`flow_sdk/inbox/projection.py MESSAGE_KIND_ROOT`).
-    record_kind: str
+    # NOTE: a record-emitting driver also carries `record_kind` — the ontology
+    # kind it stamps on each IngestItem, which decides inbox membership. It is
+    # deliberately NOT declared here: only the driver that stamps it ever reads
+    # it, and listing it made the three filesystem drivers carry an empty stub
+    # to satisfy a field the engine never consults.
+
+    #: Whether this source's bytes are OURS to write to. False means indexing
+    #: must not stamp an identity capsule into the file — a git working tree is
+    #: the clear case, where a stamp dirties the tree, gets committed, and
+    #: propagates to everyone who pulls. Such a source resolves identity by
+    #: `origin_id` lookup instead. Defaults True, which is what every
+    #: workspace-backed type has always done.
+    stamps_identity: bool = True
 
     #: Whether this driver can push a message back to its channel. Discovered
     #: the same way ``channel_for`` is — a driver that cannot send simply omits
@@ -219,11 +250,17 @@ class IngestDriver(Protocol):
         """
         ...
 
-    def streams(self, source: "DataSource") -> list[StreamRef]:
-        """The syncable units of ``source``, derived from its config."""
+    async def segments(self, source: "DataSource") -> list[SegmentRef]:
+        """The syncable units of ``source``.
+
+        Async for every driver, not because the nine builtins need it — they
+        answer from ``source.config`` — but because a source whose driver is an
+        authored module has to SPAWN it to know, and one signature that is true
+        for all ten beats nine truths and a special case at the call site.
+        """
         ...
 
-    async def fetch(self, source: "DataSource", cursor: StreamCursorView) -> FetchResult:
+    async def fetch(self, source: "DataSource", cursor: SegmentCursorView) -> FetchResult:
         """Fetch one stream. Raise ``SourceError`` to classify a failure."""
         ...
 

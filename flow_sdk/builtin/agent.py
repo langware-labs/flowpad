@@ -114,6 +114,54 @@ class Agent(Entity):
         "capability an agent needs stays visible on its card instead of living at a call site.",
     )
 
+    # ── email ─────────────────────────────────────────────────────────────
+    #
+    # The mailbox itself is NOT pointed at from here — `EmailInbox.agent_typeid`
+    # is the authoritative link, and the hub's own notes give the reason (a
+    # pointer field would duplicate drift-prone state and foreclose an agent
+    # holding several inboxes). What lives here is POLICY, which is ours: who
+    # may drive this agent by mail.
+    #
+    # On the Agent rather than the Deployment because the hub allocates one
+    # inbox per AGENT. The same agent deployed to `local` and to `e2b` shares a
+    # single address, so a per-placement policy would let two rows disagree
+    # about who may write to one mailbox.
+    email_enabled: bool = APIField(
+        default=False,
+        description="Whether inbound mail to this agent's mailbox may drive it.",
+    )
+    #: Addresses permitted to drive this agent. **Empty means nobody** — closed,
+    #: not open. The address is public, permanent and publicly writable, so the
+    #: default that cannot leak an agent holding tools is the safe one.
+    #:
+    #: PRIVATE: these are third parties' personal addresses and have no business
+    #: on a receiver or on the hub.
+    email_allowed_senders: list[str] = APIField(
+        default_factory=list,
+        sharing=Sharing.PRIVATE,
+        description="Addresses allowed to drive this agent by email; empty allows none.",
+    )
+
+    def may_email(self, address: str) -> bool:
+        """Whether *address* is permitted to drive this agent.
+
+        Case- and whitespace-insensitive: an address is an identifier a human
+        types, and `Alice@Example.com ` is the same correspondent as
+        `alice@example.com`. Nothing normalizes on the way in, so it happens
+        here — through `normalize_email`, the funnel every other email
+        comparison in the system uses. This is a gate that decides who may drive
+        an agent with tools, so it must keep agreeing with `is_self_address`
+        rather than carrying its own casefold.
+        """
+        from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
+
+        if not self.email_enabled:
+            return False
+        candidate = normalize_email(address)
+        if not candidate:
+            return False
+        return any(candidate == normalize_email(a) for a in self.email_allowed_senders)
+
     # ── lifecycle ─────────────────────────────────────────────────────────
     enabled: bool = APIField(default=True, description="Kill switch — a disabled agent refuses to launch.")
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
@@ -189,8 +237,12 @@ class Agent(Entity):
         if self.remote and self.git_origin:
             return False
 
+        from flow_sdk.assets._publish_service import owning_project  # noqa: PLC0415
         from flow_sdk.assets.git_publish import publish_git_asset  # noqa: PLC0415
 
+        project = await owning_project(self)
+        if project is not None:
+            await project.ensure_on_hub()
         await publish_git_asset(self, actor)
         return True
 
@@ -317,8 +369,20 @@ class Agent(Entity):
         actor = request_info.someone_typeid if request_info else None
         if not actor:
             return ApiFailResponse(message="deploy requires an authenticated user", status_code=401)
+        from flow_sdk.assets.git_publish import AssetPublishError  # noqa: PLC0415
+
         try:
             data = await self.deploy_to_cloud(actor)
+        except AssetPublishError as exc:
+            # Deploy publishes the agent through git first, so every publish
+            # precondition is a deploy precondition. These are the caller's
+            # state, not a server fault — reporting them as 500 both mislabels
+            # them in logs and loses the sentence that says what to do.
+            return ApiFailResponse(
+                status_code=exc.status_code,
+                message=exc.actionable,
+                data={"code": str(exc.code), **exc.data},
+            )
         except Exception as exc:
             return ApiFailResponse(message=f"deploy failed: {exc}")
         return ApiSuccessResponse(data={"agent_id": self.id, **data})
@@ -373,15 +437,24 @@ class Agent(Entity):
 
         No prompt: the process is created and shown, and the human types the
         first message. Local placement only — same routing rule as ``run``.
+
+        The optional body ``project_id`` names the project the session ACTS IN,
+        which is not always the project the agent lives in — see ``Agent.use``
+        in the TS SDK for why. Omitted, it falls back to the agent's own project.
         """
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
-        if not self.enabled:
-            return ApiFailResponse(message=f"agent {self.name!r} is disabled")
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        project_id = str((body or {}).get("project_id") or "").strip() or None
+
         deployment = await self.local_deployment()
         try:
-            process = await deployment.use()
-        except Exception as exc:  # noqa: BLE001
+            process = await deployment.use(project_id=project_id)
+        except NotImplementedError as exc:
+            return ApiFailResponse(message=str(exc))
+        except Exception as exc:  # noqa: BLE001 — incl. the disabled-agent refusal from build()
             return ApiFailResponse(message=f"use failed: {exc}")
         return ApiSuccessResponse(
             data={
@@ -393,7 +466,13 @@ class Agent(Entity):
 
     # ── projection into the launch bundle ─────────────────────────────────
 
-    def to_agent_options(self, worker_type: Optional[str] = None) -> "AgentOptions":
+    @property
+    def display_name(self) -> str:
+        """How the agent is PRESENTED — the authored title, else the slug, else the id.
+        Mirrors ``Agent.getDisplayName`` in ts_sdk so both tiers name it alike."""
+        return (self.title or "").strip() or self.name or self.id
+
+    def to_agent_options(self, worker_type: Optional[str] = None, **cli_extra) -> "AgentOptions":
         """Build the vendor options object this agent launches with.
 
         Only ever sets keys that already exist in ``to_json()`` — the serialized
@@ -406,6 +485,11 @@ class Agent(Entity):
         ``cmd.add_dirs`` with ``AgenticProcess.resolved_add_dirs`` at spawn, so a
         copy here would be dead on arrival AND would perturb the very hash this
         docstring is protecting. The process field is the single source.
+
+        ``cli_extra`` are per-launch transport keys (``output_format`` for a chat
+        surface) that go through the CONSTRUCTOR: ``ClaudeAgentOptions`` derives
+        ``verbose`` from ``output_format`` there, so setting the field after the
+        fact would persist an inconsistent pair into ``cli_config``.
         """
         from flow_sdk.builtin.agentic_process.cli_drivers import factory  # noqa: PLC0415
 
@@ -419,5 +503,6 @@ class Agent(Entity):
         ):
             if value is not None:
                 cli_json[key] = value
+        cli_json.update({k: v for k, v in cli_extra.items() if v is not None})
 
         return factory(cli_json, driver_key(worker_type or self.worker_type))

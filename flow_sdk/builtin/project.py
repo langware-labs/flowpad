@@ -333,6 +333,18 @@ class Project(Entity):
                 out.append(p)
         return out
 
+    @computed_field
+    @property
+    def context_roots(self) -> list[str]:
+        """API mirror of :meth:`direct_context_roots` — see it for the rule.
+
+        Serialized because the boundary has frontend consumers now (the home
+        agent tiles ask "which directories count as this project's?"), and a
+        client re-deriving mount + ``include_dirs`` would be a fourth copy of
+        the rule that canonicalizes differently from the three server-side ones.
+        """
+        return self.direct_context_roots()
+
     def direct_context_roots(self) -> list[str]:
         """Canonical Project root followed by its direct context roots.
 
@@ -835,6 +847,7 @@ class Project(Entity):
             "host_member_id",
             "presence",
             "include_dirs",
+            "context_roots",
             "context_dir_infos",
             "secret_origins",
             "shared_secret_origins",
@@ -900,6 +913,21 @@ class Project(Entity):
                 "description": description,
             }
         return payload
+
+    async def ensure_on_hub(self) -> bool:
+        """Publish this Project once and persist the local publication marker.
+
+        Deploying a Project or one of its repository-backed assets is a single
+        user operation. Callers must not have to manually publish the Project
+        first merely to satisfy the asset publisher's parent-before-child
+        ordering requirement.
+        """
+        if self.remote:
+            return False
+        await self.share()
+        self.remote = True
+        await self.save()
+        return True
 
     async def share(self, recipients: Optional[List[str]] = None) -> "Project":
         """Publish this project to the hub as a shared unit + invite recipients.
@@ -1909,10 +1937,7 @@ class Project(Entity):
         if not actor:
             return ApiFailResponse(message="deploy requires an authenticated user", status_code=401)
         try:
-            if not self.remote:
-                await self.share()
-                self.remote = True
-                await self.save()
+            await self.ensure_on_hub()
             data = await deploy_entity_to_cloud(self)
         except Exception as exc:
             return ApiFailResponse(message=f"deploy failed: {exc}")

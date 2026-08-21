@@ -34,7 +34,7 @@ import {
   parseTypeid as _parseTypeid,
 } from './asset-row-helpers';
 import { useProcessAssets } from './useProcessAssets';
-import { useLaunchingAgent } from './use-launching-agent';
+import { useLaunchingAgent } from '@src/hooks/use-launching-agent';
 import { AssetManagerPopover } from './AssetManagerPopover';
 
 function normalizeTranscriptWorker(workerType: string | null | undefined): TranscriptWorkerType {

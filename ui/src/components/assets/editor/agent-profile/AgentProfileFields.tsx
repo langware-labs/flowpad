@@ -1,25 +1,6 @@
-import { ReactNode, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Input } from '@src/components/ui/input';
-
-/** A block in the settings rail: optional title, optional one-line hint. */
-export function AgentSection({
-  title,
-  hint,
-  children,
-}: {
-  title?: string;
-  hint?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section>
-      {title ? <h2 className="text-sm font-semibold">{title}</h2> : null}
-      {hint ? <p className="mb-3 text-xs text-muted-foreground">{hint}</p> : null}
-      {children}
-    </section>
-  );
-}
 
 /**
  * A suggestion-backed text field: the vocabulary is advisory, so the control

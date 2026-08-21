@@ -27,8 +27,8 @@ from flow_sdk.ingest.driver import (
     FetchResult,
     SendOutcome,
     SendStatus,
-    StreamCursorView,
-    StreamRef,
+    SegmentCursorView,
+    SegmentRef,
 )
 from flow_sdk.ingest.health import SourceError
 from flow_sdk.ingest.models import IngestItem
@@ -56,13 +56,13 @@ class AgentMailDriver:
     def channel_for(self, source) -> str:
         return "agentmail"
 
-    def streams(self, source) -> list[StreamRef]:
+    async def segments(self, source) -> list[SegmentRef]:
         inbox = self._inbox(source)
-        return [StreamRef(inbox, inbox)]
+        return [SegmentRef(inbox, inbox)]
 
     # ── fetch ────────────────────────────────────────────────────────────────
 
-    async def fetch(self, source, cursor: StreamCursorView) -> FetchResult:
+    async def fetch(self, source, cursor: SegmentCursorView) -> FetchResult:
         payload = await self._get(
             source,
             f"/inboxes/{self._inbox(source)}/messages",
@@ -100,7 +100,7 @@ class AgentMailDriver:
             source_id=source.id,
             provider=self.provider,
             kind=self.record_kind,
-            stream_key=self._inbox(source),
+            segment_key=self._inbox(source),
             external_id=str(msg.get("message_id") or ""),
             title=str(msg.get("subject") or ""),
             body=str(msg.get("preview") or ""),

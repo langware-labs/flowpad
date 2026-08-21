@@ -22,7 +22,7 @@ def _item(**kw) -> IngestItem:
         source_id="ds-ingest-test",
         provider="rss",
         kind="content.feed.item",
-        stream_key="https://example.test/feed.xml",
+        segment_key="https://example.test/feed.xml",
         external_id=f"ext-{uuid.uuid4().hex[:10]}",
         title="A title",
         body="Some prose",

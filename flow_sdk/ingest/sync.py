@@ -27,26 +27,27 @@ from typing import Optional
 
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
-from flow_sdk.ingest.driver import StreamCursorView, channel_of_driver, get_driver
+from flow_sdk.ingest.driver import SegmentCursorView, channel_of_driver, get_driver
 from flow_sdk.ingest.health import SourceHealth, classify, worst_of
 from flow_sdk.ingest.ingest_on_tag import emit_sync_tag
 from flow_sdk.ingest.ingestor import ingest_items
 from flow_sdk.ingest.models import IngestMode, IngestReport
+from flow_sdk.ingest.reflect import reflect_refs
 
 logger = logging.getLogger(__name__)
 
 #: Streams fetched per run by default. A provider with a hard request ceiling
-#: (Slack: one history call a minute) declares a smaller ``stream_budget`` on
+#: (Slack: one history call a minute) declares a smaller ``segment_budget`` on
 #: its driver; the loop then round-robins by ``last_attempted_at`` so every
 #: stream still converges, just over more ticks.
-DEFAULT_STREAM_BUDGET = 5
+DEFAULT_SEGMENT_BUDGET = 5
 
 
 async def sync_source(
     source: DataSource,
     *,
     now: Optional[datetime] = None,
-    budget: int = DEFAULT_STREAM_BUDGET,
+    budget: int = DEFAULT_SEGMENT_BUDGET,
 ) -> IngestReport:
     """Run one cycle. Never raises: a failure is recorded as health, not thrown."""
     now = now or datetime.now(timezone.utc)
@@ -77,10 +78,22 @@ async def sync_source(
 
     emit_sync_tag(source.provider, source.id, "started")
 
-    cursors = await _cursors_for(source, driver)
+    # Enumerating segments can fail for the same reasons a fetch can — a driver
+    # that has to reach the provider to answer (any authored source does) can
+    # raise here. This function promises never to raise, so the failure is
+    # recorded as health like any other rather than reaching the poller's
+    # "this is a bug" catch, where it left the source stuck on `never_synced`
+    # with no error to show.
+    try:
+        cursors = await _cursors_for(source, driver)
+    except Exception as exc:  # noqa: BLE001 — classified below, never re-raised
+        health, code, detail = classify(exc)
+        await _fail_source(source, code, detail, health=health)
+        emit_sync_tag(source.provider, source.id, "completed", report=combined)
+        return combined
     # The driver's ceiling is a limit, not a preference — `min`, so a caller
     # asking for more streams cannot spend a budget the provider does not have.
-    due = _round_robin(cursors, min(budget, getattr(driver, "stream_budget", budget)))
+    due = _round_robin(cursors, min(budget, getattr(driver, "segment_budget", budget)))
 
     for cursor in due:
         combined.outcomes.extend((await _sync_stream(source, driver, cursor, now)).outcomes)
@@ -101,8 +114,8 @@ async def _sync_stream(source, driver, cursor: DataSourceCursor, now: datetime) 
     report = IngestReport()
     cursor.last_attempted_at = now
 
-    view = StreamCursorView(
-        stream_key=cursor.stream_key,
+    view = SegmentCursorView(
+        segment_key=cursor.segment_key,
         state=dict(cursor.state or {}),
         window_start=source.window_floor(now).isoformat(),
         first_run=cursor.last_synced_at is None,
@@ -118,13 +131,29 @@ async def _sync_stream(source, driver, cursor: DataSourceCursor, now: datetime) 
         cursor.consecutive_failures = (cursor.consecutive_failures or 0) + 1
         # Cursor position deliberately NOT advanced.
         await cursor.save()
-        logger.warning("[ingest] %s stream %s failed: %s", source.provider, cursor.stream_key, code)
+        logger.warning("[ingest] %s stream %s failed: %s", source.provider, cursor.segment_key, code)
         return report
 
+    # ── the two destinations ───────────────────────────────────────────────
+    #
+    # A driver's payload lands EITHER in the graph as a record or on disk as an
+    # asset, never both. `ingest_items` stays the single chokepoint for
+    # SourceItem writes — reflection is a second destination beside it, not a
+    # branch inside it, so that invariant survives a source whose payload is a
+    # file.
+    #
+    # Which one is chosen by the SOURCE (`reflect`), not the driver: the same
+    # folder could reasonably be mirrored as records or as assets, and a driver
+    # that decided this would be deciding a policy question with only transport
+    # knowledge.
     if not result.unchanged and result.items:
         report = await ingest_items(
             result.items,
             mode=IngestMode.for_run(first_run=view.first_run, item_count=len(result.items)),
+        )
+    if not result.unchanged and (result.refs or result.tombstones):
+        await reflect_refs(
+            source, list(result.refs), list(result.tombstones), dict(result.renames)
         )
 
     # ── records are committed; only now does the cursor move ──
@@ -132,7 +161,14 @@ async def _sync_stream(source, driver, cursor: DataSourceCursor, now: datetime) 
         cursor.health == SourceHealth.OK.value
         and not cursor.consecutive_failures
         and (cursor.state or {}) == (result.next_state or {})
-        and not result.high_water
+        # COMPARE, don't test truthiness. A driver that reports an unchanged
+        # high-water on an idle poll — `folder` returns its file count, `git`
+        # returns the unmoved head — would otherwise fail this check forever and
+        # rewrite its cursor row every tick. For `folder` that row carries the
+        # whole directory manifest, so a large watched tree meant megabytes of
+        # identical JSON through the writer lock once a minute. `gdrive` omits
+        # `high_water` entirely to dodge this; comparing fixes it for all three.
+        and cursor.high_water == result.high_water
     )
     cursor.state = result.next_state or {}
     if result.high_water:
@@ -161,15 +197,15 @@ async def _cursors_for(source: DataSource, driver) -> list[DataSourceCursor]:
     budget only fetches a few of them.
     """
     existing = {
-        c.stream_key: c
+        c.segment_key: c
         for c in await DataSourceCursor.get_all({"data_source_id": source.id})
     }
     out: list[DataSourceCursor] = []
-    for ref in driver.streams(source):
+    for ref in await driver.segments(source):
         cursor = existing.get(ref.key)
         if cursor is None:
             cursor = await DataSourceCursor.ensure_for(
-                source.id, ref.key, stream_label=ref.label
+                source.id, ref.key, segment_label=ref.label
             )
         out.append(cursor)
     return [c for c in out if c.enabled]
@@ -193,7 +229,7 @@ def _round_robin(cursors: list[DataSourceCursor], budget: int) -> list[DataSourc
 async def _roll_up(source: DataSource, cursors: list[DataSourceCursor], now: datetime) -> None:
     # Free: this row is being written anyway, and it saves every list surface
     # from watching the cursor table live just to render a count.
-    source.stream_count = len(cursors)
+    source.segment_count = len(cursors)
     health = worst_of([c.health for c in cursors])
     source.health = health.value
     offender = next(
@@ -207,8 +243,18 @@ async def _roll_up(source: DataSource, cursors: list[DataSourceCursor], now: dat
     await source.save()
 
 
-async def _fail_source(source: DataSource, code: str, detail: str) -> None:
-    source.health = SourceHealth.CONFIG_ERROR.value
+async def _fail_source(
+    source: DataSource,
+    code: str,
+    detail: str,
+    *,
+    health: SourceHealth = SourceHealth.CONFIG_ERROR,
+) -> None:
+    """Record a whole-source failure. Defaults to CONFIG_ERROR — the callers that
+    predate the parameter all name a cause a person has to fix — but enumerating
+    segments can fail for a transient reason, and parking a source over one
+    network blip is the mistake `SourceError.for_status` exists to prevent."""
+    source.health = health.value
     source.error_code = code
     source.error_detail = detail
     emit_sync_tag(

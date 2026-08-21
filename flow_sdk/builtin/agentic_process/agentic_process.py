@@ -42,9 +42,11 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     apply_worker_secret_env,
     get_driver,
     latch_spawn_failure,
+    resolve_worker_language,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import ProcessHookRuntime
 from flow_sdk.builtin.agentic_process.process_hooks import (
+    SUPPORTED_PROCESS_HOOK_EVENTS,
     ProcessHookCallback,
     clear_process_hook_callbacks,
     dispatch_process_hook,
@@ -3617,6 +3619,7 @@ class AgenticProcess(Entity):
                 add_dirs=list(self.resolved_add_dirs or []),
                 session_id=self.session_id if (self.session_id and not resumable) else None,
                 resume_session_id=self.session_id if resumable else None,
+                language=await resolve_worker_language(self),
                 **self._process_asset_context_kwargs(process_assets),
             )
 
@@ -4513,9 +4516,9 @@ class AgenticProcess(Entity):
     ) -> ApiSuccessResponse | ApiFailResponse:
         """Tell Claude to execute the plan.
 
-        If clear_context=True, inject '/clear' first.
-        Sets the plan auto-approve flag so that when ExitPlanMode is called,
-        the hook handler can auto-approve the PermissionRequest once.
+        If clear_context=True, inject '/clear' first. The ExitPlanMode
+        permission prompt is answered by the user in the terminal — Flowpad does
+        not pre-approve it.
         """
         if not file_path:
             return ApiFailResponse(message="file_path is required")
@@ -4529,9 +4532,6 @@ class AgenticProcess(Entity):
             await self.inject(prompt)
             await asyncio.sleep(1.5)
 
-            from flow_sdk.app.actions.listen import set_plan_auto_approve
-
-            set_plan_auto_approve(self.id)
             _write_plan_frontmatter(file_path, {"executed": True})
 
             return ApiSuccessResponse(data={"injected": True})
@@ -5205,7 +5205,7 @@ class AgenticProcess(Entity):
             normalized = HookEventType(event)
         except (TypeError, ValueError) as exc:
             raise ValueError(f"unsupported process hook event: {event!r}") from exc
-        if normalized is not HookEventType.USER_PROMPT_SUBMIT:
+        if normalized not in SUPPORTED_PROCESS_HOOK_EVENTS:
             raise ValueError(f"unsupported process hook event: {normalized.value}")
         return normalized
 
@@ -7722,9 +7722,17 @@ class AgenticProcess(Entity):
             # transcript that lands here), so no driver coupling.
             if not current_busy and prev_busy:
                 self._schedule_queue_drain("ready")
-                # Same turn-end edge: push-reindex the files this turn wrote/edited
-                # so their entities re-parse + broadcast (updated_date bump →
-                # frontend body re-read). Fire-and-forget; never blocks the turn.
+                # NOTE (QA 2026-08-21): this edge can never fire — `prev_busy`
+                # comes from `self._last_broadcast_key` and every flush hydrates a
+                # fresh object, so it is always None (instrumented at a real turn
+                # end: `prev_busy=None current_busy=False edge_fires=False`). So a
+                # headless turn's writes are never reindexed from this seam.
+                # Moving it to the idle gate DOES fix that, but it regresses the
+                # whiteboard save path — `whiteboard/create_persist` C2 goes 4/4
+                # green -> 0/4 with that change alone (proven both directions on a
+                # reset instance). The reindex firing on every idle flush races the
+                # editor's own board.json/WHITE_BOARD.md writes. Left as-is until
+                # the interaction is understood; do not "fix" the gate in isolation.
                 self._schedule_turn_end_reindex("flush")
             if not current_busy:
                 # Default-name stamp on ANY idle flush, not the busy→idle edge:

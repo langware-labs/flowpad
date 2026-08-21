@@ -21,7 +21,7 @@ Config on the DataSource::
 The hub addresses a mailbox by AGENT, never by address — one inbox per agent is
 its model (`flowpad/hub/builtin/email_inbox.py`). So `agent_id` is the stream
 key: it is immutable, it is the thing without which nothing can poll, and
-`stream_key` is one third of a SourceItem's natural key, so keying on the
+`segment_key` is one third of a SourceItem's natural key, so keying on the
 allocated address would orphan every row the day an inbox is re-provisioned.
 """
 
@@ -35,8 +35,8 @@ from flow_sdk.ingest.driver import (
     FetchResult,
     SendOutcome,
     SendStatus,
-    StreamCursorView,
-    StreamRef,
+    SegmentCursorView,
+    SegmentRef,
 )
 from flow_sdk.ingest.health import SourceError
 from flow_sdk.ingest.models import IngestItem
@@ -76,12 +76,12 @@ class CloudEmailDriver:
         """
         return "email"
 
-    def streams(self, source) -> list[StreamRef]:
-        return [StreamRef(key=self._agent_id(source), label=self._address(source))]
+    async def segments(self, source) -> list[SegmentRef]:
+        return [SegmentRef(key=self._agent_id(source), label=self._address(source))]
 
     # ── fetch ────────────────────────────────────────────────────────────────
 
-    async def fetch(self, source, cursor: StreamCursorView) -> FetchResult:
+    async def fetch(self, source, cursor: SegmentCursorView) -> FetchResult:
         state = dict(cursor.state or {})
         floor = str(state.get("high_water") or cursor.window_start or "")
         seen_at_floor = set(state.get("boundary_ids") or [])
@@ -161,15 +161,15 @@ class CloudEmailDriver:
             source_id=source.id,
             provider=self.provider,
             kind=self.record_kind,
-            stream_key=self._agent_id(source),
-            stream_label=self._address(source),
+            segment_key=self._agent_id(source),
+            segment_label=self._address(source),
             external_id=str(msg.get("message_id") or ""),
             title=str(msg.get("subject") or ""),
             body=_body_of(msg),
             occurred_at=str(msg.get("timestamp") or "") or None,
             author_external_id=address,
             author_display=str(sender.get("name") or "") or address,
-            thread_key=str(msg.get("thread_id") or "") or None,
+            thread_key=self._thread_key(source, msg),
             reply_to_external_id=str(msg.get("in_reply_to") or "") or None,
             raw=msg,
         )
@@ -230,9 +230,35 @@ class CloudEmailDriver:
         except EmailInboxError as exc:
             raise _as_source_error(exc) from exc
 
+    @classmethod
+    def _thread_key(cls, source, msg: dict) -> Optional[str]:
+        """The provider thread id, SCOPED TO THIS MAILBOX.
+
+        AgentMail's ``thread_id`` is inbox-scoped, not global — the hub's own
+        docs say so and warn "never use it as a cross-agent key". The inbox
+        projection derives a MessageThread id from ``(channel, thread_key)``
+        alone, and every cloud mailbox reports the same channel (``email``), so
+        a bare provider id lets two agents whose mailboxes happen to agree on a
+        thread id collapse onto ONE thread — and therefore one conversation, and
+        therefore one agent process. Prefixing the agent makes the key mean what
+        the projection assumes it means.
+
+        Returns None when the provider gave us nothing, so
+        ``projection.thread_key_for`` can fall back to the normalized subject
+        rather than threading every stranger onto the string ``"<agent>:"``.
+        """
+        thread_id = str(msg.get("thread_id") or "").strip()
+        return f"{cls._agent_id(source)}:{thread_id}" if thread_id else None
+
     @staticmethod
     def _agent_id(source) -> str:
-        agent_id = str((getattr(source, "config", None) or {}).get("agent_id") or "").strip()
+        """The mailbox's agent, required. Reads through `inbox.projection`'s
+        `agent_id_of` — that key is load-bearing for thread scoping, sender
+        attribution and the runner's gate, and a second spelling of the lookup
+        would fix one lane and not the others."""
+        from flow_sdk.inbox.projection import agent_id_of  # noqa: PLC0415
+
+        agent_id = agent_id_of(source)
         if not agent_id:
             raise SourceError.config("no_agent", "config.agent_id is required")
         return agent_id

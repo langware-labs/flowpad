@@ -205,6 +205,7 @@ _IGNORED_TYPES: frozenset[str] = frozenset(
         "mode",
         "agent-name",
         "bridge-session",
+        "atis-latch",
     }
 )
 

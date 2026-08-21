@@ -86,6 +86,73 @@ async def test_start_ticket_posts_to_target_projects_adopted_queue(tmp_path: Pat
 
 
 @pytest.mark.asyncio
+async def test_desk_attached_by_path_still_routes_without_a_project_of_its_own(
+    tmp_path: Path,
+) -> None:
+    """A desk adopted by PATH — no Project projection of its own — must route.
+
+    Every other case here makes the context root a Project, because the git
+    attach flow happens to mint one. Attaching the same folder by path does
+    not, and resolution used to require it: it returned None, the ticket fell
+    through to the hub's DEFAULT desk, and nothing said so. A customer who
+    adopted a vendor's desk had their support request delivered to a different
+    company, silently. That is the failure this pins.
+    """
+    context_root = tmp_path / "vendor-desk"
+    context_root.mkdir(parents=True, exist_ok=True)
+    await _desk(context_root, "cloudnsite", FIRST_CONTEXT_QUEUE)
+    # Deliberately NO `_project(context_root)` — that is the whole point.
+    target = await _project(tmp_path / "customer", contexts=[context_root])
+
+    adopted = await resolve_adopted_helpdesk(target.id)
+    assert adopted is not None, "a desk attached by path must still be adopted"
+    assert adopted.queue_project_id == FIRST_CONTEXT_QUEUE
+    # The portal has no Project to open, and that is allowed to be absent —
+    # it must not take the queue down with it.
+    assert adopted.portal_project_id is None
+
+    hub = AsyncMock(return_value={"status": "FAIL", "message": "stop after route assertion"})
+    with (
+        patch.object(
+            fma,
+            "get_current_request_info",
+            return_value=_request_info({"text": "Need help", "project_id": target.id}),
+        ),
+        patch.object(fma, "_hub_default_helpdesk", AsyncMock()) as fallback,
+        patch.object(fma, "_hub_action", hub),
+    ):
+        await fma.helpdesk_start_ticket()
+
+    method, path, _ = hub.await_args.args
+    assert (method, path) == (
+        "POST",
+        f"/graph/project/{FIRST_CONTEXT_QUEUE}/start_guest_conversation",
+    )
+    fallback.assert_not_awaited(), "must not fall through to somebody else's desk"
+
+
+@pytest.mark.asyncio
+async def test_a_desk_naming_no_usable_queue_says_so_before_falling_through(
+    tmp_path: Path, caplog
+) -> None:
+    """The other half of the silent misroute: an adopted desk with a broken
+    manifest. Falling back to the default desk is correct, but it must be
+    diagnosable — otherwise it is indistinguishable from "no desk adopted"."""
+    context_root = tmp_path / "vendor-desk"
+    await _project(context_root)
+    await _desk(context_root, "cloudnsite", "not-a-uuid")
+    target = await _project(tmp_path / "customer", contexts=[context_root])
+
+    with caplog.at_level("WARNING"):
+        adopted = await resolve_adopted_helpdesk(target.id)
+
+    assert adopted is None
+    assert any("no valid desk_project_id" in r.getMessage() for r in caplog.records), (
+        "an unusable adopted desk must be logged, not silently skipped"
+    )
+
+
+@pytest.mark.asyncio
 async def test_ticket_list_uses_direct_context_order_not_desk_row_order(tmp_path: Path) -> None:
     first_root = tmp_path / "first-context"
     second_root = tmp_path / "second-context"

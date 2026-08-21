@@ -17,7 +17,6 @@ request body before dispatching, which makes a second request.json() call hang
 """
 
 import logging
-from datetime import datetime, timezone
 from typing import Optional, Tuple
 
 from pydantic import ValidationError
@@ -37,16 +36,9 @@ from flow_sdk.core.flow.models.webhook_flow_data import (
     WebhookType,
 )
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
 logger = logging.getLogger(__name__)
-
-# Track execute-plan approval flag per agentic_process ID.
-# Flag is set by execute-plan, consumed (cleared) by PermissionRequest:ExitPlanMode
-# or UserPromptSubmit (new user input cancels auto-approve).
-# Keyed by agentic_process ID (not session ID) because /clear creates a new session.
-_plan_auto_approve_by_agentic_process: set[str] = set()
 
 
 # ---------------------------------------------------------------------------
@@ -57,12 +49,13 @@ _plan_auto_approve_by_agentic_process: set[str] = set()
 async def _route_to_source_process(
     payload_data: dict,
     execution_scope: list | None = None,
-    session_id: str | None = None,
 ) -> None:
-    """Route webhook event to the AgenticProcess that generated it.
+    """Route a ``hook_op`` webhook event to the AgenticProcess that generated it.
 
-    Uses execution_scope (from hook_op) or session_id (from agent_hook)
-    to find the source process and emit a flow_data_msg to its watchers.
+    Identity comes from ``execution_scope`` — the worker's own
+    ``FLOWPAD_EXECUTION_SCOPE``, carried in the payload by the ``flow`` verb that
+    sent it. Global ``agent_hook`` events are deliberately NOT routed here: they
+    are harness-wide and carry no process identity.
     """
     try:
         from flow_sdk.builtin.agentic_process import _send_flow_data_message
@@ -81,39 +74,11 @@ async def _route_to_source_process(
     flow_msg = fds[0].model_dump(mode="python")
 
     # Route via execution_scope (hook_op events)
-    if execution_scope:
-        for entry in execution_scope:
-            target_type = entry.get("type") if isinstance(entry, dict) else None
-            target_id = entry.get("id") if isinstance(entry, dict) else None
-            if target_type and target_id:
-                await _send_flow_data_message(target_type, target_id, flow_msg)
-        return
-
-    # Helper: find first process matching a field and route the message
-    async def _find_and_route(field_name: str, field_value: str) -> bool:
-        try:
-            from flow_sdk.builtin.agentic_process import AgenticProcess
-            from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
-
-            processes = await AgenticProcess.get_all(
-                entities_filter=QueryFilter(match=ExpressionNode(**{field_name: field_value}))
-            )
-            for proc in processes or []:
-                await _send_flow_data_message(proc.get_type(), proc.id, flow_msg)
-                return True
-        except Exception as exc:
-            logger.debug("Failed to route to process by %s: %s", field_name, exc)
-        return False
-
-    # Route via session_id (agent_hook events — match session_id)
-    if session_id:
-        if await _find_and_route("session_id", session_id):
-            return
-
-    # Fallback: route via pty_pid from payload
-    pty_pid = payload_data.get("pty_pid") if isinstance(payload_data, dict) else None
-    if pty_pid:
-        await _find_and_route("pty_pid", pty_pid)
+    for entry in execution_scope or []:
+        target_type = entry.get("type") if isinstance(entry, dict) else None
+        target_id = entry.get("id") if isinstance(entry, dict) else None
+        if target_type and target_id:
+            await _send_flow_data_message(target_type, target_id, flow_msg)
 
 
 async def _broadcast_to_sniffer(
@@ -182,151 +147,41 @@ async def _broadcast_to_sniffer(
 # ---------------------------------------------------------------------------
 
 
-async def _create_prompt_annotation(content: str, session_id: str) -> None:
-    """Create an Annotation entity for a UserPromptSubmit event. Non-critical."""
-    try:
-        from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.builtin.annotation import Annotation
-
-        now_iso = datetime.now(timezone.utc).isoformat()
-        proc = await AgenticProcess.get_by_session_id(session_id)
-        process_id = (proc.id or "") if proc else ""
-
-        annotation = Annotation(
-            labels=["prompt:"],
-            target_type="agentic_process",
-            target_id=process_id,
-            content=content[:50],
-            session_id=session_id,
-            iso_timestamp=now_iso,
-            data={},
-        )
-        await annotation.save()
-    except Exception as exc:
-        logger.debug("_create_prompt_annotation failed (non-critical): %s", exc)
-
-
-def _extract_agentic_process_id(execution_scope: list) -> str | None:
-    """Return the first agentic_process ID from execution_scope.
-
-    Accepts both dict entries {"type": "agentic_process", "id": "..."} and
-    TypeId strings (e.g. "agentic_process:uuid").
-    """
-    from flow_sdk.builtin.agentic_process import AgenticProcess
-
-    for entry in execution_scope:
-        if isinstance(entry, dict) and entry.get("type") == AgenticProcess.get_type() and entry.get("id"):
-            return entry["id"]
-        elif TypeId.is_typeid(entry):
-            tid = TypeId.to_typeid(entry)
-            if tid.type == AgenticProcess.get_type():
-                return tid.id
-    return None
-
-
-async def _close_worktree_process(agentic_process_id: str) -> None:
-    """Close the tab for a worktree agentic process after ExitWorktree completes."""
-    from flow_sdk.builtin.agentic_process import AgenticProcess
-
-    process = await AgenticProcess.get_by_id(agentic_process_id)
-    if not process:
-        logger.warning("[ExitWorktree] Process %s not found", agentic_process_id)
-        return
-    is_closed = await process.close()
-    if not is_closed:
-        logger.warning("[ExitWorktree] Failed to close process %s", agentic_process_id)
-        return
-    logger.info("[ExitWorktree] Closed process %s", agentic_process_id)
-
-
-def set_plan_auto_approve(agentic_process_id: str | None) -> None:
-    """Set the auto-approve flag for an agentic_process (called by execute-plan)."""
-    if agentic_process_id:
-        _plan_auto_approve_by_agentic_process.add(agentic_process_id)
-        logger.info("[auto-approve] FLAG SET for agentic_process %s", agentic_process_id)
-
-
 async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse | ApiFailResponse:
     """Handle agent_hook webhook - process triggers connected to the AgentHook."""
     agent_hook_id = webhook_data.agent_hook_id
     if not agent_hook_id:
         return ApiFailResponse(message="agent_hook_id is required in payload")
 
-    # Resolve hook fields first — needed for annotations and auto-approve logic,
-    # independent of whether the AgentHook entity exists in the DB.
+    # Resolve hook fields first so a CwdChanged is still logged when the
+    # AgentHook entity no longer exists in the DB. NOTHING here
+    # resolves an AgenticProcess: a global hook is harness-wide, and the process
+    # that happens to have fired it is not this tier's concern (process-scoped
+    # hooks go through `handle_process_agent_hook`).
     hook_data_dict = webhook_data.hook_data if isinstance(webhook_data.hook_data, dict) else {}
     raw = hook_data_dict.get("raw_hook_data", {}) if isinstance(hook_data_dict.get("raw_hook_data"), dict) else {}
 
     hook_event_name = hook_data_dict.get("hook_event_name") or raw.get("hook_event_name", "")
     hook_session_id = hook_data_dict.get("session_id") or raw.get("session_id", "")
-    hook_tool_name = hook_data_dict.get("tool_name") or raw.get("tool_name", "")
-    execution_scope = hook_data_dict.get("execution_scope") or raw.get("execution_scope") or []
     cwd = raw.get("cwd")
-    agentic_process_id = _extract_agentic_process_id(execution_scope)
 
     if hook_event_name == HookEventType.CWD_CHANGED:
         logger.info(f"[cwd change] to '{cwd}' (session={hook_session_id})")
-
-    # Auto-close the worktree tab when ExitWorktree completes
-    if hook_event_name == HookEventType.POST_TOOL_USE and hook_tool_name == "ExitWorktree" and agentic_process_id:
-        await _close_worktree_process(agentic_process_id)
-
-    # Auto-approve ExitPlanMode PermissionRequest if flag is set, then clear flag.
-    # `flow hooks report --wait-for-response` makes this synchronous.
-    if (
-        hook_event_name == HookEventType.PERMISSION_REQUEST
-        and hook_tool_name == "ExitPlanMode"
-        and agentic_process_id
-        and agentic_process_id in _plan_auto_approve_by_agentic_process
-    ):
-        _plan_auto_approve_by_agentic_process.discard(agentic_process_id)
-        logger.info(
-            f"[auto-approve] APPROVED ExitPlanMode for agentic_process {agentic_process_id} (session={hook_session_id})"
-        )
-        return ApiSuccessResponse(
-            data={
-                "hookSpecificOutput": {
-                    "hookEventName": hook_event_name,
-                    "decision": {"behavior": "allow"},
-                },
-            }
-        )
-
-    # Clear auto-approve flag on UserPromptSubmit
-    if (
-        hook_event_name == HookEventType.USER_PROMPT_SUBMIT
-        and agentic_process_id in _plan_auto_approve_by_agentic_process
-    ):
-        _plan_auto_approve_by_agentic_process.discard(agentic_process_id)
-        logger.info("[auto-approve] Cleared stale flag for entity %s on UserPromptSubmit", agentic_process_id)
-
-    # Auto-create Annotation for UserPromptSubmit
-    if hook_event_name == HookEventType.USER_PROMPT_SUBMIT:
-        prompt = str(hook_data_dict.get("prompt") or raw.get("prompt", ""))
-        if prompt and hook_session_id:
-            await _create_prompt_annotation(prompt[:50], hook_session_id)
 
     from flow_sdk.builtin.agent_hook import AgentHook
 
     # Load the AgentHook entity
     agent_hook = await AgentHook.get_by_id(agent_hook_id)
     if agent_hook is None:
-        # Hook entity not found (stale hook registration) — annotations already created above
+        # Hook entity not found (stale hook registration) — nothing else to do
         logger.debug("AgentHook not found: %s — skipping entity-specific handling", agent_hook_id)
         return ApiSuccessResponse(data={})
 
-    # Use the refactored handle_webhook method. `actor` is resolved HERE because
-    # the execution scope only exists at this door — handle_webhook emits the
-    # hook.* / trigger.fired envelopes and cannot see who caused them.
-    result = await agent_hook.handle_webhook(
-        webhook_data,
-        actor=f"agentic_process:{agentic_process_id}" if agentic_process_id else None,
-    )
+    result = await agent_hook.handle_webhook(webhook_data)
 
     # Emit FlowData for live sniffer/watchers. Route through the canonical
-    # ``convert_hook_event`` translator so the global sniffer view receives
-    # exactly the same shape as the per-process fan-out below — both end up
-    # as ``FlowData(element-type=status, source=sniffer, attributes={...})``.
+    # ``convert_hook_event`` translator so the global sniffer view receives a
+    # ``FlowData(element-type=status, source=sniffer, attributes={...})``.
     payload_data = {
         "webhook_type": "agent_hook",
         "agent_hook_id": agent_hook_id,
@@ -346,27 +201,6 @@ async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse |
             await agent_hook.emit_flow_data({"flow_value": fd.flow_value, "attributes": fd.attributes})
         except Exception as e:
             logger.debug(f"AgentHook emit_flow_data failed (non-critical): {e}")
-
-    # Per-process sniffer fan-out: ingest the same converted FlowData into
-    # the matching AgenticProcess.flowDataStream so the InteractiveTerminal
-    # trace gutter can render it alongside live completion + history.
-    try:
-        from flow_sdk.builtin.agentic_process import AgenticProcess
-
-        target_process = None
-        if agentic_process_id:
-            target_process = await AgenticProcess.get_by_id(agentic_process_id)
-        if target_process is None and hook_session_id:
-            target_process = await AgenticProcess.get_by_session_id(hook_session_id)
-
-        if target_process is not None:
-            for fd in converted_fds:
-                try:
-                    await target_process.emit_flow_data({"flow_value": fd.flow_value, "attributes": fd.attributes})
-                except Exception as exc:
-                    logger.debug("AgenticProcess sniffer emit_flow_data failed (non-critical): %s", exc)
-    except Exception as exc:
-        logger.debug("Sniffer fan-out skipped (non-critical): %s", exc)
 
     return ApiSuccessResponse(data=result.model_dump())
 
@@ -877,18 +711,13 @@ async def listen_action(request):
             if raw_payload.get("agentic_process_id") is not None:
                 return await handle_process_agent_hook(AgentHookData(**raw_payload))
 
-            # Enrich hook_data with absolute skill usage count from ~/.claude.json.
-            # Mutate raw_payload["hook_data"] so both _broadcast_to_sniffer AND
-            # handle_agent_hook (which re-reads webhook_data.hook_data) see the count.
-            hook_data_dict = raw_payload.get("hook_data") or {}
-
+            # Global hooks are harness-wide: they fan out to the sniffer view
+            # only. They are deliberately NOT routed to whichever process fired
+            # them — that bridge is what `handle_process_agent_hook` replaces.
             data = AgentHookData(**raw_payload)
             payload_data = {"webhook_type": "agent_hook", **raw_payload}
             skip_hook_id = raw_payload.get("agent_hook_id")
             await _broadcast_to_sniffer(payload_data, "agent_hook", skip_hook_id=skip_hook_id)
-            # Route agent_hook events to source process via session_id
-            agent_session_id = hook_data_dict.get("session_id")
-            await _route_to_source_process(payload_data, session_id=agent_session_id)
             return await handle_agent_hook(data)
 
         return ApiFailResponse(message=f"Unknown webhook type: {webhook_type}")

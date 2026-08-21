@@ -24,7 +24,7 @@ from typing import Optional
 import httpx
 
 from flow_sdk.ingest import http
-from flow_sdk.ingest.driver import FetchResult, StreamCursorView, StreamRef
+from flow_sdk.ingest.driver import FetchResult, SegmentCursorView, SegmentRef
 from flow_sdk.ingest.health import SourceError
 from flow_sdk.ingest.models import IngestItem
 
@@ -43,10 +43,10 @@ class HackerNewsDriver:
     kind = "datasource.api.hackernews"
     record_kind = "content.feed.item"
 
-    def streams(self, source) -> list[StreamRef]:
-        return [StreamRef(key=STREAM_KEY, label="Hacker News updates")]
+    async def segments(self, source) -> list[SegmentRef]:
+        return [SegmentRef(key=STREAM_KEY, label="Hacker News updates")]
 
-    async def fetch(self, source, cursor: StreamCursorView) -> FetchResult:
+    async def fetch(self, source, cursor: SegmentCursorView) -> FetchResult:
         config = source.config or {}
         allowed_types = set(config.get("types") or ["story"])
         min_score = int(config.get("min_score") or 0)
@@ -88,8 +88,8 @@ class HackerNewsDriver:
                     source_id=source.id,
                     provider=self.provider,
                     kind=self.record_kind,
-                    stream_key=cursor.stream_key,
-                    stream_label="Hacker News",
+                    segment_key=cursor.segment_key,
+                    segment_label="Hacker News",
                     external_id=str(raw.get("id")),
                     title=str(raw.get("title") or ""),
                     body=str(raw.get("text") or raw.get("url") or ""),

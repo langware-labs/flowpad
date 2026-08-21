@@ -13,7 +13,7 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
-import { dataManager, Conversation, type TabRow } from '@sdk';
+import { dataManager, Conversation, Tab } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { TabStrip } from '@src/components/tabs/TabStrip';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
@@ -21,12 +21,12 @@ import { useTabStripItems } from '@src/tabs/tab-row-item';
 void Conversation; // ensure the Conversation entity type is registered
 
 /** The real content-panel strip chips, fed real TabRows. */
-function Strip({ rows }: { rows: TabRow[] }) {
+function Strip({ rows }: { rows: Tab[] }) {
   const items = useTabStripItems(rows);
   return (
     <TabStrip
       items={items}
-      activeKey={rows[0]?.pointer ?? ''}
+      activeKey={rows[0] ? rows[0].getKey() : ''}
       onSelect={() => {}}
       onClose={() => {}}
     />
@@ -49,7 +49,7 @@ describe('opening an "ask"-created conversation opens a correctly-named tab', ()
 
     // 2. open it → the loader materializes a Tab named getTabName(dock).
     const dock = DockPointer.forConversation(id);
-    const row: TabRow = {
+    const row = new Tab({
       id,
       pointer: dock.tabHash ?? '',
       target_type: 'conversation',
@@ -62,7 +62,7 @@ describe('opening an "ask"-created conversation opens a correctly-named tab', ()
       last_active_at: null,
       status: null,
       is_disabled: false,
-    };
+    });
 
     // 3. render the strip — the tab opens with a chip labeled by the subject.
     //    Wrapped in a Router: TabStrip transitively uses navigation hooks.

@@ -128,7 +128,7 @@ There is **no** `discover_one`, `init_record`, `init`, `clone`, `move`, `read_re
 
 `ensure_asset_ref()` binds `asset_ref` from a `fs_storage_mount_path` / `cwd` meta attr when it is not already set, so index-state properties resolve for records loaded from disk.
 
-`compute_asset_ref(scope_root, entity)` resolves the user-facing asset location under `scope_root` using the registered `TypeInfo.main_subdir` / `main_layout` (`"file"` → `<safe_name>.md`, `"folder"` → `<safe_name>/`). `upsert_main_ref(entity)` writes `TypeInfo.default_body_fn(entity)` into `asset_ref` iff that file does not yet exist.
+`compute_asset_ref(scope_root, entity)` resolves the user-facing asset location under `scope_root` using the registered `TypeInfo.main_subdir` / `main_layout` (`"file"` → `<safe_name>.md`, `"folder"` → `<safe_name>/`). `upsert_main_ref(entity)` writes `TypeInfo.default_body_fn(entity)` into `asset_ref` iff that file does not yet exist, then commits the entity id to the asset's identity carrier — unless carrier writes are suppressed for this operation (see [asset capsules](asset-capsules.md)), in which case it returns the proposed id untouched and the source file is never rewritten.
 
 ---
 

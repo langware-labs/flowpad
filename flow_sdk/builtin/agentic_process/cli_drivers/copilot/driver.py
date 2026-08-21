@@ -45,6 +45,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.copilot.stream_worker import (
     CopilotCLIStreamWorker,
 )
 from flow_sdk.builtin.agentic_process.process_hooks import (
+    SUPPORTED_PROCESS_HOOK_EVENTS,
     build_process_hook_snapshot,
     normalize_process_hook_events,
 )
@@ -134,16 +135,22 @@ class CopilotDriver:
             "--process-id",
             process_id,
         ]
+        handler = {
+            "type": "command",
+            "bash": render_shell_command(flow_argv, "linux"),
+            "powershell": render_shell_command(flow_argv, "win32"),
+        }
+        # Copilot accepts BOTH its own camelCase event names
+        # (``userPromptSubmitted``/``sessionStart``/``sessionEnd``) and the
+        # PascalCase VS Code-compatible aliases. We deliberately project the
+        # aliases: on config load Copilot rewrites them to its native keys and
+        # stamps ``_vsCodeCompat`` on each handler, which switches the stdin
+        # payload to the Claude-shaped one — snake_case fields carrying
+        # ``hook_event_name``. Copilot's native payload has no event field at
+        # all, so without this one shared handler command could not tell the
+        # three events apart.
         hooks = {
-            "hooks": {
-                "userPromptSubmitted": [
-                    {
-                        "type": "command",
-                        "bash": render_shell_command(flow_argv, "linux"),
-                        "powershell": render_shell_command(flow_argv, "win32"),
-                    }
-                ]
-            },
+            "hooks": {event.value: [handler] for event in normalized},
             "version": 1,
         }
         manifest = {
@@ -174,25 +181,38 @@ class CopilotDriver:
         if not is_valid_entity_id(process_id):
             raise ValueError(f"Invalid agentic process id: {process_id!r}")
         raw = dict(raw_hook_data)
+        supported = {event.value for event in SUPPORTED_PROCESS_HOOK_EVENTS}
         supplied_event = raw.get("hook_event_name")
-        if supplied_event is not None and supplied_event != HookEventType.USER_PROMPT_SUBMIT.value:
+        if supplied_event is None:
+            # Native (non-compat) payload: no event field exists, and only the
+            # prompt hook has ever been projected that way. Anything else is a
+            # payload we cannot attribute to an event.
+            if "prompt" not in raw:
+                raise ValueError("Copilot process hook payload carries no hook_event_name")
+            supplied_event = HookEventType.USER_PROMPT_SUBMIT.value
+        elif supplied_event not in supported:
             raise ValueError(f"Unsupported Copilot process hook event: {supplied_event}")
 
-        hook_data: dict[str, Any] = {
-            "hook_event_name": HookEventType.USER_PROMPT_SUBMIT.value,
-        }
+        hook_data: dict[str, Any] = {"hook_event_name": supplied_event}
         if "session_id" in raw:
             hook_data["session_id"] = raw["session_id"]
         elif "sessionId" in raw:
             hook_data["session_id"] = raw["sessionId"]
-        for key in ("prompt", "cwd", "timestamp"):
+        # ``initial_prompt``/``initialPrompt`` is SessionStart's launch prompt,
+        # ``source``/``reason`` the lifecycle discriminators. Vocabularies stay
+        # Copilot's own; only field NAMES are canonicalized.
+        for key in ("prompt", "cwd", "timestamp", "source", "reason"):
             if key in raw:
                 hook_data[key] = raw[key]
+        if "initial_prompt" in raw:
+            hook_data["initial_prompt"] = raw["initial_prompt"]
+        elif "initialPrompt" in raw:
+            hook_data["initial_prompt"] = raw["initialPrompt"]
         # Copilot's headless stdin transport submits by appending one ``\n``;
-        # its native hook echoes that transport terminator in ``prompt``. Keep
+        # its prompt hook echoes that transport terminator in ``prompt``. Keep
         # the native payload losslessly in ``raw_hook_data``, but remove the
         # terminator from the canonical cross-worker prompt value.
-        if "sessionId" in raw and isinstance(hook_data.get("prompt"), str):
+        if supplied_event == HookEventType.USER_PROMPT_SUBMIT.value and isinstance(hook_data.get("prompt"), str):
             hook_data["prompt"] = hook_data["prompt"].removesuffix("\n")
         hook_data["raw_hook_data"] = raw
         return AgentHookData(agentic_process_id=process_id, hook_data=hook_data)

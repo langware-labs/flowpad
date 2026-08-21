@@ -160,6 +160,9 @@ async def test_open_terminal_route_guarded(bootstrapped_client, bootstrap_payloa
         return _P()
 
     monkeypatch.setattr("subprocess.Popen", _fake_popen)
+    # Linux probes shutil.which for an emulator BEFORE Popen; headless CI has
+    # none, so stub discovery too — the spawn itself is already captured above.
+    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/fake-terminal")
 
     node_id = default_compute_node_id(bootstrap_payload)
     resp = await bootstrapped_client.post(

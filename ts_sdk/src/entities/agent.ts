@@ -31,7 +31,11 @@ export { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
  *    `FrontMatterFsRef.save()` — it reconstructs frontmatter from `name` and
  *    `description` alone and would drop `avatar` and everything else — and do
  *    not write it through the markdown editor's frontmatter buffer, whose
- *    line-regex parser flattens list and nested values.
+ *    line-regex parser flattens list and nested values. The one sanctioned
+ *    file-level writer besides `save()` is the profile editor's
+ *    `patchAgentDocument`, which edits the YAML document in place (keeping
+ *    unknown keys and comments `save()` would drop) and re-attaches the
+ *    identity capsule; the backend resyncs the row from disk on that write.
  *  - `system_prompt` IS the markdown body.
  */
 @registerEntity
@@ -105,6 +109,15 @@ export class Agent extends APIEntity<Agent> {
 
     this.enabled = entity.enabled ?? true;
     this.asset_ref = entity.asset_ref;
+  }
+
+  /**
+   * An agent is addressed by its slug (`name`) but PRESENTED by its title — the
+   * chat identity row, the pinned asset row, lists. Falls back to the default
+   * chain (name → uname → …) when no title was authored.
+   */
+  override getDisplayName(): string | null {
+    return this.title?.trim() || null;
   }
 
   /** Default open target: the agent profile editor (URL-first navigate target). */
@@ -195,9 +208,30 @@ export class Agent extends APIEntity<Agent> {
    * Open a session AS this agent: a new, visible, headless Chat process built
    * from the agent's local deployment, with no first turn — the human types it.
    * `POST /agent/<id>/use`. The counterpart of `run` (one prompt, headless).
+   *
+   * `projectId` is the project the session should ACT IN, which is not always
+   * the project the agent lives in: an agent supplied by a help desk attached
+   * as a context folder belongs to the desk's checkout, but the session has to
+   * open on the customer's project. Omit it and the backend falls back to the
+   * agent's own project.
    */
-  async use(): Promise<AgentUseResult> {
+  async use(projectId?: string | null): Promise<AgentUseResult> {
     const action = new ActionInfo('use', Agent.type, this.id, 'POST');
+    action.bodyParameters = { project_id: projectId ?? null };
+    return (await dataManager.callAction(action)) as AgentUseResult;
+  }
+
+  /**
+   * Open a chat on one exact cloud Deployment of this Agent.
+   *
+   * The Hub validates that the placement belongs to this Agent and creates the
+   * real AgenticProcess on that machine. The returned process id is addressed
+   * through the ordinary AgenticProcess SDK; callers do not need a second
+   * remote-chat transport.
+   */
+  async useDeployment(deploymentId: string): Promise<AgentUseResult> {
+    const action = new ActionInfo('use', Agent.type, this.id, 'POST');
+    action.bodyParameters = { deployment_id: deploymentId };
     return (await dataManager.callAction(action)) as AgentUseResult;
   }
 
@@ -237,14 +271,10 @@ export interface AgentDeployResult {
   agent_definition_error?: string;
 }
 
-/** What `POST /agent/<id>/run` hands back. */
 /** What `POST /agent/<id>/use` hands back — the session opened as the agent. */
-export interface AgentUseResult {
-  process_id: string;
-  process_typeid: string;
-  deployment_id: string;
-}
+export type AgentUseResult = Omit<AgentRunResult, 'compute_node_id'>;
 
+/** What `POST /agent/<id>/run` hands back. */
 export interface AgentRunResult {
   process_id: string;
   process_typeid: string;

@@ -348,12 +348,16 @@ def _db_missing_orphans(
 
     Obeys the strict orphan definition (``FSRecord.orphan``): a DECLARED
     source (asset_ref) that no longer exists. Rows without an asset_ref
-    aren't file-backed → never orphan. Rows whose asset_ref still exists are
+    aren't file-backed → never orphan. Rows under an UNREACHABLE root (an
+    unmounted volume) are excluded too — absence there is not deletion. Rows
+    whose asset_ref still exists are
     alive even when the walk derived a different id for that file (e.g. an
     API-minted v4 row beside a path-minted v5 twin) — id-set arithmetic alone
     would misclassify those as orphan. Stat-per-row — callers run this
     off-loop via ``asyncio.to_thread``.
     """
+    from flow_sdk.fs_store.path_utils import source_unreachable  # noqa: PLC0415
+
     return {
         eid
         for eid, source in db_rows.items()
@@ -361,6 +365,8 @@ def _db_missing_orphans(
         and eid not in seen
         and eid not in disk_ids
         and not Path(str(aref)).exists()
+        # An unreachable root is not a deletion — see ``source_unreachable``.
+        and not source_unreachable(str(aref))
     }
 
 
