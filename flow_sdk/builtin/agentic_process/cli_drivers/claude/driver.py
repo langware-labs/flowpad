@@ -174,12 +174,18 @@ class ClaudeDriver:
         if not is_valid_entity_id(process_id):
             raise ValueError(f"Invalid agentic process id: {process_id!r}")
         raw = dict(raw_hook_data)
+        # ``source`` (SessionStart) and ``reason`` (SessionEnd) are the two
+        # lifecycle discriminators; every other vendor field stays in
+        # ``raw_hook_data``. Values are passed through, not translated — each
+        # vendor keeps its own ``source``/``reason`` vocabulary.
         canonical_fields = (
             "hook_event_name",
             "prompt",
             "session_id",
             "cwd",
             "transcript_path",
+            "source",
+            "reason",
         )
         hook_data = {key: raw[key] for key in canonical_fields if key in raw}
         hook_data["raw_hook_data"] = raw

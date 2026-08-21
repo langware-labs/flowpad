@@ -680,10 +680,23 @@ class FsRecordsActionsMixin:
         filter_type: str,
         types_filter,
         trigger: str,
-        scan_ms: float,
+        walk_ms: float,
+        started_at: float,
         scope_explicit: bool,
     ) -> ApiResponse:
-        """Project a completed walk into scan stats and persist its scan log."""
+        """Project a completed walk into scan stats and persist its scan log.
+
+        ``scan_ms`` in the response is the WHOLE request — the span an HTTP
+        caller experiences — measured from ``started_at``, which the handler
+        stamps on entry. It used to bracket only ``indexer.scan``, so a 34s
+        request advertised ``scan_ms: 0.5s``: the identity/diff projection below
+        and the scope resolution above were both outside the clock. A metric
+        that names an operation must cover that operation, otherwise it reports
+        that a slow endpoint is fast and nobody looks again. ``walk_ms`` keeps
+        the walk's own share so the split stays visible.
+        """
+        import time  # noqa: PLC0415
+
         from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
         from flow_sdk.fs_store.indexer import INDEXABLE_TYPES  # noqa: PLC0415
         from flow_sdk.fs_store.indexer.index_function import FSIndexer  # noqa: PLC0415
@@ -806,6 +819,10 @@ class FsRecordsActionsMixin:
                 ):
                     bucket.setdefault(key, 0)
 
+        # Everything above (the walk's projection, including per-record identity
+        # resolution) is part of what the caller waited for.
+        scan_ms = round((time.perf_counter() - started_at) * 1000, 1)
+
         per_type = list(by_type.values())
         grand_total = sum(bucket["count"] for bucket in per_type)
         grand_bytes = sum(bucket["total_bytes"] for bucket in per_type)
@@ -832,6 +849,7 @@ class FsRecordsActionsMixin:
                         "total_bytes": 0,
                         "avg_bytes": 0,
                         "scan_ms": scan_ms,
+                        "walk_ms": walk_ms,
                         "records": [],
                         "min_bytes": 0,
                         "max_bytes": 0,
@@ -847,6 +865,7 @@ class FsRecordsActionsMixin:
                     "total_bytes": bucket["total_bytes"],
                     "avg_bytes": bucket["avg_bytes"],
                     "scan_ms": scan_ms,
+                    "walk_ms": walk_ms,
                     "records": records,
                     "min_bytes": min(sizes),
                     "max_bytes": max(sizes),
@@ -866,6 +885,7 @@ class FsRecordsActionsMixin:
                 "types": types_for_log,
                 "grand_total": grand_total,
                 "scan_ms": scan_ms,
+                "walk_ms": walk_ms,
                 "grand_pending": grand_pending,
                 "grand_orphan": grand_orphan,
                 "diff_included": do_diff,
@@ -893,6 +913,10 @@ class FsRecordsActionsMixin:
             get_shared_indexer,
         )
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+        # Stamped BEFORE any work so `scan_ms` is the caller's own wall time —
+        # scope resolution below is part of the request too.
+        started_at = time.perf_counter()
 
         qp = request_info.request.query_params
         filter_type = qp.get("type", "").strip()
@@ -971,13 +995,14 @@ class FsRecordsActionsMixin:
                     roots=scoped_roots,
                 )
             )
-            scan_ms = round((time.perf_counter() - t0) * 1000, 1)
+            walk_ms = round((time.perf_counter() - t0) * 1000, 1)
             response = self._project_fs_records_scan(
                 nodes=nodes,
                 filter_type=filter_type,
                 types_filter=types_filter,
                 trigger=trigger,
-                scan_ms=scan_ms,
+                walk_ms=walk_ms,
+                started_at=started_at,
                 scope_explicit=scope_explicit,
             )
             if terminal_table is not None:

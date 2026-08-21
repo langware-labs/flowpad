@@ -943,9 +943,9 @@ vendor with no hooks is viable — it just lands at the codex/copilot feature le
 - **Effort if missing:** L
 
 ### `UserPromptSubmit` event
-- **Need:** User-input echo for `_create_prompt_annotation` and auto-approve cancellation.
-- **Claude:** `HookEventType.USER_PROMPT_SUBMIT = "UserPromptSubmit"` (builtin/agent_hook.py:55; app/actions/listen.py:373)
-- **Codex:** not supported
+- **Need:** User-input echo — the prompt-anchor source for terminal row alignment. This is a **process-local** hook concern (`prepare_process_hooks` → `flow hooks report --process-id`), not a global-settings one. The process-hook tier supports `UserPromptSubmit`, `SessionStart` and `SessionEnd` (`process_hooks.py:SUPPORTED_PROCESS_HOOK_EVENTS`).
+- **Claude:** `HookEventType.USER_PROMPT_SUBMIT = "UserPromptSubmit"` (builtin/agent_hook.py:55)
+- **Codex:** supported as a process-local hook (`-c hooks.UserPromptSubmit=…`, codex/driver.py)
 - **Required:** Yes
 - **Vendor must expose:** A hook event fired on user prompt submission carrying the `prompt` text.
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
@@ -953,9 +953,12 @@ vendor with no hooks is viable — it just lands at the codex/copilot feature le
 - **Effort if missing:** M
 
 ### `SessionStart` / `SessionEnd` events
-- **Need:** Session lifecycle markers (worker boot/shutdown).
-- **Claude:** `HookEventType.SESSION_START = "SessionStart"`, `HookEventType.SESSION_END = "SessionEnd"` (builtin/agent_hook.py:51-52)
-- **Codex:** not supported
+- **Need:** Session lifecycle markers (worker boot/shutdown). Process-local, same transport as `UserPromptSubmit`.
+- **Claude:** `HookEventType.SESSION_START = "SessionStart"`, `HookEventType.SESSION_END = "SessionEnd"` (builtin/agent_hook.py:51-52). `SessionStart` carries `source` (`startup|resume|clear|compact`), `SessionEnd` carries `reason`.
+- **Codex:** supported as process-local hooks (`-c hooks.SessionStart=…` / `-c hooks.SessionEnd=…`, codex/driver.py). Payload is snake_case with `hook_event_name`; `reason` is currently always `other`.
+- **Copilot:** supported via the PascalCase VS Code-compatible aliases (copilot/driver.py). Copilot's own keys are `sessionStart`/`sessionEnd`, but projecting `SessionStart`/`SessionEnd` makes it stamp `_vsCodeCompat` and emit the Claude-shaped payload — which is the only form carrying `hook_event_name`, since its native payload has no event field.
+- **Vocabularies are NOT canonicalized:** `source`/`reason` values are passed through per vendor (claude `startup`, copilot `new`; claude `prompt_input_exit`, copilot `complete`).
+- **Firing is not once-per-process:** claude re-fires `SessionStart` on resume/clear/compact; copilot fires `sessionEnd` per agentic loop by default. Callbacks must be idempotent, and ordering relative to `UserPromptSubmit` differs by vendor (copilot emits the prompt hook first).
 - **Required:** Optional
 - **Vendor must expose:** Lifecycle hook fired at session begin/end.
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
