@@ -70,6 +70,10 @@ _META_TYPES = frozenset({
     "mode",
     "agent-name",
     "bridge-session",
+    # `{"type":"atis-latch","atis":"","sessionId":…}` — written LAST after every
+    # turn, so leaving it unclassified made the tail scan report UNKNOWN for the
+    # whole of a live turn (QA 2026-08-20).
+    "atis-latch",
 })
 
 _ATTACHMENT_TYPE_PLAN_MODE_EXIT = "plan_mode_exit"

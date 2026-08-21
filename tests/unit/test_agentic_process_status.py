@@ -814,6 +814,18 @@ def test_ignored_types_match_meta_types():
                 {"type": "agent-name", "name": "some-agent"},
             ],
         ),
+        # `atis-latch` is written LAST after every turn by current Claude Code,
+        # so before it was classified the whole of a live turn read UNKNOWN —
+        # the mid-turn status the cancel/busy path gates on never appeared.
+        (
+            "tool_use",
+            WorkerStatus.TOOL_RUNNING,
+            [
+                {"type": "last-prompt", "lastPrompt": "do the thing"},
+                {"type": "ai-title", "aiTitle": "some title"},
+                {"type": "atis-latch", "atis": "", "sessionId": "abc"},
+            ],
+        ),
     ],
 )
 def test_tail_status_signal_survives_envelope_epilogue(tmp_path, stop_reason, expected, envelope):

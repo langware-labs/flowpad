@@ -7706,11 +7706,21 @@ class AgenticProcess(Entity):
             # transcript that lands here), so no driver coupling.
             if not current_busy and prev_busy:
                 self._schedule_queue_drain("ready")
-                # Same turn-end edge: push-reindex the files this turn wrote/edited
-                # so their entities re-parse + broadcast (updated_date bump →
-                # frontend body re-read). Fire-and-forget; never blocks the turn.
-                self._schedule_turn_end_reindex("flush")
             if not current_busy:
+                # Push-reindex the files this turn wrote/edited so their entities
+                # re-parse + broadcast (updated_date bump → frontend body re-read).
+                #
+                # Gated on IDLE, not on the busy→idle EDGE, for the same reason the
+                # default-name stamp below is: each flush hydrates a fresh object, so
+                # `_last_broadcast_key` is absent and `prev_busy` is always None —
+                # the edge could never fire, and a headless turn's writes were never
+                # reindexed (proven: instrumented flush logs
+                # `prev_busy=None current_busy=False edge_fires=False` at turn end).
+                # Safe to run on every idle flush because
+                # `_collect_touched_from_transcript_tail` is watermarked by entry
+                # count: it returns only entries new since the last call, so repeat
+                # flushes collect nothing. Fire-and-forget; never blocks the turn.
+                self._schedule_turn_end_reindex("flush")
                 # Default-name stamp on ANY idle flush, not the busy→idle edge:
                 # each flush hydrates a fresh object, so ``prev_busy`` starts
                 # None and an edge gate would never fire. Naming THIS hydration
