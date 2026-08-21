@@ -122,3 +122,120 @@ async def test_process_hook_acceptance_uses_real_vendor(
         unsubscribe()
         await process.delete()
         reset_instance_settings()
+
+
+_SESSION_VENDORS = [
+    pytest.param("claude_code", "claude", "harness.claude.cli", id="claude"),
+    *_VENDORS,
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("worker_type", "binary", "capability_kind"), _SESSION_VENDORS)
+async def test_session_hooks_deliver_from_a_real_vendor(
+    initialize_test_db,
+    monkeypatch,
+    tmp_path,
+    worker_type,
+    binary,
+    capability_kind,
+):
+    """A live turn delivers SessionStart alongside the prompt hook.
+
+    Assertions are on per-event presence and ordering, never on counts:
+    Claude fires SessionStart on startup/resume/clear/compact, and Copilot
+    fires sessionEnd per agentic loop by default — both vendors legitimately
+    emit lifecycle hooks more than once per process.
+    """
+    if shutil.which(binary) is None:
+        pytest.skip(f"{binary} command not found in PATH")
+
+    from flow_sdk.builtin.agent_hook import HookEventType
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.core.capabilities.discovery import run_discovery
+    from flow_sdk.instance_settings import get_instance_settings, reset_instance_settings
+
+    monkeypatch.setenv("FLOW_HOME", str(tmp_path / "flow-home"))
+    monkeypatch.setenv("FLOW_INSTANCE", f"session-hook-{worker_type}")
+    monkeypatch.setenv("LOCAL_SERVER_PORT", "0")
+    monkeypatch.setenv("FLOWPAD_SKIP_LOCK", "true")
+    reset_instance_settings()
+    settings = get_instance_settings()
+    await run_discovery([capability_kind])
+
+    cli_config = {"permission_mode": "bypassPermissions"}
+    if worker_type != "copilot":
+        cli_config["model"] = "sm"
+    if worker_type == "claude_code":
+        cli_config["effort"] = "low"
+    process = await AgenticProcess(
+        worker_type=worker_type,
+        workdir=str(tmp_path),
+        visible=False,
+        pty_mode=False,
+        load_flowpad_assistant=False,
+        cli_config=cli_config,
+    ).save()
+
+    events = (
+        HookEventType.SESSION_START,
+        HookEventType.SESSION_END,
+        HookEventType.USER_PROMPT_SUBMIT,
+    )
+    reports = []
+    # SessionEnd is deliberately NOT awaited: Claude defers it to real session
+    # teardown while Copilot fires it per agentic loop.
+    awaited = (HookEventType.SESSION_START, HookEventType.USER_PROMPT_SUBMIT)
+    seen = {event.value: asyncio.Event() for event in awaited}
+
+    def callback(data):
+        reports.append(data)
+        arrived = seen.get(data.hook_data.get("hook_event_name"))
+        if arrived is not None:
+            arrived.set()
+
+    def noop_unsubscribe():
+        return None
+
+    unsubscribe = noop_unsubscribe
+    configured = []
+    try:
+        for event in events:
+            assert await process.set_hook(event) is True
+            configured.append(event)
+        unsubscribe = process.register_callback(callback)
+
+        rehydrated = await AgenticProcess.get_by_id(process.id)
+        assert rehydrated is not None
+        assert rehydrated.process_hook_events == _CONTRACT["expected_persisted_session_events"]
+
+        async with _serve_process_hook_route(settings.server_json_path):
+            result = await process.prompt(_CONTRACT["prompt"])
+            assert result.status == "SUCCESS", result
+            await asyncio.gather(*(arrived.wait() for arrived in seen.values()))
+
+        delivered = [report.hook_data.get("hook_event_name") for report in reports]
+        assert HookEventType.SESSION_START.value in delivered, delivered
+        assert HookEventType.USER_PROMPT_SUBMIT.value in delivered, delivered
+        # Relative ORDER is deliberately not asserted: claude and codex open
+        # the session before submitting the prompt, while copilot emits
+        # userPromptSubmitted first and sessionStart after. Both are the
+        # vendors' own sequencing, not part of our contract.
+
+        for report in reports:
+            assert report.agentic_process_id == process.id
+            assert report.hook_data["session_id"]
+            event_name = report.hook_data["hook_event_name"]
+            assert event_name in _CONTRACT["expected_persisted_session_events"]
+            expectation = _CONTRACT["session_events"].get(event_name)
+            if expectation:
+                # Vendor vocabularies differ (claude "startup" vs copilot
+                # "new"), so only presence of the discriminator is pinned.
+                assert report.hook_data[expectation["discriminator"]]
+                assert "prompt" not in report.hook_data
+    finally:
+        for event in configured:
+            await process.remove_hook(event)
+        unsubscribe()
+        await process.delete()
+        reset_instance_settings()

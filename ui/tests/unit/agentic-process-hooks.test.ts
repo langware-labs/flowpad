@@ -131,6 +131,45 @@ describe('AgenticProcess process hooks', () => {
     expect(update).toEqual({});
   });
 
+  it.each([
+    [HookEventType.SESSION_START, { source: 'startup' }],
+    [HookEventType.SESSION_END, { reason: 'other' }],
+  ] as const)('delivers %s to registered callbacks', async (event, extra) => {
+    const process = new AgenticProcess({ id: PROCESS_ID, process_hook_events: [event] });
+    const received: AgentHookData[] = [];
+    const unsubscribe = process.registerCallback((data) => {
+      received.push(data);
+    });
+    const data: AgentHookData = {
+      webhook_type: 'agent_hook',
+      agentic_process_id: PROCESS_ID,
+      hook_data: { hook_event_name: event, session_id: 's1', ...extra },
+    };
+
+    await process.onHook(data);
+    unsubscribe();
+
+    expect(received).toEqual([data]);
+    expect(received[0].hook_data.hook_event_name).toBe(event);
+    expect(received[0].hook_data.prompt).toBeUndefined();
+  });
+
+  it.each([HookEventType.SESSION_START, HookEventType.SESSION_END] as const)(
+    'setHook/removeHook pass %s through to the process action',
+    async (event) => {
+      const callAction = vi.spyOn(dataManager, 'callAction').mockResolvedValue({ changed: true });
+      const process = new AgenticProcess({ id: PROCESS_ID });
+
+      expect(await process.setHook(event)).toBe(true);
+      expect(await process.removeHook(event)).toBe(true);
+
+      expect(callAction.mock.calls.map((call) => call[0].name)).toEqual(['set-hook', 'remove-hook']);
+      for (const call of callAction.mock.calls) {
+        expect(call[0].bodyParameters).toEqual({ event });
+      }
+    },
+  );
+
   it('clears callbacks only after a successful delete', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);

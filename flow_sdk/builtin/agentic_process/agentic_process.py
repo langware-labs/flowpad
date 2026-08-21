@@ -46,6 +46,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import ProcessHookRuntime
 from flow_sdk.builtin.agentic_process.process_hooks import (
+    SUPPORTED_PROCESS_HOOK_EVENTS,
     ProcessHookCallback,
     clear_process_hook_callbacks,
     dispatch_process_hook,
@@ -4486,9 +4487,9 @@ class AgenticProcess(Entity):
     ) -> ApiSuccessResponse | ApiFailResponse:
         """Tell Claude to execute the plan.
 
-        If clear_context=True, inject '/clear' first.
-        Sets the plan auto-approve flag so that when ExitPlanMode is called,
-        the hook handler can auto-approve the PermissionRequest once.
+        If clear_context=True, inject '/clear' first. The ExitPlanMode
+        permission prompt is answered by the user in the terminal — Flowpad does
+        not pre-approve it.
         """
         if not file_path:
             return ApiFailResponse(message="file_path is required")
@@ -4502,9 +4503,6 @@ class AgenticProcess(Entity):
             await self.inject(prompt)
             await asyncio.sleep(1.5)
 
-            from flow_sdk.app.actions.listen import set_plan_auto_approve
-
-            set_plan_auto_approve(self.id)
             _write_plan_frontmatter(file_path, {"executed": True})
 
             return ApiSuccessResponse(data={"injected": True})
@@ -5177,7 +5175,7 @@ class AgenticProcess(Entity):
             normalized = HookEventType(event)
         except (TypeError, ValueError) as exc:
             raise ValueError(f"unsupported process hook event: {event!r}") from exc
-        if normalized is not HookEventType.USER_PROMPT_SUBMIT:
+        if normalized not in SUPPORTED_PROCESS_HOOK_EVENTS:
             raise ValueError(f"unsupported process hook event: {normalized.value}")
         return normalized
 
