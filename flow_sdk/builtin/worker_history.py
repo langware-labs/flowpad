@@ -78,6 +78,7 @@ class WorkerType(str, Enum):
     CLAUDE = "claude"
     CODEX = "codex"
     COPILOT = "copilot"
+    OPENCODE = "opencode"
 
 
 class WorkerHistoryEntry(BaseModel):
@@ -809,10 +810,106 @@ async def get_copilot_worker_history(
     return await asyncio.to_thread(_collect_copilot_entries_sync, limit, idx, project_ids, cwd_to_pid)
 
 
+def _collect_opencode_entries_sync(
+    limit: int, process_index: ProcessIndex, project_ids: ScopeProjectIds = None,
+    cwd_to_pid: Optional[dict[str, str]] = None,
+) -> list[WorkerHistoryEntry]:
+    """Blocking body of ``get_opencode_worker_history``. Runs under ``to_thread``.
+
+    Unlike the other three vendors there is no per-session file to stat: opencode
+    keeps sessions in a SQLite database, so one ordered query replaces the
+    glob-and-mtime-cache dance (and there is nothing to cache — the query is the
+    index). Only the ``session``/``message`` tables are read, always read-only:
+    the same database also holds provider credentials.
+    """
+    import sqlite3
+
+    from flow_sdk.builtin.agentic_process.cli_drivers.opencode.session_history import (
+        opencode_db_path,
+    )
+
+    db_path = opencode_db_path()
+    if not db_path.exists():
+        return []
+    try:
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return []
+
+    scoped = project_ids is not None
+    result: list[WorkerHistoryEntry] = []
+    scope_counts: dict[str, int] = {}
+    try:
+        rows = con.execute(
+            """
+            SELECT s.id, s.directory, s.title,
+                   (SELECT MAX(m.time_created) FROM message m WHERE m.session_id = s.id),
+                   (SELECT COUNT(*) FROM message m WHERE m.session_id = s.id)
+            FROM session s
+            ORDER BY s.rowid DESC
+            """
+        )
+        for sid, directory, title, last_ms, message_count in rows:
+            if not sid:
+                continue
+            if not scoped and len(result) >= limit:
+                break
+            if scoped and all(scope_counts.get(p, 0) >= limit for p in project_ids):
+                break
+            cwd = directory or None
+            if _is_scratch_cwd(cwd):
+                continue
+            pid = _project_id_for(cwd, None, cwd_to_pid)
+            if scoped and pid not in project_ids:
+                continue
+            if scoped:
+                scope_counts[pid] = scope_counts.get(pid, 0) + 1
+            # ``time_created`` is unix milliseconds in opencode's schema.
+            last_active = (
+                datetime.fromtimestamp(last_ms / 1000, tz=timezone.utc)
+                if last_ms
+                else datetime.now(timezone.utc)
+            )
+            ap_id, ap_name, ap_last_active_at = process_index.get(sid, (None, None, None))
+            result.append(
+                WorkerHistoryEntry(
+                    worker_type=WorkerType.OPENCODE,
+                    worker_id=sid,
+                    project_id=pid,
+                    project_name=_basename(cwd),
+                    project_cwd=cwd,
+                    last_active_time=last_active,
+                    name=ap_name or (title or None),
+                    last_prompt=_pick_last_prompt(title),
+                    git_branch=None,
+                    message_count=message_count,
+                    agentic_process_id=ap_id,
+                    last_active_at=ap_last_active_at,
+                )
+            )
+    except sqlite3.Error:
+        logger.debug("opencode worker history query failed", exc_info=True)
+    finally:
+        con.close()
+    return result
+
+
+async def get_opencode_worker_history(
+    limit: int,
+    process_index: Optional[ProcessIndex] = None,
+    project_ids: ScopeProjectIds = None,
+    cwd_to_pid: Optional[dict[str, str]] = None,
+) -> list[WorkerHistoryEntry]:
+    """Return the most-recent N OpenCode sessions, newest first."""
+    idx = process_index if process_index is not None else {}
+    return await asyncio.to_thread(_collect_opencode_entries_sync, limit, idx, project_ids, cwd_to_pid)
+
+
 WORKER_HISTORY_PROVIDERS: dict[WorkerType, WorkerHistoryProvider] = {
     WorkerType.CLAUDE: get_claude_worker_history,
     WorkerType.CODEX: get_codex_worker_history,
     WorkerType.COPILOT: get_copilot_worker_history,
+    WorkerType.OPENCODE: get_opencode_worker_history,
 }
 
 

@@ -20,12 +20,15 @@ from .claude import CLAUDE_PRICING
 from .claude import pricing_for as _claude_pricing_for
 from .codex import CODEX_PRICING
 from .codex import pricing_for as _codex_pricing_for
+from .opencode import OPENCODE_PRICING
+from .opencode import pricing_for as _opencode_pricing_for
 
 __all__ = [
     "ItemPrice",
     "ModelPricing",
     "CLAUDE_PRICING",
     "CODEX_PRICING",
+    "OPENCODE_PRICING",
     "pricing_for",
     "legacy_input_output_rates",
     "total_cost_usd",
@@ -69,6 +72,10 @@ def pricing_for(model: str | None, worker: str | None = None) -> ModelPricing:
         return _claude_pricing_for(model)
     if worker == "codex" or (model and model.startswith("gpt")):
         return _codex_pricing_for(model)
+    # OpenCode is model-agnostic, so it dispatches on the worker hint (or on the
+    # provider-qualified slug shape opencode always uses) rather than a family.
+    if worker == "opencode" or (model and model.startswith("openrouter/")):
+        return _opencode_pricing_for(model)
     return _claude_pricing_for(model)
 
 

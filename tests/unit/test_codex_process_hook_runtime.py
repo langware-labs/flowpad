@@ -82,7 +82,7 @@ def test_codex_process_hook_runtime_is_structured_fileless_and_deterministic(
     assert driver.process_hook_snapshot([HookEventType.USER_PROMPT_SUBMIT]) == {
         "events": ["UserPromptSubmit"],
         "provider": "codex",
-        "schema": 1,
+        "schema": 2,
     }
     assert not assets.os_path.exists()
 
@@ -239,3 +239,72 @@ def test_codex_hook_prepare_rejects_before_filesystem_writes(tmp_path):
         )
 
     assert not assets.os_path.exists()
+
+
+def test_codex_projects_one_config_override_slot_per_configured_event(tmp_path, monkeypatch):
+    """``hooks`` is a TOML table keyed by event — one ``-c`` slot each."""
+    process_id = str(mint_uuid())
+    monkeypatch.setattr(
+        "flow_sdk.builtin.agentic_process.cli_drivers.codex.driver.get_installed_flow_invocation",
+        lambda: ("/opt/flow", []),
+    )
+    runtime = CodexDriver().prepare_process_hooks(
+        AssetDir(tmp_path / "assets"),
+        process_id,
+        [HookEventType.SESSION_START, HookEventType.SESSION_END, HookEventType.USER_PROMPT_SUBMIT],
+    )
+    options = CodexAgentOptions(workdir=str(tmp_path))
+    options.extra_config_overrides = list(runtime.config_overrides)
+    options.bypass_hook_trust = runtime.bypass_hook_trust
+
+    argv, _ = options.to_spawn_args()
+    config_flags = _config_flags(argv)
+
+    keys = [key for key, _ in runtime.config_overrides]
+    assert keys == ["features.hooks", "hooks.SessionEnd", "hooks.SessionStart", "hooks.UserPromptSubmit"]
+    for event in ("SessionEnd", "SessionStart", "UserPromptSubmit"):
+        rendered = next(value for value in config_flags if value.startswith(f"hooks.{event}="))
+        handler = tomllib.loads(rendered)["hooks"][event][0]["hooks"][0]
+        assert handler["type"] == "command"
+        assert handler["command"].endswith(f"--process-id {process_id}")
+        assert handler["commandWindows"].endswith(f"--process-id {process_id}")
+    assert argv.count("--dangerously-bypass-hook-trust") == 1
+    assert not (tmp_path / "assets").exists()
+
+    # Codex stays fileless for every event combination.
+    assert CodexDriver().prepare_process_hooks(AssetDir(tmp_path / "assets"), process_id, []).config_overrides == ()
+
+
+def test_codex_session_snapshot_and_normalization_carry_lifecycle_fields():
+    driver = CodexDriver()
+    process_id = str(mint_uuid())
+
+    assert driver.process_hook_snapshot([HookEventType.SESSION_START, HookEventType.SESSION_END]) == {
+        "events": ["SessionEnd", "SessionStart"],
+        "provider": "codex",
+        "schema": 2,
+    }
+
+    start_raw = {
+        "hook_event_name": "SessionStart",
+        "source": "startup",
+        "session_id": "rollout-1",
+        "cwd": "/repo",
+        "transcript_path": "/tmp/rollout.jsonl",
+        "permission_mode": "never",
+        "model": "gpt-5.5",
+    }
+    start = driver.normalize_process_hook_data(process_id, start_raw)
+    assert start.hook_data == {**start_raw, "raw_hook_data": start_raw}
+
+    # Codex currently always reports reason="other"; the value is passed
+    # through, never validated against a vocabulary.
+    end_raw = {
+        "hook_event_name": "SessionEnd",
+        "reason": "other",
+        "session_id": "rollout-1",
+        "cwd": "/repo",
+        "transcript_path": "/tmp/rollout.jsonl",
+    }
+    end = driver.normalize_process_hook_data(process_id, end_raw)
+    assert end.hook_data == {**end_raw, "raw_hook_data": end_raw}

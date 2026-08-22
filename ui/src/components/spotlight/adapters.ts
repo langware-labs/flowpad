@@ -134,11 +134,21 @@ export function searchResultToTerminalRow(r: SearchResult): SpotlightRow {
 }
 
 export function workerHistoryToRow(e: WorkerHistoryEntry): SpotlightRow {
-  const recordType =
-    e.worker_type === 'codex' ? 'codex_session' : e.worker_type === 'copilot' ? 'copilot_session' : 'claude_session';
+  // Only these three have a session entity type. opencode deliberately has
+  // none, so it gets the generic recordType and its glyph comes from
+  // `vendorWorkerType` — NOT a fall-through to claude_session, which is what
+  // made OpenCode results render as Claude.
+  const SESSION_TYPE: Record<string, string> = {
+    claude: 'claude_session',
+    claude_code: 'claude_session',
+    codex: 'codex_session',
+    copilot: 'copilot_session',
+  };
+  const recordType = SESSION_TYPE[e.worker_type] ?? 'agentic_process';
   return {
     key: `${e.worker_type}:${e.worker_id}`,
     recordType,
+    vendorWorkerType: e.worker_type,
     title: historyDisplayName(e),
     subtitle: e.project_name ?? '',
     timestamp: e.last_active_time ?? null,

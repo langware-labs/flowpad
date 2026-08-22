@@ -42,8 +42,13 @@ export function useTranscriptSession(
   const { navigation } = useDockNavigation();
   const [starting, setStarting] = useState(false);
 
+  // A vendor with no session ENTITY type (opencode) has no analysis target to
+  // key on — there is no `<sessionType>/<id>` to rediscover a running analyzer
+  // by. Guard the lookup: interpolating the miss produced the literal target
+  // string `"undefined/ses_…"`, which matches nothing and would silently spawn a
+  // duplicate analyzer on every mount.
   const sessionType = SESSION_TYPE_BY_WORKER[workerType];
-  const target = sessionId ? `${sessionType}/${sessionId}` : null;
+  const target = sessionId && sessionType ? `${sessionType}/${sessionId}` : null;
   const { processes } = useProcessesForTarget(target, { processType: ProcessKind.Analysis });
   const process = useMemo(() => mostRecentProcess(processes), [processes]);
 

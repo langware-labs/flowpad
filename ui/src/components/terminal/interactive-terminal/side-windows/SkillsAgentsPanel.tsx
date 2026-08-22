@@ -46,9 +46,16 @@ interface Props {
  * `AgenticProcess.transcriptDockPointer` — anything that isn't codex/copilot is
  * claude (covers 'claude_code', unset, etc.).
  */
+/** Map a process's raw worker string onto the transcript route's value space.
+ *  Every vendor the server whitelists (`_SUPPORTED_WORKERS` in
+ *  `routes/transcripts.py`) needs a branch: the fall-through is `'claude'`, so a
+ *  missing vendor silently fetches the WRONG transcript rather than erroring. */
 function normalizeWorkerType(raw: string | null | undefined): WorkerType {
   const wt = (raw ?? 'claude').toLowerCase();
-  return wt === 'codex' ? 'codex' : wt === 'copilot' ? 'copilot' : 'claude';
+  if (wt === 'codex') return 'codex';
+  if (wt === 'copilot') return 'copilot';
+  if (wt === 'opencode') return 'opencode';
+  return 'claude';
 }
 
 /** A used skill / sub-agent, deduped by name with an invocation count. */

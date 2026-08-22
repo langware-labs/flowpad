@@ -24,6 +24,10 @@ export enum TranscriptFormat {
   CODEX_ROLLOUT = 'codex_rollout',
   COPILOT_STREAM = 'copilot_stream',
   COPILOT_EVENTS = 'copilot_events',
+  // FlowPad owns both opencode formats: the headless stdout tee, and the
+  // projection assembled from opencode's SQLite store for PTY sessions.
+  OPENCODE_STREAM = 'opencode_stream',
+  OPENCODE_SESSION = 'opencode_session',
 }
 
 export enum TranscriptSource {

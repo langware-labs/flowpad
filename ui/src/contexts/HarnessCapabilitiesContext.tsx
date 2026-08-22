@@ -27,6 +27,7 @@ interface HarnessCapabilitiesValue {
   claude: UseCapabilityResult;
   codex: UseCapabilityResult;
   copilot: UseCapabilityResult;
+  opencode: UseCapabilityResult;
 }
 
 const HarnessCapabilitiesContext = createContext<HarnessCapabilitiesValue | null>(null);
@@ -36,11 +37,12 @@ export const HarnessCapabilitiesProvider = ({ children }: { children: ReactNode 
   const claude = useCapability(CapabilityKinds.ClaudeCode, { autoCheck: false });
   const codex = useCapability(CapabilityKinds.Codex, { autoCheck: false });
   const copilot = useCapability(CapabilityKinds.Copilot, { autoCheck: false });
+  const opencode = useCapability(CapabilityKinds.OpenCode, { autoCheck: false });
 
   // No useMemo: `useCapability` returns a fresh object every render, so the
-  // four deps always change identity — a memo here would never hold. Consumers
+  // five deps always change identity — a memo here would never hold. Consumers
   // re-render whenever any capability snapshot changes, which is the intent.
-  const value: HarnessCapabilitiesValue = { defaultHarness, claude, codex, copilot };
+  const value: HarnessCapabilitiesValue = { defaultHarness, claude, codex, copilot, opencode };
 
   return <HarnessCapabilitiesContext.Provider value={value}>{children}</HarnessCapabilitiesContext.Provider>;
 };
@@ -61,7 +63,7 @@ export function useOptionalHarnessCapabilities(): HarnessCapabilitiesValue | nul
   return useContext(HarnessCapabilitiesContext);
 }
 
-/** Read the shared Claude/Codex/Copilot capability snapshots. */
+/** Read the shared Claude/Codex/Copilot/OpenCode capability snapshots. */
 export function useHarnessCapabilities(): HarnessCapabilitiesValue {
   const ctx = useContext(HarnessCapabilitiesContext);
   if (!ctx) {

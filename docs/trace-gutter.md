@@ -12,7 +12,7 @@ agent trace events against terminal rows.
 The terminal has two parallel channels:
 
 1. **PTY I/O channel** - `Shell` / `PtyConnection` delivers terminal bytes to xterm and accepts user keystrokes. This is the interactive terminal itself.
-2. **FlowData trace channel** - `AgenticProcess.flowDataStream` delivers history, live worker stream events, and hook/sniffer events for trace UI.
+2. **FlowData trace channel** - `AgenticProcess.flowDataStream` delivers history and live worker stream events for trace UI.
 
 The trace gutter does not parse prompt text out of PTY bytes. PTY output is only
 used for row coordinates through `PtySyncSession`.
@@ -27,7 +27,6 @@ used for row coordinates through `PtySyncSession`.
 |--------|--------------------------|-------|
 | History | `process.loadHistory()` calls the backend `get-history` action. The active driver reads the JSONL transcript and converts entries to `FlowData`. | Marked `FlowDataSource.History`. |
 | Live stream | Print/headless worker output and SDK streaming ingest append `FlowData` as the process runs. | Marked as live stream source. |
-| Sniffer/hooks | `listen.py` converts hook payloads to canonical `FlowData` and routes a copy to the matching `AgenticProcess`. | Used for hook-level telemetry such as `UserPromptSubmit`, tool hooks, notifications. |
 | Optimistic user echo | Some API/execute paths append user-message `FlowData` before backend confirmation. | This is not the interactive PTY keystroke path. |
 
 ### TraceEvent
@@ -133,18 +132,19 @@ Backend path:
 4. transcript entries are converted to `FlowData`
 5. frontend ingests those items into `process.flowDataStream`
 
-### Hook/Sniffer Fan-Out
+### Hook events are NOT in this stream
 
-`flow_sdk/app/actions/listen.py` handles hook webhooks.
+Global hooks (`~/.claude/settings.json`) are harness-wide. `listen.py` converts
+them to `FlowData` and emits them to the global `@sniffer` `AgentHook` for the
+sniffer/events panel only — it does **not** route a copy to whichever
+`AgenticProcess` fired them. That per-process fan-out was the global→local id
+bridge and was removed; see `docs/data-management/listen-action.md`.
 
-For hook events:
-
-1. Convert hook payload to canonical `FlowData`.
-2. Broadcast to the global `@sniffer` `AgentHook` for the global sniffer panel.
-3. Route a copy to the source `AgenticProcess` when `FLOWPAD_EXECUTION_SCOPE` or session metadata identifies it.
-
-The terminal TraceGutter reads the per-process copy, not the global sniffer
-panel state.
+Process-local hooks (`handle_process_agent_hook`) reach their process as
+`FlowData` with `attributes.kind == "process_hook"`, which
+`AgenticProcess.handleFlowData` intercepts and dispatches to registered
+callbacks **without** ingesting into `flowDataStream` — so they do not render in
+the gutter either.
 
 ## Prompt Index
 
@@ -179,11 +179,16 @@ Backend path:
 
 Prompt annotations are auxiliary row anchors:
 
-1. `listen.py` sees `UserPromptSubmit`.
-2. It creates an `Annotation` with `labels=["prompt:"]`, `session_id`, and truncated prompt content.
-3. `useAnnotationGutter()` queries annotations and resolves prompt rows by searching xterm text.
-4. `InteractiveTerminal` matches transcript prompts to nearby prompt annotations within 1000 ms.
-5. If an annotation exists, the prompt can scroll to its terminal row. If it is missing, the prompt still renders from the transcript endpoint.
+1. Something creates an `Annotation` with `labels=["prompt:"]`, `session_id`, and truncated prompt content.
+2. `useAnnotationGutter()` queries annotations and resolves prompt rows by searching xterm text.
+3. `InteractiveTerminal` matches transcript prompts to nearby prompt annotations within 1000 ms, and feeds `getAnchors()` into `PtySyncSession.buildSegmentsFromAnchors()`.
+4. If an annotation exists, the prompt can scroll to its terminal row. If it is missing, the prompt still renders from the transcript endpoint and segmentation falls back to one default segment.
+
+> **No producer today.** The global `UserPromptSubmit` hook used to write these
+> annotations from `listen.py`; that was the global→local id bridge and was
+> removed. The consumers above are intact and inert, waiting to be re-fed from
+> the **process-local** `UserPromptSubmit` hook — prompt anchors are that tier's
+> canonical use case.
 
 ## TraceGutter Rendering
 
@@ -216,4 +221,4 @@ overlay list with collision avoidance for events that bucket to the same row.
 | `ts_sdk/src/process/agentic-process.ts` | `loadHistory()`, `getPrompts()`, and `getPlan()` frontend actions. |
 | `flow_sdk/builtin/agentic_process/agentic_process.py` | Backend `get-history` and `transcript/{plan,prompts}` actions. |
 | `flow_sdk/transcript_analyzer/transcript.py` | `AgentTranscriptFile.prompts` filtering logic. |
-| `flow_sdk/app/actions/listen.py` | Hook conversion, sniffer broadcast, per-process FlowData routing, prompt annotations. |
+| `flow_sdk/app/actions/listen.py` | Hook conversion, sniffer broadcast, and `hook_op` per-process FlowData routing. |

@@ -38,6 +38,7 @@ class CapabilityKind(StrEnum):
     CLAUDE_CLI = "harness.claude.cli"
     CODEX_CLI = "harness.codex.cli"
     COPILOT_CLI = "harness.copilot.cli"
+    OPENCODE_CLI = "harness.opencode.cli"
     CHROME_AUTHENTICATED = "browsing.chrome.authenticated"
     # Source control: parent = "a GitHub connection FlowPad can use" (OAuth
     # token OR gh); child = the gh CLI specifically (installed + authenticated).

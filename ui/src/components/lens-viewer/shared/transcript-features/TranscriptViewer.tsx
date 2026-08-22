@@ -86,12 +86,26 @@ export function TranscriptViewer({
   const sessionId = data?.session_id ?? null;
   const header = data?.header ?? {};
 
-  // Workflow-run envelope (only the workflow worker emits a session_meta entry).
-  // Surfaced as a summary header strip and dropped from the entry list below.
-  const workflowMeta = useMemo(
+  // The session envelope — `session_meta`, emitted by codex, copilot, workflow
+  // AND opencode. It is header material for EVERY vendor, never a conversation
+  // row, so it is always excluded from the entry list below.
+  const sessionEnvelope = useMemo(
     () => entries.find((e) => e.role === 'meta' && e.subtype === 'session_meta') ?? null,
     [entries],
   );
+
+  // The workflow-run SUMMARY STRIP is a different question from "is this the
+  // envelope". The strip reads workflow-only payload fields (`agentCount`,
+  // `totalTokens`, `totalToolCalls`, `durationMs`), so rendering it for a worker
+  // transcript produced four tiles reading 0 — a header that looks authoritative
+  // and is entirely fabricated. Gate it on the WORKER.
+  //
+  // These two must stay separate. Collapsing them (gating the envelope lookup
+  // itself on the worker) stops the fabricated header but also stops filtering
+  // the envelope out of the rows, so codex/copilot/opencode gain a spurious
+  // trace row — which is exactly what `codex_chat_terminal_full_matrix` D01
+  // catches (12 rows expected, 13 rendered).
+  const workflowMeta = workerType === 'workflow' ? sessionEnvelope : null;
 
   // A received transcript (shared from another machine) never ran here and is
   // not resumable: hide the "open in terminal" affordance and instead offer a
@@ -387,8 +401,8 @@ export function TranscriptViewer({
   const filteredEntries = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return entries.filter((entry) => {
-      // The workflow envelope renders as the summary header strip, not a row.
-      if (entry === workflowMeta) return false;
+      // The session envelope is header material for every vendor, not a row.
+      if (entry === sessionEnvelope) return false;
       if (entry.role === 'user') {
         if (!showUser) return false;
         return !query || entry.searchHaystack.includes(query);
@@ -406,7 +420,7 @@ export function TranscriptViewer({
       if (!showUser && !showAssistant) return false;
       return !query || entry.searchHaystack.includes(query);
     });
-  }, [entries, workflowMeta, showUser, showAssistant, toolFilters, searchQuery]);
+  }, [entries, sessionEnvelope, showUser, showAssistant, toolFilters, searchQuery]);
 
   // Chat mode is a quick agent ↔ user view. Operations (tool calls / file
   // writes / shell commands) live in trace mode only — chat stays simple.

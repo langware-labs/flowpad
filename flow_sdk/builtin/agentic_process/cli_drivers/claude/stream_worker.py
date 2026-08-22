@@ -181,7 +181,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         try:
             # stdin_payload is always a string in production (the stream-json
             # user message); test fakes may pass None to run stdin-less.
-            argv, env, stdin_payload = self._build_spawn(prompt, context)
+            argv, env, stdin_payload = self._build_spawn(context, prompt)
         except WorkerSpawnError as e:
             # Surface the message on the chat stream, then propagate so the
             # turn runner latches status=FAILED + start_failure.
@@ -402,10 +402,15 @@ class ClaudeCLIStreamWorker(AgenticWorker):
 
     def _build_spawn(
         self,
-        prompt: str,
         context: AgenticContext,
+        prompt: str,
     ) -> tuple[list[str], dict[str, str], str]:
         """Build (argv, env, stdin payload) via ``ClaudeAgentOptions``.
+
+        Argument order matches the other three vendors — ``(context, prompt)``.
+        Claude used to take them the other way round, which made the workers'
+        one genuinely shared hook the one thing a shared ``execute()`` could
+        not call uniformly.
 
         The prompt rides stdin as a stream-json user message
         (``--input-format stream-json``) so the open pipe doubles as the

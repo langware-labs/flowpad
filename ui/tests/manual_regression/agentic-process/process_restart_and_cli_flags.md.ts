@@ -16,7 +16,7 @@
  * (test 2/3) — that flag only resets on a real respawn.
  */
 import { test, expect, type Page } from '@playwright/test';
-import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, activePanel, fetchProcess } from './_ap_helpers';
+import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, activePanel, fetchProcess, AP_HAS_CLAUDE_ONLY_CLI_FLAGS, AP_OPENER } from './_ap_helpers';
 
 const restart = (page: Page) => activePanel(page).locator('[data-testid="process-toolbar-restart"]');
 const cliOptions = (page: Page) => activePanel(page).locator('button[aria-label="CLI Options"]');
@@ -48,6 +48,8 @@ test.describe('process restart and CLI flags', () => {
   });
 
   test('test 2: toggling a CLI flag persists + lights the Restart glow; Restart clears it', async ({ page }) => {
+    // --chrome is a claude-only flag; other vendors do not render the toggle.
+    test.skip(!AP_HAS_CLAUDE_ONLY_CLI_FLAGS, `${AP_OPENER} has no --chrome flag`);
     test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoNewShell(page);
@@ -80,6 +82,10 @@ test.describe('process restart and CLI flags', () => {
   });
 
   test('test 3: out-of-band entity mutation lights the glow; reverting or a Restart clears it', async ({ page }) => {
+    // Drives the glow by mutating cli_config.chrome, which only claude carries:
+    // a vendor without the field never drifts from last_started_hash, so the
+    // glow correctly never lights and there is no toggle to revert.
+    test.skip(!AP_HAS_CLAUDE_ONLY_CLI_FLAGS, `${AP_OPENER} has no --chrome flag`);
     test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoNewShell(page);
@@ -161,9 +167,14 @@ test.describe('process restart and CLI flags', () => {
 
     // CLI Options checkboxes ENABLED (started unlocks toggles).
     await cliOptions(page).click();
-    await expect(page.getByRole('menuitemcheckbox', { name: /Chrome browser/ })).toBeEnabled();
+    // Full Trust is the one toggle every vendor advertises (each with its own
+    // flag: --dangerously-skip-permissions / --allow-all / --auto). Chrome and
+    // Debug are claude-only, so assert them only on that arm.
     await expect(page.getByRole('menuitemcheckbox', { name: /Full Trust/ })).toBeEnabled();
-    await expect(page.getByRole('menuitemcheckbox', { name: /Debug logging/ })).toBeEnabled();
+    if (AP_HAS_CLAUDE_ONLY_CLI_FLAGS) {
+      await expect(page.getByRole('menuitemcheckbox', { name: /Chrome browser/ })).toBeEnabled();
+      await expect(page.getByRole('menuitemcheckbox', { name: /Debug logging/ })).toBeEnabled();
+    }
     await page.keyboard.press('Escape');
   });
 });

@@ -129,10 +129,11 @@ export async function openAgenticProcess(
       return;
     }
 
-    // Headless → view the run's transcript (read-only).
+    // Headless → view the run's transcript (read-only). The lens category is
+    // the PROCESS's vendor, not a literal — see AgenticProcess.
     const sessionId = ap?.session_id;
-    if (sessionId) {
-      navigation.openLens('claude', 'transcript', sessionId);
+    if (sessionId && ap) {
+      navigation.openLens(ap.transcriptLensCategory, 'transcript', sessionId);
     } else {
       notify.error({ title: t`No transcript`, message: t`This worker has no session to view yet.` });
     }

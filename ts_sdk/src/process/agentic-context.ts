@@ -96,10 +96,10 @@ export interface AgenticContext {
    * streams per-event FlowData over HTTP. */
   outputFormat?: string;
 
-  /** Backend worker (`'claude_code'` | `'codex'` | `'copilot'`). When omitted,
+  /** Backend worker (`'claude_code'` | `'codex'` | `'copilot'` | `'opencode'`). When omitted,
    * the backend resolves the persisted default `harness` capability reference.
    * Surfaced so an explicit UI selection can override that default. */
-  workerType?: 'claude_code' | 'codex' | 'copilot';
+  workerType?: 'claude_code' | 'codex' | 'copilot' | 'opencode';
 
   /** Discriminates how this process is being used (chat vs execution). */
   processType?: ProcessKind;

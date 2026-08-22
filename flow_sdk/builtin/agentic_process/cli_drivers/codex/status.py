@@ -17,18 +17,15 @@ Logger namespace: ``flow_sdk.builtin.agentic_process.cli_drivers.codex.status``.
 
 from __future__ import annotations
 
-import json
 import logging
-import time
 from pathlib import Path
 from typing import Any
 
+from flow_sdk.builtin.agentic_process.cli_drivers.transcript_tail_status import tail_status
 from flow_sdk.builtin.worker_status import WorkerStatus
 
 logger = logging.getLogger(__name__)
 
-_TAIL_BYTES = 64 * 1024
-_ACTIVE_SECONDS = 300
 
 _TOOL_CALL_ITEMS = {
     "function_call",
@@ -70,61 +67,13 @@ _INTERRUPTED_EVENTS = {
 
 
 def codex_tail_status(path: str | Path) -> WorkerStatus:
-    """Map the tail of a codex JSONL transcript to a WorkerStatus.
+    """Codex's classifier over the shared JSONL tail scanner.
 
     Terminal evidence wins even for stale files. Non-terminal evidence is
     reported only while the file is fresh; once the writer is stale, the worker
     is considered inactive rather than idle.
     """
-    p = Path(path)
-    try:
-        stat = p.stat()
-    except OSError:
-        return WorkerStatus.INITIALIZING
-
-    is_active = (time.time() - stat.st_mtime) <= _ACTIVE_SECONDS
-
-    try:
-        sz = stat.st_size
-        with open(p, "rb") as f:
-            if sz > _TAIL_BYTES:
-                f.seek(sz - _TAIL_BYTES)
-            chunk = f.read().decode("utf-8", errors="replace")
-    except OSError:
-        return WorkerStatus.INITIALIZING
-
-    saw_parseable = False
-    fallback: WorkerStatus | None = None
-    for line in reversed(chunk.splitlines()):
-        raw_line = line.strip()
-        if not raw_line:
-            continue
-        try:
-            entry = json.loads(raw_line)
-        except json.JSONDecodeError:
-            # The first line can be partial when we seek into the tail.
-            continue
-        if not isinstance(entry, dict):
-            continue
-        saw_parseable = True
-
-        status, terminal = _classify_codex_entry(entry)
-        if status is None:
-            continue
-        if terminal:
-            return status
-        if is_active:
-            return status
-        fallback = WorkerStatus.INACTIVE
-        break
-
-    if fallback is not None:
-        return fallback
-    if not saw_parseable:
-        return WorkerStatus.INITIALIZING
-    if not is_active:
-        return WorkerStatus.INACTIVE
-    return WorkerStatus.UNKNOWN
+    return tail_status(path, _classify_codex_entry)
 
 
 def _classify_codex_entry(raw: dict[str, Any]) -> tuple[WorkerStatus | None, bool]:

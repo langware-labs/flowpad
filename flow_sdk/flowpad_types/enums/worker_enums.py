@@ -9,6 +9,7 @@ class WorkerType(str, Enum):
     UNSECURED_CLAUDE = "unsecured_claude"
     CODEX = "codex"
     COPILOT = "copilot"
+    OPENCODE = "opencode"
     SIMPLE = "simple"
     MOCK = "mock"
     # Config-owning agents that aren't executors FlowPad spawns, but DO own MCP

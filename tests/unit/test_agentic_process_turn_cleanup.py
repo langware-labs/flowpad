@@ -30,6 +30,7 @@ _DRIVERS = [
     ("flow_sdk.builtin.agentic_process.cli_drivers.claude.driver", "ClaudeDriver"),
     ("flow_sdk.builtin.agentic_process.cli_drivers.codex.driver", "CodexDriver"),
     ("flow_sdk.builtin.agentic_process.cli_drivers.copilot.driver", "CopilotDriver"),
+    ("flow_sdk.builtin.agentic_process.cli_drivers.opencode.driver", "OpenCodeDriver"),
 ]
 
 
