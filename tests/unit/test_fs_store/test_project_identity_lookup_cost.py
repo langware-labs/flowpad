@@ -38,11 +38,8 @@ CORPUS = 120
 #: Refs resolved in one pass — the scan resolves every walked project.
 LOOKUPS = 40
 
-
-@pytest.fixture(autouse=True)
-def _records_root(tmp_records_root):
-    """Redirect the records root so the corpus below is the only one on disk."""
-    return tmp_records_root
+#: The corpus below must be the only one on disk.
+pytestmark = pytest.mark.usefixtures("tmp_records_root")
 
 
 @pytest.fixture
@@ -65,7 +62,7 @@ def project_corpus(tmp_path):
 
 # do not increase timeout without approval
 @pytest.mark.timeout(30)
-def test_project_identity_does_not_rescan_the_corpus_per_lookup(project_corpus):
+def test_project_identity_does_not_rescan_the_corpus_per_lookup(project_corpus, monkeypatch):
     """Resolving many projects must enumerate the corpus once, not once each.
 
     Fails today: every lookup calls `FSRecord.discover(PROJECT)` again, so the
@@ -82,15 +79,13 @@ def test_project_identity_does_not_rescan_the_corpus_per_lookup(project_corpus):
         return real_discover(record_type)
 
     # A spy over the REAL implementation — the lookup still does its real work.
-    FSRecord.discover = staticmethod(counting_discover)
-    try:
-        t0 = time.perf_counter()
-        resolved = [
-            claude_projects.existing_project_record_id(cwd) for cwd in project_corpus[:LOOKUPS]
-        ]
-        elapsed = time.perf_counter() - t0
-    finally:
-        FSRecord.discover = real_discover
+    monkeypatch.setattr(FSRecord, "discover", staticmethod(counting_discover))
+
+    t0 = time.perf_counter()
+    resolved = [
+        claude_projects.existing_project_record_id(cwd) for cwd in project_corpus[:LOOKUPS]
+    ]
+    elapsed = time.perf_counter() - t0
 
     # The lookups really resolved (guards against a no-op arm).
     assert sum(1 for r in resolved if r) == LOOKUPS
