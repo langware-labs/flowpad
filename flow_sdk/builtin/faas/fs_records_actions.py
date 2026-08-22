@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -680,10 +681,16 @@ class FsRecordsActionsMixin:
         filter_type: str,
         types_filter,
         trigger: str,
-        scan_ms: float,
+        walk_ms: float,
+        started_at: float,
         scope_explicit: bool,
     ) -> ApiResponse:
-        """Project a completed walk into scan stats and persist its scan log."""
+        """Project a completed walk into scan stats and persist its scan log.
+
+        ``scan_ms`` is the WHOLE request (from ``started_at``, stamped on
+        handler entry); ``walk_ms`` is the walk's share of it. It used to
+        bracket only ``indexer.scan``, so a 34s request advertised 0.5s.
+        """
         from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
         from flow_sdk.fs_store.indexer import INDEXABLE_TYPES  # noqa: PLC0415
         from flow_sdk.fs_store.indexer.index_function import FSIndexer  # noqa: PLC0415
@@ -806,6 +813,13 @@ class FsRecordsActionsMixin:
                 ):
                     bucket.setdefault(key, 0)
 
+        # Everything above (the walk's projection, including per-record identity
+        # resolution) is part of what the caller waited for.
+        timing = {
+            "scan_ms": round((time.perf_counter() - started_at) * 1000, 1),
+            "walk_ms": walk_ms,
+        }
+
         per_type = list(by_type.values())
         grand_total = sum(bucket["count"] for bucket in per_type)
         grand_bytes = sum(bucket["total_bytes"] for bucket in per_type)
@@ -815,7 +829,7 @@ class FsRecordsActionsMixin:
 
         last_scan_at = SchemaRegistry.append_scan(
             trigger=trigger,
-            duration_ms=scan_ms,
+            duration_ms=timing["scan_ms"],
             total_records=grand_total,
             total_bytes=grand_bytes,
             types=types_for_log if not filter_type else [],
@@ -831,7 +845,7 @@ class FsRecordsActionsMixin:
                         "count": 0,
                         "total_bytes": 0,
                         "avg_bytes": 0,
-                        "scan_ms": scan_ms,
+                        **timing,
                         "records": [],
                         "min_bytes": 0,
                         "max_bytes": 0,
@@ -846,7 +860,7 @@ class FsRecordsActionsMixin:
                     "count": bucket["count"],
                     "total_bytes": bucket["total_bytes"],
                     "avg_bytes": bucket["avg_bytes"],
-                    "scan_ms": scan_ms,
+                    **timing,
                     "records": records,
                     "min_bytes": min(sizes),
                     "max_bytes": max(sizes),
@@ -865,7 +879,7 @@ class FsRecordsActionsMixin:
             data={
                 "types": types_for_log,
                 "grand_total": grand_total,
-                "scan_ms": scan_ms,
+                **timing,
                 "grand_pending": grand_pending,
                 "grand_orphan": grand_orphan,
                 "diff_included": do_diff,
@@ -881,7 +895,9 @@ class FsRecordsActionsMixin:
         Backed by ``FSIndexer.scan()``. Emits ``progress_report`` FlowData
         events per type via the shared indexer's ``on_progress`` callback.
         """
-        import time
+        # First statement in the handler: the deferred imports below are real
+        # wall time on a cold process, and `scan_ms` claims to be the caller's.
+        started_at = time.perf_counter()
 
         import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — trigger auto-registration
         from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
@@ -971,13 +987,14 @@ class FsRecordsActionsMixin:
                     roots=scoped_roots,
                 )
             )
-            scan_ms = round((time.perf_counter() - t0) * 1000, 1)
+            walk_ms = round((time.perf_counter() - t0) * 1000, 1)
             response = self._project_fs_records_scan(
                 nodes=nodes,
                 filter_type=filter_type,
                 types_filter=types_filter,
                 trigger=trigger,
-                scan_ms=scan_ms,
+                walk_ms=walk_ms,
+                started_at=started_at,
                 scope_explicit=scope_explicit,
             )
             if terminal_table is not None:

@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { ClaudeAgentOptions, CodexAgentOptions, CopilotAgentOptions, AgenticProcess, factory } from '@sdk';
+import {
+  ClaudeAgentOptions,
+  CodexAgentOptions,
+  CopilotAgentOptions,
+  OpenCodeAgentOptions,
+  AgenticProcess,
+  factory,
+} from '@sdk';
 
 // Simulates what the backend serializes into proc.cli_config
 const BACKEND_CLI_CONFIG = {
@@ -153,6 +160,60 @@ describe('factory()', () => {
     const cmd = factory({ worker_type: 'copilot', model: 'claude-haiku-4.5', workdir: '/proj' }, 'copilot');
     expect(cmd.toShellString()).toContain('--model claude-haiku-4.5');
   });
+
+  it('returns OpenCodeAgentOptions and resolves portable tiers for opencode', () => {
+    const cmd = factory({ worker_type: 'opencode', model: 'md', workdir: '/proj' }, 'opencode')
+    expect(cmd).toBeInstanceOf(OpenCodeAgentOptions)
+    expect(cmd.toJson().model).toBe('md')
+    expect(cmd.toShellString()).toContain('--model openrouter/z-ai/glm-5.2')
+  })
+
+  it('mirrors the python opencode argv: no --add-dir, session only on resume', () => {
+    // opencode has no --add-dir (instructions ride the generated config), and
+    // --session only CONTINUES a session: the CLI exits 1 on an unknown id.
+    const fresh = factory(
+      { worker_type: 'opencode', workdir: '/proj', session_id: 'ses_abc', add_dirs: ['/proj/assets'] },
+      'opencode',
+    )
+    const freshCmd = fresh.toShellString()
+    expect(freshCmd).not.toContain('--add-dir')
+    expect(freshCmd).not.toContain('--session')
+
+    const resumed = factory(
+      { worker_type: 'opencode', workdir: '/proj', session_id: 'ses_abc', resume: true },
+      'opencode',
+    )
+    expect(resumed.toShellString()).toContain('--session ses_abc')
+  })
+
+  it('drops the run/json head for the interactive PTY shape', () => {
+    const tui = factory({ worker_type: 'opencode', workdir: '/proj', json_stream: false }, 'opencode')
+    const cmd = tui.toShellString()
+    expect(cmd).not.toContain('--format json')
+    expect(cmd).toContain('opencode --auto')
+  })
+
+  it('the interactive shape takes its directory POSITIONALLY, never as --dir', () => {
+    // Measured on 1.18.16: `opencode run` accepts `--dir`, the bare TUI accepts
+    // NEITHER `--dir` nor `--variant` — yargs dumps usage and exits 1. A command
+    // built with them dies before the composer paints, so this is not cosmetic.
+    const tui = factory(
+      { worker_type: 'opencode', workdir: '/proj', json_stream: false, variant: 'fast' },
+      'opencode',
+    )
+    const cmd = tui.toShellString()
+    expect(cmd).not.toContain('--dir')
+    expect(cmd).not.toContain('--variant')
+    expect(cmd).toContain('/proj')
+
+    const headless = factory(
+      { worker_type: 'opencode', workdir: '/proj', json_stream: true, variant: 'fast' },
+      'opencode',
+    )
+    const runCmd = headless.toShellString()
+    expect(runCmd).toContain('--dir /proj')
+    expect(runCmd).toContain('--variant fast')
+  })
 
   it('throws for unknown worker_type', () => {
     expect(() => factory({}, 'unknown')).toThrow('Unknown worker_type');

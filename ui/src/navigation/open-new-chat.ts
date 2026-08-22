@@ -4,7 +4,7 @@ import { embedStandardAgent } from './embed-standard-agent';
 import type { NavigationActions } from './NavigationActions';
 
 export interface OpenNewChatOptions {
-  workerType?: 'claude_code' | 'codex' | 'copilot';
+  workerType?: 'claude_code' | 'codex' | 'copilot' | 'opencode';
   projectId?: string;
   /** Working directory; defaults to the active project's mount path. */
   cwd?: string;

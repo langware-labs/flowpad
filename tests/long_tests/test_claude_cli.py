@@ -136,46 +136,60 @@ async def test_process_hook_acceptance_uses_real_claude_plugin(
     ).save()
 
     reports = []
-    report_seen = asyncio.Event()
+    # SessionEnd is not awaited: claude defers it to real session teardown.
+    awaited = (HookEventType.SESSION_START, HookEventType.USER_PROMPT_SUBMIT)
+    seen = {event.value: asyncio.Event() for event in awaited}
 
     def callback(data):
         reports.append(data)
-        report_seen.set()
+        arrived = seen.get(data.hook_data.get("hook_event_name"))
+        if arrived is not None:
+            arrived.set()
 
     def noop_unsubscribe():
         return None
 
     unsubscribe = noop_unsubscribe
-    hook_configured = False
+    configured = []
     try:
-        assert await process.set_hook(HookEventType.USER_PROMPT_SUBMIT) is True
-        hook_configured = True
+        for event in (HookEventType.SESSION_START, HookEventType.SESSION_END, HookEventType.USER_PROMPT_SUBMIT):
+            assert await process.set_hook(event) is True
+            configured.append(event)
         unsubscribe = process.register_callback(callback)
         rehydrated = await AgenticProcess.get_by_id(process.id)
         assert rehydrated is not None
-        assert rehydrated.process_hook_events == [_HOOK_CONTRACT["expected_persisted_event"]]
+        assert rehydrated.process_hook_events == _HOOK_CONTRACT["expected_persisted_session_events"]
 
         async with _serve_process_hook_route(settings.server_json_path):
             result = await process.prompt(_HOOK_CONTRACT["prompt"])
             assert result.status == "SUCCESS", result
-            await report_seen.wait()
+            await asyncio.gather(*(arrived.wait() for arrived in seen.values()))
 
-            assert len(reports) == 1
-            report = reports[0]
+            by_event = {report.hook_data["hook_event_name"]: report for report in reports}
+            assert set(by_event) >= {event.value for event in awaited}, list(by_event)
+
+            report = by_event[_HOOK_CONTRACT["event"]]
             assert report.agentic_process_id == process.id
-            assert report.hook_data["hook_event_name"] == _HOOK_CONTRACT["event"]
             assert report.hook_data["prompt"] == _HOOK_CONTRACT["expected_callback_prompt"]
-            assert report.hook_data["session_id"]
             assert report.hook_data["raw_hook_data"]["prompt"] == _HOOK_CONTRACT["prompt"]
+
+            for event_name, report in by_event.items():
+                assert report.agentic_process_id == process.id
+                assert report.hook_data["session_id"]
+                discriminator = _HOOK_CONTRACT["session_discriminators"].get(event_name)
+                if discriminator:
+                    assert report.hook_data[discriminator]
+                    assert "prompt" not in report.hook_data
 
             plugin = process._process_assets_path() / _HOOK_CONTRACT["plugin_relative_path"]
             assert all((plugin / relative).is_file() for relative in _HOOK_CONTRACT["plugin_files"])
             hooks = json.loads((plugin / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+            assert sorted(hooks["hooks"]) == _HOOK_CONTRACT["expected_persisted_session_events"]
             handler = hooks["hooks"][_HOOK_CONTRACT["event"]][0]["hooks"][0]
             assert handler["args"][-3:] == ["report", "--process-id", process.id]
     finally:
-        if hook_configured:
-            assert await process.remove_hook(HookEventType.USER_PROMPT_SUBMIT) is True
+        for event in configured:
+            await process.remove_hook(event)
         unsubscribe()
         unsubscribe()
         await process.delete()

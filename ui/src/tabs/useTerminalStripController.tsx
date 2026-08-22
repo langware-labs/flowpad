@@ -47,7 +47,7 @@ import { ProjectsCounterChip } from '@src/components/terminal/ProjectsCounterChi
 import { AskInstallOneOfDialog } from '@src/components/terminal/openers/AskInstallOneOfDialog';
 import { TerminalOpenerToolbar } from '@src/components/terminal/openers/TerminalOpenerToolbar';
 import type { OpenerDescriptor } from '@src/components/terminal/openers/tab_opener_types';
-import type { WorkerType } from '@src/components/workers/worker-types';
+import { HARNESS_CAPABILITY_BY_WORKER, type WorkerType } from '@src/components/workers/worker-types';
 
 const ClaudeResumeIcon: React.FC<{ className?: string }> = ({ className }) => (
   <span className={`relative inline-flex items-center justify-center ${className ?? ''}`}>
@@ -106,12 +106,17 @@ export function useTerminalStripController({
     : (dataContext.project?.getDisplayName() ?? dataContext.project?.name ?? null);
 
   const tabCreationLockRef = useRef(false);
-  const [pendingTabCreation, setPendingTabCreation] = useState<'claude' | 'codex' | 'copilot' | 'terminal' | null>(
+  const [pendingTabCreation, setPendingTabCreation] = useState<'claude' | 'codex' | 'copilot' | 'opencode' | 'terminal' | null>(
     null,
   );
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [resumeByIdOpen, setResumeByIdOpen] = useState(false);
-  const { claude: claudeCapability, codex: codexCapability, copilot: copilotCapability } = useHarnessCapabilities();
+  const {
+    claude: claudeCapability,
+    codex: codexCapability,
+    copilot: copilotCapability,
+    opencode: opencodeCapability,
+  } = useHarnessCapabilities();
   const [installChoiceKinds, setInstallChoiceKinds] = useState<string[] | null>(null);
   const askInstallOneOf = useCallback((kinds: string[]) => setInstallChoiceKinds(kinds), []);
   const { resumeInTerminal } = useResumeInTerminal();
@@ -123,16 +128,16 @@ export function useTerminalStripController({
 
   // "Start <vendor>" — create the AgenticProcess then navigate to its terminal.
   const startAgenticTab = useCallback(
-    async (kind: 'claude' | 'codex' | 'copilot', workerType?: WorkerType) => {
+    async (kind: 'claude' | 'codex' | 'copilot' | 'opencode', workerType?: WorkerType) => {
       if (tabCreationLockRef.current) return;
       tabCreationLockRef.current = true;
       setPendingTabCreation(kind);
-      const requiredKind =
-        workerType === 'codex'
-          ? CapabilityKinds.Codex
-          : workerType === 'claude_code'
-            ? CapabilityKinds.ClaudeCode
-            : CapabilityKinds.Harness;
+      // Gate on the vendor's OWN capability where one exists, so a missing
+      // binary is reported against the vendor the user actually clicked
+      // rather than against whatever the generic `harness` default resolves to.
+      const requiredKind = workerType
+        ? HARNESS_CAPABILITY_BY_WORKER[workerType] ?? CapabilityKinds.Harness
+        : CapabilityKinds.Harness;
       // The lock is released in `finally` and NOWHERE else: an unhandled throw
       // used to strand it set, which left a permanent spinner on the opener and
       // made every later click a silent no-op until the page reloaded.
@@ -171,6 +176,7 @@ export function useTerminalStripController({
   const handleStartClaude = useCallback(() => startAgenticTab('claude', 'claude_code'), [startAgenticTab]);
   const handleStartCodex = useCallback(() => startAgenticTab('codex', 'codex'), [startAgenticTab]);
   const handleStartCopilot = useCallback(() => startAgenticTab('copilot', 'copilot'), [startAgenticTab]);
+  const handleStartOpenCode = useCallback(() => startAgenticTab('opencode', 'opencode'), [startAgenticTab]);
 
   const startTerminalTab = useCallback(
     async (computeNode?: ComputeNode) => {
@@ -241,11 +247,13 @@ export function useTerminalStripController({
   const isClaudeCreationPending = pendingTabCreation === 'claude';
   const isCodexCreationPending = pendingTabCreation === 'codex';
   const isCopilotCreationPending = pendingTabCreation === 'copilot';
+  const isOpenCodeCreationPending = pendingTabCreation === 'opencode';
   const isTerminalCreationPending = pendingTabCreation === 'terminal';
   const sandboxAvailable = !!dataContext.bootstrapInfo?.sandbox_available && !!dataContext.sandboxComputeNode;
   const claudeWarning = harnessWarning(claudeCapability);
   const codexWarning = harnessWarning(codexCapability);
   const copilotWarning = harnessWarning(copilotCapability);
+  const opencodeWarning = harnessWarning(opencodeCapability);
 
   const openers = useMemo<OpenerDescriptor[]>(
     () => [
@@ -257,7 +265,7 @@ export function useTerminalStripController({
         onActivate: () => void handleStartClaude(),
         available: true,
         warning: claudeWarning,
-        capabilityKind: CapabilityKinds.ClaudeCode,
+        capabilityKind: HARNESS_CAPABILITY_BY_WORKER.claude_code,
         pendingInline: isClaudeCreationPending,
         disabled: isTabCreationPending,
       },
@@ -269,7 +277,7 @@ export function useTerminalStripController({
         onActivate: () => void handleStartCodex(),
         available: true,
         warning: codexWarning,
-        capabilityKind: CapabilityKinds.Codex,
+        capabilityKind: HARNESS_CAPABILITY_BY_WORKER.codex,
         pendingInline: isCodexCreationPending,
         disabled: isTabCreationPending,
       },
@@ -281,8 +289,20 @@ export function useTerminalStripController({
         onActivate: () => void handleStartCopilot(),
         available: true,
         warning: copilotWarning,
-        capabilityKind: CapabilityKinds.Copilot,
+        capabilityKind: HARNESS_CAPABILITY_BY_WORKER.copilot,
         pendingInline: isCopilotCreationPending,
+        disabled: isTabCreationPending,
+      },
+      {
+        id: 'opencode',
+        label: t`Start OpenCode`,
+        Icon: PROVIDER_META.opencode.Icon,
+        iconClassName: PROVIDER_META.opencode.iconClassName,
+        onActivate: () => void handleStartOpenCode(),
+        available: true,
+        warning: opencodeWarning,
+        capabilityKind: HARNESS_CAPABILITY_BY_WORKER.opencode,
+        pendingInline: isOpenCodeCreationPending,
         disabled: isTabCreationPending,
       },
       {
@@ -334,6 +354,7 @@ export function useTerminalStripController({
       handleStartClaude,
       handleStartCodex,
       handleStartCopilot,
+      handleStartOpenCode,
       handleStartTerminal,
       handleStartSandbox,
       handleOpenContext,
@@ -343,9 +364,11 @@ export function useTerminalStripController({
       claudeWarning,
       codexWarning,
       copilotWarning,
+      opencodeWarning,
       isClaudeCreationPending,
       isCodexCreationPending,
       isCopilotCreationPending,
+      isOpenCodeCreationPending,
       isTerminalCreationPending,
       isTabCreationPending,
     ],

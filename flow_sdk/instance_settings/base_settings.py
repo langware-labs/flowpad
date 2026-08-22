@@ -38,6 +38,10 @@ ENV_CODEX_HOME = "CODEX_HOME"
 # CODEX_HOME), so this is Flowpad's own override — used by test sandboxes and
 # isolated instances that must not read or write the real ``~/.copilot``.
 ENV_FLOWPAD_COPILOT_HOME = "FLOWPAD_COPILOT_HOME"
+# OpenCode resolves its data/config roots from the XDG base directories rather
+# than from an env var of its own, so these are what redirect it.
+ENV_XDG_DATA_HOME = "XDG_DATA_HOME"
+ENV_XDG_CONFIG_HOME = "XDG_CONFIG_HOME"
 ENV_FLOWPAD_HUB_URL = "FLOWPAD_HUB_URL"
 ENV_MINIHUB_HOST = "MINIHUB_HOST"
 ENV_MINIHUB_RELOAD = "MINIHUB_RELOAD"
@@ -156,6 +160,13 @@ class BaseInstanceSettings:
     copilot_home: Path
     copilot_session_state_dir: Path
     copilot_config_path: Path
+
+    # OpenCode. Unlike the other three it publishes no home env var of its own
+    # (``OPENCODE_DATA_DIR`` is not read — verified against 1.18.16); it resolves
+    # both roots from the XDG base directories, so those are what redirect it.
+    # Sessions live in a SQLite database, not a per-session file tree.
+    opencode_data_dir: Path
+    opencode_config_dir: Path
 
     # ---- Defaults / runtime ----
     default_compute_provider: str = "local-machine"
@@ -301,6 +312,8 @@ class BaseInstanceSettings:
             copilot_home=copilot_home,
             copilot_session_state_dir=copilot_home / "session-state",
             copilot_config_path=copilot_home / "config.json",
+            opencode_data_dir=cls._resolve_opencode_data_dir(),
+            opencode_config_dir=cls._resolve_opencode_config_dir(),
             cloud_user_email=os.environ.get("FLOWPAD_CLOUD_USER_EMAIL") or None,
             cloud_user_pass=os.environ.get("FLOWPAD_CLOUD_USER_PASSWORD") or None,
             cloud_login_timeout_seconds=cls._resolve_login_timeout(),
@@ -367,6 +380,22 @@ class BaseInstanceSettings:
     def _resolve_copilot_home() -> Path:
         env = os.environ.get(ENV_FLOWPAD_COPILOT_HOME)
         return Path(env) if env else Path.home() / ".copilot"
+
+    @staticmethod
+    def _resolve_opencode_data_dir() -> Path:
+        """``$XDG_DATA_HOME/opencode``, else ``~/.local/share/opencode``.
+
+        This is the redirect opencode itself honours; there is no
+        ``OPENCODE_DATA_DIR``.
+        """
+        env = os.environ.get(ENV_XDG_DATA_HOME)
+        return (Path(env) if env else Path.home() / ".local" / "share") / "opencode"
+
+    @staticmethod
+    def _resolve_opencode_config_dir() -> Path:
+        """``$XDG_CONFIG_HOME/opencode``, else ``~/.config/opencode``."""
+        env = os.environ.get(ENV_XDG_CONFIG_HOME)
+        return (Path(env) if env else Path.home() / ".config") / "opencode"
 
     @staticmethod
     def _resolve_records_root(flow_home: Path, default_subdir: str) -> Path:

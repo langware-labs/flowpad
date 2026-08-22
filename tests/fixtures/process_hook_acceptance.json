@@ -24,12 +24,21 @@
         "plugin.json",
         "hooks.json"
       ],
-      "config_event": "userPromptSubmitted"
+      "config_event": "UserPromptSubmit"
     },
     "codex": {
       "raw_prompt_suffix": "",
       "plugin_relative_path": null,
       "plugin_files": []
     }
+  },
+  "expected_persisted_session_events": [
+    "SessionEnd",
+    "SessionStart",
+    "UserPromptSubmit"
+  ],
+  "session_discriminators": {
+    "SessionStart": "source",
+    "SessionEnd": "reason"
   }
 }

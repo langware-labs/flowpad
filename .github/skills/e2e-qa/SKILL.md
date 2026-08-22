@@ -44,13 +44,13 @@ When passing the environment to teammates or tasks, pass these resolved URLs —
 
 ### Startup: clean old (mandatory, every job)
 
-**Before any test runs — immediately after identifying the job type — wipe accumulated test-instance scratch.** The pytest suite routes every test through a shared sandbox HOME at `<os-tempdir>/flowpad_test_home` (`tests/conftest.py:_TEST_HOME`). Across runs it accumulates hundreds of `.flow/instances/test-*` dirs and polluted shared singleton DBs (`oss`/`test`/`prod`), which manufacture **non-deterministic, false failures** that masquerade as code bugs — "Multiple rows were found" on @local singletons, empty-scan/orphaned-skill regressions, bootstrap failures. Always start pristine:
+**Before any test runs — immediately after identifying the job type — wipe legacy test-instance scratch.** Current pytest processes use isolated `<FLOWPAD_TEMP_DIR>/pytest-*/home` sandboxes and remove their own run roots on exit. The retired shared HOME at `<os-tempdir>/flowpad_test_home` may still contain polluted singleton DBs and stale artifacts from older runs, which manufacture **non-deterministic, false failures** that masquerade as code bugs. Always remove that legacy residue before starting:
 
 ```bash
 python .claude/skills/e2e-qa/e2e_qa_cleanup.py
 ```
 
-This is filesystem-only and safe: it only ever touches a dir literally named `flowpad_test_home` under the OS temp dir, never the real `~/.flow` / `~/.claude` or any launched instance, and never kills a process. Run it once at startup before Phase 1 (and again any time you suspect cross-run contamination, e.g. the same suite yields different failures on re-run). Use `--dry-run` to preview.
+This is filesystem-only and safe: it only ever touches the retired directory literally named `flowpad_test_home` under the OS temp dir plus unambiguous `e2etest-*` skill artifacts. Apart from those reserved-name artifacts, it never touches real user data, launched instances, or live per-process `pytest-*` roots, and never kills a process. Run it once at startup before Phase 1. Use `--dry-run` to preview.
 
 Backend start command:
 ```bash
@@ -198,6 +198,13 @@ When the user issues a decree mid-run — a config change, a policy like a timeo
 > Flagged means this test exposes a significant gap, hence senior dev review is required to decide on next step.
 
 `flagged` is a terminal state for a test within this cycle. It is a quarantine lane: **non-blocking** for cycle completion, but always **visible, evidence-attached, and owned**. It is never a silent skip and never counts as a pass.
+
+> **PASS MEANS PASS (non-negotiable).** A flagged test is a **RED, unfixed test**. It permits the cycle
+> to advance; it does NOT make its phase a pass. A phase with even one flagged test is reported
+> **`RED — N failing (N flagged)`** — in the summary table, the HTML report, `cycle-state.md`, and every
+> sentence said to the user. The phrase "PASS with N flagged" is banned; the word for "we may move on"
+> is **RESOLVED**. Writing PASS over a red test converts a real defect into a green number someone
+> will trust — the same class of violation as raising a timeout to go green.
 
 > **`flagged` applies only to phases 1–10 (pytest/vitest).** The Playwright phases — **Phase 11 (`.md.ts` green gate)** and **Phase 12 (`.md`→`.md.ts` authoring)** — admit **no `flagged` pass-through.** There, a file is green only on a machine-read `npx playwright test` exit 0; the sole permitted non-green is a real in-code `test.skip(...)` for one of the three documented environment reasons (clipboard / live-Claude actively responding / wrong-platform). Anything else is a hard **BLOCKED** phase — a loud, unmasked failure — not a quarantined flag. This is deliberate: a tested regression once escaped because Phase 11 was advisory and Phase 12 allowed a flag.
 

@@ -71,39 +71,55 @@ async def test_process_hook_acceptance_uses_real_vendor(
     ).save()
 
     reports = []
-    report_seen = asyncio.Event()
+    # SessionEnd is deliberately not awaited: claude defers it to real session
+    # teardown while copilot fires it per agentic loop. Relative order is not
+    # asserted either — copilot emits the prompt hook before sessionStart.
+    awaited = (HookEventType.SESSION_START, HookEventType.USER_PROMPT_SUBMIT)
+    seen = {event.value: asyncio.Event() for event in awaited}
 
     def callback(data):
         reports.append(data)
-        report_seen.set()
+        arrived = seen.get(data.hook_data.get("hook_event_name"))
+        if arrived is not None:
+            arrived.set()
 
     def noop_unsubscribe():
         return None
 
     unsubscribe = noop_unsubscribe
-    hook_configured = False
+    configured = []
     try:
-        assert await process.set_hook(HookEventType.USER_PROMPT_SUBMIT) is True
-        hook_configured = True
+        for event in (HookEventType.SESSION_START, HookEventType.SESSION_END, HookEventType.USER_PROMPT_SUBMIT):
+            assert await process.set_hook(event) is True
+            configured.append(event)
         unsubscribe = process.register_callback(callback)
 
         rehydrated = await AgenticProcess.get_by_id(process.id)
         assert rehydrated is not None
-        assert rehydrated.process_hook_events == [_CONTRACT["expected_persisted_event"]]
+        assert rehydrated.process_hook_events == _CONTRACT["expected_persisted_session_events"]
 
         async with _serve_process_hook_route(settings.server_json_path):
             result = await process.prompt(_CONTRACT["prompt"])
             assert result.status == "SUCCESS", result
-            await report_seen.wait()
+            await asyncio.gather(*(arrived.wait() for arrived in seen.values()))
 
-        assert len(reports) == 1
-        report = reports[0]
-        assert report.agentic_process_id == process.id
-        assert report.hook_data["hook_event_name"] == _CONTRACT["event"]
-        assert report.hook_data["prompt"] == _CONTRACT["expected_callback_prompt"]
-        assert report.hook_data["session_id"]
         vendor = _CONTRACT["vendors"][worker_type]
+        by_event = {report.hook_data["hook_event_name"]: report for report in reports}
+        assert set(by_event) >= {event.value for event in awaited}, list(by_event)
+
+        report = by_event[_CONTRACT["event"]]
+        assert report.agentic_process_id == process.id
+        assert report.hook_data["prompt"] == _CONTRACT["expected_callback_prompt"]
         assert report.hook_data["raw_hook_data"]["prompt"] == (_CONTRACT["prompt"] + vendor["raw_prompt_suffix"])
+
+        for event_name, report in by_event.items():
+            assert report.agentic_process_id == process.id
+            assert report.hook_data["session_id"]
+            discriminator = _CONTRACT["session_discriminators"].get(event_name)
+            if discriminator:
+                # Vocabularies differ per vendor, so only presence is pinned.
+                assert report.hook_data[discriminator]
+                assert "prompt" not in report.hook_data
 
         if worker_type == "copilot":
             plugin = process._process_assets_path() / vendor["plugin_relative_path"]
@@ -116,8 +132,8 @@ async def test_process_hook_acceptance_uses_real_vendor(
             assert not (process._process_assets_path() / ".flowpad/plugins/codex").exists()
             assert not process._process_assets_path().exists()
     finally:
-        if hook_configured:
-            assert await process.remove_hook(HookEventType.USER_PROMPT_SUBMIT) is True
+        for event in configured:
+            await process.remove_hook(event)
         unsubscribe()
         unsubscribe()
         await process.delete()

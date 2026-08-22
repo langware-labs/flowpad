@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import time
+
 import pytest
 
 from flow_sdk.builtin.faas.fs_records_actions import FsRecordsActionsMixin
@@ -311,11 +313,15 @@ def test_typed_non_indexable_scan_is_projected_but_not_diffed(
         filter_type="folder",
         types_filter=[RecordType.FOLDER],
         trigger="test",
-        scan_ms=1.0,
+        walk_ms=1.0,
+        started_at=time.perf_counter(),
         scope_explicit=False,
     )
 
     assert response.data["type"] == "folder"
+    # `scan_ms` is the WHOLE request, `walk_ms` only the walk's share — the split
+    # that stopped a 34s scan from advertising itself as 0.5s.
+    assert response.data["walk_ms"] == 1.0
     assert response.data["count"] == 1
     assert response.data["records"][0]["id"] == str(folder)
     assert response.data["min_bytes"] == folder.stat().st_size

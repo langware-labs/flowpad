@@ -142,7 +142,7 @@ def get_webhook_listen_url(backend_url: str | None = None) -> str:
     return f"{backend_url}{listen_path}".strip()
 
 
-def generate_hook_command(hook_id: str, event_name: str, name: str | None = None) -> str:
+def generate_hook_command(hook_id: str, name: str | None = None) -> str:
     """
     Generate the command that Claude Code will execute when the hook fires.
 
@@ -157,7 +157,6 @@ def generate_hook_command(hook_id: str, event_name: str, name: str | None = None
 
     Args:
         hook_id: The AgentHook entity ID
-        event_name: The name of the event that triggers the hook
         name: Optional hook name (e.g. "flowpad_sniffer")
 
     Returns:
@@ -166,8 +165,6 @@ def generate_hook_command(hook_id: str, event_name: str, name: str | None = None
     from flow_sdk.builtin.flowpad_runner_wrapper import wrap_command
 
     args = f"hooks report --hook-entry-id={hook_id}"
-    if event_name == "PermissionRequest":
-        args += " --wait-for-response"
     if name:
         args += f" --name={name}"
     return wrap_command(args)
@@ -236,7 +233,7 @@ async def sync_hook_to_settings(hook: "AgentHook", project_path: Optional[Path] 
 
         # Build the hook command (embed hook_name for durable identification)
         hook_name = getattr(hook, "hook_name", None) or hook.name or hook.id
-        command = hook.command if hook.command else generate_hook_command(hook.id, event_name, name=hook_name)
+        command = hook.command if hook.command else generate_hook_command(hook.id, name=hook_name)
 
         # Build matcher string from matcher dict
         matcher_str = _build_matcher_str(hook)
@@ -409,7 +406,7 @@ async def sync_sniffer_hook_to_settings(hook: "AgentHook", project_path: Optiona
                 if existing_entry_idx is not None:
                     break
 
-            command = hook.command if hook.command else generate_hook_command(hook.id, event_name, name=SNIFFER_HOOK_NAME)
+            command = hook.command if hook.command else generate_hook_command(hook.id, name=SNIFFER_HOOK_NAME)
             new_entry = {
                 "matcher": matcher_str,
                 "hooks": [

@@ -2,9 +2,6 @@ import { ContextEntitiesEnum, dataContext } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
-import { CodexIcon } from '@src/components/icons/CodexIcon';
-import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import {
   NewProjectDialog,
@@ -32,6 +29,7 @@ import { FolderOpen, FolderPlus, GitBranch } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import { QUICK_CREATE_REGISTRY } from './registry';
+import { providerMetaFor } from '@src/tabs/provider-meta';
 
 interface QuickCreateMenuProps {
   children: ReactNode;
@@ -47,6 +45,17 @@ interface QuickCreateMenuProps {
  *
  * Top section: a chip showing the active project; click opens ProjectSelectorModal.
  */
+/** Vendor glyph for a menu row, resolved through `PROVIDER_META`.
+ *
+ *  The rows stay written out one-per-vendor so `<Trans>` remains statically
+ *  extractable, but the icon and its colour come from the shared registry —
+ *  that mapping had five hand-written copies across the UI and each one was a
+ *  place a new vendor could silently render as Claude. */
+function VendorGlyph({ workerType }: { workerType: string }) {
+  const meta = providerMetaFor(workerType);
+  return <meta.Icon className={`mr-2 h-4 w-4 ${meta.iconClassName}`} />;
+}
+
 export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickCreateMenuProps) {
   const { t } = useLingui();
   const { types: serverTypes } = useAssetTypes();
@@ -92,7 +101,7 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
   // live AgenticProcess immediately. Create the process, then navigate to its
   // terminal dock pointer (URL-first; the loader owns the rendered view).
   const handleStartSession = useCallback(
-    async (workerType: 'claude_code' | 'codex' | 'copilot') => {
+    async (workerType: 'claude_code' | 'codex' | 'copilot' | 'opencode') => {
       onOpenChange(false);
       // openNewChat creates AND navigates (carrying the chat mode) — no second nav.
       // The catch is load-bearing: this is invoked as `void handleStartSession(…)`,
@@ -160,16 +169,20 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
             <Trans>New session</Trans>
           </DropdownMenuLabel>
           <DropdownMenuItem onSelect={() => void handleStartSession('claude_code')}>
-            <ClaudeIcon className="me-2 h-4 w-4 text-orange-500" />
+            <VendorGlyph workerType="claude_code" />
             <Trans>Claude Code session</Trans>
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => void handleStartSession('codex')}>
-            <CodexIcon className="me-2 h-4 w-4 text-emerald-500" />
+            <VendorGlyph workerType="codex" />
             <Trans>Codex session</Trans>
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => void handleStartSession('copilot')}>
-            <CopilotIcon className="me-2 h-4 w-4 text-sky-500" />
+            <VendorGlyph workerType="copilot" />
             <Trans>Copilot session</Trans>
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void handleStartSession('opencode')}>
+            <VendorGlyph workerType="opencode" />
+            <Trans>OpenCode session</Trans>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuLabel>

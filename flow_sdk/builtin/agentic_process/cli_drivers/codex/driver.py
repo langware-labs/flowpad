@@ -9,7 +9,6 @@ prompt-composition compatibility hook.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 from pathlib import Path
@@ -28,10 +27,8 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     DeviceLoginSpec,
     ProcessHookRuntime,
     WorkerAuthResult,
-    WorkerSpawnError,
     apply_worker_env,
     apply_worker_secret_env,
-    latch_spawn_failure,
     restart_payload_from_cli_options,
     run_worker_auth_probe,
 )
@@ -52,15 +49,20 @@ from flow_sdk.builtin.agentic_process.cli_drivers.codex.status import codex_tail
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.stream_worker import (
     CodexCLIStreamWorker,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.headless_turn import run_headless_turn
 from flow_sdk.builtin.agentic_process.process_hooks import (
+    SUPPORTED_PROCESS_HOOK_EVENTS,
+    build_canonical_hook_data,
     build_process_hook_snapshot,
     normalize_process_hook_events,
 )
 from flow_sdk.builtin.flowpad_runner_wrapper import get_installed_flow_invocation
+from flow_sdk.builtin.hooks.capabilities import process_capability, unsupported
+from flow_sdk.builtin.hooks.types import HookCapabilities, HookScope
 from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.flowpad_types.enums import WorkerType
-from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from flow_sdk.responses.response import ApiFailResponse
 from flow_sdk.transcript_analyzer import (
     TranscriptDescriptor,
     TranscriptFormat,
@@ -74,6 +76,43 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Codex surfaces turn/permission/model context the other vendors do not.
+_CANONICAL_FIELDS = (
+    "hook_event_name",
+    "prompt",
+    "session_id",
+    "cwd",
+    "transcript_path",
+    "turn_id",
+    "permission_mode",
+    "model",
+    "source",
+    "reason",
+)
+
+
+#: Codex reads ``hooks.<Event>`` from config.toml (User/Project — added by the
+#: config writer) and accepts the same table as ``-c`` launch overrides
+#: (Process). Only the launch route is wired today.
+#: Verified against codex-cli 0.147.0: ``hooks.<Event>`` IS a real config.toml
+#: key and a ``[hooks]`` table parses clean, but a file-declared hook is
+#: SILENTLY SKIPPED unless its trust is persisted — measured directly: the same
+#: hook fires with ``--dangerously-bypass-hook-trust`` and does nothing without
+#: it. Only the interactive TUI writes that trust record (``hooks.state``), and
+#: forging one on the user's behalf would defeat a deliberate vendor safety
+#: gate. A hook we launch carries the bypass flag; a run we did NOT launch
+#: cannot — which is exactly what global scope has to serve. So global stays
+#: unsupported until trust can be granted honestly.
+_TRUST_GATE = (
+    "codex silently skips a config.toml hook whose trust is not persisted, and only "
+    "its interactive TUI can grant that trust"
+)
+
+_HOOK_CAPABILITIES: "HookCapabilities" = {
+    HookScope.USER: unsupported(_TRUST_GATE),
+    HookScope.PROJECT: unsupported(_TRUST_GATE),
+    HookScope.PROCESS: process_capability(),
+}
 
 class CodexDriver:
     """Vendor glue for OpenAI Codex. Implements the ``WorkerDriver`` Protocol."""
@@ -132,6 +171,9 @@ class CodexDriver:
     def process_hook_snapshot(self, events: Sequence[HookEventType]) -> dict[str, Any]:
         return build_process_hook_snapshot(events, provider=self.name)
 
+    def hook_capabilities(self) -> "HookCapabilities":
+        return dict(_HOOK_CAPABILITIES)
+
     def prepare_process_hooks(
         self,
         assets: AssetDir,
@@ -158,12 +200,17 @@ class CodexDriver:
             "command": render_shell_command(flow_argv, "linux"),
             "commandWindows": render_shell_command(flow_argv, "win32"),
         }
+        # Codex names its events exactly as we do, and ``hooks`` is a TOML
+        # table with one key per event.
         return ProcessHookRuntime(
             config_overrides=(
                 ("features.hooks", True),
-                (
-                    "hooks.UserPromptSubmit",
-                    [{"hooks": [handler]}],
+                *(
+                    (
+                        f"hooks.{event.value}",
+                        [{"hooks": [handler]}],
+                    )
+                    for event in normalized
                 ),
             ),
             bypass_hook_trust=True,
@@ -174,25 +221,10 @@ class CodexDriver:
         process_id: str,
         raw_hook_data: dict[str, Any],
     ) -> AgentHookData:
-        if not is_valid_entity_id(process_id):
-            raise ValueError(f"Invalid agentic process id: {process_id!r}")
-        raw = dict(raw_hook_data)
-        event = raw.get("hook_event_name")
-        if event != HookEventType.USER_PROMPT_SUBMIT.value:
+        event = raw_hook_data.get("hook_event_name")
+        if event not in SUPPORTED_PROCESS_HOOK_EVENTS:
             raise ValueError(f"Unsupported Codex process hook event: {event!r}")
-        canonical_fields = (
-            "hook_event_name",
-            "prompt",
-            "session_id",
-            "cwd",
-            "transcript_path",
-            "turn_id",
-            "permission_mode",
-            "model",
-        )
-        hook_data = {key: raw[key] for key in canonical_fields if key in raw}
-        hook_data["raw_hook_data"] = raw
-        return AgentHookData(agentic_process_id=process_id, hook_data=hook_data)
+        return build_canonical_hook_data(process_id, raw_hook_data, fields=_CANONICAL_FIELDS)
 
     # ── Per-turn execution ───────────────────────────────────────────────────
 
@@ -238,82 +270,9 @@ class CodexDriver:
         )
 
         worker = CodexCLIStreamWorker.for_process(process.id)
-        from flow_sdk.builtin.agentic_process.agentic_process import (
-            register_prompt_worker,
-            unregister_prompt_worker,
+        return await run_headless_turn(
+            self, process, worker, prompt=full_prompt, context=context, logger=logger
         )
-
-        register_prompt_worker(process.id, worker)
-        # Setup between registration and task scheduling can raise. The caller's
-        # admission ``finally`` can no longer clean the slot — register_prompt_worker
-        # popped the admission and moved ownership to ``_PROMPT_WORKERS``. Until
-        # _run_turn is scheduled (its ``finally`` owns unregister), THIS frame owns
-        # the worker slot: a raise here would leak it → prompt_worker_active pinned
-        # True forever (permanent 409 + busy). Hand ownership off on success.
-        try:
-            # Touch the transcript file so ``tail_status`` returns INITIALIZING
-            # (rather than None) before the worker writes its first event. Mirrors
-            # the Claude path's eager session_id assignment.
-            try:
-                transcript_path = worker.transcript_path
-                if transcript_path is not None and not transcript_path.exists():
-                    transcript_path.parent.mkdir(parents=True, exist_ok=True)
-                    transcript_path.touch()
-            except OSError:
-                logger.debug("CodexDriver.headless_prompt: failed to pre-touch transcript", exc_info=True)
-
-            from flow_sdk.builtin.process_lifecycle import ProcessStatus
-
-            if process.status != ProcessStatus.RUNNING.value:
-                process.status = ProcessStatus.RUNNING.value
-                try:
-                    await process.save()
-                except Exception:
-                    logger.debug("CodexDriver.headless_prompt: lifecycle save failed", exc_info=True)
-
-            process_ref = process
-            process_id = process.id
-
-            # Multi-turn correctness: see ClaudeDriver.headless_prompt + the
-            # AgenticProcess._discover_status_from_transcript override.
-            object.__setattr__(process_ref, "_turn_in_flight", True)
-            try:
-                await process_ref.notify_updated()
-            except Exception:
-                logger.exception("CodexDriver.headless_prompt: start-of-turn notify_updated failed")
-
-            # Session adoption (and its restart-snapshot bookkeeping) is owned by
-            # AgenticProcess.adopt_worker_session; the turn-scoped adopter trusts
-            # only the turn-initial report (spurious-rotation guard).
-            adopt_session = process_ref.make_turn_session_adopter("CodexDriver.headless_prompt")
-
-            async def _run_turn() -> None:
-                try:
-                    async for fd in worker.execute(prompt=full_prompt, context=context):
-                        await adopt_session(worker.get_session_id())
-                        try:
-                            await process_ref.emit_flow_data(fd.model_dump())
-                        except Exception:
-                            logger.debug("CodexDriver.headless_prompt: emit_flow_data failed", exc_info=True)
-                except WorkerSpawnError as e:
-                    # No subprocess ever started — end the process FAILED with the
-                    # start_failure latch (the ERROR frame was already emitted).
-                    await latch_spawn_failure(process_ref, e)
-                except Exception:
-                    logger.exception("CodexDriver.headless_prompt: worker error")
-                finally:
-                    unregister_prompt_worker(process_id, worker)
-                    # Terminal status broadcast + completion-driven queue advance
-                    # (see AgenticProcess.end_headless_turn).
-                    await process_ref.end_headless_turn("CodexDriver.headless_prompt")
-
-            asyncio.create_task(_run_turn(), name=f"codex-{process.id[:8]}")
-        except BaseException:
-            # _run_turn never took ownership of the slot — release it here so the
-            # next turn is not permanently rejected with a 409.
-            unregister_prompt_worker(process.id, worker)
-            raise
-        return ApiSuccessResponse(data={"status": "started", "worker": self.name})
 
     def stream_worker(self, process: "AgenticProcess") -> CodexCLIStreamWorker:
         return CodexCLIStreamWorker.for_process(process.id)

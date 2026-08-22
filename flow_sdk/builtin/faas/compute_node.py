@@ -773,13 +773,20 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         ``terminals/list``/``close`` shim was deleted at the Tab cutover; the
         strip lists from the ``Tab`` entity and closes via ``tabs/close``."""
         request_info = get_current_request_info()
-        sub_path = (request_info.sub_path or "").strip("/").lower() if request_info else ""
-        if sub_path.startswith("get_by_worker_id/"):
-            worker_id = sub_path[len("get_by_worker_id/") :]
+        raw_sub_path = (request_info.sub_path or "").strip("/") if request_info else ""
+        # Case-fold the ROUTE prefix only — never the id that follows it.
+        # Lowercasing the whole sub-path mangled every case-sensitive session id:
+        # opencode's are mixed-case (``ses_ff0351c3fffeknxcJAjTQi4uMp``), so the
+        # resolver was handed an id the store had never seen and always 404'd.
+        prefix = "get_by_worker_id/"
+        if raw_sub_path.lower().startswith(prefix):
+            worker_id = raw_sub_path[len(prefix):]
             if not worker_id:
                 return ApiFailResponse(message="worker id required", status_code=400)
             return await self._scan_get_by_worker_id(worker_id)
-        return ApiFailResponse(message=f"unknown terminals sub-path: {sub_path!r}", status_code=400)
+        return ApiFailResponse(
+            message=f"unknown terminals sub-path: {raw_sub_path!r}", status_code=400
+        )
 
     @action.post(action_name="tabs")
     async def _tabs(self, background_tasks: BackgroundTasks) -> ApiResponse:
