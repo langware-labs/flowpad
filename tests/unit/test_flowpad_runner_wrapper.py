@@ -33,6 +33,10 @@ def test_installed_flow_invocation_prefers_current_python_environment_without_wr
     flow.write_text("entrypoint", encoding="utf-8")
     flow.chmod(flow.stat().st_mode | 0o111)
     monkeypatch.setenv("FLOWPAD_TEST_SANDBOX", str(sandbox))
+    # FLOWPAD_TEST_SANDBOX does NOT move ``flow_home`` — that keys off FLOW_HOME
+    # (base_settings._resolve_flow_home). Without this the assertion below reads
+    # a session-wide ~/.flow that any earlier test may have written into.
+    monkeypatch.setenv("FLOW_HOME", str(sandbox / "flow home"))
     monkeypatch.setattr(sys, "platform", platform)
     monkeypatch.setattr(sys, "executable", str(python))
     monkeypatch.setattr(shutil, "which", lambda _name: pytest.fail("PATH fallback used"))

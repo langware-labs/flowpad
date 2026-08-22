@@ -49,6 +49,21 @@ describe('AgenticProcess process hooks', () => {
     expect(action.bodyParameters).toEqual({ event: HookEventType.USER_PROMPT_SUBMIT });
   });
 
+  it('propagates the backend refusal when a harness cannot serve the cell', async () => {
+    // Unsupported (harness, scope, event) cells are refused by the manager and
+    // reported as a 501 by the set-hook action. The thin client must surface
+    // that rejection rather than swallowing it into a falsy "changed" — the
+    // caller has to be able to tell "already configured" from "impossible here".
+    const refusal = new Error(
+      'codex does not support user-scope hooks (supported: none) — codex silently skips a ' +
+        'config.toml hook whose trust is not persisted',
+    );
+    vi.spyOn(dataManager, 'callAction').mockRejectedValue(refusal);
+    const process = new AgenticProcess({ id: PROCESS_ID });
+
+    await expect(process.setHook(HookEventType.PRE_TOOL_USE)).rejects.toThrow('does not support');
+  });
+
   it('dispatches a stable callback snapshot in registration order and isolates failures', async () => {
     const process = new AgenticProcess({ id: PROCESS_ID });
     const seen: string[] = [];

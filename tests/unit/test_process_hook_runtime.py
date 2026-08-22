@@ -26,6 +26,11 @@ from flow_sdk.instance_settings import reset_instance_settings
 @pytest.fixture()
 def isolated_wrapper(tmp_path, monkeypatch):
     monkeypatch.setenv("FLOWPAD_TEST_SANDBOX", str(tmp_path / "sandbox with space"))
+    # FLOWPAD_TEST_SANDBOX does NOT move ``flow_home`` — that keys off FLOW_HOME
+    # (base_settings._resolve_flow_home), so without this the whole pytest
+    # session shares ONE ~/.flow and any test that materializes the runner
+    # wrapper (the sniffer e2e does) breaks the assertions below.
+    monkeypatch.setenv("FLOW_HOME", str(tmp_path / "flow home"))
     reset_instance_settings()
     yield
     reset_instance_settings()
@@ -56,7 +61,9 @@ def test_claude_process_hook_projection_is_deterministic(tmp_path, isolated_wrap
     ][0]
     command, prefix = get_installed_flow_invocation()
     assert hook == {
-        "args": [*prefix, "hooks", "report", "--process-id", process_id],
+        # UserPromptSubmit is response-capable: Claude reads this handler's
+        # stdout, so the report blocks on the backend round trip.
+        "args": [*prefix, "hooks", "report", "--process-id", process_id, "--wait-for-response"],
         "command": command,
         "type": "command",
     }
@@ -192,16 +199,23 @@ def test_claude_projection_emits_one_handler_per_configured_event(tmp_path, isol
     hooks = json.loads((plugin / "hooks/hooks.json").read_text(encoding="utf-8"))["hooks"]
 
     command, prefix = get_installed_flow_invocation()
-    expected = {
-        "args": [*prefix, "hooks", "report", "--process-id", process_id],
-        "command": command,
-        "type": "command",
-    }
+
+    def expected(event: str) -> dict:
+        """``--wait-for-response`` only where Claude reads the handler's stdout.
+
+        SessionEnd has no documented output shape, so blocking its report would
+        buy nothing and cost a round trip on every session teardown.
+        """
+        args = [*prefix, "hooks", "report", "--process-id", process_id]
+        if event in {"UserPromptSubmit", "SessionStart"}:
+            args.append("--wait-for-response")
+        return {"args": args, "command": command, "type": "command"}
+
     assert sorted(hooks) == ["SessionEnd", "SessionStart", "UserPromptSubmit"]
     for event, entries in hooks.items():
         # Matcher-free: SessionStart/SessionEnd matchers select on
         # source/reason, and omitting one means "every occurrence".
-        assert entries == [{"hooks": [expected]}], event
+        assert entries == [{"hooks": [expected(event)]}], event
 
 
 def test_claude_removing_one_event_keeps_the_others_projected(tmp_path, isolated_wrapper):

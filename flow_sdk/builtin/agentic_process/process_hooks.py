@@ -8,31 +8,24 @@ not.
 
 from __future__ import annotations
 
-import inspect
 import logging
-from collections.abc import Awaitable, Callable, Sequence
-from itertools import count
-from threading import RLock
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
-from flow_sdk.builtin.agent_hook import HookEventType
+from flow_sdk.builtin.hooks import callbacks as _callbacks
+from flow_sdk.builtin.hooks.callbacks import AgentHookCallback
+from flow_sdk.builtin.hooks.capabilities import PROCESS_EVENTS
+from flow_sdk.builtin.hooks.types import HookEventType
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 
 logger = logging.getLogger(__name__)
 
-ProcessHookCallback = Callable[[AgentHookData], Awaitable[None] | None]
+#: Deprecated alias for ``AgentHookCallback``.
+ProcessHookCallback = AgentHookCallback
 
-_lock = RLock()
-_next_token = count(1)
-_callbacks: dict[str, dict[int, ProcessHookCallback]] = {}
-SUPPORTED_PROCESS_HOOK_EVENTS = frozenset(
-    {
-        HookEventType.SESSION_START,
-        HookEventType.SESSION_END,
-        HookEventType.USER_PROMPT_SUBMIT,
-    }
-)
+#: Re-exported so there is ONE definition of the process event set.
+SUPPORTED_PROCESS_HOOK_EVENTS = PROCESS_EVENTS
 
 
 def normalize_process_hook_events(
@@ -92,51 +85,18 @@ def register_process_hook_callback(
     process_id: str,
     callback: ProcessHookCallback,
 ) -> Callable[[], None]:
-    """Register ``callback`` for every hook on ``process_id``.
-
-    Each registration is independent, including repeated registrations of the
-    same callable. The returned synchronous unsubscriber removes exactly this
-    registration and is safe to call repeatedly.
-    """
-    if not callable(callback):
-        raise TypeError("process hook callback must be callable")
-    key = str(process_id)
-    token = next(_next_token)
-    with _lock:
-        _callbacks.setdefault(key, {})[token] = callback
-
-    def unsubscribe() -> None:
-        with _lock:
-            registrations = _callbacks.get(key)
-            if registrations is None:
-                return
-            registrations.pop(token, None)
-            if not registrations:
-                _callbacks.pop(key, None)
-
-    return unsubscribe
+    """Deprecated alias — use ``process.hooks.set_callback``."""
+    return _callbacks.register(str(process_id), callback)
 
 
 async def dispatch_process_hook(process_id: str, data: AgentHookData) -> None:
-    """Invoke a stable registration-order snapshot, isolating failures."""
-    with _lock:
-        callbacks = tuple((_callbacks.get(str(process_id)) or {}).values())
-    for callback in callbacks:
-        try:
-            result = callback(data)
-            if inspect.isawaitable(result):
-                await result
-        except Exception:
-            logger.exception("process hook callback failed for %s", process_id)
+    """Deprecated alias — use ``process.hooks.deliver``."""
+    await _callbacks.dispatch(str(process_id), data)
 
 
 def clear_process_hook_callbacks(process_id: str | None = None) -> None:
-    """Clear one process's subscriptions, or every subscription at shutdown."""
-    with _lock:
-        if process_id is None:
-            _callbacks.clear()
-        else:
-            _callbacks.pop(str(process_id), None)
+    """Deprecated alias — use ``process.hooks.clear_callbacks``."""
+    _callbacks.clear(process_id)
 
 
 __all__ = [

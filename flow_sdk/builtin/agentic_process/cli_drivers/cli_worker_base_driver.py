@@ -64,6 +64,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
     from flow_sdk.builtin.agentic_process.events import AgenticProcessEventName
+    from flow_sdk.builtin.hooks.types import AgentHookResponse, HookCapabilities, HookOutcome
     from flow_sdk.builtin.worker_status import WorkerStatus
     from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
     from flow_sdk.responses.response import ApiResponse
@@ -1385,6 +1386,17 @@ class WorkerDriver(Protocol):
         """Return this worker's canonical launch payload for restart hashing."""
         ...
 
+    def hook_capabilities(self) -> "HookCapabilities":
+        """Declare which hook scopes/events this harness supports.
+
+        A scope absent from the mapping is unsupported: ``HooksManager`` raises
+        ``NotImplementedError`` when asked to configure it, rather than writing a
+        hook that could never fire. A vendor that declares nothing (or predates
+        this contract) is therefore unsupported everywhere, which is exactly the
+        state a newly added driver should start in.
+        """
+        ...
+
     def process_hook_snapshot(self, events: Sequence["HookEventType"]) -> dict[str, Any]:
         """Return a pure semantic snapshot for persisted process-hook intent."""
         ...
@@ -1404,6 +1416,21 @@ class WorkerDriver(Protocol):
         raw_hook_data: dict[str, Any],
     ) -> "AgentHookData":
         """Normalize one vendor-native report into canonical hook data."""
+        ...
+
+    def render_hook_response(
+        self,
+        event: "HookEventType",
+        response: "AgentHookResponse",
+    ) -> "HookOutcome":
+        """Render a typed callback answer into this vendor's stdout shape.
+
+        The mirror of :meth:`normalize_process_hook_data`: that converges a
+        vendor payload onto ``AgentHookData`` coming in, this diverges a typed
+        ``AgentHookResponse`` back into vendor JSON going out. A vendor that
+        cannot consume a decision for ``event`` raises ``NotImplementedError`` —
+        the same contract as an unsupported hook cell.
+        """
         ...
 
     # ── Per-turn execution ───────────────────────────────────────────────────

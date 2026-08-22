@@ -85,7 +85,10 @@ async def test_set_and_remove_hook_are_idempotent(no_save, worker_type, event):
 async def test_process_hooks_reject_every_other_event_before_mutation(no_save, worker_type, event):
     process = AgenticProcess(id=mint_uuid(), worker_type=worker_type)
 
-    with pytest.raises(ValueError, match="unsupported process hook event"):
+    # An unsupported (harness, scope, event) cell raises NotImplementedError at
+    # CONFIGURE time — never a silent no-op that installs a hook which could
+    # never fire. See tests/unit/test_hook_capability_matrix.py for the matrix.
+    with pytest.raises(NotImplementedError, match="does not support"):
         await process.set_hook(event)
 
     assert process.process_hook_events == []

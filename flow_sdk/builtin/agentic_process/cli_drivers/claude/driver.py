@@ -25,7 +25,6 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import 
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
     ClaudeCLIStreamWorker,
 )
-from flow_sdk.builtin.agentic_process.cli_drivers.headless_turn import run_headless_turn
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
     AgentOptions,
@@ -37,12 +36,23 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     restart_payload_from_cli_options,
     run_worker_auth_probe,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.headless_turn import run_headless_turn
 from flow_sdk.builtin.agentic_process.process_hooks import (
     build_canonical_hook_data,
     build_process_hook_snapshot,
     normalize_process_hook_events,
 )
 from flow_sdk.builtin.flowpad_runner_wrapper import get_installed_flow_invocation
+from flow_sdk.builtin.hooks.capabilities import process_capability, settings_file_scopes
+from flow_sdk.builtin.hooks.types import (
+    AgentHookResponse,
+    BlockResponse,
+    ContextResponse,
+    HookCapabilities,
+    HookOutcome,
+    HookScope,
+    PermissionResponse,
+)
 from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.responses.response import ApiFailResponse
@@ -73,6 +83,18 @@ _CANONICAL_FIELDS = (
 # Shared with the codex driver via ``AgenticProcess._PROMPT_WORKERS`` —
 # the entity owns the dict, drivers just register/deregister.
 
+
+#: Events whose handler STDOUT Claude reads back. ``SessionEnd`` is absent —
+#: Claude defines no output shape for it (see ``hook_events.py``), so a decision
+#: there would be silently discarded, which is worse than refusing it.
+_RESPONSE_EVENTS = frozenset({HookEventType.USER_PROMPT_SUBMIT, HookEventType.SESSION_START})
+
+#: Claude is the only harness with both halves: a settings file it discovers at
+#: three scopes, and a plugin directory we hand over at launch.
+_HOOK_CAPABILITIES: "HookCapabilities" = {
+    **settings_file_scopes(),
+    HookScope.PROCESS: process_capability(response_events=_RESPONSE_EVENTS),
+}
 
 class ClaudeDriver:
     """Vendor glue for Claude Code. Implements the ``WorkerDriver`` Protocol."""
@@ -132,6 +154,9 @@ class ClaudeDriver:
     def process_hook_snapshot(self, events: Sequence[HookEventType]) -> dict[str, Any]:
         return build_process_hook_snapshot(events, provider=self.name)
 
+    def hook_capabilities(self) -> "HookCapabilities":
+        return dict(_HOOK_CAPABILITIES)
+
     def prepare_process_hooks(
         self,
         assets: AssetDir,
@@ -146,14 +171,22 @@ class ClaudeDriver:
             raise ValueError(f"Invalid agentic process id: {process_id!r}")
 
         command, prefix_args = get_installed_flow_invocation()
-        handler = {
-            "args": [*prefix_args, "hooks", "report", "--process-id", process_id],
-            "command": command,
-            "type": "command",
-        }
+
+        def _handler(event: HookEventType) -> dict[str, Any]:
+            """One handler per event.
+
+            ``--wait-for-response`` is added ONLY for events whose stdout Claude
+            reads. It makes the CLI block on a backend round trip, so paying it
+            for a fire-and-forget event would be pure latency on every hook.
+            """
+            args = [*prefix_args, "hooks", "report", "--process-id", process_id]
+            if event in _RESPONSE_EVENTS:
+                args.append("--wait-for-response")
+            return {"args": args, "command": command, "type": "command"}
+
         hooks = {
             "description": "Flowpad process-scoped hooks",
-            "hooks": {event.value: [{"hooks": [handler]}] for event in normalized},
+            "hooks": {event.value: [{"hooks": [_handler(event)]}] for event in normalized},
         }
         manifest = {
             "author": {"name": "Flowpad"},
@@ -180,6 +213,55 @@ class ClaudeDriver:
         raw_hook_data: dict[str, Any],
     ) -> AgentHookData:
         return build_canonical_hook_data(process_id, raw_hook_data, fields=_CANONICAL_FIELDS)
+
+    def render_hook_response(
+        self,
+        event: HookEventType,
+        response: "AgentHookResponse",
+    ) -> HookOutcome:
+        """Render a typed answer into Claude's hook-output JSON.
+
+        Shapes come from Claude's documented hook outputs: ``hookSpecificOutput``
+        carries per-event fields, while ``decision``/``reason`` sit at the top
+        level. See ``setup_cmd/claude_code_setup/hook_events.py`` for the models.
+
+        Always exit 0. Claude reads a decision straight out of stdout JSON, so
+        the exit-2 blocking channel buys nothing here — and a stray non-zero
+        would block the turn.
+        """
+        if event not in _RESPONSE_EVENTS:
+            raise NotImplementedError(
+                f"claude reads no hook output for {event.value} — a decision there would be discarded"
+            )
+
+        if isinstance(response, ContextResponse):
+            if response.block:
+                return HookOutcome(stdout={"decision": "block", "reason": response.reason})
+            if not response.additional_context:
+                return HookOutcome()
+            return HookOutcome(
+                stdout={
+                    "hookSpecificOutput": {
+                        "hookEventName": event.value,
+                        "additionalContext": response.additional_context,
+                    }
+                }
+            )
+        if isinstance(response, BlockResponse):
+            if not response.block:
+                return HookOutcome()
+            return HookOutcome(stdout={"decision": "block", "reason": response.reason})
+        if isinstance(response, PermissionResponse):
+            return HookOutcome(
+                stdout={
+                    "hookSpecificOutput": {
+                        "hookEventName": event.value,
+                        "permissionDecision": str(response.behavior),
+                        "permissionDecisionReason": response.reason,
+                    }
+                }
+            )
+        raise NotImplementedError(f"unrenderable hook response: {type(response).__name__}")
 
     # ── Per-turn execution ───────────────────────────────────────────────────
 

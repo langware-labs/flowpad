@@ -876,10 +876,7 @@ def hooks_report(
         last_resp = _report_process_hook(process_id)
         if not wait_for_response:
             raise typer.Exit(0)
-        data = (last_resp.json().get("data") or {}) if last_resp and last_resp.text else {}
-        if data:
-            typer.echo(json.dumps(data))
-        raise typer.Exit(0)
+        _apply_hook_outcome(last_resp)
 
     def find_hook_metadata(
         entry_id: Optional[str], hook_name: Optional[str] = None
@@ -1031,12 +1028,43 @@ def hooks_report(
         # Normal fire-and-forget mode
         raise typer.Exit(0)
 
-    # Echo server's data field to stdout (Claude Code reads hookSpecificOutput from it).
-    data = (last_resp.json().get("data") or {}) if last_resp and last_resp.text else {}
-    if data:
-        typer.echo(json.dumps(data))
-    raise typer.Exit(0)
+    # Same envelope, same application as the process branch. The global door
+    # answers with a WebhookHandleResult (trigger bookkeeping) and no hook
+    # outcome, so this correctly writes nothing and exits 0 — echoing trigger
+    # internals to stdout would have fed them to the harness as hook output.
+    _apply_hook_outcome(last_resp)
 
+
+
+def _apply_hook_outcome(response) -> None:
+    """Apply the backend's hook-outcome envelope to THIS process, then exit.
+
+    Deliberately vendor-blind: which exit code and which stream carry meaning is
+    a per-harness fact, and it is decided by the driver in the backend. Here we
+    only obey — write what we were told and exit with the code we were given.
+
+    Anything absent or malformed degrades to an inert outcome (exit 0, no
+    output). This process is holding a worker's turn open, and on claude and
+    codex a non-zero exit BLOCKS that turn, so a garbled payload must never be
+    able to produce one.
+    """
+    import json as _json
+
+    from flow_sdk.builtin.hooks.types import HOOK_OUTCOME_KEY, HookOutcome
+
+    data = {}
+    try:
+        if response is not None and response.text:
+            data = response.json().get("data") or {}
+    except ValueError:
+        data = {}
+
+    outcome = HookOutcome.from_wire(data.get(HOOK_OUTCOME_KEY))
+    if outcome.stdout:
+        typer.echo(_json.dumps(outcome.stdout))
+    if outcome.stderr:
+        typer.echo(outcome.stderr, err=True)
+    raise typer.Exit(outcome.exit_code)
 
 def _post_hook_report(url: str, payload: dict):
     """POST a hook report using the command's established request policy.

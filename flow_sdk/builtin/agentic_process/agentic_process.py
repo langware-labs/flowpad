@@ -45,13 +45,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     resolve_worker_language,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import ProcessHookRuntime
-from flow_sdk.builtin.agentic_process.process_hooks import (
-    SUPPORTED_PROCESS_HOOK_EVENTS,
-    ProcessHookCallback,
-    clear_process_hook_callbacks,
-    dispatch_process_hook,
-    register_process_hook_callback,
-)
+from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks
 from flow_sdk.builtin.agentic_process.status_predicates import (
     WorkerMode,
     is_process_startable,
@@ -80,6 +74,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process._shared import RunResult
     from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import WorkerAuthResult
     from flow_sdk.builtin.agentic_process.prompt_queue import PromptQueue
+    from flow_sdk.builtin.hooks.process_manager import ProcessHooksManager
     from flow_sdk.builtin.shell import Shell
     from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
     from flow_sdk.fs_store.fs_record import FSRecord
@@ -5199,58 +5194,42 @@ class AgenticProcess(Entity):
         """Compatibility instruction-only preparation entry point."""
         return await self._prepare_system_instruction_assets()
 
-    @staticmethod
-    def _canonical_process_hook_event(event: HookEventType | str) -> HookEventType:
-        try:
-            normalized = HookEventType(event)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"unsupported process hook event: {event!r}") from exc
-        if normalized not in SUPPORTED_PROCESS_HOOK_EVENTS:
-            raise ValueError(f"unsupported process hook event: {normalized.value}")
-        return normalized
+    @cached_property
+    def hooks(self) -> "ProcessHooksManager":
+        """This process's hooks — the ``HooksManager`` for Process scope.
 
-    def _require_process_hook_support(self) -> None:
-        if not bool(getattr(self.driver, "supports_process_hooks", False)):
-            raise ValueError(f"process hooks are unsupported for worker {self.worker_type or 'default'}")
+        Its global counterpart is ``get_hook_manager(worker_type)``. Same
+        interface; the difference is only the target and which cells the harness
+        declares.
+        """
+        from flow_sdk.builtin.hooks.process_manager import ProcessHooksManager
 
-    async def _set_process_hook_enabled(
-        self,
-        event: HookEventType | str,
-        *,
-        enabled: bool,
-    ) -> bool:
-        normalized = self._canonical_process_hook_event(event)
-        self._require_process_hook_support()
-        original = list(self.process_hook_events or [])
-        updated = set(original)
-        if enabled:
-            updated.add(normalized.value)
-        else:
-            updated.discard(normalized.value)
-        canonical = sorted(updated)
-        if canonical == original:
-            return False
-        self.process_hook_events = canonical
-        await self.save()
-        return True
+        return ProcessHooksManager(self)
 
     async def set_hook(self, event: HookEventType | str) -> bool:
         """Persist one process-local hook intent; return whether it changed."""
-        return await self._set_process_hook_enabled(event, enabled=True)
+        return await self.hooks._set(event, enabled=True, scope=None)
 
     async def remove_hook(self, event: HookEventType | str) -> bool:
         """Remove one process-local hook intent; return whether it changed."""
-        return await self._set_process_hook_enabled(event, enabled=False)
+        return await self.hooks.remove(event)
 
-    def register_callback(self, callback: ProcessHookCallback) -> Callable[[], None]:
+    def register_callback(self, callback) -> Callable[[], None]:
         """Subscribe to every hook delivered to this process."""
-        return register_process_hook_callback(str(self.id), callback)
+        return self.hooks.set_callback(callback)
 
-    async def on_hook(self, data: AgentHookData) -> None:
-        """Emit and dispatch one canonical, process-targeted hook event."""
+    async def on_hook(self, data: AgentHookData):
+        """Emit and dispatch one canonical, process-targeted hook event.
+
+        Returns whatever a callback answered (``None`` when nobody has an
+        opinion, which is the common observer case).
+        """
+        from flow_sdk.builtin.hooks.manager import normalize_event
+
         if data.agentic_process_id != str(self.id):
             raise ValueError("agent hook target does not match process")
-        event = self._canonical_process_hook_event(data.hook_data.get("hook_event_name"))
+        event = normalize_event(data.hook_data.get("hook_event_name"))
+        self.hooks.require(event)
         if event.value not in (self.process_hook_events or []):
             raise ValueError(f"process hook event is not configured: {event.value}")
 
@@ -5276,7 +5255,7 @@ class AgenticProcess(Entity):
             await self.emit_flow_data(flow_data.model_dump(mode="python"))
         except Exception:
             logger.exception("process hook FlowData emission failed for %s", self.id)
-        await dispatch_process_hook(str(self.id), data)
+        return await self.hooks.deliver(data)
 
     @action.post(action_name="set-hook")
     async def _http_set_hook(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -5285,6 +5264,10 @@ class AgenticProcess(Entity):
             return body
         try:
             changed = await self.set_hook(body.get("event"))
+        except NotImplementedError as exc:
+            # An unsupported (harness, scope, event) cell. 501 rather than 400:
+            # the request is well-formed, this harness simply cannot serve it.
+            return ApiFailResponse(message=str(exc), status_code=501)
         except (TypeError, ValueError) as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         return ApiSuccessResponse(data={"changed": changed})
@@ -5296,6 +5279,10 @@ class AgenticProcess(Entity):
             return body
         try:
             changed = await self.remove_hook(body.get("event"))
+        except NotImplementedError as exc:
+            # An unsupported (harness, scope, event) cell. 501 rather than 400:
+            # the request is well-formed, this harness simply cannot serve it.
+            return ApiFailResponse(message=str(exc), status_code=501)
         except (TypeError, ValueError) as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         return ApiSuccessResponse(data={"changed": changed})
