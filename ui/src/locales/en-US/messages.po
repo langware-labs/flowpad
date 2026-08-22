@@ -1960,6 +1960,10 @@ msgstr "Auto-allow Bash if Sandboxed"
 msgid "Auto-approve bash when sandbox is active"
 msgstr "Auto-approve bash when sandbox is active"
 
+#: src/components/terminal/interactive-terminal/process-cli-presentation.ts
+msgid "Auto-approve permissions that are not explicitly denied (--auto)"
+msgstr "Auto-approve permissions that are not explicitly denied (--auto)"
+
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Auto-detect direction from first strong character"
 msgstr "Auto-detect direction from first strong character"
@@ -11568,6 +11572,22 @@ msgstr "Open worker session"
 msgid "OPENAI_API_KEY"
 msgstr "OPENAI_API_KEY"
 
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "OpenCode"
+msgstr "OpenCode"
+
+#: src/components/icons/OpenCodeRestoreIcon.tsx
+msgid "OpenCode (restored session)"
+msgstr "OpenCode (restored session)"
+
+#: src/components/quick-create/QuickCreateMenu.tsx
+msgid "OpenCode session"
+msgstr "OpenCode session"
+
+#: src/tabs/provider-meta.tsx
+msgid "OpenCode tab"
+msgstr "OpenCode tab"
+
 #: src/routes/loaders/load-shell.ts
 msgid "Opened a different terminal"
 msgstr "Opened a different terminal"
@@ -14551,8 +14571,11 @@ msgstr "Session {sessionId} is not in Claude, Codex, or Copilot history."
 msgid "Session {threadId} is not in Claude, Codex, or Copilot history."
 msgstr "Session {threadId} is not in Claude, Codex, or Copilot history."
 
-#: src/components/spotlight/adapters.ts
 #: src/hooks/use-resume-in-terminal.ts
+msgid "Session {workerId} is not in Claude, Codex, Copilot or OpenCode history."
+msgstr "Session {workerId} is not in Claude, Codex, Copilot or OpenCode history."
+
+#: src/components/spotlight/adapters.ts
 msgid "Session {workerId} is not in Claude, Codex, or Copilot history."
 msgstr "Session {workerId} is not in Claude, Codex, or Copilot history."
 
@@ -15556,6 +15579,10 @@ msgstr "Start new conversation · {effectiveTitle}"
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Start new conversation · {title}"
 msgstr "Start new conversation · {title}"
+
+#: src/tabs/useTerminalStripController.tsx
+msgid "Start OpenCode"
+msgstr "Start OpenCode"
 
 #: src/components/helpdesk/HelpdeskAsk.tsx
 msgid "Start over"
