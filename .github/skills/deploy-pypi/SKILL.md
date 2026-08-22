@@ -284,9 +284,9 @@ the release bump.
 
 **A version is only published to PyPI if the latest PR merged into the release
 branch has GREEN checks.** The `Tests` workflow (`.github/workflows/test.yml`)
-runs three jobs on every PR: `backend (pytest unit + api)`, `frontend (tsc +
-vitest unit + i18n)`, and `e2e (live backend: vitest headless/api/react +
-playwright)`. It is intentionally **non-blocking for merge** — a PR can be merged
+runs four jobs on every PR: `backend (pytest unit)`, `backend (pytest api)`,
+`frontend (tsc + vitest unit + i18n)`, and `e2e (live backend: vitest
+headless/api/react + playwright)`. It is intentionally **non-blocking for merge** — a PR can be merged
 while its tests are red or still running — so this gate is the point where the
 test result actually matters. **Pending counts as "not passed"**: if the checks
 haven't finished, treat it as not passed and do not publish.
