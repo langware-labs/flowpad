@@ -33,10 +33,19 @@ def test_test_instance_never_touches_the_developers_real_opencode_store():
 
     pre_sandbox_home = os.environ.get("FLOWPAD_PRE_SANDBOX_HOME")
     if pre_sandbox_home:
-        real_store = Path(pre_sandbox_home) / ".local" / "share" / "opencode"
-        assert data != real_store, f"opencode store is not sandboxed: {data}"
-    # And it must in any case sit under the sandboxed home, not somewhere else.
-    assert str(data).startswith(str(Path.home()))
+        real_local = Path(pre_sandbox_home) / ".local"
+        assert not str(data).startswith(str(real_local)), f"opencode store is not sandboxed: {data}"
+
+    # And it must sit under whichever root the resolver was told to use — which
+    # is `$XDG_DATA_HOME` when that is set, and the sandboxed home only when it
+    # is not. Asserting `Path.home()` unconditionally contradicts the resolver's
+    # own contract (OpenCode follows the XDG base dirs, so honouring the var is
+    # the whole design), and it fails wherever the environment legitimately sets
+    # one: a CI runner does, a developer shell usually does not, so the test
+    # passes locally and fails only on CI.
+    xdg_data_home = os.environ.get("XDG_DATA_HOME")
+    expected_root = Path(xdg_data_home) if xdg_data_home else Path.home()
+    assert str(data).startswith(str(expected_root)), f"{data} is not under {expected_root}"
 
 
 def test_db_path_sits_under_the_data_dir():
