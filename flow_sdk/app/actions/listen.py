@@ -177,7 +177,11 @@ async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse |
         logger.debug("AgentHook not found: %s — skipping entity-specific handling", agent_hook_id)
         return ApiSuccessResponse(data={})
 
-    result = await agent_hook.handle_webhook(webhook_data)
+    # Rule execution lives one layer ABOVE hooks: the bridge imports both, the
+    # hook entity imports neither. Triggers may depend on hooks, never the reverse.
+    from flow_sdk.builtin.trigger_hook_bridge import run_triggers_for_hook
+
+    result = await run_triggers_for_hook(agent_hook, webhook_data)
 
     # Emit FlowData for live sniffer/watchers. Route through the canonical
     # ``convert_hook_event`` translator so the global sniffer view receives a
@@ -224,9 +228,34 @@ async def handle_process_agent_hook(webhook_data: AgentHookData) -> ApiSuccessRe
         raw_hook_data = wrapped.get("raw_hook_data") if isinstance(wrapped, dict) else None
         native = raw_hook_data if isinstance(raw_hook_data, dict) else wrapped
         canonical = normalize(process_id, native)
-        await process.on_hook(canonical)
+        answer = await process.on_hook(canonical)
     except (TypeError, ValueError, ValidationError) as exc:
         return ApiFailResponse(message=str(exc), status_code=400)
+
+    # A callback's typed answer, rendered by the DRIVER into what this harness
+    # should observe — exit code, stdout, stderr. The reporting CLI applies that
+    # envelope verbatim under ``--wait-for-response``, which the projector adds
+    # only for response-capable events. No callback (the common observer case)
+    # means no opinion: the CLI is released immediately with the plain ack.
+    if answer is not None:
+        from flow_sdk.builtin.hooks.manager import normalize_event
+        from flow_sdk.builtin.hooks.types import HOOK_OUTCOME_KEY
+
+        render = getattr(process.driver, "render_hook_response", None)
+        if render is None:
+            logger.debug("%s renders no hook responses; dropping the answer", process.driver.name)
+        else:
+            try:
+                event = normalize_event(canonical.hook_data.get("hook_event_name"))
+                outcome = render(event, answer)
+            except (NotImplementedError, TypeError, ValueError) as exc:
+                # A callback answered an event the harness cannot hear. Log and
+                # release the CLI rather than failing the turn over it.
+                logger.warning("dropping hook response for %s: %s", process_id, exc)
+            else:
+                if not outcome.is_silent:
+                    return ApiSuccessResponse(data={HOOK_OUTCOME_KEY: outcome.to_wire()})
+
     return ApiSuccessResponse(data={"received": True})
 
 

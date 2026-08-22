@@ -32,7 +32,6 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     restart_payload_from_cli_options,
     run_worker_auth_probe,
 )
-from flow_sdk.builtin.agentic_process.cli_drivers.headless_turn import run_headless_turn
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
     codex_transcript_path_for_process,
@@ -50,6 +49,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.codex.status import codex_tail
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.stream_worker import (
     CodexCLIStreamWorker,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.headless_turn import run_headless_turn
 from flow_sdk.builtin.agentic_process.process_hooks import (
     SUPPORTED_PROCESS_HOOK_EVENTS,
     build_canonical_hook_data,
@@ -57,6 +57,8 @@ from flow_sdk.builtin.agentic_process.process_hooks import (
     normalize_process_hook_events,
 )
 from flow_sdk.builtin.flowpad_runner_wrapper import get_installed_flow_invocation
+from flow_sdk.builtin.hooks.capabilities import process_capability, unsupported
+from flow_sdk.builtin.hooks.types import HookCapabilities, HookScope
 from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.flowpad_types.enums import WorkerType
@@ -88,6 +90,29 @@ _CANONICAL_FIELDS = (
     "reason",
 )
 
+
+#: Codex reads ``hooks.<Event>`` from config.toml (User/Project — added by the
+#: config writer) and accepts the same table as ``-c`` launch overrides
+#: (Process). Only the launch route is wired today.
+#: Verified against codex-cli 0.147.0: ``hooks.<Event>`` IS a real config.toml
+#: key and a ``[hooks]`` table parses clean, but a file-declared hook is
+#: SILENTLY SKIPPED unless its trust is persisted — measured directly: the same
+#: hook fires with ``--dangerously-bypass-hook-trust`` and does nothing without
+#: it. Only the interactive TUI writes that trust record (``hooks.state``), and
+#: forging one on the user's behalf would defeat a deliberate vendor safety
+#: gate. A hook we launch carries the bypass flag; a run we did NOT launch
+#: cannot — which is exactly what global scope has to serve. So global stays
+#: unsupported until trust can be granted honestly.
+_TRUST_GATE = (
+    "codex silently skips a config.toml hook whose trust is not persisted, and only "
+    "its interactive TUI can grant that trust"
+)
+
+_HOOK_CAPABILITIES: "HookCapabilities" = {
+    HookScope.USER: unsupported(_TRUST_GATE),
+    HookScope.PROJECT: unsupported(_TRUST_GATE),
+    HookScope.PROCESS: process_capability(),
+}
 
 class CodexDriver:
     """Vendor glue for OpenAI Codex. Implements the ``WorkerDriver`` Protocol."""
@@ -145,6 +170,9 @@ class CodexDriver:
 
     def process_hook_snapshot(self, events: Sequence[HookEventType]) -> dict[str, Any]:
         return build_process_hook_snapshot(events, provider=self.name)
+
+    def hook_capabilities(self) -> "HookCapabilities":
+        return dict(_HOOK_CAPABILITIES)
 
     def prepare_process_hooks(
         self,

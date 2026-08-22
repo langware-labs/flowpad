@@ -43,6 +43,7 @@ def build_config(
     *,
     instruction_files: list[str] | None = None,
     skill_paths: list[str] | None = None,
+    plugin_files: list[str] | None = None,
 ) -> dict:
     """The config body — pure, so it can be asserted on without touching disk."""
     config: dict = {"$schema": CONFIG_SCHEMA_URL}
@@ -52,6 +53,11 @@ def build_config(
     paths = [str(p) for p in (skill_paths or []) if p]
     if paths:
         config["skills"] = {"paths": paths}
+    # ``plugin`` entries must be URLs, not bare paths: opencode resolves a bare
+    # string as an npm module specifier and fails to load it.
+    plugins = [Path(p).as_uri() for p in (plugin_files or []) if p]
+    if plugins:
+        config["plugin"] = plugins
     return config
 
 
@@ -60,11 +66,16 @@ def write_process_config(
     *,
     instruction_files: list[str] | None = None,
     skill_paths: list[str] | None = None,
+    plugin_files: list[str] | None = None,
 ) -> Path | None:
     """Write the generated config; return its path, or None when there is
     nothing to say (no instructions and no skills — then the CLI's own config
     resolution is left completely alone)."""
-    config = build_config(instruction_files=instruction_files, skill_paths=skill_paths)
+    config = build_config(
+        instruction_files=instruction_files,
+        skill_paths=skill_paths,
+        plugin_files=plugin_files,
+    )
     if len(config) == 1:  # only the $schema key
         return None
     path = opencode_config_path_for_process(process_id)
@@ -90,13 +101,17 @@ def config_for_assets_dir(process_id: str, assets_dir: "Path | str | None") -> P
     directory = Path(assets_dir) if assets_dir else None
     if directory is None or not str(directory):
         return None
+    from flow_sdk.builtin.agentic_process.cli_drivers.opencode.hook_plugin import plugin_path
+
     agents_md = directory / "AGENTS.md"
     skills_dir = directory / SKILLS_SUBDIR
+    hook_plugin = plugin_path(directory)
     try:
         return write_process_config(
             process_id,
             instruction_files=[str(agents_md)] if agents_md.is_file() else [],
             skill_paths=[str(skills_dir)] if skills_dir.is_dir() else [],
+            plugin_files=[str(hook_plugin)] if hook_plugin.is_file() else [],
         )
     except Exception:
         logger.debug("opencode: config generation failed for %s", process_id, exc_info=True)

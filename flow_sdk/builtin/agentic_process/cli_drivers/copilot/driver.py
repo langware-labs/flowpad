@@ -25,7 +25,6 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     restart_payload_from_cli_options,
     run_worker_auth_probe,
 )
-from flow_sdk.builtin.agentic_process.cli_drivers.headless_turn import run_headless_turn
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
     copilot_session_state_root,
@@ -44,6 +43,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.copilot.status import copilot_
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.stream_worker import (
     CopilotCLIStreamWorker,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.headless_turn import run_headless_turn
 from flow_sdk.builtin.agentic_process.process_hooks import (
     SUPPORTED_PROCESS_HOOK_EVENTS,
     build_canonical_hook_data,
@@ -51,6 +51,8 @@ from flow_sdk.builtin.agentic_process.process_hooks import (
     normalize_process_hook_events,
 )
 from flow_sdk.builtin.flowpad_runner_wrapper import get_installed_flow_invocation
+from flow_sdk.builtin.hooks.capabilities import process_capability, unsupported
+from flow_sdk.builtin.hooks.types import HookCapabilities, HookScope
 from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.flowpad_types.enums import WorkerType
@@ -82,6 +84,23 @@ _CANONICAL_FIELDS = (
 # Copilot is the one vendor emitting camelCase in its non-compat payloads.
 _CAMEL_ALIASES = {"session_id": "sessionId", "initial_prompt": "initialPrompt"}
 
+
+#: Copilot hooks come only from plugins, and ``copilot plugin install`` accepts
+#: no local path — so a locally generated plugin can only be handed over per
+#: launch. There is no global scope to declare (verified on CLI 1.0.80).
+#: Verified against Copilot CLI 1.0.80: hooks come ONLY from plugins, and
+#: ``copilot plugin install`` accepts a marketplace/repo/URL but no local path —
+#: so a plugin we generate can only be handed over per launch via
+#: ``--plugin-dir``. ``~/.copilot/config.json`` holds auth/UI state and cannot
+#: carry hooks. This is a vendor limitation, not a missing writer.
+_NO_GLOBAL = (
+    "copilot loads hooks only from plugins, and plugin install accepts no local path"
+)
+
+_HOOK_CAPABILITIES: "HookCapabilities" = {
+    HookScope.USER: unsupported(_NO_GLOBAL),
+    HookScope.PROCESS: process_capability(),
+}
 
 class CopilotDriver:
     """Vendor glue for GitHub Copilot CLI."""
@@ -125,6 +144,9 @@ class CopilotDriver:
 
     def process_hook_snapshot(self, events: Sequence["HookEventType"]) -> dict[str, Any]:
         return build_process_hook_snapshot(events, provider=self.name)
+
+    def hook_capabilities(self) -> "HookCapabilities":
+        return dict(_HOOK_CAPABILITIES)
 
     def prepare_process_hooks(
         self,

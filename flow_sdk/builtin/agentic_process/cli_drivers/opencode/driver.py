@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
     AgenticProcessContextKey,
     AgentOptions,
     DeviceLoginSpec,
+    ProcessHookRuntime,
     WorkerAuthResult,
     apply_worker_env,
     apply_worker_secret_env,
@@ -24,6 +27,11 @@ from flow_sdk.builtin.agentic_process.cli_drivers.opencode.cli import OpenCodeAg
 from flow_sdk.builtin.agentic_process.cli_drivers.opencode.config_gen import (
     SKILLS_SUBDIR,
     config_for_assets_dir,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.opencode.hook_plugin import (
+    PLUGIN_SUBDIR,
+    plugin_path,
+    render_plugin,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.opencode.session_history import (
     assemble_session_jsonl,
@@ -42,7 +50,14 @@ from flow_sdk.builtin.agentic_process.cli_drivers.opencode.status import opencod
 from flow_sdk.builtin.agentic_process.cli_drivers.opencode.stream_worker import (
     OpenCodeCLIStreamWorker,
 )
+from flow_sdk.builtin.agentic_process.process_hooks import (
+    build_process_hook_snapshot,
+    normalize_process_hook_events,
+)
+from flow_sdk.builtin.flowpad_runner_wrapper import get_installed_flow_invocation
+from flow_sdk.builtin.hooks.types import HookCapabilities, HookCapability, HookEventType, HookScope
 from flow_sdk.builtin.worker_status import WorkerStatus
+from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.responses.response import ApiFailResponse
 from flow_sdk.transcript_analyzer import (
@@ -53,10 +68,25 @@ from flow_sdk.transcript_analyzer import (
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
     from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
     from flow_sdk.responses.response import ApiResponse
 
 logger = logging.getLogger(__name__)
+
+
+#: OpenCode reaches its plugin through the generated ``opencode.json`` rather
+#: than argv, so Process scope works with no CLI flag at all. Global scopes are
+#: reachable in principle — ``.opencode/plugin/*.js`` is auto-discovered at both
+#: the config home and the repo — but are not wired yet.
+#:
+#: ``SessionEnd`` is deliberately absent: opencode's ``session.idle`` fires at
+#: TURN end, not session end, so mapping it would fire SessionEnd on every turn.
+_HOOK_CAPABILITIES: "HookCapabilities" = {
+    HookScope.PROCESS: HookCapability(
+        events=frozenset({HookEventType.USER_PROMPT_SUBMIT, HookEventType.SESSION_START}),
+    ),
+}
 
 
 class OpenCodeDriver:
@@ -110,6 +140,76 @@ class OpenCodeDriver:
         options: AgentOptions,
     ) -> dict:
         return restart_payload_from_cli_options(options)
+
+    # ------------------------------------------------------------------
+    # Process hooks
+    # ------------------------------------------------------------------
+
+    supports_process_hooks = True
+    process_hooks_use_assets = True
+
+    def hook_capabilities(self) -> "HookCapabilities":
+        return dict(_HOOK_CAPABILITIES)
+
+    def process_hook_snapshot(self, events: "Sequence[HookEventType]") -> dict:
+        return build_process_hook_snapshot(events, provider=self.name)
+
+    def prepare_process_hooks(
+        self,
+        assets: "AssetDir",
+        process_id: str,
+        events: "Sequence[HookEventType]",
+    ) -> ProcessHookRuntime:
+        """Materialize the plugin; return an EMPTY runtime.
+
+        Unlike every other vendor there is nothing to add to the command line —
+        opencode has no plugin flag. The generated plugin reaches the worker
+        because ``config_for_assets_dir`` finds it in this same assets dir and
+        lists it in the ``opencode.json`` that ``OPENCODE_CONFIG`` points at.
+        """
+        normalized = normalize_process_hook_events(events, provider=self.name)
+        # The shared normalizer validates against the V1 three-event set, which
+        # is WIDER than what opencode declares (no SessionEnd). Re-check against
+        # our own capability so a stale row can never render a plugin with a
+        # handler opencode would never call.
+        declared = _HOOK_CAPABILITIES[HookScope.PROCESS].events
+        unsupported = sorted(e.value for e in normalized if e not in declared)
+        if unsupported:
+            raise ValueError(f"Unsupported Opencode process hook event: {', '.join(unsupported)}")
+        if not normalized:
+            assets.remove(PLUGIN_SUBDIR)
+            return ProcessHookRuntime()
+        if not is_valid_entity_id(process_id):
+            raise ValueError(f"Invalid agentic process id: {process_id!r}")
+
+        command, prefix_args = get_installed_flow_invocation()
+        source = render_plugin(
+            process_id=process_id,
+            flow_argv=[command, *prefix_args],
+            events=tuple(normalized),
+        )
+        assets.remove(PLUGIN_SUBDIR)
+        assets.load_asset(str(plugin_path(Path("."))), content=source)
+        return ProcessHookRuntime()
+
+    def normalize_process_hook_data(
+        self,
+        process_id: str,
+        raw_hook_data: dict,
+    ) -> "AgentHookData":
+        if not is_valid_entity_id(process_id):
+            raise ValueError(f"Invalid agentic process id: {process_id!r}")
+        raw = dict(raw_hook_data)
+        supported = {event.value for event in _HOOK_CAPABILITIES[HookScope.PROCESS].events}
+        event = raw.get("hook_event_name")
+        if event not in supported:
+            raise ValueError(f"Unsupported Opencode process hook event: {event!r}")
+        hook_data: dict = {"hook_event_name": event}
+        for key in ("prompt", "cwd", "session_id", "timestamp"):
+            if key in raw:
+                hook_data[key] = raw[key]
+        hook_data["raw_hook_data"] = raw
+        return AgentHookData(agentic_process_id=process_id, hook_data=hook_data)
 
     # ------------------------------------------------------------------
     # Per-turn execution
