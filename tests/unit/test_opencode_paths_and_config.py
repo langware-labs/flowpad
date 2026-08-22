@@ -17,7 +17,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.opencode.session_history impor
 from flow_sdk.instance_settings import get_instance_settings
 
 
-def test_test_instance_never_touches_the_developers_real_opencode_store():
+def test_test_instance_never_touches_the_developers_real_opencode_store(tmp_path, monkeypatch):
     """The store must never resolve to the developer's own one.
 
     OpenCode publishes no ``OPENCODE_DATA_DIR``; it follows the XDG base dirs,
@@ -25,27 +25,59 @@ def test_test_instance_never_touches_the_developers_real_opencode_store():
     so the guard that matters is against the PRE-sandbox home, stashed as
     ``FLOWPAD_PRE_SANDBOX_HOME``. A regression here would have a test run read,
     and a driver write, the real ``~/.local/share/opencode``.
+
+    The instance is PINNED rather than inherited. Which settings class answers
+    depends on how the instance resolves, and that is ambient: a developer shell
+    that exports ``FLOW_INSTANCE`` (this checkout exports ``oss``) gets
+    ``BaseInstanceSettings``, whose store sits under the sandboxed ``$HOME`` and
+    satisfies any home-relative assertion for free, while CI exports nothing,
+    falls back to ``test``, and resolves a PID-keyed sandbox that is not under
+    ``$HOME`` at all. Unpinned, this test passed on every laptop, failed only on
+    CI, and never once exercised the test instance it is named for.
     """
     import os
 
-    data = opencode_data_dir()
-    assert data == get_instance_settings().opencode_data_dir
+    from flow_sdk.instance_settings import reset_instance_settings
 
-    pre_sandbox_home = os.environ.get("FLOWPAD_PRE_SANDBOX_HOME")
-    if pre_sandbox_home:
-        real_local = Path(pre_sandbox_home) / ".local"
-        assert not str(data).startswith(str(real_local)), f"opencode store is not sandboxed: {data}"
+    sandbox = tmp_path / "sandbox"
+    monkeypatch.setenv("FLOW_INSTANCE", "test")
+    monkeypatch.setenv("FLOWPAD_TEST_SANDBOX", str(sandbox))
+    # Cleared so the sandbox is what answers. Honouring XDG is real behaviour and
+    # has its own coverage below; letting an ambient value leak in here would put
+    # us back to asserting against whatever the machine happens to export.
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    reset_instance_settings()
+    try:
+        data = opencode_data_dir()
+        assert data == get_instance_settings().opencode_data_dir
+        assert data == sandbox / ".local" / "share" / "opencode"
 
-    # And it must sit under whichever root the resolver was told to use — which
-    # is `$XDG_DATA_HOME` when that is set, and the sandboxed home only when it
-    # is not. Asserting `Path.home()` unconditionally contradicts the resolver's
-    # own contract (OpenCode follows the XDG base dirs, so honouring the var is
-    # the whole design), and it fails wherever the environment legitimately sets
-    # one: a CI runner does, a developer shell usually does not, so the test
-    # passes locally and fails only on CI.
-    xdg_data_home = os.environ.get("XDG_DATA_HOME")
-    expected_root = Path(xdg_data_home) if xdg_data_home else Path.home()
-    assert str(data).startswith(str(expected_root)), f"{data} is not under {expected_root}"
+        pre_sandbox_home = os.environ.get("FLOWPAD_PRE_SANDBOX_HOME")
+        if pre_sandbox_home:
+            # A PREFIX test, not an equality one: a store merely nested under the
+            # developer's real `.local` is just as much a leak as the exact path.
+            real_local = Path(pre_sandbox_home) / ".local"
+            assert not str(data).startswith(str(real_local)), f"opencode store is not sandboxed: {data}"
+    finally:
+        reset_instance_settings()
+
+
+def test_the_data_dir_follows_xdg_when_the_environment_sets_it(tmp_path, monkeypatch):
+    """Honouring ``$XDG_DATA_HOME`` is the design, not an accident.
+
+    OpenCode resolves its own store that way, so flow_sdk has to agree or the
+    driver reads a different database than the CLI writes.
+    """
+    from flow_sdk.instance_settings import reset_instance_settings
+
+    monkeypatch.setenv("FLOW_INSTANCE", "test")
+    monkeypatch.setenv("FLOWPAD_TEST_SANDBOX", str(tmp_path / "sandbox"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    reset_instance_settings()
+    try:
+        assert opencode_data_dir() == tmp_path / "xdg" / "opencode"
+    finally:
+        reset_instance_settings()
 
 
 def test_db_path_sits_under_the_data_dir():
