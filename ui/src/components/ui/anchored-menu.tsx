@@ -13,12 +13,32 @@ const MIN_WIDTH = 224;
 const VIEWPORT_GUTTER = 8;
 
 /**
- * AnchoredMenu — a slide-in MENU whose right edge is pinned under the control
- * that opens it, growing leftward. A transient, non-modal flyout: it floats over
- * content (the trigger stays interactive) and dismisses on outside pointer-down,
- * Escape, and — unless a hover-driven owner opts out with `idleMs={null}` — 5s
- * of idle (see `useIdleAutoClose`). Reusable layout element — the `headerRight`
- * slot is the canonical home for a scope filter, so any "scoped menu" drops in.
+ * The gap an owner must pass as `anchorEnd` to line a menu's inline-end edge up
+ * with its trigger's: the distance from the VIEWPORT's inline-end edge to the
+ * trigger's inline-end edge.
+ *
+ * Physical `right`/`left` swap roles between the two directions, so measuring
+ * with the LTR formula in an RTL locale anchors the panel against the edge it is
+ * furthest from and it renders off-window. Callers pass `dir` (from
+ * `useLocaleInfo().dir`) rather than reading `document.documentElement.dir` here,
+ * so the value stays reactive to a locale switch and testable without touching
+ * the document.
+ *
+ * Clamped at 0 so a trigger scrolled past the viewport edge parks the menu at
+ * that edge instead of pushing it out of view.
+ */
+export function viewportInlineEndGap(rect: DOMRect, dir: 'ltr' | 'rtl'): number {
+  return Math.max(0, dir === 'rtl' ? rect.left : window.innerWidth - rect.right);
+}
+
+/**
+ * AnchoredMenu — a slide-in MENU whose INLINE-END edge is pinned under the
+ * control that opens it, growing toward inline-start. A transient, non-modal
+ * flyout: it floats over content (the trigger stays interactive) and dismisses
+ * on outside pointer-down, Escape, and — unless a hover-driven owner opts out
+ * with `idleMs={null}` — 5s of idle (see `useIdleAutoClose`). Reusable layout
+ * element — the `headerRight` slot is the canonical home for a scope filter, so
+ * any "scoped menu" drops in.
  *
  * It used to be `LeftSlider`, pinned beside the rail and growing rightward. That
  * mode went with the rail's bookmarks icon; keeping a second branch nothing
@@ -43,7 +63,7 @@ export function AnchoredMenu({
   headerRight,
   width = 320,
   anchorTop = ANCHOR_FALLBACK_TOP,
-  anchorRight = VIEWPORT_GUTTER,
+  anchorEnd = VIEWPORT_GUTTER,
   idleMs,
   onPointerEnter,
   onPointerLeave,
@@ -58,11 +78,16 @@ export function AnchoredMenu({
   /** Viewport y the menu's top edge aligns to — pass the trigger's own top so
    *  the menu reads as belonging to it. */
   anchorTop?: number;
-  /** Distance from the VIEWPORT's right edge to the menu's right edge — i.e.
-   *  `window.innerWidth - triggerRect.right`, so the two line up. Defaulted
+  /** Distance from the VIEWPORT's INLINE-END edge to the menu's inline-end edge,
+   *  so the two line up. Logical, not physical: the owner measures
+   *  `window.innerWidth - triggerRect.right` under LTR but `triggerRect.left`
+   *  under RTL (see `viewportInlineEndGap`). Passing the LTR formula in an RTL
+   *  locale is what used to shove the panel off the window — the trigger sits
+   *  near the LEFT edge there, so `innerWidth - rect.right` is nearly the full
+   *  viewport width and the panel grew off-screen from there. Defaulted
    *  because the owner measures in a layout effect, which lands after this
    *  child's first commit. */
-  anchorRight?: number;
+  anchorEnd?: number;
   /** `null` opts out of the idle auto-close — for a hover-driven slider that
    *  owns its own dismissal via pointer-leave. See useIdleAutoClose. */
   idleMs?: number | null;
@@ -124,9 +149,12 @@ export function AnchoredMenu({
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
       style={{
-        // Pin the right edge to the trigger; the left is free to move as the
-        // content sizes it, which is what makes the menu grow leftward.
-        right: anchorRight,
+        // Pin the inline-END edge to the trigger; the inline-start edge is free
+        // to move as the content sizes it, which is what makes the menu grow
+        // toward inline-start. Logical (`insetInlineEnd`), so under RTL this
+        // resolves to `left` and the panel grows RIGHTWARD, into the window,
+        // instead of off the edge it is anchored to.
+        insetInlineEnd: anchorEnd,
         top: anchorTop,
         // Size to content, not a fixed slab: short bookmark names left most of a
         // 320px panel empty. Clamped between a min that fits the header and
@@ -144,13 +172,17 @@ export function AnchoredMenu({
         // let the rail paint over the menu on a narrow window.
         'fixed z-[60] flex flex-col overflow-hidden rounded-lg border border-border bg-background shadow-lg',
         'transition-transform duration-200 ease-in-out',
-        // Parked off the right edge while closed, so the slide travels toward
-        // the content. It must not hit-test there: a hover-driven owner would
+        // Parked off the inline-END edge while closed, so the slide travels
+        // toward the content. `translate-x-full` is PHYSICAL — Tailwind does not
+        // mirror translations — so RTL needs the explicit negation, or the panel
+        // would park on the far side and sail across the whole window to arrive.
+        //
+        // It must not hit-test there: a hover-driven owner would
         // otherwise receive pointerenter from its own off-screen panel while the
         // pointer is really on the trigger, reopen, slide away, get pointerleave,
         // close, slide back under the pointer — an oscillation that never
         // settles. Only a shown panel takes the pointer.
-        shown ? 'translate-x-0' : 'translate-x-full pointer-events-none',
+        shown ? 'translate-x-0' : 'translate-x-full rtl:-translate-x-full pointer-events-none',
       )}
     >
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
