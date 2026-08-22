@@ -94,28 +94,29 @@ _PROJECT_CWD_CACHE: "tuple[tuple, dict[str, FSRecord]] | None" = None
 
 
 def _project_corpus_stamp() -> tuple:
-    """Cheap identity of the project records directory — one stat.
+    """Cheap identity of the project corpus — one stat plus a counter read.
 
-    Adding or removing a project writes or deletes a child directory, which
-    moves the parent's mtime. That is the half `invalidate_project_cwd_index`
-    cannot see: `operations/claude_project.py` rmtree's stale record dirs
-    directly, without going through this module's writer. The two gates cover
-    different writers — membership changes from anywhere (stamp) and in-place
-    field edits by our own writer (explicit invalidation).
+    Two writers, neither of which sees the other:
+
+    * the type directory's mtime moves when a record dir is ADDED or REMOVED —
+      including from outside this module (`operations/claude_project.py`
+      rmtree's stale dirs) and from another process;
+    * `record_write_generation` moves when any in-process writer rewrites a
+      record's own metadata.json — `FSRecord.save` / `save_metadata`, which the
+      generic Entity->record sync goes through (`entity_model.py`). That rewrite
+      does NOT move the directory mtime, so without the counter a re-mounted
+      project would resolve to its stale record for the life of the process.
     """
+    from flow_sdk.fs_store.fs_record import record_write_generation  # noqa: PLC0415
     from flow_sdk.fs_store.record_paths import get_default_records_root  # noqa: PLC0415
 
-    root = get_default_records_root() / str(RecordType.PROJECT)
+    type_name = str(RecordType.PROJECT)
+    root = get_default_records_root() / type_name
     try:
-        return (str(root), root.stat().st_mtime_ns)
+        mtime = root.stat().st_mtime_ns
     except OSError:
-        return (str(root), None)
-
-
-def invalidate_project_cwd_index() -> None:
-    """Drop the cwd index. Called wherever this module writes a project record."""
-    global _PROJECT_CWD_CACHE
-    _PROJECT_CWD_CACHE = None
+        mtime = None
+    return (str(root), mtime, record_write_generation(type_name))
 
 
 def _project_cwd_index() -> "dict[str, FSRecord]":
@@ -255,10 +256,6 @@ async def _refresh_session_stats_and_save(rec: FSRecord) -> FSRecord:
         await rec.save()
     except Exception:
         pass
-    # A saved record may have changed the cwd/name/mount fields the index is
-    # keyed on, and rewriting an EXISTING record does not move the corpus
-    # directory's mtime — so the stamp alone cannot see it.
-    invalidate_project_cwd_index()
     return rec
 
 

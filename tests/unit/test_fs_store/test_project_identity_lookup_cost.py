@@ -26,6 +26,7 @@ observes how often the real function runs; it never stands in for it.
 
 from __future__ import annotations
 
+import pathlib
 import time
 
 import pytest
@@ -96,4 +97,35 @@ def test_project_identity_does_not_rescan_the_corpus_per_lookup(project_corpus, 
         f"{elapsed / LOOKUPS * 1000:.1f}ms per lookup). Identity resolution is "
         f"O(refs x corpus): the corpus must be indexed once per pass and looked "
         f"up by cwd."
+    )
+
+
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
+def test_project_index_sees_an_in_place_record_rewrite(project_corpus):
+    """A record rewritten in place must not keep resolving under its old path.
+
+    Rewriting an EXISTING record touches only its own metadata.json, which does
+    NOT move the type directory's mtime — so a cache keyed on that mtime alone
+    would serve the stale record for the life of the process. `FSRecord.save`
+    bumps a per-type write generation that the stamp also reads.
+    """
+    from flow_sdk.fs_store.indexer.functions import claude_projects
+
+    moved, other = project_corpus[0], project_corpus[1]
+    record_id = claude_projects.existing_project_record_id(moved)
+    assert record_id, "fixture record must resolve before the rewrite"
+
+    # Warm the index, then re-point that record at a new cwd, in place.
+    claude_projects.existing_project_record_id(other)
+    record = claude_projects._find_project_record_by_cwd(moved)
+    relocated = str(pathlib.Path(moved).parent / "relocated")
+    pathlib.Path(relocated).mkdir()
+    object.__setattr__(record, "cwd", relocated)
+    object.__setattr__(record, "name", relocated)
+    record.save()
+
+    assert claude_projects.existing_project_record_id(relocated) == record_id
+    assert claude_projects.existing_project_record_id(moved) is None, (
+        "the old cwd still resolves — the index did not see an in-place rewrite"
     )
