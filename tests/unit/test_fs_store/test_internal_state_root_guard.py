@@ -1,72 +1,84 @@
-"""Guard: Flowpad's own state dir must never become a folder-walk root.
+"""Guard: Flowpad's own state dir is never walked.
 
 Sibling of ``test_real_project_cwd_home_guard``. That one covers a root at or
-ABOVE ``$HOME``; this covers the state directory BELOW it, which an ancestor
-check lets straight through.
+ABOVE ``$HOME``; ``flow_home`` sits BELOW it, so the ancestor check lets it
+through.
 
 ``<flow_home>/instances/<name>/`` holds per-instance DBs and a ``records/``
-shadow tree — one directory per indexed record. Registered as a project root it
-makes the indexer walk its own output, and it compounds: every launched
-instance adds a root, and each grows with use. Measured on one machine: 21 such
-roots contributed 155,914 of 166,310 walked folders (94%), turning a ~2s skill
-discovery into ~25s and timing out the per-type index test.
+shadow tree, so walking it makes the indexer walk its own output — and it
+compounds, since every launched instance adds another root that grows with use.
 
-The root is read from ``InstanceSettings.flow_home`` (never a literal), so a
-relocated ``FLOW_HOME`` is covered, and containment goes through the shared
-``canonical_posix_path`` + ``is_path_under`` pair so the answer is the same on
-Windows and on case-insensitive/NFD macOS volumes.
+Asserted through ``indexing_decision`` (the gate both root resolvers call)
+rather than a private predicate, so the property holds for any future resolver.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
 
-from flow_sdk.fs_store.indexer.roots import is_internal_state_path
-from flow_sdk.instance_settings import get_instance_settings
+from flow_sdk.fs_store.indexer import special_folders as sf_mod
+from flow_sdk.fs_store.indexer.special_folders import (
+    FolderKind,
+    IndexDecision,
+    classify_special_folder,
+    indexing_decision,
+)
 
 
-def _flow_home() -> str:
-    return str(get_instance_settings().flow_home)
+@pytest.fixture
+def flow_home(tmp_path, monkeypatch):
+    """A relocated ``flow_home`` — proves no literal ``~/.flow`` is baked in.
+
+    Patched at the settings seam (``special_folders`` reads it lazily per call)
+    rather than via env, so it binds deterministically instead of depending on
+    whether settings happen to be cached in this process.
+    """
+    root = tmp_path / "relocated" / "flowhome"
+    (root / "instances" / "inst" / "records" / "project").mkdir(parents=True)
+    monkeypatch.setattr(
+        sf_mod, "get_instance_settings", lambda: SimpleNamespace(flow_home=root), raising=False
+    )
+    monkeypatch.setattr(
+        "flow_sdk.instance_settings.get_instance_settings",
+        lambda: SimpleNamespace(flow_home=root),
+    )
+    sf_mod._special_folders_for_home.cache_clear()
+    yield root
+    sf_mod._special_folders_for_home.cache_clear()
 
 
 @pytest.mark.parametrize(
-    ("suffix", "expected"),
+    "rel",
     [
-        ("", True),                          # flow_home itself
-        ("/instances", True),                # the instances dir
-        ("/instances/oss", True),            # one instance root
-        ("/instances/oss/records/project", True),  # deep inside the shadow tree
-        ("/capability-probes", True),        # other internal state
+        "",                              # flow_home itself
+        "instances",                     # the instances dir
+        "instances/inst",                # one instance root
+        "instances/inst/records/project",  # deep inside the shadow tree
     ],
 )
-def test_paths_inside_flow_home_are_internal(suffix, expected):
-    assert is_internal_state_path(_flow_home() + suffix) is expected
+def test_flow_home_is_never_walked(flow_home, rel):
+    target = flow_home / rel if rel else flow_home
+    assert indexing_decision(target) is IndexDecision.SKIP
 
 
-def test_a_sibling_with_a_shared_prefix_is_not_internal():
-    """Segment-safe: ``<flow_home>data`` must not read as inside ``<flow_home>``.
-
-    A naive ``startswith`` would swallow it. This is why the check goes through
-    ``is_path_under`` rather than comparing strings here.
-    """
-    assert is_internal_state_path(_flow_home() + "data") is False
+def test_flow_home_is_hardskip_so_it_is_never_even_offered(flow_home):
+    """HARDSKIP, not TRISTATE: there is no consent question to ask about our own
+    storage, and a foreground (explicit) open must not walk it either."""
+    assert classify_special_folder(flow_home).kind is FolderKind.HARDSKIP
+    assert indexing_decision(flow_home, foreground=True) is IndexDecision.SKIP
 
 
-def test_a_real_project_is_not_internal(tmp_path):
+def test_a_sibling_sharing_the_prefix_is_still_walked(flow_home):
+    """Segment-safe: ``<flow_home>data`` must not be swallowed by ``<flow_home>``."""
+    sibling = Path(str(flow_home) + "data")
+    sibling.mkdir(parents=True)
+    assert indexing_decision(sibling) is IndexDecision.WALK
+
+
+def test_an_ordinary_project_is_still_walked(flow_home, tmp_path):
     project = tmp_path / "dev" / "repo"
     project.mkdir(parents=True)
-    assert is_internal_state_path(project) is False
-
-
-def test_the_guard_follows_a_relocated_flow_home(tmp_path, monkeypatch):
-    """No literal ``~/.flow`` anywhere: point FLOW_HOME elsewhere and the guard
-    moves with it — which is also what keeps sandboxed test instances covered."""
-    relocated = tmp_path / "elsewhere" / "flowhome"
-    (relocated / "instances" / "inst").mkdir(parents=True)
-    monkeypatch.setenv("FLOW_HOME", str(relocated))
-
-    from flow_sdk.instance_settings import get_instance_settings as _gs
-
-    if str(_gs().flow_home) != str(relocated):
-        pytest.skip("FLOW_HOME is resolved/cached elsewhere in this process")
-    assert is_internal_state_path(relocated / "instances" / "inst") is True
+    assert indexing_decision(project) is IndexDecision.WALK

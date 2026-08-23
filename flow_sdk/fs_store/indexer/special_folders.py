@@ -20,8 +20,9 @@ model persisted in the instance ``preferences.json`` (keys
 Two folder KINDS:
   * TRISTATE — Documents / Desktop / Downloads: dev projects plausibly live
     here, so we ask.
-  * HARDSKIP — the media library (Music / Movies / Pictures): an editor has no
-    legitimate reason to index it, so it is NEVER walked and NEVER offered.
+  * HARDSKIP — the media library (Music / Movies / Pictures), and Flowpad's own
+    ``flow_home`` state dir: no legitimate reason to index either, so they are
+    NEVER walked and NEVER offered.
 
 Cross-OS: the *mechanism* (states, decision) is uniform; only the folder PATHS
 and whether the OS actually prompts differ. macOS prompts (TCC); Windows does
@@ -92,8 +93,27 @@ def _win_dir(name: str, home: Path) -> Path:
     return home / name
 
 
+def _internal_state_folder(flow_home_str: str, sf, hard: FolderKind) -> SpecialFolder:
+    """Flowpad's own state dir, as a HARDSKIP folder.
+
+    ``<flow_home>/instances/<name>/`` holds per-instance DBs and a ``records/``
+    shadow tree — one directory per indexed record. Walking it makes the indexer
+    walk its own output, and it compounds: every launched instance adds another
+    root that grows as it is used. HARDSKIP is exactly right — never walked,
+    never offered, no consent question to ask about our own storage.
+
+    ``is_home_or_ancestor`` does not cover this: it stops roots at or ABOVE
+    ``$HOME``, and ``flow_home`` sits below it. Read from settings, never a
+    literal, so a relocated ``FLOW_HOME`` (and the sandboxed one tests use) is
+    covered on every OS.
+    """
+    return sf("internal", Path(flow_home_str), hard, False)
+
+
 @lru_cache(maxsize=8)
-def _special_folders_for_home(home_str: str, platform: str) -> tuple[SpecialFolder, ...]:
+def _special_folders_for_home(
+    home_str: str, platform: str, flow_home_str: str
+) -> tuple[SpecialFolder, ...]:
     """Per-OS special-folder set for a given home (cached; home varies in tests).
 
     Paths are ``.resolve()``d ONCE here so ``classify_special_folder`` only has
@@ -119,6 +139,7 @@ def _special_folders_for_home(home_str: str, platform: str) -> tuple[SpecialFold
             sf("media", home / "Music", hard, True),
             sf("media", home / "Movies", hard, True),
             sf("media", home / "Pictures", hard, True),
+            _internal_state_folder(flow_home_str, sf, hard),
         )
     if platform == "win32":
         return (
@@ -128,6 +149,7 @@ def _special_folders_for_home(home_str: str, platform: str) -> tuple[SpecialFold
             sf("media", _win_dir("Pictures", home), hard, False),
             sf("media", _win_dir("Music", home), hard, False),
             sf("media", _win_dir("Videos", home), hard, False),
+            _internal_state_folder(flow_home_str, sf, hard),
         )
     # Linux / other: XDG user dirs (best-effort), gate is perf-only.
     return (
@@ -137,6 +159,7 @@ def _special_folders_for_home(home_str: str, platform: str) -> tuple[SpecialFold
         sf("media", _xdg_dir("PICTURES", home / "Pictures"), hard, False),
         sf("media", _xdg_dir("MUSIC", home / "Music"), hard, False),
         sf("media", _xdg_dir("VIDEOS", home / "Videos"), hard, False),
+        _internal_state_folder(flow_home_str, sf, hard),
     )
 
 
@@ -154,7 +177,13 @@ def _xdg_dir(name: str, fallback: Path) -> Path:
 
 def special_folders() -> tuple[SpecialFolder, ...]:
     """The active special-folder set for the current instance + OS."""
-    return _special_folders_for_home(str(_home().resolve()), sys.platform)
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    return _special_folders_for_home(
+        str(_home().resolve()),
+        sys.platform,
+        str(Path(get_instance_settings().flow_home).resolve()),
+    )
 
 
 def classify_special_folder(path: str | Path) -> SpecialFolder | None:
