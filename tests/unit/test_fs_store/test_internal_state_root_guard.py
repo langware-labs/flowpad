@@ -82,3 +82,30 @@ def test_an_ordinary_project_is_still_walked(flow_home, tmp_path):
     project = tmp_path / "dev" / "repo"
     project.mkdir(parents=True)
     assert indexing_decision(project) is IndexDecision.WALK
+
+
+def test_flow_home_is_not_a_valid_project_cwd(flow_home):
+    """The mint-time half: a path inside our state dir must never become a
+    project cwd in the first place.
+
+    ``is_valid_project_cwd`` gates project discovery and materialization, so
+    widening ``is_protected_path`` to ``flow_home`` is what stops these rows
+    being created — and, because the filter applies on read, stops the ones
+    already in the DB from being listed. The walk-time HARDSKIP above is the
+    second line of defense, not the only one.
+    """
+    from flow_sdk.fs_store.path_utils import is_protected_path, is_valid_project_cwd
+
+    # `include_temp=True` throughout: the fixture lives under the pytest tmp
+    # dir, which `is_valid_project_cwd` rejects for an unrelated reason. This
+    # test is about flow_home, so the temp axis is held constant.
+    instance_dir = flow_home / "instances" / "inst"
+    assert is_protected_path(instance_dir) is True
+    assert is_valid_project_cwd(instance_dir, include_temp=True) is False
+
+    # A workspace-local `.flow/` is somebody else's directory, not our state —
+    # the real corpus has one (`Flowpad workspace/.flow/helpdesk/...`) and it
+    # must keep resolving.
+    workspace_flow = flow_home.parent / "workspace" / ".flow" / "helpdesk"
+    workspace_flow.mkdir(parents=True)
+    assert is_valid_project_cwd(workspace_flow, include_temp=True) is True
