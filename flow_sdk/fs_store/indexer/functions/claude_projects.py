@@ -88,28 +88,82 @@ def claude_projects_fn(
 # ── Per-record find / upsert (records_root-scoped, used by extract_*) ────────
 
 
-def _find_project_record_by_cwd(cwd: str) -> FSRecord | None:
-    """Return the first ID-sorted project record matching canonical ``cwd``."""
-    if not cwd:
-        return None
-    canonical = canonical_posix_path(cwd)
-    records = sorted(
-        FSRecord.discover(RecordType.PROJECT),
-        key=lambda record: str(record.id or ""),
-    )
-    for record in records:
-        candidates = (
+#: ``(corpus stamp, {canonical cwd: record})`` — one tuple so the index and the
+#: stamp it was built from cannot drift apart.
+_PROJECT_CWD_CACHE: "tuple[tuple, dict[str, FSRecord]] | None" = None
+
+
+def _project_corpus_stamp() -> tuple:
+    """Cheap identity of the project corpus — one stat plus a counter read.
+
+    Two writers, neither of which sees the other:
+
+    * the type directory's mtime moves when a record dir is ADDED or REMOVED —
+      including from outside this module (`operations/claude_project.py`
+      rmtree's stale dirs) and from another process;
+    * `record_write_generation` moves when any in-process writer rewrites a
+      record's own metadata.json — `FSRecord.save` / `save_metadata`, which the
+      generic Entity->record sync goes through (`entity_model.py`). That rewrite
+      does NOT move the directory mtime, so without the counter a re-mounted
+      project would resolve to its stale record for the life of the process.
+    """
+    from flow_sdk.fs_store.fs_record import record_write_generation  # noqa: PLC0415
+    from flow_sdk.fs_store.record_paths import get_default_records_root  # noqa: PLC0415
+
+    type_name = str(RecordType.PROJECT)
+    root = get_default_records_root() / type_name
+    try:
+        mtime = root.stat().st_mtime_ns
+    except OSError:
+        mtime = None
+    return (str(root), mtime, record_write_generation(type_name))
+
+
+def _project_cwd_index() -> "dict[str, FSRecord]":
+    """The corpus keyed by every canonical path a record answers to.
+
+    Built once per corpus state instead of once per lookup: the previous shape
+    ran `FSRecord.discover(PROJECT)` plus a linear scan inside every call, so
+    resolving N projects re-read all M records N times.
+
+    Lowest id wins a contested key, preserving the old "first ID-sorted record
+    matching" contract without sorting the whole corpus.
+    """
+    global _PROJECT_CWD_CACHE
+
+    stamp = _project_corpus_stamp()
+    if _PROJECT_CWD_CACHE is not None and _PROJECT_CWD_CACHE[0] == stamp:
+        return _PROJECT_CWD_CACHE[1]
+
+    index: dict[str, FSRecord] = {}
+    for record in FSRecord.discover(RecordType.PROJECT):
+        name = getattr(record, "name", None)
+        values = (
             getattr(record, "cwd", None),
             getattr(record, "fs_storage_mount_path", None),
             getattr(record, "real_path", None),
+            str(name) if name and Path(str(name)).is_absolute() else None,
         )
-        if any(value and canonical_posix_path(str(value)) == canonical for value in candidates):
-            return record
-        name = getattr(record, "name", None)
-        if name and Path(str(name)).is_absolute():
-            if canonical_posix_path(str(name)) == canonical:
-                return record
-    return None
+        # One resolve per DISTINCT string: `name` is usually the same value as
+        # `cwd`, and `canonical_posix_path` is a realpath chain, not a string op.
+        for value in dict.fromkeys(v for v in values if v):
+            key = canonical_posix_path(str(value))
+            current = index.get(key)
+            if current is None or str(record.id or "") < str(current.id or ""):
+                index[key] = record
+
+    _PROJECT_CWD_CACHE = (stamp, index)
+    return index
+
+
+def _find_project_record_by_canonical(canonical: str) -> FSRecord | None:
+    """Record owning an ALREADY-canonical path, or None."""
+    return _project_cwd_index().get(canonical) if canonical else None
+
+
+def _find_project_record_by_cwd(cwd: str) -> FSRecord | None:
+    """Record owning ``cwd``, or None. Canonicalizes first."""
+    return _find_project_record_by_canonical(canonical_posix_path(cwd)) if cwd else None
 
 
 def _compute_project_session_stats(rec: FSRecord) -> tuple[int, str | None]:
@@ -217,7 +271,7 @@ async def _upsert_project_for_cwd(
     denormalized session-stat fields. Saves to disk. Returns the Record.
     """
     canonical = canonical_posix_path(cwd)
-    existing = _find_project_record_by_cwd(canonical)
+    existing = _find_project_record_by_canonical(canonical)
     if existing is not None:
         existing.id = resolved_id
         if claude_project is not None:
@@ -269,7 +323,7 @@ def claude_project_identity_key(ref: FSRef | Path) -> str:
 
 def existing_project_record_id(ref: FSRef | Path) -> str | None:
     """Read an existing filesystem project-record id without minting."""
-    record = _find_project_record_by_cwd(_canonical_project_cwd(ref))
+    record = _find_project_record_by_canonical(_canonical_project_cwd(ref))
     return str(record.id) if record is not None and record.id is not None else None
 
 

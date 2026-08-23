@@ -281,6 +281,24 @@ def _digest(raw: str) -> str:
     return hashlib.blake2b(raw.encode(), digest_size=8).hexdigest()
 
 
+#: Bumped whenever a record of a type is written or removed. A corpus cache
+#: (e.g. the project cwd index) keys its validity on this, so it can never serve
+#: a record whose fields were rewritten in place — rewriting an EXISTING record
+#: touches only its own metadata.json, which does not move the type directory's
+#: mtime.
+_RECORD_WRITE_GENERATION: dict[str, int] = {}
+
+
+def record_write_generation(record_type: str) -> int:
+    """Monotonic counter of in-process writes to ``record_type``'s corpus."""
+    return _RECORD_WRITE_GENERATION.get(str(record_type), 0)
+
+
+def _bump_record_write_generation(record_type: str) -> None:
+    key = str(record_type)
+    _RECORD_WRITE_GENERATION[key] = _RECORD_WRITE_GENERATION.get(key, 0) + 1
+
+
 class FSRecord(Generic[M]):
     """Lean filesystem manifest. See module docstring."""
 
@@ -479,6 +497,7 @@ class FSRecord(Generic[M]):
             json.dumps(self.to_dict(), indent=2, ensure_ascii=False, default=str),
             encoding="utf-8",
         )
+        _bump_record_write_generation(self.type)
         return meta_path
 
     def current_meta_keys(self) -> set[str]:
@@ -517,6 +536,7 @@ class FSRecord(Generic[M]):
             json.dumps(merged, indent=2, ensure_ascii=False, default=str),
             encoding="utf-8",
         )
+        _bump_record_write_generation(self.type)
         return meta_path
 
     def save_metadata_field(self, key: str, val) -> Path:

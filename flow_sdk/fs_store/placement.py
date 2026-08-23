@@ -112,6 +112,7 @@ _WORKER_NAME_TO_TYPE: dict[str, "HarnessType"] = {
     "claude_code": HarnessType.CLAUDE,
     "claude_code_cli": HarnessType.CLAUDE,
     "codex": HarnessType.AGENTS,
+    "opencode": HarnessType.AGENTS,
     "agents": HarnessType.AGENTS,
     "copilot": HarnessType.COPILOT,
     "github": HarnessType.GITHUB,
@@ -135,6 +136,7 @@ def coerce_harness(value: object) -> "HarnessType | None":
     return {
         CapabilityKind.CLAUDE_CLI.value: HarnessType.CLAUDE,
         CapabilityKind.CODEX_CLI.value: HarnessType.AGENTS,
+        CapabilityKind.OPENCODE_CLI.value: HarnessType.AGENTS,
         CapabilityKind.COPILOT_CLI.value: HarnessType.COPILOT,
     }.get(v)
 

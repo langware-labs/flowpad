@@ -317,8 +317,10 @@ async def test_set_env_persists_on_entity(bootstrapped_client):
     )
     assert response.status_code == 200, response.text
     res = ApiResponse(**response.json())
-    assert res.status == "SUCCESS"
-    assert "FOO" in res.data["vars"]
+    assert res.status == "SUCCESS", response.text
+    # The response carries the MERGED env (the server owns the merge; callers
+    # apply it locally instead of racing the data_op_msg WS delivery).
+    assert res.data["env"] == {"FOO": "bar"}, response.text
 
     # Verify via GET
     read_resp = await bootstrapped_client.get(f"/api/v1/graph/shell/{entity_id}")

@@ -97,12 +97,16 @@ export interface ScanTypeStats {
   total_bytes: number;
   avg_bytes: number;
   scan_ms: number;
+  /** The walk's own share of `scan_ms` (the rest is scope resolution + projection). */
+  walk_ms?: number;
 }
 
 export interface LastScanResult {
   types: ScanTypeStats[];
   grand_total: number;
   scan_ms: number;
+  /** The walk's own share of `scan_ms` (the rest is scope resolution + projection). */
+  walk_ms?: number;
 }
 
 /** One row of the per-type progress table. */

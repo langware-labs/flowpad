@@ -1,4 +1,4 @@
-import { Agent } from '@sdk';
+import { Agent, Project, TypeId } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { AgentAvatar } from '@src/components/agents/AgentAvatar';
 import { AgentIntroCard } from '@src/components/agents/AgentIntroCard';
@@ -23,10 +23,12 @@ import { cn } from '@src/lib/utils';
  * would be a third way to do one thing.
  */
 export function ProjectAgentsStrip({ projectId, className }: { projectId?: string | null; className?: string }) {
-  const { project } = useProject();
-  // `undefined` means "the active project" — Project Home passes its own pin.
-  const resolvedId = projectId ?? project?.id ?? null;
-  const { agents } = useProjectAgents(resolvedId);
+  // The PROJECT, not just its id: the agent lookup needs its context roots. A
+  // `projectId` pins a specific project (Project Home passes its own);
+  // `undefined` resolves the active one. No memo on the TypeId — `useEntity`
+  // keys on its type/id STRINGS, not object identity.
+  const { project } = useProject(projectId ? new TypeId(Project.type, projectId) : null);
+  const { agents } = useProjectAgents(project);
   const { launch, busyId } = useAgentLauncher();
 
   if (agents.length === 0) return null;
@@ -50,7 +52,9 @@ export function ProjectAgentsStrip({ projectId, className }: { projectId?: strin
               // a launch navigates away — so while one is starting, every tile
               // goes inert rather than racing it.
               disabled={!agent.enabled || !!busyId}
-              onClick={() => void launch(agent)}
+              // The project the STRIP resolved, not the active one: a pinned
+              // strip lists this project's agents and must launch into it too.
+              onClick={() => void launch(agent, project?.id ?? null)}
               data-testid="project-agent-tile"
               data-agent-name={agent.name}
             />

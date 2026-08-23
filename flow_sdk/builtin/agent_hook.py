@@ -1,5 +1,4 @@
 import logging
-from flow_sdk._compat import StrEnum
 from pathlib import Path
 from typing import Any, ClassVar, Optional, Union
 
@@ -9,127 +8,42 @@ from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.hook_models import (
     ErrorMessage,
-    ExecutedAction,
-    HookEventData,
     RelationshipSubAction,
     SuccessMessage,
-    WebhookHandleResult,
 )
-from flow_sdk.builtin.trigger import Trigger
+
+# Hook vocabulary lives in ``flow_sdk.builtin.hooks.types`` — the bottom of the
+# hook stack, which imports no trigger code. Re-exported here so the many call
+# sites that import these names from ``agent_hook`` keep working.
+from flow_sdk.builtin.hooks.types import (
+    ALL_HOOK_EVENTS,
+    DEFAULT_LISTENED_HOOKS,
+    HOOK_EVENTS_NO_MATCHER,
+    HOOK_EVENTS_WITH_MATCHER,
+    AgentProvider,
+    HookEventType,
+    HookScope,
+)
 from flow_sdk.core import action
 from flow_sdk.core.entity.entity_model import Entity
-from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.flowpad_types.enums.entity_enums import BuiltInRelationshipTypes, RelationshipDirection
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
-
-class HookScope(StrEnum):
-    """Configuration scope for agent hooks."""
-
-    USER = "user"  # ~/.claude/settings.json (or equivalent)
-    PROJECT = "project"  # .claude/settings.json (or equivalent)
-    LOCAL = "local"  # .claude/settings.local.json (or equivalent)
-
-
-class AgentProvider(StrEnum):
-    """Agent provider types."""
-
-    CLAUDE_CODE = "claude_code"
-    # Future: CURSOR = "cursor", etc.
-
-
-class HookEventType(StrEnum):
-    """Types of hook events from Claude Code.
-
-    Based on Claude Code hooks documentation:
-    https://code.claude.com/docs/en/hooks
-    """
-
-    # Session lifecycle events
-    SESSION_START = "SessionStart"
-    SESSION_END = "SessionEnd"
-
-    # User interaction events
-    USER_PROMPT_SUBMIT = "UserPromptSubmit"
-    NOTIFICATION = "Notification"
-
-    # Tool events
-    PRE_TOOL_USE = "PreToolUse"
-    POST_TOOL_USE = "PostToolUse"
-    POST_TOOL_USE_FAILURE = "PostToolUseFailure"
-    PERMISSION_REQUEST = "PermissionRequest"
-
-    # Agent stop/start events
-    STOP = "Stop"
-    STOP_FAILURE = "StopFailure"
-    SUBAGENT_START = "SubagentStart"
-    SUBAGENT_STOP = "SubagentStop"
-
-    # Agent teams events
-    TEAMMATE_IDLE = "TeammateIdle"
-    TASK_CREATED = "TaskCreated"
-    TASK_COMPLETED = "TaskCompleted"
-
-    # Configuration events
-    CONFIG_CHANGE = "ConfigChange"
-    INSTRUCTIONS_LOADED = "InstructionsLoaded"
-
-    # Worktree events
-    WORKTREE_CREATE = "WorktreeCreate"
-    WORKTREE_REMOVE = "WorktreeRemove"
-
-    # Compaction events
-    PRE_COMPACT = "PreCompact"
-    POST_COMPACT = "PostCompact"
-
-    # MCP elicitation events
-    ELICITATION = "Elicitation"
-    ELICITATION_RESULT = "ElicitationResult"
-
-    # File system events
-    CWD_CHANGED = "CwdChanged"
-    FILE_CHANGED = "FileChanged"
-
-
-# Hook events that don't use matchers (always fire on every occurrence)
-HOOK_EVENTS_NO_MATCHER = [
-    HookEventType.USER_PROMPT_SUBMIT,
-    HookEventType.STOP,
-    HookEventType.TEAMMATE_IDLE,
-    HookEventType.TASK_COMPLETED,
-    HookEventType.WORKTREE_CREATE,
-    HookEventType.WORKTREE_REMOVE,
-    HookEventType.CWD_CHANGED,
-    HookEventType.FILE_CHANGED,
+#: The hook vocabulary is re-exported, not redefined — one definition lives in
+#: ``hooks.types``. Listed here so it reads as this module's public surface
+#: rather than as unused imports; many call sites still import it from here.
+__all__ = [
+    "ALL_HOOK_EVENTS",
+    "DEFAULT_LISTENED_HOOKS",
+    "HOOK_EVENTS_NO_MATCHER",
+    "HOOK_EVENTS_WITH_MATCHER",
+    "AgentHook",
+    "AgentProvider",
+    "HookEventType",
+    "HookScope",
 ]
-
-# Hook events that use matchers
-HOOK_EVENTS_WITH_MATCHER = [
-    HookEventType.PRE_TOOL_USE,
-    HookEventType.POST_TOOL_USE,
-    HookEventType.POST_TOOL_USE_FAILURE,
-    HookEventType.PERMISSION_REQUEST,
-    HookEventType.SESSION_START,
-    HookEventType.SESSION_END,
-    HookEventType.NOTIFICATION,
-    HookEventType.SUBAGENT_START,
-    HookEventType.SUBAGENT_STOP,
-    HookEventType.STOP_FAILURE,
-    HookEventType.PRE_COMPACT,
-    HookEventType.POST_COMPACT,
-    HookEventType.CONFIG_CHANGE,
-    HookEventType.INSTRUCTIONS_LOADED,
-    HookEventType.ELICITATION,
-    HookEventType.ELICITATION_RESULT,
-]
-
-# All available hook events
-ALL_HOOK_EVENTS = HOOK_EVENTS_NO_MATCHER + HOOK_EVENTS_WITH_MATCHER
-
-# Default hooks to listen to — excludes worktree create event (which would replace the default behavior)
-DEFAULT_LISTENED_HOOKS = [e for e in ALL_HOOK_EVENTS if e != HookEventType.WORKTREE_CREATE]
 
 
 class AgentHook(Entity):
@@ -208,122 +122,6 @@ class AgentHook(Entity):
             trigger_id = trigger
 
         await self.delete_relationship(to_e=trigger_id, relationship=BuiltInRelationshipTypes.ConnectedTo)
-
-    async def process_hook_event(self, hook_data: HookEventData) -> list[ExecutedAction]:
-        """
-        Process a hook event by checking all connected triggers.
-
-        Executes matching triggers via execute_action() which:
-        - Updates last_triggered timestamp
-        - Increments counter for NOTIFY_ENTITY action type
-        - Saves changes to database
-
-        Args:
-            hook_data: The hook event data to process
-
-        Returns:
-            List of executed actions from matching triggers
-        """
-
-        if not self.enabled:
-            return []
-
-        triggers = await self.get_triggers()
-        matched_actions: list[ExecutedAction] = []
-
-        for entity in triggers:
-            trigger: Trigger = entity  # type: ignore
-            if trigger.match(hook_data):
-                # Execute trigger action (updates timestamp, increments counter, saves to DB)
-                executed_action = await trigger.execute_action()
-                matched_actions.append(executed_action)
-
-        return matched_actions
-
-    async def handle_webhook(self, webhook_data: AgentHookData,
-                             *, actor: Optional[str] = None) -> WebhookHandleResult:
-        """
-        Handle a webhook event for this agent hook.
-
-        Processes the webhook data and invokes matching triggers.
-
-        This is also the bus funnel for the hook family. Two emissions, and the
-        distinction between them matters:
-
-        * ONE ``hook.<event>`` per inbound webhook, carrying the match count.
-          Emitted here rather than per trigger because a webhook that matches
-          NOTHING is the common case and is otherwise invisible everywhere in
-          the product — ``Trigger.match`` just returns falsy and the request
-          ends. One-per-webhook also keeps this off the per-item lane.
-        * ONE ``trigger.fired`` per MATCHED trigger, so a hook rule reads the
-          same as a schedule or fsop rule on the events screen.
-
-        ``actor`` is the principal that caused the webhook (``agentic_process:<id>``),
-        resolved by the caller from the hook's execution scope — this method
-        cannot see it.
-
-        In the old FlowPad cloud, this also created/looked up a Flow entity
-        for session tracking via Flow.get_or_create_for_session().  In desktop
-        mode the Flow entity is dead (replaced by AgenticProcess) and session
-        tracking is not needed, so we skip it entirely.
-
-        Args:
-            webhook_data: The webhook data containing hook event information
-
-        Returns:
-            WebhookHandleResult with processing details
-        """
-
-        # Parse the hook data from webhook_data
-        hook_data = HookEventData(**webhook_data.hook_data)
-
-        # Extract session_id from hook data (for reporting only, no entity lookup)
-        session_id = webhook_data.hook_data.get("session_id")
-
-        # Get triggers connected to this AgentHook
-        triggers = await self.get_triggers()
-
-        # Invoke matching triggers
-        from flow_sdk.builtin.trigger_on_tag import emit_hook_received, emit_trigger_fired
-
-        executed_actions: list[ExecutedAction] = []
-        matched_trigger_ids: list[str] = []
-        for entity in triggers:
-            trigger: Trigger = entity  # type: ignore
-            result = await trigger.invoke(hook_data)
-            if result:
-                executed_actions.append(result)
-                if trigger.id:
-                    matched_trigger_ids.append(trigger.id)
-                    emit_trigger_fired(
-                        trigger.id, str(trigger.trigger_type),
-                        trigger.name or trigger.id,
-                        counter=trigger.counter,
-                        action_types=[str(a.action_type) for a in trigger.actions],
-                        detail={"hook_event": str(hook_data.hook_event_name or ""),
-                                "agent_hook_id": self.id},
-                        project_id=trigger.project_id,
-                        actor=actor,
-                        scope_extra=[f"agent_hook:{self.id}"] if self.id else None,
-                    )
-
-        emit_hook_received(
-            self.id or "",
-            str(hook_data.hook_event_name or ""),
-            matched=len(matched_trigger_ids),
-            matched_trigger_ids=matched_trigger_ids,
-            session_id=session_id,
-            actor=actor,
-        )
-
-        return WebhookHandleResult(
-            status="processed",
-            matched_triggers=len(executed_actions),
-            executed_actions=executed_actions,
-            agentic_process_id=None,
-            flow_id=None,
-            session_id=session_id,
-        )
 
     @action.all(action_name="trigger_action")
     async def trigger_action(self, request: Request) -> ApiResponse:

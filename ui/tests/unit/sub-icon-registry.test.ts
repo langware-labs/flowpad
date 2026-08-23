@@ -4,14 +4,16 @@ import { subIconForEntity } from '@src/components/graph-view/icons/subIconRegist
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
 import { CopilotIcon } from '@src/components/icons/CopilotIcon';
+import { OpenCodeIcon } from '@src/components/icons/OpenCodeIcon';
 import {
   ClaudeRestoreIcon,
 } from '@src/components/icons/ClaudeRestoreIcon';
 import { CodexRestoreIcon } from '@src/components/icons/CodexRestoreIcon';
 import { CopilotRestoreIcon } from '@src/components/icons/CopilotRestoreIcon';
+import { OpenCodeRestoreIcon } from '@src/components/icons/OpenCodeRestoreIcon';
 import { Sparkles } from 'lucide-react';
 
-const RESTORE_COMPOSITES = [ClaudeRestoreIcon, CodexRestoreIcon, CopilotRestoreIcon];
+const RESTORE_COMPOSITES = [ClaudeRestoreIcon, CodexRestoreIcon, CopilotRestoreIcon, OpenCodeRestoreIcon];
 
 let seq = 0;
 const proc = (worker_type?: string, restored = false) =>
@@ -29,11 +31,12 @@ describe('subIconForEntity — AgenticProcess worker sub-icon', () => {
     expect(subIconForEntity(proc(undefined))).toBe(ClaudeIcon);
     expect(subIconForEntity(proc('codex'))).toBe(CodexIcon);
     expect(subIconForEntity(proc('copilot'))).toBe(CopilotIcon);
+    expect(subIconForEntity(proc('opencode'))).toBe(OpenCodeIcon);
     expect(subIconForEntity(proc('some-future-worker'))).toBe(Sparkles); // generic
   });
 
   it('never returns a -restore composite (would nest a badge in a badge)', () => {
-    for (const wt of ['claude', 'codex', 'copilot', 'other']) {
+    for (const wt of ['claude', 'codex', 'copilot', 'opencode', 'other']) {
       const icon = subIconForEntity(proc(wt, /* restored */ true));
       expect(RESTORE_COMPOSITES).not.toContain(icon);
     }

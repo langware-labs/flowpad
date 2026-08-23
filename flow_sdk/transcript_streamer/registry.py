@@ -50,6 +50,11 @@ def _infer_worker_type(path: Path) -> str:
         return "codex"
     if ".copilot" in parts:
         return "copilot"
+    # OpenCode keeps sessions in a SQLite database with no dot-dir of its own,
+    # so the file the streamer watches is always one FlowPad wrote into the
+    # process shadow dir. Key on that stem rather than on a vendor path.
+    if path.name.startswith(("opencode_transcript", "session_ses_")):
+        return "opencode"
     raise ValueError(f"Cannot infer worker_type from path: {path}")
 
 

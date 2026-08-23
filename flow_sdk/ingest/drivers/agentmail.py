@@ -56,7 +56,7 @@ class AgentMailDriver:
     def channel_for(self, source) -> str:
         return "agentmail"
 
-    def segments(self, source) -> list[SegmentRef]:
+    async def segments(self, source) -> list[SegmentRef]:
         inbox = self._inbox(source)
         return [SegmentRef(inbox, inbox)]
 

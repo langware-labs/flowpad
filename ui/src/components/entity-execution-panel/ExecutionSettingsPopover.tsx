@@ -6,13 +6,7 @@ import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { usePreference } from '@src/hooks/use-preference';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@src/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 
 /**
  * Execution settings. Assets intentionally live in `AssetManagerButton`; this
@@ -25,6 +19,7 @@ interface ExecutionSettingsPopoverProps {
   onProjectChange: (id: string | null) => void;
   modelControl?: ReactNode;
   workerControl?: ReactNode;
+  showProject?: boolean;
   trigger: ReactNode;
 }
 
@@ -34,11 +29,12 @@ export function ExecutionSettingsPopover({
   onProjectChange,
   modelControl,
   workerControl,
+  showProject = true,
   trigger,
 }: ExecutionSettingsPopoverProps) {
   const { t } = useLingui();
   const projectsQuery = useMemo(() => new QueryRequest({ type: Project.type }), []);
-  const { data: projects = [] } = useEntitiesQuery<Project>(projectsQuery);
+  const { data: projects = [] } = useEntitiesQuery<Project>(projectsQuery, { enabled: showProject });
   const [showTools, setShowTools] = usePreference<boolean>(PrefKey.CHAT_SHOW_TOOLS);
   const projectLocked = !!activeProcess;
 
@@ -47,42 +43,44 @@ export function ExecutionSettingsPopover({
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent align="end" className="w-64 p-0" data-testid="execution-settings-popover">
         <div className="space-y-3 px-3 py-3">
-          <div>
-            <div className="mb-1.5 flex items-center justify-between">
-              <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                <Trans>Project</Trans>
+          {showProject && (
+            <div>
+              <div className="mb-1.5 flex items-center justify-between">
+                <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  <Trans>Project</Trans>
+                </div>
+                {projectLocked && (
+                  <span className="text-[10px] text-muted-foreground">
+                    <Trans>locked after first message</Trans>
+                  </span>
+                )}
               </div>
-              {projectLocked && (
-                <span className="text-[10px] text-muted-foreground">
-                  <Trans>locked after first message</Trans>
-                </span>
-              )}
-            </div>
-            <Select
-              value={projectId ?? ''}
-              onValueChange={(v) => onProjectChange(v || null)}
-              disabled={projectLocked}
-            >
-              <SelectTrigger
-                className="h-7 text-xs"
-                data-testid="execution-settings-project"
-                title={
-                  projectLocked
-                    ? t`Project is fixed after the first message — start a new session to change it.`
-                    : undefined
-                }
+              <Select
+                value={projectId ?? ''}
+                onValueChange={(v) => onProjectChange(v || null)}
+                disabled={projectLocked}
               >
-                <SelectValue placeholder={t`Select project`} />
-              </SelectTrigger>
-              <SelectContent>
-                {projects.map((p) => (
-                  <SelectItem key={p.id} value={p.id!}>
-                    {p.displayName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+                <SelectTrigger
+                  className="h-7 text-xs"
+                  data-testid="execution-settings-project"
+                  title={
+                    projectLocked
+                      ? t`Project is fixed after the first message — start a new session to change it.`
+                      : undefined
+                  }
+                >
+                  <SelectValue placeholder={t`Select project`} />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.displayName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           {modelControl && (
             <div className="space-y-1.5" data-testid="execution-settings-model-section">
               <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">

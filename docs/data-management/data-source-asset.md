@@ -221,17 +221,36 @@ Shared, it arrives broken — and silently, because a failed subagent load is
 swallowed and the run proceeds on the addendum alone. Folder-local is the point of
 making this a folder asset.
 
-## Open before this ships
+## Resolved, and what is left
 
-1. **`external_id_unique_within` must reach `find_existing` and `_load_existing`**,
-   or it is decoration and the duplicate-on-move bug ships with it.
-2. **`emits` must be stamped at the `ingest_items` chokepoint.** The Protocol's
-   `record_kind` has no production readers outside drivers stamping their own
-   items, and the agent driver's is fiction — it returns no items at all. Delete it.
-3. **i18n.** Lingui extracts at build time from source files and will never see a
-   user-authored asset. Shipped sources keep translations by extracting manifest
-   strings into the catalogue at build; third-party sources ship untranslated.
-   That is the honest outcome, and no schema change improves it.
+The three items this section opened with have been answered:
+
+1. **`external_id_unique_within` is gone.** It promised that a wrong value would
+   irreversibly merge records — a guarantee the natural key, always
+   `(source_id, segment_key, external_id)`, never provided. Declaring it is now a
+   load error rather than a field that changes nothing.
+2. **`record_kind` is off the Protocol.** Nothing outside a driver ever read it,
+   so three filesystem drivers carried an empty stub to satisfy it. A
+   record-emitting driver still carries one and stamps it; `emits` is what feeds
+   an authored source's.
+3. **i18n is unchanged and honest.** Lingui extracts at build time and will never
+   see a user-authored asset. Shipped sources keep translations by extracting
+   manifest strings at build; third-party sources ship untranslated.
+
+Still open, and named where it bites:
+
+* **The backend does not validate `config` against `config_schema`.** `required`
+  and `pattern` are enforced only by the create form, so a source made by the
+  `flow` CLI, by curl, or by an agent following the authoring skill bypasses every
+  rule the manifest declares. That is the one gap where a machine, not a person,
+  is filling the fields.
+* **`auth.connector` has no backend consumer.** Nothing derives
+  `required_capabilities` from it, so the capability gate never fires, and
+  `channel` — which the credential probe keys on — is only stamped on the first
+  poll, so Verify on a fresh credentialed source probes nothing.
+* **`FETCH.md` (agent runtime) is reserved, not implemented.** A folder carrying
+  one is refused at load with that message, rather than indexing and then failing
+  every poll.
 
 <!-- flowpad:capsule identity
 version: 1

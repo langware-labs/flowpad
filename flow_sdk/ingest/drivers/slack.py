@@ -77,7 +77,7 @@ class SlackDriver:
     def channel_for(self, source) -> str:
         return "slack"
 
-    def segments(self, source) -> list[SegmentRef]:
+    async def segments(self, source) -> list[SegmentRef]:
         """One stream per Slack channel.
 
         Keyed by channel ID, never by name: a renamed channel is the same
@@ -186,7 +186,7 @@ class SlackDriver:
         is worse than one that refuses to start: it looks like it is working, so
         nobody goes looking for the two that are missing.
         """
-        channels = self.segments(source)
+        channels = await self.segments(source)
         if not channels:
             return SetupVerdict.waiting(
                 "No channels selected yet — pick at least one for this source to read."

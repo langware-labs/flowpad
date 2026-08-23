@@ -11,6 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DataSource, type SourceStatus } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { lucideByName } from '@src/lib/lucide-by-name';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 import {
@@ -214,20 +215,29 @@ export function DataSourceDialog({
                 <Trans>Provider</Trans>
               </Label>
               <div className="grid grid-cols-2 gap-2">
-                {specs.map((p) => (
-                  <button
-                    key={p.name}
-                    type="button"
-                    data-testid={`provider-${p.name}`}
-                    onClick={() => setDraft(emptyDraft(p.name))}
-                    className={`rounded border p-2 text-start text-xs ${
-                      draft.provider === p.name ? 'border-primary bg-primary/5' : 'border-border'
-                    }`}
-                  >
-                    <span className="block font-medium">{p.title || p.name}</span>
-                    <span className="block text-muted-foreground">{p.description}</span>
-                  </button>
-                ))}
+                {specs.map((p) => {
+                  // The spec's own glyph. `iconForType` answers "what is a data
+                  // source" — one antenna for all of them — which is right for
+                  // the type and useless for telling nine providers apart.
+                  const Glyph = lucideByName(p.icon_name);
+                  return (
+                    <button
+                      key={p.name}
+                      type="button"
+                      data-testid={`provider-${p.name}`}
+                      onClick={() => setDraft(emptyDraft(p.name))}
+                      className={`flex gap-2 rounded border p-2 text-start text-xs ${
+                        draft.provider === p.name ? 'border-primary bg-primary/5' : 'border-border'
+                      }`}
+                    >
+                      <Glyph className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0">
+                        <span className="block font-medium">{p.title || p.name}</span>
+                        <span className="block text-muted-foreground">{p.description}</span>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

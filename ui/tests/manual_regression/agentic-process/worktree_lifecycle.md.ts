@@ -20,7 +20,7 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
-import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, activePanel, sessionPopover } from './_ap_helpers';
+import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, activePanel, sessionPopover, AP_HAS_CLAUDE_ONLY_CLI_FLAGS, AP_OPENER } from './_ap_helpers';
 
 const PROJECT_DIR = '/Users/shlom/Flowpad workspace/my_first_project';
 
@@ -41,6 +41,10 @@ test.describe('worktree lifecycle', () => {
   test.afterEach(() => { cleanGit(PROJECT_DIR); });
 
   test('test 1: OpenInWorktree spawns a worktree sibling; CommitMerge appears in it', async ({ page }) => {
+    // --worktree is claude-only (getWorkerCliCapabilities reports worktree:false
+    // for codex/copilot/opencode), so the Open-in-Worktree affordance correctly
+    // does not render on those arms.
+    test.skip(!AP_HAS_CLAUDE_ONLY_CLI_FLAGS, `${AP_OPENER} has no --worktree flag`);
     test.setTimeout(60_000);
     cleanGit(PROJECT_DIR);
     gitInitWithCommit(PROJECT_DIR);
