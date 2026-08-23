@@ -46,6 +46,40 @@ def is_home_or_ancestor(path: Path | str, home: Path) -> bool:
     return h.is_relative_to(c)
 
 
+def is_internal_state_path(path: Path | str) -> bool:
+    """True if ``path`` is inside Flowpad's own state dir (``flow_home``).
+
+    Sibling of :func:`is_home_or_ancestor`, needed for the same reason at the
+    same guard sites. That one stops a root at or ABOVE ``$HOME``; this one
+    stops the state directory BELOW it, which an ancestor check lets through.
+
+    ``<flow_home>/instances/<name>/`` is our own storage — per-instance DBs plus
+    a ``records/`` shadow tree with one directory per indexed record. Letting it
+    become a folder-walker root makes the indexer walk its own output, and it
+    compounds: every instance ever launched adds another root, and each grows as
+    it is used. Measured on one machine: 21 such roots contributed 155,914 of
+    166,310 walked folders (94%), turning a ~2s skill discovery into ~25s.
+    Nothing under here is user content — the records are shadows of assets
+    indexed from their real locations.
+
+    The root comes from ``InstanceSettings.flow_home`` rather than a literal, so
+    a relocated ``FLOW_HOME`` (and the sandboxed one tests use) is covered too.
+    Containment goes through ``canonical_posix_path`` + ``is_path_under``, the
+    repo's shared pair, which is what makes it correct on Windows (``\\`` vs
+    ``/``, drive case) and on case-insensitive/NFD macOS volumes.
+    """
+    from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under  # noqa: PLC0415
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    try:
+        return is_path_under(
+            canonical_posix_path(path),
+            canonical_posix_path(get_instance_settings().flow_home),
+        )
+    except OSError:
+        return False
+
+
 def lookup_project_id_by_uname(uname: str) -> str | None:
     """Sync sqlite read of a project entity's id by uname.
 
@@ -373,6 +407,7 @@ def default_roots() -> list[FSRef]:
     )
     if (
         not is_home_or_ancestor(cwd, settings.user_home)
+        and not is_internal_state_path(cwd)
         and indexing_decision(cwd, foreground=False) is IndexDecision.WALK
     ):
         roots.append(
