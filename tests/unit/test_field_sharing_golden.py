@@ -447,6 +447,9 @@ def test_project_hub_body_override_strips_local_project_state():
     # toward the remainder that genuinely is not per-field policy.
     assert popped == [
         "context_dir_infos",
+        # Local absolute paths — the same reason `include_dirs` is here. The
+        # frontend reads it from the local API; it must never reach the hub.
+        "context_roots",
         "host_member_id",
         "include_dirs",
         "last_mode",

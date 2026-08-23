@@ -5,6 +5,7 @@
  * leaving the URL stuck on agentic_process-<id> while showing shell tab content.
  */
 import { test, expect } from '@playwright/test';
+import { AP_OPENER } from './_ap_helpers';
 
 async function dismissSetupModal(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
@@ -32,9 +33,9 @@ test('clicking shell tab from agentic process view updates URL to shell session'
 
   const initialTabCount = await page.locator('[data-testid^="tab-shell|"]').count();
 
-  // Start Claude via the always-present "+" tab-opener menu.
+  // Start the vendor under test via the always-present "+" tab-opener menu.
   await page.locator('[data-testid="opener-plus-button"]').click();
-  await page.locator('[data-testid="opener-menu-row-claude"]').click();
+  await page.locator(`[data-testid="opener-menu-row-${AP_OPENER}"]`).click();
   await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 20_000 });
 
   // Wait for PTY tab to appear (confirms agentic process PTY started)

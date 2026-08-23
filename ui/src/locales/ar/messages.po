@@ -1960,6 +1960,10 @@ msgstr "السماح التلقائي بـ Bash عند تفعيل العزل"
 msgid "Auto-approve bash when sandbox is active"
 msgstr "الموافقة التلقائية على أوامر Bash عند تفعيل وضع العزل"
 
+#: src/components/terminal/interactive-terminal/process-cli-presentation.ts
+msgid "Auto-approve permissions that are not explicitly denied (--auto)"
+msgstr ""
+
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Auto-detect direction from first strong character"
 msgstr "الكشف التلقائي عن الاتجاه من أول حرف قوي"
@@ -2547,6 +2551,7 @@ msgstr "التغييرات ({0})"
 msgid "Chat"
 msgstr "المحادثة"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Chat history"
 msgstr "سجل الدردشة"
@@ -2562,6 +2567,10 @@ msgstr "أدوات الدردشة"
 #: src/components/lens-viewer/shared/ViewModeToggle.tsx
 msgid "Chat view"
 msgstr "عرض المحادثة"
+
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+msgid "Chat with this deployed agent"
+msgstr ""
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
@@ -4975,6 +4984,10 @@ msgstr "نشر إلى السحابة"
 #: src/components/version-popover/version-popover.tsx
 msgid "Deployed"
 msgstr "منشور"
+
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+msgid "Deployed agent"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deployed without its definition"
@@ -9501,6 +9514,10 @@ msgstr "مراسلة العامل"
 msgid "Message the agent…"
 msgstr "مراسلة العامل…"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+msgid "Message this deployed agent…"
+msgstr ""
+
 #: src/i18n/type-labels.ts
 msgid "Message Thread"
 msgstr "سلسلة الرسائل"
@@ -9800,6 +9817,7 @@ msgstr "مجلد إشارات مرجعية جديد"
 msgid "New build"
 msgstr "إصدار جديد"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "New chat"
 msgstr "محادثة جديدة"
@@ -10391,6 +10409,7 @@ msgstr "لا توجد صفحة بهذا الاسم حتى الآن."
 msgid "No past builds"
 msgstr "لا توجد إصدارات سابقة"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "No past chats"
 msgstr "لا توجد محادثات سابقة"
@@ -11553,6 +11572,22 @@ msgstr "فتح جلسة العامل"
 msgid "OPENAI_API_KEY"
 msgstr "OPENAI_API_KEY"
 
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "OpenCode"
+msgstr ""
+
+#: src/components/icons/OpenCodeRestoreIcon.tsx
+msgid "OpenCode (restored session)"
+msgstr ""
+
+#: src/components/quick-create/QuickCreateMenu.tsx
+msgid "OpenCode session"
+msgstr ""
+
+#: src/tabs/provider-meta.tsx
+msgid "OpenCode tab"
+msgstr ""
+
 #: src/routes/loaders/load-shell.ts
 msgid "Opened a different terminal"
 msgstr "تم فتح محطة طرفية مختلفة."
@@ -11767,6 +11802,7 @@ msgstr "التحليلات السابقة"
 msgid "Past builds"
 msgstr "الإصدارات السابقة"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Past chats"
 msgstr "المحادثات السابقة"
@@ -14437,6 +14473,10 @@ msgstr "يجب إرسال رسالة أولاً — يتطلب التفرع سج
 msgid "Send a message first — no transcript yet"
 msgstr "يجب إرسال رسالة أولاً — لم يتم إنشاء السجل بعد"
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+msgid "Send a message to this deployed agent."
+msgstr ""
+
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Send a PROMPT to the recipient asking for a status summary"
 msgstr "إرسال PROMPT إلى المستلم لطلب ملخص عن الحالة"
@@ -14531,8 +14571,11 @@ msgstr "الجلسة {sessionId} غير موجودة في سجل Claude أو Cod
 msgid "Session {threadId} is not in Claude, Codex, or Copilot history."
 msgstr "الجلسة {threadId} غير موجودة في سجل Claude أو Codex أو Copilot."
 
-#: src/components/spotlight/adapters.ts
 #: src/hooks/use-resume-in-terminal.ts
+msgid "Session {workerId} is not in Claude, Codex, Copilot or OpenCode history."
+msgstr ""
+
+#: src/components/spotlight/adapters.ts
 msgid "Session {workerId} is not in Claude, Codex, or Copilot history."
 msgstr "الجلسة {workerId} غير موجودة في سجل Claude أو Codex أو Copilot."
 
@@ -15536,6 +15579,10 @@ msgstr "بدء محادثة جديدة · {effectiveTitle}"
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Start new conversation · {title}"
 msgstr "بدء محادثة جديدة · {title}"
+
+#: src/tabs/useTerminalStripController.tsx
+msgid "Start OpenCode"
+msgstr ""
 
 #: src/components/helpdesk/HelpdeskAsk.tsx
 msgid "Start over"

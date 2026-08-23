@@ -20,12 +20,14 @@ const OPENER_TO_WORKER: Partial<Record<OpenerId, WorkerType>> = {
   claude: 'claude_code',
   codex: 'codex',
   copilot: 'copilot',
+  opencode: 'opencode',
 };
 
 const WORKER_TO_OPENER: Record<WorkerType, OpenerId> = {
   claude_code: 'claude',
   codex: 'codex',
   copilot: 'copilot',
+  opencode: 'opencode',
 };
 
 /** Coerce a stored opener id to a worker vendor — null for non-worker openers. */

@@ -9,7 +9,7 @@
  * the CopyRow redesign). The Command row reflects current CLI flags.
  */
 import { test, expect, type Page } from '@playwright/test';
-import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, activePanel, sessionPopover } from './_ap_helpers';
+import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, activePanel, sessionPopover, AP_HAS_CLAUDE_ONLY_CLI_FLAGS, AP_OPENER } from './_ap_helpers';
 
 const popover = sessionPopover;
 
@@ -52,8 +52,11 @@ test.describe('session info popover', () => {
 
     // Labels rendered verbatim by SessionInfoPopover (Session ID / Session Name
     // carry a worker prefix → match on suffix).
+    // Chrome/Debug/Worktree rows exist only for a vendor that HAS those flags
+    // (see getWorkerCliCapabilities) — the rest of the popover is shared.
     const exact = ['Process ID', 'Status', 'CLI worker status', 'Started', 'Last message',
-      'Working Dir', 'PTY ID', 'Permission', 'Chrome', 'Debug', 'Worktree', 'Model', 'Command'];
+      'Working Dir', 'PTY ID', 'Permission', 'Model', 'Command',
+      ...(AP_HAS_CLAUDE_ONLY_CLI_FLAGS ? ['Chrome', 'Debug', 'Worktree'] : [])];
     for (const label of exact) {
       await expect(popover(page).getByText(new RegExp(`^${label}$`)).first()).toBeVisible();
     }
@@ -81,6 +84,7 @@ test.describe('session info popover', () => {
   });
 
   test('test 3: Command row reflects CLI flags (--chrome appears after toggle)', async ({ page }) => {
+    test.skip(!AP_HAS_CLAUDE_ONLY_CLI_FLAGS, `${AP_OPENER} has no --chrome flag`);
     test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoNewShell(page);

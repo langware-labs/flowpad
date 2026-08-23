@@ -9,8 +9,9 @@ import { useEffect, type PointerEventHandler } from 'react';
 /**
  * BookmarksSlider — a fast, hover-driven bookmarks MENU. AnchoredMenu provides the
  * anchored chrome, FavoritesTreeMenu the rows. Its host decides which edge it
- * grows from (`side`); today that is the navigation bar's star, expanding
- * leftward from the top right.
+ * grows from (`side`); today that is the navigation bar's star, expanding from
+ * the top inline-end corner toward inline-start — so top-right-growing-leftward
+ * under LTR, and top-left-growing-rightward under HE/AR.
  *
  * Dismissal is fully owned by hover (`hoverProps`, shared with the rail button
  * that opens it) plus Escape / outside pointer-down / close-on-navigate / window
@@ -27,15 +28,15 @@ export function BookmarksSlider({
   onOpenChange,
   hoverProps,
   anchorTop,
-  anchorRight,
+  anchorEnd,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Viewport y the menu's top edge aligns to, so it reads as belonging to the
    *  control that opened it. */
   anchorTop?: number;
-  /** Distance from the viewport's right edge — see AnchoredMenu. */
-  anchorRight?: number;
+  /** Distance from the viewport's inline-end edge — see AnchoredMenu. */
+  anchorEnd?: number;
   /** The SAME hover intent as the trigger's, so travelling from the button
    *  into the panel cancels the pending close instead of dismissing. Required,
    *  not optional: this component turns the idle auto-close OFF, so hover IS
@@ -76,13 +77,15 @@ export function BookmarksSlider({
       // the menu body is rows only.
       headerRight={scopeBar}
       anchorTop={anchorTop}
-      anchorRight={anchorRight}
+      anchorEnd={anchorEnd}
       idleMs={null}
       onPointerEnter={hoverProps.onPointerEnter}
       onPointerLeave={hoverProps.onPointerLeave}
     >
-      {/* The panel grows leftward, so the tree does too: glyphs on the trailing
-          side, previews opening into the screen rather than off it. */}
+      {/* The panel grows toward inline-start, so the tree does too: glyphs on the
+          trailing side, previews opening into the screen rather than off it.
+          `mirrored` is LOGICAL — BrowseableTree XORs it with the locale's dir —
+          so this stays correct in both directions and must NOT be flipped here. */}
       <FavoritesTreeMenu key={scopeKey} filter={filter} mirrored />
     </AnchoredMenu>
   );

@@ -199,8 +199,18 @@ asserting an outcome straight after an emit races it.
 
 ## Adding a source
 
+**Most sources need no Python at all.** Write a manifest and a `fetch.py` in
+`agentic-assets/data_source/<name>/`, index the project, and `ScriptSource`
+(`ingest/drivers/script.py`) adapts it to this same contract by calling the module
+over `utils/module_rpc.py` — the engine cannot tell the difference. That path is
+the one the `connect-data-source` skill drives, and it is described in
+[the data-source asset](data-source-asset.md).
+
+Write a Python driver only when the source needs something a subprocess cannot
+have — a live credential that refreshes mid-sync, or an in-process client. Then:
+
 1. Implement a driver in `ingest/drivers/` — `segments()` and `fetch()` are the
-   whole required surface. Register it in that package's `__init__`.
+   whole required surface, both async. Register it in that package's `__init__`.
 2. Choose the segment unit. **Never key it on a mutable grouping**: `segment_key`
    participates in the natural key, so a folder or a space that items move
    between produces duplicates nothing cleans up.

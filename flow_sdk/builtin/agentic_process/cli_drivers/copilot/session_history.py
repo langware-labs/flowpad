@@ -7,9 +7,11 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData, FlowDataType
-from flow_sdk.transcript_analyzer import AgentTranscriptFile, TranscriptFormat
-from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
+from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import (
+    load_transcript_history as shared_load_transcript_history,
+)
+from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
+from flow_sdk.transcript_analyzer import TranscriptFormat
 
 from .event_to_flowdata import _element_type_for_kind, flowpad_terminal_event_frames
 
@@ -154,63 +156,26 @@ def load_transcript_history(
     *,
     transcript_format: TranscriptFormat | str | None = None,
 ) -> list[FlowData]:
-    fmt = transcript_format or _format_for_path(transcript)
-    try:
-        parsed = AgentTranscriptFile("copilot", transcript, transcript_format=fmt)
-    except Exception:
-        logger.debug("Copilot history parse failed for %s", transcript, exc_info=True)
-        return []
-    history: list[FlowData] = []
-    for entry in parsed.entries:
-        if parsed.transcript_format is TranscriptFormat.COPILOT_STREAM:
-            terminal_frames = flowpad_terminal_event_frames(getattr(entry, "payload", {}))
-            if terminal_frames is not None:
-                history.extend(terminal_frames)
-                continue
-        history.extend(_entry_to_replay_flow_data(entry))
-    return history
+    """This vendor's format guess + mapping over the shared replay envelope.
 
-
-def _entry_to_replay_flow_data(entry) -> list[FlowData]:
-    """Wrap a parsed entry in the same envelope the live stream stamps.
-
-    Mirrors ``event_to_flowdata._wrap_live`` field for field, differing only in
-    ``observation_kind`` — so a reloaded session is row-for-row comparable with
-    what a live subscriber saw, the way claude and codex replay already are.
-
-    Without this a replayed frame carried no ``ProcessEntry``, no ``subtype``
-    and no ``observation-kind``, so every chip the UI builds off the typed entry
-    (a ``flow`` CLI call, a file write, a skill) silently degraded to a nameless
-    generic row after a page refresh — on copilot only.
+    ``_terminal_frames`` keeps copilot's own expansion of the ``flowpad.*``
+    terminal events its tee writes — those are FlowPad envelopes, not copilot
+    entries, so they bypass the standard replay envelope entirely.
     """
-    process_entry = ProcessEntry(transcript_entry=entry, observation_kind="replay").to_dict()
-    frames = entry.to_flow_data()
-    if not frames:
-        # Entries whose ``to_flow_data()`` is deliberately empty still get one
-        # frame — ``_wrap_live`` does the same, so the two paths stay aligned.
-        return [
-            FlowData(
-                flow_value={},
-                created_time=entry.timestamp or "",
-                attributes={
-                    "element-type": _element_type_for_kind(entry.kind.value),
-                    "data-type": FlowDataType.OBJECT,
-                    "subtype": entry.kind.value,
-                    "observation-kind": "replay",
-                },
-                process_entry=process_entry,
-            )
-        ]
+    return shared_load_transcript_history(
+        "copilot",
+        transcript,
+        _element_type_for_kind,
+        transcript_format=transcript_format or _format_for_path(transcript),
+        logger=logger,
+        entry_frames=_terminal_frames,
+    )
 
-    for frame in frames:
-        frame.process_entry = process_entry
-        frame.attributes.setdefault("element-type", _element_type_for_kind(entry.kind.value))
-        frame.attributes.setdefault("data-type", FlowDataType.OBJECT)
-        frame.attributes.setdefault("subtype", entry.kind.value)
-        frame.attributes.setdefault("observation-kind", "replay")
-        if getattr(entry, "virtual", False):
-            frame.attributes["is-virtual"] = "true"
-    return frames
+
+def _terminal_frames(entry, fmt) -> list[FlowData] | None:
+    if fmt is not TranscriptFormat.COPILOT_STREAM:
+        return None
+    return flowpad_terminal_event_frames(getattr(entry, "payload", {}))
 
 
 def _format_for_path(path: Path) -> TranscriptFormat:

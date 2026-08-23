@@ -109,10 +109,10 @@ class TestItIsAPluggableDriver:
         here would fork every thread from any other transport on this mailbox."""
         assert CloudEmailDriver().channel_for(_source()) == "email"
 
-    def test_the_stream_is_keyed_on_the_agent_not_the_address(self):
+    async def test_the_stream_is_keyed_on_the_agent_not_the_address(self):
         """`segment_key` is a third of a SourceItem's natural key. The address is
         allocated and can change; the agent id cannot."""
-        stream = CloudEmailDriver().segments(_source())[0]
+        stream = (await CloudEmailDriver().segments(_source()))[0]
         assert stream.key == AGENT_ID
         assert stream.label == ADDRESS, "the address is still what a human reads"
 
@@ -127,7 +127,12 @@ class TestMapping:
         item = (await CloudEmailDriver().fetch(src, _cursor())).items[0]
 
         assert item.external_id == "<abc@mail.example>", "the RFC id, brackets intact"
-        assert item.thread_key == "t-1"
+        # SCOPED to the mailbox, not the bare provider id. AgentMail's
+        # `thread_id` is inbox-scoped ("never use it as a cross-agent key"),
+        # and the projection derives a thread id from `(channel, thread_key)`
+        # where every cloud mailbox reports the same channel — so a bare id
+        # lets two agents collapse onto one thread.
+        assert item.thread_key == f"{AGENT_ID}:t-1"
         assert item.title == "Round trip"
         assert item.occurred_at == "2026-08-04T08:28:47.206Z"
         assert item.kind == "content.message.email"

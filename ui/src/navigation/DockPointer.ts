@@ -1883,7 +1883,7 @@ export class DockPointer implements IDockPointer {
    *   rollout JSONL — the generic viewer fetches it via `useTranscript`.
    */
   static forLensTranscript(
-    workerType: 'claude' | 'codex' | 'copilot' | 'workflow',
+    workerType: 'claude' | 'codex' | 'copilot' | 'opencode' | 'workflow',
     ref: string,
     layout: Layout = Layout.DOCK,
     options?: Record<string, string>,

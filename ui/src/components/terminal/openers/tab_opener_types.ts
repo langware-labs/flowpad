@@ -5,6 +5,7 @@ export type OpenerId =
   | 'claude'
   | 'codex'
   | 'copilot'
+  | 'opencode'
   | 'claude-resume-by-id'
   | 'terminal'
   | 'sandbox'
@@ -18,6 +19,7 @@ export const VALID_OPENER_IDS: OpenerId[] = [
   'claude',
   'codex',
   'copilot',
+  'opencode',
   'claude-resume-by-id',
   'terminal',
   'sandbox',

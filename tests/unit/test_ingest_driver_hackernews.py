@@ -86,8 +86,8 @@ def _view(state=None) -> SegmentCursorView:
     )
 
 
-def test_hacker_news_has_exactly_one_stream():
-    refs = HackerNewsDriver().segments(None)
+async def test_hacker_news_has_exactly_one_stream():
+    refs = await HackerNewsDriver().segments(None)
     assert [r.key for r in refs] == [STREAM_KEY], (
         "HN has no per-channel partition; one stream also proves the per-stream "
         "machinery tolerates a source that has only one"

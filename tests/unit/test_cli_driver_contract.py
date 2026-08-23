@@ -31,6 +31,7 @@ from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeDriver
 from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexAgentOptions, CodexDriver
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotAgentOptions, CopilotDriver
+from flow_sdk.builtin.agentic_process.cli_drivers.opencode import OpenCodeAgentOptions, OpenCodeDriver
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.fs_store.record_paths import get_default_records_root, set_default_records_root
 from flow_sdk.instance_settings import get_instance_settings, reset_instance_settings
@@ -218,12 +219,16 @@ def test_codex_and_copilot_do_not_support_plan_mode():
 
     assert CodexDriver().supports_plan_mode(codex_proc) is False
     assert CopilotDriver().supports_plan_mode(copilot_proc) is False
+    # OpenCode ships a built-in ``plan`` agent, but not the ExitPlanMode tool
+    # contract FlowPad's plan flow needs to surface ``plan_path``.
+    assert OpenCodeDriver().supports_plan_mode(_process(WorkerType.OPENCODE, session_id="x")) is False
 
 
 def test_codex_and_copilot_do_not_pin_resume_cwd():
     # Only claude pins the resume cwd (and only claude forks).
     assert CodexDriver.pins_resume_cwd is False
     assert CopilotDriver.pins_resume_cwd is False
+    assert OpenCodeDriver.pins_resume_cwd is False
 
 
 def test_codex_never_emits_fork_session_flag():
@@ -255,13 +260,13 @@ _AGENTS = {
 }
 
 
-@pytest.mark.parametrize("driver", [ClaudeDriver(), CodexDriver(), CopilotDriver()])
+@pytest.mark.parametrize("driver", [ClaudeDriver(), CodexDriver(), CopilotDriver(), OpenCodeDriver()])
 def test_compose_prompt_passthrough_without_agents(driver):
     assert driver.compose_prompt("just do it", None) == "just do it"
     assert driver.compose_prompt("just do it", {}) == "just do it"
 
 
-@pytest.mark.parametrize("driver", [ClaudeDriver(), CodexDriver(), CopilotDriver()])
+@pytest.mark.parametrize("driver", [ClaudeDriver(), CodexDriver(), CopilotDriver(), OpenCodeDriver()])
 def test_compose_prompt_passthrough_with_agents(driver):
     composed = driver.compose_prompt("use the reviewer agent", _AGENTS)
 
@@ -292,3 +297,49 @@ def test_codex_and_copilot_omit_report_event():
     # is the documented contract — pin that they truly don't define it.
     assert not hasattr(CodexDriver, "report_event")
     assert not hasattr(CopilotDriver, "report_event")
+    assert not hasattr(OpenCodeDriver, "report_event")
+
+
+# ── opencode ─────────────────────────────────────────────────────────────────
+
+
+def test_opencode_omits_preassign_because_the_cli_rejects_unknown_ids():
+    """``opencode run --session <unknown>`` exits 1 with "Session not found",
+    so a caller-minted id can never be handed over at launch. Like codex, the
+    driver omits the attribute entirely and captures the vendor's own id."""
+    assert not hasattr(OpenCodeDriver, "preassign_interactive_session_id")
+
+
+def test_opencode_submits_on_paste():
+    """Measured on 1.18.16: a single paste ending in \\r created a real session.
+
+    OpenCode sides with claude here; codex and copilot need a discrete Enter.
+    """
+    assert OpenCodeDriver.pty_submits_on_paste is True
+
+
+def test_opencode_composer_pattern_is_a_regex_trait():
+    assert OpenCodeDriver.pty_composer_ready_pattern is not None
+    assert OpenCodeDriver.pty_composer_ready_pattern.search("  Ask anything... \"Fix broken tests\"")
+
+
+def test_opencode_can_fork_unlike_codex_and_copilot():
+    """OpenCode is the second forking vendor after claude — but its ``--fork``
+    is a modifier on a resume, not a standalone flag."""
+    forked = OpenCodeAgentOptions(
+        workdir="/repo", session_id="ses_a", resume=True, fork_session_id="ses_parent"
+    )
+    argv = forked.cli_cmd()
+    assert "--fork" in argv
+    assert "--session" in argv
+
+    plain = OpenCodeAgentOptions(workdir="/repo", session_id="ses_a", resume=True)
+    assert "--fork" not in plain.cli_cmd()
+
+
+def test_opencode_never_emits_add_dir():
+    """There is no ``--add-dir`` on opencode: instructions and skills ride the
+    generated config. A copy-paste from copilot would silently drop them."""
+    cmd = OpenCodeAgentOptions(workdir="/repo", add_dirs=["/repo/assets"])
+    assert "--add-dir" not in cmd.cli_cmd(instruction="hi")
+    assert "--add-dir" not in cmd.to_shell_string(instruction="hi")

@@ -301,8 +301,16 @@ describe('file change → reindex → entity change → refresh', () => {
     const marker = 'AGENT_MARKER_123';
     const worker = await new sdk.AgenticProcess({ workdir, visible: false, pty_mode: false }).save([]);
     await worker.watch();
+    // Pin the TOOL, not just the outcome. The turn-end reindex sources its
+    // touched set from FileWrite/FileEdit transcript entries, so a file the
+    // agent writes through a Bash redirect is invisible to it (proven: with the
+    // old wording the model chose Bash, `_collect_touched_from_transcript_tail`
+    // returned [], and the entity never re-parsed). That blind spot is a real
+    // product gap tracked separately — this scenario exists to prove the
+    // file-op → reindex → entity-change loop, so it must drive the file-op path
+    // deterministically rather than letting tool choice decide whether it runs.
     await worker.prompt(
-      `Edit the file ${target} and set its ENTIRE content to exactly:\n${marker}\nDo not add anything else.`,
+      `Use the Write tool (do NOT use Bash) to set the ENTIRE content of ${target} to exactly:\n${marker}\nDo not add anything else.`,
     );
 
     const chat = chatContent(worker.flowDataStream.items, sdk.FlowElementTypes);

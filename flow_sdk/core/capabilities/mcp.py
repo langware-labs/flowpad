@@ -52,6 +52,7 @@ _WORKER_TYPE_TO_HARNESS: dict[str, str] = {
     "unsecured_claude": CapabilityKind.CLAUDE_CLI.value,
     "codex": CapabilityKind.CODEX_CLI.value,
     "copilot": CapabilityKind.COPILOT_CLI.value,
+    "opencode": CapabilityKind.OPENCODE_CLI.value,
 }
 
 

@@ -43,7 +43,7 @@ class HackerNewsDriver:
     kind = "datasource.api.hackernews"
     record_kind = "content.feed.item"
 
-    def segments(self, source) -> list[SegmentRef]:
+    async def segments(self, source) -> list[SegmentRef]:
         return [SegmentRef(key=STREAM_KEY, label="Hacker News updates")]
 
     async def fetch(self, source, cursor: SegmentCursorView) -> FetchResult:

@@ -1,0 +1,108 @@
+name: Tests
+
+# NON-BLOCKING BY DESIGN: none of these jobs may be added to the
+# branch-protection "required status checks" list — a PR can merge while they
+# are red or pending. They still report true pass/fail, because the PyPI
+# deploy gate (deploy-pypi skill → "Test gate", via `gh pr checks`) reads the
+# check conclusions on the last PR merged into the release branch to decide
+# whether to publish. Forcing these green, or making them required, would
+# break that gate.
+#
+# Consolidates the former pr-tests.yml / ui-typecheck.yml / ui-i18n.yml.
+# Needs NO repository secrets.
+#
+# Intentionally EXCLUDED tiers:
+#   - pytest tests/cli — spawns servers/PTYs and segfaults at interpreter
+#     shutdown on Linux (exit 139)
+#   - pytest tests/long_tests, tests/hub_tests, tests/migration_e2e,
+#     tests/pty_fuzz — deep/slow tiers needing real worker CLIs or a hub
+#   - vitest long / hub / hub-paired — need real workers or two backends + hub
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - main
+      - 'release/v*'
+  workflow_dispatch:
+    inputs:
+      backend-tests:
+        description: 'Run backend tests (pytest unit + api)'
+        type: boolean
+        required: false
+        default: true
+      frontend-tests:
+        description: 'Run frontend tests (tsc, vitest unit, i18n guards)'
+        type: boolean
+        required: false
+        default: true
+      e2e-tests:
+        description: 'Run live-backend E2E (vitest headless/api/react + Playwright)'
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Split into two parallel jobs so neither brushes the timeout: the api tier
+  # grew when the Claude CLI install let its worker/PTY tests actually run.
+  # Isolation is safe — jobs are separate VMs, and tests/conftest.py roots the
+  # DB/records/home under a per-process mkdtemp anyway.
+  backend-unit:
+    name: backend (pytest unit)
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.backend-tests }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/backend-tests
+        with:
+          tier: unit
+
+  backend-api:
+    name: backend (pytest api)
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.backend-tests }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/backend-tests
+        with:
+          tier: api
+
+  frontend-tests:
+    name: frontend (tsc + vitest unit + i18n)
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.frontend-tests }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/frontend-tests
+        with:
+          tsc: false
+
+  e2e-tests:
+    name: 'e2e (live backend: vitest headless/api/react + playwright)'
+    needs: [backend-unit, backend-api, frontend-tests]
+    # !cancelled() + per-result checks so a dispatch-toggled-off upstream job
+    # (result == 'skipped') doesn't auto-skip e2e; a FAILED upstream still does.
+    if: >-
+      ${{ !cancelled()
+          && (needs.backend-unit.result == 'success' || needs.backend-unit.result == 'skipped')
+          && (needs.backend-api.result == 'success' || needs.backend-api.result == 'skipped')
+          && (needs.frontend-tests.result == 'success' || needs.frontend-tests.result == 'skipped')
+          && (github.event_name != 'workflow_dispatch' || inputs.e2e-tests) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Burn-in ended 2026-08-19 (first full-green run, 32267242614): e2e
+    # failures now count in the PyPI deploy gate like every other job.
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/e2e-tests

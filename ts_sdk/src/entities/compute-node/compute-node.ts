@@ -48,7 +48,7 @@ export const WORKSPACE_FLAVOR = 'workspace';
 export type MachineSessionCallback = (sessionId: string, session: Shell) => void;
 
 /** CLI worker kind shared across resolver APIs. */
-export type WorkerKind = 'claude' | 'codex' | 'copilot';
+export type WorkerKind = 'claude' | 'codex' | 'copilot' | 'opencode';
 
 /** Descriptor returned by {@link ComputeNode.findSession} on hit. */
 export interface FindSessionResult {
