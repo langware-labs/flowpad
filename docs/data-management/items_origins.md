@@ -151,7 +151,7 @@ Two files at the bundle root, written by `_write_origin_files` and read by
 
 | File | Contents |
 |---|---|
-| `fs_origins.json` | canonical — **every** kind, keyed `<type>-@<id>` |
+| `fs_origins.json` | canonical — **every** kind, keyed `<type>-<id>` |
 | `git_origins.json` | transition dual-write — a strict subset |
 
 The reader prefers the canonical file and falls back to the legacy one, so a

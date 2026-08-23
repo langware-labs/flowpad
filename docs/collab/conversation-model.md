@@ -79,7 +79,7 @@ membership + role list and the basis for ownership/authz decisions. Roles
 ### `message_count` / `message_ids` (`:129-130`)
 **Projections** of `conversation.jsonl`, never authored directly — see
 [The projection guard](#the-projection-guard). `message_ids` is a JSON-encoded
-list of typed pointers `[{"typeid": "flow_message-@<id>", "ts": "<ISO>"}, …]`
+list of typed pointers `[{"typeid": "flow_message-<id>", "ts": "<ISO>"}, …]`
 ordered oldest-first by jsonl append order; `message_count` is its length.
 
 ### Message-status sharing

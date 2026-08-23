@@ -45,6 +45,6 @@ The production rule that sets it on a walk root is **borrowed bytes**: a directo
 ## How records use FSRefs
 
 - `record.asset_ref` — the primary content file (anywhere on disk); the only ref path persisted (`metadata.json`). `record.main_ref` is an alias for it.
-- `record.record_folder_ref` / `record.metadata_ref` — computed refs into the shadow folder (`<records_root>/<type>/<type>-@<id>/`).
+- `record.record_folder_ref` / `record.metadata_ref` — computed refs into the shadow folder (`<records_root>/<type>/<id>/`).
 
 Normative rules live in [docs/CLAUDE.md](CLAUDE.md); the record model detail is in [data-management/record-model.md](data-management/record-model.md).

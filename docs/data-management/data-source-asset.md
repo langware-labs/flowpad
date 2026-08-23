@@ -153,13 +153,14 @@ with the endpoint that serves the choices.
 
 ### Traits — non-builtin sources only
 
-A builtin omits this block; its driver class holds the same four as class
-attributes. Declaring them in both places is a load error.
+A builtin omits this block; its driver declares the same three facts under its own
+names — `record_kind` for `emits`, `channel_for()` for `channel`, and
+`stamps_identity` for `owns_bytes` (inverted sense). Declaring them in both places
+is a load error.
 
 ```yaml
 emits: content.message.email      # ontology kind stamped on every item
 channel: email                    # the user-facing medium
-external_id_unique_within: segment # segment | source
 owns_bytes: false                 # false ⇒ never stamp identity into these bytes
 ```
 
@@ -171,20 +172,6 @@ its JSON.
 **`channel`** is the medium; `name` is the transport. Threading keys on the
 channel, so a harness Gmail source and an API one resolve to one thread instead of
 forking every conversation. It is also what binds a source to its DataEmitter.
-
-**`external_id_unique_within`** decides whether `segment_key` participates in the
-natural key. Phrased as a falsifiable claim about the provider, because that is
-what an author has to answer.
-
-> **Default is `segment`, and the asymmetry is the reason the key exists.** A wrong
-> `source` **merges two distinct records** — a Slack `ts` repeats across channels,
-> and the merge is unrecoverable. A wrong `segment` only duplicates, and an
-> enumerate-diff sweep reaps duplicates. The default is the lossy-but-recoverable
-> side on purpose.
-
-Say `source` when the provider id is stable across the whole source and the segment
-is a **mutable grouping** — a Confluence page moves between spaces, a Drive file
-between folders, and keying on the segment mints a row nothing reaps.
 
 **`owns_bytes: false`** says the bytes belong to someone else, so indexing must not
 stamp an identity capsule into them: in a git working tree that dirties the repo,

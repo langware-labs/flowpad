@@ -9,7 +9,7 @@ it. This is the user-facing contract — the folders and files *you* create. The
 parser lives in `flow_sdk/fs_store/indexer/functions/dataset.py`; the entity and
 row models in `flow_sdk/builtin/dataset.py`.
 
-A dataset is a **folder** under `assets/datasets/<slug>/`, marked by a
+A dataset is a **folder** under `agentic-assets/dataset/<slug>/`, marked by a
 `dataset.json` manifest at its root. Without that manifest the folder is **not**
 discovered as a dataset. It holds many **examples** (rows) in one of two physical
 layouts, chosen by `data_layout` in the manifest:
@@ -100,7 +100,7 @@ a read-only compatibility source, but new identity is never written there.
 ## 2. `csv` layout
 
 ```
-assets/datasets/<slug>/
+agentic-assets/dataset/<slug>/
   dataset.json        # { "metadata": { "data_layout": "csv" }, "data": {} }
   data.csv            # one row per example
 ```
@@ -130,7 +130,7 @@ by the `io_folder` layout.
 ## 3. `io_folder` layout
 
 ```
-assets/datasets/<slug>/
+agentic-assets/dataset/<slug>/
   dataset.json        # { "metadata": { "data_layout": "io_folder" }, "data": {} }
   examples/
     0001/             # one folder per example (the folder name is the example key)
@@ -215,7 +215,7 @@ accepted as a back-compat alias; `example.json` wins per section on conflict).
 ### 3.5 Canonical example
 
 ```
-assets/datasets/grader-e2e/
+agentic-assets/dataset/grader-e2e/
   .flow/capsules/identity.json     # { "version": 1, "data": { "id": "<uuid-v4-or-v5>" } }
   dataset.json                     # { "metadata": { "data_layout": "io_folder", "title": "Grader E2E" }, "data": {} }
   examples/0001/
@@ -263,7 +263,7 @@ multi data; use `input`/`expected` for the simple single-text case.
 
 - [ ] Every `*.json` is two-section — known keys under `metadata`, free under `data`
       (a flat JSON is ignored).
-- [ ] Folder is at `assets/datasets/<slug>/` with a `dataset.json` at its root.
+- [ ] Folder is at `agentic-assets/dataset/<slug>/` with a `dataset.json` at its root.
 - [ ] `dataset.json` `metadata` sets `data_layout` (`csv` or `io_folder`); preserve
       `.flow/capsules/identity.json` when copying or moving the dataset.
 - [ ] **csv**: `data.csv` present; non-standard headers remapped via `field_spec`.

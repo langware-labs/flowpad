@@ -204,7 +204,7 @@ The body upload contract has two transfer modes:
   still ride inside the `.flowmsg`.
 - **`git`** — git-backed attachments are metadata-only on the body axis. The bundle
   carries `git_origins.json`, `git_transfers.json`, and
-  `metadata/<type>-@<id>/metadata.json`; it does not carry the git-backed file
+  `metadata/<type>-<id>/metadata.json`; it does not carry the git-backed file
   bytes. On receive, the unpacker resolves a matching local checkout, pulls the
   branch when possible, or clones the remote, then indexes the entity from the
   real filesystem location. Existing local entities still use the normal
@@ -311,7 +311,7 @@ single **Download** button and rendered attachment chips.
 `_type_id_record_materialized(data)` (`flow_sdk/builtin/flow_message.py:164`) is a
 **sync disk probe** — disk is the source of truth. For a `TYPE_ID` attachment it
 checks for a materialized record folder
-(`<records_root>/<type>/<type>-@<id>/metadata.json`). Two carve-outs:
+(`<records_root>/<type>/<id>/metadata.json`). Two carve-outs:
 
 - **Structural / row-only types always count as present**
   (`_NON_MATERIALIZING_TYPE_IDS`, `flow_sdk/builtin/flow_message.py:149`):

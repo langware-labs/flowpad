@@ -149,7 +149,7 @@ flow_message.json
 entities.json
 git_origins.json
 git_transfers.json
-metadata/<type>-@<id>/metadata.json
+metadata/<type>-<id>/metadata.json
 ```
 
 `flow_message.json` is the top-level FlowMessage envelope (renamed from the legacy
