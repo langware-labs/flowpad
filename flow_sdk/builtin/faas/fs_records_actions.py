@@ -99,7 +99,10 @@ class FsRecordsActionsMixin:
             from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
             from flow_sdk.builtin.project import Project  # noqa: PLC0415
             from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
-            from flow_sdk.fs_store.indexer.roots import is_home_or_ancestor  # noqa: PLC0415
+            from flow_sdk.fs_store.indexer.roots import (  # noqa: PLC0415
+                is_home_or_ancestor,
+                is_internal_state_path,
+            )
             from flow_sdk.fs_store.indexer.special_folders import (  # noqa: PLC0415
                 IndexDecision,
                 gate_root,
@@ -141,6 +144,17 @@ class FsRecordsActionsMixin:
                 if not mount_path.is_dir():
                     logging.debug(
                         "fs-records/_resolve_scoped_roots: skipping project %s — mount %r is not a directory",
+                        pid,
+                        mount,
+                    )
+                    continue
+                if is_internal_state_path(mount_path):
+                    # Our own ~/.flow state (per-instance DBs + the `records/`
+                    # shadow tree). Walking it makes the indexer walk its own
+                    # output — see is_internal_state_path.
+                    logging.debug(
+                        "fs-records/_resolve_scoped_roots: skipping project %s — "
+                        "mount %r is inside flow_home (internal state)",
                         pid,
                         mount,
                     )
@@ -1679,6 +1693,8 @@ class FsRecordsActionsMixin:
                     data={
                         "type": filter_type,
                         "indexed": 0,
+                        "new": 0,
+                        "skipped": 0,
                         "errors": 0,
                         "orphans_found": 0,
                         "orphans_db_removed": 0,
@@ -1691,7 +1707,15 @@ class FsRecordsActionsMixin:
             return ApiSuccessResponse(
                 data={
                     "type": one["type"],
+                    # Same three counters the aggregate payload carries, and the
+                    # same meanings: `indexed` is everything PROCESSED, split into
+                    # `new` (re-parsed) and `skipped` (fresh, left alone). Without
+                    # the split a per-type caller sees "indexed: 2107" for a run
+                    # that actually re-parsed nothing, and cannot tell a no-op
+                    # re-index from a full one.
                     "indexed": one["indexed"],
+                    "new": one["new"],
+                    "skipped": one["skipped"],
                     "errors": one["errors"],
                     "orphans_found": one["orphans_found"],
                     "orphans_db_removed": one["orphans_db_removed"],
