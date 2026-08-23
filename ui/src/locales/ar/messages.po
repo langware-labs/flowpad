@@ -16429,6 +16429,10 @@ msgstr "سيصلهم بريد إلكتروني، والصندوق الرملي �
 msgid "thinking"
 msgstr "التفكير"
 
+#: src/components/entity-execution-panel/current-activity.ts
+msgid "Thinking"
+msgstr "التفكير"
+
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "Thinking:"
 msgstr "التفكير:"

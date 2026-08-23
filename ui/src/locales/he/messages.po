@@ -16429,6 +16429,10 @@ msgstr "הם יקבלו דוא״ל, וה-sandbox כבר ברשימה שלהם."
 msgid "thinking"
 msgstr "חשיבה"
 
+#: src/components/entity-execution-panel/current-activity.ts
+msgid "Thinking"
+msgstr "חשיבה"
+
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "Thinking:"
 msgstr "חשיבה:"
