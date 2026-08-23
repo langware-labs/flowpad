@@ -88,11 +88,11 @@ export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps
       onStop={handleStop}
       onPasteImages={onPasteImages}
       placeholder={plan.planPending ? t`Plan mode — describe what to plan…` : t`Message the agent…`}
-      onShiftTab={plan.enabled ? plan.togglePlan : undefined}
+      onShiftTab={plan.planToggleEnabled ? plan.togglePlan : undefined}
       leadingSlot={
         <div className="flex items-center gap-2">
           <ChatToolsMenu />
-          {plan.enabled ? (
+          {plan.planToggleEnabled ? (
             <button
               type="button"
               onClick={plan.togglePlan}

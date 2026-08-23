@@ -65,10 +65,16 @@ function findPending(items: FlowData[]): Pending {
  * Sticky action area below the chat stream: renders the structured choice card
  * for an AskUserQuestion, or a "Plan ready → Execute" card for ExitPlanMode.
  * Submitting an answer / executing routes through {@link useChatPlanMode}, which
- * sends it as the next headless turn (the "insert a prompt + Enter" path).
+ * sends it as the next turn (the "insert a prompt + Enter" path).
+ *
+ * Gated on `respondEnabled`, NOT on the plan pill's `planToggleEnabled`: the
+ * agent asked this question on whatever transport it is running, and the answer
+ * is an ordinary `prompt()` the backend routes by transport. Keying this off the
+ * headless flag hid the card on every chat session that had ever visited the
+ * terminal — see the two-gate note in `chat-plan-mode-context`.
  */
 export function PlanInteractionBar({ items }: PlanInteractionBarProps) {
-  const { enabled, sending, answer, execute, setPlanPending } = useChatPlanMode();
+  const { respondEnabled, sending, answer, execute, setPlanPending } = useChatPlanMode();
   const pending = useMemo(() => findPending(items), [items]);
 
   // "Switch back to code" once a plan is ready.
@@ -76,7 +82,7 @@ export function PlanInteractionBar({ items }: PlanInteractionBarProps) {
     if (pending?.kind === 'plan') setPlanPending(false);
   }, [pending?.kind, setPlanPending]);
 
-  if (!enabled || !pending) return null;
+  if (!respondEnabled || !pending) return null;
 
   return (
     <div className="border-t bg-background px-4 py-3" data-testid="plan-interaction-bar">

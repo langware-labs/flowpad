@@ -4,19 +4,34 @@ import { notify } from '@src/notifications/notify';
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 
 /**
- * Shared "plan mode" state for the headless chat surface. The composer
- * (ChatComposerBar) owns the toggle/pill; the plan-interaction bar
- * (PlanInteractionBar) owns the question/Execute cards. Both need the same
- * `planPending` flag and the same `process.prompt(...)` wiring, so it lives in
- * one context provided around the whole InteractiveTerminal subtree.
+ * Shared "plan mode" state for the chat surface. The composer (ChatComposerBar)
+ * owns the toggle/pill; the plan-interaction bar (PlanInteractionBar) owns the
+ * question/Execute cards. Both need the same `planPending` flag and the same
+ * `process.prompt(...)` wiring, so it lives in one context provided around the
+ * whole InteractiveTerminal subtree.
  *
  * "mode" here is NOT a live process state — it is just which `--permission-mode`
  * the next headless turn is sent with: `plan` (read-only) while the toggle is
  * on, the process's normal configured mode otherwise. See the plan doc.
+ *
+ * TWO gates, deliberately separate — one flag serving both is the bug this
+ * split fixes. SENDING a plan turn needs the headless transport (the per-turn
+ * `permission_mode` is only read on the print-mode branch of `_http_prompt`;
+ * the PTY branch routes to `_run_pty_prompt` before it is ever consulted), so
+ * the pill stays headless-gated. RESPONDING to a question the agent already
+ * asked needs nothing of the sort — the answer is an ordinary `prompt()`, which
+ * the backend routes by transport on its own. Gating the cards on the transport
+ * too meant a chat surface sitting on a PTY worker (the normal state once a
+ * session has visited the terminal — reconciliation is one-directional, see
+ * docs/viewmodes.md) silently dropped every AskUserQuestion.
  */
 interface ChatPlanModeValue {
-  /** Toggle is offered only for a headless (`pty_mode===false`) capable worker. */
-  enabled: boolean;
+  /** The plan pill / Shift+Tab. Headless (`pty_mode===false`) + capable worker
+   *  only: no other transport can carry `--permission-mode plan`. */
+  planToggleEnabled: boolean;
+  /** The question / Execute cards. Transport-agnostic: answering is a plain
+   *  turn, so the only requirement is a process to send it to. */
+  respondEnabled: boolean;
   /** The next manual send goes out as a read-only `plan` turn. */
   planPending: boolean;
   togglePlan: () => void;
@@ -30,7 +45,8 @@ interface ChatPlanModeValue {
 }
 
 const FALLBACK: ChatPlanModeValue = {
-  enabled: false,
+  planToggleEnabled: false,
+  respondEnabled: false,
   planPending: false,
   togglePlan: () => {},
   setPlanPending: () => {},
@@ -42,7 +58,8 @@ const FALLBACK: ChatPlanModeValue = {
 const Ctx = createContext<ChatPlanModeValue | null>(null);
 
 export function ChatPlanModeProvider({ process, children }: { process: AgenticProcess | null; children: ReactNode }) {
-  const enabled = !!process && process.isHeadless && !!process.supports_plan_mode;
+  const planToggleEnabled = !!process && process.isHeadless && !!process.supports_plan_mode;
+  const respondEnabled = !!process;
   const [planPending, setPlanPending] = useState(false);
   const [sending, setSending] = useState(false);
 
@@ -82,8 +99,8 @@ export function ChatPlanModeProvider({ process, children }: { process: AgenticPr
   }, [send]);
 
   const value = useMemo<ChatPlanModeValue>(
-    () => ({ enabled, planPending, togglePlan, setPlanPending, sending, answer, execute }),
-    [enabled, planPending, togglePlan, sending, answer, execute],
+    () => ({ planToggleEnabled, respondEnabled, planPending, togglePlan, setPlanPending, sending, answer, execute }),
+    [planToggleEnabled, respondEnabled, planPending, togglePlan, sending, answer, execute],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
