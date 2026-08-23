@@ -11470,6 +11470,7 @@ msgid "Open Spec Session"
 msgstr "פתיחת סשן המפרט"
 
 #: src/components/diagnose/open-in-terminal-button.tsx
+#: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Open terminal"
 msgstr "פתח טרמינל"
@@ -16190,6 +16191,14 @@ msgstr "היכולת \"{skillName}\" אינה מותקנת."
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "The Agent bundle is not available."
 msgstr "חבילת הסוכן אינה זמינה."
+
+#: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
+msgid "The agent has asked a question — answer it in the terminal."
+msgstr "הסוכן שאל שאלה — יש לענות עליה בטרמינל."
+
+#: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
+msgid "The agent's plan is ready — approve it in the terminal."
+msgstr "התוכנית של הסוכן מוכנה — יש לאשר אותה בטרמינל."
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "The analysis completed but did not produce asset-scoped findings."

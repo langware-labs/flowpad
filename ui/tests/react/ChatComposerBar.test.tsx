@@ -7,7 +7,7 @@
  *      turn in flight routes the send to the backend prompt queue rather than
  *      locking the input, so `busy` gates the ROUTE, never the `disabled` prop.
  *   2. Plan-mode gating. The Plan pill + Shift+Tab toggle render ONLY when the
- *      chat-plan-mode context reports `enabled`, and `planPending` drives the
+ *      chat-plan-mode context reports `planToggleEnabled`, and `planPending` drives the
  *      pill's pressed state + the composer placeholder.
  *
  * NOTE (interface deviation): the coverage plan named "ProcessToolbar plan-mode
@@ -53,7 +53,7 @@ vi.mock('@src/components/entity-execution-panel/CompactExecutionInput', () => ({
 
 // Plan-mode context — controlled per test.
 const planState = {
-  enabled: false,
+  planToggleEnabled: false,
   planPending: false,
   togglePlan: vi.fn(),
 };
@@ -80,7 +80,7 @@ const readyProcess = () => makeProcess(false);
 
 afterEach(() => {
   cleanup();
-  planState.enabled = false;
+  planState.planToggleEnabled = false;
   planState.planPending = false;
   planState.togglePlan.mockClear();
 });
@@ -94,13 +94,13 @@ describe('ChatComposerBar — composer readiness', () => {
 
 describe('ChatComposerBar — plan-mode gating', () => {
   it('plan disabled → no Plan pill', () => {
-    planState.enabled = false;
+    planState.planToggleEnabled = false;
     render(createElement(ChatComposerBar, { process: readyProcess() }));
     expect(screen.queryByTestId('plan-mode-pill')).toBeNull();
   });
 
   it('plan enabled → Plan pill rendered, not pressed when idle', () => {
-    planState.enabled = true;
+    planState.planToggleEnabled = true;
     planState.planPending = false;
     render(createElement(ChatComposerBar, { process: readyProcess() }));
     const pill = screen.getByTestId('plan-mode-pill');
@@ -109,7 +109,7 @@ describe('ChatComposerBar — plan-mode gating', () => {
   });
 
   it('plan pending → pill pressed and placeholder switches to plan copy', () => {
-    planState.enabled = true;
+    planState.planToggleEnabled = true;
     planState.planPending = true;
     render(createElement(ChatComposerBar, { process: readyProcess() }));
     expect(screen.getByTestId('plan-mode-pill')).toHaveAttribute('aria-pressed', 'true');
