@@ -103,10 +103,30 @@ export function useProcessSurface({
     if (previous === viewMode) return;
 
     const wantPty = viewModePtyMode(viewMode);
-    // Chat / vibe are transport-agnostic — record the mode and leave the worker
-    // alone. See the one-directional rule in this hook's doc comment.
+    // Chat / vibe need no transport of their own — they render the session's
+    // stream, so we never spawn or kill a worker for them (the one-directional
+    // rule in this hook's doc comment). They DO need the TRANSCRIPT, though.
+    // A turn produced on the surface we are leaving never entered this client's
+    // `flowDataStream`: one typed into the xterm has no `prompt()` response
+    // stream carrying it here, and `useObservedTurn` only runs while a pane is
+    // mounted and the turn is live. The incoming pane's mount-time
+    // `loadHistory()` cannot repair that — it is a no-op once `_historyLoaded`
+    // is set, and nothing ever resets that latch. So without a forced reload
+    // the pane renders a list frozen at the last row it happened to see, until
+    // a full page reload (FLOWPAD-2013). Reconcile the same way the PTY branch
+    // below already does.
     if (!wantPty) {
+      // A forced reload REPLACES the stream with the on-disk transcript, so a
+      // frame not yet persisted would be dropped — only ever do it at idle,
+      // matching `loadHistory`'s documented force-path contract. The mode is
+      // deliberately left unrecorded while a turn is in flight so this effect
+      // retries the moment the worker goes idle rather than skipping the
+      // reconcile outright (same reasoning as the mid-turn guard below).
+      if (!awaitingUserInput) return;
       lastReconciledMode.set(key, viewMode);
+      void live
+        .loadHistory({ force: true })
+        .catch((err) => console.debug('[sessionSurface] surface reconcile deferred:', err));
       return;
     }
     if (wantPty === ptyMode) {

@@ -52,6 +52,14 @@ function Surface({ canSwitch, marker }: { canSwitch: boolean; marker: string }) 
   return <div>{marker}</div>;
 }
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.surface_transcript_reconcile.rules: EDITING use-process-surface?
+//       the non-PTY branch MUST force loadHistory - read this tag's rules first; this
+//       file stubs loadHistory and does NOT cover it
+// flowpad:endcapsule tag
 describe('process surface reconciliation during panel startup', () => {
   beforeEach(() => {
     state.mode = 'advanced';

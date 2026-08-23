@@ -107,12 +107,12 @@ export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps
       onPasteImages={onPasteImages}
       animateEnqueue
       placeholder={plan.planPending ? t`Plan mode — describe what to plan…` : t`Message the agent…`}
-      onShiftTab={plan.enabled ? plan.togglePlan : undefined}
+      onShiftTab={plan.planToggleEnabled ? plan.togglePlan : undefined}
       leadingSlot={
         <div className="flex items-center gap-2">
           <ChatToolsMenu />
           <QueueChip process={reflected} />
-          {plan.enabled ? (
+          {plan.planToggleEnabled ? (
             <button
               type="button"
               onClick={plan.togglePlan}
