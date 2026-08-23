@@ -70,18 +70,14 @@ mapping is `surfaceForViewMode(mode) → 'vibe' | 'chat' | 'terminal'`
 mode selector rather than a skin. It replaced a second `chat mode` preference
 that drifted out of sync with this one; one enum, one preference, one control.
 
-The consequence people get wrong: **a chat or vibe surface can legitimately be
+The consequence: **a chat or vibe surface can legitimately be
 sitting on a PTY worker.** `pty_mode` / `AgenticProcess.isHeadless` therefore
 does NOT correlate 1:1 with the view mode — once a session has visited the
 terminal it stays `pty_mode=true` until something else changes it, including
 after a reload (the intent is durable). Code must not infer "this is the chat
-surface, therefore the worker is headless". That inference is what hid the
-AskUserQuestion card in `PlanInteractionBar`
-(`ui/src/components/terminal/interactive-terminal/PlanInteractionBar.tsx`) on
-every session that had visited the terminal; it now gates on `respondEnabled`
-(answering is transport-independent) while only the plan pill keeps the headless
-requirement (`--permission-mode plan` is read on the print-mode branch alone) —
-the two-gate split in `chat-plan-mode-context.tsx`.
+surface, therefore the worker is headless". That inference led to hidden components
+and broken view for the chat/vibe mode (e.g. AskUserQustion card not showing for sessions
+after visiting the terminal once).
 
 What chat and vibe DO reconcile on the way in is the **transcript**, not the
 transport: the non-PTY branch forces `loadHistory({ force: true })` when the
@@ -91,13 +87,7 @@ the incoming pane.
 The exception is scoped to that switch and carries its own rules: the backend
 409s a mid-turn switch, so the reconcile waits for `awaitingUserInput` and
 deliberately leaves the mode unrecorded on refusal, retrying when the worker goes
-idle rather than stranding the session on the wrong transport. Do not read this
-carve-out as a licence to gate anything else on mode — everything above still
-holds for chrome, layout, and data.
-
-Because getting the surface wrong mounts a whole pane, read it with
-`useSessionSurface()`, which returns `null` for NOT-KNOWN-YET and lets callers
-hold the arrangement instead of painting a guess (see the boot-seed note below).
+idle rather than stranding the session on the wrong transport.
 
 ## The toolkit — `@src/components/view-mode`
 
