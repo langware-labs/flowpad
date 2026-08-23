@@ -21,13 +21,13 @@ Error contract (agents parse these):
 
 from __future__ import annotations
 
-import os
 from typing import Optional
 
 import typer
 from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
+    caller_abs_path as _caller_abs_path,
     discover_port as _discover_port,
     fail as _fail,
     ok as _ok,
@@ -112,7 +112,7 @@ def show_file(
     # resolves it against ITS OWN launch directory (in a packaged install,
     # ~/.local/bin) and silently addresses a different, usually nonexistent
     # file. Same expansion `flow record index` already applies (record_cmd).
-    _post_show(process, {"path": os.path.abspath(os.path.expanduser(path))})
+    _post_show(process, {"path": _caller_abs_path(path)})
 
 
 @show_app.command(
