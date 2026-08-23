@@ -9491,6 +9491,7 @@ msgid "Message Attachment"
 msgstr "Message Attachment"
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
+#: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 msgid "Message not queued"
 msgstr "Message not queued"
 
