@@ -18,7 +18,7 @@ id: "e54d4265-bef1-5abb-8f25-d8204141caed"
 
    * The following were **deliberately removed** with the old `Record` class and must not be reintroduced: `state.json` / `RecordState` / `PropertyRecord` caching, `raw_json` + dict-like item access, auto-save on attribute mutation, `parent_ref`/`children_refs`/`origin_ref` on the record (the Entity DB owns edges), and polymorphic legacy load fallbacks.
 
-4. A Record's shadow folder is always `<records_root>/<type>/<type>-@<id>/` and contains `metadata.json` plus at most one zero-byte `.hash` index sentinel. There is no other layout.
+4. A Record's shadow folder is always `<records_root>/<type>/<id>/` and contains `metadata.json` plus at most one zero-byte `.hash` index sentinel. There is no other layout.
 
    * `records_root` is **per-instance** (`InstanceSettings.records_root`). Resolve it via `get_default_records_root()` / redirect in tests via `set_default_records_root()` — both in `flow_sdk/fs_store/record_paths.py`; always restore in teardown.
 

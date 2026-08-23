@@ -10,7 +10,7 @@ This document describes the `FSRecord` class and the surrounding infrastructure 
 
 ## Overview
 
-`FSRecord` is a single concrete class. Construct as `FSRecord(type, id, **fields)`. The on-disk shadow lives at `<records_root>/<type>/<type>-@<id>/metadata.json`. Meta fields are stored as **direct instance attributes** on the object's `__dict__` (not a `_data` dict). The record holds an `asset_ref` (`FSRef` to the user-facing source file) and a free-form bag of meta fields. Per-type typed metadata is opt-in via `TypeInfo.meta_model` (a Pydantic model).
+`FSRecord` is a single concrete class. Construct as `FSRecord(type, id, **fields)`. The on-disk shadow lives at `<records_root>/<type>/<id>/metadata.json`. Meta fields are stored as **direct instance attributes** on the object's `__dict__` (not a `_data` dict). The record holds an `asset_ref` (`FSRef` to the user-facing source file) and a free-form bag of meta fields. Per-type typed metadata is opt-in via `TypeInfo.meta_model` (a Pydantic model).
 
 The class deliberately omits, by design (see the module docstring at `flow_sdk/fs_store/fs_record.py:13`):
 
@@ -72,7 +72,7 @@ There is no `name`/`status`/`uid` property on the base class — `name`, `status
 
 ### Stem / folder naming
 
-The folder name is `<type>-@<uid>` (separator constant `_NAME_SEP = "-@"`). `record_stem(type, uid)` builds it; `parse_record_stem(stem)` splits it back (both in `fs_record.py`, also re-exported from `record_paths.py`).
+The shadow folder is named by the **bare id** under a `<type>/` parent — no stem, no separator. `record_stem(type, id)` / `parse_record_stem(stem)` (defined in `record_paths.py`, re-exported from `fs_record.py`) build the separate **portable** token `<type>-<id>` (`_NAME_SEP = "-"`) used in flat namespaces such as bundle arcs. The retired `<type>-@<uid>` spelling is still parsed for back-compat and never written.
 
 ---
 
@@ -81,7 +81,7 @@ The folder name is `<type>-@<uid>` (separator constant `_NAME_SEP = "-@"`). `rec
 An `FSRecord` is **always** a folder. There is no FILE or LIST_ITEM layout for `FSRecord` (the `StorageLayout` enum still exists in `storage_layout.py` but is legacy and unused by `FSRecord`).
 
 ```
-<records_root>/<type>/<type>-@<uid>/
+<records_root>/<type>/<id>/
   metadata.json                 # the only file FSRecord writes: identity + meta fields
   <int_epoch>_<hexdigest>.hash  # index freshness sentinel (asset-backed records only)
 ```
@@ -104,7 +104,7 @@ An `FSRecord` is **always** a folder. There is no FILE or LIST_ITEM layout for `
 | `save_metadata(patch)` | `(dict) -> Path` | The single DB→disk writer. Reads existing `metadata.json`, overlays `patch` (skipping `None` and system/`_` keys), re-anchors `type`/`id`, writes once. Updates in-memory attrs too. |
 | `save_metadata_field(key, val)` | `(str, Any) -> Path` | Convenience single-field partial merge. |
 | `current_meta_keys()` | `() -> set[str]` | Keys present in the on-disk `metadata.json` (empty set if none). |
-| `load(type, id)` | `classmethod -> FSRecord` | Reads `<root>/<type>/<type>-@<id>/metadata.json`. Raises `FileNotFoundError` if absent. |
+| `load(type, id)` | `classmethod -> FSRecord` | Reads `<root>/<type>/<id>/metadata.json`. Raises `FileNotFoundError` if absent. |
 | `load_or_none(type, id)` | `classmethod -> FSRecord \| None` | Like `load` but returns `None` on a missing shadow. |
 | `load_record(path)` | `classmethod -> FSRecord` | Loads from a shadow folder OR a direct `metadata.json` path. |
 | `discover(type)` | `classmethod -> list[FSRecord]` | Walks `<root>/<type>/`, loading each child shadow via `load_record`; skips malformed entries. |
@@ -124,7 +124,7 @@ There is **no** `discover_one`, `init_record`, `init`, `clone`, `move`, `read_re
 | `metadata_ref` | `FSRef` | `<shadow_dir>/metadata.json`. |
 | `asset_ref` | `FSRef \| None` | The primary user-facing content file/folder. Backed by `_asset_ref`; the setter coerces a `str` into an `FSRef`. Only the path string is persisted (in `metadata.json`). |
 | `main_ref` | `FSRef \| None` | Alias for `asset_ref`. |
-| `shadow_dir` | `Path` | `records_root/<type>/<type>-@<id>/`. Raises if `type`/`id` unset. |
+| `shadow_dir` | `Path` | `records_root/<type>/<id>/`. Raises if `type`/`id` unset. |
 
 `ensure_asset_ref()` binds `asset_ref` from a `fs_storage_mount_path` / `cwd` meta attr when it is not already set, so index-state properties resolve for records loaded from disk.
 
@@ -250,7 +250,7 @@ class RecordRef:
     key_value: str | None = None
 ```
 
-`RecordRef.content_hash` is a deterministic 12-char md5 of the addressing fields. `RecordRef.from_dict` returns a `RecordDataRef` subclass when a `format` key is present; `RecordDataRef` adds a `format` field plus `resolve_data_dir()` / `resolve_data_file()` helpers that target the records-data root (`~/.flow/records_data/<type>/<type>-@<id>/`).
+`RecordRef.content_hash` is a deterministic 12-char md5 of the addressing fields. `RecordRef.from_dict` returns a `RecordDataRef` subclass when a `format` key is present; `RecordDataRef` adds a `format` field plus `resolve_data_dir()` / `resolve_data_file()` helpers that target the records-data root (`~/.flow/records_data/<type>/<id>/`).
 
 ---
 

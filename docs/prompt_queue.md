@@ -25,7 +25,7 @@ Design principles:
 ## On-disk format
 
 Two files next to each other in the process record folder
-(`…/records/agentic_process/agentic_process-@<id>/`):
+(`…/records/agentic_process/<id>/`):
 
 `prompt_queue.json` — current state. Atomic writes (temp + `os.replace`);
 reads never raise (missing/corrupt → default `{"enabled": true, "entries": []}`).

@@ -27,7 +27,7 @@ Names should make that obvious.
 profile and session store, with channel bindings routing to it; many live in one Gateway
 process, and it has no subagent concept. Our `SubAgent` is only a provider-owned prompt
 asset. The closest Flowpad analogue is `Agent`: a native, launchable identity plus bundle
-stored at `agentic-assets/agent/<name>/agent.md`. It deploys through `AgentDeployment` and
+stored at `agentic-assets/agent/<name>/agent.md`. A `Deployment` (kind `runtime.agent`) places it, and
 each launch becomes an `AgenticProcess`. Unlike OpenClaw's tenant, Flowpad keeps deployment
 placement and each run as separate entities.
 
@@ -103,7 +103,7 @@ a `AssetClass.REPO` folder under `agentic-assets/<family>/`.
 ## Agent capability fields
 
 `Agent` is the persistent, named binding of identity, system prompt, worker/model choices,
-and launch configuration. `AgentDeployment` places it; `AgenticProcess` records one run.
+and launch configuration. A `Deployment` (kind `runtime.agent`) places it; `AgenticProcess` records one run.
 Some capability fields are currently declaration-only: `max_turns`, tool allow/deny lists,
 skills, MCP servers, and SubAgent references round-trip through `agent.md` but are not yet
 projected into the worker. They must not be presented as enforced controls until that

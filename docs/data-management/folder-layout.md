@@ -38,34 +38,34 @@ set_default_records_root(path)    # test-only override
 
 ### Folder Naming Convention
 
-Each record occupies its own subdirectory (the "shadow" folder). The directory name follows the pattern:
+Each record occupies its own subdirectory (the "shadow" folder), named by the **bare id** under a `<type>/` parent:
 
 ```
-<type>-@<uid>
+<id>
 ```
 
-Examples: `task-@f822d496-f6f0-40b7-b18f-64669be1b766`, `agentic_process-@7d1ae3db-...`, `claude_error-@a3b7f91c2e1d`.
+Examples: `f822d496-f6f0-40b7-b18f-64669be1b766`, `7d1ae3db-...`, `a3b7f91c2e1d`.
 
-The separator is `-@` (defined as `_NAME_SEP` in `record_paths.py`, also in `fs_record.py`). `record_stem()` builds this name and `parse_record_stem()` splits it back apart (both in `record_paths.py`).
+The type-scoped shadow store carries no separator at all. `record_stem()` / `parse_record_stem()` (defined in `record_paths.py`, re-exported from `fs_record.py`) build the distinct **portable** token `<type>-<id>` (`_NAME_SEP = "-"`), used only in flat namespaces such as bundle arcs — never as a shadow-folder name. The retired `<type>-@<uid>` shape is still *parsed* for back-compat and never written.
 
 Records are organized by type under the records root:
 
 ```
 ~/.flow/instances/<name>/records/
   <type>/
-    <type>-@<uid>/
+    <id>/
       metadata.json                    # ALL persisted fields (flat): type, id, name + domain fields
       <epoch>_<hexdigest>.hash         # index sentinel (zero-byte)
 ```
 
-The shadow folder of an `FSRecord` (`flow_sdk/fs_store/fs_record.py`) lives at `<records_root>/<type>/<type>-@<id>/metadata.json`. The class header is explicit that `Record` (the old split-format class) was removed; `FSRecord` is the lean replacement.
+The shadow folder of an `FSRecord` (`flow_sdk/fs_store/fs_record.py`) lives at `<records_root>/<type>/<id>/metadata.json`. The class header is explicit that `Record` (the old split-format class) was removed; `FSRecord` is the lean replacement.
 
 ### Record Metadata File (Single Flat File)
 
 There is no `_data.json` / `state.json` split anymore, and no `data/` subfolder. Everything persisted to disk lives in one file:
 
 ```
-<type>-@<uid>/metadata.json     # identity + domain fields, flat (NOT wrapped in {"data": ...})
+<id>/metadata.json              # identity + domain fields, flat (NOT wrapped in {"data": ...})
 ```
 
 `metadata.json` holds `type`, `id`, `name`, and every non-system meta field as top-level keys. A real example:
@@ -349,9 +349,9 @@ These are defined next to their type in `flow_sdk/fs_store/indexer/functions/<ty
 | `ACCOUNT` | `~/.claude.json` (deprecated) |
 | `CLAUDE_ERROR` | Synced from `~/.claude/debug/*.txt` into `<records_root>/claude_error/` |
 | `CODEX_SESSION` / `CODEX_PROJECT` | `~/.codex/sessions/` (see `codex_sessions.py` / `codex_projects.py`) |
-| `SESSION_ANALYSIS` / `SESSION_CLASSIFICATION` | `<records_root>/<type>/<type>-@<uid>/` |
+| `SESSION_ANALYSIS` / `SESSION_CLASSIFICATION` | `<records_root>/<type>/<id>/` |
 
-FlowPad-owned types (`SKILL`, `AGENT`, `AGENTIC_PROCESS`, `TASK`, `MARKDOWN`, …) follow the standard `<records_root>/<type>/<type>-@<uid>/` shadow-folder pattern, with their user-facing asset (if any) at the `main_subdir`-derived `asset_ref`.
+FlowPad-owned types (`SKILL`, `AGENT`, `AGENTIC_PROCESS`, `TASK`, `MARKDOWN`, …) follow the standard `<records_root>/<type>/<id>/` shadow-folder pattern, with their user-facing asset (if any) at the `main_subdir`-derived `asset_ref`.
 
 > **Claude hook source files**: hook discovery scans multiple settings files, not just `~/.claude/settings.json` — user `settings.json` / `settings.local.json`, project `.claude/settings.json` / `.claude/settings.local.json`, plugin `hooks/hooks.json`, and legacy `~/.claude.json`. See `flow_sdk/fs_store/indexer/functions/claude_hook.py` and `flow_sdk/fs_store/operations/claude_hook.py`.
 
@@ -470,21 +470,21 @@ $HOME/
                                         # (no type_info.json — TypeInfo is NOT persisted; see schema-registry.md)
         records/                         # owned record shadow folders
           task/
-            task-@<uid>/
+            <id>/
               metadata.json             # ALL persisted fields (flat)
               <epoch>_<hash>_<pathdigest>.hash  # index sentinel (zero-byte; legacy 2-part form still reconciles)
           skill/
-            skill-@<uid>/
+            <id>/
               metadata.json
               <epoch>_<hash>_<pathdigest>.hash
           claude_error/
-            claude_error-@<fingerprint>/
+            <fingerprint>/
               metadata.json
           claude_hook/
-            claude_hook-@<content-hash>/
+            <content-hash>/
               metadata.json             # writable hook overlay
           agentic_process/
-            agentic_process-@<uid>/
+            <id>/
               metadata.json
           # ... other types follow the same metadata.json + .hash pattern ...
         records_data/                    # user-facing asset content (asset_ref targets)
