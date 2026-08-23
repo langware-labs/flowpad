@@ -284,6 +284,12 @@ msgstr "{0} is deployed"
 msgid "{0} is indexed without a valid source path and cannot be opened."
 msgstr "{0} is indexed without a valid source path and cannot be opened."
 
+#. placeholder {0}: node.name || 'The sandbox'
+#. placeholder {1}: result.version
+#: src/hooks/use-sandboxes.ts
+msgid "{0} is now running FlowPad {1}."
+msgstr "{0} is now running FlowPad {1}."
+
 #. placeholder {0}: workerLabel(unavailableWorker)
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "{0} is unavailable"
@@ -392,6 +398,11 @@ msgstr "{0} types"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "types_time"
 msgstr "{0} types · {1}"
+
+#. placeholder {0}: node.name || 'The sandbox'
+#: src/hooks/use-sandboxes.ts
+msgid "{0} was upgraded and restarted."
+msgstr "{0} was upgraded and restarted."
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "{changedCount} changed"
@@ -4122,6 +4133,10 @@ msgstr "Could not update attached secrets"
 msgid "Could not update eval flag"
 msgstr "Could not update eval flag"
 
+#: src/hooks/use-sandboxes.ts
+msgid "Could not upgrade the sandbox"
+msgstr "Could not upgrade the sandbox"
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Could not upload avatar"
@@ -6927,6 +6942,10 @@ msgstr "Flowpad Hub"
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "Flowpad initializes the repository, then proposes the install on a separate review branch."
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
+msgstr "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -13868,6 +13887,10 @@ msgstr "Sandbox started without cloud sign-in"
 msgid "Sandbox unavailable"
 msgstr "Sandbox unavailable"
 
+#: src/hooks/use-sandboxes.ts
+msgid "Sandbox upgraded"
+msgstr "Sandbox upgraded"
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sandboxes"
 msgstr "Sandboxes"
@@ -16628,6 +16651,10 @@ msgstr "This removes the downloaded help desk folder and its indexed entries fro
 msgid "This runs in the background — feel free to keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
 msgstr "This runs in the background — feel free to keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "this sandbox"
+msgstr "this sandbox"
+
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This sandbox could not be set up."
 msgstr "This sandbox could not be set up."
@@ -17332,10 +17359,27 @@ msgstr "Updating plan"
 msgid "Updating…"
 msgstr "Updating…"
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Upgrade"
+msgstr "Upgrade"
+
+#: src/pages/hub-home/HubHome.tsx
+#: src/pages/hub-home/HubHome.tsx
+msgid "Upgrade FlowPad on this sandbox"
+msgstr "Upgrade FlowPad on this sandbox"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Upgrade FlowPad on this sandbox?"
+msgstr "Upgrade FlowPad on this sandbox?"
+
 #. placeholder {0}: pypi.latest
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrade to v{0}"
 msgstr "Upgrade to v{0}"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Upgrading — this takes a minute or two"
+msgstr "Upgrading — this takes a minute or two"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrading…"

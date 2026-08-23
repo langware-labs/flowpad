@@ -21,8 +21,20 @@ import { NewSandboxDialog } from './NewSandboxDialog';
 import { LaunchSandboxDialog } from './LaunchSandboxDialog';
 import { ShareSandboxDialog } from './ShareSandboxDialog';
 import { AddMachineDialog } from '@src/components/hub/AddMachineDialog';
+import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { MembershipInvitations } from '@src/components/inbox-view/MembershipInvitations';
-import { Building2, Globe, KeyRound, Laptop, Loader2, LogOut, Monitor, Trash2, UserPlus } from 'lucide-react';
+import {
+  ArrowUpCircle,
+  Building2,
+  Globe,
+  KeyRound,
+  Laptop,
+  Loader2,
+  LogOut,
+  Monitor,
+  Trash2,
+  UserPlus,
+} from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { consumeInboundParams } from '@src/navigation/inbound-link';
@@ -251,6 +263,8 @@ export function HubHome() {
     deletingId,
     logoutSandbox,
     loggingOutId,
+    upgradeSandbox,
+    upgradingId,
     details,
     refetch,
   } = useSandboxes();
@@ -286,6 +300,11 @@ export function HubHome() {
   // auto-login can only be chosen before the box signs anyone in. Opening an
   // already-launched box stays one click — it asks nothing and starts nothing.
   const [launching, setLaunching] = useState<ComputeNode | null>(null);
+  // The sandbox whose upgrade confirm is open, or null. Asks first because the
+  // upgrade STOPS the app inside the box: anyone working in it — the owner in
+  // another tab, or someone they shared it with — is interrupted for as long as
+  // the install and the boot take.
+  const [upgrading, setUpgrading] = useState<ComputeNode | null>(null);
   // Drives the "accepting adds it below" hint, and lets the sandbox list
   // refresh once an invitation is accepted (the granted node appears in it).
   const [pendingInviteCount, setPendingInviteCount] = useState(0);
@@ -307,6 +326,9 @@ export function HubHome() {
   }, []);
 
   const firstName = currentUser?.name?.split(' ')[0] || 'there';
+  // Named outside the confirm's own message: a `t` macro cannot be nested inside
+  // another one's interpolation, and the fallback needs translating too.
+  const upgradeTargetName = upgrading?.name || t`this sandbox`;
 
   const openWorldView = (projection: WorldViewProjection) =>
     navigation.openPage(PageId.HUB, ViewType.WORLDVIEW, projection);
@@ -526,6 +548,43 @@ export function HubHome() {
                       <Trans>Launch</Trans>
                     </Button>
                   )}
+                  {/* Upgrade the FlowPad app INSIDE the box — `flow stop`,
+                      `flow upgrade`, start — so a fleet is kept current without
+                      anyone opening a terminal on the machines.
+
+                      Same visibility rule as Open, and for the same reasons: a
+                      box that was never launched has no VM to upgrade, and one
+                      the probe cannot reach can only fail. Visible rather than
+                      hover-only, unlike the icons after it: this is how a box
+                      gets a fix, and an upgrade nobody can find is an upgrade
+                      nobody runs. */}
+                  {isLaunched(d) && !isUnreachable(details[d.id]) && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={() => setUpgrading(d)}
+                          disabled={!sandboxesEnabled || upgradingId === d.id}
+                          aria-label={t`Upgrade FlowPad on this sandbox`}
+                          data-testid="sandbox-upgrade"
+                          className="shrink-0 text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                        >
+                          {upgradingId === d.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <ArrowUpCircle className="h-4 w-4" />
+                          )}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {upgradingId === d.id ? (
+                          <Trans>Upgrading — this takes a minute or two</Trans>
+                        ) : (
+                          <Trans>Upgrade FlowPad on this sandbox</Trans>
+                        )}
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
                   <button
                     type="button"
                     onClick={() => setSharing(d)}
@@ -666,6 +725,25 @@ export function HubHome() {
         // Only opens the launcher — the share dialog closes itself, as it does on
         // every other exit.
         onLaunchInstead={() => setLaunching(sharing)}
+      />
+
+      {/* Upgrading stops the app inside the box, reinstalls it from PyPI and
+          starts it again. Not destructive — nothing on the machine is lost — but
+          it interrupts whoever is using it, and it wakes a paused box, so it
+          asks first and says both. */}
+      <ConfirmDialog
+        open={!!upgrading}
+        onOpenChange={(o) => {
+          if (!o) setUpgrading(null);
+        }}
+        title={t`Upgrade FlowPad on this sandbox?`}
+        description={t`FlowPad stops, upgrades to the latest release and starts again on ${upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it.`}
+        confirmLabel={t`Upgrade`}
+        onConfirm={() => {
+          const node = upgrading;
+          setUpgrading(null);
+          if (node) void upgradeSandbox(node);
+        }}
       />
 
       {/* Deleting a project is not undoable and it is shared — the people it was

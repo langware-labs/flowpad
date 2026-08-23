@@ -26,6 +26,7 @@ import {
 import { IEntity } from '../../IEntity';
 import { ActionInfo } from '../../models';
 import {
+  type AppUpgrade,
   ComputeProviderType,
   type NodeStatus,
   RuntimeEnvironment,
@@ -596,6 +597,22 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    */
   async workspaceReady(): Promise<WorkspaceReady> {
     return this.ops<WorkspaceReady>('workspace-ready');
+  }
+
+  /**
+   * Upgrade the FlowPad app INSIDE the box to the latest published release, and
+   * bring it back up: `flow stop`, `flow upgrade`, and the hub's own start.
+   *
+   * The equivalent of typing those commands into a terminal on the machine,
+   * except that the start is the hub's workspace-ready path — the only one that
+   * carries the hub url into the process — so a box does not come back pointed
+   * at the image's default hub.
+   *
+   * One call per box, and it is slow by nature: it is a PyPI install followed by
+   * an app boot, not a request. Owner-only, like every other `ops` command.
+   */
+  async upgradeApp(): Promise<AppUpgrade> {
+    return this.ops<AppUpgrade>('upgrade-app');
   }
 
   // ── computeNodeTools: setting a box's projects up ────────────────────
