@@ -1960,6 +1960,10 @@ msgstr "السماح التلقائي بـ Bash عند تفعيل العزل"
 msgid "Auto-approve bash when sandbox is active"
 msgstr "الموافقة التلقائية على أوامر Bash عند تفعيل وضع العزل"
 
+#: src/components/terminal/interactive-terminal/process-cli-presentation.ts
+msgid "Auto-approve permissions that are not explicitly denied (--auto)"
+msgstr ""
+
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Auto-detect direction from first strong character"
 msgstr "الكشف التلقائي عن الاتجاه من أول حرف قوي"
@@ -9487,6 +9491,7 @@ msgid "Message Attachment"
 msgstr "مرفق الرسالة"
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
+#: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 msgid "Message not queued"
 msgstr "تعذر إدراج الرسالة في الطابور"
 
@@ -11568,6 +11573,22 @@ msgstr "فتح جلسة العامل"
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
 msgid "OPENAI_API_KEY"
 msgstr "OPENAI_API_KEY"
+
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "OpenCode"
+msgstr ""
+
+#: src/components/icons/OpenCodeRestoreIcon.tsx
+msgid "OpenCode (restored session)"
+msgstr ""
+
+#: src/components/quick-create/QuickCreateMenu.tsx
+msgid "OpenCode session"
+msgstr ""
+
+#: src/tabs/provider-meta.tsx
+msgid "OpenCode tab"
+msgstr ""
 
 #: src/routes/loaders/load-shell.ts
 msgid "Opened a different terminal"
@@ -14552,8 +14573,11 @@ msgstr "الجلسة {sessionId} غير موجودة في سجل Claude أو Cod
 msgid "Session {threadId} is not in Claude, Codex, or Copilot history."
 msgstr "الجلسة {threadId} غير موجودة في سجل Claude أو Codex أو Copilot."
 
-#: src/components/spotlight/adapters.ts
 #: src/hooks/use-resume-in-terminal.ts
+msgid "Session {workerId} is not in Claude, Codex, Copilot or OpenCode history."
+msgstr ""
+
+#: src/components/spotlight/adapters.ts
 msgid "Session {workerId} is not in Claude, Codex, or Copilot history."
 msgstr "الجلسة {workerId} غير موجودة في سجل Claude أو Codex أو Copilot."
 
@@ -15558,6 +15582,10 @@ msgstr "بدء محادثة جديدة · {effectiveTitle}"
 msgid "Start new conversation · {title}"
 msgstr "بدء محادثة جديدة · {title}"
 
+#: src/tabs/useTerminalStripController.tsx
+msgid "Start OpenCode"
+msgstr ""
+
 #: src/components/helpdesk/HelpdeskAsk.tsx
 msgid "Start over"
 msgstr "البدء من جديد"
@@ -16409,6 +16437,10 @@ msgstr "سيصلهم بريد إلكتروني، والصندوق الرملي �
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "thinking"
+msgstr "التفكير"
+
+#: src/components/entity-execution-panel/current-activity.ts
+msgid "Thinking"
 msgstr "التفكير"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx

@@ -5,6 +5,7 @@ import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import { Check, X } from 'lucide-react';
 import { markdownComponents } from '@src/components/markdown-view';
+import { useLocaleInfo } from '@src/contexts/locale-context';
 import { annotate, buildReviewParts, countChanges, countPending, type Decision } from '@src/lib/markdown-review-diff';
 
 interface MarkdownReviewDiffProps {
@@ -99,9 +100,11 @@ export function MarkdownReviewDiff({ oldContent, newContent }: MarkdownReviewDif
     setDecisions((prev) => ({ ...prev, [id]: d }));
   }, []);
 
+  const localeDir = useLocaleInfo().dir;
+
   const components = useMemo<Components>(
     () => ({
-      ...markdownComponents({ codeChrome: false }),
+      ...markdownComponents({ codeChrome: false, localeDir }),
       ins: ({ className, children }) => (
         <ReviewMark kind="ins" className={className} onDecide={decide}>
           {children}
@@ -113,7 +116,7 @@ export function MarkdownReviewDiff({ oldContent, newContent }: MarkdownReviewDif
         </ReviewMark>
       ),
     }),
-    [decide],
+    [decide, localeDir],
   );
 
   return (

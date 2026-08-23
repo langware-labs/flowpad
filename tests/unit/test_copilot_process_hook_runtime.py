@@ -48,9 +48,10 @@ def test_process_hook_plugin_projection_is_deterministic_and_reconciles_stale_fi
         "name": "flowpad-process-hooks",
         "version": "1.0.0",
     }
+    # See CopilotDriver.prepare_process_hooks for why the aliases are projected.
     assert json.loads((plugin / "hooks.json").read_text(encoding="utf-8")) == {
         "hooks": {
-            "userPromptSubmitted": [
+            "UserPromptSubmit": [
                 {
                     "type": "command",
                     "bash": (
@@ -129,7 +130,7 @@ def test_process_hook_snapshot_is_semantic_and_does_not_materialize_assets(tmp_p
     assert driver.process_hook_snapshot([HookEventType.USER_PROMPT_SUBMIT]) == {
         "events": ["UserPromptSubmit"],
         "provider": "copilot",
-        "schema": 1,
+        "schema": 2,
     }
     assert not assets_path.exists()
 
@@ -192,3 +193,101 @@ def test_normalization_rejects_invalid_target_and_wrong_supplied_event() -> None
             str(mint_uuid()),
             {"hook_event_name": "PreToolUse", "prompt": "hello"},
         )
+
+
+def test_every_configured_event_projects_one_handler_under_its_alias(tmp_path: Path) -> None:
+    """SessionStart/SessionEnd ride the same plugin file as the prompt hook."""
+    process_id = str(mint_uuid())
+    assets = AssetDir(tmp_path / "assets")
+    plugin = assets.os_path / ".flowpad/plugins/copilot/flowpad-process-hooks"
+
+    CopilotDriver().prepare_process_hooks(
+        assets,
+        process_id,
+        [HookEventType.SESSION_END, HookEventType.SESSION_START, HookEventType.USER_PROMPT_SUBMIT],
+    )
+
+    hooks = json.loads((plugin / "hooks.json").read_text(encoding="utf-8"))["hooks"]
+    assert sorted(hooks) == ["SessionEnd", "SessionStart", "UserPromptSubmit"]
+    handlers = {json.dumps(entry, sort_keys=True) for entries in hooks.values() for entry in entries}
+    assert len(handlers) == 1  # one shared process-pinned handler, three aliases
+    for entries in hooks.values():
+        assert entries[0]["type"] == "command"
+        assert f"--process-id {process_id}" in entries[0]["bash"]
+
+    # Dropping one event rewrites the projection without disturbing the others.
+    CopilotDriver().prepare_process_hooks(assets, process_id, [HookEventType.SESSION_END])
+    assert sorted(json.loads((plugin / "hooks.json").read_text(encoding="utf-8"))["hooks"]) == ["SessionEnd"]
+
+
+def test_vs_code_compat_session_payloads_normalize_to_canonical_agent_hook_data() -> None:
+    """The compat payload is the Claude shape: snake_case + hook_event_name."""
+    driver = CopilotDriver()
+    process_id = str(mint_uuid())
+    start = {
+        "hook_event_name": "SessionStart",
+        "session_id": "compat-session",
+        "timestamp": "2026-08-21T12:00:00.000Z",
+        "cwd": "/repo",
+        "source": "new",
+        "initial_prompt": "boot prompt",
+    }
+    end = {
+        "hook_event_name": "SessionEnd",
+        "session_id": "compat-session",
+        "timestamp": "2026-08-21T12:05:00.000Z",
+        "cwd": "/repo",
+        "reason": "complete",
+    }
+
+    start_data = driver.normalize_process_hook_data(process_id, start)
+    end_data = driver.normalize_process_hook_data(process_id, end)
+
+    assert start_data.hook_data == {
+        "hook_event_name": "SessionStart",
+        "session_id": "compat-session",
+        "timestamp": "2026-08-21T12:00:00.000Z",
+        "cwd": "/repo",
+        "source": "new",
+        "initial_prompt": "boot prompt",
+        "raw_hook_data": start,
+    }
+    assert end_data.hook_data == {
+        "hook_event_name": "SessionEnd",
+        "session_id": "compat-session",
+        "timestamp": "2026-08-21T12:05:00.000Z",
+        "cwd": "/repo",
+        "reason": "complete",
+        "raw_hook_data": end,
+    }
+
+
+def test_transport_terminator_is_stripped_only_for_the_prompt_event() -> None:
+    driver = CopilotDriver()
+    process_id = str(mint_uuid())
+
+    prompt = driver.normalize_process_hook_data(
+        process_id,
+        {"hook_event_name": "UserPromptSubmit", "session_id": "s", "prompt": "hello\n"},
+    )
+    start = driver.normalize_process_hook_data(
+        process_id,
+        {"hook_event_name": "SessionStart", "session_id": "s", "source": "startup", "initialPrompt": "hello\n"},
+    )
+
+    assert prompt.hook_data["prompt"] == "hello"
+    assert prompt.hook_data["raw_hook_data"]["prompt"] == "hello\n"
+    assert start.hook_data["initial_prompt"] == "hello\n"
+
+
+def test_event_less_payload_is_rejected_unless_it_is_the_legacy_prompt_shape() -> None:
+    """A native session payload cannot be attributed to an event — fail loudly."""
+    driver = CopilotDriver()
+    process_id = str(mint_uuid())
+
+    legacy = driver.normalize_process_hook_data(process_id, {"sessionId": "s", "prompt": "hi\n"})
+    assert legacy.hook_data["hook_event_name"] == "UserPromptSubmit"
+
+    for unattributable in ({"sessionId": "s", "source": "startup"}, {"sessionId": "s", "reason": "complete"}):
+        with pytest.raises(ValueError, match="Unsupported Copilot process hook event: None"):
+            driver.normalize_process_hook_data(process_id, unattributable)

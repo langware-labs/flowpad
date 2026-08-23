@@ -16,6 +16,15 @@ export const COPILOT_MODEL_TIERS: Record<string, string | null> = {
   lg: null,
 }
 
+// OpenCode is provider-agnostic: every id carries its provider prefix, and
+// these tiers pick open-weight models through OpenRouter (which opencode
+// resolves from a bare OPENROUTER_API_KEY, with no config file at all).
+export const OPENCODE_MODEL_TIERS: Record<string, string> = {
+  sm: 'openrouter/z-ai/glm-4.7-flash',
+  md: 'openrouter/z-ai/glm-5.2',
+  lg: 'openrouter/z-ai/glm-5.2',
+}
+
 export function resolveModelTier(
   tierMap: Record<string, string | null>,
   model?: string | null,

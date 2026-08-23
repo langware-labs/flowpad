@@ -80,6 +80,26 @@ test.afterAll(async () => {
   if (tmpRoot) await fs.rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
 });
 
+/**
+ * Suppress the harness-login gate BEFORE any page script runs.
+ *
+ * `useHarnessLoginGate` probes every assistant's sign-in state on mount and,
+ * on a fresh instance where none is signed in, auto-opens the "Assistants &
+ * keys" modal, whose Radix overlay covers the viewport with `pointer-events:
+ * auto`. Those probes are async, so the modal lands an unpredictable moment
+ * AFTER first paint and swallows whatever click is racing it.
+ *
+ * Seeding the same localStorage key the modal's own dismissal writes means the
+ * gate never opens at all. That is the pattern the index-search scenarios
+ * already use, and it removes the race rather than waiting the modal out:
+ * a post-hoc poll can only sample a state that has not happened yet.
+ */
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('llm-setup-modal-seen', 'true');
+  });
+});
+
 test('Assets navigator lists the added context folder', async ({ page }) => {
   await page.goto(`/dock/project/${projectId}`);
 
@@ -88,16 +108,9 @@ test('Assets navigator lists the added context folder', async ({ page }) => {
   const root = page.getByText('Context folders', { exact: true });
   await expect(root).toBeVisible();
 
-  // A fresh instance auto-opens the Chat Settings dialog over the project
-  // view — asynchronously, AFTER first paint — and its Radix overlay swallows
-  // pointer events. Poll-dismiss with Escape until the overlay is gone.
-  const overlay = page.locator('div[data-state="open"].fixed.inset-0');
-  await expect(async () => {
-    if ((await overlay.count()) > 0) {
-      await page.keyboard.press('Escape');
-      throw new Error('overlay still open');
-    }
-  }).toPass({ timeout: 15_000 });
+  // Nothing can be over the viewport: the harness-login gate is suppressed in
+  // `beforeEach`, so this asserts a clear one instead of racing it.
+  await expect(page.locator('div[data-state="open"].fixed.inset-0')).toHaveCount(0);
 
   // Expand the root (chevron id = the stable ASSET_CONTEXT_FOLDERS_ROOT_ID)
   // and assert the added folder appears as a child row, labeled by basename.

@@ -2,10 +2,10 @@
  * ChatComposerBar — the interactive-agent prompt composer.
  *
  * Two contracts, boundary-mock flavor (mirrors WorkerStatusChip.test.tsx):
- *   1. Composer disabled-state tracks the single `busy` boolean: a busy process
- *      (a turn in flight — RUNNING + busy) disables send; a ready process
- *      (RUNNING, not busy) enables it. The composer reads `isBusy(process)` — no
- *      worker-status derivation.
+ *   1. A ready process (RUNNING, not busy) leaves send enabled. There is
+ *      deliberately no busy-disables-the-composer case: since FLOWPAD-2006 a
+ *      turn in flight routes the send to the backend prompt queue rather than
+ *      locking the input, so `busy` gates the ROUTE, never the `disabled` prop.
  *   2. Plan-mode gating. The Plan pill + Shift+Tab toggle render ONLY when the
  *      chat-plan-mode context reports `planToggleEnabled`, and `planPending` drives the
  *      pill's pressed state + the composer placeholder.
@@ -65,7 +65,7 @@ import { ProcessStatus } from '@sdk';
 import { ChatComposerBar } from '@src/components/terminal/interactive-terminal/ChatComposerBar';
 
 // A live process is always RUNNING now; readiness vs busy is the separate
-// ``busy`` boolean the composer gates on via ``isBusy``.
+// ``busy`` boolean the composer reads via ``isBusy`` to pick prompt-vs-enqueue.
 function makeProcess(busy: boolean): any {
   return {
     id: 'proc-1',
@@ -77,7 +77,6 @@ function makeProcess(busy: boolean): any {
   };
 }
 const readyProcess = () => makeProcess(false);
-const busyProcess = () => makeProcess(true);
 
 afterEach(() => {
   cleanup();
@@ -86,15 +85,10 @@ afterEach(() => {
   planState.togglePlan.mockClear();
 });
 
-describe('ChatComposerBar — composer disabled-state tracks worker readiness', () => {
+describe('ChatComposerBar — composer readiness', () => {
   it('ready process → composer enabled', () => {
     render(createElement(ChatComposerBar, { process: readyProcess() }));
     expect(screen.getByTestId('send-btn')).not.toBeDisabled();
-  });
-
-  it('busy process (turn in flight) → composer disabled', () => {
-    render(createElement(ChatComposerBar, { process: busyProcess() }));
-    expect(screen.getByTestId('send-btn')).toBeDisabled();
   });
 });
 

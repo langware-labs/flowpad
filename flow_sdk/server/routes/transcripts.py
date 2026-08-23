@@ -56,7 +56,7 @@ async def _is_received(worker_type: str, session_id: str) -> bool:
 router = APIRouter()
 
 
-_SUPPORTED_WORKERS: frozenset[str] = frozenset({"claude", "codex", "copilot", "workflow"})
+_SUPPORTED_WORKERS: frozenset[str] = frozenset({"claude", "codex", "copilot", "opencode", "workflow"})
 
 
 def _error(status_code: int, code: str, message: str) -> JSONResponse:

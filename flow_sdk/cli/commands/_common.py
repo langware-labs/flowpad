@@ -22,6 +22,7 @@ presents the secret.
 from __future__ import annotations
 
 import json
+import os
 from typing import TYPE_CHECKING, Any, Callable, NoReturn, Optional
 
 import typer
@@ -49,6 +50,21 @@ def fail(exit_code: int, error_code: str, message: str, extra: "dict[str, Any] |
 
 def ok(payload: dict[str, Any]) -> None:
     typer.echo(json.dumps({"ok": True, **payload}))
+
+
+def caller_abs_path(path: str) -> str:
+    """Absolutize a caller-supplied path before it crosses the wire.
+
+    The CLI runs in the agent's working directory; the server does not, and that
+    cwd never crosses the wire. A relative path sent as typed therefore gets
+    resolved against the SERVER's launch directory instead — for a packaged
+    install, ``~/.local/bin`` — addressing a different, usually nonexistent
+    file while the route still answers success.
+
+    Every command that puts a ``path`` on the wire routes through here, so the
+    fix cannot be applied to one command and missed by the next.
+    """
+    return os.path.abspath(os.path.expanduser(path.strip()))
 
 
 def discover_port() -> int:

@@ -49,6 +49,21 @@ describe('AgenticProcess process hooks', () => {
     expect(action.bodyParameters).toEqual({ event: HookEventType.USER_PROMPT_SUBMIT });
   });
 
+  it('propagates the backend refusal when a harness cannot serve the cell', async () => {
+    // Unsupported (harness, scope, event) cells are refused by the manager and
+    // reported as a 501 by the set-hook action. The thin client must surface
+    // that rejection rather than swallowing it into a falsy "changed" — the
+    // caller has to be able to tell "already configured" from "impossible here".
+    const refusal = new Error(
+      'codex does not support user-scope hooks (supported: none) — codex silently skips a ' +
+        'config.toml hook whose trust is not persisted',
+    );
+    vi.spyOn(dataManager, 'callAction').mockRejectedValue(refusal);
+    const process = new AgenticProcess({ id: PROCESS_ID });
+
+    await expect(process.setHook(HookEventType.PRE_TOOL_USE)).rejects.toThrow('does not support');
+  });
+
   it('dispatches a stable callback snapshot in registration order and isolates failures', async () => {
     const process = new AgenticProcess({ id: PROCESS_ID });
     const seen: string[] = [];
@@ -130,6 +145,43 @@ describe('AgenticProcess process hooks', () => {
     expect(process.process_hook_events).toEqual([]);
     expect(update).toEqual({});
   });
+
+  it.each([
+    [HookEventType.SESSION_START, { source: 'startup' }],
+    [HookEventType.SESSION_END, { reason: 'other' }],
+  ] as const)('delivers %s to registered callbacks', async (event, extra) => {
+    const process = new AgenticProcess({ id: PROCESS_ID, process_hook_events: [event] });
+    const received: AgentHookData[] = [];
+    const unsubscribe = process.registerCallback((data) => {
+      received.push(data);
+    });
+    const data: AgentHookData = {
+      webhook_type: 'agent_hook',
+      agentic_process_id: PROCESS_ID,
+      hook_data: { hook_event_name: event, session_id: 's1', ...extra },
+    };
+
+    await process.onHook(data);
+    unsubscribe();
+
+    expect(received).toEqual([data]);
+  });
+
+  it.each([HookEventType.SESSION_START, HookEventType.SESSION_END] as const)(
+    'setHook/removeHook pass %s through to the process action',
+    async (event) => {
+      const callAction = vi.spyOn(dataManager, 'callAction').mockResolvedValue({ changed: true });
+      const process = new AgenticProcess({ id: PROCESS_ID });
+
+      expect(await process.setHook(event)).toBe(true);
+      expect(await process.removeHook(event)).toBe(true);
+
+      expect(callAction.mock.calls.map((call) => [call[0].name, call[0].bodyParameters])).toEqual([
+        ['set-hook', { event }],
+        ['remove-hook', { event }],
+      ]);
+    },
+  );
 
   it('clears callbacks only after a successful delete', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);

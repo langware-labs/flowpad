@@ -29,7 +29,7 @@ export {
   classifyExecutionMode,
   supportedExecutionModes,
 } from './agentic-types';
-export type { ParsedUIUri, ProcessIconKey, UIComponentPayload, StatusBearingProcess } from './agentic-types';
+export type { ParsedUIUri, ProcessIconKey, UIComponentPayload, StatusBearingProcess, WorkerType } from './agentic-types';
 export { WORKER_STATUS_LABEL, PROCESS_STATUS_LABEL, workerStatusText } from './status-labels';
 
 export { AgenticProcess, AgenticProcessEventName } from './agentic-process';
