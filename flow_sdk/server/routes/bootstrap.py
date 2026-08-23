@@ -52,6 +52,7 @@ from flow_sdk.config import (
     StorageProvider,
     flowpad_assistant_project_root,
     get_os_root_path,
+    is_hidden_project,
     system_projects_root,
 )
 from flow_sdk.core.entity.entity_model import Entity
@@ -1946,12 +1947,25 @@ async def _last_active_project() -> Optional[dict]:
     except Exception as e:  # noqa: BLE001
         logging.warning(f"[bootstrap] could not resolve the last active project: {e}")
         return None
-    # ``system`` projects are excluded — the shipped Flowpad Assistant is one, and
-    # it is a browsable project like any other, so glancing at its docs stamps
-    # ``last_active_at`` on it. Without this filter that one visit would make it
-    # the project every fresh browser opens into, forever. `_ensure_system_projects`
-    # is what stamps the flag; the entity carries the answer.
-    active = [p for p in projects if p.last_active_at and not p.system]
+    # Anything HIDDEN is excluded, via the repo's own predicate rather than a
+    # local rule: `is_hidden_project` is already the answer to "should this
+    # project be offered", and it ORs four cases — the ``system`` flag, an
+    # SDK-shipped system project path, the agent mount ROOT, and a helpdesk
+    # portal checkout.
+    #
+    # Reading ``p.system`` alone was not enough, and a live box proved it: the
+    # shipped Flowpad Assistant carries the flag, but a HELPDESK project does
+    # not. A user who asked the help desk a question was left with it as her
+    # most recently active project, so this would have opened her into a support
+    # scratch checkout instead of her own work. These projects are all browsable,
+    # so merely visiting one stamps ``last_active_at`` on it — which is exactly
+    # how a single support question becomes a permanent landing place.
+    #
+    # Deliberately the shared predicate and not a second spelling of it: a local
+    # copy would drift from whatever the next hidden kind turns out to be.
+    active = [
+        p for p in projects if p.last_active_at and not is_hidden_project(p.fs_storage_mount_path or "", bool(p.system))
+    ]
     if not active:
         return None
     return project_to_dict(max(active, key=lambda p: p.last_active_at))

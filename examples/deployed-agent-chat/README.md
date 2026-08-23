@@ -31,3 +31,9 @@ Use `localhost` as shown (rather than the numeric loopback address), because it
 is part of the Hub's existing development-origin allowlist.
 
 The page stores nothing in local or session storage. The password and bearer token remain in memory only. The Hub and Agent are URL parameters because the SDK must know its API origin before it loads.
+
+<!-- flowpad:capsule identity
+version: 1
+data:
+  id: 3c8b15b1-1b53-4007-8926-f3a7a3171ec5
+flowpad:endcapsule identity -->
