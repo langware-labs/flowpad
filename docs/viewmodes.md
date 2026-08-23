@@ -55,27 +55,39 @@ instant, and impossible to break the data layer with.
 
 ### The ONE sanctioned exception — session surface
 
-An agent session's **transport** follows the mode, and this is deliberate: only
-the terminal surface runs an interactive PTY (`viewModePtyMode`), so selecting
-Terminal switches the live worker to `WorkerMode.Interactive` and selecting
-Vibe/Chat switches it to `WorkerMode.CLI`
-(`ui/src/components/terminal/interactive-terminal/use-process-surface.ts`). That
-is a real backend mutation driven by view mode — the mapping is
-`surfaceForViewMode(mode) → 'vibe' | 'chat' | 'terminal'`
+An agent session's **transport** follows the mode, and this is deliberate — but
+it is ONE-DIRECTIONAL: a **terminal** surface *requires* an interactive PTY
+(`viewModePtyMode`), so selecting Terminal switches the live worker to
+`WorkerMode.Interactive`
+(`ui/src/components/terminal/interactive-terminal/use-process-surface.ts`).
+**Chat and vibe require nothing** — they render the session's
+transport-independent stream — so they never switch it back to `WorkerMode.CLI`.
+Killing a healthy worker to enter chat bought nothing, and when the backend
+refused it mid-turn (409) the kill was silently queued to fire minutes later.
+The one switch that remains is a real backend mutation driven by view mode — the
+mapping is `surfaceForViewMode(mode) → 'vibe' | 'chat' | 'terminal'`
 (`ui/src/contexts/view-mode-context.tsx`), the single reason View mode is *the*
 mode selector rather than a skin. It replaced a second `chat mode` preference
 that drifted out of sync with this one; one enum, one preference, one control.
 
+The consequence: **a chat or vibe surface can legitimately be
+sitting on a PTY worker.** `pty_mode` / `AgenticProcess.isHeadless` therefore
+does NOT correlate 1:1 with the view mode — once a session has visited the
+terminal it stays `pty_mode=true` until something else changes it, including
+after a reload (the intent is durable). Code must not infer "this is the chat
+surface, therefore the worker is headless". That inference led to hidden components
+and broken view for the chat/vibe mode (e.g. AskUserQustion card not showing for sessions
+after visiting the terminal once).
+
+What chat and vibe DO reconcile on the way in is the **transcript**, not the
+transport: the non-PTY branch forces `loadHistory({ force: true })` when the
+worker is idle, so a turn produced on the surface being left is not missing from
+the incoming pane.
+
 The exception is scoped to that switch and carries its own rules: the backend
 409s a mid-turn switch, so the reconcile waits for `awaitingUserInput` and
 deliberately leaves the mode unrecorded on refusal, retrying when the worker goes
-idle rather than stranding the session on the wrong transport. Do not read this
-carve-out as a licence to gate anything else on mode — everything above still
-holds for chrome, layout, and data.
-
-Because getting the surface wrong mounts a whole pane, read it with
-`useSessionSurface()`, which returns `null` for NOT-KNOWN-YET and lets callers
-hold the arrangement instead of painting a guess (see the boot-seed note below).
+idle rather than stranding the session on the wrong transport.
 
 ## The toolkit — `@src/components/view-mode`
 
