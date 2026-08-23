@@ -173,7 +173,13 @@ def is_protected_path(path: Path | str | None) -> bool:
 
     internal_roots: list[Path | str] = []
     if settings is not None:
-        for attr in ("records_root", "records_data_dir"):
+        # ``flow_home`` first: it CONTAINS records_root/records_data_dir, and the
+        # two of them alone covered only the CURRENT instance's records — not the
+        # instance dir around them (the DBs), and not other instances' dirs. That
+        # gap let `<flow_home>/instances/<name>` be minted as a project cwd and
+        # then walked: 21 such rows contributed 155,914 of 166,310 walked folders
+        # on one machine. Nothing under flow_home is user content.
+        for attr in ("flow_home", "records_root", "records_data_dir"):
             value = getattr(settings, attr, None)
             if value:
                 internal_roots.append(value)
