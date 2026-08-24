@@ -81,10 +81,17 @@ describe('process hook shared real-worker acceptance', () => {
           const hooks = JSON.parse(await plugin.child('hooks/hooks.json').read()) as {
             hooks: Record<string, Array<{ hooks: Array<{ args: string[] }> }>>;
           };
-          expect(hooks.hooks[contract.event][0].hooks[0].args.slice(-3)).toEqual([
+          // The contract event (UserPromptSubmit) is response-capable, so the
+          // projected handler blocks on the backend round trip — see
+          // `_RESPONSE_EVENTS` in flow_sdk/.../cli_drivers/claude/driver.py.
+          // This tail assertion predates that projection (commit 4e1482ede)
+          // and is checked here at full width rather than weakened.
+          expect(hooks.hooks[contract.event][0].hooks[0].args.slice(-5)).toEqual([
+            'hooks',
             'report',
             '--process-id',
             process.id,
+            '--wait-for-response',
           ]);
         } else {
           const hooks = JSON.parse(await plugin.child('hooks.json').read()) as {

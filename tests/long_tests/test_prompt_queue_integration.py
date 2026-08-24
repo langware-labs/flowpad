@@ -59,6 +59,7 @@ async def test_prompt_queue_drains_into_worker(bootstrapped_client, tmp_path, vi
             # PTY: loader path. start_pty() with no instruction → _perform_open
             # pops the head as the launch arg.
             await process.start_pty()
+            process = await AgenticProcess.get_by_id(process.id)
             inject_source = "launch"
         else:
             # Headless: enqueue would schedule this; await it deterministically.

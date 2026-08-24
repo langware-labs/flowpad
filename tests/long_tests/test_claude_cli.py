@@ -186,7 +186,15 @@ async def test_process_hook_acceptance_uses_real_claude_plugin(
             hooks = json.loads((plugin / "hooks" / "hooks.json").read_text(encoding="utf-8"))
             assert sorted(hooks["hooks"]) == _HOOK_CONTRACT["expected_persisted_session_events"]
             handler = hooks["hooks"][_HOOK_CONTRACT["event"]][0]["hooks"][0]
-            assert handler["args"][-3:] == ["report", "--process-id", process.id]
+            # UserPromptSubmit is response-capable, so the projected handler blocks on
+            # the backend round trip (claude/driver.py ``_RESPONSE_EVENTS``).
+            assert handler["args"][-5:] == [
+                "hooks",
+                "report",
+                "--process-id",
+                process.id,
+                "--wait-for-response",
+            ]
     finally:
         for event in configured:
             await process.remove_hook(event)
