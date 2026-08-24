@@ -12,6 +12,7 @@ const switchMode = vi.hoisted(() =>
 
 vi.mock('@sdk', () => ({
   isReadyForInput: () => true,
+  isBusy: () => false,
   PrefKey: { VIEW_MODE: 'viewMode' },
   WorkerMode: { Interactive: 'interactive', CLI: 'cli' },
 }));
