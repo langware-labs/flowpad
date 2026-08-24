@@ -11,12 +11,19 @@ own PKCE challenge, so a code from one session's URL is only redeemable by that
 session — a second live login makes the paste-back a coin flip.
 """
 
+import re
 import subprocess
 import sys
 
-from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import DeviceLoginState
+from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import (
+    DeviceLoginSpec,
+    DeviceLoginState,
+    WorkerAuthResult,
+    WorkerAuthStatus,
+)
 from flow_sdk.builtin.agentic_process.cli_drivers.device_login import (
     _CODE_REJECTED_RE,
+    DeviceLoginSession,
     _reap_stray_logins,
 )
 
@@ -74,10 +81,52 @@ def test_reap_is_a_noop_without_argv():
     assert _reap_stray_logins([]) == 0
 
 
+async def test_start_spawns_a_real_pty_via_the_platform_pty_backend():
+    """Regression for the observed Windows outage: ``start()`` unconditionally
+    did ``from ptyprocess import PtyProcess`` to spawn the login PTY, but
+    ptyprocess is Unix-only (needs ``fcntl``, which doesn't exist on
+    Windows) — every login spawn failed instantly with
+    ``ModuleNotFoundError: No module named 'ptyprocess'`` there. Windows
+    ships ``pywinpty`` (the ``winpty`` module) instead.
+
+    Deliberately spawns a REAL PTY through whichever backend ``device_login``
+    picks for THIS platform rather than mocking it — a reintroduced
+    unconditional import fails this test the exact same way it failed users.
+    """
+    spec = DeviceLoginSpec(
+        login_argv=(sys.executable, "-c", "print('device-login-pty-test')"),
+        url_re=re.compile(r"(https://\S+)"),
+        code_re=None,
+        accepts_code_paste=False,
+    )
+
+    async def probe_fn() -> WorkerAuthResult:
+        # Anything other than LOGGED_IN/NOT_INSTALLED so start() proceeds to
+        # the actual PTY spawn instead of short-circuiting before it.
+        return WorkerAuthResult(status=WorkerAuthStatus.LOGGED_OUT)
+
+    session = DeviceLoginSession(
+        "device-login-pty-test",
+        argv=[sys.executable, "-c", "print('device-login-pty-test')"],
+        probe_fn=probe_fn,
+        spec=spec,
+    )
+    try:
+        await session.start()
+        assert session.state != DeviceLoginState.ERROR, f"pty spawn failed: {session.message}"
+        assert session._pty is not None, "start() never reached the PTY spawn"
+    finally:
+        session.cancel()
+
+
 class _FakePty:
+    """winpty.write() takes str, ptyprocess.write() takes bytes — mirror
+    whichever ``device_login`` picks for this platform rather than assuming
+    one, so this fixture doesn't silently mask the wrong choice."""
+
     def __init__(self, alive=True):
         self._alive = alive
-        self.written = b""
+        self.written = "" if sys.platform == "win32" else b""
 
     def isalive(self):
         return self._alive
@@ -109,13 +158,14 @@ def test_submit_code_refuses_unless_the_session_is_awaiting_the_user():
     ):
         s = _session(state)
         assert s.submit_code("abc") is False, f"accepted a code while {state}"
-        assert s._pty.written == b"", "nothing may be written to a session not awaiting a code"
+        assert not s._pty.written, "nothing may be written to a session not awaiting a code"
 
 
 def test_submit_code_writes_when_awaiting_and_marks_it():
     s = _session(DeviceLoginState.AWAITING_USER)
     assert s.submit_code(" abc123 ") is True
-    assert s._pty.written == b"abc123\r"
+    expected = "abc123\r" if sys.platform == "win32" else b"abc123\r"
+    assert s._pty.written == expected
     assert s._code_submitted is True
 
 
