@@ -18,20 +18,6 @@ import { useEntity } from '@src/hooks/entity-hooks';
  *
  * The `!isPrompting` gate is what keeps this from doubling rows: a client
  * either sent the turn (its own stream carries it) or observes it. Never both.
- *
- * A headless (`pty_mode === false`) turn the backend drains from the prompt
- * queue is a THIRD source on top of that: `run_headless_turn` also publishes
- * every frame via `emit_flow_data`, which reaches every watcher over the
- * entity WebSocket — including this one, even though it is merely
- * `busy && !isPrompting`. That is not a reason to skip `observe-turn` here,
- * though: for a turn a *different* client sent through its own `prompt()`
- * (the normal cross-browser/second-tab case this hook exists for), nothing
- * broadcasts over the WS at all — `observe-turn` is this client's only
- * source. The two live channels genuinely can both be needed, so the
- * FLOWPAD-2022 double-render is resolved downstream instead, in
- * `FlowDataStream` — a groupless WS chunk that duplicates content already
- * held by an open group (from this stream) is recognized and dropped rather
- * than merged in as new content.
  */
 export function useObservedTurn(process: AgenticProcess | null | undefined): void {
   const typeId = useMemo(
