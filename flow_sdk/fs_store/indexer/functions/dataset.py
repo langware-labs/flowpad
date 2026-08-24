@@ -20,14 +20,21 @@ a file ``«base».«ext»``, a folder ``«base»/``, or numbered occurrences
 ``«base»-«N»`` (multiple outputs / consensus annotations). A sibling
 ``«base»[-N].json`` is that artifact's two-section sidecar (``.json`` is never slot
 data). Per-example metadata lives in ``example.json`` (alias: ``meta.json``).
-Back-compat: ``input.txt``/``expected.txt`` still populate ``Example.input`` /
-``Example.expected`` (the latter folds onto the ground_truth slot).
+Back-compat: a legacy ``expected.txt`` is re-keyed under ``ground_truth`` when no
+native gold exists.
 
-``iter_examples`` is the single parser for BOTH layouts — it normalizes each
-into the shared ``Example`` shape. Modeled on ``functions/whiteboard.py``.
+``iter_examples`` is the single parser for BOTH layouts — each row becomes one
+:class:`~flow_sdk.schema.datum.Datum` tree that MIRRORS the example directory: a
+file is a leaf holding its example-relative path, a folder is a branch of its
+members, and a sidecar is a sibling leaf keyed by its full filename. Sidecar and
+data keys can never collide — a data key is a filename STEM and carries no dot,
+a sidecar key always does — which is what lets ``_is_data_key`` be exact.
+
+Nothing here decodes a file: a leaf carries a reference and reading the bytes is
+the consumer's job, so a dataset of PDFs stays cheap to index.
 
 Type metadata lives in ``flow_sdk/schema/type_info/dataset_type_info.py``; this
-module provides the slot functions only.
+module provides the walker and parser only.
 """
 from __future__ import annotations
 
@@ -39,13 +46,11 @@ from typing import Any
 
 from flow_sdk.builtin.dataset import (
     EXAMPLE_META,  # canonical per-example metadata filename (model-owned)
-    ArtifactKind,
     DataLayoutEnum,
     Example,
-    ExampleArtifact,
     ExampleKind,
-    ExampleSlot,
 )
+from flow_sdk.schema.datum import Datum
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identifier import adopt_entity_id, mint_uuid
@@ -59,10 +64,19 @@ CSV_FILE = "data.csv"
 EXAMPLES_DIR = "examples"
 
 # IO_FOLDER per-example layout.
-SLOT_BASES = ("input", "output", "ground_truth")
+INPUT, OUTPUT, GROUND_TRUTH = "input", "output", "ground_truth"
+SLOT_BASES = (INPUT, OUTPUT, GROUND_TRUTH)
 EXAMPLE_META_ALIAS = "meta.json"       # back-compat alias (example.json wins)
 EXPECTED_LEGACY = "expected"           # legacy expected.txt → folded onto ground_truth
-TEXT_EXTS = {".txt", ".md"}            # only these data files are decoded into .text
+TEXT_EXTS = {".txt", ".md"}            # a leaf naming one of these is text, not binary
+
+#: The kind stamped on a leaf whose value is a PATH rather than a literal — the
+#: one bit that keeps a leaf self-describing, since an IO_FOLDER leaf references
+#: a file while a CSV leaf holds the answer itself. ``content.file`` is the
+#: SEEDED ontology kind (``flow_sdk/builtin/tag.py`` SYSTEM_TAG_SEED); minting a
+#: private one here would put the vocabulary in two registries, only one of them
+#: discoverable.
+REF_KIND = "content.file"
 
 
 # ── manifest + id helpers ──────────────────────────────────────────────────────
@@ -131,25 +145,9 @@ def _coerce_enum(value: Any, enum_cls: type, default: Any) -> Any:
         return default
 
 
-# ── IO_FOLDER slot discovery ──────────────────────────────────────────────────
+# ── IO_FOLDER tree assembly ───────────────────────────────────────────────────
 
 _NO_MATCH = object()
-
-
-def _slot_id(example_id: str, base: str, index: int | None) -> str:
-    """Deterministic per-artifact uuid5; idempotent across re-index."""
-    suffix = base if index is None else f"{base}-{index}"
-    return mint_uuid(f"{example_id}:{suffix}", namespace=uuid.NAMESPACE_DNS)
-
-
-def _maybe_text(path: Path) -> str | None:
-    """Decode small text artifacts only (.txt/.md). Binary files are never read."""
-    if path.suffix.lower() not in TEXT_EXTS:
-        return None
-    try:
-        return path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return None
 
 
 def _match_base(stem: str, base: str) -> Any:
@@ -180,19 +178,6 @@ def _classify(name: str, is_dir: bool, base: str) -> Any:
     return ("sidecar" if is_json else "data", index)
 
 
-def _build_artifact(ex_dir: Path, target: Path, index: int | None) -> ExampleArtifact:
-    """Wrap one data file/folder as an ExampleArtifact (paths relative, lazy text)."""
-    rel = target.relative_to(ex_dir).as_posix()
-    if target.is_dir():
-        files = sorted(
-            p.relative_to(ex_dir).as_posix() for p in target.rglob("*") if p.is_file()
-        )
-        return ExampleArtifact(kind=ArtifactKind.FOLDER, path=rel, files=files, text=None, index=index)
-    return ExampleArtifact(
-        kind=ArtifactKind.FILE, path=rel, files=[rel], text=_maybe_text(target), index=index,
-    )
-
-
 def _resolve_ambiguity(a: Path, b: Path) -> Path:
     """Two entries claim one slot+index. File beats folder; ties → lexicographic."""
     a_file, b_file = a.is_file(), b.is_file()
@@ -203,46 +188,62 @@ def _resolve_ambiguity(a: Path, b: Path) -> Path:
     return min(a, b, key=lambda p: p.name)
 
 
-_Doc = tuple[dict[str, Any], dict[str, Any]]  # a sidecar's (metadata, data) sections
+_Doc = tuple[dict[str, Any], dict[str, Any]]  # a two-section doc: (metadata, data)
 
 
-def _assemble_slot(
-    ex_dir: Path,
-    base: str,
-    data: dict[int | None, Path],
-    sidecars: dict[int | None, _Doc],
-    example_id: str,
-) -> ExampleSlot | None:
-    """Build one ``ExampleSlot`` from its bucketed data artifacts + sidecars.
+def _build_datum(ex_dir: Path, target: Path) -> Datum:
+    """One data file or folder as a Datum node.
 
-    Artifacts are ordered (bare first, then numbered ascending); each consumes
-    its matching ``«base»[-N].json`` sidecar (its ``metadata``/``data`` sections).
-    A bare sidecar with no data artifact lands at slot level. ``None`` when empty.
+    A file is a LEAF whose value is its example-relative POSIX path; a folder is
+    a BRANCH of its members, recursively. That makes the file/folder distinction
+    structural rather than a flag, and a folder's contained paths are just its
+    leaf values.
     """
-    if not data and not sidecars:
-        return None
-    ordered = sorted(data, key=lambda k: (k is not None, k or 0))
-    artifacts: list[ExampleArtifact] = []
-    for index in ordered:
-        art = _build_artifact(ex_dir, data[index], index)
-        art.metadata, art.data = sidecars.pop(index, ({}, {}))  # consume the matching sidecar
-        art.id = _slot_id(example_id, base, index)
-        artifacts.append(art)
-    slot_meta, slot_data = sidecars.get(None, ({}, {}))  # orphan bare sidecar → slot level
-    return ExampleSlot(name=base, artifacts=artifacts, metadata=slot_meta, data=slot_data)
+    if target.is_dir():
+        return Datum(fields={
+            child.name: _build_datum(ex_dir, child)
+            for child in sorted(target.iterdir(), key=lambda p: p.name)
+        })
+    return Datum(kind=REF_KIND, value=target.relative_to(ex_dir).as_posix())
 
 
-def _discover_slots(
-    ex_dir: Path, bases: tuple[str, ...], example_id: str
-) -> dict[str, ExampleSlot]:
-    """Classify a single ``iterdir`` pass into one ``ExampleSlot`` per base.
+def _slot_key(base: str, index: int | None) -> str:
+    """The tree key for one occurrence: ``output`` / ``output-2``."""
+    return base if index is None else f"{base}-{index}"
 
-    Each dir entry belongs to at most one base, so one scan covers every slot —
-    far cheaper than re-scanning per base. Returns only bases that have a data
-    artifact or sidecar.
+
+def _keys_for(tree: Datum, base: str) -> list[str]:
+    """Every DATA occurrence key of ``base``, in canonical order.
+
+    Data and sidecars are told apart by the key alone: at the example root a
+    data key is a filename STEM (``_classify`` splits on the first dot, so it
+    never carries one) while a sidecar key is a full ``«base»[-N].json``
+    filename, which always does. The rule is a root-level one — inside a folder
+    branch, members are keyed by full filename and dots are ordinary.
     """
+    prefix = f"{base}-"
+    return [
+        k for k in (tree.fields or {})
+        if "." not in k and (k == base or k.startswith(prefix))
+    ]
+
+
+def _build_example_datum(ex_dir: Path) -> Datum:
+    """Assemble one example directory into a Datum tree.
+
+    A single ``iterdir`` pass classifies every entry (each belongs to at most one
+    base). Data is bucketed by ``(base, index)`` — it has to be, because
+    ``_resolve_ambiguity`` needs both candidates in hand and the canonical order
+    needs the full set before sorting. Sidecars are not: their emitted key is the
+    filename itself, so they only need collecting.
+
+    Data lands under its stem key; a ``«base»[-N].json`` sidecar lands under its
+    FULL filename — which can never collide, because a data key is a stem and
+    carries no dot while a sidecar key always does.
+    """
+    bases = (*SLOT_BASES, EXPECTED_LEGACY)
     data: dict[str, dict[int | None, Path]] = {b: {} for b in bases}
-    sidecars: dict[str, dict[int | None, _Doc]] = {b: {} for b in bases}
+    sidecars: list[Path] = []
     for entry in ex_dir.iterdir():
         is_dir = entry.is_dir()
         for base in bases:
@@ -251,34 +252,31 @@ def _discover_slots(
                 continue
             role, index = verdict
             if role == "sidecar":
-                sidecars[base][index] = _load_doc(entry)
+                sidecars.append(entry)
             else:
                 prev = data[base].get(index)
                 data[base][index] = entry if prev is None else _resolve_ambiguity(prev, entry)
             break  # an entry belongs to at most one base
-    slots: dict[str, ExampleSlot] = {}
+
+    # `expected*` is an ALIAS for ground_truth, honoured only when no native gold
+    # DATA exists. A key RENAME at emit time — moving buckets instead would drop
+    # any native `ground_truth.json` sidecar.
+    alias = EXPECTED_LEGACY if (data[EXPECTED_LEGACY] and not data[GROUND_TRUTH]) else None
+
+    fields: dict[str, Datum] = {}
+    # Canonical order per base: bare occurrence first, then numbered ascending.
+    # Key ORDER is the only carrier of that ordering, so it is emitted here
+    # rather than reconstructed by readers.
     for base in bases:
-        slot = _assemble_slot(ex_dir, base, data[base], sidecars[base], example_id)
-        if slot is not None:
-            slots[base] = slot
-    return slots
-
-
-def _promote_to_ground_truth(slot: ExampleSlot | None, example_id: str) -> ExampleSlot | None:
-    """Re-label a legacy ``expected`` slot as ``ground_truth`` (re-stamp artifact ids)."""
-    if slot is None:
-        return None
-    slot.name = "ground_truth"
-    for art in slot.artifacts:
-        art.id = _slot_id(example_id, "ground_truth", art.index)
-    return slot
-
-
-def _primary_text(slot: ExampleSlot | None) -> str | None:
-    """Text of a slot's primary artifact when it is a text FILE, else None."""
-    if slot and slot.primary and slot.primary.kind == ArtifactKind.FILE:
-        return slot.primary.text
-    return None
+        if base == EXPECTED_LEGACY and base != alias:
+            continue
+        emit_as = GROUND_TRUTH if base == alias else base
+        for index in sorted(data[base], key=lambda k: (k is not None, k or 0)):
+            fields[_slot_key(emit_as, index)] = _build_datum(ex_dir, data[base][index])
+    for path in sorted(sidecars, key=lambda p: p.name):
+        metadata, doc_data = _load_doc(path)
+        fields[path.name] = Datum(value={"metadata": metadata, "data": doc_data})
+    return Datum(fields=fields)
 
 
 def _load_example_meta(ex_dir: Path) -> _Doc:
@@ -324,12 +322,14 @@ def iter_examples(
         consumed = {input_col, expected_col, kind_col}
         with csv_path.open(newline="", encoding="utf-8") as fh:
             for i, raw in enumerate(csv.DictReader(fh, delimiter=delimiter or ",")):
+                cells = {INPUT: Datum(value=raw.get(input_col) or "")}
+                if raw.get(expected_col) is not None:
+                    cells[GROUND_TRUTH] = Datum(value=raw.get(expected_col))
                 rows.append(Example(
                     id=_example_id(dataset_id, str(i)),
                     kind=_coerce_enum(raw.get(kind_col), ExampleKind, ExampleKind.TRAIN),
-                    input=raw.get(input_col) or "",
-                    expected=raw.get(expected_col),
                     metadata={k: v for k, v in raw.items() if k not in consumed},
+                    datum=Datum(fields=cells),
                 ))
         return rows
 
@@ -343,26 +343,16 @@ def iter_examples(
         example_id = _example_id(dataset_id, ex_dir.name)
         ex_meta, ex_data = _load_example_meta(ex_dir)
 
-        slots = _discover_slots(ex_dir, (*SLOT_BASES, EXPECTED_LEGACY), example_id)
-        input_slot = slots.get("input")
-        if input_slot is None:
-            continue  # no input in any form → not an example (was: no input.txt)
-
-        # Gold = ground_truth; legacy expected.txt folds onto it when absent.
-        gt_slot = slots.get("ground_truth") or _promote_to_ground_truth(
-            slots.get(EXPECTED_LEGACY), example_id
-        )
+        tree = _build_example_datum(ex_dir)
+        if not _keys_for(tree, INPUT):
+            continue  # no input DATA in any form → not an example (a lone sidecar is not an input)
 
         rows.append(Example(
             id=example_id,
             kind=_coerce_enum(ex_meta.get("kind"), ExampleKind, ExampleKind.TRAIN),
-            input=_primary_text(input_slot) or "",
-            expected=_primary_text(gt_slot),  # gold = ground_truth only; output never feeds expected
             metadata=ex_meta,
             data=ex_data,
-            input_slot=input_slot,
-            output_slot=slots.get("output"),
-            ground_truth_slot=gt_slot,
+            datum=tree,
             layout=ex_meta.get("layout"),
         ))
     return rows
@@ -388,13 +378,17 @@ def extract_dataset(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     num_annotated = num_multi_output = num_binary_inputs = 0
     for ex in examples:
         kind_counts[ex.kind] = kind_counts.get(ex.kind, 0) + 1
-        if ex.ground_truth_slot is not None:
+        tree = ex.datum
+        # "Annotated" means real gold DATA — a lone `ground_truth.json` sidecar is
+        # metadata ABOUT gold, not gold.
+        if _keys_for(tree, GROUND_TRUTH):
             num_annotated += 1
-        if ex.output_slot is not None and len(ex.output_slot.artifacts) > 1:
+        if len(_keys_for(tree, OUTPUT)) > 1:
             num_multi_output += 1
-        primary_input = ex.input_slot.primary if ex.input_slot is not None else None
-        if primary_input is not None and (
-            primary_input.kind == ArtifactKind.FOLDER or primary_input.text is None
+        inputs = _keys_for(tree, INPUT)
+        primary = tree.fields[inputs[0]] if inputs else None
+        if primary is not None and (
+            not primary.is_leaf or Path(str(primary.value)).suffix.lower() not in TEXT_EXTS
         ):
             num_binary_inputs += 1
 

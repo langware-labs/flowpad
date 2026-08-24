@@ -239,23 +239,53 @@ Each example becomes an `Example` (`flow_sdk/builtin/dataset.py`):
 class Example:
     id: str                 # deterministic uuid5(dataset_id : key)
     kind: ExampleKind       # train | eval | test  (from example.json metadata)
-    input: str              # back-compat scalar: input.txt/.md text, else ""
-    expected: str | None    # back-compat scalar: ground_truth primary text, else None
     metadata: dict          # example.json `metadata` section (+ CSV leftover columns)
     data: dict              # example.json `data` section (free, use-case-owned)
-    # structured slots (io_folder):
-    input_slot: ExampleSlot | None
-    output_slot: ExampleSlot | None         # candidate — never the gold
-    ground_truth_slot: ExampleSlot | None   # gold; >1 artifact ⇒ consensus
+    datum: Datum | None     # the row's content — see below
     layout: str | None      # example.json metadata["layout"]
 ```
 
-A slot holds one or more **artifacts**, each with `kind` (`file`/`folder`),
-`path` (relative), `files` (folder contents), `text` (decoded for `.txt`/`.md`
-only), `index` (the `N` in `output-2`), and **both** `metadata` and `data` (the
-two sections of its `<slot>.json` sidecar). `ExampleSlot` and the dataset record
-likewise carry `metadata` + `data`. Read the structured slots for binary/folder/
-multi data; use `input`/`expected` for the simple single-text case.
+`datum` is a [`Datum`](datum.md) tree that **mirrors the recognized slots of the
+example directory** — entries matching `input`/`output`/`ground_truth` (and the
+legacy `expected` alias). An unrelated file such as `notes.md` is not indexed:
+
+| On disk | In the tree |
+|---|---|
+| a file (`input.pdf`) | a **leaf**, `value` = its example-relative path, `kind` = `content.file` |
+| a folder (`ground_truth/`) | a **branch** of its members, recursively |
+| a numbered occurrence (`output-2.txt`) | a sibling key `output-2` |
+| a sidecar (`ground_truth-2.json`) | a sibling **leaf** keyed by its full filename, `value` = its two sections |
+
+```jsonc
+// examples/0001/ from §3.5
+{ "fields": {
+    "input":               { "kind": "content.file", "value": "input.pdf" },
+    "input.json":          { "value": {"metadata": {"pages": 3}, "data": {}} },
+    "output-1":            { "kind": "content.file", "value": "output-1.txt" },
+    "output-2":            { "kind": "content.file", "value": "output-2.txt" },
+    "ground_truth":        { "fields": {"grade.json": {"kind": "content.file",
+                                                       "value": "ground_truth/grade.json"}} },
+    "ground_truth-2":      { "fields": {"grade.json": {"kind": "content.file",
+                                                       "value": "ground_truth-2/grade.json"}} },
+    "ground_truth.json":   { "value": {"metadata": {"rater": "A"}, "data": {}} } } }
+```
+
+Three rules make this readable without a slot model:
+
+- **At the example root**, a data key never contains a dot and a sidecar key
+  always does — a root data key is a filename *stem*. Inside a folder branch
+  members are keyed by full filename, so the rule is root-level only.
+- **Key order is canonical** — bare occurrence first, then numbered ascending.
+  It is the only carrier of that ordering, so readers must not re-sort.
+- **File vs folder is structural**, not a flag: a file is a leaf, a folder is a
+  branch. A folder's contained paths are simply its leaf values.
+
+Nothing is decoded. A leaf carries a *reference*; reading the bytes is the
+consumer's job, lazily — which is what keeps a dataset of PDFs cheap to index.
+
+A CSV row builds the same tree with the cell value in the leaf instead of a path
+(`{"fields": {"input": {"value": "capital of France?"}}}`); the `content.file`
+kind is what tells a reference from a literal.
 
 ---
 

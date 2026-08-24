@@ -30,11 +30,11 @@ FLOW_SDK = Path(__file__).resolve().parents[3] / "flow_sdk"
 #: Module-level ``*_id`` helpers allowed to reach ``mint_uuid`` directly.
 #: Each entry needs a REASON — "it was already there" is how the last 20 got in.
 _PER_TYPE_MINTER_ALLOWLIST = {
-    # Child rows of a dataset. An example/slot has no FSRef and no TypeInfo of
-    # its own, so there is no seam to route through — the id is derived from
-    # the owning dataset's id plus a within-file key.
+    # A dataset's example rows. An example has no FSRef and no TypeInfo of its
+    # own, so there is no seam to route through — the id is derived from the
+    # owning dataset's id plus a within-file key. (Slot artifacts used to need a
+    # second entry here; they are Datum leaves now, and a value object has no id.)
     ("dataset.py", "_example_id"),
-    ("dataset.py", "_slot_id"),
     # The task type's folder-name fallback, the last leg of
     # ``_task_id_from_fields``' reader precedence (capsule → frontmatter →
     # folder name). Mirrors the TypeInfo reader order rather than competing
