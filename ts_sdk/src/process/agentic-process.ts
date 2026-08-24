@@ -770,6 +770,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (hint === 'claude' || hint === 'codex' || hint === 'copilot' || hint === 'opencode') {
       action.queryParameters = { worker_type: hint };
     }
+    // This GET can SPAWN a visible PTY (the backend upserts and starts one for a
+    // session that has no live process), so it is a launch and must pin the
+    // palette like the other two. Query hint, since there is no body on a GET.
+    const theme = hostTerminalTheme();
+    if (theme) action.queryParameters = { ...(action.queryParameters ?? {}), theme };
     try {
       const data = await dataManager.callAction<void, IAgenticProcess | null>(action);
       if (!data) return null;

@@ -57,6 +57,13 @@ def _pinned_theme(argv: list[str]) -> str | None:
 
 @pytest.mark.asyncio
 # do not increase timeout without approval
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.worker_terminal_theme.rules: FAILING? read this tag's rules before
+#       editing — the theme must ride createProcess, not open
+# flowpad:endcapsule tag
 @pytest.mark.timeout(60)
 @pytest.mark.parametrize("theme", ["light", "dark"])
 async def test_create_process_pins_terminal_theme(bootstrapped_client, tmp_path, theme):

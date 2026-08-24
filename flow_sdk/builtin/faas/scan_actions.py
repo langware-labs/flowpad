@@ -684,6 +684,7 @@ class ScanActionsMixin:
             workdir:    str | None    — working directory
             projectId:  str | None    — project ID for context
             workerType: str | None    — "claude" (default) or "codex"
+            theme:      str | None    — "light" | "dark", palette to pin on the spawn
 
         Returns: ApiSuccessResponse with the full AgenticProcess entity dict.
         """
@@ -699,11 +700,13 @@ class ScanActionsMixin:
         if not session_id:
             return ApiFailResponse(message="sessionId is required")
 
+        theme = body.get("theme")
         return await self._upsert_session_process_impl(
             session_id=session_id,
             workdir=body.get("workdir"),
             project_id=body.get("projectId"),
             worker_type_raw=(body.get("workerType") or "claude").lower(),
+            terminal_theme=theme if theme in ("light", "dark") else None,
         )
 
     async def _upsert_session_process_impl(
@@ -714,6 +717,7 @@ class ScanActionsMixin:
         worker_type_raw: str,
         *,
         session_rec=None,
+        terminal_theme: str | None = None,
     ) -> ApiResponse:
         """Find or create an AgenticProcess for ``session_id``.
 
@@ -832,7 +836,7 @@ class ScanActionsMixin:
                 start_data = None
                 if not process.shell_id or not process.visible:
                     try:
-                        start_resp = await process.start_pty(visible=True)
+                        start_resp = await process.start_pty(visible=True, terminal_theme=terminal_theme)
                     except Exception as start_err:
                         logging.exception(
                             f"ComputeNode {self.id} upsertSessionProcess heal-start error for {process.id}: {start_err}"
@@ -948,7 +952,7 @@ class ScanActionsMixin:
             # AgenticProcess has no shell_id, is filtered out of the visible
             # tab strip, and the route loader silently snaps to a fallback.
             try:
-                start_resp = await process.start_pty(visible=True)
+                start_resp = await process.start_pty(visible=True, terminal_theme=terminal_theme)
             except Exception as start_err:
                 logging.exception(
                     f"ComputeNode {self.id} upsertSessionProcess start error for {process.id}: {start_err}"
@@ -1018,11 +1022,17 @@ class ScanActionsMixin:
                 status_code=404,
             )
 
+        # Palette of the terminal this session is being adopted into. A query
+        # hint here, not a body field: this is the GET the frontend actually
+        # uses (``AgenticProcess.getByWorkerId``), and the impl below SPAWNS a
+        # visible PTY — so this is a real terminal launch, not a headless one.
+        theme_hint = (request_info.get_param("theme") if request_info else None) or None
         return await self._upsert_session_process_impl(
             session_id=worker_id,
             workdir=None,
             project_id=None,
             worker_type_raw=worker_type,
+            terminal_theme=theme_hint if theme_hint in ("light", "dark") else None,
             session_rec=session_rec,
         )
 
