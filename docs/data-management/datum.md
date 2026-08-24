@@ -21,8 +21,8 @@ branch or a leaf, never both.
 
 ## Descriptor and carrier are one tree
 
-A schema describes and an instance carries; here they are the same shape. With empty leaves it is a **contract**; with populated
-leaves it is the **datum**:
+A schema describes and an instance carries. Here they are one shape: with empty
+leaves the tree is a **contract**, with populated leaves it is the **datum**.
 
 ```jsonc
 // contract
