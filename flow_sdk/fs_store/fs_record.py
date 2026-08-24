@@ -36,7 +36,7 @@ from contextlib import asynccontextmanager
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Iterator, TypeVar
 from weakref import WeakValueDictionary
 
 from flow_sdk.fs_store.fs_ref import FSRef
@@ -632,18 +632,27 @@ class FSRecord(Generic[M]):
         directly via ``load_record``. Missing root or malformed entries are
         skipped silently.
         """
+        return list(cls.iter_discovered(type))
+
+    @classmethod
+    def iter_discovered(cls, type: str) -> "Iterator[FSRecord]":
+        """Lazy :meth:`discover` — same walk, same skips, one record at a time.
+
+        Split out so callers that only need the FIRST match (e.g.
+        ``type_has_pending_changes``) don't pay to load every shadow of the
+        type, without re-implementing the ``is_record_dir`` filter or the
+        malformed-entry handling.
+        """
         root = _get_default_records_root() / type
         if not root.is_dir():
-            return []
-        out: list[FSRecord] = []
+            return
         for child in root.iterdir():
             if not is_record_dir(child):
                 continue
             try:
-                out.append(cls.load_record(child))
+                yield cls.load_record(child)
             except (FileNotFoundError, OSError, ValueError):
                 continue
-        return out
 
     @classmethod
     def count(cls, type: str) -> int:
@@ -818,6 +827,18 @@ class FSRecord(Generic[M]):
                 f.unlink(missing_ok=True)
         except OSError:
             pass
+
+    @classmethod
+    def type_has_pending_changes(cls, type_name: str) -> bool:
+        """True if ANY record of ``type_name`` needs re-indexing.
+
+        The per-type answer to the same question ``index_required`` answers per
+        record, and the primitive the unscoped index-status path was missing:
+        it reported a hardcoded ``stale=False`` for every type while the
+        indexer was re-parsing thousands of records. Short-circuits on the
+        first pending record, so a stale type costs one shadow read.
+        """
+        return any(rec.index_required for rec in cls.iter_discovered(type_name))
 
     @classmethod
     def clear_hashes_for_type(cls, type_name: str) -> None:

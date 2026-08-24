@@ -714,10 +714,19 @@ class FsRecordsActionsMixin:
                     "type": key,
                     "count": 0,
                     "total_bytes": 0,
+                    "scan_ms": 0.0,
                     "_records": [],
                 },
             )
             bucket["count"] += 1
+            # Per-type projection cost, actually measured. This used to be
+            # assigned the literal 0.0 after the loop, so every row advertised
+            # 0.0 while the aggregate carried the real number — the per-type
+            # column was decoration. Timed here because this stat() per ref IS
+            # the per-type share of the request: the walk that produced `nodes`
+            # is untyped (its cost is `walk_ms`), and everything after this is
+            # the diff, which reports itself.
+            _t_type = time.perf_counter()
             try:
                 stat = node._path.stat()
                 bucket["total_bytes"] += stat.st_size
@@ -733,10 +742,11 @@ class FsRecordsActionsMixin:
                     )
             except OSError:
                 pass
+            bucket["scan_ms"] += (time.perf_counter() - _t_type) * 1000
 
         for bucket in by_type.values():
             bucket["avg_bytes"] = bucket["total_bytes"] // bucket["count"] if bucket["count"] else 0
-            bucket["scan_ms"] = 0.0
+            bucket["scan_ms"] = round(bucket["scan_ms"], 2)
 
         # A full-coverage walk can classify freshness and orphans on disk.
         do_diff = not scope_explicit
@@ -795,6 +805,9 @@ class FsRecordsActionsMixin:
                             "count": 0,
                             "total_bytes": 0,
                             "avg_bytes": 0,
+                            # Genuinely zero: this bucket is minted by the DIFF
+                            # for a type the walk produced no refs for, so no
+                            # per-type projection work happened.
                             "scan_ms": 0.0,
                             "_records": [],
                         },
@@ -1507,6 +1520,7 @@ class FsRecordsActionsMixin:
         # ``discover_record_by_path`` still stamps an already-known owning
         # project through its targeted project-mount lookup.
         if _p is not None and filter_type and _p.is_file() and not rebuild and not force:
+            _t_direct = time.perf_counter()
             try:
                 found = await discover_record_by_path(filter_type, str(_p))
             except Exception as e:
@@ -1516,20 +1530,24 @@ class FsRecordsActionsMixin:
                 )
             indexed_typeid = f"{filter_type}-{found.id}" if found is not None and getattr(found, "id", None) else None
             indexed_typeids = [indexed_typeid] if indexed_typeid else []
+            # Measured, not 0.0: this branch really does parse and sync the
+            # file, so reporting zero made a single-file index look free and
+            # left the endpoint's only SLO (< 1s) unobservable in its own payload.
+            _direct_ms = round((time.perf_counter() - _t_direct) * 1000, 2)
             type_row = {
                 "type": filter_type,
                 "indexed": 1 if indexed_typeid else 0,
                 "new": 1 if indexed_typeid else 0,
                 "skipped": 0,
                 "errors": 0,
-                "duration_ms": 0.0,
+                "duration_ms": _direct_ms,
                 "orphans_found": 0,
                 "orphans_db_removed": 0,
                 "orphans_disk_removed": 0,
             }
             SchemaRegistry.append_index(
                 trigger=trigger,
-                duration_ms=0.0,
+                duration_ms=_direct_ms,
                 total_indexed=1 if indexed_typeid else 0,
                 types=[],
                 type_name=filter_type,
@@ -1554,10 +1572,20 @@ class FsRecordsActionsMixin:
         from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter  # noqa: PLC0415
         from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
 
+        # `create_missing=False`: resolving the scope must NOT write entities.
+        # The ScopeFilter is complete either way — an unmaterialized cwd still
+        # yields `Project.derive_id_for_path(cwd)` — and the index run itself
+        # materializes every missing project inside the job, via
+        # `real_project_cwd_fn` -> `get_all_projects(create_missing=True)`.
+        # Minting here was duplicate work done BEFORE the index single-flight
+        # guard is taken: measured 38.854s on a cold DB (vs 1.4s warm) while
+        # the index job itself is 2.4s, so a second request arriving in that
+        # window died with `409 Job 'index' already running` and the api-tier
+        # tests failed as either a 30s timeout or a 409 depending on warmth.
         scope_filter = (
             await resolve_project_scope(ScopeFilter.from_query_params(qp), create_missing=True)
             if (qp.get("user") is not None or qp.get("projects") is not None)
-            else await get_all_scope_filter(create_missing=True)
+            else await get_all_scope_filter(create_missing=False)
         )
         # Single-project narrowing — derived from the ScopeFilter, used below
         # to short-circuit non-project indexer work paths.

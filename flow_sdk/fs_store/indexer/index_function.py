@@ -876,6 +876,14 @@ class FSIndexer:
             for ref, info, ref_id, probe, fresh, canon_path in all_probed:
                 current_rt = ref.record_type
                 acc = per_type_counts[ref.record_type]
+                # Start the per-type clock at the TOP of the ref, not after the
+                # skip branches. `t_start` used to be set only on the parse
+                # path, so a type whose refs were all fresh-skipped reported
+                # duration_ms=0.0 even though enumerating and hash-checking
+                # them cost real time — measured on a live backend: 25 of 30
+                # type rows at 0.0, and the 5 non-zero rows summed to 11.4s of
+                # a 19.6s request. Every exit below accumulates.
+                t_ref = time.perf_counter()
 
                 # Per-type cap: once we've processed `limit_per_type` records of
                 # this type (parsed or skip-fresh), skip further refs of the same
@@ -888,6 +896,7 @@ class FSIndexer:
 
                 if ref_id is None or probe is None:
                     acc["errors"] += 1
+                    acc["duration_ms"] += (time.perf_counter() - t_ref) * 1000
                     await emit()
                     continue
 
@@ -899,17 +908,19 @@ class FSIndexer:
 
                 if (str(ref.record_type), ref_id, canon_path) in duplicate_paths:
                     acc["skipped"] += 1
+                    acc["duration_ms"] += (time.perf_counter() - t_ref) * 1000
                     await emit()
                     continue
 
                 if fresh and (str(ref.record_type), ref_id, canon_path) not in primary_swaps:
                     acc["skipped"] += 1
+                    acc["duration_ms"] += (time.perf_counter() - t_ref) * 1000
                     # seen_ids already holds ref_id (added above), so a fresh
                     # skip is not misclassified as orphan.
                     await emit()
                     continue
 
-                t_start = time.perf_counter()
+                t_start = t_ref
                 try:
                     # Loop is gated by _has_dispatch → from_disk_fn is set.
                     from_disk = info.from_disk_fn

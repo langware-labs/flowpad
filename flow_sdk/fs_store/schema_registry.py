@@ -1173,7 +1173,11 @@ class SchemaRegistry:
                     "id": str(uuid.uuid4()),
                     "type": "index_log",
                     "index_trigger": trigger,
-                    "duration_ms": 0.0,
+                    # The caller's per-type dict already carries a measured
+                    # duration (``types_out`` in fs_records_actions); reading
+                    # ``indexed`` from it while writing a literal 0.0 here left
+                    # every aggregate run's audit trail timeless.
+                    "duration_ms": t.get("duration_ms", 0.0),
                     "total_indexed": t.get("indexed", 0),
                     "type_name": t_name,
                     "created_at": now,
@@ -1261,12 +1265,30 @@ class SchemaRegistry:
         ``stale`` now means "changes pending next index", not a 24h timer.
         Orphan counts come from a scan, not from here.
         """
+        import asyncio  # noqa: PLC0415
+
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
+        from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
 
         driver = get_db_driver()
         per_type: list[TypeIndexStatus] = []
         latest_iso: str | None = None
-        for type_name in types or cls.get_default_index_types():
+        target_types = list(types or cls.get_default_index_types())
+
+        # `stale` is the endpoint's documented contract — "changes pending next
+        # index" — and it used to be the literal False on every row, so the
+        # freshness signal could never be true outside the single-project
+        # branch below. It is now the same question that branch asks
+        # (`index_required`), asked per type. `orphan_count` stays 0 by design:
+        # orphans come from a scan, not from here.
+        # One thread hop for the whole sweep, not one per type: the walk never
+        # yields to the loop between types, so 30+ dispatches bought nothing.
+        def _stale_by_type() -> dict[str, bool]:
+            return {t: FSRecord.type_has_pending_changes(t) for t in target_types}
+
+        stale_by_type = await asyncio.to_thread(_stale_by_type)
+
+        for type_name in target_types:
             type_last = cls.get_last_index_at(type_name)  # JSONL run-history (audit)
             if type_last and (latest_iso is None or type_last > latest_iso):
                 latest_iso = type_last
@@ -1276,7 +1298,7 @@ class SchemaRegistry:
                     type_name=type_name,
                     last_indexed_at=type_last,
                     entity_count=count,
-                    stale=False,
+                    stale=stale_by_type.get(type_name, False),
                     orphan_count=0,
                 )
             )
@@ -1298,7 +1320,8 @@ class SchemaRegistry:
         return IndexStatus(
             never_indexed=all(t.last_indexed_at is None for t in per_type),
             last_indexed_at=latest_iso,
-            stale=False,
+            # Rolled up from the per-type answers rather than hardcoded.
+            stale=any(t.stale for t in per_type),
             default_types=cls.get_default_index_types(),
             per_type=per_type,
             total_orphans=0,
