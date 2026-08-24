@@ -25,6 +25,7 @@ import {
 } from '../../flow_processing';
 import { IEntity } from '../../IEntity';
 import { ActionInfo } from '../../models';
+import { hostTerminalTheme } from '../../utils/runtime';
 import {
   type AppUpgrade,
   ComputeProviderType,
@@ -243,6 +244,9 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
       ...(options?.visible !== undefined ? { visible: options.visible } : {}),
       ...(options?.pty_mode !== undefined ? { pty_mode: options.pty_mode } : {}),
       ...(options?.launchPrompt ? { launch_prompt: options.launchPrompt } : {}),
+      // This action spawns the PTY server-side for a visible process, so the
+      // theme has to ride the CREATE — the later `open` only reattaches.
+      ...(hostTerminalTheme() ? { theme: hostTerminalTheme() } : {}),
     };
 
     const response = await dataManager.callAction<unknown, IAgenticProcess>(action);

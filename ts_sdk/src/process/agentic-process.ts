@@ -22,6 +22,7 @@ import { FlowElementTypes } from '../flow_processing/flow-element-types';
 import { ActionInfo } from '../models/ActionInfo';
 import type { FlowEvent } from '../tags/EventBus';
 import { toplog } from '../services/toplog';
+import { hostTerminalTheme } from '../utils/runtime';
 
 /** Elapsed ms since `t0` formatted for `process_load` trace lines. */
 const msSince = (t0: number): string => (performance.now() - t0).toFixed(1);
@@ -2810,7 +2811,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     // performance and removes the empty-shell-after-refresh failure mode
     // (the cached ``status === RUNNING`` could outlive the actual worker).
     const actionInfo = new ActionInfo('open', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = options ?? {};
+    // Sampled per launch, not per caller: the CLI reads the theme at startup, so
+    // a mid-session toggle recolors the next worker, never the running one.
+    const theme = hostTerminalTheme();
+    actionInfo.bodyParameters = { ...(options ?? {}), ...(theme ? { theme } : {}) };
     const tOpen = performance.now();
     const result = await dataManager.callAction<
       unknown,

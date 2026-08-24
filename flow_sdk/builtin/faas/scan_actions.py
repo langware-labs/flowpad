@@ -320,7 +320,7 @@ class ScanActionsMixin:
     async def _scan_create_process(self) -> ApiResponse:
         """Create a new idle AgenticProcess on this ComputeNode.
 
-        POST body: { context, result, visible } (same shape as CreateProcessRequest)
+        POST body: { context, result, visible, theme } (same shape as CreateProcessRequest)
 
         Returns:
             AgenticProcess entity data
@@ -346,6 +346,13 @@ class ScanActionsMixin:
                 context_raw = {}
 
             visible = bool(body.get("visible", False))
+            # Palette of the terminal this worker will paint into. This action
+            # both creates the process AND spawns its PTY, so the launch happens
+            # here — the client's later ``open`` only reattaches and can no
+            # longer influence the command line.
+            terminal_theme = body.get("theme")
+            if terminal_theme not in ("light", "dark"):
+                terminal_theme = None
             # Transport intent for the new session: True → interactive PTY
             # (default), False → headless JSON-stream (no PTY/xterm). The UI passes
             # False for a Standard chat tab; omitted → True so every existing
@@ -631,7 +638,7 @@ class ScanActionsMixin:
             # next ``/prompt`` to land on a stale session and emit nothing.
             if visible:
                 try:
-                    start_resp = await process.start_pty(visible=visible)
+                    start_resp = await process.start_pty(visible=visible, terminal_theme=terminal_theme)
                 except Exception as start_err:
                     logging.exception(f"ComputeNode {self.id} createProcess start error for {process.id}: {start_err}")
                     return _start_failure_response(
@@ -735,9 +742,7 @@ class ScanActionsMixin:
                 "copilot": ("copilot", WorkerType.COPILOT),
                 "opencode": ("opencode", WorkerType.OPENCODE),
             }
-            cli_factory_key, wt_enum = _VENDORS.get(
-                worker_type_raw, ("claude", WorkerType.CLAUDE_CODE)
-            )
+            cli_factory_key, wt_enum = _VENDORS.get(worker_type_raw, ("claude", WorkerType.CLAUDE_CODE))
 
             # Resolve workdir + project_id from the session record.
             # Transcript cwd is the authoritative restore location; project_id is
@@ -989,10 +994,7 @@ class ScanActionsMixin:
         hint = hint_raw.lower() or None
         if hint and hint not in ("claude", "codex", "copilot", "opencode"):
             return ApiFailResponse(
-                message=(
-                    "worker_type must be 'claude', 'codex', 'copilot' or 'opencode' "
-                    f"(got {hint_raw!r})"
-                ),
+                message=(f"worker_type must be 'claude', 'codex', 'copilot' or 'opencode' (got {hint_raw!r})"),
                 status_code=400,
             )
 
