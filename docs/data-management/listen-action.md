@@ -71,8 +71,8 @@ async def listen_action(request):
         payload_data = {"webhook_type": "agent_hook", **raw_payload}
         skip_hook_id = raw_payload.get("agent_hook_id")
         await _broadcast_to_sniffer(payload_data, "agent_hook", skip_hook_id=skip_hook_id)
-        agent_session_id = (raw_payload.get("hook_data") or {}).get("session_id")
-        await _route_to_source_process(payload_data, session_id=agent_session_id)
+        # NOTE: global hooks are NOT routed to a source process — see
+        # "agent_hook Side Effects" below.
         return await handle_agent_hook(data)
 ```
 
@@ -164,15 +164,11 @@ Parsed model: `AgentHookData`
 
 ### agent_hook Side Effects
 
-`handle_agent_hook` resolves the hook fields (`hook_event_name`, `session_id`, `tool_name`, `tool_input`, `execution_scope`) up-front — before loading the `AgentHook` entity — so the side effects below run even when the hook entity itself no longer exists. The originating `AgenticProcess` id is resolved from `execution_scope` via `_extract_agentic_process_id`.
+`handle_agent_hook` resolves the hook fields (`hook_event_name`, `session_id`, `cwd`) up-front — before loading the `AgentHook` entity — so a `CwdChanged` is still logged when the hook entity no longer exists. Beyond that it does two things: run the connected triggers (`AgentHook.handle_webhook`) and emit the converted `FlowData` to the hook entity's own watchers.
 
-**Worktree auto-close**: On `PostToolUse:ExitWorktree` with a resolved agentic_process id, `_close_worktree_process` closes that process's tab.
+**No process resolution.** A global hook is harness-wide: `handle_agent_hook` never looks up the `AgenticProcess` that fired it, and never writes per-process state. That bridge — prompt annotations, ExitPlanMode auto-approve, ExitWorktree tab close, per-process FlowData fan-out — was removed; process-scoped delivery belongs to `handle_process_agent_hook` and the per-process hook plugin (`--process-id`). `tests/api/test_global_hook_has_no_process_bridge.py` pins this.
 
-**ExitPlanMode auto-approve**: A module-level `_plan_auto_approve_by_agentic_process` set (keyed by agentic_process id, set by `set_plan_auto_approve` / execute-plan) is consumed on `PermissionRequest:ExitPlanMode` to return a synchronous `{"behavior": "allow"}` decision, and is cleared on `UserPromptSubmit`.
-
-**Annotation auto-creation**: On **`UserPromptSubmit`**, `_create_prompt_annotation` creates an annotation with label `"prompt:"`, content truncated to 50 chars, linked to the `AgenticProcess` matching the session's `session_id`. Plan↔process cross-linking is NOT done here — it belongs to the transcript paths (`PlanHandler` in the indexer and the TranscriptStreamer subscriber, both via `cross_link_plan_to_process`).
-
-Annotation creation is non-critical — failures are caught and logged at DEBUG level.
+Consequently no hook event carries `--wait-for-response` any more: nothing on this tier produces a `hookSpecificOutput` decision, so every global hook is fire-and-forget.
 
 ## handle_hook_op: CRUD Dispatch
 
@@ -272,16 +268,17 @@ Failures in this function are non-critical and logged at DEBUG level.
 
 ## _route_to_source_process
 
-**Function:** `_route_to_source_process(payload_data, execution_scope, session_id)`
+**Function:** `_route_to_source_process(payload_data, execution_scope)`
 
-Routes a copy of the webhook event to the `AgenticProcess` that generated it, so it appears in the process's `flowDataStream` and can be rendered by the terminal TraceGutter.
+Routes a copy of a **`hook_op`** webhook event to the `AgenticProcess` that generated it, so it appears in the process's `flowDataStream` and can be rendered by the terminal TraceGutter.
+
+Identity comes from `execution_scope` only — the worker's own `FLOWPAD_EXECUTION_SCOPE`, carried in the payload by the `flow` verb that sent it. `agent_hook` events are never routed here: they are harness-wide and carry no process identity.
 
 The payload is **not** wrapped in a hand-built `{element_type: "webhook", ...}` dict. Instead it is translated through the shared `convert_webhook_event(payload_data)` dispatcher, and `flow_msg = fds[0].model_dump(mode="python")` is the canonical `FlowData` shape. If `convert_webhook_event` returns nothing, the function returns early.
 
-Routing priority:
-1. **execution_scope** (hook_op): for each `{type, id}` entry, call `_send_flow_data_message(type, id, flow_msg)`, then return.
-2. **session_id** (agent_hook): query `AgenticProcess` by `session_id == session_id` (via `QueryFilter(match=ExpressionNode(session_id=…))`), route to the first match.
-3. **Fallback**: if neither matched, extract `pty_pid` from `payload_data` and query `AgenticProcess` by `pty_pid`.
+Routing: for each `{type, id}` entry in `execution_scope`, call `_send_flow_data_message(type, id, flow_msg)`.
+
+The former `session_id` and `pty_pid` lookups were the `agent_hook` → process bridge and are gone.
 
 ## DataOpMessage
 

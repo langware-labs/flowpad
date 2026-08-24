@@ -24,6 +24,7 @@ function providerKindForWorkerType(workerType: string | null | undefined): strin
   const wt = (workerType ?? '').toLowerCase();
   if (wt === 'codex') return 'codex';
   if (wt === 'copilot') return 'copilot';
+  if (wt === 'opencode') return 'opencode';
   return 'claude';
 }
 

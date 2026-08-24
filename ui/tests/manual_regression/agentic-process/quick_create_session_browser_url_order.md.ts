@@ -10,7 +10,7 @@
  * This directory's Playwright config intentionally discovers `*.md.ts` tests.
  */
 import { expect, test } from '@playwright/test';
-import { dismissSetupModal } from './_ap_helpers';
+import { AP_QUICK_CREATE_LABEL, dismissSetupModal } from './_ap_helpers';
 import { withViewMode } from '../_shared/view-mode';
 
 function processIdFromCreateResponse(payload: unknown): string {
@@ -45,7 +45,7 @@ test('Quick Create Claude session commits its final browser URL after dock loadi
 
   await page.getByRole('button', { name: 'Quick create' }).click();
   await expect(page.getByRole('dialog', { name: 'Create new' })).toBeVisible();
-  await page.getByRole('button', { name: 'Claude Code' }).click();
+  await page.getByRole('button', { name: AP_QUICK_CREATE_LABEL }).click();
 
   const createdProcess = processIdFromCreateResponse(await (await createProcessResponse).json());
   await tabMaterializedResponse;

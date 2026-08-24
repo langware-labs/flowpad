@@ -140,12 +140,18 @@ describe('progress_report fast tests', () => {
       apiClient.get(`${CN_FS_BASE}/scan?trigger=manual&limit_types=5`),
     );
 
-    expect(tables.length).toBeGreaterThan(0);
-    for (const table of tables) {
+    // Assert on the scan-labelled events only (same job_name filter as the
+    // index sibling below): the collector sees EVERY progress broadcast in
+    // the window, and a concurrent job — e.g. the detached startup
+    // `_index_system_assets` pass, still running on a cold CI instance —
+    // legitimately interleaves its own 'index' snapshots.
+    const scanTables = tables.filter((t) => t.job_name === 'scan');
+    expect(scanTables.length).toBeGreaterThan(0);
+    for (const table of scanTables) {
       assertTableShape(table, 'scan');
       expect(table.total).toBe(0);
     }
-    const final = tables[tables.length - 1];
+    const final = scanTables[scanTables.length - 1];
     expect(final.text).toBe('complete');
     expect(final.current).toBeNull();
   }, 30000);

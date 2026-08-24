@@ -39,10 +39,44 @@ export async function gotoNewShell(page: Page) {
   await page.waitForTimeout(2_000);
 }
 
-/** Open the "+" tab opener menu and pick the Claude Code row. */
+/**
+ * Which vendor opener these scenarios drive.
+ *
+ * The opener rows pass an EXPLICIT `workerType` to `openNewChat`, so flipping
+ * the default-harness capability does NOT change which worker the "+" menu
+ * launches — the row itself picks the vendor. `AP_OPENER` therefore selects the
+ * row, which is the only way to run this matrix against a non-default vendor.
+ * Defaults to `claude`, i.e. the suite behaves exactly as before when unset.
+ */
+export const AP_OPENER = process.env.AP_OPENER || 'claude';
+
+/** The same vendor named as a `WorkerType` (the WorkerToolbar's testid suffix). */
+export const AP_WORKER_TYPE = AP_OPENER === 'opencode' ? 'opencode' : 'claude_code';
+
+/** The same vendor as the Quick Create panel labels it. */
+export const AP_QUICK_CREATE_LABEL = AP_OPENER === 'opencode' ? 'OpenCode' : 'Claude Code';
+
+/**
+ * Does this vendor actually HAVE `--chrome` / `--debug` / `--worktree`?
+ *
+ * Only claude does. The CLI Options menu is built from
+ * `getWorkerCliCapabilities` (`process-cli-presentation.ts`), which reports
+ * `chrome/debug/worktree: false` for codex, copilot and opencode — so on those
+ * arms the toggles legitimately do not render, and a test that clicks one is
+ * asserting a Claude-specific product feature rather than a shared contract.
+ *
+ * This restates that fact rather than importing it: the presentation module
+ * pulls in `@lingui/core/macro`, which Playwright's transpiler does not expand.
+ * `ui/tests/unit/cli-options-vendor-flags.test.ts` runs under vitest (where the
+ * macro DOES expand) and fails if the two ever disagree — so a vendor that
+ * later gains these flags surfaces as a red unit test, not as a silent skip.
+ */
+export const AP_HAS_CLAUDE_ONLY_CLI_FLAGS = AP_OPENER === 'claude';
+
+/** Open the "+" tab opener menu and pick the vendor row under test. */
 export async function startClaude(page: Page) {
   await page.locator('[data-testid="opener-plus-button"]').click();
-  await page.locator('[data-testid="opener-menu-row-claude"]').click();
+  await page.locator(`[data-testid="opener-menu-row-${AP_OPENER}"]`).click();
   await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 30_000 });
 }
 

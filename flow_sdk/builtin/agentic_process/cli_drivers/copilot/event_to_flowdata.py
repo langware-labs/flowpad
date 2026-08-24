@@ -6,15 +6,14 @@ import json
 import logging
 from typing import Any
 
+from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import wrap_live
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowData,
     FlowDataType,
     FlowElementType,
 )
-from flow_sdk.transcript_analyzer.derive import derive_entry
 from flow_sdk.transcript_analyzer.entries import AssistantMessageEntry
 from flow_sdk.transcript_analyzer.parsers.copilot import CopilotParser
-from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 
 logger = logging.getLogger(__name__)
 
@@ -160,32 +159,8 @@ def flowpad_terminal_event_frames(event: dict[str, Any]) -> list[FlowData] | Non
 
 
 def _wrap_live(entry) -> FlowData:
-    # Derived refinements (e.g. a `flow` CLI call inside a shell command)
-    # are applied here so the live frame matches what history's refold
-    # produces for the same entry.
-    entry = derive_entry(entry)
-    process_entry = ProcessEntry(transcript_entry=entry, observation_kind="live")
-    frames = entry.to_flow_data()
-    if frames:
-        fd = frames[0]
-        fd.process_entry = process_entry.to_dict()
-        fd.attributes.setdefault("element-type", _element_type_for_kind(entry.kind.value))
-        fd.attributes.setdefault("data-type", FlowDataType.OBJECT)
-        fd.attributes.setdefault("subtype", entry.kind.value)
-        fd.attributes.setdefault("observation-kind", "live")
-        return fd
-    return FlowData(
-        flow_value={},
-        created_time=entry.timestamp or "",
-        attributes={
-            "element-type": _element_type_for_kind(entry.kind.value),
-            "data-type": FlowDataType.OBJECT,
-            "subtype": entry.kind.value,
-            "observation-kind": "live",
-        },
-        process_entry=process_entry.to_dict(),
-    )
-
+    """This vendor's element-type mapping over the shared live envelope."""
+    return wrap_live(entry, _element_type_for_kind)
 
 def _element_type_for_kind(kind: str) -> str:
     if kind == "user_message":

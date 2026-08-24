@@ -36,10 +36,8 @@ import { useInputHistory } from '@src/hooks/use-input-history';
 import { splitLiveGroup, useTurnGroups, type TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
 import { TurnGroupsList } from './TurnGroupsList';
 import { ChatActivityLine } from './ChatActivityLine';
-import { describeCurrentActivity } from './current-activity';
 import { TurnEventChip } from '@src/components/floating-chat/TurnEventChip';
 import { useObservedTurn } from './hooks/useObservedTurn';
-import { useStickyActivity } from './hooks/useStickyActivity';
 import { useTurnActivity } from './hooks/useTurnActivity';
 import {
   buildHistorySubline,
@@ -50,6 +48,8 @@ import {
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { useProcessesForTarget } from './hooks/useProcessesForTarget';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
+import { ChatPlanModeProvider } from '@src/components/terminal/interactive-terminal/chat-plan-mode-context';
+import { PlanInteractionBar } from '@src/components/terminal/interactive-terminal/PlanInteractionBar';
 import { AssetManagerButton } from '@src/components/asset-manager';
 import { useLaunchingAgent } from '@src/hooks/use-launching-agent';
 import { normalizeWorkerType, type WorkerType } from '@src/components/workers/worker-types';
@@ -434,18 +434,6 @@ export function EntityExecutionPanel({
   const { inlineGroups, liveEvents } = useMemo(
     () => splitLiveGroup(turnGroups, dense && activity.active),
     [dense, activity.active, turnGroups],
-  );
-  // The live group is hidden behind the counter chip, so without this the
-  // footer could only say "Using tool" while the stream already knew it was
-  // editing a named file. Same frames, read for their operation instead of
-  // just counted (FLOWPAD-1980). `startedAt` scopes the read to the current
-  // turn — a resumed session's replayed history is in this buffer too.
-  const currentActivity = useStickyActivity(
-    useMemo(
-      () => describeCurrentActivity(liveEvents, activity.startedAt, activity.status),
-      [liveEvents, activity.startedAt, activity.status],
-    ),
-    activity.startedAt,
   );
 
   // 4. Project workdir + id (lazy-create inputs). Caller-supplied defaults
@@ -882,14 +870,7 @@ export function EntityExecutionPanel({
               onWorkerChange={handleWorkerChange}
             />
             {activeProcess && (
-              <ChatActivityLine
-                process={activeProcess}
-                active={activity.active}
-                startedAt={activity.startedAt}
-                status={activity.status}
-                activity={currentActivity}
-                trailing={<TurnEventChip events={liveEvents} />}
-              />
+              <ChatActivityLine process={activeProcess} trailing={<TurnEventChip events={liveEvents} />} />
             )}
           </>
         ) : (
@@ -904,6 +885,15 @@ export function EntityExecutionPanel({
           ))
         )}
       </AutoScrollContainer>
+      {/* Pending-interaction notice, `allowPicker={false}`: this surface never
+          offers the structured picker. On a PTY worker it says a question is
+          waiting and opens the terminal (the agent's own picker is blocked
+          there — an answer sent from here is rejected and its text is eaten as
+          keystrokes). On a headless worker it renders nothing: the composer
+          right below already takes the answer as a normal turn. */}
+      <ChatPlanModeProvider process={activeProcess}>
+        <PlanInteractionBar items={items} allowPicker={false} />
+      </ChatPlanModeProvider>
       {promptContext && (
         <div className="flex flex-shrink-0 items-center gap-2 px-3 pt-2" data-testid="prompt-context-chip">
           <span className="inline-flex max-w-full items-center gap-1 truncate rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs text-primary">

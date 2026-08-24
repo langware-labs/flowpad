@@ -15,31 +15,36 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 def _resolve_session_record(session_id: str, hint: str | None = None):
     """Locate a session record on disk by id, auto-discovering worker_type.
 
-    With ``hint`` set to ``"claude"``, ``"codex"``, or ``"copilot"``, only
-    the matching backend is probed. Without a hint, Claude is tried first,
-    then Codex, then Copilot.
+    With ``hint`` set to a known vendor, ONLY that backend is probed. Without a
+    hint, Claude is tried first, then Codex, then Copilot, then OpenCode.
+
+    Each branch is an inclusion test (``hint in (None, "<vendor>")``). They used
+    to be exclusion lists naming the *other* vendors, which silently stopped
+    skipping as soon as a fourth vendor existed: ``hint="opencode"`` satisfied
+    all three of them and probed claude, codex and copilot first — defeating the
+    entire purpose of passing a hint.
 
     Returns ``(record, worker_type)`` on hit; ``(None, None)`` on miss.
     Worker_type is the canonical query/api spelling.
     """
-    if hint not in (None, "claude", "codex", "copilot"):
+    if hint not in (None, "claude", "codex", "copilot", "opencode"):
         return None, None
 
-    if hint not in ("codex", "copilot"):
+    if hint in (None, "claude"):
         from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
 
         rec = get_claude_session(session_id)
         if rec is not None:
             return rec, "claude"
 
-    if hint not in ("claude", "copilot"):
+    if hint in (None, "codex"):
         from flow_sdk.fs_store.indexer.functions.codex_sessions import get_codex_session
 
         rec = get_codex_session(session_id)
         if rec is not None:
             return rec, "codex"
 
-    if hint not in ("claude", "codex"):
+    if hint in (None, "copilot"):
         from types import SimpleNamespace
 
         from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
@@ -56,6 +61,26 @@ def _resolve_session_record(session_id: str, hint: str | None = None):
                 jsonl_path=str(path),
                 source_file=str(path),
             ), "copilot"
+
+    if hint in (None, "opencode"):
+        # OpenCode keeps sessions in SQLite, not in a per-session file, so the
+        # "record" is synthesized from the store row plus the projection the
+        # driver materialises. Probed LAST: its ids are ``ses_…``-prefixed and
+        # cannot collide with the UUID/rollout ids above, so order is only cost.
+        from types import SimpleNamespace
+
+        from flow_sdk.builtin.agentic_process.cli_drivers.opencode.session_history import (
+            find_opencode_session,
+            opencode_session_cwd,
+        )
+
+        if find_opencode_session(session_id) is not None:
+            return SimpleNamespace(
+                cwd=opencode_session_cwd(session_id),
+                name=session_id,
+                jsonl_path=None,
+                source_file=None,
+            ), "opencode"
 
     return None, None
 
@@ -295,7 +320,7 @@ class ScanActionsMixin:
     async def _scan_create_process(self) -> ApiResponse:
         """Create a new idle AgenticProcess on this ComputeNode.
 
-        POST body: { context, result, visible } (same shape as CreateProcessRequest)
+        POST body: { context, result, visible, theme } (same shape as CreateProcessRequest)
 
         Returns:
             AgenticProcess entity data
@@ -321,6 +346,13 @@ class ScanActionsMixin:
                 context_raw = {}
 
             visible = bool(body.get("visible", False))
+            # Palette of the terminal this worker will paint into. This action
+            # both creates the process AND spawns its PTY, so the launch happens
+            # here — the client's later ``open`` only reattaches and can no
+            # longer influence the command line.
+            terminal_theme = body.get("theme")
+            if terminal_theme not in ("light", "dark"):
+                terminal_theme = None
             # Transport intent for the new session: True → interactive PTY
             # (default), False → headless JSON-stream (no PTY/xterm). The UI passes
             # False for a Standard chat tab; omitted → True so every existing
@@ -606,7 +638,7 @@ class ScanActionsMixin:
             # next ``/prompt`` to land on a stale session and emit nothing.
             if visible:
                 try:
-                    start_resp = await process.start_pty(visible=visible)
+                    start_resp = await process.start_pty(visible=visible, terminal_theme=terminal_theme)
                 except Exception as start_err:
                     logging.exception(f"ComputeNode {self.id} createProcess start error for {process.id}: {start_err}")
                     return _start_failure_response(
@@ -652,6 +684,7 @@ class ScanActionsMixin:
             workdir:    str | None    — working directory
             projectId:  str | None    — project ID for context
             workerType: str | None    — "claude" (default) or "codex"
+            theme:      str | None    — "light" | "dark", palette to pin on the spawn
 
         Returns: ApiSuccessResponse with the full AgenticProcess entity dict.
         """
@@ -667,11 +700,13 @@ class ScanActionsMixin:
         if not session_id:
             return ApiFailResponse(message="sessionId is required")
 
+        theme = body.get("theme")
         return await self._upsert_session_process_impl(
             session_id=session_id,
             workdir=body.get("workdir"),
             project_id=body.get("projectId"),
             worker_type_raw=(body.get("workerType") or "claude").lower(),
+            terminal_theme=theme if theme in ("light", "dark") else None,
         )
 
     async def _upsert_session_process_impl(
@@ -682,6 +717,7 @@ class ScanActionsMixin:
         worker_type_raw: str,
         *,
         session_rec=None,
+        terminal_theme: str | None = None,
     ) -> ApiResponse:
         """Find or create an AgenticProcess for ``session_id``.
 
@@ -700,10 +736,17 @@ class ScanActionsMixin:
         request_info = get_current_request_info()
 
         try:
-            is_codex = worker_type_raw in ("codex",)
-            is_copilot = worker_type_raw in ("copilot",)
-            cli_factory_key = "copilot" if is_copilot else ("codex" if is_codex else "claude")
-            wt_enum = WorkerType.COPILOT if is_copilot else (WorkerType.CODEX if is_codex else WorkerType.CLAUDE_CODE)
+            # Vendor -> (cli factory key, WorkerType). A ternary chain here
+            # DEFAULTED to claude for anything it did not enumerate, so a resolved
+            # opencode session was upserted as a claude_code process - silently,
+            # because "unknown vendor" and "claude" were the same branch. A table
+            # makes an unlisted vendor visible instead of mis-attributed.
+            _VENDORS = {
+                "codex": ("codex", WorkerType.CODEX),
+                "copilot": ("copilot", WorkerType.COPILOT),
+                "opencode": ("opencode", WorkerType.OPENCODE),
+            }
+            cli_factory_key, wt_enum = _VENDORS.get(worker_type_raw, ("claude", WorkerType.CLAUDE_CODE))
 
             # Resolve workdir + project_id from the session record.
             # Transcript cwd is the authoritative restore location; project_id is
@@ -714,10 +757,7 @@ class ScanActionsMixin:
                 from flow_sdk.builtin.project import Project
 
                 if session_rec is None:
-                    session_rec, _ = _resolve_session_record(
-                        session_id,
-                        hint="copilot" if is_copilot else ("codex" if is_codex else "claude"),
-                    )
+                    session_rec, _ = _resolve_session_record(session_id, hint=cli_factory_key)
 
                 if session_rec:
                     rec_cwd = getattr(session_rec, "cwd", None)
@@ -796,7 +836,7 @@ class ScanActionsMixin:
                 start_data = None
                 if not process.shell_id or not process.visible:
                     try:
-                        start_resp = await process.start_pty(visible=True)
+                        start_resp = await process.start_pty(visible=True, terminal_theme=terminal_theme)
                     except Exception as start_err:
                         logging.exception(
                             f"ComputeNode {self.id} upsertSessionProcess heal-start error for {process.id}: {start_err}"
@@ -894,9 +934,12 @@ class ScanActionsMixin:
 
                 _cmd = _cli_factory(process.cli_config, worker_type=cli_factory_key)
                 _cmd.resume = True
-                # Codex/Copilot resume need the id passed as the cli session_id
-                # (Claude already reads it from process.session_id at args-build time).
-                if is_codex or is_copilot:
+                # Every vendor but claude needs the id passed as the cli
+                # session_id for resume (claude reads it off process.session_id
+                # at args-build time). Keyed on "not claude" rather than an
+                # enumeration, so a new vendor resumes correctly by default
+                # instead of silently losing its --session flag.
+                if cli_factory_key != "claude":
                     _cmd.session_id = session_id
                 process.cli_config = _cmd.to_json()
                 # workdir is guaranteed by the create-time guard above — no
@@ -909,7 +952,7 @@ class ScanActionsMixin:
             # AgenticProcess has no shell_id, is filtered out of the visible
             # tab strip, and the route loader silently snaps to a fallback.
             try:
-                start_resp = await process.start_pty(visible=True)
+                start_resp = await process.start_pty(visible=True, terminal_theme=terminal_theme)
             except Exception as start_err:
                 logging.exception(
                     f"ComputeNode {self.id} upsertSessionProcess start error for {process.id}: {start_err}"
@@ -953,9 +996,9 @@ class ScanActionsMixin:
             else ""
         )
         hint = hint_raw.lower() or None
-        if hint and hint not in ("claude", "codex", "copilot"):
+        if hint and hint not in ("claude", "codex", "copilot", "opencode"):
             return ApiFailResponse(
-                message=f"worker_type must be 'claude', 'codex', or 'copilot' (got {hint_raw!r})",
+                message=(f"worker_type must be 'claude', 'codex', 'copilot' or 'opencode' (got {hint_raw!r})"),
                 status_code=400,
             )
 
@@ -975,15 +1018,21 @@ class ScanActionsMixin:
                 return ApiSuccessResponse(data=existing.model_dump())
 
             return ApiFailResponse(
-                message=f"Session {worker_id} not found in Claude, Codex, or Copilot history",
+                message=f"Session {worker_id} not found in Claude, Codex, Copilot or OpenCode history",
                 status_code=404,
             )
 
+        # Palette of the terminal this session is being adopted into. A query
+        # hint here, not a body field: this is the GET the frontend actually
+        # uses (``AgenticProcess.getByWorkerId``), and the impl below SPAWNS a
+        # visible PTY — so this is a real terminal launch, not a headless one.
+        theme_hint = (request_info.get_param("theme") if request_info else None) or None
         return await self._upsert_session_process_impl(
             session_id=worker_id,
             workdir=None,
             project_id=None,
             worker_type_raw=worker_type,
+            terminal_theme=theme_hint if theme_hint in ("light", "dark") else None,
             session_rec=session_rec,
         )
 

@@ -36,3 +36,9 @@ Old desktop `@docker-*` ComputeNode rows are removed by the `0.2.137` migration 
 it runs, hydrate with an unset provider instead of failing the whole node list.
 
 End-to-end check: `scripts/e2e_flow_connect_docker.sh` (`APPROVE=manual` for the code path).
+
+<!-- flowpad:capsule identity
+version: 1
+data:
+  id: ef2ffb57-bf41-4793-812f-3dd429f90539
+flowpad:endcapsule identity -->

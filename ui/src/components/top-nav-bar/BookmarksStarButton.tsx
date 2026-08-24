@@ -1,8 +1,10 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { BookmarksSlider } from '@src/components/bookmarks-slider/BookmarksSlider';
 import { compactEntityActionClassName } from '@src/components/entity-actions/action-button-styles';
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
 import { NavBadge } from '@src/components/ui/nav-badge';
+import { viewportInlineEndGap } from '@src/components/ui/anchored-menu';
+import { useLocaleInfo } from '@src/contexts/locale-context';
 import { useHoverIntent } from '@src/hooks/use-hover-intent';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useUnopenedFavoritesCount } from '@src/hooks/use-unopened-favorites-count';
@@ -37,25 +39,36 @@ export function BookmarksStarButton({ favorite }: { favorite: FavoriteRef }) {
   // star still renders; only the menu it would open is withheld.
   const bookmarksAvailable = !isHubOnly();
   const triggerRef = useRef<HTMLSpanElement>(null);
-  const [anchor, setAnchor] = useState<{ top: number; right: number }>();
+  const [anchor, setAnchor] = useState<{ top: number; end: number }>();
+  // The nav bar mirrors under HE/AR, which puts this star near the viewport's
+  // LEFT edge — so the gap the menu anchors by has to be measured from whichever
+  // edge is inline-end for the active locale, not from `right` unconditionally.
+  const dir = useLocaleInfo().dir;
 
-  // The menu hangs BELOW the bar with its right edge on the star's. Measured
+  // The menu hangs BELOW the bar with its inline-end edge on the star's. Measured
   // rather than a constant: the star's x moves with the breadcrumb and the
   // action cluster beside it.
-  const measure = () => {
+  // `useCallback` over `dir`, not a bare closure: the effect below both calls
+  // this and registers it as a listener, so it has to be a dep — and an
+  // unmemoised function would re-run the effect (rebinding `resize`) on every
+  // single render.
+  const measure = useCallback(() => {
     const rect = triggerRef.current?.getBoundingClientRect();
     if (!rect) return;
-    setAnchor({ top: rect.bottom + MENU_GAP, right: Math.max(0, window.innerWidth - rect.right) });
-  };
+    setAnchor({ top: rect.bottom + MENU_GAP, end: viewportInlineEndGap(rect, dir) });
+  }, [dir]);
 
   // Measured before paint, and re-measured only while the menu is showing — a
-  // resize listener that runs when nothing is open is work for nobody.
+  // resize listener that runs when nothing is open is work for nobody. It
+  // re-runs when `dir` changes (via `measure`) because switching locale with the
+  // menu open flips which edge that gap is measured from; a stale value would
+  // leave the panel anchored to the edge the trigger just left.
   useLayoutEffect(() => {
     if (!menu.open) return;
     measure();
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
-  }, [menu.open]);  
+  }, [menu.open, measure]);
 
   return (
     <>
@@ -78,7 +91,7 @@ export function BookmarksStarButton({ favorite }: { favorite: FavoriteRef }) {
           onOpenChange={menu.set}
           hoverProps={menu.hoverProps}
           anchorTop={anchor?.top}
-          anchorRight={anchor?.right}
+          anchorEnd={anchor?.end}
         />
       )}
     </>

@@ -284,6 +284,12 @@ msgstr "{0} is deployed"
 msgid "{0} is indexed without a valid source path and cannot be opened."
 msgstr "{0} is indexed without a valid source path and cannot be opened."
 
+#. placeholder {0}: node.name || 'The sandbox'
+#. placeholder {1}: result.version
+#: src/hooks/use-sandboxes.ts
+msgid "{0} is now running FlowPad {1}."
+msgstr "{0} is now running FlowPad {1}."
+
 #. placeholder {0}: workerLabel(unavailableWorker)
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "{0} is unavailable"
@@ -392,6 +398,11 @@ msgstr "{0} types"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "types_time"
 msgstr "{0} types · {1}"
+
+#. placeholder {0}: node.name || 'The sandbox'
+#: src/hooks/use-sandboxes.ts
+msgid "{0} was upgraded and restarted."
+msgstr "{0} was upgraded and restarted."
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "{changedCount} changed"
@@ -1959,6 +1970,10 @@ msgstr "Auto-allow Bash if Sandboxed"
 #: src/components/settings-view/settings-utils.ts
 msgid "Auto-approve bash when sandbox is active"
 msgstr "Auto-approve bash when sandbox is active"
+
+#: src/components/terminal/interactive-terminal/process-cli-presentation.ts
+msgid "Auto-approve permissions that are not explicitly denied (--auto)"
+msgstr "Auto-approve permissions that are not explicitly denied (--auto)"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Auto-detect direction from first strong character"
@@ -4067,6 +4082,7 @@ msgstr "Could not sign the sandbox out"
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-chat-pane.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 msgid "Could not start"
@@ -4117,6 +4133,10 @@ msgstr "Could not update attached secrets"
 #: src/components/assets/editor/skill/SkillAssetEditor.tsx
 msgid "Could not update eval flag"
 msgstr "Could not update eval flag"
+
+#: src/hooks/use-sandboxes.ts
+msgid "Could not upgrade the sandbox"
+msgstr "Could not upgrade the sandbox"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -6548,6 +6568,7 @@ msgstr "Failed to start session"
 
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-chat-pane.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 msgid "Failed to start the build session."
@@ -6923,6 +6944,10 @@ msgstr "Flowpad Hub"
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "Flowpad initializes the repository, then proposes the install on a separate review branch."
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
+msgstr "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -9487,6 +9512,7 @@ msgid "Message Attachment"
 msgstr "Message Attachment"
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
+#: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 msgid "Message not queued"
 msgstr "Message not queued"
 
@@ -11465,6 +11491,7 @@ msgid "Open Spec Session"
 msgstr "Open Spec Session"
 
 #: src/components/diagnose/open-in-terminal-button.tsx
+#: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Open terminal"
 msgstr "Open terminal"
@@ -11567,6 +11594,22 @@ msgstr "Open worker session"
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
 msgid "OPENAI_API_KEY"
 msgstr "OPENAI_API_KEY"
+
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "OpenCode"
+msgstr "OpenCode"
+
+#: src/components/icons/OpenCodeRestoreIcon.tsx
+msgid "OpenCode (restored session)"
+msgstr "OpenCode (restored session)"
+
+#: src/components/quick-create/QuickCreateMenu.tsx
+msgid "OpenCode session"
+msgstr "OpenCode session"
+
+#: src/tabs/provider-meta.tsx
+msgid "OpenCode tab"
+msgstr "OpenCode tab"
 
 #: src/routes/loaders/load-shell.ts
 msgid "Opened a different terminal"
@@ -13847,6 +13890,10 @@ msgstr "Sandbox started without cloud sign-in"
 msgid "Sandbox unavailable"
 msgstr "Sandbox unavailable"
 
+#: src/hooks/use-sandboxes.ts
+msgid "Sandbox upgraded"
+msgstr "Sandbox upgraded"
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sandboxes"
 msgstr "Sandboxes"
@@ -14551,8 +14598,11 @@ msgstr "Session {sessionId} is not in Claude, Codex, or Copilot history."
 msgid "Session {threadId} is not in Claude, Codex, or Copilot history."
 msgstr "Session {threadId} is not in Claude, Codex, or Copilot history."
 
-#: src/components/spotlight/adapters.ts
 #: src/hooks/use-resume-in-terminal.ts
+msgid "Session {workerId} is not in Claude, Codex, Copilot or OpenCode history."
+msgstr "Session {workerId} is not in Claude, Codex, Copilot or OpenCode history."
+
+#: src/components/spotlight/adapters.ts
 msgid "Session {workerId} is not in Claude, Codex, or Copilot history."
 msgstr "Session {workerId} is not in Claude, Codex, or Copilot history."
 
@@ -15557,6 +15607,10 @@ msgstr "Start new conversation · {effectiveTitle}"
 msgid "Start new conversation · {title}"
 msgstr "Start new conversation · {title}"
 
+#: src/tabs/useTerminalStripController.tsx
+msgid "Start OpenCode"
+msgstr "Start OpenCode"
+
 #: src/components/helpdesk/HelpdeskAsk.tsx
 msgid "Start over"
 msgstr "Start over"
@@ -16163,6 +16217,14 @@ msgstr "The \"{skillName}\" skill is not installed."
 msgid "The Agent bundle is not available."
 msgstr "The Agent bundle is not available."
 
+#: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
+msgid "The agent has asked a question — answer it in the terminal."
+msgstr "The agent has asked a question — answer it in the terminal."
+
+#: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
+msgid "The agent's plan is ready — approve it in the terminal."
+msgstr "The agent's plan is ready — approve it in the terminal."
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "The analysis completed but did not produce asset-scoped findings."
 msgstr "The analysis completed but did not produce asset-scoped findings."
@@ -16402,6 +16464,10 @@ msgstr "They'll get an email, and the sandbox is already in their list."
 msgid "thinking"
 msgstr "thinking"
 
+#: src/components/entity-execution-panel/current-activity.ts
+msgid "Thinking"
+msgstr "Thinking"
+
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "Thinking:"
 msgstr "Thinking:"
@@ -16595,6 +16661,10 @@ msgstr "This removes the downloaded help desk folder and its indexed entries fro
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "This runs in the background — feel free to keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
 msgstr "This runs in the background — feel free to keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "this sandbox"
+msgstr "this sandbox"
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This sandbox could not be set up."
@@ -17300,10 +17370,27 @@ msgstr "Updating plan"
 msgid "Updating…"
 msgstr "Updating…"
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Upgrade"
+msgstr "Upgrade"
+
+#: src/pages/hub-home/HubHome.tsx
+#: src/pages/hub-home/HubHome.tsx
+msgid "Upgrade FlowPad on this sandbox"
+msgstr "Upgrade FlowPad on this sandbox"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Upgrade FlowPad on this sandbox?"
+msgstr "Upgrade FlowPad on this sandbox?"
+
 #. placeholder {0}: pypi.latest
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrade to v{0}"
 msgstr "Upgrade to v{0}"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Upgrading — this takes a minute or two"
+msgstr "Upgrading — this takes a minute or two"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrading…"

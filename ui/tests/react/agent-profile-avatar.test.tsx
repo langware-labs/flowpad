@@ -104,7 +104,9 @@ describe('Agent profile avatar', () => {
   it('resolves a canonical bundle image through its asset FSRef and uses the TypeInfo fallback', () => {
     const withImage = qAgent(AGENT_AVATAR_REF);
     const first = render(<MemoryRouter><AgentProfileEditor agent={withImage} mainRef={agentMainRef()} /></MemoryRouter>);
-    const image = screen.getByRole('img', { name: 'Q avatar' });
+    // Accessible name follows Agent.getDisplayName() — title over name
+    // ("assistant turns are signed by the Agent", 378e760f5).
+    const image = screen.getByRole('img', { name: 'QA manager avatar' });
     expect(image).toHaveAttribute('src', 'http://files.local/avatar.png');
     first.unmount();
 

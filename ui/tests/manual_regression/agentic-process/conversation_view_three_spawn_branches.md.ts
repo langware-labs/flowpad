@@ -23,7 +23,7 @@
  */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { apiContext } from '../_shared/api';
-import { dismissSetupModal } from './_ap_helpers';
+import { AP_WORKER_TYPE, dismissSetupModal } from './_ap_helpers';
 
 /** Resolve the bootstrap default project's id + real workdir (mount path). */
 async function defaultProject(rq: APIRequestContext): Promise<{ id: string; workdir: string }> {
@@ -114,7 +114,7 @@ async function launchSession(page: Page, rq: APIRequestContext, convId: string):
   // test always launches claude_code regardless of the persisted last worker.
   const toolbar = page.locator('[data-testid="conversation-launch-toolbar"]');
   await toolbar.waitFor({ state: 'visible', timeout: 30_000 });
-  const claudeBtn = toolbar.locator('[data-testid="conversation-launch-claude_code"]');
+  const claudeBtn = toolbar.locator(`[data-testid="conversation-launch-${AP_WORKER_TYPE}"]`);
   if (!(await claudeBtn.isVisible().catch(() => false))) {
     await toolbar.locator('[data-testid="conversation-launch-more"]').click();
   }

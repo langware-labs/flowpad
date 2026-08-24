@@ -27,6 +27,7 @@ import typer
 from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
+    caller_abs_path as _caller_abs_path,
     discover_port as _discover_port,
     fail as _fail,
     ok as _ok,
@@ -95,13 +96,23 @@ def show_entity(
 def show_file(
     path: Annotated[
         str,
-        typer.Argument(help="File path, absolute or ~-relative (e.g. '~/Flowpad workspace/proj/index.html')"),
+        typer.Argument(
+            help=(
+                "File path — absolute, ~-relative, or relative to YOUR cwd "
+                "(resolved here before it is sent; e.g. './index.html')"
+            )
+        ),
     ],
     process: Annotated[Optional[str], typer.Option("--process", "-p", help=_PROCESS_HELP)] = None,
 ) -> None:
     if not path or not path.strip():
         _fail(EXIT_INVALID_ARG, "INVALID_PATH", "Empty path")
-    _post_show(process, {"path": path})
+    # Absolutize HERE, in the caller's process. A relative path means "relative
+    # to the agent's cwd" and that cwd never crosses the wire, so the server
+    # resolves it against ITS OWN launch directory (in a packaged install,
+    # ~/.local/bin) and silently addresses a different, usually nonexistent
+    # file. Same expansion `flow record index` already applies (record_cmd).
+    _post_show(process, {"path": _caller_abs_path(path)})
 
 
 @show_app.command(

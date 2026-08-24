@@ -7,6 +7,8 @@ import { CodexIcon } from './CodexIcon';
 import { CodexRestoreIcon } from './CodexRestoreIcon';
 import { CopilotIcon } from './CopilotIcon';
 import { CopilotRestoreIcon } from './CopilotRestoreIcon';
+import { OpenCodeIcon } from './OpenCodeIcon';
+import { OpenCodeRestoreIcon } from './OpenCodeRestoreIcon';
 
 /**
  * UI-side resolver for the symbolic ``ProcessIconKey`` exposed by
@@ -22,6 +24,8 @@ export const PROCESS_ICONS: Record<ProcessIconKey, ComponentType<{ className?: s
   'codex-restore': CodexRestoreIcon,
   copilot: CopilotIcon,
   'copilot-restore': CopilotRestoreIcon,
+  opencode: OpenCodeIcon,
+  'opencode-restore': OpenCodeRestoreIcon,
   generic: Sparkles,
   'generic-restore': History,
 };

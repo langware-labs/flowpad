@@ -1,8 +1,6 @@
 import type { AgenticProcess } from '@sdk';
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
-import { CodexIcon } from '@src/components/icons/CodexIcon';
-import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
+import { providerMetaFor } from '@src/tabs/provider-meta';
 
 /**
  * Shared formatting + presentation for "past chats" rows.
@@ -99,13 +97,15 @@ interface WorkerIconProps {
   className?: string;
 }
 
-/** Tiny worker-vendor glyph. Defaults to Claude. */
+/** Tiny worker-vendor glyph, resolved through `PROVIDER_META`.
+ *
+ *  Deliberately NOT a per-vendor if-ladder. This used to enumerate codex and
+ *  copilot and fall through to Claude, so opencode rendered — and announced to
+ *  screen readers — as Claude. A fall-through that names a real vendor fails
+ *  silently and plausibly, which is why it survived. Reading the shared table
+ *  instead means the next vendor is correct here the moment it is added there,
+ *  with no edit to this file. */
 export function WorkerIcon({ workerType, className = 'h-3 w-3 shrink-0' }: WorkerIconProps) {
-  if (workerType === 'codex') {
-    return <CodexIcon className={`${className} text-emerald-500`} />;
-  }
-  if (workerType === 'copilot') {
-    return <CopilotIcon className={`${className} text-sky-500`} />;
-  }
-  return <ClaudeIcon className={`${className} text-orange-500`} />;
+  const meta = providerMetaFor(workerType);
+  return <meta.Icon className={`${className} ${meta.iconClassName}`} />;
 }

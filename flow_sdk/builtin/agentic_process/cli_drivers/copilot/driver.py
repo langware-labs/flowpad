@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import re
@@ -21,10 +20,8 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     DeviceLoginSpec,
     ProcessHookRuntime,
     WorkerAuthResult,
-    WorkerSpawnError,
     apply_worker_env,
     apply_worker_secret_env,
-    latch_spawn_failure,
     restart_payload_from_cli_options,
     run_worker_auth_probe,
 )
@@ -46,15 +43,20 @@ from flow_sdk.builtin.agentic_process.cli_drivers.copilot.status import copilot_
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.stream_worker import (
     CopilotCLIStreamWorker,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.headless_turn import run_headless_turn
 from flow_sdk.builtin.agentic_process.process_hooks import (
+    SUPPORTED_PROCESS_HOOK_EVENTS,
+    build_canonical_hook_data,
     build_process_hook_snapshot,
     normalize_process_hook_events,
 )
 from flow_sdk.builtin.flowpad_runner_wrapper import get_installed_flow_invocation
+from flow_sdk.builtin.hooks.capabilities import process_capability, unsupported
+from flow_sdk.builtin.hooks.types import HookCapabilities, HookScope
 from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.flowpad_types.enums import WorkerType
-from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from flow_sdk.responses.response import ApiFailResponse
 from flow_sdk.transcript_analyzer import (
     TranscriptDescriptor,
     TranscriptFormat,
@@ -69,7 +71,36 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _PROCESS_HOOK_PLUGIN = Path(".flowpad/plugins/copilot/flowpad-process-hooks")
+_CANONICAL_FIELDS = (
+    "hook_event_name",
+    "prompt",
+    "session_id",
+    "cwd",
+    "timestamp",
+    "source",
+    "reason",
+    "initial_prompt",
+)
+# Copilot is the one vendor emitting camelCase in its non-compat payloads.
+_CAMEL_ALIASES = {"session_id": "sessionId", "initial_prompt": "initialPrompt"}
 
+
+#: Copilot hooks come only from plugins, and ``copilot plugin install`` accepts
+#: no local path — so a locally generated plugin can only be handed over per
+#: launch. There is no global scope to declare (verified on CLI 1.0.80).
+#: Verified against Copilot CLI 1.0.80: hooks come ONLY from plugins, and
+#: ``copilot plugin install`` accepts a marketplace/repo/URL but no local path —
+#: so a plugin we generate can only be handed over per launch via
+#: ``--plugin-dir``. ``~/.copilot/config.json`` holds auth/UI state and cannot
+#: carry hooks. This is a vendor limitation, not a missing writer.
+_NO_GLOBAL = (
+    "copilot loads hooks only from plugins, and plugin install accepts no local path"
+)
+
+_HOOK_CAPABILITIES: "HookCapabilities" = {
+    HookScope.USER: unsupported(_NO_GLOBAL),
+    HookScope.PROCESS: process_capability(),
+}
 
 class CopilotDriver:
     """Vendor glue for GitHub Copilot CLI."""
@@ -114,6 +145,9 @@ class CopilotDriver:
     def process_hook_snapshot(self, events: Sequence["HookEventType"]) -> dict[str, Any]:
         return build_process_hook_snapshot(events, provider=self.name)
 
+    def hook_capabilities(self) -> "HookCapabilities":
+        return dict(_HOOK_CAPABILITIES)
+
     def prepare_process_hooks(
         self,
         assets: "AssetDir",
@@ -136,16 +170,22 @@ class CopilotDriver:
             "--process-id",
             process_id,
         ]
+        handler = {
+            "type": "command",
+            "bash": render_shell_command(flow_argv, "linux"),
+            "powershell": render_shell_command(flow_argv, "win32"),
+        }
+        # Copilot accepts BOTH its own camelCase event names
+        # (``userPromptSubmitted``/``sessionStart``/``sessionEnd``) and the
+        # PascalCase VS Code-compatible aliases. We deliberately project the
+        # aliases: on config load Copilot rewrites them to its native keys and
+        # stamps ``_vsCodeCompat`` on each handler, which switches the stdin
+        # payload to the Claude-shaped one — snake_case fields carrying
+        # ``hook_event_name``. Copilot's native payload has no event field at
+        # all, so without this one shared handler command could not tell the
+        # three events apart.
         hooks = {
-            "hooks": {
-                "userPromptSubmitted": [
-                    {
-                        "type": "command",
-                        "bash": render_shell_command(flow_argv, "linux"),
-                        "powershell": render_shell_command(flow_argv, "win32"),
-                    }
-                ]
-            },
+            "hooks": {event.value: [handler] for event in normalized},
             "version": 1,
         }
         manifest = {
@@ -173,31 +213,28 @@ class CopilotDriver:
         process_id: str,
         raw_hook_data: dict[str, Any],
     ) -> "AgentHookData":
-        if not is_valid_entity_id(process_id):
-            raise ValueError(f"Invalid agentic process id: {process_id!r}")
-        raw = dict(raw_hook_data)
-        supplied_event = raw.get("hook_event_name")
-        if supplied_event is not None and supplied_event != HookEventType.USER_PROMPT_SUBMIT.value:
+        supplied_event = raw_hook_data.get("hook_event_name")
+        if supplied_event is None and "prompt" in raw_hook_data:
+            # Pre-alias projection: the native payload has no event field, and
+            # only the prompt hook was ever projected that way. Retire this
+            # branch once no worker predating process-hook schema 2 can be live
+            # (see build_process_hook_snapshot).
+            supplied_event = HookEventType.USER_PROMPT_SUBMIT.value
+        if supplied_event not in SUPPORTED_PROCESS_HOOK_EVENTS:
             raise ValueError(f"Unsupported Copilot process hook event: {supplied_event}")
 
-        hook_data: dict[str, Any] = {
-            "hook_event_name": HookEventType.USER_PROMPT_SUBMIT.value,
-        }
-        if "session_id" in raw:
-            hook_data["session_id"] = raw["session_id"]
-        elif "sessionId" in raw:
-            hook_data["session_id"] = raw["sessionId"]
-        for key in ("prompt", "cwd", "timestamp"):
-            if key in raw:
-                hook_data[key] = raw[key]
+        data = build_canonical_hook_data(process_id, raw_hook_data, fields=_CANONICAL_FIELDS)
+        hook_data = data.hook_data
+        hook_data["hook_event_name"] = supplied_event
+        for canonical, camel in _CAMEL_ALIASES.items():
+            if canonical not in hook_data and camel in raw_hook_data:
+                hook_data[canonical] = raw_hook_data[camel]
         # Copilot's headless stdin transport submits by appending one ``\n``;
-        # its native hook echoes that transport terminator in ``prompt``. Keep
-        # the native payload losslessly in ``raw_hook_data``, but remove the
-        # terminator from the canonical cross-worker prompt value.
-        if "sessionId" in raw and isinstance(hook_data.get("prompt"), str):
+        # its prompt hook echoes that terminator back in ``prompt``. The native
+        # payload stays lossless in ``raw_hook_data``.
+        if supplied_event == HookEventType.USER_PROMPT_SUBMIT.value and isinstance(hook_data.get("prompt"), str):
             hook_data["prompt"] = hook_data["prompt"].removesuffix("\n")
-        hook_data["raw_hook_data"] = raw
-        return AgentHookData(agentic_process_id=process_id, hook_data=hook_data)
+        return data
 
     async def headless_prompt(
         self,
@@ -243,77 +280,9 @@ class CopilotDriver:
         )
 
         worker = CopilotCLIStreamWorker.for_process(process.id)
-        from flow_sdk.builtin.agentic_process.agentic_process import (
-            register_prompt_worker,
-            unregister_prompt_worker,
+        return await run_headless_turn(
+            self, process, worker, prompt=full_prompt, context=context, logger=logger
         )
-
-        register_prompt_worker(process.id, worker)
-        # Setup between registration and task scheduling can raise. The caller's
-        # admission ``finally`` can no longer clean the slot — register_prompt_worker
-        # popped the admission and moved ownership to ``_PROMPT_WORKERS``. Until
-        # _run_turn is scheduled (its ``finally`` owns unregister), THIS frame owns
-        # the worker slot: a raise here would leak it → prompt_worker_active pinned
-        # True forever (permanent 409 + busy). Hand ownership off on success.
-        try:
-            try:
-                transcript_path = worker.transcript_path
-                if transcript_path is not None and not transcript_path.exists():
-                    transcript_path.parent.mkdir(parents=True, exist_ok=True)
-                    transcript_path.touch()
-            except OSError:
-                logger.debug("CopilotDriver.headless_prompt: transcript pre-touch failed", exc_info=True)
-
-            from flow_sdk.builtin.process_lifecycle import ProcessStatus
-
-            if process.status != ProcessStatus.RUNNING.value:
-                process.status = ProcessStatus.RUNNING.value
-                try:
-                    await process.save()
-                except Exception:
-                    logger.debug("CopilotDriver.headless_prompt: lifecycle save failed", exc_info=True)
-
-            process_ref = process
-            process_id = process.id
-            object.__setattr__(process_ref, "_turn_in_flight", True)
-            try:
-                await process_ref.notify_updated()
-            except Exception:
-                logger.exception("CopilotDriver.headless_prompt: start notify failed")
-
-            # Session adoption (and its restart-snapshot bookkeeping) is owned by
-            # AgenticProcess.adopt_worker_session; the turn-scoped adopter trusts
-            # only the turn-initial report (spurious-rotation guard). Resumed
-            # sessions no-op inside adopt_worker_session when the id is unchanged.
-            adopt_session = process_ref.make_turn_session_adopter("CopilotDriver.headless_prompt")
-
-            async def _run_turn() -> None:
-                try:
-                    async for fd in worker.execute(prompt=full_prompt, context=context):
-                        await adopt_session(worker.get_session_id())
-                        try:
-                            await process_ref.emit_flow_data(fd.model_dump())
-                        except Exception:
-                            logger.debug("CopilotDriver.headless_prompt: emit_flow_data failed", exc_info=True)
-                except WorkerSpawnError as e:
-                    # No subprocess ever started — end the process FAILED with the
-                    # start_failure latch (the ERROR frame was already emitted).
-                    await latch_spawn_failure(process_ref, e)
-                except Exception:
-                    logger.exception("CopilotDriver.headless_prompt: worker error")
-                finally:
-                    unregister_prompt_worker(process_id, worker)
-                    # Terminal status broadcast + completion-driven queue advance
-                    # (see AgenticProcess.end_headless_turn).
-                    await process_ref.end_headless_turn("CopilotDriver.headless_prompt")
-
-            asyncio.create_task(_run_turn(), name=f"copilot-{process.id[:8]}")
-        except BaseException:
-            # _run_turn never took ownership of the slot — release it here so the
-            # next turn is not permanently rejected with a 409.
-            unregister_prompt_worker(process.id, worker)
-            raise
-        return ApiSuccessResponse(data={"status": "started", "worker": self.name})
 
     def stream_worker(self, process: "AgenticProcess") -> CopilotCLIStreamWorker:
         return CopilotCLIStreamWorker.for_process(process.id)
