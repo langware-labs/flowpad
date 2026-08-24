@@ -360,12 +360,41 @@ export class FlowDataStream extends EventEmitter {
       return null;
     }
 
-    // New group = add and track
+    // New group = add and track — unless another still-open group (started
+    // via the other ingestion mode) already carries this exact message. Two
+    // live channels can legitimately both be delivering the SAME turn (e.g. a
+    // headless queue-drain broadcasts over the WS while this client's
+    // `observe-turn` stream is also open) — see FLOWPAD-2022. Content and
+    // role were captured verbatim off a live backend, but the two frames
+    // carry no shared identity, so this is where they meet.
+    const duplicate = this._findDuplicateOpenGroup(item);
+    if (duplicate) {
+      console.debug(`${logPrefix} DUPLICATE across channels - matches open group ${duplicate.groupId}, ignoring`);
+      return null;
+    }
     this._ownItems.push(item);
     this._openGroups.set(groupId, item);
     this.emit('data', [item], this);
     console.debug(`${logPrefix} NEW GROUP (${item.elementType}) - added to items, count=${this._ownItems.length}`);
     return item;
+  }
+
+  /**
+   * A different still-open group already carrying `item`'s exact content —
+   * the cross-channel duplicate case (see `_ingestWithGroupId`'s "New group"
+   * branch and `_ingestRaw`'s). Deliberately exact-match, not prefix/substring:
+   * this only needs to catch the same complete message arriving twice, and a
+   * looser match would risk swallowing legitimately repeated short content.
+   */
+  private _findDuplicateOpenGroup(item: FlowData): FlowData | null {
+    if (!item.content) return null;
+    for (const tracked of this._openGroups.values()) {
+      if (tracked === item) continue;
+      if (tracked.elementType !== item.elementType) continue;
+      if ((tracked.attributes?.role ?? '') !== (item.attributes?.role ?? '')) continue;
+      if (tracked.content === item.content) return tracked;
+    }
+    return null;
   }
 
   /**
@@ -406,6 +435,16 @@ export class FlowDataStream extends EventEmitter {
 
     // Check if we should start new group or continue current
     if (this._shouldStartNewGroup(elementType)) {
+      // Same cross-channel duplicate as `_ingestWithGroupId`'s "New group"
+      // branch — a groupless WS chunk can restate content an already-open
+      // grouped stream (e.g. `observe-turn`) delivered first. Check before
+      // touching any raw-group state, so a genuine duplicate leaves the
+      // current raw group (if any, of a different element type) untouched.
+      const duplicate = this._findDuplicateOpenGroup(item);
+      if (duplicate) {
+        return null;
+      }
+
       this._closeCurrentGroup();
 
       // Generate group-id for this item
