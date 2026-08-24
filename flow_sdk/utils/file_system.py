@@ -11,7 +11,12 @@ _SYSTEM_TEMP_DIR = Path(tempfile.gettempdir()).resolve()
 # these prefixes also catch /tmp and other-subtree temp paths that a *different*
 # process (e.g. a test run) created. Matched against the RESOLVED path, so /tmp
 # and /var/folders are compared in their /private/* canonical form on macOS.
-_TEMP_PREFIXES = ("/tmp/", "/private/tmp/", "/var/folders/", "/private/var/folders/")
+# The ROOT itself is a temp location, not just its descendants: a project cwd of
+# "/tmp" or "/private/tmp" once passed `is_valid_project_cwd` (only "/tmp/..."
+# matched), so the indexer registered the whole system temp dir as a project and
+# recursively walked every other process's scratch files from it.
+_TEMP_ROOTS = ("/tmp", "/private/tmp", "/var/folders", "/private/var/folders")
+_TEMP_PREFIXES = tuple(f"{root}/" for root in _TEMP_ROOTS)
 
 
 def is_temp_path(path: Path | str) -> bool:
@@ -27,7 +32,12 @@ def is_temp_path(path: Path | str) -> bool:
         resolved = Path(path).resolve()
     except (OSError, ValueError):
         return False
-    if resolved.as_posix().startswith(_TEMP_PREFIXES):
+    posix = resolved.as_posix()
+    # The roots themselves count, not just their descendants — one membership
+    # test covers the static OS roots and this process's own resolved $TMPDIR.
+    if posix in (*_TEMP_ROOTS, _SYSTEM_TEMP_DIR.as_posix()):
+        return True
+    if posix.startswith(_TEMP_PREFIXES):
         return True
     try:
         return resolved.is_relative_to(_SYSTEM_TEMP_DIR)

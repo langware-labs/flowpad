@@ -372,7 +372,14 @@ def extract_markdown(ref: FSRef, resolved_id: str) -> list[FSRecord]:
         return []
     data = parse_markdown_text(text, path=path)
     data["id"] = resolved_id
-    data["type"] = RecordType.MARKDOWN
+    # Persist under the type the CALLER asked for, not a hardcoded MARKDOWN.
+    # This extractor is shared by three TypeInfos (markdown, claude_md,
+    # markdown_index); hardcoding MARKDOWN meant a CLAUDE_MD ref was accounted
+    # as claude_md by the indexer but written as a markdown row, so
+    # `list_entity_sources_by_type("claude_md")` was always empty. Skip-fresh
+    # gates on that set (`row_present`), so every CLAUDE.md was re-parsed on
+    # every index, forever — measured: indexed=6 new=6 skipped=0 on every run.
+    data["type"] = ref.record_type or RecordType.MARKDOWN
     data["status"] = "active"
     # name is the title (MarkdownRecord overrode name to read title; we
     # populate name directly so base accessors work).

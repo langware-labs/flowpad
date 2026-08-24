@@ -201,8 +201,13 @@ describe('progress_report fast tests', () => {
       apiClient.get(`${CN_FS_BASE}/scan?trigger=manual&type=skill`),
     );
 
-    expect(tables.length).toBeGreaterThan(0);
-    const doneSeq = tables.map((table) => table.done);
+    // Same job_name filter as the aggregate-scan test above: the collector sees
+    // EVERY progress broadcast in the window, and a concurrent job (e.g. the
+    // detached startup index pass) legitimately interleaves its own snapshots.
+    // Two interleaved jobs' `done` counters are not one monotonic sequence.
+    const scanTables = tables.filter((t) => t.job_name === 'scan');
+    expect(scanTables.length).toBeGreaterThan(0);
+    const doneSeq = scanTables.map((table) => table.done);
     for (let i = 1; i < doneSeq.length; i++) {
       expect(doneSeq[i]).toBeGreaterThanOrEqual(doneSeq[i - 1]);
     }
@@ -220,8 +225,9 @@ describe('progress_report fast tests', () => {
       apiClient.get(`${CN_FS_BASE}/scan?type=skill&trigger=manual`),
     );
 
-    expect(tables.length).toBeGreaterThan(0);
-    const final = tables[tables.length - 1];
+    const scanTables = tables.filter((t) => t.job_name === 'scan');
+    expect(scanTables.length).toBeGreaterThan(0);
+    const final = scanTables[scanTables.length - 1];
     assertTableShape(final, 'scan');
     expect(final.text).toBe('complete');
     const skill = findRow(final, 'skill');
@@ -247,13 +253,24 @@ describe('progress_report fast tests', () => {
       apiClient.post(`${CN_FS_BASE}/index?type=skill`),
     );
 
-    expect(tables.length).toBeGreaterThan(0);
-    const final = tables[tables.length - 1];
+    // A concurrent scan pass can emit the LAST snapshot inside the window, so
+    // take the final table of the INDEX job rather than of the raw stream.
+    const indexTables = tables.filter((t) => t.job_name === 'index');
+    expect(indexTables.length).toBeGreaterThan(0);
+    const final = indexTables[indexTables.length - 1];
     assertTableShape(final, 'index');
     expect(final.text).toBe('complete');
     const skill = findRow(final, 'skill');
     expect(skill).toBeDefined();
     expect(skill!.total).toBeGreaterThanOrEqual(3);
     expect(skill!.done).toBe(skill!.total);
-  }, 30000);
+    // 5s is the asserted SLO for an unscoped per-type index, not a hang guard.
+    // `?type=skill` filters PARSING, never the WALK (index_function.py: "Always
+    // runs a full scan"), so this test is the only thing gating how many roots
+    // that walk covers. It sat green at ~26s while ~/.flow/instances/* were
+    // being walked — 155,749 of 165,666 dirs — under the old 30s cap.
+    // Measured after gating flow_home out of project discovery: endpoint 4.0-4.2s,
+    // test body 4.6s. NEVER RAISE THIS. A regression here means the index is
+    // walking roots it should not; fix the roots, not the number.
+  }, 5000);
 });
