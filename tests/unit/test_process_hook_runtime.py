@@ -26,6 +26,11 @@ from flow_sdk.instance_settings import reset_instance_settings
 @pytest.fixture()
 def isolated_wrapper(tmp_path, monkeypatch):
     monkeypatch.setenv("FLOWPAD_TEST_SANDBOX", str(tmp_path / "sandbox with space"))
+    # FLOWPAD_TEST_SANDBOX does NOT move ``flow_home`` — that keys off FLOW_HOME
+    # (base_settings._resolve_flow_home), so without this the whole pytest
+    # session shares ONE ~/.flow and any test that materializes the runner
+    # wrapper (the sniffer e2e does) breaks the assertions below.
+    monkeypatch.setenv("FLOW_HOME", str(tmp_path / "flow home"))
     reset_instance_settings()
     yield
     reset_instance_settings()
@@ -56,7 +61,9 @@ def test_claude_process_hook_projection_is_deterministic(tmp_path, isolated_wrap
     ][0]
     command, prefix = get_installed_flow_invocation()
     assert hook == {
-        "args": [*prefix, "hooks", "report", "--process-id", process_id],
+        # UserPromptSubmit is response-capable: Claude reads this handler's
+        # stdout, so the report blocks on the backend round trip.
+        "args": [*prefix, "hooks", "report", "--process-id", process_id, "--wait-for-response"],
         "command": command,
         "type": "command",
     }
@@ -109,7 +116,7 @@ def test_claude_hook_snapshot_and_native_normalization_are_semantic():
     assert driver.process_hook_snapshot([HookEventType.USER_PROMPT_SUBMIT]) == {
         "events": ["UserPromptSubmit"],
         "provider": "claude",
-        "schema": 1,
+        "schema": 2,
     }
     data = driver.normalize_process_hook_data(process_id, raw)
     assert data.agentic_process_id == process_id
@@ -176,3 +183,95 @@ def test_process_hook_runtime_fields_are_launch_only() -> None:
 
 def _flag_values(argv: list[str], flag: str) -> list[str]:
     return [argv[index + 1] for index, value in enumerate(argv[:-1]) if value == flag]
+
+
+def test_claude_projection_emits_one_handler_per_configured_event(tmp_path, isolated_wrapper):
+    process_id = str(mint_uuid())
+    assets = AssetDir(tmp_path / "assets")
+    driver = ClaudeDriver()
+
+    driver.prepare_process_hooks(
+        assets,
+        process_id,
+        [HookEventType.SESSION_START, HookEventType.SESSION_END, HookEventType.USER_PROMPT_SUBMIT],
+    )
+    plugin = assets.os_path / ".flowpad/plugins/claude/flowpad-process-hooks"
+    hooks = json.loads((plugin / "hooks/hooks.json").read_text(encoding="utf-8"))["hooks"]
+
+    command, prefix = get_installed_flow_invocation()
+
+    def expected(event: str) -> dict:
+        """``--wait-for-response`` only where Claude reads the handler's stdout.
+
+        SessionEnd has no documented output shape, so blocking its report would
+        buy nothing and cost a round trip on every session teardown.
+        """
+        args = [*prefix, "hooks", "report", "--process-id", process_id]
+        if event in {"UserPromptSubmit", "SessionStart"}:
+            args.append("--wait-for-response")
+        return {"args": args, "command": command, "type": "command"}
+
+    assert sorted(hooks) == ["SessionEnd", "SessionStart", "UserPromptSubmit"]
+    for event, entries in hooks.items():
+        # Matcher-free: SessionStart/SessionEnd matchers select on
+        # source/reason, and omitting one means "every occurrence".
+        assert entries == [{"hooks": [expected(event)]}], event
+
+
+def test_claude_removing_one_event_keeps_the_others_projected(tmp_path, isolated_wrapper):
+    process_id = str(mint_uuid())
+    assets = AssetDir(tmp_path / "assets")
+    driver = ClaudeDriver()
+    plugin = assets.os_path / ".flowpad/plugins/claude/flowpad-process-hooks"
+
+    driver.prepare_process_hooks(assets, process_id, [HookEventType.SESSION_START, HookEventType.SESSION_END])
+    driver.prepare_process_hooks(assets, process_id, [HookEventType.SESSION_END])
+
+    assert sorted(json.loads((plugin / "hooks/hooks.json").read_text(encoding="utf-8"))["hooks"]) == ["SessionEnd"]
+    assert driver.prepare_process_hooks(assets, process_id, []).plugin_dirs == ()
+    assert not plugin.exists()
+
+
+def test_claude_session_snapshot_and_normalization_carry_lifecycle_fields():
+    driver = ClaudeDriver()
+    process_id = str(mint_uuid())
+
+    assert driver.process_hook_snapshot([HookEventType.SESSION_END, HookEventType.SESSION_START]) == {
+        "events": ["SessionEnd", "SessionStart"],
+        "provider": "claude",
+        "schema": 2,
+    }
+
+    start_raw = {
+        "hook_event_name": "SessionStart",
+        "source": "resume",
+        "session_id": "session",
+        "transcript_path": "/tmp/session.jsonl",
+        "permission_mode": "plan",
+        "model": "sonnet",
+    }
+    start = driver.normalize_process_hook_data(process_id, start_raw)
+    assert start.hook_data == {
+        "hook_event_name": "SessionStart",
+        "session_id": "session",
+        "transcript_path": "/tmp/session.jsonl",
+        "source": "resume",
+        "raw_hook_data": start_raw,
+    }
+
+    end_raw = {
+        "hook_event_name": "SessionEnd",
+        "reason": "prompt_input_exit",
+        "session_id": "session",
+        "cwd": "/repo",
+        "transcript_path": "/tmp/session.jsonl",
+    }
+    end = driver.normalize_process_hook_data(process_id, end_raw)
+    assert end.hook_data == {
+        "hook_event_name": "SessionEnd",
+        "session_id": "session",
+        "cwd": "/repo",
+        "transcript_path": "/tmp/session.jsonl",
+        "reason": "prompt_input_exit",
+        "raw_hook_data": end_raw,
+    }

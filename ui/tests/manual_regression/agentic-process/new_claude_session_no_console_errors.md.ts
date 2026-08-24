@@ -7,6 +7,7 @@
  * 3. `Error parsing message` — compute-node.ts WS handler got string, used as TypeId object
  */
 import { test, expect } from '@playwright/test';
+import { AP_OPENER } from './_ap_helpers';
 
 async function dismissSetupModal(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
@@ -30,9 +31,9 @@ test('creating a Claude session produces no console errors', async ({ page }) =>
   await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
   await page.waitForTimeout(2_000);
 
-  // Start Claude via the always-present "+" tab-opener menu.
+  // Start the vendor under test via the always-present "+" tab-opener menu.
   await page.locator('[data-testid="opener-plus-button"]').click();
-  await page.locator('[data-testid="opener-menu-row-claude"]').click();
+  await page.locator(`[data-testid="opener-menu-row-${AP_OPENER}"]`).click();
   await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 20_000 });
   await page.waitForTimeout(3_000);
 

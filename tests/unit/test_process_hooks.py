@@ -55,29 +55,41 @@ def records_root(tmp_path):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "worker_type",
-    [WorkerType.CLAUDE_CODE, WorkerType.CODEX, WorkerType.COPILOT],
+    "event",
+    [HookEventType.USER_PROMPT_SUBMIT, HookEventType.SESSION_START, HookEventType.SESSION_END],
 )
-async def test_set_and_remove_hook_are_idempotent(no_save, worker_type):
-    process = AgenticProcess(id=mint_uuid(), worker_type=worker_type)
-
-    assert await process.set_hook(HookEventType.USER_PROMPT_SUBMIT) is True
-    assert await process.set_hook(HookEventType.USER_PROMPT_SUBMIT) is False
-    assert process.process_hook_events == [HookEventType.USER_PROMPT_SUBMIT.value]
-    assert await process.remove_hook(HookEventType.USER_PROMPT_SUBMIT) is True
-    assert await process.remove_hook(HookEventType.USER_PROMPT_SUBMIT) is False
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "worker_type",
     [WorkerType.CLAUDE_CODE, WorkerType.CODEX, WorkerType.COPILOT],
 )
-async def test_process_hooks_reject_every_other_event_before_mutation(no_save, worker_type):
+async def test_set_and_remove_hook_are_idempotent(no_save, worker_type, event):
     process = AgenticProcess(id=mint_uuid(), worker_type=worker_type)
 
-    with pytest.raises(ValueError, match="unsupported process hook event"):
-        await process.set_hook(HookEventType.PRE_TOOL_USE)
+    assert await process.set_hook(event) is True
+    assert await process.set_hook(event) is False
+    assert process.process_hook_events == [event.value]
+    assert await process.remove_hook(event) is True
+    assert await process.remove_hook(event) is False
+    assert process.process_hook_events == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "event",
+    [HookEventType.PRE_TOOL_USE, HookEventType.STOP, HookEventType.NOTIFICATION],
+)
+@pytest.mark.parametrize(
+    "worker_type",
+    [WorkerType.CLAUDE_CODE, WorkerType.CODEX, WorkerType.COPILOT],
+)
+async def test_process_hooks_reject_every_other_event_before_mutation(no_save, worker_type, event):
+    process = AgenticProcess(id=mint_uuid(), worker_type=worker_type)
+
+    # An unsupported (harness, scope, event) cell raises NotImplementedError at
+    # CONFIGURE time — never a silent no-op that installs a hook which could
+    # never fire. See tests/unit/test_hook_capability_matrix.py for the matrix.
+    with pytest.raises(NotImplementedError, match="does not support"):
+        await process.set_hook(event)
 
     assert process.process_hook_events == []
     assert process.process_assets is None
@@ -571,3 +583,118 @@ async def test_each_worker_launch_entry_prepares_once_with_runtime_parity(
         assert contexts[direct.id].extra_config_overrides == list(config_overrides)
         assert contexts[http.id].bypass_hook_trust is True
         assert contexts[direct.id].bypass_hook_trust is True
+
+
+SESSION_EVENTS = [HookEventType.SESSION_START, HookEventType.SESSION_END]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "worker_type",
+    [WorkerType.CLAUDE_CODE, WorkerType.CODEX, WorkerType.COPILOT],
+)
+async def test_hook_events_accumulate_in_canonical_order_and_remove_independently(no_save, worker_type):
+    process = AgenticProcess(id=mint_uuid(), worker_type=worker_type)
+
+    for event in (HookEventType.USER_PROMPT_SUBMIT, *SESSION_EVENTS):
+        assert await process.set_hook(event) is True
+
+    assert process.process_hook_events == ["SessionEnd", "SessionStart", "UserPromptSubmit"]
+
+    assert await process.remove_hook(HookEventType.SESSION_START) is True
+    assert process.process_hook_events == ["SessionEnd", "UserPromptSubmit"]
+    assert await process.remove_hook(HookEventType.SESSION_START) is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("worker_type", "plugin_relative_path"),
+    [
+        (WorkerType.CLAUDE_CODE, ".flowpad/plugins/claude/flowpad-process-hooks"),
+        (WorkerType.COPILOT, ".flowpad/plugins/copilot/flowpad-process-hooks"),
+        (WorkerType.CODEX, None),
+    ],
+)
+async def test_each_session_event_moves_the_restart_snapshot_independently(
+    no_save,
+    records_root,
+    worker_type,
+    plugin_relative_path,
+):
+    """Restart identity is per-event and stays artifact-independent."""
+    process = AgenticProcess(
+        id=mint_uuid(),
+        worker_type=worker_type,
+        load_flowpad_assistant=False,
+    )
+    baseline = process._restart_snapshot()
+
+    assert await process.set_hook(HookEventType.SESSION_START) is True
+    start_only = process._restart_snapshot()
+    assert start_only != baseline
+
+    assert await process.set_hook(HookEventType.SESSION_END) is True
+    both = process._restart_snapshot()
+    assert both not in (baseline, start_only)
+
+    prepared = await process.prepare_process_assets()
+    assert process._restart_snapshot() == both
+    if plugin_relative_path is None:
+        assert prepared.hook_runtime.plugin_dirs == ()
+    else:
+        assert Path(prepared.hook_runtime.plugin_dirs[0]).exists()
+    await process.prepare_process_assets()
+    assert process._restart_snapshot() == both
+
+    assert await process.remove_hook(HookEventType.SESSION_END) is True
+    assert process._restart_snapshot() == start_only
+    assert await process.remove_hook(HookEventType.SESSION_START) is True
+    assert process._restart_snapshot() == baseline
+
+
+@pytest.mark.asyncio
+async def test_on_hook_delivers_each_configured_session_event_with_its_own_subtype(monkeypatch):
+    process_id = mint_uuid()
+    process = AgenticProcess(id=process_id, process_hook_events=["SessionEnd", "SessionStart"])
+    received: list[AgentHookData] = []
+    emitted: list[dict] = []
+    process.register_callback(received.append)
+
+    async def capture(_self, flow_data):
+        emitted.append(flow_data)
+
+    monkeypatch.setattr(AgenticProcess, "emit_flow_data", capture)
+    start = AgentHookData(
+        agentic_process_id=process_id,
+        hook_data={"hook_event_name": "SessionStart", "source": "startup", "session_id": "s1"},
+    )
+    end = AgentHookData(
+        agentic_process_id=process_id,
+        hook_data={"hook_event_name": "SessionEnd", "reason": "other", "session_id": "s1"},
+    )
+
+    await process.on_hook(start)
+    await process.on_hook(end)
+
+    assert received == [start, end]
+    assert [item["attributes"]["subtype"] for item in emitted] == ["SessionStart", "SessionEnd"]
+    assert {item["attributes"]["kind"] for item in emitted} == {"process_hook"}
+
+
+@pytest.mark.asyncio
+async def test_on_hook_rejects_an_event_this_process_has_not_configured():
+    """A live worker may still project a hook the entity no longer lists."""
+    process_id = mint_uuid()
+    process = AgenticProcess(id=process_id, process_hook_events=["SessionStart"])
+    seen: list[AgentHookData] = []
+    process.register_callback(seen.append)
+
+    with pytest.raises(ValueError, match="process hook event is not configured: SessionEnd"):
+        await process.on_hook(
+            AgentHookData(
+                agentic_process_id=process_id,
+                hook_data={"hook_event_name": "SessionEnd", "reason": "other"},
+            )
+        )
+
+    assert seen == []

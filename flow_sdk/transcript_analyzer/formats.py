@@ -16,6 +16,13 @@ class TranscriptFormat(StrEnum):
     CODEX_ROLLOUT = "codex_rollout"
     COPILOT_STREAM = "copilot_stream"
     COPILOT_EVENTS = "copilot_events"
+    # OpenCode's own store is one JSON file per message, so there is nothing
+    # tail-readable to point at: FlowPad owns the canonical JSONL in both modes.
+    # STREAM is the headless stdout tee; SESSION is the projection assembled
+    # from the vendor store for PTY sessions. Both carry the same line
+    # vocabulary, so one parser serves both.
+    OPENCODE_STREAM = "opencode_stream"
+    OPENCODE_SESSION = "opencode_session"
 
 
 class TranscriptSource(StrEnum):
@@ -33,6 +40,12 @@ class TranscriptDescriptor:
     format: TranscriptFormat
     source: TranscriptSource
     session_id: str = ""
+    # True when ``path`` is a FlowPad-materialised projection of some other
+    # store rather than the file the worker itself appends to. A live poller
+    # must RE-RESOLVE such a transcript every tick — watching the projection's
+    # own mtime only ever reports the last time FlowPad rewrote it, so a
+    # resolve-once loop would never observe a single new entry.
+    derived: bool = False
 
     def to_dict(self) -> dict[str, str]:
         return {

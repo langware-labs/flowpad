@@ -25,6 +25,7 @@ export enum WorkerType {
   CLAUDE_CODE = 'claude_code',
   CODEX = 'codex',
   COPILOT = 'copilot',
+  OPENCODE = 'opencode',
   SIMPLE = 'simple',
 }
 

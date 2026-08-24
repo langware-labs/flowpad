@@ -38,7 +38,7 @@ export function useResumeInTerminal() {
           if (!p) {
             notify.error({
               title: t`Session not found`,
-              message: t`Session ${workerId} is not in Claude, Codex, or Copilot history.`,
+              message: t`Session ${workerId} is not in Claude, Codex, Copilot or OpenCode history.`,
               id: `session-not-found:${workerId}`,
             });
             return;

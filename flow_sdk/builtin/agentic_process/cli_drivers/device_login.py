@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import sys
 import threading
 from functools import partial
 from typing import Any, Awaitable, Callable
@@ -42,6 +43,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     get_driver,
     run_worker_auth_probe,
 )
+from flow_sdk.config import PLATFORM_WIN32
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +173,13 @@ class DeviceLoginSession:
             logger.info("device login: reaped %d stray %s login(s)", reaped, self.worker_type)
 
         try:
-            from ptyprocess import PtyProcess  # noqa: PLC0415 — unix; login flows are PTY-bound
+            # PTY handling mirrors the desktop compute provider: winpty on
+            # Windows (Unix-only ptyprocess needs fcntl, which doesn't exist
+            # there), ptyprocess elsewhere.
+            if sys.platform == PLATFORM_WIN32:
+                from winpty import PtyProcess  # noqa: PLC0415 — windows
+            else:
+                from ptyprocess import PtyProcess  # noqa: PLC0415 — unix
 
             self._pty = await asyncio.to_thread(PtyProcess.spawn, self._argv, env=env, dimensions=PTY_DIMENSIONS)
         except Exception as exc:
@@ -192,7 +200,7 @@ class DeviceLoginSession:
             return False
         if self._pty is None or not self._pty.isalive():
             return False
-        self._pty.write((code.strip() + "\r").encode())
+        self._pty.write(self._encode_for_pty(code.strip() + "\r"))
         self._code_submitted = True
         return True
 
@@ -229,6 +237,11 @@ class DeviceLoginSession:
             "accepts_code_paste": self.spec.accepts_code_paste,
         }
 
+    @staticmethod
+    def _encode_for_pty(text: str) -> str | bytes:
+        """winpty.write() expects str; ptyprocess.write() expects bytes."""
+        return text if sys.platform == PLATFORM_WIN32 else text.encode()
+
     # ── Reader thread ────────────────────────────────────────────────────────
 
     def _read_loop(self) -> None:
@@ -256,7 +269,7 @@ class DeviceLoginSession:
         answer = find_auto_answer(clean, self._answered)
         if answer is not None:
             self._answered.add(answer[0])
-            self._pty.write(answer[1].encode())
+            self._pty.write(self._encode_for_pty(answer[1]))
         # A code the CLI rejects leaves it sitting at the SAME paste prompt, so
         # without this the session never leaves AWAITING_USER and the UI shows
         # "waiting for you" forever against a code that will never be accepted.

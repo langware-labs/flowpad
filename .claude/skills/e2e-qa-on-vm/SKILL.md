@@ -23,7 +23,7 @@ WORKSPACE_DIR="$HOME/Flowpad workspace"
 APP_DIR="$WORKSPACE_DIR/flowpad"
 BASE_BRANCH="release/v0.2"
 CLONE_URL="git@github-flowpad:langware-labs/flowpad.git"
-REPORT_TO="tzahi@langware.ai"
+REPORT_TO="dev-team@langware.ai"
 MAIL_ENV="$HOME/.config/flowpad-qa/mail.env"
 SOD_DIR="$HOME/sod"
 RESULTS_DIR="ui/tests/manual_regression/_results"
@@ -35,11 +35,13 @@ default identity has no access.
 
 ---
 
-## Phase 0 — Preflight (all three must pass)
+## Phase 0 — Preflight (all four must pass)
 
-Run all three before touching the filesystem. **If any fails, report which one
-and stop.** Phase 2 deletes the working tree; never reach it on a VM that
-cannot finish the run.
+Run all four before touching the filesystem. **If any fails, report which one
+and stop.** Phase 2 deletes the workspace; never reach it on a VM that cannot
+finish the run. Each check proves a capability the run depends on *later* —
+write access, a working mail credential, the app, the ports file — because
+every one of those failing after Phase 2 costs the whole cycle.
 
 ### 0.1 Git write permission
 
@@ -63,7 +65,7 @@ behind:
 git ls-remote --heads "$CLONE_URL" 'qa-write-probe*'   # must print nothing
 ```
 
-### 0.2 SendGrid API key present
+### 0.2 SendGrid API key present **and valid**
 
 ```bash
 [[ -f "$MAIL_ENV" ]] || { echo "FAIL: $MAIL_ENV missing"; exit 1; }
@@ -71,6 +73,21 @@ set -a; source "$MAIL_ENV"; set +a
 [[ -n "${SMTP_PASS:-}" && -n "${SMTP_URL:-}" && -n "${SMTP_FROM:-}" ]] \
   || { echo "FAIL: SMTP_* incomplete in $MAIL_ENV"; exit 1; }
 ```
+
+A non-empty variable only proves a key was written, not that it still works —
+and a rotated or revoked key would then fail in Phase 6, after the whole cycle
+has run and the VM is about to stop. Authenticate for real. `-X "NOOP"` does
+EHLO + AUTH and disconnects, so this **sends no mail**:
+
+```bash
+curl --silent --show-error --ssl-reqd --url "$SMTP_URL" \
+  --user "${SMTP_USER}:${SMTP_PASS}" -X "NOOP" --max-time 30 -v 2>&1 \
+  | sed "s/${SMTP_PASS}/***/g" | grep -qE '^< 235 ' \
+  || { echo "FAIL: SendGrid rejected the key (no 235)"; exit 1; }
+```
+
+Same reasoning as the `--dry-run` push probe in 0.1: prove the credential works
+now, not after the expensive part.
 
 Never echo `SMTP_PASS`. The file is `0600` and holds a live SendGrid key;
 mask it (`sed "s/${SMTP_PASS}/***/g"`) in any command output you surface.
@@ -89,6 +106,23 @@ from the checkout below.
 which flow && flow --help >/dev/null 2>&1 || { echo "FAIL: flow not installed"; exit 1; }
 uv tool list | grep -m1 flowpad
 ```
+
+### 0.4 Preserved `.env.local` is available
+
+Phase 4 restores `~/sod/.env.local` into the fresh clone, and the e2e-qa skill
+cannot start without the ports it carries. Check it **here**, before Phase 2
+deletes anything — otherwise the run wipes the workspace and only then
+discovers it has nothing to restore.
+
+```bash
+[[ -f "$SOD_DIR/.env.local" ]] || { echo "FAIL: $SOD_DIR/.env.local missing"; exit 1; }
+grep -qE '^LOCAL_SERVER_PORT=' "$SOD_DIR/.env.local" \
+  && grep -qE '^VITE_PORT=' "$SOD_DIR/.env.local" \
+  || { echo "FAIL: $SOD_DIR/.env.local lacks LOCAL_SERVER_PORT / VITE_PORT"; exit 1; }
+```
+
+On a VM built from a fresh image this file will not exist until it is seeded
+once — see Phase 4.
 
 ---
 
@@ -115,12 +149,17 @@ mkdir -p "$SOD_DIR"
 [[ -f "$APP_DIR/.env.local" ]] && cp -a "$APP_DIR/.env.local" "$SOD_DIR/.env.local"
 [[ -f "$SOD_DIR/.env.local" ]] || { echo "FAIL: no .env.local to restore later"; exit 1; }
 
-rm -rf "$WORKSPACE_DIR"/*
+echo "=== will delete ==="; find "$WORKSPACE_DIR" -mindepth 1 -maxdepth 1 ! -name '.*'
+find "$WORKSPACE_DIR" -mindepth 1 -maxdepth 1 ! -name '.*' -exec rm -rf {} +
 ```
 
-Note the quoting: the glob must sit **outside** the quotes. `"$WORKSPACE_DIR/*"`
-quotes the asterisk and matches nothing, while an unquoted
-`~/Flowpad workspace/*` splits on the space and would target `~/Flowpad`.
+**Use this `find` form, not `rm -rf "$WORKSPACE_DIR"/*`.** The glob form is
+routinely refused by command-safety guards as an unset-variable-to-root risk,
+and a run that gets blocked mid-phase forces the agent to improvise a
+replacement — which is exactly where a destructive step should have no
+improvisation. `find` with an explicit `-maxdepth 1 ! -name '.*'` has identical
+semantics (non-dotfiles, one level), states them in the command itself, and
+lists what it will remove first.
 
 > **Destructive and irreversible.** This clears the entire workspace, not just
 > the checkout — every FlowPad project directory beside `flowpad` goes with it,
@@ -142,6 +181,36 @@ git clone --branch "$BASE_BRANCH" --single-branch "$CLONE_URL"
 ```
 
 `.env.local` is restored in Phase 4, once the QA branch exists.
+
+### Refresh the user-level copy of this skill
+
+This skill must exist **outside** the workspace, because `flowpad-qa.service`
+runs `claude` with `WorkingDirectory=/home/claudeuser` — project-skill
+discovery therefore looks in `~/.claude/skills/`, not in the checkout. A copy
+that lives only in the repo is invisible to the unit, and Phase 2 deletes the
+checkout anyway, so pointing the cwd at it is not an option either.
+
+That leaves a second copy, and a second copy drifts. Re-sync it from the clone
+that was *just* fetched, so every run picks up whatever `release/v0.2` now says:
+
+```bash
+USER_SKILL="$HOME/.claude/skills/e2e-qa-on-vm"
+rm -rf "$USER_SKILL"
+mkdir -p "$USER_SKILL"
+cp -a "$APP_DIR/.claude/skills/e2e-qa-on-vm/." "$USER_SKILL/"
+```
+
+`cp -a` after a `rm -rf`, not `rsync --delete`: the QA image has no `rsync`, and
+a plain `cp -a` over an existing directory would leave files behind that the
+skill has since deleted.
+
+The refresh lands here, after the clone, rather than at the start: it takes
+effect from the **next** run, since the current process already loaded the
+version it is executing. That is intentional — a run always finishes under the
+skill it started with, and never swaps its own instructions mid-flight.
+
+On a VM built from a fresh image the user-level copy must be seeded once by
+hand, or the very first run has no skill to invoke.
 
 ---
 
@@ -178,11 +247,50 @@ a space (`Flowpad workspace`), and an unquoted value breaks `source`.
 
 ## Phase 5 — Run the QA cycle
 
-Delegate to the sibling skill and let it own the test run:
+Delegate to the sibling skill and let it own the test run. Invoke it as a
+nested `claude` run **whose working directory is the checkout**:
 
+```bash
+cd "$APP_DIR"
+claude -p "/e2e-qa qa cycle" --dangerously-skip-permissions \
+  --output-format stream-json --verbose
 ```
-Skill(skill="e2e-qa", args="qa cycle")
-```
+
+> **Run this in the FOREGROUND and block on it. Do not background it, do not
+> poll it, and do not end your turn while it is running.**
+>
+> This is not a style preference — it is the failure that killed the
+> 2026-08-19T20:28 run. That agent launched the nested cycle with
+> `run_in_background`, then ended its turn intending to report "when the cycle
+> finishes". `claude -p` is **single-turn**: it exits the moment the turn ends.
+> systemd then tore down the service cgroup and killed the nested run 20
+> seconds after it started. The unit reported `success`, `ExecStopPost` powered
+> the VM off, and the whole cycle — Phases 5 and 6 — never happened. Nothing was
+> committed, pushed or emailed, and the exit code was 0.
+>
+> Your turn must not end until this command returns. Everything after it in
+> this file depends on it having actually finished.
+
+`--output-format stream-json --verbose` is not decoration. Plain `claude -p`
+emits the **final result only** — nothing while it works. Under
+`flowpad-qa.service` that means an empty journal for the whole cycle, so a run
+that wedges gives you `TimeoutStartSec=4h` of silence and then a poweroff, and
+the journal tail `qa-finalize.sh` mails you contains nothing about where it
+stopped. Streaming puts each step in the journal as it happens, which is the
+only forensic record an unattended run leaves behind.
+
+Not `Skill(skill="e2e-qa", …)` from this process. Two reasons, and both bite:
+
+* **Discovery.** `e2e-qa` is a project skill living in
+  `$APP_DIR/.claude/skills/`. This process was started by `flowpad-qa.service`
+  with `WorkingDirectory=/home/claudeuser`, so it only ever sees
+  `~/.claude/skills/` — `e2e-qa` is not in its skill list and the call cannot
+  resolve.
+* **Relative paths.** `e2e-qa` reads `.env.local`, `ui/tests/manual_regression/`
+  and `.claude/skills/e2e-qa/e2e_qa_cleanup.py` as repo-relative. Copying it to
+  `~/.claude/skills/` would fix discovery and break every one of those paths.
+  It has to run *in* the checkout, which is exactly what the nested run gives
+  it.
 
 It writes results to `ui/tests/manual_regression/_results/<timestamp>/`,
 including `report.html` built from its `templates/report.html`. Capture that

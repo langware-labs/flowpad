@@ -25,7 +25,9 @@ import {
 } from '../../flow_processing';
 import { IEntity } from '../../IEntity';
 import { ActionInfo } from '../../models';
+import { hostTerminalTheme } from '../../utils/runtime';
 import {
+  type AppUpgrade,
   ComputeProviderType,
   type NodeStatus,
   RuntimeEnvironment,
@@ -48,7 +50,7 @@ export const WORKSPACE_FLAVOR = 'workspace';
 export type MachineSessionCallback = (sessionId: string, session: Shell) => void;
 
 /** CLI worker kind shared across resolver APIs. */
-export type WorkerKind = 'claude' | 'codex' | 'copilot';
+export type WorkerKind = 'claude' | 'codex' | 'copilot' | 'opencode';
 
 /** Descriptor returned by {@link ComputeNode.findSession} on hit. */
 export interface FindSessionResult {
@@ -242,6 +244,9 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
       ...(options?.visible !== undefined ? { visible: options.visible } : {}),
       ...(options?.pty_mode !== undefined ? { pty_mode: options.pty_mode } : {}),
       ...(options?.launchPrompt ? { launch_prompt: options.launchPrompt } : {}),
+      // This action spawns the PTY server-side for a visible process, so the
+      // theme has to ride the CREATE — the later `open` only reattaches.
+      ...(hostTerminalTheme() ? { theme: hostTerminalTheme() } : {}),
     };
 
     const response = await dataManager.callAction<unknown, IAgenticProcess>(action);
@@ -596,6 +601,22 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    */
   async workspaceReady(): Promise<WorkspaceReady> {
     return this.ops<WorkspaceReady>('workspace-ready');
+  }
+
+  /**
+   * Upgrade the FlowPad app INSIDE the box to the latest published release, and
+   * bring it back up: `flow stop`, `flow upgrade`, and the hub's own start.
+   *
+   * The equivalent of typing those commands into a terminal on the machine,
+   * except that the start is the hub's workspace-ready path — the only one that
+   * carries the hub url into the process — so a box does not come back pointed
+   * at the image's default hub.
+   *
+   * One call per box, and it is slow by nature: it is a PyPI install followed by
+   * an app boot, not a request. Owner-only, like every other `ops` command.
+   */
+  async upgradeApp(): Promise<AppUpgrade> {
+    return this.ops<AppUpgrade>('upgrade-app');
   }
 
   // ── computeNodeTools: setting a box's projects up ────────────────────

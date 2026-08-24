@@ -1,3 +1,7 @@
+---
+id: 91856acd-d005-470d-b3c8-0e762229408a
+---
+
 # Claude Guidelines for flow-cli
 
 ## Quick Start
@@ -45,6 +49,20 @@ npm run dev
 The frontend runs at `http://localhost:$VITE_PORT` and calls the backend at `http://localhost:$LOCAL_SERVER_PORT` via the `__API_URL__` define in `vite.config.ts`.
 
 > **Hub at** **`$FLOWPAD_HUB_URL`** **(default** **`localhost:8093`) is served by the sibling checkout** **`../test_flowpad/FlowPad/`** **(run via** **`flowpad/run.py`, ships** **`flowpad/hub/routers/auth.py`** **with** **`/api/v1/login`) — NOT the minimal** **`flow-hub/`** **stub in this tree. Don't** **`pkill`/install into the wrong one.**
+
+### Validating the HUB UI (non-negotiable)
+
+**"Open the hub UI" means a frontend configured against the HUB server — never the local backend.** The hub page rendered against `localhost:$LOCAL_SERVER_PORT` is a *different runtime*: the local server declares `supported_pages: ["desk","hub"]`, so `isHubOnly()` is false, the full desktop API is present, and the type registry is populated. Every hub-only behavior — the API subset, `isHubOnly()` gates, missing `types` — is invisible there. Validating a hub change against the local backend proves nothing about the hub.
+
+Use the checked-in hub-mode env, which is exactly this:
+
+```bash
+cd ui && npx vite --mode hubtest      # .env.hubtest.local → :4098, API http://localhost:8093
+```
+
+`.env.hubtest.local` sets `VITE_API_URL=http://localhost:8093`, `LOCAL_SERVER_PORT=8093`, `VITE_FORCE_HUB=true`, `FLOW_INSTANCE=hubtest`. Open `http://localhost:4098/dock/hub/home`. Confirm the wiring before trusting a screenshot: in the page, `window.__API_URL__` must be the hub, and `GET /api/v1/graph/bootstrap` must return `supported_pages: ["hub"]`. If it returns `["desk","hub"]` you are on the local server and looking at the wrong runtime.
+
+Corollary: the hub's bootstrap ships `schemas` but **no `types`**, so the frontend SchemaRegistry is empty there and every `iconForType()` falls back to one generic glyph. Per-type icons cannot be validated on the hub until the hub publishes `types`.
 
 ### Spinning up an extra named instance (`scripts/instance_ctl.sh`)
 
@@ -126,13 +144,17 @@ If a test fails on time, the production code is too slow or stalls — that's th
 
 ## Entity id policy (non-negotiable)
 
-**An entity id is always a UUID v4 (random) or v5 (deterministic). Never any other version.** v4 = no stable key (random); v5 = derived from a stable key (a file path or a natural key, via `uuid5`). Nothing else is a valid entity id.
+**UUID v4 is the entity id. The one exception is a READ-ONLY asset, whose id may be v5 derived from its file path.** An id is a name, not a fact about the thing — it does not encode which account a source serves or which record a row mirrors. Anything that needs *that* is a **lookup on the natural key**, not id arithmetic.
 
-* **Mint through one place.** Construct ids only via `mint_uuid(key=None, *, namespace=...)` in `flow_sdk/api/api_types/identifier.py` (re-exported from `flow_sdk/fs_store/identifier.py`): `uuid5(namespace, key)` when a stable key is given, else `uuid4`. Don't hand-roll `uuid.uuid4()` / `uuid5(...)` at call sites — route through the minter (or `Entity.allocate_id`, or a type's `gen_uuid_fn`, which themselves use it).
+Why the exception and nothing else: a read-only asset has no row of its own to look up — the file IS the record, so its id has to fall out of the path or a rescan would mint a new entity for the same file. Everything else has a row, and a row can be queried.
 
-* **Validate on adopt.** Any id taken from outside the minter — a markdown/asset **frontmatter** **`id:`**, a slug, a client-supplied id — must pass `is_valid_entity_id` (UUID v4/v5) before it's adopted. If it doesn't (e.g. a hand-authored v7), **ignore it and derive a stable v5 instead** — never let a foreign id become an entity id. The per-type `_read_*_frontmatter_id` readers and `Entity.allocate_id` already enforce this; new id-adopting paths must too.
+**Never invent a new deterministic id.** If you catch yourself writing `uuid5(...)` to make a re-run "converge on the same row", stop: query for the row instead. `SourceItem.find_existing` (`flow_sdk/builtin/source_item.py`) and `DataSource.find_for_account` are the shape — the lookup gives the same idempotency, works on rows minted before the key existed, and does not silently break when a key component changes.
 
-* **Two predicates, don't confuse them.** `is_valid_uuid` / `UUID_PATTERN` are deliberately **version-agnostic** (URL/VFS path matchers and `@local` parsing depend on that) — do NOT tighten them. `is_valid_entity_id` is the **mint/adopt policy gate** (v4/v5 only) — use it wherever an id is born or adopted.
+* **Mint through one place.** Construct ids only via `mint_uuid(key=None, *, namespace=...)` in `flow_sdk/api/api_types/identifier.py` (re-exported from `flow_sdk/fs_store/identifier.py`): `uuid5(namespace, key)` when a stable key is given, else `uuid4`. Don't hand-roll `uuid.uuid4()` / `uuid5(...)` at call sites — route through the minter (or `Entity.allocate_id` for a row-only entity, or `TypeInfo.mint_entity_id` for a filesystem asset — both use it). New code passes no key.
+
+* **Validate on adopt.** Any id taken from outside the minter — a markdown/asset **frontmatter** **`id:`**, a slug, a client-supplied id — must pass `is_valid_entity_id` (UUID v4/v5) before it's adopted. If it doesn't (e.g. a hand-authored v7), **ignore it and derive a stable v5 instead** — never let a foreign id become an entity id. `TypeInfo.mint_entity_id` is the filesystem adoption gate around the pure per-type carrier readers; `Entity.allocate_id` enforces the row-only entity-side gate. New id-adopting paths must use one of those seams.
+
+* **Two predicates, don't confuse them.** `is_valid_uuid` / `UUID_PATTERN` are deliberately **version-agnostic** (URL/VFS path matchers and `@local` parsing depend on that) — do NOT tighten them. `is_valid_entity_id` is the **mint/adopt policy gate** — use it wherever an id is born or adopted. It keeps accepting **v4 and v5**: read-only assets are v5 by design, and so are rows minted before this rule. Tightening it to v4-only would orphan both.
 
 * **Validators must agree at v4/v5.** The frontend `ts_sdk/src/models/TypeId.ts` regex (`…-[45]xxx-…`) and the hub `flowpad/hub/api/identifier.py` must accept exactly v4/v5. A mismatch (e.g. a stricter frontend) means a backend-minted id can poison entity resolution — see the v7 incident where one fixture's v7 frontmatter id broke `useEntityByPath`'s whole bulk list.
 
@@ -150,8 +172,11 @@ If a backend route can't be called through `apiClient` because it doesn't return
 
 **Every per-type icon in the UI comes from the backend type registry (`TypeInfo.icon`) — never hardcode a glyph for an entity type at a call site.** Resolve it at render time via `iconForType(type)` (`ui/src/components/graph-view/icons/iconRegistry.ts`), which reads the bootstrap-loaded SchemaRegistry and falls back to a generic document glyph for unknown/icon-less types. If a type's icon is wrong or missing, fix its `TypeInfo` (`flow_sdk/schema/type_info/<type>_*info.py`) so every surface picks it up — don't patch the one component.
 
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 596a59c7-5b73-4993-8529-e7ef0d92723b
-flowpad:endcapsule identity -->
+## Naming — check the glossary before inventing a noun
+
+**[`docs/glossary.md`](docs/glossary.md) is the cross-walk between our vocabulary, Claude Code's, and OpenClaw's.** Read it before naming a new entity, and keep two rules:
+
+* **Say whether it mirrors a provider or is ours.** `DynamicWorkflow`/`WorkflowRun` mirror Claude Code's Workflow tool; `GraphWorkflow`/`GraphWorkflowRun` are ours. A provider mirror follows the provider's format and lives under its dot-dir; a native asset is `AssetClass.REPO` under `agentic-assets/<family>/`.
+* **Don't reuse an already-taken word.** `Flow` means a chat message (`FlowMessage`) and a bus envelope (`FlowEvent`); `Graph` means the entity graph, `GRAPH_CONTEXT`, and `graph-view`; `Workflow` means the two Claude Code mirrors. That's why ours is the compound `GraphWorkflow` — bare `Graph*` and bare `Workflow*` are both ambiguous.
+
+* **`Agent` is reserved; the `.claude/agents/*.md` prompt asset is `SubAgent`** (type value `subagent`) — Claude Code's own word for it. The bare noun is held for the hub-level launchable principal. Note the deliberate split: the **entity** is `subagent`, the **directory and family** stay `agents` because Claude Code owns that path, and `AGENTS_SPEC_FIELDS` mirrors its `--agents` JSON verbatim. Also don't confuse the graph **node kind** `node_type: "agent"` (a spawned worker station, which *references* a SubAgent) with the entity type.

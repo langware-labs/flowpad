@@ -45,12 +45,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     resolve_worker_language,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import ProcessHookRuntime
-from flow_sdk.builtin.agentic_process.process_hooks import (
-    ProcessHookCallback,
-    clear_process_hook_callbacks,
-    dispatch_process_hook,
-    register_process_hook_callback,
-)
+from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks
 from flow_sdk.builtin.agentic_process.status_predicates import (
     WorkerMode,
     is_process_startable,
@@ -79,6 +74,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process._shared import RunResult
     from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import WorkerAuthResult
     from flow_sdk.builtin.agentic_process.prompt_queue import PromptQueue
+    from flow_sdk.builtin.hooks.process_manager import ProcessHooksManager
     from flow_sdk.builtin.shell import Shell
     from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
     from flow_sdk.fs_store.fs_record import FSRecord
@@ -342,6 +338,10 @@ class SystemInstructionAssets:
     assets_dir: Path
     instructions: str
     claude_file: Path
+    # The owning process. Every vendor but opencode reaches these assets through
+    # a directory flag and needs nothing else; opencode reaches them ONLY through
+    # a generated per-process config, which is keyed on this id.
+    process_id: str = ""
 
 
 @dataclass
@@ -837,6 +837,20 @@ class AgenticProcess(Entity):
         persist=Persist.FALSE,
         description="WebSocket connection ID of the browser tab that opened this process (runtime field, not persisted)",
     )
+    terminal_theme: str | None = APIField(
+        default=None,
+        persist=Persist.TRUE,
+        description=(
+            "Palette of the terminal this worker paints into: 'light' | 'dark'. "
+            "Sent by the client on open. Workers emit truecolor SGR chosen at "
+            "launch from their own theme setting, so the host's xterm palette "
+            "cannot recolor them — the theme has to travel with the launch or a "
+            "light terminal gets the worker's dark-theme (pale) foregrounds. "
+            "Persisted so a server-side recovery relaunch keeps the same palette. "
+            "Read at startup by the CLI: toggling mid-session does not recolor a "
+            "running worker, only the next launch."
+        ),
+    )
     visible: bool = APIField(
         default=False,
         description=(
@@ -1330,6 +1344,7 @@ class AgenticProcess(Entity):
         visible: bool | None = None,
         retry: bool = False,
         session_id_override: str | None = None,
+        terminal_theme: str | None = None,
     ) -> ApiSuccessResponse | ApiFailResponse:
         """Spawn (or reattach to) this AgenticProcess's PTY worker.
 
@@ -1366,6 +1381,11 @@ class AgenticProcess(Entity):
                 return ApiFailResponse(message=f"Process not found: {self.id}")
             if session_id_override:
                 fresh.session_id = session_id_override
+            # Same reason as ``session_id_override``: this arrived on the request,
+            # so it exists only on the caller's copy. The launch below runs on
+            # ``fresh``, so a value left on ``self`` never reaches the worker.
+            if terminal_theme:
+                fresh.terminal_theme = terminal_theme
 
             # Suppress the restart-required auto-flag while start_pty() mutates
             # fields (status, session_id are tracked, but those mutations are
@@ -1451,7 +1471,16 @@ class AgenticProcess(Entity):
                 )
                 self.start_failure = None
                 cleared_start_failure = True
-            self.session_id = self.session_id or str(uuid4())
+            # Mint a provisional id ONLY for a vendor that can actually be
+            # handed one at launch. Codex and opencode mint their own
+            # (``rollout-…`` / ``ses_…``) and reject a foreign id, so stamping a
+            # FlowPad uuid here gave them a phantom session id that no vendor
+            # store has ever heard of — it is later replaced by the adopted real
+            # one, but until then every lookup keyed on it misses. ``prompt()``
+            # already honours this trait (see ``preassign_interactive_session_id``
+            # at the prompt admission); this is the same gate on the open path.
+            if not self.session_id and bool(getattr(self.driver, "preassign_interactive_session_id", False)):
+                self.session_id = str(uuid4())
             reattach_changed = False
             # True iff this open is respawning a dead worker (after-restart
             # recovery), set in the stale-shell-drop branch below. Drives the
@@ -3760,8 +3789,13 @@ class AgenticProcess(Entity):
                 record_turn_abort(self._record_dir(), session_id=self.session_id)
             return ApiSuccessResponse(data={"cancelled": True, "transport": "cli"})
         if self.pty_mode and self.shell_id:
+            # The interrupt key is a VENDOR trait, not a constant: opencode quits
+            # on Ctrl-C, so sending it here destroyed the session instead of
+            # stopping the turn. Default stays Ctrl-C for every vendor that
+            # doesn't declare otherwise.
+            interrupt = getattr(self.driver, "pty_interrupt_sequence", b"\x03")
             try:
-                await self.send(b"\x03")
+                await self.send(interrupt)
             except ValueError:
                 # No shell actually linked — fall through to the no-turn reply.
                 pass
@@ -3931,6 +3965,7 @@ class AgenticProcess(Entity):
         )
         from flow_sdk.transcript_analyzer import AgentTranscriptFile
         from flow_sdk.transcript_analyzer.entry import EntryKind
+        from flow_sdk.transcript_analyzer.resolver import transcript_change_signature
 
         poll_interval = 0.3
         lock = _PROMPT_LOCKS[self.id]
@@ -3985,6 +4020,7 @@ class AgenticProcess(Entity):
         # loop streams only entries appended for THIS turn.
         emitted = 0
         wm_path, wm_fmt, wm_descriptor = _resolve_transcript()
+        wm_derived = bool(getattr(wm_descriptor, "derived", False))
         if wm_path is not None and wm_path.exists():
             emitted = len(_read_entries(wm_path, wm_fmt))
         else:
@@ -4000,7 +4036,8 @@ class AgenticProcess(Entity):
             nudge_task: asyncio.Task | None = None
             resolved_path: "Path | None" = wm_path if (wm_path and wm_path.exists()) else None
             resolved_fmt = wm_fmt
-            last_sig: "tuple[int, int] | None" = None
+            resolved_derived = wm_derived
+            last_sig: "tuple | None" = None
             active_codex_turn_id: str | None = None
             try:
                 async with lock:
@@ -4135,9 +4172,13 @@ class AgenticProcess(Entity):
                     last_activity = time.monotonic()
                     while True:
                         # Resolve the transcript lazily — it may not exist until
-                        # the worker writes its first line of this turn.
-                        if resolved_path is None or not resolved_path.exists():
+                        # the worker writes its first line of this turn. A
+                        # DERIVED transcript is re-resolved every tick: the
+                        # projection only grows when the driver rebuilds it, so
+                        # watching its mtime alone would never advance.
+                        if resolved_path is None or not resolved_path.exists() or resolved_derived:
                             p, f, descriptor = _resolve_transcript()
+                            resolved_derived = bool(getattr(descriptor, "derived", False))
                             if p is not None and p.exists():
                                 resolved_path, resolved_fmt = p, f
                                 last_sig = None  # force a read
@@ -4145,11 +4186,7 @@ class AgenticProcess(Entity):
                                     await self._persist_transcript_session_id(descriptor)
 
                         if resolved_path is not None and resolved_path.exists():
-                            try:
-                                st = resolved_path.stat()
-                                sig = (st.st_size, st.st_mtime_ns)
-                            except OSError:
-                                sig = None
+                            sig = transcript_change_signature(resolved_path)
                             # Only reparse when the file actually changed.
                             if sig is not None and sig != last_sig:
                                 last_sig = sig
@@ -4227,10 +4264,13 @@ class AgenticProcess(Entity):
                             # window to observe the result before failing.
                             if not landed and needs_initial_type and not blind_delivered.is_set():
                                 logger.warning(
-                                    "prompt-pty: composer marker never matched for %s (%s) and the "
-                                    "user turn never landed — typing the prompt blindly as a last "
-                                    "resort before submission-error; CHECK THE VENDOR COMPOSER "
-                                    "REGEX FOR DRIFT (process %s)",
+                                    "prompt-pty: user turn never landed for %s (%s) — typing the "
+                                    "prompt blindly as a last resort before submission-error. "
+                                    "Either the prompt was never delivered (composer marker drift, "
+                                    "or an unrecognized interstitial owns the screen) or it WAS "
+                                    "delivered and the transcript never showed it — check the "
+                                    "vendor's transcript resolution before blaming the regex "
+                                    "(process %s)",
                                     self.id,
                                     worker_type,
                                     self.id,
@@ -4349,23 +4389,25 @@ class AgenticProcess(Entity):
             entry_to_flowdata,
         )
         from flow_sdk.transcript_analyzer import AgentTranscriptFile
+        from flow_sdk.transcript_analyzer.resolver import transcript_change_signature
 
         poll_interval = 0.3
         worker_type = self.driver.name
         noise = live_stream_noise_kinds()
         handler = StreamingResponseHandler()
 
-        def _transcript_path() -> "Path | None":
+        def _transcript_path() -> "tuple[Path | None, bool]":
+            """Return ``(path, derived)`` — see ``TranscriptDescriptor.derived``."""
             try:
                 desc = self.driver.transcript_descriptor(self)
             except Exception:
                 desc = None
             if desc is not None:
-                return desc.path
+                return desc.path, desc.derived
             try:
-                return self.driver.transcript_path(self)
+                return self.driver.transcript_path(self), False
             except Exception:
-                return None
+                return None, False
 
         def _read_entries(path: "Path") -> list:
             """Full reparse keyed off entry COUNT — same choice the prompt
@@ -4388,7 +4430,7 @@ class AgenticProcess(Entity):
                 logger.debug("observe-turn: transcript parse failed for %s", path, exc_info=True)
                 return []
 
-        path = _transcript_path()
+        path, derived = _transcript_path()
         # Watermark at open: the caller's pane loads history on mount, so
         # everything up to now is already on screen. Stream only what the turn
         # appends from here.
@@ -4397,16 +4439,17 @@ class AgenticProcess(Entity):
         async def _observe() -> None:
             nonlocal emitted
             try:
-                last_sig: "tuple[int, int] | None" = None
+                last_sig: "tuple | None" = None
                 saw_marker = False
                 while True:
-                    p = path if (path is not None and path.exists()) else _transcript_path()
+                    # A derived transcript is rebuilt by the driver, so it must
+                    # be re-resolved every tick (see ``TranscriptDescriptor``).
+                    if derived or path is None or not path.exists():
+                        p, _ = _transcript_path()
+                    else:
+                        p = path
                     if p is not None and p.exists():
-                        try:
-                            st = p.stat()
-                            sig = (st.st_size, st.st_mtime_ns)
-                        except OSError:
-                            sig = None
+                        sig = transcript_change_signature(p)
                         if sig is not None and sig != last_sig:
                             last_sig = sig
                             entries = _read_entries(p)
@@ -4486,9 +4529,9 @@ class AgenticProcess(Entity):
     ) -> ApiSuccessResponse | ApiFailResponse:
         """Tell Claude to execute the plan.
 
-        If clear_context=True, inject '/clear' first.
-        Sets the plan auto-approve flag so that when ExitPlanMode is called,
-        the hook handler can auto-approve the PermissionRequest once.
+        If clear_context=True, inject '/clear' first. The ExitPlanMode
+        permission prompt is answered by the user in the terminal — Flowpad does
+        not pre-approve it.
         """
         if not file_path:
             return ApiFailResponse(message="file_path is required")
@@ -4502,9 +4545,6 @@ class AgenticProcess(Entity):
             await self.inject(prompt)
             await asyncio.sleep(1.5)
 
-            from flow_sdk.app.actions.listen import set_plan_auto_approve
-
-            set_plan_auto_approve(self.id)
             _write_plan_frontmatter(file_path, {"executed": True})
 
             return ApiSuccessResponse(data={"injected": True})
@@ -5142,6 +5182,7 @@ class AgenticProcess(Entity):
             assets_dir=asset_dir.os_path,
             instructions=instructions,
             claude_file=claude_file,
+            process_id=self.id,
         )
 
     async def prepare_process_assets(self) -> PreparedProcessAssets:
@@ -5171,58 +5212,42 @@ class AgenticProcess(Entity):
         """Compatibility instruction-only preparation entry point."""
         return await self._prepare_system_instruction_assets()
 
-    @staticmethod
-    def _canonical_process_hook_event(event: HookEventType | str) -> HookEventType:
-        try:
-            normalized = HookEventType(event)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"unsupported process hook event: {event!r}") from exc
-        if normalized is not HookEventType.USER_PROMPT_SUBMIT:
-            raise ValueError(f"unsupported process hook event: {normalized.value}")
-        return normalized
+    @cached_property
+    def hooks(self) -> "ProcessHooksManager":
+        """This process's hooks — the ``HooksManager`` for Process scope.
 
-    def _require_process_hook_support(self) -> None:
-        if not bool(getattr(self.driver, "supports_process_hooks", False)):
-            raise ValueError(f"process hooks are unsupported for worker {self.worker_type or 'default'}")
+        Its global counterpart is ``get_hook_manager(worker_type)``. Same
+        interface; the difference is only the target and which cells the harness
+        declares.
+        """
+        from flow_sdk.builtin.hooks.process_manager import ProcessHooksManager
 
-    async def _set_process_hook_enabled(
-        self,
-        event: HookEventType | str,
-        *,
-        enabled: bool,
-    ) -> bool:
-        normalized = self._canonical_process_hook_event(event)
-        self._require_process_hook_support()
-        original = list(self.process_hook_events or [])
-        updated = set(original)
-        if enabled:
-            updated.add(normalized.value)
-        else:
-            updated.discard(normalized.value)
-        canonical = sorted(updated)
-        if canonical == original:
-            return False
-        self.process_hook_events = canonical
-        await self.save()
-        return True
+        return ProcessHooksManager(self)
 
     async def set_hook(self, event: HookEventType | str) -> bool:
         """Persist one process-local hook intent; return whether it changed."""
-        return await self._set_process_hook_enabled(event, enabled=True)
+        return await self.hooks._set(event, enabled=True, scope=None)
 
     async def remove_hook(self, event: HookEventType | str) -> bool:
         """Remove one process-local hook intent; return whether it changed."""
-        return await self._set_process_hook_enabled(event, enabled=False)
+        return await self.hooks.remove(event)
 
-    def register_callback(self, callback: ProcessHookCallback) -> Callable[[], None]:
+    def register_callback(self, callback) -> Callable[[], None]:
         """Subscribe to every hook delivered to this process."""
-        return register_process_hook_callback(str(self.id), callback)
+        return self.hooks.set_callback(callback)
 
-    async def on_hook(self, data: AgentHookData) -> None:
-        """Emit and dispatch one canonical, process-targeted hook event."""
+    async def on_hook(self, data: AgentHookData):
+        """Emit and dispatch one canonical, process-targeted hook event.
+
+        Returns whatever a callback answered (``None`` when nobody has an
+        opinion, which is the common observer case).
+        """
+        from flow_sdk.builtin.hooks.manager import normalize_event
+
         if data.agentic_process_id != str(self.id):
             raise ValueError("agent hook target does not match process")
-        event = self._canonical_process_hook_event(data.hook_data.get("hook_event_name"))
+        event = normalize_event(data.hook_data.get("hook_event_name"))
+        self.hooks.require(event)
         if event.value not in (self.process_hook_events or []):
             raise ValueError(f"process hook event is not configured: {event.value}")
 
@@ -5248,7 +5273,7 @@ class AgenticProcess(Entity):
             await self.emit_flow_data(flow_data.model_dump(mode="python"))
         except Exception:
             logger.exception("process hook FlowData emission failed for %s", self.id)
-        await dispatch_process_hook(str(self.id), data)
+        return await self.hooks.deliver(data)
 
     @action.post(action_name="set-hook")
     async def _http_set_hook(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -5257,6 +5282,10 @@ class AgenticProcess(Entity):
             return body
         try:
             changed = await self.set_hook(body.get("event"))
+        except NotImplementedError as exc:
+            # An unsupported (harness, scope, event) cell. 501 rather than 400:
+            # the request is well-formed, this harness simply cannot serve it.
+            return ApiFailResponse(message=str(exc), status_code=501)
         except (TypeError, ValueError) as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         return ApiSuccessResponse(data={"changed": changed})
@@ -5268,6 +5297,10 @@ class AgenticProcess(Entity):
             return body
         try:
             changed = await self.remove_hook(body.get("event"))
+        except NotImplementedError as exc:
+            # An unsupported (harness, scope, event) cell. 501 rather than 400:
+            # the request is well-formed, this harness simply cannot serve it.
+            return ApiFailResponse(message=str(exc), status_code=501)
         except (TypeError, ValueError) as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         return ApiSuccessResponse(data={"changed": changed})
@@ -5279,20 +5312,8 @@ class AgenticProcess(Entity):
     ) -> None:
         if assets is None:
             return
-        if hasattr(cmd, "add_dirs"):
-            add_dirs = list(getattr(cmd, "add_dirs", []) or [])
-            assets_path = str(assets.assets_dir)
-            if assets_path not in add_dirs:
-                add_dirs.append(assets_path)
-                cmd.add_dirs = add_dirs
-        cmd.system_prompt_append = None
-        cmd.system_prompt_file = str(assets.claude_file)
-        if hasattr(cmd, "developer_instructions"):
-            cmd.developer_instructions = assets.instructions
-        if hasattr(cmd, "custom_instruction_dirs"):
-            cmd.custom_instruction_dirs = [str(assets.assets_dir)]
-            if hasattr(cmd, "no_custom_instructions"):
-                cmd.no_custom_instructions = False
+        # One seam, owned by the argv class — see ``AgentOptions``.
+        cmd.apply_instruction_assets(assets)
 
     @classmethod
     def _apply_process_assets(cls, cmd: AgentOptions, prepared: PreparedProcessAssets) -> None:
@@ -7159,7 +7180,7 @@ class AgenticProcess(Entity):
         Action name kept as ``open`` for back-compat with existing UI / TS SDK
         clients; the underlying behaviour is PTY spawn (``start_pty``).
 
-        POST body: {instruction?, visible?, session_id?, retry?}
+        POST body: {instruction?, visible?, session_id?, retry?, theme?}
 
         ``retry: true`` is the explicit user-retry signal — it clears the
         ``start_failure`` latch so a failed-to-start process relaunches.
@@ -7169,6 +7190,12 @@ class AgenticProcess(Entity):
         if request_info and request_info.request_connection_id:
             self.connection_id = request_info.request_connection_id
         body = await request_info.get_post_data() if request_info else {}
+        # Palette of the terminal the client is rendering this worker into.
+        # Anything other than the two known values leaves the previous value
+        # in place rather than un-pinning the worker's theme.
+        theme = body.get("theme")
+        if theme not in ("light", "dark"):
+            theme = None
         instruction = body.get("instruction")
         visible = body.get("visible")
         retry = bool(body.get("retry"))
@@ -7179,6 +7206,7 @@ class AgenticProcess(Entity):
             visible=visible,
             retry=retry,
             session_id_override=session_id_override,
+            terminal_theme=theme,
         )
 
     async def reap_if_orphaned(self, *, grace_seconds: int = 10) -> bool:
@@ -7706,9 +7734,17 @@ class AgenticProcess(Entity):
             # transcript that lands here), so no driver coupling.
             if not current_busy and prev_busy:
                 self._schedule_queue_drain("ready")
-                # Same turn-end edge: push-reindex the files this turn wrote/edited
-                # so their entities re-parse + broadcast (updated_date bump →
-                # frontend body re-read). Fire-and-forget; never blocks the turn.
+                # NOTE (QA 2026-08-21): this edge can never fire — `prev_busy`
+                # comes from `self._last_broadcast_key` and every flush hydrates a
+                # fresh object, so it is always None (instrumented at a real turn
+                # end: `prev_busy=None current_busy=False edge_fires=False`). So a
+                # headless turn's writes are never reindexed from this seam.
+                # Moving it to the idle gate DOES fix that, but it regresses the
+                # whiteboard save path — `whiteboard/create_persist` C2 goes 4/4
+                # green -> 0/4 with that change alone (proven both directions on a
+                # reset instance). The reindex firing on every idle flush races the
+                # editor's own board.json/WHITE_BOARD.md writes. Left as-is until
+                # the interaction is understood; do not "fix" the gate in isolation.
                 self._schedule_turn_end_reindex("flush")
             if not current_busy:
                 # Default-name stamp on ANY idle flush, not the busy→idle edge:

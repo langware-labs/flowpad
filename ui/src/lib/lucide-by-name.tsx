@@ -4,6 +4,7 @@ import { FileText, type LucideIcon } from 'lucide-react';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
 import { CopilotIcon } from '@src/components/icons/CopilotIcon';
+import { OpenCodeIcon } from '@src/components/icons/OpenCodeIcon';
 import { iconAssetUrl } from '@sdk';
 
 /**
@@ -21,6 +22,7 @@ const CUSTOM_ICONS: Record<string, LucideIcon> = {
   ClaudeCode: ClaudeIcon as unknown as LucideIcon,
   Codex: CodexIcon as unknown as LucideIcon,
   Copilot: CopilotIcon as unknown as LucideIcon,
+  OpenCode: OpenCodeIcon as unknown as LucideIcon,
 };
 
 /**

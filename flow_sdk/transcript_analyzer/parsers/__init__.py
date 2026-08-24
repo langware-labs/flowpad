@@ -7,12 +7,14 @@ from .base import Parser
 from .claude import ClaudeParser
 from .codex import CodexParser, CodexRolloutParser, CodexStreamParser
 from .copilot import CopilotEventsParser, CopilotParser, CopilotStreamParser
+from .opencode import OpenCodeParser, OpenCodeSessionParser, OpenCodeStreamParser
 from .workflow import WorkflowParser
 
 _REGISTRY: dict[str, type[Parser]] = {
     "claude": ClaudeParser,
     "codex": CodexParser,
     "copilot": CopilotParser,
+    "opencode": OpenCodeParser,
     "workflow": WorkflowParser,
 }
 
@@ -33,6 +35,11 @@ def get_parser_class(
             return CopilotEventsParser
         if fmt is TranscriptFormat.COPILOT_STREAM:
             return CopilotStreamParser
+    if worker_type == "opencode":
+        if fmt is TranscriptFormat.OPENCODE_SESSION:
+            return OpenCodeSessionParser
+        if fmt is TranscriptFormat.OPENCODE_STREAM:
+            return OpenCodeStreamParser
     try:
         return _REGISTRY[worker_type]
     except KeyError as exc:
@@ -51,6 +58,9 @@ __all__ = [
     "CopilotEventsParser",
     "CopilotParser",
     "CopilotStreamParser",
+    "OpenCodeParser",
+    "OpenCodeSessionParser",
+    "OpenCodeStreamParser",
     "WorkflowParser",
     "get_parser_class",
 ]

@@ -5,7 +5,7 @@ import { useContext } from './useContext';
 
 /** Worker vendors as the worker-history action reports them (NOT the launch
  *  `claude_code` form). Single source for the union + any vendor chip list. */
-export const WORKER_TYPES = ['claude', 'codex', 'copilot'] as const;
+export const WORKER_TYPES = ['claude', 'codex', 'copilot', 'opencode'] as const;
 export type WorkerType = (typeof WORKER_TYPES)[number];
 
 export interface WorkerHistoryEntry {
