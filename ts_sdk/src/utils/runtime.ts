@@ -57,3 +57,25 @@ export interface RuntimeInfo {
 export function isElectronShell(): boolean {
   return typeof window !== 'undefined' && !!(window as { electronAPI?: unknown }).electronAPI;
 }
+
+/** Palette of the terminal a worker will paint into, or undefined off-DOM.
+ *
+ * The second client-contributed signal in this module, and for the same reason
+ * as `isElectronShell()`: only the browser can know it. Workers paint in
+ * truecolor (their PTY runs with `COLORTERM=truecolor`), so none of their
+ * foregrounds are ANSI-indexed and the host xterm palette cannot recolor them.
+ * The CLI picks those RGB values from its own theme setting at startup, so a
+ * worker launched without this inherits the user's global (usually dark) theme
+ * and paints pale grey on a light terminal.
+ *
+ * Read from the class next-themes writes on `<html>` rather than from
+ * `useTheme()`, because every launch path that needs it — `AgenticProcess.start`,
+ * `ComputeNode.createProcess`, the recovery retries — is outside React.
+ *
+ * Undefined off-DOM (node tests, headless callers) leaves the worker unpinned,
+ * which is the right answer for a launch with no terminal to match.
+ */
+export function hostTerminalTheme(): 'light' | 'dark' | undefined {
+  if (typeof document === 'undefined') return undefined;
+  return document.documentElement.classList.contains('light') ? 'light' : 'dark';
+}

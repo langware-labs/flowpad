@@ -837,6 +837,20 @@ class AgenticProcess(Entity):
         persist=Persist.FALSE,
         description="WebSocket connection ID of the browser tab that opened this process (runtime field, not persisted)",
     )
+    terminal_theme: str | None = APIField(
+        default=None,
+        persist=Persist.TRUE,
+        description=(
+            "Palette of the terminal this worker paints into: 'light' | 'dark'. "
+            "Sent by the client on open. Workers emit truecolor SGR chosen at "
+            "launch from their own theme setting, so the host's xterm palette "
+            "cannot recolor them — the theme has to travel with the launch or a "
+            "light terminal gets the worker's dark-theme (pale) foregrounds. "
+            "Persisted so a server-side recovery relaunch keeps the same palette. "
+            "Read at startup by the CLI: toggling mid-session does not recolor a "
+            "running worker, only the next launch."
+        ),
+    )
     visible: bool = APIField(
         default=False,
         description=(
@@ -1330,6 +1344,7 @@ class AgenticProcess(Entity):
         visible: bool | None = None,
         retry: bool = False,
         session_id_override: str | None = None,
+        terminal_theme: str | None = None,
     ) -> ApiSuccessResponse | ApiFailResponse:
         """Spawn (or reattach to) this AgenticProcess's PTY worker.
 
@@ -1366,6 +1381,11 @@ class AgenticProcess(Entity):
                 return ApiFailResponse(message=f"Process not found: {self.id}")
             if session_id_override:
                 fresh.session_id = session_id_override
+            # Same reason as ``session_id_override``: this arrived on the request,
+            # so it exists only on the caller's copy. The launch below runs on
+            # ``fresh``, so a value left on ``self`` never reaches the worker.
+            if terminal_theme:
+                fresh.terminal_theme = terminal_theme
 
             # Suppress the restart-required auto-flag while start_pty() mutates
             # fields (status, session_id are tracked, but those mutations are
@@ -1459,9 +1479,7 @@ class AgenticProcess(Entity):
             # one, but until then every lookup keyed on it misses. ``prompt()``
             # already honours this trait (see ``preassign_interactive_session_id``
             # at the prompt admission); this is the same gate on the open path.
-            if not self.session_id and bool(
-                getattr(self.driver, "preassign_interactive_session_id", False)
-            ):
+            if not self.session_id and bool(getattr(self.driver, "preassign_interactive_session_id", False)):
                 self.session_id = str(uuid4())
             reattach_changed = False
             # True iff this open is respawning a dead worker (after-restart
@@ -7162,7 +7180,7 @@ class AgenticProcess(Entity):
         Action name kept as ``open`` for back-compat with existing UI / TS SDK
         clients; the underlying behaviour is PTY spawn (``start_pty``).
 
-        POST body: {instruction?, visible?, session_id?, retry?}
+        POST body: {instruction?, visible?, session_id?, retry?, theme?}
 
         ``retry: true`` is the explicit user-retry signal — it clears the
         ``start_failure`` latch so a failed-to-start process relaunches.
@@ -7172,6 +7190,12 @@ class AgenticProcess(Entity):
         if request_info and request_info.request_connection_id:
             self.connection_id = request_info.request_connection_id
         body = await request_info.get_post_data() if request_info else {}
+        # Palette of the terminal the client is rendering this worker into.
+        # Anything other than the two known values leaves the previous value
+        # in place rather than un-pinning the worker's theme.
+        theme = body.get("theme")
+        if theme not in ("light", "dark"):
+            theme = None
         instruction = body.get("instruction")
         visible = body.get("visible")
         retry = bool(body.get("retry"))
@@ -7182,6 +7206,7 @@ class AgenticProcess(Entity):
             visible=visible,
             retry=retry,
             session_id_override=session_id_override,
+            terminal_theme=theme,
         )
 
     async def reap_if_orphaned(self, *, grace_seconds: int = 10) -> bool:
