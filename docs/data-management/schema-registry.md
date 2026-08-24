@@ -15,6 +15,10 @@ Per-type metadata is **authored declaratively** in `flow_sdk/schema/type_info/<t
 - `flow_sdk/schema/types.py` — `EntityType`, the single canonical type-name enum
 
 ---
+> The layer below this one is [`Datum`](datum.md) — the descriptor and carrier
+> for data whose shape arrives at runtime. `TypeInfo` is its resolver for
+> entity-backed kinds; it is not a competing type system.
+
 
 ## TypeInfo
 

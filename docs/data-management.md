@@ -168,9 +168,9 @@ On-disk directory structure for both FlowPad records (`~/.flow/records/`) and Cl
 
 ***
 
-### [Datum — the data descriptor](data-management/datum.md)
+### [Datum — the data descriptor and carrier](data-management/datum.md)
 
-The one descriptor for data whose shape arrives **as data** rather than being declared in source: a recursive `{kind?, fields?, value?}` tree where branches carry `fields`, leaves carry `value`, and the same shape serves as a contract (empty leaves) and as the datum (populated leaves), joined by position. Covers the branch-XOR-leaf invariant, `kind` as an ordinary dot-path tag, arrays, and why entity fields declared via `APIField` are deliberately out of scope.
+The most basic unit of data: one model that both **describes** a shape and **carries** its values, for data whose shape arrives **as data** rather than being declared in source: a recursive `{kind?, fields?, value?}` tree where branches carry `fields`, leaves carry `value`, and the same shape serves as a contract (empty leaves) and as the datum (populated leaves), joined by position. Covers the branch-XOR-leaf invariant, `kind` as an ordinary dot-path tag, arrays, and why entity fields declared via `APIField` are deliberately out of scope.
 
 **Key source files:** `flow_sdk/schema/datum.py`
 

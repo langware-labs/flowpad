@@ -1,9 +1,13 @@
-# Datum — the data descriptor
+# Datum — the data descriptor and carrier
 
-`Datum` (`flow_sdk/schema/datum.py`) is the one descriptor for data whose shape
-arrives **as data** — an asset manifest, a dataset row, an I/O contract someone
-wrote in JSON. It sits at the bottom of the schema layer, beside
-[the schema registry](schema-registry.md).
+`Datum` (`flow_sdk/schema/datum.py`) is the most basic unit of data in the
+system: it **describes** a shape and it **carries** the values. One model does
+both, because they are the same tree — empty leaves make it a contract,
+populated leaves make it the datum.
+
+It is for data whose shape arrives **as data** — an asset manifest, a dataset
+row, an I/O contract someone wrote in JSON. It sits at the bottom of the schema
+layer, beside [the schema registry](schema-registry.md).
 
 ```python
 class Datum(BaseModel):
@@ -15,9 +19,9 @@ class Datum(BaseModel):
 Three optional fields and one invariant: **`fields` XOR `value`** — a node is a
 branch or a leaf, never both.
 
-## Why it is not called a schema
+## Descriptor and carrier are one tree
 
-The same tree is both. With empty leaves it is a **contract**; with populated
+A schema describes and an instance carries; here they are the same shape. With empty leaves it is a **contract**; with populated
 leaves it is the **datum**:
 
 ```jsonc
