@@ -284,6 +284,12 @@ msgstr "{0} مُنتشر"
 msgid "{0} is indexed without a valid source path and cannot be opened."
 msgstr "{0} مُفهرس بدون مسار مصدر صحيح ولا يمكن فتحه."
 
+#. placeholder {0}: node.name || 'The sandbox'
+#. placeholder {1}: result.version
+#: src/hooks/use-sandboxes.ts
+msgid "{0} is now running FlowPad {1}."
+msgstr ""
+
 #. placeholder {0}: workerLabel(unavailableWorker)
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "{0} is unavailable"
@@ -392,6 +398,11 @@ msgstr "{0} نوع"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "types_time"
 msgstr "{0} نوع · {1}"
+
+#. placeholder {0}: node.name || 'The sandbox'
+#: src/hooks/use-sandboxes.ts
+msgid "{0} was upgraded and restarted."
+msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "{changedCount} changed"
@@ -4122,6 +4133,10 @@ msgstr "تعذر تحديث الأسرار المرفقة"
 msgid "Could not update eval flag"
 msgstr "تعذر تحديث علم التقييم"
 
+#: src/hooks/use-sandboxes.ts
+msgid "Could not upgrade the sandbox"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Could not upload avatar"
@@ -6927,6 +6942,10 @@ msgstr "Flowpad Hub"
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "يقوم Flowpad بتهيئة المستودع، ثم يقترح التثبيت على فرع مراجعة منفصل."
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -13869,6 +13888,10 @@ msgstr "تم تشغيل Sandbox من دون تسجيل الدخول إلى ال�
 msgid "Sandbox unavailable"
 msgstr "الصندوق غير متاح"
 
+#: src/hooks/use-sandboxes.ts
+msgid "Sandbox upgraded"
+msgstr ""
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sandboxes"
 msgstr "الصناديق"
@@ -16637,6 +16660,10 @@ msgstr "تؤدي هذه العملية إلى حذف مجلد مكتب المس�
 msgid "This runs in the background — feel free to keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
 msgstr "تعمل هذه العملية في الخلفية، ويمكن الاستمرار في العمل بكل حرية. عند الانتهاء، ستكون النتيجة (وأي إجراءات) متاحة في الصفحة الرئيسية."
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "this sandbox"
+msgstr ""
+
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This sandbox could not be set up."
 msgstr "تعذر إعداد هذه البيئة المعزولة."
@@ -17341,10 +17368,27 @@ msgstr "يحدّث الخطة"
 msgid "Updating…"
 msgstr "جاري التحديث…"
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Upgrade"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+#: src/pages/hub-home/HubHome.tsx
+msgid "Upgrade FlowPad on this sandbox"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Upgrade FlowPad on this sandbox?"
+msgstr ""
+
 #. placeholder {0}: pypi.latest
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrade to v{0}"
 msgstr "الترقية إلى الإصدار {0}"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Upgrading — this takes a minute or two"
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrading…"

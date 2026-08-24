@@ -78,3 +78,9 @@ step.
 Also invisible to the probe: a socket that is **bound but never listening**.
 `_port_open` returned `False` for such a port and the picker handed it straight
 out.
+
+<!-- flowpad:capsule identity
+version: 1
+data:
+  id: 7a3d2916-5d25-46e9-94da-8ce07c087c77
+flowpad:endcapsule identity -->

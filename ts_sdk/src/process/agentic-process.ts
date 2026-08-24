@@ -22,6 +22,7 @@ import { FlowElementTypes } from '../flow_processing/flow-element-types';
 import { ActionInfo } from '../models/ActionInfo';
 import type { FlowEvent } from '../tags/EventBus';
 import { toplog } from '../services/toplog';
+import { hostTerminalTheme } from '../utils/runtime';
 
 /** Elapsed ms since `t0` formatted for `process_load` trace lines. */
 const msSince = (t0: number): string => (performance.now() - t0).toFixed(1);
@@ -769,6 +770,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (hint === 'claude' || hint === 'codex' || hint === 'copilot' || hint === 'opencode') {
       action.queryParameters = { worker_type: hint };
     }
+    // This GET can SPAWN a visible PTY (the backend upserts and starts one for a
+    // session that has no live process), so it is a launch and must pin the
+    // palette like the other two. Query hint, since there is no body on a GET.
+    const theme = hostTerminalTheme();
+    if (theme) action.queryParameters = { ...(action.queryParameters ?? {}), theme };
     try {
       const data = await dataManager.callAction<void, IAgenticProcess | null>(action);
       if (!data) return null;
@@ -2810,7 +2816,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     // performance and removes the empty-shell-after-refresh failure mode
     // (the cached ``status === RUNNING`` could outlive the actual worker).
     const actionInfo = new ActionInfo('open', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = options ?? {};
+    // Sampled per launch, not per caller: the CLI reads the theme at startup, so
+    // a mid-session toggle recolors the next worker, never the running one.
+    const theme = hostTerminalTheme();
+    actionInfo.bodyParameters = { ...(options ?? {}), ...(theme ? { theme } : {}) };
     const tOpen = performance.now();
     const result = await dataManager.callAction<
       unknown,

@@ -19,7 +19,7 @@ export {
   RuntimeType,
   SANDBOX_PROVIDERS,
 } from './compute-node-types';
-export type { NodeStatus, RuntimeEnvironment, WorkspaceReady } from './compute-node-types';
+export type { AppUpgrade, NodeStatus, RuntimeEnvironment, WorkspaceReady } from './compute-node-types';
 
 // Export machine status types for monitoring compute nodes
 export { ComputeNodeSize, ComputeNodeSizeLabels, MachineStatusUtils, ServiceStatusEnum } from './machine-status';
