@@ -28,7 +28,7 @@ export default mergeConfig(
         },
       },
       reporters: ['default', 'hanging-process'],
-      environment: 'jsdom',
+      environment: path.resolve(__dirname, '../_jsdomNodeAbort.ts'),
       environmentOptions: {
         jsdom: {
           url: `http://localhost:${port}`,

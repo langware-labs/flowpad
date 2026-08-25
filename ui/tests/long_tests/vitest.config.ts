@@ -44,7 +44,8 @@ export default mergeConfig(
         },
       },
       reporters: ['default', 'hanging-process'],
-      environment: 'jsdom',
+      // jsdom + Node's AbortController/AbortSignal — see the file header.
+      environment: path.resolve(__dirname, '../_jsdomNodeAbort.ts'),
       environmentOptions: {
         jsdom: {
           url: `http://localhost:${port}`,

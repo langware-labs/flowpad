@@ -556,6 +556,25 @@ _VALID_PERMISSION_MODES = frozenset({"plan", "default", "acceptEdits", "bypassPe
 # concurrent refresh-driven calls can't both run recovery on the same process.
 _OPEN_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 
+# The worker's IDENTITY, mirrored from the launch back onto the caller's
+# instance (see ``start_pty``). Deliberately only these two.
+#
+# ``_perform_open`` also assigns ``context_data``, ``last_started_hash``,
+# ``last_started_snapshot``, ``pty_mode``, ``restart_required``, ``shell_id``,
+# ``sidecar_shell_id``, ``start_failure`` and ``visible`` — those are the launch
+# BOOKKEEPING that belongs to ``fresh``, the copy that owns the durable row.
+# Copying them onto ``self`` too makes a second ``self.save()`` write a
+# start-lifecycle snapshot that was captured under ``fresh``'s lock, which
+# re-triggers restart-required/relaunch bookkeeping and hangs the next launch
+# (proven: ``test_create_process_terminal_theme`` goes 3 passed in 13s →
+# 3 × 60s timeout when the full set is mirrored). Identity is what callers read
+# back; bookkeeping is not. Do NOT widen this tuple without re-running
+# ``tests/long_tests/test_create_process_terminal_theme.py``.
+_OPEN_MUTATED_FIELDS: tuple[str, ...] = (
+    "session_id",
+    "status",
+)
+
 # Per-process serialization for prompt-queue drains so two ready edges can't
 # pop+inject the same head twice.
 _QUEUE_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
@@ -1396,6 +1415,24 @@ class AgenticProcess(Entity):
                 return result
             finally:
                 fresh._set_start_lifecycle(False)
+                # Mirror the worker's identity back onto the caller's object. The
+                # lock body deliberately runs on ``fresh`` (a DB reload) so two
+                # concurrent opens can't double-spawn from stale snapshots — but
+                # that leaves the fields the launch assigns on ``fresh`` alone,
+                # and ``self`` is the object the caller keeps using. Without
+                # this, ``await proc.start_pty()`` returns a session id in its
+                # payload while ``proc.session_id`` is still None and
+                # ``proc.status`` is still "new", so the very next call on the
+                # caller's object reads a session-less process: notably
+                # ``stream_transcript()``, whose ``driver.transcript_path(self)``
+                # then returns None until the deadline and dies with the opaque
+                # "transcript file did not appear within timeout".
+                # The inbound direction (caller → ``fresh``) is already handled
+                # above for ``session_id_override``/``terminal_theme``; this is
+                # the outbound half of the same handshake.
+                if fresh is not self:
+                    for _field in _OPEN_MUTATED_FIELDS:
+                        setattr(self, _field, getattr(fresh, _field))
 
     async def start(
         self,

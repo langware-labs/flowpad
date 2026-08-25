@@ -33,7 +33,8 @@ export default mergeConfig(
     },
     test: {
       name: 'headless',
-      environment: 'jsdom',
+      // jsdom + Node's AbortController/AbortSignal — see the file header.
+      environment: path.resolve(__dirname, '../_jsdomNodeAbort.ts'),
       environmentOptions: {
         // The SDK reads window.location for its WS origin; pin it at the selected
         // backend. Missing selection stays origin-only until the setup hook reds.

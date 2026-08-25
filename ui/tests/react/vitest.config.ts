@@ -36,7 +36,8 @@ export default mergeConfig(
     },
     test: {
       name: 'react',
-      environment: 'jsdom',
+      // jsdom + Node's AbortController/AbortSignal — see the file header.
+      environment: path.resolve(__dirname, '../_jsdomNodeAbort.ts'),
       environmentOptions: {
         jsdom: {
           url: port ? `http://localhost:${port}` : 'http://localhost',

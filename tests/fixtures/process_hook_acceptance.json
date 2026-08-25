@@ -40,5 +40,9 @@
   "session_discriminators": {
     "SessionStart": "source",
     "SessionEnd": "reason"
-  }
+  },
+  "response_events": [
+    "SessionStart",
+    "UserPromptSubmit"
+  ]
 }

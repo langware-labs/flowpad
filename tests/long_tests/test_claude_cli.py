@@ -185,8 +185,17 @@ async def test_process_hook_acceptance_uses_real_claude_plugin(
             assert all((plugin / relative).is_file() for relative in _HOOK_CONTRACT["plugin_files"])
             hooks = json.loads((plugin / "hooks" / "hooks.json").read_text(encoding="utf-8"))
             assert sorted(hooks["hooks"]) == _HOOK_CONTRACT["expected_persisted_session_events"]
-            handler = hooks["hooks"][_HOOK_CONTRACT["event"]][0]["hooks"][0]
-            assert handler["args"][-3:] == ["report", "--process-id", process.id]
+            # Every persisted event's handler, not just one: the driver appends
+            # ``--wait-for-response`` ONLY for events whose stdout Claude reads
+            # (see claude/driver.py ``_RESPONSE_EVENTS``). Paying that blocking
+            # round trip on a fire-and-forget event is pure hook latency, and
+            # dropping it from a response event silently breaks the round trip —
+            # so both directions are pinned here.
+            for event_name, handlers in hooks["hooks"].items():
+                expected = ["report", "--process-id", process.id]
+                if event_name in _HOOK_CONTRACT["response_events"]:
+                    expected.append("--wait-for-response")
+                assert handlers[0]["hooks"][0]["args"][-len(expected) :] == expected, event_name
     finally:
         for event in configured:
             await process.remove_hook(event)

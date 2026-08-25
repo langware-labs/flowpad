@@ -54,14 +54,35 @@ def capture_terminal_path() -> str:
     return fallback
 
 
-def probe(executables: list[str]) -> dict:
-    """Resolve each executable against the captured terminal PATH.
+def _merge_paths(*paths: str) -> str:
+    """Concatenate PATH strings in order, dropping empties and duplicates."""
+    seen: set[str] = set()
+    merged: list[str] = []
+    for entry in os.pathsep.join(p for p in paths if p).split(os.pathsep):
+        if entry and entry not in seen:
+            seen.add(entry)
+            merged.append(entry)
+    return os.pathsep.join(merged)
 
-    PATH order is the tie-break for multiple installs — the same binary a
-    terminal would run wins. ``shutil.which`` handles absolute paths and
-    Windows PATHEXT.
+
+def probe(executables: list[str]) -> dict:
+    """Resolve each executable against the terminal PATH, then this process's.
+
+    PATH order is the tie-break for multiple installs — the terminal PATH comes
+    first, so the same binary a terminal would run still wins. ``shutil.which``
+    handles absolute paths and Windows PATHEXT.
+
+    The process PATH is *appended*, never dropped: the captured terminal PATH is
+    only as good as the dotfiles that built it, and a shell whose ``$HOME`` has
+    no ``.profile``/``.bashrc`` (a sandboxed HOME, a service account, a stripped
+    container image) yields a PATH *narrower* than the one this process is
+    already running with. Resolving against that alone reports a harness as "not
+    installed" while its binary sits on the server's own PATH, executable right
+    now — which then refuses ``createProcess`` and fails PTY spawn. Discovery
+    must never lose a directory we can already see.
     """
-    path = capture_terminal_path()
+    terminal_path = capture_terminal_path()
+    path = _merge_paths(terminal_path, os.environ.get("PATH", ""))
     return {
         "path": path,
         "executables": {exe: shutil.which(exe, path=path) for exe in executables},
