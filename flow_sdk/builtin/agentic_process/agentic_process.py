@@ -7733,7 +7733,6 @@ class AgenticProcess(Entity):
             # AP-level seam for both PTY *and* headless turns (both write the
             # transcript that lands here), so no driver coupling.
             if not current_busy and prev_busy:
-                self._schedule_queue_drain("ready")
                 # NOTE (QA 2026-08-21): this edge can never fire — `prev_busy`
                 # comes from `self._last_broadcast_key` and every flush hydrates a
                 # fresh object, so it is always None (instrumented at a real turn
@@ -7747,6 +7746,22 @@ class AgenticProcess(Entity):
                 # the interaction is understood; do not "fix" the gate in isolation.
                 self._schedule_turn_end_reindex("flush")
             if not current_busy:
+                # Drain the prompt queue on ANY idle flush, not the busy→idle
+                # edge above — that edge is dead for the reason its NOTE gives,
+                # which left a PTY turn with NO turn-end drain at all
+                # (FLOWPAD-1981). A prompt enqueued mid-turn bails ``not_ready``,
+                # and that bail returns before the ``chain`` reschedule, so
+                # nothing ever revisits it: the queue strands until the user
+                # happens to act again. Headless self-heals through
+                # ``end_headless_turn``'s "complete" drain; this is the PTY
+                # equivalent. Re-firing on every idle flush (rather than on an
+                # edge) is safe: ``_schedule_queue_drain`` returns early when no
+                # queue file exists, ``_maybe_drain_queue`` bails on an empty or
+                # disabled queue, and it pop-persists the head before injecting
+                # so a repeat can never double-inject. Only the DRAIN moves here
+                # — the reindex stays on the dead edge above, so the whiteboard
+                # race described in that NOTE is untouched by this change.
+                self._schedule_queue_drain("ready")
                 # Default-name stamp on ANY idle flush, not the busy→idle edge:
                 # each flush hydrates a fresh object, so ``prev_busy`` starts
                 # None and an edge gate would never fire. Naming THIS hydration
