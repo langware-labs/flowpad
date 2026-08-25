@@ -5,7 +5,7 @@ manifest (which is also the walker's marker file). The manifest declares the
 physical layout; the example rows live beside it:
 
     agentic-assets/dataset/<slug>/
-      dataset.json                 # {"metadata": {id?, data_layout, field_spec, schema, …}, "data": {…}}
+      dataset.json                 # {"metadata": {id?, data_layout, field_spec, contract, …}, "data": {…}}
       data.csv                     # data_layout == "csv"
       examples/0001/...            # data_layout == "io_folder" (see below)
 
@@ -40,9 +40,12 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import uuid
 from pathlib import Path
 from typing import Any
+
+from pydantic import ValidationError
 
 from flow_sdk.builtin.dataset import (
     EXAMPLE_META,  # canonical per-example metadata filename (model-owned)
@@ -58,6 +61,8 @@ from flow_sdk.fs_store.indexer.functions._folder_capsule import (
     read_folder_capsule_id,
 )
 from flow_sdk.fs_store.record_types import RecordType
+
+logger = logging.getLogger(__name__)
 
 MANIFEST = "dataset.json"
 CSV_FILE = "data.csv"
@@ -135,6 +140,33 @@ def dataset_id_from_folder(ref: FSRef | Path) -> object | None:
 def _example_id(dataset_id: str, key: str) -> str:
     """Deterministic per-example uuid5 of ``f"{dataset_id}:{key}"``."""
     return mint_uuid(f"{dataset_id}:{key}", namespace=uuid.NAMESPACE_DNS)
+
+
+def _take_contract(ds_meta: dict[str, Any]) -> dict[str, Any] | None:
+    """POP the manifest's ``contract`` slot, normalized to a :class:`Datum` dump.
+
+    It is removed from ``ds_meta`` rather than read, because the caller spreads
+    that dict into the record metadata — leaving the key behind would publish the
+    raw, unvalidated value beside (or instead of) the normalized one.
+
+    Validated here, where the file is still in hand, rather than left raw for a
+    consumer to choke on mid-join. ``None`` when absent, not a dict, or
+    malformed — a bad contract degrades the SLOT, never the dataset: raising
+    would cost every ``Example`` record this extractor also emits, since the
+    walk marks only the dataset's own id as seen before parsing, so an
+    ``orphan_action=DELETE`` sweep would reap the example rows the contract has
+    nothing to do with. (``data_source_spec`` drops its whole record on a bad
+    manifest, but there the manifest IS the definition; here the rows parse
+    fine.)
+    """
+    raw = ds_meta.pop("contract", None)
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return Datum.model_validate(raw).model_dump(exclude_none=True)
+    except ValidationError as exc:
+        logger.warning("[dataset] ignoring malformed `contract`: %s", exc)
+        return None
 
 
 def _coerce_enum(value: Any, enum_cls: type, default: Any) -> Any:
@@ -396,8 +428,10 @@ def extract_dataset(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     description = ds_meta.get("description") if isinstance(ds_meta.get("description"), str) else ""
     content = "\n".join(p for p in (name, description) if p)
 
+    contract = _take_contract(ds_meta)  # POPS the raw key before the spread below
+
     metadata = {
-        **ds_meta,  # known dataset fields (incl. `schema`) from the metadata section
+        **ds_meta,  # known dataset fields from the metadata section
         "data_layout": str(layout),
         "field_spec": field_spec,
         "delimiter": delimiter,
@@ -408,6 +442,8 @@ def extract_dataset(ref: FSRef, resolved_id: str) -> list[FSRecord]:
         "num_binary_inputs": num_binary_inputs,
         "data": ds_data,  # free dataset-level `data` section (use-case-owned)
     }
+    if contract is not None:
+        metadata["contract"] = contract   # absent ⇒ the dataset declares no shape
 
     rec_kwargs: dict[str, Any] = {
         "type": RecordType.DATASET,

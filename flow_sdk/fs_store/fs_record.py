@@ -37,6 +37,8 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Iterator, TypeVar
+
+from pydantic import BaseModel
 from weakref import WeakValueDictionary
 
 from flow_sdk.fs_store.fs_ref import FSRef
@@ -299,6 +301,28 @@ def _bump_record_write_generation(record_type: str) -> None:
     _RECORD_WRITE_GENERATION[key] = _RECORD_WRITE_GENERATION.get(key, 0) + 1
 
 
+def _json_default(obj: Any) -> Any:
+    """Encode a value ``json.dumps`` cannot handle on its own.
+
+    A Pydantic model is dumped, not stringified. Without this a model-valued
+    metadata field (``Dataset.contract`` is a ``Datum``) would fall to the ``str``
+    fallback and be written as its **repr** — ``"kind='array' fields=None …"`` —
+    which re-reads as a string and fails validation on the next load. Silent
+    corruption, no exception to notice it by.
+
+    ``mode="json"`` so nested datetimes/enums/paths inside the model encode the
+    same way the DB writer encodes them, and nulls are KEPT: the top-level
+    ``None`` skip in ``save_metadata`` exists to protect a partial merge, and
+    there is no partial merge inside a value that is replaced wholesale.
+
+    Everything else keeps the historical ``str`` coercion — narrowing that is a
+    separate change with its own blast radius.
+    """
+    if isinstance(obj, BaseModel):
+        return obj.model_dump(mode="json")
+    return str(obj)
+
+
 class FSRecord(Generic[M]):
     """Lean filesystem manifest. See module docstring."""
 
@@ -494,7 +518,7 @@ class FSRecord(Generic[M]):
         """Write metadata.json into the shadow folder. Mints id if absent."""
         meta_path = self._meta_path_for_write("save()")
         meta_path.write_text(
-            json.dumps(self.to_dict(), indent=2, ensure_ascii=False, default=str),
+            json.dumps(self.to_dict(), indent=2, ensure_ascii=False, default=_json_default),
             encoding="utf-8",
         )
         _bump_record_write_generation(self.type)
@@ -533,7 +557,7 @@ class FSRecord(Generic[M]):
             merged[k] = v
             self.__dict__[k] = v  # keep the in-memory view consistent
         meta_path.write_text(
-            json.dumps(merged, indent=2, ensure_ascii=False, default=str),
+            json.dumps(merged, indent=2, ensure_ascii=False, default=_json_default),
             encoding="utf-8",
         )
         _bump_record_write_generation(self.type)
@@ -567,7 +591,7 @@ class FSRecord(Generic[M]):
         if not removed:
             return None
         meta_path.write_text(
-            json.dumps(merged, indent=2, ensure_ascii=False, default=str),
+            json.dumps(merged, indent=2, ensure_ascii=False, default=_json_default),
             encoding="utf-8",
         )
         return meta_path

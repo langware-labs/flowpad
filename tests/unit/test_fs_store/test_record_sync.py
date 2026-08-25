@@ -14,6 +14,8 @@ Covers every sync mode, bidirectional:
 All ≤5s, real FSRecord + SQLite, no mocks of the units under test.
 """
 import json
+import uuid
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -24,8 +26,9 @@ from flow_sdk.api.api_types.api_field import APIField, Persist
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_driver import DBConfig
 from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver
-from flow_sdk.fs_store.fs_record import FSRecord
+from flow_sdk.fs_store.fs_record import FSRecord, _json_default
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.schema.datum import Datum
 
 
 # ── Test type: one field per persist policy ──────────────────────────────────
@@ -47,6 +50,8 @@ class _SyncEntity(Entity):
     forced: str | None = APIField(default=None, persist=Persist.TRUE)
     # DEFAULT but NOT in _SyncMeta → not persisted
     ghost: str | None = APIField(default=None)
+    # A MODEL-valued persisted field (Dataset.contract is the real one).
+    contract: Datum | None = APIField(default=None, persist=Persist.TRUE)
 
 
 def _register_meta_model():
@@ -135,6 +140,36 @@ class TestSaveMetadata:
         assert rec.current_meta_keys() == set()
         rec.save_metadata({"name": "alpha", "status": "running"})
         assert {"name", "status"}.issubset(rec.current_meta_keys())
+
+
+class TestModelValuedFields:
+    """metadata.json is written with a ``default=`` hook, so a value json.dumps
+    cannot handle never raises — it is coerced. Before ``_json_default``, a
+    Pydantic model fell to ``str`` and was written as its REPR
+    (``"kind='array' fields=None …"``), which re-reads as a string and fails
+    validation on the next load: silent corruption, with no exception to notice
+    it by. These pin the encode, not an exception."""
+
+    def test_a_model_value_is_written_as_json_not_a_repr(self, tmp_path):
+        rec = FSRecord(type="test_sync", id=str(uuid.uuid4()))
+        rec.save_metadata({"contract": Datum(kind="array", items=[Datum(kind="string")])})
+        on_disk = _meta_on_disk(rec)["contract"]
+        assert isinstance(on_disk, dict), f"written as {type(on_disk).__name__}: {on_disk!r}"
+        assert on_disk["kind"] == "array"
+        assert Datum.model_validate(on_disk).items[0].kind == "string"  # re-reads
+
+    def test_a_collection_of_models_is_encoded_too(self):
+        """The coercion belongs to the WRITER, so it reaches values a per-field
+        branch on the producer would miss — a list or dict of models."""
+        encoded = json.loads(json.dumps(
+            {"many": [Datum(value=1)], "by_name": {"a": Datum(value=2)}},
+            default=_json_default,
+        ))
+        assert encoded["many"][0]["value"] == 1
+        assert encoded["by_name"]["a"]["value"] == 2
+
+    def test_an_unknown_type_keeps_the_historical_str_coercion(self):
+        assert json.loads(json.dumps({"p": Path("/x/y")}, default=_json_default))["p"] == "/x/y"
 
 
 # ── 2. persist resolution → metadata_payload (pure, no DB) ────────────────────
