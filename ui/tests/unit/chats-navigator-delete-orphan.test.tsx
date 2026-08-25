@@ -89,7 +89,7 @@ describe('ChatsNavigator — delete orphan (no agentic_process_id) session', () 
   });
 
   it('opens the confirm dialog and deletes via the worker-id heal instead of no-opping', async () => {
-    mockUseWorkerHistory.mockReturnValue({ entries: [orphanEntry()], isLoading: false, refetch: vi.fn() });
+    mockUseWorkerHistory.mockReturnValue({ entries: [orphanEntry()], fetchedCount: 1, isLoading: false, refetch: vi.fn() });
 
     render(<ChatsNavigator />);
 

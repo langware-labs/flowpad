@@ -80,7 +80,7 @@ describe('ChatsNavigator — resume orphan (no agentic_process_id) session', () 
   });
 
   it('opens via the worker-id heal instead of erroring "no resumable session"', async () => {
-    mockUseWorkerHistory.mockReturnValue({ entries: [orphanEntry()], isLoading: false, refetch: vi.fn() });
+    mockUseWorkerHistory.mockReturnValue({ entries: [orphanEntry()], fetchedCount: 1, isLoading: false, refetch: vi.fn() });
 
     render(<ChatsNavigator />);
 
