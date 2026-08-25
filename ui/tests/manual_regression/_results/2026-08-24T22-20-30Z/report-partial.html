@@ -1,0 +1,233 @@
+<!doctype html><meta charset=utf-8><title>FlowPad QA (PARTIAL) 2026-08-24T22-20-30Z</title>
+<style>body{font:14px/1.5 system-ui,sans-serif;margin:2rem;max-width:60rem}
+.warn{background:#fff3cd;border-left:5px solid #e0a800;padding:1rem;margin:1rem 0}
+pre{background:#f6f8fa;padding:1rem;overflow-x:auto;white-space:pre-wrap;font-size:12px}
+th,td{border:1px solid #ddd;padding:.4rem .6rem;text-align:left}table{border-collapse:collapse}</style>
+<h1>FlowPad QA — PARTIAL run</h1>
+<div class=warn><b>This is NOT a completed QA cycle.</b> The cycle completed phases 1&ndash;6 of 12 and was
+stopped by the QA agent at the <code>flowpad-qa.service</code> <code>TimeoutStartSec=4h</code> deadline
+(~02:09:55Z) so the work could be committed, pushed and mailed before <code>ExecStopPost</code> powered the
+VM off. Phases 7&ndash;12 <b>never ran</b>. The skill's own <code>report.html</code> was never generated;
+this document was assembled by the outer QA agent from the cycle's own state files.</div>
+<table><tr><th>Branch</th><td><a href="https://github.com/langware-labs/flowpad/tree/20260824-221153-qa-e2e-agent">20260824-221153-qa-e2e-agent</a></td></tr>
+<tr><th>Base</th><td>release/v0.2 @ 08eeefb91c00553dee1b6e50e8eff13de2e0976d</td></tr>
+<tr><th>Result id</th><td>2026-08-24T22-20-30Z</td></tr>
+<tr><th>Phases run</th><td>1&ndash;6 of 12</td></tr></table>
+<h2>cycle-state.md</h2><pre># QA Cycle State — 2026-08-24T22-20-30Z
+
+- Branch: 20260824-221153-qa-e2e-agent @ 08eeefb91
+- Host: linux, 4 cores, 31GB RAM, load at start: 0.57 0.91 0.55
+- Repo: /home/claudeuser/Flowpad workspace/flowpad
+- Toolchain: python3 3.13.5 (venv 3.10.17), node v24.19.0, uv 0.12.5
+- **`python` is NOT on PATH on this host** — every skill command written as `python -m pytest` must be run as `uv run python -m pytest`.
+- Main dev backend ($LOCAL_SERVER_PORT=9008) / frontend ($VITE_PORT=4098): NOT running. This cycle will NOT clear or mutate them.
+- Instances launched by this cycle: (none yet)
+- Results dir: ui/tests/manual_regression/_results/2026-08-24T22-20-30Z
+
+## Phase dispositions
+
+| Phase | Suite | Status | Verdict |
+|---|---|---|---|
+| 1 | pytest unit | **PASS** | 6449 passed, 21 skipped, 4 xfailed, 0 failed (632s) |
+| 2 | pytest api | **PASS** | 805 passed, 11 skipped, 0 failed, PYTEST_EXIT=0 (1104s) — after the env-probe fix; was 18 failed |
+| 3 | pytest long | **RED — 2 failing (2 flagged)** | 112 passed, 51 skipped, 5 xfailed, 2 failed, PYTEST_EXIT=1 (746s). Baseline was 110 passed / 3 failed; 1 fixed in app, 1 fixed in test, 2 flagged (codex+copilot CLIs absent). Plus 2 harness flags. |
+| 4 | vitest unit | **PASS** | 3540 passed, 436 files, VITEST_EXIT=0 |
+| 5 | vitest api | **PASS** | 252 passed, 1 skipped, 0 failed, VITEST_EXIT=0 (no-bail run). Was 2 failed + 3 failed suites + 12 skipped; one env fix recovered 11 masked tests. |
+| 6 | vitest react | RUNNING | — |
+| 7 | vitest long | PENDING | — |
+| 8 | vitest headless | PENDING | — |
+| 9 | pytest hub | PENDING | — |
+| 10 | vitest hub | PENDING | — |
+| 11 | playwright .md.ts sweep | PENDING | — |
+| 12 | author .md.ts for orphan .md | PENDING | — |
+
+## Test index
+- Rebuilt `.flow/skills/agentic-qa/test_index.md`: 137 `.md` specs, 159 `.md.ts`, across 29 categories.
+- **Phase 12 scope (filesystem `comm -23` diff, authoritative): 2 orphan `.md`**
+  - `data-sources/credentialed_sources.md`
+  - `sandbox/sandbox_share_link.md` (note: `sandbox/` has NO playwright.config.ts)
+
+## Milestone log
+- 2026-08-24T22-20-30Z cleanup ran: /tmp/flowpad_test_home absent, 0 e2etest-* artifacts. Clean start.
+- Carried forward from the aborted 22-14-09Z attempt (process died with its session; artifacts kept):
+  - `.venv` (157 pkgs) and `ui/node_modules` (772 entries) are installed and reused.
+  - **Hub preflight finding (affects Phases 9 &amp; 10):** `http://localhost:8093/api/v1/health/status` → connection refused. Canonical hub checkout `../test_flowpad/FlowPad` DOES NOT EXIST on this host; no `hub_setup.md` anywhere on disk; no `neo4j` binary; nothing on 7474/7687/8093. To be re-verified and formally dispositioned at Phase 9.
+- Phase 1 started: `uv run python -m pytest tests/unit/ -q -rf` (pid 15832).
+  - NOTE: an initial launch added `--timeout=600`; `pytest.ini` already sets `--timeout=30`, so that would have RAISED a test timeout (CLAUDE.md non-negotiable). Killed and relaunched with the ini timeout intact. No timeout is raised anywhere in this cycle.
+
+## Fix 1 — capability discovery lost the process PATH (root cause of all 18 Phase 2 failures)
+
+- **Symptom (18 tests, 3 signatures):** `Claude CLI is not installed on this machine.` (7),
+  `Command not found: &#x27;/home/claudeuser/.local/bin/claude&#x27; — no harness.claude.cli installation discovered` (8),
+  `assert False is True` on `capability/test` → `available` (2), plus 1 `worker.restarted` follow-on.
+- **On/off proof:** `env_probe.probe([&#x27;claude&#x27;])` with real `$HOME` → `/home/claudeuser/.local/bin/claude`;
+  with a sandboxed `$HOME` (what `tests/conftest.py:70` sets) → `None`. Deterministic, both directions.
+- **Root cause:** `capture_terminal_path()` runs `$SHELL -ilc &#x27;printf &quot;%s&quot; &quot;$PATH&quot;&#x27;` and `probe()` resolved
+  executables against **only** that PATH. On this host `~/.local/bin` is prepended by `~/.profile` and
+  `~/.bashrc` — neither exists under the test sandbox HOME, and `/etc/profile` does not add it — so the
+  captured PATH came back *narrower* than the PATH the server process was already running with. Discovery
+  then reported no Claude CLI, which made `AgenticProcess.is_installed()` False → `createProcess` refused
+  (400) and PTY spawn raised, even though `spawn_argv[0]` was already the correct, executable absolute path.
+- **Classification: app defect (not a test issue).** The narrow-PATH condition is not test-only — a service
+  account, a stripped container image, or any launch context whose `$HOME` lacks dotfiles reproduces it. The
+  probe must never *lose* a directory the process can already see.
+- **Fix:** `flow_sdk/core/capabilities/env_probe.py` — `probe()` now resolves against
+  `_merge_paths(capture_terminal_path(), os.environ[&quot;PATH&quot;])`. Terminal PATH stays **first**, so the
+  documented tie-break (&quot;the binary a terminal would run wins&quot;) is preserved; the process PATH is appended,
+  de-duplicated, never substituted. No assertion weakened, no timeout/retry touched.
+- **Validation:** the 7 affected files re-ran 68 passed / 1 skipped / 0 failed (exit 0); full `tests/api/`
+  then re-ran 805 passed / 0 failed (exit 0).
+
+## CIRCUIT BREAKER — meta-RCA on the harness (2 same-class anomalies)
+
+**Anomaly class:** the Phase 3 pytest session died mid-run with `INTERNALERROR`, twice, truncating
+the run and destroying its verdict (runs of 63 and 67 tests out of ~170).
+
+**Signature (identical both times):**
+```
+INTERNALERROR&gt; ... _pytest/_code/source.py ... ast.parse(content, &quot;source&quot;, &quot;exec&quot;)
+INTERNALERROR&gt; ... pytest_timeout.py:317 in handler -&gt; timeout_sigalrm(item, settings)
+INTERNALERROR&gt; Failed: Timeout (&gt;30.0s) from pytest-timeout.
+```
+
+**Root cause (harness, not product):** `pytest.ini` sets `--timeout=30`, and on POSIX pytest-timeout
+defaults to the **SIGALRM** method. The alarm is armed for `test_start + 30s`. When a test *fails*
+very close to its own deadline, pytest then formats the failure report — `repr_failure` →
+`getstatementrange_ast` → `ast.parse` of the source file — and the still-armed SIGALRM fires **inside
+pytest&#x27;s own reporting machinery**. `timeout_sigalrm` raises `Failed` from a frame pytest cannot
+recover in, so the entire session aborts instead of just that test.
+
+**Why it bit here:** this tier&#x27;s source files are large (`agentic_process.py` is ~5k lines), so the
+`ast.parse` step in report formatting is slow enough to be a reliable landing zone for the alarm.
+
+**Remediation (no timeout raised, added, or weakened anywhere):** run this tier with `--tb=no -rf`.
+That removes the expensive source-parsing report path — the alarm has no long-running pytest internal
+to fire inside — while `-rf` still prints the machine-readable `FAILED &lt;nodeid&gt;` list the verdict is
+taken from. Individual failures are then re-run singly to obtain a traceback. `--timeout=30` and every
+other budget is untouched; `--timeout-method=thread` was rejected because it kills the whole process
+on timeout, which destroys the verdict in a different way.
+
+**Verdict status:** the two crashed Phase 3 runs are recorded as **NO VERDICT** (truncated session),
+per Run Integrity. Phase 3&#x27;s verdict is taken from the `--tb=no` re-run below.
+
+## Fix 2 — stale hook-args assertion (Phase 3, test-issue)
+- `tests/long_tests/test_claude_cli.py::test_process_hook_acceptance_uses_real_claude_plugin` asserted
+  `handler[&quot;args&quot;][-3:] == [&quot;report&quot;, &quot;--process-id&quot;, id]`, but `claude/driver.py` intentionally appends
+  `--wait-for-response` for events whose stdout Claude reads (`_RESPONSE_EVENTS` = SessionStart,
+  UserPromptSubmit) — and the fixture&#x27;s event IS `UserPromptSubmit`. The app is right; the test was stale.
+- Fixed by STRENGTHENING: the test now checks EVERY persisted event&#x27;s handler and asserts the flag is
+  present for response events and absent for fire-and-forget ones. `response_events` added to
+  `tests/fixtures/process_hook_acceptance.json`. Nothing weakened.
+
+## Fix 3 — `start_pty` never returned the worker&#x27;s identity to its caller (Phase 3, app defect)
+- `start_pty()` runs the launch on `fresh` (a DB reload) so concurrent opens can&#x27;t double-spawn. Every
+  field the launch assigns therefore landed on `fresh` only, while `self` — the object the caller keeps
+  using — still read `session_id=None`, `status=&quot;new&quot;`. `stream_transcript()` resolves
+  `driver.transcript_path(self)`, so it polled a session-less process to its deadline and died with
+  `TimeoutError: stream_transcript: transcript file did not appear within timeout`.
+- Fix: mirror the worker&#x27;s IDENTITY (`session_id`, `status`) back onto `self` after the launch.
+- **Deliberately narrow, and this was proven the hard way.** Mirroring ALL 11 assigned fields (the
+  launch bookkeeping: `context_data`, `last_started_*`, `shell_id`, `sidecar_shell_id`,
+  `restart_required`, `start_failure`, `pty_mode`, `visible`) REGRESSED
+  `test_create_process_terminal_theme.py` from `3 passed in 13s` to `3 x 60s timeout`. On/off toggle
+  confirmed it both ways; the tuple is now identity-only with a comment saying not to widen it.
+- Validation: `test_prompt_queue_integration[pty]` FAIL(timeout) -&gt; PASS; terminal_theme 3/3 PASS;
+  asset_cleanup PASS; full tier 112 passed (baseline 110).
+
+## Fix 4 — jsdom/Node `AbortSignal` realm split broke the whole api tier&#x27;s fetch+abort path (Phase 5)
+- Symptom A (2 tests): `TypeError: RequestInit: Expected signal (&quot;AbortSignal {}&quot;) to be an instance of
+  AbortSignal` from `compute_node_command_service.test.ts`.
+- Symptom B (3 whole suites, 11 tests skipped): `Error: backend &#x27;projfast&#x27; did not come up on :6077`.
+  **The backend was healthy.** Its own log showed `Application startup complete` / `Uvicorn running`, and
+  a cold boot to `/api/v1/health/status` 200 measured **8s** against a 60s budget. `waitHealthy` passes
+  `signal: AbortSignal.timeout(2000)` to `fetch` and swallows the resulting TypeError in its
+  &quot;not up yet&quot; catch — so it looped out its whole budget and blamed the backend.
+- Root cause (proven by probe): in this tier&#x27;s jsdom environment every web global is jsdom&#x27;s, including
+  `AbortSignal` — `sig instanceof AbortSignal` is `true` — but global `fetch` is Node&#x27;s undici, which
+  validates against the class it captured at load time. One realm rejects the other&#x27;s signal. Real
+  browsers have a single realm, so there is no product analogue; the SDK is right to pass a signal.
+- Fix: `ui/tests/api/jsdomNodeAbort.ts`, a custom Vitest environment that runs builtin jsdom and then
+  restores Node&#x27;s `AbortController`/`AbortSignal` (captured at module scope, before jsdom&#x27;s `setup()`).
+  `tests/api/vitest.config.ts` points `environment` at it. No test or product code changed; no per-file
+  workaround; no timeout touched. Rejected alternatives: `@vitest-environment node` per file (the SDK
+  needs `document.createElement` for entity decoding) and hand-shimming window/localStorage/location.
+- NOT caused by this cycle: toggling `env_probe.py` off reproduced Symptom B identically at baseline.
+</pre>
+<h2>flagged.md</h2><pre># Flagged — senior dev review required
+
+Flagged is a **RED, unfixed test**. It lets the cycle advance; it is never a pass.
+
+---
+
+## phase3/long_tests/test_agentic_invalid_launch_recovery.py::test_malformed_codex_launch_returns_without_stranding_process
+- owner: senior-dev-review
+- reason: Required third-party harness CLI unavailable, and installing it is outside the cycle&#x27;s instance-level ownership.
+- evidence: `AssertionError: real codex executable is required for this regression`
+  (`tests/long_tests/test_agentic_invalid_launch_recovery.py:149` — `assert shutil.which(&quot;codex&quot;)`).
+  Confirmed on host: `command -v codex` → not installed (nor `copilot`, nor `opencode`; only `claude` is present at `/home/claudeuser/.local/bin/claude`).
+- why senior review: The cycle owns the instances it launches, not the machine. Installing a global
+  third-party CLI (`npm i -g @openai/codex`) mutates the user&#x27;s VM and was not authorized, so the
+  cycle will not do it unilaterally. There is also a genuine design question underneath: this is the
+  ONLY codex test in the tier that hard-`assert`s the binary; its sibling
+  `tests/long_tests/test_cli_driver_binary_smoke.py:133` uses
+  `pytest.mark.skipif(shutil.which(&quot;codex&quot;) is None, reason=&quot;codex CLI not installed&quot;)`. The two
+  conventions disagree, and picking one is a policy call, not a QA call.
+- recommendation: Either (a) provision codex on the QA host and keep the hard assert — it is a real
+  regression guard and skipping it silently loses coverage; or (b) make the gate consistent with the
+  smoke test&#x27;s `skipif`. Do NOT do (b) without deciding whether losing the guard is acceptable.
+
+## phase3/long_tests/test_markdown_index.py::test_markdown_index_incremental[copilot]
+- owner: senior-dev-review
+- reason: Same class — the `copilot` harness CLI is not installed on this host, so the worker never spawns.
+- evidence: `Failed: Timeout (&gt;30.0s) from pytest-timeout.` Backend log from the same run:
+  `AgenticProcess … start_pty error: Command not found: &#x27;copilot&#x27; — no harness.copilot.cli installation discovered`.
+  `command -v copilot` → not installed.
+- why senior review: The `[copilot]` parametrization has no install gate at all, so on a host without
+  copilot it does not skip — it burns its full 30s budget and fails. Whether the fix is &quot;provision
+  copilot on QA hosts&quot; or &quot;gate the parametrization on discovery&quot; is the same policy call as above.
+- recommendation: Gate the per-harness parametrizations on capability discovery
+  (`AgenticProcess.is_installed(&lt;worker&gt;)`) so an absent CLI skips explicitly and visibly, AND
+  provision the harnesses on the QA host so the coverage is actually exercised. The timeout stays 30s.
+
+## phase3/long_tests/test_prompt_queue_integration.py::test_prompt_queue_drains_into_worker[headless]
+- owner: senior-dev-review
+- reason: Bounded RCA effort exhausted. A real, reproducible defect distinct from the `[pty]` one that
+  was fixed this cycle; it is masked as a &quot;skip&quot; by a tier-wide hook (see the next flag).
+- evidence:
+  - Reproduces deterministically. With the masking hook gated off:
+    `TimeoutError: stream_transcript: transcript file did not appear within timeout`
+    (`flow_sdk/builtin/agentic_process/agentic_process.py:3367`).
+  - NOT an Anthropic API problem, despite the skip text saying so. Minimal repro crossing only that
+    boundary: `claude -p &quot;…&quot; --model haiku` answered correctly in **4.088s** on this host.
+  - The worker really runs: the run creates a fresh Claude project dir
+    `~/.claude/projects/-tmp-flowpad-temp-pytest-*-tmp-test-prompt-queue-drains-into-0/` containing a
+    populated `&lt;uuid&gt;.jsonl` (24 KB). So the transcript EXISTS on disk and
+    `driver.transcript_path(process)` still fails to resolve to it.
+  - The sibling `[pty]` variant, which was failing the same way, is now GREEN after this cycle&#x27;s
+    `start_pty` identity write-back fix — so the headless path has a second, independent root.
+- why senior review: The remaining defect is in how the **headless / print-mode** drain binds a
+  process to the session id Claude actually used. Establishing that binding correctly is a
+  driver-contract question (who mints the session id for print mode, and when the process adopts the
+  vendor&#x27;s real id) — a design decision, not a local patch.
+- recommendation: Trace `_maybe_drain_queue` → `prompt()` → the print-mode driver and confirm whether
+  the process&#x27;s `session_id` is ever reconciled with the id in the JSONL Claude actually wrote. Then
+  fix the adoption, and drop the module from the masking hook&#x27;s reach so it can never re-hide.
+
+## phase3/harness/tests/long_tests/conftest.py::pytest_runtest_makereport — blanket TimeoutError → &quot;skip&quot;
+- owner: senior-dev-review
+- reason: Integrity defect in the test tier itself. Fixing it is a tier-wide policy change
+  (an unknown number of currently-&quot;skipped&quot; long tests would become failures), which is exactly the
+  architectural-change stop rule.
+- evidence: `tests/long_tests/conftest.py:255-260` downgrades **any** `TimeoutError` /
+  `ApiErrorTimeoutError` in **any** long test to a skip labelled
+  `&quot;Skipped: Anthropic API issue — {exc}&quot;`. This cycle proved that label false at least once: the
+  prompt-queue headless failure is a local transcript-binding bug, while the real Anthropic round trip
+  measured 4.088s. The mask is why Phase 3 reported this tier as `1 passed, 1 skipped` instead of red.
+- why senior review: This violates two run-integrity rules at once — an infra-skip is being counted as
+  a non-failure, and a failure is attributed across a service boundary with no reproduction. But
+  removing the downgrade will turn every currently-masked timeout red at once; someone has to own that
+  backlog before the switch is flipped.
+- recommendation: Replace the blanket downgrade with an explicit, per-test opt-in marker
+  (e.g. `@pytest.mark.external_api_flaky`) so a test must *declare* that its timeout is an external
+  dependency. Then run the tier once with the downgrade off to size the real backlog.
+</pre>
