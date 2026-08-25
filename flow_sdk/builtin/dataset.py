@@ -104,8 +104,12 @@ class Dataset(Entity):
     kind_counts: Dict[str, int] = APIField({})
 
     # Free `data` section of dataset.json (use-case-owned passthrough). The
-    # `schema` and other known metadata fields ride in the record metadata.
+    # other known metadata fields ride in the record metadata.
     data: Optional[Dict[str, Any]] = APIField(default_factory=dict)
+
+    # The shape each example's `datum` populates: a `Datum` with EMPTY leaves.
+    # `None` — the dataset declares no shape — is legal. See datasets.md.
+    contract: Optional[Datum] = APIField(None)
 
     created_at: Optional[datetime] = APIField(None)
 

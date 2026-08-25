@@ -1,7 +1,7 @@
 """``Datum`` — the one descriptor for data whose shape arrives AS DATA.
 
-A datum is one node of a tree. Branches carry ``fields``; leaves carry
-``value``; ``kind`` annotates either. The same shape serves as a **contract**
+A datum is one node of a tree. A node carries named children (``fields``),
+ordered elements (``items``) or a ``value``; ``kind`` annotates any of them. The same shape serves as a **contract**
 (no values anywhere) and as the **datum** itself (values at the leaves) — which
 is why it is not called a schema or a spec.
 
@@ -28,20 +28,28 @@ composable, just not validatable).
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterator, Optional
+from typing import Any, Dict, Iterator, Optional, Union
 
 from pydantic import BaseModel, field_validator, model_validator
 
 from flow_sdk.tags.grammar import normalize_tag
 
 
+#: One step of a leaf path: a ``fields`` key or an ``items`` index.
+Seg = Union[str, int]
+
+
 class Datum(BaseModel):
-    """One node of a data tree: a branch (``fields``) or a leaf (``value``)."""
+    """One node of a data tree: ``fields``, ``items`` or a ``value``."""
 
     #: Optional dot-path tag. Normalized on adopt; ``None`` means unannotated.
     kind: Optional[str] = None
     #: Branch. Child name → child node.
     fields: Optional[Dict[str, "Datum"]] = None
+    #: Repetition. Ordered elements of one shape. A contract carries one
+    #: template element for every element of an instance — a consumer rule the
+    #: model cannot enforce and does not try to; see datum.md.
+    items: Optional[list["Datum"]] = None
     #: Leaf. ``Any`` on purpose — a scalar, a list, a path, a TypeId string.
     #: ``kind`` is what says how to read a value that is a pointer.
     value: Any = None
@@ -55,33 +63,39 @@ class Datum(BaseModel):
         return None if value is None else normalize_tag(value)
 
     @model_validator(mode="after")
-    def _branch_xor_leaf(self) -> "Datum":
-        """A node is a branch or a leaf, never both.
+    def _one_arm_only(self) -> "Datum":
+        """A node is named children, ordered elements, or a value — never two.
 
-        Without this the tree stops being a tree: a node carrying both an
-        expansion and a value has two competing readings, and every consumer
-        has to pick one. Raw bytes beside a parsed form is the tempting case —
-        express it as two sibling leaves instead.
+        Without this the tree stops being a tree: a node carrying more than one
+        expansion has competing readings and every consumer has to pick one. Raw
+        bytes beside a parsed form is the tempting case — express it as two
+        sibling leaves instead.
         """
-        if self.fields is not None and self.value is not None:
-            raise ValueError("a Datum is a branch (fields) or a leaf (value), never both")
+        arms = [n for n in ("fields", "items", "value") if getattr(self, n) is not None]
+        if len(arms) > 1:
+            raise ValueError(f"a Datum carries one of fields/items/value, not {arms}")
         return self
 
     @property
     def is_leaf(self) -> bool:
-        return self.fields is None
+        return self.fields is None and self.items is None
 
-    def leaves(self, _prefix: tuple[str, ...] = ()) -> "Iterator[tuple[tuple[str, ...], Datum]]":
+    def leaves(self, _prefix: tuple[Seg, ...] = ()) -> "Iterator[tuple[tuple[Seg, ...], Datum]]":
         """Every leaf under this node as ``(path, node)``, depth-first.
 
         The path IS the join key between a contract and its datum, and between a
-        produced value and its expected one.
+        produced value and its expected one. A ``fields`` step contributes a
+        string segment and an ``items`` step an integer one, so a path reads as
+        ``("output", 0, "category")``.
         """
-        if self.fields is None:
+        if self.fields is not None:
+            for name, node in self.fields.items():
+                yield from node.leaves((*_prefix, name))
+        elif self.items is not None:
+            for index, node in enumerate(self.items):
+                yield from node.leaves((*_prefix, index))
+        else:
             yield (_prefix, self)
-            return
-        for name, node in self.fields.items():
-            yield from node.leaves((*_prefix, name))
 
 
 Datum.model_rebuild()

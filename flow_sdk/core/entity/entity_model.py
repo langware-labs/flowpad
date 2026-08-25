@@ -1252,6 +1252,10 @@ class Entity(DBEntity):
                       ``BaseMeta`` when a type registers none.
         ``None`` values are omitted so a stale field never clobbers a fresh
         on-disk one under partial-merge.
+
+        Values are handed on as-is, models included — encoding to plain JSON is
+        the record writer's job (``fs_record._json_default``), so every producer
+        of a metadata value gets it, not just this one.
         """
         from flow_sdk.api.api_types.api_field import Persist, persist_policy
         from flow_sdk.fs_store.schema_registry import SchemaRegistry

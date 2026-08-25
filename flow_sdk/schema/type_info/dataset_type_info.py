@@ -14,6 +14,9 @@ from flow_sdk.schema.view_mode import ViewMode
 
 
 class DatasetMeta(BaseMeta):
+    # A `Datum` dump, not a `Datum` — metadata.json is written with json.dump,
+    # so every value here must already be a plain JSON type.
+    contract: Optional[dict] = None
     data_layout: Optional[str] = None
     field_spec: Optional[dict] = None
     delimiter: Optional[str] = None

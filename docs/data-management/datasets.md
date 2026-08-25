@@ -38,7 +38,7 @@ sidecars — is a two-section document:
 ```
 
 - **`metadata`** holds flowpad-recognized keys (`data_layout`, `field_spec`, `kind`,
-  `layout`, `schema`, …). The set grows over time; unknown keys here are preserved
+  `layout`, `contract`, …). The set grows over time; unknown keys here are preserved
   but not interpreted.
 - **`data`** is an opaque object flowpad never reads — it round-trips verbatim onto
   the corresponding model's `.data`.
@@ -68,7 +68,9 @@ configuration + metadata, in the two-section form:
     "data_layout": "io_folder",                    // "csv" | "io_folder" (default "csv")
     "field_spec": { "input": "question" },          // CSV column remap only (§2)
     "delimiter": ",",                               // CSV only
-    "schema": { "input": { "scan": { /* json-schema */ } } } // forward-looking, opaque today
+    "contract": {                                   // a Datum with EMPTY leaves (§ Contract)
+      "fields": { "category": { "kind": "string" } }
+    }
   },
   "data": {
     "owner": "you@example.com"                      // free — surfaced under record metadata.data
@@ -79,6 +81,26 @@ configuration + metadata, in the two-section form:
 Computed fields you **do not** write — the indexer fills them in:
 `num_examples`, `kind_counts`, `num_annotated`, `num_multi_output`,
 `num_binary_inputs`.
+
+### The `contract`
+
+`contract` is a [`Datum`](datum.md) with **empty leaves** — the shape every
+example's `datum` populates. Contract and datum are the same tree, so they join
+**by position**: checking a produced row against the declared shape is a
+structural walk, not a schema negotiation.
+
+It is **parsed and normalized at index time**, not stored verbatim: `kind`s are
+put through the tag grammar and the one-arm invariant is enforced. A malformed
+contract fails the parse, where the file is still in hand — a consumer joining it
+against a row later has no way to report the problem usefully. Omitting it is
+legal and means the dataset declares no shape — and a malformed one is logged and
+ignored, never fatal: the examples beside it parse fine and must not be lost over
+a bad metadata key.
+
+The slot was previously named `schema`. That name is thoroughly taken here
+(`SchemaRegistry`, `flow_sdk/schema/`, `TypeInfo`, JSON-Schema) and describes the
+wrong thing — this is the *same tree* as the datum, joined by position, not a
+separate description of it. A legacy `schema:` key is ignored, uninterpreted.
 
 ### Portability
 

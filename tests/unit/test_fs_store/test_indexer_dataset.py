@@ -725,12 +725,47 @@ def test_dataset_json_two_section(tmp_path: Path) -> None:
     assert meta["data"] == {"owner": "eran", "team": "ml"}  # free dataset data section
 
 
-def test_dataset_schema_passthrough(tmp_path: Path) -> None:
-    schema = {"input": {"scan": {"type": "object"}}}
+def test_dataset_contract_is_parsed_and_normalized(tmp_path: Path) -> None:
+    """The contract slot is a `Datum`, not an opaque blob.
+
+    It is stored normalized because a consumer joins it against an example's
+    `datum` by position — a malformed contract has no reading at that point, so
+    it must fail here, where the file is still in hand.
+    """
     ds = _seed_io_dataset(
-        tmp_path, "schema",
+        tmp_path, "contract",
         examples={"0001": {"input": "i"}},
-        manifest={"data_layout": "io_folder", "schema": schema},
+        manifest={"data_layout": "io_folder",
+                  "contract": {"fields": {"category": {"kind": "  String  "}}}},
     )
     meta = _extract(FSRef(ds))[0].meta_dict()["metadata"]
-    assert meta["schema"] == schema  # opaque known field, surfaced verbatim
+    assert meta["contract"] == {"fields": {"category": {"kind": "string"}}}
+
+
+def test_dataset_without_a_contract_declares_none(tmp_path: Path) -> None:
+    """Declaring no shape is legal — and the key is simply ABSENT, so indexing an
+    existing dataset does not rewrite its metadata to add an explicit null."""
+    ds = _seed_io_dataset(
+        tmp_path, "no-contract",
+        examples={"0001": {"input": "i"}},
+        manifest={"data_layout": "io_folder"},
+    )
+    assert "contract" not in _extract(FSRef(ds))[0].meta_dict()["metadata"]
+
+
+def test_a_malformed_contract_degrades_the_slot_not_the_dataset(tmp_path: Path) -> None:
+    """A bad contract must never cost the examples.
+
+    Raising out of the extractor would drop every Example record it also emits;
+    the walk marks only the dataset's own id as seen before parsing, so an
+    `orphan_action=DELETE` sweep would then reap example rows that parsed fine.
+    """
+    ds = _seed_io_dataset(
+        tmp_path, "bad-contract",
+        examples={"0001": {"input": "i"}},
+        manifest={"data_layout": "io_folder",
+                  "contract": {"fields": {"a": {}}, "value": 1}},
+    )
+    records = _extract(FSRef(ds))
+    assert "contract" not in records[0].meta_dict()["metadata"]
+    assert records[0].meta_dict()["metadata"]["num_examples"] == 1  # the row survived

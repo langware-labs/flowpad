@@ -12,12 +12,13 @@ layer, beside [the schema registry](schema-registry.md).
 ```python
 class Datum(BaseModel):
     kind:   Optional[str]                = None   # a dot-path tag
-    fields: Optional[Dict[str, "Datum"]] = None   # branch
-    value:  Any                          = None   # leaf
+    fields: Optional[Dict[str, "Datum"]] = None   # named children
+    items:  Optional[list["Datum"]]      = None   # ordered elements
+    value:  Any                          = None   # a value
 ```
 
-Three optional fields and one invariant: **`fields` XOR `value`** — a node is a
-branch or a leaf, never both.
+Four optional fields and one invariant: **exactly one of `fields` / `items` /
+`value`** — named children, ordered elements, or a value, never two at once.
 
 ## Descriptor and carrier are one tree
 
@@ -77,20 +78,45 @@ no place in the tag tree:
 | `content.file` | a relative path — read the bytes |
 | *(absent)* | the datum itself, or opaque |
 
-## Repetition
+## Repetition — `items`
 
-**Repetition is sibling keys, not a list.** The dataset walker emits
-`output-1`, `output-2` as separate keys, and key order carries the ordering.
-That keeps a contract and its datum the same shape, so the position-join holds.
+Repetition is the third arm: an **ordered** list of nodes of one shape.
 
-A leaf's `value` is `Any`, so it *can* hold a list — but a list is opaque to
-`leaves()`, which means a contract describing one cannot join to an instance
-containing one. Do not use a list where the elements need to be addressed
-individually.
+```jsonc
+// contract — exactly ONE element, the template
+{ "kind": "array", "items": [ {"kind": "string"} ] }
 
-Picking a real repetition primitive (an ordered `items:` arm whose paths carry
-an index) is open, and it is the decision that gates describing list-valued
-config fields.
+// datum — N elements
+{ "kind": "array", "items": [ {"value": "a@x"}, {"value": "b@y"} ] }
+```
+
+An `items` step contributes an **integer** path segment, so a path mixes both
+kinds and reads as `("output", 0, "category")`. This is an arm rather than a list
+stuffed into `value` because a list inside `value` is opaque to `leaves()` — a
+contract describing one could never be walked against an instance containing one.
+
+**Repetition is the one place a raw path-join is NOT enough.** Everywhere else a
+contract and its datum yield identical paths. Under `items` they do not: a
+contract yields `(0,)` and a three-element instance yields `(0,)`, `(1,)`, `(2,)`.
+Comparing `dict(contract.leaves())` against `dict(datum.leaves())` therefore
+matches element 0 and **silently ignores elements 1..n** — the failure looks like
+"extra fields", or like a row passing when element 2 is the wrong shape.
+
+A consumer joining an `items` node must apply the contract's element 0 to *every*
+element of the instance — clamp the contract-side index to 0. The model does not
+enforce a one-element contract: that would reject a legitimate single-element
+*instance*, since nothing here can tell a contract from a datum. `items: []` is
+likewise legal and yields no leaves, so an empty contract trivially matches —
+the same shape as the pre-existing `fields: {}` case.
+
+> This rule lives in prose because no consumer exists yet. The moment one does,
+> it belongs in a `Datum.join(contract, instance)` on the model — written once,
+> where the walk already is — not re-derived per reader.
+
+Sibling keys are still the right expression for *distinct named* occurrences that
+merely look alike — which is what the dataset walker emits for `output-1`,
+`output-2`. Use `items` when the elements are the same thing repeated and their
+count is not known when the contract is written.
 
 ## Not an entity
 
@@ -111,9 +137,10 @@ node.leaves()                    # yields (path, node) depth-first — path IS t
 | Site | Carries |
 |---|---|
 | `Example.datum` (`flow_sdk/builtin/dataset.py`) | one dataset row, mirroring its example directory |
+| `Dataset.contract` (same module) | the shape those rows populate — empty leaves, joined to each row by position |
 
-Planned: an agent-spec I/O contract, `dataset.json`'s `schema` slot, and the free
-`data` sections the type system has never been able to see.
+Planned: an agent's `input`/`output` contract, and the free `data` sections the
+type system has never been able to see.
 
 Not planned, and worth stating: the ingest manifest's `ConfigField` is eight
 parts form policy (`required`, `label`, `hint`, `placeholder`, `advanced`,
