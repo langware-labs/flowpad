@@ -18,8 +18,10 @@ Run:
 
 from __future__ import annotations
 
+import json
 import os
 import re
+from pathlib import Path
 
 import httpx
 import pytest
@@ -164,3 +166,112 @@ async def test_prompt_admits_visible_process_via_pty_transport(hub_and_node, tmp
                 break
 
     assert b"<flow-" in received, f"no flow-* frame from PTY transport: {received.decode('utf-8', 'replace')[:300]}"
+
+
+def _trust_workdir_for_claude(workdir: str) -> None:
+    """Record the vendor CLI's directory-trust consent for ``workdir``.
+
+    Claude's TUI opens a blocking "1. Yes, I trust this folder" interstitial the
+    first time it is launched in an unseen directory, and a prompt typed while
+    that owns the screen is eaten — the turn then dies as ``user-turn-not-landed``
+    long before reaching the code under test.
+
+    This is CLI *consent* state, the same category as ``~/.claude/.credentials.json``
+    (which this suite's conftest already goes out of its way to preserve) — not a
+    stand-in for anything in the failure being reproduced. Everything about the
+    bug itself stays real.
+    """
+    path = Path(os.path.expanduser("~")) / ".claude.json"
+    try:
+        blob = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    projects = blob.setdefault("projects", {})
+    for key in {workdir, workdir.replace("/", "\\"), workdir.replace("\\", "/")}:
+        entry = projects.setdefault(key, {})
+        entry["hasTrustDialogAccepted"] = True
+        entry["hasCompletedProjectOnboarding"] = True
+        entry["projectOnboardingSeenCount"] = 2
+    path.write_text(json.dumps(blob, indent=2), encoding="utf-8")
+
+
+async def test_pty_prompt_streams_the_turn_tail_past_a_quiet_tool_call(hub_and_node, tmp_path):
+    """A PTY-transport turn must not be truncated because its transcript went quiet.
+
+    FLOWPAD-2034. Reproduces the reported flow: a vibe session (``pty_mode=False``)
+    is switched to the terminal, which sets ``pty_mode=True`` — and returning to
+    vibe never clears it, so every later vibe ``prompt()`` lands on
+    ``_run_pty_prompt``'s transcript poller instead of the healthy stream-json path.
+
+    That poller refreshes ``last_activity`` ONLY when the transcript grows, and the
+    vendor CLI writes nothing to its JSONL while a tool runs or while the model
+    generates. The quiet window is therefore raced against the poller's inactivity
+    fallback, and everything after it is dropped — with the stream still reporting
+    ``outcome="success"``.
+
+    The quiet window is produced the same way the reported failure produced it: by
+    a genuinely long GENERATION. The vendor writes an assistant message to the JSONL
+    only once that message is complete, so the whole time the model is producing
+    output the transcript is untouched while the PTY paints continuously. Asking for
+    a long, mechanical answer makes that window reliably outlast the fallback, and —
+    unlike a tool call — the model can neither background it nor decline it.
+    Real PTY, real vendor CLI, real transcript, real clock; nothing is faked.
+
+    Deliberately NOT parameterised on ``inactivity_timeout``: shortening it would
+    fabricate the race, lengthening it would mask the bug. The turn genuinely takes
+    longer than the suite's 30s cap (>15s of that is the mandated quiet window), so
+    this test only runs under an explicitly relaxed timeout.
+    """
+    hub_client, local_compute_node_id = hub_and_node
+    workdir = str(tmp_path)
+    _trust_workdir_for_claude(workdir)
+    process_id = await _create_print_mode_process(hub_client, local_compute_node_id, workdir)
+
+    # Step 1 — the vibe turn, on the headless transport that works today.
+    async with hub_client.stream(
+        "POST",
+        f"/api/v1/graph/agentic_process/{process_id}/prompt",
+        json={"message": 'Reply with exactly the word "ready" and nothing else.'},
+    ) as r:
+        assert r.status_code == 200
+        await r.aread()
+
+    # Step 2 — go to the terminal. This is the UI's own path: the footer toggle
+    # calls AgenticProcess.switchMode(Interactive), which calls start(), which
+    # POSTs `open` (ts_sdk/src/process/agentic-process.ts). The `switch-mode`
+    # action's INTERACTIVE branch only mirrors this for non-UI callers.
+    r = await hub_client.post(
+        f"/api/v1/graph/agentic_process/{process_id}/open",
+        json={"visible": True, "retry": True},
+    )
+    assert r.status_code == 200, f"open {r.status_code}: {r.text[:300]}"
+
+    r = await hub_client.get(f"/api/v1/graph/agentic_process/{process_id}")
+    entity = r.json().get("data") or {}
+    assert entity.get("pty_mode") is True, "precondition: the session must be on the PTY transport"
+
+    # Step 3 — back in vibe, prompt again. Same action, now routed to the poller.
+    marker = "FLOWPAD2034MARKER"
+    message = (
+        "Do not use any tools at all. Write out the integers from 1 to 2500, one per line, "
+        "in order, with nothing else on each line. Do not abbreviate, do not skip ranges, "
+        "and do not use an ellipsis — every single integer must appear. "
+        f"Then, on the very last line, write exactly {marker} ."
+    )
+    body = b""
+    async with hub_client.stream(
+        "POST",
+        f"/api/v1/graph/agentic_process/{process_id}/prompt",
+        json={"message": message},
+    ) as r:
+        assert r.status_code == 200, f"prompt {r.status_code}: {(await r.aread()).decode()[:300]}"
+        async for chunk in r.aiter_bytes():
+            body += chunk
+
+    xml = body.decode("utf-8", errors="replace")
+    chats = re.findall(r"<flow-chat[^>]*>(.*?)</flow-chat>", xml, re.S)
+    assert any(marker in c for c in chats), (
+        "the turn tail never reached the client: the stream closed while the worker "
+        f"was still working. frames={re.findall(r'<flow-([a-z-]+)', xml)} "
+        f"chats={[c[:60] for c in chats]}"
+    )
