@@ -1,20 +1,24 @@
-"""FLOWPAD-1981 — a prompt queued DURING a PTY turn is never drained.
+"""FLOWPAD-1981 — the prompt queue did not drain in PTY mode.
 
-Scope: this pins the PTY no-retry defect only.
+Scope: this pins the PTY drain defect only.
 
-  * ``_maybe_drain_queue`` bails ``not_ready`` when the agent is busy. That
-    bail is a bare ``return`` INSIDE the per-process lock (``agentic_process``
-    :meth:`~AgenticProcess._maybe_drain_queue`), so it returns before the
-    ``try/finally`` that schedules the ``chain`` retry. A drain that bails
-    cannot reschedule itself.
-  * Nothing else re-fires it for a PTY turn. ``end_headless_turn`` schedules
-    the ``complete`` drain — its docstring says that edge "is what actually
+  * The turn-end seam is the busy→idle EDGE in ``_flush_transcript_change``,
+    ``if not current_busy and prev_busy:``. ``prev_busy`` comes from
+    ``_last_broadcast_key``, which was a plain INSTANCE attribute — and
+    ``_route_to_ap`` hydrates a FRESH ``AgenticProcess`` per streamer event, so
+    it always read back ``None`` and the edge never fired. That is the cause.
+  * Nothing else covered for it. ``end_headless_turn`` schedules the
+    ``complete`` drain — its docstring says that edge "is what actually
     advances a multi-entry queue (VIBE-005)" — but it runs on headless turns
-    only. ``chain`` needs a successful pop. The AP-level ``ready`` edge in
-    ``_flush_transcript_change`` fires on the busy→idle edge, and that edge
-    needs a flush to have recorded ``busy=True`` first.
+    only, and so does the ``submit`` drain (a live PTY returns after sending
+    Enter, before reaching it). ``chain`` needs a successful pop it can never
+    get. ``enqueue`` always declines, because you only queue while busy.
+  * Supporting, not the cause: that enqueue-time decline is terminal.
+    ``_maybe_drain_queue`` bails ``not_ready`` with a bare ``return`` INSIDE
+    the per-process lock, above the ``try/finally`` that schedules ``chain``,
+    so a drain that declines cannot reschedule itself.
 
-  ⇒ headless self-heals on its turn end; PTY has no turn-end drain at all.
+  ⇒ headless self-heals on its turn end; in PTY the queue never drained at all.
 
 Deliberately NOT in scope: the stale-``last-prompt``-tail wedge that pins
 ``busy`` True forever. This test uses a FRESH transcript and asserts, before
@@ -128,6 +132,13 @@ async def _settle(before: set[asyncio.Task]) -> None:
         await asyncio.gather(*spawned, return_exceptions=True)
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.pty_queue_drain.rules: FAILING? the prompt queue did not drain
+#       in PTY mode - read this tag's rules before touching the turn-end edge or _last_broadcast_key
+# flowpad:endcapsule tag
 @pytest.mark.asyncio
 async def test_prompt_queued_during_a_pty_turn_drains_when_the_turn_ends(
     initialize_test_db,
@@ -190,8 +201,9 @@ async def test_prompt_queued_during_a_pty_turn_drains_when_the_turn_ends(
         f"still {remaining}; drain_check={drain_checks}; "
         f"worker_status at turn end={at_turn_end}"
     )
-    # ...and specifically because the turn-end seam asked again, not because
-    # some unrelated event happened to pop it.
+    # ...and specifically from the turn-end seam. No other drain source is
+    # reachable for a live PTY, so anything else popping it would mean the
+    # scenario, not the fix, changed.
     assert ("ready", "ok") in drain_checks, (
         f"the queue drained, but not from the turn-end seam: {drain_checks}"
     )
