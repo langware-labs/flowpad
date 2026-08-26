@@ -21,6 +21,7 @@ from enum import Enum
 from functools import cached_property, lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, List
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from pydantic import SerializationInfo, model_serializer, model_validator
@@ -60,6 +61,10 @@ from flow_sdk.builtin.process_lifecycle import (
 )
 from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.builtin.worker_status import is_terminal as is_worker_terminal
+from flow_sdk.compute.providers.compute_provider import (
+    LOOPBACK_HOSTNAMES,
+    sandbox_public_url,
+)
 from flow_sdk.core import Entity, action
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.core.flow.streaming.response_handler import StreamingResponseHandler
@@ -67,6 +72,7 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.flowpad_types.enums import ProcessKind, WorkerType
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
+from flow_sdk.instance_settings.runtime import own_sandbox_id
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
@@ -6710,6 +6716,33 @@ class AgenticProcess(Entity):
             raise ValueError("No compute node found")
         return compute_node.get_host(int_port)
 
+    async def _resolve_browser_dev_host(self, port: int) -> str:
+        """The url a BROWSER should load for a dev-server ``port``.
+
+        Differs from :meth:`_resolve_dev_host` in exactly one case: when THIS
+        app is itself running inside a sandbox. The provider answers for the
+        machine the app runs on, and a local node answers ``localhost`` -- right
+        on a desktop, where the viewer sits at that machine, and wrong in a cloud
+        box, where ``localhost`` is the viewer's own laptop and nothing is
+        listening on it.
+
+        Only a loopback answer is rewritten. A genuinely remote compute node
+        already returns a routable host and a box has no business second-guessing
+        it.
+
+        Deliberately NOT pushed into ``LocalComputeProvider.get_host``:
+        ``probe-webapp`` and the MCP client reach the same port from INSIDE the
+        box, where loopback is correct and free. This is the browser's question;
+        theirs is a different one with a different answer.
+        """
+        host = await self._resolve_dev_host(port)
+        sandbox_id = own_sandbox_id()
+        if not sandbox_id:
+            return host
+        if (urlparse(host).hostname or "").lower() not in LOOPBACK_HOSTNAMES:
+            return host
+        return sandbox_public_url(int(port), sandbox_id)
+
     @action.all(action_name="get-host")
     async def get_host(self, port: int, redirect: bool = True):
         """Resolve the public host for a dev-server ``port`` running on this
@@ -6720,7 +6753,7 @@ class AgenticProcess(Entity):
         from fastapi.responses import RedirectResponse
 
         try:
-            host = await self._resolve_dev_host(port)
+            host = await self._resolve_browser_dev_host(port)
         except ValueError as e:
             return ApiFailResponse(message=f"get-host: {e}")
 
