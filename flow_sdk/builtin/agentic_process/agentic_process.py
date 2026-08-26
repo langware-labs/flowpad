@@ -560,6 +560,14 @@ _OPEN_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 # pop+inject the same head twice.
 _QUEUE_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 
+# Last (status, busy, worker_status) triple broadcast per process, keyed by AP id.
+# Module-level for the same reason ``_PROMPT_WORKERS`` is: the transcript watcher
+# hydrates a FRESH AgenticProcess for every streamer event, so anything stored on
+# ``self`` dies with that event. An instance attribute therefore always reads back
+# as None, which is why the busy->idle edge in ``_flush_transcript_change`` never
+# fired. Keyed by id so the value outlives the per-event object.
+_LAST_BROADCAST_KEYS: dict[str, tuple] = {}
+
 
 #: Where a process remembers the terminal it opened for the user, so
 #: `flow terminal open` is idempotent (a re-show, not a second terminal) and
@@ -7693,7 +7701,12 @@ class AgenticProcess(Entity):
             worker_key = str(current) if current is not None else None
             key = (self.status, current_busy, worker_key)
             previous = getattr(self, "_last_broadcast_key", None)
-            prev_busy = previous[1] if previous else None
+            # ``prev_busy`` reads the process-scoped key so it survives the
+            # per-event rehydration and the busy->idle edge can actually fire.
+            # Scoped deliberately: the ``key == previous`` dedup below still reads
+            # the INSTANCE attribute, so broadcast behaviour is unchanged by this.
+            previous_for_busy = _LAST_BROADCAST_KEYS.get(str(self.id))
+            prev_busy = previous_for_busy[1] if previous_for_busy else None
 
             # Generic agent-progress projection. Runs every flush (counters move
             # without a status transition), so it precedes the transition
@@ -7703,6 +7716,7 @@ class AgenticProcess(Entity):
             if key == previous:
                 return
             object.__setattr__(self, "_last_broadcast_key", key)
+            _LAST_BROADCAST_KEYS[str(self.id)] = key
 
             if current == WorkerStatus.API_TIMEOUT:
                 logger.warning(
@@ -7733,23 +7747,40 @@ class AgenticProcess(Entity):
             # AP-level seam for both PTY *and* headless turns (both write the
             # transcript that lands here), so no driver coupling.
             if not current_busy and prev_busy:
-                # NOTE (QA 2026-08-21): this edge can never fire — `prev_busy`
-                # comes from `self._last_broadcast_key` and every flush hydrates a
-                # fresh object, so it is always None (instrumented at a real turn
-                # end: `prev_busy=None current_busy=False edge_fires=False`). So a
-                # headless turn's writes are never reindexed from this seam.
-                # Moving it to the idle gate DOES fix that, but it regresses the
-                # whiteboard save path — `whiteboard/create_persist` C2 goes 4/4
-                # green -> 0/4 with that change alone (proven both directions on a
-                # reset instance). The reindex firing on every idle flush races the
-                # editor's own board.json/WHITE_BOARD.md writes. Left as-is until
-                # the interaction is understood; do not "fix" the gate in isolation.
+                # HISTORY (QA 2026-08-21): this edge USED to be dead. `prev_busy`
+                # came from `self._last_broadcast_key` — an INSTANCE attribute —
+                # and every flush hydrates a fresh object, so it was always None
+                # (instrumented at a real turn end:
+                # `prev_busy=None current_busy=False edge_fires=False`). A headless
+                # turn's writes were therefore never reindexed from this seam.
+                # `prev_busy` now reads the module-level `_LAST_BROADCAST_KEYS`, so
+                # THIS EDGE IS LIVE and fires once per turn end.
+                #
+                # That revives `_schedule_turn_end_reindex` with it. The same QA
+                # note recorded why the reindex was left alone: moving it to the
+                # IDLE GATE took `whiteboard/create_persist` C2 from 4/4 green to
+                # 0/4, because a reindex on every flush races the editor's own
+                # board.json/WHITE_BOARD.md writes. Waking the EDGE is not that
+                # change: it fires once per turn end, not once per flush, and the
+                # whiteboard scenario was re-run against this seam live and stays
+                # 4/4. The load, not the seam, was what broke it.
+                #
+                # Second defect here, independent of the gate: the watermark
+                # `_reindex_entry_watermark` is per-instance transient for the very
+                # same reason `prev_busy` was, so on this seam it always reads 0 and
+                # every firing reindexes the whole session history rather than the
+                # turn's own files. Fixing that is likely the precondition for
+                # trusting a live edge.
                 self._schedule_turn_end_reindex("flush")
             if not current_busy:
-                # Drain the prompt queue on ANY idle flush, not the busy→idle
-                # edge above — that edge is dead for the reason its NOTE gives,
-                # which left a PTY turn with NO turn-end drain at all
-                # (FLOWPAD-1981). A prompt enqueued mid-turn bails ``not_ready``,
+                # Drain the prompt queue on ANY idle flush: a LEVEL gate ("is it
+                # idle now?"), deliberately NOT the busy→idle EDGE above. The edge
+                # was dead when this drain landed (FLOWPAD-1981), which is what
+                # left a PTY turn with NO turn-end drain at all; it is live again
+                # now, but the drain stays here on purpose — a level gate
+                # self-heals a missed observation, and it keeps the drain
+                # decoupled from the reindex that shares that edge.
+                # A prompt enqueued mid-turn bails ``not_ready``,
                 # and that bail returns before the ``chain`` reschedule, so
                 # nothing ever revisits it: the queue strands until the user
                 # happens to act again. Headless self-heals through
@@ -7758,9 +7789,9 @@ class AgenticProcess(Entity):
                 # edge) is safe: ``_schedule_queue_drain`` returns early when no
                 # queue file exists, ``_maybe_drain_queue`` bails on an empty or
                 # disabled queue, and it pop-persists the head before injecting
-                # so a repeat can never double-inject. Only the DRAIN moves here
-                # — the reindex stays on the dead edge above, so the whiteboard
-                # race described in that NOTE is untouched by this change.
+                # so a repeat can never double-inject. Only the DRAIN lives here
+                # — the reindex stays on the edge above, so the whiteboard race
+                # described in that NOTE is untouched by the drain itself.
                 self._schedule_queue_drain("ready")
                 # Default-name stamp on ANY idle flush, not the busy→idle edge:
                 # each flush hydrates a fresh object, so ``prev_busy`` starts
