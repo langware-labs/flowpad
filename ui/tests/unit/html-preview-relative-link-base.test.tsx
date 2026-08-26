@@ -60,6 +60,25 @@ describe('HtmlPreview relative links', () => {
     expect(previewLinkTarget(FILE, 'https://example.com/x.html')).toBeNull();
   });
 
+  it('scrolls an in-page anchor inside the frame instead of navigating it', async () => {
+    // `#id` does not scroll on its own in a srcdoc frame: the document's url is
+    // `about:srcdoc` but its BASE is the parent's dock route, so `#top` resolves
+    // to `<app route>#top` -- a different document -- and the browser navigates
+    // the frame at the gated backend. Users got the Forbidden page for clicking
+    // an in-page anchor, and agents started replacing `href="#id"` with custom
+    // scroll JS, which breaks the markup everywhere it is published.
+    render(<HtmlPreview path={FILE} />);
+    const frame: HTMLIFrameElement = await screen.findByTestId('html-preview');
+    await waitFor(() => expect(frame.getAttribute('srcdoc')).toContain('cloud-types.html'));
+    const srcdoc = frame.getAttribute('srcdoc') ?? '';
+
+    // Handled in the guest, by scrolling — never handed to the parent to route.
+    expect(srcdoc).toContain('scrollIntoView');
+    expect(srcdoc).toMatch(/charAt\(0\) === '#'/);
+    // …and the parent still refuses to treat a fragment as a sibling file.
+    expect(previewLinkTarget(FILE, '#top')).toBeNull();
+  });
+
   it('routes a clicked link through the router instead of navigating the frame', async () => {
     window.history.replaceState({}, '', '/dock/shell/agentic_process-10a3bd1e?viewMode=vibe');
     openMachinePath.mockClear();

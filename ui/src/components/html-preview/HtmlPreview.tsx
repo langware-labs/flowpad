@@ -31,9 +31,10 @@ import { useDockNavigation } from '@src/navigation';
  * sibling would be refused exactly as before. The parent has both the identity
  * and the file's location; the guest has neither.
  *
- * Returns null for in-page anchors (`#top`, which the guest handles itself) and
- * for anything carrying a scheme (`https:`, `mailto:`) — those are not files
- * next to this one.
+ * Returns null for in-page anchors (`#top`) and for anything carrying a scheme
+ * (`https:`, `mailto:`) — neither is a file next to this one. Fragments are not
+ * the PARENT's to route, but they are not the guest's to follow either: see
+ * `LINK_INTERCEPTOR`, which scrolls them inside the frame.
  */
 export function previewLinkTarget(filePath: string, href: string): string | null {
   if (!href || href.startsWith('#')) return null;
@@ -148,8 +149,25 @@ document.addEventListener('click', function (e) {
   var a = e.target && e.target.closest && e.target.closest('a[href]');
   if (!a) return;
   var href = a.getAttribute('href');
-  if (!href || href.charAt(0) === '#') return;
+  if (!href) return;
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(href)) return;
+  if (href.charAt(0) === '#') {
+    // A fragment does NOT scroll on its own here. This document's url is
+    // \`about:srcdoc\` but its BASE is the parent's dock route, so \`#top\`
+    // resolves to \`<app route>#top\` -- a DIFFERENT document -- and the browser
+    // navigates the frame at the gated backend instead of scrolling. The user
+    // sees the Forbidden page for clicking an in-page anchor.
+    //
+    // So scroll it here. The page keeps ordinary \`href="#id"\` markup, which is
+    // what makes it work anywhere else it is published, keyboard- and
+    // screen-reader-navigable, and deep-linkable.
+    e.preventDefault();
+    var id = decodeURIComponent(href.slice(1));
+    if (!id) { (document.scrollingElement || document.documentElement).scrollTo({ top: 0, behavior: 'smooth' }); return; }
+    var t = document.getElementById(id) || document.getElementsByName(id)[0];
+    if (t && t.scrollIntoView) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
   e.preventDefault();
   parent.postMessage({ type: 'flowpad:preview-link', href: href }, '*');
 }, true);
