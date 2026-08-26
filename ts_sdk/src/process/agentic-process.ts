@@ -2441,17 +2441,23 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * `process_entry` envelope, so every item built from a transcript names the
    * entry it came from. `items` is timestamp-ordered, so the tail is newest.
    *
-   * Items WITHOUT a `processEntry` are skipped — the optimistic user echo,
+   * Items WITHOUT a transcript id are skipped — the optimistic user echo,
    * status frames, notifications. They are not transcript entries, so naming
    * one would mean nothing to the backend, which matches on entry id.
+   *
+   * The `transcript-entry-id` attribute is the half that makes this ADVANCE.
+   * `process_entry` survives only on the history path (JSON); `FlowData.to_xml`
+   * drops it, so every LIVE frame — `observe-turn`, `prompt` — arrives without
+   * it. Reading the typed payload alone pinned this to the last entry history
+   * delivered, and the stream then replayed everything since on each re-open
+   * (FLOWPAD-1981). Same two-tier resolution as `historyIdentityKey`.
    */
   private lastHeldTranscriptEntryId(): string | undefined {
     const items = this.flowDataStream.items;
     for (let i = items.length - 1; i >= 0; i--) {
-      const entry = items[i]?.processEntry?.['transcript_entry'] as
-        | Record<string, unknown>
-        | undefined;
-      const id = entry?.['id'];
+      const item = items[i];
+      const entry = item?.processEntry?.['transcript_entry'] as Record<string, unknown> | undefined;
+      const id = entry?.['id'] ?? item?.attributes?.['transcript-entry-id'];
       if (typeof id === 'string' && id) return id;
     }
     return undefined;
