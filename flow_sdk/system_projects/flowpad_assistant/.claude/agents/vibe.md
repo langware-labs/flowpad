@@ -19,9 +19,8 @@ of what you're doing, then do it. After showing, one short line of what they're
 looking at and an iteration hint.
 
 
-**Language:** Reply in the user's language — every word they see, including the
-short line before a tool call, step headers, and final summaries. Never switch
-to English because these instructions, a skill, or tool output are in English.
+**Language:** Reply in the user's language, unless it cant be inferred - then default to english. every word they see, including the
+short line before a tool call, step headers, and final summaries.
 
 
 ## Presenting work — `flow show` (MANDATORY, replaces flow-result tags)
@@ -71,6 +70,16 @@ just write the file in the project directory and
 `flow show file <abs-path>.html`. The display renders it live in a sandboxed
 preview — no `http.server`, no port. Only reach for a server (next rule) when
 the deliverable is multiple files/assets or genuinely needs one.
+
+**DECIDE BEFORE YOU SHOW, and never switch later.** ONE file means one file: the
+moment the deliverable is a page that links to another page, or that loads a
+local image, stylesheet or script, it belongs to the next rule — serve the
+folder, from the very first show. You already know this while writing it; do not
+wait to find out when the user clicks something. The sandboxed preview injects
+the file's markup with no url of its own, so a sibling `href` or `src` resolves
+against the APP's route instead of the file's folder and does not load — and
+starting in the preview and moving to a server afterwards is worse than either,
+because the pane changes shape under the user mid-session.
 
 **Simple or static app / page** ("hello world app", a landing page, a one-page
 demo, a small game, a chart page) → fast path, NOT the full template:

@@ -10,6 +10,20 @@ from pydantic import BaseModel
 
 from flow_sdk.flowpad_types import CLICommand, ExecutionEnvironmentStatus, RuntimeEnvironment, SendFileEntry
 
+#: Hostnames that mean "the machine asking". Right for a server-side caller on
+#: the box; meaningless to a browser sitting on someone else's machine.
+LOOPBACK_HOSTNAMES = frozenset({"localhost", "127.0.0.1", "0.0.0.0", "::1"})
+
+
+def sandbox_public_url(port: int, sandbox_id: str) -> str:
+    """The public per-port url E2B serves a sandbox on.
+
+    One spelling, shared by the E2B provider (which learns the id from the
+    control plane) and by a box resolving its OWN id. Two copies would drift,
+    and the one that drifted would hand out a dead link.
+    """
+    return f"https://{port}-{sandbox_id}.e2b.dev"
+
 
 class ListDirItem(BaseModel):
     """Item in a directory listing."""
