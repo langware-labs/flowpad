@@ -17,6 +17,14 @@ from flow_sdk.compute.providers.compute_provider import sandbox_public_url
 from flow_sdk.instance_settings.runtime import own_sandbox_id
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.sandbox_browser_url.rules: FAILING? read this tag's rules before
+#       editing. The sandbox id does NOT come from E2B_SANDBOX_ID — it is empty in the
+#       server process.
+# flowpad:endcapsule tag
 def test_a_populated_env_var_does_not_make_this_a_sandbox(monkeypatch):
     own_sandbox_id.cache_clear()
     monkeypatch.setenv("E2B_SANDBOX", "true")
