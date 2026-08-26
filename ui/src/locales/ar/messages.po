@@ -16936,6 +16936,10 @@ msgstr "الرموز"
 msgid "Tomorrow"
 msgstr "غداً"
 
+#: src/components/html-preview/HtmlPreview.tsx
+msgid "Too large to preview:"
+msgstr ""
+
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Too many attempts. Wait a few minutes and try again."
 msgstr ""
