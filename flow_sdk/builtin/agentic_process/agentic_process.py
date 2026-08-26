@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from functools import cached_property, lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, List
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, List, NamedTuple
 from uuid import uuid4
 
 from pydantic import SerializationInfo, model_serializer, model_validator
@@ -560,13 +560,14 @@ _OPEN_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 # pop+inject the same head twice.
 _QUEUE_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 
-# Last (status, busy, worker_status) triple broadcast per process, keyed by AP id.
-# Module-level for the same reason ``_PROMPT_WORKERS`` is: the transcript watcher
-# hydrates a FRESH AgenticProcess for every streamer event, so anything stored on
-# ``self`` dies with that event. An instance attribute therefore always reads back
-# as None, which is why the busy->idle edge in ``_flush_transcript_change`` never
-# fired. Keyed by id so the value outlives the per-event object.
-_LAST_BROADCAST_KEYS: dict[str, tuple] = {}
+#: Broadcast dedup key — private, reached only via ``AgenticProcess._last_broadcast_key``, so its shape can change freely.
+_BroadcastKey = NamedTuple(
+    "_BroadcastKey",
+    [("status", str), ("busy", bool), ("worker_status", str | None)],
+)
+
+# Last key broadcast per AP id — module-level because every streamer event hydrates a FRESH AP, killing instance state.
+_LAST_BROADCAST_KEYS: dict[str, _BroadcastKey] = {}
 
 
 #: Where a process remembers the terminal it opened for the user, so
@@ -7693,6 +7694,32 @@ class AgenticProcess(Entity):
         # — safer than re-scanning all, which would re-reindex the whole history.
         return list(_iter_touched_paths(entries[wm:]))
 
+    @property
+    def _last_broadcast_key(self) -> _BroadcastKey | None:
+        """Last (status, busy, worker_status) triple broadcast for this process.
+
+        Backed by the module-level :data:`_LAST_BROADCAST_KEYS` rather than by
+        ``self``: the transcript watcher hydrates a FRESH AgenticProcess for
+        every streamer event, so an instance attribute dies with that event and
+        always reads back as None. The property keeps the ordinary
+        attribute-shaped call sites while the value lives as long as the
+        process does.
+        """
+        return _LAST_BROADCAST_KEYS.get(str(self.id))
+
+    @_last_broadcast_key.setter
+    def _last_broadcast_key(self, key: "_BroadcastKey | tuple | None") -> None:
+        if key is None:
+            # Drop the row rather than storing a None, so a reader can't tell
+            # "never broadcast" from "broadcast a None" — there is no such key.
+            _LAST_BROADCAST_KEYS.pop(str(self.id), None)
+        else:
+            # Normalize on the way in — the setter is the ONLY writer, so a
+            # plain triple (what the tests assign) still reads back with named
+            # axes. Wrong arity raises here rather than surfacing as a silent
+            # mis-index at the read.
+            _LAST_BROADCAST_KEYS[str(self.id)] = _BroadcastKey(*key)
+
     async def _flush_transcript_change(self) -> None:
         """Run after the debounce window on this AP's transcript.
 
@@ -7733,14 +7760,11 @@ class AgenticProcess(Entity):
             # is in the key too so a lifecycle flip (running→stopped) still fires.
             current_busy = is_turn_busy(self, current)
             worker_key = str(current) if current is not None else None
-            key = (self.status, current_busy, worker_key)
+            key = _BroadcastKey(self.status, current_busy, worker_key)
+            # Process-scoped (see the property), so it survives the per-event
+            # rehydration and the busy->idle edge below can actually fire.
             previous = getattr(self, "_last_broadcast_key", None)
-            # ``prev_busy`` reads the process-scoped key so it survives the
-            # per-event rehydration and the busy->idle edge can actually fire.
-            # Scoped deliberately: the ``key == previous`` dedup below still reads
-            # the INSTANCE attribute, so broadcast behaviour is unchanged by this.
-            previous_for_busy = _LAST_BROADCAST_KEYS.get(str(self.id))
-            prev_busy = previous_for_busy[1] if previous_for_busy else None
+            prev_busy = previous.busy if previous else None
 
             # Generic agent-progress projection. Runs every flush (counters move
             # without a status transition), so it precedes the transition
@@ -7749,8 +7773,7 @@ class AgenticProcess(Entity):
 
             if key == previous:
                 return
-            object.__setattr__(self, "_last_broadcast_key", key)
-            _LAST_BROADCAST_KEYS[str(self.id)] = key
+            self._last_broadcast_key = key
 
             if current == WorkerStatus.API_TIMEOUT:
                 logger.warning(
@@ -7781,14 +7804,14 @@ class AgenticProcess(Entity):
             # AP-level seam for both PTY *and* headless turns (both write the
             # transcript that lands here), so no driver coupling.
             if not current_busy and prev_busy:
-                # HISTORY (QA 2026-08-21): this edge USED to be dead. `prev_busy`
-                # came from `self._last_broadcast_key` — an INSTANCE attribute —
-                # and every flush hydrates a fresh object, so it was always None
+                # HISTORY (QA 2026-08-21): this edge USED to be dead.
+                # `_last_broadcast_key` was a plain INSTANCE attribute and every
+                # flush hydrates a fresh object, so `prev_busy` was always None
                 # (instrumented at a real turn end:
                 # `prev_busy=None current_busy=False edge_fires=False`). A headless
-                # turn's writes were therefore never reindexed from this seam.
-                # `prev_busy` now reads the module-level `_LAST_BROADCAST_KEYS`, so
-                # THIS EDGE IS LIVE and fires once per turn end.
+                # turn's writes were therefore never reindexed from this seam. The
+                # key is process-scoped now, so THIS EDGE IS LIVE and fires once
+                # per turn end.
                 #
                 # That revives `_schedule_turn_end_reindex` with it. The same QA
                 # note recorded why the reindex was left alone: moving it to the
