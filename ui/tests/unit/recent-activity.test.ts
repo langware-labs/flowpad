@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TypeId } from '@sdk';
 import type { SearchResult } from '@src/hooks/use-record-search';
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
@@ -123,4 +123,58 @@ describe('recent activity navigation coverage', () => {
       expect(getDockPointerForResult(result)).not.toBeNull();
     },
   );
+});
+
+/**
+ * FLOWPAD-2030 — paging must survive the empty-chat filter: a full page that
+ * contained hidden rows would read as short and end pagination early, so
+ * `hasMore` compares `fetchedCount` (pre-filter), not the displayed count.
+ */
+describe('useRecentActivity — paging past hidden chats', () => {
+  const LIMIT = 5;
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+  });
+
+  async function renderRecentActivity(opts: { fetchedCount: number; visible: number }) {
+    const buckets = [
+      {
+        label: 'Today',
+        entries: Array.from({ length: opts.visible }, (_, i) =>
+          session({ worker_id: `w-${i}`, message_count: 2 }),
+        ),
+      },
+    ];
+
+    vi.doMock('@src/components/chats-navigator/useChatHistory', () => ({
+      useChatHistory: () => ({
+        buckets,
+        total: opts.visible,
+        fetchedCount: opts.fetchedCount,
+        isLoading: false,
+        refetch: vi.fn(),
+      }),
+    }));
+    vi.doMock('@src/hooks/use-record-search', () => ({
+      useRecordSearch: () => ({ results: [], total: 0, isLoading: false, error: null }),
+    }));
+
+    const { useRecentActivity } = await import('@src/pages/flow-page/use-recent-activity');
+    const { renderHook } = await import('@testing-library/react');
+    return renderHook(() => useRecentActivity(projectScope(PROJECT_UUID), LIMIT)).result.current;
+  }
+
+  it('keeps hasMore when a full page was fetched but empty chats were hidden', async () => {
+    const { hasMore } = await renderRecentActivity({ fetchedCount: LIMIT, visible: 2 });
+
+    expect(hasMore).toBe(true);
+  });
+
+  it('reports no more pages when the backend returned a short page', async () => {
+    const { hasMore } = await renderRecentActivity({ fetchedCount: 2, visible: 2 });
+
+    expect(hasMore).toBe(false);
+  });
 });
