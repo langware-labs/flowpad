@@ -4358,9 +4358,15 @@ class AgenticProcess(Entity):
         )
 
     @action.post(action_name="observe-turn")
-    async def observe_turn(self) -> Any:
+    async def observe_turn(self, after_entry_id: str | None = None) -> Any:
         """Stream an IN-FLIGHT turn's transcript entries to a client that did
         NOT start it.
+
+        *after_entry_id* is the client's own position: "I already hold this
+        transcript entry; send me what follows it". Omit it and the stream
+        watermarks at open, which is the historical behaviour — see the
+        watermark block below for why that default is wrong for a client that
+        learns about a turn late.
 
         A turn's content reaches the client that sent it through that client's
         own ``prompt`` response stream. Nobody else has a source: a turn typed
@@ -4439,10 +4445,38 @@ class AgenticProcess(Entity):
                 return []
 
         path, derived = _transcript_path()
-        # Watermark at open: the caller's pane loads history on mount, so
-        # everything up to now is already on screen. Stream only what the turn
-        # appends from here.
-        emitted = len(_read_entries(path)) if path is not None and path.exists() else 0
+        # Where this stream starts.
+        #
+        # DEFAULT (no ``after_entry_id``) — watermark at open: the caller's pane
+        # loads history on mount, so everything up to now is already on screen.
+        # Stream only what the turn appends from here. That assumption holds
+        # exactly when mount and open coincide (a second tab opening mid-turn).
+        # It is FALSE for a client that learns about a turn late — a prompt
+        # drained from the queue, say — where the pane mounted long before the
+        # turn existed, so "everything up to now" silently includes content
+        # nobody has ever seen. Measured: the drained prompt and the turn's
+        # first output are always already on disk by the time ``busy`` reaches
+        # the client (it is broadcast from the DEBOUNCED transcript flush), so
+        # this watermark classifies the turn's own head as history (FLOWPAD-1981).
+        #
+        # ``after_entry_id`` fixes that by asking instead of guessing: the client
+        # states the last entry it holds and the stream resumes after it. The
+        # server has no way to know this on its own — only the client knows what
+        # is on its screen.
+        #
+        # An UNKNOWN id degrades to the watermark-at-open default rather than
+        # replaying from zero: a stale, rotated, or foreign id should behave like
+        # today, never flood a pane with the whole session.
+        entries_at_open = _read_entries(path) if path is not None and path.exists() else []
+        emitted = len(entries_at_open)
+        if after_entry_id:
+            # Scan from the tail: the client's position is far likelier to be
+            # recent, and the last match wins if an id somehow repeats.
+            for index in range(len(entries_at_open) - 1, -1, -1):
+                entry = entries_at_open[index]
+                if after_entry_id in (getattr(entry, "id", None), getattr(entry, "entry_id", None)):
+                    emitted = index + 1
+                    break
 
         async def _observe() -> None:
             nonlocal emitted
