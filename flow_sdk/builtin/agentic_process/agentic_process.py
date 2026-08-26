@@ -3963,7 +3963,7 @@ class AgenticProcess(Entity):
             },
         )
 
-    def _run_pty_prompt(self, message: str, inactivity_timeout: float = 15.0) -> Any:
+    def _run_pty_prompt(self, message: str, inactivity_timeout: float = 300.0) -> Any:
         from starlette.responses import StreamingResponse  # local import — starlette is an app-layer dep
 
         from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
