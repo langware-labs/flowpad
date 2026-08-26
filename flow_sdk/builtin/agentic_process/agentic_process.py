@@ -7829,32 +7829,30 @@ class AgenticProcess(Entity):
                 # turn's own files. Fixing that is likely the precondition for
                 # trusting a live edge.
                 self._schedule_turn_end_reindex("flush")
-            if not current_busy:
-                # Drain the prompt queue on ANY idle flush: a LEVEL gate ("is it
-                # idle now?"), deliberately NOT the busy→idle EDGE above. The edge
-                # was dead when this drain landed (FLOWPAD-1981), which is what
-                # left a PTY turn with NO turn-end drain at all; it is live again
-                # now, but the drain stays here on purpose — a level gate
-                # self-heals a missed observation, and it keeps the drain
-                # decoupled from the reindex that shares that edge.
-                # A prompt enqueued mid-turn bails ``not_ready``,
-                # and that bail returns before the ``chain`` reschedule, so
-                # nothing ever revisits it: the queue strands until the user
-                # happens to act again. Headless self-heals through
-                # ``end_headless_turn``'s "complete" drain; this is the PTY
-                # equivalent. Re-firing on every idle flush (rather than on an
-                # edge) is safe: ``_schedule_queue_drain`` returns early when no
-                # queue file exists, ``_maybe_drain_queue`` bails on an empty or
-                # disabled queue, and it pop-persists the head before injecting
-                # so a repeat can never double-inject. Only the DRAIN lives here
-                # — the reindex stays on the edge above, so the whiteboard race
-                # described in that NOTE is untouched by the drain itself.
+                # Drain the prompt queue on this same turn-end edge. A prompt
+                # enqueued mid-turn bails ``not_ready``, and that bail returns
+                # before the ``chain`` reschedule, so nothing ever revisits it:
+                # the queue strands until the user happens to act again. Headless
+                # self-heals through ``end_headless_turn``'s "complete" drain;
+                # this is the PTY equivalent.
+                #
+                # The edge needs an earlier flush to have recorded ``busy=True``,
+                # which the enqueue case always has — the UI can only offer
+                # "queue" once a broadcast told it the agent is working, and that
+                # broadcast IS the flush that wrote the busy key. Re-firing is
+                # harmless if some other path fires it too:
+                # ``_schedule_queue_drain`` returns early when no queue file
+                # exists, ``_maybe_drain_queue`` bails on an empty or disabled
+                # queue, and it pop-persists the head before injecting, so a
+                # repeat can never double-inject.
                 self._schedule_queue_drain("ready")
-                # Default-name stamp on ANY idle flush, not the busy→idle edge:
-                # each flush hydrates a fresh object, so ``prev_busy`` starts
-                # None and an edge gate would never fire. Naming THIS hydration
-                # also keeps ``_emit_status_report``'s whole-row save above from
-                # clobbering a name stamped elsewhere. No-op once named.
+            if not current_busy:
+                # Default-name stamp on ANY idle flush, not the busy→idle edge
+                # above: a process that has not yet run a turn still needs a
+                # name, and the edge would never fire for it. Naming THIS
+                # hydration also keeps ``_emit_status_report``'s whole-row save
+                # above from clobbering a name stamped elsewhere. No-op once
+                # named.
                 try:
                     await self.stamp_default_name()
                 except Exception:
