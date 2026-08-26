@@ -178,3 +178,38 @@ async def test_an_unknown_entry_id_degrades_to_the_open_watermark(
     assert "DRAINED-PROMPT" not in body
     assert "HEAD-OUTPUT" not in body
     assert "TAIL-OUTPUT" in body
+
+
+@pytest.mark.asyncio
+async def test_the_stream_names_the_entry_each_frame_came_from(
+    initialize_test_db,
+) -> None:
+    """A client can only advance its position if the frames say what they are.
+
+    ``process_entry`` does NOT survive ``FlowData.to_xml`` — that writes
+    attributes and content only — so before the ``transcript-entry-id``
+    attribute every live frame reached the client anonymous. Its
+    ``lastHeldTranscriptEntryId`` could then only ever return the last entry
+    HISTORY gave it, so each re-open re-stated that stale position and the
+    stream replayed everything written since (FLOWPAD-1981).
+
+    Known limit, deliberately not asserted here: the streaming handler merges
+    CONSECUTIVE same-element-type entries into one element, and a start tag's
+    attributes are fixed when it opens — so a run of several assistant entries
+    is named by its FIRST entry. Alternating user/assistant turns (the queue
+    drain this ticket is about) give every entry its own element.
+    """
+    ap, path, session_id = await _session_with_an_unseen_turn_head()
+    ids = _entry_ids(path, session_id)
+
+    body = await _observe(ap, path, session_id, after_entry_id=ids[1])
+
+    assert "DRAINED-PROMPT" in body, "guard: the turn head is being streamed at all"
+    named = [entry_id for entry_id in ids if entry_id in body]
+    assert ids[2] in named, (
+        f"the streamed prompt must name its own entry so a client can resume "
+        f"after it instead of re-stating its history position; named={named}"
+    )
+    assert ids[3] in named, (
+        f"...and so must the assistant frame that follows it; named={named}"
+    )
