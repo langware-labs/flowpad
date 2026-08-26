@@ -11,8 +11,8 @@ Scope: this pins the PTY no-retry defect only.
     the ``complete`` drain — its docstring says that edge "is what actually
     advances a multi-entry queue (VIBE-005)" — but it runs on headless turns
     only. ``chain`` needs a successful pop. The AP-level ``ready`` edge in
-    ``_flush_transcript_change`` is dead (``prev_busy`` is always None,
-    per the in-code QA note beside it).
+    ``_flush_transcript_change`` fires on the busy→idle edge, and that edge
+    needs a flush to have recorded ``busy=True`` first.
 
   ⇒ headless self-heals on its turn end; PTY has no turn-end drain at all.
 
@@ -24,8 +24,9 @@ this one.
 
 No mocks: a real JSONL under the real (test-sandboxed) ``claude_projects_dir``,
 dispatched through the real ``_route_to_ap`` subscriber — which re-hydrates the
-AP per event exactly as the streamer does, and is the reason the ``ready`` edge
-can never see a previous ``busy``.
+AP per event exactly as the streamer does, so the ``ready`` edge only sees a
+previous ``busy`` if the process-scoped broadcast key really carried it across
+that re-hydration.
 """
 
 from __future__ import annotations
@@ -142,6 +143,14 @@ async def test_prompt_queued_during_a_pty_turn_drains_when_the_turn_ends(
     # Guard (keeps the stale-tail defect out of scope): the agent is busy for
     # the honest reason — a live turn on a fresh transcript.
     assert ap.fetch_worker_status() == WorkerStatus.THINKING
+
+    # The streamer fires on the turn's OWN writes, not only on its end — that
+    # mid-turn flush is what records ``busy=True`` and is why the UI can show
+    # the agent as working at all. Dispatch it here for the same reason the
+    # user can only queue "while busy" once they have been told so.
+    before_mid = set(asyncio.all_tasks())
+    await _route_to_ap(ap.session_id, path, [])
+    await _settle(before_mid)
 
     ap.queue.enqueue("queued while busy", source="ui")
     await ap._maybe_drain_queue("enqueue")
