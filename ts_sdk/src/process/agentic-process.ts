@@ -44,6 +44,7 @@ import {
   ProcessStatus,
   WorkerMode,
   WorkerStatus,
+  isBusy,
   isProcessRunning,
   isReadyForInput,
   isWorkerRunning,
@@ -1906,13 +1907,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       return;
     }
 
-    // Don't echo a turn the process cannot actually accept. `busy`/`workerStatus`
-    // are backend-confirmed (set from watched entity state), so this catches a
-    // prompt fired while a prior turn is still in flight — the request will 409,
-    // and with nothing persisted to match, `loadHistory`'s retract-by-content
-    // never fires and the echo would otherwise be stuck on screen forever
-    // (FLOWPAD-2045).
-    if (this.busy || isWorkerRunning(this.workerStatus)) {
+    // Don't echo a turn the process can't accept — it'll 409, and with nothing
+    // persisted to match, the echo is stuck on screen forever (FLOWPAD-2045).
+    if (isBusy(this)) {
       return;
     }
 
@@ -2420,6 +2417,25 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     } finally {
       this._setPromptingDelta(-1);
     }
+  }
+
+  /**
+   * `prompt()` when idle, `enqueue()` when a turn is running — `isBusy` (wire)
+   * or `isPrompting` (just fired locally, not yet reflected back). The one
+   * fork every "send" surface should use instead of racing `prompt()` into a
+   * 409 (FLOWPAD-2045). `opts.permissionMode` is dropped on the queue path —
+   * it carries prompt text only.
+   */
+  async promptOrEnqueue(
+    text: string,
+    abortController?: AbortController,
+    opts?: { permissionMode?: PermissionMode },
+  ): Promise<void> {
+    if (isBusy(this) || this.isPrompting) {
+      await this.enqueue(text);
+      return;
+    }
+    await this.prompt(text, abortController, opts);
   }
 
   /**

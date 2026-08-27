@@ -237,10 +237,12 @@ describe('FLOWPAD-2045 — starter prompts during a New-session swap', () => {
     expect(composerDisabled()).toBe('false');
 
     // Positive control: the chips are not merely dead. The same click now
-    // prompts the session the user is actually looking at.
+    // prompts the session the user is actually looking at. `promptOrEnqueue`
+    // forwards all three `prompt()` params positionally (undefined included),
+    // hence the explicit trailing undefineds below.
     const label = chips()[0].textContent as string;
     fireEvent.click(chips()[0]);
-    await waitFor(() => expect(newProcess.prompt).toHaveBeenCalledWith(label));
+    await waitFor(() => expect(newProcess.prompt).toHaveBeenCalledWith(label, undefined, undefined));
     expect(oldProcess.prompt).not.toHaveBeenCalled();
   });
 

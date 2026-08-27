@@ -14,7 +14,7 @@ import { useViewerStore, useProcessWebApp, useAppDisplay } from '@src/hooks/flow
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, editorForPath, editorForType } from '@src/navigation/asset-doc-types';
 import { DisplayHistoryButton } from './display-history-button';
-import { AgenticProcess, dataContext, type DisplayEntry, FlowData, fsStore, isBusy, TypeId, ViewType } from '@sdk';
+import { AgenticProcess, dataContext, type DisplayEntry, FlowData, fsStore, TypeId, ViewType } from '@sdk';
 import { resolveProcessInputDir } from '@src/utils/upload-to-input-dir';
 import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -308,12 +308,9 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
           activeProcess ?? (await AgenticProcess.getById<AgenticProcess>(session.processId).catch(() => null));
         if (existing) {
           // Mid-turn clicks ENQUEUE instead of racing a second turn onto a busy
-          // process — same mechanism as ChatComposerBar.handleSend.
-          if (isBusy(existing)) {
-            await existing.enqueue(prompt);
-          } else {
-            await existing.prompt(prompt);
-          }
+          // process — `promptOrEnqueue` is the shared fork (also used by
+          // ChatComposerBar.handleSend).
+          await existing.promptOrEnqueue(prompt);
           return;
         }
         if (!project?.id) {
