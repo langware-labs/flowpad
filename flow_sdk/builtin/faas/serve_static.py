@@ -155,6 +155,11 @@ def _base_url_for(request: Request, api_url_scheme: str | None) -> str:
     return base_url if base_url.endswith("/") else base_url + "/"
 
 
+#: What a built app's assets are allowed to sit in a browser cache for. An app
+#: is a release; a file being iterated on is not, which is why the caller picks.
+ASSET_CACHE_CONTROL = "public, max-age=3600"
+
+
 async def serve_app_bytes(
     root: Path | str,
     sub_path: str | None,
@@ -162,6 +167,8 @@ async def serve_app_bytes(
     *,
     inject_base: bool = True,
     api_url_scheme: str | None = None,
+    fallback_index: bool = True,
+    cache_control: str = ASSET_CACHE_CONTROL,
 ) -> Response:
     """Serve one file out of *root*, falling back to its ``index.html``.
 
@@ -170,6 +177,18 @@ async def serve_app_bytes(
     asset URLs resolve, while one served on its own domain must not have its
     document rewritten. The API-origin injection is unconditional — it is what
     makes the page's SDK reach the right backend.
+
+    ``fallback_index`` and ``cache_control`` exist for the same reason: they are
+    the two places where serving ONE FILE differs from serving an APP, and both
+    defaults describe the app.
+
+    * The index fallback is what makes a client-routed app work — ``/about`` is
+      not a file, it is a route the JS inside ``index.html`` handles, so an
+      unknown path must still return that document. A single served file has no
+      router to hand over to, so the fallback would answer a missing file with
+      an unrelated page: a 404 wearing a working page's clothes.
+    * An hour of caching is right for a release and wrong for a file being
+      edited, where the whole point is seeing the next version.
     """
     root_path = Path(root)
     if not root_path.exists() or not root_path.is_dir():
@@ -179,7 +198,7 @@ async def serve_app_bytes(
 
     if not (requested_file.exists() and requested_file.is_file()):
         index_file = root_path / "index.html"
-        if not index_file.exists():
+        if not fallback_index or not index_file.exists():
             return Response(status_code=404, content=f"File not found: {requested_file}")
         requested_file = index_file
 
@@ -205,7 +224,7 @@ async def serve_app_bytes(
         media_type=mime_type or "application/octet-stream",
     )
     response.headers["ETag"] = etag
-    response.headers["Cache-Control"] = "public, max-age=3600"
+    response.headers["Cache-Control"] = cache_control
     return response
 
 
