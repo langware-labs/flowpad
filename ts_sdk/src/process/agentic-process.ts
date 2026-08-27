@@ -2426,14 +2426,61 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * whether to observe. Setting it here would make a watcher look like a
    * sender.
    *
+   * Resumes from the newest transcript entry this client already holds, so a
+   * turn whose head was written before we could open the stream is no longer
+   * lost (FLOWPAD-1981). Pass `opts.afterEntryId` to state a different
+   * position; hold nothing and the backend keeps its watermark-at-open default.
+   *
    * Resolves when the turn ends. Abort the controller (on unmount) to stop
    * watching — the worker is unaffected, only the observation stops.
    */
-  async observeTurn(abortController?: AbortController): Promise<void> {
+  /**
+   * The newest transcript entry this client already holds, or `undefined`.
+   *
+   * Both the history replay and the live streams carry the backend's
+   * `process_entry` envelope, so every item built from a transcript names the
+   * entry it came from. `items` is timestamp-ordered, so the tail is newest.
+   *
+   * Items WITHOUT a transcript id are skipped — the optimistic user echo,
+   * status frames, notifications. They are not transcript entries, so naming
+   * one would mean nothing to the backend, which matches on entry id.
+   *
+   * The `transcript-entry-id` attribute is the half that makes this ADVANCE.
+   * `process_entry` survives only on the history path (JSON); `FlowData.to_xml`
+   * drops it, so every LIVE frame — `observe-turn`, `prompt` — arrives without
+   * it. Reading the typed payload alone pinned this to the last entry history
+   * delivered, and the stream then replayed everything since on each re-open
+   * (FLOWPAD-1981). Same two-tier resolution as `historyIdentityKey`.
+   */
+  private lastHeldTranscriptEntryId(): string | undefined {
+    const items = this.flowDataStream.items;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i];
+      const entry = item?.processEntry?.['transcript_entry'] as Record<string, unknown> | undefined;
+      const id = entry?.['id'] ?? item?.attributes?.['transcript-entry-id'];
+      if (typeof id === 'string' && id) return id;
+    }
+    return undefined;
+  }
+
+  async observeTurn(
+    abortController?: AbortController,
+    opts?: { afterEntryId?: string },
+  ): Promise<void> {
     const { FlowStreamProcessor } = await import('../flow_processing/flow-stream-processor');
     const { FlowEvents } = await import('../flow_processing/flow-events');
 
     const ctrl = abortController ?? new AbortController();
+
+    // Tell the backend where WE are. Without this it watermarks at open and
+    // treats everything already on disk as history — correct only when the
+    // pane mounted just now, and wrong for a turn we learn about late (a
+    // queue-drained prompt), where the turn's own head is already written by
+    // the time `busy` reaches us. Derived by default so callers need no
+    // change; `opts.afterEntryId` overrides. Omitted entirely when we hold no
+    // transcript entry, which is exactly when the old default is right.
+    const afterEntryId = opts?.afterEntryId ?? this.lastHeldTranscriptEntryId();
+
     const actionInfo = new ActionInfo(
       'observe-turn',
       AgenticProcess.type,
@@ -2443,6 +2490,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       true, // streaming
       ctrl.signal,
     );
+    if (afterEntryId) actionInfo.bodyParameters = { after_entry_id: afterEntryId };
 
     const response = await dataManager.callAction<unknown, Response>(actionInfo);
     if (!response || !response.body) return; // nothing in flight — not an error

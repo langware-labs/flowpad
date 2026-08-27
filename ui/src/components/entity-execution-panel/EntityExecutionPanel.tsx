@@ -46,6 +46,7 @@ import {
   WorkerIcon as HistoryWorkerIcon,
 } from './history-row';
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
+import { selectHistoryProcesses } from './history-processes';
 import { useProcessesForTarget } from './hooks/useProcessesForTarget';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { ChatPlanModeProvider } from '@src/components/terminal/interactive-terminal/chat-plan-mode-context';
@@ -313,7 +314,9 @@ export function EntityExecutionPanel({
   // full HistoryModal. The dropdown rows merge each AgenticProcess with its
   // matching entry to display the rich info (subject, project, branch, msg
   // count, worker icon) instead of bare ids and timestamps.
-  const { entries: workerHistoryEntries } = useWorkerHistory(30);
+  // A metadata JOIN, not a rendered list: `selectHistoryProcesses` needs every row
+  // to tell "empty" from "outside this 30-row window".
+  const { entries: workerHistoryEntries } = useWorkerHistory(30, { includeEmpty: true });
   const workerHistoryByProcessId = useMemo(() => {
     const map = new Map<string, WorkerHistoryEntry>();
     for (const entry of workerHistoryEntries) {
@@ -371,6 +374,13 @@ export function EntityExecutionPanel({
 
   const activeProcess: AgenticProcess | null =
     forceNew && !resolvedMatchesLocal ? localProcess : (resolvedProcess ?? localProcess);
+
+  // Rows the dropdown OFFERS. NOT `sortedProcesses`: that also drives the
+  // auto-latest pick, clear-all and delete, which must keep seeing every process.
+  const historyProcesses = useMemo(
+    () => selectHistoryProcesses(sortedProcesses, workerHistoryByProcessId, activeProcess?.id ?? null),
+    [sortedProcesses, workerHistoryByProcessId, activeProcess?.id],
+  );
   // The Agent this process runs AS — signs its assistant turns. Cache-first,
   // live (a rename / new avatar repaints); null for a plain session.
   const launchingAgent = useLaunchingAgent(activeProcess?.deployment_id);
@@ -816,7 +826,7 @@ export function EntityExecutionPanel({
         </div>
       )}
       <ExecutionHistoryHeader
-        processes={sortedProcesses}
+        processes={historyProcesses}
         workerHistoryByProcessId={workerHistoryByProcessId}
         activeId={activeProcess?.id ?? null}
         onNewSession={typeof leadingSlot === 'function' ? null : startNewSession}

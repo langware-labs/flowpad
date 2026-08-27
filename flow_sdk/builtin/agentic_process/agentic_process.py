@@ -21,6 +21,7 @@ from enum import Enum
 from functools import cached_property, lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, List, NamedTuple
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from pydantic import SerializationInfo, model_serializer, model_validator
@@ -60,6 +61,10 @@ from flow_sdk.builtin.process_lifecycle import (
 )
 from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.builtin.worker_status import is_terminal as is_worker_terminal
+from flow_sdk.compute.providers.compute_provider import (
+    LOOPBACK_HOSTNAMES,
+    sandbox_public_url,
+)
 from flow_sdk.core import Entity, action
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.core.flow.streaming.response_handler import StreamingResponseHandler
@@ -67,6 +72,7 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.flowpad_types.enums import ProcessKind, WorkerType
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
+from flow_sdk.instance_settings.runtime import own_sandbox_id
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
@@ -559,6 +565,15 @@ _OPEN_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 # Per-process serialization for prompt-queue drains so two ready edges can't
 # pop+inject the same head twice.
 _QUEUE_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
+
+#: Broadcast dedup key — private, reached only via ``AgenticProcess._last_broadcast_key``, so its shape can change freely.
+_BroadcastKey = NamedTuple(
+    "_BroadcastKey",
+    [("status", str), ("busy", bool), ("worker_status", str | None)],
+)
+
+# Last key broadcast per AP id — module-level because every streamer event hydrates a FRESH AP, killing instance state.
+_LAST_BROADCAST_KEYS: dict[str, _BroadcastKey] = {}
 
 
 #: Where a process remembers the terminal it opened for the user, so
@@ -3957,7 +3972,7 @@ class AgenticProcess(Entity):
             },
         )
 
-    def _run_pty_prompt(self, message: str, inactivity_timeout: float = 15.0) -> Any:
+    def _run_pty_prompt(self, message: str, inactivity_timeout: float = 300.0) -> Any:
         from starlette.responses import StreamingResponse  # local import — starlette is an app-layer dep
 
         from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
@@ -4388,9 +4403,15 @@ class AgenticProcess(Entity):
         )
 
     @action.post(action_name="observe-turn")
-    async def observe_turn(self) -> Any:
+    async def observe_turn(self, after_entry_id: str | None = None) -> Any:
         """Stream an IN-FLIGHT turn's transcript entries to a client that did
         NOT start it.
+
+        *after_entry_id* is the client's own position: "I already hold this
+        transcript entry; send me what follows it". Omit it and the stream
+        watermarks at open, which is the historical behaviour — see the
+        watermark block below for why that default is wrong for a client that
+        learns about a turn late.
 
         A turn's content reaches the client that sent it through that client's
         own ``prompt`` response stream. Nobody else has a source: a turn typed
@@ -4469,10 +4490,38 @@ class AgenticProcess(Entity):
                 return []
 
         path, derived = _transcript_path()
-        # Watermark at open: the caller's pane loads history on mount, so
-        # everything up to now is already on screen. Stream only what the turn
-        # appends from here.
-        emitted = len(_read_entries(path)) if path is not None and path.exists() else 0
+        # Where this stream starts.
+        #
+        # DEFAULT (no ``after_entry_id``) — watermark at open: the caller's pane
+        # loads history on mount, so everything up to now is already on screen.
+        # Stream only what the turn appends from here. That assumption holds
+        # exactly when mount and open coincide (a second tab opening mid-turn).
+        # It is FALSE for a client that learns about a turn late — a prompt
+        # drained from the queue, say — where the pane mounted long before the
+        # turn existed, so "everything up to now" silently includes content
+        # nobody has ever seen. Measured: the drained prompt and the turn's
+        # first output are always already on disk by the time ``busy`` reaches
+        # the client (it is broadcast from the DEBOUNCED transcript flush), so
+        # this watermark classifies the turn's own head as history (FLOWPAD-1981).
+        #
+        # ``after_entry_id`` fixes that by asking instead of guessing: the client
+        # states the last entry it holds and the stream resumes after it. The
+        # server has no way to know this on its own — only the client knows what
+        # is on its screen.
+        #
+        # An UNKNOWN id degrades to the watermark-at-open default rather than
+        # replaying from zero: a stale, rotated, or foreign id should behave like
+        # today, never flood a pane with the whole session.
+        entries_at_open = _read_entries(path) if path is not None and path.exists() else []
+        emitted = len(entries_at_open)
+        if after_entry_id:
+            # Scan from the tail: the client's position is far likelier to be
+            # recent, and the last match wins if an id somehow repeats.
+            for index in range(len(entries_at_open) - 1, -1, -1):
+                entry = entries_at_open[index]
+                if after_entry_id in (getattr(entry, "id", None), getattr(entry, "entry_id", None)):
+                    emitted = index + 1
+                    break
 
         async def _observe() -> None:
             nonlocal emitted
@@ -6748,6 +6797,33 @@ class AgenticProcess(Entity):
             raise ValueError("No compute node found")
         return compute_node.get_host(int_port)
 
+    async def _resolve_browser_dev_host(self, port: int) -> str:
+        """The url a BROWSER should load for a dev-server ``port``.
+
+        Differs from :meth:`_resolve_dev_host` in exactly one case: when THIS
+        app is itself running inside a sandbox. The provider answers for the
+        machine the app runs on, and a local node answers ``localhost`` -- right
+        on a desktop, where the viewer sits at that machine, and wrong in a cloud
+        box, where ``localhost`` is the viewer's own laptop and nothing is
+        listening on it.
+
+        Only a loopback answer is rewritten. A genuinely remote compute node
+        already returns a routable host and a box has no business second-guessing
+        it.
+
+        Deliberately NOT pushed into ``LocalComputeProvider.get_host``:
+        ``probe-webapp`` and the MCP client reach the same port from INSIDE the
+        box, where loopback is correct and free. This is the browser's question;
+        theirs is a different one with a different answer.
+        """
+        host = await self._resolve_dev_host(port)
+        sandbox_id = own_sandbox_id()
+        if not sandbox_id:
+            return host
+        if (urlparse(host).hostname or "").lower() not in LOOPBACK_HOSTNAMES:
+            return host
+        return sandbox_public_url(int(port), sandbox_id)
+
     @action.all(action_name="get-host")
     async def get_host(self, port: int, redirect: bool = True):
         """Resolve the public host for a dev-server ``port`` running on this
@@ -6758,7 +6834,7 @@ class AgenticProcess(Entity):
         from fastapi.responses import RedirectResponse
 
         try:
-            host = await self._resolve_dev_host(port)
+            host = await self._resolve_browser_dev_host(port)
         except ValueError as e:
             return ApiFailResponse(message=f"get-host: {e}")
 
@@ -7689,6 +7765,32 @@ class AgenticProcess(Entity):
         # — safer than re-scanning all, which would re-reindex the whole history.
         return list(_iter_touched_paths(entries[wm:]))
 
+    @property
+    def _last_broadcast_key(self) -> _BroadcastKey | None:
+        """Last (status, busy, worker_status) triple broadcast for this process.
+
+        Backed by the module-level :data:`_LAST_BROADCAST_KEYS` rather than by
+        ``self``: the transcript watcher hydrates a FRESH AgenticProcess for
+        every streamer event, so an instance attribute dies with that event and
+        always reads back as None. The property keeps the ordinary
+        attribute-shaped call sites while the value lives as long as the
+        process does.
+        """
+        return _LAST_BROADCAST_KEYS.get(str(self.id))
+
+    @_last_broadcast_key.setter
+    def _last_broadcast_key(self, key: "_BroadcastKey | tuple | None") -> None:
+        if key is None:
+            # Drop the row rather than storing a None, so a reader can't tell
+            # "never broadcast" from "broadcast a None" — there is no such key.
+            _LAST_BROADCAST_KEYS.pop(str(self.id), None)
+        else:
+            # Normalize on the way in — the setter is the ONLY writer, so a
+            # plain triple (what the tests assign) still reads back with named
+            # axes. Wrong arity raises here rather than surfacing as a silent
+            # mis-index at the read.
+            _LAST_BROADCAST_KEYS[str(self.id)] = _BroadcastKey(*key)
+
     async def _flush_transcript_change(self) -> None:
         """Run after the debounce window on this AP's transcript.
 
@@ -7729,9 +7831,11 @@ class AgenticProcess(Entity):
             # is in the key too so a lifecycle flip (running→stopped) still fires.
             current_busy = is_turn_busy(self, current)
             worker_key = str(current) if current is not None else None
-            key = (self.status, current_busy, worker_key)
+            key = _BroadcastKey(self.status, current_busy, worker_key)
+            # Process-scoped (see the property), so it survives the per-event
+            # rehydration and the busy->idle edge below can actually fire.
             previous = getattr(self, "_last_broadcast_key", None)
-            prev_busy = previous[1] if previous else None
+            prev_busy = previous.busy if previous else None
 
             # Generic agent-progress projection. Runs every flush (counters move
             # without a status transition), so it precedes the transition
@@ -7740,7 +7844,7 @@ class AgenticProcess(Entity):
 
             if key == previous:
                 return
-            object.__setattr__(self, "_last_broadcast_key", key)
+            self._last_broadcast_key = key
 
             if current == WorkerStatus.API_TIMEOUT:
                 logger.warning(
@@ -7771,25 +7875,55 @@ class AgenticProcess(Entity):
             # AP-level seam for both PTY *and* headless turns (both write the
             # transcript that lands here), so no driver coupling.
             if not current_busy and prev_busy:
-                self._schedule_queue_drain("ready")
-                # NOTE (QA 2026-08-21): this edge can never fire — `prev_busy`
-                # comes from `self._last_broadcast_key` and every flush hydrates a
-                # fresh object, so it is always None (instrumented at a real turn
-                # end: `prev_busy=None current_busy=False edge_fires=False`). So a
-                # headless turn's writes are never reindexed from this seam.
-                # Moving it to the idle gate DOES fix that, but it regresses the
-                # whiteboard save path — `whiteboard/create_persist` C2 goes 4/4
-                # green -> 0/4 with that change alone (proven both directions on a
-                # reset instance). The reindex firing on every idle flush races the
-                # editor's own board.json/WHITE_BOARD.md writes. Left as-is until
-                # the interaction is understood; do not "fix" the gate in isolation.
+                # HISTORY (QA 2026-08-21): this edge USED to be dead.
+                # `_last_broadcast_key` was a plain INSTANCE attribute and every
+                # flush hydrates a fresh object, so `prev_busy` was always None
+                # (instrumented at a real turn end:
+                # `prev_busy=None current_busy=False edge_fires=False`). A headless
+                # turn's writes were therefore never reindexed from this seam. The
+                # key is process-scoped now, so THIS EDGE IS LIVE and fires once
+                # per turn end.
+                #
+                # That revives `_schedule_turn_end_reindex` with it. The same QA
+                # note recorded why the reindex was left alone: moving it to the
+                # IDLE GATE took `whiteboard/create_persist` C2 from 4/4 green to
+                # 0/4, because a reindex on every flush races the editor's own
+                # board.json/WHITE_BOARD.md writes. Waking the EDGE is not that
+                # change: it fires once per turn end, not once per flush, and the
+                # whiteboard scenario was re-run against this seam live and stays
+                # 4/4. The load, not the seam, was what broke it.
+                #
+                # Second defect here, independent of the gate: the watermark
+                # `_reindex_entry_watermark` is per-instance transient for the very
+                # same reason `prev_busy` was, so on this seam it always reads 0 and
+                # every firing reindexes the whole session history rather than the
+                # turn's own files. Fixing that is likely the precondition for
+                # trusting a live edge.
                 self._schedule_turn_end_reindex("flush")
+                # Drain the prompt queue on this same turn-end edge. A prompt
+                # enqueued mid-turn bails ``not_ready``, and that bail returns
+                # before the ``chain`` reschedule, so nothing ever revisits it:
+                # the queue strands until the user happens to act again. Headless
+                # self-heals through ``end_headless_turn``'s "complete" drain;
+                # this is the PTY equivalent.
+                #
+                # The edge needs an earlier flush to have recorded ``busy=True``,
+                # which the enqueue case always has — the UI can only offer
+                # "queue" once a broadcast told it the agent is working, and that
+                # broadcast IS the flush that wrote the busy key. Re-firing is
+                # harmless if some other path fires it too:
+                # ``_schedule_queue_drain`` returns early when no queue file
+                # exists, ``_maybe_drain_queue`` bails on an empty or disabled
+                # queue, and it pop-persists the head before injecting, so a
+                # repeat can never double-inject.
+                self._schedule_queue_drain("ready")
             if not current_busy:
-                # Default-name stamp on ANY idle flush, not the busy→idle edge:
-                # each flush hydrates a fresh object, so ``prev_busy`` starts
-                # None and an edge gate would never fire. Naming THIS hydration
-                # also keeps ``_emit_status_report``'s whole-row save above from
-                # clobbering a name stamped elsewhere. No-op once named.
+                # Default-name stamp on ANY idle flush, not the busy→idle edge
+                # above: a process that has not yet run a turn still needs a
+                # name, and the edge would never fire for it. Naming THIS
+                # hydration also keeps ``_emit_status_report``'s whole-row save
+                # above from clobbering a name stamped elsewhere. No-op once
+                # named.
                 try:
                     await self.stamp_default_name()
                 except Exception:
