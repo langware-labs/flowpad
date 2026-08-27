@@ -57,7 +57,7 @@ same way on every surface.
 |---|---|---|
 | `.md` / `.markdown` (+ mdx/md.out via `isMarkdownDocumentPath`) | MARKDOWN | `PlainMarkdownAssetEditor` |
 | `.mcp.html` / `.mcp.htm` (checked before .html) | MCP_APP | `McpAppPreview` (MCP sandbox; agent bridge when the vibe display threads the process, bridge-less elsewhere) |
-| `.html` / `.htm` | HTML | `HtmlPreview` (iframe on the file's own `fs/serve` url; sandboxed WITHOUT `allow-same-origin`) |
+| `.html` / `.htm` | HTML | `HtmlPreview` (iframe on the file's own `fs/serve` url, `allow-same-origin`) |
 | png jpg jpeg gif webp svg avif bmp ico | IMAGE | `MediaViewer` (`<img>` via fs `download` URL) |
 | mp4 webm mov | VIDEO | `MediaViewer` (`<video>`) |
 | mp3 wav m4a ogg | AUDIO | `MediaViewer` (`<audio>`) |
@@ -137,13 +137,28 @@ diagnosis, home. Every route has a chrome-less `/win/` twin (same tabHash).
 
 | Tier | Surface | Origin model | Powers |
 |---|---|---|---|
-| 1 (most locked) | `HtmlPreview` — shown `.html` | backend-origin `fs/serve/<path>` url, `sandbox` WITHOUT `allow-same-origin` → **opaque origin** | scripts, forms, modals, popups, downloads, and its own relative pages/assets; no API (opaque origin ⇒ CORS), no storage, no bridge |
+| 1 (was: most locked) | `HtmlPreview` — shown `.html` | backend-origin `fs/serve/<path>` url, `allow-same-origin` — see below | same as tier 3 in practice; its own relative pages/assets resolve because the url mirrors the path |
 | 2 | MCP sandbox — `McpAppPreview` (vibe), `ShowView` (`/dock/show`, skill `ui/<component>.html`), `AppHost` (`/dock/apps/<uname>`) | backend-origin `sandbox_proxy.html`, per-request CSP (`_sandbox_csp`, default `connect-src 'none'`) | JSON-RPC bridge; only the vibe `.mcp.html` path routes `ui/message` back to the agent; guest tool calls stubbed everywhere |
 | 3 | `PersistentIframe` — webapp by port | real origin, `allow-same-origin allow-scripts allow-forms allow-popups …` + broad `allow=` list | full browser powers on its own origin |
 | 4 (full) | Bespoke asset editors / native views | app origin, no iframe | full app access |
 
 No host currently passes `csp`/`connectDomains` to the sandbox proxy, so tier
 2's network is always fully closed in practice.
+
+**Tier 1 is no longer meaningfully locked, and the reason is worth recording.**
+It shipped withholding `allow-same-origin`, on the reasoning that an opaque
+origin costs only `localStorage` while keeping an agent-written page away from
+the API. On a **cookie-gated** instance that is wrong: an opaque origin's *site
+for cookies* is null, so every request the document itself makes is cross-site
+and the `SameSite=Lax` `__Host-cookie-gate` cookie is withheld. The frame's
+first load is parent-initiated and carries the cookie, so the page renders —
+then its own images and its own link clicks each come back as the gate's
+Forbidden page. The host is identical; the host is not what the browser decides
+on. A desktop install is never gated, so **no local test can see this**.
+
+Withholding the flag therefore does not buy isolation, it buys a broken page.
+Genuine isolation for shown HTML needs a separate, un-gated origin to serve
+from — see [§8](#8-open-questions) Q1.
 
 ## 6. Backend serving surfaces
 
@@ -241,12 +256,19 @@ No host currently passes `csp`/`connectDomains` to the sandbox proxy, so tier
    `served-html` kind, no ephemeral MicroApp: the frontend already knows a path
    is HTML from its extension, so nothing had to change in `resolve_display_target`.
 
-   What is NOT granted is `allow-same-origin`. The served url is on the app's
-   own origin, so granting it would let an agent-written page call the API with
-   the user's session and reach `parent.document`. That still costs
-   `localStorage` and same-origin `fetch`, and buying those back means a
-   SEPARATE origin — which cannot carry the `__Host-` cookie-gate cookie, so it
-   needs the gate to admit it. That, not the serving, is the remaining work.
+   `allow-same-origin` IS granted, after shipping once without it. Withholding
+   it gives the frame an opaque origin, whose *site for cookies* is null, so a
+   gated instance withholds the `SameSite=Lax` gate cookie from everything the
+   document itself requests — broken images and a Forbidden page on every link
+   ([§5](#5-foreign-html--the-four-trust-tiers)). It bought no isolation, only a
+   broken page.
+
+   So the real remaining question is unchanged and now unavoidable: **isolating
+   shown HTML requires a separate, un-gated origin to serve it from.** A distinct
+   host cannot carry the `__Host-` gate cookie, so that origin has to be either
+   outside the gate or admitted by it explicitly — plus the port/subdomain and
+   e2b exposure that come with it. Until then, a shown `.html` runs with the
+   same powers as a `flow app serve` app.
 2. **Should tier 2 ever get network?** The `csp`/`connectDomains` lever
    exists end-to-end but is never used. Is a scoped grant (backend origin
    only, token-limited API) the sanctioned way for MCP apps to read data, or

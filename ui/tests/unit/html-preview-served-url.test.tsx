@@ -67,14 +67,23 @@ describe('HtmlPreview', () => {
     expect(resolved.pathname).not.toContain('/dock/');
   });
 
-  it('withholds allow-same-origin while granting what needs no origin', () => {
+  it('grants allow-same-origin, without which a gated instance serves Forbidden', () => {
     render(<HtmlPreview path={FILE} />);
     const sandbox = frame().getAttribute('sandbox') ?? '';
 
-    // The served url is on the app's OWN origin, so allow-same-origin would let
-    // an agent-written page call the API with the user's session and reach
-    // parent.document. Everything that does not need an origin is granted.
-    expect(sandbox).not.toContain('allow-same-origin');
+    // This assertion was once its own inverse, and the flip is the point.
+    // Withholding allow-same-origin gives the frame an opaque origin, whose
+    // *site for cookies* is null — so every request the document itself makes
+    // is treated as cross-site and the SameSite=Lax __Host-cookie-gate cookie
+    // is withheld. Measured on e2b: the frame's first load is parent-initiated
+    // so the page renders, then its own image fetch and its own link clicks
+    // come back as the gate's Forbidden page. Same host; the host is not what
+    // the browser decides on.
+    //
+    // Do NOT "harden" this back. It is the posture PersistentIframe has always
+    // used for served apps on the same host through the same gate. Real
+    // isolation requires a separate, un-gated origin, not a flag here.
+    expect(sandbox).toContain('allow-same-origin');
     expect(sandbox).toContain('allow-scripts');
     expect(sandbox).toContain('allow-forms');
     expect(sandbox).toContain('allow-modals');
