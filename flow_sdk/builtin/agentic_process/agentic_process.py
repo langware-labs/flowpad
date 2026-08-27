@@ -4011,6 +4011,33 @@ class AgenticProcess(Entity):
         # invalidates a cached byte offset, silently dropping the turn. Full
         # reparse keyed off entry COUNT is immune to rewrites; we gate it on a
         # (size, mtime) change so idle polls stay cheap.
+        # The vendor writes an assistant message to its transcript only once that
+        # message is COMPLETE, so the file is untouched for the whole time the
+        # model is thinking, generating, or running a tool. Transcript silence is
+        # therefore the normal state of a WORKING agent, not a turn boundary —
+        # keying the inactivity fallback on it alone cut long turns off mid-flight
+        # and reported them as successful (FLOWPAD-2034). The PTY is the missing
+        # liveness signal: the vendor TUI paints continuously while it works, so a
+        # change to its stream file means the worker is still busy.
+        #
+        # Named so the two fields can never be read positionally by mistake; it
+        # still compares as a plain tuple, which is all the poller does with it.
+        PtySignature = NamedTuple("PtySignature", [("size", int), ("mtime_ns", int)])
+
+        def _pty_change_signature() -> "PtySignature | None":
+            try:
+                from flow_sdk.builtin.shell import get_shell_record, shell_pty_stream_path
+
+                record = get_shell_record(self.shell_id) if self.shell_id else None
+                if record is None:
+                    return None
+                st = shell_pty_stream_path(record.id, record.__dict__.get("pty_pid")).stat()
+                return PtySignature(st.st_size, st.st_mtime_ns)
+            except Exception:
+                # No shell, no stream file yet, or an unreadable stat — fall back
+                # to transcript-only liveness rather than holding the turn open.
+                return None
+
         def _read_entries(path: "Path", fmt: "Any") -> list:
             try:
                 tf = AgentTranscriptFile(
@@ -4053,6 +4080,7 @@ class AgenticProcess(Entity):
             resolved_fmt = wm_fmt
             resolved_derived = wm_derived
             last_sig: "tuple | None" = None
+            last_pty_sig: "PtySignature | None" = None
             active_codex_turn_id: str | None = None
             try:
                 async with lock:
@@ -4264,6 +4292,16 @@ class AgenticProcess(Entity):
                                         # absent or incomplete.
                                         await handler.on_flow_data(self._pty_inactivity_result(True))
                                         return
+
+                        # A PTY paint is turn activity. Without this the fallback
+                        # measures a busy worker as idle (see _pty_change_signature).
+                        # NOTE this does not widen any budget: inactivity_timeout is
+                        # unchanged, it now just starts from the last sign of life
+                        # rather than the last transcript write.
+                        pty_sig = _pty_change_signature()
+                        if pty_sig is not None and pty_sig != last_pty_sig:
+                            last_pty_sig = pty_sig
+                            last_activity = time.monotonic()
 
                         if time.monotonic() - last_activity >= inactivity_timeout:
                             landed = user_turn_landed.is_set()
