@@ -163,6 +163,14 @@ def pty_turn(tmp_path, monkeypatch):
     return process, stream_path, run
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.pty_turn_liveness.rules: FAILING? the PTY turn was cut off while
+#       the worker was still generating - read this tag's rules before touching the
+#       inactivity fallback or _pty_change_signature
+# flowpad:endcapsule tag
 @pytest.mark.asyncio
 async def test_a_painting_pty_holds_the_turn_open_past_the_inactivity_window(pty_turn):
     """The bug, directly: a silent transcript must not end a working turn.
