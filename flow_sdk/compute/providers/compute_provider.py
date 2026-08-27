@@ -15,6 +15,19 @@ from flow_sdk.flowpad_types import CLICommand, ExecutionEnvironmentStatus, Runti
 LOOPBACK_HOSTNAMES = frozenset({"localhost", "127.0.0.1", "0.0.0.0", "::1"})
 
 
+#: The domain E2B publishes sandbox ports on. Every url under it is https and
+#: only https, which is why ``_base_url_for`` can read a browser-facing scheme
+#: off nothing but the Host header — E2B's proxy terminates TLS and forwards
+#: plain http WITHOUT an ``X-Forwarded-Proto``, so the host is the only
+#: evidence left that the browser is on https.
+E2B_PUBLIC_DOMAIN = "e2b.dev"
+
+
+def is_e2b_public_host(host: str) -> bool:
+    """Is ``host`` (a Host header, port optional) an E2B public sandbox host?"""
+    return host.split(":")[0].strip().lower().endswith("." + E2B_PUBLIC_DOMAIN)
+
+
 def sandbox_public_url(port: int, sandbox_id: str) -> str:
     """The public per-port url E2B serves a sandbox on.
 
@@ -22,7 +35,7 @@ def sandbox_public_url(port: int, sandbox_id: str) -> str:
     control plane) and by a box resolving its OWN id. Two copies would drift,
     and the one that drifted would hand out a dead link.
     """
-    return f"https://{port}-{sandbox_id}.e2b.dev"
+    return f"https://{port}-{sandbox_id}.{E2B_PUBLIC_DOMAIN}"
 
 
 class ListDirItem(BaseModel):
