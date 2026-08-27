@@ -4523,7 +4523,13 @@ class AgenticProcess(Entity):
                     emitted = index + 1
                     break
 
-        async def _observe() -> None:
+        async def _observe(*, live: bool) -> None:
+            """Pump the transcript into the stream.
+
+            ``live`` False means the stream was opened AFTER the turn ended and
+            exists only to hand over the backlog the client is behind: flush one
+            pass and close, never poll for a turn that is not coming.
+            """
             nonlocal emitted
             try:
                 last_sig: "tuple | None" = None
@@ -4561,6 +4567,14 @@ class AgenticProcess(Entity):
                                     saw_marker = True
                                     continue
                                 await handler.on_flow_data(entry_to_flowdata(entry, observation_kind="live"))
+                    if not live:
+                        # Backlog-only stream (see ``live``): the pass above just
+                        # flushed everything after the client's stated position
+                        # and there is no turn to follow. Closing here is what
+                        # makes the short-turn case terminate — the liveness
+                        # check below needs a provider marker, which a stream
+                        # opened after the marker was already on disk never sees.
+                        return
                     # Neither signal is sufficient alone for a PTY: the provider
                     # marker fires per message, and ``is_turn_busy`` falls through
                     # to the transcript tail, which reads idle for a beat between
@@ -4580,10 +4594,24 @@ class AgenticProcess(Entity):
             finally:
                 await handler.on_flow_data(None)
 
-        # Nothing running: hand back an empty, already-closed stream rather than
-        # an error — a caller racing the end of a turn is normal, not a fault.
-        observe_task = asyncio.create_task(_observe()) if is_turn_busy(self) else None
-        if observe_task is None:
+        # ``busy`` gates whether there is a turn to FOLLOW — not whether there is
+        # anything to SEND. A client that states ``after_entry_id`` can be behind
+        # entries that are already on disk, and a SHORT turn is routinely over
+        # before that client ever opens the stream: ``busy`` reaches it from the
+        # DEBOUNCED transcript flush, so the open loses the race by construction.
+        # Gating the whole stream on liveness threw the stated position away and
+        # closed empty — the drained prompt and its answer then appeared only on
+        # a manual refresh (PR #354 review). Serve the backlog first; only then
+        # is "nothing running" also "nothing to say".
+        busy_at_open = is_turn_busy(self)
+        backlog = len(entries_at_open) - emitted
+        if busy_at_open or backlog > 0:
+            observe_task = asyncio.create_task(_observe(live=busy_at_open))
+        else:
+            # Nothing running and nothing unseen: hand back an empty,
+            # already-closed stream rather than an error — a caller racing the
+            # end of a turn is normal, not a fault.
+            observe_task = None
             await handler.on_flow_data(None)
 
         async def _stream_body():
