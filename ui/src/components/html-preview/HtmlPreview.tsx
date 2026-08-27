@@ -22,18 +22,33 @@ import { useFS } from '@src/hooks/useFS';
  * interceptor, the `previewLinkTarget` resolver and the data:-uri asset
  * inliner (with its 2MB/8MB ceilings) are gone with it.
  *
- * **What the sandbox still withholds, deliberately.** `allow-same-origin` is
- * NOT granted. The served url sits on the app's own origin, so granting it
- * would let an agent-written page call the API with the user's session and
- * reach `parent.document` — the app's own UI. Everything that does not need an
- * origin is granted instead (forms, modals, popups, downloads). The cost is
- * `localStorage` and `fetch` of the page's own data files, both of which need a
- * real origin; buying them back means serving from a SEPARATE origin, which is
- * its own piece of work (a distinct host cannot carry the `__Host-` gate
- * cookie). The gate is why this url must stay on the app's host: same host,
- * different path, so the cookie rides along even from a sandboxed frame.
+ * **`allow-same-origin` is required, and withholding it does not work.** It was
+ * withheld at first, on the reasoning that an opaque origin costs only
+ * `localStorage` while keeping an agent-written page away from the API and from
+ * `parent.document`. On a cookie-gated instance that reasoning is wrong, and it
+ * fails in a way local testing cannot see (a desktop install is never gated, so
+ * no cookie is ever needed there).
+ *
+ * A sandboxed frame WITHOUT `allow-same-origin` has an opaque origin, and an
+ * opaque origin's *site for cookies* is null — so every request the document
+ * itself makes counts as cross-site, and the `SameSite=Lax` `__Host-cookie-gate`
+ * cookie is withheld from all of them. Same host or not: the host is not what
+ * the browser is deciding on. The symptom is precise and was measured on e2b —
+ * the frame's FIRST load is initiated by the parent, so it carries the cookie
+ * and the page renders; then its own image fetch and its own link clicks arrive
+ * cookie-less and the gate answers each with its Forbidden page.
+ *
+ * So the trade is not "isolation vs `localStorage`" but "isolation vs the page
+ * loading at all". `PersistentIframe` (every `flow app serve` app) has run with
+ * `allow-same-origin` on the same host through the same gate all along; this
+ * matches it rather than inventing a weaker posture.
+ *
+ * What that costs, stated plainly: with `allow-scripts` and `allow-same-origin`
+ * together the sandbox is not a boundary — the page can reach the API with the
+ * user's session and touch `parent.document`. Real isolation needs a SEPARATE,
+ * un-gated origin to serve from, which is its own piece of work.
  */
-const PREVIEW_SANDBOX = 'allow-scripts allow-forms allow-modals allow-popups allow-downloads';
+const PREVIEW_SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads';
 
 export function HtmlPreview({ path }: { path: string }) {
   const { computeNode } = useAgentContext();
