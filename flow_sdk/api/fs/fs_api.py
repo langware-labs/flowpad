@@ -1,9 +1,10 @@
 from pydantic import BaseModel, ConfigDict
 
-from flow_sdk.api.api_types.vfs_path import VFSPath, parse_custom_uri
+from flow_sdk.api.api_types.vfs_path import VFSPath
 from flow_sdk.request_context import get_current_request_info
 from flow_sdk.request_context.request_info import RequestInfo
 from flow_sdk.responses import ApiFailResponse
+
 
 class EntityFSReqInfo(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -60,6 +61,7 @@ allowed_fs_actions = [
     "browse",
     "upload",
     "download",
+    "serve",
     "download_zip",
     "upload_zip",
     "delete",
