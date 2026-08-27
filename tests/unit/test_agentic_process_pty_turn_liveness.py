@@ -20,7 +20,7 @@ hold the turn open.
 
 ``inactivity_timeout`` is an existing parameter of ``_run_pty_prompt`` and is
 SHORTENED here (not raised) purely to isolate the rule under test — the
-production default of 15.0s is untouched. CLAUDE.md forbids widening a wait to
+production default of 300.0s is untouched. CLAUDE.md forbids widening a wait to
 ride past a symptom; narrowing one in a test makes the assertion strictly
 stricter, and it is what keeps this file inside the suite's 30s cap.
 """
