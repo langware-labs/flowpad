@@ -34,7 +34,10 @@ function CodeBlock({ children, codeChrome }: { children: React.ReactNode; codeCh
 
   if (!codeChrome) {
     return (
-      <pre className="overflow-x-auto rounded-md bg-muted px-3 py-2 font-mono text-sm text-muted-foreground">
+      <pre
+        dir="ltr"
+        className="overflow-x-auto rounded-md bg-muted px-3 py-2 text-start font-mono text-sm text-muted-foreground"
+      >
         {children}
       </pre>
     );
@@ -48,7 +51,7 @@ function CodeBlock({ children, codeChrome }: { children: React.ReactNode; codeCh
   };
 
   return (
-    <div className="group my-3 overflow-hidden rounded-lg border bg-muted/60">
+    <div dir="ltr" className="group my-3 overflow-hidden rounded-lg border bg-muted/60">
       <div className="flex items-center justify-between border-b border-border/60 px-3 py-1.5">
         <span className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
           {language || t`code`}
@@ -65,7 +68,7 @@ function CodeBlock({ children, codeChrome }: { children: React.ReactNode; codeCh
       </div>
       <pre
         ref={preRef}
-        className="max-h-[480px] overflow-auto px-3 py-3 font-mono text-[13px] leading-relaxed text-foreground"
+        className="max-h-[480px] overflow-auto px-3 py-3 text-start font-mono text-[13px] leading-relaxed text-foreground"
       >
         {children}
       </pre>
@@ -107,7 +110,9 @@ export function markdownComponents({
 
   return {
     code: ({ children }) => (
-      <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.85em] text-foreground">{children}</code>
+      <code dir="ltr" className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.85em] text-foreground">
+        {children}
+      </code>
     ),
     pre: ({ children }) => <CodeBlock codeChrome={codeChrome}>{children}</CodeBlock>,
     p: ({ node, children }) => (
