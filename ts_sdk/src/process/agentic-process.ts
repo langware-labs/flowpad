@@ -1906,6 +1906,16 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       return;
     }
 
+    // Don't echo a turn the process cannot actually accept. `busy`/`workerStatus`
+    // are backend-confirmed (set from watched entity state), so this catches a
+    // prompt fired while a prior turn is still in flight — the request will 409,
+    // and with nothing persisted to match, `loadHistory`'s retract-by-content
+    // never fires and the echo would otherwise be stuck on screen forever
+    // (FLOWPAD-2045).
+    if (this.busy || isWorkerRunning(this.workerStatus)) {
+      return;
+    }
+
     // Guard against double-submitting the SAME text — but only against a live
     // placeholder, never against a persisted row: matching history too would
     // silently swallow a message the user deliberately sends twice ("hi", then
