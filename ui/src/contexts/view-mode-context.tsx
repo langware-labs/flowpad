@@ -189,19 +189,24 @@ function syncDesktopMenu(val: ViewMode): void {
 function applyAttribute(val: ViewMode, animate = true): void {
   if (val === ViewMode.Vibe) ensureVibeFont();
   syncDesktopMenu(val);
-  const prev = document.documentElement.getAttribute('data-view');
+  const root = document.documentElement;
+  const prev = root.getAttribute('data-view');
   // Guard: prefMan fires on EVERY pref change, but only a view-mode change need
   // touch the DOM. Skip the write when the attribute already matches.
   if (prev !== val) {
-    document.documentElement.setAttribute('data-view', val);
+    root.setAttribute('data-view', val);
     if (animate && prev != null) {
-      document.documentElement.classList.remove('view-mode-glow-flicker');
+      root.classList.remove('view-mode-glow-flicker');
       // Restart the CSS animation even when changes happen in quick succession.
-      void document.documentElement.offsetWidth;
-      document.documentElement.classList.add('view-mode-glow-flicker');
+      void root.offsetWidth;
+      root.classList.add('view-mode-glow-flicker');
       if (flickerTimer !== undefined) window.clearTimeout(flickerTimer);
+      // Hold the element, not the `document` global: this timer can outlive the
+      // document (a jsdom test environment is torn down between files), and
+      // dereferencing the global afterwards throws `document is not defined`,
+      // which vitest reports as an unhandled error and fails an otherwise green run.
       flickerTimer = window.setTimeout(() => {
-        document.documentElement.classList.remove('view-mode-glow-flicker');
+        root.classList.remove('view-mode-glow-flicker');
         flickerTimer = undefined;
       }, 700);
     }
