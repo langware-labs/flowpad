@@ -64,6 +64,11 @@ export interface FSStoreState {
   getDownloadUrl: (typeid: TypeId, path: string) => string;
 
   /**
+   * Get render URL for a file (inline, not a download)
+   */
+  getServeUrl: (typeid: TypeId, path: string) => string;
+
+  /**
    * Download file content (cached)
    */
   downloadFile: (typeid: TypeId, path: string, asBlob?: boolean) => Promise<string | Blob>;
@@ -240,6 +245,10 @@ export const fsStore = createStore<FSStoreState>()(
 
     getDownloadUrl: (typeid: TypeId, path: string) => {
       return fsManager.getDownloadUrl(typeid, path);
+    },
+
+    getServeUrl: (typeid: TypeId, path: string) => {
+      return fsManager.getServeUrl(typeid, path);
     },
 
     downloadFile: async (typeid: TypeId, path: string, asBlob = false) => {
