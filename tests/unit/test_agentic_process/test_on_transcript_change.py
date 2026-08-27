@@ -142,6 +142,78 @@ async def test_flush_skips_broadcast_when_status_unchanged(initialize_test_db, m
 
 
 @pytest.mark.asyncio
+async def test_a_rehydrated_flush_dedups_against_the_previous_one(
+    initialize_test_db, monkeypatch
+) -> None:
+    """The dedup gate across the REHYDRATION — the axis the seeded-key tests miss.
+
+    The transcript watcher hydrates a FRESH AgenticProcess per streamer event, so
+    the only way the gate can ever match is if the key outlives the instance that
+    wrote it. Seeding ``_last_broadcast_key`` by hand on one object proves nothing
+    about that: it passes with a plain instance attribute too. Here the second
+    flush runs on an object loaded from the row — same process, different Python
+    object, nothing seeded — and the key must still be there to dedup against.
+    """
+    first = await _make_ap(WorkerStatus.THINKING, monkeypatch)
+
+    notify_calls: list[None] = []
+
+    async def _fake_notify():
+        notify_calls.append(None)
+
+    monkeypatch.setattr(type(first), "notify_updated", lambda self: _fake_notify(), raising=False)
+
+    await first.on_transcript_change(Path("/tmp/x.jsonl"), [])
+    await first._debounce_task
+    assert notify_calls == [None], "the first flush is a transition — it must broadcast"
+
+    second = await AgenticProcess.get_by_id(str(first.id))
+    assert second is not None and second is not first
+    assert second._last_broadcast_key == ("running", True, "thinking"), (
+        "the key must survive the per-event rehydration"
+    )
+
+    await second.on_transcript_change(Path("/tmp/x.jsonl"), [])
+    await second._debounce_task
+
+    assert notify_calls == [None], "nothing changed — the rehydrated flush must not re-broadcast"
+
+
+@pytest.mark.asyncio
+async def test_on_timeout_fires_once_per_transition_not_once_per_flush(
+    initialize_test_db, monkeypatch
+) -> None:
+    """The gate's second consumer: everything BELOW the early return.
+
+    ``_on_timeout`` sits after ``if key == previous: return``. With the key dying
+    per event the gate never matched, so a worker parked in API_TIMEOUT re-entered
+    that branch on EVERY debounced flush — a repeated timeout handler and a
+    repeated warning for one stall. Deduped, it runs once, on the transition in.
+    """
+    first = await _make_ap(WorkerStatus.API_TIMEOUT, monkeypatch)
+
+    timeout_calls: list[None] = []
+
+    async def _fake_timeout():
+        timeout_calls.append(None)
+
+    monkeypatch.setattr(type(first), "_on_timeout", lambda self: _fake_timeout(), raising=False)
+    monkeypatch.setattr(type(first), "notify_updated", lambda self: asyncio.sleep(0), raising=False)
+
+    await first.on_transcript_change(Path("/tmp/x.jsonl"), [])
+    await first._debounce_task
+    assert timeout_calls == [None]
+
+    for _ in range(3):
+        rehydrated = await AgenticProcess.get_by_id(str(first.id))
+        assert rehydrated is not None
+        await rehydrated.on_transcript_change(Path("/tmp/x.jsonl"), [])
+        await rehydrated._debounce_task
+
+    assert timeout_calls == [None], "the stall is unchanged — the handler must not re-fire"
+
+
+@pytest.mark.asyncio
 async def test_flush_short_circuits_when_not_running(initialize_test_db, monkeypatch) -> None:
     """Lifecycle flipped to STOPPED during the debounce window → no broadcast."""
     ap = await _make_ap(WorkerStatus.COMPLETE, monkeypatch)
