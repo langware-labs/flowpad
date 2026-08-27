@@ -29,7 +29,12 @@ import { dismissSetupModal, openTabViaMenu, skipIfPtyExhausted } from './helpers
  * overlay intercepts clicks. Not an app bug — passes when PTYs are free.
  */
 async function dismissCleanedSessionsOrSkip(page: Page) {
-  const ok = page.getByRole('button', { name: 'OK' });
+  // `exact` is required: role-name matching is a case-insensitive substring
+  // match by default, and the Chats navigator's history rows are role=button
+  // too — a row whose title contains "ok" would be clicked instead, resuming an
+  // on-disk Claude session into a brand-new process that leaks into every
+  // later scenario.
+  const ok = page.getByRole('button', { name: 'OK', exact: true });
   if (await ok.isVisible({ timeout: 500 }).catch(() => false)) await ok.click().catch(() => {});
   await skipIfPtyExhausted(page);
 }
@@ -294,9 +299,14 @@ async function expectStripTabs(page: Page, ids: string[]) {
     .toBe(ids.length);
 }
 
-/** Click a left-rail icon button (Home or the Chats/shell view). */
+/**
+ * Click Home or the Chats/shell view. Home is a TOP-BAR control, not a rail
+ * slot (`RailItemId` has no 'home' member — see rail-visibility.ts), so it is
+ * addressed by its own testid; only `chats` is a rail item.
+ */
 async function clickRail(page: Page, target: 'home' | 'chats') {
-  await page.locator(`[data-rail-item="${target}"]`).click();
+  const sel = target === 'home' ? '[data-testid="top-nav-home"]' : '[data-rail-item="chats"]';
+  await page.locator(sel).click();
 }
 
 /**
@@ -1128,13 +1138,19 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const ids = [await createShell(rq, projectId), await createShell(rq, projectId), await createShell(rq, projectId)];
     await gotoDockShell(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(3);
-    // Close a non-active (last) shell externally — the backend hides its Tab
+    // Close a NON-active shell externally — the backend hides its Tab
     // (visible=false); the strip reflects it on the next load-time refetch.
-    await closeShell(rq, ids[2]);
+    // Bare /dock/shell picks its default among the seeded tabs without a
+    // creation-order guarantee, so read the active one off the URL instead of
+    // assuming the last-created shell is never it.
+    await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: 15_000 });
+    const activeId = page.url().match(/shell-([0-9a-f-]+)/)![1];
+    const victim = ids.find((id) => id !== activeId)!;
+    await closeShell(rq, victim);
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
-    await expect.poll(async () => (await tabIds(page)).join(','), { timeout: 10_000 }).not.toContain(ids[2]);
+    await expect.poll(async () => (await tabIds(page)).join(','), { timeout: 10_000 }).not.toContain(victim);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 10_000 }).toBe(2);
     await rq.dispose();
   });

@@ -241,36 +241,51 @@ describe('progress_report fast tests', () => {
     expect(skill!.done).toBeGreaterThanOrEqual(3);
   }, 30000);
 
-  it('per-type index (?type=skill) completes the skill row', async () => {
-    const manager = ConnectionManager.getInstance();
-    await waitForConnection(manager);
+  describe('per-type index SLO', () => {
+    // Seeding lives HERE so the 3 createSkill calls stay OUTSIDE the 5s SLO the
+    // test body asserts — inlining them would silently widen what the SLO measures.
+    // The creates also kick the AUTO-index, and the timed POST would queue behind
+    // it on the single-flight guard — drain it first so the 5s measures ONLY the
+    // per-type index, not the seeding's own background pass.
+    beforeEach(async () => {
+      for (let i = 0; i < 3; i++) {
+        await createSkill(`per-type-i-${Date.now()}-${i}`);
+      }
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const status = await apiClient.get<{ data: unknown }>(`${CN_FS_BASE}/activity-status`);
+        if ((status as { data?: unknown })?.data == null) break;
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    });
 
-    for (let i = 0; i < 3; i++) {
-      await createSkill(`per-type-i-${Date.now()}-${i}`);
-    }
+    it('per-type index (?type=skill) completes the skill row', async () => {
+      const manager = ConnectionManager.getInstance();
+      await waitForConnection(manager);
 
-    const tables = await collectProgressDuring(manager, () =>
-      apiClient.post(`${CN_FS_BASE}/index?type=skill`),
-    );
+      const tables = await collectProgressDuring(manager, () =>
+        apiClient.post(`${CN_FS_BASE}/index?type=skill`),
+      );
 
-    // A concurrent scan pass can emit the LAST snapshot inside the window, so
-    // take the final table of the INDEX job rather than of the raw stream.
-    const indexTables = tables.filter((t) => t.job_name === 'index');
-    expect(indexTables.length).toBeGreaterThan(0);
-    const final = indexTables[indexTables.length - 1];
-    assertTableShape(final, 'index');
-    expect(final.text).toBe('complete');
-    const skill = findRow(final, 'skill');
-    expect(skill).toBeDefined();
-    expect(skill!.total).toBeGreaterThanOrEqual(3);
-    expect(skill!.done).toBe(skill!.total);
-    // 5s is the asserted SLO for an unscoped per-type index, not a hang guard.
-    // `?type=skill` filters PARSING, never the WALK (index_function.py: "Always
-    // runs a full scan"), so this test is the only thing gating how many roots
-    // that walk covers. It sat green at ~26s while ~/.flow/instances/* were
-    // being walked — 155,749 of 165,666 dirs — under the old 30s cap.
-    // Measured after gating flow_home out of project discovery: endpoint 4.0-4.2s,
-    // test body 4.6s. NEVER RAISE THIS. A regression here means the index is
-    // walking roots it should not; fix the roots, not the number.
-  }, 5000);
+      // A concurrent scan pass can emit the LAST snapshot inside the window, so
+      // take the final table of the INDEX job rather than of the raw stream.
+      const indexTables = tables.filter((t) => t.job_name === 'index');
+      expect(indexTables.length).toBeGreaterThan(0);
+      const final = indexTables[indexTables.length - 1];
+      assertTableShape(final, 'index');
+      expect(final.text).toBe('complete');
+      const skill = findRow(final, 'skill');
+      expect(skill).toBeDefined();
+      expect(skill!.total).toBeGreaterThanOrEqual(3);
+      expect(skill!.done).toBe(skill!.total);
+      // 5s is the asserted SLO for an unscoped per-type index, not a hang guard.
+      // `?type=skill` filters PARSING, never the WALK (index_function.py: "Always
+      // runs a full scan"), so this test is the only thing gating how many roots
+      // that walk covers. It sat green at ~26s while ~/.flow/instances/* were
+      // being walked — 155,749 of 165,666 dirs — under the old 30s cap.
+      // Measured after gating flow_home out of project discovery: endpoint 4.0-4.2s,
+      // test body 4.6s. NEVER RAISE THIS. A regression here means the index is
+      // walking roots it should not; fix the roots, not the number.
+    }, 5000);
+  });
 });

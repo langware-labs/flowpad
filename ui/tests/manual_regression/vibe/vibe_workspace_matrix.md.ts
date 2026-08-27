@@ -7,12 +7,34 @@
  * one-tab identity, `flow show` target rendering/history/restore, and the
  * project-local skill/image viewers. They require no model response.
  */
-import { expect, test } from '@playwright/test';
+import { expect, test, type APIRequestContext } from '@playwright/test';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
 
 import { API, createVibeFixture, destroyVibeFixture, openVibe, showPath, showPort, showTypeId } from './_helpers';
+
+
+/** Create a markdown in the fixture project and append a grep-able marker to its
+ * file. Shared by the VW-17/18 and VW-19/20 suites — one definition, one drift
+ * point; each suite passes its own fixture project and cleanup list. */
+async function seedMarkedMarkdown(
+  request: APIRequestContext,
+  projectId: string,
+  createdIds: string[],
+  name: string,
+  marker: string,
+): Promise<{ id: string; asset_ref: string }> {
+  const response = await request.post(`${API}/api/v1/graph/project/${projectId}/markdown`, {
+    data: { name },
+  });
+  expect(response.status()).toBe(200);
+  const entity = (await response.json()).data as { id: string; asset_ref: string };
+  createdIds.push(entity.id);
+  const scaffold = readFileSync(entity.asset_ref, 'utf8');
+  writeFileSync(entity.asset_ref, `${scaffold}\n# ${marker}\n`, 'utf8');
+  return entity;
+}
 
 test.describe('Claude Vibe Workspace browser matrix', () => {
   test('VW-01/VW-15: legacy display links canonicalize to one shell workspace tab', async ({ page, request }) => {
@@ -80,7 +102,14 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       await expect(history.nth(0)).toContainText('open-me.html');
       await expect(history.nth(1)).toContainText('open-me.md');
       await history.nth(1).click();
-      await expect(page).toHaveURL(/\/dock\/assets\/editor\/markdown\//);
+      // A document shown from a workspace carries its host in the URL:
+      // `/dock/project/<P>/process/<typeid>/display/<tail>` (DockPointer
+      // HOST_PARAM) — the document's identity is still the editor tail.
+      await expect(page).toHaveURL(
+        new RegExp(
+          `/dock/project/${fixture.projectId}/process/agentic_process-${fixture.processId}/display/editor/markdown/`,
+        ),
+      );
       await expect(page.getByText('VW02_MARKDOWN_READY')).toBeVisible();
       await expect(page.getByTestId('workspace-child-strip')).toBeVisible();
 
@@ -191,55 +220,36 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
     }
   });
 
-  test('VW-17/VW-18/VW-19/VW-20: asset entry stays URL-first, updates live, and shown related assets become children', async ({
+  test('VW-17/VW-18: asset entry stays URL-first and updates live', async ({
     page,
     request,
   }) => {
     const fixture = await createVibeFixture(request, 'vibe-asset-origin');
     const createdIds: string[] = [];
     try {
-      const createMarkdown = async (name: string, marker: string) => {
-        const response = await request.post(`${API}/api/v1/graph/project/${fixture.projectId}/markdown`, {
-          data: { name },
-        });
-        expect(response.status()).toBe(200);
-        const entity = (await response.json()).data as {
-          id: string;
-          asset_ref: string;
-        };
-        createdIds.push(entity.id);
-        const scaffold = readFileSync(entity.asset_ref, 'utf8');
-        writeFileSync(entity.asset_ref, `${scaffold}\n# ${marker}\n`, 'utf8');
-        return entity;
-      };
-
-      const source = await createMarkdown('vibe-origin-source', 'VW17_ORIGINAL');
-      const related = await createMarkdown('vibe-origin-related', 'VW20_RELATED');
-      const processResponse = await request.get(`${API}/api/v1/graph/agentic_process/${fixture.processId}`);
-      const process = (await processResponse.json()).data;
-      const updateProcess = await request.put(`${API}/api/v1/graph/agentic_process/${fixture.processId}`, {
-        data: {
-          ...process,
-          process_type: 'chat',
-          target_typeid_str: `markdown-${source.id}`,
-        },
-      });
-      expect(updateProcess.status()).toBe(200);
+      const source = await seedMarkedMarkdown(request, fixture.projectId, createdIds, 'vibe-origin-source', 'VW17_ORIGINAL');
 
       await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
       await page.goto(`/dock/assets/editor/markdown/typeid/markdown-${source.id}?viewMode=standard`);
-      await expect(page.getByText('vibe-origin-source.md')).toBeVisible();
-      await expect(page.getByTestId('assets-page-header').getByTestId('asset-discuss-in-vibe')).toBeVisible();
+      // The file's identity lives in the top bar's current crumb (the editor
+      // has no header row of its own); the navigator tree also lists the file
+      // under more than one root, so a bare text match is ambiguous.
+      const crumb = page.getByTestId('top-nav-crumb-details-trigger');
+      await expect(crumb).toHaveAttribute('title', 'vibe-origin-source.md');
+      // Discuss lives in the bar's action cluster now (the editor header is gone).
+      await expect(page.getByTestId('top-nav-bar').getByTestId('asset-discuss-in-vibe')).toBeVisible();
       expect(await page.locator('[data-panel-id="asset-vibe-chat"]').getAttribute('data-panel-size')).toBe('0.0');
       expect(await page.locator('[data-panel-id="asset-vibe-content"]').getAttribute('data-panel-size')).toBe('100.0');
       const before = new URL(page.url());
       await page.getByTestId('asset-discuss-in-vibe').click();
 
+      // Discuss keeps the document at its natural asset address and only adds
+      // the view mode: no workspace host is inferred or invented for it.
       await expect(page).toHaveURL(/\/dock\/assets\/editor\/markdown\/.*viewMode=vibe/);
       const after = new URL(page.url());
       expect(after.pathname).toBe(before.pathname);
       await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible();
-      await expect(page.getByText('vibe-origin-source.md')).toBeVisible();
+      await expect(crumb).toHaveAttribute('title', 'vibe-origin-source.md');
       await expect(page.getByTestId('workspace-child-strip')).toBeVisible();
       expect(await page.locator('[data-panel-id="asset-vibe-chat"]').getAttribute('data-panel-size')).toBe('36.0');
       expect(await page.locator('[data-panel-id="asset-vibe-content"]').getAttribute('data-panel-size')).toBe('64.0');
@@ -251,13 +261,55 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       expect(reindex.status()).toBe(200);
       await expect(page.getByText('VW18_LIVE_UPDATE')).toBeVisible();
 
+    } finally {
+      for (const id of createdIds) {
+        await request.delete(`${API}/api/v1/graph/markdown/${id}`).catch(() => undefined);
+      }
+      await destroyVibeFixture(request, fixture);
+    }
+  });
+
+  test('VW-19/VW-20: shown related assets pin in the Display and reopen as workspace children', async ({
+    page,
+    request,
+  }) => {
+    const fixture = await createVibeFixture(request, 'vibe-asset-related');
+    const createdIds: string[] = [];
+    try {
+      const source = await seedMarkedMarkdown(request, fixture.projectId, createdIds, 'vibe-origin-source', 'VW17_ORIGINAL');
+      const related = await seedMarkedMarkdown(request, fixture.projectId, createdIds, 'vibe-origin-related', 'VW20_RELATED');
+
+      // A `flow show` steers only the workspace of the process that shows: on the
+      // process URL it pins the target in the Display pane, and a prior target
+      // reopened from Display history becomes a child of that workspace, named
+      // by the URL's host (`.../process/<typeid>/display/...`).
+      const hosted = (id: string) =>
+        new RegExp(
+          `/dock/project/${fixture.projectId}/process/agentic_process-${fixture.processId}/display/editor/markdown/typeid/markdown-${id}`,
+        );
+      const processUrl = new RegExp(`/dock/shell/agentic_process-${fixture.processId}\\?.*viewMode=vibe`);
+      await openVibe(page, fixture.processId);
+      await showTypeId(request, fixture.processId, `markdown-${source.id}`);
+      await expect(page.getByText('VW17_ORIGINAL')).toBeVisible();
+      await expect(page).toHaveURL(processUrl);
+
       await showTypeId(request, fixture.processId, `markdown-${related.id}`);
-      await expect(page).toHaveURL(new RegExp(`/dock/assets/editor/markdown/typeid/markdown-${related.id}`));
       await expect(page.getByText('VW20_RELATED')).toBeVisible();
+      await expect(page).toHaveURL(processUrl);
       await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible();
+
+      await page.getByTestId('display-history').click();
+      const history = page.getByTestId('display-history-row');
+      await expect(history).toHaveCount(2);
+      // Entity targets are listed as `<type> · <id8>`, newest first.
+      await expect(history.nth(0)).toContainText(related.id.slice(0, 8));
+      await expect(history.nth(1)).toContainText(source.id.slice(0, 8));
+      await history.nth(1).click();
+      await expect(page).toHaveURL(hosted(source.id));
+      await expect(page.getByText('VW17_ORIGINAL')).toBeVisible();
       await expect(page.getByTestId('workspace-child-strip')).toBeVisible();
       await page.reload();
-      await expect(page.getByText('VW20_RELATED')).toBeVisible();
+      await expect(page.getByText('VW17_ORIGINAL')).toBeVisible();
       await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible();
       expect(await page.locator('[data-panel-id="asset-vibe-chat"]').getAttribute('data-panel-size')).toBe('36.0');
       expect(await page.locator('[data-panel-id="asset-vibe-content"]').getAttribute('data-panel-size')).toBe('64.0');

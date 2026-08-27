@@ -4,7 +4,7 @@
  *
  * Verifies:
  * - Test button calls POST /api/v1/graph/trigger/{id}/test
- * - Invocations panel updates with a 'schedule_fire' entry
+ * - The Events feed shows the 'schedule_fire' entry for the rule
  * - last_run is updated on the trigger
  */
 import { test, expect } from '@playwright/test';
@@ -54,12 +54,23 @@ test('schedule trigger test button fires job and shows invocation', async ({ pag
     await triggerRow.waitFor({ state: 'visible', timeout: 15_000 });
     await triggerRow.click();
 
-    await page.getByText('Invocations', { exact: true }).first().waitFor({ state: 'visible', timeout: 5_000 });
-    await expect(page.getByText('No invocations yet', { exact: true })).toBeVisible();
+    // Triggers and Signals merged into one Events screen: a rule's fires are
+    // read from its log into the shared feed (an <ol> of rows led by the rule
+    // name), so there is no separate Invocations panel any more. With the rule
+    // selected, the feed is narrowed to that rule's fires — none yet.
+    const fireRow = () => page.getByRole('listitem').filter({ hasText: triggerName });
+    await expect(page.getByRole('button', { name: 'Run now', exact: true })).toBeVisible();
+    await expect(fireRow()).toHaveCount(0);
 
     // The selected schedule editor owns the current, accessible Run-now action.
     await page.getByRole('button', { name: 'Run now', exact: true }).click();
-    await expect(page.getByText('Scheduled', { exact: true })).toBeVisible({ timeout: 15_000 });
+    // The schedule_fire log entry lands in the feed via the fires poll, led by
+    // the rule name and carrying the "Scheduled (cron): <expr>" reason.
+    await expect(fireRow().first()).toBeVisible({ timeout: 15_000 });
+    await expect(fireRow().first()).toContainText('fired');
+    // The reason lives in the row's expandable detail, not its one-line summary.
+    await fireRow().first().getByRole('button').first().click();
+    await expect(fireRow().first()).toContainText('Scheduled');
 
     const updatedResponse = await fetch(`${API}/api/v1/graph/trigger/${triggerId}`);
     const updated = (await updatedResponse.json())?.data ?? null;

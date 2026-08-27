@@ -43,6 +43,10 @@ async function isPtyExhausted(page: Page): Promise<boolean> {
  * from a nav helper's catch block: a genuine app breakage still throws its own
  * error; only the host-capacity case is skipped (with proof in the reason).
  */
+/** The ribbon's button container under the terminal (TerminalBottomRibbon). One
+ * selector change here used to be a six-file sweep — keep it single-sourced. */
+export const RIBBON_TABS = '[data-testid="terminal-ribbon-tabs"]';
+
 export async function skipIfPtyExhausted(page: Page) {
   if (await isPtyExhausted(page)) {
     test.skip(
@@ -368,7 +372,7 @@ export async function ensureSideTabOpen(page: Page, buttonIndex: number, tabLabe
     .getByText(tabLabel, { exact: true })
     .isVisible({ timeout: 1_000 })
     .catch(() => false);
-  if (!already) await activePanel(page).locator('.border-t .ms-auto button').nth(buttonIndex).click();
+  if (!already) await activePanel(page).locator(`${RIBBON_TABS} button`).nth(buttonIndex).click();
   await tabStrip.getByText(tabLabel, { exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
 }
 

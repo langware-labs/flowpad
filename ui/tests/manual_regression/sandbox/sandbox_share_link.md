@@ -1,3 +1,7 @@
+---
+manual: true
+---
+
 # Sandbox sharing — hand a box over, share ONLY the link
 
 Two Flowpad instances (Alice, Bob) + the local hub + a real E2B sandbox.

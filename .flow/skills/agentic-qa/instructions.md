@@ -13,6 +13,19 @@
 
 ## Testing Environment
 
+- Cycle 2026-08-22→26 (0.2.140-fixes, macOS 24.6, 14 cores): cycle-owned instances via
+  `scripts/instance_ctl.sh` — qa-cycle (backend :6001/:6002, frontend :5002), qa-b/qa-c/qa-d for
+  parallel 11b agents, dev-1/2/3 for hub tiers; final Phase 11 from a `git worktree`
+  (`../flowpad-oss-qa`, branch `qa-cycle-worktree`) as instance qa-w (:6001/:5002) because the
+  main tree's backend could not import mid-cycle. Local hub :8093 (`../test_flowpad/FlowPad`,
+  Neo4j Desktop DBMS via headless `bin/neo4j`, JAVA_HOME=openjdk@21) — both died with a session
+  restart and were brought back per `docs/hub_setup.md`; hub email switched to `mock` for the rig
+  (`.env.local` backed up). User's own backend :9008 (`oss`) and :9007 (`prod`) NEVER targeted.
+  Playwright: headless Chromium via `npx playwright test` per category config, JSON reporter per
+  file, `--output` per run. Host load 3–7 during a single sweep; 11+ when anything else runs.
+  Concurrent user edits in the tree (datum/dataset work) and user-side `instance_ctl launch`
+  calls were the two environmental variables that voided sweeps.
+
 - Focused run (2026-08-18, Claude quota recovery in Vibe): dedicated `vibe-18`
   backend `http://localhost:6018`, frontend `http://localhost:5018`, local Hub
   `http://localhost:8093`, and Chromium through the standard Playwright MCP on
@@ -79,6 +92,118 @@
 - Last cycle (2026-05-30, record-removal branch): backend 9008 + frontend 4098 both reachable (HTTP 200) throughout. Phases 1-4 green (1522 / 441 / 51 / 907). 1 real fix (bootstrap `types` shape, 4 tests). No port conflicts this run.
 
 ## Learnings
+
+### 2026-08-25/26 — Phase 11 in the same cycle (three sweeps to one verdict)
+
+- **Pin the instance or the Playwright API helper hits the user's backend.** `_shared/api.ts`
+  resolves the API base from `FLOW_INSTANCE || 'development'`; with only `VITE_PORT` set, every
+  direct API call went to `.env.local`'s 9008 (the user's dev backend) while the browser used the
+  QA frontend — 105 `ECONNREFUSED 9008` failures and test rows written to the user's DB. Always
+  pass `FLOW_INSTANCE=<qa> LOCAL_SERVER_PORT=$QA_BE API_URL=http://localhost:$QA_BE VITE_PORT=…`.
+
+- **A sweep that "hangs for 2h with servers answering 200" = the backend cannot import.** The
+  user's in-flight edit (`dataset.py` importing a not-yet-existing `flow_sdk.schema.data_spec`)
+  made every per-category relaunch crash on import; each category then timed out on a dead port.
+  Health snapshots on non-zero exits (`be=000`) and preserved backend logs are what caught it —
+  keep both in the sweep. Fix that did not touch the user's tree: a `git worktree` at HEAD with the
+  cycle's diff applied, `.venv`/`node_modules` symlinked, instance launched FROM the worktree.
+  Verify `reset` relaunches from the worktree (backend PWD) — it does.
+
+- **A detached-HEAD worktree breaks `git-ops/status` tests** (`branch` is null). Put the worktree on
+  a named branch.
+
+- **Every category's first file after a reset is cold.** Warm (bootstrap + a small index) before it,
+  and wait for the FRONTEND (HTTP 200), not only the backend — a full reset restarts vite too.
+
+- **`getByRole('button', {name:'OK'})` without `exact` resumed a live Claude session** (substring
+  match on a Chats-history row). That, not "PTY accumulation", was the terminal category's
+  cumulative degradation. `exact: true`; file went 16 min/11 fails → 4.9 min/0.
+
+- **Deliberate product changes the specs never absorbed** (each a test-issue + doc correction):
+  bare `/dock/assets` under a project scope is the project landing — the type tree is the unscoped
+  `?scope-mode=all` (ScopeMode has no 'global'); `/dock/home` canonicalizes to `/`; tree root labels
+  come from the type registry — match `[data-testid^="browseable-chevron-asset-type:<type>"]`
+  (NO trailing colon; the `:all:v3` suffix exists only for some types); triggers+signals merged
+  into the Events screen; navigator sections renamed.
+
+- **Vibe rail "Chats" RESUMES the last chat** (`lastVibeChatQuery`: project_id + process_type=chat
+  + last_active_at NOT NULL) and lands on the home hero when none exists. Tests entering Vibe must
+  self-seed: `createVibeFixture` + `PUT process_type=chat` + `POST …/activate` + `openVibe`.
+
+- **Memory (probe) journeys registered by a dynamic import were invisible to an already-rendered
+  consumer** — the registry had no listeners. Fixed with `subscribeMemoryJourneys` +
+  `useSyncExternalStore` (ts_sdk memory-journey.ts / ui use-journey.ts).
+
+- **Single-flight index: wait, don't race.** `GET fs-records/activity-status` returns null when idle;
+  a test that POSTs `index` right after creating an asset must poll that to null first (409
+  "Job 'index' already running" otherwise).
+
+- **Launches from the user's tree kill the QA instance.** `qa-25/26/28` appeared from
+  `PWD=<main tree>` and each coincided with my instance vanishing. Keep the user informed; run
+  the sweep resumable (skip files with a JSON verdict) so a kill costs one category, not the run.
+
+- **Phase 12's orphan diff flags deliberately-manual specs** (`credentialed_sources`,
+  `sandbox_share_link` say so in their text). Don't author hollow `test.skip` stubs; report
+  BLOCKED-by-design and add a frontmatter marker the diff can honour.
+
+### 2026-08-23/24 — Full QA cycle (0.2.140-fixes)
+
+**Result: phases 1-8 PASS (6448 / 805 / 131 / 4242 / 252 / 594 / 342 / 3). Phase 9 RED with 6
+failures + 9 infra skips, Phase 10 RED with 1 — every one hub-side or external, none an oss bug.
+Phases 11-12 not run (phase-ordering). 4 oss fixes landed. Full narrative:
+`_results/2026-08-22T23-04-39/cycle-state.md`.**
+
+- **Phase 7's `long` project is self-hostile — this is why it never finished before.** FIVE tests
+  bounce the SHARED backend the serialized project runs against: `pty_survives_restart` and
+  `agentic_survives_restart` shell out to `instance_ctl.sh launch $FLOW_INSTANCE`; and
+  `ws_reconnect_after_backend_restart`, `agentic_echo_after_backend_restart`,
+  `pty_echo_after_backend_restart` do `kill -TERM $PID` then `nohup uv run -m flow_sdk.server.run &`.
+  **That respawned backend is a CHILD of the vitest process, so it dies when the runner exits** —
+  the backend vanishes with NO shutdown record and every later file fails ECONNREFUSED. Seen twice
+  (232 and 66 "failures", all collateral). **Remedy: split the project.** Batch A excludes those
+  five plus `init_sdk_bench` (which launches 10 instances); Batch B runs them ONE FILE AT A TIME,
+  each against a freshly launched instance. Batch A then produced 324 passed / exit 0 in 13 min,
+  Batch B 18/18. Real fix would be respawning detached, like instance_ctl does.
+
+- **`--wait-for-response` broke BOTH hook mirrors and nobody updated either.** Commit 4e1482ede
+  appends it for response events (UserPromptSubmit, SessionStart); the `[-3:]` assertions in
+  `tests/long_tests/test_claude_cli.py` and `ui/tests/long_tests/process_hook_acceptance.test.ts`
+  dated to 16f571115. When a hook arg contract changes, grep BOTH mirrors.
+
+- **The temp ROOT was not a temp path.** `_TEMP_PREFIXES` held only trailing-slash forms, so
+  `is_temp_path('/tmp')` was False, `/private/tmp` passed `is_valid_project_cwd`, and the indexer
+  registered the whole system temp dir as a project and walked it (9,510 dirs). Fixed + regression
+  test. Related: gating `~/.flow` out of project discovery cut the walk 9.35s -> 1.52s and
+  `index?type=skill` 21.5s -> 2.9s — `~/.flow/instances/oss` alone was 155,749 of 165,657 walked dirs.
+
+- **`?type=<x>` does NOT narrow the scan.** `index_function.py`: "Always runs a full scan; when
+  opts.types is set, only FSRefs of those types get PARSED." So a per-type index still walks every
+  root — which is why an SLO on it is really an assertion about how many roots exist.
+
+- **The progress collector sees EVERY job's snapshots.** Three per-type tests in
+  `progress_report_fast.test.ts` took `tables[last]` from the raw stream, so a concurrent job's
+  snapshot could be the "final" table (`expected 'scan' to be 'index'`), and the monotonic test
+  mixed two jobs' counters. Both aggregate tests in the same file already filter by `job_name` and
+  document why. Filter, always.
+
+- **HUB: the creator gets no role edge on a nested-created child.** `handle_create_entity` passes
+  the creator as owner on the TOP-LEVEL branch (`entity.save(someone_typeid)` -> neo4j
+  `create_owner_relationship`), but the NESTED branch calls `add_child` -> bare `child.save()`.
+  So a conversation MEMBER can post a comment and then get 401 on editing or deleting their OWN
+  comment, because they resolve only through the parent's inherited `member` role and the comment
+  policy puts update/delete at editor level (deliberately, to stop people editing OTHERS' comments).
+  The policy note called author-scoped editing "not expressible" — but the missing owner edge IS
+  the defect, and the mechanism already exists one branch above. Pure-hub repro (hub API only)
+  reproduces it without flow_sdk in the path.
+
+- **PROCESS — three mistakes worth not repeating.** (1) Ran phases 7/8/9/10 in PARALLEL while 7 was
+  red: violates phase ordering AND manufactured false failures (Batch A's 14 failures all passed
+  15/15 on a quiet host). One-writer-per-instance is not enough; these suites need a QUIET HOST.
+  (2) Ran the hub tier with `FLOWPAD_HUB_URL` but no `FLOW_INSTANCE`, so it fell through to
+  `.env.local`'s `FLOW_INSTANCE=oss` — the USER'S instance — and contended with it (8x "database is
+  locked"). Always pin FLOW_INSTANCE to a cycle-owned instance. (3) Asserted the temp-root fix was
+  what made a test pass; the rca on/off toggle REFUTED it (still passed with the fix reverted).
+  Toggle before claiming causation.
 
 ### 2026-08-18 — Vibe Claude quota recovery to Codex
 
