@@ -182,7 +182,7 @@ export function useRecentActivity(scope: ScopeFilter, limit: number) {
     300,
     { limit },
   );
-  const { buckets, isLoading: sessionsLoading } = useChatHistory(
+  const { buckets, fetchedCount, isLoading: sessionsLoading } = useChatHistory(
     { scope, search: '' },
     limit,
   );
@@ -199,6 +199,8 @@ export function useRecentActivity(scope: ScopeFilter, limit: number) {
     // Worker history is an array-only endpoint, so equality is the only
     // available "there may be another page" signal. One harmless extra load
     // resolves the exact-boundary case.
-    hasMore: editedEntities.length < editedEntityTotal || sessions.length >= limit,
+    // Against `fetchedCount`, not `sessions.length`: a full page containing
+    // hidden empty chats would otherwise read as short and end paging early.
+    hasMore: editedEntities.length < editedEntityTotal || fetchedCount >= limit,
   };
 }

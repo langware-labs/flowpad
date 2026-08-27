@@ -108,7 +108,8 @@ export function useChatHistory(
   // the per-project cap is computed there — otherwise an under-active project's
   // sessions never make it into the response to be filtered client-side.
   const projectIds = isAllScope(filters.scope) ? undefined : scopeProjectIds(filters.scope);
-  const { entries, isLoading, refetch } = useWorkerHistory(limit, {
+  // Empty chats are filtered at the source; `fetchedCount` is the pre-filter length.
+  const { entries, fetchedCount, isLoading, refetch } = useWorkerHistory(limit, {
     projectIds: projectIds?.length ? projectIds : undefined,
   });
 
@@ -213,5 +214,6 @@ export function useChatHistory(
 
   const total = useMemo(() => buckets.reduce((n, b) => n + b.entries.length, 0), [buckets]);
 
-  return { buckets, total, isLoading, refetch };
+  // `total` is what is displayed; `fetchedCount` is pre-filter, for paging.
+  return { buckets, total, fetchedCount, isLoading, refetch };
 }

@@ -123,6 +123,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
 
   const visible = useMemo(() => {
     const currentProjectId = currentProject?.id ?? null;
+    // `entries` arrives with empty chats already filtered out (useWorkerHistory).
     const projectScoped = effectiveAllProjects ? entries : entries.filter((e) => e.project_id === currentProjectId);
     const q = query.trim().toLowerCase();
     const filtered = q

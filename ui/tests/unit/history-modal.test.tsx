@@ -50,6 +50,7 @@ describe('HistoryModal', () => {
           name: 'Claude task',
         }),
       ],
+      fetchedCount: 2,
       isLoading: false,
       refetch: vi.fn(),
     });
@@ -79,6 +80,7 @@ describe('HistoryModal', () => {
           name: 'Docs cleanup',
         }),
       ],
+      fetchedCount: 3,
       isLoading: false,
       refetch: vi.fn(),
     });

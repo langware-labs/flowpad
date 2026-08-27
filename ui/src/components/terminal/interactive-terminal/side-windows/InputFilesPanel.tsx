@@ -5,10 +5,7 @@ import { ExternalLink, File, RefreshCw, Trash2 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-} from '@src/components/ui/dialog';
+import { Dialog, DialogContent } from '@src/components/ui/dialog';
 import { useFS } from '@src/hooks/useFS';
 
 interface InputFilesPanelProps {
@@ -22,10 +19,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
-  computeNodeTypeId,
-  inputDirAbsPath,
-}) => {
+export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({ computeNodeTypeId, inputDirAbsPath }) => {
   const { t } = useLingui();
   const fs = useFS(computeNodeTypeId);
   const fsRef = React.useRef(fs);
@@ -89,12 +83,21 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
       className={`flex flex-1 flex-col overflow-hidden transition-colors ${isDragOver ? 'bg-muted/40 ring-1 ring-inset ring-primary/40' : ''}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
-      onDrop={(e) => { void handleDrop(e); }}
+      onDrop={(e) => {
+        void handleDrop(e);
+      }}
     >
       <div className="flex items-center justify-between border-b px-3 py-2">
-        <span className="text-sm font-medium"><Trans>Input Files</Trans></span>
+        <span className="text-sm font-medium">
+          <Trans>Input Files</Trans>
+        </span>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" onClick={() => void openExternalFromComputeNode(computeNodeTypeId.id, inputDirAbsPath)} className="h-6 w-6 p-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void openExternalFromComputeNode(computeNodeTypeId.id, inputDirAbsPath)}
+            className="h-6 w-6 p-0"
+          >
             <ExternalLink className="h-3.5 w-3.5" />
           </Button>
           <Button variant="ghost" size="sm" onClick={handleRefresh} className="h-6 w-6 p-0">
@@ -112,7 +115,11 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
           <div className="flex flex-col gap-1">
             {items.map((item) => {
               const itemPath = `${inputDirAbsPath}/${item.name}`;
-              const downloadUrl = fs?.getDownloadUrl(item.vfs_abs_path ?? itemPath);
+              // getDownloadUrl takes an ENTITY-RELATIVE path — it prepends
+              // `compute_node/<id>/fs/download/` itself. `vfs_abs_path` already
+              // carries that `compute_node-<id>/` prefix, so passing it doubled
+              // the entity segment and every thumbnail 404'd.
+              const downloadUrl = fs?.getDownloadUrl(item.relativePath || itemPath);
               const isImage = isImagePath(item.name);
               const isDeleting = deletingPath === itemPath;
               return (
@@ -122,11 +129,7 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
                   onClick={isImage && downloadUrl ? () => setSelectedImage(downloadUrl) : undefined}
                 >
                   {isImage && downloadUrl ? (
-                    <img
-                      src={downloadUrl}
-                      alt={item.name}
-                      className="h-12 w-12 shrink-0 rounded object-cover"
-                    />
+                    <img src={downloadUrl} alt={item.name} className="h-12 w-12 shrink-0 rounded object-cover" />
                   ) : (
                     <File className="h-5 w-5 shrink-0 text-muted-foreground" />
                   )}
@@ -157,14 +160,15 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
         )}
       </div>
 
-      <Dialog open={!!selectedImage} onOpenChange={(open) => { if (!open) setSelectedImage(null); }}>
+      <Dialog
+        open={!!selectedImage}
+        onOpenChange={(open) => {
+          if (!open) setSelectedImage(null);
+        }}
+      >
         <DialogContent className="max-h-[90vh] max-w-[90vw] p-2">
           {selectedImage && (
-            <img
-              src={selectedImage}
-              alt={t`Preview`}
-              className="max-h-[85vh] max-w-full rounded object-contain"
-            />
+            <img src={selectedImage} alt={t`Preview`} className="max-h-[85vh] max-w-full rounded object-contain" />
           )}
         </DialogContent>
       </Dialog>
