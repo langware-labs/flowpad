@@ -156,3 +156,9 @@ the identical scenario with `pty_mode=False` and passes, because
   against a stopped session that then starts. `enable` is the only PTY-reachable
   fallback there, and it needs a manual toggle. Never exercised; treat it as
   unverified, not as a rule.
+
+<!-- flowpad:capsule identity
+version: 1
+data:
+  id: 248d2e92-b44d-4f51-a4d1-2ac8ab65dcdc
+flowpad:endcapsule identity -->
