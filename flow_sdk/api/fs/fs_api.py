@@ -1,6 +1,11 @@
 from pydantic import BaseModel, ConfigDict
 
-from flow_sdk.api.api_types.vfs_path import VFSPath
+# `parse_custom_uri` is unused HERE and re-exported on purpose — `api/fs_api.py`
+# names it in `__all__`, `api_types/fs_api.py` re-exports it again, and
+# `tests/api/test_storage.py` imports it from this module. The noqa is load-bearing:
+# ruff's unused-import autofix removed it once, which broke collection of two test
+# modules with `cannot import name 'parse_custom_uri'`.
+from flow_sdk.api.api_types.vfs_path import VFSPath, parse_custom_uri  # noqa: F401
 from flow_sdk.request_context import get_current_request_info
 from flow_sdk.request_context.request_info import RequestInfo
 from flow_sdk.responses import ApiFailResponse
