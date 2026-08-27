@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { dismissSetupModal, ensureAdvancedView, skipIfPtyExhausted, startClaudeSession } from './helpers';
+import { RIBBON_TABS, dismissSetupModal, ensureAdvancedView, skipIfPtyExhausted, startClaudeSession } from './helpers';
 import { apiOrigin } from '../_shared/api';
 
 /**
@@ -18,7 +18,7 @@ async function gotoAgenticProcessWithSession(page: import('@playwright/test').Pa
       await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
       await startClaudeSession(page);
       await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 60_000 });
-    }
+  }
 
     // The annotation gutter + ribbon are Advanced-view surfaces; the backend pref
     // now wins over the localStorage seed, so flip to Advanced at runtime.
@@ -26,12 +26,12 @@ async function gotoAgenticProcessWithSession(page: import('@playwright/test').Pa
 
     // Wait for the process ribbon (indicates worker_session_id is set)
     const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-    const ribbon = activePanel.locator('.border-t .ms-auto');
+    const ribbon = activePanel.locator(RIBBON_TABS);
     await expect(ribbon).toBeVisible({ timeout: 60_000 });
-  } catch (e) {
+} catch (e) {
     await skipIfPtyExhausted(page);
     throw e;
-  }
+}
 
   return page.url();
 }
@@ -39,7 +39,7 @@ async function gotoAgenticProcessWithSession(page: import('@playwright/test').Pa
 test.describe('terminal_annotation_bookmark', () => {
   test.beforeEach(async ({ page }) => {
     await dismissSetupModal(page);
-  });
+});
 
   test('test 2: Annotation gutter is not visible in a plain shell terminal', async ({ page }) => {
     test.setTimeout(60_000);
@@ -54,7 +54,7 @@ test.describe('terminal_annotation_bookmark', () => {
     // Annotation gutter must NOT be present in a plain shell
     const gutter = page.locator('[data-testid="annotation-gutter"]').first();
     await expect(gutter).not.toBeAttached({ timeout: 3_000 });
-  });
+});
 
   test('test 3: Annotation gutter is visible for existing agentic process with worker session ID', async ({ page }) => {
     test.setTimeout(60_000);
@@ -64,7 +64,7 @@ test.describe('terminal_annotation_bookmark', () => {
     // Annotation gutter must be present for an agentic process with worker_session_id
     const gutter = page.locator('[data-testid="annotation-gutter"]').first();
     await expect(gutter).toBeAttached({ timeout: 10_000 });
-  });
+});
 
   // test 4 (create bookmark) + test 5 (persists with session linkage; listed by
   // a live surface). The original test 5's home BookmarkColumn / "Open Session"
@@ -99,7 +99,7 @@ test.describe('terminal_annotation_bookmark', () => {
       await plusBtn.scrollIntoViewIfNeeded().catch(() => {});
       await plusBtn.click({ force: true }).catch(() => {});
       await expect(popover).toBeVisible({ timeout: 800 });
-    }).toPass({ timeout: 5_000 });
+  }).toPass({ timeout: 5_000 });
 
     // ── Step 3: Select "Bookmark" from the annotation type picker ─────────────
     await expect(popover).toBeVisible({ timeout: 5_000 });
@@ -138,7 +138,7 @@ test.describe('terminal_annotation_bookmark', () => {
           const procs = (await procRes.json()).data as Array<{ id: string; session_id?: string }>;
           sessionId = procs.find((p) => p.id === bareProcessId)?.session_id ?? '';
           return sessionId;
-        },
+      },
         { timeout: 15_000, message: `agentic_process ${bareProcessId} persisted with a worker session id` },
       )
       .not.toBe('');
@@ -153,7 +153,7 @@ test.describe('terminal_annotation_bookmark', () => {
       const linked = bms.find((b) => b.session_id === sessionId && b.bookmark_type === 'terminal_annotation');
       expect(linked, `a terminal-annotation bookmark is linked to process session ${sessionId}`).toBeTruthy();
       expect(linked?.content, 'the linked bookmark carries the content we saved').toBe('e2e test bookmark');
-    }).toPass({ timeout: 15_000 });
+  }).toPass({ timeout: 15_000 });
 
     // ── Step 7: A live surface lists the bookmark ─────────────────────────────
     // Reload the process page so the annotation gutter re-fetches bookmarks from
@@ -168,5 +168,5 @@ test.describe('terminal_annotation_bookmark', () => {
     await expect(bookmarkMarker).toBeVisible({ timeout: 15_000 });
     await bookmarkMarker.hover();
     await expect(page.getByText('e2e test bookmark').first()).toBeVisible({ timeout: 5_000 });
-  });
+});
 });

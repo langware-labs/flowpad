@@ -100,3 +100,23 @@ export async function openVibe(page: Page, processId: string): Promise<void> {
   await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible();
   await expect(page.getByTestId('workspace-display-tab')).toBeVisible();
 }
+
+/**
+ * Seed a chat the Vibe rail can RESUME, and scope its project. `lastVibeChatQuery`
+ * matches project_id (the SCOPED project) + process_type=chat + a non-null
+ * last_active_at; none of those come from create alone, and with no resumable
+ * chat the rail's Chats icon lands on the home hero — no `VibeDisplay` ever
+ * mounts. `openVibe` is load-bearing: visiting the process is what puts its
+ * project in scope for the later rail click.
+ */
+export async function seedLastVibeChat(
+  request: APIRequestContext,
+  page: Page,
+  label: string,
+): Promise<VibeFixture> {
+  const fixture = await createVibeFixture(request, label);
+  await request.put(`${API}/api/v1/graph/agentic_process/${fixture.processId}`, { data: { process_type: 'chat' } });
+  await request.post(`${API}/api/v1/graph/agentic_process/${fixture.processId}/activate`, { data: {} });
+  await openVibe(page, fixture.processId);
+  return fixture;
+}
