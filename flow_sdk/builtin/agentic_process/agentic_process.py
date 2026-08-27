@@ -6532,6 +6532,11 @@ class AgenticProcess(Entity):
         self._tombstone_session_transcript()
         result = await super().delete()
         clear_process_hook_callbacks(str(self.id))
+        # The dedup key outlives the instance by design (module-level, keyed by
+        # process id), so the row has to be dropped explicitly here or it leaks
+        # for the lifetime of the server — and a recycled id would start out
+        # deduping against a dead process's last broadcast.
+        self._last_broadcast_key = None
         return result
 
     def _tombstone_session_transcript(self) -> None:
@@ -7284,6 +7289,14 @@ class AgenticProcess(Entity):
             self.status = ProcessStatus.FAILED.value
             await self.save()
             return False
+
+        finally:
+            # Drop the process-scoped broadcast dedup key: it lives in a
+            # module-level dict, so nothing else releases it when the process
+            # goes down. Clearing on BOTH exits (closed / failed-to-close) also
+            # means a later re-open starts with no history and broadcasts its
+            # first key instead of silently deduping against the pre-close one.
+            self._last_broadcast_key = None
 
     # ── HTTP actions ──────────────────────────────────────────────────────────
 
