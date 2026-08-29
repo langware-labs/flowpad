@@ -553,6 +553,7 @@ async def reflect_refs(
             return report
 
         fresh: list[tuple[str, str]] = []
+        renames = renames or {}
         for ref in refs:
             placed = reflector.place(source, ref)
             if not placed:
@@ -560,12 +561,13 @@ async def reflect_refs(
                 continue
             origin_id = origin_id_for(source, ref)
             known = await _find_by_origin(origin_id)
-            if known is None and (renames or {}).get(ref):
+            previous_ref = renames.get(ref)
+            if known is None and previous_ref:
                 # The source says this path IS the old one, moved. Its identity
                 # lives under the ORIGIN IT HAD — for git that is computable even
                 # though the old path no longer exists, because the handle is
                 # repo-relative rather than a property of the file on disk.
-                known = await _find_by_origin(origin_id_for(source, renames[ref]))
+                known = await _find_by_origin(origin_id_for(source, previous_ref))
             if known is None:
                 fresh.append((placed, ref))
                 continue

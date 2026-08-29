@@ -152,9 +152,7 @@ async def _sync_stream(source, driver, cursor: DataSourceCursor, now: datetime) 
             mode=IngestMode.for_run(first_run=view.first_run, item_count=len(result.items)),
         )
     if not result.unchanged and (result.refs or result.tombstones):
-        await reflect_refs(
-            source, list(result.refs), list(result.tombstones), dict(result.renames)
-        )
+        await reflect_refs(source, result.refs, result.tombstones, result.renames)
 
     # ── records are committed; only now does the cursor move ──
     was_clean = (

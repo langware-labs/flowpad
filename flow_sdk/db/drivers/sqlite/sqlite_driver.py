@@ -1244,14 +1244,16 @@ class SQLiteDBDriver(DBDriver):
             # Create new entity - _create_entity checks unique constraints
             return await self._create_entity(entity, owner, session)
 
-    async def stamp_last_active_at(self, entity_id: str, timestamp_ms: int) -> tuple[DBBaseRecord | None, bool]:
-        """Atomically stamp recency without rewriting a stale entity snapshot.
-
-        The writer transaction first hydrates the authoritative row so a stale
-        pre-close Tab activation still observes ``visible=False`` and no-ops.
-        Otherwise ``json_set`` changes only ``last_active_at`` in one UPDATE
-        statement, preserving every other persisted field.
-        """
+    async def _stamp_data_field(
+        self,
+        entity_id: str,
+        field_name: str,
+        value: object,
+        *,
+        hidden_entity_type: str | None = None,
+        skip_if_unchanged: bool = False,
+    ) -> tuple[DBBaseRecord | None, bool]:
+        """Hydrate the authoritative row and atomically stamp one data field."""
         async with self._session_ctx() as session:
             current_result = await session.execute(select(EntitySchema).where(EntitySchema.id == entity_id))
             schema = current_result.scalar_one_or_none()
@@ -1259,13 +1261,12 @@ class SQLiteDBDriver(DBDriver):
                 return None, False
 
             current = self._schema_to_entity(schema)
-            if current.get_type() == "tab" and getattr(current, "visible", True) is False:
+            is_hidden = getattr(current, "visible", True) is False
+            if is_hidden and (hidden_entity_type is None or current.get_type() == hidden_entity_type):
+                return current, False
+            if skip_if_unchanged and getattr(current, field_name, None) == value:
                 return current, False
 
-            # Match the audit behavior of the former ``Entity.save()`` path,
-            # but derive it from the authoritative row.  In particular,
-            # apply_update_fields preserves an existing updated_date (the old
-            # save path did not reset it) while updating actor/provenance.
             self.apply_update_fields(current)
             await session.execute(
                 update(EntitySchema)
@@ -1276,14 +1277,30 @@ class SQLiteDBDriver(DBDriver):
                     updated_through=current.updated_through,
                     data=func.json_set(
                         func.coalesce(EntitySchema.data, "{}"),
-                        "$.last_active_at",
-                        timestamp_ms,
+                        f"$.{field_name}",
+                        value,
                     ),
                 )
             )
-            current.last_active_at = timestamp_ms
+            setattr(current, field_name, value)
             current._dirty = False
             return current, True
+
+    async def stamp_last_active_at(self, entity_id: str, timestamp_ms: int) -> tuple[DBBaseRecord | None, bool]:
+        """Atomically stamp recency without rewriting a stale entity snapshot.
+
+        The writer transaction first hydrates the authoritative row so a stale
+        pre-close Tab activation still observes ``visible=False`` and no-ops.
+        Otherwise ``json_set`` changes only ``last_active_at`` in one UPDATE
+        statement, preserving every other persisted field. Audit fields match
+        the former ``Entity.save()`` path but come from the authoritative row.
+        """
+        return await self._stamp_data_field(
+            entity_id,
+            "last_active_at",
+            timestamp_ms,
+            hidden_entity_type="tab",
+        )
 
     async def _patch_data_field(
         self,
