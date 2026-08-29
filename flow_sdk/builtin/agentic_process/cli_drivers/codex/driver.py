@@ -61,13 +61,15 @@ from flow_sdk.builtin.hooks.capabilities import process_capability, unsupported
 from flow_sdk.builtin.hooks.types import HookCapabilities, HookScope
 from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
-from flow_sdk.flowpad_types.enums import WorkerType
+from flow_sdk.flowpad_types.vendors import vendor_for
 from flow_sdk.responses.response import ApiFailResponse
 from flow_sdk.transcript_analyzer import (
     TranscriptDescriptor,
     TranscriptFormat,
     TranscriptSource,
 )
+
+VENDOR = vendor_for("codex")
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
@@ -117,7 +119,7 @@ _HOOK_CAPABILITIES: "HookCapabilities" = {
 class CodexDriver:
     """Vendor glue for OpenAI Codex. Implements the ``WorkerDriver`` Protocol."""
 
-    name = WorkerType.CODEX.value
+    name = VENDOR.key
     supports_process_hooks = True
     process_hooks_use_assets = False
     # Codex's TUI needs a discrete Enter after the paste settles, not a
@@ -400,3 +402,7 @@ class CodexDriver:
         if not sessions_root.is_dir():
             return set()
         return {p.name for p in sessions_root.rglob("rollout-*.jsonl")}
+
+
+#: The class ``get_driver`` instantiates for this vendor (looked up by ``VENDORS[...].package``).
+DRIVER = CodexDriver

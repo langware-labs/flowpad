@@ -272,3 +272,7 @@ class ClaudeAgentOptions(AgentOptions):
             verbose=bool(data.get("verbose", False)),
             effort=data.get("effort"),
         )
+
+
+#: The options class ``factory`` builds for this vendor.
+AGENT_OPTIONS = ClaudeAgentOptions

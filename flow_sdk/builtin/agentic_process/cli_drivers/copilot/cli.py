@@ -167,3 +167,7 @@ class CopilotAgentOptions(AgentOptions):
 
     def _allow_all_enabled(self) -> bool:
         return self.allow_all and self.permission_mode == "bypassPermissions"
+
+
+#: The options class ``factory`` builds for this vendor.
+AGENT_OPTIONS = CopilotAgentOptions

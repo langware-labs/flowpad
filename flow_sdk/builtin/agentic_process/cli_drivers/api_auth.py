@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Callable
 from flow_sdk.builtin.agentic_process.model_tiers import resolve_model_tier
 from flow_sdk.cli.auth.lm_api_keys import get_lm_api
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
+from flow_sdk.flowpad_types.vendors import vendor_or_none
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
@@ -232,8 +233,9 @@ _SPECS: dict[str, ApiAuthSpec] = {
 
 
 def driver_api_auth_spec(worker_type: str) -> ApiAuthSpec | None:
-    """The ApiAuthSpec for a driver name (claude/codex/copilot), or None."""
-    return _SPECS.get(worker_type)
+    """The ApiAuthSpec for any vendor spelling ``VENDORS`` knows, or None."""
+    vendor = vendor_or_none(worker_type)
+    return _SPECS.get(vendor.key) if vendor else None
 
 
 async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | None:
