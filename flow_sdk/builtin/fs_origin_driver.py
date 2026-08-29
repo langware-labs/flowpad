@@ -17,7 +17,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
 
-from flow_sdk.fs_store.origin.fs_origin import ORIGIN_KIND_ALIASES
+from flow_sdk.fs_store.origin.fs_origin import ORIGIN_MODELS
 from flow_sdk.utils.kind_registry import KindRegistry
 
 if TYPE_CHECKING:
@@ -75,9 +75,8 @@ def _build_default_registry(registry: "KindRegistry[FSOriginDriver]") -> None:
     registry.register(GitOriginDriver())
     registry.register(LocalOriginDriver())
 
-
 ORIGIN_DRIVERS: "KindRegistry[FSOriginDriver]" = KindRegistry(
-    "FSOrigin", aliases=ORIGIN_KIND_ALIASES, builder=_build_default_registry
+    "FSOrigin", aliases=ORIGIN_MODELS.aliases, builder=_build_default_registry
 )
 
 

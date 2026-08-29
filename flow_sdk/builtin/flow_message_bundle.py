@@ -449,12 +449,7 @@ async def _resolve_file_backed_source(entry_type: str, entry_id: str):
     ar_path = Path(ar)
     if not ar_path.exists():
         return (info, ent, None)
-    if info.main_layout == "folder":
-        # spec-style: asset_ref is the inner main_file → ship the parent folder.
-        # skill-style: asset_ref is the folder itself.
-        src_root = ar_path.parent if getattr(info, "main_file_is_asset_ref", False) else ar_path
-    else:
-        src_root = ar_path
+    src_root = info.storage_root_for(ar_path)   # the folder for a folder type, the file otherwise
     return (info, ent, src_root)
 
 
@@ -816,7 +811,7 @@ def _mint_rendered_asset_identity(info, body_path: Path, entry_type: str, entry_
     from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
-    asset_path = info.asset_ref_for(body_path.parent) if info.main_layout == "folder" else body_path
+    asset_path = info.layout_of(body_path).ref
     ref = FSRef(asset_path, record_type=RecordType(entry_type))
     return info.mint_entity_id(ref, proposed_id=entry_id, derive=True, overwrite=True)
 
@@ -1059,13 +1054,7 @@ def _asset_ref_for_git_origin(checkout_root: Path, rel_path: str, info) -> Path 
     asset_root = safe_join(checkout_root, rel_path)
     if asset_root is None:
         return None
-    if (
-        getattr(info, "main_layout", None) == "folder"
-        and getattr(info, "main_file_is_asset_ref", False)
-        and getattr(info, "main_file", None)
-    ):
-        return asset_root / info.main_file
-    return asset_root
+    return info.asset_ref_for(asset_root) if info is not None else asset_root   # the type's ref convention, once
 
 
 def _git_origin_index_scope(checkout_root: Path, rel_path: str, info) -> Path:
@@ -1842,7 +1831,7 @@ async def _collect_descendant_envelopes(entry_type: str, ent, entities: dict) ->
         ar = getattr(ent, "asset_ref", None)
         if info is None or not ar or info.main_layout != "folder":
             return
-        folder = info.folder_for(Path(ar))
+        folder = info.storage_root_for(Path(ar))
         if not folder.is_dir():
             return
         for ref in repo_assets_fn([FSRef(folder)], IndexerOptions()):

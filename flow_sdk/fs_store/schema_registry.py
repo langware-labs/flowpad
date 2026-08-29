@@ -23,6 +23,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Optional, get_args, get_origin
 
+from flow_sdk._compat import StrEnum
 from flow_sdk.capsules import CapsuleSpec
 from flow_sdk.fs_store.identifier import adopt_entity_id, is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.identity_backend import IdentityBackend, IdentityObservation, IdentityState
@@ -214,6 +215,25 @@ def humanize_type(type_name: str) -> str:
     as the fallback label when a type has no curated ``display_name`` — the Python
     mirror of the frontend ``humanizeType`` (``ui/src/tabs/provider-meta.tsx``)."""
     return " ".join(w[:1].upper() + w[1:] for w in type_name.replace("-", " ").replace("_", " ").split())
+
+
+class LayoutKind(StrEnum):
+    FOLDER = "folder"        # the path IS the asset folder
+    MAIN_FILE = "main_file"  # the inner main file of a folder asset
+    FILE = "file"            # a file-layout asset
+    NONE = "none"            # not this type's shape
+
+
+@dataclass(frozen=True)
+class Layout:
+    kind: LayoutKind
+    root: "Path | None"   # the folder (folder types) / the file; None iff NONE
+    body: "Path | None"   # the writable main document
+    ref: "Path | None"    # where asset_ref points (``asset_ref_for(root)``)
+
+
+_NO_LAYOUT = Layout(LayoutKind.NONE, None, None, None)
+
 
 
 @dataclass
@@ -422,30 +442,33 @@ class TypeInfo:
             return folder / self.main_file
         return folder
 
-    def body_path_for(self, asset_path: Path) -> Path:
-        """Map an asset_ref path to the writable main-body file.
-
-        Folder-layout types whose asset_ref is the bare folder (skill-style,
-        ``main_file_is_asset_ref=False``) keep the body at ``<folder>/<main_file>``;
-        a legacy ref that already names ``main_file`` is accepted idempotently.
-        Every other shape's asset_ref already IS the body target.
-        """
-        if self.main_layout == "folder" and self.main_file and not self.main_file_is_asset_ref:
-            return self.folder_for(asset_path) / self.main_file
-        return asset_path
-
-    def asset_root_for(self, path: Path) -> "Path | None":
-        """The asset root a walker ref names, or None when the ref is not this
-        type's shape: a folder type accepts its folder (holding ``main_file``) or
-        the inner main file; a file type accepts a file with ``main_ext``. A
-        validating recognizer — unlike ``storage_root_for``, a total map."""
+    def layout_of(self, path: Path, *, verify: bool = False) -> "Layout":
+        """THE path→layout classifier. A folder type names its folder (``FOLDER``)
+        or the inner main file (``MAIN_FILE`` → root is the parent); a file type
+        names the file (``FILE``). ``NONE`` when the path is not this type's shape.
+        ``verify`` additionally requires the main file / the file to exist —
+        the indexer's gate; every other mapper is a total, stat-light projection.
+        Names compare case-insensitively (the default filesystem does)."""
         if self.main_layout == "folder":
-            if path.is_dir():
-                return path if self.main_file and (path / self.main_file).is_file() else None
-            if self.main_file and path.name.lower() == self.main_file.lower():
-                return path.parent
-            return None
-        return path if path.is_file() and path.suffix.lower() == (self.main_ext or "").lower() else None
+            # Decide by NAME; the one stat keeps a real directory named like the
+            # main file a directory. ``verify`` is where existence is required.
+            names_main = bool(self.main_file) and path.name.lower() == self.main_file.lower()
+            if names_main and not path.is_dir():
+                root, kind = path.parent, LayoutKind.MAIN_FILE
+            else:
+                root, kind = path, LayoutKind.FOLDER
+                if verify and not (path.is_dir() and self.main_file and (path / self.main_file).is_file()):
+                    return _NO_LAYOUT
+            body = root / self.main_file if self.main_file else None
+            return Layout(kind, root, body, self.asset_ref_for(root))
+        if (verify and not path.is_file()) or path.suffix.lower() != (self.main_ext or "").lower():
+            return _NO_LAYOUT
+        return Layout(LayoutKind.FILE, path, path, path)
+
+    def body_path_for(self, asset_path: Path) -> Path:
+        """The writable main-body file for an asset_ref (the file itself for a
+        file type; ``<folder>/<main_file>`` for a folder type)."""
+        return self.layout_of(asset_path).body or asset_path
 
     def record_for(self, ref: Any) -> Any:
         """Parse ONE asset: resolve its id through the one id seam (a
@@ -459,25 +482,9 @@ class TypeInfo:
 
     def storage_root_for(self, path: Path) -> Path:
         """The asset ROOT a serializer stores at — the folder for a folder-layout
-        type even when ``asset_ref`` names the inner main file
-        (``agent/<name>/agent.md`` → ``agent/<name>``); the file otherwise.
-        Inverse of ``asset_ref_for``."""
-        return self.folder_for(path) if self.main_layout == "folder" else path
-
-    def folder_for(self, asset_ref: Path) -> Path:
-        """Map an asset_ref back to its owning folder (inverse of ``asset_ref_for``).
-
-        Bare-folder asset_ref (skill-style) IS the folder; a legacy skill-style
-        ref that already names the inner ``main_file`` and spec-style inner-file
-        refs map to their containing dir. An existing directory named like the
-        main file remains a directory, so the conversion is unambiguous on disk.
-        Callers gate on ``main_layout == "folder"``.
-        """
-        if not self.folder_backed:
-            return asset_ref.parent
-        if self.main_file and asset_ref.name == self.main_file and not asset_ref.is_dir():
-            return asset_ref.parent
-        return asset_ref
+        type even when ``asset_ref`` names the inner main file; the file
+        otherwise. Inverse of ``asset_ref_for``."""
+        return self.layout_of(path).root or path
 
     @property
     def effective_meta_model(self) -> Any:
@@ -520,13 +527,7 @@ class TypeInfo:
     def capsule_target_for(self, ref: Any) -> Path:
         """Return the owning file/folder used by this type's capsule backend."""
         path = self._identity_path(ref)
-        if not self.folder_backed:
-            return path
-        if path.is_dir():
-            return path
-        if self.main_file and path.name == self.main_file:
-            return path.parent
-        return path
+        return self.storage_root_for(path) if self.folder_backed else path
 
     def _observe(self, ref: Any, *, target: "Path | None" = None) -> "IdentityObservation | None":
         """Read + parse the source's identity carrier ONCE, failing closed.

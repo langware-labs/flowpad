@@ -1265,9 +1265,8 @@ class Entity(DBEntity):
                 continue
             if policy == Persist.DEFAULT and name not in model_field_names:
                 continue
-            if getattr(self, name, None) is not None:
-                persisted.add(name)
-        return self.model_dump(mode="json", include=persisted, exclude_none=True) if persisted else {}
+            persisted.add(name)
+        return self.model_dump(mode="json", include=persisted, exclude_none=True)
 
     async def store(self) -> "Record | None":
         """Sync entity metadata DOWN to its record on disk.
@@ -1420,7 +1419,7 @@ class Entity(DBEntity):
         if not par_ref or pinfo.main_layout != "folder":
             return None  # a repo child can only nest inside a folder-backed parent
         # The parent's asset FOLDER owns where the child's agentic-assets/ goes.
-        return pinfo.folder_for(Path(par_ref))
+        return pinfo.storage_root_for(Path(par_ref))
 
     async def check_and_refresh_record(self) -> bool:
         """If the source asset changed since the last index, re-sync. Returns

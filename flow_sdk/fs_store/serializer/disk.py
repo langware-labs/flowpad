@@ -46,16 +46,12 @@ def _main_doc(info: Any, root: Path) -> Optional[Path]:
     """The main document's path for a stored asset, or None."""
     if info is None:
         return root if root.suffix else None
-    if info.main_layout == "folder":
-        return root / info.main_file if info.main_file else None
-    return root
+    return info.layout_of(root).body
 
 
 def _asset_ref(info: Any, root: Path) -> Path:
-    """The ref the type's identity backend is registered for: the inner main
-    file of a ``main_file_is_asset_ref`` folder type, else the root itself.
-    Inverse of ``TypeInfo.storage_root_for``."""
-    return info.asset_ref_for(root) if info.main_layout == "folder" else root
+    """The ref the type's identity backend is registered for (``Layout.ref``)."""
+    return info.layout_of(root).ref or root
 
 
 def _sub_target(root: Path, name: str, sub_cls: type) -> Path:

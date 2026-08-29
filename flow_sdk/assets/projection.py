@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue, field_validator
 from flow_sdk.assets.git_origin import PortableGitOrigin
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identifier import is_valid_entity_id
-from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
+from flow_sdk.fs_store.schema_registry import LayoutKind, SchemaRegistry, TypeInfo
 
 PORTABLE_ASSET_CONTRACT_VERSION = 1
 
@@ -147,12 +147,11 @@ def project_asset_tree(
     resolved_asset = asset_root.resolve(strict=True)
     if not resolved_asset.is_relative_to(root):
         raise ValueError("asset path escapes the checkout")
-    if info.main_layout == "folder" and not resolved_asset.is_dir():
-        raise ValueError("folder-layout asset origin must resolve to a directory")
-    if info.main_layout == "file" and not resolved_asset.is_file():
-        raise ValueError("file-layout asset origin must resolve to a file")
+    layout = info.layout_of(resolved_asset, verify=True)
+    if layout.kind is LayoutKind.NONE:
+        raise ValueError(f"asset origin does not resolve to a {info.main_layout}-layout asset")
 
-    parser_path = info.asset_ref_for(resolved_asset) if info.main_layout == "folder" else resolved_asset
+    parser_path = layout.ref
     parser_ref = FSRef(parser_path, record_type=entity_type, read_only=True)
     observed_id = info.mint_entity_id(parser_ref)
     if observed_id != expected_id:

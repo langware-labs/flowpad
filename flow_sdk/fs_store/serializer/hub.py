@@ -53,7 +53,7 @@ class HubSerializer:
         return body
 
     def load(self, cls: type, origin: FSOrigin, *, entity_id: Optional[str] = None) -> Any:
-        raise NotImplementedError("the bridge composes the payload; use HubSerializer.from_payload")
+        raise NotImplementedError("a hub payload is read through HubSerializer.unwire")
 
     @staticmethod
     def unwire(cls: type, payload: dict[str, Any]) -> dict[str, Any]:
@@ -61,6 +61,3 @@ class HubSerializer:
         lifted = {name: payload[wire] for name, wire in hub_names(cls).items() if wire in payload and name not in payload}
         return {**payload, **lifted} if lifted else payload
 
-    @staticmethod
-    def from_payload(cls: type, payload: dict[str, Any]) -> Any:
-        return cls.model_validate(HubSerializer.unwire(cls, payload))

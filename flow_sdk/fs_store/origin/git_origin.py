@@ -21,7 +21,7 @@ from typing import Any, Literal, Optional
 
 from flow_sdk.assets.git_origin import PortableGitOrigin as PortableGitOrigin
 from flow_sdk.fs_store.identifier import mint_uuid
-from flow_sdk.fs_store.origin.fs_origin import FSOrigin
+from flow_sdk.fs_store.origin.fs_origin import ORIGIN_MODELS, FSOrigin
 from flow_sdk.fs_store.origin.fs_origin import is_safe_rel_path as is_safe_rel_path  # canonical home; re-exported
 from flow_sdk.utils.git import _run_git, find_project_root, git_current_branch, git_remote_url
 from flow_sdk.utils.git_identity import canonical_git_origin_repo_key, git_origin_clone_url, parse_git_origin_url
@@ -224,3 +224,6 @@ def fresh_clone_slot(preferred_leaf: str, *, reuse_empty: bool = True) -> Path:
     Blocking (stats the workspace) — call via ``asyncio.to_thread`` on a loop.
     """
     return _slot(preferred_leaf, "project", accept=lambda p: reuse_empty and not has_content(p))
+
+
+ORIGIN_MODELS.register(GitOrigin, "git")

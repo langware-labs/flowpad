@@ -19,9 +19,9 @@ Contracts under test:
 import pytest
 from pydantic import TypeAdapter
 
-from flow_sdk.fs_store.origin.fs_origin import FSOrigin, is_safe_rel_path
 from flow_sdk.builtin.fs_origin_driver import ORIGIN_DRIVERS, get_origin_driver
 from flow_sdk.fs_store.origin.field import OriginField
+from flow_sdk.fs_store.origin.fs_origin import FSOrigin, is_safe_rel_path
 from flow_sdk.fs_store.origin.git_origin import GitOrigin
 from flow_sdk.fs_store.origin.local_origin import LocalOrigin
 
@@ -219,5 +219,14 @@ def test_entity_origin_tolerates_legacy_and_fails_soft():
     # The hub's wire name comes back through the hub seam, not the model.
     from flow_sdk.fs_store.serializer.hub import HubSerializer
 
-    lifted = HubSerializer.from_payload(Entity, {"type": "task", "git_origin": {"owner": "a", "name": "b", "rel_path": "x"}})
+    lifted = Entity.model_validate(HubSerializer.unwire(Entity, {"type": "task", "git_origin": {"owner": "a", "name": "b", "rel_path": "x"}}))
     assert isinstance(lifted.origin, GitOrigin)
+
+
+def test_every_driver_serves_a_kind_the_union_knows():
+    """Drivers ⊂ models: the model table is the one home for origin kinds."""
+    from flow_sdk.builtin.fs_origin_driver import ORIGIN_DRIVERS
+    from flow_sdk.fs_store.origin.fs_origin import ORIGIN_MODELS
+
+    assert set(ORIGIN_DRIVERS.kinds()) <= set(ORIGIN_MODELS.kinds())
+    assert ORIGIN_DRIVERS.normalize("GitHub") == ORIGIN_MODELS.normalize("GitHub") == "git"

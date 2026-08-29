@@ -42,7 +42,7 @@ def spec_extractor(type_name: str):
 
     def extract(ref: FSRef, resolved_id: str) -> list:
         info = SchemaRegistry.get(type_name)   # a dict hit; the info may be enriched after registration
-        root = info.asset_root_for(ref._path)
+        root = info.layout_of(ref._path, verify=True).root
         if root is None:
             return []
         try:

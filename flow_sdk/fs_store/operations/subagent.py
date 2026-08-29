@@ -3,18 +3,21 @@ as methods on the deleted ``AgentRecord`` subclass."""
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 from flow_sdk.builtin.subagent import AGENTS_SPEC_FIELDS
+from flow_sdk.capsules.errors import CapsuleError
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions.subagent import (
-    JSON_TO_KEY,
     KEY_TO_JSON,
 )
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
+
+logger = logging.getLogger(__name__)
 
 
 def extract_subagent_from_path(path: str | Path) -> FSRecord | None:
@@ -27,67 +30,53 @@ def extract_subagent_from_path(path: str | Path) -> FSRecord | None:
     return SchemaRegistry.get(str(RecordType.SUBAGENT)).record_for(FSRef(Path(path), record_type=RecordType.SUBAGENT))
 
 
-def load_system_subagent(name: str) -> FSRecord | None:
-    """Replaces ``AgentRecord.load_system_subagent``.
-
-    Lookup order: SDK-bundled agents dir → legacy workspace install. Soft-fail
-    on parse error — returns None.
-    """
-    from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415
-
-    agents_dir = flowpad_assistant_project_root() / ".claude" / "agents"
-    md = agents_dir / f"{name}.md"
-    if md.is_file():
-        try:
-            return extract_subagent_from_path(md)
-        except (OSError, ValueError, UnicodeDecodeError) as exc:
-            import logging  # noqa: PLC0415
-            logging.warning("load_system_subagent: failed to parse %s: %s", md, exc)
-            return None
-    legacy = (
-        Path.home()
-        / "Flowpad workspace"
-        / ".flow"
-        / "system_assets"
-        / "agents"
-        / name
-    )
-    if legacy.is_dir():
-        # Legacy folder layout — find the .md inside and parse.
-        md_files = list(legacy.glob("*.md"))
-        if md_files:
-            return extract_subagent_from_path(md_files[0])
+def _md(candidate: Path) -> Path | None:
+    """The one probe every loader shares: a file is itself; a folder is its
+    first ``*.md``; anything else is not a sub-agent."""
+    if candidate.is_file():
+        return candidate
+    if candidate.is_dir():
+        return min(candidate.glob("*.md"), default=None)
     return None
 
 
+def _load(candidate: Path) -> FSRecord | None:
+    """Parse the sub-agent at ``candidate`` (folder or file); None when absent or unreadable."""
+    md = _md(candidate)
+    if md is None:
+        return None
+    try:
+        return extract_subagent_from_path(md)
+    except (OSError, ValueError, UnicodeDecodeError, CapsuleError) as exc:
+        logger.warning("subagent: failed to parse %s: %s", md, exc)
+        return None
+
+
+def _first(candidates: "list[Path]") -> FSRecord | None:
+    for candidate in candidates:
+        rec = _load(candidate)
+        if rec is not None:
+            return rec
+    return None
+
+
+def load_system_subagent(name: str) -> FSRecord | None:
+    """SDK-bundled ``.claude/agents/<name>.md`` → legacy workspace folder. Soft-fail."""
+    from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415
+
+    return _first([
+        flowpad_assistant_project_root() / ".claude" / "agents" / f"{name}.md",
+        Path.home() / "Flowpad workspace" / ".flow" / "system_assets" / "agents" / name,
+    ])
+
+
 def load_subagent(name: str, project_dir: str | Path | None = None) -> FSRecord | None:
-    """Replaces ``AgentRecord.load_subagent``. Priority: project > user > system."""
+    """Priority: project (folder, then file) > user (folder, then file) > system."""
+    bases = [get_instance_settings().claude_agents_dir]
     if project_dir is not None:
-        p = Path(project_dir) / ".claude" / "agents" / name
-        if p.is_dir():
-            md_files = list(p.glob("*.md"))
-            if md_files:
-                return extract_subagent_from_path(md_files[0])
-        md = Path(project_dir) / ".claude" / "agents" / f"{name}.md"
-        if md.is_file():
-            return extract_subagent_from_path(md)
-
-    user = get_instance_settings().claude_agents_dir / name
-    if user.is_dir():
-        md_files = list(user.glob("*.md"))
-        if md_files:
-            return extract_subagent_from_path(md_files[0])
-    user_md = get_instance_settings().claude_agents_dir / f"{name}.md"
-    if user_md.is_file():
-        return extract_subagent_from_path(user_md)
-
-    return load_system_subagent(name)
-
-
-# Flowpad-only spec fields that must NOT reach the Claude ``--agents`` CLI JSON
-# (they're routing/metadata, not part of Claude's agent schema). They still
-# round-trip through frontmatter via ``render_subagent_markdown``.
-_CLI_EXCLUDED_FIELDS = frozenset({"kind"})
+        bases.insert(0, Path(project_dir) / ".claude" / "agents")
+    candidates = [cand for base in bases for cand in (base / name, base / f"{name}.md")]   # folder, then file
+    return _first(candidates) or load_system_subagent(name)
 
 
 def subagent_to_cli_json(rec: FSRecord) -> dict[str, dict[str, Any]]:
@@ -104,7 +93,9 @@ def subagent_to_cli_json(rec: FSRecord) -> dict[str, dict[str, Any]]:
     if prompt:
         entry["prompt"] = prompt
     for key in AGENTS_SPEC_FIELDS:
-        if key in _CLI_EXCLUDED_FIELDS:
+        # ``kind`` is Flowpad routing metadata, not Claude's agent schema (it
+        # still round-trips through frontmatter via ``render_subagent_markdown``).
+        if key == "kind":
             continue
         val = rec.data.get(key)
         if val is not None:
@@ -112,19 +103,6 @@ def subagent_to_cli_json(rec: FSRecord) -> dict[str, dict[str, Any]]:
             entry[json_key] = val
     return {rec.name or rec.id: entry}
 
-
-def subagent_from_cli_json(name: str, data: dict[str, Any]) -> FSRecord:
-    """Replaces ``AgentRecord.from_agents_json``."""
-    kwargs: dict[str, Any] = {
-        "type": RecordType.SUBAGENT,
-        "status": "active",
-        "id": name,
-        "name": name,
-    }
-    for json_key, val in data.items():
-        data_key = JSON_TO_KEY.get(json_key, json_key)
-        kwargs[data_key] = val
-    return FSRecord(**kwargs)
 
 
 def render_subagent_markdown(rec: FSRecord) -> str:
@@ -172,20 +150,4 @@ def get_subagent(uid: str) -> FSRecord | None:
         except (json.JSONDecodeError, OSError):
             pass
 
-    user_dir = get_instance_settings().claude_agents_dir
-    md = user_dir / f"{uid}.md"
-    if md.exists():
-        return extract_subagent_from_path(md)
-
-    return load_system_subagent(uid)
-
-
-def install_subagent_md(rec: FSRecord, base_dir: str | Path) -> Path:
-    """Write ``base_dir/.claude/agents/<name>.md`` from the record.
-
-    Replaces ``AgentRecord.clone(base_dir)``. Returns the written path.
-    """
-    md_path = Path(base_dir) / ".claude" / "agents" / f"{rec.name}.md"
-    md_path.parent.mkdir(parents=True, exist_ok=True)
-    md_path.write_text(render_subagent_markdown(rec))
-    return md_path
+    return _load(get_instance_settings().claude_agents_dir / f"{uid}.md") or load_system_subagent(uid)

@@ -4,6 +4,7 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.fs_store.origin.git_origin import GitOrigin
+from flow_sdk.ingest import reflect
 from flow_sdk.ingest.change_event import change_tag, emit_change, handle_change, subscribe
 from flow_sdk.ingest.driver import SegmentCursorView, get_driver
 from flow_sdk.ingest.reflect import ReflectMode, origin_id_for
@@ -67,7 +68,7 @@ async def test_origin_id_is_the_documented_dedup_handle(git_db, asset_repo, make
 
     assert entity is not None
     assert entity.origin_id == str(expected.key())
-    assert origin_id_for(source, str(asset_repo / "a.md")) == str(expected.key())
+    assert origin_id_for(source, str(asset_repo / "a.md"), await reflect._materialize(source)) == str(expected.key())
 
 
 async def test_an_empty_event_still_reconciles(git_db, asset_repo, make_source):

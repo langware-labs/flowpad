@@ -34,10 +34,10 @@ def test_each_tree_driver_derives_a_local_origin(tmp_path):
     assert gdrive == local_origin_for_path(cache.resolve())
 
 
-def test_local_root_reads_the_origin_not_a_config_key(tmp_path):
+async def test_local_root_reads_the_origin_not_a_config_key(tmp_path):
     src = SimpleNamespace(id="s", origin=local_origin_for_path(tmp_path), config={"root": "/elsewhere"})
-    assert reflect._local_root(src) == tmp_path
-    assert reflect._local_root(SimpleNamespace(id="s", origin=None)) is None
+    assert await reflect._materialize(src) == tmp_path
+    assert await reflect._materialize(SimpleNamespace(id="s", origin=None)) is None
 
 
 @pytest.mark.asyncio
