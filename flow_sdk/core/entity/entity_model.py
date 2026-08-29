@@ -749,9 +749,11 @@ class Entity(DBEntity):
         caller that WRITES on a miss (minting, deleting) — see ``fs_store/reindex.py``.
         Read-only callers can keep the lenient default.
         """
-        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.fs_store.path_utils import asset_ref_spellings  # noqa: PLC0415
 
         path_str = str(path)
+        spellings = asset_ref_spellings(path_str)
         # Only types that OWN their path may answer "who owns this path". A type
         # that merely *references* an asset (``owns_asset_ref = False``, e.g.
         # Artifact) carries the same ``asset_ref`` as the entity it points at, so
@@ -760,7 +762,7 @@ class Entity(DBEntity):
         # type registered before it and silently wrong for one registered after.
         candidates = cls.asset_owner_classes()
         hit = await cls.first_across_asset_owners(
-            "asset_ref", path_str, strict=strict, candidates=candidates
+            "asset_ref", spellings, strict=strict, candidates=candidates
         )
         if hit is not None:
             return hit
@@ -773,12 +775,13 @@ class Entity(DBEntity):
     async def first_across_asset_owners(
         cls,
         field: str,
-        value: str,
+        value: "str | list[str]",
         *,
         strict: bool = False,
         candidates: "list[type[Entity]] | None" = None,
     ) -> "Entity | None":
-        """First row across every asset-owning type whose ``field`` equals ``value``.
+        """First row across every asset-owning type whose ``field`` equals ``value``
+        (or any of them, when a list of spellings is given — one query per type).
 
         The fan-out itself, held once: a base-class query does not reach
         concrete-type rows, so any "which entity does this handle name" question
@@ -797,8 +800,12 @@ class Entity(DBEntity):
         # `return_exceptions` keeps the per-candidate resilience — one broken type
         # must not sink the fan-out — while still telling a failed probe apart
         # from one that genuinely found nothing.
+        def _filter(c: type) -> QueryFilter:
+            op, operand = (QueryOp.EQ, value) if isinstance(value, str) else (QueryOp.IN, list(value))
+            return QueryFilter(type=c.get_type(), match=ExpressionNode(op=op, operands=[field, operand]))
+
         results = await asyncio.gather(
-            *[c.get_one({field: value}) for c in candidates], return_exceptions=True
+            *[c.get_one(_filter(c)) for c in candidates], return_exceptions=True
         )
         failed = sum(1 for r in results if isinstance(r, BaseException))
         for result in results:
