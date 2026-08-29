@@ -3,13 +3,12 @@ transform. The agent writes the JSON sidecar; this renders the markdown."""
 
 from __future__ import annotations
 
-import json
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from flow_sdk.fs_store.indexer._frontmatter import _render_frontmatter
 
 # ── Schema ────────────────────────────────────────────────────────────────────
 
@@ -59,29 +58,6 @@ class IndexMdJson(BaseModel):
 
 
 # ── Pure render ───────────────────────────────────────────────────────────────
-
-
-def _render_frontmatter(fields: dict[str, Any]) -> str:
-    """Minimal YAML frontmatter dump — deterministic ordering, no fancy formats."""
-    lines = ["---"]
-    for key, value in fields.items():
-        if value is None or value == "":
-            lines.append(f"{key}: ''")
-        elif isinstance(value, bool):
-            lines.append(f"{key}: {'true' if value else 'false'}")
-        elif isinstance(value, (int, float)):
-            lines.append(f"{key}: {value}")
-        else:
-            # Strings — quote if they contain anything that needs it
-            s = str(value)
-            if any(c in s for c in (":", "#", "\n", "'", '"', "\\")):
-                # Use double quotes with backslash escapes
-                escaped = s.replace("\\", "\\\\").replace('"', '\\"')
-                lines.append(f'{key}: "{escaped}"')
-            else:
-                lines.append(f"{key}: {s}")
-    lines.append("---")
-    return "\n".join(lines)
 
 
 def render_index_md(data: IndexMdJson) -> str:

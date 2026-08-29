@@ -80,13 +80,17 @@ def execution_base(proc: Any) -> Path:
 
 
 def prepare_execution_io(base: Path, fe: "RunEvent") -> tuple[Path, Path]:
-    """Materialize the standardized I/O record for one execution: mkdir
-    ``input/`` + ``output/`` and write ``input/event.json``. THE one writer of
-    the input-record convention. Best-effort — a read-only disk never fails
-    the execution."""
-    input_dir, output_dir = base / "input", base / "output"
+    """Materialize the standardized I/O record for one execution: ``input/``
+    holding ``event.json``, and an empty ``output/`` for the executor to fill.
+
+    The slot NAMES are the layout's constants (``INPUT`` / ``OUTPUT``), which
+    is what makes an execution dir an ``io_folder`` example dir; the
+    ``example.json`` stamp comes later (``_stamp_example``). Best-effort — a
+    read-only disk never fails the execution."""
+    from flow_sdk.schema.data_spec.layout import INPUT, OUTPUT  # noqa: PLC0415
+
+    input_dir, output_dir = base / INPUT, base / OUTPUT
     try:
-        input_dir.mkdir(parents=True, exist_ok=True)
         output_dir.mkdir(parents=True, exist_ok=True)
         _write_json(input_dir / "event.json", fe.model_dump())
     except OSError:
@@ -403,8 +407,10 @@ class GraphWorkflowManager:
             from flow_sdk.tags import FixedWindowStormGuard
 
             self._entry_guard = FixedWindowStormGuard()
+        from flow_sdk.ingest.models import STORM_CAP_PER_MINUTE  # noqa: PLC0415
+
         loaded = self._flows.get(flow_id)
-        cap = loaded.doc.config.max_entries_per_minute if loaded else 30
+        cap = loaded.doc.config.max_entries_per_minute if loaded else STORM_CAP_PER_MINUTE
 
         def _warn() -> None:
             logger.warning(
@@ -644,17 +650,12 @@ class GraphWorkflowManager:
         if agent_id:
             source["agent_id"] = agent_id
         try:
-            from flow_sdk.builtin.dataset import EXAMPLE_META
+            from flow_sdk.schema.data_spec.layout import FolderLayout  # noqa: PLC0415
 
-            _write_json(
-                exec_dir / EXAMPLE_META,
-                {
-                    "metadata": {
-                        "id": str(mint_uuid(f"{run.flow.flow_id}:{run.id}:{seq}")),
-                        "kind": "train",
-                        "source": source,
-                    },
-                },
+            # The ONE example.json writer — the same one FolderLayout.write uses.
+            FolderLayout().write_example_meta(
+                exec_dir,
+                {"id": str(mint_uuid(f"{run.flow.flow_id}:{run.id}:{seq}")), "kind": "train", "source": source},
             )
         except OSError:
             logger.debug("GraphWorkflowManager: example.json stamp failed", exc_info=True)

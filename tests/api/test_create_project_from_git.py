@@ -124,7 +124,7 @@ async def test_create_project_from_git_clones_with_user_token(bootstrapped_clien
         shutil.rmtree(target)
 
     async def _fake_token():
-        return "ghs_test_token", None
+        return "ghs_test_token"
 
     # Patched on the defining module — the action imports the helper lazily
     # inside the function body, so it resolves the patched version at call time.

@@ -114,3 +114,17 @@ version: 1
 data:
   id: ab1f9726-eb39-41cb-86f0-6d57214c24ff
 flowpad:endcapsule identity -->
+
+* **`SourceItemSpec`** — ours. The ingestion envelope a data-source driver emits and the `asset_spec` of `SourceItem` (the row): the fields the DB medium persists. Not an entity; a `DataSpec`.
+* **`ManifestSpec`** — ours. The shape of a data source's `data_source.json` and the `asset_spec` of the `DataSourceSpec` folder asset; every authoring rule is a validator on it.
+* **`KindRegistry`** — ours. The one register-by-kind table (`flow_sdk/utils/kind_registry.py`) behind the FSOrigin, SecretOrigin, email-inbox, serializer, ingest-provider and reflect-mode registries.
+
+## Consolidation seams (2026-08-29, Phase 1)
+
+| Ours | One place | Notes |
+|---|---|---|
+| WS frames | `flow_sdk/api/api_types/messages.py` | The single definition site (shared with the hub's vocabulary). `flow_sdk/api/messages.py` re-exports it and adds only app-only frames. |
+| `credential_for(provider, user=None)` / `token_for(...)` | `flow_sdk/core/oauth/provider_registry.py` | The one credential-precedence policy: explicit user → request user → local user → hub. `_get_github_token_for_current_user`, `get_anthropic_token_for_current_user`, `get_github_token` are thin envelopes over it. |
+| `report_type_metadata(...)` | `flow_sdk/schema/type_info/_report.py` | The shared shape of the flat-JSON report families (agent trace, usage report, asset-cleanup report). |
+| `useJsonDoc<T>(fsRef)` | `ui/src/hooks/use-json-doc.ts` | The one read-once JSON document hook behind `useAgentTraceDoc` / `useUsageReportDoc` / the cleanup-report editor. |
+| `CapabilityRegistry` | `flow_sdk/core/capabilities/registry.py` | A `KindRegistry[CapabilityRunner]` (kinds keep registration order). |

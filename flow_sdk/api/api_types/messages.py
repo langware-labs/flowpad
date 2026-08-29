@@ -1,29 +1,11 @@
 import uuid
 from enum import Enum
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from flow_sdk.api.api_types.api_request import APIRequest
 from flow_sdk.api.api_types.type_id import TypeId
-
-# TODO: AuthContext not available locally, need to implement or stub
-# from request_context.auth_info import AuthContext
-
-
-class AuthContext:
-    """Stub implementation of AuthContext"""
-
-    def __init__(self):
-        self.scope = None
-        self.method = None
-        self.target_type = None
-        self.target_id = None
-        self.direct_resource_type = None
-        self.action = None
-        self.sub_path = None
-        self.query_params = None
-        self.body = None
 
 
 class WSMessageType(Enum):
@@ -37,8 +19,16 @@ class WSMessageType(Enum):
     RESPONSE_MSG = "response_msg"
     PTY_OUTPUT_MSG = "pty_output_msg"
     PTY_SESSION_STATUS_MSG = "pty_session_status_msg"
+    LLM_CONFIG_MSG = "llm_config_msg"
+    FLOW_DATA_MSG = "flow_data_msg"
     HUB_CLIENT_ERROR_MSG = "hub_client_error_msg"
     AUTH_EXPIRED_MSG = "auth_expired_msg"
+    CLOUD_LOGIN_STATUS_MSG = "cloud_login_status_msg"
+    CLOUD_CONNECTION_STATUS_MSG = "cloud_connection_status_msg"
+    PRIVACY_MODE_MSG = "privacy_mode_msg"
+    TOPLOG_STATE_MSG = "toplog_state_msg"
+    # The unified event bus frame (docs/flow-events.md) — carries one FlowEvent.
+    TAG_MSG = "tag_msg"
 
 
 class BaseMessage(BaseModel):
@@ -88,6 +78,8 @@ class OAuthMessage(BaseMessage):
     message_type: str = WSMessageType.OAUTH_MSG.value
     oauth_request_id: str
     status: OAuthMessageStatus
+    message: Optional[str] = None
+    user: Optional[Dict[str, Any]] = None
 
 
 class HubClientErrorMessage(BaseMessage):
@@ -144,20 +136,9 @@ class DataOpMessage(EntityMessage):
 
 class APIMessage(BaseMessage, APIRequest):
     message_type: str = WSMessageType.REST_API_MSG.value
-
-    @property
-    def auth_info(self) -> AuthContext:
-        auth_context = AuthContext()
-        auth_context.scope = self.scope
-        auth_context.method = self.method
-        auth_context.target_type = self.target_typeid.type if self.target_typeid else None
-        auth_context.target_id = self.target_typeid.id if self.target_typeid else None
-        auth_context.direct_resource_type = self.direct_resource_type
-        auth_context.action = self.action
-        auth_context.sub_path = self.sub_path
-        auth_context.query_params = self.query_params
-        auth_context.body = self.body
-        return auth_context
+    # Per-call hub-reflection opt-in for the WS-REST path (the HTTP path uses the
+    # ``Hub-Reflect`` header). Default False — do not reflect.
+    hub_reflect: bool = False
 
 
 class ComputeMessage(BaseMessage):

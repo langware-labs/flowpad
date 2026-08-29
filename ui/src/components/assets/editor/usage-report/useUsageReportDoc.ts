@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
 import { FSRef } from '@sdk';
+import { useJsonDoc } from '@src/hooks/use-json-doc';
 
 /** A session's slice of the report — mirrors the backend SessionRow. */
 export interface UsageSessionRow {
@@ -53,45 +53,8 @@ interface ReportDoc {
   markdown?: string;
 }
 
-/**
- * Loads + parses the report.json behind a UsageReport entity. Read once per
- * fsRef and cached in state.
- */
-export function useUsageReportDoc(fsRef: FSRef | null): {
-  data: UsageReportData | null;
-  markdown: string;
-  error: string | null;
-  loading: boolean;
-} {
-  const [doc, setDoc] = useState<ReportDoc | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const path = fsRef?.path ?? null;
-
-  useEffect(() => {
-    if (!fsRef) return;
-    let cancelled = false;
-    setDoc(null);
-    setError(null);
-    (async () => {
-      try {
-        const raw = await fsRef.read();
-        if (cancelled) return;
-        setDoc(JSON.parse(raw) as ReportDoc);
-      } catch (err) {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path]);
-
-  return {
-    data: doc?.data ?? null,
-    markdown: doc?.markdown ?? '',
-    error,
-    loading: !doc && !error,
-  };
+/** The report.json behind a UsageReport entity, projected to its payload. */
+export function useUsageReportDoc(fsRef: FSRef | null) {
+  const { doc, error, loading } = useJsonDoc<ReportDoc>(fsRef);
+  return { data: doc?.data ?? null, markdown: doc?.markdown ?? '', error, loading };
 }

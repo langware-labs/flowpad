@@ -236,12 +236,8 @@ def _github_api_url_from_origin(git_origin: GitOrigin) -> tuple[str, str, str]:
 
 
 async def _get_github_token(request_info: RequestInfo) -> Optional[str]:
-    """Get GitHub token for the current user.
-
-    Desktop mode: attempts to read from SOD credentials.
-    Returns None if no token is available (public repos still work).
-    """
-    from flow_sdk.core.oauth.github_credentials import get_github_token
+    """The request user's GitHub token; None keeps public repos working."""
+    from flow_sdk.core.oauth.github_credentials import get_github_token  # noqa: PLC0415
 
     return await get_github_token(request_info.user)
 

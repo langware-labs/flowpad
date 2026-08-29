@@ -1,6 +1,7 @@
 import { AssetCleanupReport, FSRef, launchWizard } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEffect, useMemo, useState } from 'react';
+import { useJsonDoc } from '@src/hooks/use-json-doc';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
 import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
@@ -25,40 +26,6 @@ interface CleanupReportDoc {
   findings?: CleanupFinding[];
   summary?: Record<string, number>;
   markdown?: string;
-}
-
-/** Loads + parses the report.json behind an AssetCleanupReport entity. */
-function useCleanupReportDoc(fsRef: FSRef | null): {
-  doc: CleanupReportDoc | null;
-  error: string | null;
-  loading: boolean;
-} {
-  const [doc, setDoc] = useState<CleanupReportDoc | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const path = fsRef?.path ?? null;
-
-  useEffect(() => {
-    if (!fsRef) return;
-    let cancelled = false;
-    setDoc(null);
-    setError(null);
-    (async () => {
-      try {
-        const raw = await fsRef.read();
-        if (cancelled) return;
-        setDoc(JSON.parse(raw) as CleanupReportDoc);
-      } catch (err) {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path]);
-
-  return { doc, error, loading: !doc && !error };
 }
 
 function StatTile({ label, value }: { label: string; value: string }) {
@@ -156,7 +123,7 @@ interface AssetCleanupReportAssetEditorProps {
  */
 export function AssetCleanupReportAssetEditor({ fsRef, report }: AssetCleanupReportAssetEditorProps) {
   const { t } = useLingui();
-  const { doc, error, loading } = useCleanupReportDoc(fsRef);
+  const { doc, error, loading } = useJsonDoc<CleanupReportDoc>(fsRef);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [cleaning, setCleaning] = useState(false);
 

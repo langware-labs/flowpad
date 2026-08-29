@@ -21,9 +21,12 @@ write, or a connected provider reads as MISSING: ``github_credentials``
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 GITHUB = "github"
 ANTHROPIC = "anthropic"
@@ -266,47 +269,77 @@ def prefers_hub_flow(name: str) -> bool:
     return local.endpoints is None or local.kind == OAuthFlowKind.DEVICE
 
 
-async def token_for(provider: str) -> Optional[str]:
-    """This machine's bearer token for ``provider``, or ``None``.
+async def credential_for(provider: str, *, user: Any = None, hub: bool = True) -> Any:
+    """The stored credential for ``provider`` in whatever shape it was saved
+    (GitHub: the token string; Anthropic: the normalized OAuth dict), or ``None``.
 
-    Local SOD first, then the hub. That order is not arbitrary: connection
-    sharing copies a hub-held token down, so on a set-up machine it is already
-    local, and the hub covers the window before a desktop has adopted it.
+    Tiers, in order: the current request's user (re-read, so a token stored
+    since the process booted is visible), then this machine's local user when
+    it is a different principal, then the hub. Connection sharing copies a
+    hub-held token down, so on a set-up machine it is already local, and the
+    hub covers the window before a desktop has adopted it. Background contexts
+    (discovery sweeps, the OAuth poll task) have no request user and land on
+    the local tier. ``hub=False`` skips the hub round trip for a credential
+    that is desktop-local by construction (Anthropic).
 
-    One copy, because the precedence IS the policy. It lived twice — once in
-    `SlackDriver._token` and once in `GoogleDriveDriver._token` — and a third
-    connector would have copied it again, so a change to the order, or a new
-    fallback tier, would have reached one driver and not the others.
+    ``user`` names ONE principal (a ``User`` or its typeid) and disables the
+    chain — the publish path acts for an explicit actor, never a fallback.
 
-    Absence is the normal case for a provider nobody connected, so neither
-    lookup failing is an error worth raising.
+    One copy, because the precedence IS the policy: it lived in six places
+    (two ingest drivers, two "current user" action helpers, a publish-side
+    resolver and a capability probe) and a new tier reached some of them.
+    Never raises: absence is the normal case for a provider nobody connected.
     """
-    import logging  # noqa: PLC0415
-
-    from flow_sdk.core.oauth.provider_probe import token_from_credential  # noqa: PLC0415
-
-    logger = logging.getLogger(__name__)
     name = user_credentials_name(provider)
+    if not name:
+        return None
+
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+    from flow_sdk.request_context.methods import (  # noqa: PLC0415
+        get_current_request_user_fresh,
+        get_user_credentials,
+    )
+
+    async def _read(target: Any) -> Any:
+        u = target if isinstance(target, User) else await User.get_by_typeid(target)
+        if u is None:
+            return None
+        try:
+            return await get_user_credentials(u, name, u.id)
+        except KeyError:  # no SOD entry — the ordinary "not connected"
+            return None
 
     try:
-        from flow_sdk.builtin.user import User  # noqa: PLC0415
-        from flow_sdk.request_context.methods import get_user_credentials  # noqa: PLC0415
-
-        user = await User.get_local()
-        if user is not None and name:
-            token = token_from_credential(await get_user_credentials(user, name, user.id))
-            if token:
-                return token
+        if user is not None:
+            return await _read(user)
+        seen: set[str] = set()
+        for target in (await get_current_request_user_fresh(), await User.get_local()):
+            if target is None or getattr(target, "id", None) in seen:
+                continue
+            seen.add(getattr(target, "id", None))
+            value = await _read(target)
+            if value:
+                return value
     except Exception:  # noqa: BLE001
         logger.debug("%s: no local credential", provider, exc_info=True)
 
+    if not hub:
+        return None
     try:
         from flow_sdk.core.oauth.hub_oauth import (  # noqa: PLC0415
             hub_credential_value,
             hub_credentials_name_for,
         )
 
-        return token_from_credential(await hub_credential_value(hub_credentials_name_for(provider)))
+        return await hub_credential_value(hub_credentials_name_for(provider))
     except Exception:  # noqa: BLE001
         logger.debug("%s: no hub credential", provider, exc_info=True)
         return None
+
+
+async def token_for(provider: str, *, user: Any = None, hub: bool = True) -> Optional[str]:
+    """The bearer token for ``provider`` — ``credential_for`` unwrapped by
+    ``token_from_credential`` (a dict credential yields its ``access_token``)."""
+    from flow_sdk.core.oauth.provider_probe import token_from_credential  # noqa: PLC0415
+
+    return token_from_credential(await credential_for(provider, user=user, hub=hub))

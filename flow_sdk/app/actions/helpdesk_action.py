@@ -176,7 +176,7 @@ async def helpdesk_ensure(project_id: str = "") -> ApiResponse:
                 _get_github_token_for_current_user,
             )
 
-            token, _ = await _get_github_token_for_current_user()
+            token = await _get_github_token_for_current_user()
         except Exception:  # noqa: BLE001
             # The portal is expected to be public; a missing token is normal.
             token = None
@@ -200,7 +200,7 @@ async def helpdesk_ensure(project_id: str = "") -> ApiResponse:
             fs_storage_mount_path=canonical,
             fs_storage_provider=StorageProvider.LOCAL.value,
             visitor_role="owner",
-            git_origin=GitOrigin.from_url(target.portal_git_url, rel_path="."),
+            origin=GitOrigin.from_url(target.portal_git_url, rel_path="."),
         )
         await proj.save(request_info.someone_typeid)
         # Mirrors `_ensure_system_projects`: the field alone does not establish
