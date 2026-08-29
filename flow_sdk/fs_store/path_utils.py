@@ -57,6 +57,19 @@ def canonical_posix_path(p: Path | str) -> str:
     return unicodedata.normalize("NFC", Path(p).resolve().as_posix())
 
 
+def asset_ref_spellings(p: Path | str) -> list[str]:
+    """Every spelling a stored ``asset_ref`` may have for ``p``, deduped.
+
+    ``FSRef`` stores the RESOLVED path; the canonical form additionally
+    NFC-normalizes. An NFD filename on macOS is the only case where the two
+    differ, and a lookup that probes just one of them reads as "unowned" —
+    which lets a writer mint a fresh id for a row that exists.
+    """
+    resolved = str(Path(p).resolve())
+    canonical = canonical_posix_path(resolved)
+    return [resolved] if canonical == resolved else [resolved, canonical]
+
+
 def _path_policy_key(path: Path | str) -> tuple[str, str, str] | None:
     """Return ``(flavour, canonical, root)`` without mangling Windows paths.
 

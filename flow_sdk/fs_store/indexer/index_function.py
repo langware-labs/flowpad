@@ -1164,7 +1164,7 @@ class FSIndexer:
 
             orphan_records[rt] = missing
             if db_rows_known:
-                orphan_sources[rt] = {eid: {"in_db": eid in db_rows, "on_disk": eid in disk_ids} for eid in missing}
+                orphan_sources[rt] = {eid: {"on_disk": eid in disk_ids} for eid in missing}
 
         for rt, ids in orphan_records.items():
             acc = per_type_counts.setdefault(
@@ -1331,19 +1331,15 @@ class FSIndexer:
         - DELETE: remove DB row + FTS entry if present, AND rmtree the records
           dir at ``records_root/<type>/<stem>/`` if present.
 
-        Cleanup chain for a DB-side orphan goes through ``Entity.delete()`` so
-        the orphan removal benefits from the same downstream invalidation a
-        normal API delete would: entity cache, auth cache, uname cache, wiki
-        edges. Without this, ~1000 orphan ids would leave their wiki backlinks
-        and cache references in place until the next natural eviction.
+        Row removal (DB row + FTS + wiki edges) is ``remove_orphan_row`` —
+        the same type-scoped delete the push path uses, deliberately NOT
+        ``Entity.delete()`` (see ``fs_store/orphan_removal.py`` for why).
+        It runs for every orphan, DB row or not, because wiki edges can
+        outlive a row that was deleted previously without proper cleanup.
 
-        For records-dir-only orphans (no DB row), we still issue a best-effort
-        ``wiki.delete_for_id`` because wiki edges can outlive an entity row
-        that was deleted previously without proper cleanup.
-
-        ``id_sources`` (optional) maps each id to ``{"in_db": bool, "on_disk":
-        bool}``. When omitted we attempt every removal — driver returns False
-        harmlessly for missing rows.
+        ``id_sources`` (optional) maps each id to ``{"on_disk": bool}`` — whether
+        a records dir exists to rmtree. The row removal is attempted for every
+        id regardless; the driver returns False harmlessly for a missing row.
 
         Failures are tolerated per-id so a single bad row doesn't abort the sweep.
         """
@@ -1351,51 +1347,23 @@ class FSIndexer:
             return 0, 0
 
         # Lazy imports keep this module a leaf in import topology.
-        from flow_sdk.db import get_db_driver  # noqa: PLC0415
+        from flow_sdk.fs_store.orphan_removal import remove_orphan_row  # noqa: PLC0415
         from flow_sdk.fs_store.record_paths import shadow_dir_for  # noqa: PLC0415
 
-        driver = get_db_driver()
         type_name = str(rt)
         db_removed = 0
         disk_removed = 0
 
         for eid in ids:
-            sources = (id_sources or {}).get(eid, {"in_db": True, "on_disk": True})
-            in_db = sources.get("in_db", True)
-            on_disk = sources.get("on_disk", True)
+            on_disk = (id_sources or {}).get(eid, {}).get("on_disk", True)
 
-            # Best-effort wiki edge cleanup — idempotent, runs for every orphan
-            # regardless of whether the DB row currently exists. Stale edges
-            # pointing at a previously-deleted id would otherwise persist.
             try:
-                from flow_sdk import wiki  # noqa: PLC0415
+                if await remove_orphan_row(eid, type_name):
+                    db_removed += 1
+            except Exception as e:
+                import logging  # noqa: PLC0415
 
-                await wiki.delete_for_id(type_name, eid)
-            except Exception:
-                pass
-
-            if in_db:
-                # Type-scoped driver delete only. We deliberately do NOT go
-                # through ``Entity.get_one(...).delete()`` here because that
-                # path triggers relationship-cascade cleanup that can
-                # unintentionally affect bootstrap-required rows (e.g.
-                # deleting a "project" orphan via the typed-entity path can
-                # ripple through membership relationships and unbind the
-                # ``@local`` compute_node). Orphan sweeps want minimal,
-                # type-scoped row removal — anything beyond FTS belongs in
-                # the regular API delete path.
-                try:
-                    if hasattr(driver, "fts_delete"):
-                        try:
-                            await driver.fts_delete(eid)
-                        except Exception:
-                            pass
-                    if await driver.delete_by_id(eid, type_name):
-                        db_removed += 1
-                except Exception as e:
-                    import logging  # noqa: PLC0415
-
-                    logging.debug(f"[FSIndexer] driver.delete_by_id for {type_name}:{eid}: {e}")
+                logging.debug(f"[FSIndexer] remove_orphan_row for {type_name}:{eid}: {e}")
 
             if action == OrphanAction.DELETE and on_disk:
                 try:

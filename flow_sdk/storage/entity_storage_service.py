@@ -8,7 +8,7 @@ Provides:
 import logging
 import os
 import tempfile
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.config import StorageProvider
@@ -52,14 +52,17 @@ def get_entity_embedded_storage(typeid: TypeId) -> LocalStorageDriver:
 def get_entity_storage(
     typeid: TypeId,
     entity: Optional[Any] = None,
-) -> LocalStorageDriver:
+    *,
+    fallback: Optional[Callable[[TypeId], Any]] = None,
+) -> Any:
     """Get filesystem storage driver for an entity.
 
     Resolution order:
     1. File-backed Git-publishable assets use their entity VFS rooted at the
        local asset checkout.
     2. If entity has fs_storage_provider set, use configured storage mount.
-    3. Otherwise, fall back to embedded storage (temp folder).
+    3. Otherwise, ``fallback(typeid)`` — the temp-folder embedded storage unless
+       the caller has a request-scoped store (``Entity.fs_storage`` does).
 
     Simple and deterministic - no database lookups. Entity only used if already available.
 
@@ -103,6 +106,5 @@ def get_entity_storage(
                     f"Unsupported fs_storage_provider for {typeid}: provider={provider_value}, path={mount_path}"
                 )
 
-    # Fall back to embedded storage (always available, in temp folder)
     logger.debug(f"Using embedded storage for {typeid}")
-    return get_entity_embedded_storage(typeid)
+    return (fallback or get_entity_embedded_storage)(typeid)
