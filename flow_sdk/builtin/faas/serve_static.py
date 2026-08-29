@@ -23,12 +23,13 @@ from fastapi import HTTPException
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, Response, StreamingResponse
 
+from flow_sdk.compute.providers.compute_provider import is_e2b_public_host
+
 # Set before the app bundle loads; ``||`` so a host that already pinned the
 # override (the Electron preload) keeps winning. ``load_config.ts`` honours this
 # ABOVE the compile-time ``__API_URL__`` define.
 API_ORIGIN_SNIPPET = (
-    "<script>globalThis.__FLOWPAD_API_URL__="
-    "globalThis.__FLOWPAD_API_URL__||window.location.origin;</script>"
+    "<script>globalThis.__FLOWPAD_API_URL__=globalThis.__FLOWPAD_API_URL__||window.location.origin;</script>"
 )
 
 _CHUNK_SIZE = 8192
@@ -114,12 +115,49 @@ async def _file_iterator(file_path: Path):
             yield chunk
 
 
+def _browser_scheme(request: Request, api_url_scheme: str | None) -> str:
+    """The scheme the BROWSER used to reach us — not the one we speak.
+
+    ``<base>`` is resolved by the browser, so it has to name the origin the
+    browser is actually on. Behind any TLS-terminating proxy that is not the
+    scheme on our own socket, and getting it wrong is not cosmetic: an https
+    page carrying ``<base href="http://…">`` has every relative asset blocked
+    as mixed content, and the app renders blank.
+
+    Three sources, most authoritative first:
+
+    1. ``X-Forwarded-Proto`` — the standard announcement, believed when sent.
+    2. An E2B public host. Its proxy sends **no** forwarded header at all (the
+       request arrives with Host, Via and X-Cloud-Trace-Context and nothing
+       else), so the Host is the only surviving evidence — and every url on
+       that domain is https by construction (``sandbox_public_url``).
+    3. The configured scheme, else our own. The escape hatch for a deployment
+       whose proxy this function cannot recognise.
+
+    ``inject_api_origin`` solves the same problem in the browser, where it is
+    free (``window.location.origin``). ``<base>`` has to be built server-side,
+    which is why it needs this.
+    """
+    forwarded = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
+    if forwarded:
+        return forwarded
+    if is_e2b_public_host(request.headers.get("host") or ""):
+        return "https"
+    return api_url_scheme or request.url.scheme
+
+
 def _base_url_for(request: Request, api_url_scheme: str | None) -> str:
     request_url = request.url
-    if api_url_scheme and request_url.scheme != api_url_scheme:
-        request_url = request_url.replace(scheme=api_url_scheme)
+    scheme = _browser_scheme(request, api_url_scheme)
+    if request_url.scheme != scheme:
+        request_url = request_url.replace(scheme=scheme)
     base_url = str(request_url).split("?")[0]
     return base_url if base_url.endswith("/") else base_url + "/"
+
+
+#: What a built app's assets are allowed to sit in a browser cache for. An app
+#: is a release; a file being iterated on is not, which is why the caller picks.
+ASSET_CACHE_CONTROL = "public, max-age=3600"
 
 
 async def serve_app_bytes(
@@ -129,6 +167,8 @@ async def serve_app_bytes(
     *,
     inject_base: bool = True,
     api_url_scheme: str | None = None,
+    fallback_index: bool = True,
+    cache_control: str = ASSET_CACHE_CONTROL,
 ) -> Response:
     """Serve one file out of *root*, falling back to its ``index.html``.
 
@@ -137,6 +177,18 @@ async def serve_app_bytes(
     asset URLs resolve, while one served on its own domain must not have its
     document rewritten. The API-origin injection is unconditional — it is what
     makes the page's SDK reach the right backend.
+
+    ``fallback_index`` and ``cache_control`` exist for the same reason: they are
+    the two places where serving ONE FILE differs from serving an APP, and both
+    defaults describe the app.
+
+    * The index fallback is what makes a client-routed app work — ``/about`` is
+      not a file, it is a route the JS inside ``index.html`` handles, so an
+      unknown path must still return that document. A single served file has no
+      router to hand over to, so the fallback would answer a missing file with
+      an unrelated page: a 404 wearing a working page's clothes.
+    * An hour of caching is right for a release and wrong for a file being
+      edited, where the whole point is seeing the next version.
     """
     root_path = Path(root)
     if not root_path.exists() or not root_path.is_dir():
@@ -146,7 +198,7 @@ async def serve_app_bytes(
 
     if not (requested_file.exists() and requested_file.is_file()):
         index_file = root_path / "index.html"
-        if not index_file.exists():
+        if not fallback_index or not index_file.exists():
             return Response(status_code=404, content=f"File not found: {requested_file}")
         requested_file = index_file
 
@@ -172,7 +224,7 @@ async def serve_app_bytes(
         media_type=mime_type or "application/octet-stream",
     )
     response.headers["ETag"] = etag
-    response.headers["Cache-Control"] = "public, max-age=3600"
+    response.headers["Cache-Control"] = cache_control
     return response
 
 

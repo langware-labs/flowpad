@@ -12,12 +12,15 @@ import mimetypes
 import re
 import urllib.parse
 from io import BytesIO
+from pathlib import Path
 from typing import AsyncIterator, List
 
 from starlette.datastructures import UploadFile
-from starlette.responses import StreamingResponse
+from starlette.responses import Response, StreamingResponse
 
 from flow_sdk.api.fs.fs_api import EntityFSReqInfo, VFSPath
+from flow_sdk.builtin.faas.serve_static import AppNotBuilt, serve_app_bytes
+from flow_sdk.config import default_service_config
 from flow_sdk.models import FSEntry
 from flow_sdk.request_context.request_info import RequestInfo
 from flow_sdk.responses import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -337,6 +340,71 @@ async def fetch_remote_entity_file(typeid, vfs_path: str, storage: "LocalStorage
     return True
 
 
+async def serve(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> Response | ApiFailResponse:
+    """Serve a file for the browser to RENDER, at a url that mirrors its path.
+
+    The sibling of ``download``, and the difference is the whole point. Download
+    answers "give me these bytes" with ``Content-Disposition: attachment``; this
+    answers "show me this page", which needs three things download cannot give:
+    an inline disposition, an html-aware read, and — above all — **a url**.
+
+    A page handed to an iframe as ``srcDoc`` has no url of its own, so the
+    browser resolves its relative links and assets against the PARENT document:
+    ``<a href="page2.html">`` in a shown site became ``/dock/shell/page2.html``,
+    an app route holding no file. Every workaround for that (intercepting
+    clicks, inlining assets as data: uris) is a way of compensating for the
+    missing address. Serving supplies the address instead, and because this
+    url's tail IS the file's path, ``page2.html`` beside ``index.html`` resolves
+    to ``…/fs/serve/<dir>/page2.html`` with no ``<base>`` and no rewriting.
+
+    Reach is identical to ``download`` — the same entity storage, the same
+    paths — so this exposes no file that was not already readable. What changes
+    is only how the browser is told to treat the bytes.
+
+    Delegates to ``serve_app_bytes`` rather than restating it: the utf-8 read is
+    a documented contract (a locale-default read serves mojibake off a Windows
+    host), and so are the etag and the streaming asset branch. Two flags depart
+    from the app defaults — no index fallback (a missing file must read as
+    missing, not as some other page) and no caching (a file being iterated on is
+    not a release).
+    """
+    if not request_info.is_get:
+        return ApiFailResponse(message="Serve action requires GET method")
+    if not fs_info.vpath.typeid:
+        return ApiFailResponse(message="Serve action requires typeid")
+    if request_info.request is None:
+        return ApiFailResponse(message="Serve action requires an HTTP request")
+
+    try:
+        storage = await _get_storage_for_entity(request_info)
+        if not await storage.exists(fs_info.vpath.abs_vfspath):
+            return ApiFailResponse(message="File not found", status_code=404)
+
+        target = Path(storage.get_storage_path(fs_info.vpath.abs_vfspath))
+        return await serve_app_bytes(
+            target.parent,
+            target.name,
+            request_info.request,
+            # The url already mirrors the filesystem, so relative refs resolve
+            # correctly on their own; a <base> built from a url ending in a
+            # FILENAME would append "/" and turn that file into a directory.
+            inject_base=False,
+            api_url_scheme=default_service_config.service_urls_config.api_url_scheme,
+            fallback_index=False,
+            cache_control="no-store",
+        )
+    except AppNotBuilt:
+        return ApiFailResponse(message="File not found", status_code=404)
+    except FileNotFoundError:
+        return ApiFailResponse(message="File not found", status_code=404)
+    except Exception as e:
+        if _is_permission_denied_error(e):
+            logger.warning(f"Serve permission denied: {e}")
+            return _permission_denied_response(fs_info.vpath.entity_sub_path)
+        logger.error(f"Serve error: {e}")
+        return ApiFailResponse(message=f"Failed to serve file: {str(e)}")
+
+
 async def download(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> StreamingResponse | ApiFailResponse:
     """Download file.
 
@@ -599,7 +667,9 @@ async def write(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
         # remote/sandbox storage — no local git tree, and the box's own indexer
         # owns the entity row.
         real_path = _real_path(storage, fs_info.vpath.abs_vfspath)
-        await autoversion_commit_local(storage, fs_info.vpath.abs_vfspath, content if isinstance(content, str) else "", real_path=real_path)
+        await autoversion_commit_local(
+            storage, fs_info.vpath.abs_vfspath, content if isinstance(content, str) else "", real_path=real_path
+        )
 
         # The file IS the record for a file-backed entity (agent.md, SKILL.md,
         # a task's folder…), so a write here must land in the row too — else

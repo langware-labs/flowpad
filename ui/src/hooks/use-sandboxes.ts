@@ -789,6 +789,52 @@ export function useSandboxes() {
     [refetch],
   );
 
+  // Upgrading the app INSIDE a box. Its own state again, for the same reason:
+  // three spinners on one card must not be able to mean each other.
+  const [upgradingId, setUpgradingId] = useState<string | null>(null);
+
+  /**
+   * Upgrade the FlowPad app running inside a box, without signing in to it.
+   *
+   * `flow stop`, `flow upgrade`, start — the three commands someone would
+   * otherwise type into a terminal on the machine — run hub-side as one
+   * `ops/upgrade-app` command. Everything about the sequence lives there: the
+   * client cannot compose it, because the start has to carry the hub url into
+   * the process, and a browser cannot.
+   *
+   * Slow by nature (a PyPI install plus an app boot), so it reports through
+   * notifications rather than a dialog: the card's spinner says which box is
+   * busy, and the result says which version it landed on. Deliberately does not
+   * throw — every caller is a click handler.
+   */
+  const upgradeSandbox = useCallback(
+    async (node: ComputeNode) => {
+      setUpgradingId(node.id);
+      try {
+        const result = await node.upgradeApp();
+        notify.success({
+          id: 'sandbox-upgrade',
+          title: t`Sandbox upgraded`,
+          message: result?.version
+            ? t`${node.name || 'The sandbox'} is now running FlowPad ${result.version}.`
+            : t`${node.name || 'The sandbox'} was upgraded and restarted.`,
+        });
+        // The box may now report a different logged-in user or status, and the
+        // list is the honest source for both.
+        await refetch();
+      } catch (err) {
+        notify.error({
+          id: 'sandbox-upgrade',
+          title: t`Could not upgrade the sandbox`,
+          message: errorMessage(err, 'The sandbox did not confirm the upgrade.'),
+        });
+      } finally {
+        setUpgradingId(null);
+      }
+    },
+    [refetch],
+  );
+
   const deleteSandbox = useCallback(
     async (node: ComputeNode) => {
       setDeletingId(node.id);
@@ -863,6 +909,8 @@ export function useSandboxes() {
     deletingId,
     logoutSandbox,
     loggingOutId,
+    upgradeSandbox,
+    upgradingId,
     details,
   };
 }

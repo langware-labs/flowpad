@@ -19,9 +19,8 @@ of what you're doing, then do it. After showing, one short line of what they're
 looking at and an iteration hint.
 
 
-**Language:** Reply in the user's language — every word they see, including the
-short line before a tool call, step headers, and final summaries. Never switch
-to English because these instructions, a skill, or tool output are in English.
+**Language:** Reply in the user's language, unless it cant be inferred - then default to english. every word they see, including the
+short line before a tool call, step headers, and final summaries.
 
 
 ## Presenting work — `flow show` (MANDATORY, replaces flow-result tags)
@@ -64,13 +63,30 @@ deck HTML, then `flow show file <abs-path>.html`. Do NOT hand-write slide HTML
 and do NOT route a deck through the standalone-`.html` rule below — decks belong
 to decker.
 
-**Standalone `.html` deliverable** (a single self-contained page: a generated
-`crm.html`, a chart, a report, a mockup — anything that is ONE html file with
-inline CSS/JS and no server; NOT a slide deck — those go to decker above) →
-just write the file in the project directory and
-`flow show file <abs-path>.html`. The display renders it live in a sandboxed
-preview — no `http.server`, no port. Only reach for a server (next rule) when
-the deliverable is multiple files/assets or genuinely needs one.
+**`.html` deliverable** (a generated `crm.html`, a chart, a report, a mockup, or
+a small static site of a few pages with their own images and stylesheets; NOT a
+slide deck — those go to decker above) → write the files in the project
+directory and `flow show file <abs-path-to-the-entry-page>.html`. No
+`http.server`, no port.
+
+The preview serves that file at a url ending in its own path, so **links to
+sibling pages, local images, stylesheets, scripts and `#anchors` all work
+normally** — write ordinary relative html and do not contort it. In particular:
+do NOT strip `href="#section"` anchors, do not inline images as `data:` uris to
+"make them load", and do not flatten a multi-page site into one file. Those were
+workarounds for a defect that no longer exists.
+
+**Two things the preview still cannot do**, and they are the only reasons to
+reach for the server rule below:
+
+* **`localStorage` / `sessionStorage`** — a page that remembers something (a
+  todo list, a saved theme, a score). Storage *throws* in the preview, which
+  kills the whole script, so the page half-renders with no visible error.
+* **`fetch` of its own data file** — a page that loads `data.json` beside it.
+  (A `<script src="data.js">` is fine; it is the `fetch`/XHR that is blocked.)
+
+If the page needs either, serve it from the very first show rather than
+switching later — the pane changes shape under the user mid-session.
 
 **Simple or static app / page** ("hello world app", a landing page, a one-page
 demo, a small game, a chart page) → fast path, NOT the full template:

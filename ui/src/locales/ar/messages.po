@@ -284,6 +284,12 @@ msgstr "{0} مُنتشر"
 msgid "{0} is indexed without a valid source path and cannot be opened."
 msgstr "{0} مُفهرس بدون مسار مصدر صحيح ولا يمكن فتحه."
 
+#. placeholder {0}: node.name || 'The sandbox'
+#. placeholder {1}: result.version
+#: src/hooks/use-sandboxes.ts
+msgid "{0} is now running FlowPad {1}."
+msgstr ""
+
 #. placeholder {0}: workerLabel(unavailableWorker)
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "{0} is unavailable"
@@ -392,6 +398,11 @@ msgstr "{0} نوع"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "types_time"
 msgstr "{0} نوع · {1}"
+
+#. placeholder {0}: node.name || 'The sandbox'
+#: src/hooks/use-sandboxes.ts
+msgid "{0} was upgraded and restarted."
+msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "{changedCount} changed"
@@ -4071,6 +4082,7 @@ msgstr "تعذّر تسجيل الخروج من Sandbox"
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-chat-pane.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 msgid "Could not start"
@@ -4121,6 +4133,10 @@ msgstr "تعذر تحديث الأسرار المرفقة"
 #: src/components/assets/editor/skill/SkillAssetEditor.tsx
 msgid "Could not update eval flag"
 msgstr "تعذر تحديث علم التقييم"
+
+#: src/hooks/use-sandboxes.ts
+msgid "Could not upgrade the sandbox"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -6552,6 +6568,7 @@ msgstr "تعذر بدء الجلسة"
 
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-chat-pane.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 msgid "Failed to start the build session."
@@ -6927,6 +6944,10 @@ msgstr "Flowpad Hub"
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "يقوم Flowpad بتهيئة المستودع، ثم يقترح التثبيت على فرع مراجعة منفصل."
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -8977,6 +8998,10 @@ msgstr "جارٍ تحميل المقاييس..."
 msgid "Loading organizations…"
 msgstr ""
 
+#: src/components/html-preview/HtmlPreview.tsx
+msgid "Loading preview…"
+msgstr ""
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Loading project resources..."
 msgstr "جاري تحميل موارد المشروع..."
@@ -9491,6 +9516,7 @@ msgid "Message Attachment"
 msgstr "مرفق الرسالة"
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
+#: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 msgid "Message not queued"
 msgstr "تعذر إدراج الرسالة في الطابور"
 
@@ -11469,6 +11495,7 @@ msgid "Open Spec Session"
 msgstr "فتح جلسة المواصفات"
 
 #: src/components/diagnose/open-in-terminal-button.tsx
+#: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Open terminal"
 msgstr "فتح المحطة الطرفية"
@@ -13867,6 +13894,10 @@ msgstr "تم تشغيل Sandbox من دون تسجيل الدخول إلى ال�
 msgid "Sandbox unavailable"
 msgstr "الصندوق غير متاح"
 
+#: src/hooks/use-sandboxes.ts
+msgid "Sandbox upgraded"
+msgstr ""
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sandboxes"
 msgstr "الصناديق"
@@ -16190,6 +16221,14 @@ msgstr "المهارة \"{skillName}\" غير مثبَّتة."
 msgid "The Agent bundle is not available."
 msgstr "حزمة الوكيل غير متاحة."
 
+#: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
+msgid "The agent has asked a question — answer it in the terminal."
+msgstr "طرح الوكيل سؤالاً — أجب عنه في الطرفية."
+
+#: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
+msgid "The agent's plan is ready — approve it in the terminal."
+msgstr "خطة الوكيل جاهزة — وافق عليها في الطرفية."
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "The analysis completed but did not produce asset-scoped findings."
 msgstr "اكتمل التحليل، لكنه لم ينتج نتائج خاصة بالأصل."
@@ -16429,6 +16468,10 @@ msgstr "سيصلهم بريد إلكتروني، والصندوق الرملي �
 msgid "thinking"
 msgstr "التفكير"
 
+#: src/components/entity-execution-panel/current-activity.ts
+msgid "Thinking"
+msgstr "التفكير"
+
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "Thinking:"
 msgstr "التفكير:"
@@ -16622,6 +16665,10 @@ msgstr "تؤدي هذه العملية إلى حذف مجلد مكتب المس�
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "This runs in the background — feel free to keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
 msgstr "تعمل هذه العملية في الخلفية، ويمكن الاستمرار في العمل بكل حرية. عند الانتهاء، ستكون النتيجة (وأي إجراءات) متاحة في الصفحة الرئيسية."
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "this sandbox"
+msgstr ""
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This sandbox could not be set up."
@@ -16892,6 +16939,10 @@ msgstr "الرموز"
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Tomorrow"
 msgstr "غداً"
+
+#: src/components/html-preview/HtmlPreview.tsx
+#~ msgid "Too large to preview:"
+#~ msgstr ""
 
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Too many attempts. Wait a few minutes and try again."
@@ -17327,10 +17378,27 @@ msgstr "يحدّث الخطة"
 msgid "Updating…"
 msgstr "جاري التحديث…"
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Upgrade"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+#: src/pages/hub-home/HubHome.tsx
+msgid "Upgrade FlowPad on this sandbox"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Upgrade FlowPad on this sandbox?"
+msgstr ""
+
 #. placeholder {0}: pypi.latest
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrade to v{0}"
 msgstr "الترقية إلى الإصدار {0}"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Upgrading — this takes a minute or two"
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrading…"

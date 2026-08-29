@@ -96,6 +96,7 @@ _HOOK_CAPABILITIES: "HookCapabilities" = {
     HookScope.PROCESS: process_capability(response_events=_RESPONSE_EVENTS),
 }
 
+
 class ClaudeDriver:
     """Vendor glue for Claude Code. Implements the ``WorkerDriver`` Protocol."""
 
@@ -142,6 +143,17 @@ class ClaudeDriver:
         agents_json = process.get_agents_json()
         if agents_json:
             cmd.agents_json = agents_json
+        # Pin the host terminal's palette. Claude paints in truecolor (Flowpad
+        # sets COLORTERM=truecolor), so none of its foregrounds are ANSI-indexed
+        # and swapping xterm's 16-slot theme host-side recolors nothing — the RGB
+        # values come from Claude's own theme setting, read once at launch. Left
+        # unset, a worker in a light terminal inherits the user's global (usually
+        # dark) theme and paints #999999/#b1b9f9 on white. ``--settings`` is a
+        # per-process layer, so this never touches ~/.claude/settings.json.
+        # How a theme reaches a given CLI is that vendor's business: Claude has a
+        # first-class ``theme`` setting; codex/copilot/opencode are unaddressed.
+        if process.terminal_theme:
+            cmd.settings_json = {**(cmd.settings_json or {}), "theme": process.terminal_theme}
         return cmd
 
     def restart_snapshot(
@@ -373,9 +385,7 @@ class ClaudeDriver:
                 try:
                     await process.save()
                 except Exception:
-                    logger.debug(
-                        "ClaudeDriver.headless_prompt: fork-strip save failed", exc_info=True
-                    )
+                    logger.debug("ClaudeDriver.headless_prompt: fork-strip save failed", exc_info=True)
 
         # The three non-default arguments are claude's documented divergences;
         # each is explained once, on run_headless_turn's own docstring.

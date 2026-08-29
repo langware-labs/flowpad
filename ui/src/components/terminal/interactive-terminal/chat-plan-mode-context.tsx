@@ -4,19 +4,49 @@ import { notify } from '@src/notifications/notify';
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 
 /**
- * Shared "plan mode" state for the headless chat surface. The composer
- * (ChatComposerBar) owns the toggle/pill; the plan-interaction bar
- * (PlanInteractionBar) owns the question/Execute cards. Both need the same
- * `planPending` flag and the same `process.prompt(...)` wiring, so it lives in
- * one context provided around the whole InteractiveTerminal subtree.
+ * Shared "plan mode" state for the chat surface. The composer (ChatComposerBar)
+ * owns the toggle/pill; the plan-interaction bar (PlanInteractionBar) owns the
+ * question/Execute cards. Both need the same `planPending` flag and the same
+ * `process.prompt(...)` wiring, so it lives in one context provided around the
+ * whole InteractiveTerminal subtree.
  *
  * "mode" here is NOT a live process state — it is just which `--permission-mode`
  * the next headless turn is sent with: `plan` (read-only) while the toggle is
  * on, the process's normal configured mode otherwise. See the plan doc.
+ *
+ * THREE flags, because "can the user act on this here?" has three different
+ * answers and one flag serving all of them is the bug this split fixes.
+ *
+ * A chat surface can be sitting on a PTY worker — the normal state once a
+ * session has visited the terminal, since reconciliation is one-directional
+ * (docs/viewmodes.md). What that transport can and cannot do:
+ *
+ *  - SENDING a plan turn needs headless. The per-turn `permission_mode` is read
+ *    only on the print-mode branch of `_http_prompt`; the PTY branch returns
+ *    `_run_pty_prompt` before it is ever consulted, so the pill would be a lie.
+ *  - ANSWERING a pending question inline ALSO needs headless, but for a
+ *    different reason, and it took a live experiment to establish: on a PTY
+ *    worker the answer is pasted into a TUI that is blocked on its own question
+ *    picker. The backend rejects the turn (`submission-error` /
+ *    `user-turn-not-landed`) AND the prose is consumed as keystrokes, toggling
+ *    checkboxes and marking questions answered in the picker the user has to
+ *    come back to. Worse than a no-op, so the card must not offer it.
+ *  - KNOWING a question is pending needs neither. That is `respondEnabled`, and
+ *    it is what keeps a PTY-backed chat from showing an idle worker with an
+ *    unexplained "Asking a question" chip — it renders a read-only notice
+ *    pointing at the terminal instead.
  */
 interface ChatPlanModeValue {
-  /** Toggle is offered only for a headless (`pty_mode===false`) capable worker. */
-  enabled: boolean;
+  /** The plan pill / Shift+Tab. Headless (`pty_mode===false`) + capable worker
+   *  only: no other transport can carry `--permission-mode plan`. */
+  planToggleEnabled: boolean;
+  /** There is a session that could have a pending interaction — the bar may
+   *  render something. Transport-agnostic. */
+  respondEnabled: boolean;
+  /** Whether an answer submitted HERE actually reaches the agent. Headless
+   *  only: on a PTY worker the turn is rejected and the paste corrupts the
+   *  TUI's own picker, so the bar degrades to a read-only notice. */
+  canAnswerInline: boolean;
   /** The next manual send goes out as a read-only `plan` turn. */
   planPending: boolean;
   togglePlan: () => void;
@@ -30,7 +60,9 @@ interface ChatPlanModeValue {
 }
 
 const FALLBACK: ChatPlanModeValue = {
-  enabled: false,
+  planToggleEnabled: false,
+  respondEnabled: false,
+  canAnswerInline: false,
   planPending: false,
   togglePlan: () => {},
   setPlanPending: () => {},
@@ -42,7 +74,9 @@ const FALLBACK: ChatPlanModeValue = {
 const Ctx = createContext<ChatPlanModeValue | null>(null);
 
 export function ChatPlanModeProvider({ process, children }: { process: AgenticProcess | null; children: ReactNode }) {
-  const enabled = !!process && process.isHeadless && !!process.supports_plan_mode;
+  const canAnswerInline = !!process && process.isHeadless;
+  const planToggleEnabled = canAnswerInline && !!process.supports_plan_mode;
+  const respondEnabled = !!process;
   const [planPending, setPlanPending] = useState(false);
   const [sending, setSending] = useState(false);
 
@@ -82,8 +116,18 @@ export function ChatPlanModeProvider({ process, children }: { process: AgenticPr
   }, [send]);
 
   const value = useMemo<ChatPlanModeValue>(
-    () => ({ enabled, planPending, togglePlan, setPlanPending, sending, answer, execute }),
-    [enabled, planPending, togglePlan, sending, answer, execute],
+    () => ({
+      planToggleEnabled,
+      respondEnabled,
+      canAnswerInline,
+      planPending,
+      togglePlan,
+      setPlanPending,
+      sending,
+      answer,
+      execute,
+    }),
+    [planToggleEnabled, respondEnabled, canAnswerInline, planPending, togglePlan, sending, answer, execute],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

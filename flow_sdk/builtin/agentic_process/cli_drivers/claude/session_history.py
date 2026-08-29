@@ -109,6 +109,24 @@ def load_session_history(session_id: str) -> list[FlowData]:
     return [entry_to_flowdata(e) for e in transcript.entries]
 
 
+def _stamp_entry_id(attributes: dict, entry) -> None:
+    """Name the transcript entry this frame came from, as an ATTRIBUTE.
+
+    ``process_entry`` already carries the entry, but ``FlowData.to_xml`` writes
+    only attributes and content — so a frame that reaches a client over the
+    ``observe-turn`` SSE stream arrives with no entry identity at all, and the
+    client's ``lastHeldTranscriptEntryId`` can never advance past the last
+    entry HISTORY gave it. It then states that stale position on every re-open
+    and the stream replays everything since (FLOWPAD-1981).
+
+    ``setdefault`` and the attribute name both match codex's converter, which
+    has stamped this all along (``codex/session_history.py``).
+    """
+    entry_id = getattr(entry, "id", None)
+    if entry_id:
+        attributes.setdefault("transcript-entry-id", str(entry_id))
+
+
 def entry_to_flowdata(entry, observation_kind: str = "replay") -> FlowData:
     """Convert one parsed ``TranscriptEntry`` to a UI-renderable FlowData.
 
@@ -132,6 +150,7 @@ def entry_to_flowdata(entry, observation_kind: str = "replay") -> FlowData:
             fd.attributes["observation-kind"] = observation_kind
             if getattr(entry, "virtual", False):
                 fd.attributes["is-virtual"] = "true"
+            _stamp_entry_id(fd.attributes, entry)
             fd.process_entry = pe.to_dict()
             return fd
     attributes = {
@@ -140,6 +159,7 @@ def entry_to_flowdata(entry, observation_kind: str = "replay") -> FlowData:
         "subtype": kind,
         "observation-kind": observation_kind,
     }
+    _stamp_entry_id(attributes, entry)
     flow_value: Any = {}
     text = getattr(entry, "text", None)
     if kind == "user_message":
