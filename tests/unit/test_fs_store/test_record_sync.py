@@ -16,6 +16,7 @@ All ≤5s, real FSRecord + SQLite, no mocks of the units under test.
 import json
 import uuid
 from pathlib import Path
+from typing import Optional
 
 import pytest
 import pytest_asyncio
@@ -28,8 +29,7 @@ from flow_sdk.db.drivers.db_driver import DBConfig
 from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver
 from flow_sdk.fs_store.fs_record import FSRecord, _json_default
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.schema.datum import Datum
-
+from flow_sdk.schema.data_spec import DataSpec, SpecType, to_authoring_form
 
 # ── Test type: one field per persist policy ──────────────────────────────────
 
@@ -50,8 +50,8 @@ class _SyncEntity(Entity):
     forced: str | None = APIField(default=None, persist=Persist.TRUE)
     # DEFAULT but NOT in _SyncMeta → not persisted
     ghost: str | None = APIField(default=None)
-    # A MODEL-valued persisted field (Dataset.contract is the real one).
-    contract: Datum | None = APIField(default=None, persist=Persist.TRUE)
+    # A MODEL-valued persisted field (Dataset.spec is the real one).
+    spec: Optional[SpecType] = APIField(default=None, persist=Persist.TRUE)
 
 
 def _register_meta_model():
@@ -66,6 +66,7 @@ _register_meta_model()
 # their TypeInfo so the builtin-type round-trip tests resolve persist=DEFAULT
 # against the real meta_model rather than the BaseMeta fallback.
 from flow_sdk.schema.type_info import register_all as _register_all  # noqa: E402
+
 _register_all()
 
 
@@ -150,23 +151,28 @@ class TestModelValuedFields:
     validation on the next load: silent corruption, with no exception to notice
     it by. These pin the encode, not an exception."""
 
-    def test_a_model_value_is_written_as_json_not_a_repr(self, tmp_path):
+    def test_a_shape_class_is_written_as_its_authoring_form(self, tmp_path):
+        """The seam is ``metadata_payload``: it dumps THROUGH Pydantic, so a
+        ``SpecType`` field's own serializer runs and the writer never sees a
+        class. (A bare class handed to the raw writer is not a supported input.)"""
+        e = _SyncEntity(name="alpha", spec={"tags": ["string"]})
+        payload = e.metadata_payload()
+        assert payload["spec"] == {"tags": ["string"]}          # the compact authoring form
         rec = FSRecord(type="test_sync", id=str(uuid.uuid4()))
-        rec.save_metadata({"contract": Datum(kind="array", items=[Datum(kind="string")])})
-        on_disk = _meta_on_disk(rec)["contract"]
-        assert isinstance(on_disk, dict), f"written as {type(on_disk).__name__}: {on_disk!r}"
-        assert on_disk["kind"] == "array"
-        assert Datum.model_validate(on_disk).items[0].kind == "string"  # re-reads
+        rec.save_metadata(payload)
+        on_disk = _meta_on_disk(rec)["spec"]
+        assert on_disk == {"tags": ["string"]}
+        assert to_authoring_form(DataSpec.parse(on_disk)) == on_disk  # re-reads
 
     def test_a_collection_of_models_is_encoded_too(self):
         """The coercion belongs to the WRITER, so it reaches values a per-field
         branch on the producer would miss — a list or dict of models."""
         encoded = json.loads(json.dumps(
-            {"many": [Datum(value=1)], "by_name": {"a": Datum(value=2)}},
+            {"many": [DataSpec.parse({"n": "int"})(n=1)], "by_name": {"a": DataSpec.parse({"b": "bool"})(b=True)}},
             default=_json_default,
         ))
-        assert encoded["many"][0]["value"] == 1
-        assert encoded["by_name"]["a"]["value"] == 2
+        assert encoded["many"][0] == {"n": 1}
+        assert encoded["by_name"]["a"] == {"b": True}
 
     def test_an_unknown_type_keeps_the_historical_str_coercion(self):
         assert json.loads(json.dumps({"p": Path("/x/y")}, default=_json_default))["p"] == "/x/y"

@@ -20,8 +20,7 @@ from flow_sdk.builtin.email_inbox_driver import (
     EmailInboxDriver,
     EmailInboxError,
     get_email_inbox_driver,
-    get_email_inbox_registry,
-    normalize_email_inbox_kind,
+    EMAIL_INBOX_DRIVERS,
 )
 from flow_sdk.cloud_client.shared.errors import HubError
 
@@ -38,7 +37,7 @@ DESCRIPTOR = {
 
 class TestTheFamily:
     def test_the_hub_member_is_registered(self):
-        assert "flowpad-hub" in get_email_inbox_registry().kinds()
+        assert "flowpad-hub" in EMAIL_INBOX_DRIVERS.kinds()
 
     def test_hub_has_one_spelling_across_families(self):
         """`flowpad-hub` is also `HubSecretDriver.kind`. Two families disagreeing
@@ -48,7 +47,7 @@ class TestTheFamily:
         assert HubEmailInboxDriver.kind == HubSecretDriver.kind == "flowpad-hub"
 
     def test_the_bare_alias_resolves(self):
-        assert normalize_email_inbox_kind("hub") == "flowpad-hub"
+        assert EMAIL_INBOX_DRIVERS.normalize("hub") == "flowpad-hub"
         assert get_email_inbox_driver("hub").kind == "flowpad-hub"
 
     def test_an_unknown_kind_names_itself(self):

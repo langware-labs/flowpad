@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+
 from tests.test_settings import test_service_config
 
 pytestmark = pytest.mark.skipif(
@@ -20,11 +21,10 @@ pytestmark = pytest.mark.skipif(
     reason="Skipping long tests when DEEP_TESTING is disabled",
 )
 
-from flow_sdk.server.app import app
 from flow_sdk.fs_store import get_default_records_root, set_default_records_root
-
-from flow_sdk.fs_store.indexer.functions.task import extract_task
 from flow_sdk.fs_store.fs_record import FSRecord
+from flow_sdk.server.app import app
+
 TaskResource = FSRecord  # noqa: F401 — register type
 
 

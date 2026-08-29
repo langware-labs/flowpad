@@ -8,6 +8,7 @@ import pytest
 from flow_sdk.builtin.group import Group
 from flow_sdk.builtin.prompt import Prompt
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 pytestmark = pytest.mark.asyncio
 
@@ -63,7 +64,6 @@ async def test_prompt_project_scoped_create_materializes_md(bootstrapped_client,
     from pathlib import Path
 
     from flow_sdk.fs_store.fs_ref import FSRef
-    from flow_sdk.fs_store.indexer.functions.prompt import extract_prompt
 
     client = bootstrapped_client
     resp = await client.post(
@@ -86,7 +86,7 @@ async def test_prompt_project_scoped_create_materializes_md(bootstrapped_client,
     assert md.is_file(), "create must materialize the backing .md"
 
     # what the indexer would read back equals what the API wrote
-    [rec] = extract_prompt(FSRef(Path(md)), created["id"])
+    [rec] = SchemaRegistry.get("prompt").from_disk_fn(FSRef(Path(md)), created["id"])
     assert rec.id == created["id"]
     assert rec.name == "Code review pass"
     assert rec.icon == "Rocket"
@@ -98,6 +98,6 @@ async def test_prompt_project_scoped_create_materializes_md(bootstrapped_client,
     edited = await Prompt.get_by_id(created["id"])
     edited.color = "#8b5cf6"
     await edited.save()
-    [rec2] = extract_prompt(FSRef(Path(md)), created["id"])
+    [rec2] = SchemaRegistry.get("prompt").from_disk_fn(FSRef(Path(md)), created["id"])
     assert rec2.color == "#8b5cf6"
     assert rec2.text == "Review the diff."  # body preserved

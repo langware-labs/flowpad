@@ -13,7 +13,7 @@ ProgressCallback = Callable[[int, int], Awaitable[None]]
 from pydantic import BaseModel, SerializerFunctionWrapHandler, model_serializer, model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
-from flow_sdk.builtin.cloud_origin import CloudOrigin, CloudOriginLocal
+from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.type_id import TypeId
 

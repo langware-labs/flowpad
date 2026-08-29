@@ -20,9 +20,6 @@ from pathlib import Path
 from flow_sdk.capsules import AssetCapsule, strip_capsule_blocks
 from flow_sdk.fs_store.indexer._frontmatter import _extract_body, _extract_frontmatter, _yaml_load
 from flow_sdk.fs_store.indexer.functions.markdown import (
-    extract_markdown as _extract_markdown,
-)
-from flow_sdk.fs_store.indexer.functions.markdown import (
     markdown_id as _markdown_id,
 )
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
@@ -41,7 +38,7 @@ class _MarkdownRecordAdapter:
         from flow_sdk.fs_store.fs_ref import FSRef
         ref = FSRef(path)
         resolved_id = SchemaRegistry.get("markdown").mint_entity_id(ref, derive=True, overwrite=True)
-        return _extract_markdown(ref, resolved_id)[0]
+        return SchemaRegistry.get("markdown").from_disk_fn(ref, resolved_id)[0]
 
 MarkdownRecord = _MarkdownRecordAdapter
 from flow_sdk.fs_store.fs_ref import FSRef

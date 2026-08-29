@@ -13,6 +13,7 @@ from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
 CLAUDE_MEMORY = TypeMetadata(
+    hub_main_file="document.md",
     type=EntityType.CLAUDE_MEMORY,
     icon="Brain",
     browseable_by=ViewMode.ADVANCED,

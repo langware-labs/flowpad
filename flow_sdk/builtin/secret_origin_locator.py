@@ -6,17 +6,14 @@ because they never contain the secret value.
 """
 from __future__ import annotations
 
-from typing import Any
-
 from pydantic import BaseModel
+
+from flow_sdk.utils.kind_registry import kind_discriminator
 
 DEFAULT_SECRET_ORIGIN_KIND = "local"
 
 
-def resolve_secret_origin_kind(value: Any) -> str:
-    if isinstance(value, dict):
-        return str(value.get("kind") or DEFAULT_SECRET_ORIGIN_KIND)
-    return str(getattr(value, "kind", DEFAULT_SECRET_ORIGIN_KIND) or DEFAULT_SECRET_ORIGIN_KIND)
+resolve_secret_origin_kind = kind_discriminator(DEFAULT_SECRET_ORIGIN_KIND)
 
 
 class SecretOriginLocator(BaseModel):

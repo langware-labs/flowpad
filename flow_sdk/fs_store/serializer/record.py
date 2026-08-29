@@ -32,18 +32,16 @@ def fts_content(obj: Any, info: Any) -> str:
 def spec_extractor(type_name: str):
     """The ``from_disk_fn`` for ``type_name``; the registry lookup and the
     cycle-guarded imports resolve on the first record, not on every one."""
-    from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+    from pydantic import ValidationError  # noqa: PLC0415
+
+    from flow_sdk.capsules.errors import CapsuleError  # noqa: PLC0415
+    from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+    from flow_sdk.fs_store.fs_ref import FrontMatterFsRef, FSRef  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.local_origin import local_origin_for_path  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     def extract(ref: FSRef, resolved_id: str) -> list:
-        from pydantic import ValidationError  # noqa: PLC0415
-
-        from flow_sdk.capsules.errors import CapsuleError  # noqa: PLC0415
-        from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
-        from flow_sdk.fs_store.fs_ref import FrontMatterFsRef  # noqa: PLC0415
-        from flow_sdk.fs_store.origin.local_origin import local_origin_for_path  # noqa: PLC0415
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-        info = SchemaRegistry.get(type_name)
+        info = SchemaRegistry.get(type_name)   # a dict hit; the info may be enriched after registration
         root = info.asset_root_for(ref._path)
         if root is None:
             return []

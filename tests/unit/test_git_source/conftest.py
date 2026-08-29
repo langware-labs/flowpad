@@ -1,19 +1,19 @@
 """Shared setup for the git-source matrix.
 
 Two repositories, deliberately. The receiving project and the asset repository
-are not necessarily the same git, and every delivery mode except `in-place`
-depends on that being genuinely true rather than simulated with two directories
-in one repo.
+are not necessarily the same git, and `copy` (vendoring into the receiving
+repo) depends on that being genuinely true rather than simulated with two
+directories in one repo.
 """
 import subprocess
 from pathlib import Path
 
-import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — side-effect: register_all()
-import flow_sdk.ingest.drivers  # noqa: F401 — side-effect: register every driver
-
-import flow_sdk.db.drivers.db_driver as db_driver_mod
 import pytest
 import pytest_asyncio
+
+import flow_sdk.db.drivers.db_driver as db_driver_mod
+import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — side-effect: register_all()
+import flow_sdk.ingest.drivers  # noqa: F401 — side-effect: register every driver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.project import Project
 from flow_sdk.core.entity.entity_model import Entity
@@ -112,13 +112,10 @@ def make_source(asset_repo, receiving, tmp_path, monkeypatch):
     """
     monkeypatch.chdir(tmp_path)
 
-    async def _make(mode: str = ReflectMode.IN_PLACE.value):
-        if mode == ReflectMode.IN_PLACE.value:
+    async def _make(mode: str = ReflectMode.NONE.value):
+        if mode == ReflectMode.NONE.value:
             landing, into = asset_repo, ""
-        elif mode == ReflectMode.MATERIALIZE.value:
-            landing = tmp_path / "cache" / "asset"
-            into = str(landing)
-        else:  # vendor
+        else:  # copy — vendored into the receiving repo's tracked tree
             landing, into = receiving, str(receiving)
 
         proj = Project(name="git-project", fs_storage_mount_path=str(landing))

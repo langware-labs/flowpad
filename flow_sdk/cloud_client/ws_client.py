@@ -10,7 +10,7 @@ import ssl
 import uuid
 from contextlib import asynccontextmanager
 from functools import lru_cache
-from typing import Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 from urllib.parse import urlsplit, urlunsplit
 
 import websockets
@@ -21,12 +21,21 @@ from websockets.exceptions import (
     InvalidStatus,
 )
 
-from flow_sdk.cli.auth.credentials import UserHubCredentials, load_credentials
 from flow_sdk.cloud_client.auth_state import invalidate_hub_login, set_connection_status
 from flow_sdk.cloud_client.auth_status import HubConnectionStatus
 from flow_sdk.cloud_client.client import ApiConfig
 from flow_sdk.cloud_client.client_hooks import attach_machine_id
 from flow_sdk.cloud_client.constants import EXPIRY_LEEWAY_SECONDS
+
+if TYPE_CHECKING:
+    from flow_sdk.cli.auth.credentials import UserHubCredentials
+
+
+def load_credentials() -> "UserHubCredentials | None":
+    # Lazy: flow_sdk.cli imports cloud_client; a module-level import would close the cycle.
+    from flow_sdk.cli.auth.credentials import load_credentials as _load
+
+    return _load()
 
 InboundHandler = Callable[[dict], Awaitable[None]]
 HUB_WS_REQUEST_DEFAULT_TIMEOUT_SECONDS = 10.0

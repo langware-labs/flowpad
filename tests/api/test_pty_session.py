@@ -4,9 +4,6 @@ PTY Session WebSocket Notification Tests (adapted from FlowPad).
 Tests that when a PTY session is created via REST API, a WebSocket notification is sent to watchers.
 """
 
-import asyncio
-import json
-import uuid
 
 import pytest
 

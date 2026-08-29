@@ -504,6 +504,8 @@ async def test_count_mismatch_equal_date_dispatches_fetch_and_heals(hub_base_url
     conv_id = await _hub_create_conversation(hub_base_url, api_key, title=f"incident-{uuid.uuid4()}")
     await _hub_add_message(hub_base_url, api_key, conv_id, "m1")
     await _hub_add_message(hub_base_url, api_key, conv_id, "m2")
+    hub_row = await _hub_get_conversation(hub_base_url, api_key, conv_id)
+    hub_updated = Conversation._as_datetime(hub_row.get("updated_date"))
 
     someone = await _local_user_typeid()
     await handle_conversation_list(someone)
@@ -516,7 +518,7 @@ async def test_count_mismatch_equal_date_dispatches_fetch_and_heals(hub_base_url
     assert settled is not None
 
     healthy = await _poll_until(
-        _projected(conv_id, expected_count=2),
+        _projected(conv_id, expected_count=2, hub_updated=hub_updated),
         timeout=10.0,
     )
     assert healthy, f"initial sync never projected 2 messages for {conv_id[:8]}"
@@ -543,7 +545,7 @@ async def test_count_mismatch_equal_date_dispatches_fetch_and_heals(hub_base_url
     assert healed, f"projection not healed for {conv_id[:8]}"
 
 
-def _projected(conv_id: str, *, expected_count: int):
+def _projected(conv_id: str, *, expected_count: int, hub_updated=None):
     """Async predicate: the local row's projection reports expected_count."""
     from flow_sdk.builtin.conversation import Conversation
 
@@ -551,7 +553,9 @@ def _projected(conv_id: str, *, expected_count: int):
         c = await Conversation.get_one({"id": conv_id})
         if c is None:
             return None
-        return c if int(c.message_count or 0) == expected_count and c.message_ids else None
+        projection_ready = int(c.message_count or 0) == expected_count and c.message_ids
+        watermark_ready = hub_updated is None or Conversation._as_datetime(c.hub_updated_date) == hub_updated
+        return c if projection_ready and watermark_ready else None
 
     return _check
 

@@ -128,7 +128,7 @@ implemented — so the card stops being free-floating prose:
 
 ```yaml
 source:
-  origin: # the SDK's FSOriginField union; omit `kind` → git
+  origin: # the SDK's OriginField union; omit `kind` → git
     kind: git
     provider: github
     owner: langware

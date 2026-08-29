@@ -341,13 +341,23 @@ class _RecordBackedEntity:
 
 
 class _FileBackedEntity(_RecordBackedEntity):
-    _hub_asset_layout = "file"
-    _hub_main_file = "document.md"
+    type: str = "probe_file_backed"
 
 
 class _FolderBackedEntity(_RecordBackedEntity):
-    _hub_asset_layout = "folder"
-    _hub_main_file = "SKILL.md"
+    type: str = "probe_folder_backed"
+
+
+def _register_hub_layout_probes() -> None:
+    """Hub layout is ``TypeInfo``'s (``main_layout`` / ``main_file``) — the same
+    facts the disk serializer reads — so the probes declare it there."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
+
+    SchemaRegistry.register(TypeInfo(type_name="probe_file_backed", main_layout="file", hub_main_file="document.md"))
+    SchemaRegistry.register(TypeInfo(type_name="probe_folder_backed", main_layout="folder", main_file="SKILL.md", hub_main_file="SKILL.md"))
+
+
+_register_hub_layout_probes()
 
 
 @pytest.mark.asyncio

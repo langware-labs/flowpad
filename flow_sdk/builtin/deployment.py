@@ -38,7 +38,7 @@ from pydantic import PrivateAttr, field_validator
 from flow_sdk._compat import UTC
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
-from flow_sdk.builtin.cloud_origin import CloudOrigin
+from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin
 from flow_sdk.core import Entity, action
 from flow_sdk.schema.types import EntityType
 from flow_sdk.worldview.models import (

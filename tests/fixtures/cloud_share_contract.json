@@ -27,9 +27,9 @@
       "created_by",
       "created_date",
       "fetched_at",
+      "editors",
       "fs_storage_mount_path",
       "fs_storage_provider",
-      "git_origin",
       "members",
       "origin_id",
       "private_context_entities_",
@@ -56,6 +56,7 @@
       "last_edited_at",
       "locale",
       "namespace",
+      "origin",
       "parent_type_id",
       "root_vfs_path",
       "schema_version",
@@ -70,7 +71,6 @@
     "secret_origins"
   ],
   "readded_by_share": [
-    "git_origin",
     "shared_context_origins",
     "shared_secret_origins"
   ],
@@ -107,7 +107,6 @@
     "fs_storage_mount_path",
     "fs_storage_path",
     "fs_storage_provider",
-    "git_origin",
     "group_id",
     "id",
     "installed_root",
@@ -117,6 +116,7 @@
     "members",
     "metadata",
     "namespace",
+    "origin",
     "parent_path",
     "parent_type_id",
     "path",

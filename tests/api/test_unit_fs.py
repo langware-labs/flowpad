@@ -3,7 +3,6 @@
 Tests VFSPath, storage drivers, and filesystem operations.
 """
 
-import asyncio
 import os
 import tempfile
 import uuid

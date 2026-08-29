@@ -42,11 +42,12 @@ from flow_sdk.builtin.agentic_process.launch_health import (
     ensure_launchable,
 )
 from flow_sdk.ingest.driver import (
+    IngestDriver,
     FetchResult,
-    SendOutcome,
-    SendStatus,
     SegmentCursorView,
     SegmentRef,
+    SendOutcome,
+    SendStatus,
     ingest_run_context,
 )
 from flow_sdk.ingest.health import SourceError
@@ -101,7 +102,7 @@ DEFAULT_AGENT = "email-summarizer"
 DEFAULT_SUBAGENT = "email_analyzer"
 
 
-class AgentDriver:
+class AgentDriver(IngestDriver):
     """One driver, any connector. `provider` stays `agent`; the connector rides
     in `kind` so the ontology reads `datasource.agent.<connector>`."""
 

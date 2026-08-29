@@ -60,14 +60,18 @@ def canonical_posix_path(p: Path | str) -> str:
 def asset_ref_spellings(p: Path | str) -> list[str]:
     """Every spelling a stored ``asset_ref`` may have for ``p``, deduped.
 
-    ``FSRef`` stores the RESOLVED path; the canonical form additionally
-    NFC-normalizes. An NFD filename on macOS is the only case where the two
-    differ, and a lookup that probes just one of them reads as "unowned" —
-    which lets a writer mint a fresh id for a row that exists.
+    The spelling given (a row saved by hand keeps it verbatim — ``/tmp/x``
+    stays ``/tmp/x`` even where ``/tmp`` is a symlink), the RESOLVED path
+    ``FSRef`` stores, and the canonical form that additionally NFC-normalizes.
+    A lookup that probes only one of them reads a real row as "unowned" — which
+    lets a writer mint a fresh id for a row that exists.
     """
-    resolved = str(Path(p).resolve())
-    canonical = canonical_posix_path(resolved)
-    return [resolved] if canonical == resolved else [resolved, canonical]
+    raw = str(p)
+    out = [raw]
+    for candidate in (str(Path(raw).resolve()), canonical_posix_path(raw)):
+        if candidate not in out:
+            out.append(candidate)
+    return out
 
 
 def _path_policy_key(path: Path | str) -> tuple[str, str, str] | None:

@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.config import flowpad_assistant_project_root
-from flow_sdk.fs_store.indexer.functions.agent import parse_agent_markdown
+from tests.unit.agent._parse import parse_agent_markdown
 
 AGENT_ROOT = Path(flowpad_assistant_project_root()) / "agentic-assets" / "agent"
 

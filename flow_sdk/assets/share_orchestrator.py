@@ -265,7 +265,7 @@ async def _link_project(project, actor) -> None:
             data=blocked.data(),
         ) from blocked
 
-    project.git_origin = origin
+    project.origin = origin
     await project.share()
     await project.save(actor)
 

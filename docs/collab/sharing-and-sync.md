@@ -147,7 +147,7 @@ In `git` mode, git-backed attachments share **declaration, not bytes**:
 ```
 flow_message.json
 entities.json
-git_origins.json
+fs_origins.json
 git_transfers.json
 metadata/<type>-<id>/metadata.json
 ```

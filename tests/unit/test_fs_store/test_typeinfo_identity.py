@@ -178,6 +178,28 @@ def test_folder_main_file_normalizes_to_owning_capsule(tmp_path: Path) -> None:
     assert AssetCapsule.from_path(folder).read("identity") == CapsuleData(1, {"id": minted})
 
 
+def test_folder_backed_main_file_ref_normalizes_idempotently(tmp_path: Path) -> None:
+    folder = tmp_path / "skill"
+    folder.mkdir()
+    main = folder / "SKILL.md"
+    main.write_text("body\n", encoding="utf-8")
+    info = TypeInfo(
+        type_name="probe",
+        main_layout="folder",
+        main_file="SKILL.md",
+    )
+
+    assert info.folder_for(folder) == folder
+    assert info.body_path_for(folder) == main
+    assert info.folder_for(main) == folder
+    assert info.body_path_for(main) == main
+
+    same_named_folder = tmp_path / "SKILL.md"
+    same_named_folder.mkdir()
+    assert info.folder_for(same_named_folder) == same_named_folder
+    assert info.body_path_for(same_named_folder) == same_named_folder / "SKILL.md"
+
+
 def test_metadata_carries_identity_traits_and_capsules_affect_hash() -> None:
     backend = DerivedIdentityBackend()
     key = lambda ref: "key"  # noqa: E731

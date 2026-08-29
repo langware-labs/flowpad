@@ -3,7 +3,6 @@
 Pure function over a string. No DB, no records, no fixtures beyond pytest's.
 """
 
-import pytest
 
 from flow_sdk.wiki.parser import parse_links
 

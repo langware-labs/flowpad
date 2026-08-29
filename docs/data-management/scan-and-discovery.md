@@ -143,12 +143,12 @@ The dispatch callables:
 
 | Slot | Signature | Role |
 |---|---|---|
-| `from_disk_fn` | `(FSRef, resolved_id) -> list[FSRecord]` (sync or async) | Parse payload using the identity resolved once by the caller. |
+| `from_disk_fn` | `(FSRef, resolved_id) -> list[FSRecord]` (sync or async) | Parse payload using the identity resolved once by the caller. Defaults to the generic `spec_extractor` for any type with an `asset_spec`. |
 | `capsules` / `identity_backend` | `tuple[CapsuleSpec, ...]`, backend | Declare named capsules and observe canonical plus legacy/native identity carriers. |
 | `id_stable_key_fn` / `id_namespace` | `(FSRef) -> str`, `UUID` | Optional natural/path key and namespace for deterministic v5 identity. |
 | `asset_hash_fn` | `(...) -> str` | Content hash for the type's primary asset (used by skip-fresh / sentinel logic). |
 | `post_sync_fn` | hook | Post-sync side effects. |
-| `default_body_fn` | hook | Default-body writer for `FSRecord.upsert_main_ref` on create. |
+| `default_body_fn` | hook | Default-body writer for a type with no `asset_spec` (`dynamic_workflow`) on create. |
 
 Example (`flow_sdk/schema/type_info/skill_type_info.py`):
 
@@ -159,7 +159,7 @@ SKILL = TypeMetadata(
     indexed_by_default=True, api_visible=True,
     index_fields=["description"],
     main_subdir=".claude/skills", main_layout="folder",
-    from_disk_fn=extract_skill,
+    fts_content=("name", "description", "body"),   # from_disk_fn defaults to spec_extractor
     capsules=(CapsuleSpec("identity"),),
     identity_backend=capsule_identity(skill_id_from_folder),
     asset_hash_fn=skill_asset_hash,

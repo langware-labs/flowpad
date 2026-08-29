@@ -13,24 +13,72 @@ id)`` to the row that already holds it. Same guarantee as the old v5-derived id
 arithmetic to a lookup — so rows written before the change still resolve, and
 nothing has to re-derive an id it does not hold.
 
-**Snapshot vs local state.** Snapshot fields are refreshed from the provider
-whenever the content digest moves; ``read`` and ``starred`` are ours and must
-survive re-delivery, which is why the ingestor writes an explicit field map
-rather than replacing the row.
+**Snapshot vs local state.** ``SourceItemSpec`` — the type's ``asset_spec`` — IS
+the snapshot: what a driver emits and what the ingestor copies onto the row
+whenever the content digest moves. ``read`` and ``starred`` are ours, outside
+the header, and so survive re-delivery structurally rather than by a hand-kept
+field map.
 """
 from __future__ import annotations
 
-from typing import ClassVar, Optional
+from typing import Annotated, ClassVar, Optional
 
-from pydantic import model_validator
+from pydantic import ConfigDict, StringConstraints, model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.legacy_fields import adopt_renamed
+from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.schema.types import EntityType
+
+#: A header component: the natural key is ``(data_source_id, segment_key,
+#: external_id)`` and a blank component collapses every item of a segment onto
+#: one row — so blankness is refused by the type, not by a route.
+NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+class SourceItemSpec(DataSpec):
+    """The ingestion envelope — header + body, in the network-message sense.
+
+    What a driver hands the ingestor: a routing **header** (which source, which
+    segment, which record) plus the normalized **body** it stores. ``raw`` rides
+    along uninterpreted so a mapping bug can be re-derived later without
+    re-fetching. Field names are the ROW's — this is the type's ``asset_spec``,
+    the model that selects which fields the medium persists.
+
+    ``extra="forbid"`` (DataSpec) is the write route's unknown-field refusal: a
+    caller that misspelled ``name`` as ``subject`` gets an error, not a row with
+    an empty name. Frozen: an envelope is a value.
+    """
+
+    spec_kind: ClassVar[str] = "ingest.source_item"
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    # ── header — each a natural-key component or a route key, so never blank ──
+    data_source_id: NonBlank
+    provider: NonBlank
+    kind: NonBlank
+    segment_key: NonBlank
+    external_id: NonBlank
+
+    # ── body ──
+    name: str = ""
+    body: str = ""
+    occurred_at: Optional[str] = None
+    author_external_id: Optional[str] = None
+    author_display: Optional[str] = None
+    permalink: Optional[str] = None
+    thread_key: Optional[str] = None
+    reply_to_external_id: Optional[str] = None
+    segment_label: str = ""
+    raw: Optional[dict] = None
+
 
 
 class SourceItem(Entity):
+    """The ROW; the snapshot the medium persists is ``SourceItemSpec``
+    (``TypeInfo.asset_spec``)."""
+
     type: str = APIField(default=EntityType.SOURCE_ITEM.value)
 
     # ── envelope (the routing header) ──────────────────────────────────────
@@ -57,7 +105,7 @@ class SourceItem(Entity):
 
     # ── body ───────────────────────────────────────────────────────────────
     # `name` (declared on Entity) is the FTS title. `body` must reach FTS, which
-    # is why it is in SourceItemMeta — see the type_info module.
+    # is why it is in the header — see the type_info module.
     body: str = APIField(default="")
     # The provider payload, verbatim. Persist.FALSE keeps it a DB column: it
     # never lands in metadata.json and never pollutes the FTS row.
@@ -67,11 +115,11 @@ class SourceItem(Entity):
     # sha256 over the NORMALIZED fields only, never over `raw` — provider
     # payloads carry volatile keys (scores, reaction counts, re-serialized
     # whitespace) that would flip the digest on every poll and defeat the gate.
-    content_digest: str = APIField(default="")
+    content_digest: str = APIField(default="", persist=Persist.TRUE)
 
     # ── local state — PRESERVED across re-delivery ─────────────────────────
-    read: bool = APIField(default=False)
-    starred: bool = APIField(default=False)
+    read: bool = APIField(default=False, persist=Persist.TRUE)
+    starred: bool = APIField(default=False, persist=Persist.TRUE)
 
     _api_visible: ClassVar[bool] = True
 
@@ -96,17 +144,10 @@ class SourceItem(Entity):
         """THE identity lookup — the row for this natural key, or None.
 
         ``segment_key`` is part of the key because provider ids are frequently
-        only unique *within* a stream (a Slack ``ts`` repeats across channels),
+        only unique *within* a segment (a Slack ``ts`` repeats across channels),
         and ``data_source_id`` because the same remote feed added twice must not
-        collide.
-
-        Single-row path, indexed by ``ix_entities_source_item_natural_key``.
-        ``ingest_items`` does the same resolution for a whole page in one query
-        (``_load_existing``) — use that for anything batched, or a steady-state
-        poll pays one SELECT per item just to consult the digest gate.
+        collide. The key itself is declared once, on the type
+        (``TypeInfo.natural_key``); this is its named single-row entry point,
+        indexed by ``ix_entities_source_item_natural_key_v2``.
         """
-        return await cls.get_one({
-            "data_source_id": data_source_id,
-            "segment_key": segment_key,
-            "external_id": external_id,
-        })
+        return await cls.serializer().resolve_key(cls, (data_source_id, segment_key, external_id))

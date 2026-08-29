@@ -86,7 +86,7 @@ _LOCAL_OR_RUNTIME_FIELDS = frozenset(
         "visitor_role",
         "members",
         "remote",
-        "git_origin",
+        "origin",
         "expand",
         "env_vars",
         "group_id",

@@ -19,7 +19,7 @@ from __future__ import annotations
 import importlib
 import logging
 import pkgutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Any, Literal
 
 from flow_sdk.capsules import CapsuleSpec
@@ -27,6 +27,9 @@ from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
 from flow_sdk.schema.view_mode import ViewMode
 
 logger = logging.getLogger(__name__)
+
+
+_TYPE_INFO_SLOTS = frozenset(f.name for f in fields(TypeInfo))
 
 
 @dataclass
@@ -128,12 +131,36 @@ class TypeMetadata:
     owns_main_ref: bool = False
     # Per-type pydantic metadata model — the FS↔DB schema (see TypeInfo.meta_model).
     meta_model: Any = None
+    # Serialization layout facts (see TypeInfo): the path names the entity
+    # when the header does not; the field naming the rows' layout; how a JSON
+    # main doc is laid out; the disk-derived facts hook.
+    name_from_path: bool = False
+    rows_layout_field: str | None = None
+    hub_main_file: str | None = None
+    manifest_layout: str | None = None
+    derive_fields_fn: Any = None
+    # The origin kind a store/load defaults to; None ⇒ "db" for db_only types,
+    # else "local". A row-only type that is NOT db_only (SourceItem keeps its
+    # shadow + FTS) declares "db" explicitly.
+    default_origin_kind: str | None = None
+    # Row identity + no-op gate for row-only types (see TypeInfo).
+    natural_key: tuple[str, ...] | None = None
+    digest_fields: tuple[str, ...] | None = None
+    digest_field: str = "content_digest"
+    # The type's shape — a ``DataSpec`` class (see TypeInfo.asset_spec).
+    asset_spec: Any = None
+    # Row-only but searchable: the row field FTS indexes as ``content``.
+    fts_content: tuple[str, ...] = ()
     # Reception seam: when a received attachment of this type is installed, the
     # built-in skill (if any) that sets it up in a Vibe session. ``None`` ⇒ the
     # received entity is simply opened (no setup agent). The sentinel value equal
     # to ``type`` means "run the received entity as its own skill" (skill type).
     # Read by ``Entity.setup_on_receive``.
     setup_skill: str | None = None
+    # Builtin editors for the type — SDK-shipped apps under
+    # ``flow_sdk/assets/editors/<name>/`` served for EVERY entity of the type,
+    # alongside whatever the asset itself ships under ``<asset>/editors/``.
+    editors: list[str] = field(default_factory=list)
     # Reception seam: the verb the receive UI shows for this type — the CTA label
     # is ``"<reception_verb> the <typeLabel>"`` (e.g. "Set up the app", "Run the
     # skill", "Open the note"). Declared next to the type like ``main_subdir``.
@@ -150,47 +177,20 @@ class TypeMetadata:
     # ``{"remote": False, "received": True}``). Backend-only; never serialized.
     receive_row_overrides: dict | None = None
 
+    # TypeMetadata is the authoring form of TypeInfo; the two differ only in the
+    # names below. Every other slot copies by name, so a new field needs no plumbing.
+    _RENAMED = {"type": "type_name", "displayName": "display_name"}
+
     def to_type_info(self) -> TypeInfo:
-        return TypeInfo(
-            type_name=str(self.type),
-            icon=self.icon,
-            display_name=self.displayName,
-            browseable_by=self.browseable_by,
-            creatable=self.creatable,
-            indexed_by_default=self.indexed_by_default,
-            api_visible=self.api_visible,
-            cloud_file_transport=self.cloud_file_transport,
-            db_only=self.db_only,
-            index_fields=list(self.index_fields),
-            asset_class=self.asset_class,
-            harness=self.harness,
-            family=self.family,
-            main_layout=self.main_layout,
-            main_file=self.main_file,
-            main_file_is_asset_ref=self.main_file_is_asset_ref,
-            main_ext=self.main_ext,
-            assignee_owned_fields=tuple(self.assignee_owned_fields),
-            pack_exclude=tuple(self.pack_exclude),
-            parent_type=self.parent_type,
-            parent_share_on_default=self.parent_share_on_default,
-            shared_child=self.shared_child,
-            from_disk_fn=self.from_disk_fn,
-            capsules=tuple(self.capsules),
-            identity_backend=self.identity_backend,
-            id_stable_key_fn=self.id_stable_key_fn,
-            **({"id_namespace": self.id_namespace} if self.id_namespace is not None else {}),
-            asset_hash_fn=self.asset_hash_fn,
-            post_sync_fn=self.post_sync_fn,
-            default_body_fn=self.default_body_fn,
-            owns_main_ref=self.owns_main_ref,
-            meta_model=self.meta_model,
-            setup_skill=self.setup_skill,
-            reception_verb=self.reception_verb,
-            receive_policy=self.receive_policy,
-            receive_row_overrides=self.receive_row_overrides,
-            locations=["index"],
-            metadata=self,
-        )
+        kw = {}
+        for f in fields(self):
+            name = self._RENAMED.get(f.name, f.name)
+            value = getattr(self, f.name)
+            if name in _TYPE_INFO_SLOTS and not (name == "id_namespace" and value is None):
+                kw[name] = value
+        kw["type_name"] = str(kw["type_name"])
+        kw["default_origin_kind"] = self.default_origin_kind or ("db" if self.db_only else "local")
+        return TypeInfo(**kw, locations=["index"], metadata=self)
 
     def register(self) -> None:
         SchemaRegistry.register(self.to_type_info())
@@ -233,3 +233,5 @@ def register_all() -> None:
                 mod.name,
                 exc_info=True,
             )
+    # Post-pass, once every entity class is complete: a spec/row mismatch RAISES.
+    SchemaRegistry.check_asset_specs()

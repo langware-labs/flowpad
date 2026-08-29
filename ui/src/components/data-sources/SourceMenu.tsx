@@ -8,8 +8,8 @@
  * (Runs). Both links are URL-first: they navigate, and the destination reads its
  * own scope off the URL.
  */
-import type { DataSource } from '@sdk';
-import { History, MoreHorizontal, Pencil, RadioTower, Rewind, Trash2 } from 'lucide-react';
+import type { DataSource, DataSourceSpec } from '@sdk';
+import { History, LayoutPanelLeft, MoreHorizontal, Pencil, RadioTower, Rewind, Trash2 } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -24,13 +24,15 @@ import {
 
 interface Props {
   source: DataSource;
+  /** The source's definition — its `editors` are the apps offered here. */
+  spec?: DataSourceSpec | null;
   onToggleEnabled: () => void;
   onEdit: (source: DataSource) => void;
   onReplay: (source: DataSource) => void;
   onDelete: (source: DataSource) => void;
 }
 
-export function SourceMenu({ source, onToggleEnabled, onEdit, onReplay, onDelete }: Props) {
+export function SourceMenu({ source, spec, onToggleEnabled, onEdit, onReplay, onDelete }: Props) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
 
@@ -67,6 +69,19 @@ export function SourceMenu({ source, onToggleEnabled, onEdit, onReplay, onDelete
         {/* Narrowed to this source. `target` is the FlowEvent's own key, and
             `ingest.*.sync.*` already targets `data_source:<id>` — so this is a
             filter on the envelope, not a search over its text. */}
+        {/* Editor apps the definition ships or the type provides (the builtin
+            `spec` form for every source). URL-first: the app reads the source
+            id off its own query string. */}
+        {spec?.availableEditors.map((app) => (
+          <DropdownMenuItem
+            key={app}
+            data-testid={`source-open-editor-${app}`}
+            onSelect={() => navigation.openDock(DockPointer.forAssetApp(spec.typeId, app, { source: source.id }))}
+          >
+            <LayoutPanelLeft className="me-2 size-4" />
+            {t`Open ${app}`}
+          </DropdownMenuItem>
+        ))}
         <DropdownMenuItem
           onSelect={() => navigation.openDock(DockPointer.forEvents(undefined, { target: `data_source:${source.id}` }))}
         >

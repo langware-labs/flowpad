@@ -1,28 +1,28 @@
 """Spec owns_main_ref round-trip is stable (no frontmatter accumulation).
 
 Load-bearing for the .flowmsg unification: a shared Spec's body must survive
-``default_body_fn`` -> ``specs/<name>/spec.md`` -> ``extract_spec`` -> ``content``
+the serializer -> ``specs/<name>/spec.md`` -> ``extract_spec`` -> ``content``
 without the frontmatter block doubling on each save. Regression target: blank
 shared plans (a content-less spec stub renders an empty "View Plan" editor).
 """
-from types import SimpleNamespace
 
 import pytest
 
 # Populate the SchemaRegistry so compute_asset_ref/default_body resolve SPEC.
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401
-
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.fs_store.indexer.functions.spec import extract_spec
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.unit._disk import store_main
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
 
 def _spec_entity(spec_id, title, content, spec_type="plan"):
-    # Duck-typed: _spec_default_body / _safe_name read id/title/name/content/spec_type.
-    return SimpleNamespace(id=spec_id, title=title, name=title, content=content, spec_type=spec_type)
+    from flow_sdk.builtin.spec import Spec
+
+    return Spec(id=spec_id, title=title, name=title, content=content, spec_type=spec_type)
 
 
 def test_spec_main_ref_roundtrip_is_stable(tmp_path):
@@ -37,7 +37,7 @@ def test_spec_main_ref_roundtrip_is_stable(tmp_path):
     object.__setattr__(rec, "_asset_ref", ar)
 
     # 1. owns_main_ref writes specs/<safe>/spec.md (folder + main_file).
-    resolved_id = rec.upsert_main_ref(entity)
+    resolved_id = store_main(rec, entity)
     md = ar._path
     assert md.name == "spec.md", f"expected inner spec.md, got {md}"
     assert md.parent.parent.name == "spec", f"expected agentic-assets/spec/<name>/spec.md, got {md}"
@@ -51,7 +51,7 @@ def test_spec_main_ref_roundtrip_is_stable(tmp_path):
     assert "SENTINEL-body line" in written
 
     # 2. extract_spec returns body-only content (frontmatter stripped).
-    recs = extract_spec(FSRef(md), resolved_id)
+    recs = SchemaRegistry.get("spec").from_disk_fn(FSRef(md), resolved_id)
     assert len(recs) == 1
     out = recs[0]
     assert out.id == resolved_id
@@ -66,11 +66,11 @@ def test_spec_main_ref_roundtrip_is_stable(tmp_path):
     #    re-render an existing file (owns_main_ref is False).
     md.write_text(written + "\nUSER-EDITED-LINE\n", encoding="utf-8")
     entity2 = _spec_entity(out.id, "Renamed Title", "totally different body", out.spec_type)
-    rec.upsert_main_ref(entity2)  # file exists -> no-op, user data preserved
+    store_main(rec, entity2)  # file exists -> no-op, user data preserved
     after = md.read_text(encoding="utf-8")
     assert "USER-EDITED-LINE" in after, "user edit to the file was clobbered"
     assert "totally different body" not in after, "save re-rendered the user's file"
     # And extraction still reflects the file (the source of truth), not entity2.
-    recs2 = extract_spec(FSRef(md), resolved_id)
+    recs2 = SchemaRegistry.get("spec").from_disk_fn(FSRef(md), resolved_id)
     assert "USER-EDITED-LINE" in recs2[0].content
     assert recs2[0].title == title

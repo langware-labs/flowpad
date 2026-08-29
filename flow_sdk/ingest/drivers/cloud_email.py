@@ -31,15 +31,16 @@ import logging
 from typing import Any, Optional
 
 from flow_sdk.builtin.email_inbox_driver import EmailInboxError
+from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest.driver import (
+    IngestDriver,
     FetchResult,
-    SendOutcome,
-    SendStatus,
     SegmentCursorView,
     SegmentRef,
+    SendOutcome,
+    SendStatus,
 )
 from flow_sdk.ingest.health import SourceError
-from flow_sdk.ingest.models import IngestItem
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ PAGE_LIMIT = 25
 BOUNDARY_NUDGE_SECONDS = 1
 
 
-class CloudEmailDriver:
+class CloudEmailDriver(IngestDriver):
     provider = "cloud_email"
     kind = "datasource.cloud.email"
     record_kind = "content.message.email"
@@ -103,7 +104,7 @@ class CloudEmailDriver:
         payload = await self._mailbox(mailbox.list_messages(agent, **params))
         messages = payload.get("messages") or []
 
-        items: list[IngestItem] = []
+        items: list[SourceItemSpec] = []
         high_water = floor
         boundary_ids: list[str] = list(seen_at_floor) if floor else []
 
@@ -148,7 +149,7 @@ class CloudEmailDriver:
             unchanged=not items,
         )
 
-    def _to_item(self, source, msg: dict) -> IngestItem:
+    def _to_item(self, source, msg: dict) -> SourceItemSpec:
         """One hub `EmailMessage` → the shared envelope.
 
         `sender` arrives already structured (`{address, name}`) because the hub
@@ -157,14 +158,14 @@ class CloudEmailDriver:
         """
         sender = msg.get("sender") or {}
         address = str(sender.get("address") or "")
-        return IngestItem(
-            source_id=source.id,
+        return SourceItemSpec(
+            data_source_id=source.id,
             provider=self.provider,
             kind=self.record_kind,
             segment_key=self._agent_id(source),
             segment_label=self._address(source),
             external_id=str(msg.get("message_id") or ""),
-            title=str(msg.get("subject") or ""),
+            name=str(msg.get("subject") or ""),
             body=_body_of(msg),
             occurred_at=str(msg.get("timestamp") or "") or None,
             author_external_id=address,

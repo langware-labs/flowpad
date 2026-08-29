@@ -14,7 +14,7 @@ import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.artifact import Artifact
-from flow_sdk.builtin.git_origin import GitOrigin
+from flow_sdk.fs_store.origin.git_origin import GitOrigin
 
 
 def _git(cwd: Path, *args: str) -> None:

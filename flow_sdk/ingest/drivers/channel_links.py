@@ -5,7 +5,7 @@ Provider knowledge, so it lives here with the drivers (docs/glossary.md:
 though its consumer is the inbox projection.
 
 Only channels whose connector gives us NO link need an entry. `rss` and
-`hackernews` set `IngestItem.permalink` at fetch time and never reach this.
+`hackernews` set `SourceItemSpec.permalink` at fetch time and never reach this.
 Gmail does need one: it arrives through the agent transport, where the WORKER
 constructs the items via `flow record create` — so there is no driver-side
 construction site to set it at, and the alternative is asking a model to

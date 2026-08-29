@@ -264,6 +264,10 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
       return entityLabel(activeEntity as APIEntity<any>, targetTypeId);
     }
     if (targetTypeId) return labelForType(targetTypeId.type);
+    // A raw VFS file is not an entity, so nothing resolves for it — but it is
+    // still a file with a name, and the tab label ("<project>'s Assets") names
+    // the container it was opened in, not the thing on screen.
+    if (dock?.resourceVfsPath?.filename) return dock.resourceVfsPath.filename;
     return viewLabel(dock);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolved.entity, targetTypeId, activeEntity, activeEntityTypeId, wikiRef, dockKey]);

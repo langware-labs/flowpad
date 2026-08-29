@@ -660,9 +660,25 @@ def _get_sdk_path() -> Path | None:
         return Path(__file__).parent / "static" / "sdk"
 
 
+class _RevalidatedStaticFiles(StaticFiles):
+    """Static files that are always revalidated (ETag/304), never heuristically cached.
+
+    ``/sdk/flowpad-sdk.js`` is a FIXED name whose body changes on every SDK
+    build (it imports a hashed chunk). Without a Cache-Control header the
+    browser caches it heuristically and a served app keeps importing the
+    PREVIOUS build's chunk long after a rebuild — observed as an iframe app
+    running an SDK that predates a just-added entity class.
+    """
+
+    def file_response(self, *args, **kwargs):  # type: ignore[override]
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 _sdk_path = _get_sdk_path()
 if _sdk_path and _sdk_path.exists():
-    app.mount("/sdk", StaticFiles(directory=str(_sdk_path)), name="sdk")
+    app.mount("/sdk", _RevalidatedStaticFiles(directory=str(_sdk_path)), name="sdk")
 
 # ── SPA fallback ─────────────────────────────────────────────────────────────
 from fastapi import Request as _Request

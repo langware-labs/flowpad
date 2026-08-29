@@ -26,6 +26,7 @@ export * from './capability';
 export * from './data-source';
 export * from './data-source-cursor';
 export * from './data-source-spec';
+export * from './source-item';
 export * from './message-thread';
 export * from './mention';
 export * from './page';

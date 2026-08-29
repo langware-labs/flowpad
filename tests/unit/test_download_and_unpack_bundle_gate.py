@@ -11,6 +11,7 @@ the hub to fetch, so the function must skip the hub GET entirely rather than
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -64,3 +65,42 @@ async def test_proceeds_when_status_omitted() -> None:
     ) as mock_get:
         await _download_and_unpack_bundle(FM_ID, "body.flowmsg", hub_updated=None)
     assert mock_get.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_same_message_downloads_are_serialized() -> None:
+    """Two pull sources for one FM cannot overlap the shared staging update."""
+    first_entered = asyncio.Event()
+    release_first = asyncio.Event()
+    active = 0
+    max_active = 0
+    calls = 0
+
+    async def controlled_get(*args, **kwargs) -> bytes:
+        nonlocal active, max_active, calls
+        calls += 1
+        active += 1
+        max_active = max(max_active, active)
+        try:
+            if calls == 1:
+                first_entered.set()
+                await release_first.wait()
+            return b""
+        finally:
+            active -= 1
+
+    with patch("flow_sdk.app.actions.flow_message_action.hub_get", controlled_get):
+        first = asyncio.create_task(
+            _download_and_unpack_bundle(FM_ID, "body.flowmsg", body_status=BodyStatus.READY)
+        )
+        await first_entered.wait()
+        second = asyncio.create_task(
+            _download_and_unpack_bundle(FM_ID, "body.flowmsg", body_status=BodyStatus.READY)
+        )
+        await asyncio.sleep(0)
+        assert calls == 1, "the second pull must wait outside hub_get/unpack"
+        release_first.set()
+        assert await asyncio.gather(first, second) == [False, False]
+
+    assert calls == 2
+    assert max_active == 1

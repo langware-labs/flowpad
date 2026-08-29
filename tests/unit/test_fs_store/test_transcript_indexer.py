@@ -6,8 +6,6 @@ Real DB + real JSONL files under tmp_path. No mocks (per repo policy).
 from __future__ import annotations
 
 import json
-import os
-import time
 import uuid
 from pathlib import Path
 from typing import ClassVar
@@ -18,19 +16,17 @@ from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.claude_memory_entities import ClaudePlan
 from flow_sdk.db import get_db_driver
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.index_function import FSIndexer, IndexerOptions
 from flow_sdk.fs_store.indexer.functions.claude_projects import claude_projects_fn
 from flow_sdk.fs_store.indexer.functions.claude_sessions import claude_sessions_fn
+from flow_sdk.fs_store.indexer.index_function import FSIndexer, IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.transcript_indexer import (
     TranscriptContext,
     TranscriptIndexer,
 )
 from flow_sdk.fs_store.transcript_indexer.handlers import PlanHandler
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.transcript_analyzer.entries.exit_plan_mode import ExitPlanModeEntry
 from flow_sdk.transcript_analyzer.entry import EntryKind, TranscriptEntry
-
 
 # ── helpers ─────────────────────────────────────────────────────────────────
 

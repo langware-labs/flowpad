@@ -17,7 +17,7 @@ ORIGIN = {
     "rel_path": ".",
 }
 PUBLISHED_AT = "2026-08-03T12:00:00+00:00"
-CANONICAL_ORIGIN = {**ORIGIN, "project_id": ""}
+CANONICAL_ORIGIN = dict(ORIGIN)
 
 
 async def _create_project(client, tmp_path, name: str) -> dict:
@@ -153,10 +153,10 @@ async def test_project_publish_returns_and_persists_canonical_project(
     assert canonical["id"] == project["id"]
     assert canonical["remote"] is True
     assert canonical["hub_published_at"] == PUBLISHED_AT
-    assert canonical["git_origin"] == CANONICAL_ORIGIN
+    assert canonical["origin"] == CANONICAL_ORIGIN
 
     persisted = await Project._db.get_by_id(project["id"], Project.get_type())
     assert persisted is not None
     assert persisted.remote is True
     assert persisted.hub_published_at == PUBLISHED_AT
-    assert persisted.git_origin.model_dump(mode="json") == CANONICAL_ORIGIN
+    assert persisted.origin.model_dump(mode="json") == CANONICAL_ORIGIN

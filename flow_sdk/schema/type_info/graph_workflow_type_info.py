@@ -1,9 +1,9 @@
 """Type metadata for GRAPH_WORKFLOW — folder-backed flow document (whiteboard model)."""
 from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, folder_capsule_id
 from flow_sdk.fs_store.indexer.functions.graph_workflow import (
+    extract_graph_workflow,
     graph_workflow_asset_hash,
     graph_workflow_id_from_folder,
-    extract_graph_workflow,
 )
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.types import EntityType

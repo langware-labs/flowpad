@@ -6,7 +6,7 @@
  * cursors. This is what a source *is* — a folder asset carrying the manifest.
  * The split is the same one `GraphWorkflow` / `GraphWorkflowRun` already makes.
  *
- * It is why the create form no longer hardcodes a catalog: `config_schema`
+ * It is why the create form no longer hardcodes a catalog: `config`
  * comes from the backend, so a new source lights the form up without a
  * frontend release.
  */
@@ -49,7 +49,8 @@ export interface IDataSourceSpec extends IEntity {
   setup_wiki?: string;
   runtime?: string;
   reflect?: string[];
-  config_schema?: Record<string, SpecConfigField>;
+  /** The form's fields, under the manifest's own key. */
+  config?: Record<string, SpecConfigField>;
   auth?: Record<string, unknown> | null;
   traits?: Record<string, unknown> | null;
   requires?: Record<string, string>;
@@ -77,7 +78,7 @@ export class DataSourceSpec extends APIEntity<DataSourceSpec> implements IDataSo
   setup_wiki: string = '';
   runtime: string = 'builtin';
   reflect: string[] = [];
-  config_schema: Record<string, SpecConfigField> = {};
+  config: Record<string, SpecConfigField> = {};
   auth: Record<string, unknown> | null = null;
   traits: Record<string, unknown> | null = null;
   requires: Record<string, string> = {};
@@ -91,7 +92,7 @@ export class DataSourceSpec extends APIEntity<DataSourceSpec> implements IDataSo
    * means the base constructor's `deepAssign` lands first and each default
    * then overwrites it. A row fetched by a LIST query (`castAndDeepAssign`'s
    * cache-miss branch is the only `new` path) therefore arrives with `title`
-   * empty and `config_schema` `{}`; entities normally recover because a later
+   * empty and `config` `{}`; entities normally recover because a later
    * by-id fetch or `data_op` deep-assigns onto the cached instance, but the Add
    * dialog reads the specs immediately and rendered bare provider names with no
    * fields at all.

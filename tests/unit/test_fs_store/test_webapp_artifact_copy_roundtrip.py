@@ -8,16 +8,16 @@ from pathlib import Path
 import pytest
 
 import flow_sdk.models.entities  # noqa: F401
-from flow_sdk.schema.type_info import register_all
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.artifact import Artifact
-from flow_sdk.builtin.local_origin import LocalOrigin
 from flow_sdk.builtin.flow_message_bundle import (
-    _pack_webapp_artifact_attachment,
-    _restore_webapp_artifact_entry,
     _TRANSFER_MODE_COPY,
     _entry_key,
+    _pack_webapp_artifact_attachment,
+    _restore_webapp_artifact_entry,
 )
+from flow_sdk.fs_store.origin.local_origin import LocalOrigin
+from flow_sdk.schema.type_info import register_all
 
 register_all()
 

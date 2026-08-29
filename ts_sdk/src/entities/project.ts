@@ -327,8 +327,8 @@ export class Project extends APIEntity<Project> {
    *  local presence `presence` overlay below. The project's own (uuid4) id is the
    *  shared hub identity — no separate cloud id. */
   members: ConversationParticipant[] = [];
-  /** Portable repository identity received with a shared project. */
-  git_origin: GitOrigin | null = null;
+  /** Portable repository identity received with a shared project (the hub sends it as `git_origin`). */
+  origin: GitOrigin | null = null;
   /** When this desktop instance successfully published the Project to Hub. */
   hub_published_at: string | null = null;
   /** Last UI view mode used in this project (vibe|standard|advanced|dev);
@@ -365,7 +365,9 @@ export class Project extends APIEntity<Project> {
   constructor(entity: Partial<Project> = {}) {
     super(entity);
     this.members = (entity.members as ConversationParticipant[] | undefined) ?? [];
-    this.git_origin = (entity.git_origin as GitOrigin | null | undefined) ?? null;
+    // The hub sends the git kind under its wire name `git_origin`; a local row says `origin`.
+    const hubOrigin = (entity as { git_origin?: GitOrigin | null }).git_origin;
+    this.origin = (entity.origin as GitOrigin | null | undefined) ?? hubOrigin ?? null;
     this.hub_published_at = (entity.hub_published_at as string | null | undefined) ?? null;
     this.last_mode = (entity.last_mode as string | null | undefined) ?? null;
     this.locale = (entity.locale as string | null | undefined) ?? null;

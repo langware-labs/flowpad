@@ -15,7 +15,7 @@ from typing import Any, Optional
 import requests
 from pydantic import BaseModel, ConfigDict
 
-from flow_sdk.builtin.git_origin import GitOrigin
+from flow_sdk.fs_store.origin.git_origin import GitOrigin
 from flow_sdk.core import action
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.request_context.request_info import RequestInfo

@@ -158,16 +158,20 @@ async def owner_id_for(type_name: str, path: str, *, strict: bool = False) -> st
     if cls is None or not getattr(cls, "owns_asset_ref", True):
         return None
 
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
     failed = False
-    for spelling in asset_ref_spellings(path):
-        try:
-            entity = await cls.get_one({"asset_ref": spelling})
-        except Exception:
-            failed = True
-            continue
-        entity_id = getattr(entity, "id", None) if entity is not None else None
-        if entity_id:
-            return str(entity_id)
+    spellings = asset_ref_spellings(path)
+    try:
+        entity = await cls.get_one(
+            QueryFilter(type=cls.get_type(), match=ExpressionNode(op=QueryOp.IN, operands=["asset_ref", spellings]))
+        )
+    except Exception:
+        failed = True
+        entity = None
+    entity_id = getattr(entity, "id", None) if entity is not None else None
+    if entity_id:
+        return str(entity_id)
 
     if failed:
         logging.getLogger(__name__).warning("owner lookup failed for %s at %s", type_name, path)

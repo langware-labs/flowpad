@@ -33,7 +33,6 @@ interface LegacyArtifactInput {
   path?: string | null;
   metadata?: Record<string, unknown> | null;
   generating_flow_id?: string | null;
-  git_origin?: FSOriginInput | null;
   port?: string | number | null;
   start_cmd?: string | null;
   health?: string | null;
@@ -56,7 +55,6 @@ const RETIRED_ARTIFACT_KEYS = [
   'path',
   'metadata',
   'generating_flow_id',
-  'git_origin',
   'port',
   'start_cmd',
   'health',
@@ -92,12 +90,11 @@ export class Artifact extends APIEntity<Artifact> implements IArtifact {
   constructor(entity: Partial<IArtifact> | (Partial<IArtifact> & LegacyArtifactInput) = {}) {
     super(entity);
     const legacy = entity as Partial<IArtifact> & LegacyArtifactInput;
-    const metadataOrigin = legacy.metadata?.git_origin as FSOriginInput | undefined;
 
     this.name = entity.name ?? '';
     this.kind = normalizeKind(entity.kind ?? kindFromLegacy(legacy.artifact_type));
     this.description = entity.description;
-    this.origin = normalizeFSOrigin((entity.origin ?? legacy.git_origin ?? metadataOrigin) as FSOriginInput | null);
+    this.origin = normalizeFSOrigin((entity.origin ?? null) as FSOriginInput | null);
     this.project_id = entity.project_id ?? null;
     this.asset_ref = entity.asset_ref ?? '';
     this.target_type_id = entity.target_type_id ?? null;

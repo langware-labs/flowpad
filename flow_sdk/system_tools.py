@@ -527,6 +527,16 @@ async def clear_all_data() -> ClearAllResult:
         invalidate_bootstrap_cache()
         await bootstrap()
 
+        # The process-wide capability cache survives a database replacement,
+        # but the rows mirrored into the capabilities UI do not.  Bootstrap
+        # deliberately does not wait for discovery, so without an explicit
+        # sweep here a factory reset leaves freshly-seeded rows at state=none
+        # while workers continue using the cached installed values.  Complete
+        # the reset only after the canonical discovery seam has realigned both.
+        from flow_sdk.core.capabilities.discovery import run_discovery  # noqa: PLC0415
+
+        await run_discovery()
+
         # Rebuild the shipped system content through the same canonical pass as
         # process startup. The bootstrap() route handler above only restores the
         # @local graph; a factory reset also deletes the indexed system agents,

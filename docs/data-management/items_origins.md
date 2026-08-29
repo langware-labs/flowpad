@@ -28,11 +28,12 @@ This document covers `FSOrigin` — the data-layer carrier. Bundle *transport*
 ## Shape
 
 ```
-FSOrigin                         kind · rel_path · project_id
+FSOrigin                         kind · rel_path   (project_id / id: local slots, excluded from every dump)
   ├── GitOrigin   kind="git"     provider · owner · name · branch · head_commit
   └── LocalOrigin kind="local"   base
 
-FSOriginField = Annotated[Union[GitOrigin, LocalOrigin], Discriminator(resolve_origin_kind)]
+OriginField = Annotated[Union[GitOrigin|"git", LocalOrigin|"local", CloudOrigin|"cloud"], Discriminator(origin_tag)]
+SoftOrigin  = Annotated[Optional[OriginField], WrapValidator(soft)]   # malformed → None, the ONE tolerance rule
 ```
 
 `rel_path` is the universal placement contract — the asset **root** relative to
@@ -41,10 +42,13 @@ types). `.` means the whole repository.
 
 **The discriminator is tolerant by design.** A dict with no `kind` reads as
 `git`, because origins persisted before the discriminant existed were all git.
-That rule lives in exactly one place, `resolve_origin_kind`, and is shared by the
-union and by `is_legacy_visible_origin`.
+That rule lives in exactly one place, `resolve_origin_kind`, the union's
+discriminator (`origin_tag`, `fs_store/origin/field.py`): missing kind → git, a
+git-hosting name folds onto git, `local` is local, anything else is a `CloudOrigin`
+(whose `kind` is the open CHANNEL string). `ORIGIN_ADAPTER` validates a raw value
+the same way the entity field does — typed, or `None` when malformed.
 
-Store an origin in a field typed `FSOriginField`, never bare `FSOrigin` — a
+Store an origin in a field typed `OriginField`, never bare `FSOrigin` — a
 bare-base field instantiates the base and silently drops the subclass locator.
 
 ## The driver registry
@@ -96,89 +100,54 @@ machines; altering it silently breaks dedup for everything already shared.
 Several entities carry origin-shaped fields with different types. This looks
 like drift and is not; each answers a different question.
 
-| Carrier | Type | Sharing | Why this type |
+| Carrier | Type | Sharing | Note |
 |---|---|---|---|
-| `Folder.origin`, `Artifact.origin` | `FSOriginField` | — | genuinely polymorphic: a folder may be a checkout **or** a mounted directory |
-| `Project.git_origin` | `GitOrigin` | PRIVATE | a project origin is **cloned** — `clone_url()`, `branch`, `next_clone_target` at ~15 sites. A local-kind project origin is meaningless |
-| `Task.git_origin` | `GitOrigin` | PRIVATE | same: the receiver clones it. Frontmatter-populated, no Python writer |
-| `Entity.git_origin` | `dict` | **SHARED** | the **hub wire format** — see below. Must stay a dict |
-| `MessageAttachment.git_origin` | `dict` | PRIVATE | a raw bundle pass-through buffer, re-wrapped into an origins map on restore |
+| `Entity.origin` | `SoftOrigin` | **SHARED**, `hub_name="git_origin"` | **the one origin field.** Folder, Artifact, Skill, Markdown, Project … all carry it here; pydantic types it |
+| `Task.origin`, `MessageAttachment.origin`, `DataSource.origin` | `SoftOrigin` | PRIVATE re-declaration | a project/task origin is **cloned** by the receiver through its own action wire; an attachment's is a bundle pass-through |
 
-So when adding a **new kind**, the homes that matter are the `FSOriginField`
-fields. `Project` and `Task` are deliberately narrow, and widening them to the
-union would only add `kind == "git"` narrows at every call site.
+Clone sites narrow with `as_git(entity.origin)` (`builtin/git_origin.py`) —
+`None` for absent, non-git or malformed — instead of hand-rolling a validate.
 
 ## The wire contract
 
-`Entity.git_origin` is `Sharing.SHARED` and reaches the **hub**, which pins a
-*released* `flow_sdk`. The serialized dict is therefore a wire format whose
-exact key set **and key order** are load-bearing:
+The hub pins a *released* `flow_sdk` and reads the git kind under the key
+**`git_origin`**. That is the field's **`hub_name`** (`APIField(hub_name=...)`,
+a `json_schema_extra` slot — never a pydantic alias, which would leak into the
+API serializer and the disk header). `HubSerializer.body` renames every
+`hub_name` field generically and drops any value whose `transportable` is
+false (a `LocalOrigin`); `HubSerializer.unwire` / `from_payload` invert it on
+the way back, and `membership_sync` goes through it. No kind strings anywhere.
+
+Model dumps stay wire-stable (no `exclude_none`; `head_commit: null` rides):
 
 ```
-git    kind, rel_path, project_id, provider, owner, name, branch, head_commit
-local  kind, rel_path, project_id, base
+git    kind, rel_path, provider, owner, name, branch, head_commit
+local  kind, rel_path, base
 ```
 
-`head_commit: null` is emitted — there is no `exclude_none`. All three dump
-paths (`model_dump(mode="python")`, `mode="json"`, `FS_ORIGIN_ADAPTER.dump_python`)
-agree byte-for-byte, which is what lets internal code carry typed objects while
-the boundary keeps dumping dicts.
+## The bundle
 
-**Forbidden, because each silently changes bytes:** adding `exclude_none` /
-`exclude_defaults` / `by_alias`; reordering a field declaration. Field order for
-the redeclared `kind` comes from the **base** class, so moving `kind` inside a
-subclass is a byte change.
-
-### validate → dump is not identity
-
-A legacy kind-less dict round-trips with `kind`, `project_id` and `head_commit`
-**added**, and reordered:
-
-```
-in   {provider, owner, name, branch, rel_path}
-out  {kind:"git", rel_path, project_id:"", provider, owner, name, branch, head_commit:null}
-```
-
-That is correct behaviour, and it is why **any path that passes a raw origin
-dict through to the wire must keep passing it through**. Normalizing such a path
-"for consistency" rewrites bytes a released receiver is already reading.
-`tests/unit/test_fs_origin.py` pins this asymmetry deliberately.
-
-## Origins in a bundle
-
-Two files at the bundle root, written by `_write_origin_files` and read by
-`_read_origin_map`:
-
-| File | Contents |
-|---|---|
-| `fs_origins.json` | canonical — **every** kind, keyed `<type>-<id>` |
-| `git_origins.json` | transition dual-write — a strict subset |
-
-The reader prefers the canonical file and falls back to the legacy one, so a
-bundle from an older sender still unpacks; an unreadable file is treated as
-absent rather than fatal.
-
-The legacy file is the only thing keeping git shares readable by an
-already-released receiver. **What may appear there is a property of the kind**,
-answered by `is_legacy_visible_origin` in `fs_origin.py` — deliberately phrased
-as a question about the kind so a new kind cannot inherit exclusion silently.
-An old receiver can only materialize git, so anything else must stay out.
+One file at the bundle root, written by `_write_origin_files` and read by
+`_read_origin_map`: **`fs_origins.json`** — every kind, keyed `<type>-<id>`,
+values written through unchanged. An unreadable or absent file is `{}`, never a
+failed unpack. The receiver reads `origins_map[key]` (or the entry payload's
+`origin`) and stamps the typed value onto `entity.origin`.
 
 ## Adding a kind
 
 1. Subclass `FSOrigin` with a `Literal` `kind` and your locator fields. Do not
    reorder inherited fields.
-2. Add a `Tag` arm to `FSOriginField`.
+2. Add a `Tag` arm to `OriginField`.
 3. Implement and register an `FSOriginDriver`. `key()` must be
    machine-independent, or shared assets will not reconcile.
-4. Answer `is_legacy_visible_origin` — almost certainly *no*.
-5. Decide `transportable`. A machine-local origin overrides it to `False`;
+4. Decide `transportable`. A machine-local origin overrides it to `False`;
    the share path gates on that, not on `kind`.
-6. `detect()` currently hardcodes git, so a new kind is declaration-only until
+5. `detect()` currently hardcodes git, so a new kind is declaration-only until
    that grows a dispatch loop.
 
-**Key source files:** `flow_sdk/builtin/fs_origin.py`, `fs_origin_field.py`,
-`fs_origin_driver.py`, `git_origin.py`, `local_origin.py`,
+**Key source files:** `flow_sdk/fs_store/origin/{fs_origin,git_origin,local_origin,cloud_origin,field}.py`
+(under `fs_store` so `entity_model` can type the field at class-build time),
+`flow_sdk/builtin/fs_origin_driver.py`,
 `flow_sdk/builtin/drivers/` (git/local drivers), `flow_sdk/assets/git_origin.py`
 (`PortableGitOrigin`, publish/receipt only), `flow_sdk/builtin/flow_message_bundle.py`
 (`_write_origin_files`, `_read_origin_map`)

@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.local_origin import LocalOrigin
+from flow_sdk.fs_store.origin.local_origin import LocalOrigin
 from flow_sdk.fs_store.placement import (
     LAYOUT_REGISTRY,
     WORKER_PREFIX,

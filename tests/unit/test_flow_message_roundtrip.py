@@ -996,13 +996,13 @@ async def test_pack_dbonly_spec_capsules_id_and_sanitizes_hostile_name(tmp_path)
         assert "<!-- flowpad:capsule identity" in body
         assert f"id: {spec_id}" in body
 
-    # --- default_body_fn None → early return, nothing shipped ---
+    # --- nothing renderable → early return, nothing shipped ---
     spec_info = SchemaRegistry.get("spec")
     fm2 = _make_flow_message(fm_id="f0f00004-0000-4000-8000-000000000004")
     fm2.attachment = [Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"spec-{spec_id}")]
     with (
         patch.object(Spec, "get_one", new=AsyncMock(return_value=mock_spec)),
-        patch.object(spec_info, "default_body_fn", None),
+        patch("flow_sdk.fs_store.serializer.disk.DiskSerializer.render", return_value=None),
     ):
         zip_path2 = await pack_bundle(fm2, dest_dir=tmp_path)
     with zipfile.ZipFile(zip_path2, "r") as zf:

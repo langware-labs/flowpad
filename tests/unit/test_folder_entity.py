@@ -14,8 +14,8 @@ Contract under test:
 import pytest
 
 from flow_sdk.builtin.folder import Folder
-from flow_sdk.builtin.git_origin import GitOrigin
-from flow_sdk.builtin.local_origin import LocalOrigin
+from flow_sdk.fs_store.origin.git_origin import GitOrigin
+from flow_sdk.fs_store.origin.local_origin import LocalOrigin
 from flow_sdk.fs_store.identifier import is_valid_entity_id
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
@@ -138,7 +138,7 @@ def test_hub_body_never_leaks_local_path(tmp_path):
     )
     git_body = git._hub_body()
     assert "path" not in git_body
-    assert git_body["origin"]["kind"] == "git"
+    assert "origin" not in git_body and git_body["git_origin"]["kind"] == "git"   # the hub-wire name
     assert "/Users/alice" not in str(git_body)
 
 

@@ -2,7 +2,8 @@
 
 from flow_sdk.api.api_types.fs_api import VFSPath as ApiTypesVFSPath
 from flow_sdk.api.api_types.vfs_path import VFSPath as CanonicalVFSPath
-from flow_sdk.api.fs.fs_api import EntityFSReqInfo, VFSPath as FsPackageVFSPath
+from flow_sdk.api.fs.fs_api import EntityFSReqInfo
+from flow_sdk.api.fs.fs_api import VFSPath as FsPackageVFSPath
 from flow_sdk.api.fs_api import VFSPath as LegacyVFSPath
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.request_context.request_info import RequestInfo

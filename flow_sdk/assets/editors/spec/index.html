@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Source editor</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <strong id="title">Source editor</strong>
+      <span id="status" class="status">Connecting…</span>
+    </header>
+    <main id="main" hidden>
+      <section class="pane">
+        <label class="row">
+          <span>Source</span>
+          <select id="source" data-testid="spec-editor-source"></select>
+        </label>
+        <form id="form" data-testid="spec-editor-form"></form>
+        <div class="actions">
+          <button id="save" type="button" data-testid="spec-editor-save">Save config</button>
+          <span id="saved" class="muted"></span>
+        </div>
+      </section>
+      <section class="pane">
+        <h2>Items <span id="count" class="muted"></span></h2>
+        <ul id="items" class="items" data-testid="spec-editor-items"></ul>
+      </section>
+    </main>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

@@ -144,7 +144,7 @@ def cmd_specs(args) -> dict:
                 "reflect": s.get("reflect") or [],
                 "auth": s.get("auth"),
                 "setup_wiki": s.get("setup_wiki") or "",
-                "config_schema": s.get("config_schema") or {},
+                "config": s.get("config") or {},
             }
             for s in (_get("/graph/data_source_spec") or [])
         ]
@@ -267,7 +267,7 @@ def cmd_snapshot(args) -> dict:
     source = _one(args.source)
     sid = source["id"]
     return {
-        "source": {k: source.get(k) for k in ("id", "name", "provider", "status", "health", "error_code", "error_detail", "setup_detail", "segment_count", "poll_interval_seconds", "window_days", "reflect", "reflect_into", "required_capabilities", "last_synced_at", "verified_at", "next_poll_at")},
+        "source": {k: source.get(k) for k in ("id", "name", "provider", "status", "health", "error_code", "error_detail", "setup_detail", "segment_count", "poll_interval_seconds", "window_days", "origin", "reflect", "reflect_into", "required_capabilities", "last_synced_at", "verified_at", "next_poll_at")},
         "cursors": [{k: c.get(k) for k in ("segment_key", "segment_label", "health", "error_code", "error_detail", "last_synced_at", "consecutive_failures")} for c in _cursors(sid)],
         "item_count": _item_count(sid),
     }

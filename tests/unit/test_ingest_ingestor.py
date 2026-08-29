@@ -13,23 +13,23 @@ import uuid
 import pytest
 
 from flow_sdk.builtin.source_item import SourceItem
-from flow_sdk.ingest import IngestItem, IngestMode, ingest_item, ingest_items
+from flow_sdk.ingest import SourceItemSpec, IngestMode, ingest_item, ingest_items
 from flow_sdk.tags import event_bus
 
 
-def _item(**kw) -> IngestItem:
+def _item(**kw) -> SourceItemSpec:
     base = dict(
-        source_id="ds-ingest-test",
+        data_source_id="ds-ingest-test",
         provider="rss",
         kind="content.feed.item",
         segment_key="https://example.test/feed.xml",
         external_id=f"ext-{uuid.uuid4().hex[:10]}",
-        title="A title",
+        name="A title",
         body="Some prose",
         occurred_at="2026-07-30T10:00:00Z",
     )
     base.update(kw)
-    return IngestItem(**base)
+    return SourceItemSpec(**base)
 
 
 @pytest.mark.asyncio
@@ -94,7 +94,7 @@ async def test_the_row_is_written_before_the_ingest_event_is_emitted():
     unsub_entity = event_bus.on("entity.created", lambda e: sequence.append("saved"))
     unsub_ingest = event_bus.on("ingest.*.item.created", lambda e: sequence.append("emitted"))
     try:
-        await ingest_item(_item(title="Ordering", body="ordering body"))
+        await ingest_item(_item(name="Ordering", body="ordering body"))
     finally:
         unsub_entity()
         unsub_ingest()
@@ -123,7 +123,7 @@ async def test_subscriber_sees_a_committed_and_searchable_row():
 
     unsub = event_bus.on("ingest.*.item.created", handler)
     try:
-        outcome = await ingest_item(_item(title="Ordering", body=f"lead {needle} tail"))
+        outcome = await ingest_item(_item(name="Ordering", body=f"lead {needle} tail"))
         for _ in range(50):
             if "searchable" in seen:
                 break
@@ -144,7 +144,7 @@ async def test_backfill_emits_nothing_per_item():
     fired: list[str] = []
     unsub = event_bus.on("ingest.*", lambda e: fired.append(e.tag))
     try:
-        items = [_item(title=f"item {i}", body=f"body {i}") for i in range(40)]
+        items = [_item(name=f"item {i}", body=f"body {i}") for i in range(40)]
         report = await ingest_items(items, mode=IngestMode.BACKFILL)
     finally:
         unsub()
@@ -164,7 +164,7 @@ async def test_incremental_emits_once_per_changed_item_only():
     fired: list[str] = []
     unsub = event_bus.on("ingest.*", lambda e: fired.append(e.tag))
     try:
-        items = [_item(title=f"inc {i}", body=f"body {i}") for i in range(3)]
+        items = [_item(name=f"inc {i}", body=f"body {i}") for i in range(3)]
         await ingest_items(items, mode=IngestMode.INCREMENTAL)
         assert fired == ["ingest.rss.item.created"] * 3
 

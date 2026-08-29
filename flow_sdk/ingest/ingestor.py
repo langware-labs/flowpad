@@ -15,7 +15,7 @@ committed. A refactor that moves emission to the caller, or into ``save()``'s
 notify path, breaks that silently: keep steps 5-7 in one function.
 
 **The digest gate is the performance story.** An unchanged item costs one
-indexed read (the natural key, via ``ix_entities_source_item_natural_key``) and
+indexed read (the natural key, via ``ix_entities_source_item_natural_key_v2``) and
 nothing else — no save, no metadata.json write, no FTS write, no WS broadcast,
 no event. Feeds re-serve their whole window on every
 poll, so without this gate a 5-minute poller rewrites and re-announces the same
@@ -27,80 +27,39 @@ import logging
 from typing import Optional, Sequence
 
 from flow_sdk.api.type_id import TypeId
-from flow_sdk.builtin.source_item import SourceItem
-from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
-from flow_sdk.ingest.digest import content_digest
+from flow_sdk.builtin.source_item import SourceItem, SourceItemSpec
 from flow_sdk.ingest.ingest_on_tag import emit_item_tag
-from flow_sdk.ingest.models import IngestItem, IngestMode, IngestOutcome, IngestReport
+from flow_sdk.ingest.models import IngestMode, IngestOutcome, IngestReport
 
 logger = logging.getLogger(__name__)
 
-#: Snapshot fields, as an explicit ``entity attr -> item attr`` map.
-#:
-#: Explicit rather than a name-matching loop: the two shapes deliberately differ
-#: (``source_id`` on the wire, ``data_source_id`` on the row; ``title`` on the
-#: wire, ``name`` on the row), and a mismatch should be visible here rather than
-#: raising AttributeError on the first real payload.
-#:
-#: Everything on SourceItem that is NOT listed here is local state and must
-#: survive re-delivery — today ``read`` and ``starred``.
-_SNAPSHOT_FIELDS: dict[str, str] = {
-    "name": "title",
-    "kind": "kind",
-    "provider": "provider",
-    "data_source_id": "source_id",
-    "segment_key": "segment_key",
-    "segment_label": "segment_label",
-    "external_id": "external_id",
-    "thread_key": "thread_key",
-    "reply_to_external_id": "reply_to_external_id",
-    "permalink": "permalink",
-    "occurred_at": "occurred_at",
-    "author_external_id": "author_external_id",
-    "author_display": "author_display",
-    "body": "body",
-    "raw": "raw",
-}
 
 
 async def ingest_item(
-    item: IngestItem,
+    item: SourceItemSpec,
     *,
     owner: Optional[TypeId] = None,
     mode: IngestMode = IngestMode.INCREMENTAL,
-    known: Optional[dict[tuple[str, str, str], SourceItem]] = None,
+    known: Optional[dict[tuple[str, ...], SourceItem]] = None,
 ) -> IngestOutcome:
-    """``known`` is a pre-loaded ``{(source, stream, external_id): row}`` map
-    from ``ingest_items``; without it this falls back to a single lookup.
+    """``known`` is a pre-loaded ``{natural key: row}`` map from
+    ``ingest_items``; without it this falls back to a single lookup.
 
-    **Identity is the natural key, not the id.** The row is resolved by
-    ``(data_source, stream, external id)``; a genuinely new record gets an
-    ordinary ``uuid4``. That is what makes a re-poll idempotent — and it works
-    on rows written before ids were v4, because nothing here re-derives an id.
+    **Identity is the natural key, not the id.** The DB serializer resolves the
+    row by ``(data_source, segment, external id)`` and gates on the digest; a
+    genuinely new record gets an ordinary ``uuid4``. That is what makes a
+    re-poll idempotent — and it works on rows written before ids were v4,
+    because nothing here re-derives an id.
     """
-    digest = content_digest(item)
-    key = (item.source_id, item.segment_key, item.external_id)
-
+    ser = SourceItem.serializer()
     if known is not None:
-        existing = known.get(key)
+        existing = known.get(ser.natural_key_of(SourceItem, item))
     else:
-        existing = await SourceItem.find_existing(
-            item.source_id, item.segment_key, item.external_id
-        )
+        existing = await ser.resolve(SourceItem, item)
 
-    # ── the gate ──────────────────────────────────────────────────────────
-    if existing is not None and existing.content_digest == digest:
-        return IngestOutcome(
-            entity_id=str(existing.id), external_id=item.external_id, status="unchanged"
-        )
-
-    row = existing or SourceItem()
-
-    for row_attr, item_attr in _SNAPSHOT_FIELDS.items():
-        setattr(row, row_attr, getattr(item, item_attr))
-    row.content_digest = digest
-
-    status = "created" if existing is None else "updated"
+    row, status = ser.upsert(SourceItem, item, existing=existing)
+    if row is None:
+        return IngestOutcome(entity_id=str(existing.id), external_id=item.external_id, status="unchanged")
 
     # ── record + index ────────────────────────────────────────────────────
     # save() writes the DB row, the shadow metadata.json and the FTS row. For a
@@ -122,7 +81,7 @@ async def ingest_item(
 
 
 async def ingest_items(
-    items: Sequence[IngestItem],
+    items: Sequence[SourceItemSpec],
     *,
     owner: Optional[TypeId] = None,
     mode: IngestMode = IngestMode.INCREMENTAL,
@@ -130,8 +89,9 @@ async def ingest_items(
     """Ingest a page in order.
 
     **Reads are batched, writes are not.** The whole page's existing rows load
-    in one query — otherwise a steady-state poll where nothing changed would
-    still cost one SELECT per item just to consult the digest gate.
+    in one query (``DbSerializer.resolve_many``) — otherwise a steady-state poll
+    where nothing changed would still cost one SELECT per item just to consult
+    the digest gate.
 
     The writes stay a sequential loop, deliberately: small per-item writes never
     hold the SQLite writer across a whole page, and an item that raises leaves
@@ -139,43 +99,7 @@ async def ingest_items(
     already have advanced past.
     """
     report = IngestReport()
-    known = await _load_existing(items)
+    known = await SourceItem.serializer().resolve_many(SourceItem, items)
     for item in items:
         report.outcomes.append(await ingest_item(item, owner=owner, mode=mode, known=known))
     return report
-
-
-async def _load_existing(
-    items: Sequence[IngestItem],
-) -> dict[tuple[str, str, str], SourceItem]:
-    """The page's existing rows, keyed by the full natural key.
-
-    One query per ``(source, stream)`` group, which is ONE query for every real
-    page — a poll fetches a single stream of a single source (``sync.py``), and
-    only the write route can hand in a mixed batch.
-
-    All three key components are in the query AND in the map key, because both
-    halves matter: an external id is only unique within a stream (a Slack ``ts``
-    repeats across channels), so a partial key would hand the digest gate the
-    wrong row — re-saving an unchanged record and clobbering its sibling. The
-    lookup rides ``ix_entities_source_item_natural_key``; without that index
-    this is a full scan of the type on every poll.
-    """
-    if not items:
-        return {}
-    groups: dict[tuple[str, str], set[str]] = {}
-    for item in items:
-        groups.setdefault((item.source_id, item.segment_key), set()).add(item.external_id)
-
-    known: dict[tuple[str, str, str], SourceItem] = {}
-    for (source_id, segment_key), external_ids in groups.items():
-        rows = await SourceItem.get_all(
-            QueryFilter(match=ExpressionNode(op=QueryOp.AND, operands=[
-                ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", source_id]),
-                ExpressionNode(op=QueryOp.EQ, operands=["segment_key", segment_key]),
-                ExpressionNode(op=QueryOp.IN, operands=["external_id", list(external_ids)]),
-            ]))
-        )
-        for row in rows:
-            known[(source_id, segment_key, str(row.external_id))] = row
-    return known

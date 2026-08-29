@@ -37,6 +37,17 @@ let projectTypeIdPromise = null;
  * of its own URL rather than being told, and rather than assuming the SDK's
  * default project (which is the backend's default, not this app's).
  */
+/**
+ * When this folder is shipped INSIDE an asset as an editor
+ * (`<asset>/editors/<name>/`), Flowpad serves it at
+ * `/api/v1/graph/<type>/<id>/editor/<name>/` — the host entity is in the path.
+ * Null when served any other way (MicroApp, dev server).
+ */
+function hostEntityTypeId() {
+  const m = location.pathname.match(/graph\/([a-z_]+)\/([^/]+)\/editor\//i);
+  return m ? new sdk.TypeId(m[1], m[2]) : null;
+}
+
 async function resolveProjectTypeId() {
   const match = location.pathname.match(/micro_app\/([0-9a-f-]{36})/i);
   if (match) {

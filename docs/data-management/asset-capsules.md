@@ -111,7 +111,7 @@ its bytes even under `overwrite`; only an ABSENT one is stamped.
 A source may also declare that its bytes are not ours to write at all. A driver
 with `stamps_identity = False` — git, whose files are tracked — runs its
 reflection inside `carrier_writes_suppressed()` (`fs_store/fs_record.py`), and
-`upsert_main_ref` then returns the id it was given without consulting or
+the serializer's `store` then returns the id it was given without consulting or
 committing to the carrier. Identity for such a source is resolved by an
 `Entity.origin_id` lookup instead, so the ladder above is not merely skipped, it
 is unnecessary. The flag is a ContextVar because the write happens four layers

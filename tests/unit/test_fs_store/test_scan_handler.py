@@ -7,9 +7,8 @@ event emission, and scan_log writes.
 
 from __future__ import annotations
 
-from typing import Any
-
 import time
+from typing import Any
 
 import pytest
 

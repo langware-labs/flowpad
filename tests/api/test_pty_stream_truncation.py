@@ -30,7 +30,6 @@ from flow_sdk.builtin.shell import Shell
 from flow_sdk.compute.providers.desktop import pty_stream_file as psf_module
 from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
 from flow_sdk.compute.providers.desktop.pty_stream_file import PtyStreamFile
-
 from tests.api.conftest import default_compute_node_id
 
 # Small cap so a short burst overflows it and front-truncation runs.

@@ -18,7 +18,13 @@ export type { IJourneyJournal, JourneyJournalEntry, JourneyStatus } from './jour
 export { JourneyGraph } from './journey-graph';
 
 // Code-defined journeys — no folder, no rows, no network.
-export { getMemoryJourney, MemoryJourney, registerMemoryJourney } from './memory-journey';
+export {
+  getMemoryJourney,
+  MemoryJourney,
+  memoryJourneysVersion,
+  registerMemoryJourney,
+  subscribeMemoryJourneys,
+} from './memory-journey';
 
 // What a step waits for — one vocabulary for every kind of "not yet".
 export { GUIDED_WAIT_KINDS, matchesElement, matchesLocation, waitConditionProblems } from './journey-wait';

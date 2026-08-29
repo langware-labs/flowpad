@@ -817,7 +817,7 @@ export function MessageEntityChip({
   // attachment is marked installed (metadata-only, no clone).
   const folderOrigin: GitOrigin | null =
     typeId.type === 'folder'
-      ? ((attachment?.git_origin ??
+      ? ((attachment?.origin ??
           (data as unknown as { origin?: Record<string, unknown> } | null)?.origin ??
           null) as GitOrigin | null)
       : null;

@@ -739,6 +739,7 @@ async def _find_message_committed_before_failure(
 async def _try_send_reply_via_hub(
     *,
     conv_id: str,
+    flow_message_id: str,
     text: str,
     sender_name: str,
     sender_id: Optional[str],
@@ -774,6 +775,7 @@ async def _try_send_reply_via_hub(
         resp = await hub_ws_bridge.add_message(
             conversation_id=conv_id,
             text=text,
+            flow_message_id=flow_message_id,
             sender_name=sender_name or None,
         )
     except Exception as e:
@@ -977,6 +979,21 @@ async def handle_add_message(
     sender_id = sender_participant.get("user_id") or None
     sender_name = sender_participant.get("name") or ""
 
+    # Mint the logical message exactly once, before choosing its transport.
+    # If a WebSocket reply is lost after the hub commits, the HTTP fallback
+    # must reuse this id: the hub's unique entity id then makes both delivery
+    # attempts one write instead of two indistinguishable messages.
+    reply_fm = _build_reply_flow_message(
+        conv_id=conv.id,
+        message=message,
+        sender_id=sender_id,
+        sender_name=sender_name,
+        is_draft=is_draft,
+        shared_context_entities=shared_context_entities,
+        remote_worker_session_id=remote_worker_session_id,
+        kind=message_kind,
+    )
+
     uploaded_files = body.get("files") or []
     if not isinstance(uploaded_files, list):
         uploaded_files = [uploaded_files]
@@ -1010,6 +1027,7 @@ async def handle_add_message(
     ):
         hub_response = await _try_send_reply_via_hub(
             conv_id=conv.id,
+            flow_message_id=reply_fm.id,
             text=message,
             sender_name=sender_name,
             sender_id=sender_id,
@@ -1017,17 +1035,6 @@ async def handle_add_message(
         )
         if hub_response is not None:
             return hub_response
-
-    reply_fm = _build_reply_flow_message(
-        conv_id=conv.id,
-        message=message,
-        sender_id=sender_id,
-        sender_name=sender_name,
-        is_draft=is_draft,
-        shared_context_entities=shared_context_entities,
-        remote_worker_session_id=remote_worker_session_id,
-        kind=message_kind,
-    )
 
     if raw_attachments:
         # Direct Attachment dicts ({attachment_type, data}) from the SDK —

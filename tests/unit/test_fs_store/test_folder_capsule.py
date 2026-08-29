@@ -22,7 +22,6 @@ from flow_sdk.fs_store.indexer.functions._folder_capsule import (
     write_folder_capsule_id,
 )
 from flow_sdk.fs_store.indexer.functions.skill import (
-    extract_skill,
     skill_id_from_name,
 )
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
@@ -150,7 +149,7 @@ def test_indexing_skill_md_file_paths_dont_collide(tmp_path: Path) -> None:
         md.parent.mkdir(parents=True)
         md.write_text(f"---\nname: {nm}\n---\n\nbody {nm}", encoding="utf-8")
         resolved_id = _skill_mint(md)
-        ids.add(extract_skill(FSRef(md), resolved_id)[0].id)  # FILE path, as the CLI passes
+        ids.add(SchemaRegistry.get("skill").from_disk_fn(FSRef(md), resolved_id)[0].id)  # FILE path, as the CLI passes
     assert len(ids) == 2, f"distinct skill folders collided on one id: {ids}"
 
 

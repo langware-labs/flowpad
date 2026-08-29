@@ -13,9 +13,8 @@ import pytest
 
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions, build_default_indexer
-from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown
-from flow_sdk.fs_store.indexer.functions.whiteboard import extract_whiteboard
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.indexer.functions.whiteboard import extract_whiteboard
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 
@@ -24,7 +23,7 @@ class MarkdownRecord:
     def from_fsref(ref):
         # async-compat: the real indexer awaits this; the test will too.
         async def _aw():
-            return extract_markdown(ref, SchemaRegistry.get("markdown").mint_entity_id(ref, derive=True, overwrite=True))
+            return SchemaRegistry.get("markdown").from_disk_fn(ref, SchemaRegistry.get("markdown").mint_entity_id(ref, derive=True, overwrite=True))
 
         return _aw()
 

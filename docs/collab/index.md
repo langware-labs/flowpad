@@ -100,7 +100,7 @@ skill, …) are anchored to the conversation and recursively auto-share.
   branch/head, and safe repo-relative asset path. It is the single git pointer
   used by git-backed shares, project setup, and artifact resolution.
 - **git transfer** — a body-bundle transfer mode where the message carries
-  declaration metadata (`metadata.json`, `git_origins.json`, `git_transfers.json`)
+  declaration metadata (`metadata.json`, `fs_origins.json`, `git_transfers.json`)
   but does not copy git-backed file bytes. Receive means fetch/pull/clone as
   needed, index from the local filesystem, and preserve the sender's repo-relative
   layout.

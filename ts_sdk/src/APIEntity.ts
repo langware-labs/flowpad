@@ -197,6 +197,8 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   updated_through?: string;
   schema_version?: string;
   labels?: string[];
+  /** Editor apps available for this asset (shipped under `editors/` or the type's builtins). Derived by the backend. */
+  editors?: string[];
   root_vfs_path?: string;
   fs_storage_mount_path?: string;
   visitor_role?: string;
@@ -600,6 +602,34 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * has no asset file yet. Asset subclasses return this from `dockPointer`
    * (falling back to `super.dockPointer`); the `editor/<type>/<ref>` format
    * lives here once so it stays consistent across every asset type.
+   */
+  /** Editor apps this entity can open: the type's builtins plus what its asset ships. */
+  public get availableEditors(): string[] {
+    return Array.from(new Set([...dataManager.editorsForType(this.type), ...(this.editors ?? [])])).sort();
+  }
+
+  /** Membership without the allocation `availableEditors` makes. */
+  public hasEditor(name: string): boolean {
+    return (this.editors?.includes(name) ?? false) || dataManager.editorsForType(this.type).includes(name);
+  }
+
+  /**
+   * URL of one of this asset's editor apps — served by the backend from the
+   * asset (`/graph/<type>/<id>/editor/<name>/`), the same way a MicroApp is.
+   * The app learns its host entity from that path. `options` become the query
+   * string the app may read (e.g. `source` for the spec editor).
+   */
+  public editorAppUrl(name: string, options?: Record<string, string>): string {
+    const base = `${new ActionInfo('editor', this.type, this.id).fullActionUrl}/${encodeURIComponent(name)}/`;
+    const query = options ? new URLSearchParams(options).toString() : '';
+    return query ? `${base}?${query}` : base;
+  }
+
+  /**
+   * URL of one of this asset's editor apps — served by the backend from the
+   * asset (`/graph/<type>/<id>/editor/<name>/`), the same way a MicroApp is.
+   * The app learns its host entity from that path. `options` become the query
+   * string the app may read (e.g. `source` for the spec editor).
    */
   protected assetEditorPointer(typeSegment: string): DockPointerData | null {
     const editor = editorForType(typeSegment);

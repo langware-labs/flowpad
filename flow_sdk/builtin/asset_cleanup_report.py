@@ -8,17 +8,28 @@ markdown — lives in the entity's ``asset_ref`` file
 (``.claude/cleanup_reports/<name>/report.json``), mirroring UsageReport.
 
 ``report`` is a create-time ferry (db-excluded): it carries the JSON payload
-through save into ``default_body_fn`` (which materializes report.json) and is
+through save into the serializer (which materializes report.json as the ``FreeSection``) and is
 never persisted or returned on GET.
 """
 from __future__ import annotations
 
-import json
 from typing import Optional
 
-from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Sharing
+from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist, Sharing
 from flow_sdk.core import Entity
+from flow_sdk.schema.data_spec import FreeSection, FrontMatter
 from flow_sdk.schema.types import EntityType
+
+
+class AssetCleanupReportSpec(FrontMatter):
+    """``report.json`` — a FLAT document: three headline keys beside the
+    payload (``roots``, ``findings``, ``summary``, ``markdown``). The five
+    counts are DERIVED from the findings (``derive_cleanup``), never authored."""
+
+    name: Optional[str] = None
+    generated_at: Optional[str] = None
+    session_id: Optional[str] = None
+    report: Optional[FreeSection] = None
 
 
 class AssetCleanupReport(Entity):
@@ -27,17 +38,18 @@ class AssetCleanupReport(Entity):
     generated_at: Optional[str] = APIField(None)
 
     # Headline (drives the feed card; full detail is in report.json)
-    root_count: int = APIField(0)
-    finding_count: int = APIField(0)
-    garbage_count: int = APIField(0)
-    keep_count: int = APIField(0)
-    unsure_count: int = APIField(0)
+    # Facts about the findings — mirrored to the shadow so the index carries them.
+    root_count: int = APIField(0, persist=Persist.TRUE)
+    finding_count: int = APIField(0, persist=Persist.TRUE)
+    garbage_count: int = APIField(0, persist=Persist.TRUE)
+    keep_count: int = APIField(0, persist=Persist.TRUE)
+    unsure_count: int = APIField(0, persist=Persist.TRUE)
     session_id: Optional[str] = APIField(None, description="Worker session that produced the scan")
 
     asset_ref: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     # Create-time ferry only: JSON text consumed by default_body_fn (which
     # materializes report.json at asset_ref). Never persisted to DB/blob.
-    report: Optional[str] = NoDBAPIField(default=None)
+    report: Optional[dict] = NoDBAPIField(default=None)
 
     @classmethod
     def from_result(
@@ -69,5 +81,5 @@ class AssetCleanupReport(Entity):
             keep_count=counts["keep"],
             unsure_count=counts["unsure"],
             session_id=result.session_id,
-            report=json.dumps(payload),
+            report=payload,
         )

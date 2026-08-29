@@ -9,6 +9,7 @@ import pytest
 
 import flow_sdk.core.capabilities.discovery as discovery_mod
 from flow_sdk.builtin.capability import Capability
+from flow_sdk.schema.data_spec import DataSpec
 from flow_sdk.core.capabilities import (
     CapabilityKind,
     CapabilityResult,
@@ -123,7 +124,7 @@ async def test_gh_check_installed_auth_seam(monkeypatch):
         CapabilityValue(
             kind=CapabilityKind.GITHUB_GH.value,
             value={"path": "/opt/gh/bin", "ref_type": "folder"},
-            value_type="folder",
+            value_spec=DataSpec.parse("fs_ref"),
             message="seeded",
         )
     )

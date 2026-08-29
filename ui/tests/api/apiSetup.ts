@@ -5,10 +5,16 @@
 // that forgets to clean up. See `installLeakTripwire` in `../_cleanup` for the
 // mechanism (sweeps for the `e2etest-*` marker; no-ops when offline).
 import { installLeakTripwire } from '../_cleanup';
+import { connectionManager } from '@sdk';
+import { afterAll } from 'vitest';
 import { assertClaudeTranscriptHomesAligned } from './_claude_transcript_home';
 
 assertClaudeTranscriptHomesAligned();
 installLeakTripwire(['skill']);
+
+afterAll(() => {
+  connectionManager.dispose();
+});
 
 // The `@lingui/react` shim is registered in its own setup file (../_lingui-mock,
 // listed first in this tier's setupFiles) and shared with the unit/react tiers.

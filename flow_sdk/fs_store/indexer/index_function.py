@@ -809,12 +809,43 @@ class FSIndexer:
             chunk = dispatchable[chunk_start : chunk_start + _PROBE_CHUNK_REFS]
             all_probed.extend(await asyncio.to_thread(_probe_chunk, chunk))
 
+        # The resolver re-validates every stored occurrence it is handed by
+        # re-reading the file's identity carrier, so handing a SCOPED run the
+        # whole corpus prices a one-file project index at one frontmatter read
+        # per record on the machine — and the auto-index fires one such run per
+        # project selection. A scoped run can only change the groups it walked:
+        # keep a key when this run holds a live candidate for it, or when a
+        # stored path lies under a walked root (so a deletion inside the scope
+        # is still pruned). Everything else belongs to some other root's run.
+        # An unscoped run keeps the full view: it is the sweep that prunes what
+        # no root reaches any more.
+        resolver_occurrences = stored_occurrences
+        if opts.roots is not None or opts.scope_filter is not None:
+            walk_roots = list(opts.roots) if opts.roots is not None else self._roots
+            walk_prefixes = tuple(
+                canonical_posix_path(str(root._path)).rstrip("/") + "/" for root in walk_roots
+            )
+            walked_keys = {
+                (str(ref.record_type), ref_id) for ref, _info, ref_id, _probe, _fresh, _canon in all_probed if ref_id
+            }
+
+            def _under_walk(path: str) -> bool:
+                return any(path == prefix[:-1] or path.startswith(prefix) for prefix in walk_prefixes)
+
+            resolver_occurrences = StoredOccurrenceMap()
+            for key, occurrences in stored_occurrences.items():
+                if key in walked_keys or any(_under_walk(occurrence.path) for occurrence in occurrences):
+                    resolver_occurrences[key] = occurrences
+            resolver_occurrences.synthetic_keys.update(
+                key for key in stored_occurrences.synthetic_keys if key in resolver_occurrences
+            )
+
         def _resolve_occurrences():
             from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
             from flow_sdk.utils.git import git_asset_introduction  # noqa: PLC0415
 
             stored_identities: dict[str, tuple[str, str, str]] = {}
-            for (type_name, entity_id), occurrences in stored_occurrences.items():
+            for (type_name, entity_id), occurrences in resolver_occurrences.items():
                 info = SchemaRegistry.get(type_name)
                 if info is None:
                     continue
@@ -839,7 +870,7 @@ class FSIndexer:
 
             return resolve_asset_collisions(
                 all_probed,
-                stored_occurrences,
+                resolver_occurrences,
                 identity,
                 git_asset_introduction,
                 datetime.now(timezone.utc),

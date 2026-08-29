@@ -22,7 +22,6 @@ import pytest
 
 import flow_sdk.builtin.faas.analytics.claude_context as claude_context_mod
 from flow_sdk.compute.providers.desktop.provider import LocalComputeProvider
-
 from tests.api.conftest import default_compute_node_id
 
 

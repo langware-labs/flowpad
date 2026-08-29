@@ -126,7 +126,7 @@ async def test_publish_sends_project_id_only_and_updates_only_asset_cache(tmp_pa
     assert set(posted["payload"]) == {"contract_version", "project", "asset", "git_origin"}
     assert project.model_dump(mode="json") == project_before
     assert agent.remote is True
-    assert agent.git_origin == origin.model_dump(mode="json")
+    assert agent.origin.model_dump(mode="json") == origin.model_dump(mode="json")
     save.assert_awaited_once_with(actor, notify=False)
     assert result.project == {"id": project.id}
 

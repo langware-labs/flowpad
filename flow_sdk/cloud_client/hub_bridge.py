@@ -21,7 +21,7 @@ from typing import Any, Callable, Optional
 
 from flow_sdk import inbox
 from flow_sdk.cloud_client.ws_client import HubWebSocketManager, hub_ws_manager
-from flow_sdk.fs_store.serializer.hub import hub_names
+from flow_sdk.fs_store.serializer.hub import HubSerializer
 from flow_sdk.preferences import message_status_sharing_enabled
 
 logger = logging.getLogger(__name__)
@@ -920,9 +920,7 @@ class HubWsBridge:
         clean["remote"] = True
         # Wire adapter: the roster's hub key (``participants``) → the local
         # ``members`` cache, from the one declaration on ``Conversation``.
-        for field, wire in hub_names(Conversation).items():
-            if wire in clean:
-                clean[field] = clean.pop(wire)
+        clean = HubSerializer.unwire(Conversation, clean)
 
         self.remember_hub_conversation(conv_id)
 

@@ -53,6 +53,29 @@ necessarily the one this app belongs to.
 await new sdk.Task({ title }).save(projectTypeId);
 ```
 
+## Ship it as an asset editor
+
+The same folder can live INSIDE an asset, at `<asset folder>/editors/<name>/`
+(a data-source definition, a skill, a task — any folder asset). Flowpad then
+lists `<name>` on the asset's `editors` and serves the page at
+`/api/v1/graph/<type>/<id>/editor/<name>/`; the UI opens it from the asset's
+menus at `/dock/assets/editor/app/typeid/<type>-<id>?app=<name>`. Nothing to
+register — re-index the asset and it is there. The rules above still hold; the
+one addition is that the host entity is in the page's own path:
+
+```js
+const host = hostEntityTypeId();            // TypeId('data_source_spec', '…') or null
+const spec = host && (await sdk.dataManager.getByTypeId(host));
+```
+
+Anything else the dock passes arrives as the query string (the Data Sources
+menu passes `?source=<data_source id>`). To move the host somewhere, post a
+dock URL to it — never navigate the frame itself:
+
+```js
+window.parent.postMessage({ kind: 'open-link', url: '/dock/assets/editor/task/typeid/task-…' }, location.origin);
+```
+
 ## Live updates come free — do not poll
 
 Flowpad pushes entity changes over a WebSocket. Subscribe with a watched query

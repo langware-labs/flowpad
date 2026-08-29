@@ -5,8 +5,8 @@ tolerant at the git end: a dict with no ``kind`` is a legacy git origin, a
 git-hosting name folds onto ``git``, ``local`` is local, and any other kind is a
 ``CloudOrigin`` (whose ``kind`` is the CHANNEL — gmail, slack, gcp — an open string).
 
-``SoftOrigin`` is the same type with the ONE tolerance rule attached: a malformed
-value becomes ``None`` rather than breaking the entity that merely carries it.
+``OriginField`` carries the ONE tolerance rule: a malformed value becomes ``None``
+rather than breaking the entity that merely carries it.
 """
 
 from __future__ import annotations
@@ -26,11 +26,12 @@ logger = logging.getLogger(__name__)
 
 def origin_tag(value: Any) -> str:
     """The union arm a raw origin belongs to: ``git`` / ``local`` / ``cloud``."""
-    kind = ORIGIN_KIND_ALIASES.get(resolve_origin_kind(value).lower(), resolve_origin_kind(value).lower())
+    kind = resolve_origin_kind(value).lower()
+    kind = ORIGIN_KIND_ALIASES.get(kind, kind)
     return kind if kind in ("git", "local") else "cloud"
 
 
-OriginField = Annotated[
+_ORIGIN_UNION = Annotated[
     Union[
         Annotated[GitOrigin, Tag("git")],
         Annotated[LocalOrigin, Tag("local")],
@@ -50,9 +51,11 @@ def _soft(value: Any, handler: Any) -> Any:
         return None
 
 
-SoftOrigin = Annotated[Optional[OriginField], WrapValidator(_soft)]
+#: THE origin type: the union plus the one tolerance rule — a malformed value
+#: reads as absent rather than breaking the entity that merely carries it.
+OriginField = Annotated[Optional[_ORIGIN_UNION], WrapValidator(_soft)]
 
 # Cache the adapters — TypeAdapter compiles a full validation schema for the
 # union; rebuilding it per call (e.g. once per bundle entry on unpack) is the
 # expensive part pydantic warns about. Reuse these everywhere.
-ORIGIN_ADAPTER: TypeAdapter = TypeAdapter(SoftOrigin)
+ORIGIN_ADAPTER: TypeAdapter = TypeAdapter(OriginField)

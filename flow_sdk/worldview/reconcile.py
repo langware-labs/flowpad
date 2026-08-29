@@ -20,7 +20,7 @@ thing, and once minted it never changes.
 from __future__ import annotations
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
-from flow_sdk.builtin.cloud_origin import CloudOrigin
+from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin
 from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.worldview.models import (
     ArtifactLinkSource,
