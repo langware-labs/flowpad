@@ -25,8 +25,6 @@ from flow_sdk.api.api_types.api_field import APIField, EntityField, Persist, Sha
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.faas.compute_node import ComputeNode
-from flow_sdk.builtin.fs_origin_field import FSOriginField
-from flow_sdk.builtin.git_origin import GitOrigin, as_git
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
 from flow_sdk.config import AGENT_MOUNT_FOLDER, PLATFORM_WIN32, StorageProvider
 from flow_sdk.core import Entity, action
@@ -36,6 +34,7 @@ from flow_sdk.core.flow.mcp_server import MCPConnector, mcp_connector_pool
 from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.fs_store.origin.git_origin import GitOrigin, as_git, fresh_clone_slot
 from flow_sdk.fs_store.path_utils import (
     canonical_posix_path,
     is_path_under,
@@ -46,7 +45,6 @@ from flow_sdk.request_context.methods import (
     get_current_request_info,
 )
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
-from flow_sdk.utils.git import find_local_repo_for_url, git_clone
 
 log = logging.getLogger(__name__)
 
@@ -61,36 +59,6 @@ def _generate_session_code() -> str:
     left = "".join(random.choices(alphabet, k=4))
     right = "".join(random.choices(alphabet, k=4))
     return f"{left}-{right}"
-
-
-def _fresh_clone_slot(preferred_leaf: str) -> Path:
-    """An unused workspace directory named after ``preferred_leaf``.
-
-    Blocking (stats the workspace) — call via ``asyncio.to_thread``.
-
-    Deliberately NOT ``GitOrigin.next_clone_target``: that one reuses an
-    existing checkout when the origin matches, which is right when the repo IS
-    the project's identity and wrong when it is a template being instantiated
-    for the Nth time. This one always suffixes past a collision.
-    """
-    base = Path(AGENT_MOUNT_FOLDER)
-    base.mkdir(parents=True, exist_ok=True)
-    leaf = (
-        "".join(c if c.isalnum() or c in ("-", "_", ".") else "-" for c in (preferred_leaf or "")).strip("-. ")
-        or "project"
-    )
-    candidate = base / leaf
-    n = 2
-    # An EMPTY directory is not a collision — nothing there can be lost, and
-    # ``git clone`` is happy to write into one. This matters because a Project
-    # reserves ``<workspace>/<name>`` when it is constructed, so treating that
-    # as taken would push every engagement to ``<name>-2`` and strand the
-    # reserved directory as an empty stray (which the workspace scan then mints
-    # a second, empty project for).
-    while candidate.exists() and any(candidate.iterdir()):
-        candidate = base / f"{leaf}-{n}"
-        n += 1
-    return candidate
 
 
 def _detach_git_history(repo_root: Path) -> None:
@@ -204,11 +172,6 @@ class Project(Entity):
     # Portable repository identity for a project shared through the hub. This
     # is never the sender's local worktree path; the recipient uses it to
     # clone/materialize its own checkout.
-    origin: Optional[FSOriginField] = APIField(
-        sharing=Sharing.PRIVATE,
-        default=None,
-        description="Portable Git repository origin used to materialize a shared project.",
-    )
     # Legacy stash for the removed stored ``include_dirs`` field. Context
     # folders are now Folder entities linked via the base-Entity context
     # buckets (see the computed ``include_dirs`` property); any raw
@@ -962,12 +925,11 @@ class Project(Entity):
         parent_tid = parent_share_typeid(self)
         if parent_tid is not None:
             self.add_shared_context_entities(parent_tid)
-        body = self._hub_body()
         if self.fs_storage_mount_path:
             origin = await asyncio.to_thread(GitOrigin.for_asset_path, self.fs_storage_mount_path)
             if origin is not None:
-                self.origin = origin
-                body["git_origin"] = origin.model_dump(mode="json", exclude={"project_id", "id"})
+                self.origin = origin   # SHARED: the body carries it under its hub name
+        body = self._hub_body()
         shared_context_origins = await self._shared_context_origin_payload()
         invalid_shared_folders = [
             str(tid)
@@ -1024,22 +986,12 @@ class Project(Entity):
 
         from flow_sdk.app.actions.oauth_action import _get_github_token_for_current_user  # noqa: PLC0415
         from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir  # noqa: PLC0415
+        from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
 
-        existing = await asyncio.to_thread(find_local_repo_for_url, origin.clone_url())
-        if existing and origin.matches_checkout(existing, require_branch=bool(origin.branch)):
-            target_dir = existing
-        else:
-            target_dir = str(await asyncio.to_thread(origin.next_clone_target))
-            token = await _get_github_token_for_current_user()
-            ok, message = await git_clone(
-                origin.clone_url(),
-                target_dir,
-                branch=origin.branch or None,
-                token=token,
-            )
-            if not ok:
-                raise RuntimeError(message)
-
+        root, _ = await get_origin_driver(origin.kind).materialize(
+            origin, token=await _get_github_token_for_current_user()
+        )
+        target_dir = str(root)
         self.fs_storage_mount_path = canonical_posix_path(target_dir)
         self.name = os.path.basename(target_dir.rstrip(os.sep))
         self.remote = True
@@ -1097,17 +1049,19 @@ class Project(Entity):
         from flow_sdk.builtin.bootstrap_manifest import read_bootstrap_manifest  # noqa: PLC0415
 
         # A fresh slot every time, named after the ENGAGEMENT rather than the
-        # template. ``origin.next_clone_target`` is right for ``setup_from_git``
-        # (the repo is the project's identity, and reusing a matching checkout
-        # is correct) and wrong on both counts here: two engagements from one
-        # template are two independent working copies, and a customer whose
-        # folder is called ``cloudnsite-bootstrap`` has been handed the vendor's
-        # name for their own work.
-        target_dir = str(await asyncio.to_thread(_fresh_clone_slot, self.name or origin.name))
+        # template: two engagements from one template are two independent
+        # working copies, and a customer whose folder is called
+        # ``cloudnsite-bootstrap`` has been handed the vendor's name for their
+        # own work. An empty/absent preferred root is the driver's clone target.
+        from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
+
+        slot = await asyncio.to_thread(fresh_clone_slot, self.name or origin.name)
         token = await _get_github_token_for_current_user()
-        ok, message = await git_clone(origin.clone_url(), target_dir, branch=origin.branch or None, token=token)
-        if not ok:
-            return ApiFailResponse(message=message, status_code=502)
+        try:
+            root, _ = await get_origin_driver(origin.kind).materialize(origin, preferred_root=slot, token=token)
+        except RuntimeError as exc:
+            return ApiFailResponse(message=str(exc), status_code=502)
+        target_dir = str(root)
 
         target = Path(target_dir)
         # Read the manifest BEFORE severing history — the file itself stays, it
@@ -2002,7 +1956,7 @@ class Project(Entity):
         branch check when the origin names no branch
         (``if require_branch and self.branch``), so ANY checkout of this URL
         anywhere on disk matches, on any branch, at any commit; and
-        ``_resolve_git_checkout`` gates its pull on ``if origin.branch`` too, so
+        ``GitOriginDriver.materialize`` gates its pull on ``if origin.branch`` too, so
         nothing brings it up to date afterwards. The result is a vendor folder
         whose contents depend on what some unrelated flow happened to leave in
         the workspace. Resolving the default branch costs one ``ls-remote`` (no

@@ -28,13 +28,14 @@ from flow_sdk.app.actions.message_attachment_action import handle_attachment_ins
 from flow_sdk.builtin.artifact import Artifact
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.builtin.conversation import Conversation
+from flow_sdk.builtin.drivers.git_driver import GitOriginDriver
 from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
-from flow_sdk.builtin.flow_message_bundle import _resolve_git_checkout, pack_bundle, unpack_bundle
-from flow_sdk.builtin.git_origin import GitOrigin
+from flow_sdk.builtin.flow_message_bundle import pack_bundle, unpack_bundle
 from flow_sdk.builtin.message_attachment import MessageAttachment
 from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.skill import Skill
 from flow_sdk.core import Entity
+from flow_sdk.fs_store.origin.git_origin import GitOrigin
 from flow_sdk.responses.response import ApiSuccessResponse
 from flow_sdk.schema.types import EntityType
 
@@ -158,9 +159,9 @@ async def test_skill_reflects_same_repo_path_through_real_pack_unpack(tmp_path):
     # 2) The materialized receiver entity carries git_origin (same id, adopted).
     recv_skill = await Skill.get_one({"id": SKILL_ID})
     assert recv_skill is not None, "receiver never materialized the skill entity"
-    go = recv_skill.git_origin
-    assert go and go.get("rel_path") == REL_PATH, f"git_origin not stamped correctly: {go}"
-    assert go.get("owner") == "Acme" and go.get("branch") == "feature/demo"
+    go = recv_skill.origin
+    assert go and go.rel_path == REL_PATH, f"origin not stamped correctly: {go}"
+    assert go.owner == "Acme" and go.branch == "feature/demo"
 
 
 async def test_git_transfer_indexes_existing_receiver_worktree_without_copying_bundle_data(tmp_path):
@@ -221,8 +222,8 @@ async def test_git_transfer_indexes_existing_receiver_worktree_without_copying_b
     assert recv_skill is not None, "receiver never materialized the git-backed skill"
     assert Path(recv_skill.asset_ref).resolve() == (recv_repo / REL_PATH).resolve()
     assert GIT_ONLY_SEARCH_TOKEN in (recv_repo / REL_PATH / "SKILL.md").read_text(encoding="utf-8")
-    assert recv_skill.git_origin and recv_skill.git_origin.get("provider") == "file"
-    assert recv_skill.git_origin.get("rel_path") == REL_PATH
+    assert recv_skill.origin and recv_skill.origin.provider == "file"
+    assert recv_skill.origin.rel_path == REL_PATH
 
     results = await Entity.search(GIT_ONLY_SEARCH_TOKEN, record_type=EntityType.SKILL.value)
     assert any(result.id == GIT_ONLY_SKILL_ID for result in results), (
@@ -284,7 +285,7 @@ async def test_git_transfer_clones_remote_when_receiver_has_no_checkout(tmp_path
     recv_skill = await Skill.get_one({"id": GIT_CLONE_SKILL_ID})
     assert recv_skill is not None
     assert Path(recv_skill.asset_ref).resolve() == (cloned_root / REL_PATH).resolve()
-    assert recv_skill.git_origin and recv_skill.git_origin.get("provider") == "file"
+    assert recv_skill.origin and recv_skill.origin.provider == "file"
     results = await Entity.search(GIT_CLONE_SEARCH_TOKEN, record_type=EntityType.SKILL.value)
     assert any(result.id == GIT_CLONE_SKILL_ID for result in results), (
         "cloned git-transfer skill materialized but was not searchable via FTS"
@@ -320,7 +321,7 @@ async def test_git_checkout_resolution_skips_matching_remote_on_wrong_branch(tmp
     git_origin = GitOrigin.from_url(origin.resolve().as_uri(), branch="feature/expected", rel_path=".")
     assert git_origin is not None
 
-    checkout_root, _ = await _resolve_git_checkout(
+    checkout_root, _ = await GitOriginDriver().materialize(
         git_origin,
         preferred_root=wrong_branch_repo,
         preferred_project_id=None,
@@ -382,7 +383,7 @@ async def test_git_transfer_packs_graph_artifact_metadata_without_copying_app_fi
     key = f"{EntityType.ARTIFACT.value}-{GIT_ARTIFACT_ID}"
     with zipfile.ZipFile(zip_path) as zf:
         names = zf.namelist()
-        assert "git_origins.json" in names
+        assert "fs_origins.json" in names
         assert "git_transfers.json" in names
         metadata_name = f"metadata/{key}/metadata.json"
         assert metadata_name in names
@@ -493,7 +494,7 @@ async def test_git_transfer_markdown_doc_indexes_from_receiver_worktree_and_is_s
     key = f"{EntityType.MARKDOWN.value}-{GIT_MARKDOWN_ID}"
     with zipfile.ZipFile(zip_path) as zf:
         names = zf.namelist()
-        assert "git_origins.json" in names
+        assert "fs_origins.json" in names
         assert "git_transfers.json" in names
         assert f"metadata/{key}/metadata.json" in names
         assert not any(name.endswith("shared-git-doc.md") for name in names), names
@@ -514,8 +515,8 @@ async def test_git_transfer_markdown_doc_indexes_from_receiver_worktree_and_is_s
     assert Path(received_doc.asset_ref).resolve() == (recv_repo / rel_path).resolve()
     assert received_doc.title == "Shared Git Markdown"
     assert GIT_MARKDOWN_TOKEN in (recv_repo / rel_path).read_text(encoding="utf-8")
-    assert received_doc.git_origin and received_doc.git_origin.get("provider") == "file"
-    assert received_doc.git_origin.get("rel_path") == rel_path
+    assert received_doc.origin and received_doc.origin.provider == "file"
+    assert received_doc.origin.rel_path == rel_path
 
     results = await Entity.search(GIT_MARKDOWN_TOKEN, record_type=EntityType.MARKDOWN.value)
     assert any(result.id == GIT_MARKDOWN_ID for result in results), (
@@ -593,8 +594,8 @@ async def test_git_transfer_markdown_doc_clones_remote_and_is_searchable(tmp_pat
     received_doc = await Docs.get_one({"id": GIT_MARKDOWN_CLONE_ID})
     assert received_doc is not None
     assert Path(received_doc.asset_ref).resolve() == expected.resolve()
-    assert received_doc.git_origin and received_doc.git_origin.get("provider") == "file"
-    assert received_doc.git_origin.get("rel_path") == rel_path
+    assert received_doc.origin and received_doc.origin.provider == "file"
+    assert received_doc.origin.rel_path == rel_path
 
     results = await Entity.search(GIT_MARKDOWN_CLONE_TOKEN, record_type=EntityType.MARKDOWN.value)
     assert any(result.id == GIT_MARKDOWN_CLONE_ID for result in results), (
@@ -637,7 +638,7 @@ async def test_git_transfer_packs_folder_chip_metadata_only_and_install_never_cl
     key = f"{EntityType.FOLDER.value}-{folder_id}"
     with zipfile.ZipFile(zip_path) as zf:
         names = zf.namelist()
-        assert "git_origins.json" in names and "git_transfers.json" in names
+        assert "fs_origins.json" in names and "git_transfers.json" in names
         metadata_name = f"metadata/{key}/metadata.json"
         assert metadata_name in names
         metadata = json.loads(zf.read(metadata_name).decode("utf-8"))
@@ -646,7 +647,7 @@ async def test_git_transfer_packs_folder_chip_metadata_only_and_install_never_cl
         assert "path" not in metadata, metadata
         # Repo-root folders must carry a human name (never the "." degenerate).
         assert metadata.get("name") not in (None, "", "."), metadata
-        origins = json.loads(zf.read("git_origins.json").decode("utf-8"))
+        origins = json.loads(zf.read("fs_origins.json").decode("utf-8"))
         assert origins[key]["kind"] == "git"
         # Repo bytes never ride the bundle.
         assert not any(name.endswith("notes.md") for name in names), names

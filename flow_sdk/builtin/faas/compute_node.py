@@ -1026,9 +1026,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         ``target_name`` set to accept the suggestion.
         """
         from flow_sdk.app.actions.oauth_action import _get_github_token_for_current_user
-        from flow_sdk.builtin.git_origin import GitOrigin
         from flow_sdk.config import AGENT_MOUNT_FOLDER
-        from flow_sdk.utils.git import derive_repo_leaf_from_url, git_clone
+        from flow_sdk.fs_store.origin.git_origin import GitOrigin
+        from flow_sdk.utils.git import derive_repo_leaf_from_url
 
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
@@ -1062,21 +1062,26 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             )
 
         target_dir = os.path.join(AGENT_MOUNT_FOLDER, leaf)
-        if os.path.exists(target_dir):
-            # If caller explicitly chose this name, refuse — they need to pick
-            # another; offer the next-free `<leaf>-N` so the dialog can suggest it.
+        suggested = self._next_free_leaf(leaf)
+        if suggested != leaf:
+            # The caller chose this name and it is taken — refuse; offer the
+            # next-free `<leaf>-N` so the dialog can suggest it.
             return ApiFailResponse(
                 message=f"'{leaf}' already exists in workspace",
-                data={"suggested_name": self._next_free_leaf(leaf), "attempted_name": leaf},
+                data={"suggested_name": suggested, "attempted_name": leaf},
                 status_code=409,
             )
 
         # Same credential path `/api/v1/git/remote-access` probes with (see
-        # git_remote_access) — no token → anonymous clone, as before.
+        # git_remote_access) — no token → anonymous clone. The absent
+        # ``target_dir`` is the driver's clone target.
+        from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
+
         token = await _get_github_token_for_current_user()
-        ok, msg = await git_clone(clone_url, target_dir, branch=branch, token=token)
-        if not ok:
-            return ApiFailResponse(message=msg, status_code=400)
+        try:
+            await get_origin_driver(git_origin.kind).materialize(git_origin, preferred_root=Path(target_dir), token=token)
+        except RuntimeError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
 
         from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir  # noqa: PLC0415
 
@@ -1088,20 +1093,13 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     @staticmethod
     def _next_free_leaf(leaf: str) -> str:
-        """``leaf``, or the next free ``leaf-N``, under AGENT_MOUNT_FOLDER.
+        """``leaf``, or the next ``leaf-N`` nothing has claimed at all, under
+        AGENT_MOUNT_FOLDER — ``fresh_clone_slot`` without the empty-dir reuse.
+        All three callers want a path that does not exist: a 409 suggestion, a
+        delivered tree moved into place, and the name-availability probe."""
+        from flow_sdk.fs_store.origin.git_origin import fresh_clone_slot  # noqa: PLC0415
 
-        Single owner of the workspace placement/collision policy shared by
-        create-project-from-git (which reports it as a 409 suggestion) and
-        materialize-project (which just takes the free name).
-        """
-        from flow_sdk.config import AGENT_MOUNT_FOLDER  # noqa: PLC0415
-
-        if not os.path.exists(os.path.join(AGENT_MOUNT_FOLDER, leaf)):
-            return leaf
-        n = 2
-        while os.path.exists(os.path.join(AGENT_MOUNT_FOLDER, f"{leaf}-{n}")):
-            n += 1
-        return f"{leaf}-{n}"
+        return fresh_clone_slot(leaf, reuse_empty=False).name
 
     @staticmethod
     async def _materialize_project(target_dir: str, project_id: str | None = None) -> "Project":
@@ -1377,17 +1375,15 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         the task-scoped ``find-project`` endpoint — lets the receiver of a shared
         repo attach to a clone they already have instead of re-cloning it.
         """
-        from flow_sdk.builtin.git_origin import GitOrigin
-        from flow_sdk.utils.git import find_local_repo_for_url
-
+        from flow_sdk.fs_store.origin.git_origin import GitOrigin
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
         try:
             git_origin = GitOrigin.model_validate((body or {}).get("git_origin"))
         except Exception:
             return ApiFailResponse(message="git_origin is required", status_code=400)
-        local_path = find_local_repo_for_url(git_origin.clone_url())
-        return ApiSuccessResponse(data={"found": bool(local_path), "local_path": local_path})
+        local = git_origin.local_checkout()
+        return ApiSuccessResponse(data={"found": local is not None, "local_path": str(local) if local else None})
 
     @action.get(action_name="session-transcript")
     async def _session_transcript(self):
