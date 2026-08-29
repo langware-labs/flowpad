@@ -10,26 +10,9 @@ excluded from FTS).
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
-from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.record_types import RecordType
-
-
-def _load_trace(path: Path) -> dict:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except (OSError, ValueError):
-        return {}
-
-
-def _trace_id_from_path(path: Path) -> str:
-    """UUID5 from resolved path — stable across rescans."""
-    from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
-    return mint_uuid(str(path.resolve()))
+from flow_sdk.fs_store.indexer.functions._report_common import load_report, report_id_from_path
+from flow_sdk.fs_store.serializer.record import spec_extractor
 
 
 def _adopt_doc_id(data: dict) -> str | None:
@@ -40,38 +23,8 @@ def _adopt_doc_id(data: dict) -> str | None:
 
 def agent_trace_id(ref: FSRef) -> str:
     """Cheap id: prefer the trace's embedded ``id``; else uuid5(path)."""
-    return _adopt_doc_id(_load_trace(ref._path)) or _trace_id_from_path(ref._path)
+    return _adopt_doc_id(load_report(ref._path)) or report_id_from_path(ref._path)
 
 
-def extract_agent_trace(ref: FSRef, resolved_id: str) -> list[FSRecord]:
-    """Parse a trace.json into a Record — summary fields only.
-
-    FTS content is name + verdict + verdict_reason; the trace payload itself
-    never enters the index (it can be megabytes of tool-call previews).
-    """
-    path = ref._path
-    data = _load_trace(path)
-    summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
-    name = str(data.get("name") or path.parent.name)
-    verdict = summary.get("verdict")
-    verdict_reason = summary.get("verdict_reason")
-
-    content_parts = [p for p in (name, verdict, verdict_reason) if p]
-    rec = FSRecord(
-        type=RecordType.AGENT_TRACE,
-        id=resolved_id,
-        name=name,
-        session_id=str(data.get("session_id") or ""),
-        worker_type=str(data.get("worker_type") or "claude"),
-        verdict=verdict,
-        verdict_reason=verdict_reason,
-        duration_ms=summary.get("duration_ms"),
-        cost_usd=summary.get("cost_usd"),
-        issue_count=summary.get("issue_count") or 0,
-        divergence_count=summary.get("divergence_count") or 0,
-        lane_count=summary.get("lane_count") or 1,
-        content="\n".join(content_parts),
-    )
-    rec.source_file = str(path)
-    object.__setattr__(rec, "_asset_ref", FSRef(path))
-    return [rec]
+#: The generic spec-driven extractor, under the name callers import.
+extract_agent_trace = spec_extractor("agent_trace")

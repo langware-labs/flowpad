@@ -25,7 +25,8 @@ from flow_sdk.api.api_types.api_field import APIField, EntityField, Persist, Sha
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.faas.compute_node import ComputeNode
-from flow_sdk.builtin.git_origin import GitOrigin
+from flow_sdk.builtin.fs_origin_field import FSOriginField
+from flow_sdk.builtin.git_origin import GitOrigin, as_git
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
 from flow_sdk.config import AGENT_MOUNT_FOLDER, PLATFORM_WIN32, StorageProvider
 from flow_sdk.core import Entity, action
@@ -203,7 +204,7 @@ class Project(Entity):
     # Portable repository identity for a project shared through the hub. This
     # is never the sender's local worktree path; the recipient uses it to
     # clone/materialize its own checkout.
-    git_origin: GitOrigin | None = APIField(
+    origin: Optional[FSOriginField] = APIField(
         sharing=Sharing.PRIVATE,
         default=None,
         description="Portable Git repository origin used to materialize a shared project.",
@@ -965,8 +966,8 @@ class Project(Entity):
         if self.fs_storage_mount_path:
             origin = await asyncio.to_thread(GitOrigin.for_asset_path, self.fs_storage_mount_path)
             if origin is not None:
-                self.git_origin = origin
-                body["git_origin"] = origin.model_dump(mode="json")
+                self.origin = origin
+                body["git_origin"] = origin.model_dump(mode="json", exclude={"project_id", "id"})
         shared_context_origins = await self._shared_context_origin_payload()
         invalid_shared_folders = [
             str(tid)
@@ -1017,7 +1018,7 @@ class Project(Entity):
         into the workspace slot ``GitOrigin.next_clone_target`` picks, then bind
         the existing shared Project id to that checkout and index it.
         """
-        origin = self.git_origin
+        origin = as_git(self.origin)
         if origin is None:
             raise RuntimeError("Shared project has no Git origin")
 
@@ -1029,7 +1030,7 @@ class Project(Entity):
             target_dir = existing
         else:
             target_dir = str(await asyncio.to_thread(origin.next_clone_target))
-            token, _ = await _get_github_token_for_current_user()
+            token = await _get_github_token_for_current_user()
             ok, message = await git_clone(
                 origin.clone_url(),
                 target_dir,
@@ -1103,7 +1104,7 @@ class Project(Entity):
         # folder is called ``cloudnsite-bootstrap`` has been handed the vendor's
         # name for their own work.
         target_dir = str(await asyncio.to_thread(_fresh_clone_slot, self.name or origin.name))
-        token, _ = await _get_github_token_for_current_user()
+        token = await _get_github_token_for_current_user()
         ok, message = await git_clone(origin.clone_url(), target_dir, branch=origin.branch or None, token=token)
         if not ok:
             return ApiFailResponse(message=message, status_code=502)
@@ -2022,7 +2023,7 @@ class Project(Entity):
             )
             from flow_sdk.utils.git import git_remote_access  # noqa: PLC0415
 
-            token, _ = await _get_github_token_for_current_user()
+            token = await _get_github_token_for_current_user()
             reachable, default_branch = await git_remote_access(origin.clone_url(), token)
             if not reachable:
                 return ApiFailResponse(

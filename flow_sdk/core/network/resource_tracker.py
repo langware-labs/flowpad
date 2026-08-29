@@ -9,7 +9,7 @@ import logging
 import re
 from datetime import datetime, timezone
 from itertools import count
-from typing import Any, Optional
+from typing import Any
 from uuid import uuid4
 
 from fastapi.encoders import jsonable_encoder
@@ -17,57 +17,13 @@ from fastapi.encoders import jsonable_encoder
 logger = logging.getLogger(__name__)
 
 
-# ``DataOpMessage`` still has multiple compatibility import paths, each with
-# its own producer-local ``BaseMessage._counter``. Those values cannot order a
-# mixed stream. Stamp the authoritative sequence at the one outbound funnel,
-# before per-connection send tasks can complete out of order. A reconnect gets
-# a new socket and the client resets its accepted-sequence map.
+# Producers each carry a private ``BaseMessage._counter``; those values cannot
+# order a mixed stream. Stamp the authoritative sequence at the one outbound
+# funnel, before per-connection send tasks can complete out of order. A
+# reconnect gets a new socket and the client resets its accepted-sequence map.
 _DATA_OP_WIRE_SEQUENCE = count(1)
 
 
-class DataOpMessage:
-    """Entity operation message for WebSocket notifications."""
-
-    _counter: int = 0
-
-    def __init__(self, op: str, to_entity, data: Optional[dict] = None, message_id: Optional[str] = None):
-        """
-        Initialize DataOpMessage.
-
-        Args:
-            op: Operation type (create, update, delete)
-            to_entity: TypeId or string in format "type-id" or "type:id"
-            data: Optional entity data
-            message_id: Optional message ID (will be generated if not provided)
-        """
-        DataOpMessage._counter += 1
-        self.instance_id = DataOpMessage._counter
-        self.message_type = "data_op_msg"
-        self.message_id = message_id or str(uuid4())
-        self.op = op
-        # Handle TypeId or string
-        if isinstance(to_entity, str):
-            self.to_entity = to_entity
-        else:
-            # Assume it's a TypeId object
-            self.to_entity = f"{to_entity.type}-{to_entity.id}"
-        self.data = data
-
-    def to_dict(self) -> dict:
-        """Convert to JSON-serializable dict."""
-        msg = {
-            "message_type": self.message_type,
-            "message_id": self.message_id,
-            "instance_id": self.instance_id,
-            "op": self.op,
-            "to_entity": self.to_entity,
-        }
-        if self.data is not None:
-            msg["data"] = self.data
-        return msg
-
-
-# UUID pattern (8-4-4-4-12 hex chars) at the end of a "type-uuid" string.
 _UUID_SUFFIX_RE = re.compile(
     r"^(.+)-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
     re.IGNORECASE,
@@ -110,9 +66,7 @@ def _to_message_dict(op_message: Any) -> dict:
     if isinstance(op_message, dict):
         data = op_message
     elif hasattr(op_message, "model_dump"):
-        data = op_message.model_dump()  # Pydantic models (api.messages.DataOpMessage)
-    elif hasattr(op_message, "to_dict"):
-        data = op_message.to_dict()  # Local compatibility wrapper
+        data = op_message.model_dump()  # DataOpMessage (api_types.messages)
     else:
         raise TypeError(f"Unsupported op_message type: {type(op_message)}")
 
@@ -201,7 +155,7 @@ async def _send_payloads(ws, payloads: list[dict]):
             logger.warning("Failed to send entity notification: %s", e)
 
 
-def _sync_handle_entity_op(op_message: DataOpMessage):
+def _sync_handle_entity_op(op_message: Any):
     """
     Synchronous wrapper to handle entity operations and queue WebSocket notifications.
 
@@ -302,7 +256,7 @@ def _sync_handle_entity_op(op_message: DataOpMessage):
         logger.error(f"Error handling entity op: {e}", exc_info=True)
 
 
-async def handle_entity_op(op_message: DataOpMessage):
+async def handle_entity_op(op_message: Any):
     """Async wrapper to handle entity operations and notify watchers."""
     _sync_handle_entity_op(op_message)
 

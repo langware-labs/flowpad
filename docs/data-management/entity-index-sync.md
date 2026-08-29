@@ -50,7 +50,7 @@ Frontend (reactive UI)
 
 **Scan filesystem (Records) directly when:**
 - You need the full domain data for one specific record (title, description, body, custom fields)
-- You need data that was never mirrored to the Entity (only the fields in the type's `meta_model` plus a few base columns like `scope`, `project_id`, `asset_ref` are mirrored)
+- You need data that was never mirrored to the Entity (only the fields in the type's `effective_meta_model` plus a few base columns like `scope`, `project_id`, `asset_ref` are mirrored)
 - You are doing a one-off traversal of a known directory tree
 - You need data that has not been indexed yet
 
@@ -338,11 +338,11 @@ No sync needed -- `entity.get_record()` loads the Record from disk by `(type, id
 | `flow_sdk/fs_store/schema_registry.py` | `SchemaRegistry`, `TypeInfo` -- type metadata, `clear_index()`, `get_index_status()`, `get_errors()`, index logging |
 | `flow_sdk/fs_store/indexer/index_function.py` | `FSIndexer.index()` / `.scan()` -- scan/index orchestration |
 | `flow_sdk/schema/types.py` | `EntityType` -- single consolidated type-name enum (was `RecordType` + `BuiltinEntityType`) |
-| `flow_sdk/schema/type_info/` | per-type `TypeMetadata` (`<t>_type_info.py`) + `register_all()`; `post_sync_fn`, `meta_model`, `default_body_fn`, etc. |
+| `flow_sdk/schema/type_info/` | per-type `TypeMetadata` (`<t>_type_info.py`) + `register_all()`; `post_sync_fn`, `meta_model`, `default_body_fn`, `serializer()`, etc. |
 | `flow_sdk/db/drivers/sqlite/sqlite_driver.py` | `FtsEntry`, `fts_upsert()`, `fts_delete()`, `fts_search()`, `browse_by_type()`; `entities_fts` schema |
 | `flow_sdk/builtin/faas/fs_records_actions.py` | `FsRecordsActionsMixin._fs_records_action()`, `_broadcast_fs_record_op()` -- CRUD gateway + DataOp notify |
 | `flow_sdk/core/network/resource_tracker.py` | `handle_entity_op()`, `_resolve_recipients()` |
-| `flow_sdk/api/messages.py` | `DataOpMessage`, `WSMessageType`, `OperationType`, `EntityMessage` |
+| `flow_sdk/api/api_types/messages.py` | `DataOpMessage`, `WSMessageType`, `OperationType`, `EntityMessage` — the single definition site; `flow_sdk/api/messages.py` re-exports them and adds the app-only frames |
 | `flow_sdk/app/actions/watch_registry.py` | `_watched_entities`, `add_watch()`, `get_watched_by()` |
 | `flow_sdk/server/routes/search.py` | `GET /api/v1/search` |
 | `flow_sdk/fs_store/operations/record_error.py` | `from_exception()` -- persisted indexing errors |

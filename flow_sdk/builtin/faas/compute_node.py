@@ -1073,7 +1073,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         # Same credential path `/api/v1/git/remote-access` probes with (see
         # git_remote_access) — no token → anonymous clone, as before.
-        token, _ = await _get_github_token_for_current_user()
+        token = await _get_github_token_for_current_user()
         ok, msg = await git_clone(clone_url, target_dir, branch=branch, token=token)
         if not ok:
             return ApiFailResponse(message=msg, status_code=400)

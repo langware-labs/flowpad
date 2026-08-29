@@ -239,9 +239,7 @@ class FsRecordsActionsMixin:
                 if ent_name:
                     rec = FSRecord.load_or_none(ent.type or ent.get_type(), ent_name)
             if rec:
-                ar = getattr(rec, "_asset_ref", None)
-                if ar is not None:
-                    return getattr(ar, "path", None) or ""
+                return rec.asset_path
         except Exception:
             pass
         return ""
@@ -2123,24 +2121,30 @@ class FsRecordsActionsMixin:
     # -- fs-records CRUD action --------------------------------------------------
 
     async def _materialize_main_body(self, rec, record_type: str) -> None:
-        """Write a just-created folder-asset's main body to disk (default_body →
-        e.g. ``SKILL.md``) so the new asset is discoverable by a disk-walking
-        scan. No-op for types without a ``default_body_fn``/``entity_cls`` or an
-        unresolved ``asset_ref``, and idempotent (``upsert_main_ref`` skips an
-        existing file). Bridges the gap that ``sync_to_db`` (DB row + metadata
-        shadow only) leaves for the FSRecord create path."""
+        """Write a just-created asset to disk through the type's serializer
+        (``SKILL.md``, ``agent.md``…) so the new asset is discoverable by a
+        disk-walking scan. Bridges the gap that ``sync_to_db`` (DB row +
+        metadata shadow only) leaves for the FSRecord create path."""
+        from pathlib import Path  # noqa: PLC0415
+
+        from flow_sdk.builtin.local_origin import local_origin_for_path  # noqa: PLC0415
         from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         info = SchemaRegistry.get(record_type)
-        if info is None or info.default_body_fn is None or info.entity_cls is None:
+        if info is None or info.entity_cls is None:
             return
         entity = await info.entity_cls.get_one({"id": rec.id})
         ar = getattr(entity, "asset_ref", None) if entity is not None else None
         if not ar:
             return
         rec.asset_ref = FSRef(ar)
-        await asyncio.to_thread(rec.upsert_main_ref, entity)
+        # The write is the serializer's: nothing to render ⇒ a no-op; an
+        # existing file is left alone (the store policy).
+        origin = local_origin_for_path(info.storage_root_for(Path(ar)))
+        committed = await asyncio.to_thread(info.serializer().store, entity, origin, type_name=record_type)
+        if committed.id:
+            rec.__dict__["id"] = committed.id
 
     async def _fs_records_action(self) -> ApiResponse:
         """CRUD gateway for filesystem-backed typed records.
@@ -2649,10 +2653,10 @@ async def discover_record_by_path(
     from datetime import timezone as _timezone  # noqa: PLC0415
 
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415 — trigger auto-registration
-    from flow_sdk.fs_store.fs_ref import FSRef as _FSRef  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.roots import classify_path  # noqa: PLC0415
     from flow_sdk.fs_store.fs_record import carrier_writes_are_suppressed  # noqa: PLC0415
+    from flow_sdk.fs_store.fs_ref import FSRef as _FSRef  # noqa: PLC0415
     from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.roots import classify_path  # noqa: PLC0415
     from flow_sdk.fs_store.record_list import RecordList  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType as _RT  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
@@ -2664,10 +2668,7 @@ async def discover_record_by_path(
 
     def _find() -> object | None:
         for rec in RecordList(type_name=record_type):
-            ref = getattr(rec, "asset_ref", None) or getattr(rec, "_asset_ref", None)
-            ref_path = getattr(ref, "path", None) if ref is not None else None
-            if ref_path is None:
-                ref_path = str(ref) if ref else ""
+            ref_path = rec.asset_path
             if _normalize_asset_path(ref_path) == target_norm:
                 return rec
         return None
@@ -2817,10 +2818,7 @@ async def discover_record_by_path(
                         object.__setattr__(rec, "project_id", project_id)
                     elif owner_pid:
                         object.__setattr__(rec, "project_id", owner_pid)
-                    ref = getattr(rec, "asset_ref", None) or getattr(rec, "_asset_ref", None)
-                    ref_path = getattr(ref, "path", None) if ref is not None else None
-                    if ref_path is None:
-                        ref_path = str(ref) if ref else ""
+                    ref_path = rec.asset_path
                     synced = False
                     try:
                         await rec.sync_to_db(notify=notify)
