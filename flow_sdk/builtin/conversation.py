@@ -159,7 +159,13 @@ class Conversation(ProjectedFields, Entity):
     remote_project_id: Optional[str] = APIField(None)
     remote_project_name: Optional[str] = APIField(None)
     message_count: int = APIField(0, sharing=Sharing.PRIVATE)
-    message_ids: Optional[str] = APIField(None)  # JSON-encoded [{"typeid": ..., "ts": ...}]
+    # The roster's hub WIRE key is ``participants`` (hub contract); the local
+    # read cache is the generic ``members``. Declared once here so every
+    # ingest/merge seam reads the alias from ``hub_names(Conversation)``.
+    members: List[dict] = APIField(default_factory=list, sharing=Sharing.PRIVATE, hub_name="participants")
+    # JSON-encoded [{"typeid": ..., "ts": ...}] — a projection of the pointer
+    # log, like ``message_count``: rebuilt locally, never accepted from the hub.
+    message_ids: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     # Roster cache lives on the Entity base as ``members`` (generic hub capability).
     # The hub sends/receives the conversation roster on the WIRE as ``participants``
     # (its field + fanout key); that key is adapted to ``members`` at ingest

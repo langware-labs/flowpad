@@ -128,3 +128,14 @@ flowpad:endcapsule identity -->
 | `report_type_metadata(...)` | `flow_sdk/schema/type_info/_report.py` | The shared shape of the flat-JSON report families (agent trace, usage report, asset-cleanup report). |
 | `useJsonDoc<T>(fsRef)` | `ui/src/hooks/use-json-doc.ts` | The one read-once JSON document hook behind `useAgentTraceDoc` / `useUsageReportDoc` / the cleanup-report editor. |
 | `CapabilityRegistry` | `flow_sdk/core/capabilities/registry.py` | A `KindRegistry[CapabilityRunner]` (kinds keep registration order). |
+
+## Consolidation seams (2026-08-30, Phase 2)
+
+| Ours | One place | Notes |
+|---|---|---|
+| `VENDORS` / `Vendor` | `flow_sdk/flowpad_types/vendors.py` | The one table of facts about the four CLI harness vendors (key, persisted `worker_type`, aliases, placement harness, capability kind, dot-dir, session entity type, pricing prefixes). Stdlib-only so `placement.py` and `transcript_analyzer` can import it; classes are reached by the dotted `package`. `vendor_for` / `vendor_or_none` / `default_vendor` / `vendor_by` / `vendor_for_path`. |
+| `JsonlTeeStreamWorker` | `flow_sdk/builtin/agentic_process/cli_drivers/jsonl_tee_worker.py` | The one non-interactive JSONL turn loop for vendors whose CLI records no turn terminal (copilot, opencode); a vendor supplies its session-key spelling, terminal types, stdin mode, converter and gate. Claude and codex stay on their own workers. |
+| `GitOriginDriver.materialize(origin, *, preferred_root, preferred_project_id, token)` | `flow_sdk/builtin/drivers/git_driver.py` | THE clone/reuse/pull policy — bundle receive, `Project.setup_from_git_origin`, `setup_from_bootstrap_git`, `Folder.resolve_location` and `create-project-from-git` all route through it. An absent/empty `preferred_root` means *clone here*. The driver is anonymous; callers pass their own `token`. |
+| `GitOrigin.next_clone_target()` / `fresh_clone_slot(leaf, reuse_empty=)` | `flow_sdk/fs_store/origin/git_origin.py` | The two workspace placement policies: reuse a matching checkout vs. never reuse (suffix past a collision; an empty dir is not one unless `reuse_empty=False`). |
+| Header-carried bundle entries | `flow_sdk/builtin/flow_message_bundle.py` `_HEADER_UNPACKERS` + `_unpack_*_entry` | Conversation / flow_message / remote_worker_session unpack through named inverses of their packers (an `_UnpackCtx` carries the unpack-time state) instead of inline branches in `unpack_bundle`. |
+| Hub merge deny-set | `_hub_reflect._merge_skip_fields(entity)`; `wiki_cache._cache_payload` | Derived from the `Sharing` declarations (`fields_not_accepted_from_hub()` + hub wire aliases from `APIField(hub_name=…)`; `fields_not_in_bundle()`), not hand lists. The three ALLOW lists (`_FM_FIELDS`, `hub_bridge._LOCAL_FIELDS`, `membership_sync._MIRRORED_FIELDS`) are wire-format subsets and stay declared. |

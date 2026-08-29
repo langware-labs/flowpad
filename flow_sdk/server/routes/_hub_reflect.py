@@ -168,7 +168,7 @@ def is_git_backed_remote_fs(entity: Entity | None, action_name: str | None) -> b
         action_name == "fs"
         and entity is not None
         and getattr(entity, "remote", False) is True
-        and getattr(entity, "git_origin", None) is not None
+        and getattr(entity, "origin", None) is not None
         and _hub_serves_git_bytes(entity)
         and not is_local_mode()
     )
@@ -369,15 +369,20 @@ def _normalize_hub_response(action_name: str, hub_resp: Any) -> Any:
 
 _MISSING = object()
 
-# Collection fields that carry their OWN dedicated sync path and must never be
-# overwritten by a bare entity PUT response: the roster (``participants`` /
-# ``members`` — owned by the ``members`` reflect, and echoed in the hub's
-# ``{user_id,…}`` shape rather than the local normalized ``{email,name}``) and
-# the conversation message projections (rebuilt from the pointer log, guarded
-# again downstream by ``apply_field_updates``). Every OTHER hub-modeled field —
-# scalars AND collections the hub genuinely owns (a task's ``artifacts``,
-# ``tags``, ``links``, ``metadata``) — is hub-authoritative and merges.
-_MERGE_SKIP_FIELDS = frozenset({"participants", "members", "message_ids", "message_count"})
+def _merge_skip_fields(entity: Entity) -> frozenset[str]:
+    """Fields a bare entity PUT response must never overwrite: what the type
+    declares not-accepted-from-hub (``PRIVATE`` + ``HUB_WRITE`` — the roster
+    ``members``, owned by the ``members`` reflect and echoed in the hub's
+    ``{user_id,…}`` shape; the conversation message projections, rebuilt from
+    the pointer log) plus each such field's hub wire name (the roster arrives
+    as ``participants``). Every OTHER hub-modeled field — scalars AND
+    collections the hub genuinely owns (a task's ``artifacts``, ``tags``,
+    ``links``, ``metadata``) — is hub-authoritative and merges."""
+    from flow_sdk.fs_store.serializer.hub import hub_names  # noqa: PLC0415
+
+    blocked = type(entity).fields_not_accepted_from_hub()
+    wire = hub_names(type(entity))
+    return blocked | frozenset(wire[n] for n in blocked if n in wire)
 
 
 def _merge_hub_entity_into_local(entity: Entity, hub_resp: Any) -> dict[str, Any]:
@@ -387,7 +392,7 @@ def _merge_hub_entity_into_local(entity: Entity, hub_resp: Any) -> dict[str, Any
     the source of truth: every API field the hub echoes (scalar OR collection)
     that differs from the local value is applied, so a remote entity reflects
     IMMEDIATELY into the local row — including hub-modeled collections like a
-    task's ``artifacts``. The only exclusions are ``_MERGE_SKIP_FIELDS`` (the
+    task's ``artifacts``. The only exclusions are ``_merge_skip_fields`` (the
     roster + message projections, which own their own sync and carry a divergent
     hub shape). Local-only fields (``project_id``, ``dismissed_at``,
     ``archived_at``, a task's ``session_id`` …) are absent from the hub response
@@ -401,8 +406,9 @@ def _merge_hub_entity_into_local(entity: Entity, hub_resp: Any) -> dict[str, Any
     if not isinstance(hub_resp, dict):
         return {}
     updates: dict[str, Any] = {}
+    skip = _merge_skip_fields(entity)
     for k, v in hub_resp.items():
-        if k in _MERGE_SKIP_FIELDS:
+        if k in skip:
             continue
         if not entity.is_api_field(k):
             continue
