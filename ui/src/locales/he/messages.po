@@ -40,7 +40,7 @@ msgstr "— הצג שוליים הערות"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "— show prompt anchors in gutter"
-msgstr "— הצג עוגנים של נושא בשוליים"
+msgstr "— הצג עוגני פרומפט בשוליים"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "— show time/index gutter"
@@ -119,7 +119,7 @@ msgstr "(לא חובה — אפשר להוסיף מאוחר יותר)"
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 msgid "(prompt content unavailable)"
-msgstr "(תוכן הבקשה אינו זמין)"
+msgstr "(תוכן הפרומפט אינו זמין)"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "(running...)"
@@ -284,6 +284,12 @@ msgstr "{0} פרוס"
 msgid "{0} is indexed without a valid source path and cannot be opened."
 msgstr "\"{0}\" מאונדקסת ללא נתיב מקור תקף, ולא ניתן לפתוח אותה."
 
+#. placeholder {0}: node.name || 'The sandbox'
+#. placeholder {1}: result.version
+#: src/hooks/use-sandboxes.ts
+msgid "{0} is now running FlowPad {1}."
+msgstr ""
+
 #. placeholder {0}: workerLabel(unavailableWorker)
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "{0} is unavailable"
@@ -393,6 +399,11 @@ msgstr "ספירת סוגים"
 msgid "types_time"
 msgstr "זמן סוגים"
 
+#. placeholder {0}: node.name || 'The sandbox'
+#: src/hooks/use-sandboxes.ts
+msgid "{0} was upgraded and restarted."
+msgstr ""
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "{changedCount} changed"
 msgstr "{changedCount} השתנו"
@@ -438,7 +449,7 @@ msgstr "ל-{folderName} יש שינויים שעדיין לא נדחפו לשר�
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{guestName} wants to run prompts on your machine."
-msgstr "{guestName} רוצה להריץ הנחיות במחשבך."
+msgstr "{guestName} רוצה להריץ פרומפטים במחשב שלך."
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{hostName} declined the live session."
@@ -483,7 +494,7 @@ msgstr "{name} עדיין לא מותקן על המחשב הזה. יש לעקו�
 
 #: src/components/conversation/LiveSessionGroup.tsx
 msgid "{promptCount} prompts · {replyCount} replies"
-msgstr "{promptCount} הודעות · {replyCount} תגובות"
+msgstr "{promptCount} פרומפטים · {replyCount} תגובות"
 
 #. placeholder {0}: names.length
 #: src/components/connections-manager.tsx
@@ -672,11 +683,11 @@ msgstr "🔧 Command - בצע סקריפט bash"
 
 #: src/components/hooks-view/HooksTable.tsx
 msgid "🤖 Prompt"
-msgstr "🤖 הנחיה"
+msgstr "🤖 פרומפט"
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "🤖 Prompt - Query AI (Claude Haiku)"
-msgstr "🤖 Prompt - בקש מ-AI (Claude Haiku)"
+msgstr "🤖 פרומפט - בקש מ-AI (Claude Haiku)"
 
 #: src/components/data-sources/provider-catalog.ts
 #~ msgid "0"
@@ -956,7 +967,7 @@ msgstr "הוסף הערה אישית…"
 
 #: src/components/conversation/PromptComposerDialog.tsx
 msgid "Add a prompt to your reply"
-msgstr "הוסף הנחיה לתשובתך"
+msgstr "הוסף פרומפט לתשובתך"
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Add an agent…"
@@ -1183,7 +1194,7 @@ msgstr "agent-name"
 
 #: src/i18n/type-labels.ts
 msgid "Agentic Process"
-msgstr "תהליך סוכנותי"
+msgstr "תהליך סוכני"
 
 #: src/routes/loaders/load-next-process.ts
 #: src/routes/loaders/process-load-error-resolution.ts
@@ -1192,7 +1203,7 @@ msgstr "התהליך האגנטי אינו קיים."
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "AgenticProcess ID this prompt annotation is linked to"
-msgstr "מזהה ה-AgenticProcess שאליו מקושרת הערת ההנחיה"
+msgstr "מזהה ה-AgenticProcess שאליו מקושרת הערת הפרומפט"
 
 #: src/components/data-sources/provider-catalog.ts
 #~ msgid "AgentMail"
@@ -1215,7 +1226,7 @@ msgstr "הגדרות AI"
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "AI Prompt *"
-msgstr "AI Prompt *"
+msgstr "פרומפט AI *"
 
 #: src/components/machine-overview/logs-viewer.tsx
 msgid "Alerts Only ({totalAlerts})"
@@ -1338,7 +1349,7 @@ msgstr "אפשרו"
 
 #: src/components/conversation/ExecutePromptDialog.tsx
 msgid "Allow {who} to run prompt on this computer"
-msgstr "יש להרשות ל-{who} להריץ prompt במחשב זה"
+msgstr "יש להרשות ל-{who} להריץ פרומפט במחשב זה"
 
 #: src/components/terminal/interactive-terminal/process-cli-presentation.ts
 msgid "Allow all tools without confirmation (--allow-all)"
@@ -1649,7 +1660,7 @@ msgstr "גרסת האפליקציה"
 
 #: src/components/conversation/chips/MessageChips.tsx
 msgid "Appended to the current worker's prompt queue, tagged with this message."
-msgstr "הוספה לתור ההנמקות של העובד הנוכחי, מסומנת בהודעה זו."
+msgstr "הוספה לתור הפרומפטים של העובד הנוכחי, מסומנת בהודעה זו."
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Apply"
@@ -1666,11 +1677,11 @@ msgstr "אישור"
 
 #: src/components/conversation/attachment-actions/registry.ts
 msgid "Approve and run this prompt in {sessionLabel}"
-msgstr "אישור והרצה של ההנחיה הזו ב־{sessionLabel}"
+msgstr "אישור והרצה של הפרומפט הזה ב־{sessionLabel}"
 
 #: src/components/conversation/attachment-actions/registry.ts
 msgid "Approve this prompt and run it"
-msgstr "אישור ההנחיה והרצתה"
+msgstr "אישור הפרומפט והרצתו"
 
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
@@ -1982,15 +1993,15 @@ msgstr "תשובה אוטומטית"
 
 #: src/components/conversation/ExecutePromptDialog.tsx
 msgid "Auto-run future prompts"
-msgstr "הפעלה אוטומטית של הצעות עתידיות"
+msgstr "הרצה אוטומטית של פרומפטים עתידיים"
 
 #: src/components/conversation/ExecutePromptDialog.tsx
 msgid "Auto-run prompts from {who} (all projects)"
-msgstr "הפעל הצעות מ{who} באופן אוטומטי (כל הפרויקטים)"
+msgstr "הרץ פרומפטים מ{who} באופן אוטומטי (כל הפרויקטים)"
 
 #: src/components/conversation/ExecutePromptDialog.tsx
 msgid "Auto-run prompts from {who} for this project"
-msgstr "הפעל הצעות מ{who} באופן אוטומטי עבור פרויקט זה"
+msgstr "הרץ פרומפטים מ{who} באופן אוטומטי עבור פרויקט זה"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Auto-updates check hourly."
@@ -2968,7 +2979,7 @@ msgstr "לחץ לצפייה"
 
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 msgid "Click to view full prompt"
-msgstr "לחץ כדי לצפות בבקשה המלאה"
+msgstr "לחץ כדי לצפות בפרומפט המלא"
 
 #: src/components/image-annotator/image-annotator-store.tsx
 msgid "Clipboard not updated"
@@ -3762,7 +3773,7 @@ msgstr "העתק נתיב"
 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Copy prompt"
-msgstr "העתק הנמקה"
+msgstr "העתק פרומפט"
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Copy Provider ID"
@@ -4071,6 +4082,7 @@ msgstr "לא ניתן היה להתנתק מארגז החול"
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-chat-pane.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 msgid "Could not start"
@@ -4121,6 +4133,10 @@ msgstr "לא ניתן היה לעדכן את הסודות המצורפים"
 #: src/components/assets/editor/skill/SkillAssetEditor.tsx
 msgid "Could not update eval flag"
 msgstr "לא ניתן היה לעדכן את דגל ההערכה"
+
+#: src/hooks/use-sandboxes.ts
+msgid "Could not upgrade the sandbox"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -4455,7 +4471,7 @@ msgstr "שורת המאגר הנוכחית שנפתרה — הערות תוכנ�
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Current resolved buffer row — prompt annotations position by text-search in xterm buffer"
-msgstr "שורת המאגר הנוכחית שנפתרה — הערות הנחיה ממוקמות לפי חיפוש טקסט במאגר של xterm"
+msgstr "שורת המאגר הנוכחית שנפתרה — הערות פרומפט ממוקמות לפי חיפוש טקסט במאגר של xterm"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Current Time"
@@ -5239,7 +5255,7 @@ msgstr "השבתת כל ה-hooks"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Disable API prompt caching"
-msgstr "השבתת מטמון prompts ב-API"
+msgstr "השבתת מטמון פרומפטים ב-API"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Disable Bypass Permissions Mode"
@@ -5251,7 +5267,7 @@ msgstr "השבתת תעבורה לא חיונית"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Disable Prompt Caching"
-msgstr "השבתת מטמון prompts"
+msgstr "השבתת מטמון פרומפטים"
 
 #: src/components/hooks-manager/index.tsx
 #: src/components/hooks/EventSnifferChip.tsx
@@ -5626,7 +5642,7 @@ msgstr "ערוך בכל זאת"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Edit attached prompt"
-msgstr "ערוך prompt מצורף"
+msgstr "ערוך פרומפט מצורף"
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Edit data source"
@@ -5661,7 +5677,7 @@ msgstr "ערוך שם"
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "Edit prompt"
-msgstr "ערוך prompt"
+msgstr "ערוך פרומפט"
 
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Edit sender name"
@@ -5677,7 +5693,7 @@ msgstr "ערוך Trigger של מערכת"
 
 #: src/components/conversation/attachment-actions/registry.ts
 msgid "Edit the queued prompt"
-msgstr "עריכת ההנחיה שבתור"
+msgstr "עריכת הפרומפט שבתור"
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Edit Trigger"
@@ -6552,6 +6568,7 @@ msgstr "כישלון בהתחלת הסשן"
 
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-chat-pane.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 msgid "Failed to start the build session."
@@ -6719,7 +6736,7 @@ msgstr "סנן לפי תווית, דפוס או שורה תואמת…"
 
 #: src/components/terminal/HistoryModal.tsx
 msgid "Filter by name or last prompt…"
-msgstr "סנן לפי שם או ההנמקה האחרונה…"
+msgstr "סנן לפי שם או הפרומפט האחרון…"
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Filter by session"
@@ -6927,6 +6944,10 @@ msgstr "Flowpad Hub"
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "Flowpad מאתחל את המאגר, ולאחר מכן מציע את ההתקנה בענף ביקורת נפרד."
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -8055,7 +8076,7 @@ msgstr "עומק האינדוקס"
 
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 msgid "Index of prompts sent in this session"
-msgstr "אינדקס ההנחיות שנשלחו בסשן זה"
+msgstr "אינדקס הפרומפטים שנשלחו בסשן זה"
 
 #: src/i18n/pref-labels.ts
 msgid "Index project on selection"
@@ -8977,6 +8998,10 @@ msgstr "טוען מדדים..."
 msgid "Loading organizations…"
 msgstr ""
 
+#: src/components/html-preview/HtmlPreview.tsx
+msgid "Loading preview…"
+msgstr ""
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Loading project resources..."
 msgstr "טעינת משאבי הפרויקט..."
@@ -8993,7 +9018,7 @@ msgstr "טוען פרויקטים…"
 #: src/components/chats-navigator/ChatPromptsPopover.tsx
 #: src/components/terminal/HistoryModal.tsx
 msgid "Loading prompts…"
-msgstr "טוען הנמקות…"
+msgstr "טוען פרומפטים…"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Loading records…"
@@ -9491,6 +9516,7 @@ msgid "Message Attachment"
 msgstr "קובץ מצורף להודעה"
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
+#: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 msgid "Message not queued"
 msgstr "ההודעה לא נוספה לתור"
 
@@ -9898,7 +9924,7 @@ msgstr "פרויקט חדש"
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "New prompt"
-msgstr "בקשה חדשה"
+msgstr "פרומפט חדש"
 
 #: src/components/helpdesk/HelpdeskMyItems.tsx
 msgid "New reply"
@@ -9966,7 +9992,7 @@ msgstr "התאמה הבאה (Enter)"
 
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "Next prompt — injected when the agent next goes idle. Press Enter to add."
-msgstr "הודעה הבאה — תוזרק כשהסוכן יהיה רגוע. לחץ Enter כדי להוסיף."
+msgstr "הפרומפט הבא — יוזרק כשהסוכן יהיה פנוי. לחץ Enter כדי להוסיף."
 
 #: src/components/data-sources/DataSourceCard.tsx
 msgid "Next scheduled poll"
@@ -10492,20 +10518,20 @@ msgstr "אין פרויקטים."
 #: src/components/chats-navigator/ChatPromptsPopover.tsx
 #: src/components/terminal/HistoryModal.tsx
 msgid "No prompts found"
-msgstr "לא נמצאו הנמקות"
+msgstr "לא נמצאו פרומפטים"
 
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "No prompts queued. Add one below."
-msgstr "אין הודעות בתור. הוסף אחת למטה."
+msgstr "אין פרומפטים בתור. הוסף אחד למטה."
 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "No prompts yet"
-msgstr "אין הנמקות עדיין"
+msgstr "אין פרומפטים עדיין"
 
 #: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "No prompts yet — create one below."
-msgstr "אין בקשות עדיין — צור אחת למטה."
+msgstr "אין פרומפטים עדיין — צור אחד למטה."
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "No PTY events have fired yet."
@@ -10644,7 +10670,7 @@ msgstr "אין הגדרות התואמות לחיפוש שלך."
 
 #: src/components/collaboration/SharedSessionsList.tsx
 msgid "No shared sessions yet. Executing a prompt starts one."
-msgstr "אין עדיין סשנים משותפים. הרצת הנחיה תתחיל אחד."
+msgstr "אין עדיין סשנים משותפים. הרצת פרומפט תתחיל אחד."
 
 #: src/routes/loaders/load-next-process.ts
 #: src/routes/loaders/process-load-error-resolution.ts
@@ -10762,7 +10788,7 @@ msgstr "לא הוגדרו טריגרים לוו-וצק זה"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "No turns yet — send a prompt below to start working on {hostName}'s machine."
-msgstr "אין עדיין תורים — יש לשלוח הנחיה למטה כדי להתחיל לעבוד במחשב של {hostName}."
+msgstr "אין עדיין תורים — יש לשלוח פרומפט למטה כדי להתחיל לעבוד במחשב של {hostName}."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "No types match filter"
@@ -10906,7 +10932,7 @@ msgstr "טרם התחיל"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Not started — your first prompt will request access to {hostName}'s machine."
-msgstr "טרם התחיל — גישה למכונה של {hostName} תתבקש עם ההנחיה הראשונה שלך."
+msgstr "טרם התחיל — גישה למכונה של {hostName} תתבקש עם הפרומפט הראשון שלך."
 
 #: src/components/connections-manager/usage-cell.tsx
 msgid "Not used yet"
@@ -11469,6 +11495,7 @@ msgid "Open Spec Session"
 msgstr "פתיחת סשן המפרט"
 
 #: src/components/diagnose/open-in-terminal-button.tsx
+#: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Open terminal"
 msgstr "פתח טרמינל"
@@ -12008,7 +12035,7 @@ msgstr "נעץ את {0}"
 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Pin to prompt library"
-msgstr "הצמד — הוסף לספריית ההנמקות"
+msgstr "הצמד — הוסף לספריית הפרומפטים"
 
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/task-bar/SharedTaskView.tsx
@@ -12486,15 +12513,15 @@ msgstr "פרויקטים"
 #: src/components/quick-create/registry.ts
 #: src/i18n/type-labels.ts
 msgid "Prompt"
-msgstr "הנחיה"
+msgstr "פרומפט"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Prompt Annotation"
-msgstr "הערת הנושא"
+msgstr "הערת פרומפט"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Prompt annotations"
-msgstr "הערות הנושא"
+msgstr "הערות פרומפט"
 
 #: src/i18n/type-labels.ts
 msgid "Prompt Completion"
@@ -12502,73 +12529,73 @@ msgstr "השלמת פרומפט"
 
 #: src/components/quick-create/registry.ts
 msgid "Prompt created"
-msgstr "ההנחיה נוצרה"
+msgstr "הפרומפט נוצר"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Prompt file"
-msgstr "קובץ הנחיה"
+msgstr "קובץ פרומפט"
 
 #: src/components/prompt-library/PromptLibraryMenu.tsx
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
 msgid "Prompt Library"
-msgstr "ספרייה של בקשות"
+msgstr "ספריית פרומפטים"
 
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
 msgid "Prompt Library — click a prompt to add it to the queue"
-msgstr "ספריית ההנחיות — לחץ על הנחיה כדי להוסיף אותה לתור"
+msgstr "ספריית הפרומפטים — לחץ על פרומפט כדי להוסיף אותו לתור"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 msgid "Prompt name"
-msgstr "שם הנושא"
+msgstr "שם הפרומפט"
 
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "Prompt Queue"
-msgstr "תור הודעות"
+msgstr "תור הפרומפטים"
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Prompt sent to Claude Haiku for decision-making. Use ${variable} for interpolation."
-msgstr "הנחיה שנשלחה ל-Claude Haiku לקבלת החלטות. השתמש ב-${variable} לאינטרפולציה."
+msgstr "פרומפט שנשלח ל-Claude Haiku לקבלת החלטות. השתמש ב-${variable} לאינטרפולציה."
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Prompt sent to the agentic process when this trigger fires…"
-msgstr "הנמקה שנשלחת לתהליך בעלי סוכן כאשר טריגר זה מופעל…"
+msgstr "פרומפט שנשלח לתהליך האגנטי כאשר טריגר זה מופעל…"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 msgid "Prompt text"
-msgstr "טקסט הנושא"
+msgstr "טקסט הפרומפט"
 
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 msgid "Prompt to run"
-msgstr "בקשה להפעלה"
+msgstr "פרומפט להרצה"
 
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 msgid "Prompt to run:"
-msgstr "בקשה להפעלה:"
+msgstr "פרומפט להרצה:"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "Prompt:"
-msgstr "הערה:"
+msgstr "פרומפט:"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "prompts"
-msgstr "שאילתות"
+msgstr "פרומפטים"
 
 #: src/components/chats-navigator/ChatPromptsPopover.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 msgid "Prompts"
-msgstr "הנמקות"
+msgstr "פרומפטים"
 
 #. placeholder {0}: visiblePrompts.length
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Prompts ({0})"
-msgstr "הנחיות ({0})"
+msgstr "פרומפטים ({0})"
 
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 msgid "Prompts queued for this agent; the backend injects each when the worker is ready"
-msgstr "הנחיות בתור לאגנט זה; השרת מזריק כל אחת כאשר העובד מוכן"
+msgstr "פרומפטים בתור לאגנט זה; השרת מזריק כל אחד כאשר העובד מוכן"
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Properties"
@@ -13175,7 +13202,7 @@ msgstr "הסרת אפשרות"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Remove queued prompt"
-msgstr "הסר prompt בתור"
+msgstr "הסר פרומפט מהתור"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Remove this file from the next commit (git restore --staged)"
@@ -13597,7 +13624,7 @@ msgstr "יש לבדוק כל נכס מצורף ולבחור כיצד להתקי�
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 msgid "Review prompts"
-msgstr "סקירת הנמקות"
+msgstr "סקירת פרומפטים"
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Revision history of this file"
@@ -13825,7 +13852,7 @@ msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "Sample prompts"
-msgstr "שאילתות לדוגמה"
+msgstr "פרומפטים לדוגמה"
 
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 msgid "sandbox"
@@ -13866,6 +13893,10 @@ msgstr "ארגז החול הופעל ללא התחברות לענן"
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sandbox unavailable"
 msgstr "סביבה לא זמינה"
+
+#: src/hooks/use-sandboxes.ts
+msgid "Sandbox upgraded"
+msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sandboxes"
@@ -14350,7 +14381,7 @@ msgstr "יש לבחור כלל כדי לערוך אותו, או לצפות בה�
 
 #: src/components/collaboration/CollaborationPage.tsx
 msgid "Select a shared session, or execute a prompt to start one."
-msgstr "ניתן לבחור סשן משותף או להריץ הנחיה כדי להתחיל אחד"
+msgstr "ניתן לבחור סשן משותף או להריץ פרומפט כדי להתחיל אחד"
 
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "Select a task"
@@ -14479,7 +14510,7 @@ msgstr ""
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Send a PROMPT to the recipient asking for a status summary"
-msgstr "שלח הנחיה לנמען לסיכום מצב המשימה"
+msgstr "שלח פרומפט לנמען לסיכום מצב המשימה"
 
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 msgid "Send a question to the help desk. A new conversation will open with your message as the starting point."
@@ -15387,7 +15418,7 @@ msgstr "מיין לפי זמן: הקדומות ראשונות (לחץ לחדשו
 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Sort prompts by time"
-msgstr "מיין הנמקות לפי זמן"
+msgstr "מיין פרומפטים לפי זמן"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Sort within each type"
@@ -15846,11 +15877,11 @@ msgstr "\"תת־תהליך\" מריץ את סריקת הקבצים בתהליך 
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Suggest a prompt for the other user to approve"
-msgstr "הצע prompt למשתמש השני לאישור"
+msgstr "הצע פרומפט למשתמש השני לאישור"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Suggest prompt"
-msgstr "הצע prompt"
+msgstr "הצע פרומפט"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
@@ -15989,7 +16020,7 @@ msgstr "פרופיל מערכת"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "System prompt"
-msgstr "הנחיית מערכת"
+msgstr "פרומפט מערכת"
 
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "System triggers power core Flowpad functionality. Editing them can cause parts of the app to behave unexpectedly. Proceed only if you understand what this trigger does."
@@ -16190,6 +16221,14 @@ msgstr "היכולת \"{skillName}\" אינה מותקנת."
 msgid "The Agent bundle is not available."
 msgstr "חבילת הסוכן אינה זמינה."
 
+#: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
+msgid "The agent has asked a question — answer it in the terminal."
+msgstr "הסוכן שאל שאלה — יש לענות עליה בטרמינל."
+
+#: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
+msgid "The agent's plan is ready — approve it in the terminal."
+msgstr "התוכנית של הסוכן מוכנה — יש לאשר אותה בטרמינל."
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "The analysis completed but did not produce asset-scoped findings."
 msgstr "הניתוח הושלם אך לא הניב ממצאים בהיקף הנכס"
@@ -16314,11 +16353,11 @@ msgstr "הפרויקט לא יבקש אותו יותר. הערך השמור לא
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 msgid "The prompt text…"
-msgstr "טקסט הנושא..."
+msgstr "טקסט הפרומפט…"
 
 #: src/components/conversation/PromptComposerDialog.tsx
 msgid "The prompt will be attached to your next message. The other user will see an \"Approve & Execute\" chip; once approved, the prompt runs in their forked Claude Code session."
-msgstr "ההנחיה תצורף להודעה הבאה שלך. המשתמש השני יראה צ'יפ \"אישור והפעלה\"; ברגע שאושר, ההנחיה תרוץ בסשן Claude Code שלהם."
+msgstr "הפרומפט יצורף להודעה הבאה שלך. המשתמש השני יראה צ'יפ \"אישור והפעלה\"; ברגע שאושר, הפרומפט ירוץ בסשן Claude Code שלהם."
 
 #: src/components/connections-manager.tsx
 msgid "The provider accepted the token."
@@ -16334,7 +16373,7 @@ msgstr "הספק דחה את הטוקן השמור."
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "The recipient will see a PROMPT to approve."
-msgstr "הנמען יראה הנחיה לאישור."
+msgstr "הנמען יראה פרומפט לאישור."
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 msgid "The requested agent could not be found."
@@ -16427,6 +16466,10 @@ msgstr "הם יקבלו דוא״ל, וה-sandbox כבר ברשימה שלהם."
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "thinking"
+msgstr "חשיבה"
+
+#: src/components/entity-execution-panel/current-activity.ts
+msgid "Thinking"
 msgstr "חשיבה"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
@@ -16622,6 +16665,10 @@ msgstr "פעולה זו מסירה מהמחשב הזה את תיקיית העז�
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "This runs in the background — feel free to keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
 msgstr "התהליך רץ ברקע — אפשר להמשיך לעבוד. כשהוא יסתיים, התוצאה (וכל פעולה שתידרש) תחכה לכם בפיד הבית."
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "this sandbox"
+msgstr ""
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This sandbox could not be set up."
@@ -16892,6 +16939,10 @@ msgstr "טוקנים"
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Tomorrow"
 msgstr "מחר"
+
+#: src/components/html-preview/HtmlPreview.tsx
+#~ msgid "Too large to preview:"
+#~ msgstr ""
 
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Too many attempts. Wait a few minutes and try again."
@@ -17216,7 +17267,7 @@ msgstr "הסר הצמדה"
 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Unpin — remove from prompt library"
-msgstr "בטל הצמדה — הסר מספריית ההנמקות"
+msgstr "בטל הצמדה — הסר מספריית הפרומפטים"
 
 #. placeholder {0}: opener.label
 #: src/components/terminal/openers/TerminalOpenerToolbar.tsx
@@ -17327,10 +17378,27 @@ msgstr "מעדכן תוכנית"
 msgid "Updating…"
 msgstr "מתעדכן…"
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Upgrade"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+#: src/pages/hub-home/HubHome.tsx
+msgid "Upgrade FlowPad on this sandbox"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Upgrade FlowPad on this sandbox?"
+msgstr ""
+
 #. placeholder {0}: pypi.latest
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrade to v{0}"
 msgstr "שדרג ל-v{0}"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Upgrading — this takes a minute or two"
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrading…"
@@ -17499,7 +17567,7 @@ msgstr "הערת משתמש"
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/hooks-view/HooksTable.tsx
 msgid "User Prompt Submit"
-msgstr "שליחת הנושא ממשתמש"
+msgstr "שליחת פרומפט ממשתמש"
 
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "user-set"
@@ -17957,7 +18025,7 @@ msgstr "לוחות ציור"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Who this agent is — its system prompt."
-msgstr ""
+msgstr "מי הוא הסוכן הזה — פרומפט המערכת שלו."
 
 #: src/components/explorer-view/ExplorerNavigator.tsx
 msgid "Whole computer"

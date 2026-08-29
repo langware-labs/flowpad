@@ -34,6 +34,9 @@ import typer
 from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
+    caller_abs_path as _caller_abs_path,
+)
+from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
 )
 from flow_sdk.cli.commands._common import (
@@ -118,7 +121,12 @@ def artifact_entity(
 def artifact_file(
     path: Annotated[
         str,
-        typer.Argument(help="File path, absolute or ~-relative (e.g. '~/Flowpad workspace/proj/report.html')"),
+        typer.Argument(
+            help=(
+                "File path - absolute, ~-relative, or relative to YOUR cwd "
+                "(resolved here before it is sent; e.g. './report.html')"
+            )
+        ),
     ],
     name: Annotated[Optional[str], typer.Option("--name", help=_NAME_HELP)] = None,
     show: Annotated[bool, typer.Option("--show/--no-show", help=_SHOW_HELP)] = True,
@@ -126,7 +134,9 @@ def artifact_file(
 ) -> None:
     if not path or not path.strip():
         _fail(EXIT_INVALID_ARG, "INVALID_PATH", "Empty path")
-    _register(process, {"path": path, "name": name, "show": show})
+    # Absolutized in the CALLER's process - see `caller_abs_path`. A relative
+    # path would otherwise register a file under the SERVER's launch directory.
+    _register(process, {"path": _caller_abs_path(path), "name": name, "show": show})
 
 
 @artifact_app.command(

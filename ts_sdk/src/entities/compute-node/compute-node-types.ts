@@ -112,3 +112,23 @@ export interface WorkspaceReady {
   logged_in: boolean;
   login_detail: string;
 }
+
+/**
+ * The answer to `ops/upgrade-app`: the app inside the box was reinstalled from
+ * PyPI and started again.
+ *
+ * `version` is read back FROM the box after the restart — it is the build the
+ * machine now runs, not the one the hub asked pip for, and it is optional
+ * because a box that upgraded fine but did not answer the follow-up read must
+ * still report success.
+ */
+export interface AppUpgrade {
+  upgraded: boolean;
+  /** The running version, or absent when the box did not report one. */
+  version?: string | null;
+  /** Did the app come back up after the upgrade? */
+  healthy: boolean;
+  /** Tail of the pip/CLI output, so "already the latest" is tellable from
+   *  "fetched a new one" without opening a terminal on the box. */
+  output?: string;
+}

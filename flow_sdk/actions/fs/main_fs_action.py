@@ -11,11 +11,12 @@ from typing import Any
 
 from starlette.responses import StreamingResponse
 
+from flow_sdk.actions import action
 from flow_sdk.api.fs.desktop_open import open_in_os
 from flow_sdk.api.fs.fs_api import allowed_fs_actions, get_request_fs_info
-from flow_sdk.actions import action
 from flow_sdk.request_context import get_current_request_info
 from flow_sdk.responses import ApiFailResponse, ApiResponse, ApiSuccessResponse
+
 from .fs_actions import (
     browse,
     copy,
@@ -27,6 +28,7 @@ from .fs_actions import (
     move,
     rename,
     resolve_symlink,
+    serve,
     upload,
     upload_zip,
     write,
@@ -45,6 +47,7 @@ async def fs() -> ApiResponse[Any] | StreamingResponse:
     - browse: List directory contents
     - upload: Upload files
     - download: Download file
+    - serve: Serve a file for the browser to render (inline, url mirrors the path)
     - download_zip: Download directory as zip
     - upload_zip: Upload zip file
     - delete: Delete file/folder
@@ -75,6 +78,8 @@ async def fs() -> ApiResponse[Any] | StreamingResponse:
             return await upload(current_request_info, fs_info)
         elif fs_info.fs_action == "download":
             return await download(current_request_info, fs_info)
+        elif fs_info.fs_action == "serve":
+            return await serve(current_request_info, fs_info)
         elif fs_info.fs_action == "download_zip":
             return await download_zip(current_request_info, fs_info)
         elif fs_info.fs_action == "upload_zip":

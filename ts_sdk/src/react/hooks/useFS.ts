@@ -79,6 +79,15 @@ export function useFS(typeid?: TypeId) {
     },
 
     /**
+     * Get the URL a browser can RENDER this file from (inline, not a download)
+     * @param path - File path
+     * @returns URL for the file
+     */
+    getServeUrl: (path: string): string => {
+      return fsStore.getState().getServeUrl(typeid, path);
+    },
+
+    /**
      * Check if file exists (reactive, cached)
      * Returns cached existence check or null if not yet checked
      * Component will re-render when cache updates

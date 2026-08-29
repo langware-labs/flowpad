@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   panelProps: null as Record<string, unknown> | null,
   createProcess: vi.fn().mockResolvedValue({}),
   continueProcess: vi.fn().mockResolvedValue('continued-process'),
+  startNewSession: vi.fn(),
   sourceProcess: {
     id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
     target_typeid_str: 'markdown-cccccccc-cccc-4ccc-8ccc-cccccccccccc',
@@ -32,8 +33,13 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 vi.mock('@src/components/entity-execution-panel', () => ({
   EntityExecutionPanel: (props: Record<string, unknown>) => {
     mocks.panelProps = props;
+    const leadingSlot = props.leadingSlot as
+      | React.ReactNode
+      | ((actions: { startNewSession: () => void }) => React.ReactNode)
+      | undefined;
     return (
       <>
+        {typeof leadingSlot === 'function' ? leadingSlot({ startNewSession: mocks.startNewSession }) : leadingSlot}
         <button
           data-testid="pick-history"
           onClick={() =>
@@ -72,6 +78,7 @@ afterEach(() => {
   mocks.openShellProcess.mockReset();
   mocks.createProcess.mockClear();
   mocks.continueProcess.mockClear();
+  mocks.startNewSession.mockClear();
   mocks.panelProps = null;
 });
 
@@ -91,6 +98,30 @@ describe('VibeChatPane', () => {
     expect(mocks.openShellProcess).toHaveBeenCalledWith('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', {
       viewMode: ViewMode.Vibe,
     });
+  });
+
+  it('FLOWPAD-2027: "New" eagerly creates a fresh session and rebinds navigation', async () => {
+    const process = hostProcess();
+    render(<VibeChatPane process={process} />);
+
+    fireEvent.click(screen.getByTestId('entity-execution-new'));
+
+    // Instant visual feedback while the real process spins up.
+    expect(mocks.startNewSession).toHaveBeenCalled();
+
+    // The real create+navigate must run — NOT deferred to a later send. This
+    // is what keeps a sibling surface (Terminal view mode), which reads the
+    // same dock URL, from reusing the old already-used session when the user
+    // switches there before typing anything.
+    await waitFor(() =>
+      expect(mocks.createProcess).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          workdir: '/workspace',
+        }),
+      ),
+    );
+    expect(mocks.continueProcess).not.toHaveBeenCalled();
   });
 
   it('offers exactly start new, continue, and cancel outcomes', () => {

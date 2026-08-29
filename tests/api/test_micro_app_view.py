@@ -13,6 +13,8 @@ a cloud sandbox with nothing to configure.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from flow_sdk.builtin.faas.micro_app import AppLocationType, MicroApp
@@ -159,3 +161,65 @@ async def test_artifact_id_must_be_a_valid_entity_id(bootstrapped_client, user, 
             location_root=str(tmp_path),
             artifact_id="0192f5c8-7e2a-7000-8000-0242ac120002",  # v7
         )
+
+
+def _base_href(html: str) -> str | None:
+    found = re.search(r'<base[^>]*\bhref="([^"]*)"', html)
+    return found.group(1) if found else None
+
+
+@pytest.mark.asyncio
+async def test_base_href_is_https_when_served_through_a_sandbox_host(bootstrapped_client, user, tmp_path):
+    """The <base> must name the scheme the BROWSER used, not the one we speak.
+
+    E2B publishes a sandbox at ``https://<port>-<id>.e2b.dev`` and terminates
+    TLS at its proxy, which then speaks plain http to us **and sends no
+    ``X-Forwarded-Proto``** (measured against a live sandbox: the only headers
+    that survive are Host, Via and X-Cloud-Trace-Context). So neither the
+    request's own scheme nor any forwarded header can tell us we are on https,
+    and ``backend_scheme`` defaults to http.
+
+    Get this wrong and the page is delivered over https carrying
+    ``<base href="http://…">``: every relative asset becomes a mixed-content
+    request the browser blocks, and the app renders blank. The Host header is
+    the only per-request evidence of how the browser arrived — and an e2b
+    public host is https by construction (``sandbox_public_url``).
+    """
+    app = await _make_app(tmp_path)
+
+    # Exactly how e2b delivers it: plain http, public Host, no forwarded proto.
+    resp = await bootstrapped_client.get(f"http://9007-izaqamfcs55jm22e3evdn.e2b.dev{_view_url(app)}")
+
+    assert resp.status_code == 200, resp.text
+    assert _base_href(resp.text) == (
+        f"https://9007-izaqamfcs55jm22e3evdn.e2b.dev/api/v1/graph/micro_app/{app.id}/view/"
+    )
+
+
+@pytest.mark.asyncio
+async def test_base_href_follows_x_forwarded_proto(bootstrapped_client, user, tmp_path):
+    """Behind a proxy that does announce the scheme, believe it."""
+    app = await _make_app(tmp_path)
+
+    resp = await bootstrapped_client.get(
+        f"http://apps.example.com{_view_url(app)}",
+        headers={"X-Forwarded-Proto": "https"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert _base_href(resp.text) == (f"https://apps.example.com/api/v1/graph/micro_app/{app.id}/view/")
+
+
+@pytest.mark.asyncio
+async def test_base_href_stays_http_on_a_local_dev_host(bootstrapped_client, user, tmp_path):
+    """The guard on the fix: plain local development is not silently upgraded.
+
+    There is no TLS on a laptop's backend; rewriting to https here would break
+    every served app in local dev — the opposite failure, equally blank.
+    """
+    app = await _make_app(tmp_path)
+
+    resp = await bootstrapped_client.get(f"http://localhost:9007{_view_url(app)}")
+
+    assert resp.status_code == 200, resp.text
+    assert _base_href(resp.text) == (f"http://localhost:9007/api/v1/graph/micro_app/{app.id}/view/")

@@ -42,6 +42,46 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
     workdir: string | null | undefined;
   } | null>(null);
   const [workerSwitchIntent, setWorkerSwitchIntent] = useState<VibeWorkerSwitchIntent | null>(null);
+  const [startingNewSession, setStartingNewSession] = useState(false);
+
+  // "New" must EAGERLY create the fresh AgenticProcess and rebind the
+  // workspace URL — not just clear the panel's local composer state. Vibe is
+  // bound to its process by the dock URL (useVibeWorkspaceSession), and a
+  // sibling surface (Terminal view mode) reads that SAME URL without going
+  // through this panel at all. If "New" only cleared local state and left the
+  // real process/navigation for the lazy first-send, a user who clicks New
+  // and switches to Terminal before typing anything would still land in the
+  // old, already-used session — the URL never moved (FLOWPAD-2027).
+  // `startNewSession` still runs first for instant visual feedback (blank
+  // composer while the real process spins up); the effective reset once the
+  // new process lands is driven by `initialProcessId` changing underneath,
+  // same as picking a session from history.
+  const handleNewSession = useCallback(
+    async (startNewSession: () => void) => {
+      if (startingNewSession) return;
+      const projectId = project?.id ?? process?.project_id ?? null;
+      if (!projectId) {
+        startNewSession();
+        return;
+      }
+      startNewSession();
+      setStartingNewSession(true);
+      try {
+        await createVibeProcessForProject({
+          projectId,
+          workdir: project?.fs_storage_mount_path ?? undefined,
+          navigation,
+          workerType: defaultWorkerType,
+        });
+      } catch (error) {
+        console.error('[Vibe] Failed to start a new session:', error);
+        notify.error({ title: t`Could not start`, message: t`Failed to start the build session.` });
+      } finally {
+        setStartingNewSession(false);
+      }
+    },
+    [startingNewSession, project?.id, project?.fs_storage_mount_path, process?.project_id, navigation, defaultWorkerType, t],
+  );
 
   // A process created OUTSIDE the vibe flow — e.g. a plain shell/PTY tab opened
   // in vibe mode — carries no `target_typeid_str`, and a null target hard-disables
@@ -123,10 +163,11 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
         leadingSlot={({ startNewSession }) => (
           <button
             type="button"
-            onClick={startNewSession}
+            onClick={() => void handleNewSession(startNewSession)}
+            disabled={startingNewSession}
             title={t`New build`}
             data-testid="entity-execution-new"
-            className="inline-flex h-6 items-center gap-1 rounded-full border border-green-500/30 bg-green-500/10 px-2 text-xs font-medium text-green-600 transition-colors hover:bg-green-500/20 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
+            className="inline-flex h-6 items-center gap-1 rounded-full border border-green-500/30 bg-green-500/10 px-2 text-xs font-medium text-green-600 transition-colors hover:bg-green-500/20 hover:text-green-700 disabled:cursor-not-allowed disabled:opacity-60 dark:text-green-400 dark:hover:text-green-300"
           >
             <Plus className="h-3 w-3" />
             {t`New`}

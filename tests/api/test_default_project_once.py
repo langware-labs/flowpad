@@ -24,6 +24,7 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.builtin.project import Project
 from flow_sdk.server.state import _read_opening_project, set_pending_default_project
 
 
@@ -222,3 +223,41 @@ async def test_an_sdk_shipped_system_project_never_becomes_the_opening_project(b
     opened = _default_project_id(reopened.json())
     assert opened not in {str(p.id) for p in shipped}
     assert opened == mine
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_a_helpdesk_portal_never_becomes_the_opening_project(bootstrapped_client, tmp_path):
+    """Asking the help desk a question must not become where the app opens.
+
+    A helpdesk portal is app-managed infrastructure, but — unlike the shipped
+    assistant — it does NOT carry ``Entity.system``. Filtering on that flag alone
+    therefore let it through, and a live box proved the cost: a user opened the
+    help desk, which made its checkout her most recently active project, and the
+    boot path would have landed her in a support scratch checkout instead of her
+    own work. `is_hidden_project` is the repo's own answer to "should this project
+    be offered" and covers the flag AND the location.
+    """
+    from flow_sdk.config import helpdesk_project_dir
+
+    first = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+    cn_id = _cn_id(first.json())
+
+    mine = await _materialize(bootstrapped_client, cn_id, tmp_path, "my-work")
+    assert (await bootstrapped_client.post(f"/api/v1/graph/project/{mine}/activate")).status_code == 200
+
+    # A portal checkout in its real location, created the way the app creates it.
+    desk_dir = helpdesk_project_dir("2f8b7c14-0e5a-4a77-9d31-6b1f0c9a55e2")
+    desk_dir.mkdir(parents=True, exist_ok=True)
+    (desk_dir / "README.md").write_text("# desk\n")
+    desk = Project(name="Help Desk", fs_storage_mount_path=str(desk_dir))
+    await desk.save()
+    assert not desk.system, "fixture must reproduce the real shape: a desk carries no system flag"
+
+    # Opened AFTER the user's own project, so recency alone would pick it.
+    assert (await bootstrapped_client.post(f"/api/v1/graph/project/{desk.id}/activate")).status_code == 200
+
+    reopened = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+    assert _default_project_id(reopened.json()) != str(desk.id)
+    assert _default_project_id(reopened.json()) == mine

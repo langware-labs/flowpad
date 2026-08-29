@@ -155,6 +155,22 @@ export class FSManager {
   }
 
   /**
+   * URL that RENDERS a file in the browser, rather than downloading it.
+   *
+   * The distinction is `Content-Disposition`, and the reason to care is that
+   * this url's tail is the file's own path. A page loaded from it resolves its
+   * relative links and assets against its own folder — which is what a page
+   * pasted into an iframe as `srcDoc` cannot do, having no url at all.
+   *
+   * @param typeid - Entity TypeId
+   * @param path - File path
+   * @returns URL the browser can render the file from
+   */
+  getServeUrl(typeid: TypeId, path: string): string {
+    return this.createFSAction(typeid, 'serve', path, 'GET').fullActionUrl;
+  }
+
+  /**
    * Download a file as string or Blob
    * @param typeid - Entity TypeId
    * @param path - File path to download
