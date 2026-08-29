@@ -10,7 +10,6 @@ from flow_sdk.capsules import AssetCapsule
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions.prompt import (
     _read_prompt_frontmatter_id,
-    extract_prompt,
 )
 from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
@@ -24,7 +23,7 @@ V7_ID = "0190a0a0-aaaa-7bbb-8ccc-eeeeeeeeeeee"  # foreign version — must be re
 
 
 def _extract(ref: FSRef):
-    return extract_prompt(ref, SchemaRegistry.get("prompt").mint_entity_id(ref, derive=True, overwrite=True))
+    return SchemaRegistry.get("prompt").from_disk_fn(ref, SchemaRegistry.get("prompt").mint_entity_id(ref, derive=True, overwrite=True))
 
 
 def _write_md(path: Path, body: str, frontmatter: str | None = None) -> Path:
@@ -146,12 +145,12 @@ def test_extract_usage_counter_defaults_and_junk(tmp_path: Path):
 
 
 def test_default_body_renders_usage_counter(tmp_path: Path):
-    """Entity save path (_prompt_default_body) writes counters extract reads back."""
+    """Entity save path (the serializer's render) writes counters extract reads back."""
     from flow_sdk.builtin.prompt import Prompt
-    from flow_sdk.schema.type_info.prompt_info import _prompt_default_body
 
+    render = SchemaRegistry.get("prompt").serializer().render
     entity = Prompt(name="Counted", text="Count me.", use_count=3, last_used_at="2026-06-05T10:00:00Z")
-    body = _prompt_default_body(entity)
+    body = render(entity)
     p = tmp_path / "prompts" / "counted.md"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(body, encoding="utf-8")
@@ -161,5 +160,5 @@ def test_default_body_renders_usage_counter(tmp_path: Path):
     assert rec.text == "Count me."
 
     fresh = Prompt(name="Fresh", text="New.")
-    fresh_body = _prompt_default_body(fresh)
+    fresh_body = render(fresh)
     assert "use_count" not in fresh_body  # zero-usage prompts stay minimal

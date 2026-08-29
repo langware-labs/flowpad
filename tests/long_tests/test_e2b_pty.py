@@ -12,9 +12,7 @@ Skipped unless `E2B_KEY` is set.
 """
 from __future__ import annotations
 
-import asyncio
 import os
-import sys
 import uuid
 
 import pytest
@@ -112,7 +110,8 @@ async def sandbox_compute_node(initialize_test_db):
 # ---------------------------------------------------------------------------
 
 
-from tests.long_tests._pty_helpers import write_and_collect as _write_and_collect, close_shell as _close_shell
+from tests.long_tests._pty_helpers import close_shell as _close_shell
+from tests.long_tests._pty_helpers import write_and_collect as _write_and_collect
 
 
 async def _make_shell(sandbox_cn, name_suffix: str):
@@ -238,6 +237,7 @@ async def test_shell_close_kills_sandbox_when_last_pty_leaves(sandbox_compute_no
     """Closing the only sandbox Shell must reap the underlying E2B sandbox."""
     from e2b import AsyncSandbox
     from e2b.exceptions import SandboxException
+
     from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
 
     shell = await _make_shell(sandbox_compute_node, "close")

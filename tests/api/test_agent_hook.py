@@ -366,8 +366,9 @@ def test_sniffer_webhook_e2e_via_websocket():
     4. POST to /api/v1/webhook/listen with a skill_notification webhook
     5. Verify the WebSocket receives a flow_data_msg with the webhook payload
     """
-    from flow_sdk.server.app import app
     from starlette.testclient import TestClient
+
+    from flow_sdk.server.app import app
 
     with TestClient(app) as tc:
         # 1. Bootstrap (idempotent — entities may already exist from fixtures)

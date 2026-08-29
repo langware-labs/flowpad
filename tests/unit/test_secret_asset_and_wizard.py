@@ -17,6 +17,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers import apply_worker_secret_env
 from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.secret_origin import assert_value_free
 from flow_sdk.builtin.secret_origin_identity import secret_origin_id
+from flow_sdk.cli.auth.secrets import read_secret
 from flow_sdk.schema.type_info import register_all
 
 register_all()
@@ -129,6 +130,12 @@ async def test_provide_secret_local_sodot(tmp_path, sod_env):
     env: dict = {}
     await apply_worker_secret_env(env, process)
     assert env.get("OPENAI_API_KEY") == "sk-sodot-secret"
+
+    removed = await project.remove_secret_pointer(env_var="OPENAI_API_KEY")
+    assert removed.status == "SUCCESS", removed
+    assert project.secret_origins == []
+    assert read_secret("openai") == "sk-sodot-secret"
+    assert not project.env_vars or not project.env_vars.values
 
 
 @pytest.mark.asyncio

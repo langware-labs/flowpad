@@ -9,6 +9,7 @@ touching a real ``claude`` / ``copilot`` / ``codex`` binary.
 from __future__ import annotations
 
 import json
+from flow_sdk.schema.data_spec import DataSpec
 
 
 def fake_stream_argv(lines: list[dict], delay_ms: int = 0) -> list[str]:
@@ -50,7 +51,7 @@ def seed_harness_capability(monkeypatch, worker_type: str, bin_dir) -> None:
     monkeypatch.setitem(
         discovery._VALUES,
         kind,
-        CapabilityValue(kind=kind, value={"path": str(bin_dir)}, value_type="folder"),
+        CapabilityValue(kind=kind, value={"path": str(bin_dir)}, spec=DataSpec.parse("fs_ref")),
     )
 
 

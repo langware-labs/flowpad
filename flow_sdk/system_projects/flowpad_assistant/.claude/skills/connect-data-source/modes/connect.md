@@ -33,7 +33,7 @@ through the five gates and stop at the first that fails.
 
 ## Gate 2 — connect
 
-1. Build `config` per `references/mapping.md` — typed from `config_schema`,
+1. Build `config` per `references/mapping.md` — typed from `config`,
    empty values omitted, `pattern` checked per value before sending.
 2. `SC create '<json>'`. Read `dropped` in the reply: the create route silently
    discards keys it does not recognise, so a non-empty `dropped` means a field

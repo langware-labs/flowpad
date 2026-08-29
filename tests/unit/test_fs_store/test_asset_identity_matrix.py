@@ -219,14 +219,13 @@ def test_invalid_folder_capsule_falls_through_to_valid_legacy_without_backfill(
     assert capsule.read_bytes() == before
 
 
-def test_markdown_default_body_leaves_identity_to_capsule() -> None:
-    from types import SimpleNamespace
+def test_markdown_render_leaves_identity_to_capsule() -> None:
+    from flow_sdk.builtin.claude_memory_entities import Docs
 
-    from flow_sdk.schema.type_info.markdown_type_info import _markdown_default_body
-
-    body = _markdown_default_body(SimpleNamespace(id=V4, name="A", title="A"))
-    assert f"id: {V4}" not in body
-    assert "# A" in body
+    info = _info("markdown")
+    text = info.serializer().render(Docs(id=V4, name="A", title="A"), info)
+    assert f"id: {V4}" not in text
+    assert "title: A" in text
 
 
 @pytest.mark.parametrize("type_name", JSON_STABLE)

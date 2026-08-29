@@ -8,7 +8,7 @@ import { Trans } from '@lingui/react/macro';
 import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { resolveAppHtml } from './app-resolver';
-import { isInternalDockUrl, parseDockUrlToPointer } from './dock-url-helpers';
+import { openGuestLink } from './dock-url-helpers';
 import '@src/lib/mcp-host.css';
 
 const HOST_INFO = { name: 'Flowpad', version: '1.0.0' } as const;
@@ -75,14 +75,7 @@ export function AppHost() {
   // Guest asked to open a link: internal /dock/ URLs flow through navigation; others get a new tab.
   const handleOpenLink = useCallback(
     async ({ url }: { url: string }) => {
-      if (isInternalDockUrl(url)) {
-        const pointer = parseDockUrlToPointer(url);
-        if (pointer) {
-          navigation.openDock(pointer);
-          return {};
-        }
-      }
-      window.open(url, '_blank', 'noopener,noreferrer');
+      openGuestLink(url, navigation);
       return {};
     },
     [navigation],

@@ -18,18 +18,39 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from enum import Enum
+from functools import partial
 from pathlib import Path
-from typing import Awaitable, Callable, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 from pydantic import BaseModel
+
 from flow_sdk.fs_store.identifier import mint_uuid
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 
 logger = logging.getLogger(__name__)
+
+
+# Worker-history walks a user-owned, potentially multi-gigabyte transcript
+# corpus. Keep that blocking/GIL-heavy work out of asyncio's shared executor:
+# overlapping Vibe (limit=10) and Chats (limit=50) requests otherwise fan out
+# eight scans, delaying unrelated bootstrap work even after the browser cancels
+# its waiters. One owned lane also keeps the per-session cache single-writer.
+_WORKER_HISTORY_MAX_WORKERS = 1
+_WORKER_HISTORY_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_WORKER_HISTORY_MAX_WORKERS,
+    thread_name_prefix="worker-history",
+)
+
+
+async def _run_worker_history_blocking(fn: Callable[..., Any], *args: object) -> Any:
+    """Run one native-history collector on worker-history's bounded lane."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_WORKER_HISTORY_EXECUTOR, partial(fn, *args))
 
 
 # Claude/codex/copilot all append bookkeeping lines on resume/attach
@@ -305,6 +326,7 @@ def _build_history_latest_prompt_index() -> dict[str, str]:
     # Read ~/.claude/history.jsonl directly. The ClaudeHistoryEntryFsRecord
     # subclass was deleted; this inline reader replaces its .discover().
     import json
+
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
     index: dict[str, str] = {}
@@ -391,7 +413,7 @@ def _collect_claude_entries_sync(
     limit: int, process_index: ProcessIndex, project_ids: ScopeProjectIds = None,
     cwd_to_pid: Optional[dict[str, str]] = None,
 ) -> list[WorkerHistoryEntry]:
-    """Blocking body of ``get_claude_worker_history``. Runs under ``to_thread``."""
+    """Blocking body of ``get_claude_worker_history``. Runs on the history lane."""
     from flow_sdk.fs_store.indexer.functions.claude_sessions import extract_claude_session_from_path
     from flow_sdk.instance_settings import get_instance_settings
 
@@ -543,7 +565,7 @@ def _collect_codex_entries_sync(
     limit: int, process_index: ProcessIndex, project_ids: ScopeProjectIds = None,
     cwd_to_pid: Optional[dict[str, str]] = None,
 ) -> list[WorkerHistoryEntry]:
-    """Blocking body of ``get_codex_worker_history``. Runs under ``to_thread``."""
+    """Blocking body of ``get_codex_worker_history``. Runs on the history lane."""
     from flow_sdk.fs_store.indexer.functions.codex_sessions import extract_codex_session_from_path
     from flow_sdk.instance_settings import get_instance_settings
 
@@ -652,7 +674,7 @@ def _collect_copilot_entries_sync(
     limit: int, process_index: ProcessIndex, project_ids: ScopeProjectIds = None,
     cwd_to_pid: Optional[dict[str, str]] = None,
 ) -> list[WorkerHistoryEntry]:
-    """Blocking body of ``get_copilot_worker_history``. Runs under ``to_thread``."""
+    """Blocking body of ``get_copilot_worker_history``. Runs on the history lane."""
     from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
         copilot_session_state_root,
         read_copilot_session_meta,
@@ -780,7 +802,9 @@ async def get_claude_worker_history(
     under-active project's sessions aren't truncated behind busier ones.
     """
     idx = process_index if process_index is not None else {}
-    return await asyncio.to_thread(_collect_claude_entries_sync, limit, idx, project_ids, cwd_to_pid)
+    return await _run_worker_history_blocking(
+        _collect_claude_entries_sync, limit, idx, project_ids, cwd_to_pid
+    )
 
 
 async def get_codex_worker_history(
@@ -796,7 +820,9 @@ async def get_codex_worker_history(
     Claude provider's stat-then-parse pattern.
     """
     idx = process_index if process_index is not None else {}
-    return await asyncio.to_thread(_collect_codex_entries_sync, limit, idx, project_ids, cwd_to_pid)
+    return await _run_worker_history_blocking(
+        _collect_codex_entries_sync, limit, idx, project_ids, cwd_to_pid
+    )
 
 
 async def get_copilot_worker_history(
@@ -807,14 +833,16 @@ async def get_copilot_worker_history(
 ) -> list[WorkerHistoryEntry]:
     """Return the most-recent N Copilot sessions, newest first."""
     idx = process_index if process_index is not None else {}
-    return await asyncio.to_thread(_collect_copilot_entries_sync, limit, idx, project_ids, cwd_to_pid)
+    return await _run_worker_history_blocking(
+        _collect_copilot_entries_sync, limit, idx, project_ids, cwd_to_pid
+    )
 
 
 def _collect_opencode_entries_sync(
     limit: int, process_index: ProcessIndex, project_ids: ScopeProjectIds = None,
     cwd_to_pid: Optional[dict[str, str]] = None,
 ) -> list[WorkerHistoryEntry]:
-    """Blocking body of ``get_opencode_worker_history``. Runs under ``to_thread``.
+    """Blocking body of ``get_opencode_worker_history``. Runs on the history lane.
 
     Unlike the other three vendors there is no per-session file to stat: opencode
     keeps sessions in a SQLite database, so one ordered query replaces the
@@ -902,7 +930,9 @@ async def get_opencode_worker_history(
 ) -> list[WorkerHistoryEntry]:
     """Return the most-recent N OpenCode sessions, newest first."""
     idx = process_index if process_index is not None else {}
-    return await asyncio.to_thread(_collect_opencode_entries_sync, limit, idx, project_ids, cwd_to_pid)
+    return await _run_worker_history_blocking(
+        _collect_opencode_entries_sync, limit, idx, project_ids, cwd_to_pid
+    )
 
 
 WORKER_HISTORY_PROVIDERS: dict[WorkerType, WorkerHistoryProvider] = {
@@ -911,6 +941,12 @@ WORKER_HISTORY_PROVIDERS: dict[WorkerType, WorkerHistoryProvider] = {
     WorkerType.COPILOT: get_copilot_worker_history,
     WorkerType.OPENCODE: get_opencode_worker_history,
 }
+
+
+_WorkerHistoryRequestKey = tuple[int, Optional[tuple[str, ...]]]
+_WORKER_HISTORY_IN_FLIGHT: dict[
+    _WorkerHistoryRequestKey, asyncio.Task[list[WorkerHistoryEntry]]
+] = {}
 
 
 def _agentic_process_only_entries(
@@ -994,6 +1030,36 @@ async def _load_agentic_processes() -> list["AgenticProcess"]:
 async def get_worker_history(
     limit: int = 10, project_ids: ScopeProjectIds = None
 ) -> list[WorkerHistoryEntry]:
+    """Share one provider scan among identical concurrent requests.
+
+    Browser navigation cancels the HTTP waiter, but it cannot stop work already
+    running on the bounded history lane. Shielding one request-owned task keeps a
+    disconnected waiter from cancelling that scan, while the request key stops
+    the next mount from launching four duplicate provider walks.
+    """
+    normalized_ids = None if project_ids is None else tuple(sorted(project_ids))
+    key = (limit, normalized_ids)
+    task = _WORKER_HISTORY_IN_FLIGHT.get(key)
+    if task is None:
+        task = asyncio.create_task(
+            _collect_worker_history(
+                limit=limit,
+                project_ids=None if normalized_ids is None else set(normalized_ids),
+            )
+        )
+        _WORKER_HISTORY_IN_FLIGHT[key] = task
+
+        def forget(completed: asyncio.Task[list[WorkerHistoryEntry]]) -> None:
+            if _WORKER_HISTORY_IN_FLIGHT.get(key) is completed:
+                del _WORKER_HISTORY_IN_FLIGHT[key]
+
+        task.add_done_callback(forget)
+    return await asyncio.shield(task)
+
+
+async def _collect_worker_history(
+    limit: int = 10, project_ids: ScopeProjectIds = None
+) -> list[WorkerHistoryEntry]:
     """Unified, deduplicated worker history across every registered provider.
 
     The ``limit`` is applied **per project scope**, not as a single global
@@ -1016,11 +1082,12 @@ async def get_worker_history(
     collected: list[WorkerHistoryEntry] = []
     seen: set[tuple[WorkerType, str]] = set()
 
-    # Providers run concurrently (each is one ``to_thread`` hop over its own
-    # disk corpus) — wall time is max(provider), not sum. Results are folded in
-    # registration order so dedup precedence is unchanged. The call happens
-    # inside ``_run`` so even a synchronously-raising provider is captured by
-    # ``return_exceptions`` instead of escaping ``gather(*...)``.
+    # Providers are submitted together but their blocking collectors share one
+    # resource-owned lane. That prevents vendors and distinct request keys from
+    # fanning GIL-heavy corpus work across asyncio's shared executor. Results are
+    # folded in registration order so dedup precedence is unchanged. The call
+    # happens inside ``_run`` so even a synchronously-raising provider is captured
+    # by ``return_exceptions`` instead of escaping ``gather(*...)``.
     async def _run(provider: WorkerHistoryProvider) -> list[WorkerHistoryEntry]:
         return await provider(limit, process_index, project_ids, cwd_to_pid)
 

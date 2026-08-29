@@ -16,6 +16,7 @@ from typing import Any
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_body,
     _extract_frontmatter,
@@ -25,7 +26,6 @@ from flow_sdk.fs_store.indexer.functions._folder_capsule import (
     read_folder_capsule_id,
 )
 from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.fs_store.identifier import mint_uuid
 
 WHITE_BOARD_MD = "WHITE_BOARD.md"
 BOARD_JSON = "board.json"

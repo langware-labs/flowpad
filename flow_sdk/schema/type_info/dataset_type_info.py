@@ -1,31 +1,14 @@
 """Type metadata for DATASET."""
-from typing import Optional
-
+from flow_sdk.builtin.dataset import DatasetManifestSpec
 from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, folder_capsule_id
 from flow_sdk.fs_store.indexer.functions.dataset import (
     dataset_asset_hash,
     dataset_id_from_folder,
-    extract_dataset,
+    derive_dataset,
 )
 from flow_sdk.schema.type_info import TypeMetadata
-from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
-
-
-class DatasetMeta(BaseMeta):
-    # A `Datum` dump, not a `Datum` — metadata.json is written with json.dump,
-    # so every value here must already be a plain JSON type.
-    contract: Optional[dict] = None
-    data_layout: Optional[str] = None
-    field_spec: Optional[dict] = None
-    delimiter: Optional[str] = None
-    num_examples: Optional[int] = None
-    kind_counts: Optional[dict] = None
-    num_annotated: Optional[int] = None
-    num_multi_output: Optional[int] = None
-    num_binary_inputs: Optional[int] = None
-
 
 DATASET = TypeMetadata(
     type=EntityType.DATASET,
@@ -42,9 +25,11 @@ DATASET = TypeMetadata(
     # marker gate (a dataset folder must carry it). asset_ref stays the folder
     # (main_file_is_asset_ref unset), so this only names the marker/body file.
     main_file="dataset.json",
-    from_disk_fn=extract_dataset,
+    rows_layout_field="data_layout",
+    derive_fields_fn=derive_dataset,
+    asset_spec=DatasetManifestSpec,
+    fts_content=("title", "description"),
     capsules=(IDENTITY_CAPSULE,),
     identity_backend=capsule_identity(folder_capsule_id, dataset_id_from_folder),
     asset_hash_fn=dataset_asset_hash,
-    meta_model=DatasetMeta,
 )

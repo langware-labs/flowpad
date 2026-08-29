@@ -10,8 +10,8 @@ from unittest.mock import patch
 
 import pytest
 
-from flow_sdk.builtin.git_origin import GitOrigin
 from flow_sdk.config import AGENT_MOUNT_FOLDER
+from flow_sdk.fs_store.origin.git_origin import GitOrigin
 
 
 def _cn_id(bootstrap_payload: dict) -> str:

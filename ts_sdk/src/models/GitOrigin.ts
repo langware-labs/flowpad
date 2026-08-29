@@ -168,7 +168,11 @@ export function isCompleteGitOrigin(o: GitOrigin | null | undefined): o is GitOr
   return !!o && !!o.owner && !!o.name && isSafeRelPath(o.rel_path);
 }
 
-/** Read a (possibly absent) git_origin off any received entity. */
-export function gitOriginOf(entity: { git_origin?: GitOrigin | null } | null | undefined): GitOrigin | null {
-  return entity?.git_origin ?? null;
+/** Read a (possibly absent) git-kind origin off any entity. `origin` is the
+ *  entity field; `git_origin` is the hub's wire name for the same value. */
+export function gitOriginOf(
+  entity: { origin?: GitOrigin | null; git_origin?: GitOrigin | null } | null | undefined,
+): GitOrigin | null {
+  const o = entity?.origin ?? entity?.git_origin ?? null;
+  return o && (o.kind === undefined || o.kind === 'git') ? o : null;
 }

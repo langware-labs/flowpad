@@ -19,10 +19,9 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.indexer._frontmatter import (
-    _extract_body,
     _extract_frontmatter,
     _yaml_load,
 )
@@ -31,7 +30,6 @@ from flow_sdk.fs_store.indexer.functions._folder_capsule import (
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.fs_store.identifier import mint_uuid
 
 # The files whose presence makes a folder a skill; SKILL.md is the main doc.
 # Both cases of the doc are accepted (SKILL.md is canonical; skill.md tolerated).
@@ -204,58 +202,14 @@ def skill_asset_hash(ref: FSRef) -> float:
     return ts
 
 
-def extract_skill(ref: FSRef, resolved_id: str) -> list[FSRecord]:
-    """Parse a skill folder into a Record. Replaces ``SkillRecord._from_fsref_sync``.
-
-    Eagerly populates: id, name, description, content (name + description +
-    SKILL.md body for FTS), body, metadata (yaml fields).
-    """
-    path = ref._path
-    # Single-file index paths hand us the inner doc, not the skill folder.
-    # Normalize, or every skill id-derives from the constant "SKILL.md"
-    # filename and collides (VIBE-004) with a file-valued asset_ref (VIBE-007).
-    if not path.is_dir() and path.name in SKILL_INNER_FILES:
-        path = path.parent
-    yaml_fields = parse_skill_yaml_from_dir(path) if path.is_dir() else {}
-    skill_name = resolve_skill_name(yaml_fields, path.name)
-    description = ""
-    if isinstance(yaml_fields.get("description"), str):
-        description = yaml_fields["description"]
-
-    body = ""
-    skill_md = path / "SKILL.md"
-    if skill_md.exists():
-        try:
-            text = skill_md.read_text(encoding="utf-8")
-            body = _extract_body(text)
-        except OSError:
-            pass
-
-    content_parts: list[str] = []
-    if skill_name:
-        content_parts.append(skill_name)
-    if description:
-        content_parts.append(description)
-    if body:
-        content_parts.append(body)
-    content = "\n".join(content_parts) if content_parts else ""
-
-    rec_kwargs: dict = {
-        "name": skill_name,
-        "status": "active",
-        "content": content,
-        "body": body,
-    }
-    if description:
-        rec_kwargs["description"] = description
-    if yaml_fields:
-        rec_kwargs["metadata"] = yaml_fields
-    if ref.scope:
-        rec_kwargs["scope"] = ref.scope
-
-    rec = FSRecord(RecordType.SKILL, resolved_id, **rec_kwargs)
-    rec.asset_ref = FSRef(path.resolve())
-    return [rec]
-
-# Type metadata now lives in flow_sdk/schema/type_info/skill_info.py.
-# This module provides the walker + slot functions only.
+def derive_skill(data: dict, root: Path, header_raw: dict) -> None:
+    """The folder's facts: the header may come from ``skill.yaml``/``skill.yml``
+    rather than ``SKILL.md`` (the yaml wins where present, as before), the
+    name falls back to the folder (``-@`` suffix stripped), and the raw yaml
+    dict rides ``metadata``."""
+    fields = parse_skill_yaml_from_dir(root) if root.is_dir() else {}
+    data["name"] = resolve_skill_name(fields, root.name)
+    if isinstance(fields.get("description"), str):
+        data["description"] = fields["description"]
+    if fields:
+        data["metadata"] = fields

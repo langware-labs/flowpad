@@ -114,7 +114,11 @@ export function trackTypeId(type: string, id: string): void {
 }
 
 type SdkLike = {
-  apiClient: { delete: (url: string) => Promise<unknown>; get: (url: string) => Promise<unknown> };
+  apiClient: {
+    delete: (url: string) => Promise<unknown>;
+    get: (url: string) => Promise<unknown>;
+    post: (url: string, body?: unknown) => Promise<unknown>;
+  };
   GRAPH_API_PREFIX: string;
   ComputeNode: { type: string };
 };
@@ -136,6 +140,26 @@ async function loadSdk(): Promise<SdkLike | null> {
  */
 async function purgeOne(sdk: SdkLike, type: string, id: string): Promise<void> {
   const fsBase = `${sdk.GRAPH_API_PREFIX}/${sdk.ComputeNode.type}/@local/fs-records`;
+  if (type === 'conversation') {
+    try {
+      // Shared conversations need their canonical cloud cascade, not just a
+      // local fs-record deletion. Test-created tracked conversations are owned
+      // by the active realm, so this removes the hub row and child messages.
+      await sdk.apiClient.post(`${sdk.GRAPH_API_PREFIX}/conversation-delete`, {
+        conversation_id: id,
+        mode: 'delete_for_all',
+      });
+    } catch {
+      // A receiver mirror cannot delete for all. Graph DELETE still establishes
+      // its local tombstone; owner-side cleanup removes the canonical hub row.
+      try {
+        await sdk.apiClient.delete(`${sdk.GRAPH_API_PREFIX}/${type}/${id}`);
+      } catch {
+        /* already gone */
+      }
+    }
+    // Continue through fs-record purge to remove any surviving disk shadow.
+  }
   try {
     await sdk.apiClient.delete(`${fsBase}/${type}/${id}`);
     return;
@@ -229,8 +253,12 @@ export async function purgeRunScopedAt(apiUrl: string, extraTypes: string[] = []
 
 /** Build a fetch-backed `SdkLike` for `apiUrl`, borrowing route constants from `local`. */
 function remoteSdk(apiUrl: string, local: SdkLike): SdkLike {
-  const call = async (method: string, url: string): Promise<unknown> => {
-    const res = await fetch(`${apiUrl}${url}`, { method });
+  const call = async (method: string, url: string, body?: unknown): Promise<unknown> => {
+    const res = await fetch(`${apiUrl}${url}`, {
+      method,
+      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
     // `apiClient` throws on a non-2xx; `fetch` does not. Match it, or `purgeOne`
     // can never tell a successful fs-records delete from a 404 and would always
     // fire its graph-delete fallback.
@@ -238,7 +266,11 @@ function remoteSdk(apiUrl: string, local: SdkLike): SdkLike {
     return res.json();
   };
   return {
-    apiClient: { get: (url) => call('GET', url), delete: (url) => call('DELETE', url) },
+    apiClient: {
+      get: (url) => call('GET', url),
+      delete: (url) => call('DELETE', url),
+      post: (url, body) => call('POST', url, body),
+    },
     GRAPH_API_PREFIX: local.GRAPH_API_PREFIX,
     ComputeNode: local.ComputeNode,
   };

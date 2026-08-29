@@ -123,10 +123,10 @@ Neither shape ever contains a value.
 ### `reflect`
 
 Supported modes, head first as the default. A list rather than a single value
-because the picker must not offer a mode that silently fails: `materialize`
-against a non-repo no-ops every ref, and a symlinked folder-layout asset is
-invisible to a walk that never descends symlinked directories. Folder supports
-three modes and git three, so the list is not a list-of-one dressed up.
+because the picker must not offer a mode that silently fails: a symlinked
+folder-layout asset is invisible to a walk that never descends symlinked
+directories. Folder supports three modes and git two, so the list is not a
+list-of-one dressed up.
 
 **`record` may not appear in a multi-element list.** A source lands its payload in
 the graph as a record or on disk as an asset; asking for both gets neither.
@@ -226,7 +226,7 @@ The three items this section opened with have been answered:
 
 Still open, and named where it bites:
 
-* **The backend does not validate `config` against `config_schema`.** `required`
+* **The backend does not validate a source's `config` values against the spec's `config` fields.** `required`
   and `pattern` are enforced only by the create form, so a source made by the
   `flow` CLI, by curl, or by an agent following the authoring skill bypasses every
   rule the manifest declares. That is the one gap where a machine, not a person,

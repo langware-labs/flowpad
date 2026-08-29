@@ -1,9 +1,9 @@
 """CRUD × delivery mode × asset type, with git as the transport.
 
 Every change is a commit and every observation comes from a diff — the driver
-never walks a directory. The delivery axis is git-native because the receiving
-project and the asset repository are not necessarily the same repo: `in-place`
-means one, `materialize` and `vendor` mean two.
+never walks a directory. Two delivery modes, because the receiving project and
+the asset repository are not necessarily the same repo: `none` indexes the
+checkout where it sits (one repo), `copy` vendors into the receiving tree (two).
 """
 from __future__ import annotations
 
@@ -16,11 +16,7 @@ from ._harness import ASSET_KINDS, FIRST_TOKEN, SECOND_TOKEN, entity_at, id_at, 
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
-MODES = [
-    ReflectMode.IN_PLACE.value,
-    ReflectMode.MATERIALIZE.value,
-    ReflectMode.VENDOR.value,
-]
+MODES = [ReflectMode.NONE.value, ReflectMode.COPY.value]
 
 matrix = pytest.mark.parametrize("kind", ASSET_KINDS, ids=lambda k: k.name)
 modes = pytest.mark.parametrize("mode", MODES)

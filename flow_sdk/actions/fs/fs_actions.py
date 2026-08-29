@@ -189,8 +189,8 @@ async def push_entity_files_to_hub(entity) -> int:
     ``_hub_reflect._reflect_fs_to_hub``; that only fires once the entity is
     ALREADY remote, which is exactly the window this closes.
 
-    File-backed types own their Hub layout through ``_hub_asset_layout`` and
-    ``_hub_main_file`` class metadata:
+    A type opts into the record-aware transport by naming its canonical Hub
+    file in ``TypeInfo.hub_main_file``; ``TypeInfo.main_layout`` then says how:
 
     * ``file`` publishes the record's main ref under its canonical Hub name;
     * ``folder`` recursively publishes the record's asset folder, preserving
@@ -214,9 +214,13 @@ async def push_entity_files_to_hub(entity) -> int:
         logger.debug(f"share: unsupported file push for {entity.typeid}: {e}")
         return 0
 
-    layout = getattr(type(entity), "_hub_asset_layout", None)
-    canonical_main = getattr(type(entity), "_hub_main_file", None)
-    if layout in {"file", "folder"}:
+    # Layout is TypeInfo's — ``hub_main_file`` is the opt-in, ``main_layout`` the how.
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    _info = SchemaRegistry.get(entity.get_type())
+    canonical_main = _info.hub_main_file if _info is not None else None
+    if canonical_main:
+        layout = _info.main_layout
         try:
             record = await entity.get_record()
         except Exception as e:  # noqa: BLE001

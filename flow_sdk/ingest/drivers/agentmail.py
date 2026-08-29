@@ -23,15 +23,16 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
+from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest.driver import (
+    IngestDriver,
     FetchResult,
-    SendOutcome,
-    SendStatus,
     SegmentCursorView,
     SegmentRef,
+    SendOutcome,
+    SendStatus,
 )
 from flow_sdk.ingest.health import SourceError
-from flow_sdk.ingest.models import IngestItem
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ PAGE_LIMIT = 25
 REQUEST_TIMEOUT_SECONDS = 30
 
 
-class AgentMailDriver:
+class AgentMailDriver(IngestDriver):
     provider = "agentmail"
     kind = "datasource.api.agentmail"
     record_kind = "content.message.email"
@@ -71,7 +72,7 @@ class AgentMailDriver:
         messages = payload.get("messages") or []
 
         floor = str((cursor.state or {}).get("high_water") or "")
-        items: list[IngestItem] = []
+        items: list[SourceItemSpec] = []
         high_water = floor
         for msg in messages:
             stamp = str(msg.get("timestamp") or "")
@@ -88,7 +89,7 @@ class AgentMailDriver:
             state["high_water"] = high_water
         return FetchResult(items=items, next_state=state, high_water=high_water or None, unchanged=not items)
 
-    def _to_item(self, source, msg: dict) -> IngestItem:
+    def _to_item(self, source, msg: dict) -> SourceItemSpec:
         """One AgentMail message → the shared envelope.
 
         `message_id` is the RFC 5322 id and is what the provider itself uses as
@@ -96,13 +97,13 @@ class AgentMailDriver:
         re-fetches and across this driver and any other that sees the same mail.
         """
         sender = str(msg.get("from") or "")
-        return IngestItem(
-            source_id=source.id,
+        return SourceItemSpec(
+            data_source_id=source.id,
             provider=self.provider,
             kind=self.record_kind,
             segment_key=self._inbox(source),
             external_id=str(msg.get("message_id") or ""),
-            title=str(msg.get("subject") or ""),
+            name=str(msg.get("subject") or ""),
             body=str(msg.get("preview") or ""),
             occurred_at=str(msg.get("timestamp") or "") or None,
             author_display=sender,

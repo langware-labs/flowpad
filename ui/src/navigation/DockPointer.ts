@@ -946,6 +946,15 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * An asset's editor APP (`<asset>/editors/<name>` or a type builtin), hosted
+   * in the asset-editor dock. Pointer: "editor/app/typeid/<type>-<uuid>?app=<name>";
+   * extra options (e.g. `source`) are handed to the app as its query string.
+   */
+  static forAssetApp(typeId: TypeId, app: string, options?: Record<string, string>, layout: Layout = Layout.DOCK): DockPointer {
+    return DockPointer.forAssetEditorByTypeId('', typeId, layout, { ...options, app }, AssetEditor.APP);
+  }
+
+  /**
    * Create dock pointer for an entity-backed asset by its stable TypeId — the
    * preferred, relocation-proof form. The loader resolves it by id (no path
    * discovery), so navigation commits instantly.
@@ -956,8 +965,9 @@ export class DockPointer implements IDockPointer {
     typeId: TypeId,
     layout: Layout = Layout.DOCK,
     options?: Record<string, string>,
+    editorOverride?: AssetEditor,
   ): DockPointer {
-    const editor = editorForType(assetType) ?? AssetEditor.MARKDOWN;
+    const editor = editorOverride ?? editorForType(assetType) ?? AssetEditor.MARKDOWN;
     return new DockPointer(
       ViewType.ASSETS,
       serializeAssetDocPointer({

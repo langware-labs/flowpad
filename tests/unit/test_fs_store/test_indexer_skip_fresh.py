@@ -16,12 +16,11 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.db import get_db_driver
-from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.fs_record import FSRecord
+from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
 from flow_sdk.fs_store.indexer.functions.markdown import markdown_flat_fn
 from flow_sdk.fs_store.record_types import RecordType
-
 
 # ── FSRecord index-state block ───────────────────────────────────────────
 

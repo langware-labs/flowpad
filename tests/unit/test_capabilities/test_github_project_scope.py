@@ -9,7 +9,7 @@ from flow_sdk.core.capabilities.registry import get_capability_registry
 @pytest.mark.asyncio
 async def test_github_project_test_is_scoped_and_does_not_use_global_state(monkeypatch):
     import flow_sdk.builtin.project as project_mod
-    import flow_sdk.builtin.git_origin as git_origin_mod
+    import flow_sdk.fs_store.origin.git_origin as git_origin_mod
     import flow_sdk.utils.git as git_mod
     import flow_sdk.core.capabilities.registry as registry_mod
 

@@ -23,13 +23,11 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.indexer.functions.mcp_server import (
     extract_mcp_server,
-    mcp_server_identity_key,
     mcp_servers_in_file_fn,
     mcp_source_files_fn,
 )
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-
 
 PROJ_ALPHA = "/Users/alice/proj-alpha"
 PROJ_BETA = "/Users/alice/proj-beta"

@@ -94,6 +94,8 @@ export interface TypeInfo {
   /** Reception seam: the verb the receive UI shows for this type — the install
    *  CTA reads ``"<reception_verb> the <typeLabel>"`` (e.g. "Set up the app"). */
   reception_verb?: string;
+  /** Builtin editor apps every entity of the type offers (``TypeInfo.editors``). */
+  editors?: string[];
   /** Reception seam: the built-in skill that sets a received attachment of this
    *  type up in a Vibe session (null ⇒ it just opens). Presentational hint only —
    *  the backend owns the actual dispatch in ``Entity.setup_on_receive``. */

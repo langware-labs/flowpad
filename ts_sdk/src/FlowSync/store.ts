@@ -288,6 +288,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return this.typeInfos[type.toLowerCase()]?.icon ?? null;
   }
 
+  /** The builtin editor apps of a type (``TypeInfo.editors``) — the SDK-shipped
+   *  ones every entity of the type can open, before what the asset itself ships. */
+  public editorsForType(type: string): string[] {
+    if (typeof type !== 'string') return [];
+    return this.typeInfos[type.toLowerCase()]?.editors ?? [];
+  }
+
   /**
    * Single source of truth for a type's UX-friendly label — the backend-authored
    * ``TypeInfo.display_name``. Null when unknown / unlabeled; callers fall back to

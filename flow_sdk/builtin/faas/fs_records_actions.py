@@ -2127,7 +2127,7 @@ class FsRecordsActionsMixin:
         metadata shadow only) leaves for the FSRecord create path."""
         from pathlib import Path  # noqa: PLC0415
 
-        from flow_sdk.builtin.local_origin import local_origin_for_path  # noqa: PLC0415
+        from flow_sdk.fs_store.origin.local_origin import local_origin_for_path  # noqa: PLC0415
         from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 

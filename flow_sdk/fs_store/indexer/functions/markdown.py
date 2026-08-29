@@ -28,13 +28,11 @@ import re
 from pathlib import Path
 from typing import Any
 
-from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_body,
     _extract_frontmatter,
     _yaml_load,
-    read_frontmatter_id,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.placement import AGENTIC_ASSETS_DIR
@@ -228,75 +226,63 @@ def markdown_id(ref: FSRef) -> str:
     return info.mint_entity_id(ref, derive=True, overwrite=False)
 
 
-def parse_markdown_text(text: str, path: Path | None = None) -> dict[str, Any]:
-    """Parse a markdown string with YAML frontmatter into a fields dict.
+def _derive(data: dict, root: Path, header_raw: dict, *, titled: bool) -> None:
+    """The facts a markdown file's PATH and BODY carry that its frontmatter does
+    not: the asset type (from the parent directory), the title (the stem), the
+    name, the wiki-links scraped from the body, and the folder containment the
+    wiki tree renders from."""
+    if not data.get("asset_type"):
+        data["asset_type"] = "skill" if root.name == "SKILL.md" else _DIR_TO_ASSET_TYPE.get(root.parent.name, "doc")
+    if titled:
+        data["title"] = data.get("title") or root.stem
+        body = data.get("body") or ""
+        links = _extract_wiki_links(body) if body else []
+        links.extend(data.get("links") or [])
+        data["links"] = links
+    data["name"] = data.get("title") or root.stem
+    try:
+        data["parent_path"] = str(root.resolve().parent)
+    except OSError:
+        pass
+    vault = _resolve_vault_root(root)
+    if vault:
+        data["vault_root"] = vault
+    if not data.get("project_id"):
+        pid = _resolve_system_project_id_for_path(root)
+        if pid:
+            data["project_id"] = pid
 
-    Public — used by ``extract_markdown`` here and by
-    ``flow_sdk.fs_store.operations.markdown_index.from_markdown``.
-    """
+
+def derive_markdown(data: dict, root: Path, header_raw: dict) -> None:
+    _derive(data, root, header_raw, titled=True)
+
+
+def derive_claude_md(data: dict, root: Path, header_raw: dict) -> None:
+    _derive(data, root, header_raw, titled=False)
+
+
+def parse_markdown_text(text: str, path: Path | None = None) -> dict[str, Any]:
+    """Parse a markdown string with YAML frontmatter into a fields dict — the
+    same header (``MarkdownSpec``) and the same derivation the serializer
+    applies, over a STRING. Public for ``operations.markdown_index.from_markdown``."""
+    from flow_sdk.builtin.claude_memory_entities import MarkdownSpec  # noqa: PLC0415
     from flow_sdk.capsules import strip_capsule_blocks  # noqa: PLC0415
+    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
 
     text = strip_capsule_blocks(text)
     fm_text = _extract_frontmatter(text)
     fields = _yaml_load(fm_text) if fm_text else {}
-    body = _extract_body(text)
-
-    # asset_type inference from frontmatter or parent dir name.
-    asset_type = fields.get("asset_type")
-    if not asset_type and path is not None:
-        if path.name == "SKILL.md":
-            asset_type = "skill"
-        else:
-            parent_name = path.parent.name if path.parent else ""
-            asset_type = _DIR_TO_ASSET_TYPE.get(parent_name, "doc")
-    if not asset_type:
-        asset_type = "doc"
-
-    title = fields.get("title") or (path.stem if path else "Untitled")
-    tags = fields.get("tags") or []
-    if isinstance(tags, str):
-        tags = [t.strip() for t in tags.split(",") if t.strip()]
-
-    links = _extract_wiki_links(body) if body else []
-    links.extend(fields.get("links") or [])
-
-    raw_id = fields.get("asset_id") or fields.get("id")
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
-
+    fields = fields if isinstance(fields, dict) else {}
+    data: dict[str, Any] = MarkdownSpec.model_validate(fields).model_dump(exclude_none=True, exclude={"body"})
+    data["body"] = _extract_body(text)
+    _derive(data, path or Path("Untitled.md"), fields, titled=True)
     # Validate-on-adopt (v4/v5 only) — a foreign/hand-authored id is never
-    # adopted; derive the stable uuid5(path) instead. Keeps this read-side path
-    # in agreement with the TypeInfo identity reader.
-    asset_id = adopt_entity_id(raw_id)
+    # adopted; derive the stable uuid5(path) instead.
+    asset_id = adopt_entity_id(fields.get("asset_id") or fields.get("id"))
     if not asset_id and path is not None:
         asset_id = _markdown_id_from_path(path)
-    parent_id = fields.get("parent_id")
-    scope = fields.get("scope") or None
-
-    data: dict[str, Any] = {
-        "asset_type": asset_type,
-        "title": title,
-        "tags": tags,
-        "links": links,
-        "body": body,
-    }
     if asset_id:
         data["id"] = asset_id
-    if parent_id:
-        data["parent_id"] = parent_id
-    if scope:
-        data["scope"] = scope
-    # Folder containment for the Obsidian-style wiki tree. parent_path is the
-    # immediate containing directory (canonical absolute path). vault_root is
-    # the scan root that owns the file.
-    if path is not None:
-        try:
-            resolved = path.resolve()
-            data["parent_path"] = str(resolved.parent)
-        except OSError:
-            pass
-        vault = _resolve_vault_root(path)
-        if vault:
-            data["vault_root"] = vault
     return data
 
 
@@ -352,52 +338,3 @@ def _resolve_vault_root(path: Path) -> str | None:
             continue
         return str(root)
     return None
-
-
-def extract_markdown(ref: FSRef, resolved_id: str) -> list[FSRecord]:
-    """Parse a .md file into a Record. Replaces ``MarkdownRecord._from_fsref_sync``."""
-    path = ref._path
-    # Single-file index paths bypass the walker's ``*.md`` glob; without this
-    # gate any UTF-8 file (e.g. ``.html``) mints as markdown (VIBE-002).
-    if path.suffix.lower() != ".md":
-        return []
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return []
-    except UnicodeDecodeError:
-        # Not real markdown — binary content under a .md extension (e.g. macOS
-        # AppleDouble ``._*`` sidecars, or a mislabeled binary). Skip cleanly
-        # rather than raising into the indexer's error counter.
-        return []
-    data = parse_markdown_text(text, path=path)
-    data["id"] = resolved_id
-    # Persist under the type the CALLER asked for, not a hardcoded MARKDOWN.
-    # This extractor is shared by three TypeInfos (markdown, claude_md,
-    # markdown_index); hardcoding MARKDOWN meant a CLAUDE_MD ref was accounted
-    # as claude_md by the indexer but written as a markdown row, so
-    # `list_entity_sources_by_type("claude_md")` was always empty. Skip-fresh
-    # gates on that set (`row_present`), so every CLAUDE.md was re-parsed on
-    # every index, forever — measured: indexed=6 new=6 skipped=0 on every run.
-    data["type"] = ref.record_type or RecordType.MARKDOWN
-    data["status"] = "active"
-    # name is the title (MarkdownRecord overrode name to read title; we
-    # populate name directly so base accessors work).
-    data["name"] = data.get("title") or path.stem
-    # Searchable content = body + links (matches old search_content).
-    body = data.get("body") or ""
-    links = data.get("links") or []
-    if links:
-        data["content"] = (body + "\n" + " ".join(str(link) for link in links)).strip()
-    else:
-        data["content"] = body
-    # (parent_path / vault_root are populated by parse_markdown_text already.)
-
-    # project_id from FSRef inheritance or system-projects fallback.
-    pid = getattr(ref, "project_id", None) or _resolve_system_project_id_for_path(path)
-    if pid:
-        data["project_id"] = pid
-
-    rec = FSRecord(**data)
-    object.__setattr__(rec, "_asset_ref", FSRef(path))
-    return [rec]

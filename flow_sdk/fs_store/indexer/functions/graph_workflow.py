@@ -13,13 +13,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flow_sdk.graph_workflow_manager.graph_workflow_doc import GraphWorkflowDoc, parse_graph_workflow_doc
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
     read_folder_capsule_id,
 )
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.graph_workflow_manager.graph_workflow_doc import GraphWorkflowDoc, parse_graph_workflow_doc
 
 GRAPH_JSON = "graph.json"
 def _load_doc(flow_dir: Path) -> GraphWorkflowDoc | None:

@@ -4,7 +4,6 @@ Covers: hook_op webhook, REST graph API, compute-node records API,
 and WebSocket data_op_msg notifications for create/update/delete.
 """
 
-import json
 import uuid
 
 import pytest

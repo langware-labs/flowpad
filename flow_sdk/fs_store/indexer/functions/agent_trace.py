@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions._report_common import load_report, report_id_from_path
-from flow_sdk.fs_store.serializer.record import spec_extractor
 
 
 def _adopt_doc_id(data: dict) -> str | None:
@@ -24,7 +23,3 @@ def _adopt_doc_id(data: dict) -> str | None:
 def agent_trace_id(ref: FSRef) -> str:
     """Cheap id: prefer the trace's embedded ``id``; else uuid5(path)."""
     return _adopt_doc_id(load_report(ref._path)) or report_id_from_path(ref._path)
-
-
-#: The generic spec-driven extractor, under the name callers import.
-extract_agent_trace = spec_extractor("agent_trace")

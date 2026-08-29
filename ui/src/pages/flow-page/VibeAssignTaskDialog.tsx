@@ -89,11 +89,15 @@ export function VibeAssignTaskDialog({
         setError(gate.error);
         return;
       }
+      // Placement comes from the SAVE SCOPE (the URL), never from the body: a
+      // task owns its file, so the backend rejects a body `project_id` with
+      // 400 "'project_id' cannot be set in the body for 'task' ... POST to
+      // /api/v1/graph/project/<project_id>/task instead". Scoping the save is
+      // the same shape `useClaudeErrorRecords` already uses.
       const task = await new Task({
         title: title.trim(),
         description: notes.trim() || undefined,
-        ...(projectId ? { project_id: projectId } : {}),
-      }).save();
+      }).save(projectId ? [new TypeId('project', projectId)] : []);
 
       // The notification message must stand on its own: the title IS the issue,
       // so it leads even when the (optional) notes are empty — otherwise the

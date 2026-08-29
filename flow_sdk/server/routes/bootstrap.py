@@ -543,8 +543,9 @@ async def is_cloud_login_available() -> bool:
     will prompt before any subsequent login attempt.
 
     Returns False on any failure (no sentinel, no key, network error, invalid
-    token). Logout cleanup is the caller's responsibility — bootstrap only
-    reports the current validity.
+    token). Credential invalidation belongs to the hub client auth seam, which
+    can distinguish a real auth-failure envelope/local expiry from an outage or
+    an authorization denial. Bootstrap only reports current availability.
     """
     api_key = None
     try:
@@ -574,18 +575,10 @@ async def is_cloud_login_available() -> bool:
         await asyncio.wait_for(validate_api_key_async(api_key), timeout=3.0)
         return True
     except Exception:
-        # Stored token failed validation (expired, revoked, network error). When
-        # we definitely had a key, drop it from the keychain and clear the user
-        # record so the UI reflects logged-out state without further round-trips.
-        if api_key:
-            try:
-                from flow_sdk.cli.app_config import set_user
-                from flow_sdk.cli.auth.hub_login import delete_api_key
-
-                await asyncio.wait_for(asyncio.to_thread(delete_api_key), timeout=2.0)
-                set_user({})
-            except Exception:
-                pass
+        # Never erase credentials on a generic validation exception. The hub
+        # client hooks already invalidate on the only authoritative signals:
+        # local expiry and a 2xx auth-failure envelope. A connection failure,
+        # 5xx, or bare 401/403 may be transient or an authorization denial.
         return False
 
 
@@ -1278,7 +1271,7 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
     from flow_sdk.db import get_db_driver  # noqa: PLC0415
     from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry  # noqa: PLC0415
     from flow_sdk.fs_store.fs_ref import FSRef as _FSRef  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown, markdown_id  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     fts_entries: list[FtsEntry] = []
     for proj in projects:
@@ -1295,11 +1288,9 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
                     # refactor 4f94fb92, and bootstrap must not stamp identity
                     # capsules into tracked repo/system docs. Deterministic id
                     # also makes this seeding idempotent across bootstraps.
-                    _md_ref = _FSRef(md_path)
-                    records = extract_markdown(_md_ref, markdown_id(_md_ref))
-                    if not records:
+                    rec = SchemaRegistry.get("markdown").record_for(_FSRef(md_path, read_only=True))
+                    if rec is None:
                         continue
-                    rec = records[0]
                     # System-project ownership is authoritative at seed time.
                     # A desktop clear recreates the project with a fresh id,
                     # while the shipped record metadata may still carry the

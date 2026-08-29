@@ -316,7 +316,14 @@ export function EntityExecutionPanel({
   // count, worker icon) instead of bare ids and timestamps.
   // A metadata JOIN, not a rendered list: `selectHistoryProcesses` needs every row
   // to tell "empty" from "outside this 30-row window".
-  const { entries: workerHistoryEntries } = useWorkerHistory(30, { includeEmpty: true });
+  // Worker-history walks the local transcript corpora, so do not pay for it on
+  // every panel mount when its only consumer is still closed. Once requested,
+  // keep it enabled across later closes so reopening uses the same query state.
+  const [historyRequested, setHistoryRequested] = useState(false);
+  const { entries: workerHistoryEntries } = useWorkerHistory(30, {
+    enabled: historyRequested,
+    includeEmpty: true,
+  });
   const workerHistoryByProcessId = useMemo(() => {
     const map = new Map<string, WorkerHistoryEntry>();
     for (const entry of workerHistoryEntries) {
@@ -839,6 +846,7 @@ export function EntityExecutionPanel({
         historyLabel={historyLabel}
         historyTriggerLabel={historyTriggerLabel}
         historyOnLeft={historyOnLeft}
+        onHistoryOpen={() => setHistoryRequested(true)}
         afterHistorySlot={afterHistorySlot}
         pastSessionsLabel={pastSessionsLabel}
         noPastSessionsLabel={noPastSessionsLabel}
@@ -973,6 +981,7 @@ function ExecutionHistoryHeader({
   historyLabel,
   historyTriggerLabel,
   historyOnLeft,
+  onHistoryOpen,
   afterHistorySlot,
   pastSessionsLabel,
   noPastSessionsLabel,
@@ -995,6 +1004,8 @@ function ExecutionHistoryHeader({
   historyTriggerLabel?: string;
   /** Render the history trigger on the left (next to leadingSlot). */
   historyOnLeft?: boolean;
+  /** Starts the lazy worker-history enrichment when the menu is first opened. */
+  onHistoryOpen: () => void;
   /** Optional node rendered right after the left-placed history pill. */
   afterHistorySlot?: React.ReactNode;
   pastSessionsLabel: string;
@@ -1007,7 +1018,7 @@ function ExecutionHistoryHeader({
     'inline-flex h-7 flex-shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
 
   const historyDropdown = (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={(open) => open && onHistoryOpen()}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"

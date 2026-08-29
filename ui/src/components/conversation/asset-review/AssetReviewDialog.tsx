@@ -24,7 +24,7 @@ import { StagedAssetViewer } from './StagedAssetViewer';
  *  clones/pulls it); staged bytes rode inside the .flowmsg; anything else is a
  *  hub-served reference fetched on open. */
 function sourceOf(ma: MessageAttachment): { label: string; Icon: typeof Cloud; detail: string | null } {
-  const origin = (ma.git_origin ?? null) as GitOrigin | null;
+  const origin = (ma.origin ?? null) as GitOrigin | null;
   if (ma.transfer_mode === 'git' || origin) {
     return { label: t`Git`, Icon: GitBranch, detail: origin ? gitOriginCloneUrl(origin) : null };
   }
@@ -32,7 +32,7 @@ function sourceOf(ma: MessageAttachment): { label: string; Icon: typeof Cloud; d
   return { label: t`Cloud`, Icon: Cloud, detail: null };
 }
 
-const isGitAttachment = (ma: MessageAttachment): boolean => ma.transfer_mode === 'git' || ma.git_origin != null;
+const isGitAttachment = (ma: MessageAttachment): boolean => ma.transfer_mode === 'git' || ma.origin != null;
 const typeWordOf = (type?: string): string => {
   const t = type || 'file';
   return t.charAt(0).toUpperCase() + t.slice(1).replace(/_/g, ' ');

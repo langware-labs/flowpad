@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_store.operations.conversation import default_data_dir, default_jsonl_path, from_jsonl
 from flow_sdk.fs_store import RecordType
+from flow_sdk.fs_store.operations.conversation import default_data_dir, default_jsonl_path
 from flow_sdk.fs_store.record_paths import get_default_records_data_root
 
 # ---------------------------------------------------------------------------

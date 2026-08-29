@@ -138,7 +138,7 @@ One legacy type registry shim remains: the Entity `type_registry` (`schema/entit
 
 ### [Items & Origins](data-management/items_origins.md)
 
-Where the real thing lives. The three parallel origin families — `FSOrigin` (an asset's **bytes**), `CloudOrigin` (a record's **truth**), `SecretOrigin` (a **value**, resolved at worker launch and never persisted) — and why they are deliberately not one type. Covers the `FSOrigin` model and its `kind`-tagged discriminated union (`git`, `local`), the kind-keyed driver registry (`materialize`/`matches`/`detect`/`key`), the tolerant kind-less-reads-as-git rule, and `key()` as a cross-machine dedup handle that is an entity id in exactly one place (`Folder.id_for_origin`). Also documents the four *different jobs* origin-shaped fields do (polymorphic `FSOriginField` on Folder/Artifact, deliberately git-narrow on Project/Task, the SHARED hub wire dict on `Entity`, a raw bundle buffer on `MessageAttachment`), the byte-exact wire contract that dict carries, and the checklist for adding a new kind.
+Where the real thing lives. The three parallel origin families — `FSOrigin` (an asset's **bytes**), `CloudOrigin` (a record's **truth**), `SecretOrigin` (a **value**, resolved at worker launch and never persisted) — and why they are deliberately not one type. Covers the `FSOrigin` model and its `kind`-tagged discriminated union (`git`, `local`), the kind-keyed driver registry (`materialize`/`matches`/`detect`/`key`), the tolerant kind-less-reads-as-git rule, and `key()` as a cross-machine dedup handle that is an entity id in exactly one place (`Folder.id_for_origin`). Also documents the four *different jobs* origin-shaped fields do (polymorphic `OriginField` on Folder/Artifact, deliberately git-narrow on Project/Task, the SHARED hub wire dict on `Entity`, a raw bundle buffer on `MessageAttachment`), the byte-exact wire contract that dict carries, and the checklist for adding a new kind.
 
 **Key source files:** `flow_sdk/builtin/fs_origin.py`, `fs_origin_field.py`, `fs_origin_driver.py`, `git_origin.py`, `local_origin.py`, `flow_sdk/builtin/drivers/`, `flow_sdk/assets/git_origin.py`, `flow_sdk/builtin/flow_message_bundle.py`
 
@@ -168,17 +168,17 @@ On-disk directory structure for both FlowPad records (`~/.flow/records/`) and Cl
 
 ***
 
-### [Datum — the data descriptor and carrier](data-management/datum.md)
+### [DataSpec — shape as Pydantic, the spec as the layout](data-management/data-spec.md)
 
-The most basic unit of data: one model that both **describes** a shape and **carries** its values, for data whose shape arrives **as data** rather than being declared in source: a recursive `{kind?, fields?, items?, value?}` tree where a node is named children, ordered elements, or a value, and the same shape serves as a contract (empty leaves) and as the datum (populated leaves), joined by position. Covers the one-arm invariant, `kind` as an ordinary dot-path tag, repetition via `items`, and why entity fields declared via `APIField` are deliberately out of scope.
+How data whose shape arrives **as data** is described, and how an asset's on-disk layout becomes the class that models it. `DataSpec` is a keyword-free authoring form (`"string"`, `{k: v}`, `[T]`) that **compiles to** a Pydantic model via `create_model`, so validation and JSON Schema are Pydantic's; `kind` resolves through the one `SchemaRegistry`. A type's shape is its `TypeInfo.asset_spec`: the spec's field TYPES (`Body`, `FreeSection`, `FileRef`, rows, nested asset types) are the on-disk layout the serializer maps, with a per-field round-trip test matrix. The carrier is plain JSON — there is no wrapper model.
 
-**Key source files:** `flow_sdk/schema/datum.py`
+**Key source files:** `flow_sdk/schema/data_spec/spec.py`, `flow_sdk/schema/data_spec/markers.py`, `flow_sdk/schema/data_spec/frontmatter.py`, `flow_sdk/schema/data_spec/_kinds.py`, `flow_sdk/fs_store/serializer/fields.py`
 
 ***
 
 ### [Dataset Layout (Authoring Guide)](data-management/datasets.md)
 
-User-facing contract for laying out a **dataset** on disk: a folder under `agentic-assets/dataset/<slug>/` marked by a `dataset.json` manifest, in either the `csv` layout (`data.csv`, one row per example) or the `io_folder` layout (`examples/<name>/` with `input`/`output`/`ground_truth` slots). Covers slot forms (single file, folder, numbered `<slot>-N` for multiple outputs / consensus annotations), `<slot>.json` metadata sidecars, `example.json`/`meta.json` per-example metadata, the gold = `ground_truth` rule, file-beats-folder, binary-safe reads, and id-pinning for portability. Each row parses into one [`Datum`](data-management/datum.md) tree.
+User-facing contract for laying out a **dataset** on disk: a folder under `agentic-assets/dataset/<slug>/` marked by a `dataset.json` manifest, in either the `csv` layout (`data.csv`, one row per example) or the `io_folder` layout (`examples/<name>/` with `input`/`output`/`ground_truth` slots). Covers slot forms (single file, folder, numbered `<slot>-N` for multiple outputs / consensus annotations), `<slot>.json` metadata sidecars, `example.json`/`meta.json` per-example metadata, the gold = `ground_truth` rule, file-beats-folder, binary-safe reads, and id-pinning for portability. Each row parses into plain JSON; the manifest's `spec` (a [`DataSpec`](data-management/data-spec.md)) describes it.
 
 **Key source files:** `flow_sdk/builtin/dataset.py` (`Dataset`, `Example`), `flow_sdk/fs_store/indexer/functions/dataset.py` (walker + `iter_examples` parser), `flow_sdk/schema/type_info/dataset_type_info.py`
 
@@ -317,7 +317,7 @@ The webhook listener (`POST /api/v1/webhook/listen`) that drives real-time entit
 | How does the search refresh button work?                                  | [System Tools (Frontend)](data-management/system-tools.md)                                                                                                  |
 | Where does an asset's bytes / a record's truth / a secret's value live?   | [Items & Origins](data-management/items_origins.md)                                                                                                         |
 | How do I add a new origin kind (s3, gdrive)?                              | [Items & Origins](data-management/items_origins.md#adding-a-kind)                                                                                           |
-| Why is `Entity.git_origin` a dict and not a typed model?                  | [Items & Origins](data-management/items_origins.md#the-wire-contract)                                                                                       |
+| Why does the hub see `git_origin` when the entity field is `origin`?       | [Items & Origins](data-management/items_origins.md#the-wire-contract)                                                                                       |
 | How does a feed / mailbox / repo get into the graph?                      | [Data Sources](data-management/data-sources.md)                                                                                                             |
 | How do I add a new data source?                                           | [Data Sources](data-management/data-sources.md#adding-a-source)                                                                                             |
 | Does a source copy files, or index them where they are?                   | [Data Sources](data-management/data-sources.md#the-two-destinations)                                                                                        |

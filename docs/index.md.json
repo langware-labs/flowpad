@@ -5,18 +5,19 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "",
   "folder_name": "docs",
-  "inputs_hash": "74579e2cb1b808f0dafb408fd9d7259d8e0dd1694cbc25a317e17793cec42d97",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Flowpad's engineering documentation: the record and data layer, the agentic-process and PTY runtime, collaboration and sharing, tabs and view modes, the unified event bus, wiki and display surfaces, plus setup, debugging and release runbooks.",
+  "latest_process_ref": "",
+  "inputs_hash": "0ac5413654a327308c929b50a42813df8ecc461c3a626c730f2ab7a4685d9927",
   "files": [
     {
       "name": "CLAUDE.md",
       "rel_path": "CLAUDE.md",
       "title": "Record System Requirements",
-      "summary": "The binding Record System Requirements: disk as source of truth, FSRef and FSRecord, the shadow layout, metadata.json as the only persisted state, and id minting.",
-      "content_hash": "dea9bd743553717b0529602ab508307911821f144674016953833dbddc5a92fe",
-      "size_bytes": 9053
+      "summary": "Record-system requirements: disk as source of truth, FSRef and FSRecord doctrine, shadow layout, identity rules, sentinels, Entity.store via the serializer, and TypeId conventions.",
+      "content_hash": "d0f30a56c9364191916f30a42019ad7d355a2a6aa422588edab0ae9cb8bb3f60",
+      "size_bytes": 9400
     },
     {
       "name": "agentic-process.md",
@@ -61,7 +62,7 @@
     {
       "name": "claude_pty_scroll.md",
       "rel_path": "claude_pty_scroll.md",
-      "title": "Claude Code PTY scrolling \u2014 why the terminal scrollbar disappears",
+      "title": "Claude Code PTY scrolling — why the terminal scrollbar disappears",
       "summary": "Why the terminal scrollbar vanishes under Claude Code fullscreen rendering, why one cannot be synthesized inside it, and leaving that mode as the fix.",
       "content_hash": "9ce72feabd1d4f2573eb68063647297cd2657ae5dee68fd68a52e9b4d41654b9",
       "size_bytes": 4876
@@ -69,7 +70,7 @@
     {
       "name": "compute_node_action_audit.md",
       "rel_path": "compute_node_action_audit.md",
-      "title": "ComputeNode action surface \u2014 pre-refactor STATUS",
+      "title": "ComputeNode action surface — pre-refactor STATUS",
       "summary": "Pre-refactor audit of the ComputeNode action surface: clean, envelope-broken and provider-bound groups, six confirmed abstraction failures, and refuted flattenings.",
       "content_hash": "69a6ec9c689c54d18b4d917278485fd04ea2c99980977bd2b6e2ade38784fc5a",
       "size_bytes": 36246
@@ -94,9 +95,9 @@
       "name": "data-management.md",
       "rel_path": "data-management.md",
       "title": "Data Management",
-      "summary": "Entry point for the data layer: the Record-primary, Entity-cache model, three index systems, three entity creation paths, data flow, and sub-document map.",
-      "content_hash": "cf9ca5bb032ba9fb23f7eeefa40cebec85ca47bf755eacb6f0e104a4b7f4ad99",
-      "size_bytes": 34801
+      "summary": "Overview of the two-layer data model — filesystem records as truth, Entity and FTS as rebuildable indexes — with a map of every data-management sub-document.",
+      "content_hash": "cf1c9c002f84d5cc1c5b8d321e1a6d974448fa22c1ce9ac0acc0d3c609051c78",
+      "size_bytes": 35827
     },
     {
       "name": "debugMCP-setup.md",
@@ -117,7 +118,7 @@
     {
       "name": "display-capabilities.md",
       "rel_path": "display-capabilities.md",
-      "title": "Global Display Capabilities \u2014 Survey & Open Questions",
+      "title": "Global Display Capabilities — Survey & Open Questions",
       "summary": "Survey of how any target becomes a rendered view: files by extension, assets and entities, webapps and artifacts, foreign-HTML trust tiers, and backend serving surfaces.",
       "content_hash": "1781494b3817d17a48a2aa99e649b1409a23a92fa22305f4f446a732ef297672",
       "size_bytes": 18159
@@ -133,7 +134,7 @@
     {
       "name": "entities-groups.md",
       "rel_path": "entities-groups.md",
-      "title": "Entities Groups \u2014 generic folder-like containment",
+      "title": "Entities Groups — generic folder-like containment",
       "summary": "Generic folder-like containment via the Group entity: the model, base Entity addition, invariants, backend folder mechanics, SDK logic, and layer borders.",
       "content_hash": "5eee0027a13f2296190517ff77a64c32777427293a245d684386ea1786e7137a",
       "size_bytes": 7712
@@ -141,7 +142,7 @@
     {
       "name": "flow-connect-docker.md",
       "rel_path": "flow-connect-docker.md",
-      "title": "`flow connect --docker <container>` \u2014 enroll a Docker container into the hub",
+      "title": "`flow connect --docker <container>` — enroll a Docker container into the hub",
       "summary": "Enrolling a running Docker container as a hub compute node with flow connect --docker, replacing the removed desktop-local docker compute node.",
       "content_hash": "27d2e32e3c103f1b957617f1de5314ce3210c62dd66a1821abfedbc1cfda5a1c",
       "size_bytes": 2489
@@ -149,7 +150,7 @@
     {
       "name": "flow-events.md",
       "rel_path": "flow-events.md",
-      "title": "FlowEvents \u2014 the unified event bus (delivery worklog)",
+      "title": "FlowEvents — the unified event bus (delivery worklog)",
       "summary": "Delivery worklog for the unified FlowEvent bus: the normative envelope plus each phase from claiming the name through triggers, flow subscriptions, and the WS strangle.",
       "content_hash": "04f71e0872f4d8cf765b3eb3464bcedd9f9b61529f6f5f222b45c7f4a226fb83",
       "size_bytes": 36095
@@ -165,7 +166,7 @@
     {
       "name": "fs-ref.md",
       "rel_path": "fs-ref.md",
-      "title": "FSRef \u2014 declarative file/folder references",
+      "title": "FSRef — declarative file/folder references",
       "summary": "FSRef doctrine: the class family, walk tags, read-only semantics, the freshness token, serialization to TypeScript, and how records use refs.",
       "content_hash": "ef88f6f7a8238f5f91033f65f037da97bff66bc41662c05d84bcbfaafcf50a3f",
       "size_bytes": 4342
@@ -181,10 +182,10 @@
     {
       "name": "glossary.md",
       "rel_path": "glossary.md",
-      "title": "Glossary \u2014 our nouns vs. the ecosystem's",
-      "summary": "Cross-walk between Flowpad, Claude Code and OpenClaw nouns, which entities mirror a provider versus which are ours, and the naming rules that follow.",
-      "content_hash": "b663c2fe443148d0e4ea109f4dfb2e7d17de3411c2051a2ca99f29e2f1f2b129",
-      "size_bytes": 6739
+      "title": "Glossary — our nouns vs. the ecosystem's",
+      "summary": "Cross-walk of Flowpad nouns against Claude Code and OpenClaw vocabulary, provider mirrors versus native assets, naming rules, and the agent capability fields.",
+      "content_hash": "3b57540fd20a0a1e0747a82ef6209d2fc1fa33039cff8a5ad6a12eb3dcbfe6d5",
+      "size_bytes": 7319
     },
     {
       "name": "intro.md",
@@ -205,7 +206,7 @@
     {
       "name": "llm_wiki.md",
       "rel_path": "llm_wiki.md",
-      "title": "Wiki namespaces and link graph \u2014 flowpad-oss",
+      "title": "Wiki namespaces and link graph — flowpad-oss",
       "summary": "Wiki namespaces and the link graph: wiki-link syntax, edge extraction on sync, page resolution, the edge store schema, cleanup paths, and API surface.",
       "content_hash": "0f9b815b1f04922a010806f03bd46cdcb14387e5c386f7f62687e6555f175550",
       "size_bytes": 17605
@@ -229,7 +230,7 @@
     {
       "name": "playwright-usage.md",
       "rel_path": "playwright-usage.md",
-      "title": "Playwright MCP \u2014 Usage & Debug",
+      "title": "Playwright MCP — Usage & Debug",
       "summary": "Using the Playwright MCP server: its .mcp.json config, the checks required before every use, common errors, and the operating rules.",
       "content_hash": "ad290a147f367ad0e0f89aa75eacb6530439c892a16ae0aa7213be5ed231ee21",
       "size_bytes": 1184
@@ -237,7 +238,7 @@
     {
       "name": "prompt-library.md",
       "rel_path": "prompt-library.md",
-      "title": "Prompt Library \u2014 managed prompts, foldered, one click to queue",
+      "title": "Prompt Library — managed prompts, foldered, one click to queue",
       "summary": "The managed prompt library: the Prompt entity, foldered structure, ribbon integration, the prompt-to-queue flow, leaf affordances, and layer borders.",
       "content_hash": "fa2116f079ff82295a36fd135c01fc78939f5b2bc19a337be3e48a9f0357c538",
       "size_bytes": 4901
@@ -253,7 +254,7 @@
     {
       "name": "pty-sync.md",
       "rel_path": "pty-sync.md",
-      "title": "PTY Line Synchronization \u2014 Annotation Gutter (right) & Trace Gutter (left)",
+      "title": "PTY Line Synchronization — Annotation Gutter (right) & Trace Gutter (left)",
       "summary": "PTY line synchronization for the annotation and trace gutters: xterm buffer coordinates, the PtySyncSession coordinator, its React lifecycle, and row calculations.",
       "content_hash": "159dea6a5a604f9d10830a3deeca30c6e59925a4afe0e33e14a6afae29c84639",
       "size_bytes": 27079
@@ -317,7 +318,7 @@
     {
       "name": "tags.md",
       "rel_path": "tags.md",
-      "title": "Tags \u2014 the unified event bus",
+      "title": "Tags — the unified event bus",
       "summary": "The unified event bus where a free dot-path tag is the event name, carriers are the store, and the taxonomy describes without ever routing.",
       "content_hash": "9326d9ec80d12f0b858a7a7670806c26fc8f4d57025de98ad0e4e5b904f29d17",
       "size_bytes": 12128
@@ -333,7 +334,7 @@
     {
       "name": "toplog.md",
       "rel_path": "toplog.md",
-      "title": "Toplog \u2014 tag-based runtime logging",
+      "title": "Toplog — tag-based runtime logging",
       "summary": "Runtime logging gated by tag and toggled live through toplog.json rather than code: OR semantics across tags, plus cheap guards for expensive payloads.",
       "content_hash": "36bca2450ad5a07ee8e8d74367d0c2f728206bb675bdffeb5d222a9fded47922",
       "size_bytes": 6850
@@ -365,7 +366,7 @@
     {
       "name": "viewmodes.md",
       "rel_path": "viewmodes.md",
-      "title": "View Modes \u2014 Vibe / Standard / Advanced / Dev \"skin\" system",
+      "title": "View Modes — Vibe / Standard / Advanced / Dev \"skin\" system",
       "summary": "The Vibe, Standard, Advanced and Dev skin system: the non-negotiable skin-layer rule, its one exception, the gating toolkit, decision tree, and worked example.",
       "content_hash": "7ec4a84661cac2b101fc998ce85e4d3002e296cc7e251403b146f3e205bc954b",
       "size_bytes": 14349
@@ -397,28 +398,28 @@
     {
       "name": "breadcrumbs",
       "rel_path": "breadcrumbs",
-      "self_summary": "Breadcrumb rules bound to failing tests: each page states the expected behaviour, internals, invariants and failure modes for one proven bug \u2014 chat activity readout, bootstrap's default project, dev port picking, SQLite NULL ordering, served HTML encoding, terminal bidi, and worker interpreter resolution.",
+      "self_summary": "Breadcrumb rules bound to failing tests: each page states the expected behaviour, internals, invariants and failure modes for one proven bug — chat activity readout, bootstrap's default project, dev port picking, SQLite NULL ordering, served HTML encoding, terminal bidi, and worker interpreter resolution.",
       "child_typeid": "markdown_index-bd7ef5f5-cf38-55ee-b3c9-b1549c57f267",
       "child_inputs_hash": "8242b1e65095f95fd949084344ead78876282e9c4235ed68e521233ee87f5369"
     },
     {
       "name": "collab",
       "rel_path": "collab",
-      "self_summary": "Flowpad's collaboration subsystem: conversations, messages and attachments, sharing and sync, invites, members and identity, and the hub fan-out that ties two instances together \u2014 all built on disk and the hub as the source of truth, with local DB rows as rebuildable projections.",
+      "self_summary": "Flowpad's collaboration subsystem: conversations, messages and attachments, sharing and sync, invites, members and identity, and the hub fan-out that ties two instances together — all built on disk and the hub as the source of truth, with local DB rows as rebuildable projections.",
       "child_typeid": "markdown_index-ae7e9b29-8b0e-510b-91bf-6ce537d39c35",
       "child_inputs_hash": "c13cd8aa7c67c6d32a637466561fc1c4a22e0b90d05a9e3ab1ede98dbc0846ed"
     },
     {
       "name": "data-management",
       "rel_path": "data-management",
-      "self_summary": "The data layer: filesystem records as the source of truth, with Entity and FTS rows as rebuildable indexes. Covers origins, data sources, the record model and on-disk layout, dataset authoring, scan and discovery, the gitignore walk, invalidation, search, the schema registry, and the LLM folder index.",
+      "self_summary": "The data layer: filesystem records as the source of truth, with Entity and FTS rows as rebuildable indexes. Covers origins, data sources and their manifests, the record model and on-disk layout, DataSpec and the serializer, dataset authoring, scan and discovery, the gitignore walk, invalidation, search, the schema registry, and the LLM folder index.",
       "child_typeid": "markdown_index-66704284-b246-51c2-849b-cf3c916f33de",
-      "child_inputs_hash": "fcb04e90d3eb573170adebfaedc205a0eb8e008492f1aebc58eb57e625ea06d0"
+      "child_inputs_hash": "c716915ace556c20f56e0b929e936002acdc9fac9afbda0ab0b4a8092561ba68"
     },
     {
       "name": "flows",
       "rel_path": "flows",
-      "self_summary": "Cross-subsystem flows \u2014 the path a feature actually takes end to end across several entities and skills, as opposed to the per-entity API references in interface/. Currently covers the trace-analysis and skill-improvement cycle.",
+      "self_summary": "Cross-subsystem flows — the path a feature actually takes end to end across several entities and skills, as opposed to the per-entity API references in interface/. Currently covers the trace-analysis and skill-improvement cycle.",
       "child_typeid": "markdown_index-6d64a9cf-5d30-586e-9d52-b1ada8bebd41",
       "child_inputs_hash": "a160371f3bc51454e28f73e7523133ba0465b91f02c9288b24c26905e2c5d2fa"
     },
@@ -446,11 +447,10 @@
     {
       "name": "tabs",
       "rel_path": "tabs",
-      "self_summary": "Tab surfaces beyond the strip itself \u2014 how a view mode lays content over a process's single shell dock, what is allowed to write that content, and how it reaches the client. Currently covers the vibe-mode Display pane.",
+      "self_summary": "Tab surfaces beyond the strip itself — how a view mode lays content over a process's single shell dock, what is allowed to write that content, and how it reaches the client. Currently covers the vibe-mode Display pane.",
       "child_typeid": "markdown_index-7c234c43-b48e-5e33-99b2-84e907274387",
       "child_inputs_hash": "a47d5b94713d86b649d44e0e53cd94039d9b79daca69f45cd2afb0a9e797acc5"
     }
   ],
-  "generated_at": "2026-08-23T22:20:45.823073+00:00",
-  "latest_process_ref": ""
+  "generated_at": "2026-08-29T19:10:01.323036+00:00"
 }

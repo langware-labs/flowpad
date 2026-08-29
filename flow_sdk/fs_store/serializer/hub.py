@@ -25,6 +25,12 @@ def hub_names(cls: type) -> dict[str, str]:
     return {n: w for n, f in cls.model_fields.items() if (w := _extra(f).get("hub_name"))}
 
 
+@cache
+def origin_fields(cls: type) -> tuple[str, ...]:
+    """The fields typed as an origin — the only ones whose VALUE may refuse to travel."""
+    return tuple(n for n, f in cls.model_fields.items() if "Origin" in repr(f.annotation))
+
+
 class HubSerializer:
     kind: ClassVar[str] = "hub"
 
@@ -36,10 +42,10 @@ class HubSerializer:
         excluded = set(cls.fields_not_sent_to_hub())
         refuse_disk_only(cls, tuple(n for n in cls.model_fields if n not in excluded), "a hub body")
         body = obj.model_dump(mode="json", exclude_none=True, exclude=excluded)
-        for name in tuple(body):
+        for name in origin_fields(cls):
             # A machine-local pointer never leaves this machine — a value fact,
             # which no per-field declaration can express.
-            if not getattr(getattr(obj, name, None), "transportable", True):
+            if name in body and not getattr(getattr(obj, name, None), "transportable", True):
                 body.pop(name)
         for name, wire in hub_names(cls).items():
             if name in body:
@@ -52,10 +58,8 @@ class HubSerializer:
     @staticmethod
     def unwire(cls: type, payload: dict[str, Any]) -> dict[str, Any]:
         """The hub payload with wire names mapped back to field names."""
-        for name, wire in hub_names(cls).items():
-            if wire in payload and name not in payload:
-                payload = {**payload, name: payload[wire]}
-        return payload
+        lifted = {name: payload[wire] for name, wire in hub_names(cls).items() if wire in payload and name not in payload}
+        return {**payload, **lifted} if lifted else payload
 
     @staticmethod
     def from_payload(cls: type, payload: dict[str, Any]) -> Any:

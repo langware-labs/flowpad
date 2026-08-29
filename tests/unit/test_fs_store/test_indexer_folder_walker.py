@@ -38,7 +38,6 @@ from flow_sdk.fs_store.indexer.gitignore import (
 )
 from flow_sdk.fs_store.record_types import RecordType
 
-
 # Project root = the flowpad-oss working tree (this file lives under
 # tests/unit/test_fs_store/ so .parents[3] is the repo root).
 PROJECT_ROOT = Path(__file__).resolve().parents[3]

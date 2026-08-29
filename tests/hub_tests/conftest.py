@@ -302,12 +302,20 @@ def _cleanup_identities() -> list[str]:
     alice, bob = _resolve_identities()
     pairs = [
         (
+            os.environ.get("FLOWPAD_CLOUD_USER_EMAIL"),
+            os.environ.get("FLOWPAD_CLOUD_USER_PASSWORD"),
+        ),
+        (
             os.environ.get("ALICE_EMAIL") or alice,
             os.environ.get("ALICE_PW") or os.environ.get("FLOWPAD_CLOUD_USER_PASSWORD"),
         ),
         (os.environ.get("BOB_EMAIL") or bob, os.environ.get("BOB_PW")),
     ]
-    return [t for t in (_cleanup_token(e, p) for e, p in pairs) if t]
+    tokens: list[str] = []
+    for token in (_cleanup_token(email, password) for email, password in pairs):
+        if token and token not in tokens:
+            tokens.append(token)
+    return tokens
 
 
 # Every hub entity type the tier creates and never reclaimed. Measured on a
@@ -349,7 +357,7 @@ def _delete_entity(base: str, entity_type: str, entity_id: str, tokens: list[str
                     headers={"Authorization": f"Bearer {tok}", "Content-Type": "application/json"},
                     json={},
                 )
-            if r.status_code == 200:
+            if r.status_code in (200, 404):
                 return True
         except Exception:  # noqa: BLE001
             continue
@@ -400,8 +408,8 @@ def _reclaim_hub_entities_the_tier_creates(local_hub_available, request):
 
     Reclaiming is best-effort by design: a failure here must never turn a green
     tier red. A row owned by an identity we hold no token for legitimately
-    survives, and anything unreclaimable is dropped from the ledger rather than
-    retried forever.
+    survives and stays in the ledger for a later run with the right identity;
+    an already-absent row counts as reclaimed.
     """
     tokens = _cleanup_identities()
     base = _configured_hub_base_url()
@@ -410,14 +418,15 @@ def _reclaim_hub_entities_the_tier_creates(local_hub_available, request):
     # Reclaim what the previous session left, before this one adds to it.
     stale = cache.get(_LEFTOVER_CACHE_KEY, None) or []
     reclaimed = 0
+    unreclaimed: list[dict[str, str]] = []
     for entry in stale:
         kind, entity_id = (entry.get("type"), entry.get("id")) if isinstance(entry, dict) else (None, None)
         if kind and entity_id and _delete_entity(base, kind, entity_id, tokens):
             reclaimed += 1
+        elif kind and entity_id:
+            unreclaimed.append({"type": kind, "id": entity_id})
     if stale:
-        # Cleared unconditionally: a row we could not delete (owner logged out,
-        # already gone) would otherwise be retried on every future run forever.
-        cache.set(_LEFTOVER_CACHE_KEY, [])
+        cache.set(_LEFTOVER_CACHE_KEY, unreclaimed)
         print(f"\n[hub-cleanup] reclaimed {reclaimed}/{len(stale)} row(s) left by the previous run")
 
     before = {(t, kind): _live_ids(t, kind) for t in tokens for kind in _CLEANUP_TYPES}
@@ -430,8 +439,13 @@ def _reclaim_hub_entities_the_tier_creates(local_hub_available, request):
             for entity_id in _live_ids(token, kind) - before.get((token, kind), set()):
                 if not any(c["id"] == entity_id for c in created):
                     created.append({"type": kind, "id": entity_id})
+    tracked = list(unreclaimed)
+    for entry in created:
+        if entry not in tracked:
+            tracked.append(entry)
+    if tracked:
+        cache.set(_LEFTOVER_CACHE_KEY, tracked)
     if created:
-        cache.set(_LEFTOVER_CACHE_KEY, created)
         tally = ", ".join(
             f"{sum(1 for c in created if c['type'] == k)} {k}"
             for k in _CLEANUP_TYPES

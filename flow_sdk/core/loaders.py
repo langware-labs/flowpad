@@ -116,8 +116,8 @@ def load_actions():
     except ImportError:
         pass  # OAuth action not available
 
-    # Import mcp_app action to register it
-    from flow_sdk.actions import mcp_app_action  # noqa: F401
+    # Import the asset-editor action to register it
+    from flow_sdk.actions import asset_editor_action  # noqa: F401
 
 
 async def is_new_instance(existing, entity_data: dict) -> bool:

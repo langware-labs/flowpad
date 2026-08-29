@@ -224,7 +224,7 @@ async def test_handle_invitation_accept_learns_conversation_participants(monkeyp
 async def test_handle_invitation_accept_project_fetches_payload_and_materializes_context(monkeypatch):
     from flow_sdk.app.actions import flow_message_action
     from flow_sdk.builtin.folder import Folder
-    from flow_sdk.builtin.git_origin import GitOrigin
+    from flow_sdk.fs_store.origin.git_origin import GitOrigin
     from flow_sdk.builtin.invitation import Invitation
     from flow_sdk.builtin.project import Project
 

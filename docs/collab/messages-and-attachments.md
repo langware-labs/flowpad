@@ -203,7 +203,7 @@ The body upload contract has two transfer modes:
   `GitOrigin` so the receiver can preserve repo-relative placement, but the bytes
   still ride inside the `.flowmsg`.
 - **`git`** — git-backed attachments are metadata-only on the body axis. The bundle
-  carries `git_origins.json`, `git_transfers.json`, and
+  carries `fs_origins.json`, `git_transfers.json`, and
   `metadata/<type>-<id>/metadata.json`; it does not carry the git-backed file
   bytes. On receive, the unpacker resolves a matching local checkout, pulls the
   branch when possible, or clones the remote, then indexes the entity from the

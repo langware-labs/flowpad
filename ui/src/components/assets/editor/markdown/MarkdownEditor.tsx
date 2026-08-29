@@ -312,9 +312,10 @@ function MarkdownEditorContent({
   const setViewMode = useCallback(
     (mode: ViewMode) => {
       if (!currentDock) return; // outside dock context — shouldn't happen for MarkdownEditor
+      if (mode === viewMode) return; // active chips are idempotent; preserve child editor state
       navigation.openDock(currentDock.withOption(EDITOR_MODE_PARAM, mode));
     },
-    [currentDock, navigation],
+    [currentDock, navigation, viewMode],
   );
 
   // Restore from a stale 'learning' selection when the chip is hidden for this doc.

@@ -5,18 +5,18 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "data-management",
   "folder_name": "data-management",
-  "inputs_hash": "fcb04e90d3eb573170adebfaedc205a0eb8e008492f1aebc58eb57e625ea06d0",
+  "inputs_hash": "c716915ace556c20f56e0b929e936002acdc9fac9afbda0ab0b4a8092561ba68",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "The data layer: filesystem records as the source of truth, with Entity and FTS rows as rebuildable indexes. Covers origins, data sources, the record model and on-disk layout, dataset authoring, scan and discovery, the gitignore walk, invalidation, search, the schema registry, and the LLM folder index.",
+  "self_summary": "The data layer: filesystem records as the source of truth, with Entity and FTS rows as rebuildable indexes. Covers origins, data sources and their manifests, the record model and on-disk layout, DataSpec and the serializer, dataset authoring, scan and discovery, the gitignore walk, invalidation, search, the schema registry, and the LLM folder index.",
   "files": [
     {
       "name": "asset-capsules.md",
       "rel_path": "asset-capsules.md",
       "title": "Asset capsules",
-      "summary": "Portable named metadata carriers: the flowpad:capsule tag format, versioned data and tags sections, and how capsules integrate with entity identity resolution.",
-      "content_hash": "d356414b935ffdd17143fb4bf03d64a5d135c885298946dd64152cd057a1e241",
-      "size_bytes": 6516
+      "summary": "Asset capsules: named JSON metadata carried inside folders and Markdown files, the flowpad:capsule format, and their role in entity identity resolution.",
+      "content_hash": "be933efe0a480e77ac5f653cf97a980e16706115e7539d409a6b88fdbba2d8b9",
+      "size_bytes": 6523
     },
     {
       "name": "compute-node-fs-records.md",
@@ -30,17 +30,25 @@
       "name": "data-source-asset.md",
       "rel_path": "data-source-asset.md",
       "title": "Data source assets",
-      "summary": "The data_source.json manifest a source ships as: schema, requires, name, auth, reflect, config form, traits, and runtime discovered by file presence.",
-      "content_hash": "2a7d78063a391f482babfb14a6c4cce7c6fa84f862bf4f4c41a5af2c7ff095d4",
-      "size_bytes": 11031
+      "summary": "The data_source.json manifest a source ships as a folder asset: schema, name, auth, reflect modes, config form fields, traits, and runtime discovered from file presence.",
+      "content_hash": "3c83de4fe346c95f88ce0e810f584ea57ce5ed5d36c1903ee5f5d83796592302",
+      "size_bytes": 11003
     },
     {
       "name": "data-sources.md",
       "rel_path": "data-sources.md",
       "title": "Data sources",
-      "summary": "Ingestion from remote systems: the poller, sync and ingestor pipeline, driver contract and traits, status versus health, record-or-asset destinations, identity, and change envelope.",
-      "content_hash": "43a08c9a0bf740b12e173be040e3df9bd235e06ab9d991b4860c9d9404a2a1f8",
-      "size_bytes": 13293
+      "summary": "Data-source ingestion: segments, cursors, the poller/sync/ingestor pipeline, driver contract and traits, status versus health, record-or-asset destinations, origin identity, change envelope.",
+      "content_hash": "c4db5941ebfadcfb0431f95ef70661ad76202d0d05f12a1151323d132679eb93",
+      "size_bytes": 13937
+    },
+    {
+      "name": "data-spec.md",
+      "rel_path": "data-spec.md",
+      "title": "DataSpec — shape as Pydantic, the spec as the layout",
+      "summary": "DataSpec as the one Pydantic shape system: authoring form compiled to classes, kinds, SpecType, dataset layouts, and TypeInfo.asset_spec whose field types are an asset's on-disk layout.",
+      "content_hash": "4f31c3b80afb06758fc139f753a291cb04ce8c1b7d7fef2c9d65354a37ac24bc",
+      "size_bytes": 13478
     },
     {
       "name": "database.md",
@@ -54,17 +62,17 @@
       "name": "datasets.md",
       "rel_path": "datasets.md",
       "title": "Dataset Layout (Authoring Guide)",
-      "summary": "Authoring contract for a dataset folder: the dataset.json manifest, two-section JSON convention, csv and io_folder layouts, slots, sidecars, and portability.",
-      "content_hash": "7f98327f1f5d51411e0118a9cd7a3adbdda48e2fe04300c2e955563b0a38c3c7",
-      "size_bytes": 12002
+      "summary": "Authoring guide for dataset folders: the dataset.json manifest and spec, csv versus io_folder layouts, slots, sidecars, example metadata, and what the parser produces.",
+      "content_hash": "06164c6a88cf462a71bcc56668bd1750c33cfc542d23c8fbe32756b91eae9cac",
+      "size_bytes": 15086
     },
     {
       "name": "entity-index-sync.md",
       "rel_path": "entity-index-sync.md",
       "title": "Entity Index Sync",
-      "summary": "How Records on disk and Entity rows stay aligned: sync_to_db's algorithm, entity-record linkage, index removal, FTS exclusions, and indexer orchestration.",
-      "content_hash": "5a392b178bae3c976f382f6bbe8f69d55eeff19daa94a7f377e8f97b3dbf7324",
-      "size_bytes": 19948
+      "summary": "The Entity index and FTS5 tables as rebuildable mirrors of records: sync_to_db pipeline, record linkage, occurrence projection, removal, and indexer orchestration.",
+      "content_hash": "7ca1c3c468ea7311f699aee53e5adecfaf2de142167087437a6dc2d24103c5fa",
+      "size_bytes": 19974
     },
     {
       "name": "folder-layout.md",
@@ -93,7 +101,7 @@
     {
       "name": "invalidation.md",
       "rel_path": "invalidation.md",
-      "title": "Content Invalidation (file change \u2192 reindex \u2192 refresh)",
+      "title": "Content Invalidation (file change → reindex → refresh)",
       "summary": "The file-change to reindex to refresh loop: lazy GET-time refresh, explicit invalidate, turn-end push, updated_date as change token, and frontend body re-read.",
       "content_hash": "aaf791756e0dc7eb912eaf6b25f04427c13bdb2741a52d66c75ad3f9c6cb91fc",
       "size_bytes": 9624
@@ -134,9 +142,9 @@
       "name": "record-model.md",
       "rel_path": "record-model.md",
       "title": "Record Model",
-      "summary": "FSRecord as the single concrete record class: instance storage, identity and fingerprint minting, on-disk layout, save and load, FSRefs, and index state.",
-      "content_hash": "09fa2c0a6b9f52a4800312c393f9e0f6eaa6b98a68d4a62eeaecd02a768ec28b",
-      "size_bytes": 22656
+      "summary": "FSRecord, the single record class: shadow-folder storage, identity and fingerprint minting, on-disk layout, save/load/discover, FSRefs, index sentinels, and serializer-written assets.",
+      "content_hash": "5ac6313420d7dd361839c7aa2b6c8d64dc719f3e985c94b9da4ac80c5962ea60",
+      "size_bytes": 23598
     },
     {
       "name": "record-search.md",
@@ -150,17 +158,17 @@
       "name": "scan-and-discovery.md",
       "rel_path": "scan-and-discovery.md",
       "title": "Scan and Discovery",
-      "summary": "The FSIndexer walk: roots, transient waypoint types, the walker registration graph and expanders, type-gated dispatch, chunked DFS, and out-of-process scanning.",
-      "content_hash": "1eeab1de59ebdf9e187d6339768a5cf74c96ef7722f1278877a4dafd4102ad2f",
-      "size_bytes": 32101
+      "summary": "FSIndexer's depth-first walk over FSRef roots: walker registration graph, type-gated dispatch, chunked and subprocess scanning, per-type parsing/identity/freshness slots, and when indexing runs.",
+      "content_hash": "04930ad94a13c52ba20cd108c2bd6d8813c7b7d3205599ed0a08b36b2439fb03",
+      "size_bytes": 32123
     },
     {
       "name": "schema-registry.md",
       "rel_path": "schema-registry.md",
       "title": "Schema Registry",
-      "summary": "SchemaRegistry as the one registry for every record and entity type: how TypeInfo is declared and merged from two sources, and what it orchestrates.",
-      "content_hash": "2b42f3193a57b5534011cc09dbeafd28849da566ad657e7fe1d6901fc090c567",
-      "size_bytes": 16208
+      "summary": "SchemaRegistry and TypeInfo as the single type-metadata source: declarative TypeMetadata authoring, entity registration, merge semantics, serialization slots, kinds, and scan orchestration.",
+      "content_hash": "bb7a4150ceb91364ae12e99d70f7cd136da3d16f9d7da9e86e3c99f349c2b113",
+      "size_bytes": 16714
     },
     {
       "name": "system-tools.md",
@@ -180,6 +188,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-08-23T22:20:45.823073+00:00",
+  "generated_at": "2026-08-29T19:09:43.812793+00:00",
   "latest_process_ref": ""
 }

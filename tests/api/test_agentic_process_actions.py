@@ -410,7 +410,6 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
         "kind": "local",
         "base": str(tmp_path),
         "rel_path": "frontend",
-        "project_id": "",
     }
     assert deployment["kind"] == "runtime.web"
     assert deployment["artifact_id"] == artifact["id"]

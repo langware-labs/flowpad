@@ -2671,8 +2671,8 @@ class AgenticProcess(Entity):
 
         from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
         from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
-        from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
-        from flow_sdk.builtin.local_origin import LocalOrigin  # noqa: PLC0415
+        from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
+        from flow_sdk.fs_store.origin.local_origin import LocalOrigin  # noqa: PLC0415
         from flow_sdk.core.display_target import InvalidDisplayTarget, resolve_display_target  # noqa: PLC0415
         from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
 
@@ -4814,18 +4814,16 @@ class AgenticProcess(Entity):
 
         try:
             from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
-            from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown, markdown_id
+            from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
             # extract_markdown requires a resolved id (capsule refactor 4f94fb92
             # made it a positional arg). Resolve it READ-ONLY via markdown_id
             # (adopted frontmatter id, else the stable uuid5(path)) — the plan
             # file is a transient Claude transcript artifact we must not mutate
             # with an identity-capsule write.
-            _ref = _FSRef(Path(plan_file_path))
-            records = extract_markdown(_ref, markdown_id(_ref))
-            if not records:
+            rec = SchemaRegistry.get("markdown").record_for(_FSRef(Path(plan_file_path), read_only=True))
+            if rec is None:
                 return ApiFailResponse(message=f"could not parse {plan_file_path}")
-            rec = records[0]
             await rec.sync_to_db()
             return ApiSuccessResponse(data={"markdown": rec.meta_dict(), "plan_path": plan_file_path})
         except Exception as e:

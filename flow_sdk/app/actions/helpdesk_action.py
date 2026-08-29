@@ -21,7 +21,7 @@ from pathlib import Path
 
 from flow_sdk.actions.action_registry import action
 from flow_sdk.app.helpdesk_resolver import resolve_adopted_helpdesk
-from flow_sdk.builtin.git_origin import GitOrigin
+from flow_sdk.fs_store.origin.git_origin import GitOrigin
 from flow_sdk.builtin.project import Project
 from flow_sdk.config import HELPDESK_PORTAL_UNAME, StorageProvider, helpdesk_project_dir
 from flow_sdk.fs_store.path_utils import canonical_posix_path

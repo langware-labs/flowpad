@@ -27,10 +27,11 @@ links are untouched (zero migration).
 
 from typing import ClassVar, Optional
 
+from pydantic import model_validator
+
 from flow_sdk.api.api_types.api_field import APIField, Sharing
-from flow_sdk.builtin.fs_origin import FSOrigin, is_safe_rel_path
-from flow_sdk.builtin.fs_origin_field import FSOriginField
-from flow_sdk.builtin.local_origin import LocalOrigin
+from flow_sdk.fs_store.origin.fs_origin import FSOrigin, is_safe_rel_path
+from flow_sdk.fs_store.origin.local_origin import LocalOrigin, local_origin_for_path
 from flow_sdk.core import Entity, action
 from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under
@@ -39,14 +40,6 @@ from flow_sdk.schema.types import EntityType
 
 class Folder(Entity):
     type: str = APIField(default=EntityType.FOLDER.value)
-
-    # Where the folder lives — the transportable source of truth (local / git /
-    # future s3/drive). Typed as the discriminated union so the right subclass
-    # (with its locator fields) reconstructs on load.
-    origin: Optional[FSOriginField] = APIField(
-        default=None,
-        description="FSOrigin locating the directory (local base / git repo+rel_path / …).",
-    )
 
     # LOCAL resolved-path cache on THIS machine (see module docstring). Not the
     # transportable identity; set at add time (sender) or on resolve (receiver).
@@ -57,38 +50,13 @@ class Folder(Entity):
     #: first write and read back through ``getattr(..., None)``.
     _borrowed_cache: ClassVar[Optional[set]] = None
 
-    def __init__(self, **data):
-        # Tolerant backfill: an old row / bundle may carry a legacy ``path`` or
-        # ``git_origin`` (dict, possibly under ``metadata``) but no ``origin``.
-        # Synthesize ``origin`` so it loads without a DB migration. Mirrors
-        # Artifact.__init__'s lift-from-metadata.
-        if not data.get("origin"):
-            metadata = data.get("metadata") or {}
-            legacy_git = data.get("git_origin") or metadata.get("git_origin")
-            if legacy_git:
-                data["origin"] = legacy_git  # discriminated union reads kind→git
-            elif data.get("path"):
-                data["origin"] = LocalOrigin(base=canonical_posix_path(data["path"]))
-        data.pop("git_origin", None)  # dropped field — never let it reach the model
-        super().__init__(**data)
-
-    def _hub_body(self) -> dict:
-        """Folder hub payload: strip non-transportable origins.
-
-        Folders normally travel as project context refs plus
-        ``shared_context_origins``. The local resolved ``path`` is withheld by
-        the field declaration itself (``Sharing.PRIVATE``); what remains here is
-        the runtime check that an origin is transportable, which no per-field
-        policy can express.
-        """
-        body = super()._hub_body()
-        # `path` is withheld by the base seam now (declared PRIVATE); this
-        # override is left with the one thing that is NOT per-field policy — a
-        # runtime predicate on the origin's transportability.
-        origin = self.origin
-        if origin is None or not origin.transportable:
-            body.pop("origin", None)
-        return body
+    @model_validator(mode="before")
+    @classmethod
+    def _origin_from_path(cls, data):
+        """A folder named only by its local ``path`` is a LocalOrigin at that path."""
+        if isinstance(data, dict) and not data.get("origin") and data.get("path"):
+            data = {**data, "origin": local_origin_for_path(canonical_posix_path(data["path"]))}
+        return data
 
     # ── Identity ─────────────────────────────────────────────────────────────
 

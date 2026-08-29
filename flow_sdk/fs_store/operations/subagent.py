@@ -6,13 +6,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from flow_sdk.builtin.subagent import AGENTS_SPEC_FIELDS
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions.subagent import (
-    AGENTS_SPEC_FIELDS,
     JSON_TO_KEY,
     KEY_TO_JSON,
-    extract_subagent,
 )
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
@@ -25,13 +24,7 @@ def extract_subagent_from_path(path: str | Path) -> FSRecord | None:
     """
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-    ref = FSRef(Path(path), record_type=RecordType.SUBAGENT)
-    info = SchemaRegistry.get(str(RecordType.SUBAGENT))
-    if info is None:
-        return None
-    resolved_id = info.mint_entity_id(ref, derive=True, overwrite=True)
-    records = extract_subagent(ref, resolved_id)
-    return records[0] if records else None
+    return SchemaRegistry.get(str(RecordType.SUBAGENT)).record_for(FSRef(Path(path), record_type=RecordType.SUBAGENT))
 
 
 def load_system_subagent(name: str) -> FSRecord | None:

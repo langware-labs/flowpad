@@ -21,7 +21,6 @@ from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store import get_default_records_root, set_default_records_root
 from flow_sdk.fs_store.fs_record import FSRecord
-from flow_sdk.fs_store.indexer.functions.task import extract_task  # noqa: F401
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
 
 TaskResource = FSRecord  # noqa: F401

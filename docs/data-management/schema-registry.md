@@ -15,9 +15,13 @@ Per-type metadata is **authored declaratively** in `flow_sdk/schema/type_info/<t
 - `flow_sdk/schema/types.py` — `EntityType`, the single canonical type-name enum
 
 ---
-> The layer below this one is [`Datum`](datum.md) — the descriptor and carrier
-> for data whose shape arrives at runtime. `TypeInfo` is its resolver for
-> entity-backed kinds; it is not a competing type system.
+> The layer below this one is [`DataSpec`](data-spec.md) — runtime shapes
+> compiled to Pydantic, and `TypeInfo.asset_spec`, the spec whose types ARE a type's layout. Kinds bind
+> here too: `SchemaRegistry.register_kind(kind, cls)` / `kind_type(kind)` / `kind_for(cls)` share
+> the type-name namespace, so an entity type name is a kind. A `DataSpec`
+> subclass with a `spec_kind` registers itself on definition.
+> `TypeInfo` is the resolver for entity-backed kinds; it is not a competing type
+> system.
 
 
 ## TypeInfo
@@ -97,7 +101,7 @@ SKILL = TypeMetadata(
     index_fields=["description"],
     main_subdir=".claude/skills",
     main_layout="folder",
-    from_disk_fn=extract_skill,
+    fts_content=("name", "description", "body"),   # from_disk_fn defaults to spec_extractor
     capsules=(CapsuleSpec("identity"),),
     identity_backend=capsule_identity(skill_id_from_folder),
     asset_hash_fn=skill_asset_hash,
@@ -250,7 +254,7 @@ info = SchemaRegistry.get("skill")
 print(info.locations)           # ["index"]
 print(info.schema_hash)         # "a3f1c2d4..."
 print(info.indexed_by_default)  # True
-print(info.from_disk_fn)        # <function extract_skill ...>
+print(info.from_disk_fn)        # <function extract_skill ...> (the generic spec_extractor)
 
 # Find subtypes
 children = SchemaRegistry.get_subtypes("transcript_entry")  # list[TypeInfo]

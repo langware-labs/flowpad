@@ -22,9 +22,10 @@ health. A `SourceItem` is one ingested record.
 
 ```
 DataSource ──(one per segment)──> DataSourceCursor
+     │  origin: FSOrigin  (WHERE the bytes come from — stamped by driver.origin_for)
      │
-     └─ driver.fetch() ──> items ──> ingest_items()  ──> SourceItem   (record)
-                       └─> refs  ──> reflect_refs()  ──> files        (asset)
+     └─ driver.fetch() ──> SourceItemSpec ──> ingest_items() ──> SourceItem   (record: DbSerializer resolves by natural key, gates on digest)
+                       └─> refs          ──> reflect_refs()  ──> files        (asset: placed, then reindex_paths)
 ```
 
 ## The pipeline
@@ -69,17 +70,18 @@ keeps an update pointer) and a commit sha (git) without a branch.
 
 ### Declared traits
 
-Capabilities are declared, not inherited — a driver implements what its source
-can actually promise, and the engine composes behaviour from that.
+Capabilities are declared on the driver class; the optional hooks (`verify`,
+`channel_for`, `origin_id_for`, `segment_budget`, `sends`) default to `None`/`False`
+on the `IngestDriver` base, so the engine reads them directly — no `getattr` probes.
 
 | Trait | Default | Meaning |
 |---|---|---|
 | `provider` | — | Registry key. Distinct from `channel`, the user-facing name |
-| `record_kind` | — | Ontology kind stamped on each item; decides inbox membership — the projection admits `content.message.*` and nothing else. Carried by record-emitting drivers only, not the Protocol; an authored source declares `emits` instead (see [the data-source asset](data-source-asset.md#resolved-and-what-is-left)) |
+| `record_kind` | — | Ontology kind stamped on each item; decides inbox membership — the projection admits `content.message.*` and nothing else. Carried by record-emitting drivers only, not the `IngestDriver` base; an authored source declares `emits` instead (see [the data-source asset](data-source-asset.md#resolved-and-what-is-left)) |
 | `segment_budget` | 5 | Segments per run. Slack declares 1 — one history call a minute |
 | `stamps_identity` | `True` | Whether this source's bytes are ours to write to |
 | `origin_id_for()` | path | The source's own name for an asset |
-| `source_root()` | — | Where the source's tree begins, so relative structure survives reflection |
+| `origin_for()` | — | The source's tree as a typed `FSOrigin`, stamped on `DataSource.origin` at save; reflection reads it so relative structure survives |
 | `verify()` | — | Is the setup finished? Distinct from health, which is about the last run |
 | `send()` | — | Can this driver push a message back to its channel? |
 
@@ -120,17 +122,21 @@ a second destination *beside* it rather than a branch inside it.
 | `none` | indexed where they sit | The watched tree is itself a walk root |
 | `copy` | duplicated into the project | Relative structure is preserved, so folder-layout assets survive |
 | `symlink` | linked into the project | **Presentation only** — see below |
-| `in-place` | same as `none` | Git-native name; asserts one repository |
-| `materialize` | cloned into a local cache | A real repo with history, not copied bytes |
-| `vendor` | copied into the receiving repo | They become tracked content there, and will be committed |
+
+WHERE the bytes come from is not a mode: it is the source's typed `origin`
+(`DataSource.origin: OriginField`), stamped by the driver's `origin_for` on
+every save — a `LocalOrigin` at the watched folder, the checkout, or the
+download cache. A `GitOrigin` (a repository that has to be obtained) is
+materialized once per page through the `FSOriginDriver` registry into
+`reflect_into`, the same seam bundles and projects clone through. For a git
+source `copy` vendors changed files into the receiving repo's tracked tree —
+they will be committed and pushed like anything else the user wrote.
 
 Every mode ends at `reindex_paths`. None writes an entity or touches FTS
 directly — that boundary is asserted by tests, because a mode that quietly
 minted a row would still make every functional test pass.
 
-Two warts worth knowing rather than rediscovering. **`none` and `in-place` are
-the same behaviour under two names**; the git name exists so a source asserting
-one repository does not read as one that forgot to set a target. And **`symlink`
+One wart worth knowing rather than rediscovering: **`symlink`
 is an addressing no-op**: the indexer resolves through the link, so the entity
 keys on the source path exactly as `none` does. The project shows a link a user
 can open; nothing downstream can tell the two apart.
@@ -236,9 +242,12 @@ have — a live credential that refreshes mid-sync, or an in-process client. The
   its cursor sha is authoritative, so a hint could only be less accurate.
 
 **Key source files:** `flow_sdk/builtin/data_source.py`,
-`data_source_cursor.py`, `source_item.py`, `flow_sdk/ingest/` (`driver.py`,
-`poller.py`, `sync.py`, `ingestor.py`, `reflect.py`, `change_event.py`,
-`health.py`, `digest.py`, `drivers/`)
+`data_source_cursor.py`, `source_item.py` (`SourceItemSpec` = the row's header),
+`data_source_spec.py` (`ManifestSpec` = the manifest's header), `flow_sdk/ingest/`
+(`driver.py`, `poller.py`, `sync.py`, `ingestor.py`, `reflect.py`,
+`change_event.py`, `health.py`, `digest.py`, `drivers/`),
+`flow_sdk/fs_store/serializer/db.py` (natural-key identity + digest gate),
+`flow_sdk/fs_store/origin_identity.py`, `flow_sdk/utils/kind_registry.py`
 
 ## Related
 

@@ -31,7 +31,7 @@ interface SpecField {
 interface Spec {
   id: string;
   name: string;
-  config_schema?: Record<string, SpecField>;
+  config?: Record<string, SpecField>;
 }
 
 let specs: Spec[] = [];
@@ -62,7 +62,7 @@ test('the four credentialed manifests are indexed and offered', async () => {
 });
 
 test('slack: channel ids only — no account key in the form; a non-channel-id fails closed', async ({ page }) => {
-  const schema = specNamed('slack').config_schema ?? {};
+  const schema = specNamed('slack').config ?? {};
   const keys = Object.keys(schema);
   const channelKey = keys.find((k) => /channel/i.test(k));
   expect(channelKey, `slack schema has a channel-ids field (got: ${keys.join()})`).toBeTruthy();
@@ -81,7 +81,7 @@ test('slack: channel ids only — no account key in the form; a non-channel-id f
 });
 
 test('agent: the connector field is what names the channel', async ({ page }) => {
-  const schema = specNamed('agent').config_schema ?? {};
+  const schema = specNamed('agent').config ?? {};
   expect(Object.keys(schema)).toContain('connector');
   const dialog = await openProvider(page, 'agent');
   await expect(dialog.locator('#ds-connector')).toBeVisible();
@@ -91,7 +91,7 @@ test('agentmail: the API key never appears in the form — the inbox is account-
   // The manifest moved the key OUT of the form (same contract as slack): the
   // `inbox` field carries `account_key: true` and the secret lives on the
   // connection. A key-shaped plaintext field reappearing here is the regression.
-  const schema = specNamed('agentmail').config_schema as Record<string, { account_key?: boolean }>;
+  const schema = specNamed('agentmail').config as Record<string, { account_key?: boolean }>;
   const accountField = Object.entries(schema).find(([, f]) => f.account_key)?.[0];
   expect(accountField, 'agentmail schema binds a field to the account connection').toBeTruthy();
   expect(

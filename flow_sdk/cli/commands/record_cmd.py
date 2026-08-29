@@ -566,8 +566,8 @@ def _post_action(action_name: str, typeid_raw: str, payload: Optional[dict] = No
 
 
 #: Types whose birth path is NOT "materialize a file, then index it".
-#: ``source_item`` is minted by the ingestor, which owns its deterministic v5
-#: id and its content digest — so creating one means posting it through the
+#: ``source_item`` is minted by the ingestor, which resolves the row by its
+#: natural key and gates on the content digest — so creating one means posting it through the
 #: ingest route, and re-creating the same item is an idempotent upsert rather
 #: than a duplicate. Data, not an ``if``: the second such type just adds a row.
 _INGESTED_TYPES: dict[str, str] = {

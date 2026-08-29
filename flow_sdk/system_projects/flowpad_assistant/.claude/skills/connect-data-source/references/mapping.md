@@ -7,7 +7,7 @@
 ## The decision, as one falsifiable question
 
 > **Is there an installed spec whose `name` resolves to a driver AND whose
-> `config_schema` can express the thing the user named, as a segment?**
+> `config` can express the thing the user named, as a segment?**
 
 Yes → reuse it. No → `modes/author.md`. "Close enough" is not reuse.
 
@@ -26,7 +26,7 @@ care about files. Ask only when the answer changes the config.
 
 ## Filling `config` without interrogating the user
 
-Walk `config_schema` in declaration order — that is the form order.
+Walk `config` in declaration order — that is the form order.
 
 - **Ask only** for fields that are `required: true` **and** not derivable from
   what the user already said. Never ask about `advanced: true` fields.

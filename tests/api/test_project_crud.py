@@ -7,12 +7,9 @@ operations on it plus creation of additional projects.
 """
 
 import json
-from typing import List
-
-import pytest
 
 from flow_sdk.builtin.project import Project
-from flow_sdk.responses.response import ApiResponse, ApiResponseStatus
+from flow_sdk.responses.response import ApiResponseStatus
 
 
 async def test_bootstrap_project_exists(bootstrapped_client):

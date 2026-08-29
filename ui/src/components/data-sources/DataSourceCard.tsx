@@ -180,6 +180,7 @@ export function DataSourceCard({ source, spec, onEdit, onReplay, onDelete }: Pro
 
         <SourceMenu
           source={source}
+          spec={spec}
           onToggleEnabled={() => void toggleEnabled()}
           onEdit={onEdit}
           onReplay={onReplay}

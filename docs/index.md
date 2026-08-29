@@ -1,12 +1,12 @@
 ---
 type: markdown_index
 id: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
-inputs_hash: 74579e2cb1b808f0dafb408fd9d7259d8e0dd1694cbc25a317e17793cec42d97
+inputs_hash: 0ac5413654a327308c929b50a42813df8ecc461c3a626c730f2ab7a4685d9927
 template_version: 1
 prompt_version: 1
 parent_ref: ''
 vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
-generated_at: "2026-08-23T22:20:45.823073+00:00"
+generated_at: "2026-08-29T19:10:01.323036+00:00"
 latest_process_ref: ''
 file_count: 46
 subfolder_count: 10
@@ -18,7 +18,7 @@ subfolder_count: 10
 > Flowpad's engineering documentation: the record and data layer, the agentic-process and PTY runtime, collaboration and sharing, tabs and view modes, the unified event bus, wiki and display surfaces, plus setup, debugging and release runbooks.
 
 ## Files
-- [Record System Requirements](CLAUDE.md) — The binding Record System Requirements: disk as source of truth, FSRef and FSRecord, the shadow layout, metadata.json as the only persisted state, and id minting.
+- [Record System Requirements](CLAUDE.md) — Record-system requirements: disk as source of truth, FSRef and FSRecord doctrine, shadow layout, identity rules, sentinels, Entity.store via the serializer, and TypeId conventions.
 - [AgenticProcess Architecture](agentic-process.md) — AgenticProcess architecture narrative: the two modes, every headless-versus-visible divergence, PTY, CLI and wizard runtimes, status model, reconnect, and replay.
 - [Agentic process outputs](agentic_process_outputs.md) — What a run produces: the transcript derivation layer, the Artifact entity and its two addressing forms, explicit registration, and the three client channels.
 - [Agent Management](agents-management.md) — Entry point for agent management: the current model, the agent authoring bundle, main components, and links to the focused subsystem documents.
@@ -28,7 +28,7 @@ subfolder_count: 10
 - [ComputeNode action surface — pre-refactor STATUS](compute_node_action_audit.md) — Pre-refactor audit of the ComputeNode action surface: clean, envelope-broken and provider-bound groups, six confirmed abstraction failures, and refuted flattenings.
 - [Contributing to Flowpad](contributing.md) — Contributor setup: prerequisites, Windows git symlinks, backend and frontend development, project structure, and how to run each backend and frontend test suite.
 - [cookie-gate](cookie-gate.md) — The cookie-gate auth path: why it exists, how it arms or refuses, the gate exchange, cookie attributes, the WebSocket half, and hub contract.
-- [Data Management](data-management.md) — Entry point for the data layer: the Record-primary, Entity-cache model, three index systems, three entity creation paths, data flow, and sub-document map.
+- [Data Management](data-management.md) — Overview of the two-layer data model — filesystem records as truth, Entity and FTS as rebuildable indexes — with a map of every data-management sub-document.
 - [debugMCP Setup](debugMCP-setup.md) — Setting up debugMCP: launching Chrome Canary with CDP, the debugMcp server, the standard Playwright MCP server, and the usage rules.
 - [Developer Setup](dev_setup.md) — Developer setup notes, centred on PyCharm import resolution: the problem, root cause, verification steps, and the workaround.
 - [Global Display Capabilities — Survey & Open Questions](display-capabilities.md) — Survey of how any target becomes a rendered view: files by extension, assets and entities, webapps and artifacts, foreign-HTML trust tiers, and backend serving surfaces.
@@ -39,7 +39,7 @@ subfolder_count: 10
 - [Frontend Debug Cheatsheet](frontend-debug-cheatsheet.md) — Ordered frontend debugging recipes by symptom: health, entity data, PTY, process trace, hooks, WebSocket, navigation, auth, and end-to-end tracing.
 - [FSRef — declarative file/folder references](fs-ref.md) — FSRef doctrine: the class family, walk tags, read-only semantics, the freshness token, serialization to TypeScript, and how records use refs.
 - [fs_store: Record System Architecture](fs_store.md) — Directory page for the fs_store package: no single FsStore class exists; a table routes each subject to its current home under data-management.
-- [Glossary — our nouns vs. the ecosystem's](glossary.md) — Cross-walk between Flowpad, Claude Code and OpenClaw nouns, which entities mirror a provider versus which are ours, and the naming rules that follow.
+- [Glossary — our nouns vs. the ecosystem's](glossary.md) — Cross-walk of Flowpad nouns against Claude Code and OpenClaw vocabulary, provider mirrors versus native assets, naming rules, and the agent capability fields.
 - [Flowpad](intro.md) — What Flowpad is: secure, AI-native collaborative agent work, the collaborative context conversation, and the use cases it addresses.
 - [Listen Webhook Pipeline](listen_webhook.md) — The listen webhook pipeline: the endpoint and request flow, webhook types and payload models, how a specific hook is identified, and the sniffer hook.
 - [Wiki namespaces and link graph — flowpad-oss](llm_wiki.md) — Wiki namespaces and the link graph: wiki-link syntax, edge extraction on sync, page resolution, the edge store schema, cleanup paths, and API surface.
@@ -70,7 +70,7 @@ subfolder_count: 10
 - [agent-management/](agent-management/index.md) — Narrative documentation of the agent-management subsystem: the AgenticProcess entity and its filesystem records, Claude process lifecycle and restart contract, headless/PTY mode switching, the PTY and WebSocket transport, terminal tab membership, and the interactive terminal's toolbars.
 - [breadcrumbs/](breadcrumbs/index.md) — Breadcrumb rules bound to failing tests: each page states the expected behaviour, internals, invariants and failure modes for one proven bug — chat activity readout, bootstrap's default project, dev port picking, SQLite NULL ordering, served HTML encoding, terminal bidi, and worker interpreter resolution.
 - [collab/](collab/index.md) — Flowpad's collaboration subsystem: conversations, messages and attachments, sharing and sync, invites, members and identity, and the hub fan-out that ties two instances together — all built on disk and the hub as the source of truth, with local DB rows as rebuildable projections.
-- [data-management/](data-management/index.md) — The data layer: filesystem records as the source of truth, with Entity and FTS rows as rebuildable indexes. Covers origins, data sources, the record model and on-disk layout, dataset authoring, scan and discovery, the gitignore walk, invalidation, search, the schema registry, and the LLM folder index.
+- [data-management/](data-management/index.md) — The data layer: filesystem records as the source of truth, with Entity and FTS rows as rebuildable indexes. Covers origins, data sources and their manifests, the record model and on-disk layout, DataSpec and the serializer, dataset authoring, scan and discovery, the gitignore walk, invalidation, search, the schema registry, and the LLM folder index.
 - [flows/](flows/index.md) — Cross-subsystem flows — the path a feature actually takes end to end across several entities and skills, as opposed to the per-entity API references in interface/. Currently covers the trace-analysis and skill-improvement cycle.
 - [interface/](interface/index.md) — API-surface references for the agentic-process stack, each following one skeleton: Python object, backend actions, frontend TypeScript, then flows. Covers AgenticProcess, Shell, the PTY layer, ComputeNode, the CLI driver contract, the status model, test-derived flows, and the per-area coverage audit.
 - [modes/](modes/index.md) — Per-mode guides for the View-mode skin system: what each mode changes about the same underlying app, and which primitives it reuses rather than forks. Currently covers Vibe, the creator-first workspace.

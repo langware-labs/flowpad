@@ -10,6 +10,7 @@ from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.compute.providers import get_compute_provider
 from flow_sdk.compute.providers.desktop.pty_session_manager import PtyRegistry
 from flow_sdk.config import ComputeProviderType
+from flow_sdk.core.capabilities import discovery as capability_discovery
 from flow_sdk.db import database
 from flow_sdk.db.db_entity import DBEntity
 from flow_sdk.db.db_relationship import DBRelationship
@@ -165,6 +166,9 @@ async def test_factory_reset_awaits_canonical_system_content_pass(
     async def index_system_content() -> None:
         events.append("system_content")
 
+    async def run_discovery() -> None:
+        events.append("capability_discovery")
+
     monkeypatch.setattr(system_tools, "get_db_path", lambda: db_path)
     monkeypatch.setattr(system_tools, "backup_db", AsyncMock(side_effect=backup))
     monkeypatch.setattr(system_tools, "clear_index", AsyncMock(side_effect=clear_index))
@@ -193,6 +197,8 @@ async def test_factory_reset_awaits_canonical_system_content_pass(
         "bootstrap",
         AsyncMock(side_effect=bootstrap),
     )
+    discovery_mock = AsyncMock(side_effect=run_discovery)
+    monkeypatch.setattr(capability_discovery, "run_discovery", discovery_mock)
     system_content_mock = AsyncMock(side_effect=index_system_content)
     monkeypatch.setattr(
         bootstrap_module,
@@ -203,8 +209,10 @@ async def test_factory_reset_awaits_canonical_system_content_pass(
     result = await system_tools.clear_all_data()
 
     system_content_mock.assert_awaited_once_with()
+    discovery_mock.assert_awaited_once_with()
     assert result.backup_path == str(tmp_path / "backup")
     assert events.index("cancel_auto_indexes") < events.index("clear_index")
+    assert events.index("capability_discovery") > events.index("bootstrap")
     assert events.index("system_content") > events.index("bootstrap")
 
 
@@ -273,6 +281,7 @@ async def test_factory_reset_terminates_live_pty_children_before_db_wipe(
     monkeypatch.setattr(bootstrap_module, "invalidate_bootstrap_cache", lambda: None)
     monkeypatch.setattr(bootstrap_module, "bootstrap", AsyncMock())
     monkeypatch.setattr(bootstrap_module, "index_system_content", AsyncMock())
+    monkeypatch.setattr(capability_discovery, "run_discovery", AsyncMock())
 
     try:
         await system_tools.clear_all_data()

@@ -3,11 +3,11 @@
 Same driver swap the folder-source package uses: a matrix that mints and deletes
 entities must not leak rows into its neighbours.
 """
-import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — registers every TypeInfo
-import flow_sdk.models.entities  # noqa: F401 — registers every Entity CLASS (asset_owner_classes)
+import pytest_asyncio
 
 import flow_sdk.db.drivers.db_driver as db_driver_mod
-import pytest_asyncio
+import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — registers every TypeInfo
+import flow_sdk.models.entities  # noqa: F401 — registers every Entity CLASS (asset_owner_classes)
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_driver import DBConfig
 from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver

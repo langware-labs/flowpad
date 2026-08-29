@@ -52,7 +52,7 @@ export interface IMessageAttachment extends IEntity {
    *  stamped backend-side at stage time (single source of the policy). */
   user_scope_allowed?: boolean;
   transfer_mode?: 'copy' | 'git';
-  git_origin?: Record<string, unknown> | null;
+  origin?: Record<string, unknown> | null;
   scope?: MessageAttachmentScope;
   project_id?: string | null;
   installed_root?: string | null;
@@ -72,7 +72,7 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
   unpacked_path?: string;
   user_scope_allowed?: boolean;
   transfer_mode?: 'copy' | 'git';
-  git_origin?: Record<string, unknown> | null;
+  origin?: Record<string, unknown> | null;
   scope?: MessageAttachmentScope;
   project_id?: string | null;
   installed_root?: string | null;
@@ -89,7 +89,7 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
     this.unpacked_path = entity.unpacked_path;
     this.user_scope_allowed = entity.user_scope_allowed ?? true;
     this.transfer_mode = entity.transfer_mode ?? 'copy';
-    this.git_origin = entity.git_origin ?? null;
+    this.origin = entity.origin ?? null;
     // '' is the backend's CLEARED form (exclude-none saves can't null a field)
     // — normalize to null so every consumer sees one "staged" value.
     this.scope = entity.scope || null;

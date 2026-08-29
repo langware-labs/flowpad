@@ -10,11 +10,15 @@ from typing import TYPE_CHECKING, Any, Iterable, Optional, Protocol, runtime_che
 
 from pydantic import SecretStr
 
+from flow_sdk.utils.kind_registry import KindRegistry
+
 if TYPE_CHECKING:
     from flow_sdk.builtin.secret_origin_locator import SecretOriginLocator
 
 
-_KIND_ALIASES = {
+#: Spellings that mean the hub. ``email_inbox_driver`` shares this table so the
+#: two families never disagree about what "the hub" is called.
+HUB_KIND_ALIASES = {
     "hub": "flowpad-hub",
     "flowpad_hub": "flowpad-hub",
 }
@@ -106,32 +110,11 @@ class ProviderStubDriver:
         )
 
 
-class SecretOriginDriverRegistry:
-    def __init__(self) -> None:
-        self._drivers: dict[str, SecretOriginDriver] = {}
-
-    def register(self, driver: SecretOriginDriver) -> None:
-        self._drivers[driver.kind] = driver
-
-    def get(self, kind: str) -> SecretOriginDriver:
-        name = normalize_secret_origin_kind(kind)
-        try:
-            return self._drivers[name]
-        except KeyError as exc:
-            raise KeyError(f"Unknown SecretOrigin kind: {kind!r}") from exc
-
-
-def normalize_secret_origin_kind(kind: Any) -> str:
-    key = str(kind or "").strip().lower()
-    return _KIND_ALIASES.get(key, key)
-
-
-def _build_default_registry() -> SecretOriginDriverRegistry:
+def _build_default_registry(registry: "KindRegistry[SecretOriginDriver]") -> None:
     from flow_sdk.builtin.drivers.env_local_secret_driver import EnvLocalSecretDriver
     from flow_sdk.builtin.drivers.hub_secret_driver import HubSecretDriver
     from flow_sdk.builtin.drivers.local_secret_driver import LocalSecretDriver
 
-    registry = SecretOriginDriverRegistry()
     registry.register(LocalSecretDriver())     # sodot (local encrypted store)
     registry.register(EnvLocalSecretDriver())  # project .env.local store
     registry.register(HubSecretDriver())       # the hub — the system of record
@@ -145,18 +128,17 @@ def _build_default_registry() -> SecretOriginDriverRegistry:
         "1password", ("vault", "item", "field"), "1Password",
         "Connect 1Password, or paste the value to cache it locally.",
     ))
-    return registry
 
 
-_DEFAULT_REGISTRY: Optional[SecretOriginDriverRegistry] = None
+SECRET_ORIGIN_DRIVERS: "KindRegistry[SecretOriginDriver]" = KindRegistry(
+    "SecretOrigin", aliases=HUB_KIND_ALIASES, builder=_build_default_registry
+)
 
 
-def get_secret_origin_registry() -> SecretOriginDriverRegistry:
-    global _DEFAULT_REGISTRY
-    if _DEFAULT_REGISTRY is None:
-        _DEFAULT_REGISTRY = _build_default_registry()
-    return _DEFAULT_REGISTRY
+def normalize_secret_origin_kind(kind: Any) -> str:
+    return SECRET_ORIGIN_DRIVERS.normalize(kind)
+
 
 
 def get_secret_origin_driver(kind: str) -> SecretOriginDriver:
-    return get_secret_origin_registry().get(kind)
+    return SECRET_ORIGIN_DRIVERS.get(kind)

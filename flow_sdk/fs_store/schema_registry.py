@@ -17,10 +17,11 @@ import json
 import logging
 import uuid
 from collections.abc import Container
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
+from functools import cache
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, Optional, get_args, get_origin
 
 from flow_sdk.capsules import CapsuleSpec
 from flow_sdk.fs_store.identifier import adopt_entity_id, is_valid_entity_id, mint_uuid
@@ -241,6 +242,11 @@ class TypeInfo:
 
     # --- Runtime refs (NOT in hash, NOT persisted) ---
     entity_cls: type | None = field(default=None, compare=False, repr=False)
+    # The type's SHAPE — the ``DataSpec`` whose fields (and field TYPES) are
+    # what the medium persists: frontmatter scalars, a ``Body``, a
+    # ``FreeSection``, ``FileRef``s, rows, sub-assets. None ⇒ the legacy path
+    # (``default_body_fn`` / ``from_disk_fn``). Runtime-only, not in the hash.
+    asset_spec: type | None = field(default=None, compare=False, repr=False, metadata={"serialization": True})
     # Optional post-sync hook: async Callable[[FSRecord], None] — runs after
     # FSRecord.sync_to_db completes its entity/FTS/wiki writes. Used by
     # types that reconcile cross-record relationships (e.g. markdown folder-doc
@@ -295,6 +301,44 @@ class TypeInfo:
     # and ``FSRecord.meta_dict`` returns a typed instance when it is set.
     # Runtime-only; not part of the schema hash.
     meta_model: Any = field(default=None, compare=False, repr=False)
+    # --- Serialization (HOW/WHERE) — runtime-only, not part of the schema hash ---
+    # The origin kind a store/load defaults to when the caller passes none:
+    # "local" (disk) for asset types, "db" for db_only types.
+    default_origin_kind: str = field(default="local", compare=False, repr=False, metadata={"serialization": True})
+    # The path names the entity when the header carries no name: the folder
+    # name for a folder type (an Agent at ``agent/q/`` is ``q``), the file stem
+    # for a file type (``prompts/greet.md`` is ``greet``). A LAYOUT fact.
+    name_from_path: bool = field(default=False, compare=False, repr=False, metadata={"serialization": True})
+    # JSON main docs: ``"sections"`` = ``{metadata, data}`` (a dataset);
+    # ``"flat"`` = the header's keys merged into the payload's own document (a
+    # trace/report whose file predates us). None ⇒ flat when the class has no
+    # ``data_field``, sections otherwise.
+    manifest_layout: str | None = field(default=None, compare=False, repr=False, metadata={"serialization": True})
+    # Facts the DISK carries that the header cannot say: counts over rows,
+    # links scraped from a body, a name from the path. ``(data, root, header_raw)``
+    # mutates the entity kwargs after the main doc and fields are read, before
+    # the class is constructed.
+    derive_fields_fn: Any = field(default=None, compare=False, repr=False, metadata={"serialization": True})
+    # The entity field naming the rows' on-disk layout (``"data_layout"`` for a
+    # dataset). Tells the disk serializer this type has layout-written rows,
+    # without the serializer ever naming the type.
+    rows_layout_field: str | None = field(default=None, compare=False, repr=False, metadata={"serialization": True})
+    # The canonical filename the asset's main doc is published under on the hub
+    # (``document.md`` for a markdown doc, ``SKILL.md`` for a skill folder).
+    # Also the opt-in: ``None`` keeps the generic embedded-VFS push.
+    hub_main_file: str | None = field(default=None, compare=False, repr=False, metadata={"serialization": True})
+    # Row identity for row-only types: the fields whose tuple resolves an
+    # existing row (``SourceItem``: data_source · segment · external id). None ⇒
+    # identity is ``id`` alone. Read by ``DbSerializer.resolve``/``upsert``.
+    natural_key: tuple[str, ...] | None = field(default=None, compare=False, repr=False, metadata={"serialization": True})
+    # The no-op gate: the fields whose canonical digest decides "unchanged" on
+    # re-delivery. None ⇒ no gate (every save writes).
+    digest_fields: tuple[str, ...] | None = field(default=None, compare=False, repr=False, metadata={"serialization": True})
+    # The row field that HOLDS the digest the gate compares against.
+    digest_field: str = field(default="content_digest", compare=False, repr=False, metadata={"serialization": True})
+    # A row-only (``db_only``) type that is nonetheless searchable: the row field
+    # FTS indexes as ``content`` — fed from the row, no metadata.json shadow.
+    fts_content: tuple[str, ...] = field(default=(), compare=False, repr=False, metadata={"serialization": True})
     # --- Placement axis (the harness-aware replacement for ``main_subdir``) ---
     # ``asset_class`` is the "definition" (INTERNAL / HARNESS / SHARED / NONE);
     # ``harness`` names the owning harness for HARNESS types; ``family`` is the
@@ -345,6 +389,9 @@ class TypeInfo:
     # ``Entity.setup_on_receive`` and surfaced to the FE via ``to_dict``.
     setup_skill: str | None = None
     reception_verb: str = "Open"
+    # Builtin editor apps for the type (``flow_sdk/assets/editors/<name>``);
+    # runtime-only, surfaced to the FE next to the per-asset ``Entity.editors``.
+    editors: list[str] = field(default_factory=list, compare=False, repr=False)
     # ``receive_policy``: reception gate for a bundled entry of this type.
     # ``None`` ⇒ staged → review → explicit install; ``"auto"`` ⇒ row-only
     # payload installed immediately at unpack through the one install action
@@ -380,19 +427,80 @@ class TypeInfo:
 
         Folder-layout types whose asset_ref is the bare folder (skill-style,
         ``main_file_is_asset_ref=False``) keep the body at ``<folder>/<main_file>``;
-        every other shape's asset_ref already IS the body target.
+        a legacy ref that already names ``main_file`` is accepted idempotently.
+        Every other shape's asset_ref already IS the body target.
         """
         if self.main_layout == "folder" and self.main_file and not self.main_file_is_asset_ref:
-            return asset_path / self.main_file
+            return self.folder_for(asset_path) / self.main_file
         return asset_path
+
+    def asset_root_for(self, path: Path) -> "Path | None":
+        """The asset root a walker ref names, or None when the ref is not this
+        type's shape: a folder type accepts its folder (holding ``main_file``) or
+        the inner main file; a file type accepts a file with ``main_ext``. A
+        validating recognizer — unlike ``storage_root_for``, a total map."""
+        if self.main_layout == "folder":
+            if path.is_dir():
+                return path if self.main_file and (path / self.main_file).is_file() else None
+            if self.main_file and path.name.lower() == self.main_file.lower():
+                return path.parent
+            return None
+        return path if path.is_file() and path.suffix.lower() == (self.main_ext or "").lower() else None
+
+    def record_for(self, ref: Any) -> Any:
+        """Parse ONE asset: resolve its id through the one id seam (a
+        ``read_only`` ref derives without stamping) and run ``from_disk_fn``;
+        the first record or None."""
+        if self.from_disk_fn is None:
+            return None
+        resolved = self.mint_entity_id(ref, derive=True, overwrite=not getattr(ref, "read_only", False))
+        records = self.from_disk_fn(ref, resolved)
+        return records[0] if records else None
+
+    def storage_root_for(self, path: Path) -> Path:
+        """The asset ROOT a serializer stores at — the folder for a folder-layout
+        type even when ``asset_ref`` names the inner main file
+        (``agent/<name>/agent.md`` → ``agent/<name>``); the file otherwise.
+        Inverse of ``asset_ref_for``."""
+        return self.folder_for(path) if self.main_layout == "folder" else path
 
     def folder_for(self, asset_ref: Path) -> Path:
         """Map an asset_ref back to its owning folder (inverse of ``asset_ref_for``).
 
-        Bare-folder asset_ref (skill-style) IS the folder; spec-style inner-file
-        asset_ref → its containing dir. Callers gate on ``main_layout == "folder"``.
+        Bare-folder asset_ref (skill-style) IS the folder; a legacy skill-style
+        ref that already names the inner ``main_file`` and spec-style inner-file
+        refs map to their containing dir. An existing directory named like the
+        main file remains a directory, so the conversion is unambiguous on disk.
+        Callers gate on ``main_layout == "folder"``.
         """
-        return asset_ref if self.folder_backed else asset_ref.parent
+        if not self.folder_backed:
+            return asset_ref.parent
+        if self.main_file and asset_ref.name == self.main_file and not asset_ref.is_dir():
+            return asset_ref.parent
+        return asset_ref
+
+    @property
+    def effective_meta_model(self) -> Any:
+        """The FS↔DB field-membership model for this type.
+
+        A hand-written ``meta_model`` wins. Otherwise it is DERIVED from the
+        type's ``asset_spec`` (what the asset file holds) ∪ its
+        ``Persist.TRUE`` fields (what the shadow index must carry — the
+        indexer-computed counts) ∪ ``BaseMeta``. One declaration: the class.
+        Membership only, never strict validation (``base_meta.py``)."""
+        if self.meta_model is not None:
+            return self.meta_model
+        if self.entity_cls is None or self.asset_spec is None:
+            return None
+        return _derived_meta_model(self.entity_cls, self.asset_spec)
+
+    def serializer(self, origin: Any = None) -> Any:
+        """The ``DataSerializer`` for ``origin`` (by its kind), else this type's
+        default. HOW/WHERE is the serializer's; this type only names a default."""
+        from flow_sdk.fs_store.serializer.registry import get_serializer  # noqa: PLC0415
+
+        kind = getattr(origin, "kind", None) or self.default_origin_kind
+        return get_serializer(kind, self)
 
     @property
     def folder_backed(self) -> bool:
@@ -697,6 +805,7 @@ class TypeInfo:
             # via a skill in Vibe.
             "setup_skill": self.setup_skill,
             "reception_verb": self.reception_verb,
+            "editors": list(self.editors),
             # ``auto`` types' chips navigate instead of opening the review modal.
             "receive_policy": self.receive_policy,
             "schema_hash": self.schema_hash,
@@ -726,10 +835,103 @@ class TypeInfo:
 # ---------------------------------------------------------------------------
 
 
+@cache
+def _derived_meta_model(cls: type, spec: type) -> type:
+    """``create_model(<Cls>Meta, __base__=BaseMeta, <spec ∪ Persist.TRUE fields>)``, once per class."""
+    from pydantic import create_model  # noqa: PLC0415
+
+    from flow_sdk.api.api_types.api_field import Persist, persist_policy  # noqa: PLC0415
+    from flow_sdk.fs_store.serializer.fields import spec_layout  # noqa: PLC0415
+    from flow_sdk.schema.type_info.base_meta import BaseMeta  # noqa: PLC0415
+
+    # The body / free section are the DOCUMENT, not metadata: they never
+    # enter the shadow (the body rides ``content`` for FTS instead).
+    names = set(spec_layout(spec).header_fields)
+    names |= {name for name, model_field in cls.model_fields.items() if persist_policy(model_field) == Persist.TRUE}
+    # A header field the class marks Persist.FALSE (a DB-only payload such
+    # as SourceItem.raw) is selected by the header but never mirrored.
+    names -= {name for name, model_field in cls.model_fields.items() if persist_policy(model_field) == Persist.FALSE}
+    names -= set(BaseMeta.model_fields) | {"id", "type"}
+    return create_model(
+        f"{cls.__name__}Meta",
+        __base__=BaseMeta,
+        **{name: (Optional[Any], None) for name in sorted(names)},
+    )
+
+
+def _core_compatible(spec: Any, entity: Any) -> bool:
+    """Equal cores, or the entity NARROWS the spec's core (``str`` → ``TypeId`` /
+    a ``StrEnum``), recursing through ``list[...]``. ``Any`` on the spec accepts all."""
+    from flow_sdk.fs_store.serializer.fields import unwrap_annotation  # noqa: PLC0415
+
+    if spec == entity or spec is Any:
+        return True
+    # ``typing.Dict[str, Any]`` and ``dict[str, Any]`` are one core: compare
+    # origin and arguments, not the alias objects.
+    s_origin, e_origin = get_origin(spec), get_origin(entity)
+    if s_origin is not None and e_origin is not None:
+        if s_origin is not e_origin:
+            return False
+        s_args, e_args = get_args(spec), get_args(entity)
+        return len(s_args) == len(e_args) and all(
+            _core_compatible(unwrap_annotation(a), unwrap_annotation(b)) for a, b in zip(s_args, e_args)
+        )
+    # One side bare (``dict``), the other parameterised (``dict[str, Any]``):
+    # compare the base classes.
+    s_base, e_base = s_origin or spec, e_origin or entity
+    if not (isinstance(s_base, type) and isinstance(e_base, type)):
+        return False
+    # A string on disk may be held as a ``str`` subclass (a ``StrEnum``) or a
+    # custom type that validates from one (``TypeId`` declares its own pydantic
+    # schema) — the row narrows. Not an ``int`` or a ``dict``.
+    if s_base is str:
+        return issubclass(e_base, str) or hasattr(e_base, "__get_pydantic_core_schema__")
+    return issubclass(e_base, s_base)
+
+
+def check_asset_spec(type_name: str, entity_cls: type, spec: type) -> None:
+    """Every spec field is an entity field with a compatible core type. The
+    spec is the lenient DISK form; the entity may narrow. Raises ``TypeError``
+    naming the field — at registration, not on the first save."""
+    from flow_sdk.fs_store.serializer.fields import (  # noqa: PLC0415
+        FieldKind,
+        asset_class,
+        asset_info,
+        field_kinds,
+        unwrap_annotation,
+    )
+
+    entity_fields = getattr(entity_cls, "model_fields", {})
+    kinds = dict(field_kinds(spec))
+    for name, spec_field in spec.model_fields.items():
+        if name not in entity_fields:
+            raise TypeError(f"{type_name}: asset_spec field {name!r} is not a field of {entity_cls.__name__}")
+        want = unwrap_annotation(spec_field.annotation)
+        got = unwrap_annotation(entity_fields[name].annotation)
+        if not _core_compatible(want, got):
+            raise TypeError(f"{type_name}.{name}: asset_spec declares {want!r} but {entity_cls.__name__} holds {got!r}")
+        if kinds[name] is FieldKind.SUB_ASSET_LIST:
+            # A list of assets is a directory of FILES, one per element — a
+            # class-shape fact, refused here rather than on the first save.
+            sub_cls, _ = asset_class(spec_field.annotation)
+            if asset_info(sub_cls).main_layout != "file":
+                raise TypeError(f"{type_name}.{name}: a list of {sub_cls.__name__} is a directory of files, but {sub_cls.__name__} is folder-layout")
+
+
+#: The TypeInfo slots the serializers read (``metadata={"serialization": True}``); merged by "non-default wins".
+_SERIALIZATION_SLOTS = tuple(f for f in fields(TypeInfo) if f.metadata.get("serialization"))
+
+
 class SchemaRegistry:
     """Unified type registry + scan/index orchestration."""
 
     _types: ClassVar[dict[str, TypeInfo]] = {}
+    # kind → a class or a DataSpec. Lives HERE, not in a second registry: a kind
+    # is a name in the same namespace type names draw from, and one lookup
+    # table is the standing rule. Runtime-only, like ``entity_cls`` — not part
+    # of ``to_dict()`` or the schema hash. A miss is None, never a mint.
+    _kinds: ClassVar[dict[str, Any]] = {}
+    _kind_of_shape: ClassVar[dict[int, str]] = {}   # id(shape) → kind; the O(1) inverse
     _subtypes: ClassVar[dict[str, list[str]]] = {}
     _default_index_types: ClassVar[list[str]] = []
     # Whether the declarative type-info registrations have run in this process.
@@ -759,9 +961,11 @@ class SchemaRegistry:
         # times, which must not re-enter this loader.
         cls._loaded = True
         try:
+            from flow_sdk.schema.data_spec._kinds import register_builtin_kinds  # lazy: avoid import cycle
             from flow_sdk.schema.type_info import register_all  # lazy: avoid import cycle
 
             register_all()
+            register_builtin_kinds()
         except Exception:
             cls._loaded = False  # let the next access retry rather than wedge
             raise
@@ -769,6 +973,35 @@ class SchemaRegistry:
     # ---------------------------------------------------------------------------
     # Registration
     # ---------------------------------------------------------------------------
+
+    @classmethod
+    def register_kind(cls, kind: str, shape: Any) -> None:
+        """Bind a kind to a class or a ``DataSpec`` so a bare kind can name it."""
+        from flow_sdk.schema.data_spec._kinds import PRIMITIVES  # noqa: PLC0415
+        from flow_sdk.tags.grammar import normalize_tag  # noqa: PLC0415
+
+        kind = normalize_tag(kind)
+        if kind in PRIMITIVES:
+            raise ValueError(f"{kind!r} is a reserved primitive and cannot be registered")
+        cls._kinds[kind] = shape
+        cls._kind_of_shape[id(shape)] = kind
+
+    @classmethod
+    def kind_for(cls, shape: Any) -> "str | None":
+        """The kind a class is registered under, or None. Inverse of ``kind_type``."""
+        cls._ensure_loaded()
+        return cls._kind_of_shape.get(id(shape))
+
+    @classmethod
+    def kind_type(cls, kind: str) -> Any:
+        """The class or ``DataSpec`` a kind names, or None (anonymous — not an
+        error). Entity type names resolve through the same table: ONE namespace."""
+        cls._ensure_loaded()
+        hit = cls._kinds.get(kind)
+        if hit is not None:
+            return hit
+        info = cls._types.get(kind)
+        return info.entity_cls if info is not None else None
 
     @classmethod
     def register_crud_type(cls, type_name: str, *, icon: str | None = None) -> None:
@@ -858,6 +1091,11 @@ class SchemaRegistry:
                 existing.metadata = info.metadata
             if info.meta_model is not None:
                 existing.meta_model = info.meta_model
+            # Serialization slots: a declared (non-default) value wins the merge.
+            for slot in _SERIALIZATION_SLOTS:
+                value = getattr(info, slot.name)
+                if value != slot.default:
+                    setattr(existing, slot.name, value)
             if info.entity_cls is not None:
                 if existing.entity_cls is None:
                     existing.entity_cls = info.entity_cls
@@ -878,6 +1116,8 @@ class SchemaRegistry:
                 existing.setup_skill = info.setup_skill
             if info.reception_verb != "Open":
                 existing.reception_verb = info.reception_verb
+            if info.editors:
+                existing.editors = list(info.editors)
             if info.receive_policy is not None:
                 existing.receive_policy = info.receive_policy
             if info.receive_row_overrides is not None:
@@ -909,6 +1149,24 @@ class SchemaRegistry:
 
         if info.indexed_by_default and info.type_name not in cls._default_index_types:
             cls._default_index_types.append(info.type_name)
+        final = cls._types[info.type_name]
+        if final.from_disk_fn is None and final.asset_spec is not None and not final.db_only:
+            from flow_sdk.fs_store.serializer.record import spec_extractor  # noqa: PLC0415
+
+            final.from_disk_fn = spec_extractor(info.type_name)   # the spec IS the parser
+        if info.asset_spec is not None:
+            from flow_sdk.fs_store.serializer.fields import field_kinds  # noqa: PLC0415
+
+            field_kinds.cache_clear()   # a new asset type can turn a field into a sub-asset
+
+    @classmethod
+    def check_asset_specs(cls) -> None:
+        """The shape and the row must agree — run once every class is complete
+        (``register_all``'s post-pass), never from an entity's ``__init_subclass__``.
+        A violation RAISES; it is a class-shape bug, not a degraded type."""
+        for info in cls._types.values():
+            if info.asset_spec is not None and info.entity_cls is not None:
+                check_asset_spec(info.type_name, info.entity_cls, info.asset_spec)
 
     @classmethod
     def get(cls, type_name: "str | TypeId") -> TypeInfo | None:

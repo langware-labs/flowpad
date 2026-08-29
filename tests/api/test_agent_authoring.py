@@ -11,7 +11,7 @@ from flow_sdk.capsules import AssetCapsule
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
 from flow_sdk.fs_store.fs_record import AssetPathCollisionError
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.functions.agent import extract_agent
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 pytestmark = pytest.mark.asyncio
 
@@ -50,7 +50,7 @@ async def test_project_agent_collision_preserves_the_first_bundle(bootstrapped_c
     assert original_identity is not None
     assert original_identity.data["id"] == created["id"]
 
-    [disk_record] = extract_agent(FSRef(agent_md), created["id"])
+    [disk_record] = SchemaRegistry.get("agent").from_disk_fn(FSRef(agent_md), created["id"])
     assert (disk_record.name, disk_record.title, disk_record.avatar) == (
         "Q",
         "QA manager",

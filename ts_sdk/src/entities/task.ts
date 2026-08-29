@@ -86,7 +86,7 @@ export interface ITask extends IEntity {
   process_id?: string | null;
   project_name?: string | null;
   project_root?: string | null;
-  git_origin?: GitOrigin | null;
+  origin?: GitOrigin | null;
   recipient_email?: string | null;
   result_uname?: string | null;
   sender_email?: string | null;
@@ -143,7 +143,7 @@ export class Task extends APIEntity<Task> implements ITask {
   process_id?: string | null;
   project_name?: string | null;
   project_root?: string | null;
-  git_origin?: GitOrigin | null;
+  origin?: GitOrigin | null;
   recipient_email?: string | null;
   result_uname?: string | null;
   sender_email?: string | null;
@@ -201,7 +201,7 @@ export class Task extends APIEntity<Task> implements ITask {
     this.process_id = entity.process_id;
     this.project_name = entity.project_name;
     this.project_root = entity.project_root;
-    this.git_origin = entity.git_origin;
+    this.origin = entity.origin;
     this.recipient_email = entity.recipient_email;
     this.result_uname = entity.result_uname;
     this.sender_email = entity.sender_email;

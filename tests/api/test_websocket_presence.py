@@ -9,7 +9,6 @@ import uuid
 
 import pytest
 
-
 pytestmark = pytest.mark.usefixtures("reset_db_for_testclient")
 
 
@@ -43,9 +42,10 @@ def _flush(ws):
 @pytest.mark.asyncio
 async def test_presence_update_is_recorded():
     """Sending `presence` mutates the ConnectionInfo (no ACK is emitted)."""
+    from starlette.testclient import TestClient
+
     from flow_sdk.server.app import app
     from flow_sdk.server.routes.websocket import get_connection_infos
-    from starlette.testclient import TestClient
 
     connection_id = str(uuid.uuid4())
 
@@ -72,9 +72,10 @@ async def test_presence_update_is_recorded():
 @pytest.mark.asyncio
 async def test_presence_partial_update_preserves_missing_fields():
     """A presence message with only one field leaves the other unchanged."""
+    from starlette.testclient import TestClient
+
     from flow_sdk.server.app import app
     from flow_sdk.server.routes.websocket import get_connection_infos
-    from starlette.testclient import TestClient
 
     connection_id = str(uuid.uuid4())
 
@@ -102,9 +103,10 @@ async def test_presence_partial_update_preserves_missing_fields():
 @pytest.mark.asyncio
 async def test_get_active_connection_prefers_visible_and_focused():
     """With two tabs, the one that is visible+focused wins regardless of age."""
+    from starlette.testclient import TestClient
+
     from flow_sdk.server.app import app
     from flow_sdk.server.routes.websocket import get_active_connection
-    from starlette.testclient import TestClient
 
     id_a = str(uuid.uuid4())
     id_b = str(uuid.uuid4())
@@ -135,9 +137,10 @@ async def test_get_active_connection_prefers_visible_and_focused():
 @pytest.mark.asyncio
 async def test_get_active_connection_tiebreaks_by_recency():
     """When priority is tied, newest `last_presence_at` wins."""
+    from starlette.testclient import TestClient
+
     from flow_sdk.server.app import app
     from flow_sdk.server.routes.websocket import get_active_connection
-    from starlette.testclient import TestClient
 
     id_a = str(uuid.uuid4())
     id_b = str(uuid.uuid4())
@@ -167,9 +170,10 @@ async def test_get_active_connection_tiebreaks_by_recency():
 @pytest.mark.asyncio
 async def test_get_active_connection_falls_through_when_all_hidden():
     """With nothing visible, fall through to the newest overall record."""
+    from starlette.testclient import TestClient
+
     from flow_sdk.server.app import app
     from flow_sdk.server.routes.websocket import get_active_connection
-    from starlette.testclient import TestClient
 
     id_a = str(uuid.uuid4())
     id_b = str(uuid.uuid4())
@@ -198,9 +202,10 @@ async def test_get_active_connection_falls_through_when_all_hidden():
 @pytest.mark.asyncio
 async def test_disconnect_clears_connection_info():
     """Closing the socket removes the ConnectionInfo record."""
+    from starlette.testclient import TestClient
+
     from flow_sdk.server.app import app
     from flow_sdk.server.routes.websocket import get_connection_infos
-    from starlette.testclient import TestClient
 
     connection_id = str(uuid.uuid4())
 
@@ -217,8 +222,9 @@ async def test_disconnect_clears_connection_info():
 @pytest.mark.asyncio
 async def test_debug_connections_endpoint():
     """`GET /api/v1/debug/connections` reports state and active_id."""
-    from flow_sdk.server.app import app
     from starlette.testclient import TestClient
+
+    from flow_sdk.server.app import app
 
     connection_id = str(uuid.uuid4())
 

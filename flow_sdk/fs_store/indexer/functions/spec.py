@@ -8,10 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer._frontmatter import (
-    _extract_body,
     _extract_frontmatter,
     _yaml_load,
 )
@@ -70,48 +68,7 @@ def spec_id(ref: FSRef) -> str:
     return existing if existing else _spec_id_from_path(ref._path)
 
 
-def extract_spec(ref: FSRef, resolved_id: str) -> list[FSRecord]:
-    """Parse a spec.md into a Record. Replaces ``SpecRecord._from_fsref_sync``.
-
-    ``content`` is the body ONLY (frontmatter stripped) so the entity↔record
-    round-trip is stable: ``Spec`` owns its main_ref, so ``_spec_default_body``
-    re-renders ``frontmatter(id/title/spec_type) + content`` on every save — if
-    ``content`` still carried the frontmatter, each save would accumulate a
-    duplicate block. Title populates both ``name`` (generic folder/FTS) and
-    ``title`` (the Spec entity's display field).
-    """
-    path = ref._path
-    spec_uname = path.parent.name
-    name = spec_uname
-    spec_type = "plan"
-    content = ""
-    try:
-        text = path.read_text(encoding="utf-8")
-        from flow_sdk.capsules import strip_capsule_blocks  # noqa: PLC0415
-
-        text = strip_capsule_blocks(text)
-        content = _extract_body(text)  # body only — frontmatter stripped
-        # Parse frontmatter with the YAML loader (not line-splitting) so quoted
-        # values — e.g. a title containing a colon, which the renderer quotes —
-        # round-trip cleanly.
-        fm = _extract_frontmatter(text)
-        if fm:
-            fields = _yaml_load(fm) or {}
-            if isinstance(fields, dict):
-                if fields.get("title"):
-                    name = str(fields["title"])
-                if fields.get("spec_type"):
-                    spec_type = str(fields["spec_type"])
-    except OSError:
-        pass
-    rec = FSRecord(
-        type=RecordType.SPEC,
-        id=resolved_id,
-        name=name,
-        title=name,
-        spec_type=spec_type,
-        content=content,
-    )
-    rec.source_file = str(path)
-    object.__setattr__(rec, "_asset_ref", FSRef(path))
-    return [rec]
+def derive_spec(data: dict, root: Path, header_raw: dict) -> None:
+    """The name is the title, else the folder — a fact of the path, not the header."""
+    data["name"] = data.get("title") or root.name
+    data.setdefault("title", data["name"])
