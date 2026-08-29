@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Literal
 
 from flow_sdk.fs_store.identifier import mint_uuid
-from flow_sdk.fs_store.origin.fs_origin import FSOrigin
+from flow_sdk.fs_store.origin.fs_origin import ORIGIN_MODELS, FSOrigin
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 
 
@@ -52,3 +52,6 @@ def local_origin_for_path(path: "str | Path") -> LocalOrigin:
     the process asset mount and the serializer all agree byte-for-byte."""
     p = Path(path)
     return LocalOrigin(base=str(p.parent), rel_path=p.name or ".")
+
+
+ORIGIN_MODELS.register(LocalOrigin, "local")

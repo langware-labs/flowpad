@@ -26,7 +26,7 @@ class SubAgentSpec(FrontMatter):
     markdown ``Body``.
 
     ``kind`` is flowpad's, not Claude's (excluded from the ``--agents`` CLI
-    JSON by ``_CLI_EXCLUDED_FIELDS``); it still rides the frontmatter.
+    JSON by ``subagent_to_cli_json``); it still rides the frontmatter.
     """
 
     name: str | None = None

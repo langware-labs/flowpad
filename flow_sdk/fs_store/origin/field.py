@@ -16,27 +16,27 @@ from typing import Annotated, Any, Optional, Union
 
 from pydantic import Discriminator, Tag, TypeAdapter, ValidationError, WrapValidator
 
-from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin
-from flow_sdk.fs_store.origin.fs_origin import ORIGIN_KIND_ALIASES, resolve_origin_kind
-from flow_sdk.fs_store.origin.git_origin import GitOrigin
-from flow_sdk.fs_store.origin.local_origin import LocalOrigin
+import flow_sdk.fs_store.origin.cloud_origin  # noqa: F401 — registers the cloud arm
+import flow_sdk.fs_store.origin.git_origin  # noqa: F401 — registers the git arm
+import flow_sdk.fs_store.origin.local_origin  # noqa: F401 — registers the local arm
+from flow_sdk.fs_store.origin.fs_origin import CLOUD_ORIGIN_KIND, ORIGIN_MODELS, resolve_origin_kind
 
 logger = logging.getLogger(__name__)
 
 
+_ARMS = frozenset(ORIGIN_MODELS.kinds())   # the union is frozen at import; so is this
+
+
 def origin_tag(value: Any) -> str:
-    """The union arm a raw origin belongs to: ``git`` / ``local`` / ``cloud``."""
-    kind = resolve_origin_kind(value).lower()
-    kind = ORIGIN_KIND_ALIASES.get(kind, kind)
-    return kind if kind in ("git", "local") else "cloud"
+    """The union arm a raw origin belongs to — a registered FS kind, else cloud."""
+    kind = ORIGIN_MODELS.normalize(resolve_origin_kind(value))
+    return kind if kind in _ARMS else CLOUD_ORIGIN_KIND
 
 
+# The arms ARE the registry: every model registered itself where it is defined
+# (the three modules above import eagerly, so the table is complete here).
 _ORIGIN_UNION = Annotated[
-    Union[
-        Annotated[GitOrigin, Tag("git")],
-        Annotated[LocalOrigin, Tag("local")],
-        Annotated[CloudOrigin, Tag("cloud")],
-    ],
+    Union[tuple(Annotated[model, Tag(kind)] for kind, model in ORIGIN_MODELS.items())],
     Discriminator(origin_tag),
 ]
 

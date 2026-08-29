@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from flow_sdk.fs_store.origin.fs_origin import ORIGIN_KIND_ALIASES
 from flow_sdk.fs_store.serializer.protocol import DataSerializer
 from flow_sdk.utils.kind_registry import KindRegistry
 
@@ -20,7 +19,7 @@ def _build_default(registry: "KindRegistry[DataSerializer]") -> None:
 
 
 SERIALIZERS: "KindRegistry[DataSerializer]" = KindRegistry(
-    "DataSerializer", aliases=ORIGIN_KIND_ALIASES, builder=_build_default
+    "DataSerializer", builder=_build_default
 )
 
 

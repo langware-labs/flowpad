@@ -81,20 +81,13 @@ class ReflectReport:
 class Reflector(Protocol):
     """One placement policy. Holds no state and reaches no subsystem."""
 
-    def place(self, source: "DataSource", ref: str, root: Optional[Path] = None) -> Optional[str]:
+    def place(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
         """The local path the indexer should be told about, or None to skip."""
         ...
 
-    def unplace(self, source: "DataSource", ref: str, root: Optional[Path] = None) -> Optional[str]:
+    def unplace(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
         """The local path that should now be treated as gone, or None."""
         ...
-
-
-def _local_root(source: "DataSource") -> Optional[Path]:
-    """A ``LocalOrigin`` names the source's tree directly; any other kind has to
-    be materialized (``_materialize``) and the page carries that root."""
-    origin = getattr(source, "origin", None)
-    return _resolve_local_path(origin) if origin is not None and origin.kind == "local" else None
 
 
 async def _materialize(source: "DataSource") -> Optional[Path]:
@@ -109,8 +102,8 @@ async def _materialize(source: "DataSource") -> Optional[Path]:
     if origin is None:
         return None
     if origin.kind == "local":
-        root = _local_root(source)
-        return root if root is not None and root.exists() else None
+        root = _resolve_local_path(origin)   # THE base/rel join, traversal-guarded
+        return root if root.exists() else None
     from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
 
     try:
@@ -152,10 +145,10 @@ def _target_root(source: "DataSource") -> Optional[Path]:
 class InPlaceReflector:
     """``none`` — the source's own tree (its materialized origin) IS the indexed tree."""
 
-    def place(self, source: "DataSource", ref: str, root: Optional[Path] = None) -> Optional[str]:
+    def place(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
         return ref
 
-    def unplace(self, source: "DataSource", ref: str, root: Optional[Path] = None) -> Optional[str]:
+    def unplace(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
         return ref
 
 
@@ -198,7 +191,7 @@ class _ProjectionReflector:
     def _emplace(self, src: Path, dest: Path) -> None:  # pragma: no cover - overridden
         raise NotImplementedError
 
-    def place(self, source: "DataSource", ref: str, root: Optional[Path] = None) -> Optional[str]:
+    def place(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
         src = Path(ref)
         dest = self._dest(source, ref, root)
         if dest is None or not src.exists():
@@ -210,7 +203,7 @@ class _ProjectionReflector:
         self._emplace(src, dest)
         return str(dest)
 
-    def unplace(self, source: "DataSource", ref: str, root: Optional[Path] = None) -> Optional[str]:
+    def unplace(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
         dest = self._dest(source, ref, root)
         if dest is None:
             return None
@@ -254,10 +247,10 @@ class SymlinkReflector(_ProjectionReflector):
     # open — and an ADDRESSING no-op. Saying that here, once, is cheaper than
     # every caller rediscovering it.
 
-    def place(self, source: "DataSource", ref: str, root: Optional[Path] = None) -> Optional[str]:
+    def place(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
         return ref if super().place(source, ref, root) else None
 
-    def unplace(self, source: "DataSource", ref: str, root: Optional[Path] = None) -> Optional[str]:
+    def unplace(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
         return ref if super().unplace(source, ref, root) else None
 
 
@@ -270,20 +263,16 @@ class SymlinkReflector(_ProjectionReflector):
 REFLECTORS: "KindRegistry[Reflector]" = KindRegistry("reflect mode")
 
 
-def register_reflector(mode: str, reflector: Reflector) -> Reflector:
-    return REFLECTORS.register(reflector, kind=mode)
-
-
 def get_reflector(mode: str) -> Optional[Reflector]:
     return REFLECTORS.get_or_none(mode or ReflectMode.RECORD.value)
 
 
-register_reflector(ReflectMode.NONE.value, InPlaceReflector())
-register_reflector(ReflectMode.COPY.value, CopyReflector())
-register_reflector(ReflectMode.SYMLINK.value, SymlinkReflector())
+REFLECTORS.register(InPlaceReflector(), kind=ReflectMode.NONE.value)
+REFLECTORS.register(CopyReflector(), kind=ReflectMode.COPY.value)
+REFLECTORS.register(SymlinkReflector(), kind=ReflectMode.SYMLINK.value)
 
 
-def origin_id_for(source: "DataSource", ref: str, root: Optional[Path] = None) -> str:
+def origin_id_for(source: "DataSource", ref: str, root: Optional[Path]) -> str:
     """The source's own name for this asset — what identity is resolved ON.
 
     Delegates to the DRIVER, because only it knows what its source can promise.
@@ -311,16 +300,14 @@ def origin_id_for(source: "DataSource", ref: str, root: Optional[Path] = None) -
     return default_origin_id(source, ref, root)
 
 
-def default_origin_id(source: "DataSource", ref: str, root: Optional[Path] = None) -> str:
+def default_origin_id(source: "DataSource", ref: str, root: Optional[Path]) -> str:
     """Source-relative path. The weakest handle that is still always correct.
 
-    ``root`` is the page's materialized root (or the local origin's own tree) —
-    never a config key: `root` is the folder driver's spelling and `repo` is
+    ``root`` is the page's materialized root — never a config key: `root` is the folder driver's spelling and `repo` is
     git's, so reading either directly makes the fallback silently wrong for the
     other — `relative_to` raises and "always correct" quietly degrades to a bare
     filename that collides across directories.
     """
-    root = root or _local_root(source)
     try:
         rel = Path(ref).relative_to(root).as_posix() if root else Path(ref).name
     except ValueError:
@@ -485,6 +472,8 @@ async def reflect_refs(
                     report.skipped.append(path)
                     continue
                 # Just resolved after the reindex — already current, no re-read.
+                # The origin id is derived AGAIN here on purpose: a folder source
+                # keys it on the inode, and the reindex may have rewritten the file.
                 await origin_identity.stamp(entity, origin_id_for(source, ref, root), reload=False)
                 report.placed.append(path)
 

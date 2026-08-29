@@ -27,7 +27,7 @@ def test_the_hub_body_is_hub_body_and_rehydrates(cls: type) -> None:
     assert body == e._hub_body()                                # _hub_body delegates here
     json.dumps(body)                                            # JSON-serializable
     assert "asset_ref" not in body                              # PRIVATE never leaves the machine
-    back = HubSerializer.from_payload(cls, body)
+    back = cls.model_validate(HubSerializer.unwire(cls, body))
     for name in body:
         assert getattr(back, name) == getattr(e, name), name
 

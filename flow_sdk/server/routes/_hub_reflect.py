@@ -378,7 +378,7 @@ def _merge_skip_fields(entity: Entity) -> frozenset[str]:
     as ``participants``). Every OTHER hub-modeled field — scalars AND
     collections the hub genuinely owns (a task's ``artifacts``, ``tags``,
     ``links``, ``metadata``) — is hub-authoritative and merges."""
-    from flow_sdk.fs_store.serializer.hub import HubSerializer, hub_names  # noqa: PLC0415
+    from flow_sdk.fs_store.serializer.hub import hub_names  # noqa: PLC0415
 
     blocked = type(entity).fields_not_accepted_from_hub()
     wire = hub_names(type(entity))
@@ -403,6 +403,8 @@ def _merge_hub_entity_into_local(entity: Entity, hub_resp: Any) -> dict[str, Any
     Returns the dict of fields to apply, empty when nothing changed (so the caller
     skips the save+broadcast entirely).
     """
+    from flow_sdk.fs_store.serializer.hub import HubSerializer  # noqa: PLC0415
+
     if not isinstance(hub_resp, dict):
         return {}
     updates: dict[str, Any] = {}

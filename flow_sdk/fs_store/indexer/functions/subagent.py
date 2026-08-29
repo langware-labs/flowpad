@@ -14,7 +14,6 @@ Public helpers used outside the indexer:
   - ``parse_subagent_markdown(text, name)`` — pure frontmatter+body parse
   - ``extract_subagent(ref, resolved_id)`` — parser_fn entry
   - ``agent_id(ref)`` — compatibility read helper
-  - ``KEY_TO_JSON`` / ``JSON_TO_KEY`` — spec mapping (``AGENTS_SPEC_FIELDS`` is ``builtin/subagent.py``'s)
 """
 
 from __future__ import annotations
@@ -40,7 +39,6 @@ KEY_TO_JSON = {
     "max_turns": "maxTurns",
     "mcp_servers": "mcpServers",
 }
-JSON_TO_KEY = {v: k for k, v in KEY_TO_JSON.items()}
 
 
 # ── Walker ───────────────────────────────────────────────────────────────────

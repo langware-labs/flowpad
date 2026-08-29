@@ -169,7 +169,7 @@ def assert_create_target_available(
     collision = carrier.exists() or carrier.is_symlink()
 
     if not collision and info.main_layout == "folder":
-        target_folder = info.folder_for(asset_ref._path)
+        target_folder = info.storage_root_for(asset_ref._path)
         if target_folder.is_symlink():
             collision = True
         elif target_folder.exists():

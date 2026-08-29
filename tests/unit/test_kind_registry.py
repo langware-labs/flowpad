@@ -67,3 +67,11 @@ def test_kind_discriminator_defaults_when_absent():
     assert resolve({}) == "git"
     assert resolve(SimpleNamespace(kind="")) == "git"
     assert resolve(SimpleNamespace()) == "git"
+
+
+def test_items_and_aliases_expose_the_table():
+    reg = KindRegistry("thing", aliases={"gh": "git"})
+    reg.register(object(), "local")
+    reg.register("G", "git")
+    assert [k for k, _ in reg.items()] == ["git", "local"]
+    assert reg.aliases == {"gh": "git"} and reg.normalize("GH") == "git"

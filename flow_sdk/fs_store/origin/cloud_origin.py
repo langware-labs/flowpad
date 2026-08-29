@@ -27,6 +27,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
+from flow_sdk.fs_store.origin.fs_origin import CLOUD_ORIGIN_KIND, ORIGIN_MODELS
+
 
 class CloudOrigin(BaseModel):
     @property
@@ -75,3 +77,6 @@ class CloudOriginLocal(BaseModel):
     data_source_id: str = ""
     # The local cache row, 1:1. `source_item-<id>`'s bare uuid.
     source_item_id: str = ""
+
+
+ORIGIN_MODELS.register(CloudOrigin, CLOUD_ORIGIN_KIND)

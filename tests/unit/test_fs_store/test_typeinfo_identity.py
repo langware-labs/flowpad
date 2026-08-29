@@ -189,14 +189,14 @@ def test_folder_backed_main_file_ref_normalizes_idempotently(tmp_path: Path) -> 
         main_file="SKILL.md",
     )
 
-    assert info.folder_for(folder) == folder
+    assert info.storage_root_for(folder) == folder
     assert info.body_path_for(folder) == main
-    assert info.folder_for(main) == folder
+    assert info.storage_root_for(main) == folder
     assert info.body_path_for(main) == main
 
     same_named_folder = tmp_path / "SKILL.md"
     same_named_folder.mkdir()
-    assert info.folder_for(same_named_folder) == same_named_folder
+    assert info.storage_root_for(same_named_folder) == same_named_folder
     assert info.body_path_for(same_named_folder) == same_named_folder / "SKILL.md"
 
 

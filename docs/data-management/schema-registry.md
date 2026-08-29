@@ -267,3 +267,13 @@ nodes = await get_shared_indexer().scan(...)
 status = await SchemaRegistry.get_index_status()
 print(status.never_indexed)  # True if never indexed
 ```
+
+## Path → layout
+
+`TypeInfo.layout_of(path, *, verify=False) -> Layout(kind, root, body, ref)` is the one
+classifier: a folder type names its folder (`FOLDER`) or the inner main file (`MAIN_FILE`,
+root = parent); a file type names the file (`FILE`); `NONE` otherwise. Names compare
+case-insensitively; `verify=True` also requires the bytes to exist (the indexer's gate).
+`storage_root_for`, `body_path_for` and `capsule_target_for` are one-line
+projections of it; `asset_ref_for(root)` is the inverse. Never re-derive "is this the main
+file" at a call site.

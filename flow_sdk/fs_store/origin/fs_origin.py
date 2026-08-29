@@ -24,15 +24,20 @@ from pathlib import Path, PurePosixPath
 
 from pydantic import BaseModel, Field
 
-from flow_sdk.utils.kind_registry import kind_discriminator
+from flow_sdk.utils.kind_registry import KindRegistry, kind_discriminator
 
 # The tolerant default kind. Legacy origins were always git and were persisted
 # without a ``kind`` discriminant; anything arriving without one is git.
 DEFAULT_ORIGIN_KIND = "git"
 
-#: Git-hosting names fold onto the git kind — shared by the union discriminator,
-#: the driver registry and the serializer registry.
-ORIGIN_KIND_ALIASES = {"github": "git", "gitlab": "git", "bitbucket": "git"}
+#: The open-tag arm: any kind that is not a registered FS model is a cloud pointer.
+CLOUD_ORIGIN_KIND = "cloud"
+
+#: THE table of origin kinds — every model registers itself here where it is
+#: defined; the union, the driver registry and the alias fold all read it.
+ORIGIN_MODELS: KindRegistry[type] = KindRegistry(
+    "FSOrigin model", aliases={"github": "git", "gitlab": "git", "bitbucket": "git"}
+)
 
 
 #: The ``kind`` of a raw origin (dict or model), defaulting to git. Single home

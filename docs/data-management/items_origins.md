@@ -43,9 +43,12 @@ types). `.` means the whole repository.
 **The discriminator is tolerant by design.** A dict with no `kind` reads as
 `git`, because origins persisted before the discriminant existed were all git.
 That rule lives in exactly one place, `resolve_origin_kind`, the union's
-discriminator (`origin_tag`, `fs_store/origin/field.py`): missing kind → git, a
-git-hosting name folds onto git, `local` is local, anything else is a `CloudOrigin`
-(whose `kind` is the open CHANNEL string). `ORIGIN_ADAPTER` validates a raw value
+discriminator (`origin_tag`, `fs_store/origin/field.py`) reads **`ORIGIN_MODELS`**
+(`fs_origin.py`) — the one table of kinds, where each model registers itself: a
+missing kind → git, a git-hosting name folds onto git through the table's aliases,
+any unregistered kind is the `cloud` arm (`CloudOrigin`, whose `kind` is the open
+CHANNEL string). The union's arms are built from that table; the driver registry
+borrows its aliases and asserts drivers ⊂ models. `ORIGIN_ADAPTER` validates a raw value
 the same way the entity field does — typed, or `None` when malformed.
 
 Store an origin in a field typed `OriginField`, never bare `FSOrigin` — a
@@ -115,7 +118,7 @@ The hub pins a *released* `flow_sdk` and reads the git kind under the key
 a `json_schema_extra` slot — never a pydantic alias, which would leak into the
 API serializer and the disk header). `HubSerializer.body` renames every
 `hub_name` field generically and drops any value whose `transportable` is
-false (a `LocalOrigin`); `HubSerializer.unwire` / `from_payload` invert it on
+false (a `LocalOrigin`); `HubSerializer.unwire` inverts it on
 the way back, and `membership_sync` goes through it. No kind strings anywhere.
 
 Model dumps stay wire-stable (no `exclude_none`; `head_commit: null` rides):

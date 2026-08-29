@@ -13,6 +13,7 @@ load only when that family is actually used.
 
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import Any, Callable, Generic, Mapping, Optional, TypeVar
 
 T = TypeVar("T")
@@ -70,9 +71,16 @@ class KindRegistry(Generic[T]):
         self._ensure()
         return self._items.get(self.normalize(kind))
 
-    def kinds(self) -> list[str]:
+    @property
+    def aliases(self) -> Mapping[str, str]:
+        return MappingProxyType(self._aliases)
+
+    def items(self) -> list[tuple[str, T]]:
         self._ensure()
-        return sorted(self._items)
+        return sorted(self._items.items())
+
+    def kinds(self) -> list[str]:
+        return [k for k, _ in self.items()]
 
     def __contains__(self, kind: Any) -> bool:
         self._ensure()
