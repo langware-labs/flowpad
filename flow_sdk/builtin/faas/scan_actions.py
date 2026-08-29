@@ -8,8 +8,13 @@ from flow_sdk.builtin.faas import scan_indexer
 from flow_sdk.builtin.faas.project_list import (
     list_projects_from_indexer as _list_projects_from_indexer,
 )
+from flow_sdk.flowpad_types.vendors import VENDOR_KEYS, vendor_for, vendor_or_none
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+
+
+def _bad_worker_type(raw: str) -> str:
+    return f"worker_type must be one of {', '.join(repr(k) for k in sorted(VENDOR_KEYS))} (got {raw!r})"
 
 
 def _resolve_session_record(session_id: str, hint: str | None = None):
@@ -27,7 +32,7 @@ def _resolve_session_record(session_id: str, hint: str | None = None):
     Returns ``(record, worker_type)`` on hit; ``(None, None)`` on miss.
     Worker_type is the canonical query/api spelling.
     """
-    if hint not in (None, "claude", "codex", "copilot", "opencode"):
+    if hint is not None and hint not in VENDOR_KEYS:
         return None, None
 
     if hint in (None, "claude"):
@@ -683,7 +688,7 @@ class ScanActionsMixin:
             sessionId:  str           — session/thread ID
             workdir:    str | None    — working directory
             projectId:  str | None    — project ID for context
-            workerType: str | None    — "claude" (default) or "codex"
+            workerType: str | None    — a vendor key (``VENDOR_KEYS``); default "claude"
             theme:      str | None    — "light" | "dark", palette to pin on the spawn
 
         Returns: ApiSuccessResponse with the full AgenticProcess entity dict.
@@ -736,17 +741,11 @@ class ScanActionsMixin:
         request_info = get_current_request_info()
 
         try:
-            # Vendor -> (cli factory key, WorkerType). A ternary chain here
-            # DEFAULTED to claude for anything it did not enumerate, so a resolved
-            # opencode session was upserted as a claude_code process - silently,
-            # because "unknown vendor" and "claude" were the same branch. A table
-            # makes an unlisted vendor visible instead of mis-attributed.
-            _VENDORS = {
-                "codex": ("codex", WorkerType.CODEX),
-                "copilot": ("copilot", WorkerType.COPILOT),
-                "opencode": ("opencode", WorkerType.OPENCODE),
-            }
-            cli_factory_key, wt_enum = _VENDORS.get(worker_type_raw, ("claude", WorkerType.CLAUDE_CODE))
+            # Any spelling ``VENDORS`` knows; an unlisted vendor is claude, the
+            # documented default (a ternary chain here once made "unknown" and
+            # "claude" the same branch and mis-attributed opencode sessions).
+            vendor = vendor_or_none(worker_type_raw) or vendor_for("claude")
+            cli_factory_key, wt_enum = vendor.key, WorkerType(vendor.worker_type)
 
             # Resolve workdir + project_id from the session record.
             # Transcript cwd is the authoritative restore location; project_id is
@@ -996,11 +995,8 @@ class ScanActionsMixin:
             else ""
         )
         hint = hint_raw.lower() or None
-        if hint and hint not in ("claude", "codex", "copilot", "opencode"):
-            return ApiFailResponse(
-                message=(f"worker_type must be 'claude', 'codex', 'copilot' or 'opencode' (got {hint_raw!r})"),
-                status_code=400,
-            )
+        if hint and hint not in VENDOR_KEYS:
+            return ApiFailResponse(message=_bad_worker_type(hint_raw), status_code=400)
 
         session_rec, worker_type = _resolve_session_record(worker_id, hint=hint)
         if session_rec is None:
@@ -1063,11 +1059,8 @@ class ScanActionsMixin:
 
         worker_hint_raw = request_info.get_param("worker_type") or request_info.get_param("workerType") or ""
         worker_hint = worker_hint_raw.lower() or None
-        if worker_hint and worker_hint not in ("claude", "codex", "copilot"):
-            return ApiFailResponse(
-                message=f"worker_type must be 'claude', 'codex', or 'copilot' (got {worker_hint_raw!r})",
-                status_code=400,
-            )
+        if worker_hint and worker_hint not in VENDOR_KEYS:
+            return ApiFailResponse(message=_bad_worker_type(worker_hint_raw), status_code=400)
 
         try:
             rec, worker_type = _resolve_session_record(session_id, hint=worker_hint)

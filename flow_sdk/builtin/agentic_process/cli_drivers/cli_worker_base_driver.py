@@ -30,6 +30,7 @@ Public exports:
 from __future__ import annotations
 
 import asyncio
+import importlib
 import logging
 import os
 import re
@@ -57,6 +58,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import (
 )
 from flow_sdk.builtin.compute_node import ComputeNode
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
+from flow_sdk.flowpad_types.vendors import default_vendor, vendor_or_none
 from flow_sdk.transcript_analyzer import TranscriptDescriptor
 
 if TYPE_CHECKING:
@@ -1032,20 +1034,12 @@ def restart_payload_from_cli_options(options: AgentOptions) -> dict[str, Any]:
 def worker_capability_kind(worker_type: str) -> str:
     """The capability kind whose discovered value provides this worker's CLI.
 
-    Looked up FIRST, interpolated only as a fallback, because the worker type and
-    the kind segment are not always the same token. Claude registers
-    ``worker_type="claude_code"`` against kind ``harness.claude.cli``
-    (registry.py), so plain interpolation produced ``harness.claude_code.cli`` --
-    a kind nothing registers -- and every lookup keyed by the capability's
-    worker_type came back "not installed" for a CLI that was installed and
-    working. Codex and copilot escaped it only because their two names coincide.
-
-    The fallback still carries the driver names (``claude``/``codex``/``copilot``),
-    which are not in the map and for which interpolation is correct.
+    Read from ``VENDORS`` (claude's worker_type is ``claude_code`` but its kind
+    is ``harness.claude.cli`` — interpolation once produced a kind nothing
+    registers). Interpolated only for a name the table does not know.
     """
-    from flow_sdk.core.capabilities.mcp import harness_kind_for_worker_type
-
-    return harness_kind_for_worker_type(worker_type) or f"harness.{worker_type}.cli"
+    vendor = vendor_or_none(worker_type)
+    return vendor.capability_kind if vendor else f"harness.{worker_type}.cli"
 
 
 def worker_bin_folder(worker_type: str) -> str | None:
@@ -1225,30 +1219,19 @@ async def latch_spawn_failure(process: "AgenticProcess", error: WorkerSpawnError
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _vendor_module(vendor, leaf: str):
+    """``<vendor.package>.<leaf>``, imported on demand (the vendor packages
+    import this base module, so a top-level import would be a cycle)."""
+    return importlib.import_module(f"{vendor.package}.{leaf}")
+
+
 def factory(cli_json: dict, worker_type: str) -> AgentOptions:
-    """Return the correct AgentOptions subclass for the given worker_type.
-
-    String keys (``"claude"``, ``"codex"``, ``"copilot"``) are the wire form used by
-    serialised ``AgenticProcess.cli_config`` — kept stable across enum
-    renames. Local imports break the cli_drivers/<vendor> → base cycle.
-    """
-    if worker_type == "claude":
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
-
-        return ClaudeAgentOptions.from_json(cli_json)
-    if worker_type == "codex":
-        from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexAgentOptions
-
-        return CodexAgentOptions.from_json(cli_json)
-    if worker_type == "copilot":
-        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotAgentOptions
-
-        return CopilotAgentOptions.from_json(cli_json)
-    if worker_type == "opencode":
-        from flow_sdk.builtin.agentic_process.cli_drivers.opencode.cli import OpenCodeAgentOptions
-
-        return OpenCodeAgentOptions.from_json(cli_json)
-    raise ValueError(f"Unknown worker_type: {worker_type!r}")
+    """The AgentOptions subclass for ``worker_type`` — any spelling ``VENDORS``
+    knows (the wire form in ``AgenticProcess.cli_config`` is the driver key)."""
+    vendor = vendor_or_none(worker_type)
+    if vendor is None:
+        raise ValueError(f"Unknown worker_type: {worker_type!r}")
+    return _vendor_module(vendor, "cli").AGENT_OPTIONS.from_json(cli_json)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1567,48 +1550,14 @@ def get_driver(worker_type: Any) -> WorkerDriver:
     The returned driver is cached per name; constructing one is cheap but
     caching avoids re-importing the vendor module on every property access.
     """
-    if worker_type is None:
-        worker_type = os.environ.get("FLOWPAD_DEFAULT_WORKER") or "claude"
-
-    # Map enum values → driver registry keys.
-    if hasattr(worker_type, "value"):
-        worker_type = worker_type.value
-    key = str(worker_type).lower()
-    aliases = {
-        "claude_code": "claude",
-        "claude_code_cli": "claude",
-        "claude": "claude",
-        "codex": "codex",
-        "copilot": "copilot",
-        "opencode": "opencode",
-    }
-    name = aliases.get(key, key)
-
-    cached = _DRIVER_CACHE.get(name)
-    if cached is not None:
-        return cached
-
-    if name == "claude":
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude.driver import ClaudeDriver
-
-        driver: WorkerDriver = ClaudeDriver()
-    elif name == "codex":
-        from flow_sdk.builtin.agentic_process.cli_drivers.codex.driver import CodexDriver
-
-        driver = CodexDriver()
-    elif name == "copilot":
-        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.driver import CopilotDriver
-
-        driver = CopilotDriver()
-    elif name == "opencode":
-        from flow_sdk.builtin.agentic_process.cli_drivers.opencode.driver import OpenCodeDriver
-
-        driver = OpenCodeDriver()
-    else:
+    vendor = default_vendor() if worker_type is None else vendor_or_none(worker_type)
+    if vendor is None:
         raise ValueError(f"No WorkerDriver registered for worker_type={worker_type!r}")
 
-    _DRIVER_CACHE[name] = driver
-    return driver
+    cached = _DRIVER_CACHE.get(vendor.key)
+    if cached is None:
+        cached = _DRIVER_CACHE[vendor.key] = _vendor_module(vendor, "driver").DRIVER()
+    return cached
 
 
 __all__ = [

@@ -16,6 +16,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from flow_sdk.flowpad_types.vendors import VENDOR_KEYS
 from flow_sdk.transcript_analyzer.assembly import assemble_tree
 from flow_sdk.transcript_analyzer.entries import AgentSpawnEntry, MetaEntry
 from flow_sdk.transcript_analyzer.resolver import (
@@ -56,7 +57,7 @@ async def _is_received(worker_type: str, session_id: str) -> bool:
 router = APIRouter()
 
 
-_SUPPORTED_WORKERS: frozenset[str] = frozenset({"claude", "codex", "copilot", "opencode", "workflow"})
+_SUPPORTED_WORKERS: frozenset[str] = VENDOR_KEYS | {"workflow"}
 
 
 def _error(status_code: int, code: str, message: str) -> JSONResponse:

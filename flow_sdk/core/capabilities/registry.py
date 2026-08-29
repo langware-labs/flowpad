@@ -16,6 +16,7 @@ from flow_sdk.core.capabilities.models import (
     CapabilityValue,
     capability_kind_matches,
 )
+from flow_sdk.flowpad_types.vendors import VENDORS, vendor_by
 from flow_sdk.schema.data_spec import DataSpec
 from flow_sdk.utils.kind_registry import KindRegistry
 
@@ -437,7 +438,7 @@ class GithubAccountRunner(CapabilityRunner):
 
     async def test(self, scope=None) -> CapabilityResult:
         if scope is not None and getattr(scope, "scope_type", None) == "project":
-            from flow_sdk.builtin.git_origin import GitOrigin
+            from flow_sdk.fs_store.origin.git_origin import GitOrigin
             from flow_sdk.builtin.project import Project
             from flow_sdk.utils.git import git_remote_access
 
@@ -580,18 +581,10 @@ def install_worker_type(harness_kind: str) -> str:
     Agent — this used to also build a whole vendor options object whose only
     content was ``permission_mode``, which the Agent now declares.
     """
-    from flow_sdk.flowpad_types.enums import WorkerType  # noqa: PLC0415
-
-    by_kind = {
-        CapabilityKind.CLAUDE_CLI.value: WorkerType.CLAUDE_CODE.value,
-        CapabilityKind.CODEX_CLI.value: WorkerType.CODEX.value,
-        CapabilityKind.COPILOT_CLI.value: WorkerType.COPILOT.value,
-        CapabilityKind.OPENCODE_CLI.value: WorkerType.OPENCODE.value,
-    }
-    worker = by_kind.get(harness_kind)
-    if worker is None:
+    vendor = vendor_by("capability_kind", harness_kind)
+    if vendor is None:
         raise RuntimeError(f"Unsupported install harness kind: {harness_kind}")
-    return worker
+    return vendor.worker_type
 
 
 def _schedule_install_monitor(process_id: str, kind: str) -> None:
@@ -969,34 +962,14 @@ def _build_default_registry() -> CapabilityRegistry:
             allowed_query=CapabilityKind.HARNESS.value,
         )
     )
-    registry.register(
-        CliCapabilityRunner(
-            spec=specs[CapabilityKind.CLAUDE_CLI.value],
-            executable="claude",
-            worker_type="claude_code",
+    for vendor in VENDORS:
+        registry.register(
+            CliCapabilityRunner(
+                spec=specs[vendor.capability_kind],
+                executable=vendor.key,
+                worker_type=vendor.worker_type,
+            )
         )
-    )
-    registry.register(
-        CliCapabilityRunner(
-            spec=specs[CapabilityKind.CODEX_CLI.value],
-            executable="codex",
-            worker_type="codex",
-        )
-    )
-    registry.register(
-        CliCapabilityRunner(
-            spec=specs[CapabilityKind.COPILOT_CLI.value],
-            executable="copilot",
-            worker_type="copilot",
-        )
-    )
-    registry.register(
-        CliCapabilityRunner(
-            spec=specs[CapabilityKind.OPENCODE_CLI.value],
-            executable="opencode",
-            worker_type="opencode",
-        )
-    )
     registry.register(ChromeAuthenticatedBrowsingRunner(specs[CapabilityKind.CHROME_AUTHENTICATED.value]))
     registry.register(GithubAccountRunner(specs[CapabilityKind.GITHUB.value]))
     registry.register(

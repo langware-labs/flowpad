@@ -26,49 +26,70 @@ from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
 from flow_sdk.core import Entity, action
+from flow_sdk.flowpad_types.vendors import Vendor, default_vendor, vendor_for
+from flow_sdk.schema.data_spec import Body, FrontMatter, SpecType
 from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
 
-#: The two vocabularies for "which CLI".
-#:
-#: An agent.md declares the DRIVER short-id — that is what a human writes, what
-#: the CLI is called, and the key ``cli_drivers.factory`` dispatches on. But
-#: ``AgenticProcess.worker_type`` is a ``WorkerType``, whose Claude member is
-#: ``claude_code``. Feed one where the other is expected and the process fails
-#: pydantic validation, which is exactly what a real launch found.
-#:
-#: The forward direction is NOT redefined here: ``get_driver`` already owns that
-#: alias table, and owns it better — it also handles ``claude_code_cli``, a
-#: ``WorkerType`` object, casing, and the ``FLOWPAD_DEFAULT_WORKER`` default.
-#: A private copy would be the fourth in the tree and would silently ignore that
-#: env override.
+#: The two vocabularies for "which CLI": an agent.md declares the DRIVER
+#: short-id (``VENDORS[...].key``), ``AgenticProcess.worker_type`` carries the
+#: persisted value (``.worker_type``). Both directions read the one table; a
+#: blank ``worker_type:`` means "unset" and follows ``get_driver``'s default.
+
+def _vendor(worker: str | None) -> Vendor:
+    return vendor_for(worker) if (worker or "").strip() else default_vendor()
+
 
 def driver_key(worker: str | None) -> str:
     """The ``cli_drivers.factory`` key for either vocabulary."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
-        get_driver,
-    )
-
-    # A blank `worker_type:` in an agent.md means "unset", but get_driver only
-    # treats None as unset and would raise on "". Normalize before handing over.
-    return get_driver((worker or "").strip() or None).name
+    return _vendor(worker).key
 
 
 def worker_type_value(worker: str | None) -> str:
-    """The ``AgenticProcess.worker_type`` enum value for either vocabulary.
+    """The ``AgenticProcess.worker_type`` enum value for either vocabulary."""
+    return _vendor(worker).worker_type
 
-    No production helper does this direction — only test-local copies — so it
-    lives here, derived from ``driver_key`` so the two can't disagree.
+
+class AgentSpec(FrontMatter):
+    """``agent.md`` — the shape of the document. ``name`` is deliberately NOT
+    here: it comes from the folder (``TypeInfo.name_from_path``), so a rename
+    can never desync the two. ``system_prompt`` is the markdown ``Body``.
+
+    ``input`` / ``output`` are the agent's I/O contract — shapes authored
+    in YAML. They are declaration only and never enter ``to_agent_options``:
+    that bundle is md5'd into ``last_started_hash``, and a new key there would
+    flip ``restart_required`` on every running process.
     """
-    # `driver_key` can only return claude/codex/copilot (get_driver raises on
-    # anything else), and only claude's names differ between the two vocabularies.
-    key = driver_key(worker)
-    return "claude_code" if key == "claude" else key
+
+    title: Optional[str] = None
+    description: Optional[str] = None
+    avatar: Optional[str] = None
+    worker_type: Optional[str] = None
+    model: Optional[str] = None
+    permission_mode: Optional[str] = None
+    effort: Optional[str] = None
+    max_turns: Optional[int] = None
+    tools: Optional[list[str]] = None
+    disallowed_tools: Optional[list[str]] = None
+    skills: Optional[list[str]] = None
+    mcp_servers: Optional[list[str]] = None
+    subagents: Optional[list[str]] = None
+    additional_dirs: Optional[list[str]] = None
+    load_flowpad_assistant: Optional[bool] = None
+    cli_options: Optional[dict] = None
+    enabled: Optional[bool] = None
+    input: Optional[SpecType] = None
+    output: Optional[SpecType] = None
+    system_prompt: Body = ""
 
 
 class Agent(Entity):
+    """``agentic-assets/agent/<name>/`` — the ROW. Its shape on disk is
+    ``AgentSpec`` (``TypeInfo.asset_spec``); that ``agent.md`` is the main file
+    and the folder names the agent is ``TypeInfo``'s (the serializer's)."""
+
     type: str = APIField(default=EntityType.AGENT.value)
 
     # ── identity / presentation ───────────────────────────────────────────
@@ -113,6 +134,15 @@ class Agent(Entity):
         "`chrome: true`). Merged into the options bundle under the named fields, so a "
         "capability an agent needs stays visible on its card instead of living at a call site.",
     )
+
+    # ── I/O contract ──────────────────────────────────────────────────────
+    # What this agent consumes and produces — `input + template → output`.
+    # Authored as shapes in agent.md frontmatter (a class, held via SpecType). DECLARATION ONLY: they
+    # never enter `to_agent_options`, whose to_json() is md5'd into
+    # `last_started_hash` — a new key there flips `restart_required` on every
+    # running process (the same reason `system_prompt` stays out).
+    input: Optional[SpecType] = APIField(default=None, description="The shape this agent consumes.")
+    output: Optional[SpecType] = APIField(default=None, description="The shape this agent produces.")
 
     # ── email ─────────────────────────────────────────────────────────────
     #
@@ -234,7 +264,7 @@ class Agent(Entity):
         repairs the row rather than preserving a deployment that cannot load its
         files (notably ``avatar.png``).
         """
-        if self.remote and self.git_origin:
+        if self.remote and self.origin:
             return False
 
         from flow_sdk.assets._publish_service import owning_project  # noqa: PLC0415

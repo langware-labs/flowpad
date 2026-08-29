@@ -55,12 +55,15 @@ from flow_sdk.builtin.hooks.types import (
 )
 from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
+from flow_sdk.flowpad_types.vendors import vendor_for
 from flow_sdk.responses.response import ApiFailResponse
 from flow_sdk.transcript_analyzer import (
     TranscriptDescriptor,
     TranscriptFormat,
     TranscriptSource,
 )
+
+VENDOR = vendor_for("claude")
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
@@ -100,7 +103,7 @@ _HOOK_CAPABILITIES: "HookCapabilities" = {
 class ClaudeDriver:
     """Vendor glue for Claude Code. Implements the ``WorkerDriver`` Protocol."""
 
-    name = "claude"
+    name = VENDOR.key
     supports_process_hooks = True
     process_hooks_use_assets = True
     preassign_interactive_session_id = True
@@ -504,3 +507,7 @@ class ClaudeDriver:
         if not claude_projects.is_dir():
             return set()
         return {d.name for d in claude_projects.iterdir() if d.is_dir() and "flow-records-agentic" in d.name}
+
+
+#: The class ``get_driver`` instantiates for this vendor (looked up by ``VENDORS[...].package``).
+DRIVER = ClaudeDriver

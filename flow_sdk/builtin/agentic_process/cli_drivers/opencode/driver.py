@@ -58,13 +58,15 @@ from flow_sdk.builtin.flowpad_runner_wrapper import get_installed_flow_invocatio
 from flow_sdk.builtin.hooks.types import HookCapabilities, HookCapability, HookEventType, HookScope
 from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
-from flow_sdk.flowpad_types.enums import WorkerType
+from flow_sdk.flowpad_types.vendors import vendor_for
 from flow_sdk.responses.response import ApiFailResponse
 from flow_sdk.transcript_analyzer import (
     TranscriptDescriptor,
     TranscriptFormat,
     TranscriptSource,
 )
+
+VENDOR = vendor_for("opencode")
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
@@ -92,7 +94,7 @@ _HOOK_CAPABILITIES: "HookCapabilities" = {
 class OpenCodeDriver:
     """Vendor glue for the OpenCode CLI."""
 
-    name = WorkerType.OPENCODE.value
+    name = VENDOR.key
 
     # ``--session`` only CONTINUES an existing session: opencode exits 1 with
     # "Session not found" for an id it has never seen, so a caller-minted uuid
@@ -454,3 +456,7 @@ class OpenCodeDriver:
         if not process.session_id:
             return False
         return bool(find_opencode_session(process.session_id))
+
+
+#: The class ``get_driver`` instantiates for this vendor (looked up by ``VENDORS[...].package``).
+DRIVER = OpenCodeDriver

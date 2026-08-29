@@ -198,3 +198,7 @@ class OpenCodeAgentOptions(AgentOptions):
             add_dirs=list(data.get("add_dirs") or []),
             json_stream=bool(data.get("json_stream", True)),
         )
+
+
+#: The options class ``factory`` builds for this vendor.
+AGENT_OPTIONS = OpenCodeAgentOptions

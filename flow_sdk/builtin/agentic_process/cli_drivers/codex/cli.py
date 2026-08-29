@@ -216,3 +216,7 @@ class CodexAgentOptions(AgentOptions):
             json_stream=bool(data.get("json_stream", True)),
             ephemeral=bool(data.get("ephemeral", True)),
         )
+
+
+#: The options class ``factory`` builds for this vendor.
+AGENT_OPTIONS = CodexAgentOptions
