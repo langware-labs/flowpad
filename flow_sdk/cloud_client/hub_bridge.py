@@ -21,6 +21,7 @@ from typing import Any, Callable, Optional
 
 from flow_sdk import inbox
 from flow_sdk.cloud_client.ws_client import HubWebSocketManager, hub_ws_manager
+from flow_sdk.fs_store.serializer.hub import hub_names
 from flow_sdk.preferences import message_status_sharing_enabled
 
 logger = logging.getLogger(__name__)
@@ -917,11 +918,11 @@ class HubWsBridge:
         # this bit later; immediate assignment has no accept transition, so the
         # bridge must establish the invariant at the ingest boundary.
         clean["remote"] = True
-        # Wire adapter: the hub sends the roster under the ``participants`` key
-        # (its Conversation field + fanout contract); the local cache field is
-        # ``members`` (generic, on the Entity base). Map it at ingest.
-        if "participants" in clean:
-            clean["members"] = clean.pop("participants")
+        # Wire adapter: the roster's hub key (``participants``) → the local
+        # ``members`` cache, from the one declaration on ``Conversation``.
+        for field, wire in hub_names(Conversation).items():
+            if wire in clean:
+                clean[field] = clean.pop(wire)
 
         self.remember_hub_conversation(conv_id)
 
@@ -1149,10 +1150,13 @@ class HubWsBridge:
         *,
         conversation_id: str,
         text: str,
+        flow_message_id: Optional[str] = None,
         sender_name: Optional[str] = None,
         timeout: float = 10.0,
     ) -> dict:
         body: dict = {"text": text}
+        if flow_message_id:
+            body["id"] = flow_message_id
         if sender_name:
             body["sender_name"] = sender_name
         return await self.manager.send_request(
