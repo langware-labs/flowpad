@@ -502,23 +502,25 @@ def test_an_empty_reservation_is_not_a_collision(tmp_path: Path, monkeypatch) ->
     minted a second, empty project for — two identically-named projects in the
     picker, with the customer's work in the suffixed one.
     """
-    from flow_sdk.builtin import project as project_module
+    from flow_sdk.fs_store.origin.git_origin import fresh_clone_slot
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    monkeypatch.setattr(project_module, "AGENT_MOUNT_FOLDER", str(workspace))
+    monkeypatch.setattr("flow_sdk.config.AGENT_MOUNT_FOLDER", str(workspace))
 
     # Nothing there yet → the plain name.
-    assert project_module._fresh_clone_slot("acme").name == "acme"
+    assert fresh_clone_slot("acme").name == "acme"
 
     # An EMPTY directory is not a collision: nothing can be lost, and
     # ``git clone`` writes into one happily.
     (workspace / "acme").mkdir()
-    assert project_module._fresh_clone_slot("acme").name == "acme"
+    assert fresh_clone_slot("acme").name == "acme"
+    # …unless the caller needs a name nothing has claimed at all (a 409 suggestion).
+    assert fresh_clone_slot("acme", reuse_empty=False).name == "acme-2"
 
     # A directory with contents IS a collision — that is somebody's work.
     (workspace / "acme" / "README.md").write_text("theirs", encoding="utf-8")
-    assert project_module._fresh_clone_slot("acme").name == "acme-2"
+    assert fresh_clone_slot("acme").name == "acme-2"
 
 
 @pytest.mark.asyncio
