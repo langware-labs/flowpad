@@ -1,3 +1,5 @@
+import type * as lucideExports from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
@@ -55,49 +57,30 @@ export const EVENTS_VIEW_TYPES: ReadonlySet<ViewType> = new Set([
  * Viewer metadata registry
  * Single source of truth for all viewer information
  */
+/** Every `lucide-react` export that is an icon component — what `lucideByName` can resolve. */
+type LucideExportName = {
+  [K in keyof typeof lucideExports]: (typeof lucideExports)[K] extends LucideIcon ? K : never;
+}[keyof typeof lucideExports];
+
 export interface ViewerMeta {
   title: MessageDescriptor;
-  /** Icon component name (string to avoid JSX in shared package) */
-  iconName:
-    | 'LifeBuoy'
-    | 'Code'
-    | 'Terminal'
-    | 'Globe'
-    | 'Variable'
-    | 'GitCompare'
-    | 'ListCheck'
-    | 'Activity'
-    | 'MessageSquare'
-    | 'Monitor'
-    | 'FileQuestion'
-    | 'FileText'
-    | 'Brain'
-    | 'Hand'
-    | 'Key'
-    | 'KeyRound'
-    | 'LogIn'
-    | 'BookOpen'
-    | 'ListChecks'
-    | 'Webhook'
-    | 'Cpu'
-    | 'FolderOpen'
-    | 'Sparkles'
-    | 'Settings'
-    | 'PlaySquare'
-    | 'Eye'
-    | 'Home'
-    | 'Zap'
-    | 'CheckSquare'
-    | 'BadgeCheck'
-    | 'SearchIcon'
-    | 'Workflow'
-    | 'GitGraph'
-    | 'BrainCircuit'
-    | 'Users'
-    | 'Mail'
-    | 'Stethoscope'
-    | 'Antenna'
-    | 'History';
+  /**
+   * Icon component name (a string, to keep JSX out of this shared module).
+   *
+   * Derived from `lucide-react`'s own export map rather than hand-listed. The
+   * hand-maintained 40-name allowlist that used to sit here had drifted from
+   * the table it constrains — `Building2`, `Hash`, `RadioTower` and
+   * `LayoutGrid` were all in use below and all missing from it, 7 errors —
+   * and every icon added since would have drifted the same way. `lucideByName`
+   * resolves these against exactly this namespace, so this is the real
+   * constraint, it still catches a typo, and it cannot go stale.
+   *
+   * The NAMESPACE, not lucide's `icons` map: the map has dropped the
+   * deprecated aliases (`Home`, `FileQuestion`, `CheckSquare`, `SearchIcon`),
+   * which the namespace still exports and `lucideByName` still resolves. The
+   * map would have flagged four working icons as typos.
+   */
+  iconName: LucideExportName;
   /** Where this viewer renders: 'overview' tab or dedicated tab */
   tabLocation: 'overview' | 'dedicated';
   /** Can this viewer be manually added as a tab? */
