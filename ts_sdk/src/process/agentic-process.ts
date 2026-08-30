@@ -1168,9 +1168,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /** Append a directory to additional_dirs (passed to Claude via --add-dir). */
   async addDir(path: string): Promise<void> {
-    const actionInfo = new ActionInfo('add-dir', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { path };
-    await dataManager.callAction(actionInfo);
+    await this.post('add-dir', { path });
     if (!(this.additional_dirs ?? []).includes(path)) {
       this.additional_dirs = [...(this.additional_dirs ?? []), path];
     }
@@ -1182,9 +1180,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * worker's system prompt at launch (see contextProcess.md). Pre-launch only.
    */
   async setGraphContext(graphContextId: string): Promise<void> {
-    const actionInfo = new ActionInfo('set-graph-context', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { graph_context_id: graphContextId };
-    await dataManager.callAction(actionInfo);
+    await this.post('set-graph-context', { graph_context_id: graphContextId });
   }
 
   /**
@@ -1193,16 +1189,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * resolved payload comes back to subscribers via {@link onShow}.
    */
   async show(target: { typeid?: string; path?: string; port?: number; view?: string }): Promise<void> {
-    const actionInfo = new ActionInfo('show', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = target;
-    await dataManager.callAction(actionInfo);
+    await this.post('show', target);
   }
 
   /** Remove a directory from additional_dirs. No-op if not present. */
   async removeDir(path: string): Promise<void> {
-    const actionInfo = new ActionInfo('remove-dir', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { path };
-    await dataManager.callAction(actionInfo);
+    await this.post('remove-dir', { path });
     this.additional_dirs = (this.additional_dirs ?? []).filter((d) => d !== path);
   }
 
@@ -1213,29 +1205,22 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /** Append a prompt to the tail of the queue. */
   async enqueue(prompt: string, source: string = 'ui'): Promise<void> {
-    const actionInfo = new ActionInfo('enqueue', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { prompt, source };
-    await dataManager.callAction(actionInfo);
+    await this.post('enqueue', { prompt, source });
   }
 
   /** Remove a queued prompt by its id (string) or list index (number). */
   async dequeue(idOrIndex: string | number): Promise<void> {
-    const actionInfo = new ActionInfo('dequeue', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = typeof idOrIndex === 'number' ? { index: idOrIndex } : { id: idOrIndex };
-    await dataManager.callAction(actionInfo);
+    await this.post('dequeue', typeof idOrIndex === 'number' ? { index: idOrIndex } : { id: idOrIndex });
   }
 
   /** Drop every pending prompt. */
   async clearQueue(): Promise<void> {
-    const actionInfo = new ActionInfo('clear-queue', AgenticProcess.type, this.id, 'POST');
-    await dataManager.callAction(actionInfo);
+    await this.post('clear-queue');
   }
 
   /** Enable/disable draining. Disabled keeps entries but stops injection. */
   async setQueueEnabled(enabled: boolean): Promise<void> {
-    const actionInfo = new ActionInfo('set-queue-enabled', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { enabled };
-    await dataManager.callAction(actionInfo);
+    await this.post('set-queue-enabled', { enabled });
   }
 
   // ── Pin-from-history (docs/prompt-library.md) ───────────────────────────────
@@ -1246,28 +1231,22 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /** Pin a history item's text into the prompt library. Idempotent by normalized text. */
   async pinPrompt(text: string, name?: string): Promise<{ promptId: string }> {
-    const actionInfo = new ActionInfo('pin-prompt', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { text, ...(name ? { name } : {}) };
-    const result = await dataManager.callAction<
-      { text: string; name?: string },
-      { prompt_id: string; pinned: boolean }
-    >(actionInfo);
+    const result = await this.post<{ prompt_id: string; pinned: boolean }>('pin-prompt', {
+      text,
+      ...(name ? { name } : {}),
+    });
     return { promptId: result.prompt_id };
   }
 
   /** Unpin: remove the prompt↔process link and delete the prompt from the library. */
   async unpinPrompt(promptId: string): Promise<void> {
-    const actionInfo = new ActionInfo('unpin-prompt', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { prompt_id: promptId };
-    await dataManager.callAction(actionInfo);
+    await this.post('unpin-prompt', { prompt_id: promptId });
   }
 
   /** Record that this process executed a library prompt: mutual private
    *  cross-link + usage bump (conversation Approve & Execute path). */
   async linkExecutedPrompt(promptId: string): Promise<void> {
-    const actionInfo = new ActionInfo('link-executed-prompt', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { prompt_id: promptId };
-    await dataManager.callAction(actionInfo);
+    await this.post('link-executed-prompt', { prompt_id: promptId });
   }
 
   async shell(): Promise<Shell | null> {
@@ -1418,8 +1397,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /** Fetch deterministic extractive context for continuing with another worker. */
   async continuationPrompt(): Promise<string> {
-    const actionInfo = new ActionInfo('continuation-prompt', AgenticProcess.type, this.id, 'GET');
-    const response = await dataManager.callAction<unknown, { prompt: string }>(actionInfo);
+    const response = await this.get<{ prompt: string }>('continuation-prompt');
     return response.prompt;
   }
 
@@ -2169,9 +2147,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * The sub-agent spec is merged into cli_config on the backend and persisted.
    */
   async loadEmbeddedSubagent(sourcePath: string): Promise<void> {
-    const actionInfo = new ActionInfo('load-embedded-subagent', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { asset_ref: sourcePath };
-    await dataManager.callAction(actionInfo);
+    await this.post('load-embedded-subagent', { asset_ref: sourcePath });
   }
 
   /**
@@ -2181,9 +2157,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * through to the next session — no re-materialization needed.
    */
   async loadEmbeddedSkill(sourcePath: string): Promise<void> {
-    const actionInfo = new ActionInfo('load-embedded-skill', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { asset_ref: sourcePath };
-    await dataManager.callAction(actionInfo);
+    await this.post('load-embedded-skill', { asset_ref: sourcePath });
   }
 
   /**
@@ -2199,8 +2173,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * were read in the session.
    */
   async getAssets(): Promise<AssetDescriptor[]> {
-    const actionInfo = new ActionInfo('get-assets', AgenticProcess.type, this.id, 'GET');
-    const response = await dataManager.callAction<void, { assets?: AssetDescriptor[] }>(actionInfo);
+    const response = await this.get<{ assets?: AssetDescriptor[] }>('get-assets');
     return response?.assets ?? [];
   }
 
@@ -2518,9 +2491,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * update, so a watched process reflects the new `visible` on the entity.
    */
   async setVisible(visible: boolean): Promise<void> {
-    const actionInfo = new ActionInfo('set-visible', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { visible };
-    await dataManager.callAction(actionInfo);
+    await this.post('set-visible', { visible });
     // Optimistic + latched until the wire agrees (see onEntityUpdate).
     this.stageTransportIntent({ visible });
   }
@@ -2537,9 +2508,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * queue on the headless path (e.g. `{ source }`).
    */
   async input(text: string, options?: { queueOptions?: Record<string, unknown> }): Promise<void> {
-    const actionInfo = new ActionInfo('input', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { text, ...(options ? { options } : {}) };
-    await dataManager.callAction(actionInfo);
+    await this.post('input', { text, ...(options ? { options } : {}) });
   }
 
   /**
@@ -2564,8 +2533,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * a 5 s grace then SIGKILL; a final ``<flow-end>`` arrives on the stream.
    */
   async cancelPrompt(): Promise<void> {
-    const actionInfo = new ActionInfo('cancel-prompt', AgenticProcess.type, this.id, 'POST');
-    await dataManager.callAction(actionInfo);
+    await this.post('cancel-prompt');
   }
 
   /**
@@ -2763,8 +2731,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       dataManager.notifyEntityChanged(shell);
     }
 
-    const actionInfo = new ActionInfo('exit', AgenticProcess.type, this.id, 'POST');
-    await dataManager.callAction(actionInfo);
+    await this.post('exit');
 
     // Shell entity is kept alive by the backend — do NOT call shell.close()
   }
@@ -2813,8 +2780,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       }
     }
 
-    const actionInfo = new ActionInfo('close', AgenticProcess.type, this.id, 'POST');
-    await dataManager.callAction(actionInfo);
+    await this.post('close');
 
     // Dispose frontend PTY client — backend already deleted the shell entity.
     if (this.shell_id) {

@@ -603,14 +603,14 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * entity's action methods share (`DataSource.pollNow`, `Dataset.promote`, …).
    */
   protected post<R>(action: string, body?: Record<string, unknown>): Promise<R> {
-    const info = new ActionInfo(action, this.type, this.id, 'POST' as HttpMethod);
+    const info = new ActionInfo(action, this.getType(), this.id, 'POST' as HttpMethod);
     if (body) info.bodyParameters = body;
     return dataManager.callAction<undefined, R>(info);
   }
 
   /** GET one of this entity's actions and return the envelope's `data`. */
   protected get<R>(action: string): Promise<R> {
-    return dataManager.callAction<undefined, R>(new ActionInfo(action, this.type, this.id, 'GET' as HttpMethod));
+    return dataManager.callAction<undefined, R>(new ActionInfo(action, this.getType(), this.id, 'GET' as HttpMethod));
   }
 
   /** Editor apps this entity can open: the type's builtins plus what its asset ships. */
