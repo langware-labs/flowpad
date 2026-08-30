@@ -122,6 +122,15 @@ export interface IConversation extends IEntity {
   archived_at?: string | Date | null;
 }
 
+/**
+ * Declaration merge: `implements IConversation` only CHECKS the class, it adds no
+ * members — so every field declared solely on IConversation read as "does not exist
+ * on type Conversation", even though `deepAssign` populates them from the wire.
+ * This interface makes them part of the class type.
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Conversation extends IConversation {}
+
 @registerEntity
 export class Conversation extends APIEntity<Conversation> implements IConversation {
   kind?: ConversationKind;

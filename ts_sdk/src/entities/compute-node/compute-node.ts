@@ -102,6 +102,15 @@ export interface IComputeNode extends IEntity {
 }
 
 /**
+ * Declaration merge: `implements IComputeNode` only CHECKS the class, it adds no
+ * members — so every field declared solely on IComputeNode read as "does not exist
+ * on type ComputeNode", even though `deepAssign` populates them from the wire.
+ * This interface makes them part of the class type.
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface ComputeNode extends IComputeNode {}
+
+/**
  * ComputeNode entity class.
  * Manages sandboxed execution environments for running commands and processes.
  */
