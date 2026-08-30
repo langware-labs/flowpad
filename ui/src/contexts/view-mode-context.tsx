@@ -1,11 +1,15 @@
 import {
+  AgenticProcess,
   dataContext,
+  type IDockPointer,
   instancePreferences,
   isHubOnly,
   onPreferenceChange,
   PREF_REGISTRY,
   PrefKey,
   type Project,
+  TypeId,
+  ViewType,
 } from '@sdk';
 import { usePreference, usePreferenceResolved } from '@src/hooks/use-preference';
 import { defineGlobal } from '@sdk/utils';
@@ -270,6 +274,88 @@ export function applyProjectViewMode(project: Project): void {
   }
 }
 
+/**
+ * Per-SESSION memory, one level below the project's. The project's `last_mode`
+ * answers "what mode does a NEW session in here start in"; a session's own
+ * answers "what mode is THIS session in" — and it outranks the project's for
+ * as long as the session is open, because the mode is a property of the thing
+ * you are looking at, not of the app.
+ *
+ * Same equality guard as the project stamp, and for the same reason: the mode
+ * a session is opened in comes straight back round as a stamp (loader applies
+ * it → the URL carries it → `useDockViewModeOverrideSync` records it), so an
+ * already-matching value must cost nothing rather than a save per open.
+ */
+export function stampProcessViewMode(process: AgenticProcess | null | undefined, val: ViewMode): void {
+  if (!process || process.last_mode === val) return;
+  process.last_mode = val;
+  void process.save().catch((err) => {
+    console.warn('[view-mode] failed to record last_mode on process', err);
+  });
+}
+
+/**
+ * Apply a session's remembered view mode when its dock loads (called from
+ * `routeProcessPointer`, after `loadProcess` has written CurrentProcessTypeId).
+ *
+ * `urlViewMode` is the `?viewMode` the dock arrived with. When present it is
+ * authoritative and this does NOTHING: the URL already outranks every
+ * projection in `useViewMode`, and `useDockViewModeOverrideSync` — the single
+ * load-time owner of view-mode arrangements — both adopts it as the preference
+ * and stamps it onto this session. Acting here as well would write the
+ * remembered mode over the requested one for a frame and save the process
+ * twice.
+ *
+ * With no mode on the URL (a cold deep link, a hard refresh) the stored mode
+ * becomes the active one; a session that has never carried a mode adopts — and
+ * records — the current one.
+ */
+export function applyProcessViewMode(process: AgenticProcess, urlViewMode: ViewMode | null): void {
+  if (urlViewMode) return;
+  const remembered = toViewModeOrNull(process.last_mode);
+  if (remembered) {
+    setViewMode(remembered);
+  } else {
+    stampProcessViewMode(process, getViewMode());
+  }
+}
+
+/**
+ * The id of the session a dock addresses, or null when it addresses something
+ * else. A session lives at exactly one dock family — `/dock/shell/
+ * agentic_process-<id>` — in every mode (vibe is a rendering mode of that same
+ * dock, see `canonicalProcessDockPath`), so this is the whole grammar.
+ */
+export function sessionIdForDock(dock: IDockPointer): string | null {
+  if (dock.viewType !== ViewType.SHELL || !dock.pointer) return null;
+  const prefix = AgenticProcess.type + TypeId.DELIMITER;
+  return dock.pointer.startsWith(prefix) ? dock.pointer.slice(prefix.length) : null;
+}
+
+/**
+ * The mode a SESSION dock should open in, from the session's own memory — the
+ * cache-only read behind the URL-first seed in `NavigationActions.openDock`.
+ * Null when the dock is not a session, the entity is not in cache (a cold deep
+ * link: the loader's `applyProcessViewMode` covers that), or it has no valid
+ * stored mode (a session that predates this memory, which adopts the ambient
+ * mode on its first open).
+ */
+export function rememberedSessionViewMode(dock: IDockPointer): ViewMode | null {
+  const sessionId = sessionIdForDock(dock);
+  if (!sessionId) return null;
+  // A pointer is URL text: the id segment can be anything, and the cache lookup
+  // builds a TypeId, which THROWS on a malformed one. A seed that decides which
+  // mode a dock opens in must never be the thing that fails a navigation — an
+  // unreadable id simply has no memory, and the loader reports the bad URL.
+  let process: AgenticProcess | null = null;
+  try {
+    process = AgenticProcess.getByIdFromCache<AgenticProcess>(sessionId);
+  } catch {
+    return null;
+  }
+  return toViewModeOrNull(process?.last_mode ?? null);
+}
+
 // The last mode that wasn't Vibe. Entering Vibe ADOPTS it as the persisted
 // preference (useDockViewModeOverrideSync), which overwrites whatever the user
 // had — so without this latch, an Advanced user who visits Vibe and leaves is
@@ -350,12 +436,24 @@ export function useViewMode(): ViewMode {
 export function useDockViewModeOverrideSync(): void {
   const currentDock = useCurrentDock();
   const override = currentDock?.viewMode ?? null;
+  // The session this mode is being applied to, when the dock addresses one.
+  // Held as an id, not the entity, so the effect re-runs when the URL moves to
+  // another session rather than on every cache identity change.
+  const sessionId = currentDock ? sessionIdForDock(currentDock) : null;
 
   useEffect(() => {
     setDockViewModeOverride(override);
     // instancePreferences.set no-ops on equal values, so no guard is needed here.
     if (override) setViewMode(override);
-  }, [override]);
+    // Per-session memory: a mode on a session's URL — put there by the footer
+    // toggle's navigation, by an opener that named one, or by the seed in
+    // `openDock` — IS that session's mode from here on. Recorded on LOAD rather
+    // than in the click path (URL-first): a reload, a back/forward, or a deep
+    // link onto the same URL records exactly the same thing.
+    if (override && sessionId) {
+      stampProcessViewMode(AgenticProcess.getByIdFromCache<AgenticProcess>(sessionId), override);
+    }
+  }, [override, sessionId]);
 
   useEffect(() => () => setDockViewModeOverride(null), []);
 }

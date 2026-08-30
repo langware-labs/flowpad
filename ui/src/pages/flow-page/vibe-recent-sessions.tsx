@@ -7,7 +7,6 @@ import { WorkerIcon, pickHistoryTitle, timeAgo } from '@src/components/entity-ex
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Checkbox } from '@src/components/ui/checkbox';
-import { ViewMode } from '@src/contexts/view-mode-context';
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { ALL_SCOPE_FILTER, defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
 import { navigateToResult } from '@src/navigation/record-type-nav';
@@ -171,9 +170,14 @@ function ProjectRecentActivity({ projectId, heading, className }: { projectId: s
   // not-found notification. This file used to carry its own copy, which meant
   // two components emitting the same `session-not-found:<id>` toast id.
   const { resumeInTerminal } = useResumeInTerminal();
+  // No mode is named on purpose: a past build reopens in the mode it was last
+  // seen in (`AgenticProcess.last_mode`, seeded onto the URL by `openDock`), so
+  // a session the user moved to Terminal is not dragged back into the vibe skin
+  // every time they reach it from this list. One with no memory yet inherits
+  // the mode we are in, which here is Vibe.
   const openSession = useCallback(
     (entry: WorkerHistoryEntry) => {
-      resumeInTerminal(entry.worker_id, undefined, undefined, entry.worker_type, { viewMode: ViewMode.Vibe });
+      resumeInTerminal(entry.worker_id, undefined, undefined, entry.worker_type);
     },
     [resumeInTerminal],
   );

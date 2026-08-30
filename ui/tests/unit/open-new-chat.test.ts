@@ -25,7 +25,7 @@ describe('openNewChat + NavigationActions', () => {
    *  terminal surface runs a PTY), surface, and persona (only the chat surface
    *  embeds the `standard` agent). These pin the createProcess args per mode so
    *  the one chain can't drift back to a hardcoded transport. */
-  function stubComputeNode() {
+  function stubComputeNode(project?: { id: string }) {
     const startSpy = vi.fn();
     const createProcessSpy = vi.fn().mockResolvedValue({
       id: 'process-123',
@@ -39,7 +39,7 @@ describe('openNewChat + NavigationActions', () => {
         return { createProcess: createProcessSpy } as any;
       }
       if (entityKey === ContextEntitiesEnum.CurrentProjectTypeId) {
-        return { fs_storage_mount_path: '/tmp/project' } as any;
+        return { fs_storage_mount_path: '/tmp/project', ...project } as any;
       }
       return null;
     });
@@ -55,7 +55,7 @@ describe('openNewChat + NavigationActions', () => {
     const process = await openNewChat(navigation);
 
     expect(createProcessSpy).toHaveBeenCalledWith(
-      { workdir: '/tmp/project' },
+      { workdir: '/tmp/project', processType: 'chat' },
       { watchProcess: false, visible: true, pty_mode: true },
     );
     expect(startSpy).not.toHaveBeenCalled();
@@ -74,7 +74,7 @@ describe('openNewChat + NavigationActions', () => {
     const process = await openNewChat(navigation);
 
     expect(createProcessSpy).toHaveBeenCalledWith(
-      { workdir: '/tmp/project', outputFormat: 'stream-json' },
+      { workdir: '/tmp/project', processType: 'chat', outputFormat: 'stream-json' },
       { watchProcess: false, visible: false, pty_mode: false },
     );
     expect(openShell).toHaveBeenCalledWith('process-123', { viewMode: 'standard' });
@@ -94,13 +94,42 @@ describe('openNewChat + NavigationActions', () => {
     await openNewChat(navigation);
 
     expect(createProcessSpy).toHaveBeenCalledWith(
-      { workdir: '/tmp/project', outputFormat: 'stream-json' },
+      { workdir: '/tmp/project', processType: 'chat', outputFormat: 'stream-json' },
       { watchProcess: false, visible: false, pty_mode: false },
     );
     expect(openShell).toHaveBeenCalledWith('process-123', { viewMode: 'vibe' });
     // Vibe embeds its own persona through createVibeProcessForProject; this
     // chain must not layer the chat one on top.
     expect(embedMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * FLOWPAD-2054: a chat is a `chat` keyed to its project in EVERY mode. These
+   * two stamps used to be omitted here (and set only on the vibe creation
+   * path), so a session started in Standard/Advanced landed with
+   * `process_type` and `target_typeid_str` null and was invisible to every
+   * consumer that filters on them — Vibe's "Past builds" list and the rail's
+   * last-chat resolver. Identity is not a property of the mode you started in.
+   */
+  it('stamps the chat kind and the project target so every mode lists the session', async () => {
+    const { createProcessSpy } = stubComputeNode({ id: 'proj-1' });
+    vi.spyOn(viewMode, 'getViewMode').mockReturnValue(viewMode.ViewMode.Advanced);
+    const navigation = new NavigationActions(vi.fn(), null);
+    vi.spyOn(navigation, 'openShellProcess').mockResolvedValue(null);
+
+    await openNewChat(navigation);
+
+    expect(createProcessSpy).toHaveBeenCalledWith(
+      {
+        workdir: '/tmp/project',
+        projectId: 'proj-1',
+        processType: 'chat',
+        // Exactly what `chatTargetForProject` writes on the vibe path — the
+        // string has to match or the two paths key the same list differently.
+        targetVfsPath: 'project-proj-1',
+      },
+      { watchProcess: false, visible: true, pty_mode: true },
+    );
   });
 
   it('does not embed the chat persona in Dev mode', async () => {
@@ -113,7 +142,6 @@ describe('openNewChat + NavigationActions', () => {
 
     expect(embedMock).not.toHaveBeenCalled();
   });
-
 
   it('creates a plain shell without eagerly starting it', async () => {
     const startSpy = vi.fn();

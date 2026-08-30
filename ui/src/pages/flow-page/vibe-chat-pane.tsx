@@ -4,8 +4,8 @@ import {
   continueVibeSessionForProject,
   createVibeProcessForProject,
   embedVibeSubagent,
-  vibeChatTargetForProject,
 } from './use-start-vibe-session';
+import { chatTargetForProject } from '@src/lib/chat-target';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -80,7 +80,15 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
         setStartingNewSession(false);
       }
     },
-    [startingNewSession, project?.id, project?.fs_storage_mount_path, process?.project_id, navigation, defaultWorkerType, t],
+    [
+      startingNewSession,
+      project?.id,
+      project?.fs_storage_mount_path,
+      process?.project_id,
+      navigation,
+      defaultWorkerType,
+      t,
+    ],
   );
 
   // A process created OUTSIDE the vibe flow — e.g. a plain shell/PTY tab opened
@@ -92,7 +100,7 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
   // that would lazily mint a session.
   const chatTarget = !process
     ? null
-    : (process.target_typeid_str ?? (process.project_id ? vibeChatTargetForProject(process.project_id) : null));
+    : (process.target_typeid_str ?? (process.project_id ? chatTargetForProject(process.project_id) : null));
 
   const handleActiveWorkerChange = useCallback(
     ({
@@ -206,9 +214,18 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
         initialProcessId={process?.id ?? null}
         promptContext={promptContext ? { label: t`Working on ${promptContext.label}`, text: promptContext.text } : null}
         onPromptContextConsumed={promptContext ? () => consume(promptContext.key) : undefined}
+        // Picking a PAST build names no mode on purpose: an existing session
+        // opens in the mode it was last seen in (`AgenticProcess.last_mode`,
+        // seeded onto the URL by `openDock`). Pinning Vibe here dragged a
+        // session the user had put in Terminal back into the vibe skin every
+        // time they reached it from Recent. A session with no memory yet still
+        // lands in Vibe — that is the mode we are in, and the seed falls back
+        // to inheriting it.
         onProcessSelected={(processId) => {
-          void navigation.openShellProcess(processId, { viewMode: ViewMode.Vibe });
+          void navigation.openShellProcess(processId);
         }}
+        // A NEW build is a vibe build: it has no memory to honour, and this is
+        // the one place that decides what mode it is born in.
         onProcessCreated={async (newProcess) => {
           await newProcess.enableAssistant();
           await embedVibeSubagent(newProcess);
