@@ -102,49 +102,6 @@ def _read_last_entry(path: Path) -> dict[str, Any] | None:
 
 
 @dataclass
-class ScanResult:
-    """Result of scanning a single record type."""
-
-    type_name: str
-    count: int
-    total_bytes: int
-    scan_ms: float
-    last_scan_at: str | None = None
-    records: list[dict] | None = None
-    avg_bytes: int = 0
-    min_bytes: int = 0
-    max_bytes: int = 0
-
-
-@dataclass
-class IndexResult:
-    """Result of indexing a single record type."""
-
-    type_name: str
-    indexed: int
-    skipped: int
-    duration_ms: float
-    last_index_at: str | None = None
-    errors: int = 0
-    fresh: int = 0
-
-
-PROGRESS_EMIT_EVERY: int = 25  # emit one event per this many records
-
-
-@dataclass
-class IndexRequest:
-    """Declarative description of a scan+index operation."""
-
-    types: list[str] | None = None
-    actions: list[str] = field(default_factory=lambda: ["scan", "index"])
-    start_time: datetime | None = None
-    end_time: datetime | None = None
-    trigger: str = "manual"
-    limit_per_type: int | None = None
-
-
-@dataclass
 class ClearResult:
     fts_cleared: int
     entities_cleared: int
