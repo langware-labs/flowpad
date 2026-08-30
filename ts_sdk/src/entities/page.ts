@@ -48,9 +48,7 @@ export class Page extends APIEntity<Page> implements IPage {
 
   async analyze(context: TypeId[] = []): Promise<void> {
     if (!this.saved) return undefined;
-    const actionInfo = new ActionInfo('analyze', this.typeId.type, this.typeId.id, 'POST');
-    actionInfo.bodyParameters = { context };
-    await dataManager.callAction<Partial<{ context: TypeId[] }>, APIEntity<any>>(actionInfo);
+    await this.post<APIEntity<any>>('analyze', { context });
   }
 
   addFunc(funcTitle: string, funcContent?: any): void {
