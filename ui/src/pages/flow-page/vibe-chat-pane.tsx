@@ -4,8 +4,8 @@ import {
   continueVibeSessionForProject,
   createVibeProcessForProject,
   embedVibeSubagent,
-  vibeChatTargetForProject,
 } from './use-start-vibe-session';
+import { chatTargetForProject } from '@src/lib/chat-target';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -100,7 +100,7 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
   // that would lazily mint a session.
   const chatTarget = !process
     ? null
-    : (process.target_typeid_str ?? (process.project_id ? vibeChatTargetForProject(process.project_id) : null));
+    : (process.target_typeid_str ?? (process.project_id ? chatTargetForProject(process.project_id) : null));
 
   const handleActiveWorkerChange = useCallback(
     ({
