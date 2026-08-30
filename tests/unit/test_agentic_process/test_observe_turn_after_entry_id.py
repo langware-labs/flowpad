@@ -17,7 +17,9 @@ read back through the real transcript parser, streamed through the real action.
 
 Stated proxy: each case asserts on WHAT the stream delivered within a bounded
 drain, not on the stream's closure semantics — those are untouched by the
-parameter.
+parameter. The one exception is the SHORT-TURN case, where closing IS the
+behaviour under test: that stream has no turn to follow and must hand over the
+backlog and end.
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.instance_settings import get_instance_settings
@@ -107,6 +110,33 @@ async def _session_with_an_unseen_turn_head() -> tuple[AgenticProcess, Path, str
     return ap, path, session_id
 
 
+async def _session_whose_turn_already_ended() -> tuple[AgenticProcess, Path, str]:
+    """The same unseen turn head — but the turn is FINISHED before the open.
+
+    A short turn is over in well under the transcript flush's debounce, and
+    ``busy`` only reaches a client from that flush, so by the time the client
+    opens its observation there is nothing left running. Everything the client
+    has never seen is already on disk; the open is a handover, not a follow.
+    """
+    ap, path, session_id = await _session_with_an_unseen_turn_head()
+    _append(path, _assistant(session_id, "TAIL-OUTPUT", "end_turn"))
+    assert not is_turn_busy(ap), "guard: this fixture must model a turn that is already over"
+    return ap, path, session_id
+
+
+async def _drain(ap: AgenticProcess, **kwargs) -> str:
+    """Open the stream and read it to CLOSE (no writer, no finisher task)."""
+    response = await ap.observe_turn(**kwargs)
+    chunks: list[str] = []
+
+    async def _pump() -> None:
+        async for chunk in response.body_iterator:
+            chunks.append(chunk if isinstance(chunk, str) else chunk.decode("utf-8", "replace"))
+
+    await asyncio.wait_for(_pump(), timeout=_DRAIN_BUDGET)
+    return "".join(chunks)
+
+
 def _entry_ids(path: Path, session_id: str) -> list[str]:
     tf = AgentTranscriptFile("claude", path, session_id=session_id, transcript_format=None)
     return [entry.id for entry in tf.entries]
@@ -180,6 +210,68 @@ async def test_an_unknown_entry_id_degrades_to_the_open_watermark(
     assert "TAIL-OUTPUT" in body
 
 
+@pytest.mark.asyncio
+async def test_a_turn_that_ended_before_the_open_still_hands_over_its_backlog(
+    initialize_test_db,
+) -> None:
+    """A SHORT turn is over before the client can open its observation.
+
+    ``busy`` is broadcast from the DEBOUNCED transcript flush, so a turn shorter
+    than that debounce has already ended by the time the client reacts to it.
+    Gating the stream on ``is_turn_busy`` at open therefore discards the position
+    the client just stated and closes empty — the drained prompt and its answer
+    reach the pane only on a manual refresh (PR #354 review). What the client
+    has not seen is on disk; the open is a HANDOVER, not a follow.
+    """
+    ap, path, session_id = await _session_whose_turn_already_ended()
+    last_entry_the_client_holds = _entry_ids(path, session_id)[1]  # "earlier answer"
+
+    body = await _drain(ap, after_entry_id=last_entry_the_client_holds)
+
+    assert "DRAINED-PROMPT" in body
+    assert "HEAD-OUTPUT" in body
+    assert "TAIL-OUTPUT" in body
+    assert "earlier answer" not in body, "still resumes AFTER the stated entry"
+
+
+@pytest.mark.asyncio
+async def test_a_backlog_only_stream_closes_instead_of_polling_for_a_dead_turn(
+    initialize_test_db,
+) -> None:
+    """Closure is the behaviour under test here, not a proxy.
+
+    There is no turn to follow, and the PTY liveness check needs a provider
+    marker this stream can never see (it was written before the open). The
+    backlog pass must end the stream itself — ``_drain`` reads to close under
+    the same bounded budget the other cases use, so a stream that kept polling
+    fails here as a timeout.
+    """
+    ap, path, session_id = await _session_whose_turn_already_ended()
+
+    await _drain(ap, after_entry_id=_entry_ids(path, session_id)[1])
+
+
+@pytest.mark.asyncio
+async def test_nothing_running_and_nothing_unseen_is_an_empty_closed_stream(
+    initialize_test_db,
+) -> None:
+    """The original no-op path is intact: a caller racing the end of a turn with
+    its position already at the tail gets an empty, closed stream — not an
+    error, and not a replay."""
+    ap, path, session_id = await _session_whose_turn_already_ended()
+
+    body = await _drain(ap, after_entry_id=_entry_ids(path, session_id)[-1])
+
+    assert body == ""
+
+
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.live_frame_identity.rules: FAILING? the wire lost transcript-entry-id
+#       - read this tag's rules before touching entry_to_flowdata or to_xml
+# flowpad:endcapsule tag
 @pytest.mark.asyncio
 async def test_the_stream_names_the_entry_each_frame_came_from(
     initialize_test_db,
