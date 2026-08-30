@@ -22,6 +22,12 @@ export interface IMessageThread extends IEntity {
   message_count?: number;
 }
 
+// `implements IMessageThread` only checks the class; it contributes no members, so every
+// field declared solely on IMessageThread read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface MessageThread extends Omit<IMessageThread, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 @registerEntity
 export class MessageThread extends APIEntity<MessageThread> implements IMessageThread {
   static type: string = 'message_thread';

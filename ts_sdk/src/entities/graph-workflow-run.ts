@@ -20,6 +20,12 @@ export interface IGraphWorkflowRun extends IEntity {
   error?: string;
 }
 
+// `implements IGraphWorkflowRun` only checks the class; it contributes no members, so every
+// field declared solely on IGraphWorkflowRun read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface GraphWorkflowRun extends Omit<IGraphWorkflowRun, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 @registerEntity
 export class GraphWorkflowRun extends APIEntity<GraphWorkflowRun> implements IGraphWorkflowRun {
   name?: string;

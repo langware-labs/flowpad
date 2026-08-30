@@ -17,6 +17,12 @@ export interface IMarkdownIndex extends IEntity {
   latest_process_ref?: string;
 }
 
+// `implements IMarkdownIndex` only checks the class; it contributes no members, so every
+// field declared solely on IMarkdownIndex read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface MarkdownIndex extends Omit<IMarkdownIndex, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 /**
  * MarkdownIndex entity — single-file `index.md` representing a Merkle-tree
  * folder index. Frontmatter holds entity metadata; body is the human-readable

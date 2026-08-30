@@ -107,7 +107,7 @@ export interface IComputeNode extends IEntity {
  * This interface makes them part of the class type.
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface ComputeNode extends IComputeNode {}
+export interface ComputeNode extends Omit<IComputeNode, 'expand' | 'id' | 'is_private' | 'members'> {}
 
 /**
  * ComputeNode entity class.

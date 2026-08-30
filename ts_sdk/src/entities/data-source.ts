@@ -47,6 +47,12 @@ export interface IDataSource extends IEntity {
   error_detail?: string | null;
 }
 
+// `implements IDataSource` only checks the class; it contributes no members, so every
+// field declared solely on IDataSource read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface DataSource extends Omit<IDataSource, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 @registerEntity
 export class DataSource extends APIEntity<DataSource> implements IDataSource {
   static type: string = 'data_source';

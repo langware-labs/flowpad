@@ -90,6 +90,12 @@ export interface ICapability extends IEntity {
   model_map?: Record<string, Record<string, string>>;
 }
 
+// `implements ICapability` only checks the class; it contributes no members, so every
+// field declared solely on ICapability read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Capability extends Omit<ICapability, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 @registerEntity
 export class Capability extends APIEntity<Capability> implements ICapability {
   static type: string = 'capability';

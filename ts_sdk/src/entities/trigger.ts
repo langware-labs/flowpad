@@ -37,6 +37,12 @@ export interface ITrigger extends IEntity {
   last_seen_size?: number;
 }
 
+// `implements ITrigger` only checks the class; it contributes no members, so every
+// field declared solely on ITrigger read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Trigger extends Omit<ITrigger, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 /**
  * Entity representing a trigger that matches hook data and executes actions
  */

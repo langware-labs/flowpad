@@ -197,6 +197,12 @@ export interface TabRow extends ITab {
   target_remote?: boolean;
 }
 
+// `implements ITab` only checks the class; it contributes no members, so every
+// field declared solely on ITab read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Tab extends Omit<ITab, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 @registerEntity
 export class Tab extends APIEntity<Tab> implements ITab {
   static type: string = 'tab';
