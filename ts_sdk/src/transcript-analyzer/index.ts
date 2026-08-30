@@ -53,8 +53,6 @@ export {
 } from './entries';
 export { EntryKind, TranscriptEntry, type TranscriptEntryBase } from './entry';
 export { parseClaudeTranscriptUsage } from './parse-claude-usage';
-export { CLAUDE_PRICING, ModelPricing, pricingFor } from './pricing';
-export type { ItemPrice } from './pricing';
 export { AgentTranscriptFile as AgentTranscript, TranscriptFormat, TranscriptSource } from './transcript';
 
 /**
