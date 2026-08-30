@@ -50,10 +50,6 @@ import {
   isWorkerTerminal,
   type WorkerType,
 } from './agentic-types';
-import type {
-  TranscriptFormat as TranscriptFormatType,
-  TranscriptSource as TranscriptSourceType,
-} from '../transcript-analyzer';
 import {
   clearProcessHookCallbacks,
   dispatchProcessHook,
@@ -1377,18 +1373,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * ``[Request interrupted by user for tool use]`` synthetic. Hydrates
    * each entry via the analyzer's ``fromJson`` factory.
    */
-  async getPrompts(): Promise<import('../transcript-analyzer').UserMessageEntry[]> {
-    const { fromJson, UserMessageEntry } = await import('../transcript-analyzer');
+  async getPrompts(): Promise<import('../utils/agent-transcript').UserMessageEntry[]> {
+    const { isUserMessage } = await import('../utils/agent-transcript');
     const actionInfo = new ActionInfo('transcript', AgenticProcess.type, this.id, 'POST');
     actionInfo.subpath = 'prompts';
     const response = await dataManager.callAction<unknown, { prompts?: Record<string, unknown>[] | null }>(actionInfo);
-    const raw = response?.prompts ?? [];
-    const out: import('../transcript-analyzer').UserMessageEntry[] = [];
-    for (const r of raw) {
-      const entry = fromJson(r);
-      if (entry instanceof UserMessageEntry) out.push(entry);
-    }
-    return out;
+    const raw = (response?.prompts ?? []) as unknown as import('../utils/agent-transcript').GenericEntry[];
+    return raw.filter(isUserMessage);
   }
 
   /** Fetch deterministic extractive context for continuing with another worker. */
@@ -1400,41 +1391,19 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /**
    * Fetch the parsed worker transcript from the process-specific transcript source.
    */
-  async getTranscript(): Promise<import('../transcript-analyzer').AgentTranscript> {
-    const { AgentTranscript, TranscriptFormat, TranscriptSource, fromJson } = await import('../transcript-analyzer');
+  async getTranscript(): Promise<import('../utils/agent-transcript').ParsedTranscript> {
+    const { parseTranscriptResponse } = await import('../utils/agent-transcript');
     const actionInfo = new ActionInfo('transcript', AgenticProcess.type, this.id, 'POST');
     actionInfo.subpath = 'full';
-    const response = await dataManager.callAction<
-      unknown,
-      {
-        worker_type?: string | null;
-        session_id?: string | null;
-        path?: string | null;
-        transcript_path?: string | null;
-        transcript_format?: string | null;
-        transcript_source?: string | null;
-        entries?: Record<string, unknown>[] | null;
-      }
-    >(actionInfo);
-    const rawEntries = response?.entries ?? [];
-    const entries = rawEntries.map((entry) => fromJson(entry));
-    const format = Object.values(TranscriptFormat).includes(response?.transcript_format as never)
-      ? (response?.transcript_format as TranscriptFormatType)
-      : null;
-    const source = Object.values(TranscriptSource).includes(response?.transcript_source as never)
-      ? (response?.transcript_source as TranscriptSourceType)
-      : null;
-    const path = response?.path ?? response?.transcript_path ?? '';
-    return new AgentTranscript(
-      response?.worker_type ?? this.worker_type ?? '',
-      entries,
-      response?.session_id ?? this.session_id ?? '',
-      {
-        path,
-        transcript_format: format,
-        transcript_source: source,
-      },
-    );
+    const response = await dataManager.callAction<unknown, Record<string, unknown>>(actionInfo);
+    // `parseTranscriptResponse` validates and normalises the same payload this
+    // method used to rebuild by hand; only the entity-level fallbacks are ours.
+    return parseTranscriptResponse({
+      ...response,
+      worker_type: response?.worker_type ?? this.worker_type ?? '',
+      session_id: response?.session_id ?? this.session_id ?? '',
+      path: response?.path ?? response?.transcript_path ?? '',
+    });
   }
 
   // ─────────────────────────────────────────────────────────────────────────

@@ -9,7 +9,27 @@
  * a `switch (entry.kind)` block to narrow types.
  */
 
-import type { TranscriptFormat, TranscriptSource } from '../../transcript-analyzer';
+/**
+ * The transcript file format the backend parsed, and where it came from.
+ * Mirrors `TranscriptFormat` / `TranscriptSource` in
+ * `flow_sdk/transcript_analyzer/transcript.py`.
+ */
+export enum TranscriptFormat {
+  CLAUDE_JSONL = 'claude_jsonl',
+  CODEX_STREAM = 'codex_stream',
+  CODEX_ROLLOUT = 'codex_rollout',
+  COPILOT_STREAM = 'copilot_stream',
+  COPILOT_EVENTS = 'copilot_events',
+  // FlowPad owns both opencode formats: the headless stdout tee, and the
+  // projection assembled from opencode's SQLite store for PTY sessions.
+  OPENCODE_STREAM = 'opencode_stream',
+  OPENCODE_SESSION = 'opencode_session',
+}
+
+export enum TranscriptSource {
+  PROCESS_LOCAL = 'process_local',
+  WORKER_SESSION = 'worker_session',
+}
 
 export type EntryKind =
   | 'user_message'
