@@ -252,33 +252,55 @@ def _daily_graph(flow_id: str, trigger_id: str) -> str:
     return _doc(flow_id, "daily-analysis", nodes, edges)
 
 
-def _repin_trigger_nodes(graph_path, trigger_id: str) -> None:
-    """Re-point the flow's trigger node(s) at the CURRENT builtin trigger row.
+def _repin_nodes(graph_path, predicate, patch, *, what: str) -> None:
+    """Re-point seed-owned node references in a user-owned graph.
 
-    Builtin trigger rows can be recreated (fresh DB, uname upsert edge cases),
-    which strands the graph's ``trigger-<old-id>`` ref — the flow then never
-    fires. The trigger REF is seed-owned (the rest of the graph is the
-    user's), so re-pinning it every boot is safe.
+    A seeded graph belongs to the user once it exists, but the REFERENCES the
+    seed put in it (a builtin trigger row, a shipped SubAgent) are ours: those
+    rows can be recreated or minted late, which strands the node — the flow then
+    fires nothing, or silently runs the inline fallback. So every boot the
+    matching nodes are re-pinned and nothing else is touched.
+
+    ``predicate(node)`` selects the seed-owned nodes; ``patch(node_data)``
+    mutates one and returns whether it changed anything. The file is rewritten
+    only when something did.
     """
     try:
         doc = json.loads(graph_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return
-    from flow_sdk.fs_store.type_id import TypeId
-
-    want = str(TypeId(type="trigger", id=trigger_id))
     changed = False
     for node in doc.get("nodes") or []:
-        nd = node.get("node_data") or {}
-        if node.get("node_type") != "trigger":
+        if not predicate(node):
             continue
-        current = str(nd.get("typeid") or "")
-        if current and current != want:
-            nd["typeid"] = want
+        node_data = node.get("node_data") or {}
+        if patch(node_data):
+            node["node_data"] = node_data
             changed = True
     if changed:
         graph_path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
-        logger.info("set_service_graph_workflows: re-pinned %s trigger ref to %s", graph_path.parent.name, want)
+        logger.info("set_service_graph_workflows: re-pinned %s %s", graph_path.parent.name, what)
+
+
+def _repin_trigger_nodes(graph_path, trigger_id: str) -> None:
+    """Re-point the flow's trigger node(s) at the CURRENT builtin trigger row."""
+    from flow_sdk.fs_store.type_id import TypeId
+
+    want = str(TypeId(type="trigger", id=trigger_id))
+
+    def _patch(node_data: dict) -> bool:
+        current = str(node_data.get("typeid") or "")
+        if not current or current == want:
+            return False
+        node_data["typeid"] = want
+        return True
+
+    _repin_nodes(
+        graph_path,
+        lambda node: node.get("node_type") == "trigger",
+        _patch,
+        what=f"trigger ref to {want}",
+    )
 
 
 async def _seed_daily_analysis() -> None:
@@ -521,35 +543,30 @@ def _gmail_radar_graph(flow_id: str, subagent_ref: str = "") -> str:
 def _repin_agent_node(graph_path, node_id: str, subagent_ref: str) -> None:
     """Re-point a seed-owned agent node at the CURRENT SubAgent row.
 
-    Same reasoning as ``_repin_trigger_nodes``: the reference is ours, the rest
-    of the graph is the user's. A SubAgent row can be minted after the flow was
-    seeded (a fresh instance seeds before the assistant project is indexed), or
-    recreated — either way the node is left pointing at nothing, or at the
-    inline fallback, and silently runs the wrong thing.
+    A SubAgent row can be minted after the flow was seeded (a fresh instance
+    seeds before the assistant project is indexed), or recreated — either way
+    the node is left pointing at nothing, or at the inline fallback, and
+    silently runs the wrong thing.
     """
     if not subagent_ref:
         return
-    try:
-        doc = json.loads(graph_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return
-    changed = False
-    for node in doc.get("nodes") or []:
-        if node.get("id") != node_id or node.get("node_type") != "agent":
-            continue
-        nd = node.get("node_data") or {}
-        if nd.get("typeid") == subagent_ref:
-            continue
-        nd["typeid"] = subagent_ref
+
+    def _patch(node_data: dict) -> bool:
+        if node_data.get("typeid") == subagent_ref:
+            return False
+        node_data["typeid"] = subagent_ref
         # The inline prompt was only ever the unresolved fallback; leaving it
         # would layer a duplicate system prompt on top of the agent's own.
-        nd.pop("prompt", None)
-        nd.pop("model_size", None)
-        node["node_data"] = nd
-        changed = True
-    if changed:
-        graph_path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
-        logger.info("set_service_graph_workflows: re-pinned gmail-radar agent node to %s", subagent_ref)
+        node_data.pop("prompt", None)
+        node_data.pop("model_size", None)
+        return True
+
+    _repin_nodes(
+        graph_path,
+        lambda node: node.get("id") == node_id and node.get("node_type") == "agent",
+        _patch,
+        what=f"agent node to {subagent_ref}",
+    )
 
 
 async def _seed_gmail_radar() -> None:
