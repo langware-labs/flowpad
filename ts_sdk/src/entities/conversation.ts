@@ -64,6 +64,10 @@ export interface ConversationParticipant {
   email?: string | null;
   name?: string | null;
   role?: string | null;
+  /** Open like `EntityMember`, which this must stay assignable to: extra hub
+   *  keys (`status`, `invitation_id`, …) pass through untouched. Without it
+   *  Conversation fails its own `APIEntity<Conversation>` constraint. */
+  [key: string]: unknown;
 }
 
 /** Mirrors ``flow_sdk.builtin.conversation.ConversationKind`` exactly.
