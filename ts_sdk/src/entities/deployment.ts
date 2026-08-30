@@ -1,6 +1,5 @@
-import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
+import { APIEntity, isNonEmptyString, registerEntity } from '../APIEntity';
 import type { IEntity } from '../IEntity';
-import { ActionInfo } from '../models';
 import { DockPointerData } from '../models/DockPointer';
 import { normalizeKind } from '../models/Kind';
 import { isTypeId, TypeId } from '../models/TypeId';
@@ -185,8 +184,7 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
    * that path warns and this one does not.
    */
   async pause(): Promise<Deployment> {
-    const action = new ActionInfo('pause', Deployment.type, this.id, 'POST');
-    return new Deployment((await dataManager.callAction(action)) as IDeployment);
+    return new Deployment((await this.post('pause')) as IDeployment);
   }
 
   private validateStructure(): void {

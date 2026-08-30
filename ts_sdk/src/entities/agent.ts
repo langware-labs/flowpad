@@ -1,5 +1,4 @@
-import { APIEntity, dataManager, registerEntity } from '../APIEntity';
-import { ActionInfo } from '../models';
+import { APIEntity, registerEntity } from '../APIEntity';
 import type { TypeId } from '../models/TypeId';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
@@ -199,9 +198,7 @@ export class Agent extends APIEntity<Agent> {
    * server.
    */
   async run(prompt: string): Promise<AgentRunResult> {
-    const action = new ActionInfo('run', Agent.type, this.id, 'POST');
-    action.bodyParameters = { prompt };
-    return (await dataManager.callAction(action)) as AgentRunResult;
+    return (await this.post('run', { prompt })) as AgentRunResult;
   }
 
   /**
@@ -216,9 +213,7 @@ export class Agent extends APIEntity<Agent> {
    * agent's own project.
    */
   async use(projectId?: string | null): Promise<AgentUseResult> {
-    const action = new ActionInfo('use', Agent.type, this.id, 'POST');
-    action.bodyParameters = { project_id: projectId ?? null };
-    return (await dataManager.callAction(action)) as AgentUseResult;
+    return (await this.post('use', { project_id: projectId ?? null })) as AgentUseResult;
   }
 
   /**
@@ -230,9 +225,7 @@ export class Agent extends APIEntity<Agent> {
    * remote-chat transport.
    */
   async useDeployment(deploymentId: string): Promise<AgentUseResult> {
-    const action = new ActionInfo('use', Agent.type, this.id, 'POST');
-    action.bodyParameters = { deployment_id: deploymentId };
-    return (await dataManager.callAction(action)) as AgentUseResult;
+    return (await this.post('use', { deployment_id: deploymentId })) as AgentUseResult;
   }
 
   /**
@@ -247,8 +240,7 @@ export class Agent extends APIEntity<Agent> {
    * show progress rather than assume a snappy round trip.
    */
   async deploy(): Promise<AgentDeployResult> {
-    const action = new ActionInfo('deploy', Agent.type, this.id, 'POST');
-    return (await dataManager.callAction(action)) as AgentDeployResult;
+    return (await this.post('deploy')) as AgentDeployResult;
   }
 }
 

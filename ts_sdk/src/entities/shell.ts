@@ -252,9 +252,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
     const workdir = opts.workdir ?? this.workdir ?? undefined;
     const { ConnectionManager } = await import('../websocket');
     const connection_id = ConnectionManager.getInstance().id;
-    const action = new ActionInfo('open', Shell.type, this.id, 'POST');
-    action.bodyParameters = { connection_id, cols, rows, ...(workdir ? { working_dir: workdir } : {}) };
-    const result = await dataManager.callAction<any, Record<string, unknown> | null>(action);
+    const result = await this.post<Record<string, unknown> | null>('open', { connection_id, cols, rows, ...(workdir ? { working_dir: workdir } : {}) });
     if (!result) throw new Error(`Shell ${this.id} could not be opened`);
     Object.assign(this, result);
     this.pty_pid = (result.pty_id as string | undefined) ?? (result.pty_pid as string | undefined) ?? this.id;
@@ -326,9 +324,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
   }
 
   async run(command: string): Promise<ShellResult> {
-    const action = new ActionInfo('run', Shell.type, this.id, 'POST');
-    action.bodyParameters = { command };
-    const result = await dataManager.callAction<any, any>(action);
+    const result = await this.post<any>('run', { command });
     return {
       stdout: result?.stdout ?? '',
       stderr: result?.stderr ?? '',
@@ -337,9 +333,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
   }
 
   async setEnv(vars: Record<string, string>): Promise<void> {
-    const action = new ActionInfo('set-env', Shell.type, this.id, 'POST');
-    action.bodyParameters = { vars };
-    const result = await dataManager.callAction<any, any>(action);
+    const result = await this.post<any>('set-env', { vars });
     // Apply the server's merged env locally (same convention as `open()`), so a
     // read of `this.env` right after the await is correct without racing the
     // `data_op_msg` WS delivery that would otherwise be the only writer.
