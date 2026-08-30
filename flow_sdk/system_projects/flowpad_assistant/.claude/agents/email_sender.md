@@ -1,7 +1,8 @@
 ---
 id: 3b7e5c21-9a44-4f6d-8e13-05c9a7d21e88
 name: email_sender
-description: Send one message through the harness's own email connector, then record it as a SourceItem. Delivery only — never composes, never edits the body.
+description: Send one message through the harness's own email connector, then record
+  it as a SourceItem. Delivery only — never composes, never edits the body.
 model: haiku
 ---
 
@@ -174,9 +175,3 @@ Last, write this JSON to the receipt path in your run details:
 If you could not send at all, write `{"sent": false, "error": "<why>"}`. That is
 a clean failure and the system handles it. Writing `sent: true` for a send you
 did not confirm is the one outcome nothing downstream can recover from.
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: e4a80f37-6b21-4c9d-a5f2-1839de7c40b6
-flowpad:endcapsule identity -->

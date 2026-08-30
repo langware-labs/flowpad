@@ -1,7 +1,11 @@
 ---
+id: eb30bc0e-517c-4aea-8381-4f0c9cf42ed1
 title: Surface change must reconcile the transcript
-tags: [breadcrumb.test.surface_transcript_reconcile.rules]
-description: A turn produced on the surface you are LEAVING has no route into the incoming pane — terminal to vibe must force a history reload, because the mount-time loadHistory() no-ops on a latch nothing ever resets.
+tags:
+- breadcrumb.test.surface_transcript_reconcile.rules
+description: A turn produced on the surface you are LEAVING has no route into the
+  incoming pane — terminal to vibe must force a history reload, because the mount-time
+  loadHistory() no-ops on a latch nothing ever resets.
 ---
 
 # Surface change must reconcile the transcript
@@ -159,9 +163,3 @@ EEP mount loadHistory() historyLoaded=true items=69
   everything up to now is already on screen". This RCA disproves that premise.
   Whether the watermark therefore drops rows the pane never had is a hypothesis
   with **no on/off lever yet** — do not treat it as a rule.
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: eb30bc0e-517c-4aea-8381-4f0c9cf42ed1
-flowpad:endcapsule identity -->

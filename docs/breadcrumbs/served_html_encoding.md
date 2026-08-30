@@ -1,8 +1,14 @@
 ---
+id: 0cdcfaab-f5c6-42b4-99b8-425317c03a71
 title: Served app HTML must be read as UTF-8
-tags: [breadcrumb.test.served_html_encoding.rules]
-description: App HTML is UTF-8 by definition; serving must never consult the host locale. A text-mode read without encoding= decodes as cp1252 on Windows — mojibake on every non-ASCII page, and a 500 only when a byte lands on one of five undefined slots.
+tags:
+- breadcrumb.test.served_html_encoding.rules
+description: App HTML is UTF-8 by definition; serving must never consult the host
+  locale. A text-mode read without encoding= decodes as cp1252 on Windows — mojibake
+  on every non-ASCII page, and a 500 only when a byte lands on one of five undefined
+  slots.
 ---
+
 # Served app HTML must be read as UTF-8
 
 > Ground truth. Proven by RCA on 2026-08-17 (FLOWPAD-1991), toggled both
@@ -90,9 +96,3 @@ UTF-8 — the file's encoding is not consulted, and neither is its `<meta charse
 * **The proof lever is not the fix.** `PYTHONUTF8=1` toggles the symptom, which
   is what made it a clean on/off switch, but it is a process-level setting and
   does nothing for anyone importing `flow_sdk` into their own interpreter.
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 0cdcfaab-f5c6-42b4-99b8-425317c03a71
-flowpad:endcapsule identity -->

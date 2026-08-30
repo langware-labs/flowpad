@@ -1,6 +1,8 @@
 ---
+id: a5a16156-13ce-4f32-bc6e-3b496075c942
 title: Cloud sharing — what leaves your machine
 ---
+
 # Cloud sharing — what leaves your machine
 
 **Cloud sharing uploads metadata and coordinates. It never uploads document
@@ -148,9 +150,3 @@ rather than trusting the port.
 Everything it creates is namespaced by a run id and torn down: the branch
 `tagit-e2e/<runId>` is deleted (never `main`), local and hub rows are deleted,
 and stale branches older than a day are swept on the next run.
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: a5a16156-13ce-4f32-bc6e-3b496075c942
-flowpad:endcapsule identity -->

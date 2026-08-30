@@ -1,3 +1,7 @@
+---
+id: e64bb933-a999-4554-9a70-befeee0c6165
+---
+
 # Agentic process outputs
 
 What a run produces, how it is recorded, and how it reaches the screen.
@@ -229,8 +233,3 @@ existed only in the live stream and vanished on refresh.
 * [tags.md](tags.md), [flow-events.md](flow-events.md) — the bus envelope and the forward allowlist
 * [data-management/transcript-indexing.md](data-management/transcript-indexing.md) — the side-effect pass over parsed entries
 
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: e64bb933-a999-4554-9a70-befeee0c6165
-flowpad:endcapsule identity -->

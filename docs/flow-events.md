@@ -1,3 +1,7 @@
+---
+id: 668e2408-1e99-4fd8-91dd-414aab27cc11
+---
+
 # FlowEvents — the unified event bus (delivery worklog)
 
 > **This document is the delivery ledger.** The language rationale and the full
@@ -615,8 +619,3 @@ subscribers all the way down.
 
 ### Log
 
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 668e2408-1e99-4fd8-91dd-414aab27cc11
-flowpad:endcapsule identity -->

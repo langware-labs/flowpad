@@ -1,7 +1,13 @@
 ---
+id: 285cbcbd-6fba-46c4-b60c-c85bf5a52592
 title: PTY turn cut off mid-generation
-tags: [breadcrumb.test.pty_turn_liveness.rules]
-description: A long PTY turn was truncated mid-generation and still reported outcome="success". The poller measured liveness from transcript writes alone, but a vendor writes an assistant message only once it is COMPLETE — so transcript silence is the normal state of a WORKING agent, and the inactivity fallback was reading a busy worker as idle.
+tags:
+- breadcrumb.test.pty_turn_liveness.rules
+description: A long PTY turn was truncated mid-generation and still reported outcome="success".
+  The poller measured liveness from transcript writes alone, but a vendor writes an
+  assistant message only once it is COMPLETE — so transcript silence is the normal
+  state of a WORKING agent, and the inactivity fallback was reading a busy worker
+  as idle.
 ---
 
 # PTY turn cut off mid-generation
@@ -107,9 +113,3 @@ vendor CLI, hub, or backend involved.
   run, so the painted stream file is the only thing that can hold the turn open.
   A fixture that appends to the transcript to "keep the turn alive" passes against
   the broken code.
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 285cbcbd-6fba-46c4-b60c-c85bf5a52592
-flowpad:endcapsule identity -->

@@ -1,3 +1,7 @@
+---
+id: 64a4f7de-c410-456c-a76a-55f67fd8ae43
+---
+
 # Renderable code fences
 
 Most fenced code blocks are text with syntax colour. A few are worth _drawing_:
@@ -216,8 +220,3 @@ fence.
 document's **first node** — a position worth keeping in mind when changing the
 NodeView, and one the jsdom fixtures deliberately avoid.
 
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 64a4f7de-c410-456c-a76a-55f67fd8ae43
-flowpad:endcapsule identity -->
