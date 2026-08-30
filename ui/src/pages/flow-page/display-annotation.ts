@@ -33,6 +33,11 @@ export interface DisplayShowTarget {
   runtime?: 'dev' | 'served' | 'unbuilt';
   micro_app_id?: string;
   name?: string;
+  /** kind: 'dock' — the frontend's own dock grammar (`flow show view <address>`). */
+  view_type?: string;
+  page?: string;
+  pointer?: string;
+  options?: Record<string, string>;
 }
 
 function slug(value: string): string {

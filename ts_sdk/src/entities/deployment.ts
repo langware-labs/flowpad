@@ -7,6 +7,9 @@ import { isTypeId, TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
 import { WorldViewProjection } from '../worldview/projection';
 
+/** Provider label carrying a local dev server's port. Pairs with `runtimePort`. */
+const RUNTIME_PORT_LABEL = 'flowpad.runtime.port';
+
 export type ArtifactLinkSource = 'manual' | 'gcp_label';
 export type DeploymentSyncState = 'current' | 'stale' | 'partial' | 'error';
 export type DeploymentObservationKind = 'cost' | 'size' | 'activity';
@@ -145,6 +148,21 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   }
 
   /** The Agent this places, or null when the deployed element is something else. */
+  /**
+   * The local dev-server port this placement runs on, if any.
+   *
+   * Mirrors `Deployment.runtime_port` (flow_sdk/builtin/deployment.py), and exists
+   * for the same reason: the port is a provider LABEL, and callers kept re-deriving
+   * it — parse, swallow the failure, sometimes range-check, sometimes not. Owned in
+   * one place per side, a junk label reads as "no port" everywhere rather than only
+   * where someone remembered to guard.
+   */
+  get runtimePort(): number | null {
+    const raw = this.provider_labels?.[RUNTIME_PORT_LABEL];
+    const port = Number.parseInt(String(raw), 10);
+    return Number.isFinite(port) && port > 0 && port <= 65535 ? port : null;
+  }
+
   get agentTypeId(): TypeId | null {
     const parent = this.parent_type_id;
     if (!parent || !isTypeId(parent)) return null;

@@ -31,7 +31,11 @@ vi.mock('@src/tabs/tab-content-lifecycle', async (orig) => ({
   setupTabAndAdopt: vi.fn(),
 }));
 
-vi.mock('@sdk/react/hooks', () => ({
+// Ambient: the workspace now always mounts its display chrome (the toolbar stays
+// in the tree across a mode toggle so the editor beneath it is never remounted),
+// and that pulls the SDK's react context in. Nothing here is under test.
+vi.mock('@sdk/react/hooks', async (orig) => ({
+  ...(await orig<typeof import('@sdk/react/hooks')>()),
   useEntityOps: () => undefined,
 }));
 

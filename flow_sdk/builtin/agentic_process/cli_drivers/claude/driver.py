@@ -352,6 +352,10 @@ class ClaudeDriver:
             **process._process_asset_context_kwargs(process_assets),
         )
 
+        from flow_sdk.builtin.agentic_process.cli_drivers import api_auth  # noqa: PLC0415
+
+        await api_auth.stamp_api_model(context, process)
+
         # Lifecycle: flip to RUNNING before launching the worker.
         from flow_sdk.builtin.process_lifecycle import ProcessStatus
 

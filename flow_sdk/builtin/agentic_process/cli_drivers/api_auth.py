@@ -317,3 +317,19 @@ async def apply_api_model_to_options(cmd, process: "AgenticProcess") -> None:
             *list(getattr(cmd, "extra_config_overrides", []) or []),
             *auth.config_overrides,
         ]
+
+
+async def stamp_api_model(context, process: "AgenticProcess") -> None:
+    """Best-effort :func:`apply_api_model_to_options` for a headless turn.
+
+    The API-key path must reach the model too: without this the provider token is
+    injected but the model stays the vendor default, which the provider (e.g.
+    OpenRouter) would not recognise. Failures are logged and swallowed — a broken
+    override must not take down a turn that device-login auth would have run.
+    """
+    import logging  # noqa: PLC0415
+
+    try:
+        await apply_api_model_to_options(context, process)
+    except Exception:
+        logging.getLogger(__name__).debug("stamp_api_model: api model override failed", exc_info=True)

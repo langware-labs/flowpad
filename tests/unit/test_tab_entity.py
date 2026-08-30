@@ -1279,3 +1279,89 @@ async def test_reap_cycle_emits_single_broadcast() -> None:
         assert bc.await_count == 1, (
             f"one reap cycle must coalesce to a single tabs_changed ping, got {bc.await_count}"
         )
+
+
+# ── the vibe workspace's ACTIVE DISPLAY (one replaceable row per workspace) ─────
+
+
+def _active_display_ptr(host: str, view_type: str, sub: str) -> str:
+    """The pointer the frontend stores for a workspace's active display.
+
+    Two halves that pull in opposite directions, deliberately: ``tabHash`` is the
+    HOST (constant — one row per workspace), while ``viewType``/``pointer`` are the
+    live target (they change on every ``flow show``). That is what makes the row
+    replaceable instead of one chip accumulating per show.
+    """
+    return _test_json.dumps(
+        {
+            "viewType": view_type,
+            "pointer": sub,
+            "options": {"activeDisplay": "1"},
+            "tabHash": f"workspaceActive|{host}",
+            "workspaceContent": True,
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_active_display_repoints_one_row_and_follows_its_target() -> None:
+    host = f"agentic_process-{uuid.uuid4()}"
+    project = str(uuid.uuid4())
+    first = _active_display_ptr(host, "project", f"{project}/editor/markdown/typeid/markdown-{uuid.uuid4()}")
+    second = _active_display_ptr(host, "project", f"{project}/editor/markdown/typeid/markdown-{uuid.uuid4()}")
+
+    a = await ensure_tab(first, name="first.md", icon_key="FileText")
+    b = await ensure_tab(second, name="second.md", icon_key="Presentation")
+
+    # ONE row: identity is the workspace, so the second show re-points the first.
+    assert a.id == b.id == tab_id_for(first) == tab_id_for(second)
+    assert b.pointer == second
+
+    # And its label FOLLOWS the target. The generic rule is backfill-only ("a null
+    # name was never a user rename"), which would freeze this chip on `first.md`
+    # forever — the one row whose target legitimately changes needs the exception.
+    assert b.name == "second.md"
+    assert b.icon_key == "Presentation"
+
+
+@pytest.mark.asyncio
+async def test_active_display_hash_is_not_mistaken_for_the_retired_display_view() -> None:
+    """The namespace must dodge the legacy-display reaper, which pre-filters on a
+    raw ``"display" in pointer`` substring before parsing. A ``workspace-display|``
+    spelling would pay that parse on every list read and sit one comparison away
+    from being hard-deleted by a sweep it has nothing to do with."""
+    from flow_sdk.builtin.tab import _LEGACY_DISPLAY_VIEW, _pointer_view_type
+
+    host = f"agentic_process-{uuid.uuid4()}"
+    ptr = _active_display_ptr(host, "project", f"{uuid.uuid4()}/editor/markdown/typeid/markdown-{uuid.uuid4()}")
+    assert _pointer_view_type(ptr) != _LEGACY_DISPLAY_VIEW
+    assert "display" not in _pointer_view_type(ptr)
+
+
+@pytest.mark.asyncio
+async def test_active_display_stays_a_workspace_child() -> None:
+    """Adoption reads the RAW viewType/pointer, not the hash — so the active
+    display must still pass the allow-list, or the list-path reaper null-heals its
+    parent edge and it silently drops out of the workspace child strip."""
+    host = f"agentic_process-{uuid.uuid4()}"
+    project = str(uuid.uuid4())
+    assert _pointer_is_adoptable_child(
+        _active_display_ptr(host, "project", f"{project}/editor/markdown/typeid/markdown-{uuid.uuid4()}")
+    )
+    # A scope-keyed assets pointer rides on the `workspaceContent` bit.
+    assert _pointer_is_adoptable_child(_active_display_ptr(host, "assets", ""))
+    # An artifact-addressed app is workspace content too (addressable-screen rule).
+    assert _pointer_is_adoptable_child(_active_display_ptr(host, "app", f"artifact-{uuid.uuid4()}"))
+
+
+@pytest.mark.asyncio
+async def test_ordinary_tab_keeps_its_user_chosen_name() -> None:
+    """The label exception is scoped to the active-display namespace: everywhere
+    else a stored name is still never clobbered on reopen."""
+    ptr = _jptr("editor", "/workspace/src/app.ts")
+    first = await ensure_tab(ptr, name="app.ts")
+    first.name = "my renamed tab"
+    await first.save()
+
+    again = await ensure_tab(ptr, name="app.ts")
+    assert again.name == "my renamed tab"

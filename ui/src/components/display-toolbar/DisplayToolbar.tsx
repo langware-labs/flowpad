@@ -15,6 +15,15 @@ interface DisplayToolbarProps {
   /** Right-aligned control rendered NEXT TO the open-in-window icon — the
    *  display-history popover. */
   historySlot?: ReactNode;
+  /**
+   * Render the strip as hidden while keeping this wrapper in the tree.
+   *
+   * The vibe workspace is the same mounted host in both view modes — that is what
+   * lets a dirty editor survive a Standard⇄Vibe toggle instead of remounting and
+   * dropping the buffer. Conditionally wrapping the viewer in a toolbar would break
+   * exactly that, so the wrapper is unconditional and only the strip comes and goes.
+   */
+  hideStrip?: boolean;
   /** The viewer being displayed — fills the area below the strip. */
   children: ReactNode;
 }
@@ -25,12 +34,20 @@ interface DisplayToolbarProps {
  * the resolved `externalUrl` and the caller-supplied `perType` node; the
  * kind→{externalUrl, perType} mapping lives in `display-descriptors`.
  */
-export function DisplayToolbar({ externalUrl, onOpenInTab, perType, onAnnotate, historySlot, children }: DisplayToolbarProps) {
+export function DisplayToolbar({
+  externalUrl,
+  onOpenInTab,
+  perType,
+  onAnnotate,
+  historySlot,
+  hideStrip = false,
+  children,
+}: DisplayToolbarProps) {
   const contentRef = useRef<HTMLDivElement>(null);
 
   return (
     <div className="flex h-full w-full flex-col">
-      <div className="flex h-9 shrink-0 items-center justify-between gap-1 border-b bg-muted/30 px-2">
+      <div hidden={hideStrip} className="flex h-9 shrink-0 items-center justify-between gap-1 border-b bg-muted/30 px-2">
         <div className="flex items-center gap-2">{perType}</div>
         <GenericDisplayToolbar
           externalUrl={externalUrl}

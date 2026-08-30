@@ -253,17 +253,9 @@ class OpenCodeDriver:
             # has no --add-dir, so the assets dir alone would never be read.
             custom_instruction_dirs=[str(config_path)] if config_path else [],
         )
-        # The API-key path must reach the model too: without this the token is
-        # injected but the model stays the vendor default, which OpenRouter
-        # would not recognise.
-        try:
-            from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import (  # noqa: PLC0415
-                apply_api_model_to_options,
-            )
+        from flow_sdk.builtin.agentic_process.cli_drivers import api_auth  # noqa: PLC0415
 
-            await apply_api_model_to_options(context, process)
-        except Exception:
-            logger.debug("OpenCodeDriver.headless_prompt: api model override failed", exc_info=True)
+        await api_auth.stamp_api_model(context, process)
 
         worker = OpenCodeCLIStreamWorker.for_process(process.id)
         return await run_headless_turn(

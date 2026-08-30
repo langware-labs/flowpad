@@ -96,9 +96,24 @@ export async function showPort(
 export async function openVibe(page: Page, processId: string): Promise<void> {
   await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
   await page.goto(`/dock/shell/agentic_process-${processId}?viewMode=vibe`);
-  await expect(page).toHaveURL(/\/dock\/shell\/agentic_process-.*viewMode=vibe/);
+  // Deliberately NOT asserting the URL stayed on the process dock. The display is
+  // an address now, so a cold landing on a process that already has a pin is
+  // redirected to that pin (`restoreDisplayRedirect`) — which is the point. What
+  // must hold either way is that the workspace mounted.
   await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible();
   await expect(page.getByTestId('workspace-display-tab')).toBeVisible();
+}
+
+/** The process's own dock URL — where the square Display header navigates. */
+export function processUrlRe(processId: string): RegExp {
+  return new RegExp(`/dock/shell/agentic_process-${processId}\\?.*viewMode=vibe`);
+}
+
+/** The address a shown target takes inside a workspace. */
+export function displayUrlRe(projectId: string, processId: string, tail = ''): RegExp {
+  return new RegExp(
+    `/dock/project/${projectId}/process/agentic_process-${processId}/display/${tail}`,
+  );
 }
 
 /**
@@ -119,4 +134,53 @@ export async function seedLastVibeChat(
   await request.post(`${API}/api/v1/graph/agentic_process/${fixture.processId}/activate`, { data: {} });
   await openVibe(page, fixture.processId);
   return fixture;
+}
+
+/**
+ * Register a web app the way an agent does: an Artifact plus a local Deployment on
+ * `port`, then a `kind: "app"` show.
+ *
+ * The distinction this exercises is the point of `ViewType.APP`: `showPort` pins a
+ * bare port, which is a different (and weaker) address — the artifact survives a
+ * restart, a rebuild, and a switch from a dev server to built output; the port does
+ * not. Returns the created artifact id.
+ */
+export async function registerWebappArtifact(
+  request: APIRequestContext,
+  processId: string,
+  artifactPath: string,
+  port: number,
+  name: string,
+): Promise<string> {
+  const data = await successfulData(
+    await request.post(`${API}/api/v1/graph/agentic_process/${processId}/register-webapp-artifact`, {
+      data: { path: artifactPath, port, name, show: true },
+    }),
+  );
+  return String((data.artifact as { id: string }).id);
+}
+
+/** `flow show app <artifact-id>` over the wire. */
+export async function showApp(
+  request: APIRequestContext,
+  processId: string,
+  artifactId: string,
+): Promise<Record<string, unknown>> {
+  return successfulData(
+    await request.post(`${API}/api/v1/graph/agentic_process/${processId}/show`, {
+      data: { artifact_id: artifactId },
+    }),
+  );
+}
+
+/**
+ * The tab-identity hash of a workspace's ACTIVE DISPLAY.
+ *
+ * Mirrors `ACTIVE_DISPLAY_HASH_NS` (`ui/src/navigation/DockPointer.ts`). Spelled
+ * once here because the namespace's whole design note is that it must not be
+ * respelled — and because a test filtering on the bare namespace would also count
+ * rows left by other fixtures on a shared instance.
+ */
+export function activeDisplayHash(processId: string): string {
+  return `workspaceActive|agentic_process-${processId}`;
 }

@@ -118,6 +118,12 @@ export enum ViewType {
   HUB_RECORDS = 'records', // Hub entity list by type (page=hub) - /dock/hub/records/<type>
   HUB_ENTITY = 'entity', // Hub single-entity viewer (page=hub) - /dock/hub/entity/<type>/<id>
   CREDENTIALS = 'credentials', // Env vars + OAuth connections + API keys - /dock/hub/credentials/<subview>[/<projectId>]
+  // An Artifact-backed web app - /dock/app/artifact-<uuid>[?runtime=dev|served].
+  // The artifact IS the address; which runtime serves it (a dev server's port, or
+  // built output we host) is derived, never baked into the pointer, so a stale port
+  // can never become the identity of an app. Mirrors `ViewType.APP` in
+  // flow_sdk/core/dock_address.py — same value, same position.
+  APP = 'app',
 }
 
 /**

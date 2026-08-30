@@ -1,88 +1,48 @@
 import { WebappViewer } from '@src/components/webapp-viewer';
 import CodeEditor from '@src/components/code-editor/CodeEditor';
 import DiffViewer from '@src/components/code-editor/DiffViewer';
-import { AssetEditorRouter } from '@src/components/assets/editor/AssetEditorRouter';
 import { type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
 import { DisplayToolbar, WebappDisplayToolbar } from '@src/components/display-toolbar';
-import { captureElementAsImageFile } from '@src/components/display-toolbar/capture-region';
-import { annotateImage } from '@src/components/image-annotator/image-annotator-store';
 import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from '@src/components/ui/resizable';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
-import { useViewerStore, useProcessWebApp, useAppDisplay } from '@src/hooks/flow-hooks';
+import { useViewerStore, useProcessWebApp } from '@src/hooks/flow-hooks';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
-import { AssetEditor, editorForPath, editorForType } from '@src/navigation/asset-doc-types';
+import { editorForPath } from '@src/navigation/asset-doc-types';
 import { DisplayHistoryButton } from './display-history-button';
-import { AgenticProcess, dataContext, type DisplayEntry, FlowData, fsStore, TypeId, ViewType } from '@sdk';
-import { resolveProcessInputDir } from '@src/utils/upload-to-input-dir';
+import { AgenticProcess, type DisplayEntry, FlowData, ViewType } from '@sdk';
 import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
+import { isPortDisplayTarget, openActiveDisplay } from '@src/navigation/open-active-display';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
-import { shellIdFromShowTarget } from '@src/navigation/shell-show-target';
-import { ViewMode } from '@src/contexts/view-mode-context';
 import { tagAttrs } from '@src/tags/tag-attrs';
 import { WorkspaceChildStrip } from './workspace-child-strip';
 import { useProcessSurface } from '@src/components/terminal/interactive-terminal/use-process-surface';
 import { ContentPanel } from './content-panel/content-panel';
+import { DisplayChrome } from './display-chrome';
 import { launchVibeSessionForProject } from './use-start-vibe-session';
 import { VIBE_STARTER_PROMPTS } from './vibe-starter-prompts';
 import { type VibeWorkspaceSession, useVibeWorkspaceSessionHost } from './use-vibe-workspace-session';
 import { VibeChatPane } from './vibe-chat-pane';
 import {
-  buildDisplayAnnotationPrompt,
   displayAnnotationContextForDock,
   displayAnnotationContextForPath,
   displayAnnotationContextForShown,
   displayAnnotationContextForWebapp,
-  displayAnnotationImageName,
   type DisplayAnnotationContext,
   type DisplayShowTarget,
 } from './display-annotation';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { submitDisplayAnnotation } from './display-annotation-submit';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-
-const McpAppPreview = lazy(() =>
-  import('@src/components/mcp-app-preview/McpAppPreview').then((m) => ({ default: m.McpAppPreview })),
-);
-
-interface VibeFocus {
-  viewType: ViewType | null;
-  path?: string;
-  port?: string;
-}
-
-/** Mount the right viewer/editor for a raw path — ONE shared extension rule
- *  (`editorForPath`): html→HtmlPreview, images/video/audio→MediaViewer,
- *  markdown/code→their editors, all via AssetEditorRouter. MCP apps stay a
- *  direct mount here only for the `refreshKey` PROP — a soft inner reload of
- *  the running app on turn-end instead of the full remount the keyed router
- *  path does (the router's own MCP_APP case threads the same process from
- *  agent context). */
-function vfsEditorEl(absPath: string, refreshKey?: number, process?: AgenticProcess | null) {
-  const editor = editorForPath(absPath);
-  if (editor === AssetEditor.MCP_APP) {
-    return (
-      <Suspense fallback={null}>
-        <McpAppPreview
-          key={`${absPath}:${refreshKey ?? 0}`}
-          path={absPath}
-          process={process ?? null}
-          refreshKey={refreshKey}
-        />
-      </Suspense>
-    );
-  }
-  const pointer = AssetDocPointer.forVfs(editor, absPath).toPointer();
-  return <AssetEditorRouter key={`${pointer}:${refreshKey ?? 0}`} pointer={pointer} />;
-}
 
 /**
  * Read the most-recent agent `focus` off the AgenticProcess stream (`focus`,
- * `data.path`, `data.metadata.port`). This is how the display knows which viewer
- * to show; it is NOT derived from the URL (the URL stays the standard process
- * dock URL — the viewer never touches it).
+ * `data.path`, `data.metadata.port`) — the involuntary per-write focus the display
+ * FALLS BACK to when nothing is addressed. Deliberately not URL state: it changes
+ * many times per turn, so routing it would spam navigation.
  */
 function useVibeFocus(items: FlowData[]): VibeFocus {
   return useMemo(() => {
@@ -105,14 +65,13 @@ function useVibeFocus(items: FlowData[]): VibeFocus {
 
 /**
  * VibeWorkspace — the Lovable-style creator surface: a persistent side chat
- * (left) next to a live "display" (right). It is a pure OVERLAY, no baggage:
+ * (left) next to a live "display" (right).
  *
- * - The chat is the existing agentic-process chat UI (`EntityExecutionPanel`).
- * - The display reuses the existing viewer components (`WebappViewer` /
- *   `CodeEditor` / `DiffViewer`), selected by the agent's `focus` stream, with
- *   per-viewer context fed through `useViewerStore` — the same channel the
- *   normal `ContentPanel`/`WebappViewer` already read (no port sniffing, no
- *   override prop). The viewer selection never changes the URL.
+ * The display is an ADDRESS: a `flow show` navigates, and on the resulting child
+ * URL the display body is `ContentPanel` under `DisplayChrome`. What is left in
+ * this file is the pane for what has no address — a BARE port (a dev server with
+ * no artifact behind it), the involuntary `focus` stream fallback, and the empty
+ * state — plus the chat and the child strip that host them.
  */
 interface VibeWorkspaceProps {
   /** The resolved workspace session (display URL vs a child URL of it). */
@@ -141,57 +100,79 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
 
   const streamItems = useAgenticProcessStream(activeProcess);
   const focus = useVibeFocus(streamItems);
-  const displayStack = persistedProcess?.displayStack ?? [];
+  // Memoized for the same reason the chrome does it: a fresh `[]` fallback each
+  // render would invalidate every memo that reads the stack.
+  const displayStack = useMemo(() => persistedProcess?.displayStack ?? [], [persistedProcess]);
   const lastShown = (persistedProcess?.context_data as { last_shown?: DisplayShowTarget } | undefined)?.last_shown;
   const persistedShown = lastShown ?? (displayStack.length ? displayStack[displayStack.length - 1] : null);
   const persistedShownKey = persistedShown ? JSON.stringify(persistedShown) : '';
 
-  // SubAgent-declared display focus (`flow show` → on_show entity event). The
-  // last shown target PINS the display: it outranks the involuntary per-file
-  // write focus noise from the stream. A new show replaces the pin; switching
-  // to another process clears it.
+  // The agent's display focus is now the URL: a `flow show` NAVIGATES, the route
+  // renders the target, and this component sees it as a child URL. The one
+  // exception is a PORT target (`webapp` / `app`), which has no dock address yet —
+  // its identity is an artifact whose runtime is derived, and ContentPanel's
+  // WEB_APP case is a bare viewer with no runtime switcher and no cache-key path,
+  // so collapsing it early would visibly regress the running-app display. Those
+  // stay pinned here until the app grammar lands, and this state holds ONLY them.
   const [shown, setShown] = useState<DisplayShowTarget | null>(null);
   // Bumped on every `flow show` — even for the SAME webapp port. The iframe
   // registry keys by src (get-host?port=N), so a same-port re-show reuses the
   // cached iframe and shows stale content after a rebuild; feeding this as the
   // frame's cacheKey forces a reload on each show.
   const [showNonce, setShowNonce] = useState(0);
+  // The payload of the newest show — see `DisplayChrome.latestShown`.
+  const [latestShown, setLatestShown] = useState<DisplayShowTarget | null>(null);
   useEffect(() => {
     if (!activeProcess) {
       setShown(null);
       return;
     }
-    // Restore the persisted pin (context_data.last_shown / newest stack entry) so
-    // a display mounted AFTER the agent's `flow show` (page reload, late-opened
-    // tab) still lands on the deliverable — the on_show entity event has no
-    // replay. Key the effect on the payload, not entity identity: the SDK
-    // updates cached entities in place.
+    // Restore ONLY a port pin. Everything else restores as a URL, in the loader
+    // (`routeProcessPointer`), which is what removed the freshness baseline this
+    // effect used to need: a durable `last_shown` re-fires forever unless something
+    // records that the user dealt with it, and the URL is that record.
     //
-    // A shell target is NOT restorable content: the terminal it addresses lives
-    // on as its own child tab, and re-pinning it here would drag the user back
-    // into the terminal on every reload.
-    setShown(shellIdFromShowTarget(persistedShown) ? null : persistedShown);
+    // A shell target is not restorable content either — the terminal it addresses
+    // lives on as its own child tab, and re-pinning it would drag the user back into
+    // the terminal on every reload.
+    setShown(isPortDisplayTarget(persistedShown) ? persistedShown : null);
+    // Keyed on the payload, not on entity identity: the SDK mutates cached entities
+    // in place, so the object reference is not a change signal. `persistedShown` is
+    // read through that key deliberately.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProcess, persistedShownKey]);
+
+  // The FIRST show after a mount pushes; every one after it replaces — otherwise the
+  // first show overwrites the URL the user arrived on and Back ejects them from the
+  // workspace instead of returning them to it.
+  const hasPushedDisplayRef = useRef(false);
 
   useEffect(() => {
     if (!activeProcess) return;
     return activeProcess.onShow((payload) => {
-      // A terminal is hosted as a tab, not rendered in the pane — open its dock
-      // and let workspace adoption place it (the journey's path exactly).
-      const shellId = shellIdFromShowTarget(payload);
-      if (shellId) {
-        void navigation.openShell(shellId, { viewMode: ViewMode.Vibe });
+      // The nonce is bumped BEFORE the navigation decision, unconditionally: a
+      // re-show of the SAME target is a no-op navigation (same URL), and that is
+      // precisely the case it exists for — the iframe registry keys by `src`, so
+      // without it a rebuild behind an unchanged address renders stale content.
+      setShowNonce((n) => n + 1);
+      setLatestShown(payload);
+      const committed = openActiveDisplay({
+        target: payload,
+        navigation,
+        host: session.processDock.pointer ?? null,
+        projectId,
+        currentDock,
+        push: !hasPushedDisplayRef.current,
+      });
+      if (committed) {
+        hasPushedDisplayRef.current = true;
         return;
       }
+      // Not addressable (a port target, or a type with no editor and no path):
+      // the pane keeps it.
       setShown(payload);
-      setShowNonce((n) => n + 1);
     });
-  }, [activeProcess, navigation]);
-
-  // The `flow show` history (oldest first) is the AUTHORITATIVE server stack —
-  // read on every render from the reactive process entity, never a
-  // hand-appended local mirror. `useEntity` re-renders on the backend's
-  // context_data update even when the SDK mutates the entity in place.
+  }, [activeProcess, navigation, session.processDock.pointer, projectId, currentDock]);
 
   // Open a past display as its OWN standard tab (the reusable behavior): convert
   // the stored target to its dock pointer and navigate.
@@ -207,8 +188,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   // is why the pane used to stay on whatever it last showed.
   const onOpenHistoryEntry = useCallback(
     (entry: DisplayEntry) => {
-      const isPortTarget = entry.kind === 'webapp' || entry.kind === 'app';
-      if (isPortTarget) {
+      if (isPortDisplayTarget(entry)) {
         setShown(entry);
         setShowNonce((n) => n + 1);
         return;
@@ -223,16 +203,20 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     [navigation, session.processDock, projectId],
   );
 
+  // The display-history popover, hoisted out of `displayEl` so BOTH display
+  // branches carry it: the pane (a port target, the focus fallback, the empty
+  // state) and the URL-addressed child. The stack is the same server-side history
+  // either way — it belongs to the workspace, not to whichever viewer is up.
+  const historySlot = useMemo(
+    () => <DisplayHistoryButton stack={displayStack} onOpen={onOpenHistoryEntry} />,
+    [displayStack, onOpenHistoryEntry],
+  );
+
+
   // Feed the dev-server port into the viewer store — the exact channel
   // WebappViewer reads (`currentContext.viewerOptions.port`). A shown webapp
   // wins over stream focus. This is store state, not URL state.
-  //
-  // A shown APP is deliberately absent here: it carries its own identity
-  // (artifact_id) and derives its runtime, so pushing its port into the shared
-  // viewer store would re-create the port side-channel this replaces — and
-  // leave a stale port behind the moment the app is served instead.
   useEffect(() => {
-    if (shown?.kind === 'app') return;
     if (shown?.kind === 'webapp' && shown.port != null) {
       setCurrentContext({ viewerOptions: { port: String(shown.port) } });
       return;
@@ -251,40 +235,15 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   const webAppConfig = useProcessWebApp(activeProcess, webappPort);
   const webappFrameRef = useRef<PersistentIframeHandle>(null);
 
-  // A shown app: identity is the artifact, runtime (dev server vs built output
-  // we serve) is derived and user-switchable.
-  const appDisplay = useAppDisplay(
-    activeProcess,
-    shown?.kind === 'app' ? (shown.artifact_id ?? null) : null,
-    shown?.kind === 'app' && shown.port != null ? String(shown.port) : null,
-    shown?.kind === 'app' && (shown.runtime === 'dev' || shown.runtime === 'served') ? shown.runtime : null,
-  );
-  const appFrameRef = useRef<PersistentIframeHandle>(null);
 
-  const submitAnnotatedDisplay = useCallback(
-    async (file: File, context: DisplayAnnotationContext) => {
-      if (!activeProcess?.id) throw new Error('No active Vibe session');
-
-      const dir = await resolveProcessInputDir(activeProcess.id);
-      if (!dir) throw new Error('Could not resolve the chat input directory');
-
-      const uploads = await fsStore.getState().uploadFiles(new TypeId(dir.compute_node_id), dir.abs_path, [file]);
-      await Promise.all(uploads.map((upload) => upload.waitForCompletion()));
-
-      const filePath = `${dir.abs_path}/${file.name}`;
-      await activeProcess.prompt(buildDisplayAnnotationPrompt({ fileName: file.name, filePath, context }));
-    },
-    [activeProcess],
-  );
-
+  // The pane's own viewers (a bare port, the focus fallback) keep an annotate
+  // action; the pipeline itself lives in `display-annotation.ts` — capturing,
+  // annotating, uploading and prompting is not rendering.
   const handleAnnotateDisplay = useCallback(
     async (target: HTMLElement, context = displayAnnotationContextForDock(currentDock)) => {
       try {
-        const file = await captureElementAsImageFile(target, displayAnnotationImageName(context));
-        const submitted = await annotateImage(file, {
-          submitLabel: t`Submit`,
-          onSubmit: (annotated) => submitAnnotatedDisplay(annotated, context),
-        });
+        if (!activeProcess) throw new Error('No active Vibe session');
+        const submitted = await submitDisplayAnnotation(activeProcess, target, context);
         if (submitted) notify.success({ title: t`Annotation submitted` });
       } catch (err) {
         notify.error({
@@ -293,7 +252,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
         });
       }
     },
-    [currentDock, submitAnnotatedDisplay, t],
+    [activeProcess, currentDock, t],
   );
 
   const submitStarterPrompt = useCallback(
@@ -339,10 +298,6 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   }, [activeProcess]);
 
   const displayEl = useMemo(() => {
-    // The display-history popover control, rendered next to each toolbar's
-    // open-in-window icon.
-    const historySlot = <DisplayHistoryButton stack={displayStack} onOpen={onOpenHistoryEntry} />;
-
     // Fallback (nothing explicitly shown): the artifact-driven WebappViewer,
     // which carries its own chrome — left unwrapped.
     const preview = (
@@ -356,12 +311,14 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
       />
     );
 
-    // True empty state — nothing shown yet AND no stream focus: offer starter
-    // prompt chips. Clicking one submits it to the chat (prompt + enter); the
-    // agent then drives the first `flow show`. (`!shown` already implies an empty
-    // stack — the pin restores from the newest entry.)
+    // Nothing shown here AND no stream focus. `!shown` no longer implies an empty
+    // history: an addressable target now lives in the URL, so the pane legitimately
+    // sits empty while the workspace has a rich show history behind it (the user
+    // clicked the Display home chip, or a redirect has not run). The history popover
+    // is workspace chrome, not viewer chrome, so it must survive that — otherwise
+    // stepping back to the Display home silently loses the way back into the stack.
     if (!shown && !focus.viewType) {
-      return (
+      const starter = (
         <div
           className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center"
           data-testid="display-empty-state"
@@ -388,16 +345,16 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
           </div>
         </div>
       );
+      // Genuinely nothing yet → bare chips. Otherwise keep the toolbar so the
+      // history stays one click away.
+      return displayStack.length ? <DisplayToolbar historySlot={historySlot}>{starter}</DisplayToolbar> : starter;
     }
 
-    // A shown viewer under the two-tier toolbar: per-type toolbar (left) +
-    // the generic action (right). For entities/files that action is "open in
-    // a new tab" — IN-APP dock navigation (promotes the item to a full
-    // Flowpad content tab), NOT a browser tab; only webapps open externally.
-    // Promote to its OWN tab: rebase onto the project shell first. A bare ASSETS
-    // dock is scope-keyed (one tab per scope, sub-pointer folded away) — right for
-    // browsing inside the Assets tab, wrong for a document that must keep its own
-    // pointer and name. Same reason as `onOpenHistoryEntry` above.
+    // A pane viewer under the two-tier toolbar: per-type toolbar (left) + the
+    // generic action (right). Promote-to-tab rebases onto the project shell first:
+    // a bare ASSETS dock is scope-keyed (one tab per scope, sub-pointer folded
+    // away) — right for browsing inside the Assets tab, wrong for a document that
+    // must keep its own pointer and name. Same reason as `onOpenHistoryEntry`.
     const openPtrInTab = (ptr: AssetDocPointer) => () =>
       navigation.openDock(DockPointer.rebaseAssetsOntoProject(ptr.toDockPointer(), projectId));
     const wrapAsset = (path: string, node: React.ReactNode) => (
@@ -414,47 +371,6 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
 
     if (shown) {
       switch (shown.kind) {
-        case 'app': {
-          if (!appDisplay.src) return preview;
-          const appContext = displayAnnotationContextForShown(shown, appDisplay.src, appDisplay.port);
-          return (
-            <DisplayToolbar
-              externalUrl={appDisplay.src}
-              onAnnotate={(target) => {
-                void handleAnnotateDisplay(target, appContext);
-              }}
-              historySlot={historySlot}
-              perType={
-                <WebappDisplayToolbar
-                  host={appDisplay.src}
-                  port={appDisplay.port ?? ''}
-                  runtime={appDisplay.runtime}
-                  runtimes={appDisplay.available}
-                  onRuntimeChange={appDisplay.setRuntime}
-                  onRefresh={() => appFrameRef.current?.refresh()}
-                />
-              }
-            >
-              <WebappDisplay
-                // Keyed by src so a runtime switch remounts the wrapper.
-                // Changing src in place leaves BOTH the outgoing and incoming
-                // frames parked at opacity-0 — the registry activates a
-                // container on mount, and an in-place src change retires the
-                // old one without ever activating the new one. Switching
-                // runtimes is the first thing to change src routinely; the
-                // port-only path below effectively never does.
-                key={appDisplay.src}
-                ref={appFrameRef}
-                processId={activeProcess?.id}
-                testId="vibe-app-frame"
-                src={appDisplay.src}
-                port={appDisplay.port}
-                cacheKey={showNonce + refreshStamp}
-                targetTypeId={appDisplay.microApp?.typeId?.toString() ?? null}
-              />
-            </DisplayToolbar>
-          );
-        }
         case 'webapp': {
           if (!webAppConfig.host) return preview;
           const webappContext = displayAnnotationContextForShown(shown, webAppConfig.host, webappPort);
@@ -487,30 +403,6 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
             </DisplayToolbar>
           );
         }
-        case 'entity': {
-          const entityContext = displayAnnotationContextForShown(shown);
-          const editor = shown.type ? editorForType(shown.type) : undefined;
-          if (editor && shown.typeid) {
-            const ptr = AssetDocPointer.forTypeId(editor, new TypeId(shown.typeid));
-            return (
-              <DisplayToolbar
-                onOpenInTab={openPtrInTab(ptr)}
-                onAnnotate={(target) => {
-                  void handleAnnotateDisplay(target, entityContext);
-                }}
-                historySlot={historySlot}
-              >
-                <AssetEditorRouter key={`${ptr.toPointer()}:${refreshStamp}`} pointer={ptr.toPointer()} />
-              </DisplayToolbar>
-            );
-          }
-          // Type without a bespoke editor — fall back to the raw file view.
-          if (shown.path) return wrapAsset(shown.path, vfsEditorEl(shown.path, refreshStamp, activeProcess));
-          break;
-        }
-        case 'vfs':
-          if (shown.path) return wrapAsset(shown.path, vfsEditorEl(shown.path, refreshStamp, activeProcess));
-          break;
       }
     }
 
@@ -543,8 +435,8 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     }
   }, [
     shown,
+    historySlot,
     displayStack,
-    onOpenHistoryEntry,
     showNonce,
     refreshStamp,
     focus.viewType,
@@ -552,7 +444,6 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     focus.port,
     webAppConfig,
     webappPort,
-    appDisplay,
     t,
     navigation,
     activeProcess,
@@ -582,13 +473,9 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
             {session.onProcessUrl ? (
               displayEl
             ) : (
-              <DisplayToolbar
-                onAnnotate={(target) => {
-                  void handleAnnotateDisplay(target, displayAnnotationContextForDock(currentDock));
-                }}
-              >
-                <ContentPanel minimalChrome />
-              </DisplayToolbar>
+              <DisplayChrome process={persistedProcess ?? activeProcess} latestShown={latestShown}>
+                <ContentPanel minimalChrome contentEpoch={showNonce} />
+              </DisplayChrome>
             )}
           </div>
         </div>

@@ -1,4 +1,4 @@
-import { AgenticProcess, MicroApp, QueryRequest } from '@sdk';
+import { AgenticProcess, Deployment, MicroApp, QueryRequest } from '@sdk';
 import { useEffect, useMemo, useState } from 'react';
 import { useEntitiesQuery } from '../entity-hooks';
 import { useProcessWebApp } from './useProcessWebApp';
@@ -20,17 +20,19 @@ export interface AppDisplay {
 /**
  * Resolve an app's viewable runtime from its identity.
  *
- * An app is addressed by its Artifact; the dev server (a `Deployment` port,
- * arriving on the show target) and the built output (its `MicroApp`) are two
- * ways to reach that one app. Preference follows the backend's derived
- * `runtime` on first resolve, then whatever the user picks — and it re-derives
- * when the artifact changes, so switching apps never inherits the previous
- * one's mode.
+ * An app is addressed by its Artifact; the dev server (its `Deployment`'s port)
+ * and the built output (its `MicroApp`) are two ways to reach that one app, and
+ * BOTH are resolved here from the artifact alone. That is what lets the URL name
+ * only the artifact: a port belongs to whichever dev server happens to be up, so
+ * one baked into the address goes stale the moment the server moves.
+ *
+ * Preference follows the caller's `preferred` on first resolve, then whatever the
+ * user picks — and it re-derives when the artifact changes, so switching apps never
+ * inherits the previous one's mode.
  */
 export function useAppDisplay(
   process: AgenticProcess | null | undefined,
   artifactId: string | null | undefined,
-  port: string | null,
   preferred: AppRuntime | null,
 ): AppDisplay {
   const [override, setOverride] = useState<AppRuntime | null>(null);
@@ -50,7 +52,22 @@ export function useAppDisplay(
   const { data: microApps = [] } = useEntitiesQuery<MicroApp>(queryRequest, { enabled: !!artifactId });
   const microApp = microApps[0] ?? null;
 
-  const devConfig = useProcessWebApp(process, port);
+  // The dev half of the same question, asked the same way. Kept beside the MicroApp
+  // query rather than in the caller so "which port serves this artifact" has one
+  // owner — two callers deriving it differently is how a stale port survives.
+  const deploymentQuery = useMemo(
+    () =>
+      new QueryRequest({
+        type: Deployment.type,
+        query: { match: { artifact_id: artifactId ?? '' } },
+        name: 'useAppDisplay',
+      }),
+    [artifactId],
+  );
+  const { data: deployments = [] } = useEntitiesQuery<Deployment>(deploymentQuery, { enabled: !!artifactId });
+  const devPort = deployments[0]?.runtimePort ?? null;
+
+  const devConfig = useProcessWebApp(process, devPort === null ? null : String(devPort));
 
   return useMemo(() => {
     const available: AppRuntime[] = [];
@@ -66,9 +83,9 @@ export function useAppDisplay(
       runtime,
       available,
       src: runtime === 'served' ? (microApp?.viewUrl ?? '') : runtime === 'dev' ? devConfig.host : '',
-      port,
+      port: devPort === null ? null : String(devPort),
       microApp,
       setRuntime: setOverride,
     };
-  }, [devConfig.host, microApp, override, preferred, port]);
+  }, [devConfig.host, devPort, microApp, override, preferred]);
 }
