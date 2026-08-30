@@ -48,7 +48,7 @@ export class Skill extends APIEntity<Skill> {
 
   /** Default open target: the asset editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('skill') ?? super.dockPointer;
+    return this.assetEditorPointer('skill') ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {

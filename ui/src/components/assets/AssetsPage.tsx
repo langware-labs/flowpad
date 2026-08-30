@@ -60,7 +60,7 @@ import {
   INDEX_PROMPT_DESCRIPTION,
   INDEX_PROMPT_TITLE,
 } from '@src/components/search-index/index-copy';
-import type { SearchResult } from '@src/hooks/use-asset-search';
+import type { SearchRow } from '@src/hooks/search-row';
 // Side-effect column registrations
 import '@src/components/assets/columns/assetColumns';
 import '@src/components/assets/columns/bookmarkColumns';
@@ -505,7 +505,7 @@ export function AssetsPage() {
   );
 
   const handleRowClick = useCallback(
-    (result: SearchResult) => {
+    (result: SearchRow) => {
       // Projects open in their collaboration space (the "project room"), not
       // the asset editor — the editor router has no page for project entities.
       if (result.record_type === (RecordType.PROJECT as string)) {

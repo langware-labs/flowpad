@@ -42,7 +42,7 @@ export class AgentTrace extends APIEntity<AgentTrace> {
   }
 
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('agent_trace') ?? super.dockPointer;
+    return this.assetEditorPointer('agent_trace') ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {

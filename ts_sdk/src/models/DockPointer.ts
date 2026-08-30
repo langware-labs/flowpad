@@ -36,3 +36,26 @@ export class DockPointerData implements IDockPointer {
     public readonly options?: Record<string, string>,
   ) {}
 }
+
+/**
+ * A dock that definitely addresses a target.
+ *
+ * `DockPointerData.pointer` is optional for good reason — `new
+ * DockPointerData(ViewType.INBOX)` and `new DockPointerData(ViewType.SHELL)`
+ * are real docks that address a VIEW rather than a row. But some getters
+ * provably always build one (from a template literal, or from `typeId`, which
+ * throws rather than returning nullish), and their callers should not have to
+ * invent a fallback for a case that cannot happen.
+ *
+ * A subclass rather than an intersection type so the guarantee comes from a
+ * required constructor parameter instead of a cast.
+ */
+export class TargetedDock extends DockPointerData {
+  constructor(
+    viewType: ViewType,
+    public override readonly pointer: string,
+    options?: Record<string, string>,
+  ) {
+    super(viewType, pointer, options);
+  }
+}

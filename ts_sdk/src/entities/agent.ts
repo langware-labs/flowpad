@@ -121,7 +121,7 @@ export class Agent extends APIEntity<Agent> {
 
   /** Default open target: the agent profile editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('agent') ?? super.dockPointer;
+    return this.assetEditorPointer('agent') ?? this.defaultDockPointer;
   }
 
   override get searchDockPointer(): DockPointerData {

@@ -27,7 +27,7 @@ export class DynamicWorkflow extends APIEntity<DynamicWorkflow> {
   }
 
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('dynamic_workflow') ?? super.dockPointer;
+    return this.assetEditorPointer('dynamic_workflow') ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {

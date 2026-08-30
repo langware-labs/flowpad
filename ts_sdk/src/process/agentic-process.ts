@@ -32,7 +32,7 @@ function parseFsRef(value: FSRef | FSRefJson | null | undefined): FSRef | null {
   return value instanceof FSRef ? value : FSRef.fromJson(value);
 }
 import type { AssetDescriptor } from './asset-descriptor';
-import { DockPointerData } from '../models/DockPointer';
+import { DockPointerData, TargetedDock } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
@@ -842,8 +842,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * Live interactive terminal — `/dock/shell/agentic_process-<id>`.
    * Use this when the user wants to attach to (or launch) the running PTY.
    */
-  get terminalDockPointer(): DockPointerData {
-    return new DockPointerData(ViewType.SHELL, `${AgenticProcess.type}${TypeId.DELIMITER}${this.id}`);
+  get terminalDockPointer(): TargetedDock {
+    // A template literal, so `pointer` is always a string here.
+    return new TargetedDock(ViewType.SHELL, `${AgenticProcess.type}${TypeId.DELIMITER}${this.id}`);
   }
 
   openTerminalDock(extraOptions?: Record<string, string>): void {

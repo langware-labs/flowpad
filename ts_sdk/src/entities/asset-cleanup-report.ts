@@ -37,7 +37,7 @@ export class AssetCleanupReport extends APIEntity<AssetCleanupReport> {
   }
 
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('asset_cleanup_report') ?? super.dockPointer;
+    return this.assetEditorPointer('asset_cleanup_report') ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {

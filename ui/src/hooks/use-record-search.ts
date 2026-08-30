@@ -1,3 +1,5 @@
+import type { SearchRow } from './search-row';
+export type { SearchRow };
 import { useEffect, useRef, useState } from 'react';
 import apiClient from '@sdk/client';
 import { RecordType } from '@sdk/resource_management/fs_records';
@@ -43,24 +45,16 @@ export interface SearchCalibration {
   visible?: boolean;  // UI state — persisted but not sent to backend
 }
 
-export interface SearchResult {
-  record_id: string;
-  record_type: string;
-  name: string;
+/** A row from the fs-records search endpoint. Shared fields live in `SearchRow`. */
+export interface SearchResult extends SearchRow {
   text: string;
   snippet?: string;
   fts_title?: string;
   fts_description?: string;
-  status: string;
-  scope: string;
-  created_at: string;
-  modified_at: string;
   /** Epoch milliseconds; present on explicit recent-activity browse rows. */
   last_edited_at?: number | string | null;
-  asset_ref: string;
   message_count?: number;
   labels?: string[];
-  session_id?: string;
 }
 
 export interface UseRecordSearchResult {

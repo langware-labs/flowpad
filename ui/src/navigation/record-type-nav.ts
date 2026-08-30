@@ -3,7 +3,7 @@ import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import type { LucideIcon } from 'lucide-react';
-import type { SearchResult } from '@src/hooks/use-record-search';
+import type { SearchRow } from '@src/hooks/search-row';
 import { DockPointer } from './DockPointer';
 import { openNewChat } from './open-new-chat';
 import { ViewType } from '@src/types/ViewType';
@@ -23,8 +23,8 @@ export interface DockNavigationActionSpec {
   icon: LucideIcon;
   name: MessageDescriptor;
   // Either a sync dock pointer OR an async action callback (not both)
-  dockPointer?: (result: SearchResult) => DockPointer;
-  action?: (result: SearchResult, navigation: NavigationActions) => void | Promise<void>;
+  dockPointer?: (result: SearchRow) => DockPointer;
+  action?: (result: SearchRow, navigation: NavigationActions) => void | Promise<void>;
 }
 
 /**
@@ -38,17 +38,17 @@ export interface DockNavigationAction extends Omit<DockNavigationActionSpec, 'na
 
 export interface RecordTypeNav {
   /** Sync primary click — produces a DockPointer directly */
-  dockPointer?: (result: SearchResult) => DockPointer | null;
+  dockPointer?: (result: SearchRow) => DockPointer | null;
   /** Async primary click — use when navigation requires entity lookup */
-  primaryAction?: (result: SearchResult, navigation: NavigationActions) => void | Promise<void>;
+  primaryAction?: (result: SearchRow, navigation: NavigationActions) => void | Promise<void>;
   /** Extra reachability check for imperative arms whose target fields are optional. */
-  isNavigable?: (result: SearchResult) => boolean;
+  isNavigable?: (result: SearchRow) => boolean;
   /** Optional sub-navigation chips shown on the card */
   actions?: DockNavigationActionSpec[];
 }
 
 /** Extract the Claude session UUID from a search result */
-function sessionIdFromResult(result: SearchResult): string {
+function sessionIdFromResult(result: SearchRow): string {
   // asset_ref: "/path/to/<uuid>.jsonl" — derive session UUID from filename
   if (result.asset_ref) {
     const filename = result.asset_ref.split('/').pop() ?? '';
@@ -65,7 +65,7 @@ function sessionIdFromResult(result: SearchResult): string {
  * thread_id is the last 5 hyphen-separated groups of the stem. We mirror the
  * backend ``_extract_thread_id`` helper here so the UI doesn't need to round-trip.
  */
-function codexThreadIdFromResult(result: SearchResult): string {
+function codexThreadIdFromResult(result: SearchRow): string {
   if (result.asset_ref) {
     const stem = (result.asset_ref.split('/').pop() ?? '').replace(/\.jsonl$/i, '');
     if (stem.startsWith('rollout-')) {
@@ -104,7 +104,7 @@ export function resultTypeId(
  * resolves by id with no path discovery — relocation-proof and instant. Falls
  * back to the vfs/path form only when no usable id is present.
  */
-function assetEditorPointer(assetType: string, r: SearchResult): DockPointer | null {
+function assetEditorPointer(assetType: string, r: SearchRow): DockPointer | null {
   const tid = resultTypeId(r);
   if (tid) return DockPointer.forAssetEditorByTypeId(assetType, tid);
   return r.asset_ref ? DockPointer.forAssetEditor(assetType, r.asset_ref) : null;
@@ -114,7 +114,7 @@ function assetEditorPointer(assetType: string, r: SearchResult): DockPointer | n
  * navigation arms below still win; this keeps new editable asset types from
  * becoming inert search/recent-activity rows just because this dispatcher was
  * not updated in lockstep with the editor registry. */
-function registeredAssetPointer(result: SearchResult): DockPointer | null {
+function registeredAssetPointer(result: SearchRow): DockPointer | null {
   return editorForType(result.record_type)
     ? assetEditorPointer(result.record_type, result)
     : null;
@@ -405,7 +405,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
 };
 
 /** Returns the primary DockPointer for a result, or null if the type has no navigation */
-export function getDockPointerForResult(result: SearchResult): DockPointer | null {
+export function getDockPointerForResult(result: SearchRow): DockPointer | null {
   return RECORD_TYPE_NAV[result.record_type]?.dockPointer?.(result)
     ?? registeredAssetPointer(result);
 }
@@ -414,7 +414,7 @@ export function getDockPointerForResult(result: SearchResult): DockPointer | nul
  * its type declares a navigation handler. A `dockPointer` that would resolve to
  * `null` (e.g. an asset with neither a typeid nor an asset_ref) is NOT navigable;
  * treating it as navigable is what made tiles look clickable yet do nothing. */
-export function isResultNavigable(result: SearchResult): boolean {
+export function isResultNavigable(result: SearchRow): boolean {
   const nav = RECORD_TYPE_NAV[result.record_type];
   if (nav?.isNavigable && !nav.isNavigable(result)) return false;
   if (nav?.primaryAction) return true;
@@ -423,7 +423,7 @@ export function isResultNavigable(result: SearchResult): boolean {
 }
 
 /** Navigate to a result — handles both sync dockPointer and async primaryAction */
-export async function navigateToResult(result: SearchResult, navigation: NavigationActions): Promise<void> {
+export async function navigateToResult(result: SearchRow, navigation: NavigationActions): Promise<void> {
   const nav = RECORD_TYPE_NAV[result.record_type];
   if (nav?.isNavigable && !nav.isNavigable(result)) return;
   if (nav?.primaryAction) {
@@ -435,7 +435,7 @@ export async function navigateToResult(result: SearchResult, navigation: Navigat
 }
 
 /** Returns the action list for a result's record type */
-export function getActionsForResult(result: SearchResult): DockNavigationAction[] {
+export function getActionsForResult(result: SearchRow): DockNavigationAction[] {
   // Resolved HERE, at the one accessor, so `DockNavigationAction.name` stays a
   // plain string for every consumer while the table itself holds lazy
   // descriptors (it is module-level, so an eager macro would bind the language
