@@ -9,7 +9,7 @@ import { WikiLabel } from '@src/components/wiki-tip/WikiLabel';
 import { useAssistantWikiSpace } from '@src/components/wiki-tip/assistant-wiki';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 
-type CollisionEntity = APIEntity<never>;
+type CollisionEntity = APIEntity<any>;
 
 interface AssetCollisionContextValue {
   entity: CollisionEntity | null;

@@ -52,9 +52,8 @@ const RESOURCE_META: Record<ProjectResourceType, ResourceMeta> = {
   plugin: { label: msg`Plugin`, icon: Settings },
   hook: { label: msg`Hook`, icon: Terminal },
   command: { label: msg`Command`, icon: Command },
-  agent: { label: msg`SubAgent`, icon: Bot },
-  session: { label: msg`Session`, icon: FolderOpen },
-  collaboration_room: { label: msg`Collaboration Room`, icon: FolderOpen },
+  subagent: { label: msg`SubAgent`, icon: Bot },
+  claude_session: { label: msg`Session`, icon: FolderOpen },
   todo: { label: msg`Todo`, icon: CheckSquare },
   claude_md: { label: msg`CLAUDE.md`, icon: FileText },
 };
@@ -73,7 +72,7 @@ function renderEventIndicator(
   if (event) {
     const EvtIcon = getEventIcon(event.event_type, event);
     const evtColor = getEventColor(event);
-    const oneLiner = getOneLiner(event.hook_data);
+    const oneLiner = getOneLiner(event);
     return (
       <button
         type="button"

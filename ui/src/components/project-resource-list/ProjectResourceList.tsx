@@ -33,9 +33,8 @@ export type ProjectResourceType =
   | 'plugin'
   | 'hook'
   | 'command'
-  | 'agent'
+  | 'subagent'
   | 'claude_session'
-  | 'collaboration_room'
   | 'todo'
   | 'claude_md';
 
@@ -88,8 +87,8 @@ const RESOURCE_TYPE_META: Record<ProjectResourceType, ResourceTypeMeta> = {
   plugin: { label: msg`Plugin`, icon: Settings },
   hook: { label: msg`Hook`, icon: Terminal },
   command: { label: msg`Command`, icon: Command },
-  agent: { label: msg`SubAgent`, icon: Bot },
-  session: { label: msg`Session`, icon: FolderOpen },
+  subagent: { label: msg`SubAgent`, icon: Bot },
+  claude_session: { label: msg`Session`, icon: FolderOpen },
   todo: { label: msg`Todo`, icon: CheckSquare },
   claude_md: { label: msg`CLAUDE.md`, icon: FileText },
 };

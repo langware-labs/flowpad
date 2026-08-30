@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { ActionInfo, ActionType, EntityExpansion, ExpansionType, JSONSchemaParser, Workspace } from '.';
+import type { IWorkspace } from './entities/workspace';
 // Aliased: a bare `Record` import shadows the global `Record<K,V>` utility for
 // this entire file, so every `Record<string, unknown>` in it resolved to the
 // FS record class and failed as a non-generic type.
@@ -174,6 +175,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   // in the base constructor copies wire fields onto the instance, so
   // subclasses no longer need to redeclare or manually assign these.
   id: string;
+  /** The wire's own `type` discriminator, copied onto the instance by
+   *  `deepAssign` (absent on an entity constructed without one). Distinct from
+   *  the static `type` the class registers under — `getType()` reads that. */
+  type?: string;
   uname?: string;
   // Nullable: the wire sends null for an unset name/title, and subclasses
   // (Shell, Conversation) declare them that way. The base must admit it or
@@ -1270,9 +1275,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   public async get_related_workspace(): Promise<Workspace | undefined> {
     if (!this.saved) return undefined;
     const actionInfo = new ActionInfo('get_related_workspace', this.typeId.type, this.typeId.id, 'GET');
-    const ws = await dataManager.callAction<undefined, APIEntity<Workspace>>(actionInfo);
+    // The action answers wire JSON, not a hydrated entity — hence `IWorkspace`.
+    const ws = await dataManager.callAction<undefined, IWorkspace>(actionInfo);
     if (!ws) return undefined;
-    let workspace = Workspace.getByIdFromCache(ws.id);
+    let workspace = ws.id ? Workspace.getByIdFromCache<Workspace>(ws.id) : null;
     if (!workspace) workspace = new Workspace(ws);
     return workspace;
   }

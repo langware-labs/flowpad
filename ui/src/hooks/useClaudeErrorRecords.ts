@@ -288,12 +288,10 @@ export function useClaudeErrorRecords() {
           task_type: 'task',
           priority: 'high',
           tags: ['error', error.error_category],
-          metadata: {
-            errorFingerprint: error.fingerprint,
-            errorCategory: error.error_category,
-            hook: error.hook,
-            event: error.event,
-          },
+          // First-class field, not the retired `metadata` blob: `metadata` is no
+          // longer part of Task, so this fingerprint was being dropped on save
+          // and `LearningCard`'s `task.error_fingerprint` never saw it.
+          error_fingerprint: error.fingerprint,
         });
         await task.save([projectTypeId]);
         const taskId = task.id;

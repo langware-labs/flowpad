@@ -56,6 +56,10 @@ export interface WorkerAuthStatus {
 export interface ICapability extends IEntity {
   name: string;
   kind: string;
+  /** Entity scope this row is bound to; null on the global row. Mirrors the
+   *  backend `Capability.scope_type` / `.scope_id` (flow_sdk/builtin/capability.py). */
+  scope_type?: string | null;
+  scope_id?: string | null;
   description?: string;
   icon?: string | null;
   homepage_url?: string | null;
@@ -93,8 +97,11 @@ export interface ICapability extends IEntity {
 // `implements ICapability` only checks the class; it contributes no members, so every
 // field declared solely on ICapability read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
+// `icon` is omitted: `APIEntity` owns it as an accessor pair, and an
+// optional `icon?:` here is not identical to that required accessor, which
+// the merged interface cannot inherit from both sides.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Capability extends Omit<ICapability, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface Capability extends Omit<ICapability, 'expand' | 'id' | 'is_private' | 'members' | 'icon'> {}
 
 @registerEntity
 export class Capability extends APIEntity<Capability> implements ICapability {

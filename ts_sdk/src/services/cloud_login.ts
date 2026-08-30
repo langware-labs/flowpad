@@ -34,8 +34,9 @@ import {
   makeLoginSlot,
 } from './cloud_status';
 
-let _dataManagerCache: any = null;
-async function _dataManager() {
+type DataManagerRef = (typeof import('../APIEntity'))['dataManager'];
+let _dataManagerCache: DataManagerRef | null = null;
+async function _dataManager(): Promise<DataManagerRef> {
   if (!_dataManagerCache) _dataManagerCache = (await import('../APIEntity')).dataManager;
   return _dataManagerCache;
 }
@@ -306,11 +307,7 @@ class CloudManager extends EventEmitter {
       throw new Error('Login canceled');
     }
 
-    if (this._pending) {
-      this._pending.off();
-      this._pending.reject(new Error('superseded by new login attempt'));
-      this._pending = null;
-    }
+    this._rejectPending('superseded by new login attempt');
 
     this._applyLoginStatus('logging_in', null, null);
 
@@ -330,9 +327,7 @@ class CloudManager extends EventEmitter {
       const message = err?.response?.data?.message ?? err?.message ?? 'Login request failed';
       this._applyLoginStatus('login_failed', null, message);
       await this._pushFailureWarning(message);
-      this._pending?.off();
-      this._pending?.reject(new Error(message));
-      this._pending = null;
+      this._rejectPending(message);
       throw new Error(message);
     }
 
@@ -523,6 +518,20 @@ class CloudManager extends EventEmitter {
     }
   }
 
+  /**
+   * Detach and reject the in-flight login promise, if any. A method rather than
+   * inline statements so the `_pending` read is a fresh one: the object is
+   * assigned inside the `new Promise` executor, which the compiler's flow
+   * analysis cannot see through.
+   */
+  private _rejectPending(message: string): void {
+    const pending = this._pending;
+    if (!pending) return;
+    pending.off();
+    pending.reject(new Error(message));
+    this._pending = null;
+  }
+
   private async _handleOAuthCompletion(
     msg: OAuthMessage,
     resolve: (r: CloudLoginResult) => void,
@@ -552,7 +561,7 @@ class CloudManager extends EventEmitter {
     // user. The cloud principal is always modelled here as a User; only its FIELDS
     // (name, avatar, id) vary by principal kind.
     const cloudUser = dm.updateEntityFromJson<User>({ ...userDict, type: User.type });
-    if (this.isLoggedIn && this._currentUser?.typeId?.toString() === cloudUser.typeId?.toString()) {
+    if (this.isLoggedIn && this._currentUser && this._currentUser.typeId?.toString() === cloudUser.typeId?.toString()) {
       return this._currentUser;
     }
     cloudUser.markAsExpanded();

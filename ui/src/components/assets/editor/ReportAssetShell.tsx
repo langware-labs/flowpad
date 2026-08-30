@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 interface ReportAssetShellProps {
   fsRef: FSRef;
   /** Display name from the report entity; falls back to the file's basename. */
-  name?: string;
+  name?: string | null;
   testId: string;
   loading: boolean;
   error?: string | null;

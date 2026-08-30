@@ -135,14 +135,14 @@ function actionsFor(file: GitStatusFile, mode: GitMode): GitAction[] {
     ? {
         key: 'unstage',
         label: t`Unstage`,
-        tooltip: msg`Remove this file from the next commit (git restore --staged)`,
+        tooltip: t`Remove this file from the next commit (git restore --staged)`,
         icon: PlusSquare,
         subpath: 'unstage-file',
       }
     : {
         key: 'stage',
         label: t`Stage`,
-        tooltip: msg`Include this file in the next commit (git add)`,
+        tooltip: t`Include this file in the next commit (git add)`,
         icon: PlusSquare,
         subpath: 'stage-file',
       };

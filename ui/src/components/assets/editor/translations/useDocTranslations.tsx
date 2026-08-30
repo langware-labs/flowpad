@@ -10,7 +10,7 @@ import { DocLanguageSwitcher } from './DocLanguageSwitcher';
 
 interface UseDocTranslationsArgs {
   /** The resolved backing entity (a Markdown-family asset), or null. */
-  entity: APIEntity<APIEntity<unknown>> | null;
+  entity: APIEntity<any> | null;
   /** VFS path the translator process is keyed to (the asset TypeId string). */
   chatTarget: string | null;
   /** On-disk path of the source (original) doc — used in the translator prompt. */

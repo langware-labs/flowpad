@@ -102,7 +102,7 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
    *
    *  Callers `void` it (a click path must never block navigation on a usage
    *  stamp); the save promise is returned so tests can await the write. */
-  async markOpened(): Promise<void> {
+  async markOpened(): Promise<Bookmark> {
     this.counter = (this.counter ?? 0) + 1;
     dataManager.notifyEntityChanged(this);
     return this.save([]);
@@ -114,7 +114,7 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
    *  hover never claims an open that didn't happen. Idempotent: a favorite
    *  already seen (or already opened) writes nothing, so sweeping the same
    *  menu twice is free. Reactivity contract as {@link markOpened}. */
-  async markSeen(): Promise<void> {
+  async markSeen(): Promise<Bookmark | undefined> {
     if (this.seen || (this.counter ?? 0) > 0) return;
     this.seen = true;
     dataManager.notifyEntityChanged(this);

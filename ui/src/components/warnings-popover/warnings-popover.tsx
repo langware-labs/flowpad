@@ -1,4 +1,4 @@
-import { UserWarning, WARNING_IDS } from '@sdk';
+import { UserWarning, WARNING_IDS, type WarningColor } from '@sdk';
 import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { openWikiModal } from '@src/components/wiki-tip';
@@ -39,7 +39,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
 };
 
 // Map color names to Tailwind classes
-const colorMap: Record<string, { bg: string; text: string; border: string }> = {
+const colorMap: Record<WarningColor, { bg: string; text: string; border: string }> = {
   yellow: {
     bg: 'bg-yellow-500/10',
     text: 'text-yellow-500',
@@ -260,7 +260,7 @@ export function WarningsPopover() {
 
   // Trigger tint follows the most severe item, alerts included: an error that
   // never got to be a toast still has to look like an error in the footer.
-  const severity = { red: 3, orange: 2, yellow: 1, blue: 0, gray: 0 };
+  const severity: Record<WarningColor, number> = { red: 3, orange: 2, yellow: 1, blue: 0, gray: 0 };
   const colorKeys: Array<keyof typeof colorMap> = [
     ...warnings.map((w) => w.color),
     ...alerts.map((a) => ALERT_COLOR[a.level]),

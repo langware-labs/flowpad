@@ -12,6 +12,9 @@ export interface IMicroApp extends IEntity {
   /** The Artifact this delivers. Null for standalone folder/builtin apps. */
   artifact_id?: string | null;
   project_id?: string | null;
+  /** Dot-path ontology kind (backend default `application.web`); an index field
+   *  on the type — see `flow_sdk/builtin/faas/micro_app.py`. */
+  kind?: string | null;
 }
 
 // `implements IMicroApp` only checks the class; it contributes no members, so every
@@ -39,6 +42,7 @@ export class MicroApp extends APIEntity<MicroApp> implements IMicroApp {
   domains: string[] | null;
   artifact_id: string | null;
   project_id: string | null;
+  kind: string | null;
 
   constructor(entity: Partial<IMicroApp> | IEntity = {}) {
     super(entity);
@@ -49,6 +53,7 @@ export class MicroApp extends APIEntity<MicroApp> implements IMicroApp {
     this.domains = app.domains ?? null;
     this.artifact_id = app.artifact_id ?? null;
     this.project_id = app.project_id ?? null;
+    this.kind = app.kind ?? null;
   }
 
   /**

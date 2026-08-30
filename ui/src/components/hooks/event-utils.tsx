@@ -1,4 +1,5 @@
 import { LAYER_COLORS } from '@src/hooks/sniffer-layers';
+import type { EventLayer } from '@src/hooks/use-hooks-sniffer';
 import type { TraceEvent } from '@src/types/trace-event';
 import { FlowDataSource } from '@sdk';
 import { cn } from '@src/lib/utils';
@@ -38,6 +39,36 @@ import { useCopied } from '@src/components/ui/copy-button';
 // Constants
 // ---------------------------------------------------------------------------
 
+/**
+ * The renderer-facing contract these helpers actually consume. TWO producers
+ * feed them: `TraceEvent` (the per-process FlowData stream, InteractiveTerminal
+ * gutter) and `SnifferEvent` (`use-hooks-sniffer`, the hook panels/chip). Both
+ * satisfy this shape; a field only one of them carries is optional here.
+ *
+ * NOTE: `source` and `raw` are TraceEvent-only today — `SnifferEvent` carries
+ * neither (its payload is the unparsed `raw_line`), so every `source`/`raw`
+ * read below is inert for sniffer events.
+ */
+export type RenderableEvent = {
+  id: string;
+  timestamp: string;
+  event_type: string;
+  session_id?: string;
+  source?: FlowDataSource;
+  element_type?: string;
+  summary?: string;
+  tool_name?: string;
+  tool_input?: Record<string, any>;
+  raw?: Record<string, any>;
+  attributes?: Record<string, string>;
+  webhook_type?: string;
+  hook_data?: Record<string, any>;
+  layer?: EventLayer;
+  warning?: string;
+  error?: string;
+  transcriptDockPointer: { ref: string; options: Record<string, string> } | null;
+};
+
 export const EVENT_ICONS: Record<string, LucideIcon> = {
   SessionStart: Play,
   SessionEnd: Square,
@@ -68,7 +99,7 @@ export const HOOK_OP_ICONS: Record<string, LucideIcon> = {
   rules_executed: Microscope,
 };
 
-export function getEventIcon(eventType: string, event?: TraceEvent): LucideIcon {
+export function getEventIcon(eventType: string, event?: RenderableEvent): LucideIcon {
   if (event?.error || event?.element_type === 'error') return CircleX;
   if (event?.warning) return AlertTriangle;
   if (event?.webhook_type === 'hook_op') {
@@ -133,7 +164,7 @@ export function getWebhookColor(webhookType?: string): string {
   return WEBHOOK_TYPE_COLORS[webhookType ?? ''] ?? 'text-primary';
 }
 
-export function getEventColor(event: TraceEvent): string {
+export function getEventColor(event: RenderableEvent): string {
   if (event.error || event.element_type === 'error') return 'text-red-500';
   if (event.warning) return 'text-yellow-500';
   if (event.event_type.startsWith('SkillUsed:')) return 'text-purple-600';
@@ -156,7 +187,7 @@ export function getEventColor(event: TraceEvent): string {
 // isPlanWrite – detect tool writes into plans/*.md (cross-platform)
 // ---------------------------------------------------------------------------
 
-export function isPlanWrite(event: TraceEvent): boolean {
+export function isPlanWrite(event: RenderableEvent): boolean {
   const toolName = event.hook_data?.tool_name;
   if (toolName !== 'Write') return false;
   const filePath: string = event.hook_data?.tool_input?.file_path || '';
@@ -176,7 +207,7 @@ export function cropText(text: string, maxWords = 5): string {
   return words.slice(0, maxWords).join(' ') + '...';
 }
 
-export function getOneLiner(event: TraceEvent): string {
+export function getOneLiner(event: RenderableEvent): string {
   // 1. Top-level tool name (set by mapFlowDataToTraceEvent for tool-call /
   //    tool-result events, by the legacy mapTranscriptToTraceEvents for
   //    transcript-source events).
@@ -293,7 +324,7 @@ export function navigateToTranscript(
 // EventTooltipContent – shared tooltip body for trace events
 // ---------------------------------------------------------------------------
 
-export function EventTooltipContent({ event }: { event: TraceEvent }) {
+export function EventTooltipContent({ event }: { event: RenderableEvent }) {
   const Icon = getEventIcon(event.event_type, event);
   const { copied, copy } = useCopied();
 

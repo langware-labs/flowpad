@@ -10,7 +10,7 @@ interface XlsxGridProps {
   /** FSRef to the .xlsx file (binary). */
   fsRef: FSRef;
   /** Entity `updated_date`-derived token — re-reads on out-of-band change. */
-  reloadKey: string | number;
+  reloadKey: string | number | undefined;
 }
 
 interface Workbook {

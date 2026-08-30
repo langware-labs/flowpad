@@ -334,6 +334,7 @@ msgid "{0} not tested"
 msgstr "{0} لم يُختبر"
 
 #. placeholder {0}: person.name || person.email
+#. placeholder {0}: person.name || person.email || ''
 #. placeholder {1}: task.title
 #: src/components/assets/editor/task/OwnerButton.tsx
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
@@ -1911,6 +1912,10 @@ msgstr "إرفاق نسخة هذه الجلسة"
 msgid "Attach to reply"
 msgstr "إرفاق بالرد"
 
+#: src/components/conversation/FlowMessageBubble.tsx
+msgid "Attached asset types"
+msgstr ""
+
 #: src/components/conversation/AttachmentChip.tsx
 msgid "Attachment unavailable — no body was uploaded"
 msgstr "المرفق غير متاح — لم يتم رفع أي محتوى"
@@ -3231,7 +3236,6 @@ msgstr "علامة تبويب Codex"
 msgid "Collaboration"
 msgstr "التعاون"
 
-#: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/i18n/type-labels.ts
 msgid "Collaboration Room"
 msgstr "غرفة التعاون"
@@ -3391,9 +3395,12 @@ msgstr "إيداع هذا الأصل أو تنظيفه لتفعيل ميزة ا�
 
 #. placeholder {0}: r.version
 #: src/components/assets/editor/skill/UsagePanel.tsx
-#: src/components/terminal/interactive-terminal/side-windows/ImprovementResultsModal.tsx
 msgid "Committed {skillName} v{0}"
 msgstr "تم إيداع {skillName} v{0}"
+
+#: src/components/terminal/interactive-terminal/side-windows/ImprovementResultsModal.tsx
+msgid "Committed {skillName} v{version}"
+msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "compact boundary"
@@ -4071,6 +4078,10 @@ msgstr "تعذر إجراء اختبار الاتصال."
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Could not save agent"
 msgstr "تعذر حفظ الوكيل"
+
+#: src/components/assets/editor/task/TaskAssetEditor.tsx
+msgid "Could not save task"
+msgstr ""
 
 #: src/components/diagnose/use-diagnosis-report.ts
 msgid "Could not send report to the Flowpad team"
@@ -5376,6 +5387,7 @@ msgstr "نقاش"
 msgid "Discuss analysis"
 msgstr "مناقشة التحليل"
 
+#: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -5394,6 +5406,10 @@ msgstr "تجاهل جميع الإشعارات"
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Dismiss banner (the runtime error stays — this just hides the affordance)"
 msgstr "إخفاء الشريط (يظل الخطأ قائمًا — هذا الإجراء يخفي الشريط فقط)"
+
+#: src/components/conversation/FlowMessageBubble.tsx
+msgid "Dismiss download error"
+msgstr ""
 
 #: src/components/inbox-view/InboxView.tsx
 msgid "Dismiss failed"
@@ -5499,6 +5515,10 @@ msgstr "تنزيل جميع المرفقات"
 #~ msgid "Download all files"
 #~ msgstr "تنزيل جميع الملفات"
 
+#: src/components/conversation/FlowMessageBubble.tsx
+msgid "Download attachments"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Download bundle"
 msgstr "تنزيل الحزمة"
@@ -5523,6 +5543,7 @@ msgstr "تم التحميل"
 
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentChip.tsx
+#: src/components/conversation/FlowMessageBubble.tsx
 msgid "Downloading…"
 msgstr "جاري التنزيل…"
 
@@ -15964,10 +15985,20 @@ msgstr "الأعراض"
 msgid "Sync {0} changes"
 msgstr "مزامنة {0} تغيير"
 
+#. placeholder {0}: row.type
+#: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+msgid "Sync {0} changes and refresh stats"
+msgstr ""
+
 #. placeholder {0}: timeSince(source.last_synced_at)
 #: src/components/data-sources/DataSourceCard.tsx
 msgid "synced {0}"
 msgstr "متزامن {0}"
+
+#. placeholder {0}: row.type
+#: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+msgid "Syncing {0}…"
+msgstr ""
 
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Synthesize event"
@@ -16394,6 +16425,10 @@ msgstr "لم يتم إضافة المصدر إلى قائمة الانتظار."
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "The source was not removed."
 msgstr "لم يتم حذف المصدر."
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "The stored API key for this provider is removed from this machine. You can add it again later."
+msgstr ""
 
 #: src/pages/flow-page/content-panel/content-panel.tsx
 msgid "The tab content could not be prepared."
@@ -17221,6 +17256,10 @@ msgstr "تم إلغاء التثبيت"
 msgid "Unique identifier for this hook within the settings file."
 msgstr "معرّف فريد لهذا الخطاف ضمن ملف الإعدادات."
 
+#: src/components/conversation/FlowMessageBubble.tsx
+msgid "unknown"
+msgstr ""
+
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -17424,6 +17463,7 @@ msgid "Upload Message"
 msgstr "رفع الرسالة"
 
 #: src/components/conversation/AttachmentChip.tsx
+#: src/components/conversation/FlowMessageBubble.tsx
 msgid "Uploading…"
 msgstr "جاري الرفع…"
 
@@ -18158,6 +18198,7 @@ msgstr "مسحوب"
 msgid "Yesterday"
 msgstr "أمس"
 
+#: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/entity-execution-panel/execution-message/execution-message.tsx
 msgid "You"
 msgstr "أنت"
@@ -18207,6 +18248,10 @@ msgstr "سيتم إخراجك من المحادثة"
 #: src/components/inbox-view/InboxView.tsx
 msgid "You'll be removed from the participant list. Other members keep the conversation."
 msgstr "سيتم حذفك من قائمة المشاركين. الأعضاء الآخرون يحتفظون بالمحادثة."
+
+#: src/components/login-required-dialog.tsx
+msgid "You're doing great!"
+msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "You're signed in and ready to go."

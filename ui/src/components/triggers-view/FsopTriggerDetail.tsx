@@ -20,7 +20,7 @@ interface CallbackInfo {
 }
 
 interface Props {
-  trigger: ITrigger;
+  trigger: TriggerEntity;
 }
 
 /**
@@ -53,7 +53,7 @@ export function FsopTriggerDetail({ trigger }: Props) {
   );
 }
 
-function Header({ trigger }: { trigger: ITrigger }) {
+function Header({ trigger }: { trigger: TriggerEntity }) {
   return (
     <div className="flex items-center gap-2 border-b px-3 py-2">
       <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-medium', scopeColor(trigger.scope))}>
@@ -116,12 +116,12 @@ function FieldRow({
   );
 }
 
-function WatchSection({ trigger }: { trigger: ITrigger }) {
+function WatchSection({ trigger }: { trigger: TriggerEntity }) {
   const { t } = useLingui();
   // step_ms / debounce_ms / respect_gitignore / ignore_patterns aren't yet on
   // the generated ITrigger type — read through an extended view so display
   // works without a TS regen.
-  const ext = trigger as ITrigger & {
+  const ext = trigger as TriggerEntity & {
     step_ms?: number;
     debounce_ms?: number;
     respect_gitignore?: boolean;
@@ -162,7 +162,7 @@ function WatchSection({ trigger }: { trigger: ITrigger }) {
   );
 }
 
-function ActionsSection({ trigger }: { trigger: ITrigger }) {
+function ActionsSection({ trigger }: { trigger: TriggerEntity }) {
   // `trigger.action` is the legacy singular field; `trigger.actions` is the
   // plural list. The TS shape today exposes only `action` — fall back to
   // wrapping it as a 1-list. Future TS typing should mirror the Python
@@ -172,8 +172,8 @@ function ActionsSection({ trigger }: { trigger: ITrigger }) {
     callback_name?: string;
     script_path?: string;
     script_filename?: string;
-  }> = (trigger as ITrigger & { actions?: unknown[] }).actions
-    ? ((trigger as ITrigger & { actions?: unknown[] }).actions as Array<{
+  }> = (trigger as TriggerEntity & { actions?: unknown[] }).actions
+    ? ((trigger as TriggerEntity & { actions?: unknown[] }).actions as Array<{
         action_type?: string;
         callback_name?: string;
         script_path?: string;
@@ -317,7 +317,7 @@ function CallbackSourceCollapsible({ triggerId }: { triggerId: string }) {
   );
 }
 
-function StatsSection({ trigger }: { trigger: ITrigger }) {
+function StatsSection({ trigger }: { trigger: TriggerEntity }) {
   const { t } = useLingui();
   return (
     <section className="space-y-1.5">

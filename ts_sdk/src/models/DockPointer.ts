@@ -23,6 +23,10 @@ export interface IDockPointer {
   /** True when this dock IS the app root (`/`). One predicate, owned by the UI
    *  class (`isRootAddress`), so nothing re-derives a weaker version of it. */
   readonly isRoot?: boolean;
+  /** Canonical serialization — the string stored as `Tab.pointer`; null when
+   *  this dock has no tab. Same bridge as the projections above: implemented by
+   *  the UI `DockPointer`, consumed here (see `Tab.getFromDockPointer`). */
+  toJSON?(): string | null;
 }
 
 export class DockPointerData implements IDockPointer {

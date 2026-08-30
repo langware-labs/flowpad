@@ -4,6 +4,7 @@ import { ApiError, isApiError } from '../ApiResponse';
 import apiClient, { apiStats, clearStats, GRAPH_API_PREFIX } from '../client';
 import config from '../config';
 import { IEntity } from '../IEntity';
+import type { AssetOccurrence } from '../APIEntity';
 import { ActionInfo, BootstrapInfo, ScanInfo } from '../models';
 import { TypeId } from '../models/TypeId';
 import { dockOptionsToScopeFilter } from '../utils/scope-filter';
@@ -199,6 +200,12 @@ export interface Manageable {
   load(): Promise<void>;
   toJSON(): any;
   expand?: EntityExpansion;
+  /** Mirrors ``APIEntity.remote`` — true once the row is hub-backed. The store
+   *  reads it to decide whether a save carries the ``Hub-Reflect`` header. */
+  remote?: boolean;
+  /** Mirrors ``APIEntity.asset_occurrences`` — the backend's complete list of
+   *  live paths for this asset identity; the store replaces it wholesale. */
+  asset_occurrences?: AssetOccurrence[];
   isExpanded(expansion: ExpansionType | ExpansionType[] | ExpansionRequest): boolean;
   isDbField(fieldName: string): boolean;
 }
@@ -1706,7 +1713,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       if (connection_manager.connected) {
         const connection_id = connection_manager.id;
         try {
-          await apiClient.post<any, IEntity>(`${config.API_PREFIXES.graph}/${typeId.type}/${typeId.id}/watch`, {
+          await apiClient.post<IEntity>(`${config.API_PREFIXES.graph}/${typeId.type}/${typeId.id}/watch`, {
             connection_id: connection_id,
           });
         } catch (e) {
@@ -1824,11 +1831,8 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       // otherwise retain deleted trailing paths after a 3 -> 2 -> 1 update.
       let assignSource = source;
       if (Array.isArray(source.asset_occurrences)) {
-        cachedSource.asset_occurrences = source.asset_occurrences.map(
-          (occurrence: unknown) =>
-            occurrence && typeof occurrence === 'object'
-              ? { ...(occurrence as Record<string, unknown>) }
-              : occurrence,
+        cachedSource.asset_occurrences = source.asset_occurrences.map((occurrence: AssetOccurrence) =>
+          occurrence && typeof occurrence === 'object' ? { ...occurrence } : occurrence,
         );
         const { asset_occurrences: _assetOccurrences, ...rest } = source;
         assignSource = rest;

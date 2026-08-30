@@ -4,12 +4,13 @@
  * page, and the favorites tooltips. Several places previously had their own
  * slightly-different bucketings; this collapses them.
  *
+ * Accepts an ISO string or a `Date` (entity date fields arrive as `Date`).
  * Returns null for null/undefined/empty/invalid input so the caller decides
  * what empty state to render (e.g. "never indexed" vs hiding the surface).
  * Items older than a week render as a localized `MMM d` date instead of
  * "365d ago".
  */
-export function formatTimeAgo(iso: string | null | undefined): string | null {
+export function formatTimeAgo(iso: string | Date | null | undefined): string | null {
   if (!iso) return null;
   const t = new Date(iso).getTime();
   if (Number.isNaN(t)) return null;

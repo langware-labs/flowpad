@@ -355,14 +355,7 @@ export function QuickCreatePanel({
     );
   }, [serverTypes, t]);
 
-  const sessionTiles: Array<{
-    key: string;
-    Icon: TileIcon;
-    label: string;
-    wikiword: string;
-    iconClassName: string;
-    onClick: () => void;
-  }> = [
+  const sessionTiles: SessionTileDef[] = [
     // Glyph and colour come from `PROVIDER_META`; only the label and wiki page
     // are this surface's own. Hardcoding the icon here is how a vendor ends up
     // wearing Claude's mark on one screen and its own on another.

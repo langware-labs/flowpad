@@ -15,7 +15,6 @@
  * match the backend: master `enabled` switch + OR over tags.
  */
 
-import { EventEmitter } from 'events';
 import apiClient from '../client';
 import { hubModeReady, isHubOnly } from '../utils/hub-runtime';
 import type { ToplogStateMessage } from '../websocket';
@@ -26,7 +25,13 @@ function normalize(tags: Tags): string[] {
   return Array.isArray(tags) ? tags.map(String) : [String(tags)];
 }
 
-class ToplogManager extends EventEmitter {
+/**
+ * Deliberately NOT an EventEmitter. `on`/`off` here are the TAG TOGGLES (the
+ * console API, mirrored from the backend routes) — they shadowed the emitter's
+ * subscribe/unsubscribe, so nothing could ever have subscribed, and the state
+ * event it used to emit had no possible listener.
+ */
+class ToplogManager {
   private _enabled = false;
   private _active = new Set<string>();
   private _initialized = false;
@@ -128,7 +133,6 @@ class ToplogManager extends EventEmitter {
         .filter(([, v]) => !!v)
         .map(([k]) => k),
     );
-    this.emit('toplog_state_changed', this.state());
   }
 }
 

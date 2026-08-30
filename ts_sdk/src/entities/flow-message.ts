@@ -450,7 +450,7 @@ export async function uploadFlowMessage(
   return res!;
 }
 
-export interface CreateTaskBundleParams {
+export type CreateTaskBundleParams = {
   spec_title: string;
   spec_content?: string;
   task_title?: string;

@@ -65,14 +65,13 @@ export function useContext() {
     isBootstrapping: typeof dataContext.isBootstrapping;
     cloudApiUrl: typeof dataContext.cloudApiUrl;
     cloudLoginAvailable: typeof dataContext.cloudLoginAvailable;
+    cloudConnectionStatus: typeof dataContext.cloudConnectionStatus;
     desktopInfo: typeof dataContext.desktopInfo;
     runtimeKind: typeof dataContext.runtimeKind;
     isDesktop: typeof dataContext.isDesktop;
     version: typeof dataContext.version;
     instanceName: typeof dataContext.instanceName;
     warnings: typeof dataContext.warnings;
-    workflow: typeof dataContext.workflow;
-    workflowTypeId: typeof dataContext.workflowTypeId;
     agenticProcess: typeof dataContext.agenticProcess;
     agenticProcessTypeId: typeof dataContext.agenticProcessTypeId;
     activeShellId: typeof dataContext.activeShellId;
@@ -105,14 +104,13 @@ export function useContext() {
     isBootstrapping: dataContext.isBootstrapping,
     cloudApiUrl: dataContext.cloudApiUrl,
     cloudLoginAvailable: dataContext.cloudLoginAvailable,
+    cloudConnectionStatus: dataContext.cloudConnectionStatus,
     desktopInfo: dataContext.desktopInfo,
     runtimeKind: dataContext.runtimeKind,
     isDesktop: dataContext.isDesktop,
     version: dataContext.version,
     instanceName: dataContext.instanceName,
     warnings: dataContext.warnings,
-    workflow: dataContext.workflow,
-    workflowTypeId: dataContext.workflowTypeId,
     agenticProcess: dataContext.agenticProcess,
     agenticProcessTypeId: dataContext.agenticProcessTypeId,
     activeShellId: dataContext.activeShellId,
@@ -155,14 +153,13 @@ export function useContext() {
       isBootstrapping: dataContext.isBootstrapping,
       cloudApiUrl: dataContext.cloudApiUrl,
       cloudLoginAvailable: dataContext.cloudLoginAvailable,
+      cloudConnectionStatus: dataContext.cloudConnectionStatus,
       desktopInfo: dataContext.desktopInfo,
       runtimeKind: dataContext.runtimeKind,
       isDesktop: dataContext.isDesktop,
       version: dataContext.version,
       instanceName: dataContext.instanceName,
       warnings: dataContext.warnings,
-      workflow: dataContext.workflow,
-      workflowTypeId: dataContext.workflowTypeId,
       agenticProcess: dataContext.agenticProcess,
       agenticProcessTypeId: dataContext.agenticProcessTypeId,
       activeShellId: dataContext.activeShellId,
@@ -205,14 +202,13 @@ export function useContext() {
       prev.isBootstrapping !== current.isBootstrapping ||
       prev.cloudApiUrl !== current.cloudApiUrl ||
       prev.cloudLoginAvailable !== current.cloudLoginAvailable ||
+      prev.cloudConnectionStatus !== current.cloudConnectionStatus ||
       prev.desktopInfo !== current.desktopInfo ||
       prev.runtimeKind !== current.runtimeKind ||
       prev.isDesktop !== current.isDesktop ||
       prev.version !== current.version ||
       prev.instanceName !== current.instanceName ||
       prev.warnings !== current.warnings ||
-      prev.workflow !== current.workflow ||
-      typeIdChanged(prev.workflowTypeId, current.workflowTypeId) ||
       prev.agenticProcess !== current.agenticProcess ||
       typeIdChanged(prev.agenticProcessTypeId, current.agenticProcessTypeId) ||
       prev.activeShellId !== current.activeShellId ||

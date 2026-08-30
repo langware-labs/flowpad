@@ -264,7 +264,13 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       // "already registered with different entity"). Fall back to a
       // construction-free pointer when the process isn't cached.
       const cached = dataManager.getByTypeIdFromCache<AgenticProcess>(tid);
-      if (cached) return cached.searchDockPointer;
+      // `searchDockPointer` is the SDK's plain `DockPointerData`; this table hands
+      // back the UI class, so re-seat its three fields rather than leaking the
+      // interface up through `Browseable.pointer`.
+      if (cached) {
+        const dp = cached.searchDockPointer;
+        return new DockPointer(dp.viewType, dp.pointer, dp.options);
+      }
       const sessionId = (r as any).session_id ?? undefined;
       return sessionId
         ? DockPointer.forLensTranscript('claude', sessionId)

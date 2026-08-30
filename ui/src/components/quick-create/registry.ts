@@ -29,16 +29,24 @@ export interface QuickCreateResult {
   toastTitle: MessageDescriptor;
 }
 
+/**
+ * Only `project` and `name` are universal. The chip-derived fields come from the
+ * quick-create panel, which is the surface that HAS scope/harness/path chips; the
+ * plain "New <type>" name dialog on the assets page (`AssetsPage.handleNewConfirm`,
+ * `useAssetsModel`) has no chips to read and passes neither. They are optional
+ * because that is the real contract — a `create` that needs one must handle its
+ * absence rather than assume the panel called it.
+ */
 export interface QuickCreateCreateArgs {
   /** Currently-active project context (legacy create paths still rely on this). */
   project: Project | null;
   name: string;
-  /** Final destination as edited by the user in the path input. */
-  absolutePath: string;
-  /** Which scope chip was active when Create was pressed. */
-  scope: ScopeKind;
-  /** Which harness chip was active (affects which on-disk convention the path follows). */
-  harness: HarnessKind;
+  /** Final destination as edited by the user in the path input. Panel only. */
+  absolutePath?: string;
+  /** Which scope chip was active when Create was pressed. Panel only. */
+  scope?: ScopeKind;
+  /** Which harness chip was active (affects which on-disk convention the path follows). Panel only. */
+  harness?: HarnessKind;
   /** Project-relative folder when scope === 'project' (e.g. ".claude/skills"). */
   folderVfsPath?: string;
 }

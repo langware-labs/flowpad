@@ -687,7 +687,9 @@ function MarkdownEditorContent({
   // Body renderer — the single Milkdown invocation both paths share, so a
   // body-mount change (a new prop, plugin, direction/fragment tweak) can't drift
   // between the plain doc and the full editor.
-  const milkdownBody = (mode: ViewMode) => (
+  // 'markdown' renders through Monaco, never Milkdown — excluded so `editorMode`
+  // below stays within MilkdownEditorMode without a cast.
+  const milkdownBody = (mode: Exclude<ViewMode, 'markdown'>) => (
     <MilkdownEditor
       content={body}
       onChange={handleBodyChange}

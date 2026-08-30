@@ -98,7 +98,7 @@ async function init() {
         <LocaleProviders>
           <RouterProvider
             router={router}
-            unstable_onError={(error) => {
+            onError={(error) => {
               console.error('Error loading session:', error);
             }}
           />

@@ -99,6 +99,14 @@ export interface ColVisibility {
 // clipboard on. Re-emitted after annotation so the CLI inlines the annotated image.
 const EMPTY_BRACKETED_PASTE = '\x1b[200~\x1b[201~';
 
+declare global {
+  interface Window {
+    /** Per-nav perf T0, stamped on the shell-navigation click. See
+     *  `routes/loaders/_perf.ts` (`PERF_T0_KEY`) — the producer. */
+    __shellNavT0?: number;
+  }
+}
+
 import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
 import {
   FONT_FAMILY,
@@ -779,7 +787,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     const initializeTerminal = () => {
       if (disposed) return;
       if (active) {
-        const t0 = (window as Record<string, unknown>).__shellNavT0 as number | undefined;
+        const t0 = window.__shellNavT0;
         if (t0 !== undefined)
           console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms xterm initializeTerminal (active)`);
       }
@@ -834,7 +842,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         fitAddonRef.current = fit;
         container.addEventListener('paste', onDomPaste, true);
         if (active) {
-          const t0 = (window as Record<string, unknown>).__shellNavT0 as number | undefined;
+          const t0 = window.__shellNavT0;
           if (t0 !== undefined)
             console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms term.open() done (active)`);
         }
@@ -876,7 +884,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             ptySyncRef.current.initSegments(Date.now(), Math.max(3, term.rows - 4), adapter?.getEvictionOffset() ?? 0);
 
             if (active) {
-              const t0 = (window as Record<string, unknown>).__shellNavT0 as number | undefined;
+              const t0 = window.__shellNavT0;
               if (t0 !== undefined)
                 console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms setTerminalReady(true) (active)`);
             }

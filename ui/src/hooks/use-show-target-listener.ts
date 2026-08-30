@@ -145,7 +145,9 @@ export function useShowTargetListener(): void {
       handle(typeId.id, payload as DisplayTargetLike);
     };
     dataManager.on('on_entity_event', onEntityEvent);
-    return () => dataManager.off('on_entity_event', onEntityEvent);
+    return () => {
+      dataManager.off('on_entity_event', onEntityEvent);
+    };
   }, [handle]);
 
   // Durable channel — `on_show` persists `context_data.last_shown` BEFORE it

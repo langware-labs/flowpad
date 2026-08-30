@@ -8,10 +8,12 @@
 
 import { toplog } from '@sdk';
 
+/** The window key this module stamps. `Window.__shellNavT0` is declared in
+ *  `components/terminal/interactive-terminal/InteractiveTerminal.tsx` — the reader. */
 export const PERF_T0_KEY = '__shellNavT0';
 
 function readT0(): number | undefined {
-  return (window as Record<string, unknown>)[PERF_T0_KEY] as number | undefined;
+  return window.__shellNavT0;
 }
 
 export function perfLog(label: string): void {
@@ -40,5 +42,5 @@ export async function perfTime<T>(label: string, fn: () => T | Promise<T>): Prom
 
 export function markPerfT0(): void {
   if (!import.meta.env.DEV) return;
-  (window as Record<string, unknown>)[PERF_T0_KEY] = performance.now();
+  window.__shellNavT0 = performance.now();
 }

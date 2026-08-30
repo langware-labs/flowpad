@@ -6,9 +6,10 @@ import {
   isProcessRunning,
   ProcessKind,
   type APIEntity,
-  type FSRefJson,
   type Translation,
 } from '@sdk';
+// Not re-exported from the '@sdk' barrel (index.ts exports the FSRef class only).
+import type { FSRefJson } from '@sdk/fs/FSRef';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { runSkillWorker } from '@src/components/assets/editor/skill/skill-eval-analysis';
@@ -36,7 +37,7 @@ interface AddTranslationResult {
 
 interface UseTranslationsArgs {
   /** The resolved backing entity (a Markdown-family asset). */
-  entity: APIEntity<APIEntity<unknown>> | null;
+  entity: APIEntity<any> | null;
   /** VFS path the translator process is keyed to (the asset TypeId string). */
   chatTarget: string | null;
   /** On-disk path of the source (original) doc — used in the translator prompt. */

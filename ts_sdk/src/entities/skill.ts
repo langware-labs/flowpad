@@ -15,6 +15,13 @@ export class Skill extends APIEntity<Skill> {
   static type: string = 'skill';
   static override icon = 'Sparkles';
 
+  /** The skill's identity — its folder name. Non-null and never absent: the
+   *  backend declares `name: str = APIField(default="")`, and every caller
+   *  indexes skills by it. Narrower than the base `name?: string | null`.
+   *  Assigned in the constructor like every other field here — a bare field
+   *  declaration would re-DEFINE it as `''` after `super()` copied the wire
+   *  value (the app compiles with `useDefineForClassFields: true`). */
+  name: string = '';
   description: string = '';
   asset_ref?: string;
   scope?: string;
@@ -23,6 +30,7 @@ export class Skill extends APIEntity<Skill> {
 
   constructor(entity: Partial<Skill> = {}) {
     super(entity);
+    this.name = entity.name ?? '';
     this.description = entity.description ?? '';
     this.asset_ref = entity.asset_ref;
     this.scope = entity.scope;

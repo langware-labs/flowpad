@@ -34,6 +34,10 @@ export interface DisplayTargetLike {
   port?: number | string;
   /** kind: 'app' — the Artifact is the address; runtime is derived, not pinned. */
   artifact_id?: string;
+  /** kind: 'app' — the delivery row, sent whenever one exists (and the ONLY id a
+   *  webapp ASSET has, since it has no Artifact). See `_app_payload` /
+   *  `_asset_app_payload` in `flow_sdk/core/display_target.py`. */
+  micro_app_id?: string;
   runtime?: string;
   name?: string;
   /** kind: 'dock' — a SCREEN. The backend sends the frontend's own field names

@@ -278,7 +278,12 @@ export class AuthManager extends EventEmitter {
         params.set(key, value);
       });
       const queryString = params.toString();
-      const response = await apiClient.get(`/visit${queryString ? '?' + queryString : ''}`);
+      // Typed as the two shapes the line below actually reads: the id itself,
+      // or a `{data}` wrapper. `/visit` is a hub-side route (no local backend
+      // handler), so the wrapper branch is kept rather than narrowed away.
+      const response = await apiClient.get<string | { data?: string }>(
+        `/visit${queryString ? '?' + queryString : ''}`,
+      );
 
       const visitorId = typeof response === 'string' ? response : response.data;
 

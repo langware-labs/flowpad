@@ -33,7 +33,9 @@ export async function submitDisplayAnnotation(
   context: DisplayAnnotationContext,
 ): Promise<boolean> {
   const file = await captureElementAsImageFile(target, displayAnnotationImageName(context));
-  return annotateImage(file, {
+  // `annotateImage` resolves the flattened File on Save and null on Cancel; the
+  // contract here is the submitted/cancelled bit, so collapse it.
+  const result = await annotateImage(file, {
     submitLabel: t`Submit`,
     onSubmit: async (annotated) => {
       const dir = await resolveProcessInputDir(process.id);
@@ -51,4 +53,5 @@ export async function submitDisplayAnnotation(
       );
     },
   });
+  return result !== null;
 }

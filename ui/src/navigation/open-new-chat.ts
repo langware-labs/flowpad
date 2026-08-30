@@ -43,7 +43,9 @@ export async function openNewChat(
 
   const process = await computeNode.createProcess(
     {
-      workdir: options.cwd || project?.fs_storage_mount_path,
+      // `?? undefined`: a project with no mount path has `null` there, and `workdir`
+      // is an optional string — undefined drops off the wire, null would be sent.
+      workdir: options.cwd || project?.fs_storage_mount_path || undefined,
       ...(options.projectId ?? project?.id ? { projectId: options.projectId ?? project?.id } : {}),
       ...(options.workerType ? { workerType: options.workerType } : {}),
       // Headless surfaces stream the transcript as JSON; a PTY has no such stream.

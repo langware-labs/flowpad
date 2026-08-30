@@ -10,7 +10,7 @@ import { useState } from 'react';
 import { scopeColor } from './scope-colors';
 
 interface Props {
-  trigger: ITrigger;
+  trigger: TriggerEntity;
   isSelected: boolean;
   onSelect: () => void;
   onOpenLog: () => void;

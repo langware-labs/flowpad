@@ -36,8 +36,11 @@ export interface DisplayShowTarget {
   /** kind: 'dock' — the frontend's own dock grammar (`flow show view <address>`). */
   view_type?: string;
   page?: string;
-  pointer?: string;
-  options?: Record<string, string>;
+  // Nullable, matching the wire (`ShowTarget` in ts_sdk / `dock_target` in
+  // flow_sdk/core/dock_address.py): the backend sends an explicit null for a
+  // pointerless screen rather than omitting the key.
+  pointer?: string | null;
+  options?: Record<string, string> | null;
 }
 
 function slug(value: string): string {

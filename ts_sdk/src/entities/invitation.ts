@@ -60,7 +60,7 @@ export class Invitation extends APIEntity<Invitation> implements IInvitation {
   }
 }
 
-export interface DeclineInvitationParams {
+export type DeclineInvitationParams = {
   invitation_id: string;
 }
 
