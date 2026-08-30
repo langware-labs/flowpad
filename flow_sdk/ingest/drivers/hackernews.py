@@ -26,7 +26,6 @@ import httpx
 from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest import http
 from flow_sdk.ingest.driver import IngestDriver, FetchResult, SegmentCursorView, SegmentRef
-from flow_sdk.ingest.health import SourceError
 
 _BASE = "https://hacker-news.firebaseio.com/v0"
 #: Items hydrated per run — a bound on work per tick, with no sleeping.
@@ -117,7 +116,7 @@ class HackerNewsDriver(IngestDriver):
         )
 
     async def _changed_ids(self, client: httpx.AsyncClient, base: str) -> list[int]:
-        payload = await self._get_json(client, f"{base}/updates.json")
+        payload = await http.request_json(client, "GET", f"{base}/updates.json")
         if not isinstance(payload, dict):
             return []
         out: list[int] = []
@@ -129,14 +128,8 @@ class HackerNewsDriver(IngestDriver):
         return out
 
     async def _item(self, client: httpx.AsyncClient, base: str, item_id: int) -> Optional[dict]:
-        return await self._get_json(client, f"{base}/item/{item_id}.json")
+        return await http.request_json(client, "GET", f"{base}/item/{item_id}.json")
 
-    async def _get_json(self, client: httpx.AsyncClient, url: str):
-        response = await http.get(client, url)
-        try:
-            return response.json()
-        except ValueError as exc:
-            raise SourceError.transient("bad_json", str(exc)) from exc
 
 
 def _epoch_to_dt(value) -> Optional[datetime]:
