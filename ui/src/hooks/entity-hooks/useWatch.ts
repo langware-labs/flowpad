@@ -1,20 +1,7 @@
-import { dataManager, TypeId } from '@sdk';
-import { useEffect } from 'react';
-
-export function useWatch(typeId: TypeId | null, enabled: boolean = true) {
-  useEffect(() => {
-    if (!enabled || !typeId) return;
-
-    let unwatch: () => Promise<void>;
-
-    const setupWatch = async () => {
-      unwatch = await dataManager.watch(typeId);
-    };
-
-    void setupWatch();
-
-    return () => {
-      if (unwatch) setTimeout(() => void unwatch(), 100);
-    };
-  }, [enabled, typeId]);
-}
+/**
+ * Re-export of the SDK hook — see `@sdk/react/hooks/entity-hooks/useWatch`.
+ *
+ * The UI once carried its own copy; the two drifted apart and were both loaded
+ * into the same bundle. The SDK module is the single implementation.
+ */
+export { useWatch } from '@sdk/react/hooks/entity-hooks/useWatch';

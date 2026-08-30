@@ -80,6 +80,7 @@ export function useContext() {
     workdir: typeof dataContext.workdir;
     snifferEnabled: typeof dataContext.snifferEnabled;
     snifferInstalled: typeof dataContext.snifferInstalled;
+    terminalRuntimeError: typeof dataContext.terminalRuntimeError;
     isConnected: typeof dataContext.isConnected;
   }>({
     user: dataContext.user,
@@ -119,6 +120,7 @@ export function useContext() {
     workdir: dataContext.workdir,
     snifferEnabled: dataContext.snifferEnabled,
     snifferInstalled: dataContext.snifferInstalled,
+    terminalRuntimeError: dataContext.terminalRuntimeError,
     isConnected: dataContext.isConnected,
   });
 
@@ -168,6 +170,7 @@ export function useContext() {
       workdir: dataContext.workdir,
       snifferEnabled: dataContext.snifferEnabled,
       snifferInstalled: dataContext.snifferInstalled,
+      terminalRuntimeError: dataContext.terminalRuntimeError,
       isConnected: dataContext.isConnected,
     };
 
@@ -217,6 +220,8 @@ export function useContext() {
       prev.workdir !== current.workdir ||
       prev.snifferEnabled !== current.snifferEnabled ||
       prev.snifferInstalled !== current.snifferInstalled ||
+      prev.terminalRuntimeError?.kind !== current.terminalRuntimeError?.kind ||
+      prev.terminalRuntimeError?.processId !== current.terminalRuntimeError?.processId ||
       prev.isConnected !== current.isConnected
     ) {
       snapshotRef.current = current;
