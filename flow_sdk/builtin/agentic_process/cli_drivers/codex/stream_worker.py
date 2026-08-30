@@ -61,6 +61,10 @@ from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
     codex_transcript_path_for_process,
 )
 from flow_sdk.builtin.agentic_process.turn_abort import abort_status_frame
+from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import (
+    error_frame,
+    status_frame,
+)
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowData,
     FlowDataType,
@@ -137,7 +141,7 @@ class CodexCLIStreamWorker(AgenticWorker):
         except WorkerSpawnError as e:
             # Surface the message on the chat stream, then propagate so the
             # turn runner latches status=FAILED + start_failure.
-            yield _error(str(e))
+            yield error_frame(str(e))
             raise
 
         logger.info("CodexCLIStreamWorker: launching %s", " ".join(argv))
@@ -168,7 +172,7 @@ class CodexCLIStreamWorker(AgenticWorker):
             if tee_fh:
                 tee_fh.close()
             message = f"spawn failed: {e}"
-            yield _error(message)
+            yield error_frame(message)
             raise WorkerSpawnError("codex", message) from e
 
         # Pipe the prompt (with any system-prompt addition already prepended by
@@ -229,7 +233,7 @@ class CodexCLIStreamWorker(AgenticWorker):
             if self._cancel_requested:
                 yield abort_status_frame()
             elif self._proc and self._proc.returncode not in (0, None):
-                yield _status(
+                yield status_frame(
                     "exit-error",
                     f"codex exited with code {self._proc.returncode}",
                 )
@@ -336,27 +340,6 @@ class CodexCLIStreamWorker(AgenticWorker):
 
 
 # ── Module helpers ────────────────────────────────────────────────────────────
-
-
-def _error(message: str) -> FlowData:
-    return FlowData(
-        flow_value=message,
-        attributes={
-            "element-type": FlowElementType.ERROR,
-            "data-type": FlowDataType.TEXT,
-        },
-    )
-
-
-def _status(subtype: str, value: str = "") -> FlowData:
-    return FlowData(
-        flow_value=value,
-        attributes={
-            "element-type": FlowElementType.STATUS,
-            "data-type": FlowDataType.TEXT,
-            "subtype": subtype,
-        },
-    )
 
 
 def _maybe_extract_thread_id(raw_line: str) -> str | None:
