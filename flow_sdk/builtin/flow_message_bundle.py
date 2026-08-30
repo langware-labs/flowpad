@@ -813,7 +813,7 @@ def _mint_rendered_asset_identity(info, body_path: Path, entry_type: str, entry_
 
     asset_path = info.layout_of(body_path).ref
     ref = FSRef(asset_path, record_type=RecordType(entry_type))
-    return info.mint_entity_id(ref, proposed_id=entry_id, derive=True, overwrite=True)
+    return info.mint_entity_id(ref, proposed_id=entry_id)
 
 
 def _safe_entity_name(entity) -> str:

@@ -24,7 +24,7 @@ def report_type_metadata(
     return TypeMetadata(
         type=type,
         fts_content=fts_content,
-        identity_backend=NATIVE_JSON_IDENTITY,
+        identity_carrier=NATIVE_JSON_IDENTITY,
         id_stable_key_fn=resolved_path_key,
         indexed_by_default=True,
         browseable_by=ViewMode.ADVANCED,

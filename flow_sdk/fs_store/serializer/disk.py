@@ -128,40 +128,38 @@ def _frontmatter(obj: Any, info: Any) -> dict[str, Any]:
     )
     if info.name_from_path and getattr(obj, "name", None):
         out = {"name": obj.name, **out}
+    from flow_sdk.fs_store.identity_carrier import FrontmatterCarrier  # noqa: PLC0415
+
+    if isinstance(info.identity_carrier, FrontmatterCarrier) and getattr(obj, "id", None):
+        # The header IS this type's identity carrier: an owned re-render must
+        # keep the id (it rewrites the header wholesale), so it is written first.
+        out = {"id": str(obj.id), **out}
     return out
 
 
-def _observe_identity(info: Any, root: Path) -> str:
-    """The id the type's backend sees at ``root`` (capsule, then legacy readers),
-    or ``""``. MALFORMED raises, matching ``TypeInfo._observe``."""
+def _read_identity(info: Any, root: Path) -> str:
+    """The id the type's carrier holds at ``root``, or ``""``. A malformed carrier raises."""
     from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
-    from flow_sdk.fs_store.identity_backend import IdentityState  # noqa: PLC0415
 
-    if info is None or info.identity_backend is None:
+    if info is None or info.identity_carrier is None:
         return ""
-    obs = info._observe(FSRef(_asset_ref(info, root)))
-    return str(obs.candidate) if obs is not None and obs.state is IdentityState.VALID else ""
+    return info.read_id(FSRef(_asset_ref(info, root))) or ""
 
 
 def _commit_identity(info: Any, root: Path, obj: Any) -> str:
     """The identity step every disk store ends with: the carrier is
-    authoritative, so the COMMITTED id may differ from the one proposed.
-    ``carrier_writes_are_suppressed`` means the caller resolves identity
-    elsewhere — return what we were given, touch nothing.
+    authoritative, so the COMMITTED id may differ from the one proposed (the
+    seam owns the read-only / suppression gates).
 
-    The ref handed to ``mint_entity_id`` is the ASSET_REF the type's backend
+    The ref handed to ``mint_entity_id`` is the ASSET_REF the type's carrier
     was registered for — the inner ``agent.md`` for a ``main_file_is_asset_ref``
     type, the folder for a bare-folder type, the file for a file type."""
-    from flow_sdk.fs_store.fs_record import carrier_writes_are_suppressed  # noqa: PLC0415
     from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
 
     entity_id = getattr(obj, "id", None)
-    if info is None or info.identity_backend is None or not entity_id:
+    if info is None or info.identity_carrier is None or not entity_id:
         return str(entity_id or "")
-    if carrier_writes_are_suppressed():
-        return str(entity_id)
-    ref = FSRef(_asset_ref(info, root))
-    return str(info.mint_entity_id(ref, proposed_id=str(entity_id), derive=True, overwrite=True))
+    return str(info.mint_entity_id(FSRef(_asset_ref(info, root)), proposed_id=str(entity_id)))
 
 
 # ── the serializer ────────────────────────────────────────────────────────────
@@ -295,7 +293,7 @@ class DiskSerializer:
         if info is None or info.asset_spec is None:
             return self._load_via_parser(cls, info, root, entity_id)
         data, header_raw = self._read_main(cls, info, root)
-        observed_id = _observe_identity(info, root)
+        observed_id = _read_identity(info, root)
         data.update(self._read_fields(cls, info, root, entity_id or observed_id, header_raw))
         if info.derive_fields_fn is not None:
             # Facts the disk carries that the spec cannot say (counts over rows,

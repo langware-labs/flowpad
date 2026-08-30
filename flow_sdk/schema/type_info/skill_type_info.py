@@ -1,6 +1,6 @@
 """Type metadata for SKILL."""
 from flow_sdk.builtin.skill import SkillSpec
-from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, folder_capsule_id
+from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, folder_md_identity
 from flow_sdk.fs_store.indexer.functions.skill import (
     derive_skill,
     skill_asset_hash,
@@ -27,7 +27,7 @@ SKILL = TypeMetadata(
     hub_main_file="SKILL.md",
     fts_content=("name", "description", "body"),
     capsules=(IDENTITY_CAPSULE,),
-    identity_backend=capsule_identity(folder_capsule_id, skill_id_from_folder),
+    identity_carrier=folder_md_identity(skill_id_from_folder),
     asset_hash_fn=skill_asset_hash,
     asset_spec=SkillSpec,
     derive_fields_fn=derive_skill,

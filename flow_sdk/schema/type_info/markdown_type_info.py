@@ -1,6 +1,6 @@
 """Type metadata for MARKDOWN."""
 from flow_sdk.builtin.claude_memory_entities import MarkdownSpec
-from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, frontmatter_id
+from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, frontmatter_identity
 from flow_sdk.fs_store.indexer.functions.markdown import derive_markdown
 from flow_sdk.fs_store.operations.markdown import reconcile_folder_doc_edges
 from flow_sdk.schema.type_info import TypeMetadata
@@ -22,7 +22,7 @@ MARKDOWN = TypeMetadata(
     family="docs",
     fts_content=("body", "links"),
     capsules=(IDENTITY_CAPSULE,),
-    identity_backend=capsule_identity(frontmatter_id),
+    identity_carrier=frontmatter_identity(),
     post_sync_fn=reconcile_folder_doc_edges,
     # ``owns_main_ref`` stays False: a create materializes the .md when absent
     # and never clobbers hand edits. Identity lives in the capsule, not the

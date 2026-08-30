@@ -122,10 +122,13 @@ class FsRecordsActionsMixin:
                 if mount is None:
                     proj = await Project.get_one(QueryFilter.parse({"id": pid}))
                     if proj is None:
-                        return ApiFailResponse(
-                            message=f"Project '{pid}' not found",
-                            status_code=404,
-                        )
+                        # ``list-projects`` also enumerates indexer-known
+                        # directories that have no Project row yet (their id is
+                        # the derived uuid5(cwd)); the scanner's "every project"
+                        # picker sends those too. One unknown token must not
+                        # fail the whole index — skip it like a mount-less row.
+                        logging.warning("[fs-records/index] unknown project '%s' in scope — skipped", pid)
+                        continue
                     mount = getattr(proj, "fs_storage_mount_path", None)
                 if not mount:
                     # Stale entity with no mount — skip silently (matches the
@@ -647,7 +650,7 @@ class FsRecordsActionsMixin:
         if info is None:
             return None
         try:
-            return info.mint_entity_id(ref, derive=True, overwrite=True)
+            return info.mint_entity_id(ref)
         except Exception:
             return None
 
@@ -2127,8 +2130,8 @@ class FsRecordsActionsMixin:
         metadata shadow only) leaves for the FSRecord create path."""
         from pathlib import Path  # noqa: PLC0415
 
-        from flow_sdk.fs_store.origin.local_origin import local_origin_for_path  # noqa: PLC0415
         from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+        from flow_sdk.fs_store.origin.local_origin import local_origin_for_path  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         info = SchemaRegistry.get(record_type)
@@ -2653,9 +2656,7 @@ async def discover_record_by_path(
     from datetime import timezone as _timezone  # noqa: PLC0415
 
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415 — trigger auto-registration
-    from flow_sdk.fs_store.fs_record import carrier_writes_are_suppressed  # noqa: PLC0415
     from flow_sdk.fs_store.fs_ref import FSRef as _FSRef  # noqa: PLC0415
-    from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
     from flow_sdk.fs_store.indexer.roots import classify_path  # noqa: PLC0415
     from flow_sdk.fs_store.record_list import RecordList  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType as _RT  # noqa: PLC0415
@@ -2699,31 +2700,12 @@ async def discover_record_by_path(
                 _owner_id = proposed_id or await owner_id_for(
                     record_type, expanded, strict=strict_owner
                 )
-                # When the operation forbids touching the source bytes, resolve
-                # READ-ONLY: `derive=False` answers only from evidence already
-                # present and `overwrite=False` commits nothing.
-                #
-                # Read from the operation's context rather than taken as an
-                # argument. The same policy as a parameter would have to be
-                # threaded correctly by every caller, and a caller that forgot
-                # would stamp a capsule into bytes that are not ours — a git
-                # working tree, where it is then committed and pushed to
-                # everyone who pulls.
-                #
-                # A suppressed resolve has no carrier to fall back on, so a
-                # genuinely new asset is given a fresh id here. Identity for
-                # such a source converges through an `origin_id` lookup, not
-                # through anything derived from the bytes.
-                _suppressed = carrier_writes_are_suppressed()
-                resolved_id = _info.mint_entity_id(
-                    one_ref,
-                    owner_id=_owner_id,
-                    proposed_id=proposed_id,
-                    derive=not _suppressed,
-                    overwrite=not _suppressed,
-                )
-                if _suppressed and not resolved_id:
-                    resolved_id = str(mint_uuid())
+                # The seam owns the write gates (read_only, suppressed carrier
+                # writes for a git working tree): a suppressed resolve answers
+                # from the carrier or a stable path-derived id and touches no
+                # bytes; identity for such a source converges through an
+                # `origin_id` lookup, not through anything derived from the bytes.
+                resolved_id = _info.mint_entity_id(one_ref, owner_id=_owner_id, proposed_id=proposed_id)
 
                 # Match the full indexer's deterministic primary ranking. A
                 # non-primary path remains observable but is neither parsed nor
@@ -2756,7 +2738,7 @@ async def discover_record_by_path(
                             record_type=_RT(record_type),
                             scope=classify_path(candidate),
                         )
-                        candidate_id = _info.mint_entity_id(candidate_ref)
+                        candidate_id = _info.read_id(candidate_ref)
                         if not candidate_id:
                             return None
                         return record_type, candidate_id, canonical_posix_path(candidate)

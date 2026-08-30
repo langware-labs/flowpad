@@ -45,7 +45,7 @@ from tests.unit.test_fs_store._dataset_tree import (
 
 
 def _mint(ref: FSRef) -> str:
-    return SchemaRegistry.get("dataset").mint_entity_id(ref, derive=True, overwrite=True)
+    return SchemaRegistry.get("dataset").mint_entity_id(ref)
 
 
 def _extract(ref: FSRef):

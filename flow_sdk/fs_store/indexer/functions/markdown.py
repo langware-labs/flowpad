@@ -223,7 +223,8 @@ def markdown_id(ref: FSRef) -> str:
         # its result flows into sync_to_db() — a crash during registry
         # bootstrap is strictly better than a silently forked document.
         raise RuntimeError("markdown TypeInfo is not registered; cannot resolve identity")
-    return info.mint_entity_id(ref, derive=True, overwrite=False)
+    # A read-only derive: the walk already stamped; this must never write.
+    return info.mint_entity_id(FSRef(ref._path, read_only=True, record_type=ref.record_type, scope=ref.scope))
 
 
 def _derive(data: dict, root: Path, header_raw: dict, *, titled: bool) -> None:

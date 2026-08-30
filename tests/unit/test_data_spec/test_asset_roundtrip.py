@@ -118,22 +118,22 @@ COMPARE[Dataset] = {"examples": lambda rows: [r.model_dump(mode="json", exclude=
 
 
 def _register_probe_types() -> None:
-    from flow_sdk.fs_store.identity_backend import CapsuleIdentityBackend
-    from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE
+    from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, folder_md_identity, frontmatter_identity
     from flow_sdk.fs_store.schema_registry import TypeInfo
 
     for cls, spec, layout, main_file in (
         (_Leaf, _LeafSpec, "file", None), (_Inner, _InnerSpec, "folder", "inner.md"), (_Root, _RootSpec, "folder", "root.md"),
     ):
         info = TypeInfo(type_name=cls.model_fields["type"].default, capsules=(IDENTITY_CAPSULE,),
-                        identity_backend=CapsuleIdentityBackend(), main_layout=layout, main_file=main_file,
+                        identity_carrier=frontmatter_identity() if layout == "file" else folder_md_identity(),
+                        main_layout=layout, main_file=main_file,
                         main_file_is_asset_ref=bool(main_file), asset_spec=spec)
         info.entity_cls = cls
         SchemaRegistry.register(info)
 
 
 # The probes are registered like every real type: identity through a
-# CapsuleIdentityBackend, layout on TypeInfo. `type` is what _type_of reads.
+# FolderJsonCarrier, layout on TypeInfo. `type` is what _type_of reads.
 _register_probe_types()
 
 
@@ -193,16 +193,16 @@ def test_none_round_trips_as_absent(tmp_path: Path) -> None:
     assert DiskSerializer().load(_Leaf, o).model is None
 
 
-def test_identity_is_a_capsule_not_frontmatter(tmp_path: Path) -> None:
-    """Both layouts: the id lives in the capsule and NEVER in the header."""
+def test_identity_is_the_first_frontmatter_key(tmp_path: Path) -> None:
+    """Both layouts: the markdown main document carries the id as its first
+    frontmatter key; no comment capsule is written."""
     ser = DiskSerializer()
     leaf = populate(_Leaf); ser.store(leaf, LocalOrigin(base=str(tmp_path), rel_path="l.md"))
     root = populate(_Root); ser.store(root, LocalOrigin(base=str(tmp_path), rel_path="r"))
     for path, obj in ((tmp_path / "l.md", leaf), (tmp_path / "r" / "root.md", root)):
         text = path.read_text()
-        assert f"id: {obj.id}" in text                       # inside the capsule block
-        assert "flowpad:capsule identity" in text
-        assert not text.split("---")[1].strip().startswith("id:")  # not a frontmatter key
+        assert text.startswith(f"---\nid: {obj.id}\n")
+        assert "flowpad:capsule" not in text
     assert ser.load(_Leaf, LocalOrigin(base=str(tmp_path), rel_path="l.md")).id == leaf.id
     assert ser.load(_Root, LocalOrigin(base=str(tmp_path), rel_path="r")).id == root.id
 

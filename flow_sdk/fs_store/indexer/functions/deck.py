@@ -106,7 +106,7 @@ def _resolve_template_ref(deck_dir: Path, manifest: dict[str, Any]) -> str | Non
     if info is None:
         return None
     try:
-        return info.mint_entity_id(FSRef(tpl_dir, record_type=RecordType.DECK_TEMPLATE))
+        return info.read_id(FSRef(tpl_dir, record_type=RecordType.DECK_TEMPLATE))
     except Exception:
         return None
 

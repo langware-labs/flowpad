@@ -34,7 +34,7 @@ PROJ_BETA = "/Users/alice/proj-beta"
 
 
 def _extract(ref: FSRef):
-    return extract_mcp_server(ref, SchemaRegistry.get("mcp_server").mint_entity_id(ref, derive=True, overwrite=True))
+    return extract_mcp_server(ref, SchemaRegistry.get("mcp_server").mint_entity_id(ref))
 
 
 def _make_home(tmp_path: Path) -> Path:
@@ -204,7 +204,7 @@ def test_extract_claude_user_server(tmp_path: Path) -> None:
     assert "npx" in d["description"] and "@mcp/github" in d["description"]
     # The legacy natural key remains stable, but TypeInfo exposes its UUIDv5.
     assert d["id"] == SchemaRegistry.get("mcp_server").mint_entity_id(
-        ref, derive=True, overwrite=True
+        ref
     )
 
 
@@ -261,7 +261,7 @@ def test_gen_uuid_matches_extracted_record_id(tmp_path: Path) -> None:
     home = _make_home(tmp_path)
     for ref in _scan(_home_root(home)):
         (rec,) = _extract(ref)
-        gen = SchemaRegistry.get("mcp_server").mint_entity_id(ref, derive=True, overwrite=True)
+        gen = SchemaRegistry.get("mcp_server").mint_entity_id(ref)
         assert is_valid_entity_id(gen)
         assert not any(ch in gen for ch in ":/\\")
         assert gen == Entity.allocate_id(rec.to_dict())

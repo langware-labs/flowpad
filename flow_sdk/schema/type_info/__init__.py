@@ -112,7 +112,7 @@ class TypeMetadata:
     # Indexer dispatch callables (walked types only).
     from_disk_fn: Any = None
     capsules: tuple[CapsuleSpec, ...] = ()
-    identity_backend: Any = None
+    identity_carrier: Any = None
     id_stable_key_fn: Any = None
     id_namespace: Any = None
     asset_hash_fn: Any = None

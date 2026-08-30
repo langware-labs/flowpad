@@ -126,7 +126,7 @@ def test_group_fields_round_trip_task_md(tmp_path):
     (folder / "task.md").write_text(_task_md_body_from(child), encoding="utf-8")
 
     ref = FSRef(folder)
-    rec = SchemaRegistry.get("task").from_disk_fn(ref, SchemaRegistry.get("task").mint_entity_id(ref, derive=True, overwrite=True))[0]
+    rec = SchemaRegistry.get("task").from_disk_fn(ref, SchemaRegistry.get("task").mint_entity_id(ref))[0]
     assert rec.parent_id == "11111111-2222-4333-8444-555566667777"
     assert rec.assignee == "bob@x.com"
     assert rec.kind == "standard"
@@ -141,7 +141,7 @@ def test_group_kind_round_trips(tmp_path):
     (folder / "task.md").write_text(_task_md_body_from(parent), encoding="utf-8")
 
     ref = FSRef(folder)
-    rec = SchemaRegistry.get("task").from_disk_fn(ref, SchemaRegistry.get("task").mint_entity_id(ref, derive=True, overwrite=True))[0]
+    rec = SchemaRegistry.get("task").from_disk_fn(ref, SchemaRegistry.get("task").mint_entity_id(ref))[0]
     assert rec.kind == "group"
     # Empty parent_id is dropped from frontmatter (not a leak, just clean yaml).
     assert "parent_id" not in (folder / "task.md").read_text(encoding="utf-8")

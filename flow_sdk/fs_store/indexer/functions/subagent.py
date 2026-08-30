@@ -141,7 +141,7 @@ def subagent_peek_entity_id(ref: FSRef) -> str:
 
     info = SchemaRegistry.get(str(RecordType.SUBAGENT))
     if info is not None:
-        existing = info.mint_entity_id(ref)
+        existing = info.read_id(ref)
         if existing is not None:
             return existing
     try:

@@ -434,3 +434,21 @@ async def test_search_with_record_type_filter_after_index(bootstrapped_client):
     # All results must be skills
     for r in data["results"]:
         assert r["record_type"] == "skill"
+
+
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
+@pytest.mark.asyncio
+async def test_index_skips_unknown_project_token(bootstrapped_client):
+    """``list-projects`` also enumerates indexer-known directories that have no
+    Project row (their id is the derived uuid5(cwd)), and the scanner's
+    "every project" picker sends those too. One unknown token must be skipped,
+    not fail the whole index with a 404."""
+    boot = await _bootstrap(bootstrapped_client)
+    project_id = boot["data"]["default_project"]["id"]
+    unknown = mint_uuid("project:/nowhere/never-minted", namespace=__import__("uuid").NAMESPACE_URL)
+    resp = await bootstrapped_client.post(
+        _cn_url(boot, "index") + f"?type=skill&user=true&projects={project_id},{unknown}"
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["type"] == "skill"

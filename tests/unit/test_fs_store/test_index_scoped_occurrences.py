@@ -46,13 +46,13 @@ async def test_scoped_run_does_not_reread_other_roots_records(
     assert seeded.per_type[RecordType.MARKDOWN].indexed == 2
 
     reread: list[str] = []
-    original = TypeInfo.mint_entity_id
+    original = TypeInfo._read_carrier
 
     def spy(self, ref, *args, **kwargs):
         reread.append(str(ref._path))
         return original(self, ref, *args, **kwargs)
 
-    monkeypatch.setattr(TypeInfo, "mint_entity_id", spy)
+    monkeypatch.setattr(TypeInfo, "_read_carrier", spy)
 
     outside_md = str(outside / "docs" / "b.md")
 

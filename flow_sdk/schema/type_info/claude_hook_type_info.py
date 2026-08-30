@@ -15,7 +15,7 @@ CLAUDE_HOOK = TypeMetadata(
     indexed_by_default=True,
     api_visible=True,
     from_disk_fn=extract_claude_hook,
-    identity_backend=derived_identity(),
+    identity_carrier=derived_identity(),
     id_stable_key_fn=claude_hook_identity_key,
     id_namespace=uuid.NAMESPACE_DNS,
 )

@@ -196,4 +196,4 @@ async def test_folder_is_transient_not_persisted(tmp_path: Path) -> None:
             "FOLDER must not declare from_disk_fn — the indexer would persist "
             "every walked directory"
         )
-        assert info.identity_backend is None
+        assert info.identity_carrier is None

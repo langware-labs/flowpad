@@ -2,8 +2,7 @@
 from flow_sdk.builtin.prompt import PromptSpec
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
     IDENTITY_CAPSULE,
-    capsule_identity,
-    frontmatter_id,
+    frontmatter_identity,
     resolved_path_key,
 )
 from flow_sdk.schema.type_info import TypeMetadata
@@ -14,7 +13,7 @@ PROMPT = TypeMetadata(
     type=EntityType.PROMPT,
     fts_content=("text",),
     capsules=(IDENTITY_CAPSULE,),
-    identity_backend=capsule_identity(frontmatter_id),
+    identity_carrier=frontmatter_identity(),
     id_stable_key_fn=resolved_path_key,
     indexed_by_default=True,
     browseable_by=ViewMode.STANDARD,

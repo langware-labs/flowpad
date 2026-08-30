@@ -36,7 +36,7 @@ CLAUDE_SESSION = TypeMetadata(
     # which had no per-type glyph and fell back to the generic document icon.
     icon="ClaudeCode",
     from_disk_fn=extract_claude_session,
-    identity_backend=derived_identity(claude_session_id_from_file),
+    identity_carrier=derived_identity(claude_session_id_from_file),
     id_stable_key_fn=claude_session_stable_key,
     id_namespace=uuid.NAMESPACE_DNS,
     # A session IS its transcript file, so it is an ordinary file-backed asset:

@@ -325,7 +325,7 @@ These types are extracted from `~/.claude/settings.json` (or project-level `.cla
 The old `flow_sdk/fs_records/` per-type record classes (`ClaudeRootFsRecord`, `ClaudeSessionFsRecord`, `SkillRecord`, `AgenticProcess`, …) no longer exist. With `FSRecord` knowing nothing about types, all per-type behavior lives in **free functions registered on `TypeInfo`** and dispatched by the indexer:
 
 - `from_disk_fn(FSRef, resolved_id) -> list[FSRecord]` — parse payload after identity has been resolved once
-- `capsules` / `identity_backend` — named capsule declarations plus canonical and legacy/native identity observation
+- `capsules` / `identity_carrier` — named capsule declarations plus WHERE the id lives (frontmatter / folder json / native json / derived)
 - `id_stable_key_fn(FSRef) -> str | None`, `id_namespace` — optional deterministic v5 policy
 - `asset_hash_fn(FSRef) -> float` — cheap freshness stat
 - `post_sync_fn`, `default_body_fn`, `meta_model`, `main_subdir`, `main_layout`
