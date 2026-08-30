@@ -11,7 +11,7 @@ from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.fs_store.origin.local_origin import local_origin_for_path
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
-from flow_sdk.worldview.ontology import kind_matches, normalize_kind
+from flow_sdk.worldview.ontology import KindStr, kind_matches
 
 LEGACY_ARTIFACT_KIND_MAP: dict[str, str] = {
     "WEBAPP": "application.web",
@@ -34,7 +34,7 @@ class Artifact(Entity):
 
     type: str = APIField(default=EntityType.ARTIFACT.value)
     name: str = APIField(description="Display name")
-    kind: str = APIField(description="Open dot-path ontology kind")
+    kind: KindStr = APIField(description="Open dot-path ontology kind")
     description: str | None = APIField(default=None, description="Human-readable description")
     #: An artifact REFERENCES an asset; it never owns the path. Both rows carry
     #: the same ``asset_ref``, so without this the artifact would compete with
@@ -89,11 +89,6 @@ class Artifact(Entity):
             # The registration input names a PATH; the origin is its local locator.
             data["origin"] = local_origin_for_path(Path(raw_path).expanduser())
         return data
-
-    @field_validator("kind", mode="before")
-    @classmethod
-    def _valid_kind(cls, value: Any) -> str:
-        return normalize_kind(value)
 
     async def setup_on_receive(self, *, project_id=None, workdir=None) -> dict:
         """Only application.web artifacts invoke the artifact setup skill."""
