@@ -270,8 +270,24 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     this._dirty = value;
   }
 
-  get icon(): string | null {
-    return (this.constructor as typeof APIEntity).icon;
+  _icon?: string | null;
+
+  /**
+   * This row's icon: a per-ROW `icon` from the wire when the backend sends one
+   * (`Organization.icon` is a real `APIField(None)`), otherwise the TYPE's
+   * registry glyph (`static icon`, from `TypeInfo.icon`).
+   *
+   * This USED to be a getter with no setter, which made `deepAssign` throw
+   * `Cannot set property icon of #<APIEntity> which has only a getter` for any
+   * entity whose payload carried an `icon` key — `new Team({icon})` crashed.
+   * The pair is what the two-level fallback needed all along.
+   */
+  get icon(): string | null | undefined {
+    return this._icon ?? (this.constructor as typeof APIEntity).icon;
+  }
+
+  set icon(value: string | null | undefined) {
+    this._icon = value ?? null;
   }
 
   get editorDockPointer(): DockPointerData {
@@ -520,7 +536,42 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return workspaces;
   }
 
+  /** The getter installed by THIS class, for the own-mirror guard below. */
+  private static readonly baseIconGetter = Object.getOwnPropertyDescriptor(
+    APIEntity.prototype,
+    'icon',
+  )?.get;
+
+  /** The `icon` getter an instance actually resolves, walking the prototype chain. */
+  private static resolveIconAccessor(instance: object): (() => unknown) | undefined {
+    for (let o = Object.getPrototypeOf(instance); o; o = Object.getPrototypeOf(o)) {
+      const d = Object.getOwnPropertyDescriptor(o, 'icon');
+      if (d) return d.get;
+    }
+    return undefined;
+  }
+
   constructor(entityJson: any = {}) {
+    // Install `icon` as an OWN enumerable accessor before deepAssign runs: the
+    // prototype pair above already stops the assignment from throwing, but a
+    // prototype accessor is invisible to anything that serializes an entity by
+    // enumerating own properties (`toJSON`), and the `_icon` backing field is
+    // underscore-skipped.
+    //
+    // ONLY when the accessor this instance resolves is still THIS one. A
+    // subclass may override `icon` with a computed getter — `AgenticProcess`
+    // derives its glyph from `worker_type` — and an own property would shadow
+    // that override for the life of the instance.
+    if (APIEntity.resolveIconAccessor(this) === APIEntity.baseIconGetter) {
+      Object.defineProperty(this, 'icon', {
+        enumerable: true,
+        configurable: true,
+        get: () => this._icon ?? (this.constructor as typeof APIEntity).icon,
+        set: (value: string | null | undefined) => {
+          this._icon = value ?? null;
+        },
+      });
+    }
     dataManager.deepAssign(this, entityJson);
     this.id = entityJson.id || uuidv4();
     if (entityJson.type && entityJson.type != this.getType()) {
@@ -1101,8 +1152,15 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * surfaces (artifact favorites/cards/chips, skill run). Returns the DisplayTarget
    * to navigate to (`openDisplayTarget`): the entity itself, or a spawned Vibe setup
    * session. `projectId` optionally overrides the entity's own project binding.
+   *
+   * Named for the backend hook (`Entity.setup_on_receive`) rather than the wire
+   * action, which stays `setup`. A bare `setup` here collided with two real,
+   * differently-shaped subclass actions — `Capability.setup` (a type-specific
+   * `@action.post("setup")` returning a CapabilityCheck) and
+   * `ComputeNode.setup` (a different endpoint entirely, `ops/setup`, returning
+   * the provider id). This one had no callers, so it is the one that moved.
    */
-  public async setup(projectId?: string | null): Promise<ReceiveShowTarget | null> {
+  public async setupOnReceive(projectId?: string | null): Promise<ReceiveShowTarget | null> {
     const info = new ActionInfo('setup', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters = { project_id: projectId ?? null };
     const res = await dataManager.callAction<unknown, { show?: ReceiveShowTarget | null }>(info);

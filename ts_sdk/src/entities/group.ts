@@ -54,22 +54,6 @@ export class Group extends APIEntity<Group> implements IGroup {
 
   name: string = '';
   group_namespace: string = '';
-  private _icon: string | null = null;
-
-  /**
-   * Per-instance icon. The base ``APIEntity.icon`` is a getter-only accessor
-   * (the static type icon), so this overrides it as an accessor PAIR — and
-   * the constructor additionally mirrors it as an OWN enumerable accessor so
-   * toJSON's own-enumerable iterator serializes it (the ``_icon`` backing
-   * field is underscore-skipped) and deepAssign can set it.
-   */
-  get icon(): string | null {
-    return this._icon;
-  }
-
-  set icon(v: string | null) {
-    this._icon = v ?? null;
-  }
   color?: string | null;
   project_id?: string | null;
 
@@ -77,14 +61,6 @@ export class Group extends APIEntity<Group> implements IGroup {
     super(entity);
     this.name = entity.name ?? '';
     this.group_namespace = entity.group_namespace ?? '';
-    Object.defineProperty(this, 'icon', {
-      enumerable: true,
-      configurable: true,
-      get: () => this._icon,
-      set: (v: string | null | undefined) => {
-        this._icon = v ?? null;
-      },
-    });
     this.icon = entity.icon ?? null;
     this.color = entity.color ?? null;
     this.project_id = entity.project_id ?? null;

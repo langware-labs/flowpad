@@ -125,32 +125,13 @@ export class Capability extends APIEntity<Capability> implements ICapability {
   api_provider: string | null = null;
   model_map: Record<string, Record<string, string>> = {};
 
-  private _icon: string | null = null;
-
-  // NOT redundant with the constructor's defineProperty: APIEntity's
-  // prototype exposes a getter-only `icon`, and `super(entity)` assigns
-  // fields before the constructor can install the own accessor — without
-  // this prototype-level setter that assignment throws. The defineProperty
-  // below additionally makes `icon` an own enumerable prop so serialization
-  // sees it.
-  get icon(): string | null {
-    return this._icon ?? Capability.icon;
-  }
-
-  set icon(value: string | null) {
-    this._icon = value ?? null;
-  }
+  // The `_icon` holder, the prototype accessor pair and the own-enumerable
+  // defineProperty that used to live here are now on APIEntity — this entity
+  // hit the getter-only-`icon` crash first and fixed it locally; the base does
+  // it for every entity now.
 
   constructor(entity: Partial<ICapability> = {}) {
     super(entity);
-    Object.defineProperty(this, 'icon', {
-      enumerable: true,
-      configurable: true,
-      get: () => this._icon ?? Capability.icon,
-      set: (value: string | null | undefined) => {
-        this._icon = value ?? null;
-      },
-    });
     this.name = entity.name ?? this.name;
     this.kind = entity.kind ?? this.kind;
     this.scope_type = entity.scope_type ?? this.scope_type;
