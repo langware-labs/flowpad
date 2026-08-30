@@ -84,8 +84,39 @@ export function waitForChunks(queueStr: string, chunks: string[]): boolean {
 }
 
 /**
- * Decode XML entities in content
- * Handles HTML/XML entities like &gt;, &lt;, &amp;, &quot;, &apos;, &#123;, etc.
+ * The exact alphabet the backend's content escaper emits.
+ *
+ * `_escape_xml_content` is `html.escape(content, quote=False)` — three
+ * entities, and quotes are deliberately left alone so a serialized JSON
+ * document keeps its structural `"` characters.
+ */
+const XML_CONTENT_ENTITIES: Record<string, string> = {
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+};
+
+/**
+ * Decode the XML entities the backend escapes into flow-element CONTENT.
+ *
+ * Deliberately mirrors `_escape_xml_content` and nothing wider. The previous
+ * implementation round-tripped the text through a `<textarea>`, which invokes
+ * the browser's full HTML parser and therefore resolved the entire named
+ * entity set plus numeric and semicolon-less references — `&quot;`, `&quot`,
+ * `&#34;`, `&#x22;` all became `"`, and `&copy;` became `©`. No encoder ever
+ * produces those, so every one of them was an unpaired decode.
+ *
+ * That mattered because this runs on both escaped and unescaped producers:
+ * the XML stream is escaped, but `get-history` and the JSONL reader ship
+ * transcript text verbatim. An agent that writes the six characters `&quot;`
+ * into a file left them in the transcript, and decoding them to a bare `"`
+ * closed the surrounding JSON string early — `JSON.parse` then threw, the
+ * throw escaped FlowData's constructor, and the whole replay was dropped
+ * (FLOWPAD-2038). Restricting the alphabet makes those spellings inert while
+ * still reversing everything the encoder can actually emit.
+ *
+ * Single pass, so `&amp;lt;` decodes to `&lt;` and never to `<`. Pure string
+ * work — no DOM, so this is usable outside a browser.
  */
 export function decodeXMLEntities(text: string | null | undefined): string {
   if (!text) {
@@ -94,10 +125,7 @@ export function decodeXMLEntities(text: string | null | undefined): string {
   if (typeof text !== 'string') {
     return text;
   }
-  // Create a temporary element to use browser's built-in entity decoder
-  const element = document.createElement('textarea');
-  element.innerHTML = text;
-  return element.value;
+  return text.replace(/&(?:amp|lt|gt);/g, (entity) => XML_CONTENT_ENTITIES[entity]);
 }
 
 /**
