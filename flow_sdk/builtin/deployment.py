@@ -48,7 +48,7 @@ from flow_sdk.worldview.models import (
     DeploymentStatus,
     DeploymentTarget,
 )
-from flow_sdk.worldview.ontology import normalize_kind
+from flow_sdk.worldview.ontology import KindStr, normalize_kind
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.agent import Agent
@@ -72,7 +72,7 @@ class Deployment(Entity):
 
     type: str = APIField(default=EntityType.DEPLOYMENT.value)
     name: str = APIField(description="Display name")
-    kind: str = APIField(description="Open dot-path ontology kind — WHAT is placed")
+    kind: KindStr = APIField(description="Open dot-path ontology kind — WHAT is placed")
     artifact_id: str | None = APIField(default=None, description="Referenced Artifact (not the parent)")
     artifact_link_source: ArtifactLinkSource | None = APIField(default=None)
     target: DeploymentTarget = APIField(description="Provider placement target — WHERE it runs")
@@ -516,11 +516,6 @@ class Deployment(Entity):
         })
 
     # ── validators ────────────────────────────────────────────────────────
-
-    @field_validator("kind", mode="before")
-    @classmethod
-    def _valid_kind(cls, value: Any) -> str:
-        return normalize_kind(value)
 
     @field_validator("artifact_id", mode="before")
     @classmethod
