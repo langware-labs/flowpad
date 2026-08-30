@@ -1068,18 +1068,32 @@ class FSIndexer:
             # before; _commit_batch makes it explicit so the trailing batch's
             # sentinels are stamped under the same write-ahead ordering.
             await _commit_batch()
+            _since_commit = 0
 
             # Reflect the complete collision view only after all primaries have
             # been parsed/skipped, so a newly-created row is available too.
+            # Reflections are writes, so they carry the SAME bounded-batch
+            # discipline as the record loop — on the same counter, because it is
+            # the same question: how many records have been written since the
+            # writer lock was last released. Without it every reflection landed in
+            # ONE transaction released only when the session closed, holding the
+            # lock for the whole pass (measured: a 7.7s hold starting 1.3s before
+            # the record loop ended and running 6.4s past it) and starving
+            # concurrent writes past busy_timeout into "database is locked". The
+            # record loop's batching never reached here, which is why tuning
+            # _INDEX_COMMIT_BATCH did nothing to it.
             for (type_name, entity_id), decision in collision_by_key.items():
                 if not decision.changed:
                     continue
                 entity = await driver.get_by_id(entity_id, type_name)
-                if entity is not None and hasattr(entity, "reflect_asset_occurrences"):
-                    await entity.reflect_asset_occurrences(
-                        decision.occurrences,
-                        notify=True,
-                    )
+                if entity is None or not hasattr(entity, "reflect_asset_occurrences"):
+                    continue
+                await entity.reflect_asset_occurrences(decision.occurrences, notify=True)
+                _since_commit += 1
+                if _since_commit >= _INDEX_COMMIT_BATCH:
+                    await _commit_batch()
+                    _since_commit = 0
+            await _commit_batch()
 
         # The writer session ends above, before the potentially long orphan
         # discovery below. Discovery is read-only and may walk every record
