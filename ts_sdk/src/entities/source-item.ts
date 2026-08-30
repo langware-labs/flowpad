@@ -3,9 +3,8 @@
  * (flow_sdk/builtin/source_item.py). Read-mostly: the drivers write these;
  * the UI and editor apps list, star and mark them read.
  */
-import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 
 export interface ISourceItem extends IEntity {
   kind?: string;

@@ -1,6 +1,5 @@
-import type { EntityMerge } from '../IEntity';
 import { APIEntity, dataManager, registerEntity, type ReceiveShowTarget } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
 

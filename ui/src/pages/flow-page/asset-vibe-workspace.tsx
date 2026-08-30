@@ -1,4 +1,4 @@
-import { AgenticProcess, dataContext, fsStore, TypeId, VFSPath } from '@sdk';
+import { dataContext, fsStore, TypeId, VFSPath } from '@sdk';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { isContentAssetDock } from '@src/navigation/content-asset-dock';
 import { openActiveDisplay } from '@src/navigation/open-active-display';

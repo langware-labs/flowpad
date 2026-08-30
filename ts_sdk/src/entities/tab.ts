@@ -1,6 +1,5 @@
-import type { EntityMerge } from '../IEntity';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models';
 import { IDockPointer } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';

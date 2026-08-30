@@ -1,6 +1,5 @@
-import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity, dataManager } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models';
 import { JobExecutionStatus, JobRunnerType } from './jobs_enum';
 

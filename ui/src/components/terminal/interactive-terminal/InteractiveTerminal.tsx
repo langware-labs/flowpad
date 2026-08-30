@@ -94,14 +94,13 @@ export interface ColVisibility {
   annotations: boolean;
 }
 
+import { perfLog } from '@src/routes/loaders/_perf';
+import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
+
 // An empty bracketed paste (RFC 6093 start+end markers, no payload) — the exact
 // signal an image paste delivers to the PTY, which the CLI reads the system
 // clipboard on. Re-emitted after annotation so the CLI inlines the annotated image.
-import { perfLog } from '@src/routes/loaders/_perf';
-
 const EMPTY_BRACKETED_PASTE = '\x1b[200~\x1b[201~';
-
-import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
 import {
   FONT_FAMILY,
   FONT_SIZE_PX,

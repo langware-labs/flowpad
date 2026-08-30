@@ -22,13 +22,12 @@ import { IResource } from './IResource';
  * An alias rather than the key list written out 62 times: the list had already
  * drifted into two orderings, and the next member `APIEntity` declares would
  * otherwise be a 62-file edit whose failure mode is an opaque merge error.
- * `Extra` carries the per-entity additions (today: `icon`, on the five entities
- * that also take a per-row icon off the wire).
+ *
+ * `icon` is in the list unconditionally even though only five interfaces
+ * declare it — `Omit` of an absent key is a no-op, and `APIEntity` owns `icon`
+ * as an accessor pair for EVERY entity, exactly like `id` and `members`.
  */
-export type EntityMerge<I, Extra extends string = never> = Omit<
-  I,
-  'expand' | 'id' | 'is_private' | 'members' | Extra
->;
+export type EntityMerge<I> = Omit<I, 'expand' | 'icon' | 'id' | 'is_private' | 'members'>;
 
 export interface IEntity extends Omit<Partial<IResource>, 'name' | 'created_at'> {
   /** Creation timestamp (ISO string); null on a row the backend never stamped. */

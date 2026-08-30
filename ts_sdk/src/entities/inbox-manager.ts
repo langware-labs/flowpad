@@ -1,6 +1,5 @@
-import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 
 /**
  * InboxManager — the @local singleton mirroring the backend unread projection.

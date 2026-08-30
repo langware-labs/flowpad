@@ -6,9 +6,8 @@
  * that is the origin enum on a trace's FlowData (stream | history | …) and has
  * nothing to do with ingestion. See docs/glossary.md.
  */
-import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 
 /** Mirror of flow_sdk/ingest/health.py SourceHealth. */
 export type SourceHealth = 'never_synced' | 'ok' | 'transient_error' | 'config_error';

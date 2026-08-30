@@ -1,6 +1,5 @@
-import type { EntityMerge } from '../../IEntity';
 import { APIEntity, registerEntity } from '../../APIEntity';
-import { IEntity } from '../../IEntity';
+import { IEntity, EntityMerge } from '../../IEntity';
 import type { JourneyGraph } from './journey-graph';
 
 /** new → launched → complete, plus `restarted` for a superseded journal. */

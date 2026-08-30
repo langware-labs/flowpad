@@ -3,9 +3,8 @@
  * DataSource (`source_id`) its rows are that source's items: `promote` turns
  * items into examples, `annotate` writes an example's gold label.
  */
-import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 
 /** The kinds an authored field may take. Mirrors the backend's declaration —
  *  `flow_sdk/schema/data_spec/_kinds.py` PRIMITIVES plus the one-element list

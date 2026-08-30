@@ -1,6 +1,5 @@
-import type { EntityMerge } from '../../IEntity';
 import { APIEntity, isNonEmptyString, registerEntity } from '../../APIEntity';
-import type { IEntity } from '../../IEntity';
+import type { IEntity, EntityMerge } from '../../IEntity';
 import { DockPointerData } from '../../models/DockPointer';
 import type { FSOriginField, FSOriginInput } from '../../models/FSOrigin';
 import { normalizeFSOrigin } from '../../models/FSOrigin';

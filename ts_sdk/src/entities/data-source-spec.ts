@@ -10,9 +10,8 @@
  * comes from the backend, so a new source lights the form up without a
  * frontend release.
  */
-import type { EntityMerge } from '../IEntity';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 
 /**
  * What a config field renders as. Mirrors `FieldType` in

@@ -1,10 +1,9 @@
-import type { EntityMerge } from '../IEntity';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { dataContext } from '../FlowSync/context';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import type { GitOrigin } from '../models/GitOrigin';
 import { normalizeEmail } from '../utils/utils';
 import type { ConversationParticipant } from './conversation';

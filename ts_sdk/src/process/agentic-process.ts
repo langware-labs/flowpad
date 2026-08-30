@@ -69,51 +69,9 @@ import type { HookEventType } from '../claude_hook_events/event-types';
 /**
  * Result returned by AgenticProcess.spawn().
  */
-/**
- * Resolved `flow show` display target — the payload of the `on_show` entity
- * event, produced by the backend's `resolve_display_target`
- * (flow_sdk/core/display_target.py). Discriminated by `kind`.
- */
-export interface ShowTarget {
-  /** Mirrors python `DisplayTargetKind` (flow_sdk/core/display_target.py). */
-  kind?: 'entity' | 'vfs' | 'webapp' | 'app' | 'shell' | string;
-  /** entity: canonical `<type>-<id>` string. */
-  typeid?: string;
-  type?: string;
-  id?: string;
-  /** entity (when shown by path) | vfs: the resolved absolute path. */
-  path?: string;
-  /** webapp: the dev-server port. */
-  port?: number | string;
-  /** app: the Artifact IS the address — the runtime below is derived from its
-   *  companions, never pinned into the target (`_app_payload`). */
-  artifact_id?: string;
-  /** app: the delivery row. Sent whenever a MicroApp exists, and the only id a
-   *  webapp ASSET has — it has no Artifact (`_asset_app_payload`). */
-  micro_app_id?: string;
-  /** app: which plane is live right now. `dev` = a Deployment's port is up,
-   *  `served` = we serve the built MicroApp, `unbuilt` = neither. */
-  runtime?: 'dev' | 'served' | 'unbuilt';
-  /** Display label the backend resolved for the target (artifact/app/entity
-   *  name, falling back to its title). */
-  name?: string;
-  /** dock: a SCREEN — the frontend's own dock-address fields, so the client
-   *  builds its DockPointer without re-parsing a URL. */
-  view_type?: string;
-  pointer?: string | null;
-  options?: Record<string, string> | null;
-  page?: string;
-}
+export type { DisplayEntry, ShowTarget } from '../models/ShowTarget';
+import type { DisplayEntry, ShowTarget } from '../models/ShowTarget';
 
-/**
- * One entry in a process's display history — `context_data.display_stack`. The
- * backend flattens the `flow show` target and stamps it with `shown_at`, so an
- * entry IS a {@link ShowTarget} plus its server timestamp. Newest last.
- */
-export interface DisplayEntry extends ShowTarget {
-  /** ISO 8601 server timestamp — when the agent showed this target. */
-  shown_at?: string;
-}
 
 export interface SpawnResult {
   process: AgenticProcess;
