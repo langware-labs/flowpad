@@ -208,6 +208,15 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   created_through?: string;
   updated_through?: string;
   schema_version?: string;
+  /**
+   * Epoch-ms of this entity's last activation, stamped server-side by the
+   * generic `activate` action (`Entity.last_active_at`, entity_model.py:375).
+   * A base-entity field the wire sends for EVERY type, and `IEntity` already
+   * declared it — but `APIEntity` did not, so `Project.last_active_at` (the
+   * open-recency sort in the project picker) read as "does not exist" even
+   * though `deepAssign` puts it on the instance.
+   */
+  last_active_at?: number | string | null;
   labels?: string[];
   root_vfs_path?: string;
   fs_storage_mount_path?: string | null;
