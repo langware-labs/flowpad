@@ -1,14 +1,17 @@
----
+***
+
 title: XML entity decode belongs to the XML transport, not to FlowData
 tags:
-- breadcrumb.test.xml_entity_decode.rules
-description: Only the XML stream escapes flow content, and only into &amp; &lt; &gt;.
+
+* breadcrumb.test.xml\_entity\_decode.rules
+  description: Only the XML stream escapes flow content, and only into & < >.
   The client decode must mirror that exact alphabet, because the same decode also
   runs on get-history, which escapes nothing — a wider decode rewrites transcript
   text nobody encoded, and a decoded quote breaks the JSON around it and drops the
   entire replay.
-version: 2
----
+  version: 2
+
+***
 
 # XML entity decode belongs to the XML transport, not to FlowData
 
@@ -101,11 +104,9 @@ mounted from `use-flow-data-trace.ts:57` (chat) and `use-process-surface.ts:88`
    them; decoding any of them can break the JSON around it.
 3. **Single pass.** `&amp;lt;` must decode to `&lt;`, never to `<`. Use one
    regex alternation, not chained `replace` calls.
-4. **No DOM in the decoder.** It must be pure string work, usable outside a
-   browser and outside a per-row allocation.
-5. **A parse failure must never be silent.** Whatever swallows it must also
+4. **A parse failure must never be silent.** Whatever swallows it must also
    announce it. An empty pane with no alert is the bug, not the recovery.
-6. **Assert on content, not on absence of a throw.** A green `loadHistory` that
+5. **Assert on content, not on absence of a throw.** A green `loadHistory` that
    returned zero rows is the failure this tag exists for.
 
 ## Failure modes
@@ -122,11 +123,6 @@ rewrote raw transcript text, and a decoded quote closed a JSON string early:
 {"args":{"content":"print(&quot;hi&quot;)"}}   →   {"args":{"content":"print("hi")"}}
 SyntaxError: Expected ',' or '}' after property value in JSON at position 29
 ```
-
-**The quadratic re-parse.** `parseChunk` calls the decoder twice per chunk
-(`flow-data.ts:164` on the delta, `:180` on the whole accumulated buffer). With
-the textarea that was \~5M characters pushed through the HTML parser to deliver a
-20KB message. Restoring any per-call-allocating decoder brings this back.
 
 ## Related
 
