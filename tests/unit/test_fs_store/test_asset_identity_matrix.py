@@ -29,7 +29,7 @@ INDEXED_TYPES = {
     "claude_session", "codex_session", "command", "copilot_session",
     "data_source_spec",
     "dataset", "deck_template", "deck", "dynamic_workflow",
-    "helpdesk", "journey", "markdown_index", "markdown", "mcp_server", "plan", "plugin",
+    "helpdesk", "journey", "markdown_index", "markdown", "mcp_server", "micro_app", "plan", "plugin",
     "project", "prompt", "secret_origin", "skill", "spec", "spreadsheet",
     "task", "todo_file", "usage_report", "whiteboard", "workflow_run",
 }
@@ -80,8 +80,9 @@ def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
     capsule_types = set(FRONTMATTER_ALL) | set(FOLDER_PORTABLE)
     native_types = set(JSON_STABLE)
     derived_types = INDEXED_TYPES - capsule_types - native_types
-    # 18 capsule: base's 17 + `agent`. 14 derived: base's addition, untouched here.
-    assert (len(capsule_types), len(native_types), len(derived_types)) == (18, 3, 15)
+    # 18 capsule: base's 17 + `agent`. 16 derived: + `micro_app`, whose webapp.json
+    # carries no id so a shipped app has the same id on every machine.
+    assert (len(capsule_types), len(native_types), len(derived_types)) == (18, 3, 16)
 
     for name in sorted(INDEXED_TYPES):
         info = _info(name)

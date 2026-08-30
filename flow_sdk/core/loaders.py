@@ -117,7 +117,6 @@ def load_actions():
         pass  # OAuth action not available
 
     # Import the asset-editor action to register it
-    from flow_sdk.actions import asset_editor_action  # noqa: F401
 
 
 async def is_new_instance(existing, entity_data: dict) -> bool:

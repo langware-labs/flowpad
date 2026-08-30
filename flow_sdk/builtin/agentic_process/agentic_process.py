@@ -2889,7 +2889,6 @@ class AgenticProcess(Entity):
         app is a complete, valid app, so absence is the normal early state and
         not an error.
         """
-        from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
         from flow_sdk.builtin.faas.micro_app import AppLocationType, MicroApp  # noqa: PLC0415
 
         app_root = Path(artifact_path)
@@ -2908,10 +2907,10 @@ class AgenticProcess(Entity):
         if dist_path is None:
             return None
 
-        # Deterministic, mirroring the Deployment id above: re-registering the
-        # same artifact must update its delivery row, never fork a second one.
-        micro_app_id = mint_uuid(f"micro_app:artifact:{artifact.id}")
-        micro_app = await MicroApp.get_by_id(micro_app_id)
+        # LOOKUP, not an id derived from the artifact's: the row's natural key is
+        # the artifact it delivers. Same idempotency on re-registration, and it
+        # also finds rows minted before the convention existed.
+        micro_app = await MicroApp.get_by_artifact_id(artifact.id)
         payload = {
             "name": name,
             "location_type": AppLocationType.Artifact,
@@ -2921,7 +2920,7 @@ class AgenticProcess(Entity):
             "parent_type_id": str(project.typeid) if project is not None else None,
         }
         if micro_app is None:
-            micro_app = MicroApp(id=micro_app_id, **payload)
+            micro_app = MicroApp(**payload)
         else:
             micro_app.apply_field_updates(payload)
         await micro_app.save()

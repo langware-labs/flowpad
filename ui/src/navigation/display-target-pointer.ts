@@ -97,9 +97,13 @@ export function dockForDisplayTarget(target: DisplayTargetLike | null | undefine
   // sends both `artifact_id` and `typeid`) rather than one re-assembled here — the
   // `<type>-<id>` spelling is what lets the backend's own pointer-entity gate 404 a
   // bogus app address instead of handing the frontend a dock that renders nothing.
-  if (target.kind === 'app' && target.artifact_id) {
+  if (target.kind === 'app' && (target.artifact_id || target.micro_app_id)) {
     const runtime = target.runtime === 'dev' || target.runtime === 'served' ? { runtime: target.runtime } : undefined;
-    return new DockPointer(ViewType.APP, target.typeid ?? `artifact-${target.artifact_id}`, runtime);
+    // A webapp ASSET has no artifact: its own row is the address, and the backend
+    // sends that as the `typeid`. The artifact spelling stays the fallback for the
+    // built-from-source app, which is the only one that HAS an artifact.
+    const pointer = target.typeid ?? (target.artifact_id ? `artifact-${target.artifact_id}` : null);
+    if (pointer) return new DockPointer(ViewType.APP, pointer, runtime);
   }
 
   // A bare port with no artifact behind it — a dev server we were simply told

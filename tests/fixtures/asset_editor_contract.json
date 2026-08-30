@@ -16,7 +16,6 @@
     "usage_report",
     "asset_cleanup_report",
     "journey",
-    "app",
     "html",
     "mcp_app",
     "image",
@@ -74,7 +73,6 @@
     "journey": [
       "journey"
     ],
-    "app": [],
     "html": [],
     "mcp_app": [],
     "image": [],

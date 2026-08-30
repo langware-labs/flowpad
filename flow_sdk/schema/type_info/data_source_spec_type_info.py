@@ -38,8 +38,10 @@ DATA_SOURCE_SPEC = TypeMetadata(
     # source arrive carrying the sender's id.
     identity_carrier=derived_identity(),
     index_fields=["name", "title", "runtime"],
-    # Every source definition gets the spec-driven editor: a form over the
-    # manifest's ``config`` catalog for each DataSource of this spec, plus its
-    # items. A spec may ship its own under ``<asset>/editors/``.
-    editors=["spec"],
 )
+
+# A definition's EDITOR is not declared here. It is a webapp asset nested in the
+# definition's own folder (`<name>/agentic-assets/webapp/editor/`), discovered by
+# the same walker that finds the definition — so the editor is an ordinary child
+# asset with its own address and its own breadcrumb, and shipping one is a matter
+# of adding a folder rather than of registering a capability.

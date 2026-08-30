@@ -54,7 +54,8 @@ and echo the submitted fields.
 do with these items", label / annotate / training set** → the
 **connect-data-source** skill (connect, then `define`). Present with
 `flow show view data-sources` or the source's editor
-(`flow show view "assets/editor/app/typeid/data_source_spec-<id>?app=spec&source=<id>"`).
+(`flow show view "app/<editor typeid>?source=<id>"`; `SC specs` reports each
+definition's `editor`).
 
 **Full web app / SaaS / dashboard / anything with a database or auth** →
 use the **web-app-builder** skill (copy its template as-is, run its setup

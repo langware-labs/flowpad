@@ -1,5 +1,5 @@
 {
-  "comment": "What cloud sharing puts on the wire. Parsed by tests/unit/test_cloud_share_contract.py, which checks it against BOTH the code and docs/collab/cloud-sharing.md. Neither is generated from the other: the code assertions catch a field that changed, and the doc assertion stops the fixture being updated without the page. Change this only with the doc in hand. Python-only by design \u2014 this payload is built entirely in flow_sdk, so there is deliberately no TypeScript counterpart.",
+  "comment": "What cloud sharing puts on the wire. Parsed by tests/unit/test_cloud_share_contract.py, which checks it against BOTH the code and docs/collab/cloud-sharing.md. Neither is generated from the other: the code assertions catch a field that changed, and the doc assertion stops the fixture being updated without the page. Change this only with the doc in hand. Python-only by design — this payload is built entirely in flow_sdk, so there is deliberately no TypeScript counterpart.",
   "project_field_buckets": {
     "hub_always": [
       "artifacts",
@@ -27,7 +27,6 @@
       "created_by",
       "created_date",
       "fetched_at",
-      "editors",
       "fs_storage_mount_path",
       "fs_storage_provider",
       "members",

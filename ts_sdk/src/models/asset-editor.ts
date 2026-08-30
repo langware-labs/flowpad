@@ -23,10 +23,6 @@ export enum AssetEditor {
   USAGE_REPORT = 'usage_report',
   ASSET_CLEANUP_REPORT = 'asset_cleanup_report',
   JOURNEY = 'journey', // guided onboarding — overview + Start, opens the journey tray
-  // An app the asset itself ships (`<asset>/editors/<name>/index.html`) or the
-  // type's builtin; the name rides as the `app` option. Entity-backed, never a
-  // type's default editor.
-  APP = 'app',
   // File-only display viewers — no backing record type, routed by extension
   // via `editorForPath` (like CODE, they never appear in TYPE_TO_EDITOR).
   HTML = 'html', // sandboxed live preview of a self-contained .html deliverable
@@ -62,7 +58,6 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.USAGE_REPORT]: [RecordType.USAGE_REPORT],
   [AssetEditor.ASSET_CLEANUP_REPORT]: [RecordType.ASSET_CLEANUP_REPORT],
   [AssetEditor.JOURNEY]: [RecordType.JOURNEY],
-  [AssetEditor.APP]: [],
   [AssetEditor.HTML]: [],
   [AssetEditor.MCP_APP]: [],
   [AssetEditor.IMAGE]: [],
@@ -73,8 +68,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
 
 /** True for editors that render raw files and have no backing record type. */
 export function isFileOnlyEditor(editor: AssetEditor): boolean {
-  // APP edits no type of its own but is entity-backed: the entity supplies the app.
-  return editor !== AssetEditor.APP && EDITOR_TYPES[editor].length === 0;
+  return EDITOR_TYPES[editor].length === 0;
 }
 
 /** Derived inverse: record type → the editor that edits it. */

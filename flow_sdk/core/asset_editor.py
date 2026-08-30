@@ -49,9 +49,6 @@ class AssetEditor(StrEnum):
     USAGE_REPORT = "usage_report"
     ASSET_CLEANUP_REPORT = "asset_cleanup_report"
     JOURNEY = "journey"
-    # An app the asset itself ships (``<asset>/editors/<name>/index.html``); the
-    # name rides as the ``app`` option. Entity-backed, but never a type's default.
-    APP = "app"
     # File-only display viewers — no backing record type, routed by extension
     # on the TS side (like CODE, they never appear in TYPE_TO_EDITOR).
     HTML = "html"
@@ -89,7 +86,6 @@ EDITOR_TYPES: dict[AssetEditor, list[str]] = {
     AssetEditor.USAGE_REPORT: [EntityType.USAGE_REPORT],
     AssetEditor.ASSET_CLEANUP_REPORT: [EntityType.ASSET_CLEANUP_REPORT],
     AssetEditor.JOURNEY: [EntityType.JOURNEY],
-    AssetEditor.APP: [],
     AssetEditor.HTML: [],
     AssetEditor.MCP_APP: [],
     AssetEditor.IMAGE: [],

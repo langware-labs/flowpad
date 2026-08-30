@@ -150,9 +150,6 @@ export class AssetDocPointer {
       }
       if (!isTypeId(this.value)) throw new AssetPointerError(`invalid typeid "${this.value}"`);
     } else {
-      if (this.editor === AssetEditor.APP) {
-        throw new AssetPointerError('app editor has no vfs form (the entity supplies the app)');
-      }
       // VFS: must carry a compute-node root so it's unambiguous across nodes.
       if (!VFSPath.parse(this.value).isAbsolute) {
         throw new AssetPointerError(`vfs value must carry a compute-node root: "${this.value}"`);

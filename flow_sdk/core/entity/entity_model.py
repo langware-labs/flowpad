@@ -267,15 +267,6 @@ class Entity(DBEntity):
         default=False,
         description="True when this entity has a hub counterpart at the same id; refreshable from the hub",
     )
-    # Apps shipped inside a folder asset (``<asset>/editors/<name>/index.html``),
-    # derived from the disk on load — never authored, never written to a header.
-    # The type's builtin editors (``TypeInfo.editors``) are NOT copied here; the
-    # client unions them (``APIEntity.availableEditors``).
-    editors: List[str] = APIField(
-        default_factory=list,
-        sharing=Sharing.PRIVATE,
-        description="Editor apps this asset ships under editors/<name>/ — derived from disk on load",
-    )
     # Hub-authoritative role roster cache: [{user_id, email, name, role, status}].
     # Membership is a generic capability of any remote entity — a user always has
     # a hub-set role on it. This field is a pure READ CACHE: the hub is the source
@@ -1452,6 +1443,22 @@ class Entity(DBEntity):
             return root_for_scope(Scope.PROJECT, project_mount=mount)
         return root_for_scope(Scope.USER)
 
+    def is_file_backed(self) -> bool:
+        """Does THIS ROW live in a file on disk?
+
+        A per-row question, which is why it is a method and not a ClassVar like
+        ``owns_asset_ref`` (that one says a TYPE never owns a path). Most types
+        answer for every row alike; a type whose rows can be either — a webapp
+        that is an asset on disk vs. one that just delivers a build output from
+        somewhere in the user's checkout — overrides it.
+
+        Returning False means "do not place this row anywhere": no ``asset_ref``
+        is computed and no folder is materialized for it. The indexer's orphan
+        sweep reads the same fact off the stored row (a row with no
+        ``asset_ref`` is not file-backed, so it is never an orphan candidate).
+        """
+        return True
+
     async def _resolve_repo_parent_container(self, info) -> "Path | None":
         """Container for a REPO child = its parent REPO asset's folder, so the
         child nests at ``<parent-folder>/agentic-assets/<type>/<name>`` (the
@@ -2590,6 +2597,11 @@ class Entity(DBEntity):
 
             return fresh_owned_create_target(FSRef(existing_asset_ref))
         if info is None or info._resolved_layout[0] is None:
+            return
+        # Whether this ROW is file-backed at all — asked before either scope-root
+        # path, because both of them end in "materialize a folder for it". The
+        # type having a layout only says its rows CAN be assets.
+        if not self.is_file_backed():
             return
         # REPO assets nest inside their parent: a repo child lands at
         # ``<parent-folder>/agentic-assets/<type>/<name>``, recursively. When this

@@ -12,6 +12,7 @@ import type { DataSource, DataSourceSpec } from '@sdk';
 import { History, LayoutPanelLeft, MoreHorizontal, Pencil, RadioTower, Rewind, Trash2 } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useAssetApps } from '@src/hooks/flow-hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Button } from '@src/components/ui/button';
 import {
@@ -24,7 +25,7 @@ import {
 
 interface Props {
   source: DataSource;
-  /** The source's definition — its `editors` are the apps offered here. */
+  /** The source's definition — the apps NESTED INSIDE it are offered here. */
   spec?: DataSourceSpec | null;
   onToggleEnabled: () => void;
   onEdit: (source: DataSource) => void;
@@ -35,6 +36,9 @@ interface Props {
 export function SourceMenu({ source, spec, onToggleEnabled, onEdit, onReplay, onDelete }: Props) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
+  // The definition's own child apps. Nothing declares them: an app nested in the
+  // definition's folder IS its child, so shipping one is all it takes to appear.
+  const editors = useAssetApps(spec?.typeId);
 
   return (
     <DropdownMenu>
@@ -69,17 +73,17 @@ export function SourceMenu({ source, spec, onToggleEnabled, onEdit, onReplay, on
         {/* Narrowed to this source. `target` is the FlowEvent's own key, and
             `ingest.*.sync.*` already targets `data_source:<id>` — so this is a
             filter on the envelope, not a search over its text. */}
-        {/* Editor apps the definition ships or the type provides (the builtin
-            `spec` form for every source). URL-first: the app reads the source
-            id off its own query string. */}
-        {spec?.availableEditors.map((app) => (
+        {/* Editor apps the definition ships, as ordinary child assets. Opened at
+            their own address like any other webapp; URL-first, so the app reads
+            the source id off its own query string. */}
+        {editors.map((app) => (
           <DropdownMenuItem
-            key={app}
-            data-testid={`source-open-editor-${app}`}
-            onSelect={() => navigation.openDock(DockPointer.forAssetApp(spec.typeId, app, { source: source.id }))}
+            key={app.id}
+            data-testid={`source-open-editor-${app.name}`}
+            onSelect={() => navigation.openDock(DockPointer.forAppEntity(app.typeId, { source: source.id }))}
           >
             <LayoutPanelLeft className="me-2 size-4" />
-            {t`Open ${app}`}
+            {t`Open ${app.name}`}
           </DropdownMenuItem>
         ))}
         <DropdownMenuItem

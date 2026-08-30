@@ -18,6 +18,8 @@ let feedUrl = '';
 let fixture: VibeFixture;
 let sourceId = '';
 let specId = '';
+/** The rss definition's nested editor app — `micro_app-<uuid>`, its own address. */
+let editorTypeId = '';
 let datasetId = '';
 let datasetFolder = '';
 
@@ -90,6 +92,13 @@ test('2. connect: an rss source over the dialog, pointed at the loopback feed', 
   const specs = ((await (await api.get('/api/v1/graph/data_source_spec')).json()).data ?? []) as { id: string; name: string }[];
   specId = specs.find((s) => s.name === 'rss')?.id ?? '';
   expect(specId, 'the rss definition is indexed').toBeTruthy();
+  // The editor is a webapp asset NESTED in the definition, so finding it is a
+  // containment query — there is no registry of editors to read.
+  const apps = ((await (await api.get(
+    `/api/v1/graph/micro_app?filter=${encodeURIComponent(JSON.stringify({ parent_type_id: `data_source_spec-${specId}` }))}`,
+  )).json()).data ?? []) as { id: string; kind?: string }[];
+  editorTypeId = `micro_app-${apps.find((a) => a.kind === 'application.web.editor')?.id ?? ''}`;
+  expect(editorTypeId, "the definition's editor is indexed as its child").not.toBe('micro_app-');
   const polled = await (await api.post(`/api/v1/graph/data_source/${sourceId}/poll_now`)).json();
   expect(polled.data?.status).toBe('due');
   await api.dispose();
@@ -108,23 +117,27 @@ test('3. streaming: items land on the heartbeat', async () => {
 
 function editorFrame(page: Page) {
   // PersistentIframe parks the real <iframe> in a body-level portal (the host
-  // div only positions it), so locate the frame by its served URL.
-  return page.frameLocator('iframe[src*="/editor/spec/"]');
+  // div only positions it), so locate the frame by its served URL. The editor is
+  // served like any other webapp — `/graph/micro_app/<id>/view/`.
+  return page.frameLocator('iframe[src*="/micro_app/"]');
 }
 
 test('4. the editor: config form + live items in the asset dock', async ({ page }) => {
   await openScreen(page);
   await page.getByTestId(`source-more-${sourceId}`).click();
-  await page.getByTestId('source-open-editor-spec').click();
-  await expect(page).toHaveURL(/\/dock\/assets\/editor\/app\/typeid\/data_source_spec-.*app=spec/);
+  await page.getByTestId('source-open-editor-editor').click();
+  await expect(page).toHaveURL(/\/dock\/app\/micro_app-[0-9a-f-]+/);
   const frame = editorFrame(page);
   await expect(frame.getByTestId('spec-editor-field-feed_urls')).toHaveValue(feedUrl);
   await expect(frame.getByTestId('spec-editor-items').locator('li').nth(1)).toBeVisible();
+  // The editor is a CHILD of the definition, so the address bar says so. This is
+  // the whole reason it is addressed by its own row rather than through its parent.
+  await expect(page.getByTestId('breadcrumbs')).toContainText('rss');
 });
 
 test('5. define + annotate: a dataset bound to the source, one labelled example', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
-  await page.goto(`/dock/assets/editor/app/typeid/data_source_spec-${specId}?app=spec&source=${sourceId}&project=${fixture.projectId}`);
+  await page.goto(`/dock/app/${editorTypeId}?source=${sourceId}&project=${fixture.projectId}`);
   const frame = editorFrame(page);
   await expect(frame.getByTestId('spec-editor-dataset-create')).toBeVisible();
   await frame.getByTestId('spec-editor-dataset-name').fill(`labels ${stamp}`);
@@ -176,14 +189,14 @@ test('6. the agent surface: the persona rides the session and the pane shows the
   // is the display router's business (and is proven by tests 4-5, which open
   // that same address directly).
   const shown = await api.post(`/api/v1/graph/agentic_process/${fixture.processId}/show`, {
-    data: { view: `assets/editor/app/typeid/data_source_spec-${specId}?app=spec&source=${sourceId}` },
+    data: { view: `app/${editorTypeId}?source=${sourceId}` },
   });
   expect(shown.ok(), await shown.text()).toBeTruthy();
   const target = (await shown.json()).data as { kind?: string; view_type?: string; pointer?: string; options?: Record<string, string> };
   expect(target.kind).toBe('dock');
-  expect(target.view_type).toBe('assets');
-  expect(target.pointer).toBe(`editor/app/typeid/data_source_spec-${specId}`);
-  expect(target.options?.app).toBe('spec');
+  expect(target.view_type).toBe('app');
+  expect(target.pointer).toBe(editorTypeId);
+  expect(target.options?.source).toBe(sourceId);
   await api.dispose();
 
   await openVibe(page, fixture.processId);

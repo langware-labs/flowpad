@@ -10218,8 +10218,8 @@ msgid "no edges"
 msgstr "no edges"
 
 #: src/components/assets/editor/app/AssetAppHost.tsx
-msgid "No editor app named on this dock."
-msgstr "No editor app named on this dock."
+#~ msgid "No editor app named on this dock."
+#~ msgstr "No editor app named on this dock."
 
 #: src/components/conversation/EmojiPicker.tsx
 msgid "No emoji found"
@@ -11186,14 +11186,16 @@ msgstr "Open"
 msgid "Open .env.local at this line"
 msgstr "Open .env.local at this line"
 
+#. placeholder {0}: app.name
 #. placeholder {0}: file.path
+#: src/components/data-sources/SourceMenu.tsx
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
 msgid "Open {0}"
 msgstr "Open {0}"
 
 #: src/components/data-sources/SourceMenu.tsx
-msgid "Open {app}"
-msgstr "Open {app}"
+#~ msgid "Open {app}"
+#~ msgstr "Open {app}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Open {label}"
@@ -16505,8 +16507,8 @@ msgid "This asset can't be shared with Git. Turn Git sharing off to send a copy.
 msgstr "This asset can't be shared with Git. Turn Git sharing off to send a copy."
 
 #: src/components/assets/editor/app/AssetAppHost.tsx
-msgid "This asset has no editor \"{app}\"."
-msgstr "This asset has no editor \"{app}\"."
+#~ msgid "This asset has no editor \"{app}\"."
+#~ msgstr "This asset has no editor \"{app}\"."
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This asset has no file path."

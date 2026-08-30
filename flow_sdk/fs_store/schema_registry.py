@@ -370,9 +370,6 @@ class TypeInfo:
     # ``Entity.setup_on_receive`` and surfaced to the FE via ``to_dict``.
     setup_skill: str | None = None
     reception_verb: str = "Open"
-    # Builtin editor apps for the type (``flow_sdk/assets/editors/<name>``);
-    # runtime-only, surfaced to the FE next to the per-asset ``Entity.editors``.
-    editors: list[str] = field(default_factory=list, compare=False, repr=False)
     # ``receive_policy``: reception gate for a bundled entry of this type.
     # ``None`` ⇒ staged → review → explicit install; ``"auto"`` ⇒ row-only
     # payload installed immediately at unpack through the one install action
@@ -707,7 +704,6 @@ class TypeInfo:
             # via a skill in Vibe.
             "setup_skill": self.setup_skill,
             "reception_verb": self.reception_verb,
-            "editors": list(self.editors),
             # ``auto`` types' chips navigate instead of opening the review modal.
             "receive_policy": self.receive_policy,
             "schema_hash": self.schema_hash,
@@ -1018,8 +1014,6 @@ class SchemaRegistry:
                 existing.setup_skill = info.setup_skill
             if info.reception_verb != "Open":
                 existing.reception_verb = info.reception_verb
-            if info.editors:
-                existing.editors = list(info.editors)
             if info.receive_policy is not None:
                 existing.receive_policy = info.receive_policy
             if info.receive_row_overrides is not None:

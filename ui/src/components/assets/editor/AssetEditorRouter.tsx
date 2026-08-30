@@ -51,7 +51,6 @@ import { JourneyViewer } from '@src/journey/JourneyViewer';
 import { WhiteboardAssetEditor } from './whiteboard/WhiteboardAssetEditor';
 import { DeckTemplateViewer } from './deck-template/DeckTemplateViewer';
 import { DeckViewer } from './deck/DeckViewer';
-import { AssetAppHost } from './app/AssetAppHost';
 import { AssetCollisionProvider, AssetCollisionShell } from './AssetCollisionUI';
 
 const McpAppPreview = lazy(() =>
@@ -435,14 +434,6 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
           fragment={fragment}
           wikiLinkTarget={wikiLinkTarget}
         />
-      );
-    case AssetEditor.APP:
-      // The entity supplies the app; the name is the `app` option on the dock.
-      // Gate on the resolved entity only — no FSRef/record read is needed.
-      return typeIdEntity ? (
-        <AssetAppHost entity={typeIdEntity as APIEntity<APIEntity<any>>} />
-      ) : (
-        <ConnectingFallback />
       );
     default:
       return (

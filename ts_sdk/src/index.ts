@@ -6,6 +6,7 @@ export * from './alert';
 export * from './APIEntity';
 export * from './ApiResponse';
 export * from './apiStats';
+export * from './apps/index';
 export * from './capabilities';
 export * from './client';
 export * from './config';
