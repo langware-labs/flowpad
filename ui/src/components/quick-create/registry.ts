@@ -269,6 +269,3 @@ export function getDescriptor(type: string): QuickCreateDescriptor | undefined {
   return QUICK_CREATE_REGISTRY.find((d) => d.type === type);
 }
 
-export function creatableTypeSet(): Set<string> {
-  return new Set(QUICK_CREATE_REGISTRY.map((d) => d.type));
-}
