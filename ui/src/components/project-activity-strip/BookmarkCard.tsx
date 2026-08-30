@@ -61,7 +61,7 @@ export function BookmarkCard({
   return (
     <>
       <div
-        className={`bookmark-card${navPath || bookmark.bookmark_type === BookmarkType.NOTIFICATION ? 'cursor-pointer' : ''}`}
+        className={`bookmark-card${navPath || bookmark.bookmark_type === BookmarkType.NOTIFICATION ? ' cursor-pointer' : ''}`}
         onClick={navPath || bookmark.bookmark_type === BookmarkType.NOTIFICATION ? handleCardClick : undefined}
       >
         <div className="bookmark-card-header">
