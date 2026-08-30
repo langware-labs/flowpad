@@ -132,7 +132,7 @@ async def browse(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
     Raises:
         FileNotFoundError: If directory doesn't exist
     """
-    if not request_info.is_get:
+    if request_info.method != "get":
         return ApiFailResponse(message="Browse action requires GET method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Browse action requires typeid")
@@ -372,7 +372,7 @@ async def serve(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> Response
     missing, not as some other page) and no caching (a file being iterated on is
     not a release).
     """
-    if not request_info.is_get:
+    if request_info.method != "get":
         return ApiFailResponse(message="Serve action requires GET method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Serve action requires typeid")
@@ -419,7 +419,7 @@ async def download(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> Strea
     Returns:
         StreamingResponse with file contents or error response
     """
-    if not request_info.is_get:
+    if request_info.method != "get":
         return ApiFailResponse(message="Download action requires GET method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Download action requires typeid")
@@ -480,7 +480,7 @@ async def upload(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
     Returns:
         ApiResponse with list of uploaded FSEntry objects
     """
-    if not request_info.is_post:
+    if request_info.method != "post":
         return ApiFailResponse(message="Upload action requires POST method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Upload action requires typeid")
@@ -559,7 +559,7 @@ async def delete(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
     Returns:
         ApiResponse with success/error status
     """
-    if not request_info.is_delete:
+    if request_info.method != "delete":
         return ApiFailResponse(message="Delete action requires DELETE method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Delete action requires typeid")
@@ -593,7 +593,7 @@ async def mkdir(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
     Returns:
         ApiResponse with FSEntry for new directory
     """
-    if not request_info.is_post:
+    if request_info.method != "post":
         return ApiFailResponse(message="Mkdir action requires POST method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Mkdir action requires typeid")
@@ -634,7 +634,7 @@ async def write(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
     Returns:
         ApiResponse with FSEntry for written file
     """
-    if not request_info.is_post:
+    if request_info.method != "post":
         return ApiFailResponse(message="Write action requires POST method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Write action requires typeid")
@@ -731,7 +731,7 @@ async def rename(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
     Returns:
         ApiResponse with FSEntry for renamed item
     """
-    if not request_info.is_post:
+    if request_info.method != "post":
         return ApiFailResponse(message="Rename action requires POST method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Rename action requires typeid")
@@ -787,7 +787,7 @@ async def copy(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespon
     Returns:
         ApiResponse with FSEntry for copied item
     """
-    if not request_info.is_post:
+    if request_info.method != "post":
         return ApiFailResponse(message="Copy action requires POST method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Copy action requires typeid")
@@ -838,7 +838,7 @@ async def move(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespon
     Returns:
         ApiResponse with FSEntry for moved item
     """
-    if not request_info.is_post:
+    if request_info.method != "post":
         return ApiFailResponse(message="Move action requires POST method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Move action requires typeid")
