@@ -185,37 +185,29 @@ class CodexAgentOptions(AgentOptions):
         head.extend(extra_cfg)
         return head + dev_flags + self._common_tail() + ["-"]  # trailing "-" → codex reads prompt from stdin
 
-    def to_json(self) -> dict[str, Any]:
-        d = super().to_json()
-        d.update(
-            {
-                "worker_type": "codex",
-                "session_id": self.session_id,
-                "resume": self.resume,
-                "model": self.model,
-                "permission_mode": self.permission_mode,
-                "skill_names": self.skill_names,
-                "add_dirs": self.add_dirs,
-                "json_stream": self.json_stream,
-                "ephemeral": self.ephemeral,
-            }
-        )
-        return d
+    # ── Serialisation ───────────────────────────────────────────────────────
+    # The base AgentOptions.to_json / from_json do the work; this is the whole
+    # declaration of this vendor's wire shape. Key names and value types are
+    # frozen — see tests/unit/test_agent_options_serialization_golden.py.
 
-    @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "CodexAgentOptions":
-        return cls(
-            session_id=data.get("session_id"),
-            resume=bool(data.get("resume", False)),
-            model=data.get("model"),
-            permission_mode=data.get("permission_mode", "bypassPermissions"),
-            skill_names=list(data.get("skill_names") or []),
-            workdir=data.get("workdir"),
-            env_vars=data.get("env_vars") or {},
-            add_dirs=list(data.get("add_dirs") or []),
-            json_stream=bool(data.get("json_stream", True)),
-            ephemeral=bool(data.get("ephemeral", True)),
-        )
+    WORKER_TYPE = "codex"
+    SERIALIZED_FIELDS = (
+        "session_id",
+        "resume",
+        "model",
+        "permission_mode",
+        "skill_names",
+        "add_dirs",
+        "json_stream",
+        "ephemeral",
+    )
+    _COERCE = {
+        "resume": bool,
+        "json_stream": bool,
+        "ephemeral": bool,
+        "skill_names": lambda v: list(v or []),
+        "add_dirs": lambda v: list(v or []),
+    }
 
 
 #: The options class ``factory`` builds for this vendor.
