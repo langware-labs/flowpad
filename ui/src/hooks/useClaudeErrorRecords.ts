@@ -28,7 +28,7 @@ export type ErrorCategory = (typeof ErrorCategory)[keyof typeof ErrorCategory];
 
 export type ErrorTimeSpan = '1m' | '1h' | '24h' | '1w' | 'all';
 
-export const ERROR_TIME_SPANS: { value: ErrorTimeSpan; ms: number; label: string; tooltip: string }[] = [
+export const ERROR_TIME_SPANS: { value: ErrorTimeSpan; ms: number; label: MessageDescriptor; tooltip: string }[] = [
   { value: '1m', ms: 60_000, label: msg`1m`, tooltip: 'Last 1 minute' },
   { value: '1h', ms: 3_600_000, label: msg`1h`, tooltip: 'Last 1 hour' },
   { value: '24h', ms: 86_400_000, label: msg`24h`, tooltip: 'Last 24 hours' },

@@ -295,9 +295,36 @@ export function setViewMode(val: ViewMode): void {
   stampProjectViewMode(dataContext.project, val);
 }
 
+/**
+ * The `?viewMode=` carried by the address being loaded, if it names a real mode.
+ *
+ * URL-first (CLAUDE.md, non-negotiable): the address is authoritative for what is
+ * shown, so it must win from the FIRST paint, not after a repaint. Import-time
+ * paint used to read ONLY the persisted preference, so `/?viewMode=vibe` painted
+ * `data-view="standard"`; the attribute was corrected later only if a
+ * preference-CHANGE event happened to fire, and when the stored value is already
+ * resolved at boot no such event ever comes, so the URL simply lost.
+ * (`getEffectiveViewMode()` cannot close this: its `dockViewModeOverride` is still
+ * null at module import — `useDockViewModeOverrideSync` populates it once the dock
+ * mounts.) Reading the param here fixes the ordering at its source; it is not a
+ * wait, a retry, or a timing budget.
+ *
+ * Strict by construction: `toViewModeOrNull` returns null for anything that is not
+ * a real mode, so a junk param falls through to the stored preference rather than
+ * coercing the surface to a default.
+ */
+function viewModeFromLocation(): ViewMode | null {
+  try {
+    return toViewModeOrNull(new URLSearchParams(window.location.search).get('viewMode'));
+  } catch {
+    return null;
+  }
+}
+
 // Keep `data-view` in sync with prefMan: on import (first paint) and on every change,
-// including a cross-device backend value reconciled in on load.
-applyAttribute(getViewMode(), false);
+// including a cross-device backend value reconciled in on load. The URL's mode
+// outranks the stored preference on that first paint (see viewModeFromLocation).
+applyAttribute(viewModeFromLocation() ?? getViewMode(), false);
 onPreferenceChange(() => applyAttribute(getEffectiveViewMode()));
 
 defineGlobal('setView', setViewMode);

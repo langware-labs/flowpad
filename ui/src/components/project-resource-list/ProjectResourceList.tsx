@@ -25,6 +25,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { useMemo, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import './ProjectResourceList.css';
+import type { MessageDescriptor } from '@lingui/core';
 
 export type ProjectResourceType =
   | 'skill'
@@ -76,7 +77,8 @@ export interface ProjectResourceListProps {
 }
 
 interface ResourceTypeMeta {
-  label: string;
+  /** Lazy lingui descriptor — render with `i18n._(...)`. */
+  label: MessageDescriptor;
   icon: LucideIcon;
 }
 

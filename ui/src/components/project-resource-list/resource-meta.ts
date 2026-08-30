@@ -5,7 +5,8 @@ import { Bot, CheckSquare, Command, FileText, FolderOpen, Plug, Settings, Sparkl
 import type { ProjectResourceType } from './ProjectResourceList';
 
 export interface ResourceMeta {
-  label: string;
+  /** Lazy lingui descriptor — render with `i18n._(...)`. */
+  label: MessageDescriptor;
   icon: LucideIcon;
 }
 

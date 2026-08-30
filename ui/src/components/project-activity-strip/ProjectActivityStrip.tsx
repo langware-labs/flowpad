@@ -41,7 +41,8 @@ import { uploadFlowMessage, type UploadConflict } from '@sdk/entities/flow-messa
 import './ProjectActivityStrip.css';
 
 interface ResourceMeta {
-  label: string;
+  /** Lazy lingui descriptor — render with `i18n._(...)`. */
+  label: MessageDescriptor;
   icon: LucideIcon;
 }
 

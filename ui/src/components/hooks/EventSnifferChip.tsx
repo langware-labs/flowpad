@@ -30,7 +30,7 @@ import { EventTooltipContent, getEventColor, getEventIcon, navigateToTranscript 
 
 type TimeSpan = '10s' | '1M' | '10' | '60' | '1D';
 
-const TIME_SPANS: { value: TimeSpan; ms: number; tooltip: string }[] = [
+const TIME_SPANS: { value: TimeSpan; ms: number; tooltip: MessageDescriptor }[] = [
   { value: '10s', ms: 10_000, tooltip: msg`Time span: 10 seconds` },
   { value: '1M', ms: 60_000, tooltip: msg`Time span: 1 minute` },
   { value: '10', ms: 600_000, tooltip: msg`Time span: 10 minutes` },

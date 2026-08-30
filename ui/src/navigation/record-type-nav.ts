@@ -14,12 +14,26 @@ import type { NavigationActions } from './NavigationActions';
 import { openArtifact } from '@src/components/artifacts/open-artifact';
 import { notify } from '@src/notifications';
 
-export interface DockNavigationAction {
+/**
+ * An action as AUTHORED in the RECORD_TYPE_NAV table: `name` is a lazy lingui
+ * descriptor, because the table is module-level and an eager macro would bind
+ * the language at import time and never follow a locale switch.
+ */
+export interface DockNavigationActionSpec {
   icon: LucideIcon;
   name: MessageDescriptor;
   // Either a sync dock pointer OR an async action callback (not both)
   dockPointer?: (result: SearchResult) => DockPointer;
   action?: (result: SearchResult, navigation: NavigationActions) => void | Promise<void>;
+}
+
+/**
+ * An action as HANDED TO CONSUMERS by `getActionsForResult`, which resolves the
+ * descriptor. `name` is a plain string here, which is what the renderers put in
+ * the DOM — declaring it as the descriptor made every consumer a type error.
+ */
+export interface DockNavigationAction extends Omit<DockNavigationActionSpec, 'name'> {
+  name: string;
 }
 
 export interface RecordTypeNav {
@@ -30,7 +44,7 @@ export interface RecordTypeNav {
   /** Extra reachability check for imperative arms whose target fields are optional. */
   isNavigable?: (result: SearchResult) => boolean;
   /** Optional sub-navigation chips shown on the card */
-  actions?: DockNavigationAction[];
+  actions?: DockNavigationActionSpec[];
 }
 
 /** Extract the Claude session UUID from a search result */

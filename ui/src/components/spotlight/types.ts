@@ -1,5 +1,6 @@
 import type { SearchResult } from '@src/hooks/use-record-search';
 import type { NavigationActions } from '@src/navigation/NavigationActions';
+import type { MessageDescriptor } from '@lingui/core';
 
 export interface SpotlightRow {
   key: string;
@@ -35,8 +36,9 @@ export interface SpotlightInitialInfo {
 
 export interface SpotlightProfile {
   id: string;
-  label?: string;
-  placeholder?: string;
+  /** Lazy lingui descriptors — render with `i18n._(...)`. */
+  label?: MessageDescriptor;
+  placeholder?: MessageDescriptor;
   defaultEntityType?: string;
   allowedEntityTypes?: string[];
   /** When true, the FTS row click resolves the worker via AgenticProcess.getByWorkerId

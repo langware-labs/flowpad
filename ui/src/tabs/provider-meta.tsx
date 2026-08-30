@@ -27,7 +27,7 @@ import React, { useMemo } from 'react';
  *  chips' icon resolution and the vendor openers' glyph/color. */
 export const PROVIDER_META: Record<
   'claude' | 'codex' | 'copilot' | 'opencode' | 'shell',
-  { Icon: React.ComponentType<{ className?: string }>; iconClassName: string; label: string }
+  { Icon: React.ComponentType<{ className?: string }>; iconClassName: string; label: MessageDescriptor }
 > = {
   claude: { Icon: ClaudeIcon, iconClassName: 'text-orange-500', label: msg`Claude Code tab` },
   codex: { Icon: CodexIcon, iconClassName: 'text-emerald-500', label: msg`Codex tab` },
