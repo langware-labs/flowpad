@@ -32,12 +32,11 @@ import './milkdown.css';
 import { planNotePlugins } from './plan-note-plugin';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { fileShareSource, genericEntityShareSource } from '@src/hooks/share-sources';
+import { parseFrontmatterDoc } from '@sdk/fs/frontmatter-parse';
 
 function parseFrontmatter(raw: string): { executed: boolean; body: string } {
-  const m = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-  if (!m) return { executed: false, body: raw };
-  const executed = /^executed:\s*true$/m.test(m[1]);
-  return { executed, body: m[2] };
+  const doc = parseFrontmatterDoc(raw);
+  return { executed: doc.fields.executed === 'true', body: doc.body };
 }
 
 export const SpecEditor: React.FC = () => {
