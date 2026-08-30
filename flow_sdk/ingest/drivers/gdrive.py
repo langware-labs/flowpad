@@ -421,11 +421,11 @@ class GoogleDriveDriver(IngestDriver):
         return response.content
 
     async def _call(self, client, source, token: str, path: str, params: dict) -> dict[str, Any]:
-        raw = await self._get(client, source, token, path, params)
-        try:
-            return json.loads(raw)
-        except ValueError as exc:
-            raise SourceError.transient("bad_json", str(exc)) from exc
+        """The same GET as ``_get``, decoded by the house transport."""
+        url = httpx.URL(f"{self._base(source)}{path}").copy_merge_params(params)
+        return await http.request_json(
+            client, "GET", str(url), headers={"Authorization": f"Bearer {token}"}
+        )
 
     async def _token(self, source) -> Optional[str]:
         """This machine's Google token. The precedence lives in one place."""

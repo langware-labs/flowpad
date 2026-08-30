@@ -32,6 +32,7 @@ from flow_sdk.ingest.driver import (
     SendOutcome,
     SendStatus,
 )
+from flow_sdk.ingest import http
 from flow_sdk.ingest.health import SourceError
 
 logger = logging.getLogger(__name__)
@@ -186,28 +187,27 @@ class AgentMailDriver(IngestDriver):
     async def _request(
         self, source, method: str, path: str, *, params: Optional[dict] = None, json_body: Optional[dict] = None
     ) -> dict:
+        url = f"{self._base(source)}{path}"
+        # 401/403 come back as a response, not the house `unauthorized`: a bad
+        # AgentMail key is reported as `auth_failed` (a human has to fix it),
+        # and retrying forever would park the source in a loop nobody sees.
         import httpx  # noqa: PLC0415
 
-        url = f"{self._base(source)}{path}"
-        try:
-            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
-                response = await client.request(
-                    method,
-                    url,
-                    headers=self._auth(source),
-                    params=params,
-                    json=json_body,
-                )
-        except httpx.HTTPError as exc:
-            # The network, not the config — the next cycle may well succeed.
-            raise SourceError.transient("network", f"{method} {path}: {exc}") from exc
-
+        # Own client: AgentMail keeps its own REQUEST_TIMEOUT_SECONDS ceiling,
+        # which is not the house one.
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
+            response = await http.request(
+                client,
+                method,
+                url,
+                headers=self._auth(source),
+                params=params,
+                json=json_body,
+                ok_statuses=(401, 403),
+                hint=f"{method} {path}",
+            )
         if response.status_code in (401, 403):
-            # A bad key needs a human; retrying forever would just park the
-            # source in a loop nobody sees.
             raise SourceError.config("auth_failed", f"{method} {path}: {response.status_code}")
-        if response.status_code >= 400:
-            raise SourceError.transient("http_error", f"{method} {path}: {response.status_code} {response.text[:200]}")
         try:
             return response.json() or {}
         except ValueError as exc:
