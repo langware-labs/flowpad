@@ -488,8 +488,32 @@ class DataSource(Entity):
                 # `sync_source`, which reports `unknown_provider` as a
                 # config_error the card can actually explain.
                 self.status = SourceStatus.ACTIVE.value
+        await self._coerce_config()
         self._stamp_origin()
         return await super().save(*args, **kwargs)
+
+    async def _coerce_config(self) -> None:
+        """Shape ``config`` by the definition's field types on save — a URL sent
+        as a string where ``lines`` is declared must not produce a source that
+        looks configured and fails on its first sync (the rss driver iterating
+        the characters of a URL). The rule is the spec's
+        (``ConfigFieldSpec.coerce``); this is only where a row applies it, and
+        ``save`` is the one gate the dialog, the API and an agent all pass.
+
+        Only a string can need shaping, so a config whose values are already
+        typed (the poller re-saves one on every tick) costs one pass over a
+        handful of values and never a spec lookup.
+        """
+        if not isinstance(self.config, dict) or not any(isinstance(v, str) for v in self.config.values()):
+            return
+        from flow_sdk.builtin.data_source_spec import DataSourceSpec  # noqa: PLC0415
+
+        try:
+            spec = await DataSourceSpec.get_one({"name": self.provider})
+        except Exception:  # noqa: BLE001 — an unresolvable spec changes nothing
+            return
+        if spec is not None:
+            self.config = spec.coerce_config(self.config)
 
     def _stamp_origin(self) -> None:
         """``origin`` follows ``config`` on every save — the driver derives it

@@ -17,6 +17,8 @@ import csv
 import json
 import shutil
 import uuid
+from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, ClassVar, Optional, Sequence, Union
 
@@ -45,6 +47,7 @@ _Doc = tuple[dict[str, Any], dict[str, Any]]  # a two-section doc: (metadata, da
 
 # ── shared helpers ────────────────────────────────────────────────────────────
 
+@lru_cache(maxsize=4096)
 def example_id(dataset_id: str, key: str) -> str:
     """Deterministic per-example id of ``f"{dataset_id}:{key}"``.
 
@@ -100,6 +103,22 @@ def is_binary(node: Any) -> bool:
 
 class DatasetLayout:
     name: ClassVar[str] = ""
+
+    # Per-example writes exist only where an example is a directory of its own;
+    # a CSV is rewritten whole, so the base refuses and only FolderLayout answers.
+    def append(self, folder, ex: ExampleSpec, *, dataset_id: str, contents: Optional[dict[str, Any]] = None) -> str:
+        raise NotImplementedError("append is io_folder only — a CSV dataset is rewritten whole")
+
+    def append_many(self, folder, rows: "Sequence[tuple]", *, dataset_id: str) -> list[str]:
+        raise NotImplementedError("append is io_folder only — a CSV dataset is rewritten whole")
+
+    def annotate(self, folder, example_id_: str, ground_truth: Any, *, dataset_id: str, by: str = "") -> Path:
+        raise NotImplementedError("annotate is io_folder only — a CSV dataset is rewritten whole")
+
+    def index(self, folder, *, dataset_id: str) -> list[dict[str, Any]]:
+        """Per-example scalars (id, source item, kind, gold present) without
+        reading the payloads. Only a per-example layout can answer."""
+        raise NotImplementedError("index is io_folder only — a CSV dataset has no per-example dirs")
 
     def read(self, folder: Path, spec: type, *, dataset_id: str,
              field_spec: Optional[dict[str, str]] = None, delimiter: str = ",") -> list[Any]:
@@ -264,19 +283,23 @@ def _load_example_meta(ex_dir: Path) -> _Doc:
     return metadata, data
 
 
+def _example_dirs(folder) -> list[Path]:
+    """The example directories of a dataset folder, in name order. The ONE
+    enumeration — `read`, `index` and `example_dir` all walk through here."""
+    examples_dir = Path(folder) / EXAMPLES_DIR
+    if not examples_dir.is_dir():
+        return []
+    return sorted((p for p in examples_dir.iterdir() if p.is_dir()), key=lambda p: p.name)
+
+
 class FolderLayout(DatasetLayout):
     """``examples/<name>/`` — slots are files or folders; sidecars annotate them."""
 
     name = DataLayoutEnum.IO_FOLDER.value
 
     def read(self, folder, spec, *, dataset_id, field_spec=None, delimiter=","):
-        examples_dir = Path(folder) / EXAMPLES_DIR
-        if not examples_dir.is_dir():
-            return []
         rows = []
-        for ex_dir in sorted(examples_dir.iterdir()):
-            if not ex_dir.is_dir():
-                continue
+        for ex_dir in _example_dirs(folder):
             row = self.read_example(ex_dir)
             if row is None:
                 continue  # no input DATA in any form → not an example
@@ -347,6 +370,68 @@ class FolderLayout(DatasetLayout):
             name = f"{i:04d}"
             self.write_example(folder / EXAMPLES_DIR / name, ex,
                                source=(Path(source) / EXAMPLES_DIR / name) if source else None)
+
+    # ── one example at a time ────────────────────────────────────────────────
+
+    def append(self, folder, ex: ExampleSpec, *, dataset_id: str,
+               contents: Optional[dict[str, Any]] = None) -> str:
+        """Add ONE example without rewriting the others. Returns its id (the
+        pinned ``example_id`` formula over the dir name, so a later ``read``
+        agrees)."""
+        (ids,) = self.append_many(folder, [(ex, contents)], dataset_id=dataset_id)
+        return ids
+
+    def append_many(self, folder, rows: Sequence[tuple], *, dataset_id: str) -> list[str]:
+        """Append a batch: ONE directory scan for the whole batch, then a dir
+        per row (``rows`` is ``(example, contents)`` pairs). Numbering follows
+        the highest existing ``NNNN``, never the count, so a gap is preserved."""
+        examples_dir = Path(folder) / EXAMPLES_DIR
+        examples_dir.mkdir(parents=True, exist_ok=True)
+        taken = [int(p.name) for p in examples_dir.iterdir() if p.is_dir() and p.name.isdigit()]
+        nxt = (max(taken) + 1) if taken else 1
+        ids = []
+        for offset, (ex, contents) in enumerate(rows):
+            name = f"{nxt + offset:04d}"
+            self.write_example(examples_dir / name, ex, contents=contents)
+            ids.append(example_id(dataset_id, name))
+        return ids
+
+    def index(self, folder, *, dataset_id: str) -> list[dict[str, Any]]:
+        """The rows as scalars — id, source item, kind, gold present — reading
+        only ``example.json`` and one ``exists`` per dir (never the payloads)."""
+        out = []
+        for ex_dir in _example_dirs(folder):
+            meta, _ = _load_example_meta(ex_dir)
+            out.append({
+                "example_id": example_id(dataset_id, ex_dir.name),
+                "item_id": (meta.get("source") or {}).get("item_id"),
+                "kind": str(coerce_dataset_enum(meta.get("kind"), ExampleKind, ExampleKind.TRAIN).value),
+                "annotated": (ex_dir / GROUND_TRUTH).exists(),
+            })
+        return out
+
+    def example_dir(self, folder, example_id_: str, *, dataset_id: str) -> Optional[Path]:
+        """The directory behind an example id, or None. Ids are a pure (cached)
+        function of ``(dataset_id, dir name)``, so this is a scan, never a
+        lookup table."""
+        return next((p for p in _example_dirs(folder) if example_id(dataset_id, p.name) == example_id_), None)
+
+    def annotate(self, folder, example_id_: str, ground_truth: Any, *, dataset_id: str, by: str = "") -> Path:
+        """Write the gold answer of one example — ``ground_truth/label.json`` —
+        and record who did it in ``example.json`` (``metadata.annotations``).
+        A folder slot, so the layout reads it back as data (a bare ``.json`` at
+        slot level is a sidecar by the classification rule above)."""
+        ex_dir = self.example_dir(folder, example_id_, dataset_id=dataset_id)
+        if ex_dir is None:
+            raise LookupError(f"no example {example_id_} in {folder}")
+        node = FolderSpec(path=GROUND_TRUTH, files={"label.json": FileRef(path=f"{GROUND_TRUTH}/label.json")})
+        self._write_node(ex_dir, None, node, {f"{GROUND_TRUTH}/label.json": ground_truth}, None)
+        metadata, data = _load_example_meta(ex_dir)
+        annotations = list(metadata.get("annotations") or [])
+        annotations.append({"by": by, "at": datetime.now(timezone.utc).isoformat()})
+        metadata["annotations"] = annotations
+        self.write_example_meta(ex_dir, metadata, data)
+        return ex_dir
 
     def write_example(self, ex_dir: Path, ex: ExampleSpec, *, contents: Optional[dict[str, Any]] = None,
                       source: Optional[Path] = None, stamp: bool = True) -> None:

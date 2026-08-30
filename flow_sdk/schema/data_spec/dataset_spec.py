@@ -103,6 +103,25 @@ class ExampleSpec(DataSpec, Generic[InputSpecT, OutputSpecT, ContextSpecT]):
     def layout(self) -> Optional[str]:
         return self.metadata.get("layout")
 
+    @classmethod
+    def slot_type(cls, slot: int) -> Any:
+        """The ``I``/``O``/``C`` of a parametrization, by slot. THE one place
+        that knows the generic arg order — no caller reaches into pydantic."""
+        args = cls.__pydantic_generic_metadata__["args"]
+        return args[slot] if args and slot < len(args) else None
+
+    @classmethod
+    def input_type(cls) -> Any:
+        return cls.slot_type(0)
+
+    @classmethod
+    def output_type(cls) -> Any:
+        return cls.slot_type(1)
+
+    @classmethod
+    def context_type(cls) -> Any:
+        return cls.slot_type(2)
+
 
 # ── the dataset ───────────────────────────────────────────────────────────────
 

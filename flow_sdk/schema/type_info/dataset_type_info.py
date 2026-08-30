@@ -1,6 +1,10 @@
 """Type metadata for DATASET."""
 from flow_sdk.builtin.dataset import DatasetManifestSpec
-from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, folder_capsule_id
+from flow_sdk.fs_store.indexer.functions._asset_identity import (
+    IDENTITY_CAPSULE,
+    folder_capsule_id,
+    folder_json_identity,
+)
 from flow_sdk.fs_store.indexer.functions.dataset import (
     dataset_asset_hash,
     dataset_id_from_folder,
@@ -17,7 +21,7 @@ DATASET = TypeMetadata(
     creatable=True,
     indexed_by_default=True,
     api_visible=True,
-    index_fields=["description"],
+    index_fields=["description", "source_id"],
     asset_class="repo",
     family="dataset",
     main_layout="folder",
@@ -30,6 +34,6 @@ DATASET = TypeMetadata(
     asset_spec=DatasetManifestSpec,
     fts_content=("title", "description"),
     capsules=(IDENTITY_CAPSULE,),
-    identity_backend=capsule_identity(folder_capsule_id, dataset_id_from_folder),
+    identity_carrier=folder_json_identity(folder_capsule_id, dataset_id_from_folder),
     asset_hash_fn=dataset_asset_hash,
 )

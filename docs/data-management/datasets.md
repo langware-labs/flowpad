@@ -334,3 +334,29 @@ writes through the same `FolderLayout`, so an execution directory IS an
 See also: [Asset capsules](asset-capsules.md) (portable identity), [Folder
 Layout](folder-layout.md) (internal records-root layout), and [Schema
 Registry](schema-registry.md) (how the `dataset` type is registered).
+
+
+## Curating a source into a dataset
+
+A dataset can be **bound to a DataSource** (`Dataset.source_id`, authored in
+`dataset.json`). Its row shape is then `input: "ingest.source_item"` — the item
+envelope — plus the output shape the person chose, in the keyword form:
+
+```json
+{"examples": [{"input": "ingest.source_item", "output": {"topic": "string", "sentiment": "string"}}]}
+```
+
+Two actions move data along that seam (`flow_sdk/builtin/dataset.py`), both
+`io_folder` only:
+
+| Action | Body | Writes |
+| --- | --- | --- |
+| `POST /graph/dataset/<id>/promote` | `{"source_item_ids": [...]}` | `examples/NNNN/input/item.json` (the envelope) + `example.json` with `metadata.source` provenance |
+| `POST /graph/dataset/<id>/annotate` | `{"example_id", "ground_truth"}` | `examples/NNNN/ground_truth/label.json`, validated against the output shape; `metadata.annotations += {by, at}` |
+| `GET /graph/dataset/<id>/examples` | — | `[{example_id, item_id, kind, annotated}]` read from the folder |
+
+Both are per-example writes (`FolderLayout.append` / `annotate`) — the other
+rows are never rewritten — and both re-derive the counts through the indexer's
+discovery, so `num_examples` / `num_annotated` on the row follow the disk. The
+builtin `spec` editor of every source definition carries the pane that drives
+them; the `connect-data-source` skill's `define` mode drives them for an agent.

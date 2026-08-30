@@ -1,3 +1,7 @@
+---
+id: ab1f9726-eb39-41cb-86f0-6d57214c24ff
+---
+
 # Glossary — our nouns vs. the ecosystem's
 
 Written once so it isn't re-litigated. The axis that matters here is **who owns the
@@ -109,11 +113,6 @@ skills, MCP servers, and SubAgent references round-trip through `agent.md` but a
 projected into the worker. They must not be presented as enforced controls until that
 projection exists.
 
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: ab1f9726-eb39-41cb-86f0-6d57214c24ff
-flowpad:endcapsule identity -->
 
 * **`SourceItemSpec`** — ours. The ingestion envelope a data-source driver emits and the `asset_spec` of `SourceItem` (the row): the fields the DB medium persists. Not an entity; a `DataSpec`.
 * **`ManifestSpec`** — ours. The shape of a data source's `data_source.json` and the `asset_spec` of the `DataSourceSpec` folder asset; every authoring rule is a validator on it.
@@ -139,3 +138,15 @@ flowpad:endcapsule identity -->
 | `GitOrigin.next_clone_target()` / `fresh_clone_slot(leaf, reuse_empty=)` | `flow_sdk/fs_store/origin/git_origin.py` | The two workspace placement policies: reuse a matching checkout vs. never reuse (suffix past a collision; an empty dir is not one unless `reuse_empty=False`). |
 | Header-carried bundle entries | `flow_sdk/builtin/flow_message_bundle.py` `_HEADER_UNPACKERS` + `_unpack_*_entry` | Conversation / flow_message / remote_worker_session unpack through named inverses of their packers (an `_UnpackCtx` carries the unpack-time state) instead of inline branches in `unpack_bundle`. |
 | Hub merge deny-set | `_hub_reflect._merge_skip_fields(entity)`; `wiki_cache._cache_payload` | Derived from the `Sharing` declarations (`fields_not_accepted_from_hub()` + hub wire aliases from `APIField(hub_name=…)`; `fields_not_in_bundle()`), not hand lists. The three ALLOW lists (`_FM_FIELDS`, `hub_bridge._LOCAL_FIELDS`, `membership_sync._MIRRORED_FIELDS`) are wire-format subsets and stay declared. |
+
+| `data-integrations` | ours | The `kind: vibe` persona that guides connect → sample → define; mechanics in `connect-data-source` |
+| `promote` / `annotate` | ours | `Dataset` actions: a `SourceItem` becomes an example row; a gold label is written against the dataset's output shape |
+| asset editor (`editors/<name>/`) | ours | An SDK app shipped inside a folder asset, served at `/graph/<type>/<id>/editor/<name>/`; `TypeInfo.editors` names a type's builtins |
+
+## Identity carriers (2026-08-30)
+
+| Ours | One place | Notes |
+|---|---|---|
+| `identity_carrier` (`FrontmatterCarrier`, `FolderMdCarrier`, `FolderJsonCarrier`, `NativeJsonCarrier`, `DerivedCarrier`) | `flow_sdk/fs_store/identity_carrier.py` | WHERE a type's id lives. A markdown main document: `id:` first in its frontmatter. `read` / `write_if_absent` / `convert` — validation and minting stay in `TypeInfo`. |
+| `TypeInfo.mint_entity_id` / `TypeInfo.read_id` / `carrier_path_for` | `flow_sdk/fs_store/schema_registry.py` | Read the carrier → owning row → mint and write. `read_id` never writes. No `observe`/`derive`/`overwrite` vocabulary. |
+| "capsule" | `flow_sdk/capsules/` | The generic named-block carrier. For markdown identity it is **legacy**: read, stripped from bodies, converted in place. Still the live carrier for `tag` blocks in source files and for folder-json identity. |

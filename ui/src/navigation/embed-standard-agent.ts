@@ -1,5 +1,5 @@
-import { apiClient } from '@sdk';
 import type { AgenticProcess } from '@sdk';
+import { systemSubagentRef } from '@src/pages/flow-page/vibe-personas';
 
 // The standard sub-agent's asset_ref is stable for the app's lifetime — resolve
 // once, reuse across chats. Raw graph route (not useEntitiesQuery) because
@@ -15,17 +15,7 @@ import type { AgenticProcess } from '@sdk';
 // prompt with no presentation rules and no error. `scope: 'system'` pins this to
 // the SDK-shipped asset so a project subagent someone names `standard` can't
 // shadow it.
-let standardAgentRefCache: string | null = null;
-
-async function resolveStandardAgentRef(): Promise<string | null> {
-  if (standardAgentRefCache) return standardAgentRefCache;
-  const rows = await apiClient.get<{ name?: string; scope?: string; asset_ref?: string }[]>(
-    '/graph/subagent?include_system=true',
-  );
-  standardAgentRefCache =
-    (rows ?? []).find((r) => r.name === 'standard' && r.scope === 'system')?.asset_ref ?? null;
-  return standardAgentRefCache;
-}
+const resolveStandardAgentRef = () => systemSubagentRef('standard');
 
 /**
  * Ride the SDK-shipped `standard` persona on a process so the chat-mode

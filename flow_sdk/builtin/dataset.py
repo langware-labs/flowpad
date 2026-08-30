@@ -39,7 +39,11 @@ from typing import Annotated, Any, Dict, List, Optional
 from pydantic import BeforeValidator, PlainSerializer, ValidationError, model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist, Sharing
-from flow_sdk.core import Entity
+from flow_sdk.core import Entity, action
+from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
+from flow_sdk.request_context.json_body import current_user_id, read_json_body
+from flow_sdk.request_context.methods import get_current_request_info
+from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec import FreeSection, FrontMatter, to_authoring_form
 from flow_sdk.schema.data_spec.dataset_spec import (  # noqa: F401 — enums re-exported
     DEFAULT_DATASET_SPEC,
@@ -98,6 +102,8 @@ class DatasetManifestSpec(FrontMatter):
 
     title: Optional[str] = None
     description: Optional[str] = None
+    #: The DataSource whose items this dataset curates (empty when hand-authored).
+    source_id: Optional[str] = None
     data_layout: Optional[str] = None
     field_spec: Optional[Dict[str, str]] = None
     delimiter: Optional[str] = None
@@ -115,6 +121,9 @@ class Dataset(Entity):
     type: str = APIField(default="dataset")
     title: str = APIField("")
     description: Optional[str] = APIField(None, blob=True)
+    # The DataSource this dataset curates: its items are promoted into rows
+    # (`promote`) and labelled (`annotate`). One source may feed many datasets.
+    source_id: str = APIField("")
 
     # Physical layout discriminator + CSV-only knobs.
     data_layout: DataLayoutEnum = APIField(DataLayoutEnum.CSV)
@@ -167,6 +176,139 @@ class Dataset(Entity):
         """'The eval set' is ``dataset.of_kind(ExampleKind.EVAL)``."""
         return [e for e in self.examples if e.kind == kind]
 
+    # ── the curation seam: SourceItem → example → gold ───────────────────
+
+    @property
+    def input_shape(self) -> Any:
+        return (self.spec or DEFAULT_DATASET_SPEC).example_type().input_type()
+
+    @property
+    def output_shape(self) -> Any:
+        return (self.spec or DEFAULT_DATASET_SPEC).example_type().output_type()
+
+    def _folder(self) -> Path:
+        if not self.asset_ref:
+            raise ValueError("dataset has no folder on disk yet")
+        return Path(self.asset_ref)
+
+    def _index(self) -> List[Dict[str, Any]]:
+        """Per-example scalars from the folder — the cheap read (one
+        ``example.json`` per dir), never the typed payloads."""
+        from flow_sdk.schema.data_spec.layout import layout_for  # noqa: PLC0415
+
+        if self.data_layout != DataLayoutEnum.IO_FOLDER or not self.asset_ref:
+            return []
+        return layout_for(self.data_layout).index(self._folder(), dataset_id=self.id)
+
+    async def _counts_from_disk(self) -> "Dataset":
+        """Re-derive the denormalized counts after a per-example write, and
+        broadcast the row. A write changes only the counts, and those follow
+        from the cheap index — re-parsing every example's payload (what a full
+        reindex does) would make labelling N rows O(N²)."""
+        rows = self._index()
+        kinds: Dict[str, int] = {}
+        for row in rows:
+            kinds[row["kind"]] = kinds.get(row["kind"], 0) + 1
+        self.num_examples = len(rows)
+        self.num_annotated = sum(1 for row in rows if row["annotated"])
+        self.kind_counts = kinds
+        await self.save()
+        return self
+
+    @action.get(action_name="examples")
+    async def examples_action(self):
+        """The rows as the disk holds them — id, the source item behind each,
+        and whether it carries gold. What an editor needs to show promoted /
+        labelled state without the DB-excluded ``examples`` field."""
+        return ApiSuccessResponse(data={"examples": self._index()})
+
+    async def promote(self, item_ids: list[str]) -> list[str]:
+        """Items → example rows (``input/item.json`` + provenance). Returns the
+        new example ids. Raises ``LookupError`` for an unknown item,
+        ``ValueError`` when the dataset cannot take source items."""
+        from flow_sdk.builtin.source_item import SourceItem, SourceItemSpec  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.dataset_spec import FileRef, FolderSpec  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.layout import INPUT, layout_for  # noqa: PLC0415
+
+        if self.input_shape is not SourceItemSpec:
+            raise ValueError('this dataset does not take source items — its spec input must be "ingest.source_item"')
+        layout = layout_for(self.data_layout)   # a CSV layout refuses `append` itself
+        wanted = [str(i) for i in item_ids]
+        rows = {item.id: item for item in await SourceItem.get_all(
+            QueryFilter(type=SourceItem.get_type(), match=ExpressionNode(op=QueryOp.IN, operands=["id", wanted]))
+        )}   # one IN query, not N lookups
+        batch = []
+        for item_id in wanted:
+            item = rows.get(item_id)
+            if item is None:
+                raise LookupError(f"no source_item {item_id}")
+            if self.source_id and item.data_source_id != self.source_id:
+                raise ValueError(f"item {item_id} belongs to another source")
+            contents, provenance = item.as_example_input()
+            batch.append((
+                ARTIFACT_ROW(
+                    kind=ExampleKind.TRAIN,
+                    input=FolderSpec(path=INPUT, files={"item.json": FileRef(path=f"{INPUT}/item.json")}),
+                    metadata={"source": provenance},
+                ),
+                contents,
+            ))
+        return layout.append_many(self._folder(), batch, dataset_id=self.id)
+
+    async def annotate(self, example_id: str, ground_truth: Any, *, by: str = "") -> None:
+        """One example's gold label, validated against the output shape
+        (``ValidationError``) and written as ``ground_truth/label.json``."""
+        from pydantic import TypeAdapter  # noqa: PLC0415
+
+        from flow_sdk.schema.data_spec.layout import layout_for  # noqa: PLC0415
+
+        gold = TypeAdapter(self.output_shape).validate_python(ground_truth)
+        payload = gold.model_dump(mode="json") if hasattr(gold, "model_dump") else gold
+        layout_for(self.data_layout).annotate(self._folder(), example_id, payload, dataset_id=self.id, by=by)
+
+    @action.post(action_name="promote")
+    async def promote_action(self):
+        """``{"source_item_ids": [...]}`` → ``{"example_ids": [...], "num_examples"}``."""
+        body = await read_json_body(get_current_request_info())
+        if isinstance(body, ApiFailResponse):
+            return body
+        ids = body.get("source_item_ids")
+        if not isinstance(ids, list) or not ids:
+            return ApiFailResponse(message="source_item_ids: a non-empty list is required", status_code=400)
+        try:
+            example_ids = await self.promote(ids)
+        except LookupError as exc:
+            return ApiFailResponse(message=str(exc), status_code=404)
+        except (ValueError, NotImplementedError) as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        fresh = await self._counts_from_disk()
+        return ApiSuccessResponse(data={"example_ids": example_ids, "num_examples": fresh.num_examples})
+
+    @action.post(action_name="annotate")
+    async def annotate_action(self):
+        """``{"example_id", "ground_truth"}`` → ``{"example_id", "num_annotated"}``;
+        a shape mismatch is a 400 carrying the output JSON schema."""
+        from pydantic import TypeAdapter  # noqa: PLC0415
+
+        body = await read_json_body(get_current_request_info())
+        if isinstance(body, ApiFailResponse):
+            return body
+        example_id = str(body.get("example_id") or "")
+        if not example_id or "ground_truth" not in body:
+            return ApiFailResponse(message="example_id and ground_truth are required", status_code=400)
+        try:
+            await self.annotate(example_id, body["ground_truth"], by=current_user_id())
+        except ValidationError as exc:
+            return ApiFailResponse(
+                message="ground_truth does not match the dataset's output shape", status_code=400,
+                data={"errors": exc.errors(include_url=False), "schema": TypeAdapter(self.output_shape).json_schema()},
+            )
+        except LookupError as exc:
+            return ApiFailResponse(message=str(exc), status_code=404)
+        except NotImplementedError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        fresh = await self._counts_from_disk()
+        return ApiSuccessResponse(data={"example_id": example_id, "num_annotated": fresh.num_annotated})
 
 
 def dataset_id_from_path(path: Path) -> str:

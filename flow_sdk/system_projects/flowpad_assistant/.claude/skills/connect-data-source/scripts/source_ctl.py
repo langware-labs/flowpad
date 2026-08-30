@@ -18,99 +18,22 @@ Nothing else is ever printed — a caller parses stdout whole.
 """
 from __future__ import annotations
 
-import argparse
-import json
 import sys
 import time
-from functools import lru_cache
-from typing import Any
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
 
 
-@lru_cache(maxsize=1)
-def _api() -> str:
-    """Base URL, resolved once. `discover_port` reads `server.json` off disk and
-    the port cannot change inside one invocation — `observe` alone would have
-    re-read it three times per loop iteration."""
-    from flow_sdk.cli.commands._common import discover_port  # noqa: PLC0415
-
-    return f"http://127.0.0.1:{discover_port()}/api/v1"
-
-
-def _envelope(resp) -> Any:
-    """The SUCCESS envelope's `data`, or a described failure.
-
-    A body that is not JSON is the cookie gate's HTML 403, which used to surface
-    from here as a bare `JSONDecodeError` — unactionable, and stdout JSON is the
-    only evidence this skill's caller gets. `bad_response_message` is the same
-    sentence the CLI shows for it.
-    """
-    from flow_sdk.cli.commands._common import bad_response_message  # noqa: PLC0415
-
-    try:
-        body = resp.json() or {}
-    except ValueError:
-        # RuntimeError, not SystemExit: `main` turns an Exception into the
-        # one-JSON-object contract, and a BaseException would escape it.
-        raise RuntimeError(bad_response_message(resp))
-    return body.get("data")
-
-
-def _get(path: str, **params: Any) -> Any:
-    """GET a graph path. `params` are FILTERED SERVER-SIDE.
-
-    The list routes parse a `filter` JSON param and honour a top-level `limit`,
-    so asking for one source's rows costs one source's rows. Pulling the whole
-    collection and filtering here would scale with everything the instance has
-    ever ingested — and `observe` reads on a loop.
-    """
-    from urllib.parse import urlencode  # noqa: PLC0415
-
-    from flow_sdk.cli.commands._common import local_get  # noqa: PLC0415
-
-    limit = params.pop("limit", None)
-    query = {}
-    if params:
-        query["filter"] = json.dumps(params)
-    if limit is not None:
-        query["limit"] = str(limit)
-    url = f"{_api()}{path}" + (f"?{urlencode(query)}" if query else "")
-    return _envelope(local_get(url))
-
-
-def _post(path: str, body: dict | None = None) -> Any:
-    from flow_sdk.cli.commands._common import local_post  # noqa: PLC0415
-
-    return _envelope(local_post(f"{_api()}{path}", json=body or {}))
-
+from _ctl_common import api_base, create_and_verify, json_arg, run  # noqa: E402
+from _ctl_common import get as _get
+from _ctl_common import one_source as _one
+from _ctl_common import post as _post
+from _ctl_common import sources as _sources
 
 #: Ceiling for a "how many landed" read. High enough that a normal source is
 #: counted exactly, low enough that the observe loop never drags a corpus.
 COUNT_CEILING = 500
-
-
-def _sources() -> list[dict]:
-    # Unfiltered on purpose: `_one` needs the whole set to detect an ambiguous
-    # name, and this table has one row per configured source.
-    return list(_get("/graph/data_source") or [])
-
-
-def _one(ref: str) -> dict:
-    """A source by id, or by an unambiguous name/provider match.
-
-    Ambiguity is an error, never a guess: acting on the wrong source is worse
-    than asking which one.
-    """
-    rows = _sources()
-    exact = [r for r in rows if r.get("id") == ref]
-    if exact:
-        return exact[0]
-    needle = ref.strip().lower()
-    hits = [r for r in rows if needle in str(r.get("name") or "").lower() or needle == str(r.get("provider") or "").lower()]
-    if not hits:
-        raise LookupError(f"no data source matches {ref!r}")
-    if len(hits) > 1:
-        raise LookupError(f"{ref!r} matches {len(hits)}: " + ", ".join(f"{r.get('name')} ({r.get('id')})" for r in hits))
-    return hits[0]
 
 
 def _cursors(source_id: str) -> list[dict]:
@@ -170,14 +93,10 @@ def cmd_create(args) -> dict:
     field returns 200 with the value missing. So the evidence for the setup gate
     is the read-back, never the 201.
     """
-    payload = json.loads(sys.stdin.read() if args.json == "-" else args.json)
+    payload = json_arg(args.json)
     payload.setdefault("status", "new")
-    created = _post("/graph/data_source", payload) or {}
-    source_id = created.get("id")
-    if not source_id:
-        raise RuntimeError("create returned no id")
-    row = _get(f"/graph/data_source/{source_id}") or {}
-    dropped = [k for k, v in payload.items() if k != "status" and row.get(k) != v]
+    keys = tuple(k for k in payload if k != "status")
+    source_id, row, dropped = create_and_verify("/graph/data_source", payload, keys)
     return {
         "id": source_id,
         "typeid": f"data_source-{source_id}",
@@ -293,7 +212,7 @@ def cmd_delete(args) -> dict:
     # `local_request`, not a bare `requests.delete`: the cookie gate has no path
     # and no loopback exemption, so a hand-built call takes the gate's 403 HTML
     # while every other verb here works.
-    resp = local_request("DELETE", f"{_api()}/graph/data_source/{source['id']}", timeout=30)
+    resp = local_request("DELETE", f"{api_base()}/graph/data_source/{source['id']}", timeout=30)
     return {"id": source["id"], "deleted": resp.ok}
 
 
@@ -310,23 +229,5 @@ VERBS = {
 }
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    subs = parser.add_subparsers(dest="verb", required=True)
-    for name, (_fn, params) in VERBS.items():
-        sub = subs.add_parser(name)
-        for flag, kwargs in params:
-            sub.add_argument(flag, **kwargs)
-    args = parser.parse_args()
-
-    try:
-        payload = VERBS[args.verb][0](args)
-    except Exception as exc:  # noqa: BLE001 — the contract is a JSON object, always
-        print(json.dumps({"ok": False, "error_code": type(exc).__name__, "error": str(exc)}))
-        return 1
-    print(json.dumps({"ok": True, **payload}, default=str))
-    return 0
-
-
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run(VERBS, __doc__))

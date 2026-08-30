@@ -13,3 +13,11 @@ input, select, textarea { font: inherit; padding: 4px 6px; width: 100%; box-sizi
 .items { list-style: none; margin: 0; padding: 0; }
 .items li { padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, CanvasText 10%, transparent); }
 .items li small { display: block; color: GrayText; }
+.small { font-size: 12px; }
+.err { color: crimson; }
+.ghost { background: transparent; border: 1px solid color-mix(in srgb, CanvasText 30%, transparent); }
+.shape-row { display: grid; grid-template-columns: 1fr 120px 28px; gap: 6px; margin-bottom: 6px; }
+.items li .label { margin-top: 6px; display: grid; gap: 4px; }
+.items li .label .field { display: grid; grid-template-columns: 110px 1fr; gap: 6px; align-items: center; }
+.items li .item-actions { display: flex; gap: 6px; margin-top: 4px; }
+.tag { font-size: 11px; padding: 1px 6px; border-radius: 8px; background: color-mix(in srgb, seagreen 25%, transparent); }
