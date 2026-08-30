@@ -1072,16 +1072,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   process_hook_events: HookEventType[] = [];
 
   async setHook(event: HookEventType): Promise<boolean> {
-    const action = new ActionInfo('set-hook', AgenticProcess.type, this.id, 'POST');
-    action.bodyParameters = { event };
-    const response = await dataManager.callAction<{ event: HookEventType }, { changed: boolean }>(action);
+    const response = await this.post<{ changed: boolean }>('set-hook', { event });
     return response.changed;
   }
 
   async removeHook(event: HookEventType): Promise<boolean> {
-    const action = new ActionInfo('remove-hook', AgenticProcess.type, this.id, 'POST');
-    action.bodyParameters = { event };
-    const response = await dataManager.callAction<{ event: HookEventType }, { changed: boolean }>(action);
+    const response = await this.post<{ changed: boolean }>('remove-hook', { event });
     return response.changed;
   }
 
@@ -1946,8 +1942,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
     this._historyLoading = (async () => {
       try {
-        const actionInfo = new ActionInfo('get-history', AgenticProcess.type, this.id, 'GET');
-        const response = await dataManager.callAction<void, HistoryResponse>(actionInfo);
+        const response = await this.get<HistoryResponse>('get-history');
 
         if (!response || !response.history) {
           return;
@@ -2288,9 +2283,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   readonly embeddedAssets = {
     attach: async (entityOrRef: { typeId?: TypeId } | TypeId | string): Promise<void> => {
       const ref = this._coerceRef(entityOrRef);
-      const actionInfo = new ActionInfo('attach-embedded-asset', AgenticProcess.type, this.id, 'POST');
-      actionInfo.bodyParameters = { entity_ref: ref.toString() };
-      await dataManager.callAction(actionInfo);
+      await this.post('attach-embedded-asset', { entity_ref: ref.toString() });
       // The WS broadcast lands embedded_asset_refs as plain stringified TypeIds
       // (the server serializes them that way); avoid duplicating by comparing
       // on the string form instead of property-by-property on TypeId.
@@ -2301,9 +2294,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     },
     detach: async (entityOrRef: { typeId?: TypeId } | TypeId | string): Promise<void> => {
       const ref = this._coerceRef(entityOrRef);
-      const actionInfo = new ActionInfo('detach-embedded-asset', AgenticProcess.type, this.id, 'POST');
-      actionInfo.bodyParameters = { entity_ref: ref.toString() };
-      await dataManager.callAction(actionInfo);
+      await this.post('detach-embedded-asset', { entity_ref: ref.toString() });
       const refStr = ref.toString();
       this.embedded_asset_refs = (this.embedded_asset_refs ?? []).filter((r) => String(r) !== refStr);
     },
@@ -2749,8 +2740,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   async recoverProject(): Promise<import('../entities/project').Project> {
     const { Project } = await import('../entities/project');
-    const action = new ActionInfo('recover-project', AgenticProcess.type, this.id, 'POST');
-    const response = await dataManager.callAction<void, { project: unknown }>(action);
+    const response = await this.post<{ project: unknown }>('recover-project');
     if (!response?.project) {
       throw new Error('recover-project returned no project entity');
     }
@@ -2898,9 +2888,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @returns The new AgenticProcess, already opened with a live PTY.
    */
   async fork(visible = false): Promise<AgenticProcess> {
-    const actionInfo = new ActionInfo('fork', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { visible };
-    const data = await dataManager.callAction<{ visible: boolean }, Record<string, unknown>>(actionInfo);
+    const data = await this.post<Record<string, unknown>>('fork', { visible });
     if (!data?.id) throw new Error('Fork failed: backend returned no process data');
     dataManager.updateEntityFromJson(data);
     const newProcess = await dataManager.getByTypeId<AgenticProcess>(
@@ -3481,9 +3469,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @param options - Optional options (e.g., clearContext to inject /clear first)
    */
   async executePlan(filePath: string, options?: { clearContext?: boolean }): Promise<void> {
-    const actionInfo = new ActionInfo('execute-plan', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { file_path: filePath, clear_context: options?.clearContext };
-    return dataManager.callAction(actionInfo);
+    return this.post('execute-plan', { file_path: filePath, clear_context: options?.clearContext });
   }
 
   /**
@@ -3491,8 +3477,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @param filePath - Absolute path to the plan file
    */
   async updatePlan(filePath: string): Promise<void> {
-    const actionInfo = new ActionInfo('update-plan', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { file_path: filePath };
-    return dataManager.callAction<void, void>(actionInfo);
+    return this.post<void>('update-plan', { file_path: filePath });
   }
 }
