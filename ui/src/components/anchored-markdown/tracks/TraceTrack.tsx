@@ -2,8 +2,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tool
 import { cn } from '@src/lib/utils';
 import { CheckCircle2, MinusCircle, RotateCw, XCircle } from 'lucide-react';
 
-import type { AnchoredItem, AnchoredTrack } from '../types';
-
 export type TraceMarkStatus = 'done' | 'retried' | 'error' | 'skip';
 
 export interface TraceMark {
@@ -20,19 +18,6 @@ export interface TraceMark {
   /** USD cost of usage entries whose timestamp falls in [startedAt, endedAt],
    *  resolved via ModelPricing.costOf. Undefined when transcript is missing. */
   costUsd?: number;
-}
-
-export const TRACE_TRACK_WIDTH = 112;
-
-/** @deprecated Use buildMarkerTrack from '../tracks/MarkerTrack' with kind: 'trace' items. */
-export function buildTraceTrack(items: AnchoredItem<TraceMark>[]): AnchoredTrack<TraceMark> {
-  return {
-    id: 'trace',
-    side: 'left',
-    width: TRACE_TRACK_WIDTH,
-    items,
-    renderItem: (item) => <TraceMarker mark={item.data} />,
-  };
 }
 
 export { TraceMarker };
