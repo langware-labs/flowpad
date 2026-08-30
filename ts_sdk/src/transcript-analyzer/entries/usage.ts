@@ -2,8 +2,8 @@
  * UsageEntry — per-stream token / request accounting.
  *
  * TS mirror of flow_sdk/transcript_analyzer/entries/usage.py. One entry per
- * chargeable stream from an assistant turn — pairs with ItemPrice.dims in
- * the pricing module to compute USD cost.
+ * chargeable stream from an assistant turn. The backend prices it and ships
+ * the result as `cost_usd`.
  */
 
 import { EntryKind, TranscriptEntry, type TranscriptEntryBase } from '../entry';

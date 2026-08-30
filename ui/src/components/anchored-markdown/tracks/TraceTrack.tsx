@@ -16,7 +16,7 @@ export interface TraceMark {
   startedAt?: string;
   endedAt?: string;
   /** USD cost of usage entries whose timestamp falls in [startedAt, endedAt],
-   *  resolved via ModelPricing.costOf. Undefined when transcript is missing. */
+   *  summed from each entry's backend `cost_usd`. Undefined when transcript is missing. */
   costUsd?: number;
 }
 

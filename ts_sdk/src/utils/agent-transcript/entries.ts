@@ -129,6 +129,8 @@ export interface MetaEntry extends BaseEntry {
 
 export interface TokenUsageEntry extends BaseEntry {
   kind: 'token_usage';
+  /** USD cost of this stream, priced by the backend's tables. */
+  cost_usd?: number;
   // New per-dim shape (post pricing-refactor). One entry per chargeable stream.
   count?: number;
   io?: 'input' | 'output';
