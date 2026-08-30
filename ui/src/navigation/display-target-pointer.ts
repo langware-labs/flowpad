@@ -1,4 +1,4 @@
-import { PageId, TypeId } from '@sdk';
+import { PageId, TypeId, type ShowTarget } from '@sdk';
 import { AssetDocPointer } from './AssetDocPointer';
 import { editorForType } from './asset-doc-types';
 import { DockPointer } from './DockPointer';
@@ -23,31 +23,20 @@ import { ViewType } from '@src/types/ViewType';
  * answers for the same target — they were three near-copies before this.
  */
 
-/** Structural shape of every resolved show target — deliberately all-optional so
- *  the SDK's `ShowTarget`, `ReceiveShowTarget` and `DisplayShowTarget` all fit. */
-export interface DisplayTargetLike {
-  kind?: string;
-  typeid?: string;
-  type?: string;
-  id?: string;
-  path?: string;
-  port?: number | string;
-  /** kind: 'app' — the Artifact is the address; runtime is derived, not pinned. */
-  artifact_id?: string;
-  /** kind: 'app' — the delivery row, sent whenever one exists (and the ONLY id a
-   *  webapp ASSET has, since it has no Artifact). See `_app_payload` /
-   *  `_asset_app_payload` in `flow_sdk/core/display_target.py`. */
-  micro_app_id?: string;
-  runtime?: string;
-  name?: string;
-  /** kind: 'dock' — a SCREEN. The backend sends the frontend's own field names
-   *  (`flow_sdk/core/dock_address.py`, pinned by dock_address_contract.json) so
-   *  the pointer is built here without re-parsing a URL. */
-  view_type?: string;
-  pointer?: string | null;
-  options?: Record<string, string> | null;
-  page?: string;
-}
+/**
+ * Structural shape of every resolved show target — all-optional so the SDK's
+ * `ShowTarget`, `ReceiveShowTarget` and `DisplayShowTarget` all fit.
+ *
+ * DERIVED from the SDK's `ShowTarget` rather than restated. This is one backend
+ * payload (`flow_sdk/core/display_target.py`) that was declared four times
+ * across the tree, and the copies had already drifted — the last two fields the
+ * backend added had to be applied to each copy by hand.
+ *
+ * The single genuine difference is `runtime`: `ShowTarget` types it as the
+ * narrow `'dev' | 'served' | 'unbuilt'` union, while this accepting shape takes
+ * any string so a target from a source that has not been narrowed still fits.
+ */
+export type DisplayTargetLike = Omit<ShowTarget, 'runtime'> & { runtime?: string };
 
 /** Port targets (`webapp`, and an `app` whose dev server is up) → the port preview. */
 function webAppPointer(port: number | string | undefined): DockPointer | null {

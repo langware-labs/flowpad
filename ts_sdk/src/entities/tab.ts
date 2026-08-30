@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models';
@@ -201,7 +202,7 @@ export interface TabRow extends ITab {
 // field declared solely on ITab read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Tab extends Omit<ITab, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface Tab extends EntityMerge<ITab> {}
 
 @registerEntity
 export class Tab extends APIEntity<Tab> implements ITab {

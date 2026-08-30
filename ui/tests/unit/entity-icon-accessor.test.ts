@@ -18,9 +18,21 @@ describe('APIEntity.icon accessor pair', () => {
     expect(new Group({ name: 'g' } as never).icon).toBe(null);
     expect(new Prompt({ name: 'p' } as never).icon).toBe(null);
   });
-  it('keeps icon own+enumerable so toJSON serializes it', () => {
+  it('serializes icon, which is a prototype accessor the own-property loop cannot see', () => {
     const g = new Group({ name: 'g', icon: 'folder' } as never);
-    expect(Object.keys(g)).toContain('icon');
+    // Assert the REQUIREMENT (it reaches the wire), not the mechanism — this
+    // used to be an own-property mirror installed per instance, and is now a
+    // line in `toJSON`.
+    expect(g.toJSON().icon).toBe('folder');
     expect(JSON.parse(JSON.stringify(g)).icon).toBe('folder');
+  });
+
+  it('does not let a subclass icon-like member collide with the base accessor', async () => {
+    // `AgenticProcess` computes a vendor glyph KEY, deliberately not called
+    // `icon` — the collision is what used to force a per-construction guard.
+    const { AgenticProcess } = await import('@sdk/process/agentic-process');
+    const p = new AgenticProcess({ worker_type: 'codex' } as never);
+    expect(p.processIconKey).toBe('codex');
+    expect(() => (p.icon = 'Something')).not.toThrow();
   });
 });

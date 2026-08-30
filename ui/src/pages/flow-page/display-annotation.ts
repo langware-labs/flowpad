@@ -1,3 +1,4 @@
+import type { ShowTarget } from '@sdk';
 import { t } from '@lingui/core/macro';
 import { ViewType } from '@sdk';
 import { isMarkdownDocumentPath } from '@src/lib/markdown-path';
@@ -20,28 +21,14 @@ export interface DisplayAnnotationContext {
   viewType?: string;
 }
 
-export interface DisplayShowTarget {
-  /** Mirrors python `DisplayTargetKind`: entity | vfs | webapp | app | shell. */
-  kind?: string;
-  typeid?: string;
-  type?: string;
-  id?: string;
-  path?: string;
-  port?: number | string;
-  /** kind: 'app' — the Artifact is the address; runtime is derived, not pinned. */
-  artifact_id?: string;
-  runtime?: 'dev' | 'served' | 'unbuilt';
-  micro_app_id?: string;
-  name?: string;
-  /** kind: 'dock' — the frontend's own dock grammar (`flow show view <address>`). */
-  view_type?: string;
-  page?: string;
-  // Nullable, matching the wire (`ShowTarget` in ts_sdk / `dock_target` in
-  // flow_sdk/core/dock_address.py): the backend sends an explicit null for a
-  // pointerless screen rather than omitting the key.
-  pointer?: string | null;
-  options?: Record<string, string> | null;
-}
+/**
+ * The `flow show` target as it arrives on a display annotation.
+ *
+ * An alias for the SDK's `ShowTarget`, not a fourth copy of it: this was
+ * field-for-field identical to it, and the copies of this one backend payload
+ * (`flow_sdk/core/display_target.py`) had already drifted apart.
+ */
+export type DisplayShowTarget = ShowTarget;
 
 function slug(value: string): string {
   return value

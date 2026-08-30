@@ -10,6 +10,26 @@ import { IResource } from './IResource';
 // `name` and `created_at` are omitted from the base and redeclared below: an
 // entity row can carry either as null, which `IResource` (the shape local
 // file-backed resources implement) does not allow.
+/**
+ * The declaration-merge shape every entity class uses.
+ *
+ * `class X ... implements IX` contributes NO members in TypeScript, so each
+ * entity pairs its class with `export interface X extends EntityMerge<IX> {}`
+ * to make the wire fields part of the class type. What is omitted are the
+ * members `APIEntity` already declares concretely — merging them again would
+ * conflict.
+ *
+ * An alias rather than the key list written out 62 times: the list had already
+ * drifted into two orderings, and the next member `APIEntity` declares would
+ * otherwise be a 62-file edit whose failure mode is an opaque merge error.
+ * `Extra` carries the per-entity additions (today: `icon`, on the five entities
+ * that also take a per-row icon off the wire).
+ */
+export type EntityMerge<I, Extra extends string = never> = Omit<
+  I,
+  'expand' | 'id' | 'is_private' | 'members' | Extra
+>;
+
 export interface IEntity extends Omit<Partial<IResource>, 'name' | 'created_at'> {
   /** Creation timestamp (ISO string); null on a row the backend never stamped. */
   created_at?: string | null;

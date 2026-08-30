@@ -13,10 +13,10 @@ type SubIconSelector = (entity: APIEntity<any>) => IconComp | null;
 const SUB_ICON_SELECTORS: Record<string, SubIconSelector> = {
   [AgenticProcess.type]: (entity) => {
     const proc = entity as AgenticProcess;
-    // Reuse the SDK-owned worker_type→vendor mapping (`AgenticProcess.icon`), but
+    // Reuse the SDK-owned worker_type→vendor mapping (`AgenticProcess.processIconKey`), but
     // drop the `-restore` state axis: the *-restore glyphs are themselves composite
     // (a badge inside a badge), and this sub-icon only conveys the vendor.
-    const key = proc.icon.replace('-restore', '') as ProcessIconKey;
+    const key = proc.processIconKey.replace('-restore', '') as ProcessIconKey;
     return pickProcessIcon(key);
   },
 };

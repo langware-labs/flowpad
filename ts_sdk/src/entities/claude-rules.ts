@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { DockPointerData } from '../models/DockPointer';
@@ -14,7 +15,7 @@ export interface IClaudeRules extends IEntity {
 // field declared solely on IClaudeRules read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface ClaudeRules extends Omit<IClaudeRules, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface ClaudeRules extends EntityMerge<IClaudeRules> {}
 
 /** Rules markdown file under `.claude/rules/*.md`. */
 @registerEntity

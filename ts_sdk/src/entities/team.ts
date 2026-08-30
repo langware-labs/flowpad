@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 
@@ -10,7 +11,7 @@ export interface ITeam extends IEntity {
 // field declared solely on ITeam read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Team extends Omit<ITeam, 'expand' | 'icon' | 'id' | 'is_private' | 'members'> {}
+export interface Team extends EntityMerge<ITeam, 'icon'> {}
 
 @registerEntity
 export class Team extends APIEntity<Team> implements ITeam {

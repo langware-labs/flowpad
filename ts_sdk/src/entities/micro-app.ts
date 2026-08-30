@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { APIEntity, registerEntity } from '../APIEntity';
 import type { IEntity } from '../IEntity';
@@ -21,7 +22,7 @@ export interface IMicroApp extends IEntity {
 // field declared solely on IMicroApp read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface MicroApp extends Omit<IMicroApp, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface MicroApp extends EntityMerge<IMicroApp> {}
 
 /**
  * MicroApp is the *delivery* plane of an app: its built output, served by the

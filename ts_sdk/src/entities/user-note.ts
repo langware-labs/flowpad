@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 
@@ -9,7 +10,7 @@ export interface IUserNote extends IEntity {
 // field declared solely on IUserNote read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface UserNote extends Omit<IUserNote, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface UserNote extends EntityMerge<IUserNote> {}
 
 @registerEntity
 export class UserNote extends APIEntity<UserNote> implements IUserNote {

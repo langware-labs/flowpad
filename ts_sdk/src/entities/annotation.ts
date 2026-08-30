@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 
@@ -15,7 +16,7 @@ export interface IAnnotation extends IEntity {
 // field declared solely on IAnnotation read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Annotation extends Omit<IAnnotation, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface Annotation extends EntityMerge<IAnnotation> {}
 
 @registerEntity
 export class Annotation extends APIEntity<Annotation> implements IAnnotation {

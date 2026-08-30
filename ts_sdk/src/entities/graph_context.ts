@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 
@@ -17,7 +18,7 @@ export interface IGraphContext extends IEntity {
 // field declared solely on IGraphContext read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface GraphContext extends Omit<IGraphContext, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface GraphContext extends EntityMerge<IGraphContext> {}
 
 @registerEntity
 export class GraphContext extends APIEntity<GraphContext> implements IGraphContext {

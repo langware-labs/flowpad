@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { DockPointerData } from '../models/DockPointer';
@@ -37,7 +38,7 @@ export interface IMarkdown extends IEntity {
 // field declared solely on IMarkdown read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Markdown extends Omit<IMarkdown, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface Markdown extends EntityMerge<IMarkdown> {}
 
 /**
  * Markdown (Docs) entity — wiki/markdown files under `docs/*.md` (AssetClass.DOCS).

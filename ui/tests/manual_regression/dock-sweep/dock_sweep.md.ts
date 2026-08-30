@@ -117,11 +117,35 @@ test.describe('dock sweep', () => {
         // `data-view` proves the page rendered, not that the backend can steer
         // it: a navigate targets the tab's WebSocket registration, which lands
         // after first paint, and the previous case just closed its own page.
-        // Ask the control plane the same question `flow context` asks and only
-        // proceed once it names an active tab.
+        // Ask the control plane the same question `flow context` asks — but a
+        // single 200 is NOT enough, and that was this file's whole flakiness:
+        // the closed page's socket is still registered for a moment, so the
+        // poll is satisfied by the PREVIOUS case's dying connection, which is
+        // then reaped before `flow navigate` runs — and the CLI sees an empty
+        // `_active_connections` and fails `No active tab`. (Measured: right
+        // after `goto`, context answered 200 instantly from the prior page's
+        // socket, and this address re-navigates once after first paint, so the
+        // new tab's own socket lands later still.)
+        // Require the SAME connection_id on two consecutive reads: a dying
+        // registration cannot survive both, a settled one does. Same 15s
+        // budget — only the predicate got stricter.
+        let lastCid: string | null = null;
         await expect
-          .poll(async () => (await fetch(`${BACKEND}/api/v1/agent/context`)).status, { timeout: 15_000 })
-          .toBe(200);
+          .poll(
+            async () => {
+              const r = await fetch(`${BACKEND}/api/v1/agent/context`);
+              if (r.status !== 200) {
+                lastCid = null;
+                return false;
+              }
+              const cid = ((await r.json()) as { connection_id?: string }).connection_id ?? null;
+              const stable = cid !== null && cid === lastCid;
+              lastCid = cid;
+              return stable;
+            },
+            { timeout: 15_000 },
+          )
+          .toBe(true);
 
         const res = flow(['navigate', 'view', address]);
 

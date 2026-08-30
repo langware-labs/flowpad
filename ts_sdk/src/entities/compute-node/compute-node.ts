@@ -8,6 +8,7 @@
  * ComputeNode changes, the frontend cache is reset (NOT the backend PTYs).
  */
 
+import type { EntityMerge } from '../../IEntity';
 import { APIEntity, dataManager, registerEntity } from '../../APIEntity';
 import { isApiError } from '../../ApiResponse';
 import { TypeId } from '../../models/TypeId';
@@ -110,7 +111,7 @@ export interface IComputeNode extends Omit<IEntity, 'status'> {
  * This interface makes them part of the class type.
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface ComputeNode extends Omit<IComputeNode, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface ComputeNode extends EntityMerge<IComputeNode> {}
 
 /**
  * ComputeNode entity class.

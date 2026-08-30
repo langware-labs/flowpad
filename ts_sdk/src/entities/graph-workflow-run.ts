@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 
@@ -24,7 +25,7 @@ export interface IGraphWorkflowRun extends IEntity {
 // field declared solely on IGraphWorkflowRun read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface GraphWorkflowRun extends Omit<IGraphWorkflowRun, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface GraphWorkflowRun extends EntityMerge<IGraphWorkflowRun> {}
 
 @registerEntity
 export class GraphWorkflowRun extends APIEntity<GraphWorkflowRun> implements IGraphWorkflowRun {

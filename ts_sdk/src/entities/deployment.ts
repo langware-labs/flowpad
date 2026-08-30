@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, isNonEmptyString, registerEntity } from '../APIEntity';
 import type { IEntity } from '../IEntity';
 import { DockPointerData } from '../models/DockPointer';
@@ -85,7 +86,7 @@ export interface IDeployment extends Omit<IEntity, 'status'> {
 // field declared solely on IDeployment read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Deployment extends Omit<IDeployment, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface Deployment extends EntityMerge<IDeployment> {}
 
 /**
  * Deployment is THE placement record: this thing runs on that machine.

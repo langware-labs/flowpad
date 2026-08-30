@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity, dataManager } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models';
@@ -21,7 +22,7 @@ export interface IJobExecution extends IEntity {
 // field declared solely on IJobExecution read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface JobExecution extends Omit<IJobExecution, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface JobExecution extends EntityMerge<IJobExecution> {}
 
 @registerEntity
 export class JobExecution extends APIEntity<JobExecution> implements IJobExecution {

@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../../IEntity';
 import { APIEntity, registerEntity } from '../../APIEntity';
 import apiClient from '../../client';
 import { dataContext } from '../../FlowSync/context';
@@ -22,7 +23,7 @@ const JOURNEY_ASSET_REF = /^(.*)\/agentic-assets\/journey\/[^/]+\/?$/;
 // field declared solely on IJourney read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Journey extends Omit<IJourney, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface Journey extends EntityMerge<IJourney> {}
 
 /**
  * A guided User Journey — a folder-backed onboarding document. Exposes the

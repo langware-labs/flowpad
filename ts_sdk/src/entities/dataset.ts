@@ -3,6 +3,7 @@
  * DataSource (`source_id`) its rows are that source's items: `promote` turns
  * items into examples, `annotate` writes an example's gold label.
  */
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 
@@ -46,7 +47,7 @@ export interface IDataset extends IEntity {
 // field declared solely on IDataset read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Dataset extends Omit<IDataset, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface Dataset extends EntityMerge<IDataset> {}
 
 @registerEntity
 export class Dataset extends APIEntity<Dataset> implements IDataset {

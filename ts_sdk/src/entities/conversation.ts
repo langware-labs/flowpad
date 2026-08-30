@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, dataManager, registerEntity, type EntityMember } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
@@ -129,7 +130,7 @@ export interface IConversation extends IEntity {
  * This interface makes them part of the class type.
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Conversation extends Omit<IConversation, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface Conversation extends EntityMerge<IConversation> {}
 
 @registerEntity
 export class Conversation extends APIEntity<Conversation> implements IConversation {

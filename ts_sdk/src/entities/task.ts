@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { dataContext } from '../FlowSync/context';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
@@ -104,7 +105,7 @@ export interface ITask extends IEntity {
 // field declared solely on ITask read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Task extends Omit<ITask, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface Task extends EntityMerge<ITask> {}
 
 @registerEntity
 export class Task extends APIEntity<Task> implements ITask {

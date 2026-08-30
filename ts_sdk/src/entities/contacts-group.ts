@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import type { TypeId } from '../models/TypeId';
@@ -17,7 +18,7 @@ export interface IContactsGroup extends IEntity {
 // field declared solely on IContactsGroup read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface ContactsGroup extends Omit<IContactsGroup, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface ContactsGroup extends EntityMerge<IContactsGroup> {}
 
 /**
  * A named, local address-book group of contacts — participant-shaped entries

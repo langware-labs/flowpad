@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { isApiError } from '../ApiResponse';
 import { IEntity } from '../IEntity';
@@ -13,7 +14,7 @@ export interface IWebDomain extends IEntity {
 // field declared solely on IWebDomain read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface WebDomain extends Omit<IWebDomain, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface WebDomain extends EntityMerge<IWebDomain> {}
 
 @registerEntity
 export class WebDomain extends APIEntity<WebDomain> implements IWebDomain {

@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
@@ -198,7 +199,7 @@ export interface IFlowMessage extends IEntity {
 // field declared solely on IFlowMessage read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface FlowMessage extends Omit<IFlowMessage, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface FlowMessage extends EntityMerge<IFlowMessage> {}
 
 @registerEntity
 export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage {

@@ -97,15 +97,9 @@ export interface ColVisibility {
 // An empty bracketed paste (RFC 6093 start+end markers, no payload) — the exact
 // signal an image paste delivers to the PTY, which the CLI reads the system
 // clipboard on. Re-emitted after annotation so the CLI inlines the annotated image.
-const EMPTY_BRACKETED_PASTE = '\x1b[200~\x1b[201~';
+import { perfLog } from '@src/routes/loaders/_perf';
 
-declare global {
-  interface Window {
-    /** Per-nav perf T0, stamped on the shell-navigation click. See
-     *  `routes/loaders/_perf.ts` (`PERF_T0_KEY`) — the producer. */
-    __shellNavT0?: number;
-  }
-}
+const EMPTY_BRACKETED_PASTE = '\x1b[200~\x1b[201~';
 
 import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
 import {
@@ -787,9 +781,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     const initializeTerminal = () => {
       if (disposed) return;
       if (active) {
-        const t0 = window.__shellNavT0;
-        if (t0 !== undefined)
-          console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms xterm initializeTerminal (active)`);
+        perfLog('xterm initializeTerminal (active)');
       }
 
       const term = new XTerm({
@@ -842,9 +834,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         fitAddonRef.current = fit;
         container.addEventListener('paste', onDomPaste, true);
         if (active) {
-          const t0 = window.__shellNavT0;
-          if (t0 !== undefined)
-            console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms term.open() done (active)`);
+          perfLog('term.open() done (active)');
         }
       } catch (e) {
         console.error('[InteractiveTerminal] Failed to open terminal:', e);
@@ -884,9 +874,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             ptySyncRef.current.initSegments(Date.now(), Math.max(3, term.rows - 4), adapter?.getEvictionOffset() ?? 0);
 
             if (active) {
-              const t0 = window.__shellNavT0;
-              if (t0 !== undefined)
-                console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms setTerminalReady(true) (active)`);
+              perfLog('setTerminalReady(true) (active)');
             }
             setTerminalReady(true);
             focusTerminalUnlessEditingElsewhere(term, xtermContainerRef.current);

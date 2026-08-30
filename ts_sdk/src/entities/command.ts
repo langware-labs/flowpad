@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { DockPointerData } from '../models/DockPointer';
@@ -15,7 +16,7 @@ export interface ICommand extends IEntity {
 // field declared solely on ICommand read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Command extends Omit<ICommand, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface Command extends EntityMerge<ICommand> {}
 
 /** Slash-command markdown file under `.claude/commands/*.md`. */
 @registerEntity

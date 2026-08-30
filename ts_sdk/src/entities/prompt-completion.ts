@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 
@@ -24,7 +25,7 @@ export interface IPromptCompletion extends IEntity {
 // field declared solely on IPromptCompletion read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface PromptCompletion extends Omit<IPromptCompletion, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface PromptCompletion extends EntityMerge<IPromptCompletion> {}
 
 @registerEntity
 export class PromptCompletion extends APIEntity<PromptCompletion> implements IPromptCompletion {
