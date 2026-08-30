@@ -586,15 +586,12 @@ TERMINAL_SHELL_KEY = "terminal_shell_id"
 
 
 async def _read_json_body() -> dict | ApiFailResponse:
-    """JSON object body of the current request, or an ``ApiFailResponse``
-    the action can return as-is."""
-    request_info = get_current_request_info()
-    if not request_info:
-        return ApiFailResponse(message="No request info")
-    body = await request_info.get_post_data()
-    if not isinstance(body, dict):
-        return ApiFailResponse(message="Expected JSON object body")
-    return body
+    """The request body through THIS module's ``get_current_request_info`` (the
+    seam its tests patch); the reading itself is the shared one."""
+    from flow_sdk.request_context.json_body import read_json_body  # noqa: PLC0415
+
+    return await read_json_body(get_current_request_info())
+
 
 
 def _write_plan_frontmatter(file_path: str, fields: dict) -> None:
@@ -3001,12 +2998,24 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="show")
     async def _http_show(self) -> ApiSuccessResponse | ApiFailResponse:
-        """Resolve a show target — ``{typeid}`` | ``{path}`` | ``{port}`` | ``{view}`` — and emit it.
+        """Resolve a show target and emit it.
+
+        Body takes exactly one of ``{typeid}`` | ``{path}`` | ``{port}`` |
+        ``{artifact_id}`` | ``{view}``.
 
         Resolution is the shared ``resolve_display_target`` policy (same as
         ``flow navigate file``): indexed asset → its entity; unknown path →
-        raw vfs pointer; port → webapp preview; view → a dock address (a SCREEN,
-        the one form that reaches a view with no entity behind it).
+        raw vfs pointer; port → webapp preview; artifact_id → an app with its
+        runtime derived from its Deployment/MicroApp companions; view → a dock
+        address (a SCREEN, the one form that reaches a view with no entity
+        behind it).
+
+        ``artifact_id`` closes a real gap rather than adding a synonym for
+        ``port``. The resolver has always accepted it, but the only caller was
+        artifact REGISTRATION — so an agent that registered an app in one turn had
+        no way to show it again in a later one except by its port, which is exactly
+        the stale-port-as-identity failure ``_app_payload`` derives the runtime to
+        avoid.
         """
         from flow_sdk.core.display_target import (  # noqa: PLC0415
             DisplayTargetNotFound,
@@ -3023,6 +3032,7 @@ class AgenticProcess(Entity):
                 typeid=str(body.get("typeid") or "").strip() or None,
                 path=str(body.get("path") or "").strip() or None,
                 port=body.get("port"),
+                artifact_id=str(body.get("artifact_id") or "").strip() or None,
                 dock=str(body.get("view") or "").strip() or None,
                 discover=True,  # a display verb — see `flow show file`
             )

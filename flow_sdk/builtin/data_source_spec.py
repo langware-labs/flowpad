@@ -81,6 +81,21 @@ class ConfigFieldSpec(DataSpec):
     #: case: the workspace belongs to the connection, not to this form.
     account_key: bool = False
 
+    def coerce(self, value: Any) -> Any:
+        """A value as a person (or an agent) typed it → the shape this field
+        declares: ``lines``/``csv`` are lists, ``number`` a number. The one
+        definition of what a ``FieldType`` means for a stored value."""
+        if self.type in (FieldType.LINES, FieldType.CSV) and isinstance(value, str):
+            sep = "\n" if self.type == FieldType.LINES else ","
+            return [part.strip() for part in value.split(sep) if part.strip()]
+        if self.type == FieldType.NUMBER and isinstance(value, str) and value.strip():
+            try:
+                number = float(value)
+            except ValueError:
+                return value
+            return int(number) if number.is_integer() else number
+        return value
+
 
 
 class AuthSpec(DataSpec):
@@ -117,6 +132,11 @@ class TraitsSpec(DataSpec):
     channel: str = ""
     owns_bytes: bool = True
 
+
+
+def coerce_config(fields: dict, config: dict) -> dict:
+    """``config`` shaped by a field catalog (``{name: ConfigFieldSpec}``); unknown keys kept as-is."""
+    return {k: (fields[k].coerce(v) if k in fields else v) for k, v in config.items()}
 
 
 class ManifestSpec(DataSpec):
@@ -257,3 +277,7 @@ class DataSourceSpec(Entity):
     runtime: str = APIField(default="builtin", persist=Persist.TRUE)
 
     _api_visible: ClassVar[bool] = True
+
+    def coerce_config(self, config: dict) -> dict:
+        """The row's field catalog applied to a source's ``config``."""
+        return coerce_config(self.config or {}, config)

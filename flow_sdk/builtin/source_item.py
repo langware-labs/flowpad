@@ -137,6 +137,19 @@ class SourceItem(Entity):
             data, {"stream_key": "segment_key", "stream_label": "segment_label"}
         )
 
+    def as_example_input(self) -> "tuple[dict, dict]":
+        """``(contents, provenance)`` for one dataset example row: this item's
+        own envelope as ``input/item.json``, and where it came from. The
+        ingest→dataset composition lives with the item, not with ``Dataset``."""
+        from flow_sdk.schema.data_spec.layout import INPUT  # noqa: PLC0415
+
+        envelope = SourceItemSpec.model_validate({k: getattr(self, k) for k in SourceItemSpec.model_fields})
+        return (
+            {f"{INPUT}/item.json": envelope.model_dump(mode="json", exclude_none=True)},
+            {"data_source_id": self.data_source_id, "segment_key": self.segment_key,
+             "external_id": self.external_id, "item_id": self.id},
+        )
+
     @classmethod
     async def find_existing(
         cls, data_source_id: str, segment_key: str, external_id: str

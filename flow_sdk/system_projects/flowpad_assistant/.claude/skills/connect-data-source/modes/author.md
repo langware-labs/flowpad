@@ -72,6 +72,15 @@ Responses:
 Use the standard library only unless the user accepts a dependency; the module
 runs as a plain subprocess with no package management.
 
+## Shipping an editor with the source (optional)
+
+A source definition may carry its own UI: a static SDK app at
+`<spec folder>/editors/<name>/index.html` (copy `web-app-builder/template-flowpad`,
+resolve the host with `hostEntityTypeId()`). Flowpad lists it on the definition's
+`editors` and offers "Open <name>" on every source of that provider; the builtin
+`spec` editor (config form + items + dataset pane) exists for every definition
+without any file.
+
 ## After writing
 
 1. `flow record index <project> --types data_source_spec` — point it at the

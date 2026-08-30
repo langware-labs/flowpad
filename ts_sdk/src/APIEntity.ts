@@ -598,11 +598,21 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   }
 
   /**
-   * Asset-editor dock pointer for a file-backed asset entity, or null when it
-   * has no asset file yet. Asset subclasses return this from `dockPointer`
-   * (falling back to `super.dockPointer`); the `editor/<type>/<ref>` format
-   * lives here once so it stays consistent across every asset type.
+   * POST one of this entity's actions (`/graph/<type>/<id>/<action>`) with an
+   * optional JSON body and return the envelope's `data`. The one helper every
+   * entity's action methods share (`DataSource.pollNow`, `Dataset.promote`, …).
    */
+  protected post<R>(action: string, body?: Record<string, unknown>): Promise<R> {
+    const info = new ActionInfo(action, this.type, this.id, 'POST' as HttpMethod);
+    if (body) info.bodyParameters = body;
+    return dataManager.callAction<undefined, R>(info);
+  }
+
+  /** GET one of this entity's actions and return the envelope's `data`. */
+  protected get<R>(action: string): Promise<R> {
+    return dataManager.callAction<undefined, R>(new ActionInfo(action, this.type, this.id, 'GET' as HttpMethod));
+  }
+
   /** Editor apps this entity can open: the type's builtins plus what its asset ships. */
   public get availableEditors(): string[] {
     return Array.from(new Set([...dataManager.editorsForType(this.type), ...(this.editors ?? [])])).sort();
@@ -630,6 +640,12 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * asset (`/graph/<type>/<id>/editor/<name>/`), the same way a MicroApp is.
    * The app learns its host entity from that path. `options` become the query
    * string the app may read (e.g. `source` for the spec editor).
+   */
+  /**
+   * Asset-editor dock pointer for a file-backed asset entity, or null when it
+   * has no asset file yet. Asset subclasses return this from `dockPointer`
+   * (falling back to `super.dockPointer`); the `editor/<type>/<ref>` format
+   * lives here once so it stays consistent across every asset type.
    */
   protected assetEditorPointer(typeSegment: string): DockPointerData | null {
     const editor = editorForType(typeSegment);

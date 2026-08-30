@@ -12,7 +12,10 @@ description: >-
   "the source says it needs setup", "nothing is syncing", "this data source is
   broken". Use `connect-data-source author <system>` to write a NEW source type
   when nothing installed fits, `connect-data-source debug <name>` to diagnose,
-  and `connect-data-source list` to show what is connected. NOT for connecting
+  `connect-data-source define <source>` to give a connected source's items an
+  output shape, a dataset and gold labels — "what do I want out of each item",
+  "label these", "annotate", "make a training set from this feed" — and
+  `connect-data-source list` to show what is connected. NOT for connecting
   this machine to the hub as a compute node, NOT for authorising an OAuth
   connection on its own, NOT for Flowpad itself being broken or not starting,
   and NOT for creating tasks, docs, skills or other records.
@@ -41,8 +44,8 @@ into a source that demonstrably works, and shows it to the user.
 
 ## Modes (from the skill arg)
 
-The FIRST whitespace-separated token, if it is exactly `author`, `debug` or
-`list`, selects that mode. **Anything else is a natural request** — so
+The FIRST whitespace-separated token, if it is exactly `author`, `debug`,
+`define` or `list`, selects that mode. **Anything else is a natural request** — so
 "debug my rss feed" is debug mode, while "connect my debug server's logs" is a
 connect request.
 
@@ -51,6 +54,7 @@ connect request.
 | *(none)*, or a natural request — **the default** | `modes/connect.md` | Map the request onto a source, configure it, prove each gate, show it |
 | `author <system>` | `modes/author.md` | Write a NEW source type (`data_source.json` + `fetch.py`), index it, then connect it |
 | `debug [<source>]` | `modes/debug.md` | Ordered diagnosis of a source that is failing, empty or stuck |
+| `define <source>` | `modes/define.md` | Sample the items, agree an output shape, create the dataset bound to the source, label an example |
 | `list` | *(inline, below)* | Read-only — what is connected and how healthy it is |
 
 ### `list` — the read-only answer
@@ -79,6 +83,8 @@ fails** with what the user must do:
 | --- | --- |
 | turn a person's words into a provider + config | `references/mapping.md` |
 | run any mechanic — specs, create, verify, poll, observe, snapshot | `scripts/source_ctl.py` |
+| sample items, create a dataset, promote, annotate, snapshot counts | `scripts/dataset_ctl.py` |
+| the gate-safe transport both scripts share (never call it directly) | `scripts/_ctl_common.py` |
 | know what a manifest may declare | `docs/data-management/data-source-asset.md` (repo) |
 | know how the sync loop, health and reflect behave | `docs/data-management/data-sources.md` (repo) |
 | present something to the user, or take them somewhere | the `flowpad-navigation` skill |

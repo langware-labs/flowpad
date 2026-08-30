@@ -77,4 +77,5 @@ still reads healthy.
 
 `flow show view data-sources`, then `SC list` to confirm the card is in the
 listing. Exit `0` means recorded, not seen — never claim the user looked at it.
-Close by naming the source, what it produced, and its cadence.
+Close by naming the source, what it produced, and its cadence — and offer the
+next step: *"want to say what you need out of each item?"* → `modes/define.md`.

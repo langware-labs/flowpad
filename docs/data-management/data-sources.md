@@ -4,6 +4,17 @@ id: 44d26316-873d-49f6-95c2-e61d74dee7e6
 
 # Data sources
 
+> From a person's words to a labelled dataset: the `data-integrations` Vibe
+> persona (`flowpad_assistant/.claude/agents/data-integrations.md`, `kind: vibe`,
+> embedded in every vibe session) runs **connect → see a sample → define the
+> output** on top of the `connect-data-source` skill (`define` mode,
+> `scripts/dataset_ctl.py`). The result is a source that streams and a
+> `Dataset` bound to it — see [datasets.md](datasets.md#curating-a-source-into-a-dataset).
+>
+> `DataSource.config` is coerced by the definition's field types on every save
+> (`lines`/`csv` → list, `number` → number), so a value sent as the person typed
+> it never reaches a driver in the wrong shape.
+
 The filesystem indexer walks local roots. A **data source** walks something
 else — a feed, a mailbox, a channel, a repository — and lands what it finds in
 the same graph. One `DataSource` owns the relationship with one remote account

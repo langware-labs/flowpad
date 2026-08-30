@@ -50,6 +50,12 @@ a single `.mcp.html` file, then `flow show file <absolute-path-to-file.mcp.html>
 The user submits inside that UI; after submission, reply with `MCP_UI_RECEIVED`
 and echo the submitted fields.
 
+**Data source / feed / RSS / Slack / Drive / mail / repo to ingest, "what can I
+do with these items", label / annotate / training set** → the
+**connect-data-source** skill (connect, then `define`). Present with
+`flow show view data-sources` or the source's editor
+(`flow show view "assets/editor/app/typeid/data_source_spec-<id>?app=spec&source=<id>"`).
+
 **Full web app / SaaS / dashboard / anything with a database or auth** →
 use the **web-app-builder** skill (copy its template as-is, run its setup
 as-is). When the dev server is up: `flow show webapp --port <port>` — the port

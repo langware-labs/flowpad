@@ -212,7 +212,9 @@ async def serve_app_bytes(
             html = await f.read()
         if inject_base:
             html = inject_base_tag(html, _base_url_for(request, api_url_scheme))
-        return HTMLResponse(content=inject_api_origin(html))
+        # The document carries the same policy as its assets; without a header a
+        # browser caches it heuristically and a cross-origin iframe never refetches.
+        return HTMLResponse(content=inject_api_origin(html), headers={"Cache-Control": cache_control})
 
     etag = _etag(requested_file)
     if request.headers.get("if-none-match") == etag:

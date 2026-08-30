@@ -32,6 +32,8 @@ import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
 import { DataSourceCard } from './DataSourceCard';
 import { useSourceSpecs } from './use-source-specs';
+import { useStartVibeSession } from '@src/pages/flow-page/use-start-vibe-session';
+import { Sparkles } from 'lucide-react';
 import { DataSourceDialog } from './DataSourceDialog';
 import { ReplayDialog } from './ReplayDialog';
 
@@ -43,6 +45,7 @@ const sourcesQuery = new QueryRequest({
 
 export function DataSourcesView() {
   const { t } = useLingui();
+  const startVibe = useStartVibeSession();
   const { data: sources = [], refetch } = useEntitiesQuery<DataSource>(sourcesQuery);
   const { specFor } = useSourceSpecs();
 
@@ -108,6 +111,19 @@ export function DataSourcesView() {
           finds into records you can search, read and build flows on.
         </Trans>
       </p>
+      {sources.length === 0 && (
+        // The from-scratch entry: the data-integrations persona connects a source,
+        // shows a sample and agrees the output shape — the whole loop in one chat.
+        <button
+          type="button"
+          data-testid="data-sources-ask-agent"
+          onClick={() => startVibe(t`Connect a data source for me and help me define what I want out of each item.`)}
+          className="mb-5 inline-flex w-fit items-center gap-2 rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground"
+        >
+          <Sparkles className="size-4" />
+          <Trans>Ask the agent to connect one</Trans>
+        </button>
+      )}
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         {sorted.map((source) => (
