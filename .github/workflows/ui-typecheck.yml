@@ -14,7 +14,12 @@ name: UI Type Check
 # list. It exited 0 in ~0.1s and reported success on every PR from the day it
 # was added, including #296 which shipped the exact crash it was written for.
 #
-# The blocking gate is now `type-check:names`, which runs tsc against the REAL
+# Two blocking gates now: `type-check:names` (zero tolerance for the one error
+# class that is always a runtime crash) and `type-check:ceiling` (the total
+# count may never rise above the number checked into
+# ui/scripts/typecheck-ceiling.json). The raw number stays informational.
+#
+# The `names` gate runs tsc against the REAL
 # project config (tsconfig.app.json) and fails on TS2304/TS2552 — a name that
 # cannot be resolved is a ReferenceError at runtime, always. The full check
 # (`npm run type-check`) is reported non-blocking because that config still has
@@ -51,6 +56,9 @@ jobs:
 
       - name: No undefined names in shipping code (blocking)
         run: npm run type-check:names
+
+      - name: Typecheck ceiling — no new type errors (blocking)
+        run: npm run type-check:ceiling
 
       - name: Full type-check debt (informational)
         if: always()
