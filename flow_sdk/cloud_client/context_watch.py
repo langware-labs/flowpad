@@ -103,7 +103,7 @@ class BrowserContextWatch:
         if not isinstance(context, dict) or not is_logged_in():
             return set()
 
-        from flow_sdk.cloud_client.hub_bridge import _parse_to_entity
+        from flow_sdk.tags.envelope import parse_target
         from flow_sdk.core.entity.entity_model import Entity
         from flow_sdk.server.routes._hub_reflect import _entity_type_enum
 
@@ -112,7 +112,7 @@ class BrowserContextWatch:
         for value in context.values():
             if not value or not isinstance(value, str):
                 continue
-            etype, eid = _parse_to_entity(value)
+            etype, eid = parse_target(value)
             if not etype or not eid or (etype, eid) in seen:
                 continue
             seen.add((etype, eid))
