@@ -38,6 +38,8 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from flow_sdk.ingest.models import STORM_CAP_PER_MINUTE
+
 CATCH_ALL_EVENT = "*"
 # The virtual source for external injections (mirror of envelope.EXTERNAL_SOURCE
 # — kept literal here so the document model stays import-light).
@@ -110,7 +112,7 @@ class GraphWorkflowConfig(BaseModel):
     # Subscription-entry storm cap (runs started by the subscriptions: block,
     # per minute). Bounds cross-flow ping-pong loops the self-brake can't see
     # (A→B→A chains mint fresh envelopes every hop). One warn per window.
-    max_entries_per_minute: int = 30
+    max_entries_per_minute: int = STORM_CAP_PER_MINUTE
 
 
 class GraphWorkflowNodeDef(BaseModel):
