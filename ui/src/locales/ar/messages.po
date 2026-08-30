@@ -2567,6 +2567,10 @@ msgstr "المحادثة"
 msgid "Chat history"
 msgstr "سجل الدردشة"
 
+#: src/hooks/use-history-load-alert.ts
+msgid "Chat history failed to load"
+msgstr ""
+
 #: src/components/ui/settings-pane.tsx
 msgid "Chat Settings"
 msgstr "إعدادات الدردشة"
@@ -16525,6 +16529,10 @@ msgstr "جاءت هذه المحادثة من مشروع على جهاز آخر.
 #: src/components/inbox-view/InboxView.tsx
 msgid "This conversation is local-only. It will be removed from this device."
 msgstr "هذه المحادثة محلية فقط. سيتم حذفها من هذا الجهاز."
+
+#: src/hooks/use-history-load-alert.ts
+msgid "This conversation is still saved, but part of it could not be read, so the chat is showing empty. Reloading may help. Details: {detail}"
+msgstr ""
 
 #: src/routes/loaders/load-conversation.ts
 msgid "This conversation no longer exists or is unavailable."
