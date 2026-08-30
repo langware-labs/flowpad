@@ -126,7 +126,7 @@ export function AssetManagerButton({ process, trigger }: AssetManagerButtonProps
     if (!process) return null;
     void processSnapshot;
     void processHydrationVersion;
-    return dataManager.getByTypeIdFromCache(process.typeId) ?? process;
+    return dataManager.getByTypeIdFromCache<AgenticProcess>(process.typeId) ?? process;
   }, [process, processHydrationVersion, processSnapshot]);
 
   const processKey = process?.typeId.toString() ?? '';
