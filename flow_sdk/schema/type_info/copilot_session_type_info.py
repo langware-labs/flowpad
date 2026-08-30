@@ -17,7 +17,7 @@ COPILOT_SESSION = TypeMetadata(
     api_visible=True,  # see CLAUDE_SESSION
     icon="Copilot",  # see CLAUDE_SESSION
     from_disk_fn=extract_copilot_session,
-    identity_backend=derived_identity(copilot_session_id_from_file),
+    identity_carrier=derived_identity(copilot_session_id_from_file),
     id_stable_key_fn=copilot_session_stable_key,
     id_namespace=uuid.NAMESPACE_DNS,
     # Same contract as CLAUDE_SESSION — see the comment there. Copilot's own store

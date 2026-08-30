@@ -1,5 +1,9 @@
 """Type metadata for GRAPH_WORKFLOW — folder-backed flow document (whiteboard model)."""
-from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, folder_capsule_id
+from flow_sdk.fs_store.indexer.functions._asset_identity import (
+    IDENTITY_CAPSULE,
+    folder_capsule_id,
+    folder_json_identity,
+)
 from flow_sdk.fs_store.indexer.functions.graph_workflow import (
     extract_graph_workflow,
     graph_workflow_asset_hash,
@@ -27,6 +31,6 @@ GRAPH_WORKFLOW = TypeMetadata(
     main_file="graph.json",
     from_disk_fn=extract_graph_workflow,
     capsules=(IDENTITY_CAPSULE,),
-    identity_backend=capsule_identity(folder_capsule_id, graph_workflow_id_from_folder),
+    identity_carrier=folder_json_identity(folder_capsule_id, graph_workflow_id_from_folder),
     asset_hash_fn=graph_workflow_asset_hash,
 )

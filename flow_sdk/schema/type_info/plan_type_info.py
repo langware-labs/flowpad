@@ -1,8 +1,7 @@
 """Type metadata for PLAN."""
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
     IDENTITY_CAPSULE,
-    capsule_identity,
-    frontmatter_id,
+    frontmatter_identity,
     resolved_path_key,
 )
 from flow_sdk.fs_store.indexer.functions.claude_plan import extract_claude_plan
@@ -21,6 +20,6 @@ PLAN = TypeMetadata(
     family="plan",
     from_disk_fn=extract_claude_plan,
     capsules=(IDENTITY_CAPSULE,),
-    identity_backend=capsule_identity(frontmatter_id),
+    identity_carrier=frontmatter_identity(),
     id_stable_key_fn=resolved_path_key,
 )

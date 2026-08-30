@@ -73,7 +73,7 @@ def _skill_id_from_path(script_path: str) -> str | None:
         return None
     try:
         ref = FSRef(skill_dir, record_type=RecordType.SKILL)
-        return info.mint_entity_id(ref, derive=True, overwrite=True)
+        return info.mint_entity_id(ref)
     except Exception:
         return None
 

@@ -26,7 +26,7 @@ def test_names_compare_case_insensitively_and_the_capsule_lands_on_the_folder(tm
     info = TypeInfo(type_name="t_agent", main_layout="folder", main_file="agent.md", main_file_is_asset_ref=True)
     assert info.layout_of(folder / "AGENT.MD").kind is LayoutKind.MAIN_FILE
     assert info.storage_root_for(folder / "AGENT.MD") == folder
-    assert SKILL.capsule_target_for(folder / "SKILL.MD") == folder
+    assert SKILL.carrier_path_for(folder / "SKILL.MD") == folder
 
 
 def test_verify_requires_the_bytes_and_projections_stay_total(tmp_path: Path):

@@ -25,8 +25,8 @@ from typing import Any, ClassVar, Literal, Optional, get_args, get_origin
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.capsules import CapsuleSpec
-from flow_sdk.fs_store.identifier import adopt_entity_id, is_valid_entity_id, mint_uuid
-from flow_sdk.fs_store.identity_backend import IdentityBackend, IdentityObservation, IdentityState
+from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
+from flow_sdk.fs_store.identity_carrier import CarrierId, FrontmatterCarrier, IdentityCarrier
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.schema.view_mode import ViewMode, view_mode_rank, visible_in
@@ -276,12 +276,12 @@ class TypeInfo:
     # in ``fs_store/indexer/functions/<type>.py``. The indexer reads these
     # instead of duck-typing classmethods on the entity:
     #   from_disk_fn:      Callable[[FSRef, str], list[FSRecord]] — parse payload
-    #   identity_backend:  IdentityBackend — carrier observation/persistence
+    #   identity_carrier:  IdentityCarrier — WHERE the id lives (frontmatter / folder json / …)
     #   id_stable_key_fn:  Callable[[FSRef | Path], str | None] — v5 key
     #   asset_hash_fn:     Callable[[FSRef], float] — cheap freshness stat
     from_disk_fn: Any = field(default=None, compare=False, repr=False)
     capsules: tuple[CapsuleSpec, ...] = field(default_factory=tuple)
-    identity_backend: IdentityBackend | None = field(default=None, compare=False, repr=False)
+    identity_carrier: IdentityCarrier | None = field(default=None, compare=False, repr=False)
     id_stable_key_fn: Any = field(default=None, compare=False, repr=False)
     id_namespace: uuid.UUID = field(default=uuid.NAMESPACE_URL, compare=False, repr=False)
     asset_hash_fn: Any = field(default=None, compare=False, repr=False)
@@ -427,7 +427,7 @@ class TypeInfo:
         return (
             self.cloud_file_transport == "git"
             and self.from_disk_fn is not None
-            and self.identity_backend is not None
+            and self.identity_carrier is not None
         )
 
     def asset_ref_for(self, folder: Path) -> Path:
@@ -476,7 +476,7 @@ class TypeInfo:
         the first record or None."""
         if self.from_disk_fn is None:
             return None
-        resolved = self.mint_entity_id(ref, derive=True, overwrite=not getattr(ref, "read_only", False))
+        resolved = self.mint_entity_id(ref)
         records = self.from_disk_fn(ref, resolved)
         return records[0] if records else None
 
@@ -524,189 +524,115 @@ class TypeInfo:
         """Return the concrete asset path accepted by identity callbacks."""
         return Path(getattr(ref, "_path", ref))
 
-    def capsule_target_for(self, ref: Any) -> Path:
-        """Return the owning file/folder used by this type's capsule backend."""
+    def carrier_path_for(self, ref: Any) -> Path:
+        """The file or folder this type's identity carrier lives in: the main
+        markdown document for a frontmatter carrier (``<folder>/<main_file>`` on
+        a folder type), the folder for a folder-json carrier, the file otherwise."""
         path = self._identity_path(ref)
+        if isinstance(self.identity_carrier, FrontmatterCarrier) and self.folder_backed and self.main_file:
+            root = self.storage_root_for(path)
+            main = root / self.main_file
+            return main if main.is_file() else root   # no main doc (a yaml-only skill): the folder carries
         return self.storage_root_for(path) if self.folder_backed else path
 
-    def _observe(self, ref: Any, *, target: "Path | None" = None) -> "IdentityObservation | None":
-        """Read + parse the source's identity carrier ONCE, failing closed.
+    def _read_carrier(self, ref: Any) -> "tuple[Path | None, CarrierId]":
+        """The carrier path and what it holds; raises ``MalformedCarrier`` — a
+        corrupt source must never be silently re-identified."""
+        if self.identity_carrier is None:
+            return None, CarrierId()
+        path = self.carrier_path_for(ref)
+        return path, self.identity_carrier.read(path)
 
-        A MALFORMED carrier raises — a corrupt source must never be silently
-        re-identified. ``target`` lets a caller that already resolved the
-        capsule path skip re-resolving it (a stat for folder-backed types).
-        """
-        if self.identity_backend is None:
-            return None
-        observation = self.identity_backend.observe(
-            target if target is not None else self.capsule_target_for(ref)
-        )
-        if observation.state is IdentityState.MALFORMED:
-            if observation.error is not None:
-                raise observation.error
-            raise ValueError(observation.detail or "malformed asset identity")
-        return observation
+    def read_id(self, ref: Any) -> str | None:
+        """The valid id the source already carries, else None. Never writes —
+        the probe collision ranking and create guards rely on."""
+        return self._read_carrier(ref)[1].id
 
     def mint_entity_id(
         self,
         ref: Any,
         *,
+        proposed_id: str | None = None,
         owner_id: str | None = None,
         live_ids: "Container[str] | None" = None,
-        proposed_id: str | None = None,
-        derive: bool = False,
-        overwrite: bool = False,
-    ) -> str | None:
-        """**The** entity-id seam for a filesystem asset. Nothing else may mint.
+    ) -> str:
+        """**The** entity-id seam for a filesystem asset: read the carrier; if
+        it names a live id that is the answer; else the owning row; else mint
+        and write. Nothing else may mint.
 
-        An asset's id lives in the source (a capsule), but a full-content
-        rewrite — what an agent does on every revision — WIPES that carrier.
-        Deriving from the source alone then invents a fresh id for a path a row
-        already owns, forking the entity; the same-path sweep reaps the old row
-        and every reference pinned to it dangles. So a carrier-less source is
-        not a new asset: it is an existing one whose id must be RECOVERED.
+        An asset's id lives in its source, but a full-content rewrite — what an
+        agent does on every revision — can wipe that carrier. A carrier-less
+        source is therefore not a new asset when a row already owns the path:
+        it is that row, and its id is stamped back (``owner_id``). ``live_ids``
+        is the liveness oracle for a carrier that names a DIFFERENT id: ``None``
+        means "cannot prove dead", so the carrier wins; only the index walk,
+        holding the complete per-type id set, may conclude a carrier is a fossil.
 
-        Order: **carrier → owning row → derive**, decided by carrier LIVENESS.
-        ``live_ids`` is that oracle, and ``None`` means "cannot prove dead" — so
-        a valid carrier always wins unless the caller holds the complete
-        per-type id set (only the index walk does).
-
-        ``derive`` and ``overwrite`` are orthogonal and both default to the
-        inert corner. The default is **probe**: answer from evidence, return
-        ``None`` when there is none. That ``None`` is load-bearing — collision
-        ranking, create guards and the publication assertion all need to tell
-        "the carrier says X" from "we would compute X", and a derived value
-        makes two unstamped copies look identical.
-
-        Contract:
-
-        * **Sync, and never touches the DB.** ``owner_id``/``live_ids`` come
-          from the caller, which keeps DB-free callers and the
-          zero-extra-query index walk working.
-        * **Never writes ``asset_ref``.** Primary-path selection belongs to
-          ``resolve_asset_collisions`` alone — writing it here would let a copy
-          steal the original's path and flip the row every walk.
-        * Only an ABSENT carrier is ever stamped; an INVALID one keeps its
-          bytes, and read-only refs and derived backends are never written.
-
-        Known trade-off: because an absent carrier yields to the owning row,
-        deleting a file and creating a DIFFERENT file at the same path before
-        the next index makes the new content adopt the old entity. That is the
-        price of keeping every reference alive across a rewrite, and it applies
-        only while the old row exists — once swept as an orphan, a fresh id is
-        minted.
+        Writes happen only when the carrier is writable, the ref is not
+        ``read_only``, and carrier writes are not suppressed (a git-tracked
+        source) — the same gates for every caller. A carrier that holds a
+        present-but-invalid value (a hand-written v7) keeps its bytes and gets
+        a stable path-derived v5. A legacy markdown capsule is converted into
+        the frontmatter in place, id unchanged. Sync; never touches the DB.
         """
-        # Before any early return: the historic `mint_id` raised on a bad
-        # proposed_id and `resolve_id` did not, so a caller could silently get
-        # the carrier back instead of the error.
+        from flow_sdk.fs_store.fs_record import carrier_writes_are_suppressed  # noqa: PLC0415
+        from flow_sdk.fs_store.identity_carrier import LEGACY_CONVERTIBLE  # noqa: PLC0415
+
         if proposed_id is not None and not is_valid_entity_id(proposed_id):
             raise ValueError("proposed entity id must be a UUID v4 or v5")
 
-        # One capsule-target resolution per call: for folder-backed types this
-        # is a stat, and it used to run up to three times per asset per walk.
-        target = self.capsule_target_for(ref) if self.identity_backend is not None else None
-        observation = self._observe(ref, target=target)
-        carrier = (
-            adopt_entity_id(observation.candidate)
-            if observation is not None and observation.state is IdentityState.VALID
-            else None
+        path, carrier = self._read_carrier(ref)
+        can_write = (
+            path is not None
+            and self.identity_carrier.writable
+            and not bool(getattr(ref, "read_only", False))
+            and not carrier_writes_are_suppressed()
         )
 
-        if carrier is not None and (
-            owner_id is None or carrier == owner_id or live_ids is None or carrier in live_ids
+        if carrier.id is not None and (
+            owner_id is None or carrier.id == owner_id or live_ids is None or carrier.id in live_ids
         ):
-            return carrier
+            if carrier.source in LEGACY_CONVERTIBLE and can_write and hasattr(self.identity_carrier, "convert") and path.is_file():
+                try:
+                    self.identity_carrier.convert(path, carrier.id)  # type: ignore[union-attr]
+                except OSError:
+                    logging.debug("[asset-id] capsule→frontmatter conversion skipped for %s", path, exc_info=True)
+            return carrier.id
 
-        # A derived/provider identity is a pure function of the source, so an
-        # owning row must never override it — a stale row on a rotated session
-        # path would otherwise swallow a genuinely different session.
-        if owner_id and self.identity_backend is not None and self.identity_backend.persists_identity:
-            absent = observation is None or observation.state is IdentityState.ABSENT
-            if overwrite and absent and not bool(getattr(ref, "read_only", False)):
-                # store_if_absent is enough here (the carrier IS absent) and
-                # keeps the write path identical to a normal mint.
-                self.identity_backend.store_if_absent(target, owner_id)
-            elif not absent:
+        # An owning row wins over an absent or dead carrier — but never for a
+        # derived identity, which is a pure function of the source (a stale row
+        # on a rotated session path must not swallow a different session).
+        if owner_id and self.identity_carrier is not None and self.identity_carrier.writable:
+            if carrier.id is not None:
                 logging.warning(
                     "[asset-id] %s carrier %r names no live entity; path is owned by %s (%s)",
-                    self.type_name,
-                    observation.candidate,
-                    owner_id,
-                    self._identity_path(ref),
+                    self.type_name, carrier.id, owner_id, self._identity_path(ref),
                 )
+            elif carrier.raw is None and can_write:
+                try:
+                    self.identity_carrier.write_if_absent(path, owner_id)
+                except OSError:
+                    logging.debug("[asset-id] re-stamp skipped for %s", path, exc_info=True)
             return owner_id
 
-        if not derive:
-            # Probe mode: the evidence is exhausted and computing a value here
-            # is exactly what breaks collision ranking and create guards.
-            return None
-
-        # Reuse the observation above — deriving must not re-read the carrier.
-        return self._derive(
-            ref, observation, proposed_id=proposed_id, commit=overwrite, target=target
-        )
-
-    def _derive(
-        self,
-        ref: Any,
-        observation: "IdentityObservation | None",
-        *,
-        proposed_id: str | None = None,
-        commit: bool = True,
-        target: "Path | None" = None,
-    ) -> str:
-        """Lego piece 3: compute this type's configured id, optionally committing it.
-
-        Portable assets have no stable key: they receive a random v4 only when
-        their backend commits it. If the asset cannot carry that id, the stable
-        path-v5 fallback keeps repeated scans idempotent. Natural/provider
-        identities supply ``id_stable_key_fn`` and derive deterministic v5 ids.
-
-        Takes the already-read ``observation`` (and, from the walk, the already
-        -computed ``target``) so an asset's carrier is parsed once and its
-        capsule path stat-ed once per resolution — this runs per asset on every
-        index walk.
-        """
-        if observation is not None and observation.state is IdentityState.VALID:
-            return str(observation.candidate)  # before any path work — it is unused here
-
-        path = target if target is not None else self.capsule_target_for(ref)
         stable_key = self.id_stable_key_fn(ref) if self.id_stable_key_fn is not None else None
-        # Invalid canonical data is never overwritten or treated as a brand-new
-        # portable asset.  Derive a stable v5 until the source is repaired.
-        if observation is not None and observation.state is IdentityState.INVALID_ID:
-            return mint_uuid(stable_key or str(path.resolve()), namespace=self.id_namespace)
+        fallback_key = str(self._identity_path(ref).resolve())
+        if carrier.raw is not None:
+            # Present but not a UUID we accept: keep the bytes, derive a stable
+            # v5 until the source is repaired.
+            return mint_uuid(stable_key or fallback_key, namespace=self.id_namespace)
 
-        # ``commit=False`` (a read-only derive) falls through to the stable
-        # path-v5 below for portable types: a random v4 that is never persisted
-        # would differ on every call, so it is not an answer. Don't draw one.
-        read_only = bool(getattr(ref, "read_only", False))
-        if commit and self.identity_backend is not None and not read_only:
-            minted = proposed_id or mint_uuid(stable_key, namespace=self.id_namespace)
-            committed = self.identity_backend.store_if_absent(path, minted)
-            if committed.state is IdentityState.VALID:
-                return str(committed.candidate)
-            if committed.state is IdentityState.MALFORMED and committed.error is not None:
-                from flow_sdk.capsules import (  # noqa: PLC0415
-                    DuplicateCapsuleError,
-                    MalformedCapsuleError,
-                    UnsupportedCapsuleVersionError,
-                )
-
-                # OS/storage write failures fall back deterministically below;
-                # source corruption still fails closed.
-                if isinstance(
-                    committed.error,
-                    (MalformedCapsuleError, DuplicateCapsuleError, UnsupportedCapsuleVersionError),
-                ):
-                    raise committed.error
-
-            if stable_key:
-                return minted
-        elif stable_key or proposed_id:
-            # No commit: a keyed id is still deterministic, so it is an answer.
-            return proposed_id or mint_uuid(stable_key, namespace=self.id_namespace)
-        return mint_uuid(str(path.resolve()), namespace=self.id_namespace)
+        new_id = proposed_id or mint_uuid(stable_key, namespace=self.id_namespace)
+        if can_write:
+            try:
+                return self.identity_carrier.write_if_absent(path, new_id)  # type: ignore[union-attr]
+            except OSError:
+                logging.debug("[asset-id] mint write failed for %s", path, exc_info=True)
+        # Not written: only a keyed id is deterministic enough to be an answer;
+        # a random v4 that lands nowhere would differ on every call.
+        if proposed_id or stable_key:
+            return new_id
+        return mint_uuid(fallback_key, namespace=self.id_namespace)
 
     @property
     def _resolved_layout(self) -> "tuple[Any, Any, str | None]":
@@ -1068,10 +994,10 @@ class SchemaRegistry:
                         )
                     merged_capsules[spec.name] = spec
                 existing.capsules = tuple(merged_capsules[name] for name in sorted(merged_capsules))
-            if info.identity_backend is not None:
-                if existing.identity_backend is not None and existing.identity_backend != info.identity_backend:
-                    raise ValueError(f"Conflicting identity backend registration for type {info.type_name!r}")
-                existing.identity_backend = info.identity_backend
+            if info.identity_carrier is not None:
+                if existing.identity_carrier is not None and existing.identity_carrier != info.identity_carrier:
+                    raise ValueError(f"Conflicting identity carrier registration for type {info.type_name!r}")
+                existing.identity_carrier = info.identity_carrier
             if info.id_stable_key_fn is not None:
                 existing.id_stable_key_fn = info.id_stable_key_fn
             if info.id_namespace != uuid.NAMESPACE_URL:

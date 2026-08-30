@@ -36,7 +36,7 @@ DATA_SOURCE_SPEC = TypeMetadata(
     # the id falls out of the path — stable for a shipped asset and identical on
     # every machine. Stamping one into the manifest would also make a shared
     # source arrive carrying the sender's id.
-    identity_backend=derived_identity(),
+    identity_carrier=derived_identity(),
     index_fields=["name", "title", "runtime"],
     # Every source definition gets the spec-driven editor: a form over the
     # manifest's ``config`` catalog for each DataSource of this spec, plus its

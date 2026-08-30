@@ -1,6 +1,6 @@
 """Type metadata for HELPDESK — folder-backed support-desk portal."""
 
-from flow_sdk.fs_store.identity_backend import DerivedIdentityBackend
+from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
 from flow_sdk.fs_store.indexer.functions.helpdesk import (
     extract_helpdesk,
     helpdesk_asset_hash,
@@ -35,7 +35,7 @@ HELPDESK = TypeMetadata(
     # capsule writes `.flow/id` and mints a different v4 per machine. Derived
     # observes nothing and stores nothing, so `mint_id` falls through to the
     # stable key below — read-only and identical on every clone.
-    identity_backend=DerivedIdentityBackend(),
+    identity_carrier=derived_identity(),
     id_stable_key_fn=helpdesk_stable_key,
     asset_hash_fn=helpdesk_asset_hash,
 )

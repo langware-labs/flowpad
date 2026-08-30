@@ -48,7 +48,7 @@ class TypeInfo:
     entity_cls: type | None = ...     # the Entity subclass (db_base_record)
     post_sync_fn / from_disk_fn / asset_hash_fn / default_body_fn: Any
     capsules: tuple[CapsuleSpec, ...]
-    identity_backend: IdentityBackend | None
+    identity_carrier: IdentityCarrier | None
     id_stable_key_fn: Any
     id_namespace: UUID
     metadata: Any                     # the TypeMetadata instance it was built from
@@ -57,9 +57,9 @@ class TypeInfo:
     main_layout: str = "file"         # "file" | "folder"
 ```
 
-There is **no `record_cls` field** — `FSRecord` is now the single concrete record class (no `Record` subclasses), so a per-type record class is no longer registered. Per-type record behavior lives in free functions and declarative runtime slots (`from_disk_fn`, `capsules`, `identity_backend`, etc.) attached to the `TypeInfo`, not on a subclass.
+There is **no `record_cls` field** — `FSRecord` is now the single concrete record class (no `Record` subclasses), so a per-type record class is no longer registered. Per-type record behavior lives in free functions and declarative runtime slots (`from_disk_fn`, `capsules`, `identity_carrier`, etc.) attached to the `TypeInfo`, not on a subclass.
 
-`TypeInfo.mint_entity_id(ref, *, owner_id=None, live_ids=None, proposed_id=None, derive=False, overwrite=False)` is the ONE identity seam; `extract_id`/`mint_id`/`resolve_id` are gone. Its backend observes the canonical named capsule then ordered read-only legacy/native candidates, and TypeInfo applies the UUID v4/v5 adoption policy.
+`TypeInfo.mint_entity_id(ref, *, proposed_id=None, owner_id=None, live_ids=None)` is the ONE identity seam (read the carrier → owning row → mint and write); `TypeInfo.read_id(ref)` is the pure read; `extract_id`/`mint_id`/`resolve_id`/`_observe`/`_derive` are gone. The type's `identity_carrier` says where the id lives (a markdown main document's frontmatter, a folder's json capsule, a report's JSON root, or derived), reads legacy carriers, and TypeInfo applies the UUID v4/v5 adoption policy.
 
 Resolution order is **carrier → owning row → derive**, by carrier LIVENESS: the carrier wins unless a row owns this path AND the carrier is provably dead (`live_ids` is the oracle; `None` means "cannot prove dead", so only the index walk may conclude it). Two orthogonal flags, both defaulting to the inert corner:
 
@@ -103,7 +103,7 @@ SKILL = TypeMetadata(
     main_layout="folder",
     fts_content=("name", "description", "body"),   # from_disk_fn defaults to spec_extractor
     capsules=(CapsuleSpec("identity"),),
-    identity_backend=capsule_identity(skill_id_from_folder),
+    identity_carrier=folder_md_identity(skill_id_from_folder),
     asset_hash_fn=skill_asset_hash,
 )
 ```
@@ -124,7 +124,7 @@ This is the **only** remaining `__init_subclass__` auto-registration. There is n
 
 `register()` is idempotent and **merges on re-register** (`schema_registry.py:357`). The declarative `TypeMetadata` and the Entity `__init_subclass__` typically both register the same `type_name`; the merge:
 - unions `locations`,
-- fills `entity_cls`, `metadata`, `meta_model`, and the per-type runtime refs (`post_sync_fn`, `from_disk_fn`, `capsules`, `identity_backend`, stable-key/namespace policy, `asset_hash_fn`, `default_body_fn`) on first non-None,
+- fills `entity_cls`, `metadata`, `meta_model`, and the per-type runtime refs (`post_sync_fn`, `from_disk_fn`, `capsules`, `identity_carrier`, stable-key/namespace policy, `asset_hash_fn`, `default_body_fn`) on first non-None,
 - OR-merges the boolean flags (`browseable`, `creatable`, `indexed_by_default`, `api_visible`),
 - overwrites `icon`, `main_subdir`, `main_layout`, `index_fields` when the new value is set.
 
@@ -274,6 +274,6 @@ print(status.never_indexed)  # True if never indexed
 classifier: a folder type names its folder (`FOLDER`) or the inner main file (`MAIN_FILE`,
 root = parent); a file type names the file (`FILE`); `NONE` otherwise. Names compare
 case-insensitively; `verify=True` also requires the bytes to exist (the indexer's gate).
-`storage_root_for`, `body_path_for` and `capsule_target_for` are one-line
+`storage_root_for`, `body_path_for` and `carrier_path_for` are one-line
 projections of it; `asset_ref_for(root)` is the inverse. Never re-derive "is this the main
 file" at a call site.

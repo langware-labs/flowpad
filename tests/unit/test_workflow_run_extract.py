@@ -28,7 +28,7 @@ RUN_ID = "wf_a8e936fe-3a9"
 
 def test_extract_workflow_run_envelope():
     ref = FSRef(_JOURNAL)
-    recs = extract_workflow_run(ref, SchemaRegistry.get("workflow_run").mint_entity_id(ref, derive=True, overwrite=True))
+    recs = extract_workflow_run(ref, SchemaRegistry.get("workflow_run").mint_entity_id(ref))
     assert len(recs) == 1
     rec = recs[0]
 
@@ -52,7 +52,7 @@ def test_extract_workflow_run_envelope():
 
 def test_extract_asset_ref_is_read_only():
     ref = FSRef(_JOURNAL)
-    rec = extract_workflow_run(ref, SchemaRegistry.get("workflow_run").mint_entity_id(ref, derive=True, overwrite=True))[0]
+    rec = extract_workflow_run(ref, SchemaRegistry.get("workflow_run").mint_entity_id(ref))[0]
     ar = getattr(rec, "_asset_ref", None)
     assert ar is not None
     assert ar.read_only is True

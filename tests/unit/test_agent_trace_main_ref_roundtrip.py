@@ -69,7 +69,7 @@ def test_agent_trace_main_ref_roundtrip(tmp_path):
 
     # 2. Extraction reads summary fields only — payload stays out of FTS.
     ref = FSRef(doc)
-    recs = SchemaRegistry.get("agent_trace").from_disk_fn(ref, SchemaRegistry.get("agent_trace").mint_entity_id(ref, derive=True, overwrite=True))
+    recs = SchemaRegistry.get("agent_trace").from_disk_fn(ref, SchemaRegistry.get("agent_trace").mint_entity_id(ref))
     assert len(recs) == 1
     out = recs[0]
     assert out.id == TRACE_ID

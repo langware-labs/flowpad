@@ -211,8 +211,6 @@ def ref_typeid(ref, owners: "PathOwnerIndex | None" = None) -> str | None:
         rid = info.mint_entity_id(
             ref,
             owner_id=owners.owner_for(rtype, str(ref._path)) if owners is not None else None,
-            derive=True,
-            overwrite=True,
         )
     except Exception:
         return None
@@ -775,8 +773,6 @@ class FSIndexer:
                         ref,
                         owner_id=path_owners.owner_for(str(ref.record_type), str(ref._path), canon_path),
                         live_ids=existing_db_ids.get(str(ref.record_type)),
-                        derive=True,
-                        overwrite=True,
                     )
                     probe = FSRecord(type=str(ref.record_type), id=ref_id, asset_ref=ref)
                     # Skip-fresh: on-disk ``.hash`` equality AND a live DB row.
@@ -854,7 +850,7 @@ class FSIndexer:
                         path = occurrence.path
                         if not Path(path).exists():
                             continue
-                        rid = info.mint_entity_id(FSRef(path, record_type=RecordType(type_name)))
+                        rid = info.read_id(FSRef(path, record_type=RecordType(type_name)))
                         if rid == entity_id:
                             stored_identities[path] = (type_name, entity_id, path)
                     except Exception:

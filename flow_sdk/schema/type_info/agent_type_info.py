@@ -5,7 +5,7 @@ by the shared ``repo_assets_fn`` walker via ``main_file`` — no bespoke walker.
 Distinct from SUBAGENT, which is the provider-owned ``.claude/agents/*.md``.
 """
 from flow_sdk.builtin.agent import AgentSpec
-from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, frontmatter_id
+from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, frontmatter_identity
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
@@ -31,7 +31,7 @@ AGENT = TypeMetadata(
     name_from_path=True,
     fts_content=("system_prompt",),
     capsules=(IDENTITY_CAPSULE,),
-    identity_backend=capsule_identity(frontmatter_id),
+    identity_carrier=frontmatter_identity(),
     asset_spec=AgentSpec,
     # The entity is the authoring surface for system_prompt, so it re-renders
     # the file on every save rather than writing once.

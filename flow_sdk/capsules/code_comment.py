@@ -46,8 +46,18 @@ def _scan(text: str) -> tuple[_Block, ...]:
     blocks: list[_Block] = []
     active: tuple[str, int, int] | None = None
     offset = 0
+    in_fence = False
     for line in text.splitlines(keepends=True):
         logical = line.rstrip("\r\n")
+        if logical.lstrip().startswith("```"):
+            # A fenced code block is quoted text: a document ABOUT capsules
+            # may show the grammar without becoming a capsule itself.
+            in_fence = not in_fence
+            offset += len(line)
+            continue
+        if in_fence:
+            offset += len(line)
+            continue
         begin = _BEGIN.fullmatch(logical)
         end = _END.fullmatch(logical)
         if begin:
@@ -63,7 +73,9 @@ def _scan(text: str) -> tuple[_Block, ...]:
                 raise MalformedCapsuleError("capsule marker names do not match")
             blocks.append(_Block(name, start, yaml_start, offset, offset + len(line)))
             active = None
-        elif "flowpad:capsule" in logical or "flowpad:endcapsule" in logical:
+        elif logical.lstrip().startswith(("<!-- flowpad:capsule", "flowpad:endcapsule")):
+            # A line that TRIES to be a marker and fails is corruption; a mere
+            # mention of the grammar mid-sentence (docs, plans) is prose.
             raise MalformedCapsuleError("malformed capsule marker")
         offset += len(line)
     if active is not None:

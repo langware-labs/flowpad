@@ -23,7 +23,7 @@ class MarkdownRecord:
     def from_fsref(ref):
         # async-compat: the real indexer awaits this; the test will too.
         async def _aw():
-            return SchemaRegistry.get("markdown").from_disk_fn(ref, SchemaRegistry.get("markdown").mint_entity_id(ref, derive=True, overwrite=True))
+            return SchemaRegistry.get("markdown").from_disk_fn(ref, SchemaRegistry.get("markdown").mint_entity_id(ref))
 
         return _aw()
 
@@ -32,7 +32,7 @@ class WhiteboardRecord:
     @staticmethod
     def from_fsref(ref):
         async def _aw():
-            return extract_whiteboard(ref, SchemaRegistry.get("whiteboard").mint_entity_id(ref, derive=True, overwrite=True))
+            return extract_whiteboard(ref, SchemaRegistry.get("whiteboard").mint_entity_id(ref))
 
         return _aw()
 

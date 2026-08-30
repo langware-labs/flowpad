@@ -16,7 +16,7 @@ PLUGIN = TypeMetadata(
     indexed_by_default=True,
     api_visible=True,
     from_disk_fn=extract_plugin,
-    identity_backend=derived_identity(plugin_id_from_file),
+    identity_carrier=derived_identity(plugin_id_from_file),
     id_stable_key_fn=plugin_stable_key,
     id_namespace=uuid.NAMESPACE_DNS,
 )

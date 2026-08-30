@@ -136,7 +136,7 @@ def _carrier_identity_matches(info: "TypeInfo", asset_ref: FSRef, entity_id: str
     the caller refuses, which is the safe direction.
     """
     try:
-        return info.mint_entity_id(asset_ref) == entity_id
+        return info.read_id(asset_ref) == entity_id
     except Exception:
         return False
 

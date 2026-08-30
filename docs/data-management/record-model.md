@@ -128,7 +128,7 @@ There is **no** `discover_one`, `init_record`, `init`, `clone`, `move`, `read_re
 
 `ensure_asset_ref()` binds `asset_ref` from a `fs_storage_mount_path` / `cwd` meta attr when it is not already set, so index-state properties resolve for records loaded from disk.
 
-`compute_asset_ref(scope_root, entity)` resolves the user-facing asset location under `scope_root` using the registered `TypeInfo.main_subdir` / `main_layout` (`"file"` → `<safe_name>.md`, `"folder"` → `<safe_name>/`). The asset itself is written by the type's **serializer** (`TypeInfo.serializer(origin).store(entity, origin)`, `flow_sdk/fs_store/serializer/`): `DiskSerializer` renders the `asset_spec`-declared main doc plus every `FileRef` / `FolderSpec` / sub-asset / rows field, writing the main doc iff it does not yet exist (or on every save for `owns_main_ref` types), then commits the entity id to the asset's identity carrier and returns the origin with `id` set. A type with no `asset_spec` renders through `TypeInfo.default_body_fn` under the same exists/owns rule. There is no other writer. When carrier writes are suppressed for the operation (see [asset capsules](asset-capsules.md)) the proposed id is returned untouched and the source file is never rewritten.
+`compute_asset_ref(scope_root, entity)` resolves the user-facing asset location under `scope_root` using the registered `TypeInfo.main_subdir` / `main_layout` (`"file"` → `<safe_name>.md`, `"folder"` → `<safe_name>/`). The asset itself is written by the type's **serializer** (`TypeInfo.serializer(origin).store(entity, origin)`, `flow_sdk/fs_store/serializer/`): `DiskSerializer` renders the `asset_spec`-declared main doc plus every `FileRef` / `FolderSpec` / sub-asset / rows field, writing the main doc iff it does not yet exist (or on every save for `owns_main_ref` types), then commits the entity id to the asset's identity carrier (for a markdown main document the header itself — the id is rendered first) and returns the origin with `id` set. A type with no `asset_spec` renders through `TypeInfo.default_body_fn` under the same exists/owns rule. There is no other writer. When carrier writes are suppressed for the operation (see [asset capsules](asset-capsules.md)) the proposed id is returned untouched and the source file is never rewritten.
 
 ---
 
@@ -212,7 +212,7 @@ There are no `FSRecord` subclasses and no `__init_subclass__` auto-registration.
 | `meta_model` | Optional hand-written Pydantic model for the `meta` view; read via `effective_meta_model`, which derives one from the type's `asset_spec` when absent. |
 | `default_origin_kind` / `serializer(origin)` | Which `DataSerializer` stores/loads the type (`"local"` disk, `"db"`, `"hub"`); `name_from_folder`, `rows_layout_field`, `hub_main_file` are its layout facts. |
 | `from_disk_fn` | Cold-path parser: `(FSRef, resolved_id) -> list[FSRecord]`. |
-| `capsules` / `identity_backend` | Named capsule declarations and the canonical-plus-legacy/native identity carrier. |
+| `capsules` / `identity_carrier` | Named capsule declarations and WHERE the id lives (frontmatter for a markdown main document, folder json, native json, or derived). |
 | `id_stable_key_fn` / `id_namespace` | Optional deterministic key and UUID namespace used by `TypeInfo.mint_entity_id()` for provider/natural/path-v5 identities. |
 | `asset_hash_fn` | Cheap freshness token: `(FSRef) -> ...`. |
 | `post_sync_fn` | Async hook run after `sync_to_db`. |

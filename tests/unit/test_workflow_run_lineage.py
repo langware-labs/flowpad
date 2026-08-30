@@ -24,7 +24,7 @@ def _journal(path: Path, script_path: Path) -> Path:
 
 def _rec(journal: Path):
     ref = FSRef(journal, record_type=RecordType.WORKFLOW_RUN)
-    return extract_workflow_run(ref, SchemaRegistry.get("workflow_run").mint_entity_id(ref, derive=True, overwrite=True))[0]
+    return extract_workflow_run(ref, SchemaRegistry.get("workflow_run").mint_entity_id(ref))[0]
 
 
 def test_skill_bundled_run_links_to_workflow_and_skill(tmp_path):

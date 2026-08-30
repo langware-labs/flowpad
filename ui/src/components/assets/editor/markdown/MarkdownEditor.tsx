@@ -764,7 +764,9 @@ function MarkdownEditorContent({
 
           {propsExpanded && (
             <div className="flex flex-col gap-2 px-3 pb-3">
-              {Object.entries(fields).map(([key, value]) => (
+              {Object.entries(fields)
+                .filter(([key]) => key !== 'id') // identity is the carrier, not a user property
+                .map(([key, value]) => (
                 <div key={key} className="flex flex-col gap-1">
                   <label className="text-xs capitalize text-muted-foreground">{key}</label>
                   <input
