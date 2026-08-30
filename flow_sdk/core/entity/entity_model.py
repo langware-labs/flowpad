@@ -3247,23 +3247,20 @@ class Entity(DBEntity):
         else:
             self.env_vars.append(env_var)
 
-    def update_env_var_visible_value(self, var_name: str, new_value: str) -> bool:
-        if not self.env_vars:
-            return False
-        existing_var = self.env_vars.get_var(var_name)
-        if existing_var:
-            existing_var.visible_value = new_value
-            return True
-        return False
+    def update_env_var(self, var_name: str, **fields) -> bool:
+        """Patch named fields on one existing env var. False when it is absent.
 
-    def update_env_var_description(self, var_name: str, new_desc: str) -> bool:
+        Replaces the per-field update_env_var_* twins; the caller names what it
+        is changing (``update_env_var("KEY", description="x")``).
+        """
         if not self.env_vars:
             return False
         existing_var = self.env_vars.get_var(var_name)
-        if existing_var:
-            existing_var.description = new_desc
-            return True
-        return False
+        if existing_var is None:
+            return False
+        for name, value in fields.items():
+            setattr(existing_var, name, value)
+        return True
 
     def remove_env_var(self, var_name: str) -> bool:
         if not self.env_vars:
