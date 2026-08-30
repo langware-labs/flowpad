@@ -1,19 +1,11 @@
 import { useCallback } from 'react';
-import { TerminalType, instancePreferences, openTerminalFromComputeNode, dataContext, shellQuote } from '@sdk';
+import { TerminalType, instancePreferences, openTerminalFromComputeNode, dataContext } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-
-/** Re-exported so existing `@src/hooks/use-open-terminal` importers keep working. */
-export { shellQuote };
 
 export interface OpenTerminalOptions {
   command: string;
   cwd?: string;
   terminalType?: TerminalType;
-}
-
-function withCwd(command: string, cwd?: string): string {
-  if (!cwd) return command;
-  return `cd ${shellQuote(cwd)} && ${command}`;
 }
 
 /**

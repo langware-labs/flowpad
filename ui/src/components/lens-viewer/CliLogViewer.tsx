@@ -1,4 +1,4 @@
-import { ActionInfo, dataContext, dataManager } from '@sdk';
+import { ActionInfo, dataContext, dataManager, shellQuote } from '@sdk';
 import type { HookEventData } from '@sdk/claude_hook_events/hook-event-data';
 import { getEventSummaryLine } from '@sdk/claude_hook_events/field-extractors';
 import { Badge } from '@src/components/ui/badge';
@@ -8,7 +8,7 @@ import { CHIP, truncate } from '@src/components/hooks/event-summaries';
 import { EVENT_TYPE_COLORS } from '@src/components/hooks/event-utils';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import { cn } from '@src/lib/utils';
-import { shellQuote, useOpenTerminal } from '@src/hooks/use-open-terminal';
+import { useOpenTerminal } from '@src/hooks/use-open-terminal';
 import { Check, ChevronDown, ChevronRight, Copy, FolderOpen, Play, RefreshCw, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
