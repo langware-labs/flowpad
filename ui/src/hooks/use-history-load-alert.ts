@@ -28,7 +28,13 @@ export function useHistoryLoadAlert(process: AgenticProcess | null | undefined):
   const { t } = useLingui();
 
   useEffect(() => {
-    if (!process) return;
+    // Mounted from `useAgenticProcessStream`, which is a pure stream reader and
+    // has always accepted a duck-typed `{ flowDataStream }` — the render-budget
+    // tests drive it that way. Such a stand-in cannot emit, so subscribing to it
+    // threw `process.on is not a function` and took the whole render down. A real
+    // AgenticProcess always can: `on` comes from APIEntity. So this guard only
+    // ever skips objects that have no events to give, never a live process.
+    if (typeof process?.on !== 'function') return;
 
     const onHistoryError = ({ error }: { error: unknown }) => {
       const detail = error instanceof Error ? error.message : String(error);
