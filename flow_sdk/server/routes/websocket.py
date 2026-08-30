@@ -100,8 +100,9 @@ def get_connection_infos() -> Dict[str, ConnectionInfo]:
 
 
 def get_active_connection_info() -> Optional[tuple[str, "ConnectionInfo"]]:
-    """Same selection rule as ``get_active_connection`` but returns the full
-    ``ConnectionInfo`` so callers can read presence + browser_context.
+    """The 'active' connection with its full ``ConnectionInfo`` (presence +
+    browser_context). This is where the selection rule lives; see
+    ``get_active_connection`` for the socket-only form and the rule itself.
     """
     if not _active_connections:
         return None
@@ -130,29 +131,14 @@ def get_active_connection() -> Optional[tuple[str, WebSocket]]:
       3. Any connection, newest ``last_presence_at``.
     Ties on ``last_presence_at`` are broken by ``connection_id`` (lexicographic).
     Returns ``None`` only when no connections are open.
+
+    Same selection as ``get_active_connection_info``; this drops the
+    ``ConnectionInfo`` and hands back the socket.
     """
-    if not _active_connections:
+    selected = get_active_connection_info()
+    if selected is None:
         return None
-
-    items = list(_active_connections.items())
-
-    def _rank(kv):
-        # max() picks the largest tuple; connection_id as secondary key
-        # is a deterministic tie-break.
-        _cid, info = kv
-        return (info.last_presence_at, _cid)
-
-    visible_focused = [kv for kv in items if kv[1].visible and kv[1].focused]
-    if visible_focused:
-        cid, info = max(visible_focused, key=_rank)
-        return cid, info.ws
-
-    visible = [kv for kv in items if kv[1].visible]
-    if visible:
-        cid, info = max(visible, key=_rank)
-        return cid, info.ws
-
-    cid, info = max(items, key=_rank)
+    cid, info = selected
     return cid, info.ws
 
 
