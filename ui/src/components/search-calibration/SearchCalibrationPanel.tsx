@@ -6,6 +6,9 @@ import { SearchCalibration } from '@src/hooks/use-record-search';
 import { X } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 
+/** The BM25 column-weight vector, exactly as `SearchCalibration.col_weights` declares it. */
+type ColWeights = NonNullable<SearchCalibration['col_weights']>;
+
 const KNOWN_TYPES = ['skill', 'bookmark', 'claude_session', 'agentic_process', 'snippet', 'note'];
 
 interface SearchCalibrationPanelProps {
@@ -15,7 +18,13 @@ interface SearchCalibrationPanelProps {
 }
 
 export function SearchCalibrationPanel({ calibration, onChange, latencyMs }: SearchCalibrationPanelProps) {
-  const col_weights = calibration.col_weights ?? [0, 0, 10, 1];
+  // Six values, in the FTS column order [entity_id, type, name, title,
+  // description, content]. Not four: `sqlite_driver.py:672` applies the vector
+  // only `if cal.col_weights and len(cal.col_weights) == 6`, so the 4-value
+  // array this panel used to build was discarded server-side — toggling Column
+  // Weights on did nothing at all, and the 4th input was labelled `content`
+  // while it actually edited `title`.
+  const col_weights: ColWeights = calibration.col_weights ?? [0, 0, 10, 8, 3, 1];
   const colWeightsEnabled = !!calibration.col_weights;
   const recencyBoostEnabled = calibration.recency_boost != null;
   const recencyBoost = calibration.recency_boost ?? 0.01;
@@ -123,7 +132,7 @@ export function SearchCalibrationPanel({ calibration, onChange, latencyMs }: Sea
             onCheckedChange={(checked) => {
               onChange({
                 ...calibration,
-                col_weights: checked ? [col_weights[0], col_weights[1], col_weights[2], col_weights[3]] : undefined,
+                col_weights: checked ? ([...col_weights] as ColWeights) : undefined,
               });
             }}
           />
@@ -132,8 +141,8 @@ export function SearchCalibrationPanel({ calibration, onChange, latencyMs }: Sea
           </Label>
         </div>
         {colWeightsEnabled && (
-          <div className="grid grid-cols-4 gap-2 ps-8">
-            {(['entity_id', 'type', 'name', 'content'] as const).map((label, i) => (
+          <div className="grid grid-cols-3 gap-2 ps-8">
+            {(['entity_id', 'type', 'name', 'title', 'description', 'content'] as const).map((label, i) => (
               <div key={label} className="space-y-1">
                 <Label className="text-xs text-muted-foreground">{label}</Label>
                 <Input
@@ -142,7 +151,7 @@ export function SearchCalibrationPanel({ calibration, onChange, latencyMs }: Sea
                   disabled={i < 2}
                   value={col_weights[i]}
                   onChange={(e) => {
-                    const w = [...col_weights] as [number, number, number, number];
+                    const w = [...col_weights] as ColWeights;
                     w[i] = parseFloat(e.target.value) || 0;
                     onChange({ ...calibration, col_weights: w });
                   }}
