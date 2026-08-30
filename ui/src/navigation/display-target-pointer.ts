@@ -55,10 +55,15 @@ function webAppPointer(port: number | string | undefined): DockPointer | null {
  * The dock a show target opens, or null when it addresses nothing openable.
  *
  * Null is a real answer, not a failure: an entity type with no registered
- * editor and no path has no surface to open (the `dataset` hole), and an `app`
- * that is `served`/`unbuilt` carries no port — its only runtime lives behind
- * Vibe's artifact-driven chrome. Callers skip silently rather than inventing a
- * destination; the target still lands in the process's display history.
+ * editor and no path has no surface to open (the `dataset` hole). Callers skip
+ * silently rather than inventing a destination; the target still lands in the
+ * process's display history.
+ *
+ * An `app` used to be the other null case — a `served`/`unbuilt` app carries no
+ * port, so there was nothing to address and its only runtime lived behind Vibe's
+ * artifact-driven pane chrome. `ViewType.APP` closes that: the ARTIFACT is the
+ * address and the runtime stays derived, which is what lets an app be shown,
+ * bookmarked and restored without a stale port ever becoming its identity.
  */
 export function dockForDisplayTarget(target: DisplayTargetLike | null | undefined): DockPointer | null {
   if (!target) return null;
@@ -83,6 +88,22 @@ export function dockForDisplayTarget(target: DisplayTargetLike | null | undefine
     );
   }
 
+  // An APP is addressed by its artifact. `runtime` rides in options — it is derived
+  // state that changes without the app changing (a dev server dies, a build lands),
+  // and options are excluded from `tabHash`, so switching dev⇄served re-points the
+  // SAME tab rather than forking one per runtime. The port is deliberately absent:
+  // it is a companion of `runtime=dev`, re-resolved from the Deployment on load.
+  // The pointer is the artifact TypeId the backend already minted (`_app_payload`
+  // sends both `artifact_id` and `typeid`) rather than one re-assembled here — the
+  // `<type>-<id>` spelling is what lets the backend's own pointer-entity gate 404 a
+  // bogus app address instead of handing the frontend a dock that renders nothing.
+  if (target.kind === 'app' && target.artifact_id) {
+    const runtime = target.runtime === 'dev' || target.runtime === 'served' ? { runtime: target.runtime } : undefined;
+    return new DockPointer(ViewType.APP, target.typeid ?? `artifact-${target.artifact_id}`, runtime);
+  }
+
+  // A bare port with no artifact behind it — a dev server we were simply told
+  // about. It has nothing else to be identified by, so the port stays the address.
   if (target.kind === 'webapp' || target.kind === 'app') return webAppPointer(target.port);
 
   // Entity first, path second: an indexed asset opens in its bespoke editor,

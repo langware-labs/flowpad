@@ -52,6 +52,11 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 vi.mock('@src/pages/flow-page/vibe-chat-pane', () => ({
   VibeChatPane: () => <div data-testid="vibe-chat-pane" />,
 }));
+// Ambient, like the chat pane: the display BODY on a child URL. What is under test
+// here is the toolbar wrapped around it — promote, history — not the viewer inside.
+vi.mock('@src/pages/flow-page/content-panel/content-panel', () => ({
+  ContentPanel: () => <div data-testid="content-panel" />,
+}));
 vi.mock('@src/pages/flow-page/use-vibe-workspace-session', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   useVibeWorkspaceSessionHost: () => process,
@@ -69,6 +74,9 @@ const Wrap = ({ children }: PropsWithChildren) => (
   </QueryClientProvider>
 );
 
+// Mutable: a `flow show` now NAVIGATES, so the workspace moves from the process
+// URL onto the display's own address and re-renders as a child. Both halves are
+// exercised below.
 const session = { processId: PROCESS_ID, processDock, processTab: null, onProcessUrl: true };
 
 /** The workspace anchor tab the children hang off. */
@@ -93,6 +101,24 @@ function mountWithShownDoc(): void {
   );
   expect(showListener).not.toBeNull();
   act(() => showListener?.({ kind: 'vfs', path: DOC_PATH }));
+}
+
+/**
+ * Follow the navigation a `flow show` now performs: land on the display address
+ * it opened and re-render as a workspace CHILD, which is where the display
+ * chrome (promote, history, annotate) lives once the display is a URL.
+ */
+function landOnShownDisplay(): DockPointer {
+  const displayed = lastOpened();
+  currentDock = displayed;
+  session.onProcessUrl = false;
+  cleanup();
+  render(
+    <Wrap>
+      <VibeWorkspace session={session as never} />
+    </Wrap>,
+  );
+  return displayed;
 }
 
 /** The dock the last click navigated to. */
@@ -139,14 +165,25 @@ afterEach(() => {
   openDock.mockReset();
   showListener = null;
   currentDock = processDock;
+  session.onProcessUrl = true;
   process.context_data = {};
 });
 
 describe('vibe display → promoting a shown document to its own tab', () => {
   it('the toolbar button opens the doc, and the tab it mints stays that doc', () => {
     mountWithShownDoc();
+    // The show itself is now a navigation onto the display's own address, and
+    // that address is REPLACEABLE — the agent's next show re-points it.
+    const displayed = landOnShownDisplay();
+    expect(displayed.isActiveDisplay).toBe(true);
+    expect(displayed.pointer).toContain(DOC_NAME);
+
+    openDock.mockReset();
     fireEvent.click(screen.getByTestId('display-open-in-tab'));
     const opened = lastOpened();
+    // Promotion is the SAME address minus the marker: that is the whole difference
+    // between the row the agent owns and the one the user now owns.
+    expect(opened.isActiveDisplay).toBe(false);
     expect(opened.pointer).toContain(DOC_NAME);
     cleanup();
 
@@ -157,6 +194,7 @@ describe('vibe display → promoting a shown document to its own tab', () => {
 
   it('the display-history popover promotes a past display the same way', () => {
     mountWithShownDoc();
+    openDock.mockReset();
     fireEvent.click(screen.getByTestId('display-history'));
     fireEvent.click(screen.getAllByTestId('display-history-row')[0]);
     cleanup();
@@ -182,11 +220,15 @@ describe('vibe display → promoting a shown document to its own tab', () => {
     act(() => showListener?.({ kind: 'vfs', path: DOC_PATH }));
     expect(screen.queryByTestId('vibe-webapp-frame')).toBeNull();
 
+    // The doc show above navigated (it is addressable). Only the history click is
+    // under test here, so measure from zero.
+    openDock.mockReset();
     fireEvent.click(screen.getByTestId('display-history'));
     fireEvent.click(screen.getAllByTestId('display-history-row')[1]); // the webapp entry
 
-    // The popover only exists on the process dock, so re-opening that dock was
-    // a no-op — the pane must switch by itself, without any navigation.
+    // A running app has no dock address (its identity is an artifact whose runtime
+    // is derived), so it is the one target the pane still owns: the display must
+    // switch to it in place, with no navigation.
     expect(openDock).not.toHaveBeenCalled();
     expect(screen.getByTestId('vibe-webapp-frame')).toBeTruthy();
   });

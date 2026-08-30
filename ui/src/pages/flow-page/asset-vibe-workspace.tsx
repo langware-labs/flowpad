@@ -1,22 +1,19 @@
 import { AgenticProcess, dataContext, fsStore, TypeId, VFSPath } from '@sdk';
 import { useAgentContext } from '@src/contexts/agent-context';
-import { ViewMode } from '@src/contexts/view-mode-context';
 import { isContentAssetDock } from '@src/navigation/content-asset-dock';
-import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
-import { shellIdFromShowTarget } from '@src/navigation/shell-show-target';
+import { openActiveDisplay } from '@src/navigation/open-active-display';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@src/components/ui/resizable';
 import type { ImperativePanelGroupHandle, ImperativePanelHandle } from 'react-resizable-panels';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ContentPanel } from './content-panel/content-panel';
+import { DisplayChrome } from './display-chrome';
 import { WorkspaceChildStrip } from './workspace-child-strip';
 import { useProcessSurface } from '@src/components/terminal/interactive-terminal/use-process-surface';
 import { VibeChatPane } from './vibe-chat-pane';
 import { type VibeWorkspaceSession, useVibeWorkspaceSessionHost } from './use-vibe-workspace-session';
 import { assetWorkContextForDock } from './asset-work-context';
 import type { DisplayShowTarget } from './display-annotation';
-import { useEntityOps } from '@sdk/react/hooks';
-import type { IEntity } from '@sdk';
 
 interface AssetVibeWorkspaceProps {
   isVibe: boolean;
@@ -37,14 +34,12 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   // the arrival from re-deriving it (and possibly resolving a DIFFERENT process
   // than the one that showed it).
   const hostProcessIdRef = useRef<string | null>(null);
+  const projectIdRef = useRef<string | null>(null);
   currentDockRef.current = currentDock;
   navigationRef.current = navigation;
   const panelGroupRef = useRef<ImperativePanelGroupHandle>(null);
   const chatPanelRef = useRef<ImperativePanelHandle>(null);
   const hasExpandedChatRef = useRef(isVibe);
-  const mountedAtRef = useRef(Date.now());
-  const hasObservedLastShownRef = useRef(false);
-  const handledLastShownKeyRef = useRef('');
   const [transitionsReady, setTransitionsReady] = useState(false);
   // The session resolves synchronously from the URL plus the tab store, so there
   // is no unknown-host window to paper over and one process identity throughout.
@@ -56,9 +51,13 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   // host is resolved back through `DockPointer.forShell(host)`, so a bare uuid
   // silently matches no tab and the URL-carried host does nothing.
   hostProcessIdRef.current = session?.processDock.pointer ?? null;
+  projectIdRef.current = project?.id ?? null;
   // Vibe has no InteractiveTerminal, so this is where the session's transport
-  // is kept aligned with the view mode while the workspace is on screen.
-  useProcessSurface({ process });
+  // is kept aligned with the view mode while the workspace is on screen. It also
+  // hands back the REACTIVE entity — which is what the display chrome reads for
+  // the history stack, so the popover stays in step with `context_data` broadcasts
+  // instead of whatever `context_data` happened to be when the session resolved.
+  const persistedProcess = useProcessSurface({ process });
 
   const resolvedAsset = dataContext.activeEntity as {
     typeId?: TypeId | null;
@@ -109,21 +108,40 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   // address: nothing here infers or invents a workspace for it. Host identity
   // arrives with the URL (`DockPointer.hostProcessId`).
 
+  // The FIRST show after a mount pushes; every one after it replaces. With pure
+  // replace the first show would overwrite the URL the user arrived on, so Back
+  // would eject them from the workspace instead of returning them to it. After
+  // that, replacing is what keeps a chatty agent from burying the user's own
+  // history — the show history stays browsable in the display popover.
+  const hasPushedDisplayRef = useRef(false);
+  // Bumped on EVERY show, before the navigation decision. Two jobs, both real:
+  //
+  //  - it is the render trigger. The SDK mutates cached entities IN PLACE, so a
+  //    new `display_stack` arrives behind a referentially identical object and
+  //    React never re-renders — the history popover would sit frozen at whatever
+  //    it read first. The old pane got this for free because every show called
+  //    `setShown`; navigating alone does not.
+  //  - it is the cache-buster. A re-show of the SAME target is a no-op
+  //    navigation, yet the file behind it may have been rebuilt, and the iframe
+  //    registry keys by `src`.
+  const [showNonce, setShowNonce] = useState(0);
+  // The payload of the newest show — see `DisplayChrome.latestShown`.
+  const [latestShown, setLatestShown] = useState<DisplayShowTarget | null>(null);
+
   const openShownTarget = useCallback((target: DisplayShowTarget) => {
     try {
-      const host = hostProcessIdRef.current;
-      // A terminal is hosted as a workspace child tab, not opened as an asset
-      // — the same path the journey's open_terminal act takes.
-      const shellId = shellIdFromShowTarget(target);
-      if (shellId) {
-        void navigationRef.current.openShell(shellId, { viewMode: ViewMode.Vibe, host: host ?? undefined });
-        return;
-      }
-      const targetDock = dockForDisplayTarget(target);
-      if (!targetDock || !isContentAssetDock(targetDock)) return;
-      const vibeDock = targetDock.withViewMode(ViewMode.Vibe).withHost(host);
-      if (currentDockRef.current?.equals(vibeDock)) return;
-      navigationRef.current.openDock(vibeDock);
+      setShowNonce((n) => n + 1);
+      setLatestShown(target);
+      const pushed = hasPushedDisplayRef.current;
+      const committed = openActiveDisplay({
+        target,
+        navigation: navigationRef.current,
+        host: hostProcessIdRef.current,
+        projectId: projectIdRef.current,
+        currentDock: currentDockRef.current,
+        push: !pushed,
+      });
+      if (committed) hasPushedDisplayRef.current = true;
     } catch (error) {
       console.error('[asset-vibe] failed to open show target', target, error);
     }
@@ -154,58 +172,19 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
     return () => manager.off('on_entity_event', onEntityEvent);
   }, [session?.processId, isVibe, openShownTarget]);
 
-  // `on_show` is persisted on the process before the transient entity event is
-  // emitted. Consume that ordinary process update directly too: it is the
-  // durable delivery seam when a save-triggered render overlaps the transient
-  // flow-data frame.
-  const processEntityTypes = useMemo(() => [AgenticProcess.type], []);
-  const onProcessEntityOp = useCallback(
-    (typeId: TypeId, op: 'create' | 'update' | 'delete', data: IEntity) => {
-      if (
-        !isVibe ||
-        !session?.processId ||
-        typeId.id !== session.processId ||
-        (op !== 'create' && op !== 'update')
-      ) {
-        return;
-      }
-      const shown = (data as IEntity & { context_data?: { last_shown?: DisplayShowTarget } }).context_data?.last_shown;
-      if (!shown) return;
-      const key = JSON.stringify(shown);
-      if (handledLastShownKeyRef.current === key) return;
-      handledLastShownKeyRef.current = key;
-      openShownTarget(shown);
-    },
-    [session?.processId, isVibe, openShownTarget],
-  );
-  useEntityOps(processEntityTypes, onProcessEntityOp);
-
-  // `on_show` is persisted before its ephemeral entity event is emitted. Replay
-  // that durable pin when a late-mounted client finishes attaching its process
-  // listener, closing the small watch-registered → React-effect race.
-  const lastShown = (process?.context_data as { last_shown?: DisplayShowTarget } | undefined)?.last_shown;
-  const lastShownKey = lastShown ? JSON.stringify(lastShown) : '';
-  const displayStack = process?.displayStack ?? [];
-  const newestShownAt = displayStack[displayStack.length - 1]?.shown_at;
-  const parsedNewestShownAt = newestShownAt ? Date.parse(newestShownAt) : Number.NaN;
-  const newestShownAtMs = Number.isFinite(parsedNewestShownAt) ? parsedNewestShownAt : null;
-  useEffect(() => {
-    if (!isVibe || !session || !lastShown) return;
-    if (!hasObservedLastShownRef.current) {
-      hasObservedLastShownRef.current = true;
-      // The URL that mounted this workspace is authoritative. Persisted show
-      // state older than the mount is a baseline (for example an explicit
-      // history selection), not a fresh navigation command. A show written
-      // after mount is the late-listener race this durable replay exists for.
-      if (newestShownAtMs === null || newestShownAtMs < mountedAtRef.current) {
-        handledLastShownKeyRef.current = lastShownKey;
-        return;
-      }
-    }
-    if (handledLastShownKeyRef.current === lastShownKey) return;
-    handledLastShownKeyRef.current = lastShownKey;
-    openShownTarget(lastShown);
-  }, [session, isVibe, lastShownKey, newestShownAtMs, openShownTarget]);
+  // The durable `last_shown` replay that used to live here is GONE, along with the
+  // `useEntityOps` channel and the mount-time baseline that arbitrated between them.
+  //
+  // Those existed because the display was state and the `on_show` entity event has
+  // no replay: a client that mounted after the show, or whose WS attach lost the
+  // race, had to recover the pin from `context_data`. Three channels then needed a
+  // freshness baseline to stop them re-firing each other and resurrecting a display
+  // the user had navigated away from.
+  //
+  // Restore is now the loader's job (`routeProcessPointer`), answered against the
+  // URL instead of a mount timestamp, so the live event is the only channel left and
+  // needs no de-duplication: `openDock` already no-ops on a URL that is current or
+  // pending, which is what makes `on_show`'s broadcast to every client idempotent.
 
   // Bridge live worker writes into the canonical FS invalidation channel. The
   // store keeps dirty cache entries, so this refreshes clean viewers without
@@ -286,7 +265,15 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
             )}
           </div>
           <div className="min-h-0 flex-1">
-            <ContentPanel minimalChrome={isVibe} />
+            {/* In vibe the content IS the workspace's display, so it wears the
+                workspace chrome (history, promote, annotate). In standard mode it
+                is just a document at its own address and gets none. */}
+            {/* Unconditional: ContentPanel's ancestry must not change across a
+                mode toggle, or the dirty editor beneath it remounts and loses its
+                buffer. The chrome hides itself instead. */}
+            <DisplayChrome process={persistedProcess ?? process} latestShown={latestShown} active={isVibe}>
+              <ContentPanel minimalChrome={isVibe} contentEpoch={showNonce} />
+            </DisplayChrome>
           </div>
         </div>
       </ResizablePanel>

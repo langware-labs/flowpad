@@ -271,6 +271,10 @@ class CodexDriver:
             **process._process_asset_context_kwargs(process_assets),
         )
 
+        from flow_sdk.builtin.agentic_process.cli_drivers import api_auth  # noqa: PLC0415
+
+        await api_auth.stamp_api_model(context, process)
+
         worker = CodexCLIStreamWorker.for_process(process.id)
         return await run_headless_turn(
             self, process, worker, prompt=full_prompt, context=context, logger=logger

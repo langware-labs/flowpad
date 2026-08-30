@@ -185,6 +185,14 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'overview',
     canAddAsTab: true,
   },
+  [ViewType.APP]: {
+    title: msg`App`,
+    iconName: 'Globe',
+    tabLocation: 'overview',
+    // Not manually openable: an app is reached by showing/running one, never by
+    // picking "App" from a menu — its pointer is a specific artifact.
+    canAddAsTab: false,
+  },
   [ViewType.DIFF]: {
     title: msg`Diff Viewer`,
     iconName: 'GitCompare',
