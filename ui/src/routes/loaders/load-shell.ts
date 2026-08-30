@@ -55,9 +55,15 @@ import { ViewType } from '@sdk';
 import { projectScope, scopeFilterEqual, type ScopeFilter } from '@src/lib/scope-filter';
 import { replace } from 'react-router';
 import { perfLog, perfTime } from './_perf';
-import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
+import { loadProcess, ProcessLoadError } from './load-process';
 import { loadProject } from './load-project';
-import { buildProcessCleanup, loadNextProcess, type CleanupRecord, type LoadedNext } from './load-next-process';
+import {
+  buildProcessCleanup,
+  buildShellCleanup,
+  loadNextProcess,
+  type CleanupRecord,
+  type LoadedNext,
+} from './load-next-process';
 
 // ── typed error (for plain-Shell loads) ─────────────────────────────────────
 
@@ -463,7 +469,7 @@ async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder
     }
 
     // See routeProcessPointer for rationale on `replace`.
-    const directCleanup = await buildShellCleanupForRoute(e);
+    const directCleanup = await buildShellCleanup(e);
     const next = await loadNextProcess({
       excludeIds: new Set([shellId]),
       projectId: dataContext.project?.id ?? null,
@@ -480,32 +486,6 @@ async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder
     });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw replace(shellUrl(fallbackPointer));
-  }
-}
-
-// buildProcessCleanup (the direct-link process mapper) is imported from
-// load-next-process — single source of truth shared with the in-loader path.
-async function buildShellCleanupForRoute(e: ShellLoadError): Promise<CleanupRecord> {
-  switch (e.kind) {
-    case 'not_found':
-      return {
-        kind: 'shell_not_found',
-        shellId: e.shellId,
-        title: t`Shell not found`,
-        description: t`This terminal no longer exists.`,
-      };
-    case 'error_status':
-      return {
-        kind: 'shell_error_status',
-        shellId: e.shellId,
-        title: t`Shell unavailable`,
-        description: e.errorMessage ?? 'Shell error',
-      };
-    case 'start_failed': {
-      await tabManager.closeTarget(new TypeId(Shell.type, e.shellId)).catch(() => {});
-      const desc = describeProcessStartError(e.cause ?? e);
-      return { kind: 'shell_start_failed', shellId: e.shellId, title: desc.title, description: desc.description };
-    }
   }
 }
 
