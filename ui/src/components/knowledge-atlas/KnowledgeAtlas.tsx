@@ -27,6 +27,7 @@ import {
   type AtlasNode,
 } from './atlasData';
 import './atlas.css';
+import { parseFrontmatterDoc } from '@sdk/fs/frontmatter-parse';
 
 /* ---- tiny inline icons (from the design's components.jsx) ----------------- */
 function Icon({ d, s = 16, sw = 1.6 }: { d: string | string[]; s?: number; sw?: number }) {
@@ -59,11 +60,7 @@ type ProseBlock =
   | { t: 'pre'; v: string };
 
 function mdToBlocks(md: string): ProseBlock[] {
-  let text = md;
-  if (text.startsWith('---')) {
-    const fm = /^---\s*\n[\s\S]*?\n---\s*\n?/.exec(text);
-    if (fm) text = text.slice(fm[0].length);
-  }
+  const text = parseFrontmatterDoc(md).body;
   const blocks: ProseBlock[] = [];
   let para: string[] = [];
   let list: string[] | null = null;
