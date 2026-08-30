@@ -72,10 +72,6 @@ def copilot_session_id_from_file(ref: FSRef | Path) -> str | None:
     return key if is_valid_entity_id(key) else None
 
 
-def copilot_session_stable_key(ref: FSRef | Path) -> str:
-    return f"{RecordType.COPILOT_SESSION}:{copilot_session_identity_key(ref)}"
-
-
 def extract_copilot_session(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     return [extract_copilot_session_from_path(ref._path, resolved_id=resolved_id)]
 

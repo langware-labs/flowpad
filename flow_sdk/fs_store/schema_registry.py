@@ -240,6 +240,10 @@ class TypeInfo:
     capsules: tuple[CapsuleSpec, ...] = field(default_factory=tuple)
     identity_carrier: IdentityCarrier | None = field(default=None, compare=False, repr=False)
     id_stable_key_fn: Any = field(default=None, compare=False, repr=False)
+    #   identity_key_fn:   Callable[[FSRef | Path], str] — the type's natural key.
+    #     The v5 key is derived as f"{type_name}:{identity_key_fn(ref)}"; set this
+    #     instead of id_stable_key_fn unless the type needs a different shape.
+    identity_key_fn: Any = field(default=None, compare=False, repr=False)
     id_namespace: uuid.UUID = field(default=uuid.NAMESPACE_URL, compare=False, repr=False)
     asset_hash_fn: Any = field(default=None, compare=False, repr=False)
     # Per-type default-body writer: Callable[[entity], str]. Read by
@@ -476,6 +480,20 @@ class TypeInfo:
         carries a redundant flag."""
         return self.main_layout == "folder" and not self.main_file_is_asset_ref
 
+    def stable_key_for(self, ref) -> str | None:
+        """The v5 key text for *ref*, or None when this type has no stable key.
+
+        Types that only need "``<type>:<natural key>``" declare
+        ``identity_key_fn``; ``id_stable_key_fn`` stays the escape hatch for a
+        different shape. The derived text is byte-identical to the per-type
+        ``*_stable_key`` helpers it replaced — v5 ids depend on it.
+        """
+        if self.id_stable_key_fn is not None:
+            return self.id_stable_key_fn(ref)
+        if self.identity_key_fn is not None:
+            return f"{self.type_name}:{self.identity_key_fn(ref)}"
+        return None
+
     @staticmethod
     def _identity_path(ref: Any) -> Path:
         """Return the concrete asset path accepted by identity callbacks."""
@@ -572,7 +590,7 @@ class TypeInfo:
                     logging.debug("[asset-id] re-stamp skipped for %s", path, exc_info=True)
             return owner_id
 
-        stable_key = self.id_stable_key_fn(ref) if self.id_stable_key_fn is not None else None
+        stable_key = self.stable_key_for(ref)
         fallback_key = str(self._identity_path(ref).resolve())
         if carrier.raw is not None:
             # Present but not a UUID we accept: keep the bytes, derive a stable
