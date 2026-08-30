@@ -144,17 +144,11 @@ def restore_capsule_blocks(text: str, blocks: tuple[str, ...]) -> str:
 
 
 class CodeCommentCapsule(FileCapsule):
-    def _read_text(self) -> tuple[str, bytes]:
-        try:
-            return _decode(self.path.read_bytes())
-        except OSError as exc:
-            raise MalformedCapsuleError(str(exc)) from exc
+    def _scan(self, text: str) -> tuple[_Block, ...]:
+        return _scan(text)
 
-    def read(self, name: str) -> CapsuleData | None:
-        validate_capsule_name(name)
-        text, _bom = self._read_text()
-        block = next((item for item in _scan(text) if item.name == name), None)
-        return _parse(text, block) if block is not None else None
+    def _parse_block(self, text: str, block: _Block) -> CapsuleData:
+        return _parse(text, block)
 
     def _replace(self, name: str, data: CapsuleData, *, only_if_absent: bool) -> CapsuleData:
         validate_capsule_name(name)
@@ -179,12 +173,6 @@ class CodeCommentCapsule(FileCapsule):
             committed = self.read(name)
             assert committed is not None
             return committed
-
-    def write(self, name: str, data: CapsuleData) -> CapsuleData:
-        return self._replace(name, data, only_if_absent=False)
-
-    def write_if_absent(self, name: str, data: CapsuleData) -> CapsuleData:
-        return self._replace(name, data, only_if_absent=True)
 
     def remove(self, name: str) -> bool:
         validate_capsule_name(name)
