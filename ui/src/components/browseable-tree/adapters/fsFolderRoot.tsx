@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { DockPointer, normalizeRel } from '@src/navigation/DockPointer';
 import { dockPointerForFile } from '@src/navigation/local-file-pointer';
 import type { ScopeFilter } from '@src/lib/scope-filter';
-import type { Browseable, BrowseableDragData, BrowseableRoot } from '@src/components/browseable-tree/types';
+import type { Browseable, BrowseableDragData, BrowseableRoot, ToolbarAction } from '@src/components/browseable-tree/types';
 import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 
 /**
@@ -44,6 +44,17 @@ export interface FsFolderRootDeps {
   /** When true, file/folder rows carry an `FsDragItem` drag payload so drop
    *  targets (e.g. the Assets context-folder rows) can accept them. */
   draggable?: boolean;
+  /** Hide dot-prefixed entries. Off by default: every existing consumer
+   *  (Explorer, Assets, favorites, prompt-library) lists them today, so the
+   *  default must stay "show everything". */
+  hideDotfiles?: boolean;
+  /** Per-folder toolbar (new file / new folder / refresh / delete …). Receives
+   *  the folder's entity-relative path; the root anchor arrives as ''. Mirrors
+   *  `markdownFolderRoot`'s `folderToolbar`. */
+  folderToolbar?: (rel: string) => ToolbarAction[];
+  /** Inline rename for file AND folder rows. `BrowseableTree` already owns the
+   *  rename input; without this the adapter simply never offers it. */
+  onRename?: (rel: string, newName: string, isDir: boolean) => void | Promise<void>;
 }
 
 /** One filesystem entry inside a (possibly multi-item) drag. */
@@ -139,6 +150,9 @@ interface FsNodeCtx {
    *  the factory binds the handlers to that folder's rel path (e.g. copy
    *  dropped rows into that exact subfolder). */
   folderDrop?: (rel: string) => FsFolderDrop;
+  hideDotfiles?: boolean;
+  folderToolbar?: (rel: string) => ToolbarAction[];
+  onRename?: (rel: string, newName: string, isDir: boolean) => void | Promise<void>;
 }
 
 /** The "open this file" pointer for an fs row: the row's VFS identity put
@@ -177,6 +191,7 @@ function fileNode(ctx: FsNodeCtx, rel: string, label: string): Browseable {
     hasChildren: false,
     pointer: (ctx.filePointerFor ?? ctx.pointerFor)(vfsForRel(ctx, rel)),
     dragData: dragDataFor(ctx, id, rel, label, false),
+    ...(ctx.onRename ? { onRename: (name: string) => ctx.onRename!(rel, name, false) } : {}),
   };
 }
 
@@ -191,6 +206,8 @@ function folderNode(ctx: FsNodeCtx, rel: string, label: string): Browseable {
     pointer: ctx.pointerFor(vfsForRel(ctx, rel)),
     listChildren: (opts) => listChildrenAt(ctx, rel, opts),
     dragData: dragDataFor(ctx, id, rel, label, true),
+    ...(ctx.folderToolbar ? { toolbar: ctx.folderToolbar(rel) } : {}),
+    ...(ctx.onRename ? { onRename: (name: string) => ctx.onRename!(rel, name, true) } : {}),
     ...(ctx.folderDrop ? ctx.folderDrop(rel) : {}),
   };
 }
@@ -252,6 +269,7 @@ async function listChildrenAt(ctx: FsNodeCtx, dirRel: string, opts?: { refresh?:
     const childRel = normalizeRel(VFSPath.parse(item.vfs_abs_path).entitySubPath);
     if (!childRel) continue;
     const name = basename(childRel) || item.name || childRel;
+    if (ctx.hideDotfiles && name.startsWith('.')) continue;
     if (item.is_dir) dirs.push(folderNode(ctx, childRel, name));
     else files.push(fileNode(ctx, childRel, name));
   }
@@ -312,6 +330,9 @@ export function fsFolderRoot(deps: FsFolderRootDeps): BrowseableRoot {
     pointerFor: deps.pointerForVfs ?? ((path) => DockPointer.forExplorer(path.absVfsPath).withScopeFilter(scope)),
     filePointerFor: deps.filePointerForVfs,
     draggable: deps.draggable ?? false,
+    hideDotfiles: deps.hideDotfiles ?? false,
+    folderToolbar: deps.folderToolbar,
+    onRename: deps.onRename,
   };
 
   const root: BrowseableRoot = {
@@ -322,6 +343,7 @@ export function fsFolderRoot(deps: FsFolderRootDeps): BrowseableRoot {
     hasChildren: true,
     pointer: ctx.pointerFor(vfsForRel(ctx, anchor)),
     listChildren: (opts) => listChildrenAt(ctx, anchor, opts),
+    ...(ctx.folderToolbar ? { toolbar: ctx.folderToolbar(anchor) } : {}),
     ownsPointer: (pointer) => {
       const resource = resourceForPointer(ctx, projectRootPath, pointer);
       if (!resource) return false;
