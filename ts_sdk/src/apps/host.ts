@@ -45,3 +45,31 @@ export async function resolveAppHost(): Promise<AppHost> {
 export function appOption(name: string): string | null {
   return new URLSearchParams(location.search).get(name);
 }
+
+/**
+ * Adopt the host's colour theme, from `?theme=light|dark` on this page's URL.
+ *
+ * A served app is cross-origin to the Flowpad window, so it cannot read the
+ * `.dark` class the host writes on its own `<html>` — and `prefers-color-scheme`
+ * is the OS preference, which is not the same thing as the theme the user chose
+ * in the app. So the display passes it on the URL, and applying it here, before
+ * first paint, is what stops a light flash inside a dark window.
+ *
+ * Pairs with `/sdk/flowpad.css`, which defines the palette on `:root` and
+ * redefines it under `.dark`. Safe to call when neither is present: the page
+ * simply stays light.
+ */
+export function applyHostTheme(): 'light' | 'dark' {
+  const theme = appOption('theme') === 'dark' ? 'dark' : 'light';
+  document.documentElement.classList.toggle('dark', theme === 'dark');
+  // The URL carries the theme for the FIRST paint only — it is frozen there,
+  // because the host addresses this frame by its src and re-addressing it would
+  // reload the whole app to recolour it. Later changes arrive as a message, and
+  // recolouring is one class flip.
+  window.addEventListener('message', (event) => {
+    const data = event.data as { type?: string; theme?: string } | null;
+    if (data?.type !== 'flowpad:theme') return;
+    document.documentElement.classList.toggle('dark', data.theme === 'dark');
+  });
+  return theme;
+}

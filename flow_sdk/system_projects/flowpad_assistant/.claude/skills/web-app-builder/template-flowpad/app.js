@@ -95,6 +95,10 @@ formEl.addEventListener('submit', async (event) => {
 });
 
 async function main() {
+  // Adopt the host's light/dark theme from ?theme= before anything paints — a
+  // cross-origin page cannot read the class Flowpad sets on its own <html>, so
+  // without this a dark window shows a white app.
+  sdk.applyHostTheme();
   // Loads the type registry + current project/compute node. Entity calls
   // before this resolves will fail.
   await sdk.initSdk();

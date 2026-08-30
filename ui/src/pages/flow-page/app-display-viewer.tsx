@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { AgenticProcess } from '@sdk';
 import { type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
@@ -64,6 +64,13 @@ export function AppDisplayViewer({ artifactId, microAppId = null, host, runtime,
     { artifactId, microAppId, options: options ?? {} },
     runtime ?? null,
   );
+
+  // The theme is baked into the guest URL for its first paint, so a later change
+  // is PUSHED rather than re-addressed: re-addressing would swap `src`, which is
+  // the frame's identity, and reload the whole app to recolour it.
+  useEffect(() => {
+    frameRef.current?.postToGuest({ type: 'flowpad:theme', theme: appDisplay.theme });
+  }, [appDisplay.theme]);
 
   // URL-carried, so the choice survives a reload and the Back button — it used to
   // be component state and vanished on both.

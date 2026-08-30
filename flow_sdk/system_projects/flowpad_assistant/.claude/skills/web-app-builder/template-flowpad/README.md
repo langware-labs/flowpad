@@ -37,6 +37,16 @@ registry and the current project/compute node. Entity calls before it will fail.
 a real Task. Hand-rolled `fetch('/api/...')` bypasses the entity model and its
 live updates.
 
+**4. Style with Flowpad's tokens, not your own palette.** `index.html` links
+`/sdk/flowpad.css`, which carries the product's real colours, radii, font stack
+and dark theme; `styles.css` then owns layout only. Call `sdk.applyHostTheme()`
+before anything paints — a served page is cross-origin and cannot read the theme
+class Flowpad sets on its own `<html>`, so it arrives via `?theme=` instead.
+
+For anything beyond layout tweaks, load the **html-builder** skill (modern CSS
+with no build step) and **frontend-design** (the aesthetic direction). An app
+that lives inside Flowpad should look like it belongs there.
+
 ## Always save WITH the project scope
 
 `save()` with no argument places the entity outside any project

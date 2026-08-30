@@ -151,7 +151,9 @@ test('5. define + annotate: a dataset bound to the source, one labelled example'
   await frame.getByTestId('spec-editor-label-sentiment').fill('positive');
   await frame.getByTestId('spec-editor-annotate-save').click();
   await expect(frame.getByTestId('spec-editor-annotated')).toHaveText(/labelled \(1 total\)/);
-  await expect(frame.getByTestId('spec-editor-dataset-counts')).toHaveText(/1 examples · 1 labelled/);
+  // Singular: one example is "1 example". The count is copy the person reads, so
+  // it agrees with itself rather than being mechanically pluralised.
+  await expect(frame.getByTestId('spec-editor-dataset-counts')).toHaveText(/1 example · 1 labelled/);
 
   const api = await apiContext();
   const rows = ((await (await api.get(`/api/v1/graph/dataset?filter=${encodeURIComponent(JSON.stringify({ source_id: sourceId }))}`)).json()).data ?? []) as {
