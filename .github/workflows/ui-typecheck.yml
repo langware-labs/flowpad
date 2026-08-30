@@ -21,9 +21,13 @@ name: UI Type Check
 #
 # The `names` gate runs tsc against the REAL
 # project config (tsconfig.app.json) and fails on TS2304/TS2552 — a name that
-# cannot be resolved is a ReferenceError at runtime, always. The full check
-# (`npm run type-check`) is reported non-blocking because that config still has
-# ~1.7k pre-existing errors; it is the burn-down target, not yet a gate.
+# cannot be resolved is a ReferenceError at runtime, always.
+#
+# The ceiling is now ZERO. It was ~1,700 when this file was written and the full
+# check was described here as "the burn-down target, not yet a gate"; the
+# burn-down is done, so `type-check:ceiling` at 0 IS the full gate — any new
+# type error fails the build. Raising `maxErrors` above 0 should now be treated
+# as what it is: turning the gate off.
 
 on:
   pull_request:

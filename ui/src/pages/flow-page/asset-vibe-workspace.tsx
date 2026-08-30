@@ -156,21 +156,16 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
     return process.onShow(openShownTarget);
   }, [session, isVibe, openShownTarget, process]);
 
-  useEffect(() => {
-    if (!isVibe || !session?.processId) return;
-    const manager = dataContext.dataManager;
-    // Lightweight unit hosts can render the workspace before the SDK manager
-    // is installed. The process-instance listener above remains sufficient in
-    // that environment; the manager listener closes the live WS attach race.
-    if (!manager) return;
-    const processTypeId = `${AgenticProcess.type}-${session.processId}`;
-    const onEntityEvent = (typeId: TypeId, event: string, payload: Record<string, unknown>) => {
-      if (typeId.toString() !== processTypeId || event !== 'on_show') return;
-      openShownTarget(payload as DisplayShowTarget);
-    };
-    manager.on('on_entity_event', onEntityEvent);
-    return () => manager.off('on_entity_event', onEntityEvent);
-  }, [session?.processId, isVibe, openShownTarget]);
+  // A SECOND live `on_show` channel used to be declared here, subscribing to the
+  // DataManager to "close the live WS attach race". It never ran once: it read
+  // `dataContext.dataManager`, which does not exist on DataContext, so its
+  // `if (!manager) return;` guard always fired.
+  //
+  // Deleted rather than repaired, because the note below already retired the
+  // job it was written for: restore is the loader's (`routeProcessPointer`),
+  // and the `process.onShow` subscription above is — in that note's words — the
+  // only channel left. Reviving it would have added a duplicate handler that
+  // double-bumps `showNonce`, reloading the iframe an extra time per show.
 
   // The durable `last_shown` replay that used to live here is GONE, along with the
   // `useEntityOps` channel and the mount-time baseline that arbitrated between them.
