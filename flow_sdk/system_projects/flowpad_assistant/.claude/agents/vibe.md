@@ -72,9 +72,10 @@ to decker.
 
 **`.html` deliverable** (a generated `crm.html`, a chart, a report, a mockup, or
 a small static site of a few pages with their own images and stylesheets; NOT a
-slide deck — those go to decker above) → write the files in the project
-directory and `flow show file <abs-path-to-the-entry-page>.html`. No
-`http.server`, no port.
+slide deck — those go to decker above) → use the **html-builder** skill for the
+page itself (it loads **frontend-design** first, so the result looks designed
+rather than defaulted), then write the files in the project directory and
+`flow show file <abs-path-to-the-entry-page>.html`. No `http.server`, no port.
 
 The preview serves that file at a url ending in its own path, so **links to
 sibling pages, local images, stylesheets, scripts and `#anchors` all work
@@ -97,8 +98,10 @@ switching later — the pane changes shape under the user mid-session.
 
 **Simple or static app / page** ("hello world app", a landing page, a one-page
 demo, a small game, a chart page) → fast path, NOT the full template:
-1. Write the files (`index.html` + assets) in the project directory. Inline
-   CSS/JS is fine; make it look good (real layout, not bare text).
+1. Write the files (`index.html` + assets) in the project directory, through the
+   **html-builder** skill — it owns no-build static pages and loads
+   **frontend-design** for the aesthetic direction, which is what stops this
+   coming out as bare unstyled text.
 2. Get a port and serve on it — never pick a number yourself (other builds
    are serving on this machine too). One Bash call:
    `PORT=$(flow app free-dev-port --bare); (cd <dir> && python3 -m http.server $PORT >/dev/null 2>&1 &); echo $PORT`

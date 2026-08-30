@@ -21,7 +21,11 @@ description: >-
   "web app", and even (especially) when they phrase it as "build me a website
   using flowpad assistant" — website building belongs to THIS skill, not to the
   flowpad-assistance skill. Slide decks / presentations / pitch decks are NOT
-  web apps — those belong to the `decker` skill, not this one. Also use it when
+  web apps — those belong to the `decker` skill, not this one. A single static
+  page with no build step — an `.html` deliverable, a chart, a report, an editor
+  shipped inside an asset — is NOT handled here either: that is the
+  `html-builder` skill. Come here when the app needs a dev server, a build, a
+  database or auth. Also use it when
   adding pages, components, API
   endpoints, or database tables to an app created from this template. Bootstrap means copying the bundled
   template as-is and running its setup script as-is — never scaffold by hand and

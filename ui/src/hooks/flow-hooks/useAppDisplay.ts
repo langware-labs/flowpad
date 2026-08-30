@@ -1,5 +1,6 @@
 import { AgenticProcess, Deployment, MicroApp, QueryRequest, TypeId } from '@sdk';
-import { useEffect, useMemo, useState } from 'react';
+import { useTheme } from 'next-themes';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AppDockAddress } from '@src/navigation/app-dock';
 import { useEntitiesQuery, useEntity } from '../entity-hooks';
 import { useProcessWebApp } from './useProcessWebApp';
@@ -21,6 +22,10 @@ export interface AppDisplay {
   src: string;
   port: string | null;
   microApp: MicroApp | null;
+  /** The host's CURRENT colour theme. The frame is addressed with the theme it
+   *  had at mount, so a later change is pushed to the guest rather than
+   *  re-addressed — see the `initialTheme` note below. */
+  theme: 'light' | 'dark';
   setRuntime: (runtime: AppRuntime) => void;
 }
 
@@ -50,9 +55,27 @@ export function useAppDisplay(
   const [override, setOverride] = useState<AppRuntime | null>(null);
   const artifactId = address?.artifactId ?? null;
   const microAppId = address?.microAppId ?? null;
+  // A cross-origin guest cannot see the `.dark` class the host writes on its own
+  // <html>, so the theme rides the iframe URL and the guest's first paint is
+  // already correct. Deliberately NOT a dock option: the theme is not part of the
+  // address, and putting it there would spell it into the user's URL bar.
+  //
+  // FROZEN at mount, and that is the whole point. `src` is the React key AND the
+  // iframe registry's key, so changing it builds a NEW guest document — the app
+  // reloads and re-establishes its subscriptions, while the outgoing frame stays
+  // in the registry (nothing calls its cleanup) with its watches still live. A
+  // theme toggle must not cost that, and with `enableSystem` an OS light/dark
+  // schedule would trigger it unattended. Later changes are pushed to the guest
+  // instead — see `AppDisplayViewer`.
+  const { resolvedTheme } = useTheme();
+  const theme = resolvedTheme === 'dark' ? 'dark' : 'light';
+  const initialTheme = useRef(theme).current;
   // A string, so the result memo below compares it by VALUE — the caller may
   // hand us a fresh options object every render without remounting the frame.
-  const appQuery = new URLSearchParams(address?.options ?? {}).toString();
+  const appQuery = new URLSearchParams({
+    ...(address?.options ?? {}),
+    theme: initialTheme,
+  }).toString();
 
   // A new app re-derives its runtime rather than inheriting the last choice.
   useEffect(() => setOverride(null), [artifactId, microAppId]);
@@ -108,7 +131,8 @@ export function useAppDisplay(
       src: withQuery(runtime === 'served' ? (microApp?.viewUrl ?? '') : runtime === 'dev' ? devConfig.host : '', appQuery),
       port: devPort === null ? null : String(devPort),
       microApp,
+      theme,
       setRuntime: setOverride,
     };
-  }, [appQuery, devConfig.host, devPort, microApp, override, preferred]);
+  }, [appQuery, devConfig.host, devPort, microApp, override, preferred, theme]);
 }

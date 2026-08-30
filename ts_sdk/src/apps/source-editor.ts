@@ -15,13 +15,13 @@
  * It learns everything from the page: the subject is the app's PARENT asset
  * (see `resolveAppHost`), and no backend URL is written anywhere in this file.
  */
-import { APIEntity, dataManager } from '../APIEntity';
+import { dataManager } from '../APIEntity';
 import { QueryRequest } from '../FlowSync/query';
 import { TypeId } from '../models/TypeId';
 import { DATASET_FIELD_KINDS, Dataset, coerceToKind } from '../entities/dataset';
 import { dataContext } from '../FlowSync/context';
 import { initSdk } from '../main';
-import { appOption, resolveAppHost } from './host';
+import { appOption, applyHostTheme, resolveAppHost } from './host';
 
 /** The kind options a person picks from: the SDK's declared kinds plus the
  *  one-element list form. `value` is what the shape carries, so nothing here
@@ -32,29 +32,161 @@ const KIND_OPTIONS: { label: string; value: unknown }[] = [
 ];
 
 const STYLES = `
-:root { color-scheme: light dark; font: 13px system-ui, sans-serif; }
-body { margin: 0; background: Canvas; color: CanvasText; }
-.bar { display: flex; gap: 12px; align-items: center; padding: 8px 12px; border-bottom: 1px solid color-mix(in srgb, CanvasText 15%, transparent); }
-.status { color: GrayText; } .status.ok { color: seagreen; } .status.err { color: crimson; }
-main { display: grid; grid-template-columns: minmax(280px, 420px) 1fr; gap: 16px; padding: 12px; }
-.pane { min-width: 0; }
-.row { display: grid; gap: 4px; margin-bottom: 10px; }
-.row span { font-weight: 600; }
-.row small { color: GrayText; }
-input, select, textarea { font: inherit; padding: 4px 6px; width: 100%; box-sizing: border-box; }
-.actions { display: flex; gap: 8px; align-items: center; }
-.muted { color: GrayText; }
-.items { list-style: none; margin: 0; padding: 0; }
-.items li { padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, CanvasText 10%, transparent); }
-.items li small { display: block; color: GrayText; }
-.small { font-size: 12px; }
-.err { color: crimson; }
-.ghost { background: transparent; border: 1px solid color-mix(in srgb, CanvasText 30%, transparent); }
-.shape-row { display: grid; grid-template-columns: 1fr 120px 28px; gap: 6px; margin-bottom: 6px; }
-.items li .label { margin-top: 6px; display: grid; gap: 4px; }
-.items li .label .field { display: grid; grid-template-columns: 110px 1fr; gap: 6px; align-items: center; }
-.items li .item-actions { display: flex; gap: 6px; margin-top: 4px; }
-.tag { font-size: 11px; padding: 1px 6px; border-radius: 8px; background: color-mix(in srgb, seagreen 25%, transparent); }
+/* Palette, font stack and dark theme come from /sdk/flowpad.css, linked by the
+   page — an editor embedded in Flowpad should look like Flowpad, so colour is
+   not a choice made here. What IS decided here: the two-pane split (what this
+   source IS, beside what came IN), mono as the utility face for machine values,
+   and the state rail on each item — the one place boldness is spent. */
+@layer base, panes, controls, items;
+
+@layer base {
+  body { font: 14px/1.55 var(--font-sans); }
+  h2 {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+    margin: 0 0 0.75rem;
+  }
+  .muted { color: hsl(var(--muted-foreground)); }
+  .small { font-size: 12px; }
+  .err { color: hsl(var(--destructive)); }
+  /* Machine values — ids, timestamps, the shape. Marking them apart from prose
+     is the one typographic idea this tool needs. */
+  .mono { font-family: var(--font-mono); font-size: 12px; }
+}
+
+@layer panes {
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1.25rem;
+    border-block-end: 1px solid hsl(var(--border));
+    background: hsl(var(--card));
+  }
+  .bar strong { font-size: 0.9375rem; }
+  .status {
+    margin-inline-start: auto;
+    font-size: 12px;
+    color: hsl(var(--muted-foreground));
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .status::before {
+    content: '';
+    inline-size: 6px;
+    block-size: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .status.ok { color: hsl(var(--brand)); }
+  .status.err { color: hsl(var(--destructive)); }
+
+  main {
+    display: grid;
+    grid-template-columns: minmax(300px, 26rem) 1fr;
+    align-items: start;
+    gap: 1.5rem;
+    padding: 1.25rem;
+  }
+  @media (width < 60rem) { main { grid-template-columns: 1fr; } }
+  .pane { min-width: 0; }
+  .pane + .pane { border-inline-start: 1px solid hsl(var(--border)); padding-inline-start: 1.5rem; }
+  @media (width < 60rem) {
+    .pane + .pane { border-inline-start: 0; padding-inline-start: 0; border-block-start: 1px solid hsl(var(--border)); padding-block-start: 1.25rem; }
+  }
+  .group + .group { margin-block-start: 1.75rem; }
+}
+
+@layer controls {
+  .row { display: grid; gap: 0.3rem; margin-block-end: 0.75rem; }
+  .row > span { font-weight: 500; font-size: 13px; }
+  .row small { color: hsl(var(--muted-foreground)); font-size: 12px; }
+
+  input, select, textarea {
+    font: inherit;
+    padding: 0.4rem 0.55rem;
+    inline-size: 100%;
+    color: hsl(var(--foreground));
+    background: hsl(var(--background));
+    border: 1px solid hsl(var(--input));
+    border-radius: var(--radius-sm);
+  }
+  textarea { resize: vertical; }
+  input::placeholder, textarea::placeholder { color: hsl(var(--muted-foreground)); }
+
+  button {
+    font: inherit;
+    font-weight: 500;
+    padding: 0.4rem 0.75rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    cursor: pointer;
+    &:hover { background: hsl(var(--primary) / 0.9); }
+    &:disabled { opacity: 0.5; cursor: default; }
+  }
+  /* Secondary, not invisible. Promote is the frequent, low-cost step, so it must
+     read as a button at a glance — transparent on a near-black canvas leaves only
+     a 1px border, which is indistinguishable from the row separators around it. */
+  button.ghost {
+    background: hsl(var(--secondary));
+    color: hsl(var(--secondary-foreground));
+    border-color: hsl(var(--border));
+    &:hover { background: hsl(var(--accent)); }
+  }
+  .actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+  .shape-row { display: grid; grid-template-columns: 1fr 8rem 2rem; gap: 0.4rem; margin-block-end: 0.4rem; }
+  .shape-row .ghost { padding-inline: 0; }
+}
+
+@layer items {
+  .items { list-style: none; margin: 0; padding: 0; }
+
+  /* The signature: a rail that tracks each item through the pipeline —
+     untouched, promoted to an example, then labelled. The state string is
+     already on the node for rendering, so the progression costs no extra JS and
+     the list is readable at a glance instead of one row at a time. */
+  .items li {
+    padding: 0.6rem 0 0.6rem 0.85rem;
+    border-block-end: 1px solid hsl(var(--border));
+    border-inline-start: 2px solid transparent;
+    &[data-state='promote'] { border-inline-start-color: hsl(var(--border)); }
+    &[data-state^='label:'] { border-inline-start-color: hsl(var(--muted-foreground) / 0.5); }
+    &[data-state$=':true'] { border-inline-start-color: hsl(var(--brand)); }
+  }
+  .item-title { font-weight: 500; text-wrap: pretty; }
+  .items li small {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: hsl(var(--muted-foreground));
+  }
+  .tag {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 0.05rem 0.4rem;
+    border-radius: 999px;
+    background: hsl(var(--secondary));
+    color: hsl(var(--secondary-foreground));
+  }
+  li[data-state$=':true'] .tag { background: hsl(var(--brand)); color: hsl(var(--brand-foreground)); }
+
+  .items li .item-actions { display: flex; gap: 0.5rem; align-items: center; margin-block-start: 0.5rem; }
+  .items li .label { margin-block-start: 0.6rem; display: grid; gap: 0.35rem; }
+  .items li .label .field {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.6rem;
+    align-items: center;
+    max-inline-size: 34rem;
+  }
+  .items li .label .field span { font-size: 12px; color: hsl(var(--muted-foreground)); }
+}
 `;
 
 const MARKUP = `
@@ -63,38 +195,66 @@ const MARKUP = `
   <span id="status" class="status">Connecting…</span>
 </header>
 <main id="main" hidden>
-  <section class="pane">
-    <label class="row">
-      <span>Source</span>
-      <select id="source" data-testid="spec-editor-source"></select>
-    </label>
-    <form id="form" data-testid="spec-editor-form"></form>
-    <div class="actions">
-      <button id="save" type="button" data-testid="spec-editor-save">Save config</button>
-      <span id="saved" class="muted"></span>
+  <section class="pane" aria-labelledby="config-heading">
+    <div class="group">
+      <h2 id="config-heading">Connection</h2>
+      <label class="row">
+        <span>Source</span>
+        <select id="source" data-testid="spec-editor-source"></select>
+      </label>
+      <form id="form" data-testid="spec-editor-form"></form>
+      <div class="actions">
+        <button id="save" type="button" data-testid="spec-editor-save">Save config</button>
+        <span id="saved" class="muted small"></span>
+      </div>
     </div>
 
-    <h2>Dataset <span id="dataset-counts" class="muted" data-testid="spec-editor-dataset-counts"></span></h2>
-    <p class="muted small">The output you want for each item. Rows are the items; labels are yours.</p>
-    <div id="dataset-existing" hidden>
-      <div class="row"><span id="dataset-title"></span><small id="dataset-shape" data-testid="spec-editor-dataset-shape"></small></div>
-    </div>
-    <form id="dataset-form" data-testid="spec-editor-dataset-form">
-      <label class="row"><span>Name</span><input id="dataset-name" data-testid="spec-editor-dataset-name" placeholder="labels" /></label>
-      <div id="shape-rows"></div>
-      <div class="actions">
-        <button id="shape-add" type="button" class="ghost" data-testid="spec-editor-shape-add">+ field</button>
-        <button id="dataset-create" type="button" data-testid="spec-editor-dataset-create">Define output</button>
-        <span id="dataset-error" class="err small"></span>
+    <div class="group">
+      <h2 id="output-heading">
+        Output <span id="dataset-counts" class="muted" data-testid="spec-editor-dataset-counts"></span>
+      </h2>
+      <p class="muted small">What you want recorded for each item. Rows are the items; the labels are yours.</p>
+      <div id="dataset-existing" hidden>
+        <div class="row">
+          <span id="dataset-title"></span>
+          <small class="mono" id="dataset-shape" data-testid="spec-editor-dataset-shape"></small>
+        </div>
       </div>
-    </form>
+      <form id="dataset-form" data-testid="spec-editor-dataset-form">
+        <label class="row">
+          <span>Name</span>
+          <input id="dataset-name" data-testid="spec-editor-dataset-name" placeholder="labels" />
+        </label>
+        <div id="shape-rows"></div>
+        <div class="actions">
+          <button id="shape-add" type="button" class="ghost" data-testid="spec-editor-shape-add">+ field</button>
+          <button id="dataset-create" type="button" data-testid="spec-editor-dataset-create">Define output</button>
+          <span id="dataset-error" class="err small"></span>
+        </div>
+      </form>
+    </div>
   </section>
-  <section class="pane">
-    <h2>Items <span id="count" class="muted"></span></h2>
+
+  <section class="pane" aria-labelledby="items-heading">
+    <h2 id="items-heading">Items <span id="count" class="muted"></span></h2>
     <ul id="items" class="items" data-testid="spec-editor-items"></ul>
   </section>
 </main>
 `;
+
+/** What to show in an empty label field.
+ *
+ * The field's own name already says what it holds, so a placeholder only earns
+ * its place when the SHAPE is not obvious — a list needs to show it is comma
+ * separated, a boolean needs its two words. Echoing the kind (`string`) would be
+ * naming the field by how the system stores it, which tells the person nothing
+ * they can act on. */
+function placeholderFor(kind: unknown): string {
+  if (Array.isArray(kind)) return 'a, b, c';
+  if (kind === 'bool') return 'true or false';
+  if (kind === 'int' || kind === 'float') return '0';
+  return '';
+}
 
 const splitList = (text: string, sep: string) => text.split(sep).map((s) => s.trim()).filter(Boolean);
 
@@ -151,6 +311,8 @@ function readInput(field: any, el: any): any {
  * which the caller may show — the shipped apps let it surface in the status bar.
  */
 export async function mountSourceEditor(root: HTMLElement = document.body): Promise<void> {
+  // Before any markup exists, so a dark host never shows a light flash.
+  applyHostTheme();
   const style = document.createElement('style');
   style.textContent = STYLES;
   document.head.append(style);
@@ -280,6 +442,9 @@ async function run($: (id: string) => HTMLElement, statusEl: HTMLElement): Promi
       // project (`?project=<id>`), else the SDK's current project.
       const projectParam = appOption('project');
       const projectTypeId = projectParam ? new TypeId('project', projectParam) : dataContext.projectTypeId;
+      // Saving with no scope would place the dataset outside every project, where
+      // the person's list never shows it — the app would look like it worked.
+      if (!projectTypeId) throw new Error('no project in scope to save this dataset into');
       const name = ($('dataset-name') as HTMLInputElement).value.trim() || `${current.name} labels`;
       await Dataset.forSource(current.id, name, output).save(projectTypeId);
     } catch (error: any) {
@@ -297,7 +462,9 @@ async function run($: (id: string) => HTMLElement, statusEl: HTMLElement): Promi
     if (has) {
       $('dataset-title').textContent = dataset.title || dataset.name;
       $('dataset-shape').textContent = JSON.stringify(dataset.outputShape ?? {});
-      $('dataset-counts').textContent = `(${dataset.num_examples ?? 0} examples · ${dataset.num_annotated ?? 0} labelled)`;
+      const examples = dataset.num_examples ?? 0;
+      $('dataset-counts').textContent =
+        `(${examples} ${examples === 1 ? 'example' : 'examples'} · ${dataset.num_annotated ?? 0} labelled)`;
     } else {
       $('dataset-counts').textContent = '';
       if (!shapeRows.length) addShapeRow('sentiment');
@@ -347,7 +514,7 @@ async function run($: (id: string) => HTMLElement, statusEl: HTMLElement): Promi
       l.textContent = name;
       const el = document.createElement('input');
       el.dataset.testid = `spec-editor-label-${name}`;
-      el.placeholder = Array.isArray(kind) ? 'a, b, c' : kind;
+      el.placeholder = placeholderFor(kind);
       f.append(l, el);
       box.append(f);
       fields.set(name, [kind, el]);
@@ -387,6 +554,7 @@ async function run($: (id: string) => HTMLElement, statusEl: HTMLElement): Promi
     title.className = 'item-title';
     title.textContent = item.name || item.external_id || item.id;
     const meta = document.createElement('small');
+    meta.className = 'mono';
     meta.textContent = [item.author_display, item.occurred_at].filter(Boolean).join(' · ');
     li.append(title, meta);
     return li;
@@ -442,7 +610,7 @@ async function run($: (id: string) => HTMLElement, statusEl: HTMLElement): Promi
             btn.disabled = false;
             btn.textContent = String(error?.message ?? error);
           }
-        }, { testId: `spec-editor-promote-${item.id}` });
+        }, { className: 'ghost', testId: `spec-editor-promote-${item.id}` });
         actions.append(btn);
         li.append(actions);
       }
