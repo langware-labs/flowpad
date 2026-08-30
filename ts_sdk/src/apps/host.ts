@@ -67,15 +67,51 @@ export function applyHostTheme(): 'light' | 'dark' {
   const prefersDark =
     typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
   const theme = (param ? param === 'dark' : prefersDark) ? 'dark' : 'light';
-  document.documentElement.classList.toggle('dark', theme === 'dark');
-  // The URL carries the theme for the FIRST paint only — it is frozen there,
+  applyHostSkin(theme, appOption('view'), appOption('primary'), appOption('primaryInk'));
+  // The URL carries the skin for the FIRST paint only — it is frozen there,
   // because the host addresses this frame by its src and re-addressing it would
   // reload the whole app to recolour it. Later changes arrive as a message, and
-  // recolouring is one class flip.
+  // recolouring is a class flip.
   window.addEventListener('message', (event) => {
-    const data = event.data as { type?: string; theme?: string } | null;
+    const data = event.data as
+      | { type?: string; theme?: string; view?: string; primary?: string; primaryInk?: string }
+      | null;
     if (data?.type !== 'flowpad:theme') return;
-    document.documentElement.classList.toggle('dark', data.theme === 'dark');
+    applyHostSkin(data.theme === 'dark' ? 'dark' : 'light', data.view ?? null, data.primary, data.primaryInk);
   });
+  // Ask the host for the current skin. The host cannot know when this document
+  // finished loading, and a message sent before this listener existed is gone —
+  // so the guest starts the exchange rather than hoping it was heard.
+  try {
+    window.parent?.postMessage({ type: 'flowpad:skin-please' }, '*');
+  } catch {
+    // No parent, or a host that does not speak this protocol: the URL seed and
+    // the OS preference already gave a correct-enough first paint.
+  }
   return theme;
+}
+
+/**
+ * Both axes of the host's appearance at once.
+ *
+ * The colour scheme is a class and the view mode is an attribute — the same two
+ * hooks `/sdk/flowpad.css` keys its four token blocks on, and the same ones the
+ * app writes on its own `<html>`. Setting only the scheme renders the desk skin
+ * inside a vibe window: squarer corners and the wrong primary colour.
+ */
+function applyHostSkin(
+  theme: 'light' | 'dark',
+  view: string | null,
+  primary?: string | null,
+  primaryInk?: string | null,
+): void {
+  const root = document.documentElement;
+  root.classList.toggle('dark', theme === 'dark');
+  if (view) root.setAttribute('data-view', view);
+  // `--primary` and its ink are the two tokens the app brands at RUNTIME rather
+  // than in its stylesheet (`useColorPalette` writes them inline from the site
+  // config), so the generated sheet cannot carry them and a white-labelled
+  // deployment would otherwise show its brand everywhere except inside its apps.
+  if (primary) root.style.setProperty('--primary', primary);
+  if (primaryInk) root.style.setProperty('--primary-foreground', primaryInk);
 }

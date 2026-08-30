@@ -161,9 +161,12 @@ _FLOWPAD_CSS_PREAMBLE = """/* Flowpad design tokens for statically served pages.
    sheet carries the same tokens as plain CSS. Colours are bare HSL triplets,
    used as hsl(var(--token)) exactly as the app uses them.
 
-   Light is :root; dark is .dark, the class next-themes writes on <html>. A page
-   shown inside Flowpad receives ?theme=light|dark — apply it to <html> before
-   first paint so there is no flash. */
+   The theme is TWO axes, because the app's is: the colour scheme (:root / .dark,
+   the class next-themes writes on <html>) and the view mode ([data-view='vibe'],
+   which is not a tint — it changes the primary colour, the corner radius and the
+   ring). A page shown inside Flowpad receives ?theme=light|dark and ?view=<mode>;
+   apply both to <html> before first paint so there is no flash and no skin
+   mismatch with the window around it. */
 """
 
 _FLOWPAD_CSS_EXTRAS = """
@@ -259,12 +262,14 @@ def extract_token_block(css: str, selector: str) -> str:
 
 def render_flowpad_css(css: str) -> str:
     """The full served stylesheet, from the app's own token source."""
-    return (
-        f"{_FLOWPAD_CSS_PREAMBLE}\n"
-        f":root {{\n{extract_token_block(css, ':root')}\n}}\n\n"
-        f".dark {{\n{extract_token_block(css, '.dark')}\n}}\n"
-        f"{_FLOWPAD_CSS_EXTRAS}"
+    # The four blocks the app declares, in its own selector spelling so the two
+    # files diff against each other. Order matters: the vibe pair must follow the
+    # base pair to win, exactly as it does in the app.
+    blocks = "\n\n".join(
+        f"{selector} {{\n{extract_token_block(css, selector)}\n}}"
+        for selector in (":root", ".dark", "[data-view='vibe']", ".dark[data-view='vibe']")
     )
+    return f"{_FLOWPAD_CSS_PREAMBLE}\n{blocks}\n{_FLOWPAD_CSS_EXTRAS}"
 
 
 def build_tokens_css(dest: Path | None = None) -> Path:
