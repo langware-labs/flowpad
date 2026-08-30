@@ -1724,10 +1724,9 @@ msgstr "الأرشيف"
 msgid "Are you sure you want to clear all data from the database? This will also clear the scan index. A backup will be created first."
 msgstr "هل أنت متأكد من رغبتك في مسح جميع البيانات من قاعدة البيانات؟ سيؤدي ذلك أيضاً إلى مسح فهرس الفحص. سيتم إنشاء نسخة احتياطية أولاً."
 
-#. placeholder {0}: itemToDelete?.name || ''
 #: src/components/directory-tree/DirectoryTree.tsx
-msgid "Are you sure you want to delete \"{0}\"? This cannot be undone."
-msgstr "تأكيد حذف \"{0}\"؟ لا يمكن التراجع عن هذا الإجراء."
+#~ msgid "Are you sure you want to delete \"{0}\"? This cannot be undone."
+#~ msgstr "تأكيد حذف \"{0}\"؟ لا يمكن التراجع عن هذا الإجراء."
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Are you sure?"
@@ -2739,8 +2738,8 @@ msgid "Claude Code hooks were removed from your settings."
 msgstr "تم إزالة خطافات Claude Code من إعداداتك."
 
 #: src/components/quick-create/QuickCreateMenu.tsx
-msgid "Claude Code session"
-msgstr "جلسة Claude Code"
+#~ msgid "Claude Code session"
+#~ msgstr "جلسة Claude Code"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Claude Code Status"
@@ -3217,8 +3216,8 @@ msgid "Codex (restored session)"
 msgstr "Codex (جلسة مستعادة)"
 
 #: src/components/quick-create/QuickCreateMenu.tsx
-msgid "Codex session"
-msgstr "جلسة Codex"
+#~ msgid "Codex session"
+#~ msgstr "جلسة Codex"
 
 #: src/i18n/type-labels.ts
 msgid "Codex Session"
@@ -3688,8 +3687,8 @@ msgid "Copilot"
 msgstr "Copilot"
 
 #: src/components/quick-create/QuickCreateMenu.tsx
-msgid "Copilot session"
-msgstr "جلسة Copilot"
+#~ msgid "Copilot session"
+#~ msgstr "جلسة Copilot"
 
 #: src/i18n/type-labels.ts
 msgid "Copilot Session"
@@ -4338,12 +4337,10 @@ msgid "Create bookmark on the recipient's desktop"
 msgstr "إنشاء اختصار على سطح مكتب المستلم"
 
 #: src/components/browseable-tree/adapters/skillFolder.tsx
-#: src/components/code-editor/CodeEditor.tsx
 msgid "Create File"
 msgstr "إنشاء ملف"
 
 #: src/components/browseable-tree/adapters/skillFolder.tsx
-#: src/components/code-editor/CodeEditor.tsx
 msgid "Create Folder"
 msgstr "إنشاء مجلد"
 
@@ -4365,7 +4362,6 @@ msgid "Create New Project"
 msgstr "إنشاء مشروع جديد"
 
 #: src/components/quick-create/DesktopSurface.tsx
-#: src/components/quick-create/QuickCreateMenu.tsx
 msgid "Create new…"
 msgstr "إنشاء جديد…"
 
@@ -4723,8 +4719,6 @@ msgstr "يفوّض إلى"
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/data-sources/SourceMenu.tsx
-#: src/components/directory-tree/DirectoryTree.tsx
-#: src/components/directory-tree/ItemHandler.tsx
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -4885,8 +4879,8 @@ msgid "Delete Hook"
 msgstr "حذف الخطاف"
 
 #: src/components/directory-tree/DirectoryTree.tsx
-msgid "Delete Item"
-msgstr "حذف العنصر"
+#~ msgid "Delete Item"
+#~ msgstr "حذف العنصر"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Delete key"
@@ -5340,8 +5334,8 @@ msgid "Discard unsaved changes and go back to inbox"
 msgstr "تجاهل التغييرات غير المحفوظة والعودة إلى الصندوق الوارد"
 
 #: src/hooks/useFS.ts
-msgid "Discarded unsaved edits"
-msgstr "تم تجاهل التعديلات غير المحفوظة."
+#~ msgid "Discarded unsaved edits"
+#~ msgstr "تم تجاهل التعديلات غير المحفوظة."
 
 #: src/components/account/user-info.tsx
 #: src/components/collaboration/LiveSessionView.tsx
@@ -5502,8 +5496,8 @@ msgid "Download all attachments"
 msgstr "تنزيل جميع المرفقات"
 
 #: src/components/code-editor/CodeEditor.tsx
-msgid "Download all files"
-msgstr "تنزيل جميع الملفات"
+#~ msgid "Download all files"
+#~ msgstr "تنزيل جميع الملفات"
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Download bundle"
@@ -5873,12 +5867,10 @@ msgid "Enter chat rules..."
 msgstr "إدخال قواعد الدردشة..."
 
 #: src/components/browseable-tree/adapters/skillFolder.tsx
-#: src/components/code-editor/CodeEditor.tsx
 msgid "Enter file name"
 msgstr "اسم الملف"
 
 #: src/components/browseable-tree/adapters/skillFolder.tsx
-#: src/components/code-editor/CodeEditor.tsx
 msgid "Enter folder name"
 msgstr "اسم المجلد"
 
@@ -6201,8 +6193,8 @@ msgid "Explore your organization and everything you can reach."
 msgstr "استكشاف مؤسستك وكل ما يمكنك الوصول إليه."
 
 #: src/components/code-editor/CodeEditor.tsx
-msgid "Explorer"
-msgstr "المستكشف"
+#~ msgid "Explorer"
+#~ msgstr "المستكشف"
 
 #: src/components/hooks-view/hooks-view.tsx
 msgid "Export"
@@ -6432,8 +6424,8 @@ msgstr "فشل تحميل الخطافات"
 #~ msgstr "تعذر تحميل ملف Markdown"
 
 #: src/components/directory-tree/ProjectsDirectoryTree.tsx
-msgid "Failed to load projects"
-msgstr "تعذر تحميل المشاريع"
+#~ msgid "Failed to load projects"
+#~ msgstr "تعذر تحميل المشاريع"
 
 #: src/components/assets/editor/ReportAssetShell.tsx
 msgid "Failed to load report: {error}"
@@ -6474,7 +6466,6 @@ msgstr "فشل فتح مجلد {folderType}"
 
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/quick-create/QuickCreateDialog.tsx
-#: src/components/quick-create/QuickCreateMenu.tsx
 msgid "Failed to open folder picker"
 msgstr "تعذر فتح منتقي المجلدات"
 
@@ -6569,7 +6560,6 @@ msgstr "فشل في بدء الاتصال بـ GitHub"
 #: src/components/conversation/useImplementPlan.ts
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/shared/transcript-features/useTranscriptSession.ts
-#: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Failed to start session"
 msgstr "تعذر بدء الجلسة"
@@ -6800,8 +6790,6 @@ msgstr "تصفية..."
 msgid "Filter…"
 msgstr "تصفية…"
 
-#: src/components/directory-tree/FilterDropdown.tsx
-#: src/components/directory-tree/FilterDropdown.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Filters"
 msgstr "المرشحات"
@@ -7088,8 +7076,8 @@ msgid "from first"
 msgstr "من الأول"
 
 #: src/components/quick-create/QuickCreateMenu.tsx
-msgid "From git"
-msgstr "من Git"
+#~ msgid "From git"
+#~ msgstr "من Git"
 
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "from the keychain"
@@ -7634,9 +7622,8 @@ msgid "Hide from Recent conversations"
 msgstr "إخفاء من المحادثات الأخيرة"
 
 #: src/components/code-editor/CodeEditor.tsx
-#: src/components/code-editor/CodeEditor.tsx
-msgid "Hide hidden files"
-msgstr "إخفاء الملفات المخفية"
+#~ msgid "Hide hidden files"
+#~ msgstr "إخفاء الملفات المخفية"
 
 #: src/components/navigator-panel/NavigatorPanel.tsx
 #: src/components/webapp-viewer.tsx
@@ -9015,7 +9002,6 @@ msgid "Loading project resources..."
 msgstr "جاري تحميل موارد المشروع..."
 
 #: src/components/assets/ProjectPickerModal.tsx
-#: src/components/directory-tree/ProjectsDirectoryTree.tsx
 msgid "Loading projects..."
 msgstr "جارٍ تحميل المشاريع..."
 
@@ -9099,8 +9085,6 @@ msgstr "جارٍ تحميل مستودعاتك…"
 
 #: src/components/account/db-stats.tsx
 #: src/components/browseable-tree/BrowseableTree.tsx
-#: src/components/directory-tree/DirectoryTree.tsx
-#: src/components/directory-tree/DirectoryTree.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/triggers-view/TriggerEditor.tsx
@@ -9868,7 +9852,6 @@ msgid "New contacts group"
 msgstr "مجموعة متصلين جديدة"
 
 #: src/components/browseable-tree/adapters/skillFolder.tsx
-#: src/components/directory-tree/ItemHandler.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New file"
 msgstr "ملف جديد"
@@ -9884,7 +9867,6 @@ msgstr "الملفات الجديدة ({0})"
 
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 #: src/components/browseable-tree/adapters/skillFolder.tsx
-#: src/components/directory-tree/ItemHandler.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
 #: src/components/quick-create/DesktopSurface.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -9924,7 +9906,6 @@ msgstr "إضافة خيار"
 #: src/components/open-project-component/project-actions-row.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
-#: src/components/quick-create/QuickCreateMenu.tsx
 msgid "New project"
 msgstr "مشروع جديد"
 
@@ -9961,7 +9942,6 @@ msgstr "محفز جدول زمني جديد"
 msgid "New Schedule Trigger"
 msgstr "مشغّل جدولة جديد"
 
-#: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "New session"
 msgstr "جلسة جديدة"
@@ -10128,7 +10108,6 @@ msgstr "لا توجد تعليقات حتى الآن."
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/quick-create/QuickCreateDialog.tsx
-#: src/components/quick-create/QuickCreateMenu.tsx
 msgid "No compute node available"
 msgstr "لا توجد عقدة حوسبة متاحة"
 
@@ -10174,8 +10153,8 @@ msgid "No conversations yet."
 msgstr "لا توجد محادثات بعد."
 
 #: src/components/quick-create/QuickCreateMenu.tsx
-msgid "No creatable types available"
-msgstr "لا توجد أنواع قابلة للإنشاء"
+#~ msgid "No creatable types available"
+#~ msgstr "لا توجد أنواع قابلة للإنشاء"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No data available"
@@ -10254,8 +10233,8 @@ msgid "No files open"
 msgstr "لا توجد ملفات مفتوحة"
 
 #: src/components/directory-tree/DirectoryTree.tsx
-msgid "No files or folders"
-msgstr "لا توجد ملفات أو مجلدات"
+#~ msgid "No files or folders"
+#~ msgstr "لا توجد ملفات أو مجلدات"
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "No findings found"
@@ -10626,8 +10605,8 @@ msgid "No room selected."
 msgstr "لا توجد غرفة مختارة."
 
 #: src/components/directory-tree/DirectoryTree.tsx
-msgid "No roots configured"
-msgstr "لم يتم تكوين أي جذور"
+#~ msgid "No roots configured"
+#~ msgstr "لم يتم تكوين أي جذور"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "No run"
@@ -11306,7 +11285,6 @@ msgstr ""
 msgid "Open externally: {childPath}"
 msgstr "فتح خارجياً: {childPath}"
 
-#: src/components/directory-tree/ItemHandler.tsx
 #: src/components/open-project-component/project-actions-row.tsx
 msgid "Open folder"
 msgstr "فتح المجلد"
@@ -11395,8 +11373,8 @@ msgid "Open in Skills tab"
 msgstr "فتح في تبويب المهارات"
 
 #: src/components/directory-tree/DirectoryTree.tsx
-msgid "Open in system file explorer"
-msgstr "فتح في مستكشف ملفات النظام"
+#~ msgid "Open in system file explorer"
+#~ msgstr "فتح في مستكشف ملفات النظام"
 
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/components/diagnose/open-in-terminal-button.tsx
@@ -11624,8 +11602,8 @@ msgid "OpenCode (restored session)"
 msgstr ""
 
 #: src/components/quick-create/QuickCreateMenu.tsx
-msgid "OpenCode session"
-msgstr ""
+#~ msgid "OpenCode session"
+#~ msgstr ""
 
 #: src/tabs/provider-meta.tsx
 msgid "OpenCode tab"
@@ -12377,12 +12355,10 @@ msgid "Progress"
 msgstr "التقدم"
 
 #: src/components/assets/context-folder-sources.tsx
-#: src/components/code-editor/CodeEditor.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
-#: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
@@ -12397,8 +12373,8 @@ msgid "Project .env.local"
 msgstr "ملف .env.local للمشروع"
 
 #: src/components/quick-create/QuickCreateMenu.tsx
-msgid "Project (local)"
-msgstr "مشروع (محلي)"
+#~ msgid "Project (local)"
+#~ msgstr "مشروع (محلي)"
 
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Project actions"
@@ -13013,7 +12989,6 @@ msgstr "مشار إليه لكنه غير موجود في جدول الكيان�
 #: src/components/code-editor/AssetCompareView.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
-#: src/components/directory-tree/ItemHandler.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
@@ -13723,7 +13698,6 @@ msgstr "القواعد"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/conversation/attachment-actions/registry.ts
-#: src/components/directory-tree/ItemHandler.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Run"
@@ -14475,7 +14449,6 @@ msgstr "يُرجى تحديد النص لإضافة رابط"
 msgid "Select when this hook should run"
 msgstr "تحديد وقت تشغيل هذا الخطاف"
 
-#: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
 msgid "Select…"
 msgstr "اختيار…"
@@ -15011,8 +14984,8 @@ msgid "Show harness-generated entries (SYS) hidden from the standard list"
 msgstr "عرض الإدخالات الناتجة عن Harness (SYS) المخفية عن القائمة القياسية"
 
 #: src/components/code-editor/CodeEditor.tsx
-msgid "Show hidden files"
-msgstr "إظهار الملفات المخفية"
+#~ msgid "Show hidden files"
+#~ msgstr "إظهار الملفات المخفية"
 
 #: src/components/top-nav-bar/AddressField.tsx
 msgid "Show hidden path segments"
@@ -15958,7 +15931,6 @@ msgstr "إجراء التنظيف"
 msgid "Sweeping…"
 msgstr "جارٍ التنظيف…"
 
-#: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/status-bar.tsx
@@ -16517,6 +16489,10 @@ msgstr "لا يوجد مسار ملف لهذا الأصل."
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This can take up to a minute if it was asleep."
 msgstr "قد يستغرق هذا حتى دقيقة واحدة إذا كانت في وضع السكون."
+
+#: src/components/code-editor/CodeEditor.tsx
+#~ msgid "This cannot be undone."
+#~ msgstr ""
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "This chat has no resumable session."

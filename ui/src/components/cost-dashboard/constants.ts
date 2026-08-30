@@ -14,7 +14,8 @@ export type ValueFormat = 'currency' | 'tokens' | 'number';
 
 export interface CostCategory {
   id: string;
-  label: string;
+  /** Lazy lingui descriptor — render with `i18n._(...)`. */
+  label: MessageDescriptor;
   icon: LucideIcon;
   color: string;
   bgColor: string;
@@ -86,7 +87,7 @@ export const COST_CATEGORIES: CostCategory[] = [
 /**
  * Time cohort definitions for filtering.
  */
-export const TIME_COHORTS: { id: TimeCohort; label: string }[] = [
+export const TIME_COHORTS: { id: TimeCohort; label: MessageDescriptor }[] = [
   { id: 'today', label: msg`Today` },
   { id: 'thisWeek', label: msg`Week` },
   { id: 'thisMonth', label: msg`Month` },
