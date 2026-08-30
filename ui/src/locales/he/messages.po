@@ -9512,7 +9512,6 @@ msgid "Message Attachment"
 msgstr "קובץ מצורף להודעה"
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
-#: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 msgid "Message not queued"
 msgstr "ההודעה לא נוספה לתור"
 
