@@ -1,24 +1,16 @@
 import type { Bookmark } from '@sdk';
+import { formatTimeAgo as canonicalTimeAgo } from '@src/utils/format-time-ago';
 
 // ---------------------------------------------------------------------------
 // Formatters
 // ---------------------------------------------------------------------------
 
+/**
+ * Re-export of the canonical formatter with this module's empty-string
+ * convention (its callers drop the result straight into JSX).
+ */
 export function formatTimeAgo(value?: string | null): string {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-
-  const diffMs = Date.now() - date.getTime();
-  const diffMinutes = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMinutes / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffMinutes < 1) return 'just now';
-  if (diffMinutes < 60) return `${diffMinutes}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return canonicalTimeAgo(value) ?? '';
 }
 
 // ---------------------------------------------------------------------------

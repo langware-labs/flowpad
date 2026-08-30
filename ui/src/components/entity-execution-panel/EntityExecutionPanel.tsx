@@ -39,12 +39,8 @@ import { ChatActivityLine } from './ChatActivityLine';
 import { TurnEventChip } from '@src/components/floating-chat/TurnEventChip';
 import { useObservedTurn } from './hooks/useObservedTurn';
 import { useTurnActivity } from './hooks/useTurnActivity';
-import {
-  buildHistorySubline,
-  pickHistoryTitle,
-  timeAgo as historyTimeAgo,
-  WorkerIcon as HistoryWorkerIcon,
-} from './history-row';
+import { buildHistorySubline, pickHistoryTitle, WorkerIcon as HistoryWorkerIcon } from './history-row';
+import { formatTimeAgoShort } from '@src/utils/format-time-ago';
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { selectHistoryProcesses } from './history-processes';
 import { useProcessesForTarget } from './hooks/useProcessesForTarget';
@@ -1068,7 +1064,7 @@ function ExecutionHistoryHeader({
             const subline = buildHistorySubline(entry);
             // `updated_date` / `created_date` can come through as either an
             // ISO string or a Date depending on how the entity was hydrated;
-            // normalize to ISO so `timeAgo` can parse uniformly.
+            // normalize to ISO so `formatTimeAgoShort` can parse uniformly.
             const lastActiveRaw = entry?.last_active_time ?? p.updated_date ?? p.created_date ?? null;
             const lastActive: string | null =
               lastActiveRaw == null
@@ -1093,7 +1089,7 @@ function ExecutionHistoryHeader({
                   />
                   <span className="min-w-0 flex-1 truncate text-xs font-medium">{title}</span>
                   <span className="flex-shrink-0 text-[10px] tabular-nums text-muted-foreground">
-                    {historyTimeAgo(lastActive)}
+                    {formatTimeAgoShort(lastActive)}
                   </span>
                   {p.id && (
                     <button

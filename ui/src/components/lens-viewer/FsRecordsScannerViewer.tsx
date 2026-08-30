@@ -5,6 +5,7 @@ import { SearchResultCard } from '@src/components/record-search-bar/SearchResult
 import { ActivityIndicator } from '@src/components/search-index/ActivityIndicator';
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { useSystemTools } from '@src/hooks/use-system-tools';
+import { formatBytes } from '@src/utils/format-bytes';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
@@ -122,11 +123,9 @@ interface AggregateScan {
   diff_included?: boolean;
 }
 
+/** Shared formatter, plus this screen's "no bytes at all" glyph. */
 function fmtBytes(n: number): string {
-  if (n === 0) return '—';
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return n ? formatBytes(n) : '—';
 }
 
 function fmtMs(ms: number): string {

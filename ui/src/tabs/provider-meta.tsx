@@ -8,6 +8,7 @@ import type { MessageDescriptor } from '@lingui/core';
  * breaks Vite Fast Refresh) and a circular controller↔row-item import.
  */
 import { AgenticProcess, getDisplayStatus, isProcessRunning, ProcessStatus, Tab, TypeId } from '@sdk';
+import { formatTimeAgoShort } from '@src/utils/format-time-ago';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
@@ -43,19 +44,6 @@ export const PROVIDER_META: Record<
 export function providerMetaFor(workerType: string | undefined | null) {
   const key = workerType === 'claude_code' ? 'claude' : workerType;
   return PROVIDER_META[key as keyof typeof PROVIDER_META] ?? PROVIDER_META.claude;
-}
-
-function timeAgo(date: Date | string | undefined | null): string {
-  if (!date) return '—';
-  const d = typeof date === 'string' ? new Date(date) : date;
-  const seconds = Math.floor((Date.now() - d.getTime()) / 1000);
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
 }
 
 function formatDateTime(date: Date | string | undefined | null): string {
@@ -114,8 +102,14 @@ const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: str
         </p>
       )}
       <div className="space-y-1 border-t pt-1.5">
-        <InfoRow label="Created" value={`${formatDateTime(process.created_date)} · ${timeAgo(process.created_date)}`} />
-        <InfoRow label="Updated" value={`${formatDateTime(process.updated_date)} · ${timeAgo(process.updated_date)}`} />
+        <InfoRow
+          label="Created"
+          value={`${formatDateTime(process.created_date)} · ${formatTimeAgoShort(process.created_date)}`}
+        />
+        <InfoRow
+          label="Updated"
+          value={`${formatDateTime(process.updated_date)} · ${formatTimeAgoShort(process.updated_date)}`}
+        />
         {workerSessionId && <InfoRow label="Session" value={workerSessionId.slice(0, 8) + '…'} />}
       </div>
     </div>
@@ -239,13 +233,22 @@ export const ContentTabTooltip: React.FC<{
       )}
       <div className="space-y-1 border-t pt-1.5">
         {tab.created_date && (
-          <InfoRow label="Opened" value={`${formatDateTime(tab.created_date)} · ${timeAgo(tab.created_date)}`} />
+          <InfoRow
+            label="Opened"
+            value={`${formatDateTime(tab.created_date)} · ${formatTimeAgoShort(tab.created_date)}`}
+          />
         )}
         {tab.updated_date && (
-          <InfoRow label="Updated" value={`${formatDateTime(tab.updated_date)} · ${timeAgo(tab.updated_date)}`} />
+          <InfoRow
+            label="Updated"
+            value={`${formatDateTime(tab.updated_date)} · ${formatTimeAgoShort(tab.updated_date)}`}
+          />
         )}
         {lastActive != null && lastActive !== '' && (
-          <InfoRow label="Active" value={timeAgo(typeof lastActive === 'number' ? new Date(lastActive) : lastActive)} />
+          <InfoRow
+            label="Active"
+            value={formatTimeAgoShort(typeof lastActive === 'number' ? new Date(lastActive) : lastActive)}
+          />
         )}
       </div>
     </div>
