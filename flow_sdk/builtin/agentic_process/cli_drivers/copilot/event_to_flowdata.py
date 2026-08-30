@@ -14,6 +14,12 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
 )
 from flow_sdk.transcript_analyzer.entries import AssistantMessageEntry
 from flow_sdk.transcript_analyzer.parsers.copilot import CopilotParser
+from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import (
+    error_frame,
+    final_end_frame,
+    safe_dump,
+    status_frame,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +50,7 @@ class CopilotEventConverter:
             entries = self._parser.feed(event, self._line_index)
         except Exception:
             logger.debug("copilot_event_to_flowdata: parse failed", exc_info=True)
-            return [_status("parse-error", _safe_dump(event))]
+            return [status_frame("parse-error", safe_dump(event))]
         finally:
             self._line_index += 1
 
@@ -57,7 +63,7 @@ class CopilotEventConverter:
                     continue
             out.append(_wrap_live(entry))
         if not out:
-            return [_status(str(event_type) or "unknown", _safe_dump(event))]
+            return [status_frame(str(event_type) or "unknown", safe_dump(event))]
         return out
 
     def convert_line(self, line: str) -> list[FlowData]:
@@ -78,7 +84,7 @@ class CopilotEventConverter:
         message_id = str(data.get("messageId") or event.get("id") or "")
         delta = str(data.get("deltaContent") or "")
         if not delta:
-            return [_status("assistant.message_delta", _safe_dump(event))]
+            return [status_frame("assistant.message_delta", safe_dump(event))]
         if message_id:
             self._message_ids_with_deltas.add(message_id)
         entry = AssistantMessageEntry(
@@ -98,7 +104,7 @@ class CopilotEventConverter:
         reasoning_id = str(data.get("reasoningId") or event.get("id") or "")
         delta = str(data.get("deltaContent") or "")
         if not delta:
-            return [_status("assistant.reasoning_delta", _safe_dump(event))]
+            return [status_frame("assistant.reasoning_delta", safe_dump(event))]
         if reasoning_id:
             self._reasoning_ids_with_deltas.add(reasoning_id)
         entry = AssistantMessageEntry(
@@ -131,16 +137,6 @@ def convert_line(line: str) -> list[FlowData]:
     return _default_converter.convert_line(line)
 
 
-def final_end_frame() -> FlowData:
-    return FlowData(
-        flow_value="",
-        attributes={
-            "element-type": FlowElementType.END,
-            "data-type": FlowDataType.TEXT,
-        },
-    )
-
-
 def flowpad_terminal_event_frames(event: dict[str, Any]) -> list[FlowData] | None:
     """Convert a Flowpad-authored Copilot terminal marker for live or replay."""
     event_type = event.get("type")
@@ -154,7 +150,7 @@ def flowpad_terminal_event_frames(event: dict[str, Any]) -> list[FlowData] | Non
         return [abort_status_frame(), final_end_frame()]
     if event_type == "flowpad.error":
         message = str(event.get("message") or "copilot exited with an error")
-        return [_error(message), final_end_frame()]
+        return [error_frame(message), final_end_frame()]
     return None
 
 
@@ -197,29 +193,3 @@ def _result(event: dict[str, Any]) -> list[FlowData]:
     ]
 
 
-def _status(subtype: str, value: str = "") -> FlowData:
-    return FlowData(
-        flow_value=value,
-        attributes={
-            "element-type": FlowElementType.STATUS,
-            "data-type": FlowDataType.TEXT,
-            "subtype": subtype,
-        },
-    )
-
-
-def _error(message: str) -> FlowData:
-    return FlowData(
-        flow_value=message,
-        attributes={
-            "element-type": FlowElementType.ERROR,
-            "data-type": FlowDataType.TEXT,
-        },
-    )
-
-
-def _safe_dump(obj: Any) -> str:
-    try:
-        return json.dumps(obj, default=str)[:400]
-    except (TypeError, ValueError):
-        return str(obj)[:400]
