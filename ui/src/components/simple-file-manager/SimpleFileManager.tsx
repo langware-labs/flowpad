@@ -1191,7 +1191,7 @@ export function SimpleFileManager({
         </div>
       )}
 
-      {/* Delete Dialog - for file list selection only (tree deletion handled by DirectoryTree) */}
+      {/* Delete Dialog - for file list selection only (the tree deletes through its own toolbar) */}
       {showDeleteDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-80 rounded-lg bg-background p-4 shadow-lg">

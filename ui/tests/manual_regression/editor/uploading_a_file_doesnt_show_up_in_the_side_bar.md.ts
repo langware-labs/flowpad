@@ -37,9 +37,10 @@ test.describe('File explorer sidebar shows file contents (FLOWPAD-1654)', () => 
     // The explorer's sidebar/tree panel is present and surfaces the directory
     // structure. `/dock/explorer` renders the ExplorerNavigator (NavigatorPanel,
     // testid `navigator-panel-explorer`) as its sidebar and a `browseable-*` fs
-    // tree — NOT the `directory-tree` component (whose `directory-tree-filters-button`
-    // only exists in the CodeEditor / execute-flow views), so assert the real panel
-    // and that at least one filesystem tree entry (the VFS root chevron) is present.
+    // tree. (This note used to contrast with a separate `directory-tree`
+    // component; the code editor now builds on the same browseable tree, so
+    // there is only one.) Assert the real panel and that at least one
+    // filesystem tree entry (the VFS root chevron) is present.
     const sidebar = page.locator('[data-testid="navigator-panel-explorer"]');
     await expect(sidebar).toBeAttached({ timeout: 10_000 });
     await expect(
