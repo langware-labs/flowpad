@@ -550,42 +550,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return workspaces;
   }
 
-  /** The getter installed by THIS class, for the own-mirror guard below. */
-  private static readonly baseIconGetter = Object.getOwnPropertyDescriptor(
-    APIEntity.prototype,
-    'icon',
-  )?.get;
-
-  /** The `icon` getter an instance actually resolves, walking the prototype chain. */
-  private static resolveIconAccessor(instance: object): (() => unknown) | undefined {
-    for (let o = Object.getPrototypeOf(instance); o; o = Object.getPrototypeOf(o)) {
-      const d = Object.getOwnPropertyDescriptor(o, 'icon');
-      if (d) return d.get;
-    }
-    return undefined;
-  }
-
   constructor(entityJson: any = {}) {
-    // Install `icon` as an OWN enumerable accessor before deepAssign runs: the
-    // prototype pair above already stops the assignment from throwing, but a
-    // prototype accessor is invisible to anything that serializes an entity by
-    // enumerating own properties (`toJSON`), and the `_icon` backing field is
-    // underscore-skipped.
-    //
-    // ONLY when the accessor this instance resolves is still THIS one. A
-    // subclass may override `icon` with a computed getter — `AgenticProcess`
-    // derives its glyph from `worker_type` — and an own property would shadow
-    // that override for the life of the instance.
-    if (APIEntity.resolveIconAccessor(this) === APIEntity.baseIconGetter) {
-      Object.defineProperty(this, 'icon', {
-        enumerable: true,
-        configurable: true,
-        get: () => this._icon ?? (this.constructor as typeof APIEntity).icon,
-        set: (value: string | null | undefined) => {
-          this._icon = value ?? null;
-        },
-      });
-    }
     dataManager.deepAssign(this, entityJson);
     this.id = entityJson.id || uuidv4();
     if (entityJson.type && entityJson.type != this.getType()) {
@@ -828,6 +793,24 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
           baseObject[key] = value;
         }
       }
+    }
+
+    // `icon` is a prototype ACCESSOR over `_icon` (falling back to the class's
+    // static TypeInfo glyph), so the own-property loop above cannot see it and
+    // the `_icon` backing field is underscore-skipped. Emit it here, under
+    // exactly the filters that loop applies.
+    //
+    // This used to be done by installing an own enumerable accessor on every
+    // instance in the constructor. Measured, that cost ~300-430ns and ~176
+    // bytes per entity — on the hottest constructor in the app — and it needed
+    // a prototype-chain guard so it would not shadow a subclass override.
+    if (
+      baseObject.icon === undefined &&
+      !SERVER_MANAGED_SAVE_FIELDS.has('icon') &&
+      (!this.schema || this.isDbField('icon'))
+    ) {
+      const icon = this.icon;
+      if (icon !== undefined) baseObject.icon = icon;
     }
 
     // delete baseObject.expand?.roles;

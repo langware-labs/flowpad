@@ -925,10 +925,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * React component via the ``pickProcessIcon`` registry. Two axes drive
    * the choice:
    *
+   * NOT named ``icon``: that is `APIEntity`'s per-row/TypeInfo glyph, a
+   * different concept. Sharing the name shadowed the base accessor pair and
+   * cost a per-construction reflection guard to work around.
+   *
    * - **vendor**: ``worker_type`` ('claude' / 'codex' / 'copilot' / fallback)
    * - **state**: fresh-start vs ``wasRestoredFromSession``
    */
-  get icon(): ProcessIconKey {
+  get processIconKey(): ProcessIconKey {
     const wt = (this.worker_type ?? '').toLowerCase();
     const restored = this.wasRestoredFromSession;
     if (wt === 'codex') return restored ? 'codex-restore' : 'codex';

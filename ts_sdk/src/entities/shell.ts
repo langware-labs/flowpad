@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { isApiError } from '../ApiResponse';
 import { dataContext } from '../FlowSync/context';
@@ -77,7 +78,7 @@ export interface IShell extends IEntity {
  * This interface makes them part of the class type.
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Shell extends Omit<IShell, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface Shell extends EntityMerge<IShell> {}
 
 @registerEntity
 export class Shell extends APIEntity<Shell> implements IShell {

@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 
@@ -17,7 +18,7 @@ export interface IInboxManager extends IEntity {
 // field declared solely on IInboxManager read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface InboxManager extends Omit<IInboxManager, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface InboxManager extends EntityMerge<IInboxManager> {}
 
 @registerEntity
 export class InboxManager extends APIEntity<InboxManager> implements IInboxManager {

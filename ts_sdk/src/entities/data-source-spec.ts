@@ -10,6 +10,7 @@
  * comes from the backend, so a new source lights the form up without a
  * frontend release.
  */
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 
@@ -61,7 +62,7 @@ export interface IDataSourceSpec extends IEntity {
 // field declared solely on IDataSourceSpec read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface DataSourceSpec extends Omit<IDataSourceSpec, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface DataSourceSpec extends EntityMerge<IDataSourceSpec> {}
 
 @registerEntity
 export class DataSourceSpec extends APIEntity<DataSourceSpec> implements IDataSourceSpec {

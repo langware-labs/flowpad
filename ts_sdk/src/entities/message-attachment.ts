@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, dataManager, registerEntity, type ReceiveShowTarget } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
@@ -63,7 +64,7 @@ export interface IMessageAttachment extends IEntity {
 // field declared solely on IMessageAttachment read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface MessageAttachment extends Omit<IMessageAttachment, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface MessageAttachment extends EntityMerge<IMessageAttachment> {}
 
 @registerEntity
 export class MessageAttachment extends APIEntity<MessageAttachment> implements IMessageAttachment {

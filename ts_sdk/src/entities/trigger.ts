@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { QueryRequest } from '../FlowSync/query';
 import { IEntity } from '../IEntity';
@@ -41,7 +42,7 @@ export interface ITrigger extends IEntity {
 // field declared solely on ITrigger read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Trigger extends Omit<ITrigger, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface Trigger extends EntityMerge<ITrigger> {}
 
 /**
  * Entity representing a trigger that matches hook data and executes actions

@@ -1,4 +1,4 @@
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
 
 export interface IVisitor extends IEntity {
@@ -11,7 +11,7 @@ export interface IVisitor extends IEntity {
 // field declared solely on IVisitor read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Visitor extends Omit<IVisitor, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface Visitor extends EntityMerge<IVisitor> {}
 
 @registerEntity
 export class Visitor extends APIEntity<Visitor> implements IVisitor {

@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../../IEntity';
 import { APIEntity, isNonEmptyString, registerEntity } from '../../APIEntity';
 import type { IEntity } from '../../IEntity';
 import { DockPointerData } from '../../models/DockPointer';
@@ -68,7 +69,7 @@ function kindFromLegacy(type: string | null | undefined): string {
 // field declared solely on IArtifact read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Artifact extends Omit<IArtifact, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface Artifact extends EntityMerge<IArtifact> {}
 
 /**
  * Artifact describes what something is, how it composes through canonical

@@ -324,8 +324,29 @@ function viewModeFromLocation(): ViewMode | null {
 // Keep `data-view` in sync with prefMan: on import (first paint) and on every change,
 // including a cross-device backend value reconciled in on load. The URL's mode
 // outranks the stored preference on that first paint (see viewModeFromLocation).
-applyAttribute(viewModeFromLocation() ?? getViewMode(), false);
-onPreferenceChange(() => applyAttribute(getEffectiveViewMode()));
+/**
+ * The mode the `data-view` ATTRIBUTE should show right now.
+ *
+ * Deliberately NOT `getEffectiveViewMode()`: that is
+ * `dockViewModeOverride ?? getViewMode()`, and the override is null until the
+ * dock mounts, so every preference-change tick repainted the attribute from the
+ * STORED preference — silently undoing the URL-first first paint below.
+ * (`/dock/desktop?viewMode=vibe` painted `vibe`, then the next pref event
+ * repainted `standard`.) The URL sits between the two: a mounted dock override
+ * still wins, otherwise the address decides, and only then the stored value.
+ *
+ * Scoped to the attribute ON PURPOSE. Seeding `dockViewModeOverride` from the
+ * URL instead was tried and reverted: that value also feeds `openDock`'s
+ * canonicalization, and pinning it there broke pointer routing (dock_sweep went
+ * 2 failures -> 8-9, landing on the wrong paths). Painting is presentation;
+ * routing is not.
+ */
+function attributeViewMode(): ViewMode {
+  return dockViewModeOverride ?? viewModeFromLocation() ?? getViewMode();
+}
+
+applyAttribute(attributeViewMode(), false);
+onPreferenceChange(() => applyAttribute(attributeViewMode()));
 
 defineGlobal('setView', setViewMode);
 defineGlobal('getView', getViewMode);

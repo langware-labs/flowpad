@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { QueryRequest } from '../FlowSync/query';
 import { IEntity } from '../IEntity';
@@ -25,7 +26,7 @@ export interface IAgentHook extends IEntity {
 // field declared solely on IAgentHook read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface AgentHook extends Omit<IAgentHook, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface AgentHook extends EntityMerge<IAgentHook> {}
 
 /**
  * Entity representing a provider-agnostic agent hook configuration

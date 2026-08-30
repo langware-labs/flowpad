@@ -1,11 +1,12 @@
 declare global {
   interface Window {
     /** DEV-only per-nav perf T0, stamped on the home rail click. Sibling of
-     *  `__shellNavT0` (declared in InteractiveTerminal). */
+     *  `__shellNavT0`, which is declared by its owner, `routes/loaders/_perf.ts`. */
     __homeNavT0?: number;
   }
 }
 
+import { markPerfT0, perfLog } from '@src/routes/loaders/_perf';
 import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
 import { FlowpadAssistantButton } from '@src/components/floating-chat';
 import { useIsDev, useViewMode, ViewMode } from '@src/components/view-mode';
@@ -159,9 +160,9 @@ export function CollapsedSidebar() {
         // lagging `currentView` — `openDock` dedupes on the pointer itself.
         navigation.goHome();
       } else {
-        if (import.meta.env.DEV && viewType === ViewType.SHELL) {
-          window.__shellNavT0 = performance.now();
-          console.log('[PERF] +0ms shell icon clicked');
+        if (viewType === ViewType.SHELL) {
+          markPerfT0();
+          perfLog('shell icon clicked');
         }
         // Assets is scope-aware: open the scope-keyed assets tab — the current
         // project's scope when a project is active (tab "<project>'s Assets"),

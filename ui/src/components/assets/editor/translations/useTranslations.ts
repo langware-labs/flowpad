@@ -7,9 +7,8 @@ import {
   ProcessKind,
   type APIEntity,
   type Translation,
+  type FSRefJson,
 } from '@sdk';
-// Not re-exported from the '@sdk' barrel (index.ts exports the FSRef class only).
-import type { FSRefJson } from '@sdk/fs/FSRef';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { runSkillWorker } from '@src/components/assets/editor/skill/skill-eval-analysis';

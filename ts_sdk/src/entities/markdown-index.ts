@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 
@@ -21,7 +22,7 @@ export interface IMarkdownIndex extends IEntity {
 // field declared solely on IMarkdownIndex read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface MarkdownIndex extends Omit<IMarkdownIndex, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface MarkdownIndex extends EntityMerge<IMarkdownIndex> {}
 
 /**
  * MarkdownIndex entity — single-file `index.md` representing a Merkle-tree

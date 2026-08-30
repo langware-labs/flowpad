@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import type { GitOrigin } from '../models/GitOrigin';
@@ -14,7 +15,7 @@ export interface IFolder extends IEntity {
 // field declared solely on IFolder read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Folder extends Omit<IFolder, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface Folder extends EntityMerge<IFolder> {}
 
 /**
  * Folder — a first-class entity referencing a filesystem directory (project

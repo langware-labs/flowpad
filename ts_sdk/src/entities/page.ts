@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { TypeId } from '../FlowSync';
 import { IEntity } from '../IEntity';
@@ -27,7 +28,7 @@ export interface IPage extends IEntity {
 // field declared solely on IPage read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Page extends Omit<IPage, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface Page extends EntityMerge<IPage> {}
 
 @registerEntity
 export class Page extends APIEntity<Page> implements IPage {

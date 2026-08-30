@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../../IEntity';
 import { APIEntity, registerEntity } from '../../APIEntity';
 import { IEntity } from '../../IEntity';
 import type { JourneyGraph } from './journey-graph';
@@ -27,7 +28,7 @@ export interface IJourneyJournal extends IEntity {
 // field declared solely on IJourneyJournal read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface JourneyJournal extends Omit<IJourneyJournal, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface JourneyJournal extends EntityMerge<IJourneyJournal> {}
 
 /**
  * Per-user progress through a `Journey` — and THE object every journey

@@ -3,6 +3,7 @@
  * (flow_sdk/builtin/source_item.py). Read-mostly: the drivers write these;
  * the UI and editor apps list, star and mark them read.
  */
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 
@@ -28,7 +29,7 @@ export interface ISourceItem extends IEntity {
 // field declared solely on ISourceItem read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface SourceItem extends Omit<ISourceItem, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface SourceItem extends EntityMerge<ISourceItem> {}
 
 @registerEntity
 export class SourceItem extends APIEntity<SourceItem> implements ISourceItem {

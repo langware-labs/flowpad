@@ -6,6 +6,7 @@
  * that is the origin enum on a trace's FlowData (stream | history | …) and has
  * nothing to do with ingestion. See docs/glossary.md.
  */
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 
@@ -51,7 +52,7 @@ export interface IDataSource extends IEntity {
 // field declared solely on IDataSource read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface DataSource extends Omit<IDataSource, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface DataSource extends EntityMerge<IDataSource> {}
 
 @registerEntity
 export class DataSource extends APIEntity<DataSource> implements IDataSource {

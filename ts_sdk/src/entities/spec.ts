@@ -1,3 +1,4 @@
+import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
 import { TypeId } from '../models/TypeId';
 import { IEntity } from '../IEntity';
@@ -14,7 +15,7 @@ export interface ISpec extends IEntity {
 // field declared solely on ISpec read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Spec extends Omit<ISpec, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface Spec extends EntityMerge<ISpec> {}
 
 @registerEntity
 export class Spec extends APIEntity<Spec> implements ISpec {

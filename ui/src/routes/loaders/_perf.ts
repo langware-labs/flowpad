@@ -8,8 +8,16 @@
 
 import { toplog } from '@sdk';
 
-/** The window key this module stamps. `Window.__shellNavT0` is declared in
- *  `components/terminal/interactive-terminal/InteractiveTerminal.tsx` — the reader. */
+declare global {
+  interface Window {
+    /** Per-nav perf T0, stamped by `markPerfT0()` below and read by `perfLog()`
+     *  / `perfTime()`. Declared HERE, in the module that owns and stamps the
+     *  key, rather than in one of its readers. */
+    __shellNavT0?: number;
+  }
+}
+
+/** The window key this module stamps. */
 export const PERF_T0_KEY = '__shellNavT0';
 
 function readT0(): number | undefined {
