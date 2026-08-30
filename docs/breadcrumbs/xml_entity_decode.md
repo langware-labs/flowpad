@@ -123,31 +123,10 @@ rewrote raw transcript text, and a decoded quote closed a JSON string early:
 SyntaxError: Expected ',' or '}' after property value in JSON at position 29
 ```
 
-**A CI that only streams cannot see this.** Live streaming is correctly paired
-and stays green no matter how wrong the decoder is. The bug lives exclusively on
-replay, so any test guarding this must enter through `loadHistory`, not through
-the stream parser.
-
 **The quadratic re-parse.** `parseChunk` calls the decoder twice per chunk
 (`flow-data.ts:164` on the delta, `:180` on the whole accumulated buffer). With
 the textarea that was \~5M characters pushed through the HTML parser to deliver a
 20KB message. Restoring any per-call-allocating decoder brings this back.
-
-## Known residual — do not mistake for fixed
-
-The decode on the history path is **still unpaired**. Narrowing the alphabet made
-every quote spelling inert, so it can no longer break JSON structure or drop a
-replay — but a transcript containing a literal `&lt;` or `&amp;` is *still*
-rewritten on replay. The same message therefore renders differently live than
-after a reload. Closing that means not decoding history rows at all: let object
-rows reach the `flow-data.ts:254` early-return instead of being stringified at
-`:601`. That is blocked on the note at `flow-data.ts:594` — previews, reconcile
-fallback keys and `parseChunk` all assume `content` is a string.
-
-Separately, `flow_sdk/discovery/notify.py:177` **double-decodes**:
-`ET.fromstring` already resolves entities, and `html.unescape` then runs over the
-result. Its `except (json.JSONDecodeError, ValueError)` hides this — an object row
-silently degrades to a mangled string rather than raising.
 
 ## Related
 
