@@ -21,6 +21,12 @@ export interface IAgentHook extends IEntity {
   project_id?: string;
 }
 
+// `implements IAgentHook` only checks the class; it contributes no members, so every
+// field declared solely on IAgentHook read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface AgentHook extends Omit<IAgentHook, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 /**
  * Entity representing a provider-agnostic agent hook configuration
  */

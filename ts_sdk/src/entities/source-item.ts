@@ -24,6 +24,12 @@ export interface ISourceItem extends IEntity {
   starred?: boolean;
 }
 
+// `implements ISourceItem` only checks the class; it contributes no members, so every
+// field declared solely on ISourceItem read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface SourceItem extends Omit<ISourceItem, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 @registerEntity
 export class SourceItem extends APIEntity<SourceItem> implements ISourceItem {
   static type: string = 'source_item';

@@ -10,6 +10,12 @@ export interface ISpec extends IEntity {
   // NOTE: plan_id moved into context_entities. Use spec.firstContextOfType('plan').
 }
 
+// `implements ISpec` only checks the class; it contributes no members, so every
+// field declared solely on ISpec read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Spec extends Omit<ISpec, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 @registerEntity
 export class Spec extends APIEntity<Spec> implements ISpec {
   title?: string | null;

@@ -10,6 +10,12 @@ export interface IFolder extends IEntity {
   path?: string | null;
 }
 
+// `implements IFolder` only checks the class; it contributes no members, so every
+// field declared solely on IFolder read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Folder extends Omit<IFolder, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 /**
  * Folder — a first-class entity referencing a filesystem directory (project
  * context folders; git-backed ones carry a transportable GitOrigin).

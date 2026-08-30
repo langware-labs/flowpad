@@ -76,7 +76,7 @@ export interface IShell extends IEntity {
  * This interface makes them part of the class type.
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Shell extends IShell {}
+export interface Shell extends Omit<IShell, 'expand' | 'id' | 'is_private' | 'members'> {}
 
 @registerEntity
 export class Shell extends APIEntity<Shell> implements IShell {

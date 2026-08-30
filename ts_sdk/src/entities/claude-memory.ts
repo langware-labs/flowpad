@@ -12,6 +12,12 @@ export interface IClaudeMemory extends IEntity {
   project_encoded?: string;
 }
 
+// `implements IClaudeMemory` only checks the class; it contributes no members, so every
+// field declared solely on IClaudeMemory read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface ClaudeMemory extends Omit<IClaudeMemory, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 /** Memory markdown file under `~/.claude/projects/<encoded>/memory/*.md`. */
 @registerEntity
 export class ClaudeMemory extends APIEntity<ClaudeMemory> implements IClaudeMemory {

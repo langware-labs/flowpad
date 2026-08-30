@@ -7,6 +7,12 @@ export interface ILabel extends LabelInfo {
   updated_at?: string;
 }
 
+// `implements ILabel` only checks the class; it contributes no members, so every
+// field declared solely on ILabel read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Label extends Omit<ILabel, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 export class Label extends APIEntity<Label> implements ILabel {
   public label!: string;
   public description?: string;

@@ -20,6 +20,12 @@ export interface IPromptCompletion extends IEntity {
   host_process_id?: string | null;
 }
 
+// `implements IPromptCompletion` only checks the class; it contributes no members, so every
+// field declared solely on IPromptCompletion read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface PromptCompletion extends Omit<IPromptCompletion, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 @registerEntity
 export class PromptCompletion extends APIEntity<PromptCompletion> implements IPromptCompletion {
   static type: string = 'prompt_completion';

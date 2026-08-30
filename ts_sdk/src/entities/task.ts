@@ -100,6 +100,12 @@ export interface ITask extends IEntity {
   worker_session_id?: string | null;
 }
 
+// `implements ITask` only checks the class; it contributes no members, so every
+// field declared solely on ITask read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Task extends Omit<ITask, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 @registerEntity
 export class Task extends APIEntity<Task> implements ITask {
   title: string;

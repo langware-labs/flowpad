@@ -380,7 +380,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return this._expand;
   }
 
-  set expand(value: any) {
+  set expand(value: EntityExpansion | undefined) {
     this._expand = value;
   }
 

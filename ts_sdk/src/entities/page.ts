@@ -23,6 +23,12 @@ export interface IPage extends IEntity {
   readonly is_private?: boolean;
 }
 
+// `implements IPage` only checks the class; it contributes no members, so every
+// field declared solely on IPage read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Page extends Omit<IPage, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 @registerEntity
 export class Page extends APIEntity<Page> implements IPage {
   static type: string = 'page';

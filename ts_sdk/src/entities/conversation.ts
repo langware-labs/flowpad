@@ -129,7 +129,7 @@ export interface IConversation extends IEntity {
  * This interface makes them part of the class type.
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Conversation extends IConversation {}
+export interface Conversation extends Omit<IConversation, 'expand' | 'id' | 'is_private' | 'members'> {}
 
 @registerEntity
 export class Conversation extends APIEntity<Conversation> implements IConversation {

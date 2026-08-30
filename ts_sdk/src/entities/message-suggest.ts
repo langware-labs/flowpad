@@ -18,6 +18,12 @@ export interface IMessageSuggest extends IEntity {
   kind?: string;
 }
 
+// `implements IMessageSuggest` only checks the class; it contributes no members, so every
+// field declared solely on IMessageSuggest read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface MessageSuggest extends Omit<IMessageSuggest, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 @registerEntity
 export class MessageSuggest extends APIEntity<MessageSuggest> implements IMessageSuggest {
   static type: string = 'message_suggest';

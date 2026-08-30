@@ -11,6 +11,12 @@ export interface ICommand extends IEntity {
   vault_root?: string;
 }
 
+// `implements ICommand` only checks the class; it contributes no members, so every
+// field declared solely on ICommand read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Command extends Omit<ICommand, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 /** Slash-command markdown file under `.claude/commands/*.md`. */
 @registerEntity
 export class Command extends APIEntity<Command> implements ICommand {

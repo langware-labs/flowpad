@@ -11,6 +11,12 @@ export interface IPlan extends IEntity {
   vault_root?: string;
 }
 
+// `implements IPlan` only checks the class; it contributes no members, so every
+// field declared solely on IPlan read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Plan extends Omit<IPlan, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 /**
  * Plan — a markdown plan document under ~/.claude/plans/.
  * Registered so `useEntitiesQuery({ type: 'plan' })` hydrates plan records

@@ -42,6 +42,12 @@ async function queryEntities<T extends IEntity>(type: string, match: ExpressionN
   return dataManager.query<any>(new QueryRequest({ type, query: new QueryFilter({ type, match }) }));
 }
 
+// `implements IGroup` only checks the class; it contributes no members, so every
+// field declared solely on IGroup read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Group extends Omit<IGroup, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 @registerEntity
 export class Group extends APIEntity<Group> implements IGroup {
   static type: string = 'group';

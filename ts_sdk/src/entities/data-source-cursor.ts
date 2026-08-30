@@ -25,6 +25,12 @@ export interface IDataSourceCursor extends IEntity {
   consecutive_failures?: number;
 }
 
+// `implements IDataSourceCursor` only checks the class; it contributes no members, so every
+// field declared solely on IDataSourceCursor read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface DataSourceCursor extends Omit<IDataSourceCursor, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 @registerEntity
 export class DataSourceCursor extends APIEntity<DataSourceCursor> implements IDataSourceCursor {
   static type: string = 'data_source_cursor';

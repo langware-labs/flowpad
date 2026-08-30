@@ -15,7 +15,7 @@ export interface IEntity extends Partial<IResource> {
   /** Unique name (URL-safe identifier) */
   uname?: string;
   /** Display name */
-  name?: string;
+  name?: string | null;
   /** Entity status */
   status?: string;
   /** Schema version for migrations */

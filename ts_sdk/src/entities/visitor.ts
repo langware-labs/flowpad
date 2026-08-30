@@ -7,6 +7,12 @@ export interface IVisitor extends IEntity {
   visitor_role?: string;
 }
 
+// `implements IVisitor` only checks the class; it contributes no members, so every
+// field declared solely on IVisitor read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Visitor extends Omit<IVisitor, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 @registerEntity
 export class Visitor extends APIEntity<Visitor> implements IVisitor {
   ga_client_id?: string | null;

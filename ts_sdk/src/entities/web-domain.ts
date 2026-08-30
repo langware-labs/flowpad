@@ -9,6 +9,12 @@ export interface IWebDomain extends IEntity {
   micro_app_id: string;
 }
 
+// `implements IWebDomain` only checks the class; it contributes no members, so every
+// field declared solely on IWebDomain read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface WebDomain extends Omit<IWebDomain, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 @registerEntity
 export class WebDomain extends APIEntity<WebDomain> implements IWebDomain {
   static type: string = 'web_domain';

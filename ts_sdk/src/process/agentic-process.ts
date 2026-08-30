@@ -443,7 +443,7 @@ export interface IAgenticProcess extends IEntity {
  * This interface makes them part of the class type.
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface AgenticProcess extends IAgenticProcess {}
+export interface AgenticProcess extends Omit<IAgenticProcess, 'expand' | 'id' | 'is_private' | 'members'> {}
 
 /**
  * AgenticProcess Entity - A running instruction execution process

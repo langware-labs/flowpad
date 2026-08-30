@@ -10,6 +10,12 @@ export interface IClaudeRules extends IEntity {
   vault_root?: string;
 }
 
+// `implements IClaudeRules` only checks the class; it contributes no members, so every
+// field declared solely on IClaudeRules read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface ClaudeRules extends Omit<IClaudeRules, 'expand' | 'id' | 'is_private' | 'members'> {}
+
 /** Rules markdown file under `.claude/rules/*.md`. */
 @registerEntity
 export class ClaudeRules extends APIEntity<ClaudeRules> implements IClaudeRules {
