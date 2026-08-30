@@ -8,7 +8,7 @@ import { StorageLayout } from '../storage-layout';
 import { fsRecordTypeRegistry } from '../record-type-registry';
 import { dataManager } from '../../../APIEntity';
 import { ActionInfo } from '../../../models/ActionInfo';
-import type { TranscriptEntryData } from './transcript/transcript-entry';
+import type { TranscriptEntryData } from './transcript-entry-data';
 
 export type ClaudeSessionStatus = 'idle' | 'running' | 'complete';
 
