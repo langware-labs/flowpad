@@ -5,10 +5,9 @@ from pathlib import Path
 from typing import Any
 
 from flow_sdk.hooks.models import AgentHookMetadata, HookEntry
-from flow_sdk.hooks.providers.base import ProviderHookFile
 
 
-class ClaudeCodeHookFile(ProviderHookFile):
+class ClaudeCodeHookFile:
     """
     Claude Code settings.json format handler.
 

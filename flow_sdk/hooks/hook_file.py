@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 from flow_sdk.hooks.models import HookEntry, HookEntryResult
-from flow_sdk.hooks.providers.base import ProviderHookFile
+from flow_sdk.hooks.providers.claude_code import ClaudeCodeHookFile
 
 
 class HookFile:
@@ -12,10 +12,10 @@ class HookFile:
     Manages hook configurations for a specific file.
 
     Stores a flat list of HookEntry objects.
-    Uses ProviderHookFile for provider-specific serialization.
+    Uses ClaudeCodeHookFile for provider-specific serialization.
     """
 
-    def __init__(self, path: Optional[Path], provider: ProviderHookFile):
+    def __init__(self, path: Optional[Path], provider: ClaudeCodeHookFile):
         self.path = path
         self.provider = provider
         self._entries: list[HookEntry] = []
@@ -73,16 +73,12 @@ class HookFile:
                             # Check flow_metadata.flowpad_hook_id first
                             fm = hook.get("flow_metadata")
                             if fm and isinstance(fm, dict) and fm.get("flowpad_hook_id") == entry_id:
-                                from flow_sdk.hooks.providers.claude_code import ClaudeCodeHookFile
-
                                 if isinstance(self.provider, ClaudeCodeHookFile):
                                     parsed_entry = ClaudeCodeHookFile._parse_entry(event_name, entry_data)
                                     if parsed_entry:
                                         return parsed_entry
                             # Legacy fallback
                             if hook.get("_flowpad_hook_id") == entry_id:
-                                from flow_sdk.hooks.providers.claude_code import ClaudeCodeHookFile
-
                                 if isinstance(self.provider, ClaudeCodeHookFile):
                                     parsed_entry = ClaudeCodeHookFile._parse_entry(event_name, entry_data)
                                     if parsed_entry:
@@ -186,7 +182,6 @@ class HookFile:
 
 def find_entry_by_id(entry_id: str, project_dir: Optional[str] = None) -> Optional[HookEntryResult]:
     """Find a hook entry by ID across local, project, and user hook files."""
-    from flow_sdk.hooks.providers import ClaudeCodeHookFile
     from flow_sdk.utils.claude_paths import get_claude_settings_path
 
     files_to_search = []
