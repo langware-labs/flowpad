@@ -5,9 +5,8 @@ from typing import Any, Optional
 
 from pydantic import SecretStr
 
-from flow_sdk.builtin.local_secret_ref import LocalSecretRef
 from flow_sdk.builtin.secret_origin_driver import make_setup_hint
-from flow_sdk.builtin.secret_origin_locator import SecretOriginLocator
+from flow_sdk.builtin.secret_origin_refs import LocalSecretRef, SecretOriginLocator
 from flow_sdk.cli.auth.secrets import read_secret, write_secret
 
 

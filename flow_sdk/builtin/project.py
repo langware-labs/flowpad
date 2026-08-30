@@ -1377,7 +1377,7 @@ class Project(Entity):
             get_secret_origin_driver,
             normalize_secret_origin_kind,
         )
-        from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
+        from flow_sdk.builtin.secret_origin_refs import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
 
         name = (name or "").strip()
         env_var = (env_var or "").strip()
@@ -1488,7 +1488,7 @@ class Project(Entity):
         secret's value be resolved on THIS machine right now? Value-free — calls
         ``driver.can_resolve`` (never fetches a value)."""
         from flow_sdk.builtin.secret_origin_driver import get_secret_origin_driver  # noqa: PLC0415
-        from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
+        from flow_sdk.builtin.secret_origin_refs import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
 
         rows: list[dict[str, Any]] = []
         env_local_names, sodot_names = self._local_store_names()
@@ -1657,7 +1657,7 @@ class Project(Entity):
         """
         from flow_sdk.builtin.secret_origin_digest import check_drift  # noqa: PLC0415
         from flow_sdk.builtin.secret_origin_driver import get_secret_origin_driver  # noqa: PLC0415
-        from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
+        from flow_sdk.builtin.secret_origin_refs import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
 
         rows: list[dict[str, Any]] = []
         for entry in self.secret_origins:
@@ -1699,7 +1699,7 @@ class Project(Entity):
             SecretProvideUnsupported,
             get_secret_origin_driver,
         )
-        from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
+        from flow_sdk.builtin.secret_origin_refs import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
 
         if not (value or "").strip():
             return ApiFailResponse(message="value is required")

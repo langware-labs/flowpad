@@ -13,7 +13,7 @@ from pydantic import SecretStr
 from flow_sdk.utils.kind_registry import KindRegistry
 
 if TYPE_CHECKING:
-    from flow_sdk.builtin.secret_origin_locator import SecretOriginLocator
+    from flow_sdk.builtin.secret_origin_refs import SecretOriginLocator
 
 
 #: Spellings that mean the hub. ``email_inbox_driver`` shares this table so the
