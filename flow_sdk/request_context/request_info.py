@@ -107,22 +107,6 @@ class RequestInfo:
         )
 
     @property
-    def is_post(self) -> bool:
-        return self.method == "post"
-
-    @property
-    def is_get(self) -> bool:
-        return self.method == "get"
-
-    @property
-    def is_put(self) -> bool:
-        return self.method == "put"
-
-    @property
-    def is_delete(self) -> bool:
-        return self.method == "delete"
-
-    @property
     def method(self) -> str:
         if self.request is None:
             return ""
