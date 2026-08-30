@@ -866,6 +866,18 @@ class AgenticProcess(Entity):
             "running worker, only the next launch."
         ),
     )
+    last_mode: str | None = APIField(
+        default=None,
+        sharing=Sharing.PRIVATE,
+        description=(
+            "Last UI view mode this session was viewed in (vibe|standard|advanced|dev). "
+            "Per-SESSION memory: opening the session applies this mode, and switching "
+            "mode while it is open records the new one — so switching modes no longer "
+            "repaints every other session. Mirrors ``Project.last_mode`` (the project "
+            "level answers 'what mode does a NEW session start in'); per-device UI "
+            "state, so it does not travel to the hub."
+        ),
+    )
     visible: bool = APIField(
         default=False,
         description=(

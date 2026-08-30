@@ -53,7 +53,7 @@ export function HelpdeskAsk({ project }: { project: Project }) {
       <div className="h-[320px] overflow-hidden rounded-lg border border-border bg-card/40">
         <EntityExecutionPanel
           // Target the SUBAGENT, not the project: `project-<id>` is what vibe
-          // chat uses (`vibeChatTargetForProject`), and sharing it would braid
+          // chat uses (`chatTargetForProject`), and sharing it would braid
           // the help desk's history into the user's vibe sessions.
           target={new TypeId(SubAgent.type, agent.id).toString()}
           processType={ProcessKind.Chat}
