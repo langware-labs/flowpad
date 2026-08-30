@@ -9,7 +9,8 @@ import { EVENT_TYPE_COLORS } from '@src/components/hooks/event-utils';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import { cn } from '@src/lib/utils';
 import { useOpenTerminal } from '@src/hooks/use-open-terminal';
-import { Check, ChevronDown, ChevronRight, Copy, FolderOpen, Play, RefreshCw, Trash2 } from 'lucide-react';
+import { CopyButton as UiCopyButton } from '@src/components/ui/copy-button';
+import { ChevronDown, ChevronRight, FolderOpen, Play, RefreshCw, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 // ---------------------------------------------------------------------------
@@ -121,26 +122,15 @@ function tryParseHookData(stdin: string | null): HookEventData | null {
 // Shared components
 // ---------------------------------------------------------------------------
 
+/** This viewer's copy affordance: the shared button in its row chrome. */
 function CopyButton({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const copy = (e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    void navigator.clipboard
-      .writeText(value)
-      .then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      })
-      .catch(() => {
-        /* ignore */
-      });
-  };
-
   return (
-    <button onClick={copy} className="flex-shrink-0 text-muted-foreground hover:text-foreground">
-      {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
-    </button>
+    <UiCopyButton
+      value={value}
+      stopPropagation
+      copiedIconClassName="text-green-500"
+      className="flex-shrink-0 text-muted-foreground hover:text-foreground"
+    />
   );
 }
 
@@ -411,29 +401,18 @@ function EntryRow({
 // ---------------------------------------------------------------------------
 
 function WorkdirTooltip({ workdir }: { workdir: string }) {
-  const [copied, setCopied] = useState(false);
-
   if (!workdir) return null;
-
-  const copy = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    void navigator.clipboard
-      .writeText(workdir)
-      .then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      })
-      .catch(() => {
-        /* ignore */
-      });
-  };
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button onClick={copy} className="flex-shrink-0 text-muted-foreground hover:text-foreground">
-          {copied ? <Check className="h-3 w-3 text-green-500" /> : <FolderOpen className="h-3 w-3" />}
-        </button>
+        <UiCopyButton
+          value={workdir}
+          icon={FolderOpen}
+          stopPropagation
+          copiedIconClassName="text-green-500"
+          className="flex-shrink-0 text-muted-foreground hover:text-foreground"
+        />
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs">
         <span className="font-mono text-xs">{workdir}</span>
