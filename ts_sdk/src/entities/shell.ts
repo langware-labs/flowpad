@@ -69,6 +69,15 @@ export interface IShell extends IEntity {
 // stays armed and resumes when the backend resumes delivery. See
 // InteractiveTerminal's on_reconnected handler for the gap-replay repaint.
 
+/**
+ * Declaration merge: `implements IShell` only CHECKS the class, it adds no
+ * members — so every field declared solely on IShell read as "does not exist
+ * on type Shell", even though `deepAssign` populates them from the wire.
+ * This interface makes them part of the class type.
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Shell extends IShell {}
+
 @registerEntity
 export class Shell extends APIEntity<Shell> implements IShell {
   static type: string = 'shell';

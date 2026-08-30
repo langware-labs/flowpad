@@ -437,6 +437,15 @@ export interface IAgenticProcess extends IEntity {
 }
 
 /**
+ * Declaration merge: `implements IAgenticProcess` only CHECKS the class, it adds no
+ * members — so every field declared solely on IAgenticProcess read as "does not exist
+ * on type AgenticProcess", even though `deepAssign` populates them from the wire.
+ * This interface makes them part of the class type.
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface AgenticProcess extends IAgenticProcess {}
+
+/**
  * AgenticProcess Entity - A running instruction execution process
  *
  * Created by AgenticProcess.spawn(), this entity tracks execution state
