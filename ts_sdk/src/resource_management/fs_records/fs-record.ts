@@ -43,7 +43,18 @@ export class FsRecord implements IResource {
   updated_by?: string;
 
   // ── ResourceRecord extensions ────────────────────────────────
-  status?: ResourceStatus;
+  /**
+   * Whatever `status` this record's own indexer wrote, so it is per record TYPE.
+   *
+   * NOT `ResourceStatus`. That union is the archived/deleted LIFECYCLE, and no
+   * code anywhere reads this field as one — while the indexer does write a
+   * different vocabulary here for at least one record type
+   * (`fs_store/indexer/functions/claude_sessions.py:406` writes
+   * `result["status"] = "complete"`, a run state). Subclasses narrow it to
+   * their own union with `declare override`; `ResourceStatus` stays where it
+   * describes the lifecycle, on `ResourceRecord`.
+   */
+  status?: string;
   scope: Scope | string = Scope.USER;
   source_file?: string;
   path?: string;

@@ -80,7 +80,10 @@ export class ClaudeSessionRecord extends FsRecord {
   tools_used?: string[];
   has_plan = false;
   jsonl_path?: string;
-  status?: ClaudeSessionStatus;
+  /** Run state, narrowing the base's per-type `status`. `declare` because the
+   *  value arrives via `Object.assign` in `discover()` — a real field
+   *  declaration would re-define it as undefined after that assign. */
+  declare status?: ClaudeSessionStatus;
   last_stop_reason?: string;
   start_time?: string;
 

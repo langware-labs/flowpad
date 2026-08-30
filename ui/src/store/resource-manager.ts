@@ -4,7 +4,7 @@
  * Provides cache-first strategy with time window support for incremental scanning.
  */
 
-import { ActionInfo, dataManager, type SystemProfileItem } from '@sdk';
+import { ActionInfo, dataManager, type SystemProfileEntry, type SystemProfileItem } from '@sdk';
 import { create } from 'zustand';
 
 // ─────────────────────────────────────────────────────────────────
@@ -80,7 +80,7 @@ export interface ScanParams {
   forceRefresh?: boolean;
 }
 
-export interface ScanResult<T = SystemProfileItem> {
+export interface ScanResult<T = SystemProfileEntry> {
   items: T[];
   scannedWindow: TimeWindow;
   totalCount: number;
@@ -88,7 +88,7 @@ export interface ScanResult<T = SystemProfileItem> {
   resourceType: string;
 }
 
-interface CacheEntry<T = SystemProfileItem> {
+interface CacheEntry<T = SystemProfileEntry> {
   items: T[];
   windows: TimeWindow[]; // Which time ranges are cached
   lastFullScan: number | null; // Timestamp of last full scan
@@ -109,9 +109,9 @@ interface ResourceManagerState {
 
   // Actions
   setComputeNodeId: (id: string) => void;
-  getResources: <T extends SystemProfileItem>(resourceType: string, params?: ScanParams) => Promise<T[]>;
+  getResources: <T extends SystemProfileEntry>(resourceType: string, params?: ScanParams) => Promise<T[]>;
   invalidate: (resourceType?: string, itemId?: string) => void;
-  getCachedResources: <T extends SystemProfileItem>(
+  getCachedResources: <T extends SystemProfileEntry>(
     resourceType: string,
     timeWindow?: TimeWindow,
     parentId?: string,
@@ -124,7 +124,7 @@ interface ResourceManagerState {
 // Helper Functions
 // ─────────────────────────────────────────────────────────────────
 
-function getParentId(item: SystemProfileItem): string | undefined {
+function getParentId(item: SystemProfileEntry): string | undefined {
   // Type-specific parent extraction. Sessions group by cwd (path is the
   // natural project key now that `project_encoded_name` is no longer carried
   // on Flow records); todos group by their session_id.
@@ -134,7 +134,10 @@ function getParentId(item: SystemProfileItem): string | undefined {
   return undefined;
 }
 
-function isInTimeWindow(modifiedAt: string | undefined, window: TimeWindow): boolean {
+// `| null`: claude-session records carry nullable timestamps (the reason
+// `SystemProfileEntry` exists). The `!modifiedAt` guard below already handled
+// null correctly — only the parameter type was too narrow to say so.
+function isInTimeWindow(modifiedAt: string | null | undefined, window: TimeWindow): boolean {
   if (!modifiedAt) return false;
   if (window.start && modifiedAt < window.start) return false;
   if (window.end && modifiedAt > window.end) return false;
@@ -205,7 +208,7 @@ export const useResourceManager = create<ResourceManagerState>()((set, get) => (
     return get().errors.get(resourceType) ?? null;
   },
 
-  getCachedResources: <T extends SystemProfileItem>(
+  getCachedResources: <T extends SystemProfileEntry>(
     resourceType: string,
     timeWindow?: TimeWindow,
     parentId?: string,
@@ -240,7 +243,7 @@ export const useResourceManager = create<ResourceManagerState>()((set, get) => (
     return items as T[];
   },
 
-  getResources: async <T extends SystemProfileItem>(resourceType: string, params: ScanParams = {}): Promise<T[]> => {
+  getResources: async <T extends SystemProfileEntry>(resourceType: string, params: ScanParams = {}): Promise<T[]> => {
     const state = get();
     const { timeWindow, parentId, limit = 100, offset = 0, forceRefresh = false } = params;
 
@@ -408,10 +411,10 @@ export const useResourceManager = create<ResourceManagerState>()((set, get) => (
 
 export const resourceManager = {
   setComputeNodeId: (id: string) => useResourceManager.getState().setComputeNodeId(id),
-  getResources: <T extends SystemProfileItem>(resourceType: string, params?: ScanParams) =>
+  getResources: <T extends SystemProfileEntry>(resourceType: string, params?: ScanParams) =>
     useResourceManager.getState().getResources<T>(resourceType, params),
   invalidate: (resourceType?: string, itemId?: string) =>
     useResourceManager.getState().invalidate(resourceType, itemId),
-  getCachedResources: <T extends SystemProfileItem>(resourceType: string, timeWindow?: TimeWindow, parentId?: string) =>
+  getCachedResources: <T extends SystemProfileEntry>(resourceType: string, timeWindow?: TimeWindow, parentId?: string) =>
     useResourceManager.getState().getCachedResources<T>(resourceType, timeWindow, parentId),
 };
