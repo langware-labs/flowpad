@@ -1,7 +1,6 @@
 import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
 import { FlowpadAssistantButton } from '@src/components/floating-chat';
-import { useDevMode } from '@src/contexts/dev-mode-context';
-import { useViewMode, ViewMode } from '@src/components/view-mode';
+import { useIsDev, useViewMode, ViewMode } from '@src/components/view-mode';
 import { buildHubRailItems, type HubItem, type RailIcon } from './hub-rail';
 import { resolveRail, type RailGate, type RailItemId, type RailSpec } from './rail-visibility';
 import { Button } from '@src/components/ui/button';
@@ -80,7 +79,7 @@ export function CollapsedSidebar() {
   const location = useLocation();
   const onDiscover = location.pathname === '/discover';
   const [secondaryExpanded, setSecondaryExpanded] = useState(false);
-  const devMode = useDevMode();
+  const devMode = useIsDev();
   const { unread: unreadCount } = useInboxManager();
   const viewMode = useViewMode();
   // Derived, not a second useIsVibe() subscription — that hook IS this comparison.
