@@ -110,11 +110,32 @@ function ownedInstance(): OwnedInstance {
   return { name };
 }
 
-function restartOwnedInstance(instance: OwnedInstance): void {
+async function restartOwnedInstance(instance: OwnedInstance): Promise<void> {
   execFileSync(path.join(REPO_ROOT, 'scripts', 'instance_ctl.sh'), ['launch', instance.name], {
     cwd: REPO_ROOT,
     stdio: 'pipe',
   });
+  // `launch` waits for the BACKEND, never the frontend — but it restarts vite
+  // too, and a cold vite has to re-transform the whole module graph before it
+  // serves. Reloading the page the moment the command returns therefore hit a
+  // dev server that was not listening yet: the document came back empty and
+  // `terminal-panels` never appeared, failing this test and cascading into
+  // every test after it (they all then talked to a backend the page had never
+  // reconnected to). Gate on the frontend actually answering, the same way
+  // instance_ctl gates on the backend. A readiness probe, not a timeout budget:
+  // it returns the instant the server responds.
+  const base = `http://localhost:${process.env.VITE_PORT ?? '4097'}`;
+  const deadline = Date.now() + 90_000;
+  for (;;) {
+    try {
+      const r = await fetch(base, { method: 'GET' });
+      if (r.ok) return;
+    } catch {
+      /* not listening yet */
+    }
+    if (Date.now() > deadline) throw new Error(`frontend ${base} did not come back after restarting '${instance.name}'`);
+    await new Promise((r) => setTimeout(r, 250));
+  }
 }
 
 function disposableProjectRoot(label: string): string {
@@ -727,7 +748,15 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const before = await tabIds(page);
     const secondTab = page.locator(`[data-testid="${before[1]}"]`);
     await secondTab.click();
-    await page.waitForTimeout(300);
+    // The click NAVIGATES (URL-first), and the strip re-renders on that
+    // navigation. Hovering into that re-render leaves Playwright waiting for an
+    // element to become stable that keeps being replaced — every failure of this
+    // test was `locator.hover: Test timeout of 60000ms exceeded`, never the
+    // close itself. A fixed 300 ms sleep only made that likely, not certain.
+    // Wait for the click to have LANDED instead: the address naming the tab we
+    // clicked. Not a bigger budget — a correct precondition, and one fewer sleep.
+    const secondPointer = before[1].replace('tab-shell|', '');
+    await expect.poll(() => page.url(), { timeout: 15_000 }).toContain(secondPointer);
     await secondTab.hover();
     await secondTab.locator('button[aria-label="Close tab"]').click();
     await expect(secondTab).toHaveCount(0, { timeout: 15_000 });
@@ -1060,7 +1089,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await page.goto(withViewMode(`/dock/shell/shell-${shellA[0]}`, 'advanced'));
     await expectStripTabs(page, shellA);
 
-    restartOwnedInstance(instance);
+    await restartOwnedInstance(instance);
     await page.reload();
     await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible();
     await dismissCleanedSessionsOrSkip(page);
@@ -1083,7 +1112,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const processTab = page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`);
     await expect(processTab).toBeVisible();
 
-    restartOwnedInstance(instance);
+    await restartOwnedInstance(instance);
     await page.reload();
     await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible();
     await dismissCleanedSessionsOrSkip(page);

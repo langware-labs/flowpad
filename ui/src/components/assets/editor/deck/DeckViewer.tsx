@@ -31,17 +31,6 @@ interface DeckViewerProps {
   deck?: Deck;
 }
 
-/** Resolve a `../`-containing relative path against a base dir → clean segments. */
-function resolveRel(baseDir: string, rel: string): string {
-  const segs = baseDir.split('/').filter(Boolean);
-  for (const part of rel.split('/')) {
-    if (part === '' || part === '.') continue;
-    if (part === '..') segs.pop();
-    else segs.push(part);
-  }
-  return segs.join('/');
-}
-
 export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
   const [html, setHtml] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -84,8 +73,7 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
         setHtml(text);
         setNumSlides(Array.isArray(manifest?.slides) ? manifest.slides.length : null);
         if (manifest && typeof manifest.template === 'string' && manifest.template) {
-          const tplPath = resolveRel(fsRef.path.replace(/^\//, ''), manifest.template);
-          setTemplateVpath(`${fsRef.typeId.toString()}/${tplPath}`);
+          setTemplateVpath(fsRef.resolve(manifest.template).vpath);
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));

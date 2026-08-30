@@ -130,18 +130,27 @@ test.describe('dock sweep', () => {
         // registration cannot survive both, a settled one does. Same 15s
         // budget — only the predicate got stricter.
         let lastCid: string | null = null;
+        let lastUrl: string | null = null;
         await expect
           .poll(
             async () => {
+              const urlBefore = page.url();
               const r = await fetch(`${BACKEND}/api/v1/agent/context`);
               if (r.status !== 200) {
                 lastCid = null;
+                lastUrl = null;
                 return false;
               }
               const cid = ((await r.json()) as { connection_id?: string }).connection_id ?? null;
-              const stable = cid !== null && cid === lastCid;
+              // Settled means BOTH: the same socket answered twice, and the page
+              // did not navigate between those answers. This address
+              // re-navigates once after first paint, and that re-dial is what
+              // reopens the `No active tab` window even after a good read.
+              const settled =
+                cid !== null && cid === lastCid && urlBefore === lastUrl && page.url() === urlBefore;
               lastCid = cid;
-              return stable;
+              lastUrl = urlBefore;
+              return settled;
             },
             { timeout: 15_000 },
           )
