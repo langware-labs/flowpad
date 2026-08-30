@@ -132,7 +132,8 @@ test('4. the editor: config form + live items in the asset dock', async ({ page 
   await expect(frame.getByTestId('spec-editor-items').locator('li').nth(1)).toBeVisible();
   // The editor is a CHILD of the definition, so the address bar says so. This is
   // the whole reason it is addressed by its own row rather than through its parent.
-  await expect(page.getByTestId('breadcrumbs')).toContainText('rss');
+  await expect(page.getByTestId('top-nav-address')).toContainText('rss');
+  await expect(page.getByTestId('top-nav-address')).toContainText('editor');
 });
 
 test('5. define + annotate: a dataset bound to the source, one labelled example', async ({ page }) => {
