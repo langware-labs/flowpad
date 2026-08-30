@@ -269,8 +269,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
    *  folder) is erased. POSTs /api/v1/graph/flow_message/<id>/remove-message. */
   async remove(): Promise<void> {
     if (!this.id) throw new Error('remove requires this.id');
-    const action = new ActionInfo('remove-message', FlowMessage.type, this.id, 'POST');
-    await dataManager.callAction<unknown, unknown>(action);
+    await this.post<unknown>('remove-message');
   }
 
   // -------- Header / Body interface (principle #6) -------- //
@@ -298,9 +297,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
    *  POSTs /api/v1/graph/flow_message/<id>/upload_body. */
   async uploadBody(_opts: { onProgress?: (pct: number) => void; transferMode?: 'copy' | 'git' } = {}): Promise<this> {
     if (!this.id) throw new Error('uploadBody requires this.id');
-    const action = new ActionInfo('upload_body', FlowMessage.type, this.id, 'POST');
-    action.bodyParameters = { transfer_mode: _opts.transferMode ?? 'copy' };
-    await dataManager.callAction<unknown, unknown>(action);
+    await this.post<unknown>('upload_body', { transfer_mode: _opts.transferMode ?? 'copy' });
     this.body_status = BodyStatus.READY;
     this.attachment_filename = BODY_FILENAME;
     return this;

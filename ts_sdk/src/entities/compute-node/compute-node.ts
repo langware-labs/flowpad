@@ -937,9 +937,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * @param data - JSON data to write
    */
   async saveJsonFile(path: string, data: unknown): Promise<void> {
-    const action = new ActionInfo('save-json-file', ComputeNode.type, this.id, 'POST');
-    action.bodyParameters = { path, data };
-    await dataManager.callAction(action);
+    await this.post('save-json-file', { path, data });
   }
 
   /**
@@ -950,8 +948,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * @returns number of sessions cleared
    */
   async resetPty(): Promise<number> {
-    const action = new ActionInfo('reset-pty', ComputeNode.type, this.id, 'POST');
-    const response = await dataManager.callAction<void, { cleared: number }>(action);
+    const response = await this.post<{ cleared: number }>('reset-pty');
     return (response as any)?.data?.cleared ?? 0;
   }
 
@@ -969,9 +966,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * Returns null if the user cancelled.
    */
   async openPathDialog(initialDir?: string, mode: 'folder' | 'file' = 'folder'): Promise<string | null> {
-    const action = new ActionInfo('pick-folder', ComputeNode.type, this.id, 'POST');
-    action.bodyParameters = { ...(initialDir ? { initial_dir: initialDir } : {}), mode };
-    const response = await dataManager.callAction<void, { path: string | null }>(action);
+    const response = await this.post<{ path: string | null }>('pick-folder', { ...(initialDir ? { initial_dir: initialDir } : {}), mode });
     return (response as any)?.path ?? null;
   }
 

@@ -1,7 +1,6 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { ExpressionNode, QueryFilter, QueryRequest } from '../FlowSync/query';
 import { IEntity } from '../IEntity';
-import { ActionInfo } from '../models/ActionInfo';
 
 /**
  * Group — generic folder-like container entity (docs/entities-groups.md).
@@ -174,14 +173,11 @@ export class Group extends APIEntity<Group> implements IGroup {
 
   /** Cycle-checked re-parent (null = move to the namespace root). */
   async move(parentGroupId: string | null): Promise<void> {
-    const info = new ActionInfo('move', Group.type, this.id, 'POST');
-    info.bodyParameters = { group_id: parentGroupId };
-    await dataManager.callAction(info);
+    await this.post('move', { group_id: parentGroupId });
   }
 
   /** Delete this folder; its children move up to this folder's parent. */
   async deleteGroup(): Promise<void> {
-    const info = new ActionInfo('delete-group', Group.type, this.id, 'POST');
-    await dataManager.callAction(info);
+    await this.post('delete-group');
   }
 }

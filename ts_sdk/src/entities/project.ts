@@ -418,8 +418,7 @@ export class Project extends APIEntity<Project> {
     // Hub mode: the hub backend has no local compute node (`get-compute-node`
     // 401s). No node here — callers already treat null as "no compute node".
     if (isHubOnly()) return null;
-    const actionInfo = new ActionInfo('get-compute-node', Project.type, this.typeId.id, 'GET');
-    const responseComputeNode = await dataManager.callAction<void, { compute_node: any }>(actionInfo);
+    const responseComputeNode = await this.get<{ compute_node: any }>('get-compute-node');
 
     if (!responseComputeNode?.compute_node) {
       return null;
@@ -441,8 +440,7 @@ export class Project extends APIEntity<Project> {
    * show progress rather than assume a snappy round trip.
    */
   async deploy(): Promise<ProjectDeployResult> {
-    const action = new ActionInfo('deploy', Project.type, this.id, 'POST');
-    return (await dataManager.callAction(action)) as ProjectDeployResult;
+    return (await this.post('deploy')) as ProjectDeployResult;
   }
 
   /**
@@ -450,8 +448,7 @@ export class Project extends APIEntity<Project> {
    * for Projects that predate the Wiki invariant.
    */
   async getDefaultWiki(): Promise<Wiki> {
-    const action = new ActionInfo('default-wiki', Project.type, this.id, 'GET');
-    const result = await dataManager.callAction<void, IEntity>(action);
+    const result = await this.get<IEntity>('default-wiki');
     return dataManager.updateEntityFromJson<Wiki>(result);
   }
 
@@ -536,8 +533,7 @@ export class Project extends APIEntity<Project> {
 
   /** Clone/materialize the shared project's portable GitOrigin locally. */
   async setupFromGitOrigin(): Promise<Project> {
-    const action = new ActionInfo('setup-from-git', Project.type, this.id, 'POST');
-    const response = await dataManager.callAction<void, Project>(action);
+    const response = await this.post<Project>('setup-from-git');
     return dataManager.updateEntityFromJson<Project>(response as unknown as Record<string, unknown>);
   }
 
@@ -573,16 +569,13 @@ export class Project extends APIEntity<Project> {
    *  or `shared` (travels with the project) — and kicks a one-shot index so
    *  the folder's assets become discoverable. */
   async addContextDir(path: string, scope: 'private' | 'shared' = 'private'): Promise<void> {
-    const actionInfo = new ActionInfo('add-context-dir', Project.type, this.typeId.id, 'POST');
-    actionInfo.bodyParameters = { path, scope };
-    this.adoptContextDirs(await dataManager.callAction(actionInfo));
+    this.adoptContextDirs(await this.post('add-context-dir', { path, scope }));
   }
 
   /** Converge the live content dependencies declared by this Project's
    * `.flowpad/bootstrap.json`. The backend owns clone/link/index idempotency. */
   async reconcileBootstrap(): Promise<ReconcileBootstrapResult> {
-    const actionInfo = new ActionInfo('reconcile-bootstrap', Project.type, this.typeId.id, 'POST');
-    return dataManager.callAction<Record<string, never>, ReconcileBootstrapResult>(actionInfo);
+    return this.post<ReconcileBootstrapResult>('reconcile-bootstrap');
   }
 
   /** Get-or-create the `Folder` entity for a directory, WITHOUT attaching it as
@@ -593,16 +586,12 @@ export class Project extends APIEntity<Project> {
    *  the Assets header's Share); use `addContextDir` when the folder should
    *  actually join the project's context. */
   async folderForPath(path: string): Promise<{ typeid: string; path: string; origin_kind: string | null }> {
-    const actionInfo = new ActionInfo('folder-for-path', Project.type, this.typeId.id, 'POST');
-    actionInfo.bodyParameters = { path };
-    return dataManager.callAction(actionInfo);
+    return this.post('folder-for-path', { path });
   }
 
   /** Detach a context folder. No-op if not attached. */
   async removeContextDir(path: string): Promise<void> {
-    const actionInfo = new ActionInfo('remove-context-dir', Project.type, this.typeId.id, 'POST');
-    actionInfo.bodyParameters = { path };
-    this.adoptContextDirs(await dataManager.callAction(actionInfo));
+    this.adoptContextDirs(await this.post('remove-context-dir', { path }));
   }
 
   async addSecretPointer(
@@ -633,32 +622,27 @@ export class Project extends APIEntity<Project> {
   }
 
   async removeSecretPointer(typeid: string): Promise<void> {
-    const actionInfo = new ActionInfo('remove-secret-pointer', Project.type, this.typeId.id, 'POST');
-    actionInfo.bodyParameters = { typeid };
-    this.adoptSecretOrigins(await dataManager.callAction(actionInfo));
+    this.adoptSecretOrigins(await this.post('remove-secret-pointer', { typeid }));
   }
 
   /** Value-free per-secret resolve status (available/missing) for the Secrets
    *  card + setup wizard. Never fetches a value. */
   async secretResolveStatus(): Promise<SecretResolveStatus[]> {
-    const actionInfo = new ActionInfo('secret-resolve-status', Project.type, this.typeId.id, 'POST');
-    const res = await dataManager.callAction<undefined, { secrets?: SecretResolveStatus[] }>(actionInfo);
+    const res = await this.post<{ secrets?: SecretResolveStatus[] }>('secret-resolve-status');
     return Array.isArray(res?.secrets) ? res!.secrets : [];
   }
 
   /** What is in the project's `.env.local`, and may we write to it?
    *  Names and line numbers only — a value cannot cross this boundary. */
   async envLocalStatus(): Promise<EnvLocalStatus | null> {
-    const actionInfo = new ActionInfo('env-local-status', Project.type, this.typeId.id, 'POST');
-    return (await dataManager.callAction<undefined, EnvLocalStatus>(actionInfo)) ?? null;
+    return (await this.post<EnvLocalStatus>('env-local-status')) ?? null;
   }
 
   /** Which declared secrets hold a different value than when last provided.
    *  Separate from resolveStatus because answering it requires fetching values,
    *  so it runs only when someone is looking at the Secrets tab. */
   async secretDriftStatus(): Promise<SecretDriftStatus[]> {
-    const actionInfo = new ActionInfo('secret-drift-status', Project.type, this.typeId.id, 'POST');
-    const res = await dataManager.callAction<undefined, { secrets?: SecretDriftStatus[] }>(actionInfo);
+    const res = await this.post<{ secrets?: SecretDriftStatus[] }>('secret-drift-status');
     return Array.isArray(res?.secrets) ? res!.secrets : [];
   }
 
@@ -667,17 +651,13 @@ export class Project extends APIEntity<Project> {
    *  Fails with `project_not_published` when the project has no hub row yet —
    *  the caller offers to publish rather than parsing the message. */
   async pushSecretToCloud(envVar: string, value: string): Promise<void> {
-    const actionInfo = new ActionInfo('push-secret-to-cloud', Project.type, this.typeId.id, 'POST');
-    actionInfo.bodyParameters = { env_var: envVar, value };
-    await dataManager.callAction(actionInfo);
+    await this.post('push-secret-to-cloud', { env_var: envVar, value });
   }
 
   /** Delete a secret from the hub — CLOUD ONLY. The local declaration, the
    *  sodot entry and `.env.local` are all deliberately left alone. */
   async deleteSecretFromCloud(envVar: string): Promise<void> {
-    const actionInfo = new ActionInfo('delete-secret-from-cloud', Project.type, this.typeId.id, 'POST');
-    actionInfo.bodyParameters = { env_var: envVar };
-    await dataManager.callAction(actionInfo);
+    await this.post('delete-secret-from-cloud', { env_var: envVar });
   }
 
   /** Setup wizard: store a user-provided value in the secret's designated SOD
@@ -695,8 +675,7 @@ export class Project extends APIEntity<Project> {
 
   /** Resolve received shared context folders into receiver-local paths. */
   async resolveContextFolders(): Promise<ProjectContextFolderResolveResult[]> {
-    const actionInfo = new ActionInfo('resolve-context-folders', Project.type, this.typeId.id, 'POST');
-    const response = await dataManager.callAction<undefined, ProjectContextFolderResolveResponse>(actionInfo);
+    const response = await this.post<ProjectContextFolderResolveResponse>('resolve-context-folders');
     this.adoptContextDirs(response);
     const results = response?.context_folder_results;
     if (!Array.isArray(results)) return [];
@@ -892,8 +871,7 @@ export class Project extends APIEntity<Project> {
    * own record, and the project source folder on disk. Irreversible.
    */
   async deleteWithChildren(): Promise<{ project_id: string; deleted_children: number } | null> {
-    const info = new ActionInfo('delete-with-children', Project.type, this.typeId.id, 'POST');
-    return await dataManager.callAction<void, { project_id: string; deleted_children: number }>(info);
+    return await this.post<{ project_id: string; deleted_children: number }>('delete-with-children');
   }
 
   /**

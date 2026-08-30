@@ -148,24 +148,21 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
    */
   async runSetup(): Promise<ReceiveShowTarget | null> {
     if (!this.id) throw new Error('runSetup requires this.id');
-    const action = new ActionInfo('setup', MessageAttachment.type, this.id, 'POST');
-    const res = await dataManager.callAction<unknown, { entity?: unknown; show?: ReceiveShowTarget | null }>(action);
+    const res = await this.post<{ entity?: unknown; show?: ReceiveShowTarget | null }>('setup');
     return res?.show ?? null;
   }
 
   /** Remove the installed copy (staged copy persists; chip reverts to staged). */
   async uninstall(): Promise<this> {
     if (!this.id) throw new Error('uninstall requires this.id');
-    const action = new ActionInfo('uninstall', MessageAttachment.type, this.id, 'POST');
-    await dataManager.callAction<unknown, unknown>(action);
+    await this.post<unknown>('uninstall');
     return this;
   }
 
   /** List the staged files for the review modal. */
   async listStagedFiles(): Promise<StagedFilesResponse> {
     if (!this.id) throw new Error('listStagedFiles requires this.id');
-    const action = new ActionInfo('staged-files', MessageAttachment.type, this.id, 'GET');
-    return await dataManager.callAction<unknown, StagedFilesResponse>(action);
+    return await this.get<StagedFilesResponse>('staged-files');
   }
 
   /** Read one staged file's text content (rel path from listStagedFiles). */
