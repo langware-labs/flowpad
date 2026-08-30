@@ -160,17 +160,8 @@ class LineCommentCapsule(FileCapsule):
 
     # ── AssetCapsule interface ──────────────────────────────────────────────
 
-    def _read_text(self) -> tuple[str, bytes]:
-        try:
-            return _decode(self.path.read_bytes())
-        except OSError as exc:
-            raise MalformedCapsuleError(str(exc)) from exc
-
-    def read(self, name: str) -> CapsuleData | None:
-        validate_capsule_name(name)
-        text, _bom = self._read_text()
-        block = next((item for item in self._scan(text) if item.name == name), None)
-        return self._parse(block) if block is not None else None
+    def _parse_block(self, text: str, block: _Block) -> CapsuleData:
+        return self._parse(block)
 
     @staticmethod
     def _marker_line(text: str, block: _Block) -> int:
@@ -219,12 +210,6 @@ class LineCommentCapsule(FileCapsule):
             committed = self.read(name)
             assert committed is not None
             return committed
-
-    def write(self, name: str, data: CapsuleData) -> CapsuleData:
-        return self._replace(name, data, only_if_absent=False)
-
-    def write_if_absent(self, name: str, data: CapsuleData) -> CapsuleData:
-        return self._replace(name, data, only_if_absent=True)
 
     def write_at(self, name: str, data: CapsuleData, *, line: int) -> CapsuleData:
         """Place a block of ``name`` immediately above 1-indexed ``line``.
