@@ -4,7 +4,7 @@ import { dataContext } from '../FlowSync/context';
 import { QueryRequest } from '../FlowSync/query';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models';
-import { DockPointerData } from '../models/DockPointer';
+import { TargetedDock } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { PtyConnection } from '../services/shell/ptyConnection';
 import { ViewType } from '../utils/ui/view-types';
@@ -114,8 +114,8 @@ export class Shell extends APIEntity<Shell> implements IShell {
   /** True once this shell's tab has been the active tab at least once. */
   private _hasEverBeenActive = false;
 
-  get dockPointer(): DockPointerData {
-    return new DockPointerData(ViewType.SHELL, this.typeId?.toString());
+  get dockPointer(): TargetedDock {
+    return new TargetedDock(ViewType.SHELL, this.typeId.toString());
   }
 
   get computeNodeTypeId(): TypeId | null {

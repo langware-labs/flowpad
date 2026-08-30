@@ -37,7 +37,7 @@ export class Spreadsheet extends APIEntity<Spreadsheet> {
 
   /** Default open target: the spreadsheet grid editor (URL-first target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('spreadsheet') ?? super.dockPointer;
+    return this.assetEditorPointer('spreadsheet') ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {

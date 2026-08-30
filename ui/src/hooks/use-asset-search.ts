@@ -1,27 +1,14 @@
+import type { SearchRow } from './search-row';
 import { useEffect, useRef, useState } from 'react';
 import apiClient from '@sdk/client';
 import type { AssetFilter } from '@src/components/assets/assetFilter';
 import { applyFilterToParams } from '@src/components/assets/assetFilter';
 
-export interface SearchResult {
-  record_id: string;
-  record_type: string;
-  name: string;
+/** A row from the `/search` endpoint. Shared fields live in `SearchRow`. */
+export interface SearchResult extends SearchRow {
   snippet: string | null;
-  status: string;
-  scope: string;
-  asset_ref: string;
-  created_at: string;
-  modified_at: string;
   // Extra entity-specific fields (optional, populated when available)
-  uname?: string;
-  title?: string;
-  description?: string;
-  file_path?: string;
   filename?: string;
-  work_dir?: string;
-  project_id?: string;
-  project_name?: string;
   asset_type?: string;
   remote?: boolean;
   /** Group-task member pointer — member tasks are hidden from asset lists. */

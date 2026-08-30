@@ -35,7 +35,7 @@ export class Whiteboard extends APIEntity<Whiteboard> {
 
   /** Default open target: the asset editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('whiteboard') ?? super.dockPointer;
+    return this.assetEditorPointer('whiteboard') ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {

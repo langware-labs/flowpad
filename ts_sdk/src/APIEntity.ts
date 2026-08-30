@@ -12,7 +12,7 @@ import { ExpansionRequest, QueryRequest } from './FlowSync/query';
 import { DataManager, Manageable } from './FlowSync/store';
 import { FlowData, FlowDataStream } from './flow_processing';
 import { defaultEntityType, IEntity } from './IEntity';
-import { DockPointerData } from './models/DockPointer';
+import { DockPointerData, type IDockPointer } from './models/DockPointer';
 import { editorForType } from './models/asset-editor';
 import { TypeId } from './models/TypeId';
 import { ViewType } from './utils/ui/view-types';
@@ -651,7 +651,34 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return this._typeId;
   }
 
-  public get dockPointer(): DockPointerData {
+  /**
+   * The dock that opens this entity.
+   *
+   * Declared `IDockPointer | null` rather than `DockPointerData` because ONE
+   * subclass legitimately has no dock: `Tab.dockPointer` parses a stored
+   * pointer string and returns null when there is none or it will not parse.
+   * Its consumers have always null-checked (`if (!tab?.dockPointer) return`) —
+   * only this declaration disagreed with them.
+   *
+   * The 28 subclasses that always produce a pointer keep narrowing their own
+   * override back to `DockPointerData`, so code holding a concrete `Shell`,
+   * `Agent` or `Conversation` still gets a non-null type. The null only shows
+   * up when you read `.dockPointer` off a generic entity — where it might in
+   * fact be a Tab, so the check belongs there.
+   */
+  public get dockPointer(): IDockPointer | null {
+    return this.defaultDockPointer;
+  }
+
+  /**
+   * The generic "open this entity" dock, always non-null.
+   *
+   * Subclasses that compute a better pointer fall back to THIS rather than to
+   * `this.defaultDockPointer` — a named member instead of reaching back through the
+   * member they are overriding, and one that keeps its non-null type where
+   * `dockPointer` itself cannot (see above).
+   */
+  protected get defaultDockPointer(): DockPointerData {
     return new DockPointerData(ViewType.HOME, this.typeId?.toString());
   }
 
@@ -686,7 +713,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   /**
    * Asset-editor dock pointer for a file-backed asset entity, or null when it
    * has no asset file yet. Asset subclasses return this from `dockPointer`
-   * (falling back to `super.dockPointer`); the `editor/<type>/<ref>` format
+   * (falling back to `this.defaultDockPointer`); the `editor/<type>/<ref>` format
    * lives here once so it stays consistent across every asset type.
    */
   protected assetEditorPointer(typeSegment: string): DockPointerData | null {
@@ -701,8 +728,16 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     }
   }
 
-  public get searchDockPointer(): DockPointerData {
-    return this.dockPointer;
+  /**
+   * Where a search hit for this entity navigates. Always non-null: a result row
+   * has to go SOMEWHERE, and the generic "open this entity" dock is the right
+   * floor. This used to return `this.dockPointer` while declaring
+   * `DockPointerData`, so for the one entity whose pointer can be absent (a Tab
+   * with no stored pointer, or one that will not parse) it handed back a null
+   * its callers were typed never to receive.
+   */
+  public get searchDockPointer(): DockPointerData | IDockPointer {
+    return this.dockPointer ?? this.defaultDockPointer;
   }
 
   /**
@@ -713,9 +748,14 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    */
   public openDock(extraOptions?: Record<string, string>): void {
     const nav = (window as any).navigation as
-      | { openDock: (pointer: DockPointerData, extraOptions?: Record<string, string>) => void }
+      | { openDock: (pointer: IDockPointer, extraOptions?: Record<string, string>) => void }
       | undefined;
-    nav?.openDock(this.dockPointer, extraOptions);
+    // No dock is the same no-op as no navigation: an entity that does not
+    // address one (a Tab whose stored pointer is missing or unparseable) has
+    // nowhere to send the dock.
+    const dock = this.dockPointer;
+    if (!dock) return;
+    nav?.openDock(dock, extraOptions);
   }
 
   public clone(): T {

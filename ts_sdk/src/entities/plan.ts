@@ -45,6 +45,6 @@ export class Plan extends APIEntity<Plan> implements IPlan {
 
   /** Default open target: the asset editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('plan') ?? super.dockPointer;
+    return this.assetEditorPointer('plan') ?? this.defaultDockPointer;
   }
 }

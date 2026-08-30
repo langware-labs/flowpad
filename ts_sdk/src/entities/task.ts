@@ -223,7 +223,7 @@ export class Task extends APIEntity<Task> implements ITask {
 
   /** Default open target: the generic task asset editor (URL-first). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('task') ?? super.dockPointer;
+    return this.assetEditorPointer('task') ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {

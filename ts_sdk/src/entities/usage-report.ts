@@ -48,7 +48,7 @@ export class UsageReport extends APIEntity<UsageReport> {
   }
 
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('usage_report') ?? super.dockPointer;
+    return this.assetEditorPointer('usage_report') ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {

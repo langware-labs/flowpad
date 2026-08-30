@@ -118,7 +118,7 @@ export class SubAgent extends APIEntity<SubAgent> {
 
   /** Default open target: the asset editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('subagent') ?? super.dockPointer;
+    return this.assetEditorPointer('subagent') ?? this.defaultDockPointer;
   }
 
   override get searchDockPointer(): DockPointerData {
