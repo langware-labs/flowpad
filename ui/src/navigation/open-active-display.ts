@@ -1,6 +1,8 @@
+import type { ShowTarget } from '@sdk';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from './DockPointer';
-import { dockForDisplayTarget, type DisplayTargetLike } from './display-target-pointer';
+import {dockForDisplayTarget} from './display-target-pointer';
+
 import { shellIdFromShowTarget } from './shell-show-target';
 import type { NavigationActions } from './NavigationActions';
 
@@ -15,7 +17,7 @@ import type { NavigationActions } from './NavigationActions';
  * Every path that turns a show into an address must refuse the same set, which is
  * why this is exported rather than re-spelled per caller.
  */
-export function isPortDisplayTarget(target: DisplayTargetLike | null | undefined): boolean {
+export function isPortDisplayTarget(target: ShowTarget | null | undefined): boolean {
   return target?.kind === 'webapp' || (target?.kind === 'app' && !target.artifact_id && !target.typeid);
 }
 
@@ -36,7 +38,7 @@ export function isPortDisplayTarget(target: DisplayTargetLike | null | undefined
  * target still lives in the display history).
  */
 export function activeDisplayDock(
-  target: DisplayTargetLike | null | undefined,
+  target: ShowTarget | null | undefined,
   { host, projectId }: { host: string | null; projectId: string | null },
 ): DockPointer | null {
   if (!target || shellIdFromShowTarget(target) || isPortDisplayTarget(target)) return null;
@@ -54,7 +56,7 @@ export function activeDisplayDock(
 }
 
 export interface OpenActiveDisplayArgs {
-  target: DisplayTargetLike;
+  target: ShowTarget;
   navigation: NavigationActions;
   /** The workspace host, as the POINTER form `agentic_process-<uuid>`. */
   host: string | null;

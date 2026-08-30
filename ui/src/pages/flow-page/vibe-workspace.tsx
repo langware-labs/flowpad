@@ -1,3 +1,4 @@
+import type { ShowTarget } from '@sdk';
 import { WebappViewer } from '@src/components/webapp-viewer';
 import CodeEditor from '@src/components/code-editor/CodeEditor';
 import DiffViewer from '@src/components/code-editor/DiffViewer';
@@ -12,7 +13,8 @@ import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForPath } from '@src/navigation/asset-doc-types';
 import { DisplayHistoryButton } from './display-history-button';
 import { AgenticProcess, type DisplayEntry, FlowData, ViewType } from '@sdk';
-import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
+import {dockForDisplayTarget} from '@src/navigation/display-target-pointer';
+
 import { isPortDisplayTarget, openActiveDisplay } from '@src/navigation/open-active-display';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -26,14 +28,8 @@ import { launchVibeSessionForProject } from './use-start-vibe-session';
 import { VIBE_STARTER_PROMPTS } from './vibe-starter-prompts';
 import { type VibeWorkspaceSession, useVibeWorkspaceSessionHost } from './use-vibe-workspace-session';
 import { VibeChatPane } from './vibe-chat-pane';
-import {
-  displayAnnotationContextForDock,
-  displayAnnotationContextForPath,
-  displayAnnotationContextForShown,
-  displayAnnotationContextForWebapp,
-  type DisplayAnnotationContext,
-  type DisplayShowTarget,
-} from './display-annotation';
+import {displayAnnotationContextForDock, displayAnnotationContextForPath, displayAnnotationContextForShown, displayAnnotationContextForWebapp, type DisplayAnnotationContext} from './display-annotation';
+
 import { submitDisplayAnnotation } from './display-annotation-submit';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -109,7 +105,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   // Memoized for the same reason the chrome does it: a fresh `[]` fallback each
   // render would invalidate every memo that reads the stack.
   const displayStack = useMemo(() => persistedProcess?.displayStack ?? [], [persistedProcess]);
-  const lastShown = (persistedProcess?.context_data as { last_shown?: DisplayShowTarget } | undefined)?.last_shown;
+  const lastShown = (persistedProcess?.context_data as { last_shown?: ShowTarget } | undefined)?.last_shown;
   const persistedShown = lastShown ?? (displayStack.length ? displayStack[displayStack.length - 1] : null);
   const persistedShownKey = persistedShown ? JSON.stringify(persistedShown) : '';
 
@@ -120,14 +116,14 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   // WEB_APP case is a bare viewer with no runtime switcher and no cache-key path,
   // so collapsing it early would visibly regress the running-app display. Those
   // stay pinned here until the app grammar lands, and this state holds ONLY them.
-  const [shown, setShown] = useState<DisplayShowTarget | null>(null);
+  const [shown, setShown] = useState<ShowTarget | null>(null);
   // Bumped on every `flow show` — even for the SAME webapp port. The iframe
   // registry keys by src (get-host?port=N), so a same-port re-show reuses the
   // cached iframe and shows stale content after a rebuild; feeding this as the
   // frame's cacheKey forces a reload on each show.
   const [showNonce, setShowNonce] = useState(0);
   // The payload of the newest show — see `DisplayChrome.latestShown`.
-  const [latestShown, setLatestShown] = useState<DisplayShowTarget | null>(null);
+  const [latestShown, setLatestShown] = useState<ShowTarget | null>(null);
   useEffect(() => {
     if (!activeProcess) {
       setShown(null);

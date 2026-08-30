@@ -21,14 +21,6 @@ export interface DisplayAnnotationContext {
   viewType?: string;
 }
 
-/**
- * The `flow show` target as it arrives on a display annotation.
- *
- * An alias for the SDK's `ShowTarget`, not a fourth copy of it: this was
- * field-for-field identical to it, and the copies of this one backend payload
- * (`flow_sdk/core/display_target.py`) had already drifted apart.
- */
-export type DisplayShowTarget = ShowTarget;
 
 function slug(value: string): string {
   return value
@@ -70,7 +62,7 @@ export function displayAnnotationContextForPath(path: string): DisplayAnnotation
 }
 
 export function displayAnnotationContextForShown(
-  shown: DisplayShowTarget,
+  shown: ShowTarget,
   host?: string | null,
   port?: string | number | null,
 ): DisplayAnnotationContext {

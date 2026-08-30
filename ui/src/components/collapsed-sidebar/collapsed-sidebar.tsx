@@ -1,4 +1,3 @@
-
 import { markPerfT0, perfLog } from '@src/routes/loaders/_perf';
 import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
 import { FlowpadAssistantButton } from '@src/components/floating-chat';
