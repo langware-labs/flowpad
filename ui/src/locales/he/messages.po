@@ -1543,6 +1543,7 @@ msgstr "הערה"
 msgid "Annotation not submitted"
 msgstr "ההערה לא נשלחה"
 
+#: src/pages/flow-page/display-chrome.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Annotation submitted"
 msgstr "הערה נשלחה"
@@ -1634,6 +1635,7 @@ msgstr "מפתחות API"
 msgid "API Timeout"
 msgstr "פסק זמן ל-API"
 
+#: src/types/ViewType.ts
 #: src/types/ViewType.ts
 msgid "App"
 msgstr "אפליקציה"
@@ -1776,6 +1778,10 @@ msgstr "בקשו עזרה"
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "Ask someone for help"
 msgstr "לבקש עזרה ממישהו"
+
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "Ask the agent to connect one"
+msgstr ""
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Ask the Flowpad Assistant anything."
@@ -2777,8 +2783,8 @@ msgid "Claude session ID this annotation is associated with"
 msgstr "מזהה סשן Claude שאליו משויכת ההערה"
 
 #: src/components/claude-terminal/claude-terminal.tsx
-msgid "Claude Terminal"
-msgstr "טרמינל קלוד"
+#~ msgid "Claude Terminal"
+#~ msgstr "טרמינל קלוד"
 
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-resource-list/ProjectResourceList.tsx
@@ -3450,6 +3456,10 @@ msgstr "אישור"
 msgid "Connect"
 msgstr "התחבר"
 
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "Connect a data source for me and help me define what I want out of each item."
+msgstr ""
+
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 #: src/pages/entry/OpenSandboxLanding.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -3767,7 +3777,6 @@ msgstr "העתקת קישורים"
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/top-nav-bar/CopyPathButton.tsx
-#: src/components/top-nav-bar/CopyPathButton.tsx
 msgid "Copy path"
 msgstr "העתק נתיב"
 
@@ -3805,6 +3814,7 @@ msgstr "עלות"
 msgid "Cost"
 msgstr "עלות"
 
+#: src/pages/flow-page/display-chrome.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Could not annotate view"
 msgstr "לא ניתן להוסיף הערות לתצוגה"
@@ -6128,7 +6138,6 @@ msgstr "יציאה מהמצב המקומי"
 
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/browseable-tree/BrowseableTree.tsx
-#: src/components/claude-terminal/claude-terminal.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Expand"
@@ -6419,15 +6428,14 @@ msgstr "כישלון בטעינת הווקים"
 
 #: src/components/markdown-viewer.tsx
 #: src/components/markdown-viewer.tsx
-msgid "Failed to load markdown file"
-msgstr "נכשל בטעינת קובץ markdown"
+#~ msgid "Failed to load markdown file"
+#~ msgstr "נכשל בטעינת קובץ markdown"
 
 #: src/components/directory-tree/ProjectsDirectoryTree.tsx
 msgid "Failed to load projects"
 msgstr "כישלון בטעינת פרויקטים"
 
-#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
-#: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
+#: src/components/assets/editor/ReportAssetShell.tsx
 msgid "Failed to load report: {error}"
 msgstr "נכשל בטעינת הדו״ח: {error}"
 
@@ -7584,8 +7592,8 @@ msgid "Hidden from your inbox"
 msgstr "מוסתר מתיבת הדואר שלך"
 
 #: src/components/claude-terminal/claude-terminal.tsx
-msgid "Hide"
-msgstr "הסתר"
+#~ msgid "Hide"
+#~ msgstr "הסתר"
 
 #. placeholder {0}: header.title
 #: src/components/navigator-panel/NavigatorPanel.tsx
@@ -8856,7 +8864,7 @@ msgstr "טוען . . ."
 msgid "Loading [[{name}]]…"
 msgstr "טוען [[{name}]]…"
 
-#. placeholder {0}: params.uname
+#. placeholder {0}: params?.uname ?? ''
 #: src/components/app-host/AppHost.tsx
 msgid "Loading {0}..."
 msgstr "טוען {0}..."
@@ -8933,7 +8941,7 @@ msgstr "טוען אבחנה…"
 msgid "Loading diff…"
 msgstr "טוען דיף…"
 
-#: src/components/docs-viewer/DocsViewer.tsx
+#: src/components/vfs-markdown-pane.tsx
 msgid "Loading document..."
 msgstr "טוען מסמך..."
 
@@ -9024,8 +9032,7 @@ msgstr "טוען פרומפטים…"
 msgid "Loading records…"
 msgstr "טוען רשומות…"
 
-#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
-#: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
+#: src/components/assets/editor/ReportAssetShell.tsx
 msgid "Loading report…"
 msgstr "טוען דו״ח…"
 
@@ -9566,8 +9573,8 @@ msgid "min hr dom mon dow — or \"30s\" / \"5m\" for interval"
 msgstr "דקה שעה יום חודש יום שבוע — או \"30s\" / \"5m\" לקביעת מרווח"
 
 #: src/components/claude-terminal/claude-terminal.tsx
-msgid "Minimize"
-msgstr "הקטן"
+#~ msgid "Minimize"
+#~ msgstr "הקטן"
 
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyTray.tsx
@@ -10137,8 +10144,7 @@ msgstr "אין בדיקת חיבור מוגדרת עבור ספק זה."
 msgid "No contacts found."
 msgstr "לא נמצאו אנשי קשר."
 
-#: src/components/docs-viewer/DocsViewer.tsx
-#: src/components/markdown-viewer.tsx
+#: src/components/vfs-markdown-pane.tsx
 msgid "No content available"
 msgstr "אין תוכן זמין"
 
@@ -10210,6 +10216,10 @@ msgstr "אין מסמך נבחר"
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "no edges"
 msgstr "אין קצוות"
+
+#: src/components/assets/editor/app/AssetAppHost.tsx
+msgid "No editor app named on this dock."
+msgstr ""
 
 #: src/components/conversation/EmojiPicker.tsx
 msgid "No emoji found"
@@ -11180,6 +11190,10 @@ msgstr "פתחו את .env.local בשורה זו"
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
 msgid "Open {0}"
 msgstr "פתח את {0}"
+
+#: src/components/data-sources/SourceMenu.tsx
+msgid "Open {app}"
+msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Open {label}"
@@ -13009,7 +13023,6 @@ msgstr "מרובט אך לא בטבלת הישויות"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/machine-overview/machine-overview.tsx
-#: src/components/markdown-viewer.tsx
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -13044,7 +13057,7 @@ msgstr "רענן ניתוח"
 msgid "Refresh docs"
 msgstr "רענון תיעוד"
 
-#: src/components/docs-viewer/DocsViewer.tsx
+#: src/components/vfs-markdown-pane.tsx
 msgid "Refresh document"
 msgstr "רענן מסמך"
 
@@ -14915,7 +14928,6 @@ msgstr "שם Shell"
 
 #: src/routes/loaders/load-next-process.ts
 #: src/routes/loaders/load-project.ts
-#: src/routes/loaders/load-shell.ts
 msgid "Shell not found"
 msgstr "shell לא נמצא"
 
@@ -14929,7 +14941,6 @@ msgstr "כרטיסיית Shell"
 
 #: src/routes/loaders/load-next-process.ts
 #: src/routes/loaders/load-project.ts
-#: src/routes/loaders/load-shell.ts
 msgid "Shell unavailable"
 msgstr "shell לא זמין"
 
@@ -14942,7 +14953,6 @@ msgstr "מפתח קצר-טווח לקישור העמוק של Open-in-FlowPad"
 msgid "Should I allow this tool? Respond with JSON: {0}"
 msgstr "האם להרשות כלי זה? הגב ב-JSON: {0}"
 
-#: src/components/claude-terminal/claude-terminal.tsx
 #: src/components/connections-manager/usage-cell.tsx
 #: src/types/ViewType.ts
 msgid "Show"
@@ -15863,7 +15873,7 @@ msgstr "תת-הגרף לא נמצא"
 msgid "subgraph projection"
 msgstr "היטל תת־גרף"
 
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/display-annotation-submit.ts
 msgid "Submit"
 msgstr "שלחו"
 
@@ -16494,6 +16504,10 @@ msgstr "האפליקציה הזו כבר אינה זמינה."
 msgid "This asset can't be shared with Git. Turn Git sharing off to send a copy."
 msgstr "לא ניתן להשתף את הנכס הזה עם Git. יש לכבות את שיתוף Git כדי לשלוח עותק."
 
+#: src/components/assets/editor/app/AssetAppHost.tsx
+msgid "This asset has no editor \"{app}\"."
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This asset has no file path."
 msgstr "לנכס זה אין נתיב קובץ."
@@ -16533,6 +16547,10 @@ msgstr "שיחה זו כבר אינה קיימת או אינה זמינה."
 #: src/components/assets/editor/translations/DocLanguageSwitcher.tsx
 msgid "This document"
 msgstr "המסמך הזה"
+
+#: src/components/vfs-markdown-pane.tsx
+msgid "This document no longer exists."
+msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "This entry was removed since the last stamp — it exists only in the baseline."
@@ -16746,7 +16764,6 @@ msgstr "משימה זו כבר לא קיימת או אינה זמינה."
 
 #: src/routes/loaders/load-next-process.ts
 #: src/routes/loaders/load-project.ts
-#: src/routes/loaders/load-shell.ts
 msgid "This terminal no longer exists."
 msgstr "הטרמינל הזה כבר לא קיים."
 
@@ -16905,8 +16922,8 @@ msgstr "הפעל/כבה מצב תכנון (Shift+Tab)"
 #: src/components/ui/sidebar.tsx
 #: src/components/ui/sidebar.tsx
 #: src/components/ui/sidebar.tsx
-msgid "Toggle Sidebar"
-msgstr "הדלק סרגל צדדי"
+#~ msgid "Toggle Sidebar"
+#~ msgstr "הדלק סרגל צדדי"
 
 #: src/components/code-editor/CodeEditor.tsx
 msgid "Toggle terminal"

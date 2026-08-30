@@ -1543,6 +1543,7 @@ msgstr "Annotation"
 msgid "Annotation not submitted"
 msgstr "Annotation not submitted"
 
+#: src/pages/flow-page/display-chrome.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Annotation submitted"
 msgstr "Annotation submitted"
@@ -1634,6 +1635,7 @@ msgstr "API Keys"
 msgid "API Timeout"
 msgstr "API Timeout"
 
+#: src/types/ViewType.ts
 #: src/types/ViewType.ts
 msgid "App"
 msgstr "App"
@@ -1776,6 +1778,10 @@ msgstr "Ask for help"
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "Ask someone for help"
 msgstr "Ask someone for help"
+
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "Ask the agent to connect one"
+msgstr "Ask the agent to connect one"
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Ask the Flowpad Assistant anything."
@@ -2777,8 +2783,8 @@ msgid "Claude session ID this annotation is associated with"
 msgstr "Claude session ID this annotation is associated with"
 
 #: src/components/claude-terminal/claude-terminal.tsx
-msgid "Claude Terminal"
-msgstr "Claude Terminal"
+#~ msgid "Claude Terminal"
+#~ msgstr "Claude Terminal"
 
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-resource-list/ProjectResourceList.tsx
@@ -3450,6 +3456,10 @@ msgstr "Confirm"
 msgid "Connect"
 msgstr "Connect"
 
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "Connect a data source for me and help me define what I want out of each item."
+msgstr "Connect a data source for me and help me define what I want out of each item."
+
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 #: src/pages/entry/OpenSandboxLanding.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -3767,7 +3777,6 @@ msgstr "Copy links"
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/top-nav-bar/CopyPathButton.tsx
-#: src/components/top-nav-bar/CopyPathButton.tsx
 msgid "Copy path"
 msgstr "Copy path"
 
@@ -3805,6 +3814,7 @@ msgstr "cost"
 msgid "Cost"
 msgstr "Cost"
 
+#: src/pages/flow-page/display-chrome.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Could not annotate view"
 msgstr "Could not annotate view"
@@ -6128,7 +6138,6 @@ msgstr "Exit local"
 
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/browseable-tree/BrowseableTree.tsx
-#: src/components/claude-terminal/claude-terminal.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Expand"
@@ -6419,15 +6428,14 @@ msgstr "Failed to Load Hooks"
 
 #: src/components/markdown-viewer.tsx
 #: src/components/markdown-viewer.tsx
-msgid "Failed to load markdown file"
-msgstr "Failed to load markdown file"
+#~ msgid "Failed to load markdown file"
+#~ msgstr "Failed to load markdown file"
 
 #: src/components/directory-tree/ProjectsDirectoryTree.tsx
 msgid "Failed to load projects"
 msgstr "Failed to load projects"
 
-#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
-#: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
+#: src/components/assets/editor/ReportAssetShell.tsx
 msgid "Failed to load report: {error}"
 msgstr "Failed to load report: {error}"
 
@@ -7584,8 +7592,8 @@ msgid "Hidden from your inbox"
 msgstr "Hidden from your inbox"
 
 #: src/components/claude-terminal/claude-terminal.tsx
-msgid "Hide"
-msgstr "Hide"
+#~ msgid "Hide"
+#~ msgstr "Hide"
 
 #. placeholder {0}: header.title
 #: src/components/navigator-panel/NavigatorPanel.tsx
@@ -8856,7 +8864,7 @@ msgstr "Loading . . ."
 msgid "Loading [[{name}]]…"
 msgstr "Loading [[{name}]]…"
 
-#. placeholder {0}: params.uname
+#. placeholder {0}: params?.uname ?? ''
 #: src/components/app-host/AppHost.tsx
 msgid "Loading {0}..."
 msgstr "Loading {0}..."
@@ -8933,7 +8941,7 @@ msgstr "Loading diagnosis…"
 msgid "Loading diff…"
 msgstr "Loading diff…"
 
-#: src/components/docs-viewer/DocsViewer.tsx
+#: src/components/vfs-markdown-pane.tsx
 msgid "Loading document..."
 msgstr "Loading document..."
 
@@ -9024,8 +9032,7 @@ msgstr "Loading prompts…"
 msgid "Loading records…"
 msgstr "Loading records…"
 
-#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
-#: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
+#: src/components/assets/editor/ReportAssetShell.tsx
 msgid "Loading report…"
 msgstr "Loading report…"
 
@@ -9566,8 +9573,8 @@ msgid "min hr dom mon dow — or \"30s\" / \"5m\" for interval"
 msgstr "min hr dom mon dow — or \"30s\" / \"5m\" for interval"
 
 #: src/components/claude-terminal/claude-terminal.tsx
-msgid "Minimize"
-msgstr "Minimize"
+#~ msgid "Minimize"
+#~ msgstr "Minimize"
 
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyTray.tsx
@@ -10137,8 +10144,7 @@ msgstr "No connection test is defined for this provider."
 msgid "No contacts found."
 msgstr "No contacts found."
 
-#: src/components/docs-viewer/DocsViewer.tsx
-#: src/components/markdown-viewer.tsx
+#: src/components/vfs-markdown-pane.tsx
 msgid "No content available"
 msgstr "No content available"
 
@@ -10210,6 +10216,10 @@ msgstr "No Document Selected"
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "no edges"
 msgstr "no edges"
+
+#: src/components/assets/editor/app/AssetAppHost.tsx
+msgid "No editor app named on this dock."
+msgstr "No editor app named on this dock."
 
 #: src/components/conversation/EmojiPicker.tsx
 msgid "No emoji found"
@@ -11180,6 +11190,10 @@ msgstr "Open .env.local at this line"
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
 msgid "Open {0}"
 msgstr "Open {0}"
+
+#: src/components/data-sources/SourceMenu.tsx
+msgid "Open {app}"
+msgstr "Open {app}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Open {label}"
@@ -13009,7 +13023,6 @@ msgstr "referenced but not in entities table"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/machine-overview/machine-overview.tsx
-#: src/components/markdown-viewer.tsx
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -13044,7 +13057,7 @@ msgstr "Refresh analysis"
 msgid "Refresh docs"
 msgstr "Refresh docs"
 
-#: src/components/docs-viewer/DocsViewer.tsx
+#: src/components/vfs-markdown-pane.tsx
 msgid "Refresh document"
 msgstr "Refresh document"
 
@@ -14915,7 +14928,6 @@ msgstr "Shell Name"
 
 #: src/routes/loaders/load-next-process.ts
 #: src/routes/loaders/load-project.ts
-#: src/routes/loaders/load-shell.ts
 msgid "Shell not found"
 msgstr "Shell not found"
 
@@ -14929,7 +14941,6 @@ msgstr "Shell tab"
 
 #: src/routes/loaders/load-next-process.ts
 #: src/routes/loaders/load-project.ts
-#: src/routes/loaders/load-shell.ts
 msgid "Shell unavailable"
 msgstr "Shell unavailable"
 
@@ -14942,7 +14953,6 @@ msgstr "Short-lived key for Open-in-FlowPad deep link"
 msgid "Should I allow this tool? Respond with JSON: {0}"
 msgstr "Should I allow this tool? Respond with JSON: {0}"
 
-#: src/components/claude-terminal/claude-terminal.tsx
 #: src/components/connections-manager/usage-cell.tsx
 #: src/types/ViewType.ts
 msgid "Show"
@@ -15863,7 +15873,7 @@ msgstr "Subgraph not found"
 msgid "subgraph projection"
 msgstr "subgraph projection"
 
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/display-annotation-submit.ts
 msgid "Submit"
 msgstr "Submit"
 
@@ -16494,6 +16504,10 @@ msgstr "This app is no longer available."
 msgid "This asset can't be shared with Git. Turn Git sharing off to send a copy."
 msgstr "This asset can't be shared with Git. Turn Git sharing off to send a copy."
 
+#: src/components/assets/editor/app/AssetAppHost.tsx
+msgid "This asset has no editor \"{app}\"."
+msgstr "This asset has no editor \"{app}\"."
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This asset has no file path."
 msgstr "This asset has no file path."
@@ -16533,6 +16547,10 @@ msgstr "This conversation no longer exists or is unavailable."
 #: src/components/assets/editor/translations/DocLanguageSwitcher.tsx
 msgid "This document"
 msgstr "This document"
+
+#: src/components/vfs-markdown-pane.tsx
+msgid "This document no longer exists."
+msgstr "This document no longer exists."
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "This entry was removed since the last stamp — it exists only in the baseline."
@@ -16746,7 +16764,6 @@ msgstr "This task no longer exists or is unavailable."
 
 #: src/routes/loaders/load-next-process.ts
 #: src/routes/loaders/load-project.ts
-#: src/routes/loaders/load-shell.ts
 msgid "This terminal no longer exists."
 msgstr "This terminal no longer exists."
 
@@ -16905,8 +16922,8 @@ msgstr "Toggle plan mode (Shift+Tab)"
 #: src/components/ui/sidebar.tsx
 #: src/components/ui/sidebar.tsx
 #: src/components/ui/sidebar.tsx
-msgid "Toggle Sidebar"
-msgstr "Toggle Sidebar"
+#~ msgid "Toggle Sidebar"
+#~ msgstr "Toggle Sidebar"
 
 #: src/components/code-editor/CodeEditor.tsx
 msgid "Toggle terminal"

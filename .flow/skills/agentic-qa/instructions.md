@@ -896,3 +896,45 @@ Any Playwright test whose duration exceeds 60s is reported as **timeout** — a 
 - The isolated launcher may be reaped after a source edit/watchfiles restart; a foreground PTY backend/frontend on the same named instance produced a stable machine-read verdict.
 - Playwright API requests needed `API_URL=http://127.0.0.1:<port>` when the backend was IPv4-only; the browser frontend remained reachable through the configured localhost URL.
 - Asset collision coverage passed: file/folder copies, primary-excluded counts, URL back/forward drawer state, copy removal lifecycle, and Git introduction precedence.
+
+### 2026-08-30 — full cycle (0.2.148-fixes)
+
+- **A category `flow instance reset` leaves the FIRST file cold, and that alone manufactured 6 of 10
+  Phase 11 failures.** Every one of the six was its category's alphabetically-first file, and every
+  one passed 3/3 UNCHANGED on a warm backend. Waiting for readiness is not enough — the backend must
+  have SERVED a full app session. Fix that works: after each reset, one discarded
+  `npx playwright screenshot --browser chromium --wait-for-timeout 3000 http://localhost:$FE/dock/home`.
+  Also gate the frontend on a real HTTP 200 (a reset restarts vite), not mere reachability.
+- **When another session is editing the tree, ALL browser verdicts are void** — vite hot-reloads its
+  saves straight into the test browser, and the failures cluster in exactly the modules being edited.
+  The isolated `git worktree` at a stable HEAD (deps symlinked, cycle diff applied, instance launched
+  FROM the worktree) is the only trustworthy gate. **Copy `.env.local` into the worktree** or every
+  key-dependent test (E2B sandbox ×3, LLM index) fails for want of a key.
+- **`uv run` from a worktree whose `.venv` is a symlink rewrites the MAIN tree's console-script
+  shebangs** to the worktree path (`.venv/bin/flow`, `.venv/bin/flow-sdk-mcp`). Removing the worktree
+  then breaks `flow` for the user. Repair by rewriting line 1 back to the main `.venv/bin/python3` —
+  and check for this every time a worktree is used.
+- **Parallel fix agents must each get `--output=/tmp/pw-<instance>`**; sharing `ui/test-results/`
+  produces spurious `ENOENT ... .playwright-artifacts-0/traces/*.trace` failures.
+- **Stale skill-doc commands cost a phase each this cycle:** vitest `react` now REQUIRES
+  `FLOW_INSTANCE` (the doc's bare `npm run test:vitest:react` fails all 111 files at load);
+  `flow instance reset` is NOT `flow instance ctl reset`; the hub vitest project hard-requires
+  `SHARE_INST_1`/`SHARE_INST_2`/`FLOW_INSTANCE`/`ALICE_*`/`BOB_*` (see the env-contract memory).
+- **A background wrapper's exit code is not the runner's.** `(cmd > log; echo "exit=$?" >> log)`
+  reports the ECHO's status to the task notifier — always read the `exit=` line from the log, never
+  the task's own exit code.
+- **The GitOrigin consolidation renamed the entity field to `origin`; `git_origin` survives only as
+  the hub WIRE name** (`hub_name="git_origin"`). Attribute reads/writes must use `.origin`; preflight
+  payload dicts keep `["git_origin"]`. Four tests were still on the old attribute.
+
+## Testing Environment
+
+- Cycle 2026-08-30 (0.2.148-fixes, macOS 24.6, 14 cores, load 3–11): cycle-owned instances via
+  `scripts/instance_ctl.sh` — qa-cycle (be :6001 / fe :5002) for phases 2/3/5/6/7/8 and the first
+  Playwright sweeps; qa-b/qa-c/qa-d for parallel fix agents; dev-1 (:6002) + dev-2 (:6004) for
+  phases 9/10, with dev-3 (:6003) already up from another session and REUSED, never killed. The
+  authoritative Phase 11 gate ran from a throwaway worktree `../flowpad-oss-qa2` (branch
+  qa-2026-08-30, `.venv` + `ui/node_modules` symlinked, `.env.local` copied) as instances qa-w
+  (:6001/:5002), qa-w2, qa-w3. Local hub :8093 was already UP and healthy all cycle and was never
+  restarted. The user's backends :9008 (oss) and :9007 (prod) were never targeted. Playwright:
+  headless Chromium, per-category config, JSON reporter per file, private `--output` per runner.
