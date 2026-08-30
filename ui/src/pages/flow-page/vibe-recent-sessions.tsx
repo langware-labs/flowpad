@@ -3,7 +3,8 @@ import { AgenticProcess } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { useProject } from '@sdk/react/hooks';
 import { Trans } from '@lingui/react/macro';
-import { WorkerIcon, pickHistoryTitle, timeAgo } from '@src/components/entity-execution-panel/history-row';
+import { WorkerIcon, pickHistoryTitle } from '@src/components/entity-execution-panel/history-row';
+import { formatTimeAgoShort } from '@src/utils/format-time-ago';
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Checkbox } from '@src/components/ui/checkbox';
@@ -48,7 +49,7 @@ function ActivityRows({
         // truncated title, right-aligned muted meta — differing only in what
         // fills those three slots and where a click goes. Derived here rather
         // than written twice, so the shared shape cannot drift between them.
-        const when = timeAgo(new Date(item.timestampMs).toISOString());
+        const when = formatTimeAgoShort(new Date(item.timestampMs).toISOString());
         const row =
           item.kind === 'session'
             ? {

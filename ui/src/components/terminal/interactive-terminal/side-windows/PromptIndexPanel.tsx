@@ -7,7 +7,7 @@ import { cn } from '@src/lib/utils';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { timeAgo } from '@src/components/entity-execution-panel/history-row';
+import { formatTimeAgoShort } from '@src/utils/format-time-ago';
 import {
   normalizePromptText,
   useLibraryPromptsForProject,
@@ -114,7 +114,7 @@ const PromptItem: React.FC<{
               <div className="flex items-center justify-between gap-1">
                 <span className="flex items-baseline gap-1 text-[10px] text-muted-foreground">
                   <span>{formatTime(entry.time)}</span>
-                  <span className="text-muted-foreground/60">· {timeAgo(entry.time)}</span>
+                  <span className="text-muted-foreground/60">· {formatTimeAgoShort(entry.time)}</span>
                   {system && (
                     <span
                       className="rounded bg-muted px-1 text-[8px] font-bold uppercase tracking-wide text-muted-foreground/80"
