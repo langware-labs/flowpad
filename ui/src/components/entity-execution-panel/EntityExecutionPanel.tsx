@@ -931,11 +931,17 @@ export function EntityExecutionPanel({
         leadingSlot={<QueueChip process={activeProcess} />}
         history={inputHistory}
         animateEnqueue
-        // Keyed to the SURFACE, not `activeProcess`: that resolves
-        // asynchronously, so a scope flip would swap live text out from under
-        // someone mid-sentence. `target` + `processType` is this panel's
-        // identity and is stable from first render.
-        draftScope={target ? `${processType}:${target}` : undefined}
+        // The PROCESS id, which is what makes a draft follow the session across
+        // a view-mode switch: vibe renders this panel (pinned via
+        // `initialProcessId`) while Standard renders ChatComposerBar, and both
+        // are bound to the same process by the dock URL. Keying on the surface
+        // instead would give the two composers different scopes and lose the
+        // draft at exactly the moment the user swaps modes.
+        //
+        // It resolves asynchronously, so it starts undefined — CompactExecutionInput
+        // carries live text across that first undefined -> id transition rather
+        // than clearing it.
+        draftScope={activeProcess?.id}
       />
       <ConfirmDialog
         open={!!pendingDelete}

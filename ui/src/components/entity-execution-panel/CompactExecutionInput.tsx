@@ -114,10 +114,22 @@ export function CompactExecutionInput({
   // adopt rather than write — otherwise one conversation's text lands under
   // another's key. The outgoing text is already stored: it was written when it
   // was typed.
+  //
+  // One exception, and it is why the check is `undefined` and not "changed":
+  // a scope arriving from undefined is this composer's own identity RESOLVING
+  // (the owning panel looks its process up asynchronously), not a move to
+  // another conversation. The text on screen belongs to this chat, so it is
+  // carried over instead of being wiped by an empty stored draft. Any
+  // defined -> defined change IS a real switch and adopts.
   const prevScope = useRef(scope);
   useEffect(() => {
     if (prevScope.current !== scope) {
+      const identityResolved = prevScope.current === undefined;
       prevScope.current = scope;
+      if (identityResolved && value !== '') {
+        writeDraft(scope, value);
+        return;
+      }
       setValue(readDraft(scope));
       return;
     }

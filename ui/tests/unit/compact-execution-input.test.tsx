@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useInputHistory } from '@src/hooks/use-input-history';
 import { CompactExecutionInput } from '@src/components/entity-execution-panel/CompactExecutionInput';
-import { resetComposerDrafts } from '@src/components/entity-execution-panel/composer-drafts';
+import { resetComposerDrafts, writeDraft } from '@src/components/entity-execution-panel/composer-drafts';
 import { QueueChip } from '@src/components/entity-execution-panel/QueueChip';
 import type { AgenticProcess } from '@sdk';
 import { useEffect } from 'react';
@@ -257,5 +257,60 @@ describe('CompactExecutionInput drafts', () => {
 
     render(<Harness />);
     expect(input().value).toBe('');
+  });
+});
+
+// Vibe renders EntityExecutionPanel, Standard renders ChatComposerBar, and the
+// dock URL binds both to the SAME AgenticProcess. Scoping on that process id is
+// what carries a half-typed prompt across a view-mode switch.
+describe('CompactExecutionInput drafts across view modes', () => {
+  beforeEach(resetComposerDrafts);
+  afterEach(() => {
+    cleanup();
+    resetComposerDrafts();
+  });
+
+  it('the same process id shares one draft between two composers', () => {
+    // Vibe's panel.
+    const vibe = render(<Harness draftScope="proc-1" />);
+    fireEvent.change(input(), { target: { value: 'started in vibe' } });
+    vibe.unmount();
+
+    // Standard's composer bar — a different component, same process.
+    render(<Harness draftScope="proc-1" />);
+    expect(input().value).toBe('started in vibe');
+  });
+
+  it('text typed before the process resolves is carried over, not wiped', () => {
+    // The panel looks its process up asynchronously, so the composer mounts
+    // with no scope at all. Typing into that window must survive the moment
+    // the id lands, or a fast typist loses the first thing they wrote.
+    const { rerender } = render(<Harness />);
+    fireEvent.change(input(), { target: { value: 'typed before the id landed' } });
+
+    rerender(<Harness draftScope="proc-1" />);
+    expect(input().value).toBe('typed before the id landed');
+    expect(sessionStorage.getItem('flowpad.composer.draft.proc-1')).toBe('typed before the id landed');
+  });
+
+  it('resolving into a process that already has a draft adopts it when empty', () => {
+    writeDraft('proc-1', 'left here earlier');
+    const { rerender } = render(<Harness />);
+    rerender(<Harness draftScope="proc-1" />);
+    expect(input().value).toBe('left here earlier');
+  });
+
+  it('a real switch between processes still adopts, never carries over', () => {
+    // The guard is `undefined ->` specifically, so this must NOT behave like
+    // the carry-over above: proc-1's text must not follow into proc-2.
+    const { rerender } = render(<Harness draftScope="proc-1" />);
+    fireEvent.change(input(), { target: { value: 'meant for proc-1' } });
+
+    rerender(<Harness draftScope="proc-2" />);
+    expect(input().value).toBe('');
+    expect(sessionStorage.getItem('flowpad.composer.draft.proc-2')).toBeNull();
+
+    rerender(<Harness draftScope="proc-1" />);
+    expect(input().value).toBe('meant for proc-1');
   });
 });
