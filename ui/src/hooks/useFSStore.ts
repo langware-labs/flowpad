@@ -1,22 +1,7 @@
-import { useStore } from 'zustand';
-import { fsStore, type FSStoreState } from '@sdk';
-
 /**
- * React hook wrapper for the vanilla fsStore from the SDK.
- * This allows React components to subscribe to store changes.
+ * Re-export of the SDK hook — see `@sdk/react/hooks/useFSStore`.
  *
- * @example
- * ```tsx
- * const browseCache = useFSStore((state) => state.browseCache);
- * const contentCache = useFSStore((state) => state.contentCache);
- * ```
+ * The UI once carried its own copy; the two drifted apart and were both loaded
+ * into the same bundle. The SDK module is the single implementation.
  */
-export function useFSStore<T>(selector: (state: FSStoreState) => T): T {
-  return useStore(fsStore, selector);
-}
-
-/**
- * For non-React usage or direct .getState() calls,
- * re-export the vanilla store.
- */
-export { fsStore };
+export { useFSStore, fsStore } from '@sdk/react/hooks/useFSStore';
