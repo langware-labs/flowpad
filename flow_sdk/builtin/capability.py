@@ -5,6 +5,14 @@ from typing import Any, ClassVar
 
 from flow_sdk.api.api_types.api_field import APIField, Persist
 from flow_sdk.api.api_types.identifier import mint_uuid
+
+# ``auth_probe`` is stdlib-only, so this one cli_drivers import can live at
+# module level — the lazy imports elsewhere in this file exist for the heavy
+# siblings (``get_driver``, ``device_login``), not for this.
+from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import (
+    DeviceLoginState,
+    WorkerAuthStatus,
+)
 from flow_sdk.core import Entity, action
 from flow_sdk.core.capabilities import (
     CapabilityResult,
@@ -86,7 +94,7 @@ class Capability(Entity):
     # (same shape as AgenticProcess.connection_id / Tab.status). Mirrors the
     # live DeviceLoginSession for this harness kind; None/idle when no login
     # is in flight.
-    login_state: str | None = APIField(default=None, persist=Persist.FALSE)
+    login_state: DeviceLoginState | None = APIField(default=None, persist=Persist.FALSE)
     login_url: str | None = APIField(default=None, persist=Persist.FALSE)
     login_code: str | None = APIField(default=None, persist=Persist.FALSE)
     login_accepts_code: bool | None = APIField(default=None, persist=Persist.FALSE)
@@ -166,7 +174,9 @@ class Capability(Entity):
         return seeded
 
     @classmethod
-    async def get_by_kind(cls, kind: str, scope_type: str | None = None, scope_id: str | None = None) -> "Capability | None":
+    async def get_by_kind(
+        cls, kind: str, scope_type: str | None = None, scope_id: str | None = None
+    ) -> "Capability | None":
         await cls.ensure_seeded()
         return await cls._db.get_by_id(capability_id_for_kind(kind, scope_type, scope_id), cls.get_type())
 
@@ -297,7 +307,7 @@ class Capability(Entity):
         session lands on ``authenticated``, re-discover this kind so the
         availability + state flip and broadcast."""
         await self._apply_login_session(session)
-        if session.state.value == "authenticated":
+        if session.state is DeviceLoginState.AUTHENTICATED:
             from flow_sdk.core.capabilities.discovery import run_discovery
 
             await run_discovery([self.kind])
@@ -305,7 +315,7 @@ class Capability(Entity):
     def _set_login_fields(
         self,
         *,
-        state: str | None,
+        state: DeviceLoginState | None,
         url: str | None = None,
         code: str | None = None,
         accepts_code: bool | None = None,
@@ -322,7 +332,7 @@ class Capability(Entity):
         broadcast (no DB write — the fields are runtime-only)."""
         snapshot = session.to_json()
         self._set_login_fields(
-            state=snapshot["state"],
+            state=DeviceLoginState(snapshot["state"]),
             url=snapshot["url"],
             code=snapshot["code"],
             accepts_code=snapshot["accepts_code_paste"],
@@ -386,12 +396,56 @@ class Capability(Entity):
         await self.notify_updated()
         return ApiSuccessResponse(data={"cancelled": session is not None})
 
+    async def _mirror_probe_to_login_state(self, result) -> None:
+        """Mirror an auth probe onto ``login_state`` — but only when the probe
+        actually DECIDED.
+
+        ``docs/interface/cli-drivers.md`` pins the driver contract: the probe
+        distinguishes ``LOGGED_IN`` / ``LOGGED_OUT`` from ``NOT_INSTALLED`` (no
+        discovered bin folder) and ``UNKNOWN`` (timeout, exec error, output it
+        could not parse) — the last two "never conflated with ``LOGGED_OUT``".
+        Collapsing all four into authenticated/idle broke exactly that: ``idle``
+        is what ``isHarnessLoginRequired`` renders as "a coding agent CLI is
+        installed but not signed in", so a probe that merely failed to reach a
+        verdict told the user their signed-in harness was signed out.
+
+        An undetermined probe is evidence about the PROBE, not about login, so
+        it moves the field in neither direction — it does not assert a sign-out
+        and does not clear a real one. The caller still receives the full
+        result, so the modal can say what actually happened.
+        """
+        import logging
+
+        if self.login_state in (DeviceLoginState.AWAITING_USER, DeviceLoginState.STARTING):
+            return  # a login is in flight; don't clobber it
+        if result.status is WorkerAuthStatus.LOGGED_IN:
+            new_state = DeviceLoginState.AUTHENTICATED
+        elif result.status is WorkerAuthStatus.LOGGED_OUT:
+            new_state = DeviceLoginState.IDLE
+        else:
+            logging.getLogger(__name__).info(
+                "Auth probe for %s did not determine login state (%s: %s) — leaving login_state=%r",
+                self.kind,
+                result.status.value,
+                result.message,
+                self.login_state,
+            )
+            return
+        # Only broadcast when the mirror actually changes (a no-op probe
+        # shouldn't emit a WS frame).
+        if new_state != self.login_state or result.message != self.login_message:
+            self.login_state = new_state
+            self.login_message = result.message
+            await self.notify_updated()
+
     @action.get(action_name="auth-status")
     async def auth_status_action(self) -> ApiSuccessResponse | ApiFailResponse:
         """Cheap login-state probe (no version run) — the startup gate's check.
 
-        Mirrors the result onto ``login_state`` (authenticated/idle) and
-        broadcasts so every surface agrees without waiting for a full test.
+        Mirrors a DECIDED result onto ``login_state`` and broadcasts, so every
+        surface agrees without waiting for a full test. A probe that could not
+        reach a verdict leaves the field alone — see
+        ``_mirror_probe_to_login_state``.
         """
         worker_type = self._login_worker_type()
         if worker_type is None:
@@ -399,19 +453,11 @@ class Capability(Entity):
             if runner is None:
                 return ApiFailResponse(message=f"capability {self.kind!r} has no worker auth")
             result = await runner.login_probe()
-            if self.login_state not in ("awaiting_user", "starting"):
-                new_state = "authenticated" if result.status.value == "logged_in" else "idle"
-                if new_state != self.login_state or result.message != self.login_message:
-                    self.login_state = new_state
-                    self.login_message = result.message
-                    await self.notify_updated()
+            await self._mirror_probe_to_login_state(result)
             return ApiSuccessResponse(data=result.to_json())
         from flow_sdk.builtin.agentic_process.cli_drivers import get_driver
         from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec
-        from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import (
-            WorkerAuthResult,
-            WorkerAuthStatus,
-        )
+        from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import WorkerAuthResult
 
         spec = driver_api_auth_spec(worker_type)
         if self.auth_mode == "api" and spec is not None:
@@ -433,7 +479,11 @@ class Capability(Entity):
                 message = (
                     "Using FlowPad hub endpoint"
                     if has_key
-                    else ("FlowPad hub endpoint bound but box is not logged in" if bound else "No FlowPad hub endpoint bound")
+                    else (
+                        "FlowPad hub endpoint bound but box is not logged in"
+                        if bound
+                        else "No FlowPad hub endpoint bound"
+                    )
                 )
             else:
                 message = f"Using {provider} API key" if has_key else f"No {provider} API key configured"
@@ -453,12 +503,5 @@ class Capability(Entity):
                 **result.details,
                 "supported_providers": [p.value for p in spec.supported_providers],
             }
-        # Don't clobber a login in flight; only broadcast when the mirror
-        # actually changes (a no-op probe shouldn't emit a WS frame).
-        if self.login_state not in ("awaiting_user", "starting"):
-            new_state = "authenticated" if result.status.value == "logged_in" else "idle"
-            if new_state != self.login_state or result.message != self.login_message:
-                self.login_state = new_state
-                self.login_message = result.message
-                await self.notify_updated()
+        await self._mirror_probe_to_login_state(result)
         return ApiSuccessResponse(data=result.to_json())
