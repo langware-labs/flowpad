@@ -10218,8 +10218,8 @@ msgid "no edges"
 msgstr "لا توجد حواف"
 
 #: src/components/assets/editor/app/AssetAppHost.tsx
-msgid "No editor app named on this dock."
-msgstr ""
+#~ msgid "No editor app named on this dock."
+#~ msgstr ""
 
 #: src/components/conversation/EmojiPicker.tsx
 msgid "No emoji found"
@@ -11186,14 +11186,16 @@ msgstr "فتح"
 msgid "Open .env.local at this line"
 msgstr "فتح .env.local عند هذا السطر"
 
+#. placeholder {0}: app.name
 #. placeholder {0}: file.path
+#: src/components/data-sources/SourceMenu.tsx
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
 msgid "Open {0}"
 msgstr "افتح {0}"
 
 #: src/components/data-sources/SourceMenu.tsx
-msgid "Open {app}"
-msgstr ""
+#~ msgid "Open {app}"
+#~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Open {label}"
@@ -16505,8 +16507,8 @@ msgid "This asset can't be shared with Git. Turn Git sharing off to send a copy.
 msgstr "لا يمكن مشاركة هذا المورد عبر Git. يُرجى إيقاف مشاركة Git لإرسال نسخة."
 
 #: src/components/assets/editor/app/AssetAppHost.tsx
-msgid "This asset has no editor \"{app}\"."
-msgstr ""
+#~ msgid "This asset has no editor \"{app}\"."
+#~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This asset has no file path."

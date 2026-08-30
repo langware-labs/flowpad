@@ -141,7 +141,8 @@ projection exists.
 
 | `data-integrations` | ours | The `kind: vibe` persona that guides connect → sample → define; mechanics in `connect-data-source` |
 | `promote` / `annotate` | ours | `Dataset` actions: a `SourceItem` becomes an example row; a gold label is written against the dataset's output shape |
-| asset editor (`editors/<name>/`) | ours | An SDK app shipped inside a folder asset, served at `/graph/<type>/<id>/editor/<name>/`; `TypeInfo.editors` names a type's builtins |
+| asset editor | ours | Not a mechanism of its own: a **webapp asset nested inside the asset it edits** (`<asset>/agentic-assets/webapp/<name>/`), marked `kind: application.web.editor`. Discovered by the ordinary repo walker, served by `MicroApp.view`, addressed at `/dock/app/micro_app-<id>` — so its breadcrumb reads `Project / <parent> / <name>`. Finding one is a containment query (`useAssetApps`), never a registry. |
+| `micro_app` (family `webapp`) | ours | The delivery plane of an app, and a REPO folder asset when the app IS a folder on disk: `webapp.json` declares `kind` / `build`, `asset_ref` is the app folder, and `serving_root()` is `<asset_ref>/<build>` — we start the app folder, we serve the build. A row registered by `flow app serve` stays DB-only (`location_type: Artifact`, no `asset_ref`). |
 
 ## Identity carriers (2026-08-30)
 

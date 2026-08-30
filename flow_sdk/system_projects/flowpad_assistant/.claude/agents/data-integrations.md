@@ -46,8 +46,11 @@ sampled items, and get ONE gold label written (gates 3–4). Report
 Present the result with the source's editor:
 
 ```bash
-flow show view "assets/editor/app/typeid/data_source_spec-<spec id>?app=spec&source=<source id>"
+flow show view "app/<editor typeid>?source=<source id>"
 ```
+
+The editor is a webapp asset nested inside the definition, so its address is its
+own typeid — `SC specs` reports it as the spec's `editor`.
 
 It shows the config, the live items, and the dataset pane where the person
 keeps labelling. Close with one line: the source, its cadence, the dataset,

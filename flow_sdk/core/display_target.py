@@ -93,6 +93,11 @@ async def resolve_display_target(
             # entity target, and `editorForType('shell')` is undefined — the
             # display would silently fall back to the empty preview.
             return shell_target(entity)
+        if entity.get_type() == "micro_app":
+            # An app is not an editable document either: it is RUN. Routed to the
+            # app dock so `flow show typeid micro_app-<id>` and a click on the
+            # asset land in the same place — the running app, not a manifest view.
+            return _asset_app_payload(entity)
         return _entity_payload(entity)
 
     if path:
@@ -176,6 +181,23 @@ async def _app_payload(artifact_id: str) -> dict:
     if micro_app is not None:
         payload["micro_app_id"] = micro_app.id
     return payload
+
+
+def _asset_app_payload(micro_app) -> dict:
+    """An app addressed by its OWN row — a webapp asset on disk.
+
+    No artifact to derive a runtime from and no dev server to offer: the folder
+    is the app, so the runtime is always ``served``. The frontend reads the
+    ``typeid`` as the address, which is also what gives the app a breadcrumb —
+    its row has a parent, an artifact names a plane.
+    """
+    return {
+        "kind": DisplayTargetKind.APP,
+        "typeid": str(micro_app.typeid),
+        "micro_app_id": micro_app.id,
+        "name": micro_app.title or micro_app.name,
+        "runtime": "served",
+    }
 
 
 def _folder_main_files() -> dict[str, str]:

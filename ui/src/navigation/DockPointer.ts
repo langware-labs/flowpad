@@ -1005,12 +1005,14 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * An asset's editor APP (`<asset>/editors/<name>` or a type builtin), hosted
-   * in the asset-editor dock. Pointer: "editor/app/typeid/<type>-<uuid>?app=<name>";
-   * extra options (e.g. `source`) are handed to the app as its query string.
+   * A webapp addressed by its own entity — `/dock/app/<artifact|micro_app>-<uuid>`.
+   *
+   * The counterpart to `forApp`, which is the skill-UI dock (`ViewType.APPS`) and
+   * a different thing entirely. Extra options (e.g. `source`) become the app's
+   * query string, so an app is always told what to act on through its URL.
    */
-  static forAssetApp(typeId: TypeId, app: string, options?: Record<string, string>, layout: Layout = Layout.DOCK): DockPointer {
-    return DockPointer.forAssetEditorByTypeId('', typeId, layout, { ...options, app }, AssetEditor.APP);
+  static forAppEntity(typeId: TypeId, options?: Record<string, string>, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.APP, typeId.toString(), options, layout);
   }
 
   /**

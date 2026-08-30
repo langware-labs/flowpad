@@ -11,13 +11,16 @@ import { TypeId } from '@sdk';
 import { useMemo } from 'react';
 
 /**
- * An Artifact-backed app, rendered from its ADDRESS.
+ * An app, rendered from its ADDRESS.
  *
- * `/dock/app/artifact-<id>` names the app; which runtime serves it — a dev server's
- * port or the built output we host — is derived here from the artifact's companions,
- * never read out of the URL. That is the whole point of addressing the artifact: a
- * dev server that dies, or a build that lands, changes what you see without changing
- * where you are.
+ * `/dock/app/artifact-<id>` names an app built from source; which runtime serves it —
+ * a dev server's port or the built output we host — is derived here from the
+ * artifact's companions, never read out of the URL. That is the whole point of
+ * addressing the artifact: a dev server that dies, or a build that lands, changes
+ * what you see without changing where you are.
+ *
+ * `/dock/app/micro_app-<id>` names a webapp ASSET on disk, which has no artifact and
+ * no dev server. Same viewer, same toolbar; the address just resolves in one hop.
  *
  * `?runtime=` is the one runtime fact the URL does carry, and only as the user's
  * PREFERENCE. `useAppDisplay` still validates it against what is actually available,
@@ -26,8 +29,10 @@ import { useMemo } from 'react';
  * from tab identity, flipping it re-points the same tab rather than forking one.
  */
 export interface AppDisplayViewerProps {
-  /** Bare artifact uuid (the pointer's TypeId, already split). */
-  artifactId: string;
+  /** Bare artifact uuid, for an app addressed by its source plane. */
+  artifactId: string | null;
+  /** Bare micro_app uuid, for a webapp asset addressed by its own row. */
+  microAppId?: string | null;
   /**
    * The workspace host, as `agentic_process-<uuid>`. Required for the `dev`
    * runtime only: that URL is resolved through the owning process's compute node
@@ -37,9 +42,11 @@ export interface AppDisplayViewerProps {
   host?: string | null;
   /** The user's runtime preference from the URL, if it pins one. */
   runtime?: AppRuntime | null;
+  /** Dock options handed to the app as its query string (e.g. `source`). */
+  options?: Record<string, string>;
 }
 
-export function AppDisplayViewer({ artifactId, host, runtime }: AppDisplayViewerProps) {
+export function AppDisplayViewer({ artifactId, microAppId = null, host, runtime, options }: AppDisplayViewerProps) {
   const { currentDock, navigation } = useDockNavigation();
   const frameRef = useRef<PersistentIframeHandle>(null);
 
@@ -49,7 +56,14 @@ export function AppDisplayViewer({ artifactId, host, runtime }: AppDisplayViewer
   );
   const { data: process } = useEntity<AgenticProcess>(processTypeId, { enabled: !!processTypeId });
 
-  const appDisplay = useAppDisplay(process ?? null, artifactId, runtime ?? null);
+  // No memo: `useAppDisplay` reduces this to strings before anything depends on
+  // it, so a fresh object per render produces an identical `src` and the frame
+  // (keyed on `src`) does not remount.
+  const appDisplay = useAppDisplay(
+    process ?? null,
+    { artifactId, microAppId, options: options ?? {} },
+    runtime ?? null,
+  );
 
   // URL-carried, so the choice survives a reload and the Back button — it used to
   // be component state and vanished on both.

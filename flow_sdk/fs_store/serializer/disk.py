@@ -280,14 +280,7 @@ class DiskSerializer:
         is the fallback when the carrier is absent."""
         root = self.root(origin)
         info = SchemaRegistry.get(type_default(cls)) if type_default(cls) else None
-        obj = self._load_typed(cls, info, root, entity_id)
-        if obj is not None and info is not None and info.main_layout == "folder" and "editors" in cls.model_fields:
-            # A fact of loading a FOLDER asset, whichever path built the row
-            # (a bare spec probe without the field is left alone).
-            from flow_sdk.assets.asset_editors import list_asset_editors  # noqa: PLC0415
-
-            obj.editors = list_asset_editors(root)
-        return obj
+        return self._load_typed(cls, info, root, entity_id)
 
     def _load_typed(self, cls: type, info: Any, root: Path, entity_id: Optional[str]) -> Any:
         if info is None or info.asset_spec is None:

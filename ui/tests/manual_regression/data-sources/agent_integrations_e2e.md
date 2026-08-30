@@ -32,9 +32,9 @@ test 3: Streaming — items land on the heartbeat
 - [api] sample GET /graph/source_item?data_source_id=… until count ≥ 2 (≤55 s;
   the heartbeat is ≤60 s from the poll in test 2, and test 2 took ~10 s)
 
-test 4: The editor — config form + live items in the asset dock
-- [browser] card menu → "Open spec"
-- [browser] validate the URL is /dock/assets/editor/app/typeid/data_source_spec-…?…app=spec
+test 4: The editor — config form + live items, opened as a webapp
+- [browser] card menu → "Open editor"
+- [browser] validate the URL is /dock/app/micro_app-… and the breadcrumb names the definition
 - [browser] inside the app frame: the Feed URLs field holds the loopback URL and
   the items list shows ≥2 items
 
@@ -50,8 +50,8 @@ test 6: The agent surface — the persona rides the vibe session and the pane sh
 - [api] create a headless vibe process for the project, embed the personas the way
   the launcher does (GET /graph/subagent?include_system=true → kind vibe, scope system)
 - [api] GET /graph/agentic_process/{id} → embedded sub-agents name `data-integrations`
-- [api] POST /graph/agentic_process/{id}/show {"view": "assets/editor/app/typeid/data_source_spec-<id>?app=spec&source=<id>"}
-- [api] validate it RESOLVES to {kind: dock, view_type: assets, pointer: editor/app/typeid/..., options.app: spec}
+- [api] POST /graph/agentic_process/{id}/show {"view": "app/micro_app-<editor id>?source=<id>"}
+- [api] validate it RESOLVES to {kind: dock, view_type: app, pointer: micro_app-<editor id>, options.source: <id>}
   — the address the persona presents with; where the workspace paints it is the
   display router's business, and tests 4-5 prove that address renders
 - [browser] open the vibe workspace and validate the composer is ready

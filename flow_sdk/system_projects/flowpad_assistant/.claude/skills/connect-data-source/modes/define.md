@@ -68,8 +68,10 @@ it must show `input: "ingest.source_item"` and the chosen output.
 
 ## Gate 5 — view
 
-`flow show view "assets/editor/app/typeid/data_source_spec-<spec id>?app=spec&source=<source id>"`
-— the source's editor: its config, the items, and the dataset pane where the
-person keeps labelling. `<spec id>` is the `data_source_spec` whose `name`
-equals the source's `provider` (`SC specs`). Exit `0` means recorded, not seen.
+`flow show view "app/<editor typeid>?source=<source id>"` — the source's editor:
+its config, the items, and the dataset pane where the person keeps labelling.
+The editor is a webapp nested in the definition, so `SC specs` reports it: take
+`editor.typeid` from the spec whose `name` equals the source's `provider`. A
+definition with no `editor` ships none — say so rather than guessing an address.
+Exit `0` means recorded, not seen.
 Close by naming the dataset, its shape, and the counts.

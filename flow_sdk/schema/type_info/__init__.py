@@ -160,10 +160,6 @@ class TypeMetadata:
     # to ``type`` means "run the received entity as its own skill" (skill type).
     # Read by ``Entity.setup_on_receive``.
     setup_skill: str | None = None
-    # Builtin editors for the type — SDK-shipped apps under
-    # ``flow_sdk/assets/editors/<name>/`` served for EVERY entity of the type,
-    # alongside whatever the asset itself ships under ``<asset>/editors/``.
-    editors: list[str] = field(default_factory=list)
     # Reception seam: the verb the receive UI shows for this type — the CTA label
     # is ``"<reception_verb> the <typeLabel>"`` (e.g. "Set up the app", "Run the
     # skill", "Open the note"). Declared next to the type like ``main_subdir``.

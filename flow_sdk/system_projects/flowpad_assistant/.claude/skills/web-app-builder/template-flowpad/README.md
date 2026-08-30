@@ -53,19 +53,22 @@ necessarily the one this app belongs to.
 await new sdk.Task({ title }).save(projectTypeId);
 ```
 
-## Ship it as an asset editor
+## Ship it inside an asset
 
-The same folder can live INSIDE an asset, at `<asset folder>/editors/<name>/`
-(a data-source definition, a skill, a task — any folder asset). Flowpad then
-lists `<name>` on the asset's `editors` and serves the page at
-`/api/v1/graph/<type>/<id>/editor/<name>/`; the UI opens it from the asset's
-menus at `/dock/assets/editor/app/typeid/<type>-<id>?app=<name>`. Nothing to
-register — re-index the asset and it is there. The rules above still hold; the
-one addition is that the host entity is in the page's own path:
+The same folder can live INSIDE another asset, at
+`<asset folder>/agentic-assets/webapp/<name>/` (a data-source definition, a
+skill, a task — any folder asset). Nothing to register: a nested asset is a
+child of the asset it sits in, so re-indexing makes it that asset's app, served
+at `/api/v1/graph/micro_app/<id>/view/` and opened at `/dock/app/micro_app-<id>`
+like any other webapp — with `Project / <parent> / <name>` in the address bar.
+
+Mark what it is to its parent with `kind` in `webapp.json`:
+`application.web.editor` is what makes the parent offer it as its editor. The
+rules above still hold; the one addition is that the app can ask who contains
+it, which is how an editor knows what it edits:
 
 ```js
-const host = hostEntityTypeId();            // TypeId('data_source_spec', '…') or null
-const spec = host && (await sdk.dataManager.getByTypeId(host));
+const { subject } = await sdk.resolveAppHost();   // the PARENT asset
 ```
 
 Anything else the dock passes arrives as the query string (the Data Sources

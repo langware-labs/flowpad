@@ -35,6 +35,35 @@ from _ctl_common import sources as _sources
 #: counted exactly, low enough that the observe loop never drags a corpus.
 COUNT_CEILING = 500
 
+#: Imported, not spelled again: the kind is declared beside the manifest that
+#: carries it (``flow_sdk.builtin.faas.webapp_spec``) and seeded in the tag
+#: registry, so the browser can describe what drives the menu.
+from flow_sdk.builtin.faas.webapp_spec import EDITOR_KIND  # noqa: E402
+
+
+def _editors_by_spec() -> dict[str, dict]:
+    """Every definition's editor app, keyed by spec id — in ONE request.
+
+    An editor is a webapp asset NESTED inside the definition, so finding one is
+    a containment query: there is no registry of editors to consult, and a
+    definition that grows one needs no code change to appear here. Asking per
+    spec would be a round-trip per installed definition on a listing that runs
+    at the top of nearly every flow; the whole set is bounded by how many apps
+    are installed, not by anything ingested, so one unfiltered read is cheaper
+    and does not grow with the corpus.
+    """
+    from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
+
+    out: dict[str, dict] = {}
+    for row in _get("/graph/micro_app") or []:
+        parent = str(row.get("parent_type_id") or "")
+        if not parent.startswith("data_source_spec-"):
+            continue
+        if not kind_matches(EDITOR_KIND, str(row.get("kind") or "")):
+            continue
+        out.setdefault(parent.split("-", 1)[1], {"typeid": f"micro_app-{row.get('id')}", "name": row.get("name")})
+    return out
+
 
 def _cursors(source_id: str) -> list[dict]:
     return list(_get("/graph/data_source_cursor", data_source_id=source_id) or [])
@@ -57,6 +86,7 @@ def _item_count(source_id: str) -> int:
 
 def cmd_specs(args) -> dict:
     """What source types are installed. NEVER work from a memorised list."""
+    editors = _editors_by_spec()
     return {
         "specs": [
             {
@@ -68,6 +98,8 @@ def cmd_specs(args) -> dict:
                 "auth": s.get("auth"),
                 "setup_wiki": s.get("setup_wiki") or "",
                 "config": s.get("config") or {},
+                #: `flow show view "app/<typeid>?source=<source id>"` opens it.
+                "editor": editors.get(s.get("id")),
             }
             for s in (_get("/graph/data_source_spec") or [])
         ]

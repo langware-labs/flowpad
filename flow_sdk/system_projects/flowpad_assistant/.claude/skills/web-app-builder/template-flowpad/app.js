@@ -38,27 +38,22 @@ let projectTypeIdPromise = null;
  * default project (which is the backend's default, not this app's).
  */
 /**
- * When this folder is shipped INSIDE an asset as an editor
- * (`<asset>/editors/<name>/`), Flowpad serves it at
- * `/api/v1/graph/<type>/<id>/editor/<name>/` — the host entity is in the path.
- * Null when served any other way (MicroApp, dev server).
+ * The project this app belongs to — and, when it is nested inside another asset,
+ * what that asset is.
+ *
+ * Both come from `sdk.resolveAppHost()`, which reads the app's own delivery row
+ * out of the page's path: `app` is this webapp, `subject` is the asset that
+ * CONTAINS it (null at top level). An editor nested in an asset uses `subject`
+ * to know what it edits — see the README.
  */
-function hostEntityTypeId() {
-  const m = location.pathname.match(/graph\/([a-z_]+)\/([^/]+)\/editor\//i);
-  return m ? new sdk.TypeId(m[1], m[2]) : null;
-}
-
 async function resolveProjectTypeId() {
-  const match = location.pathname.match(/micro_app\/([0-9a-f-]{36})/i);
-  if (match) {
-    try {
-      const app = await sdk.dataManager.getByTypeId(new sdk.TypeId('micro_app', match[1]));
-      if (app?.project_id) return new sdk.TypeId('project', app.project_id);
-    } catch (error) {
-      console.warn('[app] could not resolve owning project, falling back', error);
-    }
+  try {
+    const { app } = await sdk.resolveAppHost();
+    if (app?.project_id) return new sdk.TypeId('project', app.project_id);
+  } catch (error) {
+    // Served some other way (a dev server has no micro_app in its path).
+    console.warn('[app] could not resolve owning project, falling back', error);
   }
-  // Dev server (no micro_app in the URL): the SDK's current project.
   return sdk.dataContext.projectTypeId ?? null;
 }
 
