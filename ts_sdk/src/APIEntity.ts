@@ -1,9 +1,12 @@
 import { v4 as uuidv4 } from 'uuid';
 import { ActionInfo, ActionType, EntityExpansion, ExpansionType, JSONSchemaParser, Workspace } from '.';
-import { Record, RecordRefs } from './fs/Record';
+// Aliased: a bare `Record` import shadows the global `Record<K,V>` utility for
+// this entire file, so every `Record<string, unknown>` in it resolved to the
+// FS record class and failed as a non-generic type.
+import { Record as FsRecord, RecordRefs } from './fs/Record';
 import { FrontMatterFsRef } from './fs/FrontMatterFsRef';
 import { Frontmatter } from './fs/Frontmatter';
-import { EntityFactory } from './schema/factory';
+import { EntityFactory, type EntityConstructor } from './schema/factory';
 import { ExpansionRequest, QueryRequest } from './FlowSync/query';
 import { DataManager, Manageable } from './FlowSync/store';
 import { FlowData, FlowDataStream } from './flow_processing';
@@ -122,7 +125,7 @@ export function getProxy<T extends Manageable & { [key: string | symbol]: any }>
   });
 }
 
-export const registerEntity = (constructor: new (json?: IEntity) => unknown) => {
+export const registerEntity = (constructor: EntityConstructor) => {
   EntityFactory.registerEntity(constructor);
 };
 
@@ -1561,12 +1564,12 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * Returns a Record with recordFolderRef (record folder) and mainRef (primary content).
    * Use ref.child() to navigate further: entity.record().then(r => r.mainRef?.child("subdir"))
    */
-  public async record(options: { hubReflect?: boolean } = {}): Promise<Record> {
+  public async record(options: { hubReflect?: boolean } = {}): Promise<FsRecord> {
     const actionInfo = new ActionInfo('record', this.typeId.type, this.typeId.id, 'GET');
     actionInfo.subpath = 'refs';
     actionInfo.hubReflect = options.hubReflect === true;
     const result = await dataManager.callAction<void, RecordRefs>(actionInfo);
-    return new Record(result as RecordRefs);
+    return new FsRecord(result as RecordRefs);
   }
 
   /**
