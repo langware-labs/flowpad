@@ -11,10 +11,13 @@ from pathlib import Path
 from typing import Any
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
-from flow_sdk.builtin.local_secret_ref import LocalSecretRef
-from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER, SecretOriginField
 from flow_sdk.builtin.secret_origin_identity import secret_origin_id
-from flow_sdk.builtin.secret_origin_locator import SecretOriginLocator
+from flow_sdk.builtin.secret_origin_refs import (
+    SECRET_ORIGIN_ADAPTER,
+    LocalSecretRef,
+    SecretOriginField,
+    SecretOriginLocator,
+)
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
 

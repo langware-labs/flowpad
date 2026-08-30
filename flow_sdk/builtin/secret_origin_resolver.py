@@ -35,7 +35,7 @@ async def resolve_project_secrets(
     """
     from flow_sdk.builtin.secret_origin import SecretOrigin  # noqa: PLC0415
     from flow_sdk.builtin.secret_origin_driver import get_secret_origin_driver  # noqa: PLC0415
-    from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
+    from flow_sdk.builtin.secret_origin_refs import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
 
     allowed = None if only is None else set(only)
     targets: list[tuple[str, Any, Any]] = []  # (env_var, locator, secret|None)

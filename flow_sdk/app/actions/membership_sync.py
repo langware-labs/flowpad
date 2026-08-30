@@ -108,7 +108,7 @@ def _shared_secret_origin_payload(
     """
     from flow_sdk.builtin.secret_origin import is_valid_secret_origin_env_var  # noqa: PLC0415
     from flow_sdk.builtin.secret_origin_driver import normalize_secret_origin_kind  # noqa: PLC0415
-    from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
+    from flow_sdk.builtin.secret_origin_refs import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
 
     locator_data = item.get("locator") if isinstance(item.get("locator"), dict) else None
     if not locator_data:
