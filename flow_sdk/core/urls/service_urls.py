@@ -3,6 +3,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from flow_sdk.api.api_request import APIRequest
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.tags.envelope import parse_target
 from flow_sdk.config import default_service_config
 
 
@@ -234,8 +235,9 @@ def build_hub_url(
     segments: list[str] = []
     if scope:
         for s in scope:
-            t = getattr(s, "type", None) or (s.split("-", 1)[0] if isinstance(s, str) and "-" in s else None)
-            i = getattr(s, "id", None) or (s.split("-", 1)[1] if isinstance(s, str) and "-" in s else None)
+            parsed_t, parsed_i = parse_target(s) if isinstance(s, str) else (None, None)
+            t = getattr(s, "type", None) or parsed_t
+            i = getattr(s, "id", None) or parsed_i
             if t and i:
                 segments.append(f"@{t}-{i}")
             else:

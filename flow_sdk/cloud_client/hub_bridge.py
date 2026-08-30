@@ -23,6 +23,7 @@ from flow_sdk import inbox
 from flow_sdk.cloud_client.ws_client import HubWebSocketManager, hub_ws_manager
 from flow_sdk.fs_store.serializer.hub import HubSerializer
 from flow_sdk.preferences import message_status_sharing_enabled
+from flow_sdk.tags.envelope import parse_target
 
 logger = logging.getLogger(__name__)
 
@@ -155,21 +156,6 @@ async def _maybe_eager_pull_bundle(
         _INFLIGHT_BUNDLE_PULLS.discard(fm_id)
 
 
-def _parse_to_entity(to_entity: Any) -> tuple[Optional[str], Optional[str]]:
-    """Normalize the to_entity field of a data_op_msg into (type, id)."""
-    if isinstance(to_entity, str):
-        if "-" in to_entity:
-            etype, eid = to_entity.split("-", 1)
-            return etype, eid
-        if ":" in to_entity:
-            etype, eid = to_entity.split(":", 1)
-            return etype, eid
-        return None, None
-    if isinstance(to_entity, dict):
-        return to_entity.get("type"), to_entity.get("id")
-    if hasattr(to_entity, "type") and hasattr(to_entity, "id"):
-        return to_entity.type, to_entity.id
-    return None, None
 
 
 async def _fill_empty_blobs(cls: Any, entity_type: str, entity_id: str, data: Any) -> Any:
@@ -299,11 +285,11 @@ class HubWsBridge:
         from flow_sdk.app.actions.membership_sync import MEMBERSHIP_MIRROR_TYPES  # noqa: PLC0415
 
         op = str(message.get("op") or "").lower()
-        etype, eid = _parse_to_entity(message.get("to_entity"))
+        etype, eid = parse_target(message.get("to_entity"))
         # Parent envelope: hub sends a flow_message CREATE with from_entity =
         # the parent conversation. Used as the authoritative source for
         # conversation_id since the FlowMessage payload doesn't carry it.
-        from_etype, from_eid = _parse_to_entity(message.get("from_entity"))
+        from_etype, from_eid = parse_target(message.get("from_entity"))
         data = message.get("data")
         if not etype or not eid or not isinstance(data, dict):
             logger.debug("hub_bridge: ignoring data_op_msg with missing parts: %s", message)

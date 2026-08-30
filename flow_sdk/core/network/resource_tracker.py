@@ -6,13 +6,14 @@ Sends websocket entity notifications for create/update/delete operations.
 import asyncio
 import json
 import logging
-import re
 from datetime import datetime, timezone
 from itertools import count
 from typing import Any
 from uuid import uuid4
 
 from fastapi.encoders import jsonable_encoder
+
+from flow_sdk.tags.envelope import parse_target
 
 logger = logging.getLogger(__name__)
 
@@ -24,41 +25,12 @@ logger = logging.getLogger(__name__)
 _DATA_OP_WIRE_SEQUENCE = count(1)
 
 
-_UUID_SUFFIX_RE = re.compile(
-    r"^(.+)-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
-    re.IGNORECASE,
-)
-
-
 def _extract_entity_parts(to_entity: Any) -> tuple[str | None, str | None, str | None]:
     """Normalize to_entity into (type, id, type-id string)."""
-    entity_type: str | None = None
-    entity_id: str | None = None
-
-    if isinstance(to_entity, str):
-        if ":" in to_entity:
-            entity_type, entity_id = to_entity.split(":", 1)
-        elif "-" in to_entity:
-            # TypeId serializes as "type-uuid". UUIDs contain hyphens, so rsplit("-", 1)
-            # would incorrectly split inside the UUID. Use a UUID regex to find the
-            # boundary, preserving hyphenated type names like "compute-node".
-            m = _UUID_SUFFIX_RE.match(to_entity)
-            if m:
-                entity_type, entity_id = m.group(1), m.group(2)
-            else:
-                entity_type, entity_id = to_entity.rsplit("-", 1)
-    elif isinstance(to_entity, dict):
-        entity_type = to_entity.get("type")
-        entity_id = to_entity.get("id")
-    elif hasattr(to_entity, "type") and hasattr(to_entity, "id"):
-        entity_type = getattr(to_entity, "type")
-        entity_id = getattr(to_entity, "id")
-
+    entity_type, entity_id = parse_target(to_entity)
     if not entity_type or not entity_id:
         return None, None, None
-
-    type_id = f"{entity_type}-{entity_id}"
-    return str(entity_type), str(entity_id), type_id
+    return str(entity_type), str(entity_id), f"{entity_type}-{entity_id}"
 
 
 def _to_message_dict(op_message: Any) -> dict:

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, ClassVar, FrozenSet, List, NamedTuple, Optiona
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.tags.envelope import parse_target
 from flow_sdk.builtin.user import normalize_email
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL, ProjectedFields
@@ -606,10 +607,8 @@ class Conversation(ProjectedFields, Entity):
         refs: list[MessageRef] = []
         for entry in entries:
             typeid = str(entry.get("typeid") or "") if isinstance(entry, dict) else ""
-            if "-" not in typeid:
-                continue
-            ptype, pid = typeid.split("-", 1)
-            pid = pid.lstrip("@")
+            ptype, pid = parse_target(typeid)
+            pid = (pid or "").lstrip("@")
             if ptype != "flow_message" or not pid:
                 continue
             ts_raw = entry.get("ts")
