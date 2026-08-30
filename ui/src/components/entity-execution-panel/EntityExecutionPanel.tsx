@@ -931,6 +931,11 @@ export function EntityExecutionPanel({
         leadingSlot={<QueueChip process={activeProcess} />}
         history={inputHistory}
         animateEnqueue
+        // Keyed to the SURFACE, not `activeProcess`: that resolves
+        // asynchronously, so a scope flip would swap live text out from under
+        // someone mid-sentence. `target` + `processType` is this panel's
+        // identity and is stable from first render.
+        draftScope={target ? `${processType}:${target}` : undefined}
       />
       <ConfirmDialog
         open={!!pendingDelete}

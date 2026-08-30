@@ -106,6 +106,7 @@ export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps
       onStop={handleStop}
       onPasteImages={onPasteImages}
       animateEnqueue
+      draftScope={process.id}
       placeholder={plan.planPending ? t`Plan mode — describe what to plan…` : t`Message the agent…`}
       onShiftTab={plan.planToggleEnabled ? plan.togglePlan : undefined}
       leadingSlot={
