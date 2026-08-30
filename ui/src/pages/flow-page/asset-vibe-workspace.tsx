@@ -1,3 +1,4 @@
+import type { ShowTarget } from '@sdk';
 import { dataContext, fsStore, TypeId, VFSPath } from '@sdk';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { isContentAssetDock } from '@src/navigation/content-asset-dock';
@@ -13,7 +14,6 @@ import { useProcessSurface } from '@src/components/terminal/interactive-terminal
 import { VibeChatPane } from './vibe-chat-pane';
 import { type VibeWorkspaceSession, useVibeWorkspaceSessionHost } from './use-vibe-workspace-session';
 import { assetWorkContextForDock } from './asset-work-context';
-import type { DisplayShowTarget } from './display-annotation';
 
 interface AssetVibeWorkspaceProps {
   isVibe: boolean;
@@ -126,9 +126,9 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   //    registry keys by `src`.
   const [showNonce, setShowNonce] = useState(0);
   // The payload of the newest show — see `DisplayChrome.latestShown`.
-  const [latestShown, setLatestShown] = useState<DisplayShowTarget | null>(null);
+  const [latestShown, setLatestShown] = useState<ShowTarget | null>(null);
 
-  const openShownTarget = useCallback((target: DisplayShowTarget) => {
+  const openShownTarget = useCallback((target: ShowTarget) => {
     try {
       setShowNonce((n) => n + 1);
       setLatestShown(target);

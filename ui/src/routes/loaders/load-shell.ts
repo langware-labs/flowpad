@@ -18,6 +18,7 @@
  * Failure UI: 1 cleanup → toast; 2+ cleanups → modal counter.
  */
 
+import type { ShowTarget } from '@sdk';
 import { t } from '@lingui/core/macro';
 import {
   AgenticProcess,
@@ -37,7 +38,6 @@ import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
 import { buildShellRedirectUrl, detectLayout, DockPointer } from '@src/navigation';
 import { ViewMode } from '@src/contexts/view-mode-context';
-import type { DisplayTargetLike } from '@src/navigation/display-target-pointer';
 import { activeDisplayDock } from '@src/navigation/open-active-display';
 
 /**
@@ -333,7 +333,7 @@ export function restoreDisplayRedirect(processId: string, requestPath: string, c
   restoredDisplays.add(processId);
 
   const process = AgenticProcess.getByIdFromCache<AgenticProcess>(processId);
-  const lastShown = (process?.context_data as { last_shown?: DisplayTargetLike } | undefined)?.last_shown;
+  const lastShown = (process?.context_data as { last_shown?: ShowTarget } | undefined)?.last_shown;
 
   // ONE definition of what the active display can address, shared with the live
   // show path. Restore must refuse exactly what `openActiveDisplay` refuses — a

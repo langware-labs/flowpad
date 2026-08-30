@@ -1,3 +1,4 @@
+import type { ShowTarget } from '@sdk';
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 /**
@@ -18,7 +19,8 @@ import { resolveProcessDisplayName } from '@src/components/terminal/process-disp
 import { formatTimeAgo, useLastStatusChange } from '@src/store/pending-actions-store';
 import { useEntityLocationLabel } from '@src/components/graph-view/ui/EntityIcon';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { dockForDisplayTarget, type DisplayTargetLike } from '@src/navigation/display-target-pointer';
+import {dockForDisplayTarget} from '@src/navigation/display-target-pointer';
+
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Eye, SquareTerminal } from 'lucide-react';
 import React, { useMemo } from 'react';
@@ -155,7 +157,7 @@ export const LazyProcessTooltip: React.FC<{
 export const ShownTargetBadge: React.FC<{ processId: string }> = ({ processId }) => {
   const { data: process } = useEntity<AgenticProcess>(new TypeId(AgenticProcess.type, processId));
   const { navigation } = useDockNavigation();
-  const shown = (process?.context_data as { last_shown?: DisplayTargetLike } | undefined)?.last_shown;
+  const shown = (process?.context_data as { last_shown?: ShowTarget } | undefined)?.last_shown;
   const projectId = process?.project_id ?? null;
   // Same project rebase the listener applies when it mints the tab — without it
   // this would navigate to the scope-collapsed Assets dock instead of the

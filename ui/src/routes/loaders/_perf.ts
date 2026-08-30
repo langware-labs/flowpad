@@ -19,7 +19,7 @@ declare global {
 
 /** The window key this module stamps — the source of truth for the two
  *  accessors below, so the literal is written once. */
-export const PERF_T0_KEY = '__shellNavT0' as const;
+export const PERF_T0_KEY = '__shellNavT0';
 
 function readT0(): number | undefined {
   return window[PERF_T0_KEY];

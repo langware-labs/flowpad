@@ -1,3 +1,4 @@
+import type { ShowTarget } from '@sdk';
 import { type ReactNode, useCallback, useMemo } from 'react';
 import { t } from '@lingui/core/macro';
 import { AgenticProcess } from '@sdk';
@@ -6,7 +7,8 @@ import { notify } from '@src/notifications/notify';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DisplayHistoryButton } from './display-history-button';
 import { displayHistory, historyEntryDock, projectIdFromDock } from './display-stack';
-import { displayAnnotationContextForDock, type DisplayShowTarget } from './display-annotation';
+import {displayAnnotationContextForDock} from './display-annotation';
+
 import { submitDisplayAnnotation } from './display-annotation-submit';
 
 /**
@@ -35,7 +37,7 @@ export interface DisplayChromeProps {
   /** The workspace's process — owner of the history stack and the chat. */
   process: AgenticProcess | null;
   /** The newest `flow show` payload, covering a stack that has not caught up. */
-  latestShown?: DisplayShowTarget | null;
+  latestShown?: ShowTarget | null;
   /**
    * Whether this content is the workspace's DISPLAY (vibe) rather than a plain
    * document at its own address (standard). Inactive keeps the wrapper mounted but
@@ -52,7 +54,7 @@ export function DisplayChrome({ process, latestShown, active = true, children }:
   const stack = useMemo(() => displayHistory(process?.displayStack ?? [], latestShown), [process, latestShown]);
 
   const openHistoryEntry = useCallback(
-    (entry: DisplayShowTarget) => {
+    (entry: ShowTarget) => {
       const dock = historyEntryDock(entry, projectIdFromDock(currentDock));
       if (dock) navigation.openDock(dock);
     },

@@ -1,8 +1,10 @@
+import type { ShowTarget } from '@sdk';
 import { AgenticProcess, dataManager, tabForDockKey, tabManager, TypeId, type IEntity } from '@sdk';
 import { useEntityOps } from '@sdk/react/hooks';
 import { useIsVibe } from '@src/components/view-mode';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { dockForDisplayTarget, type DisplayTargetLike } from '@src/navigation/display-target-pointer';
+import {dockForDisplayTarget} from '@src/navigation/display-target-pointer';
+
 import { useCallback, useEffect, useRef } from 'react';
 
 /**
@@ -57,7 +59,7 @@ export function useShowTargetListener(): void {
   // Persisted shows older than this are history, not commands (see below).
   const mountedAtRef = useRef(Date.now());
 
-  const showTarget = useCallback(async (processId: string, target: DisplayTargetLike): Promise<void> => {
+  const showTarget = useCallback(async (processId: string, target: ShowTarget): Promise<void> => {
     const dock = dockForDisplayTarget(target);
     if (!dock) {
       // A real answer, not a failure: an entity type with no editor and no
@@ -115,7 +117,7 @@ export function useShowTargetListener(): void {
   }, [isVibe]);
 
   const handle = useCallback(
-    (processId: string, target: DisplayTargetLike | null | undefined): void => {
+    (processId: string, target: ShowTarget | null | undefined): void => {
       if (!target || !processId) return;
       // The mode gate lives HERE, not on the subscriptions, because it depends
       // on the target's KIND. Vibe pins a deliverable (file / entity / webapp)
@@ -142,7 +144,7 @@ export function useShowTargetListener(): void {
     // context yields undefined and silently kills the subscription.
     const onEntityEvent = (typeId: TypeId, event: string, payload: Record<string, unknown>): void => {
       if (event !== 'on_show' || typeId.type !== AgenticProcess.type) return;
-      handle(typeId.id, payload as DisplayTargetLike);
+      handle(typeId.id, payload as ShowTarget);
     };
     dataManager.on('on_entity_event', onEntityEvent);
     return () => {
@@ -168,7 +170,7 @@ export function useShowTargetListener(): void {
     (typeId: TypeId, _op: 'create' | 'update' | 'delete', data: IEntity): void => {
       const context = (
         data as IEntity & {
-          context_data?: { last_shown?: DisplayTargetLike; display_stack?: Array<{ shown_at?: string }> };
+          context_data?: { last_shown?: ShowTarget; display_stack?: Array<{ shown_at?: string }> };
         }
       ).context_data;
       const shown = context?.last_shown;

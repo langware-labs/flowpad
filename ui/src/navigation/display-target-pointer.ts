@@ -23,20 +23,6 @@ import { ViewType } from '@src/types/ViewType';
  * answers for the same target — they were three near-copies before this.
  */
 
-/**
- * Structural shape of every resolved show target — all-optional so the SDK's
- * `ShowTarget`, `ReceiveShowTarget` and `DisplayShowTarget` all fit.
- *
- * DERIVED from the SDK's `ShowTarget` rather than restated. This is one backend
- * payload (`flow_sdk/core/display_target.py`) that was declared four times
- * across the tree, and the copies had already drifted — the last two fields the
- * backend added had to be applied to each copy by hand.
- *
- * The single genuine difference is `runtime`: `ShowTarget` types it as the
- * narrow `'dev' | 'served' | 'unbuilt'` union, while this accepting shape takes
- * any string so a target from a source that has not been narrowed still fits.
- */
-export type DisplayTargetLike = Omit<ShowTarget, 'runtime'> & { runtime?: string };
 
 /** Port targets (`webapp`, and an `app` whose dev server is up) → the port preview. */
 function webAppPointer(port: number | string | undefined): DockPointer | null {
@@ -58,7 +44,7 @@ function webAppPointer(port: number | string | undefined): DockPointer | null {
  * address and the runtime stays derived, which is what lets an app be shown,
  * bookmarked and restored without a stale port ever becoming its identity.
  */
-export function dockForDisplayTarget(target: DisplayTargetLike | null | undefined): DockPointer | null {
+export function dockForDisplayTarget(target: ShowTarget | null | undefined): DockPointer | null {
   if (!target) return null;
 
   // A terminal is an address, not content — same dock a journey's open_terminal

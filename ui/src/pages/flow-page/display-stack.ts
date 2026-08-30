@@ -1,11 +1,12 @@
+import type { ShowTarget } from '@sdk';
 import type { DisplayEntry } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
-import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
-import type { DisplayShowTarget } from './display-annotation';
+import {dockForDisplayTarget} from '@src/navigation/display-target-pointer';
+
 
 /** Do two display targets address the same thing? (Kind plus whichever key that kind uses.) */
-function sameDisplayTarget(a: DisplayShowTarget, b: DisplayShowTarget): boolean {
+function sameDisplayTarget(a: ShowTarget, b: ShowTarget): boolean {
   return (
     a.kind === b.kind &&
     (a.typeid ?? null) === (b.typeid ?? null) &&
@@ -32,7 +33,7 @@ function sameDisplayTarget(a: DisplayShowTarget, b: DisplayShowTarget): boolean 
  */
 export function displayHistory(
   serverStack: readonly DisplayEntry[],
-  latestShown: DisplayShowTarget | null | undefined,
+  latestShown: ShowTarget | null | undefined,
 ): readonly DisplayEntry[] {
   if (!latestShown) return serverStack;
   const newest = serverStack[serverStack.length - 1];
@@ -53,7 +54,7 @@ export function displayHistory(
  * Null when the entry addresses nothing openable (an entity type with no editor and
  * no path) — a real answer; the caller does nothing and the entry stays in history.
  */
-export function historyEntryDock(entry: DisplayShowTarget, projectId: string | null): DockPointer | null {
+export function historyEntryDock(entry: ShowTarget, projectId: string | null): DockPointer | null {
   const dock = dockForDisplayTarget(entry);
   return dock ? DockPointer.rebaseAssetsOntoProject(dock, projectId) : null;
 }
