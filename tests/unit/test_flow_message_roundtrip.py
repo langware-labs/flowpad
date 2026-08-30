@@ -23,7 +23,6 @@ from flow_sdk.builtin.flow_message_bundle import (
     unpack_bundle,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -158,13 +157,9 @@ class TestPackBundle:
             assert expected in names
             content = zf.read(expected).decode("utf-8")
             assert "My Task" in content
-            capsule = json.loads(
-                zf.read(
-                    f"attachment/task-{task_id}/agentic-assets/task/My_Task/"
-                    ".flow/capsules/identity.json"
-                )
-            )
-            assert capsule == {"version": 1, "data": {"id": task_id}}
+            # task.md IS the task's identity carrier: the id rides in its frontmatter.
+            assert content.startswith(f"---\nid: {task_id}\n")
+            assert not any(n.endswith(".flow/capsules/identity.json") for n in names)
             assert "in_progress" in content
             # Sender-local fields must never ride along in the shared file.
             assert "my_process_id" not in content
@@ -459,7 +454,7 @@ class TestUnpackBundle:
         """unpack_bundle calls append_message_pointer on the target conversation."""
         from flow_sdk.builtin.conversation import Conversation
         from flow_sdk.builtin.user import User
-        from flow_sdk.fs_store.operations.conversation import default_data_dir, default_jsonl_path, from_jsonl
+        from flow_sdk.fs_store.operations.conversation import default_jsonl_path
 
         # Pin the records-data root to tmp_path so the canonical jsonl lives here.
         monkeypatch.setattr(
@@ -989,12 +984,11 @@ async def test_pack_dbonly_spec_capsules_id_and_sanitizes_hostile_name(tmp_path)
         bundle_root = (tmp_path / "_resolve_check").resolve()
         resolved = (bundle_root / main_arc).resolve()
         assert str(resolved).startswith(str(bundle_root))
-        # Identity is outside frontmatter, in the file's comment capsule.
+        # Identity is the first frontmatter key; no comment capsule any more.
         body = zf.read(main_arc).decode("utf-8")
         frontmatter = body.split("---", 2)[1]
-        assert f"id: {spec_id}" not in frontmatter
-        assert "<!-- flowpad:capsule identity" in body
-        assert f"id: {spec_id}" in body
+        assert f"id: {spec_id}" in frontmatter
+        assert "flowpad:capsule" not in body
 
     # --- nothing renderable → early return, nothing shipped ---
     spec_info = SchemaRegistry.get("spec")

@@ -1543,6 +1543,7 @@ msgstr "تعليق توضيحي"
 msgid "Annotation not submitted"
 msgstr "لم يتم إرسال التعليق التوضيحي"
 
+#: src/pages/flow-page/display-chrome.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Annotation submitted"
 msgstr "تم إرسال التعليق"
@@ -1634,6 +1635,7 @@ msgstr "مفاتيح API"
 msgid "API Timeout"
 msgstr "مهلة انتظار API"
 
+#: src/types/ViewType.ts
 #: src/types/ViewType.ts
 msgid "App"
 msgstr "التطبيق"
@@ -1776,6 +1778,10 @@ msgstr "طلب المساعدة"
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "Ask someone for help"
 msgstr "طلب المساعدة من شخص آخر"
+
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "Ask the agent to connect one"
+msgstr ""
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Ask the Flowpad Assistant anything."
@@ -2777,8 +2783,8 @@ msgid "Claude session ID this annotation is associated with"
 msgstr "معرّف جلسة Claude المرتبط بهذه الملاحظة"
 
 #: src/components/claude-terminal/claude-terminal.tsx
-msgid "Claude Terminal"
-msgstr "Claude Terminal"
+#~ msgid "Claude Terminal"
+#~ msgstr "Claude Terminal"
 
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-resource-list/ProjectResourceList.tsx
@@ -3450,6 +3456,10 @@ msgstr "تأكيد"
 msgid "Connect"
 msgstr "اتصال"
 
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "Connect a data source for me and help me define what I want out of each item."
+msgstr ""
+
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 #: src/pages/entry/OpenSandboxLanding.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -3767,7 +3777,6 @@ msgstr "نسخ الروابط"
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/top-nav-bar/CopyPathButton.tsx
-#: src/components/top-nav-bar/CopyPathButton.tsx
 msgid "Copy path"
 msgstr "نسخ المسار"
 
@@ -3805,6 +3814,7 @@ msgstr "التكلفة"
 msgid "Cost"
 msgstr "التكلفة"
 
+#: src/pages/flow-page/display-chrome.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Could not annotate view"
 msgstr "تعذر تعليق العرض"
@@ -6128,7 +6138,6 @@ msgstr "الخروج من العرض المحلي"
 
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/browseable-tree/BrowseableTree.tsx
-#: src/components/claude-terminal/claude-terminal.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Expand"
@@ -6419,15 +6428,14 @@ msgstr "فشل تحميل الخطافات"
 
 #: src/components/markdown-viewer.tsx
 #: src/components/markdown-viewer.tsx
-msgid "Failed to load markdown file"
-msgstr "تعذر تحميل ملف Markdown"
+#~ msgid "Failed to load markdown file"
+#~ msgstr "تعذر تحميل ملف Markdown"
 
 #: src/components/directory-tree/ProjectsDirectoryTree.tsx
 msgid "Failed to load projects"
 msgstr "تعذر تحميل المشاريع"
 
-#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
-#: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
+#: src/components/assets/editor/ReportAssetShell.tsx
 msgid "Failed to load report: {error}"
 msgstr "تعذّر تحميل التقرير: {error}"
 
@@ -7584,8 +7592,8 @@ msgid "Hidden from your inbox"
 msgstr "مخفي عن صندوق الوارد"
 
 #: src/components/claude-terminal/claude-terminal.tsx
-msgid "Hide"
-msgstr "إخفاء"
+#~ msgid "Hide"
+#~ msgstr "إخفاء"
 
 #. placeholder {0}: header.title
 #: src/components/navigator-panel/NavigatorPanel.tsx
@@ -8856,7 +8864,7 @@ msgstr "جارٍ التحميل . . ."
 msgid "Loading [[{name}]]…"
 msgstr "جاري تحميل [[{name}]]…"
 
-#. placeholder {0}: params.uname
+#. placeholder {0}: params?.uname ?? ''
 #: src/components/app-host/AppHost.tsx
 msgid "Loading {0}..."
 msgstr "جارٍ تحميل {0}..."
@@ -8933,7 +8941,7 @@ msgstr "جارٍ تحميل التشخيص…"
 msgid "Loading diff…"
 msgstr "جاري تحميل الفروقات…"
 
-#: src/components/docs-viewer/DocsViewer.tsx
+#: src/components/vfs-markdown-pane.tsx
 msgid "Loading document..."
 msgstr "جاري تحميل المستند..."
 
@@ -9024,8 +9032,7 @@ msgstr "جارٍ تحميل المطالبات…"
 msgid "Loading records…"
 msgstr "جارٍ تحميل السجلات…"
 
-#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
-#: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
+#: src/components/assets/editor/ReportAssetShell.tsx
 msgid "Loading report…"
 msgstr "جاري تحميل التقرير…"
 
@@ -9566,8 +9573,8 @@ msgid "min hr dom mon dow — or \"30s\" / \"5m\" for interval"
 msgstr "الدقيقة والساعة ويوم الشهر والشهر ويوم الأسبوع — أو \"30s\" / \"5m\" للفاصل الزمني"
 
 #: src/components/claude-terminal/claude-terminal.tsx
-msgid "Minimize"
-msgstr "تصغير"
+#~ msgid "Minimize"
+#~ msgstr "تصغير"
 
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyTray.tsx
@@ -10137,8 +10144,7 @@ msgstr "لم يتم تعريف اختبار اتصال لهذا المزود."
 msgid "No contacts found."
 msgstr "لم يتم العثور على جهات اتصال."
 
-#: src/components/docs-viewer/DocsViewer.tsx
-#: src/components/markdown-viewer.tsx
+#: src/components/vfs-markdown-pane.tsx
 msgid "No content available"
 msgstr "لا يوجد محتوى متاح"
 
@@ -10210,6 +10216,10 @@ msgstr "لم يتم تحديد مستند"
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "no edges"
 msgstr "لا توجد حواف"
+
+#: src/components/assets/editor/app/AssetAppHost.tsx
+msgid "No editor app named on this dock."
+msgstr ""
 
 #: src/components/conversation/EmojiPicker.tsx
 msgid "No emoji found"
@@ -11180,6 +11190,10 @@ msgstr "فتح .env.local عند هذا السطر"
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
 msgid "Open {0}"
 msgstr "افتح {0}"
+
+#: src/components/data-sources/SourceMenu.tsx
+msgid "Open {app}"
+msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Open {label}"
@@ -13009,7 +13023,6 @@ msgstr "مشار إليه لكنه غير موجود في جدول الكيان�
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/machine-overview/machine-overview.tsx
-#: src/components/markdown-viewer.tsx
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -13044,7 +13057,7 @@ msgstr "تحديث التحليل"
 msgid "Refresh docs"
 msgstr "تحديث التوثيق"
 
-#: src/components/docs-viewer/DocsViewer.tsx
+#: src/components/vfs-markdown-pane.tsx
 msgid "Refresh document"
 msgstr "تحديث المستند"
 
@@ -14915,7 +14928,6 @@ msgstr "اسم الصدفة"
 
 #: src/routes/loaders/load-next-process.ts
 #: src/routes/loaders/load-project.ts
-#: src/routes/loaders/load-shell.ts
 msgid "Shell not found"
 msgstr "القشرة غير موجودة"
 
@@ -14929,7 +14941,6 @@ msgstr "علامة تبويب Shell"
 
 #: src/routes/loaders/load-next-process.ts
 #: src/routes/loaders/load-project.ts
-#: src/routes/loaders/load-shell.ts
 msgid "Shell unavailable"
 msgstr "القشرة غير متاحة"
 
@@ -14942,7 +14953,6 @@ msgstr "مفتاح قصير الأجل لرابط Open-in-FlowPad العميق"
 msgid "Should I allow this tool? Respond with JSON: {0}"
 msgstr "هل يجب السماح بهذه الأداة؟ استجب بصيغة JSON: {0}"
 
-#: src/components/claude-terminal/claude-terminal.tsx
 #: src/components/connections-manager/usage-cell.tsx
 #: src/types/ViewType.ts
 msgid "Show"
@@ -15863,7 +15873,7 @@ msgstr "الرسم البياني الفرعي غير موجود"
 msgid "subgraph projection"
 msgstr "إسقاط الرسم الفرعي"
 
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/display-annotation-submit.ts
 msgid "Submit"
 msgstr "إرسال"
 
@@ -16494,6 +16504,10 @@ msgstr "لم يعد هذا التطبيق متاحًا."
 msgid "This asset can't be shared with Git. Turn Git sharing off to send a copy."
 msgstr "لا يمكن مشاركة هذا المورد عبر Git. يُرجى إيقاف مشاركة Git لإرسال نسخة."
 
+#: src/components/assets/editor/app/AssetAppHost.tsx
+msgid "This asset has no editor \"{app}\"."
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This asset has no file path."
 msgstr "لا يوجد مسار ملف لهذا الأصل."
@@ -16533,6 +16547,10 @@ msgstr "هذه المحادثة لم تعد موجودة أو غير متاحة.
 #: src/components/assets/editor/translations/DocLanguageSwitcher.tsx
 msgid "This document"
 msgstr "هذا المستند"
+
+#: src/components/vfs-markdown-pane.tsx
+msgid "This document no longer exists."
+msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "This entry was removed since the last stamp — it exists only in the baseline."
@@ -16746,7 +16764,6 @@ msgstr "هذه المهمة لم تعد موجودة أو أصبحت غير مت
 
 #: src/routes/loaders/load-next-process.ts
 #: src/routes/loaders/load-project.ts
-#: src/routes/loaders/load-shell.ts
 msgid "This terminal no longer exists."
 msgstr "هذه النافذة الطرفية لم تعد موجودة."
 
@@ -16905,8 +16922,8 @@ msgstr "تبديل وضع التخطيط (Shift+Tab)"
 #: src/components/ui/sidebar.tsx
 #: src/components/ui/sidebar.tsx
 #: src/components/ui/sidebar.tsx
-msgid "Toggle Sidebar"
-msgstr "تبديل الشريط الجانبي"
+#~ msgid "Toggle Sidebar"
+#~ msgstr "تبديل الشريط الجانبي"
 
 #: src/components/code-editor/CodeEditor.tsx
 msgid "Toggle terminal"

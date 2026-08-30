@@ -45,9 +45,9 @@ def test_spec_main_ref_roundtrip_is_stable(tmp_path):
     written = md.read_text(encoding="utf-8")
     assert written.startswith("---")
     from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
-    assert "id" not in (_yaml_load(_extract_frontmatter(written)) or {})
-    from flow_sdk.capsules import AssetCapsule
-    assert AssetCapsule.from_path(md).read("identity").data["id"] == resolved_id
+    fields = _yaml_load(_extract_frontmatter(written)) or {}
+    assert list(fields)[0] == "id" and fields["id"] == resolved_id, "spec.md carries its id first in the header"
+    assert "flowpad:capsule" not in written
     assert "SENTINEL-body line" in written
 
     # 2. extract_spec returns body-only content (frontmatter stripped).

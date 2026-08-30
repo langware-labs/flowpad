@@ -226,7 +226,13 @@ async def _prompt_until_assistant(
 
 
 async def _send_turn(
-    hub_client, process_id: str, message: str, expected_reply: str, worker_type: str
+    hub_client,
+    process_id: str,
+    message: str,
+    expected_reply: str,
+    worker_type: str,
+    *,
+    read_to_turn_end: bool = False,
 ) -> str:
     """Transport-agnostic turn: read through noise to the exact assistant reply.
 
@@ -235,10 +241,28 @@ async def _send_turn(
     break early and just wait for the worker to free up). A 409 that is NOT an
     in-flight race (e.g. ``status=failed``) is a real error and re-raised.
     Bounded so a wedged turn fails the test rather than hanging past the cap.
+
+    ``read_to_turn_end`` keeps consuming after the reply matched, until the
+    stream closes. Use it before reading the transcript back.
+
+    **Why that is the correct observation point, not a workaround.** The
+    transcript-durability contract
+    (``cli_drivers/transcript_durability_gate.py``) guarantees the turn's rows
+    are on disk before the turn's TERMINAL frames are released — it does not,
+    and cannot, guarantee it at the first sight of the answer TEXT. A vendor
+    that streams token deltas (copilot) delivers the full text mid-turn: the
+    consolidated ``assistant.message`` frame is suppressed precisely because
+    the deltas already carried it, so there is no terminal candidate to hold,
+    and the text is observable while the turn is still being written. Breaking
+    out there and reading ``transcript/full`` samples a turn in progress.
+    Reading to the stream's close asserts at the point the contract actually
+    covers. Nothing is weakened: the exact-reply assertion is unchanged, and
+    no timeout, retry or sleep budget is involved — the stream simply ends.
     """
     deadline_attempts = 20
     for _ in range(deadline_attempts):
         received = b""
+        matched = False
         async with hub_client.stream(
             "POST",
             f"/api/v1/graph/agentic_process/{process_id}/prompt",
@@ -253,10 +277,15 @@ async def _send_turn(
             assert r.status_code == 200, f"prompt {r.status_code}: {(await r.aread()).decode()[:300]}"
             async for chunk in r.aiter_bytes():
                 received += chunk
-                if _has_exact_assistant_reply(received, expected_reply):
-                    return received.decode("utf-8", errors="replace")
-                _skip_if_worker_unavailable(received, worker_type)
-                _raise_on_result_before_reply(received, expected_reply)
+                if not matched and _has_exact_assistant_reply(received, expected_reply):
+                    matched = True
+                    if not read_to_turn_end:
+                        return received.decode("utf-8", errors="replace")
+                if not matched:
+                    _skip_if_worker_unavailable(received, worker_type)
+                    _raise_on_result_before_reply(received, expected_reply)
+        if matched:
+            return received.decode("utf-8", errors="replace")
         # Stream closed with no expected reply — let the worker settle and retry.
         _skip_if_worker_unavailable(received, worker_type)
         await asyncio.sleep(1.0)
@@ -383,8 +412,14 @@ async def test_multi_turn_resumes_same_session(hub_and_node, tmp_path, worker_ty
     )
     pid = proc["id"]
 
+    # This test reads the transcript back, so each turn is observed to its end
+    # (see _send_turn) — the point the durability contract covers. A PTY stream
+    # never closes, so only the headless transport can be read that far; PTY's
+    # transcript is written by the CLI itself as the turn runs.
+    to_end = not pty_mode
+
     xml1 = await _send_turn(
-        hub_client, pid, _TURN_ONE_PROMPT, _TURN_ONE_REPLY, worker_type
+        hub_client, pid, _TURN_ONE_PROMPT, _TURN_ONE_REPLY, worker_type, read_to_turn_end=to_end
     )
     assert _TURN_ONE_REPLY in xml1, f"turn1 missing exact assistant reply: {xml1[:200]}"
 
@@ -393,7 +428,7 @@ async def test_multi_turn_resumes_same_session(hub_and_node, tmp_path, worker_ty
 
     # _send_turn retries on the in-flight 409 until turn 1 frees the worker.
     xml2 = await _send_turn(
-        hub_client, pid, _TURN_TWO_PROMPT, _TURN_TWO_REPLY, worker_type
+        hub_client, pid, _TURN_TWO_PROMPT, _TURN_TWO_REPLY, worker_type, read_to_turn_end=to_end
     )
     assert _TURN_TWO_REPLY in xml2, f"turn2 missing exact assistant reply: {xml2[:200]}"
 
