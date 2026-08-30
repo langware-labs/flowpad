@@ -13,7 +13,6 @@ import { APIEntity, dataManager, registerEntity } from '../../APIEntity';
 import { isApiError } from '../../ApiResponse';
 import { TypeId } from '../../models/TypeId';
 import type { IAgenticProcess } from '../../process/agentic-process';
-import { ConnectionManager } from '../../websocket';
 import {
   FlowData,
   FlowElementTypes,
@@ -38,7 +37,6 @@ import {
 import type { MachineStatus, ProcessInfo } from './machine-status';
 import { ServiceControlError, type ServiceRuntimeDescriptor } from './service-control';
 import { Shell } from '../shell';
-import { PtyConnection } from '../../services/shell/ptyConnection';
 import { GitWorkdir } from '../git-workdir';
 
 /**

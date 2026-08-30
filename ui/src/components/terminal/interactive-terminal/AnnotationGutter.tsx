@@ -5,7 +5,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { cn } from '@src/lib/utils';
 import { FileText, Info, MessageSquare, StickyNote, Tag } from 'lucide-react';
 import { useDockNavigation } from '@src/navigation';
-import { APIEntity } from '@sdk/APIEntity';
 import { useContext } from '@sdk/react/hooks';
 import React, { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';

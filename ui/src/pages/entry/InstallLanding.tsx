@@ -16,7 +16,7 @@ import { StepList } from '@src/components/ui/step-list';
 import { useSandboxes } from '@src/hooks/use-sandboxes';
 import { useAuth } from '@src/hooks/useAuth';
 import { contentInstallSpec, parseInstallIntent } from '@src/lib/content-install';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Trans } from '@lingui/react/macro';
 import { ExternalLink, GitBranch, Lock, PackagePlus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 

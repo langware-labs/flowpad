@@ -2,7 +2,6 @@ import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../API
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
-import { TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
 import type { ProjectMember } from './project';
 import { Project, getOrCreateLocalMemberId } from './project';

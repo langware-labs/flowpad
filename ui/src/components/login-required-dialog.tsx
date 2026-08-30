@@ -1,6 +1,6 @@
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
-import type { MessageDescriptor } from '@lingui/core';
+import type {} from '@lingui/core';
 import { cloudManager } from '@sdk';
 import {
   AlertDialog,

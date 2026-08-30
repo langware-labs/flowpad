@@ -4,7 +4,6 @@ import { dataContext } from '../FlowSync/context';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
-import { TypeId } from '../models/TypeId';
 import { IEntity } from '../IEntity';
 import type { GitOrigin } from '../models/GitOrigin';
 import { normalizeEmail } from '../utils/utils';

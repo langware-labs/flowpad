@@ -2,7 +2,7 @@ import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { ActionInfo, dataManager, Trigger as TriggerEntity, type ITrigger } from '@sdk';
+import { ActionInfo, dataManager, Trigger as TriggerEntity } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { FlaskConical } from 'lucide-react';

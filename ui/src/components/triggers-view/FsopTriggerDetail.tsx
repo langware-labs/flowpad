@@ -4,7 +4,7 @@ import { Button } from '@src/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/components/ui/collapsible';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { ActionInfo, dataManager, Trigger as TriggerEntity, type ITrigger } from '@sdk';
+import { ActionInfo, dataManager, Trigger as TriggerEntity } from '@sdk';
 import apiClient from '@sdk/client';
 import { useEntity } from '@sdk/react/hooks';
 import Editor from '@monaco-editor/react';

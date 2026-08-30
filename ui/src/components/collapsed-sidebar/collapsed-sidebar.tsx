@@ -1,10 +1,3 @@
-declare global {
-  interface Window {
-    /** DEV-only per-nav perf T0, stamped on the home rail click. Sibling of
-     *  `__shellNavT0`, which is declared by its owner, `routes/loaders/_perf.ts`. */
-    __homeNavT0?: number;
-  }
-}
 
 import { markPerfT0, perfLog } from '@src/routes/loaders/_perf';
 import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
@@ -153,7 +146,6 @@ export function CollapsedSidebar() {
         return;
       }
       if (viewType === null) {
-        if (import.meta.env.DEV) window.__homeNavT0 = performance.now();
         // The home is an ordinary destination now, so this goes through the one
         // navigation path like every other rail click. It used to read the live
         // browser URL directly and call `navigate('/')`, guarding against a
