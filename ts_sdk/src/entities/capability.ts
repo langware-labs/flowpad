@@ -1,6 +1,5 @@
-import type { EntityMerge } from '../IEntity';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { HttpMethod } from '../models/ApiUrl';
 import { kindMatches } from '../models/Kind';
@@ -102,7 +101,7 @@ export interface ICapability extends IEntity {
 // optional `icon?:` here is not identical to that required accessor, which
 // the merged interface cannot inherit from both sides.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Capability extends EntityMerge<ICapability, 'icon'> {}
+export interface Capability extends EntityMerge<ICapability> {}
 
 @registerEntity
 export class Capability extends APIEntity<Capability> implements ICapability {

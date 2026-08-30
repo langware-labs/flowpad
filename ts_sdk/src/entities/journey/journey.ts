@@ -1,10 +1,9 @@
-import type { EntityMerge } from '../../IEntity';
 import { APIEntity, registerEntity } from '../../APIEntity';
 import apiClient from '../../client';
 import { dataContext } from '../../FlowSync/context';
 import { FSRef } from '../../fs/FSRef';
 import { DockPointerData } from '../../models/DockPointer';
-import { IEntity } from '../../IEntity';
+import { IEntity, EntityMerge } from '../../IEntity';
 import { JourneyGraph } from './journey-graph';
 import { IJourneyJournal, JourneyJournal } from './journey-journal';
 

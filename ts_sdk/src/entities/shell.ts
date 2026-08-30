@@ -1,9 +1,8 @@
-import type { EntityMerge } from '../IEntity';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { isApiError } from '../ApiResponse';
 import { dataContext } from '../FlowSync/context';
 import { QueryRequest } from '../FlowSync/query';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models';
 import { TargetedDock } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';

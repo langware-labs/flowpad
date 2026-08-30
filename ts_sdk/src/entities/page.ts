@@ -1,7 +1,6 @@
-import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
 import { TypeId } from '../FlowSync';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import type { InstructionSection, PageData } from '../types/pageData';
 import { Workspace } from './workspace';
 

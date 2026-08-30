@@ -1,7 +1,6 @@
-import type { EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { APIEntity, registerEntity } from '../APIEntity';
-import type { IEntity } from '../IEntity';
+import type { IEntity, EntityMerge } from '../IEntity';
 
 export type AppLocationType = 'Folder' | 'Builtin' | 'GCPBucket' | 'Artifact';
 

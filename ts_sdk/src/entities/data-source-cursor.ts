@@ -6,9 +6,8 @@
  * without reading inside (RSS keeps an ETag there, Hacker News an update
  * pointer). Render it, don't interpret it.
  */
-import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import type { SourceHealth } from './data-source';
 
 export interface IDataSourceCursor extends IEntity {

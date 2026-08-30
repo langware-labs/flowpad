@@ -1,7 +1,6 @@
-import type { EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 
 export enum BookmarkType {
   NOTE = 'note',

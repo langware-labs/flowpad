@@ -1,6 +1,5 @@
-import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import type { AgenticProcess } from '../process/agentic-process';
 
 /**
@@ -33,7 +32,7 @@ export interface IPrompt extends IEntity {
 // optional `icon?:` here is not identical to that required accessor, which
 // the merged interface cannot inherit from both sides.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Prompt extends EntityMerge<IPrompt, 'icon'> {}
+export interface Prompt extends EntityMerge<IPrompt> {}
 
 @registerEntity
 export class Prompt extends APIEntity<Prompt> implements IPrompt {

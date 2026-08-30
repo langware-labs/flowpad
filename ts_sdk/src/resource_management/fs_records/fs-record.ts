@@ -12,7 +12,6 @@ import type { ResourceRecord } from './resource-record';
 import { Scope } from './scope';
 import { StorageLayout } from './storage-layout';
 import type { FsRecordRef } from './fs-record-ref';
-import { ResourceStatus } from './resource-record';
 import { recordStem } from './resource-record';
 
 /** Plain-object shape that travels over the wire (JSON serializable). */
@@ -51,7 +50,7 @@ export class FsRecord implements IResource {
    * different vocabulary here for at least one record type
    * (`fs_store/indexer/functions/claude_sessions.py:406` writes
    * `result["status"] = "complete"`, a run state). Subclasses narrow it to
-   * their own union with `declare override`; `ResourceStatus` stays where it
+   * their own union with `declare`; `ResourceStatus` stays where it
    * describes the lifecycle, on `ResourceRecord`.
    */
   status?: string;

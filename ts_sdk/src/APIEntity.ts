@@ -13,6 +13,7 @@ import { DataManager, Manageable } from './FlowSync/store';
 import { FlowData, FlowDataStream } from './flow_processing';
 import { defaultEntityType, IEntity } from './IEntity';
 import { DockPointerData, type IDockPointer } from './models/DockPointer';
+import type { ShowTarget } from './models/ShowTarget';
 import { editorForType } from './models/asset-editor';
 import { TypeId } from './models/TypeId';
 import { ViewType } from './utils/ui/view-types';
@@ -21,25 +22,18 @@ import { Callable } from './types';
 
 /**
  * The DisplayTarget an `install()` / `setup()` returns — what the receiver should
- * navigate to (`openDisplayTarget`). Mirrors the backend `_entity_payload` /
- * `resolve_display_target` shape. `kind:'entity'` pointing at an `agentic_process`
- * is a spawned Vibe setup session; other entities open in their editor; `webapp`
- * opens the port preview.
+ * navigate to (`openDisplayTarget`). `kind:'entity'` pointing at an
+ * `agentic_process` is a spawned Vibe setup session; other entities open in
+ * their editor; `webapp` opens the port preview.
+ *
+ * An alias for {@link ShowTarget}, not a fourth declaration of it. The backend
+ * builds both from the same place — `Entity.setup_on_receive`'s
+ * `_entity_payload` is the builder `resolve_display_target` uses — and this
+ * copy had already fallen behind by `artifact_id`, `micro_app_id`, `runtime`
+ * and `name`, so a `kind:'app'` target arriving here was typed as though it had
+ * no artifact or app id at all.
  */
-export interface ReceiveShowTarget {
-  /** Mirrors python `DisplayTargetKind` (flow_sdk/core/display_target.py). */
-  kind?: 'entity' | 'vfs' | 'webapp' | 'app' | 'shell' | 'dock';
-  typeid?: string;
-  type?: string;
-  id?: string;
-  path?: string;
-  port?: number | string;
-  /** dock: a SCREEN, addressed by view rather than by entity or file. */
-  view_type?: string;
-  pointer?: string | null;
-  options?: Record<string, string> | null;
-  page?: string;
-}
+export type ReceiveShowTarget = ShowTarget;
 
 /**
  * One row of an entity's member roster, as returned by the generic ``members``
@@ -806,7 +800,6 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     // a prototype-chain guard so it would not shadow a subclass override.
     if (
       baseObject.icon === undefined &&
-      !SERVER_MANAGED_SAVE_FIELDS.has('icon') &&
       (!this.schema || this.isDbField('icon'))
     ) {
       const icon = this.icon;

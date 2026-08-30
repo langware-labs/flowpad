@@ -8,7 +8,6 @@
  * ComputeNode changes, the frontend cache is reset (NOT the backend PTYs).
  */
 
-import type { EntityMerge } from '../../IEntity';
 import { APIEntity, dataManager, registerEntity } from '../../APIEntity';
 import { isApiError } from '../../ApiResponse';
 import { TypeId } from '../../models/TypeId';
@@ -23,7 +22,7 @@ import {
   ShellInputFlowData,
   ShellOutputFlowData,
 } from '../../flow_processing';
-import { IEntity } from '../../IEntity';
+import { IEntity, EntityMerge } from '../../IEntity';
 import { ActionInfo } from '../../models';
 import { hostTerminalTheme } from '../../utils/runtime';
 import {

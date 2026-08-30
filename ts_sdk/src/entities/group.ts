@@ -1,7 +1,6 @@
-import type { EntityMerge } from '../IEntity';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { ExpressionNode, QueryFilter, QueryRequest } from '../FlowSync/query';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 
 /**
  * Group — generic folder-like container entity (docs/entities-groups.md).
@@ -50,7 +49,7 @@ async function queryEntities<T extends IEntity>(type: string, match: ExpressionN
 // optional `icon?:` here is not identical to that required accessor, which
 // the merged interface cannot inherit from both sides.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Group extends EntityMerge<IGroup, 'icon'> {}
+export interface Group extends EntityMerge<IGroup> {}
 
 @registerEntity
 export class Group extends APIEntity<Group> implements IGroup {

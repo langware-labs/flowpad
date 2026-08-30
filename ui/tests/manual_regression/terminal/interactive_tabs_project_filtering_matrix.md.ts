@@ -126,12 +126,27 @@ async function restartOwnedInstance(instance: OwnedInstance): Promise<void> {
   // it returns the instant the server responds.
   const base = `http://localhost:${process.env.VITE_PORT ?? '4097'}`;
   const deadline = Date.now() + 90_000;
-  for (;;) {
+  const ready = async (): Promise<boolean> => {
     try {
-      const r = await fetch(base, { method: 'GET' });
-      if (r.ok) return;
+      // 1. vite is listening AND has served the shell. A 200 on `/` alone is
+      //    not enough: vite answers immediately and only then transforms the
+      //    module graph, so the first real load is cold.
+      if (!(await fetch(base)).ok) return false;
+      // 2. the backend is serving a real bootstrap again — `terminal-panels`
+      //    needs tab data, not just a document.
+      const boot = await fetch(`${API}/api/v1/graph/bootstrap`);
+      if (!boot.ok) return false;
+      return typeof (await boot.text()).match(/"types"/)?.[0] === 'string';
     } catch {
-      /* not listening yet */
+      return false;
+    }
+  };
+  for (;;) {
+    if (await ready()) {
+      // 3. one discarded fetch of the app entry so vite has compiled the graph
+      //    before the reload the test actually measures.
+      await fetch(`${base}/dock/home`).catch(() => undefined);
+      return;
     }
     if (Date.now() > deadline) throw new Error(`frontend ${base} did not come back after restarting '${instance.name}'`);
     await new Promise((r) => setTimeout(r, 250));

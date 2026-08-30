@@ -8,9 +8,8 @@
  * the conversation view fetches a bounded 500-message window, so counting
  * client-side is wrong for any real mailbox.
  */
-import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 
 export interface IMessageThread extends IEntity {
   /** The channel: gmail | slack | jira. The badge axis. */
