@@ -25,5 +25,5 @@
       "@sdk/*": ["../ts_sdk/src/*"]
     }
   },
-  "include": ["src", "tests", "../ts_sdk/src"]
+  "include": ["src", "../ts_sdk/src"]
 }

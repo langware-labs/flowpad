@@ -37,7 +37,7 @@ repos:
       # because its SDK is nested at flowpad/ui/sdk; ours isn't.)
       - id: tsc-sdk
         name: TypeScript Check SDK
-        entry: scripts/node-hook.sh bash -c 'cd ui && npx tsc --noEmit'
+        entry: scripts/node-hook.sh bash -c 'cd ui && npx tsc --noEmit -p tsconfig.app.json'
         language: system
         types_or: [ts, tsx]
         files: '^ts_sdk/'
