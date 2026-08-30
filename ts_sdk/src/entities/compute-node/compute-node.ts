@@ -47,7 +47,6 @@ import { GitWorkdir } from '../git-workdir';
 export const WORKSPACE_FLAVOR = 'workspace';
 
 /** Callback for when a new machine session is detected */
-export type MachineSessionCallback = (sessionId: string, session: Shell) => void;
 
 /** CLI worker kind shared across resolver APIs. */
 export type WorkerKind = 'claude' | 'codex' | 'copilot' | 'opencode';
@@ -138,12 +137,8 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   private knownMachineSessions: Set<string> = new Set();
 
   /** Callback for when a new machine session is detected */
-  private machineSessionCallback: MachineSessionCallback | null = null;
 
   /** Bound handler for WebSocket data ops (for cleanup) */
-  private boundDataOpHandler:
-    | ((toEntity: string, op: string, data: { active_pty_sessions?: string[] }) => void)
-    | null = null;
 
   constructor(entity: Partial<IComputeNode> = {}) {
     super(entity);
@@ -304,26 +299,6 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   }
 
   /**
-   * Create a new shell session in this node's frontend cache.
-   * @param sessionId - Unique session identifier
-   * @param name - Display name for the session
-   * @returns The created Shell
-   */
-  async createSession(sessionId: string, name: string): Promise<Shell> {
-    if (this.sessions.has(sessionId)) {
-      console.warn(`[ComputeNode] Session '${sessionId}' already exists`);
-      return this.sessions.get(sessionId)!;
-    }
-    const shell = Shell.create(this, { name });
-    // Override the auto-generated ID with the requested sessionId
-    (shell as any).id = sessionId;
-    shell.pty = new PtyConnection();
-    shell.pty.computeNodeId = this.id;
-    this.sessions.set(sessionId, shell);
-    return shell;
-  }
-
-  /**
    * Get a session from this node's frontend cache.
    * @param sessionId - Session identifier
    * @returns ShellSession or undefined if not found
@@ -405,92 +380,6 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    */
   get sessionCount(): number {
     return this.sessions.size;
-  }
-
-  // ============================================================
-  // Machine Session WebSocket Watching
-  // ============================================================
-
-  /**
-   * Start watching for machine session updates via WebSocket.
-   * When new PTY sessions are detected in `active_pty_sessions`, creates local shell sessions.
-   * @param onNewSession - Callback invoked when a new machine session is detected
-   */
-  startWatchingMachineSessions(onNewSession?: MachineSessionCallback): void {
-    this.machineSessionCallback = onNewSession || null;
-
-    // Already watching
-    if (this.boundDataOpHandler) {
-      return;
-    }
-
-    const manager = ConnectionManager.getInstance();
-    if (!manager.connected) {
-      console.warn('[ComputeNode] Cannot watch machine sessions: ConnectionManager not connected');
-      return;
-    }
-
-    this.boundDataOpHandler = (toEntity: string, _op: string, data: { active_pty_sessions?: string[] }) => {
-      // on_data_op emits the entity as a string (e.g. "compute_node-@local").
-      // Parse it and only handle updates for this compute node.
-      let parsedTypeId: TypeId;
-      try {
-        parsedTypeId = new TypeId(toEntity);
-      } catch {
-        return;
-      }
-      if (parsedTypeId.type !== 'compute_node' || parsedTypeId.id !== this.id) {
-        return;
-      }
-
-      const activeMachineSessions = data.active_pty_sessions;
-      if (!activeMachineSessions || !Array.isArray(activeMachineSessions)) {
-        return;
-      }
-
-      // Find new sessions that we haven't seen before
-      for (const sessionId of activeMachineSessions) {
-        if (!this.knownMachineSessions.has(sessionId)) {
-          this.knownMachineSessions.add(sessionId);
-
-          // Create Shell entity for the new machine session
-          const sessionName = `Terminal ${sessionId.substring(0, 8)}`;
-          void this.createSession(sessionId, sessionName).then((shell) => {
-            // Mark PTY as started — the PTY is already running on the backend
-            shell.pty = shell.pty ?? new PtyConnection();
-            shell.pty.started = true;
-            shell.pty.computeNodeId = this.id;
-            shell.status = 'running';
-
-            // Notify callback if provided
-            if (this.machineSessionCallback) {
-              this.machineSessionCallback(sessionId, shell);
-            }
-          });
-        }
-      }
-    };
-
-    manager.on('on_data_op', this.boundDataOpHandler);
-  }
-
-  /**
-   * Stop watching for machine session updates.
-   */
-  stopWatchingMachineSessions(): void {
-    if (this.boundDataOpHandler) {
-      const manager = ConnectionManager.getInstance();
-      manager.off('on_data_op', this.boundDataOpHandler);
-      this.boundDataOpHandler = null;
-    }
-    this.machineSessionCallback = null;
-  }
-
-  /**
-   * Check if currently watching for machine session updates.
-   */
-  get isWatchingMachineSessions(): boolean {
-    return this.boundDataOpHandler !== null;
   }
 
   /**

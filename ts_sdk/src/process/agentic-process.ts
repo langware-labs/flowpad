@@ -981,6 +981,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /** Transcript-derived worker status, or undefined when the backend reports none. */
+  /**
+   * Backend-computed explanation of the current worker_status — e.g. the
+   * signed-out-harness case the CLI already named. Sent on every process
+   * payload (`AgenticProcess.to_dict`) and landed by deepAssign; it simply was
+   * never declared here, so every read of it was a type error.
+   */
+  worker_status_detail?: string | null;
+
   get workerStatus(): WorkerStatus | undefined {
     return this._workerStatus;
   }

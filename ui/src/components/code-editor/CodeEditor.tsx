@@ -283,7 +283,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
       dataContext.setActiveShellId(runShell.id);
       dataContext.setActiveTerminalTargetTypeId(new TypeId(Shell.type, runShell.id));
 
-      if (!runShell.pty?.isLive) {
+      if (!runShell.ptyConnection?.isLive) {
         await runShell.start({
           cols: 80,
           rows: 24,
