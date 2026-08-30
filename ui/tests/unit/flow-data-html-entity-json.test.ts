@@ -76,6 +76,13 @@ function historyWithEntityToolCall() {
   ];
 }
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.xml_entity_decode.rules: FAILING? read this tag's rules before
+//       editing — an empty replay is the bug, do not assert only that loadHistory resolved
+// flowpad:endcapsule tag
 describe('FLOWPAD-2038: HTML entities in transcript rows survive get-history replay', () => {
   let callActionSpy: ReturnType<typeof vi.spyOn>;
 
@@ -157,5 +164,69 @@ describe('FLOWPAD-2038: HTML entities in transcript rows survive get-history rep
     });
 
     expect(row.content).toBe('use <div> & friends');
+  });
+});
+
+describe('FLOWPAD-2038: a dropped replay is announced, not swallowed', () => {
+  let callActionSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    callActionSpy = vi.spyOn(dataManager, 'callAction');
+  });
+
+  afterEach(() => {
+    callActionSpy.mockRestore();
+  });
+
+  it('emits history-error when a corrupt row empties the replay', async () => {
+    // A genuinely unparseable object row — a truncated transcript write, not an
+    // entity. `loadHistory` still must not throw, but the pane would render
+    // empty over a non-empty transcript, so the failure has to be announced or
+    // the user cannot tell it apart from a session with nothing in it.
+    const history = [
+      {
+        flow_value: '{"tool_name": "Write", "args": {',
+        created_time: '2026-08-26T18:00:00.100Z',
+        attributes: { 'element-type': FlowElementTypes.TOOL_CALL, 'data-type': 'object' },
+      },
+    ];
+    callActionSpy.mockResolvedValue({
+      history,
+      count: history.length,
+      session_id: 'session-2038-corrupt',
+      use_worker_history: true,
+    } as never);
+
+    const process = new AgenticProcess({ id: '00000000-0000-4000-8000-00000000e039' });
+    const seen: { error: unknown }[] = [];
+    process.on('history-error', (payload: { error: unknown }) => seen.push(payload));
+
+    // The contract the UI callers rely on: this RESOLVES, it does not reject —
+    // which is exactly why their `.catch()` handlers cannot surface the failure
+    // and the event has to.
+    await expect(process.loadHistory({ force: true })).resolves.toBeUndefined();
+
+    expect(process.getOutputs()).toHaveLength(0); // replay really was dropped
+    expect(seen).toHaveLength(1); // ...and the user can be told about it
+    expect(String((seen[0] as { error: unknown }).error)).toContain('Invalid JSON format');
+  });
+
+  it('stays quiet on a healthy replay', async () => {
+    const history = [chatRow('chat-1', 'all good', '2026-08-26T18:00:00.000Z')];
+    callActionSpy.mockResolvedValue({
+      history,
+      count: history.length,
+      session_id: 'session-2038-ok',
+      use_worker_history: true,
+    } as never);
+
+    const process = new AgenticProcess({ id: '00000000-0000-4000-8000-00000000e03a' });
+    const seen: unknown[] = [];
+    process.on('history-error', (payload: unknown) => seen.push(payload));
+
+    await process.loadHistory({ force: true });
+
+    expect(process.getOutputs()).toHaveLength(1);
+    expect(seen).toHaveLength(0); // no false-positive popup
   });
 });
