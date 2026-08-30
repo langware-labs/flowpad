@@ -12,15 +12,14 @@ import { History } from 'lucide-react';
 import { DockPointer, HIGHLIGHT_PARAM } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
-import { FSRef, PageId, TypeId, PrefKey, copyToClipboard, dataManager, looksBinaryText } from '@sdk';
+import { FSRef, PageId, TypeId, PrefKey, dataManager, looksBinaryText } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
+import { CopyButton } from '@src/components/ui/copy-button';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import {
-  Check,
   ChevronDown,
   ChevronRight,
-  Copy,
   Download,
   Eye,
   ExternalLink,
@@ -823,24 +822,16 @@ function PlainDocumentHeader({ children }: { children?: React.ReactNode }) {
 // Read-only document action rendered inside the view/edit mode group.
 function CopyContentButton({ body }: { body: string }) {
   const { t } = useLingui();
-  const [copied, setCopied] = useState(false);
-  const handleCopy = useCallback(async () => {
-    await copyToClipboard(body);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }, [body]);
 
   return (
-    <button
-      type="button"
-      className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-      onClick={() => void handleCopy()}
+    <CopyButton
+      value={body}
       title={t`Copy content to clipboard`}
-      data-testid="markdown-editor-copy-content"
-    >
-      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-      {copied ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
-    </button>
+      testId="markdown-editor-copy-content"
+      label={<Trans>Copy</Trans>}
+      copiedLabel={<Trans>Copied</Trans>}
+      className="rounded px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+    />
   );
 }
 

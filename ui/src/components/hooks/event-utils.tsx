@@ -32,7 +32,7 @@ import {
   Wrench,
   Zap,
 } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCopied } from '@src/components/ui/copy-button';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -295,14 +295,7 @@ export function navigateToTranscript(
 
 export function EventTooltipContent({ event }: { event: TraceEvent }) {
   const Icon = getEventIcon(event.event_type, event);
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = useCallback(() => {
-    void navigator.clipboard.writeText(JSON.stringify(event.raw, null, 2)).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  }, [event.raw]);
+  const { copied, copy } = useCopied();
 
   // Read sniffer-only details from canonical FlowData attributes; fall back
   // to the legacy hook_data path for events that haven't been dispatched
@@ -329,7 +322,7 @@ export function EventTooltipContent({ event }: { event: TraceEvent }) {
       {event.session_id && <div className="truncate text-xs text-popover-foreground/60">Session: {event.session_id}</div>}
       <div className="relative mt-1">
         <button
-          onClick={handleCopy}
+          onClick={() => void copy(JSON.stringify(event.raw, null, 2))}
           className="absolute right-1 top-1 rounded bg-popover-foreground/10 px-1.5 py-0.5 text-[9px] text-popover-foreground/60 opacity-0 transition-opacity hover:text-popover-foreground [div:hover>&]:opacity-100"
         >
           {copied ? 'Copied' : 'Copy'}
