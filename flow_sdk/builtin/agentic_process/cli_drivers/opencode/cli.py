@@ -165,39 +165,30 @@ class OpenCodeAgentOptions(AgentOptions):
         self._sync_config_env()
         return super().to_shell_string(instruction=instruction)
 
-    def to_json(self) -> dict[str, Any]:
-        data = super().to_json()
-        data.update({
-            "worker_type": "opencode",
-            "session_id": self.session_id,
-            "resume": self.resume,
-            "fork_session_id": self.fork_session_id,
-            "model": self.model,
-            "permission_mode": self.permission_mode,
-            "agent": self.agent,
-            "variant": self.variant,
-            "skill_names": self.skill_names,
-            "add_dirs": self.add_dirs,
-            "json_stream": self.json_stream,
-        })
-        return data
+    # ── Serialisation ───────────────────────────────────────────────────────
+    # The base AgentOptions.to_json / from_json do the work; this is the whole
+    # declaration of this vendor's wire shape. Key names and value types are
+    # frozen — see tests/unit/test_agent_options_serialization_golden.py.
 
-    @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "OpenCodeAgentOptions":
-        return cls(
-            session_id=data.get("session_id"),
-            resume=bool(data.get("resume", False)),
-            fork_session_id=data.get("fork_session_id"),
-            model=data.get("model"),
-            permission_mode=data.get("permission_mode", "bypassPermissions"),
-            agent=data.get("agent"),
-            variant=data.get("variant"),
-            skill_names=list(data.get("skill_names") or []),
-            workdir=data.get("workdir"),
-            env_vars=data.get("env_vars") or {},
-            add_dirs=list(data.get("add_dirs") or []),
-            json_stream=bool(data.get("json_stream", True)),
-        )
+    WORKER_TYPE = "opencode"
+    SERIALIZED_FIELDS = (
+        "session_id",
+        "resume",
+        "fork_session_id",
+        "model",
+        "permission_mode",
+        "agent",
+        "variant",
+        "skill_names",
+        "add_dirs",
+        "json_stream",
+    )
+    _COERCE = {
+        "resume": bool,
+        "json_stream": bool,
+        "skill_names": lambda v: list(v or []),
+        "add_dirs": lambda v: list(v or []),
+    }
 
 
 #: The options class ``factory`` builds for this vendor.

@@ -40,7 +40,7 @@ import sys
 import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Protocol, Sequence
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Protocol, Sequence
 
 import psutil
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -933,18 +933,45 @@ class AgentOptions:
     def to_shell_string(self, instruction: str | None = None) -> str:
         return self._render_shell_string(sys.platform, instruction)
 
+    # ── Serialisation (declarative) ─────────────────────────────────────────
+    #
+    # ``to_json`` is a WIRE FORMAT: AgenticProcess.last_started_hash is an md5
+    # over it, so a renamed key or a changed value type invalidates every stored
+    # restart snapshot. Each subclass therefore declares only WHAT is on the
+    # wire (``SERIALIZED_FIELDS`` + ``WORKER_TYPE``) and how a raw value is
+    # normalised on the way back in (``_COERCE``); the mechanics live here once.
+    #
+    # Fields absent from ``data`` are NOT passed to the constructor, so a missing
+    # key falls through to the constructor default — the single place a default
+    # is written down.
+
+    #: Attribute names serialized on top of ``workdir``/``env_vars``.
+    SERIALIZED_FIELDS: tuple[str, ...] = ()
+    #: Value of the ``worker_type`` discriminator; "" ⇒ omitted (base only).
+    WORKER_TYPE: str = ""
+    #: field name → callable applied to a PRESENT value when reading.
+    _COERCE: "dict[str, Callable[[Any], Any]]" = {}
+
     def to_json(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "workdir": self.workdir,
             "env_vars": self.env_vars,
         }
+        if self.WORKER_TYPE:
+            data["worker_type"] = self.WORKER_TYPE
+        for name in self.SERIALIZED_FIELDS:
+            data[name] = getattr(self, name)
+        return data
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "AgentOptions":
-        return cls(
-            workdir=data.get("workdir"),
-            env_vars=data.get("env_vars") or {},
-        )
+        kwargs: dict[str, Any] = {}
+        for name in ("workdir", "env_vars", *cls.SERIALIZED_FIELDS):
+            if name not in data:
+                continue
+            coerce = cls._COERCE.get(name)
+            kwargs[name] = coerce(data[name]) if coerce is not None else data[name]
+        return cls(**kwargs)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, AgentOptions):
