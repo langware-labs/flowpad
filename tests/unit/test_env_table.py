@@ -22,7 +22,7 @@ from flow_sdk.core.entity.entity_env.env_types import (
     EnvVarType,
 )
 from flow_sdk.core.entity.entity_env.env_utils import is_confidential, mask_confidential_value
-from flow_sdk.api.api_types.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.request_context.methods import get_entity_credentials
 from flow_sdk.schema.type_info import register_all

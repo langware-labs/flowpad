@@ -24,7 +24,7 @@ from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.scope import Scope
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.utils.serialization import iso_to_datetime
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 
 PROJECT_RESOURCE_TYPE = "system_resource_claude_project"
 

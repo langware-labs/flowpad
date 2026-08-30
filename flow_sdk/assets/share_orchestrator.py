@@ -104,7 +104,7 @@ async def share_asset_to_hub(
     actor: Any = None,
 ) -> ShareOutcome:
     """Run the gate sequence. Raises :class:`ShareBlocked` for anything a user can fix."""
-    from flow_sdk.api.api_types.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
     from flow_sdk.assets._publish_service import owning_project
     from flow_sdk.core.display_target import (
         DisplayTargetKind,

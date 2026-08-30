@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import ClassVar, List, Optional
 
 from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.core import Entity, action
 from flow_sdk.core.entity import Entity as EntityBase
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType

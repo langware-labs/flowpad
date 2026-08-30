@@ -93,7 +93,7 @@ class Tag(Entity):
         copies converge on the same deterministic id; a nameless construction
         falls back to uuid4 (and is rejected later by field validation).
         """
-        from flow_sdk.fs_store.identifier import mint_uuid
+        from flow_sdk.api.api_types.identifier import mint_uuid
 
         name = data.get("name") or ""
         if name:

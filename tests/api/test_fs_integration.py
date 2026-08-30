@@ -8,7 +8,7 @@ from io import BytesIO
 
 import pytest
 
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.storage import LocalStorageDriver
 
 

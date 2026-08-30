@@ -28,7 +28,7 @@ from pydantic import SerializationInfo, model_serializer, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
-from flow_sdk.api.api_types.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.agent_hook import HookEventType
 from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
 from flow_sdk.builtin.agentic_process.cli_drivers import (
@@ -2516,7 +2516,7 @@ class AgenticProcess(Entity):
         re-deriving that from a path — which it does not have — is impossible.
         Returned rather than fetched separately so the entity is loaded once.
         """
-        from flow_sdk.api.api_types.type_id import TypeId  # noqa: PLC0415
+        from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
         from flow_sdk.core import Entity  # noqa: PLC0415
         from flow_sdk.core.display_target import DisplayTargetKind  # noqa: PLC0415
 

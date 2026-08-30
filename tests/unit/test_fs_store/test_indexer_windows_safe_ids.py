@@ -36,7 +36,7 @@ import pytest
 
 from flow_sdk.db import get_db_driver
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identifier import is_valid_entity_id
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.indexer.builtin import build_default_indexer
 from flow_sdk.fs_store.record_paths import get_default_records_root

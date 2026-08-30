@@ -34,7 +34,7 @@ def test_the_entity_may_narrow_but_never_lack_a_spec_field():
         layout: str = "csv"
         data: Optional[FreeSection] = None
 
-    from flow_sdk.api.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
     from flow_sdk.schema.data_spec.dataset_spec import DataLayoutEnum
 
     class _Row(BaseModel):

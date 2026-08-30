@@ -13,7 +13,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from flow_sdk import service_log
 from flow_sdk.actions import action
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.user import User, normalize_email
 from flow_sdk.core.auth.custom import local_signin
 from flow_sdk.core.auth.models import SignupInfo

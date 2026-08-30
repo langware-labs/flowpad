@@ -22,7 +22,7 @@ from pydantic.alias_generators import to_camel
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Persist, Sharing
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
@@ -33,7 +33,7 @@ from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializ
 from flow_sdk.core.flow.mcp_server import MCPConnector, mcp_connector_pool
 from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.origin.git_origin import GitOrigin, as_git, fresh_clone_slot
 from flow_sdk.fs_store.path_utils import (
     canonical_posix_path,
@@ -604,7 +604,7 @@ class Project(Entity):
         the base derives ``uuid5(type:id)`` from a non-uuid slug, which would
         reintroduce a v5 project id.
         """
-        from flow_sdk.fs_store.identifier import is_valid_entity_id
+        from flow_sdk.api.api_types.identifier import is_valid_entity_id
 
         rid = data.get("id") or ""
         if rid and is_valid_entity_id(rid):

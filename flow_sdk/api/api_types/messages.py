@@ -5,7 +5,7 @@ from typing import Any, ClassVar, Dict, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from flow_sdk.api.api_request import APIRequest
-from flow_sdk.api.api_types.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 
 
 class WSMessageType(Enum):

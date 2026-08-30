@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.origin.fs_origin import ORIGIN_MODELS, FSOrigin
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 

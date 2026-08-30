@@ -27,7 +27,7 @@ import os
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
-from flow_sdk.api.api_types.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 

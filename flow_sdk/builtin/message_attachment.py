@@ -16,7 +16,7 @@ from typing import ClassVar, Optional
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.origin.field import OriginField
 from flow_sdk.schema.types import EntityType

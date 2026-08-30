@@ -10,7 +10,7 @@ from flow_sdk._compat import StrEnum
 from flow_sdk.flowpad_types.enums.entity_enums import BuiltInRelationshipTypes, RelationshipDirection
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.messages import HttpMethod
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.hook_models import (
     ActionType,
     ErrorMessage,

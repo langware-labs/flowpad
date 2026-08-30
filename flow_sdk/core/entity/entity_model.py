@@ -62,7 +62,7 @@ from flow_sdk.db.drivers.query import ExpressionNode, OrderType, QueryFilter, Qu
 from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
 from flow_sdk.fs_store.asset_occurrences import AssetOccurrence, asset_occurrence_dicts
 from flow_sdk.fs_store.exceptions import AssetRefLookupError
-from flow_sdk.fs_store.identifier import adopt_entity_id, is_valid_entity_id, mint_uuid
+from flow_sdk.api.api_types.identifier import adopt_entity_id, is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.origin.field import OriginField
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 

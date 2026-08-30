@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.api.fs.fs_api import VFSPath, parse_custom_uri
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.models import FSEntry
 from flow_sdk.responses import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.storage import LocalStorageDriver

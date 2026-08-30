@@ -16,7 +16,7 @@ from flow_sdk.request_context.execution_context import get_execution_context
 
 # Note: These are flow-cli paths, not FlowPad
 from flow_sdk.config import default_service_config
-from flow_sdk.api.api_types.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 
 if TYPE_CHECKING:
     from fastapi import FastAPI

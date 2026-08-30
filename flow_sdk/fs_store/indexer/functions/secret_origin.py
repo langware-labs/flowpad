@@ -78,7 +78,7 @@ def secret_origin_in_folder_fn(nodes: list[FSRef], opts: IndexerOptions) -> list
 
 def secret_origin_id_from_file(ref: FSRef | Path) -> str | None:
     """Read only the embedded entity id; locator derivation is the mint seam."""
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
 
     data = _load_doc(Path(getattr(ref, "_path", ref)))
     return adopt_entity_id(data.get("id")) if data is not None else None

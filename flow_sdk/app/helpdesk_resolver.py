@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from flow_sdk.builtin.helpdesk import Helpdesk
 from flow_sdk.builtin.project import Project
-from flow_sdk.fs_store.identifier import is_valid_entity_id
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under
 
 log = logging.getLogger(__name__)

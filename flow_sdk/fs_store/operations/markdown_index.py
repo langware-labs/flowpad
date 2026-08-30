@@ -103,7 +103,7 @@ def from_markdown(text: str, path: Path | None = None) -> FSRecord:
     """
     from flow_sdk.fs_store.indexer.functions.markdown import parse_markdown_text  # noqa: PLC0415
 
-    from flow_sdk.fs_store.identifier import adopt_entity_id, mint_uuid  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import adopt_entity_id, mint_uuid  # noqa: PLC0415
 
     data = parse_markdown_text(text, path=path)
     data["asset_type"] = "markdown_index"

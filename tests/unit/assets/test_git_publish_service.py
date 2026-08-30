@@ -16,7 +16,7 @@ from flow_sdk.assets.git_publish import (
 from flow_sdk.assets.projection import PortableAssetLayout, PortableAssetProjection
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.project import Project
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.type_id import TypeId
 
 

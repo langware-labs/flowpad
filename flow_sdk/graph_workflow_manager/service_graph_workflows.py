@@ -264,7 +264,7 @@ def _repin_trigger_nodes(graph_path, trigger_id: str) -> None:
         doc = json.loads(graph_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return
-    from flow_sdk.api.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
 
     want = str(TypeId(type="trigger", id=trigger_id))
     changed = False

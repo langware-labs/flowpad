@@ -23,7 +23,7 @@ verbatim and are never absorbed here.
 from typing import TYPE_CHECKING, ClassVar, Optional
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
 from flow_sdk.core import Entity, action
 from flow_sdk.flowpad_types.vendors import Vendor, default_vendor, vendor_for

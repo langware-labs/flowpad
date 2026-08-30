@@ -396,7 +396,7 @@ async def test_embedded_excludes_inline_duplicate(tree, monkeypatch):
         embedded_asset_refs=[],  # filled below
         cli_config={"agents_json": {tree['ents']['p_agent'].id: {"description": "x"}}},
     )
-    from flow_sdk.api.api_types.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
     proc.embedded_asset_refs = [TypeId(p_agent_ref)]
 
     descs = await proc.get_asset_descriptors()
@@ -508,7 +508,7 @@ async def test_inline_legacy_name_resolves_to_entity_id(tree):
 async def test_inline_resolved_dedups_against_embedded(tree):
     """A legacy name that resolves to an entity id already in
     embedded_asset_refs collapses into the EMBEDDED row (no INLINE dup)."""
-    from flow_sdk.api.api_types.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
     from flow_sdk.fs_store.fs_ref import FSRef
     from flow_sdk.fs_store.indexer.functions.subagent import subagent_peek_entity_id
     from flow_sdk.fs_store.record_types import RecordType
@@ -577,7 +577,7 @@ def test_agent_peek_entity_id_reads_capsule_without_writing(tmp_path):
     once gen_id has stamped the v4 into the frontmatter capsule, peek reads and
     returns that same id. An already-adopted frontmatter UUID wins on both."""
     from flow_sdk.fs_store.fs_ref import FSRef
-    from flow_sdk.fs_store.identifier import is_valid_entity_id
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id
     from flow_sdk.fs_store.indexer.functions.subagent import subagent_peek_entity_id
     from flow_sdk.fs_store.record_types import RecordType
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
@@ -638,7 +638,7 @@ async def test_project_dir_attribution(tree):
 async def test_embedded_materialized_path_layout(tree, monkeypatch):
     """EMBEDDED descriptor's posix_path matches the materialization layout
     (`<assets>/.claude/agents/<name>.md` for agents, folder for skills)."""
-    from flow_sdk.api.api_types.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
     proc = _make_proc()
 
     # Stub the record fetch so we don't need a real AgentRecord on disk.
@@ -675,7 +675,7 @@ async def test_embedded_materialized_path_layout(tree, monkeypatch):
 async def test_embedded_descriptor_is_marked_used_without_file_read(tree, monkeypatch):
     """Vibe-style embedded personas are process-active even when the transcript
     never contains a Read of the agent markdown."""
-    from flow_sdk.api.api_types.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
 
     async def _fake_path_for(self, ref, assets_dir):
         return assets_dir / ".claude" / "agents" / "vibe.md"

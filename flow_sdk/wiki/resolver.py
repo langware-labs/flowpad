@@ -29,7 +29,7 @@ async def resolve_link(link: WikiLink, *, src_type: str, src_id: str) -> WikiLin
 
     scoped = await _resolve_scoped(link, name, src_type, src_id)
     if scoped is not None:
-        from flow_sdk.api.type_id import TypeId
+        from flow_sdk.fs_store.type_id import TypeId
 
         target_raw = scoped.get("target_typeid") if scoped.get("kind") == "resolved" else None
         target = TypeId(target_raw) if target_raw else None
@@ -49,7 +49,7 @@ async def resolve_link(link: WikiLink, *, src_type: str, src_id: str) -> WikiLin
     target_raw = legacy.get("target_typeid") if legacy.get("kind") == "resolved" else None
     if target_raw is None:
         return dataclasses.replace(link, src_type=src_type, src_id=src_id)
-    from flow_sdk.api.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
 
     target = TypeId(target_raw)
 
@@ -88,7 +88,7 @@ async def _resolve_scoped(
     None means the source lacks project context, so the legacy unique-only
     compatibility lookup may run.
     """
-    from flow_sdk.api.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
     from flow_sdk.builtin.wiki import Wiki
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 

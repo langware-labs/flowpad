@@ -272,7 +272,7 @@ class Deployment(Entity):
         new deployable element needs no change here. ``TypeId`` has no
         ``.parse`` — the constructor does the parsing.
         """
-        from flow_sdk.api.type_id import TypeId  # noqa: PLC0415
+        from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         if self._element is not None:

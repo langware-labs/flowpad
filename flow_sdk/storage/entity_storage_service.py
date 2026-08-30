@@ -10,7 +10,7 @@ import os
 import tempfile
 from typing import Any, Callable, Optional
 
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.config import StorageProvider
 from flow_sdk.storage.local_fs_driver import LocalStorageDriver
 

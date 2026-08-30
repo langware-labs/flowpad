@@ -362,7 +362,7 @@ def _parse_entity_ref(node: GraphWorkflowNodeDef, expected_type: str) -> str | N
     if not raw:
         return None
     try:
-        from flow_sdk.api.type_id import TypeId
+        from flow_sdk.fs_store.type_id import TypeId
 
         tid = TypeId(raw)
     except Exception:

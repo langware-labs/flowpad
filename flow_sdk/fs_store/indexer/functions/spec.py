@@ -43,7 +43,7 @@ def spec_project_fn(
 
 def _spec_id_from_path(path: Path) -> str:
     """UUID5 from resolved path — stable across rescans."""
-    from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
     return mint_uuid(str(path.resolve()))
 
 
@@ -58,7 +58,7 @@ def _read_spec_frontmatter_id(path: Path) -> str | None:
         return None
     fields = _yaml_load(fm) or {}
     raw = fields.get("id") or fields.get("asset_id")
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
     return adopt_entity_id(raw)  # validate-on-adopt (v4/v5) → else caller derives uuid5(path)
 
 

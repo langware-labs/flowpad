@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.project import Project
 
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.faas.analytics import AnalyticsActionsMixin
 from flow_sdk.builtin.faas.desktop_actions import DesktopActionsMixin
 from flow_sdk.builtin.faas.fs_records_actions import FsRecordsActionsMixin

@@ -33,7 +33,7 @@ from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.fs_store.origin.fs_origin import FSOrigin, is_safe_rel_path
 from flow_sdk.fs_store.origin.local_origin import LocalOrigin, local_origin_for_path
 from flow_sdk.core import Entity, action
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under
 from flow_sdk.schema.types import EntityType
 

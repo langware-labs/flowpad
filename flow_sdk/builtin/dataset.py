@@ -316,6 +316,6 @@ def dataset_id_from_path(path: Path) -> str:
     indexer's identity reader imports it, so a direct load and a walk agree."""
     import uuid  # noqa: PLC0415
 
-    from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
 
     return mint_uuid(f"dataset:{Path(path).resolve()}", namespace=uuid.NAMESPACE_DNS)
