@@ -53,7 +53,9 @@ export default function InstallLanding() {
   };
   const createdRepo = (created: RepoSummary) => {
     setRepo(created);
-    setBranch({ name: created.default_branch, protected: false });
+    // `updated_at: ''` is the documented "no date" value on BranchSummary — a repo
+    // created seconds ago has no commit date to report.
+    setBranch({ name: created.default_branch, protected: false, updated_at: '' });
     setView('confirm');
   };
   const selectBranch = (selected: BranchSummary) => {

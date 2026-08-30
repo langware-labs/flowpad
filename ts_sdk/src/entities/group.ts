@@ -45,8 +45,11 @@ async function queryEntities<T extends IEntity>(type: string, match: ExpressionN
 // `implements IGroup` only checks the class; it contributes no members, so every
 // field declared solely on IGroup read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
+// `icon` is omitted: `APIEntity` owns it as an accessor pair, and an
+// optional `icon?:` here is not identical to that required accessor, which
+// the merged interface cannot inherit from both sides.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Group extends Omit<IGroup, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface Group extends Omit<IGroup, 'expand' | 'id' | 'is_private' | 'members' | 'icon'> {}
 
 @registerEntity
 export class Group extends APIEntity<Group> implements IGroup {

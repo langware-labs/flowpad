@@ -220,7 +220,9 @@ export class NavigationActions {
   }
 
   // `viewType:pointer` label for the navigation toplog trace.
-  private static dockLabel(d: { viewType: string; pointer?: string | null } | null): string | null {
+  // `viewType` is optional because a DockPointer's is — this is a log label, and
+  // every caller hands it a real DockPointer.
+  private static dockLabel(d: { viewType?: string; pointer?: string | null } | null): string | null {
     return d ? `${d.viewType}:${d.pointer ?? ''}` : null;
   }
 

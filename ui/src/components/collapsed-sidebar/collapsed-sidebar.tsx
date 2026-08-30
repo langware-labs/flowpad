@@ -1,3 +1,11 @@
+declare global {
+  interface Window {
+    /** DEV-only per-nav perf T0, stamped on the home rail click. Sibling of
+     *  `__shellNavT0` (declared in InteractiveTerminal). */
+    __homeNavT0?: number;
+  }
+}
+
 import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
 import { FlowpadAssistantButton } from '@src/components/floating-chat';
 import { useIsDev, useViewMode, ViewMode } from '@src/components/view-mode';
@@ -140,11 +148,11 @@ export function CollapsedSidebar() {
       // Hub page: keep every rail click under page=hub (desk factories would
       // revert the page). Home → /dock/hub/home; WorldView → /dock/hub/worldview/<projection>.
       if (hubMode) {
-        navigation.openPage(PageId.HUB, viewType, pointer);
+        navigation.openPage(PageId.HUB, viewType ?? ViewType.HOME, pointer);
         return;
       }
       if (viewType === null) {
-        if (import.meta.env.DEV) (window as Record<string, unknown>).__homeNavT0 = performance.now();
+        if (import.meta.env.DEV) window.__homeNavT0 = performance.now();
         // The home is an ordinary destination now, so this goes through the one
         // navigation path like every other rail click. It used to read the live
         // browser URL directly and call `navigate('/')`, guarding against a
@@ -152,7 +160,7 @@ export function CollapsedSidebar() {
         navigation.goHome();
       } else {
         if (import.meta.env.DEV && viewType === ViewType.SHELL) {
-          (window as Record<string, unknown>).__shellNavT0 = performance.now();
+          window.__shellNavT0 = performance.now();
           console.log('[PERF] +0ms shell icon clicked');
         }
         // Assets is scope-aware: open the scope-keyed assets tab — the current

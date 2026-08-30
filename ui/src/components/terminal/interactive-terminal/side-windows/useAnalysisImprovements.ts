@@ -67,7 +67,9 @@ export function useAnalysisImprovements(trace: AgentTrace | null) {
           const skillFile = byName.get(skillName)?.doc ?? null;
           if (!skillFile) return;
           try {
-            const st = await getGitStatus(skillFile.typeId.id, skillFile.parent.path);
+            // `typeId` is protected on FSRef; `localComputeNodeId` is the public
+            // accessor (null for a hub-backed ref — no machine to run git on).
+            const st = await getGitStatus(skillFile.localComputeNodeId ?? '@local', skillFile.parent.path);
             next[skillName] = skillFileIsDirty(st?.files ?? [], skillFile.path);
           } catch {
             /* leave undefined → treated as not-dirty */

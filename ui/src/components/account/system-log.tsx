@@ -1,4 +1,4 @@
-import { dataContext, fsManager } from '@sdk';
+import { dataContext, fsManager, TypeId } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/components/ui/collapsible';
 import { notify } from '@src/notifications';
@@ -41,7 +41,7 @@ const LOG_SUBDIRS = ['server', 'monitor', 'main_desktop'] as const;
 
 // Find the newest log file across all subdirectories
 async function findNewestLogFile(
-  typeId: string,
+  typeId: TypeId,
   logsPath: string,
 ): Promise<{ path: string; name: string; date: Date } | null> {
   let newest: { path: string; name: string; date: Date } | null = null;

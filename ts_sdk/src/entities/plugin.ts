@@ -93,7 +93,6 @@ export class PluginManifest extends APIEntity<PluginManifest> implements IPlugin
   url?: string | undefined;
   latest: boolean;
   dependencies: IPluginVersion[];
-  type?: string | undefined;
   title: string;
   description: string;
   category?: string;

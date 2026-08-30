@@ -19,7 +19,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { scopeColor } from './scope-colors';
 
 interface Props {
-  trigger: ITrigger;
+  trigger: Trigger;
 }
 
 export function TriggerEditor({ trigger }: Props) {

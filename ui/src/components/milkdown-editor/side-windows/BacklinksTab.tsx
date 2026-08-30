@@ -22,7 +22,7 @@ export function BacklinksTab({ target }: BacklinksTabProps) {
     }
   }, [target]);
 
-  const { data: entity } = useEntity<APIEntity<APIEntity<unknown>>>(typeId);
+  const { data: entity } = useEntity<APIEntity<any>>(typeId);
   const [links, setLinks] = useState<WikiLink[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

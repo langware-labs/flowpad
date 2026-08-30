@@ -1645,6 +1645,8 @@ export class DockPointer implements IDockPointer {
       /** Data shape owned by this surface (`?view=tree` = ontology tree). */
       view?: 'tree';
       depth?: number;
+      /** Omit `depth` when it equals this — forwarded to `subgraphOptions`. */
+      defaultDepth?: number;
       selected?: string;
       render?: GraphPresentation;
       hidden?: readonly string[];
@@ -1687,6 +1689,8 @@ export class DockPointer implements IDockPointer {
     focusKey?: string | null,
     options?: {
       depth?: number;
+      /** Omit `depth` when it equals this — forwarded to `subgraphOptions`. */
+      defaultDepth?: number;
       selected?: string;
       render?: GraphPresentation;
       hidden?: readonly string[];
@@ -2081,7 +2085,9 @@ export class DockPointer implements IDockPointer {
   /** Serialize this dock's tab-identity fields (viewType + pointer) as JSON.
    *  This is what Tab.pointer stores in the DB. Returns null if tabHash is null. */
   toJSON(): string | null {
-    if (!this.tabHash) return null;
+    // `viewType` is restated rather than left to `tabHash` (which already returns
+    // null without one) so the registry lookups below narrow.
+    if (!this.viewType || !this.tabHash) return null;
     // The active display persists its REAL target (viewType + pointer) alongside the
     // host-keyed hash. That asymmetry is the whole mechanism: the hash is what the
     // backend reconciles by (constant → the same row every show), the pointer is what

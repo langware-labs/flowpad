@@ -17,6 +17,9 @@ export interface IUser extends IEntity {
   organization_id?: string;
   /** The user's role on that organization. Defaults to "member". */
   organization_role?: string;
+  /** Whether the user finished onboarding. Backend `onboarded: bool` (default
+   *  false) — see `flow_sdk/builtin/user.py`. */
+  onboarded?: boolean;
 }
 
 // `implements IUser` only checks the class; it contributes no members, so every
@@ -34,6 +37,7 @@ export class User extends APIEntity<User> implements IUser {
   last_login?: Date;
   organization_id?: string;
   organization_role?: string;
+  onboarded?: boolean;
   static type: string = 'user';
 
   constructor(entity: Partial<IUser> = {}) {
@@ -45,6 +49,7 @@ export class User extends APIEntity<User> implements IUser {
     this.last_login = entity.last_login;
     this.organization_id = entity.organization_id;
     this.organization_role = entity.organization_role;
+    this.onboarded = entity.onboarded;
   }
 
   /**

@@ -890,7 +890,7 @@ export function EntityExecutionPanel({
         ) : (
           messages.map((m) => (
             <ExecutionMessage
-              key={m.id ?? m.timestamp}
+              key={m.timestamp}
               flowData={m}
               worker={activeProcess?.worker_type ?? undefined}
               agent={launchingAgent}

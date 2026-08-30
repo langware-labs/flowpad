@@ -11,13 +11,13 @@ export interface ResourceMeta {
 }
 
 export const RESOURCE_META: Record<ProjectResourceType, ResourceMeta> = {
-  session: { label: msg`Session`, icon: FolderOpen },
+  claude_session: { label: msg`Session`, icon: FolderOpen },
   skill: { label: msg`Skill`, icon: Sparkles },
   mcp_server: { label: msg`MCP Server`, icon: Plug },
   plugin: { label: msg`Plugin`, icon: Settings },
   hook: { label: msg`Hook`, icon: Terminal },
   command: { label: msg`Command`, icon: Command },
-  agent: { label: msg`SubAgent`, icon: Bot },
+  subagent: { label: msg`SubAgent`, icon: Bot },
   claude_md: { label: msg`CLAUDE.md`, icon: FileText },
   todo: { label: msg`Todo`, icon: CheckSquare },
 };
@@ -29,7 +29,7 @@ export const RESOURCE_TYPE_ORDER: ProjectResourceType[] = [
   'mcp_server',
   'hook',
   'command',
-  'agent',
+  'subagent',
   'claude_md',
   'todo',
   'plugin',

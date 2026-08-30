@@ -118,7 +118,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
     isLoading: entityLoading,
     isError: entityError,
     refetch: refetchEntity,
-  } = useEntity(typeId);
+  } = useEntity<APIEntity<any>>(typeId);
   const { computeNode, flow } = useAgentContext();
   const {
     data: entityRecord,
@@ -223,7 +223,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
     // with one save. Offer that; hand-edited types (markdown/skill) get retry
     // only, since rebuilding from a template would clobber user content.
     const ownsMainRef = !!dataManager.getAllTypeInfos?.().find((t) => t.type_name === typeId.type)?.owns_main_ref;
-    const orphan = typeIdEntity as APIEntity<never> | null;
+    const orphan = typeIdEntity as APIEntity<any> | null;
     return (
       <MissingAssetCard
         typeLabel={typeId.type}

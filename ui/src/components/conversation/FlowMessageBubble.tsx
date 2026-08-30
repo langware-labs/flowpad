@@ -73,9 +73,9 @@ export function DownloadAttachmentsButton({
   const { t } = useLingui();
   const disabled = uploading || downloading;
   const sub = uploading
-    ? t('Uploading…')
+    ? t`Uploading…`
     : downloading
-      ? t('Downloading…')
+      ? t`Downloading…`
       : t`Download ${count} ${count === 1 ? 'attachment' : 'attachments'}`;
   return (
     <button
@@ -83,7 +83,7 @@ export function DownloadAttachmentsButton({
       disabled={disabled}
       onClick={disabled ? undefined : onDownload}
       data-testid="download-attachments-button"
-      title={labels.length ? labels.join('\n') : t('Download attachments')}
+      title={labels.length ? labels.join('\n') : t`Download attachments`}
       className={cn(
         'flex w-full max-w-[360px] items-center gap-3 rounded-lg border border-dashed px-3 py-2.5 text-start transition-colors',
         uploading
@@ -104,7 +104,7 @@ export function DownloadAttachmentsButton({
         </span>
         <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{sub}</span>
         {typeChips.length > 0 && (
-          <span className="mt-1 flex flex-wrap gap-1" aria-label={t('Attached asset types')}>
+          <span className="mt-1 flex flex-wrap gap-1" aria-label={t`Attached asset types`}>
             {typeChips.map((chip) => {
               const Icon = chip.type === 'file' ? File : iconForEntity(chip.type);
               return (
@@ -381,7 +381,7 @@ export function FlowMessageBubble({
   } else if (rosterLabel) {
     displayName = rosterLabel;
   } else if (isCurrentUser) {
-    displayName = localUser?.name?.trim() || t('You');
+    displayName = localUser?.name?.trim() || t`You`;
   } else if (wireSenderName) {
     displayName = wireSenderName;
   } else if (creatorLabel) {
@@ -389,7 +389,7 @@ export function FlowMessageBubble({
   } else if (fm.sender_id && rosterReady && !isHelpdesk) {
     displayName = UNRESOLVED_SENDER_LABEL;
   } else {
-    displayName = t('unknown');
+    displayName = t`unknown`;
   }
 
   // When task is present, role tracks the original task initiator (sender) vs
@@ -493,8 +493,8 @@ export function FlowMessageBubble({
               type="button"
               onClick={dismissDownloadError}
               className="shrink-0 rounded p-0.5 text-orange-700/70 hover:bg-orange-500/20 hover:text-orange-700 dark:text-orange-300/70 dark:hover:text-orange-200"
-              title={t('Dismiss')}
-              aria-label={t('Dismiss download error')}
+              title={t`Dismiss`}
+              aria-label={t`Dismiss download error`}
             >
               <X className="h-3 w-3" />
             </button>

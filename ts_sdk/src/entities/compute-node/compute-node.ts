@@ -82,7 +82,10 @@ export function vfsToOsPath(vfsPath: string, root: string): string {
 /**
  * Interface for ComputeNode entity data.
  */
-export interface IComputeNode extends IEntity {
+// `status` is omitted from the base: a compute_node row has no persisted status
+// field, and the name is taken on the class by the async `status()` call that
+// asks the provider what the machine is doing.
+export interface IComputeNode extends Omit<IEntity, 'status'> {
   name: string;
   runtime: RuntimeEnvironment;
   node_provider_type?: ComputeProviderType;

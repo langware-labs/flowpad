@@ -1,6 +1,7 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { isApiError } from '../ApiResponse';
 import { dataContext } from '../FlowSync/context';
+import { QueryRequest } from '../FlowSync/query';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models';
 import { DockPointerData } from '../models/DockPointer';
@@ -408,7 +409,10 @@ export class Shell extends APIEntity<Shell> implements IShell {
   }
 
   static async getActiveSessions(): Promise<Shell[]> {
-    const all = await Shell.query<Shell>({});
+    // Spelled out rather than `{}`: `query` overrides `type` and reuses the
+    // request's `name`, so this is the exact request the old bare-object call
+    // produced once the static filled it in.
+    const all = await Shell.query<Shell>(new QueryRequest({ type: Shell.type, name: `${Shell.type} static query` }));
     return all.filter((s) => s.status !== ShellStatus.CLOSED).sort((a, b) => (a.tab_order ?? 0) - (b.tab_order ?? 0));
   }
 }

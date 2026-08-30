@@ -63,6 +63,18 @@ export class FSRef {
     return typeof result === 'string' ? result : String(result);
   }
 
+  /**
+   * Binary counterpart of {@link read} — the same VFS download, asked for as a
+   * Blob. Without it a caller with a binary file (a .xlsx, an image) has no way
+   * through this class and has to reach past it for the ref's TypeId, which is
+   * deliberately not public.
+   */
+  async readBlob(): Promise<Blob> {
+    const { fsManager } = await import('../services/fsService');
+    const result = await fsManager.download(this.typeId, this.path, { asBlob: true });
+    return result instanceof Blob ? result : new Blob([result]);
+  }
+
   async write(content: string): Promise<void> {
     if (this.readOnly) throw new Error(`Cannot write read-only FSRef: ${this.path}`);
     const { fsManager } = await import('../services/fsService');

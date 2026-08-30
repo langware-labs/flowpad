@@ -85,6 +85,18 @@ export interface ShowTarget {
   path?: string;
   /** webapp: the dev-server port. */
   port?: number | string;
+  /** app: the Artifact IS the address — the runtime below is derived from its
+   *  companions, never pinned into the target (`_app_payload`). */
+  artifact_id?: string;
+  /** app: the delivery row. Sent whenever a MicroApp exists, and the only id a
+   *  webapp ASSET has — it has no Artifact (`_asset_app_payload`). */
+  micro_app_id?: string;
+  /** app: which plane is live right now. `dev` = a Deployment's port is up,
+   *  `served` = we serve the built MicroApp, `unbuilt` = neither. */
+  runtime?: 'dev' | 'served' | 'unbuilt';
+  /** Display label the backend resolved for the target (artifact/app/entity
+   *  name, falling back to its title). */
+  name?: string;
   /** dock: a SCREEN — the frontend's own dock-address fields, so the client
    *  builds its DockPointer without re-parsing a URL. */
   view_type?: string;
@@ -105,8 +117,9 @@ export interface DisplayEntry extends ShowTarget {
 
 export interface SpawnResult {
   process: AgenticProcess;
-  /** Set in PTY mode */
-  shell?: Shell;
+  /** Set in PTY mode. Null when the spawn ran but the process has no shell yet
+   *  — `AgenticProcess.shell()` answers null, and that value is passed through. */
+  shell?: Shell | null;
   /** Set in both modes */
   workerSessionId?: string | null;
 }
@@ -441,9 +454,17 @@ export interface IAgenticProcess extends IEntity {
  * members — so every field declared solely on IAgenticProcess read as "does not exist
  * on type AgenticProcess", even though `deepAssign` populates them from the wire.
  * This interface makes them part of the class type.
+ *
+ * The four `*_folder` fields are omitted: the interface describes the WIRE shape
+ * (`FSRefJson`), while the class holds the hydrated `FSRef` its constructor
+ * parses out of it (see `parseFsRef`). The class declaration is the accurate one.
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface AgenticProcess extends Omit<IAgenticProcess, 'expand' | 'id' | 'is_private' | 'members'> {}
+export interface AgenticProcess
+  extends Omit<
+    IAgenticProcess,
+    'expand' | 'id' | 'is_private' | 'members' | 'exe_folder' | 'input_folder' | 'output_folder' | 'assets_folder'
+  > {}
 
 /**
  * AgenticProcess Entity - A running instruction execution process
@@ -465,8 +486,12 @@ export interface AgenticProcess extends Omit<IAgenticProcess, 'expand' | 'id' | 
  * console.log('Stack frame:', process.stackFrame);
  * ```
  */
+// Deliberately no `implements IAgenticProcess`: that interface is the WIRE
+// shape, and this class stores the four `*_folder` fields hydrated (`FSRef`,
+// parsed from the wire's `FSRefJson`). Every other member is still checked
+// against it through the declaration merge above.
 @registerEntity
-export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenticProcess {
+export class AgenticProcess extends APIEntity<AgenticProcess> {
   /** Entity type for AgenticProcess */
   static type: string = 'agentic_process';
 
@@ -1536,7 +1561,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     super(entity);
     this.instruction_content = entity.instruction_content;
     this.asset_ref = entity.asset_ref;
-    this.context = entity.context;
     this.context_data = entity.context_data;
     this.deployment_id = entity.deployment_id ?? null;
     this.favorite_index = entity.favorite_index;

@@ -398,7 +398,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   }
 }
 
-export interface CreateProjectConversationParams {
+export type CreateProjectConversationParams = {
   project_id: string;
   participants: ConversationParticipant[];
   /** Optional display name. Backend falls back to a participants summary when absent. */
@@ -551,7 +551,7 @@ export async function syncFromHub(): Promise<SyncFromHubResult> {
   };
 }
 
-export interface AcceptInvitationParams {
+export type AcceptInvitationParams = {
   invitation_id: string;
 }
 
@@ -565,7 +565,7 @@ export interface AcceptInvitationResult {
   bundle_unpacked: boolean;
 }
 
-export interface DismissConversationParams {
+export type DismissConversationParams = {
   conversation_id: string;
 }
 
@@ -586,7 +586,7 @@ export async function dismissConversation(
   return res!;
 }
 
-export interface ArchiveConversationParams {
+export type ArchiveConversationParams = {
   conversation_id: string;
 }
 
@@ -658,7 +658,7 @@ export async function deleteArchivedConversations(): Promise<DeleteArchivedConve
 
 export type DeleteConversationMode = 'delete_for_all' | 'leave' | 'local';
 
-export interface DeleteConversationParams {
+export type DeleteConversationParams = {
   conversation_id: string;
   /** Caller picks the mode based on the user's relationship to the conv:
    *    - ``delete_for_all``: owner cascade-delete (rule 1)

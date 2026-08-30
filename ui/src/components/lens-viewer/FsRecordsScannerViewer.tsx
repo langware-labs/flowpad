@@ -1242,21 +1242,21 @@ export function FsRecordsScannerViewer() {
                   </thead>
                   <tbody>
                     {scanStats.types
-                      .filter((t) => (t.count ?? 0) > 0 || (t.in_index ?? 0) > 0 || (t.orphan ?? 0) > 0)
+                      .filter((row) => (row.count ?? 0) > 0 || (row.in_index ?? 0) > 0 || (row.orphan ?? 0) > 0)
                       .sort((a, b) => b.count + (b.orphan ?? 0) - (a.count + (a.orphan ?? 0)))
-                      .map((t) => {
-                        const isIndexing = indexingTypes.has(t.type);
+                      .map((row) => {
+                        const isIndexing = indexingTypes.has(row.type);
                         const amber = 'text-amber-600 dark:text-amber-400';
                         const dim = 'text-muted-foreground';
-                        const newN = t.new ?? 0;
-                        const staleN = t.stale ?? 0;
-                        const miscN = t.mis_scoped ?? 0;
-                        const orphN = t.orphan ?? 0;
-                        const inIdx = t.in_index ?? 0;
+                        const newN = row.new ?? 0;
+                        const staleN = row.stale ?? 0;
+                        const miscN = row.mis_scoped ?? 0;
+                        const orphN = row.orphan ?? 0;
+                        const inIdx = row.in_index ?? 0;
                         return (
-                          <tr key={t.type} className="group border-b last:border-0">
-                            <td className="py-1 pe-3 ps-3 font-mono">{t.type}</td>
-                            <td className="py-1 pe-3 text-end tabular-nums">{t.count}</td>
+                          <tr key={row.type} className="group border-b last:border-0">
+                            <td className="py-1 pe-3 ps-3 font-mono">{row.type}</td>
+                            <td className="py-1 pe-3 text-end tabular-nums">{row.count}</td>
                             <td className={`py-1 pe-3 text-end tabular-nums ${dim}`}>{inIdx}</td>
                             <td className={`py-1 pe-3 text-end tabular-nums ${newN > 0 ? amber : dim}`}>
                               {newN || '—'}
@@ -1270,7 +1270,7 @@ export function FsRecordsScannerViewer() {
                             <td className={`py-1 pe-3 text-end tabular-nums ${orphN > 0 ? amber : dim}`}>
                               {orphN || '—'}
                             </td>
-                            <td className={`py-1 pe-3 text-end tabular-nums ${dim}`}>{fmtBytes(t.total_bytes)}</td>
+                            <td className={`py-1 pe-3 text-end tabular-nums ${dim}`}>{fmtBytes(row.total_bytes)}</td>
                             <td className="w-10 py-1 pe-3 text-end">
                               <Tooltip>
                                 <TooltipTrigger asChild>
@@ -1279,13 +1279,13 @@ export function FsRecordsScannerViewer() {
                                     size="icon"
                                     className="h-5 w-5 opacity-0 transition-opacity group-hover:opacity-100"
                                     disabled={isIndexing}
-                                    onClick={() => void handleRefreshTypeFromStats(t.type)}
+                                    onClick={() => void handleRefreshTypeFromStats(row.type)}
                                   >
                                     <RefreshCw className={`h-3 w-3 ${isIndexing ? 'animate-spin' : ''}`} />
                                   </Button>
                                 </TooltipTrigger>
                                 <TooltipContent side="left">
-                                  {isIndexing ? t`Syncing ${t.type}…` : t`Sync ${t.type} changes and refresh stats`}
+                                  {isIndexing ? t`Syncing ${row.type}…` : t`Sync ${row.type} changes and refresh stats`}
                                 </TooltipContent>
                               </Tooltip>
                             </td>

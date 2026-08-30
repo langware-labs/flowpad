@@ -16,6 +16,10 @@ import { firstUnapprovedPromptIdx } from './prompt-attachment';
 // (the host approves the SESSION once, from the group header / session view),
 // so a prompt carrying a session id never renders "Approve & run".
 const approveVisible = (ctx: AttachmentActionContext): boolean =>
+  // `fm` is null only in the composer preview, where `isFromOther` is false —
+  // the explicit check keeps the read below off a null rather than relying on
+  // that invariant holding.
+  !!ctx.fm &&
   ctx.isFromOther &&
   !ctx.fm.remote_worker_session_id &&
   firstUnapprovedPromptIdx(ctx.fm) >= 0 &&

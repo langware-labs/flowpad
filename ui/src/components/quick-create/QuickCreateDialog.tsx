@@ -145,7 +145,7 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
 
   const handleProjectPick = useCallback(
     async (pickedKey: string) => {
-      const picked = allProjects.find((p) => canonicalPath(p.cwd) === pickedKey);
+      const picked = allProjects.find((p) => !!p.cwd && canonicalPath(p.cwd) === pickedKey);
       if (!picked?.cwd) return;
       const selectedProject = await ensureProject(picked.cwd, { select: false });
       applyProjectScope(selectedProject);

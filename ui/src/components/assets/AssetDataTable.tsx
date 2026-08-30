@@ -15,7 +15,7 @@ import {
   PaginationPrevious,
 } from '@src/components/ui/pagination';
 import { getColumns } from './columns/columnRegistry';
-import type { ColumnActions } from './columns/columnRegistry';
+import type { ColumnActions, ColumnDef } from './columns/columnRegistry';
 import { scopeTag } from './columns/columnHelpers';
 import type { SearchResult } from '@src/hooks/use-asset-search';
 import { useProjectList, getProjectDisplayName } from '@src/hooks/use-claude-projects';
@@ -123,7 +123,7 @@ export function AssetDataTable({ results, total, page, pageSize, onPageChange, r
     [projectNameById, folderPathForRow, computeNode?.typeId, openScopeFolder],
   );
 
-  const baseColumns = [
+  const baseColumns: ColumnDef[] = [
     { key: 'name', header: 'Name', render: (r: SearchResult) => r.name || r.uname || r.title || '—' },
     { key: 'status', header: 'Status', render: (r: SearchResult) => r.status || '—' },
     { key: 'scope', header: 'Scope', render: (r: SearchResult) => renderScope(r) },

@@ -22,12 +22,12 @@ export { tagGraphCodec } from './codecs';
 
 function assetEditorPointer(node: NodeData): DockPointer | null {
   const assetRef = (node.properties?.asset_ref as string | undefined) ?? '';
-  if (node.entityType === 'markdown' && assetRef) {
+  if (node.type === 'markdown' && assetRef) {
     return DockPointer.forAssetEditor('markdown', assetRef);
   }
-  if (node.entityType === 'skill') {
+  if (node.type === 'skill') {
     try {
-      return DockPointer.forAssetEditorByTypeId('skill', new TypeId('skill', node.entityId));
+      return DockPointer.forAssetEditorByTypeId('skill', new TypeId('skill', node.id));
     } catch {
       return null;
     }
@@ -52,7 +52,7 @@ export function TagGraphView() {
   // surface performs that navigation (the canvas only owns its own URL state).
   const onNodeDoubleClickIntent = useCallback(
     (node: NodeData): 'focus' | 'handled' => {
-      if (node.entityType === 'tag') return 'focus';
+      if (node.type === 'tag') return 'focus';
       const pointer = assetEditorPointer(node);
       if (pointer) navigation.openDock(pointer);
       return 'handled';

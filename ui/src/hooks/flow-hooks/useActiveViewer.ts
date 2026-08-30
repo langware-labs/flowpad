@@ -1,4 +1,5 @@
 import { ViewType } from '@sdk';
+import type { ViewContext } from '@src/types/ViewContext';
 import { useEffect } from 'react';
 import { useDockNavigation } from '../../navigation/useDockNavigation';
 import { useViewerStore } from './useViewerStore';
@@ -26,7 +27,9 @@ export function useActiveViewer() {
 
     // Sync dock pointer to currentContext (for editor files, diff, etc.)
     if (currentDock.pointer || currentDock.options) {
-      let viewerOptions = currentDock.options ?? {};
+      // Typed as the param bag it becomes, not as the string map it starts from:
+      // the APP case adds `artifactId`, which is nullable.
+      let viewerOptions: NonNullable<ViewContext['viewerOptions']> = currentDock.options ?? {};
       switch (currentDock.viewType) {
         case ViewType.WEB_APP:
           if (currentDock.options?.port) {

@@ -9,7 +9,7 @@ import { formatTimeAgo as canonicalTimeAgo } from '@src/utils/format-time-ago';
  * Re-export of the canonical formatter with this module's empty-string
  * convention (its callers drop the result straight into JSX).
  */
-export function formatTimeAgo(value?: string | null): string {
+export function formatTimeAgo(value?: string | Date | null): string {
   return canonicalTimeAgo(value) ?? '';
 }
 

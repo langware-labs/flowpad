@@ -7,7 +7,12 @@ import { IResource } from './IResource';
  * Extends IResource with entity-specific fields like uname, schema_version, and expand.
  * Also maintains Date versions of timestamps for backwards compatibility.
  */
-export interface IEntity extends Partial<IResource> {
+// `name` and `created_at` are omitted from the base and redeclared below: an
+// entity row can carry either as null, which `IResource` (the shape local
+// file-backed resources implement) does not allow.
+export interface IEntity extends Omit<Partial<IResource>, 'name' | 'created_at'> {
+  /** Creation timestamp (ISO string); null on a row the backend never stamped. */
+  created_at?: string | null;
   /** Hub role roster cache — one row per member with their hub-set role.
    *  Generic to any remote entity; hub-authoritative, local is a read cache.
    *  ``EntityMember``-shaped; kept as ``unknown[]`` here to avoid an import cycle. */
@@ -16,8 +21,9 @@ export interface IEntity extends Partial<IResource> {
   uname?: string;
   /** Display name */
   name?: string | null;
-  /** Entity status */
-  status?: string;
+  /** Entity status. Nullable: `Tab.status` and other runtime-computed statuses
+   *  are explicitly null when there is no backing state. */
+  status?: string | null;
   /** Schema version for migrations */
   schema_version?: string;
   /** Entity expansion configuration */

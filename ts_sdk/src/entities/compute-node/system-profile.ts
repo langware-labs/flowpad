@@ -64,6 +64,14 @@ export interface SystemProfileItem extends IResource {
   entity_id?: string | null;
 }
 
+/**
+ * What the profile's lists actually hold. Every list but `sessions` is
+ * `SystemProfileItem`-shaped; `sessions` carries claude-session records, which
+ * have no `scope` and nullable timestamps — so anything that walks all lists
+ * (see `SystemProfileUtils.getAllItems`) yields this union, not the item type.
+ */
+export type SystemProfileEntry = SystemProfileItem | ClaudeSessionRecordData;
+
 // ═══════════════════════════════════════════════════════════════
 // DERIVED INTERFACES - All extend SystemProfileItem
 // ═══════════════════════════════════════════════════════════════
@@ -498,8 +506,9 @@ export interface SystemProfile {
   skills: SkillItem[];
   todos: TodoFileItem[];
 
-  /** Pre-computed latest N items by modified_at */
-  recentItems: SystemProfileItem[];
+  /** Pre-computed latest N items by modified_at. `SystemProfileEntry`, not
+   *  `SystemProfileItem`: the pool it is drawn from includes `sessions`. */
+  recentItems: SystemProfileEntry[];
 
   ideConnections: number;
 
@@ -521,7 +530,7 @@ export const SystemProfileUtils = {
   /**
    * Get all items as flat array.
    */
-  getAllItems(profile: SystemProfile): SystemProfileItem[] {
+  getAllItems(profile: SystemProfile): SystemProfileEntry[] {
     return [
       ...profile.directories,
       ...profile.plugins,
@@ -543,7 +552,7 @@ export const SystemProfileUtils = {
   /**
    * Get latest N items sorted by modified_at.
    */
-  getLatestItems(profile: SystemProfile, n: number = 10): SystemProfileItem[] {
+  getLatestItems(profile: SystemProfile, n: number = 10): SystemProfileEntry[] {
     const items = this.getAllItems(profile);
     return items
       .filter((i) => i.modified_at)
@@ -554,21 +563,23 @@ export const SystemProfileUtils = {
   /**
    * Find item by id for correlation with entity.id.
    */
-  findById(profile: SystemProfile, resourceId: string): SystemProfileItem | undefined {
+  findById(profile: SystemProfile, resourceId: string): SystemProfileEntry | undefined {
     return this.getAllItems(profile).find((i) => i.id === resourceId);
   },
 
   /**
    * Get items by scope.
    */
-  getItemsByScope(profile: SystemProfile, scope: Scope | string): SystemProfileItem[] {
-    return this.getAllItems(profile).filter((i) => i.scope === scope);
+  getItemsByScope(profile: SystemProfile, scope: Scope | string): SystemProfileEntry[] {
+    // `'scope' in i` guards the one list that is not SystemProfileItem-shaped
+    // (`sessions`); an entry without the field never matched a scope anyway.
+    return this.getAllItems(profile).filter((i) => 'scope' in i && i.scope === scope);
   },
 
   /**
    * Get items by type.
    */
-  getItemsByType(profile: SystemProfile, itemType: ItemType | string): SystemProfileItem[] {
+  getItemsByType(profile: SystemProfile, itemType: ItemType | string): SystemProfileEntry[] {
     return this.getAllItems(profile).filter((i) => i.type === itemType);
   },
 
