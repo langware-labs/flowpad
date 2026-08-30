@@ -1,6 +1,5 @@
 import type { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
-import { TypeId } from '../models/TypeId';
 import { IEntity } from '../IEntity';
 
 export interface ISpec extends IEntity {

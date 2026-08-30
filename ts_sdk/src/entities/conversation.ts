@@ -3,7 +3,6 @@ import { APIEntity, dataManager, registerEntity, type EntityMember } from '../AP
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
-import { TypeId } from '../models/TypeId';
 import { ConnectionManager, DataOp } from '../websocket';
 import { Callable } from '../types';
 import { ViewType } from '../utils/ui/view-types';

@@ -44,10 +44,6 @@ import { useCopied } from '@src/components/ui/copy-button';
  * feed them: `TraceEvent` (the per-process FlowData stream, InteractiveTerminal
  * gutter) and `SnifferEvent` (`use-hooks-sniffer`, the hook panels/chip). Both
  * satisfy this shape; a field only one of them carries is optional here.
- *
- * NOTE: `source` and `raw` are TraceEvent-only today — `SnifferEvent` carries
- * neither (its payload is the unparsed `raw_line`), so every `source`/`raw`
- * read below is inert for sniffer events.
  */
 export type RenderableEvent = {
   id: string;

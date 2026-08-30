@@ -17,11 +17,12 @@ declare global {
   }
 }
 
-/** The window key this module stamps. */
-export const PERF_T0_KEY = '__shellNavT0';
+/** The window key this module stamps — the source of truth for the two
+ *  accessors below, so the literal is written once. */
+export const PERF_T0_KEY = '__shellNavT0' as const;
 
 function readT0(): number | undefined {
-  return window.__shellNavT0;
+  return window[PERF_T0_KEY];
 }
 
 export function perfLog(label: string): void {
@@ -50,5 +51,5 @@ export async function perfTime<T>(label: string, fn: () => T | Promise<T>): Prom
 
 export function markPerfT0(): void {
   if (!import.meta.env.DEV) return;
-  window.__shellNavT0 = performance.now();
+  window[PERF_T0_KEY] = performance.now();
 }

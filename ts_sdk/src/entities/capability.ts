@@ -133,11 +133,6 @@ export class Capability extends APIEntity<Capability> implements ICapability {
   api_provider: string | null = null;
   model_map: Record<string, Record<string, string>> = {};
 
-  // The `_icon` holder, the prototype accessor pair and the own-enumerable
-  // defineProperty that used to live here are now on APIEntity — this entity
-  // hit the getter-only-`icon` crash first and fixed it locally; the base does
-  // it for every entity now.
-
   constructor(entity: Partial<ICapability> = {}) {
     super(entity);
     this.name = entity.name ?? this.name;

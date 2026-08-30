@@ -2,7 +2,6 @@ import { APIEntity, registerEntity } from '../APIEntity';
 import { dataContext } from '../FlowSync/context';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
-import { ViewType } from '../utils/ui/view-types';
 
 /**
  * Whiteboard entity — backed by a WhiteboardRecord on disk

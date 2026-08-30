@@ -2,7 +2,6 @@ import { APIEntity, registerEntity } from '../APIEntity';
 import { dataContext } from '../FlowSync/context';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
-import { ViewType } from '../utils/ui/view-types';
 
 /**
  * Skill entity — backed by a SkillRecord on disk (~/.claude/skills/<name>/).

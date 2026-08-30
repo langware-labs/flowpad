@@ -1,7 +1,6 @@
 import { ReactNode } from 'react';
 import type { SearchRow } from '@src/hooks/search-row';
 
-
 export interface ColumnActions {
   filterByProject?: (label: string) => void;
 }

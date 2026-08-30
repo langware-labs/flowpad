@@ -1,5 +1,4 @@
 import type { SearchRow } from './search-row';
-export type { SearchRow };
 import { useEffect, useRef, useState } from 'react';
 import apiClient from '@sdk/client';
 import { RecordType } from '@sdk/resource_management/fs_records';

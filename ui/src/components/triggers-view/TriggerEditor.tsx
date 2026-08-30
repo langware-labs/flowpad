@@ -10,7 +10,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@src/components/ui/alert-dialog';
-import { ActionInfo, dataManager, Trigger, type ITrigger } from '@sdk';
+import { ActionInfo, dataManager, Trigger } from '@sdk';
 import Editor from '@monaco-editor/react';
 import { Pencil } from 'lucide-react';
 import { useTheme } from 'next-themes';
