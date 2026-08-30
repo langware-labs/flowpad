@@ -1,4 +1,5 @@
 import { ActivationMetadata, createDefaultActivationMetadata } from './ActivationMetadata';
+import { parseFrontmatterDoc } from '../../fs/frontmatter-parse';
 
 /**
  * Result of parsing a rule.md file
@@ -22,20 +23,18 @@ export class ActivationParseError extends Error {
  * Parser for rule.md files with YAML frontmatter
  */
 export class ActivationParser {
-  private static readonly FRONTMATTER_REGEX = /^---\s*\n([\s\S]*?)\n---\s*\n([\s\S]*)$/;
-
   /**
    * Parse rule.md content into metadata and body
    */
   static parse(rawContent: string): ActivationParseResult {
-    const match = rawContent.match(this.FRONTMATTER_REGEX);
+    const doc = parseFrontmatterDoc(rawContent);
 
-    if (!match) {
+    if (!doc.has) {
       throw new ActivationParseError('Invalid rule.md format: missing or malformed frontmatter');
     }
 
-    const frontmatterYaml = match[1];
-    const content = match[2].trim();
+    const frontmatterYaml = doc.yaml;
+    const content = doc.body.trim();
 
     const metadata = this.parseFrontmatter(frontmatterYaml);
 
