@@ -18,7 +18,6 @@ from flow_sdk.core import action
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiSuccessResponse
-from .external_apis.embeddings.embeddings_connector import generate_embeddings
 from .knowledge_engine.ontology import LabelInfo, Ontology
 from flow_sdk.utils import count_tokens
 
@@ -219,6 +218,10 @@ class KnowledgeBase(Entity):
         if self.index is None:
             raise ValueError("Index is not built. Please build the index first.")
         # query_keywords = await get_top_words(query_string)
+        from flow_sdk.external_apis.embeddings.embeddings_connector import (  # noqa: PLC0415
+            generate_embeddings,
+        )
+
         query_embedding = np.array((await generate_embeddings([query_string]))[0], dtype=np.float32)
 
         neighbors = await asyncio.to_thread(
@@ -264,6 +267,10 @@ class KnowledgeBase(Entity):
     async def _add_items_to_knowledge(self, items: list[KnowledgeItem]):
         contents = [item.content for item in items]
         # keywords = [await get_top_words(content) for content in contents]
+        from flow_sdk.external_apis.embeddings.embeddings_connector import (  # noqa: PLC0415
+            generate_embeddings,
+        )
+
         embeddings = await generate_embeddings(contents)
         for embedding, item in zip(embeddings, items):
             self.knowledge_data.items[item.typeid] = item
