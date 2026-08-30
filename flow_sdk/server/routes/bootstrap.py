@@ -804,108 +804,69 @@ async def get_or_create_local_user() -> User:
     return user
 
 
-async def get_or_create_local_project(desktop_user: Optional[Entity] = None) -> Project:
-    """Get or create the @local project.
+async def _get_or_create_local(cls, *, name: str, owner: Optional[Entity]):
+    """Get or create the singleton ``@local`` row of *cls* (Project / Workspace).
 
-    Creates a Project entity with uname="local" if it doesn't exist.
-    Sets visitor_role to "owner" for unrestricted access and assigns desktop user as owner.
+    Both are the same recipe: a stable per-machine id, a ``uname="local"``
+    fallback lookup for rows minted before that id existed, and a create with
+    ``visitor_role="owner"`` that tolerates a concurrent creator.
 
-    Args:
-        desktop_user: The desktop User entity to set as owner
-
-    Migrated from FlowPad: flowpad/hub/core/desktop_loader.py (init_local_project)
+    Migrated from FlowPad: flowpad/hub/core/desktop_loader.py
+    (init_local_project / init_local_workspace).
     """
-    local_id = _local_entity_id("project")
+    entity_type = cls.__name__.lower()
+    local_id = _local_entity_id(entity_type)
 
-    project = await Project.get_by_id(local_id)
-    if project:
-        logging.info(f"@local project already exists (by stable id): {project.id}")
-        return project
-    project = await get_local_entity(Project)
-    if project:
-        if project.id != local_id:
+    entity = await cls.get_by_id(local_id)
+    if entity:
+        logging.info("@local %s already exists (by stable id): %s", entity_type, entity.id)
+        return entity
+    entity = await get_local_entity(cls)
+    if entity:
+        if entity.id != local_id:
             logging.warning(
-                "@local project has legacy random id %s; expected stable %s. "
+                "@local %s has legacy random id %s; expected stable %s. "
                 "Keeping existing row to preserve references — wipe the DB to migrate.",
-                project.id,
+                entity_type,
+                entity.id,
                 local_id,
             )
-        logging.info(f"@local project already exists: {project.id}")
-        return project
+        logging.info("@local %s already exists: %s", entity_type, entity.id)
+        return entity
 
-    logging.info("Creating @local project for desktop environment")
-    project = Project(
+    logging.info("Creating @local %s for desktop environment", entity_type)
+    entity = cls(
         id=local_id,
-        type="project",
+        type=entity_type,
         uname="local",
-        name="my_first_project",
+        name=name,
         visitor_role="owner",
     )
     try:
-        await project.save(owner=desktop_user)
+        await entity.save(owner=owner)
     except Exception as save_error:
         if "already exist" in str(save_error):
-            logging.info("@local project already exists (race/cache miss), fetching it")
+            logging.info("@local %s already exists (race/cache miss), fetching it", entity_type)
             # Bypass uname_cache in case it has a stale entry
-            existing = await Project.get_by_prop("uname", "local", "project")
+            existing = await cls.get_by_prop("uname", "local", entity_type)
             if existing:
                 return existing
         raise save_error
-    await project.set_visitor_role("owner")
-    logging.info(f"Created @local project: {project.id} with owner: {desktop_user.id if desktop_user else 'None'}")
-    return project
+    await entity.set_visitor_role("owner")
+    logging.info(
+        "Created @local %s: %s with owner: %s", entity_type, entity.id, owner.id if owner else "None"
+    )
+    return entity
+
+
+async def get_or_create_local_project(desktop_user: Optional[Entity] = None) -> Project:
+    """Get or create the @local project (uname="local", visitor_role="owner")."""
+    return await _get_or_create_local(Project, name="my_first_project", owner=desktop_user)
 
 
 async def get_or_create_local_workspace(desktop_user: Optional[Entity] = None) -> Workspace:
-    """Get or create the @local workspace.
-
-    Creates a Workspace entity with uname="local" if it doesn't exist.
-    Sets visitor_role to "owner" for unrestricted access and assigns desktop user as owner.
-
-    Args:
-        desktop_user: The desktop User entity to set as owner
-
-    Migrated from FlowPad: flowpad/hub/core/desktop_loader.py (init_local_workspace)
-    """
-    local_id = _local_entity_id("workspace")
-
-    workspace = await Workspace.get_by_id(local_id)
-    if workspace:
-        logging.info(f"@local workspace already exists (by stable id): {workspace.id}")
-        return workspace
-    workspace = await get_local_entity(Workspace)
-    if workspace:
-        if workspace.id != local_id:
-            logging.warning(
-                "@local workspace has legacy random id %s; expected stable %s. "
-                "Keeping existing row to preserve references — wipe the DB to migrate.",
-                workspace.id,
-                local_id,
-            )
-        logging.info(f"@local workspace already exists: {workspace.id}")
-        return workspace
-
-    logging.info("Creating @local workspace for desktop environment")
-    workspace = Workspace(
-        id=local_id,
-        type="workspace",
-        uname="local",
-        name="Local Desktop Workspace",
-        visitor_role="owner",
-    )
-    try:
-        await workspace.save(owner=desktop_user)
-    except Exception as save_error:
-        if "already exist" in str(save_error):
-            logging.info("@local workspace already exists (race/cache miss), fetching it")
-            # Bypass uname_cache in case it has a stale entry
-            existing = await Workspace.get_by_prop("uname", "local", "workspace")
-            if existing:
-                return existing
-        raise save_error
-    await workspace.set_visitor_role("owner")
-    logging.info(f"Created @local workspace: {workspace.id} with owner: {desktop_user.id if desktop_user else 'None'}")
-    return workspace
+    """Get or create the @local workspace (uname="local", visitor_role="owner")."""
+    return await _get_or_create_local(Workspace, name="Local Desktop Workspace", owner=desktop_user)
 
 
 @functools.lru_cache(maxsize=8)
