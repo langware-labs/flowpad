@@ -9,7 +9,7 @@ export { useCurrentDeployments } from './useCurrentDeployments';
 export { useViewerStore } from './useViewerStore';
 export { useProcessCheckpoints } from './useProcessCheckpoints';
 export { useProcessWebApp } from './useProcessWebApp';
-export { useAppDisplay } from './useAppDisplay';
+export { hostBrand, useAppDisplay } from './useAppDisplay';
 export type { AppDisplay, AppRuntime } from './useAppDisplay';
 export { useAssetApps, EDITOR_APP_KIND } from './useAssetApps';
 export { useArtifactActions, type UseArtifactActionsReturn } from './useArtifactActions';

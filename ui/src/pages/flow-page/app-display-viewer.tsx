@@ -1,9 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { AgenticProcess } from '@sdk';
 import { type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
 import { WebappDisplayToolbar } from '@src/components/display-toolbar';
-import { useAppDisplay } from '@src/hooks/flow-hooks';
+import { hostBrand, useAppDisplay } from '@src/hooks/flow-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { APP_RUNTIME_PARAM, type AppRuntime } from '@src/navigation/app-dock';
 import { useEntity } from '@src/hooks/entity-hooks';
@@ -72,9 +72,27 @@ export function AppDisplayViewer({ artifactId, microAppId = null, host, runtime,
   // and a new frame identity (a runtime switch, a different app in this dock)
   // carries whatever theme was frozen at mount. Pushing on every new frame makes
   // the channel the authority, which is what the seed comment above promises.
+  const pushSkin = useCallback(() => {
+    frameRef.current?.postToGuest({
+      type: 'flowpad:theme',
+      theme: appDisplay.theme,
+      view: appDisplay.view,
+      // Read at send time: the palette is applied by an effect, so a value
+      // captured during render is empty on a deep-linked first paint.
+      ...hostBrand(),
+    });
+  }, [appDisplay.theme, appDisplay.view]);
+
+  // Push when the skin moves, and answer the guest's own request — a guest that
+  // finished loading after our push would otherwise never hear one.
   useEffect(() => {
-    frameRef.current?.postToGuest({ type: 'flowpad:theme', theme: appDisplay.theme });
-  }, [appDisplay.theme, appDisplay.src]);
+    pushSkin();
+    const onGuest = (event: MessageEvent) => {
+      if ((event.data as { type?: string } | null)?.type === 'flowpad:skin-please') pushSkin();
+    };
+    window.addEventListener('message', onGuest);
+    return () => window.removeEventListener('message', onGuest);
+  }, [pushSkin, appDisplay.src]);
 
   // URL-carried, so the choice survives a reload and the Back button — it used to
   // be component state and vanished on both.

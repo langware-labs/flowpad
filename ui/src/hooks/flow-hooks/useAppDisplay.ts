@@ -1,11 +1,30 @@
 import { AgenticProcess, Deployment, MicroApp, QueryRequest, TypeId } from '@sdk';
 import { useTheme } from 'next-themes';
+import { useViewMode } from '@src/contexts/view-mode-context';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AppDockAddress } from '@src/navigation/app-dock';
 import { useEntitiesQuery, useEntity } from '../entity-hooks';
 import { useProcessWebApp } from './useProcessWebApp';
 
 export type AppRuntime = 'dev' | 'served';
+
+/**
+ * The two tokens the app brands at RUNTIME rather than in its stylesheet:
+ * `useColorPalette` writes them inline on `<html>` from the site config, so the
+ * generated `/sdk/flowpad.css` cannot carry them and a white-labelled deployment
+ * would show its brand everywhere except inside its own apps.
+ *
+ * Read live rather than cached — the palette is applied by an effect, so any
+ * value captured during a first render is empty.
+ */
+export function hostBrand(): { primary: string; primaryInk: string } {
+  if (typeof document === 'undefined') return { primary: '', primaryInk: '' };
+  const root = document.documentElement.style;
+  return {
+    primary: root.getPropertyValue('--primary').trim(),
+    primaryInk: root.getPropertyValue('--primary-foreground').trim(),
+  };
+}
 
 /** Append the dock's app-facing options to a base URL, preserving any it has. */
 function withQuery(base: string, query: string): string {
@@ -22,10 +41,12 @@ export interface AppDisplay {
   src: string;
   port: string | null;
   microApp: MicroApp | null;
-  /** The host's CURRENT colour theme. The frame is addressed with the theme it
-   *  had at mount, so a later change is pushed to the guest rather than
-   *  re-addressed — see the `initialTheme` note below. */
+  /** The host's CURRENT appearance — colour scheme and view mode. The frame is
+   *  addressed with the skin it had at mount, so a later change is pushed to the
+   *  guest rather than re-addressed; see the `initialSkin` note below. */
   theme: 'light' | 'dark';
+  view: string;
+
   setRuntime: (runtime: AppRuntime) => void;
 }
 
@@ -67,14 +88,22 @@ export function useAppDisplay(
   // theme toggle must not cost that, and with `enableSystem` an OS light/dark
   // schedule would trigger it unattended. Later changes are pushed to the guest
   // instead — see `AppDisplayViewer`.
+  // Two axes, because the app's appearance is two: the colour scheme and the
+  // view mode. Vibe is not a tint — it changes the primary colour, the corner
+  // radius and the ring — so a guest given only the scheme renders the desk skin
+  // inside a vibe window.
   const { resolvedTheme } = useTheme();
   const theme = resolvedTheme === 'dark' ? 'dark' : 'light';
-  const initialTheme = useRef(theme).current;
+  const view = useViewMode();
+  const initialSkin = useRef({ theme, view, ...hostBrand() }).current;
   // A string, so the result memo below compares it by VALUE — the caller may
   // hand us a fresh options object every render without remounting the frame.
   const appQuery = new URLSearchParams({
     ...(address?.options ?? {}),
-    theme: initialTheme,
+    theme: initialSkin.theme,
+    view: initialSkin.view,
+    ...(initialSkin.primary ? { primary: initialSkin.primary } : {}),
+    ...(initialSkin.primaryInk ? { primaryInk: initialSkin.primaryInk } : {}),
   }).toString();
 
   // A new app re-derives its runtime rather than inheriting the last choice.
@@ -132,7 +161,8 @@ export function useAppDisplay(
       port: devPort === null ? null : String(devPort),
       microApp,
       theme,
+      view,
       setRuntime: setOverride,
     };
-  }, [appQuery, devConfig.host, devPort, microApp, override, preferred, theme]);
+  }, [appQuery, devConfig.host, devPort, microApp, override, preferred, theme, view]);
 }
