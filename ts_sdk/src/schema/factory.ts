@@ -1,10 +1,21 @@
 import { defaultEntityType, IEntity } from '../IEntity';
 
+/**
+ * A registrable entity constructor.
+ *
+ * Deliberately loose in its parameter: every subclass ctor takes its own
+ * `Partial<X>`, and `new (json?: IEntity) => unknown` is not assignable from
+ * any of them (parameter positions are checked bivariantly for methods but not
+ * for standalone ctor types), which made every `@registerEntity` decorator
+ * report "unable to resolve signature".
+ */
+export type EntityConstructor = new (json?: any) => unknown;
+
 export class EntityFactory {
-  private static entityMap: { [type: string]: new (json?: IEntity) => unknown } = {};
+  private static entityMap: { [type: string]: EntityConstructor } = {};
 
   // Registers a new entity type and its constructor
-  static registerEntity(constructor: new (json?: IEntity) => unknown) {
+  static registerEntity(constructor: EntityConstructor) {
     //@ts-ignore
     const type = constructor.type;
     if (!type) {
@@ -19,7 +30,7 @@ export class EntityFactory {
     }
     EntityFactory.entityMap[type] = constructor;
   }
-  static getEntityConstructor(type: string): new (json?: IEntity) => unknown {
+  static getEntityConstructor(type: string): EntityConstructor {
     return EntityFactory.entityMap[type];
   }
 
