@@ -123,10 +123,6 @@ def plugin_id_from_file(ref: FSRef | Path) -> str | None:
     return key if is_valid_entity_id(key) else None
 
 
-def plugin_stable_key(ref: FSRef | Path) -> str:
-    return f"{RecordType.PLUGIN}:{plugin_identity_key(ref)}"
-
-
 def extract_plugin(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse one PLUGIN FSRef into a record matching the legacy item shape."""
     path = Path(ref.path)

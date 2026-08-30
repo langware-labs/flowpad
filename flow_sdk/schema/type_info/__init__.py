@@ -114,6 +114,9 @@ class TypeMetadata:
     capsules: tuple[CapsuleSpec, ...] = ()
     identity_carrier: Any = None
     id_stable_key_fn: Any = None
+    # The type's natural key; the v5 key is f"{type}:{identity_key_fn(ref)}".
+    # Prefer this over id_stable_key_fn, which is for a different key shape.
+    identity_key_fn: Any = None
     id_namespace: Any = None
     asset_hash_fn: Any = None
     post_sync_fn: Any = None

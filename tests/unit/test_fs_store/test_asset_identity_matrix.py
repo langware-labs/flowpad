@@ -325,7 +325,7 @@ def test_deterministic_provider_exact_v5_matrix(tmp_path: Path, type_name: str) 
     ref, stable_key, namespace = _deterministic_case(tmp_path, type_name)
     info = _info(type_name)
     assert info.read_id(ref) is None
-    assert info.id_stable_key_fn(ref) == stable_key
+    assert info.stable_key_for(ref) == stable_key
     assert info.mint_entity_id(ref) == str(uuid.uuid5(namespace, stable_key))
 
 

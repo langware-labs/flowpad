@@ -131,10 +131,6 @@ def codex_session_id_from_file(ref: FSRef | Path) -> str | None:
     return key if is_valid_entity_id(key) else None
 
 
-def codex_session_stable_key(ref: FSRef | Path) -> str:
-    return f"{RecordType.CODEX_SESSION}:{codex_session_identity_key(ref)}"
-
-
 def extract_codex_session(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a rollout JSONL into a Record (head fields only — stats lazy)."""
     return [extract_codex_session_from_path(ref._path, resolved_id=resolved_id)]
