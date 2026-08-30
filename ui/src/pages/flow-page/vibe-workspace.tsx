@@ -38,6 +38,12 @@ import { submitDisplayAnnotation } from './display-annotation-submit';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
+interface VibeFocus {
+  viewType: ViewType | null;
+  path?: string;
+  port?: string;
+}
+
 /**
  * Read the most-recent agent `focus` off the AgenticProcess stream (`focus`,
  * `data.path`, `data.metadata.port`) — the involuntary per-write focus the display

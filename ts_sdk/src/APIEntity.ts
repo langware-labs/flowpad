@@ -80,6 +80,7 @@ export interface AssetOccurrence {
 }
 import { defineGlobal } from './utils/globals';
 import { WikiLink } from './types/wiki';
+import type { HttpMethod } from './models/ApiUrl';
 
 /**
  * True when ``v`` is a string with at least one non-whitespace character.
