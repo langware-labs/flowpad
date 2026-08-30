@@ -6,7 +6,7 @@ from io import BytesIO
 from typing import Any, AsyncIterator, BinaryIO, List
 
 from flow_sdk.api.fs.fs_api import VFSPath
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 
 # FSEntry import is optional - it may not be defined yet in models
 try:

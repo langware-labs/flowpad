@@ -256,7 +256,7 @@ def test_gen_uuid_matches_extracted_record_id(tmp_path: Path) -> None:
     be a filesystem-safe UUID (no ``:`` that would crash the Windows write).
     """
     from flow_sdk.core.entity.entity_model import Entity
-    from flow_sdk.fs_store.identifier import is_valid_entity_id
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id
 
     home = _make_home(tmp_path)
     for ref in _scan(_home_root(home)):

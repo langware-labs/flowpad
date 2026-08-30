@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.core.entity.entity_model import Entity, remote_reflection
 from flow_sdk.db.db_entity import DBEntity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType

@@ -6,7 +6,7 @@ from pydantic import BaseModel, field_validator
 
 from flow_sdk._compat import UTC
 from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.user import normalize_email
 from flow_sdk.config import default_service_config
 from flow_sdk.core.entity.entity_model import Entity

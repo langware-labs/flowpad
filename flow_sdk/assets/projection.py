@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue, field_validator
 
 from flow_sdk.assets.git_origin import PortableGitOrigin
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identifier import is_valid_entity_id
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.fs_store.schema_registry import LayoutKind, SchemaRegistry, TypeInfo
 
 PORTABLE_ASSET_CONTRACT_VERSION = 1

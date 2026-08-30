@@ -20,7 +20,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Literal, Optional
 
 from flow_sdk.assets.git_origin import PortableGitOrigin as PortableGitOrigin
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.origin.fs_origin import ORIGIN_MODELS, FSOrigin
 from flow_sdk.fs_store.origin.fs_origin import is_safe_rel_path as is_safe_rel_path  # canonical home; re-exported
 from flow_sdk.utils.git import _run_git, find_project_root, git_current_branch, git_remote_url

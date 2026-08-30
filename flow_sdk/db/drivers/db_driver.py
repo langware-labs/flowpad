@@ -10,7 +10,7 @@ from flow_sdk.settings import is_desktop
 from pydantic import BaseModel
 
 from flow_sdk.flowpad_types.enums import BuiltInConstant, RelationshipDirection
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, EntityChild, RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.entity_factory import type_registry as _entity_registry

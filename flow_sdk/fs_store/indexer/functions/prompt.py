@@ -19,7 +19,7 @@ from flow_sdk.fs_store.indexer._frontmatter import (
 
 def _prompt_id_from_path(path: Path) -> str:
     """UUID5 from resolved path — stable across rescans."""
-    from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
 
     return mint_uuid(str(path.resolve()))
 
@@ -45,7 +45,7 @@ def _read_prompt_frontmatter_id(path: Path) -> str | None:
     the caller derives the stable uuid5(path) instead.
     """
     raw = _prompt_frontmatter(path).get("id")
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
 
     return adopt_entity_id(raw)
 

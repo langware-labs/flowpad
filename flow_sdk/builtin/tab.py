@@ -37,7 +37,7 @@ from flow_sdk.builtin.tab_order import (
 )
 from flow_sdk.core import Entity
 from flow_sdk.core.dock_address import VIEW_META, PageId, ViewType, parse_view_type
-from flow_sdk.fs_store.identifier import is_valid_uuid, mint_uuid
+from flow_sdk.api.api_types.identifier import is_valid_uuid, mint_uuid
 from flow_sdk.schema.types import EntityType
 
 logger = logging.getLogger(__name__)

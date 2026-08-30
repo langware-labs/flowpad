@@ -35,7 +35,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
-    from flow_sdk.api.api_types.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
     from flow_sdk.builtin.inbox_manager import InboxManager
     from flow_sdk.builtin.invitation import Invitation
 

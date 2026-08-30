@@ -2585,7 +2585,7 @@ class FsRecordsActionsMixin:
         """
         try:
             from flow_sdk.api.messages import DataOpMessage, OperationType
-            from flow_sdk.api.type_id import TypeId
+            from flow_sdk.fs_store.type_id import TypeId
             from flow_sdk.core.network.resource_tracker import handle_entity_op
 
             op_enum = OperationType(op)

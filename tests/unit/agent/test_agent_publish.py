@@ -2,10 +2,10 @@
 
 from unittest.mock import AsyncMock
 
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.project import Project
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 
 
 async def test_publish_is_idempotent(monkeypatch):

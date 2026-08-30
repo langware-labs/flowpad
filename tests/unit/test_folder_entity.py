@@ -16,7 +16,7 @@ import pytest
 from flow_sdk.builtin.folder import Folder
 from flow_sdk.fs_store.origin.git_origin import GitOrigin
 from flow_sdk.fs_store.origin.local_origin import LocalOrigin
-from flow_sdk.fs_store.identifier import is_valid_entity_id
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.type_info import register_all

@@ -58,7 +58,7 @@ from flow_sdk.cloud_client.transport.hub_http import hub_get, hub_post
 from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.flowpad_types.enums.auth_enums import HubRole
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse
 

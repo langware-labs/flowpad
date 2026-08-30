@@ -217,7 +217,7 @@ def _patch_entity_lookup(monkeypatch, entity):
 async def test_cache_miss_fills_from_hub_for_any_remote_entity(monkeypatch, tmp_path):
     """The generalized fallback: no longer flow_message-only."""
     from flow_sdk.actions.fs.fs_actions import fetch_remote_entity_file
-    from flow_sdk.api.api_types.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
 
     _patch_hub_get(monkeypatch, b"file-bytes")
     _patch_entity_lookup(monkeypatch, _entity(remote=True))
@@ -234,7 +234,7 @@ async def test_cache_miss_fills_from_hub_for_any_remote_entity(monkeypatch, tmp_
 @pytest.mark.asyncio
 async def test_cache_miss_does_not_hit_hub_for_local_only_entity(monkeypatch, tmp_path):
     from flow_sdk.actions.fs.fs_actions import fetch_remote_entity_file
-    from flow_sdk.api.api_types.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
 
     _patch_hub_get(monkeypatch, b"file-bytes")
     _patch_entity_lookup(monkeypatch, _entity(remote=False))
@@ -249,7 +249,7 @@ async def test_cache_miss_does_not_hit_hub_for_local_only_entity(monkeypatch, tm
 async def test_cache_miss_returns_false_when_hub_has_nothing(monkeypatch, tmp_path):
     """Hub 404 → False, so the caller 404s exactly as it did before."""
     from flow_sdk.actions.fs.fs_actions import fetch_remote_entity_file
-    from flow_sdk.api.api_types.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
 
     _patch_hub_get(monkeypatch, None)
     _patch_entity_lookup(monkeypatch, _entity(remote=True))

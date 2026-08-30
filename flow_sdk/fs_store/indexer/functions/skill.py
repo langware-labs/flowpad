@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_frontmatter,
     _yaml_load,
@@ -126,7 +126,7 @@ def read_frontmatter_id_from_yaml(yaml_fields: dict) -> str | None:
     foreign frontmatter id (a v7, a hand-typed token) is rejected → ``None`` and
     the caller mints a fresh v4 into the capsule instead of adopting garbage.
     """
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
     for candidate in (yaml_fields.get("id"), yaml_fields.get("asset_id")):
         adopted = adopt_entity_id(candidate)
         if adopted:

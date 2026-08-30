@@ -17,5 +17,5 @@ def load_report(path: Path) -> dict:
 
 
 def report_id_from_path(path: Path) -> str:
-    from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
     return mint_uuid(str(path.resolve()))

@@ -638,7 +638,7 @@ class GraphWorkflowManager:
         agent_id: str | None = None,
     ) -> None:
         """Born-compatible Dataset example: id is deterministic → idempotent promotion."""
-        from flow_sdk.fs_store.identifier import mint_uuid
+        from flow_sdk.api.api_types.identifier import mint_uuid
 
         source: dict[str, Any] = {"flow_id": run.flow.flow_id, "run_id": run.id, "node_id": node_id, "seq": seq}
         if fe is not None:

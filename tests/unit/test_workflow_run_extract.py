@@ -10,7 +10,7 @@ import pytest
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401
 
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
+from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.indexer.functions.workflow_run import (
     extract_workflow_run,
     workflow_run_id,

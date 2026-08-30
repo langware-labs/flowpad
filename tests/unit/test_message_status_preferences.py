@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.cloud_client.hub_bridge import HubWsBridge
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 
 
 @pytest.mark.parametrize(("stored_value", "expected"), [(False, False), (True, True)])

@@ -24,7 +24,7 @@ from typing import Any, Optional, Type
 from pydantic import TypeAdapter
 
 from flow_sdk._compat import UTC
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.organization import Organization
 from flow_sdk.core.entity.entity_model import Entity, remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType

@@ -32,7 +32,7 @@ def read_folder_capsule_id(folder: Any) -> str | None:
     Routes through ``adopt_entity_id`` so a foreign/garbage capsule id (a v7, a
     hand-typed token) is rejected → ``None`` and the caller mints a fresh v4.
     """
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
 
     try:
         raw = _capsule_path(folder).read_text(encoding="utf-8")
@@ -49,7 +49,7 @@ def write_folder_capsule_id(folder: Any, entity_id: str) -> bool:
     abort an index run — and returns ``False`` in that case so callers can fall
     back without a confirming re-read.
     """
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
     from flow_sdk.fs_store.indexer._frontmatter import _atomic_write_text  # noqa: PLC0415
 
     adopted = adopt_entity_id(entity_id)

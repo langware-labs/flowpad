@@ -41,7 +41,7 @@ class PromptSpec(FrontMatter):
     @field_validator("group_id", mode="before")
     @classmethod
     def _valid_group(cls, value: Any) -> Optional[str]:
-        from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+        from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
 
         return adopt_entity_id(value) or None
 

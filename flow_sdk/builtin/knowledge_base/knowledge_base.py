@@ -12,7 +12,7 @@ from usearch.index import Index
 
 from flow_sdk.config import default_service_config
 from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.knowledge_base.knowledge_data import KeyedEmbeddings, KnowledgeData, KnowledgeItem
 from flow_sdk.core import action
 from flow_sdk.core.entity.entity_model import Entity

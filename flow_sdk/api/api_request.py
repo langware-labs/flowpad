@@ -6,8 +6,8 @@ from urllib.parse import urlparse, urlunparse
 from fastapi import HTTPException
 from pydantic import BaseModel
 
-from flow_sdk.api.identifier import is_valid_identifier
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.api.api_types.identifier import is_valid_identifier
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.actions.action_registry import is_action
 from flow_sdk.config import API_PREFIX
 from flow_sdk.fs_store.schema_registry import SchemaRegistry

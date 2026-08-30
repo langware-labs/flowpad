@@ -197,7 +197,7 @@ def _markdown_id_from_path(path: Path) -> str:
     Survives only as the ``parse_markdown_text`` read-side
     derive for a not-yet-stamped file.
     """
-    from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
 
     return mint_uuid(str(path.resolve()))
 
@@ -268,7 +268,7 @@ def parse_markdown_text(text: str, path: Path | None = None) -> dict[str, Any]:
     applies, over a STRING. Public for ``operations.markdown_index.from_markdown``."""
     from flow_sdk.builtin.claude_memory_entities import MarkdownSpec  # noqa: PLC0415
     from flow_sdk.capsules import strip_capsule_blocks  # noqa: PLC0415
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
 
     text = strip_capsule_blocks(text)
     fm_text = _extract_frontmatter(text)

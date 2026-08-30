@@ -16,7 +16,7 @@ from flow_sdk.fs_store.indexer.functions._report_common import load_report, repo
 
 def _adopt_doc_id(data: dict) -> str | None:
     """The trace's embedded ``id``, validated on adopt (v4/v5 only)."""
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
     return adopt_entity_id(data.get("id"))
 
 

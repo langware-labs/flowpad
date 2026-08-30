@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from flow_sdk.capsules import CapsuleSpec
-from flow_sdk.fs_store.identifier import is_valid_entity_id
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.fs_store.identity_carrier import (
     DerivedCarrier,
     FolderJsonCarrier,

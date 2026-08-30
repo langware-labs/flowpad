@@ -2046,7 +2046,7 @@ def _rewrite_file_attachments(fm_data: dict, tmp_root: Path, fm_id: str) -> None
     ``/fs/download/`` resolves identically on both sides. Inline-text PROMPT
     attachments are passed through.
     """
-    from flow_sdk.api.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
     from flow_sdk.storage import get_entity_embedded_storage
 
     fm_typeid = TypeId(type="flow_message", id=fm_id)

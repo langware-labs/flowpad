@@ -521,7 +521,7 @@ def search_record(
 
 def _parse_typeid(raw: str) -> tuple[str, str]:
     """Split a `<type>-<id>` TypeId string into (type, id). Validates via TypeId."""
-    from flow_sdk.api.type_id import TypeId  # noqa: PLC0415
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
 
     try:
         tid = TypeId(raw)

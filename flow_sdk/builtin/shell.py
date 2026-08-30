@@ -32,7 +32,7 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 from flow_sdk.utils.serialization import now_epoch_ms
 
 if TYPE_CHECKING:
-    from flow_sdk.api.api_types.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
         AgentOptions,
         WorkerExecutionInfo,
@@ -216,7 +216,7 @@ class Shell(Entity):
         ``agentic_process_id`` field — a cheap getattr, no reverse scan — so the shell
         and its process carry each other as lineage chips, both directions."""
         from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
-        from flow_sdk.api.api_types.type_id import TypeId  # noqa: PLC0415
+        from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
 
         refs = super().get_implicit_private_context_entities()
         # Guard the id: this runs inside entity serialization, so a malformed

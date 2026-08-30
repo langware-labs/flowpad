@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 from typing import Optional, Sequence
 
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.source_item import SourceItem, SourceItemSpec
 from flow_sdk.ingest.ingest_on_tag import emit_item_tag
 from flow_sdk.ingest.models import IngestMode, IngestOutcome, IngestReport

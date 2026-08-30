@@ -13,7 +13,7 @@ import pytest
 
 from flow_sdk.builtin.spreadsheet import Spreadsheet
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identifier import is_valid_entity_id
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.fs_store.indexer.functions.spreadsheet import (
     extract_spreadsheet,
 )

@@ -54,7 +54,7 @@ def example_id(dataset_id: str, key: str) -> str:
     A uuid5 — kept EXACTLY (three tests hard-code the formula; changing it is a
     data migration). The row index for CSV, the example folder name for IO_FOLDER.
     """
-    from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
 
     return mint_uuid(f"{dataset_id}:{key}", namespace=uuid.NAMESPACE_DNS)
 

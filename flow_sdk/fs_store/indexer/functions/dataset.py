@@ -43,7 +43,7 @@ from pathlib import Path
 from typing import Any
 
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identifier import adopt_entity_id
+from flow_sdk.api.api_types.identifier import adopt_entity_id
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
     read_folder_capsule_id,
 )

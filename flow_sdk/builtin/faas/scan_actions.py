@@ -567,7 +567,7 @@ class ScanActionsMixin:
             # Invalid / unparseable typeids are skipped — a bad provenance hint
             # must never block a launch.
             if shared_context_entities_raw:
-                from flow_sdk.api.api_types.type_id import TypeId as _TypeId
+                from flow_sdk.fs_store.type_id import TypeId as _TypeId
 
                 tids = []
                 for raw in shared_context_entities_raw:

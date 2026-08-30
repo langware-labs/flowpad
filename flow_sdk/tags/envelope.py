@@ -23,7 +23,7 @@ def now_iso() -> str:
     from datetime import datetime, timezone
 
     return datetime.now(timezone.utc).isoformat()
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 
 TagOrigin = Literal["app", "local_server", "hub", "sandbox"]
 

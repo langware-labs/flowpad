@@ -4,7 +4,7 @@ import pytest
 from fastapi import HTTPException
 from pydantic import BaseModel
 
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.core.loaders import is_new_instance
 from tests.conftest import async_context

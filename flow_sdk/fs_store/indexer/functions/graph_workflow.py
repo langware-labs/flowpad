@@ -35,7 +35,7 @@ def graph_workflow_id_from_folder(ref: FSRef | Path) -> object | None:
     if cap:
         return cap
     doc = _load_doc(path)
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
 
     return adopt_entity_id(doc.id if doc else None)
 

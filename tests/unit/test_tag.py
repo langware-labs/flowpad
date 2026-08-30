@@ -21,7 +21,7 @@ register_all()
 def test_id_is_deterministic_uuid5_of_the_name():
     import uuid
 
-    from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 
     a = Tag(name="graph_workflow.step.done")
     b = Tag(name="  Graph_Workflow.Step.Done ")  # normalization variant → same identity

@@ -25,7 +25,7 @@ from typing import Any, ClassVar, Literal, Optional, get_args, get_origin
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.capsules import CapsuleSpec
-from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
+from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.identity_carrier import CarrierId, FrontmatterCarrier, IdentityCarrier
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
