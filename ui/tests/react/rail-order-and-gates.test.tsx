@@ -36,7 +36,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 /** The Vibe-only Chats target. Captured, not exercised — its own resolution is
  *  unit-tested against the query it builds. */
 const lastVibeChat = vi.hoisted(() => vi.fn());
-vi.mock('@src/pages/flow-page/use-last-vibe-chat', () => ({ useLastVibeChat: () => lastVibeChat }));
+vi.mock('@src/pages/flow-page/vibe-process-resolver', () => ({ useLastVibeChat: () => lastVibeChat }));
 
 // Content gates, driven per test.
 const gates = vi.hoisted(() => ({ conversations: false }));
