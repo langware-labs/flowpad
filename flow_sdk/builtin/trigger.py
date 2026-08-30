@@ -10,6 +10,7 @@ from flow_sdk._compat import StrEnum
 from flow_sdk.flowpad_types.enums.entity_enums import BuiltInRelationshipTypes, RelationshipDirection
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.messages import HttpMethod
+from flow_sdk.ingest.models import STORM_CAP_PER_MINUTE
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.hook_models import (
     ActionType,
@@ -292,7 +293,7 @@ class Trigger(Entity):
     tag_pattern: Optional[str] = APIField(None, description="Bus tag pattern, segment-glob (TAG triggers only), e.g. 'entity.created' or 'graph_workflow.*'. Bare '*' is rejected.")
     tag_target: Optional[str] = APIField(None, description="Optional target filter in colon form: 'usage_report:*' or an exact 'type:id' (TAG only)")
     tag_scope: list[str] = APIField(default_factory=list, description="Optional scope filter — colon-form targets the event's ctx.scope must intersect (TAG only)")
-    max_fires_per_minute: int = APIField(default=30, description="Storm guard for TAG triggers: fires beyond this per-minute cap are dropped (one storm_suppressed log entry per window)")
+    max_fires_per_minute: int = APIField(default=STORM_CAP_PER_MINUTE, description="Storm guard for TAG triggers: fires beyond this per-minute cap are dropped (one storm_suppressed log entry per window)")
     confirm: Optional[dict[str, Any]] = APIField(None, description="Optional confirm-against-store gate (TAG only): {type, filter} — the entity query must match or the fire is skipped (event != proof)")
 
     _api_visible: ClassVar[bool] = True
