@@ -1,7 +1,13 @@
 ---
+id: 248d2e92-b44d-4f51-a4d1-2ac8ab65dcdc
 title: Prompt queue didn't drain in PTY mode
-tags: [breadcrumb.test.pty_queue_drain.rules]
-description: A prompt enqueued in PTY mode never drained at all. The turn-end seam in _flush_transcript_change gates on (not current_busy and prev_busy), but prev_busy came from _last_broadcast_key — an INSTANCE attribute on an AgenticProcess that is re-hydrated fresh for every streamer event, so it always read back None and the edge was dead.
+tags:
+- breadcrumb.test.pty_queue_drain.rules
+description: A prompt enqueued in PTY mode never drained at all. The turn-end seam
+  in _flush_transcript_change gates on (not current_busy and prev_busy), but prev_busy
+  came from _last_broadcast_key — an INSTANCE attribute on an AgenticProcess that
+  is re-hydrated fresh for every streamer event, so it always read back None and the
+  edge was dead.
 ---
 
 # Prompt queue didn't drain in PTY mode
@@ -156,9 +162,3 @@ the identical scenario with `pty_mode=False` and passes, because
   against a stopped session that then starts. `enable` is the only PTY-reachable
   fallback there, and it needs a manual toggle. Never exercised; treat it as
   unverified, not as a rule.
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 248d2e92-b44d-4f51-a4d1-2ac8ab65dcdc
-flowpad:endcapsule identity -->

@@ -1,4 +1,5 @@
 ---
+id: 6319f8e0-ad5f-489f-95f7-2ad8e9fe95f0
 title: NULL sort order in the SQLite driver
 tags:
 - breadcrumb.test.null_sort_order.rules
@@ -60,9 +61,3 @@ Note the test does **not** go through `get_children`: the driver stamps
 test that built one and asserted on its position would be asserting on
 `datetime.now()`. The sort key is what carries the NULL semantics, so it is
 tested directly.
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 6319f8e0-ad5f-489f-95f7-2ad8e9fe95f0
-flowpad:endcapsule identity -->

@@ -1,10 +1,11 @@
 ---
+id: 9445799d-e807-4cdf-80a5-3bfab86b335f
 title: Agent activity readout rules
 tags:
 - breadcrumb.test.agent_activity_readout.rules
 description: The chat activity line sources its own frames from the process, may only
-  report the CURRENT turn's newest operation, must hold each one 500ms, and must let an
-  operation refine itself — every rule here is a shipped bug.
+  report the CURRENT turn's newest operation, must hold each one 500ms, and must let
+  an operation refine itself — every rule here is a shipped bug.
 version: 3
 ---
 
@@ -198,9 +199,3 @@ Each was observed, and each maps to the invariant that prevents it.
   from `context.agenticProcess.flowDataStream.items`. Note those hydrated frames
   are stamped `observation-kind: replay`, so invariant 1 discards them — restamp
   as `live` before asserting on the result.
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 9445799d-e807-4cdf-80a5-3bfab86b335f
-flowpad:endcapsule identity -->

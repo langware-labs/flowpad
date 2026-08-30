@@ -1,8 +1,13 @@
 ---
-title: "Sandbox preview urls: browser vs server"
-tags: [breadcrumb.test.sandbox_browser_url.rules]
-description: A dev-server port has TWO correct urls in a cloud box — loopback for the server, the public per-port host for the browser — and E2B_SANDBOX_ID is empty in the process that must choose.
+id: e858b952-80f7-40dd-83eb-bd54d65dfa66
+title: 'Sandbox preview urls: browser vs server'
+tags:
+- breadcrumb.test.sandbox_browser_url.rules
+description: A dev-server port has TWO correct urls in a cloud box — loopback for
+  the server, the public per-port host for the browser — and E2B_SANDBOX_ID is empty
+  in the process that must choose.
 ---
+
 # Sandbox preview urls: browser vs server
 
 > Ground truth. Proven by RCA on 2026-08-26. Do not edit without the user's approval.
@@ -78,9 +83,3 @@ Live E2B box `ivshr0pshcpupip2m0pqk`, one real `python3 -m http.server 8000` ins
 | unfixed | `307 → http://localhost:8000/` | connection refused |
 | fixed | `307 → https://8000-ivshr0pshcpupip2m0pqk.e2b.dev/` | `200`, the page itself |
 | reverted | `307 → http://localhost:8000/` | connection refused |
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: e858b952-80f7-40dd-83eb-bd54d65dfa66
-flowpad:endcapsule identity -->

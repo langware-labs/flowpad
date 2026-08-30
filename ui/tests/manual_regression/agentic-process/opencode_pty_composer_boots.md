@@ -1,3 +1,7 @@
+---
+id: c8603ff6-3903-4aea-9045-e0a3bc75e2c2
+---
+
 # OpenCode opener spawns a PTY whose TUI reaches its composer
 
 **Area:** agentic-process / PTY spawn
@@ -42,8 +46,3 @@ after spawn in a raw PTY and ~11.5s end-to-end through the app. OpenCode paints 
 directory-trust or login interstitial, so the marker is unambiguous — it appears
 only once input is accepted.
 
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: c8603ff6-3903-4aea-9045-e0a3bc75e2c2
-flowpad:endcapsule identity -->

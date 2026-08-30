@@ -1,8 +1,13 @@
 ---
+id: fcb36e00-bcdd-468f-becc-4bf077bd755b
 title: Terminal RTL/bidi rendering contract
-tags: [breadcrumb.test.terminal_bidi.rules]
-description: A terminal row must be ONE bidi paragraph; xterm's injected display:inline-block breaks that and makes Hebrew read left-to-right. Two contracts, chosen by host platform AND CLI vendor, never both.
+tags:
+- breadcrumb.test.terminal_bidi.rules
+description: A terminal row must be ONE bidi paragraph; xterm's injected display:inline-block
+  breaks that and makes Hebrew read left-to-right. Two contracts, chosen by host platform
+  AND CLI vendor, never both.
 ---
+
 # Terminal RTL/bidi rendering contract
 
 > Ground truth. Proven by RCA on 2026-08-03 (one-bidi-paragraph rule) and
@@ -158,9 +163,3 @@ per-word-correct, sentence-LTR.
   gate with `navigator.platform` supplied as a fixture, so they assert the same
   decision from macOS, Linux or a Windows runner.
   Run: `cd ui && npx playwright test --config tests/browser_render/playwright.config.ts`
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: fcb36e00-bcdd-468f-becc-4bf077bd755b
-flowpad:endcapsule identity -->

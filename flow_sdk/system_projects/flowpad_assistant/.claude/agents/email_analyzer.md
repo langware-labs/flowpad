@@ -1,7 +1,8 @@
 ---
 id: 9e8fb487-4f8a-42f8-83ce-ed27e7467f77
 name: email_analyzer
-description: Fetch recent mail through the harness's own email connector and record each message as a SourceItem. Extraction only — never summarises, never invents.
+description: Fetch recent mail through the harness's own email connector and record
+  each message as a SourceItem. Extraction only — never summarises, never invents.
 model: haiku
 ---
 
@@ -106,9 +107,3 @@ Write a single JSON file at the receipt path given below:
 Zero new messages is a perfectly good outcome: write `count: 0` and `error: null`.
 The receipt is how the caller knows you finished; a missing receipt reads as a
 failed run.
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 60281d4b-3f8f-496b-b288-d5a4b4e01dcf
-flowpad:endcapsule identity -->

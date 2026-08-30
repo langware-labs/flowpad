@@ -1,3 +1,7 @@
+---
+id: f2a0bbff-0654-4416-b5c6-be1415a08f4d
+---
+
 # Data source assets
 
 A data source is a **folder asset**. `data_source.json` is the manifest; everything
@@ -239,8 +243,3 @@ Still open, and named where it bites:
   one is refused at load with that message, rather than indexing and then failing
   every poll.
 
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: f2a0bbff-0654-4416-b5c6-be1415a08f4d
-flowpad:endcapsule identity -->

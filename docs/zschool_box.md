@@ -1,3 +1,7 @@
+---
+id: 98efd3d9-11d6-4f80-ad5e-99dc06e1c205
+---
+
 # zschool box
 
 Two parts 
@@ -24,8 +28,3 @@ Just like one, but add asset package (another proiejct) that contains the simple
 
 <br />
 
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 98efd3d9-11d6-4f80-ad5e-99dc06e1c205
-flowpad:endcapsule identity -->
