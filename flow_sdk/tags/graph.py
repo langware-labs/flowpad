@@ -13,7 +13,7 @@ maps to its node key with zero lookups, blessed or not. The blessed entity's
 uuid rides in ``properties.entity_id`` for consumers that need the row.
 
 Registered as subgraph projection ``"tag"`` at import (see
-``server/routes/subgraph.py`` lazy loader).
+``flow_sdk/subgraph/__init__.py``'s built-in loader).
 """
 
 from __future__ import annotations
