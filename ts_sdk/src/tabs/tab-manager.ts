@@ -8,18 +8,10 @@ import { TabLifecycleRegistry } from './tab-lifecycle-registry';
 import { computeReorder } from './tab-order';
 import { resolveNextTabPure } from './tab-selection';
 import {
-  childrenOfTab,
-  openTabHashes,
-  openTabTargetIds,
-  projectTabCounts,
   tabForDockKey,
   tabForTargetId,
-  tabKey,
   tabsForProject,
   terminalTabsForScope,
-  topLevelTabsForProject,
-  uniqueTabsByDockKey,
-  type TabProjectCounts,
   type TabScope,
 } from './tab-selectors';
 
@@ -204,50 +196,22 @@ export class TabManager {
     this.notify();
   }
 
-  keyOf(tab: Tab): string {
-    return tabKey(tab);
-  }
 
-  allUnique(): Tab[] {
-    return uniqueTabsByDockKey(this.snapshot);
-  }
 
   forProject(projectId: string | null): Tab[] {
     return tabsForProject(this.snapshot, projectId);
   }
 
-  topLevelForProject(projectId: string | null): Tab[] {
-    return topLevelTabsForProject(this.snapshot, projectId);
-  }
 
-  childrenOf(parentTabId: string): Tab[] {
-    return childrenOfTab(this.snapshot, parentTabId);
-  }
 
-  terminals(scope: TabScope, projectId: string | null): Tab[] {
-    return terminalTabsForScope(this.snapshot, scope, projectId);
-  }
 
   findByDockKey(key: string | null | undefined): Tab | null {
     return tabForDockKey(this.snapshot, key);
   }
 
-  findByTarget(target: TypeId | string): Tab | null {
-    const targetId = this.parseTarget(target);
-    return targetId ? tabForTargetId(this.snapshot, targetId) : null;
-  }
 
-  getOpenDockHashes(): Set<string> {
-    return openTabHashes(this.snapshot);
-  }
 
-  getOpenTargetIds(): Set<string> {
-    return openTabTargetIds(this.snapshot);
-  }
 
-  getProjectCounts(): TabProjectCounts {
-    return projectTabCounts(this.snapshot);
-  }
 
   setPendingIntent(key: string | null): void {
     this.pendingIntentKey = key;
