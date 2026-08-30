@@ -46,7 +46,6 @@ vi.mock('@src/hooks/use-has-conversations', () => ({ useHasConversations: () => 
 vi.mock('@src/components/theme-toggle/theme-toggle', () => ({ ThemeToggle: () => null }));
 vi.mock('@src/components/floating-chat', () => ({ FlowpadAssistantButton: () => null }));
 vi.mock('@src/pages/flow-page/content-panel/user-dropdown/user-dropdown', () => ({ UserDropdown: () => null }));
-vi.mock('@src/contexts/dev-mode-context', () => ({ useDevMode: () => false }));
 vi.mock('@src/store/use-inbox-store', () => ({ useInboxStore: () => ({ unreadCount: 0 }) }));
 vi.mock('@src/store/use-spotlight-store', () => ({
   useSpotlightStore: { getState: () => ({ openSpotlight: vi.fn() }) },
