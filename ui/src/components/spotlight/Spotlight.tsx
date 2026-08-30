@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 import { useRecordSearch } from '@src/hooks/use-record-search';
 import { useDefaultScopeFilter } from '@src/hooks/use-default-scope-filter';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useSpotlightStore } from '@src/store/use-spotlight-store';
+import { closeSpotlight, useSpotlightStore } from '@src/store/use-spotlight-store';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -23,7 +23,6 @@ const EMPTY_INITIAL: SpotlightInitialInfo = { rows: [], isLoading: false };
 export function Spotlight() {
   const { t } = useLingui();
   const open = useSpotlightStore((s) => s.open);
-  const closeSpotlight = useSpotlightStore((s) => s.closeSpotlight);
   const { navigation, currentDock } = useDockNavigation();
 
   // Pin the profile at the moment of open so dock changes during a session

@@ -19,7 +19,7 @@ import {
 import { DataSource, PageId } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useHasConversations } from '@src/hooks/use-has-conversations';
-import { useLastVibeChat } from '@src/pages/flow-page/use-last-vibe-chat';
+import { useLastVibeChat } from '@src/pages/flow-page/vibe-process-resolver';
 import { JourneyBadge } from '@src/journey/JourneyBadge';
 import { NavBadge } from '@src/components/ui/nav-badge';
 import { useLingui } from '@lingui/react/macro';

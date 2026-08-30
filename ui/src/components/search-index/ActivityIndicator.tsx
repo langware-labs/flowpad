@@ -1,5 +1,5 @@
 import { useSystemTools } from '@src/hooks/use-system-tools';
-import { useActivityModalStore } from '@src/store/use-activity-modal-store';
+import { showActivityModal } from '@src/store/use-activity-modal-store';
 import { CheckCircle2, Circle, Loader2 } from 'lucide-react';
 import { activityFooterLabel, phaseLabelTrailing, progressCountsLabel, rowState } from './activity-labels';
 import { ActivityProgressBar, MiniProgressBar } from './ActivityProgressModal';
@@ -31,7 +31,7 @@ const LIST_ROW_STYLE = {
 
 export function ActivityIndicator(props: ActivityIndicatorProps) {
   const { currentActivity, progressTable } = useSystemTools();
-  const show = useActivityModalStore((s) => s.show);
+  const show = showActivityModal;
 
   if (props.variant === 'list') {
     if (!progressTable) return null;

@@ -12,7 +12,6 @@ import { HooksManager } from '@src/components/hooks-manager';
 import { LensViewer } from '@src/components/lens-viewer';
 import { MachineOverview } from '@src/components/machine-overview/machine-overview';
 import { MarkdownViewer } from '@src/components/markdown-viewer';
-import { ProcessTerminal } from '@src/components/process-terminal';
 import { SettingsView } from '@src/components/settings-view/SettingsView';
 import { PreferencesView } from '@src/components/preferences-view/PreferencesView';
 import { DesktopPage } from '@src/pages/desktop/DesktopPage';
@@ -443,7 +442,7 @@ export function ContentPanel({
         return <SearchView />;
       case ViewType.AGENTIC_PROCESS:
         return currentDock?.pointer ? (
-          <ProcessTerminal key={currentDock.pointer} processId={currentDock.pointer} />
+          <TabbedTerminal className="h-full" key={currentDock.pointer} processId={currentDock.pointer} />
         ) : (
           <div className="flex h-full items-center justify-center text-muted-foreground">
             <Trans>No process ID specified</Trans>
