@@ -146,7 +146,6 @@ def build_sdk():
     print(f"Copied SDK bundle to {dest}")
 
 
-
 # ── The served token stylesheet (/sdk/flowpad.css) ──────────────────────────
 #: Tokens a served page cannot get any other way. The palette lives in
 #: ``ui/src/styles/index.css`` and is extracted from it, so there is ONE source of
@@ -250,29 +249,35 @@ def extract_token_block(css: str, selector: str) -> str:
     marker = selector + " {"
     start = css.find(marker)
     if start < 0:
-        raise ValueError(f"{TOKENS_CSS}: no `{selector} {{` block")
+        raise ValueError(f"no `{selector} {{` block")
     body = css[start + len(marker) : css.index("}", start)]
     tokens = [line.strip() for line in body.splitlines() if line.strip().startswith("--")]
     if not tokens:
-        raise ValueError(f"{TOKENS_CSS}: `{selector}` block declares no tokens")
+        raise ValueError(f"`{selector}` block declares no tokens")
     return "\n".join("  " + t for t in tokens)
 
 
 def render_flowpad_css(css: str) -> str:
     """The full served stylesheet, from the app's own token source."""
     return (
-        _FLOWPAD_CSS_PREAMBLE
-        + "\n:root {\n"
-        + extract_token_block(css, ":root")
-        + "\n}\n\n.dark {\n"
-        + extract_token_block(css, ".dark")
-        + "\n}\n"
-        + _FLOWPAD_CSS_EXTRAS
+        f"{_FLOWPAD_CSS_PREAMBLE}\n"
+        f":root {{\n{extract_token_block(css, ':root')}\n}}\n\n"
+        f".dark {{\n{extract_token_block(css, '.dark')}\n}}\n"
+        f"{_FLOWPAD_CSS_EXTRAS}"
     )
 
 
-def build_tokens_css(dest: Path) -> Path:
-    """Write ``flowpad.css`` next to the SDK bundle."""
+def build_tokens_css(dest: Path | None = None) -> Path:
+    """Write ``flowpad.css`` beside the SDK bundle.
+
+    Standalone on purpose: it transforms a checked-in text file and needs no
+    npm, so `python build_ui.py --tokens-only` refreshes every served page after
+    a token edit without a full UI build. Served pages carry no colours of their
+    own, so a checkout where this never ran renders them unstyled rather than
+    merely stale.
+    """
+    dest = dest or (get_dist_dir() / "sdk")
+    dest.mkdir(parents=True, exist_ok=True)
     out = dest / "flowpad.css"
     out.write_text(render_flowpad_css(TOKENS_CSS.read_text(encoding="utf-8")), encoding="utf-8")
     print(f"Wrote {out}")
@@ -295,5 +300,11 @@ def build():
 
 if __name__ == "__main__":
     # No --port: the backend-served bundle is origin-relative (see build_ui()).
-    argparse.ArgumentParser(description="Build the Flow UI").parse_args()
-    build()
+    parser = argparse.ArgumentParser(description="Build the Flow UI")
+    parser.add_argument(
+        "--tokens-only",
+        action="store_true",
+        help="Regenerate /sdk/flowpad.css from the app's tokens and stop. Needs no npm.",
+    )
+    args = parser.parse_args()
+    build_tokens_css() if args.tokens_only else build()

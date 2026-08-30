@@ -60,7 +60,13 @@ export function appOption(name: string): string | null {
  * simply stays light.
  */
 export function applyHostTheme(): 'light' | 'dark' {
-  const theme = appOption('theme') === 'dark' ? 'dark' : 'light';
+  // No param means nobody is hosting this page — it was opened on its own. Follow
+  // the OS there rather than forcing light, so a standalone page on a dark
+  // desktop does not glare.
+  const param = appOption('theme');
+  const prefersDark =
+    typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
+  const theme = (param ? param === 'dark' : prefersDark) ? 'dark' : 'light';
   document.documentElement.classList.toggle('dark', theme === 'dark');
   // The URL carries the theme for the FIRST paint only — it is frozen there,
   // because the host addresses this frame by its src and re-addressing it would

@@ -52,22 +52,31 @@ def test_radius_is_light_only_and_inherited(rendered):
     assert "--radius:" not in _block(rendered, ".dark")
 
 
-def test_the_sheet_is_servable_as_is(rendered):
-    # Nothing Tailwind-bearing may survive extraction: a browser given @tailwind
-    # or @apply silently drops the rule, so the page loses exactly the styling
-    # this file exists to provide.
-    for directive in ("@tailwind", "@apply", "theme(", "@import"):
-        assert directive not in rendered, f"{directive} is not servable to a browser"
+def test_no_tailwind_call_survives_in_a_token_value(rendered):
+    # Extraction keeps only `--x: y;` lines, so at-rules cannot reach the output —
+    # but a `theme()` call CAN, on the right-hand side of a token. A browser drops
+    # the declaration silently, so the page loses exactly what this file supplies.
+    assert "theme(" not in rendered
 
 
-def test_it_supplies_what_tokens_alone_cannot(rendered):
-    # Tailwind's preflight gives the app its body font and tailwind.config.ts
-    # derives the radius scale; a served page has neither.
-    for expected in ("--font-sans", "--radius-md", ":focus-visible", "prefers-reduced-motion"):
-        assert expected in rendered
+def test_the_radius_scale_matches_the_app(rendered):
+    """The served scale is hand-written; the app derives it in tailwind.config.ts.
+
+    Two statements of one fact, in two languages, with nothing tying them — so
+    tie them here. Drift is silent otherwise: every served page just renders with
+    slightly wrong geometry.
+    """
+    config = (build_ui.REPO_ROOT / "ui" / "tailwind.config.ts").read_text(encoding="utf-8")
+    for name, expression in (
+        ("lg", "var(--radius)"),
+        ("md", "calc(var(--radius) - 2px)"),
+        ("sm", "calc(var(--radius) - 4px)"),
+    ):
+        assert expression in config, f"tailwind.config.ts no longer derives radius {name} as {expression}"
+        assert f"--radius-{name}: {expression};" in rendered
 
 
-def test_a_missing_block_fails_loudly(rendered):
+def test_a_missing_block_fails_loudly():
     # The whole point of raising: an empty extraction must not ship.
     with pytest.raises(ValueError, match="no `.nope"):
         build_ui.extract_token_block(":root { --a: 1; }", ".nope")

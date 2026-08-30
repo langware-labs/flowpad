@@ -68,9 +68,13 @@ export function AppDisplayViewer({ artifactId, microAppId = null, host, runtime,
   // The theme is baked into the guest URL for its first paint, so a later change
   // is PUSHED rather than re-addressed: re-addressing would swap `src`, which is
   // the frame's identity, and reload the whole app to recolour it.
+  // Keyed on `src` as well as the theme: the URL is only a SEED for first paint,
+  // and a new frame identity (a runtime switch, a different app in this dock)
+  // carries whatever theme was frozen at mount. Pushing on every new frame makes
+  // the channel the authority, which is what the seed comment above promises.
   useEffect(() => {
     frameRef.current?.postToGuest({ type: 'flowpad:theme', theme: appDisplay.theme });
-  }, [appDisplay.theme]);
+  }, [appDisplay.theme, appDisplay.src]);
 
   // URL-carried, so the choice survives a reload and the Back button — it used to
   // be component state and vanished on both.

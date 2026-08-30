@@ -176,16 +176,16 @@ const STYLES = `
   }
   li[data-state$=':true'] .tag { background: hsl(var(--brand)); color: hsl(var(--brand-foreground)); }
 
-  .items li .item-actions { display: flex; gap: 0.5rem; align-items: center; margin-block-start: 0.5rem; }
-  .items li .label { margin-block-start: 0.6rem; display: grid; gap: 0.35rem; }
-  .items li .label .field {
+  .item-actions { display: flex; gap: 0.5rem; align-items: center; margin-block-start: 0.5rem; }
+  .label { margin-block-start: 0.6rem; display: grid; gap: 0.35rem; }
+  .label .field {
     display: grid;
     grid-template-columns: max-content 1fr;
     gap: 0.6rem;
     align-items: center;
     max-inline-size: 34rem;
   }
-  .items li .label .field span { font-size: 12px; color: hsl(var(--muted-foreground)); }
+  .label .field span { font-size: 12px; color: hsl(var(--muted-foreground)); }
 }
 `;
 
@@ -554,7 +554,6 @@ async function run($: (id: string) => HTMLElement, statusEl: HTMLElement): Promi
     title.className = 'item-title';
     title.textContent = item.name || item.external_id || item.id;
     const meta = document.createElement('small');
-    meta.className = 'mono';
     meta.textContent = [item.author_display, item.occurred_at].filter(Boolean).join(' · ');
     li.append(title, meta);
     return li;
