@@ -133,6 +133,48 @@ class PathQueryOptions:
 _MAX_ASSET_EPOCH = 7_258_118_400.0
 
 
+# The private/shared context buckets and their per-entry sidecars. These hold a
+# LOCAL link projection maintained at runtime by ``cross_link_entities`` — they
+# are never authored on an asset's carrier, so a filesystem re-parse must not be
+# allowed to narrow them (see ``Entity.from_record``).
+_CONTEXT_BUCKET_FIELDS = frozenset(
+    {
+        "private_context_entities_",
+        "shared_context_entities",
+        "private_context_entity_data",
+        "shared_context_entity_data",
+    }
+)
+
+
+def _union_context_bucket(current, incoming):
+    """Merge a carrier's context bucket INTO the stored one, never over it.
+
+    Lists of TypeId dedup by ``str(typeid)``, stored entries first so their
+    order is stable; dict sidecars keep the stored entry when both sides carry
+    the same key. Returns ``current`` unchanged when ``incoming`` adds nothing,
+    so an unrelated re-index is a no-op rather than a rewrite.
+    """
+    if current is None:
+        return incoming
+    if isinstance(current, dict) or isinstance(incoming, dict):
+        if not isinstance(incoming, dict):
+            return current
+        if not isinstance(current, dict):
+            return incoming
+        return {**incoming, **current}
+    if not isinstance(incoming, (list, tuple)):
+        return current
+    merged = list(current or [])
+    seen = {str(item) for item in merged}
+    for item in incoming:
+        key = str(item)
+        if key not in seen:
+            seen.add(key)
+            merged.append(item)
+    return merged
+
+
 def _asset_updated_epoch(record_type: str, src_path: str) -> float | None:
     """Best "real last-modified" epoch for a source path, or None.
 
@@ -1034,6 +1076,19 @@ class Entity(DBEntity):
                 # properties leaked in by stale metadata don't crash setattr.
                 if k in ("id",) or k not in entity.__class__.model_fields:
                     continue
+                # Context buckets are a LOCAL, DB-owned link projection written
+                # by cross_link_entities — never authored on the carrier. A
+                # re-parse of the file (reindex_paths → discover_record_by_path
+                # → sync_to_db) hands us the carrier's copy, which for a file
+                # the agent just wrote is EMPTY; setting it here blanks a link
+                # that was committed moments earlier. That is how the file-op
+                # cross-link lost its Docs→AP direction ~2 runs in 3: the
+                # reindex scheduled by the same transcript flush raced the
+                # cross-link save and won. So a carrier may ADD entries here,
+                # never remove them — union, don't replace. Fresh rows still
+                # seed from disk (the create branch above assigns directly).
+                if k in _CONTEXT_BUCKET_FIELDS:
+                    v = _union_context_bucket(getattr(entity, k, None), v)
                 field = entity.__class__.model_fields.get(k)
                 if field is not None:
                     v = TypeAdapter(field.annotation).validate_python(v)
@@ -1921,19 +1976,6 @@ class Entity(DBEntity):
             return
         await blob_index_entity.save(self.embedded_storage)
         # logging.info(f"Saved blob index for {self.typeid} with fields: {blob_index_entity._blob_index.fields.keys()} on \n {self.storage.vfs_root_path}")
-
-    def cloud_watch(self) -> "CloudWatch":
-        """Async-context stream of hub events scoped to this entity.
-
-        See ``flow_sdk.cloud_client.events.CloudWatch`` for the full API.
-        Matches events whose ``entity_id`` *or* ``parent_id`` equals
-        ``self.id`` — i.e., "events about me" + "events about my children".
-        """
-        from flow_sdk.cloud_client.events import CloudWatch  # noqa: PLC0415
-
-        if not self.id:
-            raise RuntimeError("cloud_watch requires entity.id; save first")
-        return CloudWatch(self.id)
 
     async def share(self: EntityType, *, recursive: bool = False) -> EntityType:
         """Create this entity on the hub (POST /api/v1/graph/<type>).
