@@ -2,7 +2,6 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgenticProcess } from '@sdk';
-import { ViewMode } from '@src/contexts/view-mode-context';
 
 const mocks = vi.hoisted(() => ({
   openShellProcess: vi.fn(),
@@ -95,9 +94,11 @@ describe('VibeChatPane', () => {
     expect(mocks.panelProps?.target).toBe(process.target_typeid_str);
     expect(mocks.panelProps?.initialProcessId).toBe(process.id);
     fireEvent.click(screen.getByTestId('pick-history'));
-    expect(mocks.openShellProcess).toHaveBeenCalledWith('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', {
-      viewMode: ViewMode.Vibe,
-    });
+    // NO mode is passed: a past build reopens in the mode it was last seen in
+    // (per-session `last_mode`, seeded onto the URL by `openDock`). Naming Vibe
+    // here used to drag a session the user had put in Terminal back into the
+    // vibe skin every time they picked it out of Recent.
+    expect(mocks.openShellProcess).toHaveBeenCalledWith('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
   });
 
   it('FLOWPAD-2027: "New" eagerly creates a fresh session and rebinds navigation', async () => {
