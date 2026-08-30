@@ -596,12 +596,6 @@ class Shell(Entity):
             await self.save()
             return True
 
-    async def start(self, *args, **kwargs) -> bool:
-        """Back-compat alias for :meth:`start_pty`. Prefer ``start_pty`` —
-        ``start`` reads as a generic lifecycle word but this method only ever
-        spawns the PTY."""
-        return await self.start_pty(*args, **kwargs)
-
     async def stop(self) -> None:
         """Kill PTY + worker, keep the Shell entity. Tab entry remains.
 

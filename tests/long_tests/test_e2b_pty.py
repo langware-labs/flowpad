@@ -1,7 +1,7 @@
 """Integration tests for E2B sandbox shells — driven through the real Shell entity.
 
 Everything goes through the production path:
-  `Shell(...).save()` → `shell.start()` → `shell.compute_node.get_pty(shell.id).write(...)` → `pty.output()`
+  `Shell(...).save()` → `shell.start_pty()` → `shell.compute_node.get_pty(shell.id).write(...)` → `pty.output()`
 
 No direct calls to `E2BComputeProvider`. No hand-built `session_manager` entries.
 If `Shell.start()` routes to the wrong provider, these tests will fail loudly —
@@ -143,7 +143,7 @@ async def test_shell_on_sandbox_boots_linux_pty_via_shell_start(sandbox_compute_
     """
     shell = await _make_shell(sandbox_compute_node, "boot")
     try:
-        await shell.start(rows=24, cols=80)
+        await shell.start_pty(rows=24, cols=80)
 
         # The provider that actually spawned the PTY should be E2B — NOT local.
         # This is the key invariant that was broken.
@@ -179,7 +179,7 @@ async def test_shell_on_sandbox_pwd_is_home_user(sandbox_compute_node):
     """`pwd` in a sandbox shell must return /home/user (the E2B default cwd)."""
     shell = await _make_shell(sandbox_compute_node, "pwd")
     try:
-        await shell.start(rows=24, cols=80)
+        await shell.start_pty(rows=24, cols=80)
         pty = shell.compute_node.get_pty(shell.id)
         assert pty is not None
 
@@ -241,7 +241,7 @@ async def test_shell_close_kills_sandbox_when_last_pty_leaves(sandbox_compute_no
     from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
 
     shell = await _make_shell(sandbox_compute_node, "close")
-    await shell.start(rows=24, cols=80)
+    await shell.start_pty(rows=24, cols=80)
     key = (sandbox_compute_node.id, sandbox_compute_node.node_provider_id, shell.id)
     sess = pty_registry.states.get(key)
     assert sess is not None

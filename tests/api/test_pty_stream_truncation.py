@@ -76,7 +76,7 @@ async def test_pty_stream_front_truncates_but_replays_tail(
     await shell.save()
 
     try:
-        await shell.start()
+        await shell.start_pty()
 
         # The stream file the real on_pty_output path writes to (the replay
         # artifact). Grab it from the registered session state.
