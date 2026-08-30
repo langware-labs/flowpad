@@ -172,8 +172,11 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   // subclasses no longer need to redeclare or manually assign these.
   id: string;
   uname?: string;
-  name?: string;
-  title?: string;
+  // Nullable: the wire sends null for an unset name/title, and subclasses
+  // (Shell, Conversation) declare them that way. The base must admit it or
+  // every such subclass fails its own `APIEntity<T>` F-bound.
+  name?: string | null;
+  title?: string | null;
   key?: string;
   namespace?: string;
   tags?: string[];
@@ -199,7 +202,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   schema_version?: string;
   labels?: string[];
   root_vfs_path?: string;
-  fs_storage_mount_path?: string;
+  fs_storage_mount_path?: string | null;
   visitor_role?: string;
   /** Epoch-ms of the last successful content edit. */
   last_edited_at?: number | string | null;
