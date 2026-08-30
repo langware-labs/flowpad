@@ -2,7 +2,8 @@ import { AssetCleanupReport, FSRef, launchWizard } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEffect, useMemo, useState } from 'react';
 import { useJsonDoc } from '@src/hooks/use-json-doc';
-import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
+import { ReportAssetShell } from '@src/components/assets/editor/ReportAssetShell';
+import { StatTile } from '@src/components/assets/editor/agent-trace/simple/SimpleSessionReport';
 import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { notify } from '@src/notifications';
@@ -26,15 +27,6 @@ interface CleanupReportDoc {
   findings?: CleanupFinding[];
   summary?: Record<string, number>;
   markdown?: string;
-}
-
-function StatTile({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col rounded border border-border bg-muted/40 px-3 py-2">
-      <span className="text-lg font-semibold text-foreground">{value}</span>
-      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
-    </div>
-  );
 }
 
 interface FindingsTableProps {
@@ -206,94 +198,83 @@ export function AssetCleanupReportAssetEditor({ fsRef, report }: AssetCleanupRep
     }
   };
 
-  const fileName = fsRef.path.split('/').pop() ?? 'report.json';
-  const dirPath = fsRef.path.slice(0, -fileName.length - 1);
-
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="asset-cleanup-report-editor">
-      <AssetEditorHeader fileName={report.name || fileName} dirPath={dirPath} />
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        {loading && (
-          <p className="text-sm text-muted-foreground">
-            <Trans>Loading report…</Trans>
-          </p>
-        )}
-        {error && (
-          <p className="text-sm text-destructive">
-            <Trans>Failed to load report: {error}</Trans>
-          </p>
-        )}
-        {doc && (
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between gap-2">
-              <div className="grid flex-1 grid-cols-2 gap-2 sm:grid-cols-4">
-                <StatTile label={t`garbage`} value={String(fileGroups.garbage.length)} />
-                <StatTile label={t`unsure`} value={String(fileGroups.unsure.length)} />
-                <StatTile label={t`keep`} value={String(fileGroups.keep.length)} />
-                <StatTile label={t`roots`} value={String(doc.roots?.length ?? 0)} />
-              </div>
-              <Button
-                size="sm"
-                disabled={selected.size === 0 || cleaning}
-                onClick={() => void startCleanup()}
-                data-testid="asset-cleanup-clean-button"
-              >
-                {cleaning ? <Trans>Cleaning…</Trans> : <Trans>Clean up ({selected.size})</Trans>}
-              </Button>
+    <ReportAssetShell
+      fsRef={fsRef}
+      name={report.name}
+      testId="asset-cleanup-report-editor"
+      loading={loading}
+      error={error}
+    >
+      {doc && (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between gap-2">
+            <div className="grid flex-1 grid-cols-2 gap-2 sm:grid-cols-4">
+              <StatTile label={t`garbage`} value={String(fileGroups.garbage.length)} />
+              <StatTile label={t`unsure`} value={String(fileGroups.unsure.length)} />
+              <StatTile label={t`keep`} value={String(fileGroups.keep.length)} />
+              <StatTile label={t`roots`} value={String(doc.roots?.length ?? 0)} />
             </div>
+            <Button
+              size="sm"
+              disabled={selected.size === 0 || cleaning}
+              onClick={() => void startCleanup()}
+              data-testid="asset-cleanup-clean-button"
+            >
+              {cleaning ? <Trans>Cleaning…</Trans> : <Trans>Clean up ({selected.size})</Trans>}
+            </Button>
+          </div>
 
-            {doc.roots && doc.roots.length > 0 && (
-              <div>
-                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Trans>Scanned roots</Trans>
-                </h3>
-                <ul className="space-y-0.5 text-xs text-muted-foreground">
-                  {doc.roots.map((r) => (
-                    <li key={r} className="truncate font-mono" title={r}>
-                      {r}
-                    </li>
-                  ))}
-                </ul>
+          {doc.roots && doc.roots.length > 0 && (
+            <div>
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <Trans>Scanned roots</Trans>
+              </h3>
+              <ul className="space-y-0.5 text-xs text-muted-foreground">
+                {doc.roots.map((r) => (
+                  <li key={r} className="truncate font-mono" title={r}>
+                    {r}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {[
+            { title: t`Garbage`, rows: fileGroups.garbage },
+            { title: t`Unsure`, rows: fileGroups.unsure },
+            { title: t`Keep`, rows: fileGroups.keep },
+          ].map(({ title, rows }) => (
+            <FindingsTable
+              key={title}
+              title={title}
+              rows={rows}
+              selected={selected}
+              onToggle={onToggle}
+              onToggleAll={onToggleAll}
+            />
+          ))}
+
+          {projectFindings.length > 0 && (
+            <div data-testid="asset-cleanup-projects-section">
+              <div className="mb-2 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                <Trans>
+                  Deleting a project is permanent: it removes the project folder and every Flowpad record inside it.
+                  Projects are never pre-selected — check them deliberately.
+                </Trans>
               </div>
-            )}
-
-            {[
-              { title: t`Garbage`, rows: fileGroups.garbage },
-              { title: t`Unsure`, rows: fileGroups.unsure },
-              { title: t`Keep`, rows: fileGroups.keep },
-            ].map(({ title, rows }) => (
               <FindingsTable
-                key={title}
-                title={title}
-                rows={rows}
+                title={t`Projects`}
+                rows={projectFindings}
                 selected={selected}
                 onToggle={onToggle}
                 onToggleAll={onToggleAll}
+                showVerdict
               />
-            ))}
-
-            {projectFindings.length > 0 && (
-              <div data-testid="asset-cleanup-projects-section">
-                <div className="mb-2 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-                  <Trans>
-                    Deleting a project is permanent: it removes the project folder and every Flowpad record inside it.
-                    Projects are never pre-selected — check them deliberately.
-                  </Trans>
-                </div>
-                <FindingsTable
-                  title={t`Projects`}
-                  rows={projectFindings}
-                  selected={selected}
-                  onToggle={onToggle}
-                  onToggleAll={onToggleAll}
-                  showVerdict
-                />
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
+            </div>
+          )}
+        </div>
+      )}
+    </ReportAssetShell>
   );
 }
