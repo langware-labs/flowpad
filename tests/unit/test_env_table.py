@@ -84,7 +84,7 @@ async def test_update_env_var_description_and_value(sod_env):
     project.set_env_var(entity_var)
     await project.update()
 
-    project.update_env_var_description("SECRET_KEY", "second")
+    project.update_env_var("SECRET_KEY", description="second")
     await store_env_var_value(project.get_env_var("SECRET_KEY"), "sk-second-bbbb", project.typeid)
     await project.update()
 
