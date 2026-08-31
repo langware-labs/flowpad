@@ -775,6 +775,10 @@ msgstr "יש להקצות מעטפת חדשה. (פעולת שרת בדרך — �
 msgid "A live session is already running in this conversation"
 msgstr "כבר פועל סשן חי בשיחה זו"
 
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "A new project folder — everything you create is scoped to it"
+msgstr ""
+
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "A project with that name exists"
 msgstr "כבר קיים פרויקט בשם הזה"
@@ -3000,6 +3004,10 @@ msgstr "שכפל @ {branch}"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Clone & Open"
 msgstr "שחזר ופתח"
+
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "Clone a git repo (or reuse a local clone) as a new project"
+msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
 msgid "Clone a git repo (or reuse a local clone) as context"
@@ -7084,6 +7092,7 @@ msgid "from first"
 msgstr "מהראשון"
 
 #: src/components/quick-create/QuickCreateMenu.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "From git"
 msgstr "מ-Git"
 
@@ -9921,6 +9930,7 @@ msgstr "אפשרות חדשה"
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "New project"
 msgstr "פרויקט חדש"
 
@@ -12371,6 +12381,7 @@ msgstr "התקדמות"
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
