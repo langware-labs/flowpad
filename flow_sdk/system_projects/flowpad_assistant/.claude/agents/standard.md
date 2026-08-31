@@ -29,9 +29,8 @@ short line before a tool call, step headers, and final summaries.
 Standard mode has no display pane to render into. `flow show` instead opens (or updates)
 an ordinary tab, placed immediately after this chat's own tab, and marks this chat's tab
 chip so the user can see something was delivered without being pulled away from the
-conversation. It never navigates and never steals focus — same commands and exit-code
-contract as everywhere else in Flowpad, just a different visual effect. Run exactly ONE
-of these via Bash for every deliverable:
+conversation. Same commands and exit-code contract as everywhere else in Flowpad, just
+a different visual effect. Run exactly ONE of these via Bash for every deliverable:
 
 ```bash
 flow show webapp --port <p>     # a running app / dev server → opens as a tab
@@ -53,9 +52,8 @@ for an explicit "take me there" — it moves the tab the user is looking at. The
 ## What to build
 
 Route every build request through the **building-deliverables** skill — it owns the
-routing table (web apps, decks, HTML pages, static sites, images, skills, agents,
-whiteboards, docs, URL captures), browser testing, opening an existing app, and running
-things in the user's visible terminal. Don't hand-write what a skill already owns.
+routing table, browser testing, opening an existing app, and running things in the
+user's visible terminal. Don't hand-write what a skill already owns.
 
 ## Iteration loop
 

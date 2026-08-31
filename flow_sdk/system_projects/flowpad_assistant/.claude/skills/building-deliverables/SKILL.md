@@ -19,16 +19,12 @@ already owns. After every deliverable, present it with `flow show` (see the
 
 ## Routing
 
-**MCP UI / MCP Apps / interactive chat forms** → the **mcp-ui** skill. Write a single
-`.mcp.html` file, then `flow show file <absolute-path-to-file.mcp.html>`. The user
-submits inside that UI; after submission, reply with `MCP_UI_RECEIVED` and echo the
-submitted fields.
+**MCP UI / MCP Apps / interactive chat forms** → the **mcp-ui** skill, which owns the
+`.mcp.html` format and the submission protocol.
 
 **Data source / feed / RSS / Slack / Drive / mail / repo to ingest**, "what can I do
 with these items", label / annotate / training set → the **connect-data-source** skill
-(connect, then `define`). Present with `flow show view data-sources` or the source's
-editor (`flow show view "app/<editor typeid>?source=<id>"`; `SC specs` reports each
-definition's `editor`).
+(connect, then `define`), which owns the connect gates and how to present a source.
 
 **Full web app / SaaS / dashboard / anything with a database or auth** → the
 **web-app-builder** skill (copy its template as-is, run its setup as-is). When the dev
@@ -37,26 +33,18 @@ reported, never an assumed one.
 
 **Slide deck / presentation / slideshow / pitch deck / keynote** (anything the user
 wants as slides — even phrased as "make me a presentation about X") → the **decker**
-skill. It builds a reusable deck template (asking which page types to support via an
-mcp-ui multi-select) and generates a single self-contained deck HTML, then
-`flow show file <abs-path>.html`. Do NOT hand-write slide HTML and do NOT route a deck
-through the `.html` rule below — decks belong to decker.
+skill. Do NOT hand-write slide HTML and do NOT route a deck through the `.html` rule
+below — decks belong to decker.
 
 **`.html` deliverable** (a generated `crm.html`, a chart, a report, a mockup, or a small
 static site of a few pages with their own images and stylesheets; NOT a slide deck) →
 the **html-builder** skill for the page itself (it loads **frontend-design** first, so
 the result looks designed rather than defaulted), then write the files in the project
 directory and `flow show file <abs-path-to-the-entry-page>.html`. No `http.server`, no
-port.
+port. html-builder owns how to author the page itself.
 
-The preview serves that file at a url ending in its own path, so **links to sibling
-pages, local images, stylesheets, scripts and `#anchors` all work normally** — write
-ordinary relative html and do not contort it. Do NOT strip `href="#section"` anchors, do
-not inline images as `data:` uris to "make them load", and do not flatten a multi-page
-site into one file. Those were workarounds for a defect that no longer exists.
-
-**Two things the preview still cannot do**, and they are the only reasons to reach for
-the server rule below:
+**Two things the preview cannot do**, and they are the only reasons to reach for the
+server rule below:
 
 * **`localStorage` / `sessionStorage`** — a page that remembers something (a todo list,
   a saved theme, a score). Storage *throws* in the preview, which kills the whole
@@ -123,13 +111,9 @@ Then `flow show file <abs-path-to-WHITE_BOARD.md>`.
 
 When the user asks to **test / QA / validate / smoke-test / check** what you built in a
 browser ("test this", "make sure it works", "does the app work", "check the pages") → use
-the **web-tester** skill. It runs a headless backend Playwright sweep over every HTML
-target — standalone `.html` files AND running apps — capturing console/JS errors, failed
-requests, screenshots, broken links, and basic a11y, and reports pass/fail. All debug
-artifacts go to an isolated temp folder — never write test output into the user's project
-unless they ask. Don't hand-roll browser checks or a Playwright setup yourself; route
-through the skill. If a sweep finds failures and the user wants them fixed, fix the app
-files in place and re-run the sweep.
+the **web-tester** skill, which sweeps every HTML target — standalone `.html` files AND
+running apps — and reports pass/fail. Don't hand-roll browser checks or a Playwright
+setup yourself; route through the skill.
 
 ## Opening an EXISTING web app
 
@@ -139,11 +123,10 @@ files in place and re-run the sweep.
 flow app open "<user words>"
 ```
 
-It first reuses a matching saved WEBAPP artifact. If none matches, it scans the project
-for web app roots (`package.json`, common frameworks, static `index.html` folders),
-starts the best match, creates/updates the WEBAPP artifact, and shows it. Exit 0 =
-opened and shown. Exit 4 = no app found → say so briefly and offer to create one. Do not
-manually emit `<flow-result>` XML for this; the command persists the artifact.
+It reuses a saved WEBAPP artifact when one matches, otherwise finds and starts the best
+app in the project, then shows it. Exit 0 = opened and shown. Exit 4 = no app found →
+say so briefly and offer to create one. Do not manually emit `<flow-result>` XML for
+this; the command persists the artifact.
 
 For anything else that already exists (a doc, a skill, a board, a screen), use the
 **flowpad-navigation** skill — it owns show/open/navigate.

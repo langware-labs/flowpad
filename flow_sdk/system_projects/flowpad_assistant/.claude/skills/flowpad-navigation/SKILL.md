@@ -44,7 +44,7 @@ This is "open it" after writing or discussing a file. No TypeId, no indexing nee
 flow show file <absolute-path>
 ```
 
-Exit 0 = shown, done. Stop — no verification, no follow-up commands, no report.
+Exit 0 = shown, done.
 
 Only if the user explicitly asked to be *taken* to it does the file need an entity
 first. Two commands, no research:
@@ -94,29 +94,14 @@ More examples: `explorer/src`, `process-runs`, `data-sources`, `capabilities`,
 it instead of guessing. Screens are **not** TypeIds: `flow navigate entity events` is
 wrong and will fail.
 
-## "the current X" (no path, no id)
+## You have no path and no id
 
-Resolve via context, then act:
+- **"the current X"** → the `context` action of the **flowpad-assistance** skill maps
+  the user's phrase to a key; show the TypeId it returns.
+- **You know only a name** → the `search` action of the same skill, which owns what to
+  do when several rows match; show the TypeId it settles on.
 
-```bash
-flow context list                  # JSON; read e.g. CurrentProjectTypeId
-flow show entity <that-typeid>     # if the value is null, tell the user and stop
-```
-
-Do not invent a TypeId, do not query the DB another way, and do not ask the user —
-that is the whole point of `context`.
-
-## "create X and open it"
-
-Complete the creation first (indexing returns a freshly-minted TypeId), then pass that
-TypeId to `flow show entity`. One show per request — no follow-up "did it open?" check.
-
-## You know the name but not the path or id
-
-```bash
-flow record search "<name or words>" 0 5   # take the best match's typeid
-flow show entity <typeid>
-```
+Do not invent a TypeId and do not ask the user — that is what those actions are for.
 
 ## Exit codes
 
@@ -133,8 +118,3 @@ On success the CLI prints one JSON line to stdout and exits 0:
 | `3`  | No active browser tab (`flow navigate` only). Tell the user to open Flowpad. |
 | `4`  | Entity or pointer not found — well-formed but does not exist. Tell the user. |
 | `5`  | Cannot reach the Flowpad server. Tell the user the server is down. |
-
-## When you are finished
-
-After a successful run, stop. Do not read the URL back, do not verify with extra
-commands, do not summarize at length. The user sees the result in front of them.
