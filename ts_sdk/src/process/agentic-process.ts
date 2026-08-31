@@ -2081,7 +2081,23 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         this._historyLoaded = true;
       } catch (error) {
         console.error(`[AgenticProcess] Failed to load history for process ${this.id}:`, error);
-        // Don't throw - history loading failure shouldn't break the app
+        // Don't throw - history loading failure shouldn't break the app.
+        //
+        // But it must not stay SILENT either. Every row is ingested in the one
+        // loop above, so a single malformed row throws out of the whole loop and
+        // the stream is left EMPTY — the pane then renders exactly like a session
+        // that genuinely has no history, with nothing to distinguish "nothing was
+        // said" from "your conversation failed to load" (FLOWPAD-2038, where one
+        // `&quot;` in a transcript emptied a 1600-row chat).
+        //
+        // Note the callers' `loadHistory().catch(...)` handlers can never see
+        // this: the promise resolves. So the failure is announced here, as an
+        // event, and the mounted surface turns it into a user-visible alert —
+        // the SDK has no notification layer of its own and must not reach into
+        // the UI's. NOT named 'error': that is EventEmitter's special-cased name
+        // and would throw again when no listener is attached, which is the exact
+        // amplification that made this bug swallow the entire replay.
+        this.emit('history-error', { process: this, error });
       } finally {
         this._historyLoading = null;
       }
