@@ -440,6 +440,14 @@ class DataSource(Entity):
             )
         for item in doomed:
             await item.destroy()
+        if doomed:
+            # The inbox side of the purge. Under the reference model the
+            # projected FlowMessages hold no body of their own — leaving them
+            # behind would fill the inbox with blank rows, so the cascade is
+            # mandatory, not hygiene.
+            from flow_sdk.inbox.projection import remove_projection_for_items  # noqa: PLC0415
+
+            await remove_projection_for_items([i.id for i in doomed])
         return len(doomed)
 
     @classmethod

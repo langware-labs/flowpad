@@ -893,6 +893,61 @@ class FlowMessage(Entity):
             self.text = ""
         return await super().save(owner, notify=notify)
 
+    # ── read-time hydration — the other half of the reference model ────────
+    #
+    # `body_status` already made this entity one whose body may live elsewhere
+    # (the hub bundle). A reference row is the third residence: its `text`
+    # lives on the SourceItem, joined in batch at read time. Rows with no
+    # `source_item_id` (hub-native) pass through untouched.
+
+    @classmethod
+    async def _hydrate(cls, rows) -> None:
+        """Stitch each reference row's body from its SourceItem, one IN query.
+
+        A dangling reference (item purged, or a row that arrived via share and
+        points at a foreign database) hydrates to nothing — the row renders
+        with an empty body rather than a stale copy, which is the honest
+        answer.
+        """
+        wanted = sorted({str(fm.source_item_id) for fm in rows if getattr(fm, "source_item_id", None)})
+        if not wanted:
+            return
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        items = await SourceItem.get_all(
+            QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", wanted]))
+        )
+        by_id = {str(i.id): i for i in items}
+        for fm in rows:
+            item = by_id.get(str(fm.source_item_id or ""))
+            if item is not None:
+                fm.text = item.body or item.name or ""
+
+    @classmethod
+    async def get_all(cls, entities_filter=None, source_entity=None, *, hydrate: bool = True):
+        """Every list read hydrates (``Entity.get_one`` funnels through here).
+
+        ``hydrate=False`` is for hot paths that read only membership/state —
+        the unread recompute loads EVERY message and never looks at ``text``;
+        joining a whole mailbox of items under the projection lock would put
+        the join on every mutation's critical path.
+        """
+        rows = await super().get_all(entities_filter=entities_filter, source_entity=source_entity)
+        if hydrate and rows:
+            await cls._hydrate(rows)
+        return rows
+
+    @classmethod
+    async def get_by_id(cls, eid: str):
+        """The single-entity path does NOT go through ``get_all`` — the request
+        middleware preloads the auth target via ``get_by_typeid`` → here — so
+        it hydrates on its own or the message-preview pane reads blank."""
+        row = await super().get_by_id(eid)
+        if row is not None and getattr(row, "source_item_id", None):
+            await cls._hydrate([row])
+        return row
+
     async def download_body(
         self,
         *,
