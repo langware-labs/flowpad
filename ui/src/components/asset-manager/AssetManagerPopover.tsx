@@ -35,7 +35,7 @@ import { EntityIcon, useEntityLocationLabel } from '@src/components/graph-view/u
 import {
   basename as _basename,
   descriptorKey,
-  displayLabelForTypeid as _displayLabelForTypeid,
+  displayLabelForDescriptor as _displayLabelForDescriptor,
   isOpenableTypeid as _isOpenableTypeid,
   parseTypeid as _parseTypeid,
 } from './asset-row-helpers';
@@ -375,7 +375,7 @@ export function AssetManagerPopover({
       d,
       type: _parseTypeid(d.typeid).type,
       scope: assetScope(d),
-      label: _displayLabelForTypeid(d.typeid, d.name),
+      label: _displayLabelForDescriptor(d),
       used: assetDescriptorHasUsage(d),
       selected: selected.has(d.typeid),
       improvable: !!canImprove?.(d),

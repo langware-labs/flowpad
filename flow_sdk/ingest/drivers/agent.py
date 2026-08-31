@@ -118,6 +118,31 @@ def accepted_fields() -> str:
     return ", ".join(f"`{name}`" for name in SourceItemSpec.model_fields)
 
 
+def _run_contract_prefix(source, config: dict) -> list[str]:
+    """'## This run' lines both prompts open with — one owner, no drift."""
+    return [
+        f"- data-source id (`data_source_id`): `{source.id}`",
+        f"- provider: `{config.get('connector') or 'gmail'}`",
+    ]
+
+
+def _run_contract_suffix(receipt_path, flow_cli) -> list[str]:
+    """'## This run' closing lines shared by the fetch and send prompts.
+
+    The absolute-path CLI rule and the schema-named field list are load-bearing;
+    writing them once means neither prompt can teach a weaker version.
+    """
+    return [
+        f"- receipt path: `{receipt_path}`",
+        f"- the `flow` CLI to use, by absolute path: `{flow_cli}`",
+        f"  (run exactly `{flow_cli} record create source_item --json <file>` — "
+        "a bare `flow` on PATH may be an older build without this command)",
+        f"- the ONLY field names the write route accepts, from its own schema: "
+        f"{accepted_fields()}. Any other key is refused and the whole batch "
+        "is rejected — send no others, and spell these exactly.",
+    ]
+
+
 class AgentDriver(IngestDriver):
     """One driver, any connector. `provider` stays `agent`; the connector rides
     in `kind` so the ontology reads `datasource.agent.<connector>`."""
@@ -393,18 +418,11 @@ class AgentDriver(IngestDriver):
             "---",
             "## This run",
             "",
-            f"- data-source id (`data_source_id`): `{source.id}`",
-            f"- provider: `{config.get('connector') or 'gmail'}`",
+            *_run_contract_prefix(source, config),
             f"- reply into thread (`thread_key`): `{thread_key or '(none — start a new thread)'}`",
             f"- send to: `{to}`",
             f"- subject: `{subject or '(reuse the thread’s subject)'}`",
-            f"- receipt path: `{receipt_path}`",
-            f"- the `flow` CLI to use, by absolute path: `{flow_cli}`",
-            "  (run exactly `… record create source_item --json <file>` — a bare",
-            "  `flow` on PATH may be an older build without this command)",
-            f"- the ONLY field names the write route accepts, from its own schema: "
-            f"{accepted_fields()}. Any other key is refused and the whole batch "
-            f"is rejected — send no others, and spell these exactly.",
+            *_run_contract_suffix(receipt_path, flow_cli),
             "",
             "### The message body — send exactly this, and nothing else",
             "",
@@ -496,22 +514,14 @@ class AgentDriver(IngestDriver):
         # outright removes the resolution step entirely.
         flow_cli = Path(sys.executable).parent / "flow"
         seen = (cursor.state or {}).get("high_water")
-        return (
-            f"{body}\n\n---\n"
-            f"## This run\n\n"
-            f"- data-source id (`data_source_id`): `{source.id}`\n"
-            f"- provider: `{config.get('connector') or 'gmail'}`\n"
-            f"- mailbox (`segment_key`): `{cursor.segment_key}`\n"
-            f"- fetch messages newer than: `{seen or window}`\n"
-            f"- record at most {int(config.get('max_items') or 25)} messages, newest first\n"
-            f"- receipt path: `{receipt_path}`\n"
-            f"- the `flow` CLI to use, by absolute path: `{flow_cli}`\n"
-            f"  (run exactly `{flow_cli} record create source_item --json <file>` — "
-            f"a bare `flow` on PATH may be an older build without this command)\n"
-            f"- the ONLY field names the write route accepts, from its own schema: "
-            f"{accepted_fields()}. Any other key is refused and the whole batch "
-            f"is rejected — send no others, and spell these exactly.\n"
-        )
+        run_lines = [
+            *_run_contract_prefix(source, config),
+            f"- mailbox (`segment_key`): `{cursor.segment_key}`",
+            f"- fetch messages newer than: `{seen or window}`",
+            f"- record at most {int(config.get('max_items') or 25)} messages, newest first",
+            *_run_contract_suffix(receipt_path, flow_cli),
+        ]
+        return f"{body}\n\n---\n## This run\n\n" + "\n".join(run_lines) + "\n"
 
     # ── the receipt ───────────────────────────────────────────────────────────
 

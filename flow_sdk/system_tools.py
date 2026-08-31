@@ -568,10 +568,10 @@ async def clear_all_data() -> ClearAllResult:
         #     stale entities' `update()` then falls through to `_create_entity`
         #     and collides on `uname` — a 409 storm that takes the backend out
         #     mid-suite. Re-seeding without this stop is worse than the bug.
-        #  2. DO NOT call `fsop_watcher.start()`. `rearm()` spawns the same
-        #     watch tasks without `start()`'s per-trigger catch-up disk walk.
-        #     This runs on EVERY `resetDb()`; that walk alone pushed a
-        #     60s-budget test to 50.9s. The reset path must stay cheap.
+        #  2. Restart with `catch_up=False`: it spawns the same watch tasks
+        #     without `start()`'s per-trigger catch-up disk walk. This runs on
+        #     EVERY `resetDb()`; that walk alone pushed a 60s-budget test to
+        #     50.9s. The reset path must stay cheap.
         #     Re-arming is NOT optional: SCHEDULE triggers re-register
         #     themselves on save, but FSOp ones would come back stored and
         #     unwatched, which no row count can see.
@@ -581,7 +581,7 @@ async def clear_all_data() -> ClearAllResult:
 
             await fsop_watcher.stop()
             await seed_service_entities()
-            await fsop_watcher.rearm()
+            await fsop_watcher.start(catch_up=False)
         except Exception as e:  # noqa: BLE001
             logger.warning(f"clear_all_data: failed to re-install service rows (non-fatal): {e}")
 

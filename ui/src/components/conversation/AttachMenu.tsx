@@ -1,9 +1,10 @@
 import { useCallback, useId, useMemo, useRef, useState } from 'react';
 import { Paperclip, FileUp, Boxes, X, ChevronDown } from 'lucide-react';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import type { AssetDescriptor } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { AssetManagerPopover } from '@src/components/asset-manager/AssetManagerPopover';
-import { displayLabelForTypeid, parseTypeid } from '@src/components/asset-manager/asset-row-helpers';
+import { displayLabelForDescriptor, parseTypeid } from '@src/components/asset-manager/asset-row-helpers';
 
 /**
  * Wires a list of picked assets to `AssetManagerPopover`'s selection props.
@@ -151,13 +152,14 @@ export function AssetRefChips({ assetRefs, onChange, disabled }: AssetRefChipsPr
     <ul className="space-y-1" data-testid="attach-menu-asset-list">
       {assetRefs.map((a) => {
         const { type } = parseTypeid(a.typeid);
-        const label = displayLabelForTypeid(a.typeid, a.name);
+        const TypeIcon = iconForType(type);
+        const label = displayLabelForDescriptor(a);
         return (
           <li
             key={`${a.typeid}|${a.source}`}
             className="flex items-center gap-2 rounded-md border border-input bg-muted/40 px-2 py-1 text-xs"
           >
-            <Boxes className="h-3 w-3 shrink-0 text-muted-foreground" />
+            <TypeIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
             <span className="flex-1 truncate text-foreground" title={a.typeid}>
               {label}
             </span>

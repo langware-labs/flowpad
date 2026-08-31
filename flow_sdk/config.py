@@ -829,20 +829,14 @@ class ServiceConfig(BaseSettings):
     # false — both punish the person trying to switch the suites ON.
     deep_testing: bool = False
     manual_testing: bool = False
+    load_flowpad_assistant: bool = True
 
     @field_validator("deep_testing", "manual_testing", mode="before")
     @classmethod
     def _enabled_unless_denied(cls, value: object) -> bool:
         """Missing → off. An explicit denial → off. Anything else → on."""
-        if value is None:
-            return False
-        if isinstance(value, bool):
-            return value
         text = str(value).strip().lower()
-        if not text:
-            return False
-        return text not in {"false", "disabled", "disable", "0", "no", "off", "none"}
-    load_flowpad_assistant: bool = True
+        return bool(text) and text not in {"false", "disabled", "disable", "0", "no", "off", "none"}
 
     # Paths
     public_static_paths: list[str] = [

@@ -1,6 +1,6 @@
 import { type AssetDescriptor } from '@sdk';
 import { AssetManagerPopover } from '@src/components/asset-manager/AssetManagerPopover';
-import { displayLabelForTypeid, parseTypeid } from '@src/components/asset-manager/asset-row-helpers';
+import { displayLabelForDescriptor, parseTypeid } from '@src/components/asset-manager/asset-row-helpers';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useContext } from '@src/hooks/useContext';
 import { useFavorites } from '@src/hooks/use-favorites';
@@ -47,7 +47,7 @@ export function FavoritesAddRow({ parentId }: { parentId: string }) {
       {
         entityType: type,
         entityId: id,
-        title: displayLabelForTypeid(d.typeid, d.name),
+        title: displayLabelForDescriptor(d),
         nav: d.posix_path ? { asset_ref: d.posix_path } : undefined,
       },
       parentId,
