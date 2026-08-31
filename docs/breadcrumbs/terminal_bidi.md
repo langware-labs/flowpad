@@ -1,11 +1,9 @@
 ---
 id: fcb36e00-bcdd-468f-becc-4bf077bd755b
 title: Terminal RTL/bidi rendering contract
-tags:
-- breadcrumb.test.terminal_bidi.rules
+tags: ''
 description: A terminal row must be ONE bidi paragraph; xterm's injected display:inline-block
-  breaks that and makes Hebrew read left-to-right. Two contracts, chosen by host platform
-  AND CLI vendor, never both.
+version: 2
 ---
 
 # Terminal RTL/bidi rendering contract
@@ -28,6 +26,7 @@ Two failure shapes are distinct and must not be confused:
   stream); the two are visually identical, so the symptom alone does not tell
   you which contract is wrong — check what the app emits. The codex-on-Windows
   bug fixed on 2026-08-04 is the zero-reorder case.
+
 * **each word correct, sentence running left-to-right** — the run was never
   treated as one run. This is the macOS bug fixed on 2026-08-03.
 
@@ -36,18 +35,18 @@ Two failure shapes are distinct and must not be confused:
 RTL is reached by one of **two mutually exclusive contracts**, chosen by what
 the PTY side emits — never by the viewer:
 
-| contract | PTY emits | who reorders | selected by |
-|---|---|---|---|
-| browser-bidi | logical order | the browser | no `.xterm-rtl-grid` class |
-| buffer-order | visual order, pre-reversed | nobody — paint as-is | `.xterm-rtl-grid` class |
+| contract     | PTY emits                  | who reorders         | selected by                |
+| ------------ | -------------------------- | -------------------- | -------------------------- |
+| browser-bidi | logical order              | the browser          | no `.xterm-rtl-grid` class |
+| buffer-order | visual order, pre-reversed | nobody — paint as-is | `.xterm-rtl-grid` class    |
 
 Which one an app needs is a function of **both the host platform and the CLI
 vendor**, and the two are independent:
 
-|  | macOS / Linux | Windows |
-|---|---|---|
+| <br />     | macOS / Linux          | Windows                     |
+| ---------- | ---------------------- | --------------------------- |
 | **claude** | logical → browser-bidi | pre-reversed → buffer-order |
-| **codex** | logical → browser-bidi | logical → browser-bidi |
+| **codex**  | logical → browser-bidi | logical → browser-bidi      |
 
 Claude Code pre-reverses **on Windows only**, because conhost/Windows Terminal
 paint cells strictly left-to-right; macOS terminals have real bidi engines, so
@@ -64,17 +63,21 @@ the wrong one, leaves the row in logical order.
   not `add`: the contract is re-applied when the vendor resolves and must clear
   a stale class. Client platform stays the proxy for the PTY host platform: the
   desktop provider always spawns PTYs on the machine the UI runs on.
+
 * `InteractiveTerminal.tsx:952` — called from its **own layout effect keyed on
   `process?.worker_type`**, not inline after `term.open()`. The open effect runs
   on `[sessionId, isHeadless]`, but the subscribed process (and with it
   `worker_type`) resolves later; deciding at open time reads every session as
   the `workerCliVendor()` default, `claude`.
+
 * `SidecarShellTerminal.tsx:133` — passes `'unknown'`. A plain shell emits
   logical order on every platform.
+
 * `ui/src/styles/xterm.css` — `.xterm-rtl-grid .xterm-rows > div, … span`
   sets `unicode-bidi: bidi-override; direction: ltr` (buffer-order contract).
   `unicode-bidi` is not inherited, so the rule must target the text-holding
   elements, not a container.
+
 * `ui/src/styles/xterm.css` — `.xterm .xterm-rows span { display: inline !important }`
   (browser-bidi contract). See the invariant below.
 
@@ -130,23 +133,28 @@ per-word-correct, sentence-LTR.
   multiple spans. On a host whose monospace font renders Hebrew at exactly the
   ASCII cell advance, the row collapses to one span and the whole sentence
   reorders correctly — a green test on a broken build.
+
 * **jsdom and node cannot see this.** `tests/react` and `tests/unit` have no
   layout engine, no bidi, no glyph geometry, and will pass on a row the browser
   paints backwards. This class of bug requires a real browser.
+
 * **Host-platform leakage in tests.** A spec that calls `applyRtlGridContract`
   and feeds a fixture for the *other* contract fails spuriously on Windows CI.
   Drive each contract explicitly; assert the gate's decision separately, as a
   full platform × vendor matrix rather than a single boolean.
+
 * **Deciding before the vendor is known.** `worker_type` arrives with the
   subscribed process, after `term.open()`. Any contract decision made in the
   open path silently reads `claude` for every session — including codex — and
   never re-runs, because that effect is keyed on `[sessionId, isHeadless]`.
+
 * **A shipped build can lag the fix.** The 2026-08-03 macOS symptom reappeared
   on 2026-08-04 purely because the installed wheel (flowpad 0.2.115, spawning
   the PTY from `~/.local/share/uv/tools/flowpad/`) predated the CSS rule. Before
   root-causing a *recurrence*, grep the bundle the running backend actually
   serves — `site-packages/flow_sdk/server/static/assets/index-*.css` — for the
   rule; source being correct proves nothing about the app under test.
+
 * **Chasing the wrong layer.** Markdown/chat surfaces have their own, unrelated
   RTL mechanism (`dir="auto"` per block, `ui/src/components/markdown-view.tsx`).
   A Hebrew complaint must first be pinned to terminal vs markdown — they share
