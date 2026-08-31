@@ -6,7 +6,9 @@ description: Routes a build request to the right Flowpad skill and says how to p
   skills, agents, whiteboards, docs and URL-to-markdown captures. Use whenever the
   user asks to build, create, make, generate, scaffold or prototype something, when
   they ask to test what was built, or when they want an existing app opened or a
-  command run in their visible terminal.
+  command run in their visible terminal. NOT for showing or navigating to a
+  document, entity or screen that already exists (flowpad-navigation), or records
+  CRUD (flowpad-assistance).
 ---
 
 # Building deliverables — what to build, and with what

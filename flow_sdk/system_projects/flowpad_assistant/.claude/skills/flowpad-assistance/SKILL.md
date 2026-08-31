@@ -8,8 +8,8 @@ description: >-
   restarts the calling agentic-process; and sends messages with attachments into a
   conversation. Use for "the current X" / "this X", "create a task / skill / agent",
   "find or look up X", "restart this session", or "send X to my conversation with Y".
-  Showing or opening something in the UI belongs to the flowpad-navigation skill;
-  building a web app to web-app-builder; a slide deck to decker.
+  NOT for showing or opening something in the UI (flowpad-navigation), building a
+  web app (web-app-builder), or a slide deck (decker).
 tags:
 - flowpad
 - context

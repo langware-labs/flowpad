@@ -1,19 +1,18 @@
 ---
 id: 624e65db-e277-486c-a82d-7369cd549dd8
 name: html-builder
-description: 'Build a static HTML page or app that looks designed, with no build step
-  — no bundler, no transpiler, no node_modules. Use this whenever what you are writing
-  is plain files a browser opens directly: an `.html` deliverable (a report, a chart,
-  a mockup, a small multi-page site), an app or editor shipped inside an asset, a
-  page served from a folder, or anything that must keep working when copied somewhere
-  else. Reach for it the moment you are about to hand-roll a `<style>` block, and
-  especially when a page you just wrote renders as bare unstyled text and needs to
-  look intentional. Covers the CRAFT: modern CSS with no preprocessor, semantic structure,
-  interactivity without a framework, the accessibility floor, and how to verify the
-  result. It does NOT cover aesthetic direction — palette, typography and motion come
-  from the `frontend-design` skill, which this one loads first. NOT for apps that
-  need a dev server, a build, a database or auth (use web-app-builder), slide decks
-  (use decker), or testing pages that already exist (use web-tester).'
+description: >-
+  Builds a static HTML page or app that looks designed, with no build step — no
+  bundler, no transpiler, no node_modules. Use whenever the deliverable is plain
+  files a browser opens directly: an `.html` report, chart, mockup or small
+  multi-page site, an app or editor shipped inside an asset, or a page served from
+  a folder — and especially when a page renders as bare unstyled text and needs to
+  look intentional. Covers the craft (modern CSS without a preprocessor, semantic
+  structure, interactivity without a framework, the accessibility floor, and how to
+  verify the result); aesthetic direction comes from the `frontend-design` skill,
+  which this one loads first. NOT for apps needing a dev server, build, database or
+  auth (web-app-builder), slide decks (decker), or testing pages that already exist
+  (web-tester).
 allowed-tools:
 - Read
 - Write

@@ -6,7 +6,9 @@ description: Shows a file, entity or screen to the user in Flowpad with `flow sh
   somewhere. Use whenever the user asks to open, show, display, preview or jump to a
   file path, TypeId or screen — including bare follow-ups such as "open it" or "show
   it" after creating or discussing a file. Never use the operating system's `open`
-  command for this; Flowpad has its own surface.
+  command for this; Flowpad has its own surface. NOT for building the deliverable
+  itself (building-deliverables), or creating and indexing records
+  (flowpad-assistance).
 ---
 
 # flowpad-navigation
