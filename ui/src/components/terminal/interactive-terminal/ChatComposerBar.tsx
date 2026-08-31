@@ -10,7 +10,7 @@ import { QueueChip } from '@src/components/entity-execution-panel/QueueChip';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications/notify';
 import { ScrollText } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useChatPlanMode } from './chat-plan-mode-context';
 import { ChatToolsMenu } from './ChatToolsMenu';
@@ -37,7 +37,6 @@ interface ChatComposerBarProps {
  */
 export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps) {
   const { t } = useLingui();
-  const [sending, setSending] = useState(false);
   const plan = useChatPlanMode();
 
   // Reflect the gold entity reactively — the prop comes from the loader context
@@ -50,43 +49,27 @@ export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps
 
   // Headless and PTY turns both broadcast status live now, so the reactive
   // entity is the single source. The backend's turn-in-flight `busy` boolean
-  // (serialized alongside `status`; read via `isBusy`) drives the Stop button
-  // and routes mid-turn sends to the queue. The composer itself stays USABLE
-  // while busy — typing + Enter enqueues (handleSend's turn-busy branch)
-  // instead of being locked out. A dead PTY reads ¬busy and is relaunched by
-  // prompt(), so it stays sendable.
+  // (serialized alongside `status`; read via `isBusy`) drives the Stop button.
+  // Routing mid-turn sends to the queue is `promptOrEnqueue`'s job (called
+  // below), so the composer stays USABLE while busy instead of being locked
+  // out. A dead PTY reads ¬busy and is relaunched by prompt(), so it stays
+  // sendable.
   const indicatorProcess = reflected;
   const busy = isBusy(indicatorProcess);
 
   const handleSend = useCallback(
     async (text: string) => {
-      // Mid-turn sends ENQUEUE instead of racing a second turn: the backend
-      // owns the queue and auto-drains it as the worker frees up (the composer
-      // stays usable while busy; the queue chip shows the pending count). The
-      // plan toggle stays pending rather than riding along — the queue carries
-      // prompt text only, so a queued turn cannot claim `--permission-mode plan`.
-      if (busy || sending) {
-        try {
-          await reflected.enqueue(text);
-        } catch (err) {
-          console.error('[ChatComposerBar] enqueue failed', err);
-          notify.error({ title: t`Message not queued`, message: err instanceof Error ? err.message : String(err) });
-        }
-        return;
-      }
-
-      setSending(true);
+      // `promptOrEnqueue` enqueues mid-turn sends instead of racing a second
+      // turn, so the composer stays usable while busy (queue chip shows count).
       try {
         // Plan toggle on → send this turn read-only (`--permission-mode plan`).
-        await process.prompt(text, undefined, plan.planPending ? { permissionMode: 'plan' } : undefined);
+        await reflected.promptOrEnqueue(text, undefined, plan.planPending ? { permissionMode: 'plan' } : undefined);
       } catch (err) {
-        console.error('[ChatComposerBar] prompt failed', err);
+        console.error('[ChatComposerBar] send failed', err);
         notify.error({ title: t`Message not sent`, message: err instanceof Error ? err.message : String(err) });
-      } finally {
-        setSending(false);
       }
     },
-    [process, reflected, sending, busy, plan.planPending, t],
+    [reflected, plan.planPending, t],
   );
 
   const handleStop = useCallback(async () => {
@@ -106,6 +89,7 @@ export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps
       onStop={handleStop}
       onPasteImages={onPasteImages}
       animateEnqueue
+      draftScope={process.id}
       placeholder={plan.planPending ? t`Plan mode — describe what to plan…` : t`Message the agent…`}
       onShiftTab={plan.planToggleEnabled ? plan.togglePlan : undefined}
       leadingSlot={

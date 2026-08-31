@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro';
 import { caretOnFirstLine, caretOnLastLine, type InputHistory } from '@src/hooks/use-input-history';
 import { PromptHistoryList } from './PromptHistoryList';
+import { readDraft, writeDraft } from './composer-drafts';
 
 interface CompactExecutionInputProps {
   onSend: (text: string, files?: File[]) => void | Promise<void>;
@@ -52,6 +53,20 @@ interface CompactExecutionInputProps {
    * sees where the prompt went. Skipped under prefers-reduced-motion.
    */
   animateEnqueue?: boolean;
+  /**
+   * Keep the unsent draft across unmount/remount and across a reload, for the
+   * lifetime of this browser tab (see `composer-drafts.ts`). On by default:
+   * navigating away from a half-typed prompt and losing it is never the wanted
+   * behaviour. Pass false for a composer that must always open empty.
+   */
+  saveDraft?: boolean;
+  /**
+   * Which conversation the draft belongs to — a process id, or a surface
+   * identity for a panel that may not have a process yet. Without it there is
+   * nothing to tell two composers apart, so persistence stays inert rather
+   * than risk one chat's draft appearing in another.
+   */
+  draftScope?: string;
 }
 
 /**
@@ -60,6 +75,10 @@ interface CompactExecutionInputProps {
  * opt-in via `allowAttachments`. Enter sends; Shift+Enter inserts a newline;
  * Cmd/Ctrl+Enter also sends; Escape stops the in-flight turn. While
  * `running`, a Stop button appears and sends enqueue.
+ *
+ * The composer owns its draft: given a `draftScope` it stores the text as it is
+ * typed and restores it on mount, so navigating away and returning — or
+ * reloading the tab — does not lose an unsent prompt.
  */
 export function CompactExecutionInput({
   onSend,
@@ -76,11 +95,46 @@ export function CompactExecutionInput({
   onShiftTab,
   history,
   animateEnqueue = false,
+  saveDraft = true,
+  draftScope,
 }: CompactExecutionInputProps) {
   const { t } = useLingui();
-  const [value, setValue] = useState('');
+  const scope = saveDraft ? draftScope : undefined;
+  const [value, setValue] = useState(() => readDraft(scope));
   const taRef = useRef<HTMLTextAreaElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+
+  // Persist as the text changes, NOT on unmount: a reload runs no React
+  // cleanup, so a draft saved only on the way out would survive navigation and
+  // still be lost to F5 — the case this exists for. Keeping it in one effect
+  // also leaves all five setValue call sites (typing, paste splice, history
+  // browsing) untouched.
+  //
+  // The scope-swap frame renders the NEW scope with the OLD value, so it must
+  // adopt rather than write — otherwise one conversation's text lands under
+  // another's key. The outgoing text is already stored: it was written when it
+  // was typed.
+  //
+  // One exception, and it is why the check is `undefined` and not "changed":
+  // a scope arriving from undefined is this composer's own identity RESOLVING
+  // (the owning panel looks its process up asynchronously), not a move to
+  // another conversation. The text on screen belongs to this chat, so it is
+  // carried over instead of being wiped by an empty stored draft. Any
+  // defined -> defined change IS a real switch and adopts.
+  const prevScope = useRef(scope);
+  useEffect(() => {
+    if (prevScope.current !== scope) {
+      const identityResolved = prevScope.current === undefined;
+      prevScope.current = scope;
+      if (identityResolved && value !== '') {
+        writeDraft(scope, value);
+        return;
+      }
+      setValue(readDraft(scope));
+      return;
+    }
+    writeDraft(scope, value);
+  }, [scope, value]);
 
   const picker = usePickedFiles({ enabled: allowAttachments, disabled });
 

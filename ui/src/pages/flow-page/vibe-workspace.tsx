@@ -257,21 +257,37 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     [activeProcess, currentDock, t],
   );
 
+  // FLOWPAD-2045: this is the ONLY affordance in an empty display, and its click
+  // handler can do nothing with a rejected promise — so EVERY failure below used
+  // to render identically to success: nothing happens. A refused prompt (the
+  // bound process is mid-turn), a dead session id, a missing project — all
+  // silent. Nothing here may fail quietly; report the reason and move on.
   const submitStarterPrompt = useCallback(
     async (prompt: string) => {
-      const existing =
-        activeProcess ?? (await AgenticProcess.getById<AgenticProcess>(session.processId).catch(() => null));
-      if (existing) {
-        await existing.prompt(prompt);
-        return;
+      try {
+        const existing =
+          activeProcess ?? (await AgenticProcess.getById<AgenticProcess>(session.processId).catch(() => null));
+        if (existing) {
+          // Mid-turn clicks ENQUEUE instead of racing a second turn onto a busy
+          // process — `promptOrEnqueue` is the shared fork (also used by
+          // ChatComposerBar.handleSend).
+          await existing.promptOrEnqueue(prompt);
+          return;
+        }
+        if (!project?.id) {
+          throw new Error(
+            `no vibe session resolved for ${session.processId} and no active project to start one in`,
+          );
+        }
+        await launchVibeSessionForProject({
+          projectId: project.id,
+          workdir: project.fs_storage_mount_path || project.name || undefined,
+          message: prompt,
+          navigation,
+        });
+      } catch (error) {
+        console.error('[Vibe] starter prompt failed', { prompt, processId: session.processId, error });
       }
-      if (!project?.id) return;
-      await launchVibeSessionForProject({
-        projectId: project.id,
-        workdir: project.fs_storage_mount_path || project.name || undefined,
-        message: prompt,
-        navigation,
-      });
     },
     [activeProcess, navigation, project?.fs_storage_mount_path, project?.id, project?.name, session.processId],
   );
@@ -287,6 +303,12 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   // so listen on the workerStatus EDGE into any idle state rather than the
   // 'complete' event. Tradeoff (accepted): a remount drops unsaved in-editor
   // user edits; the editors autosave within ~2s, so the window is small.
+  // Owned HERE, not in the chat pane that sets it: `New` rebinds the URL as soon
+  // as the process lands, and this workspace stops rendering the pane while the
+  // new entity resolves — pane-local state would die mid-flight and leave the
+  // display's chips greyed out forever.
+  const [newSessionPending, setNewSessionPending] = useState(false);
+
   const [refreshStamp, setRefreshStamp] = useState(0);
   useEffect(() => {
     setRefreshStamp(0);
@@ -337,8 +359,13 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
                   key={p}
                   type="button"
                   onClick={() => void submitStarterPrompt(p)}
+                  // Held shut while `New` is creating the next session: until
+                  // that lands, this display is still bound to the PREVIOUS
+                  // process and a click here would prompt it instead
+                  // (FLOWPAD-2045).
+                  disabled={newSessionPending}
                   data-testid="display-starter-chip"
-                  className="rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className="rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60 disabled:pointer-events-none"
                 >
                   {p}
                 </button>
@@ -451,13 +478,20 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     activeProcess,
     handleAnnotateDisplay,
     submitStarterPrompt,
+    newSessionPending,
     projectId,
   ]);
 
   return (
     <ResizablePanelGroup direction="horizontal" className="h-full w-full">
       <ResizablePanel defaultSize={36} minSize={24} maxSize={55}>
-        {activeProcess && <VibeChatPane process={activeProcess} />}
+        {activeProcess && (
+          <VibeChatPane
+            process={activeProcess}
+            newSessionPending={newSessionPending}
+            onNewSessionPendingChange={setNewSessionPending}
+          />
+        )}
       </ResizablePanel>
       <ResizableHandle withHandle />
       <ResizablePanel defaultSize={64} minSize={45}>

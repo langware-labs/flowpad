@@ -232,6 +232,15 @@ interface EntityExecutionPanelProps {
    * navigates its child tabs). The picker stays fully functional afterward.
    */
   initialProcessId?: string | null;
+  /**
+   * Host-owned hard gate on the composer, OR-ed with the panel's own
+   * "has a target" check. For hosts whose process identity is URL-bound, there
+   * is a window where the pane is still bound to the PREVIOUS process while the
+   * next one is being created — anything typed and sent in it lands in the old
+   * session (FLOWPAD-2045). Such a host holds the composer shut for the
+   * duration. Not for turn-busy: a busy turn still accepts input (it enqueues).
+   */
+  composerDisabled?: boolean;
 }
 
 /**
@@ -287,6 +296,7 @@ export function EntityExecutionPanel({
   onPromptContextConsumed,
   onProcessSelected,
   initialProcessId,
+  composerDisabled = false,
 }: EntityExecutionPanelProps) {
   const { t } = useLingui();
   const capabilityDefaultWorkerType = useDefaultWorkerType();
@@ -786,9 +796,10 @@ export function EntityExecutionPanel({
   // `status`; read via `isBusy`) drives the Stop button and routes mid-turn
   // sends to the queue. The composer itself stays USABLE while busy — typing
   // + Enter enqueues (handleSend's turn-busy branch) instead of being locked
-  // out, so the only hard gate is having a target at all.
+  // out, so the only hard gates are having a target at all and the host's own
+  // `composerDisabled` (a session swap in flight — see the prop's docs).
   const busy = !!indicatorProcess && isBusy(indicatorProcess);
-  const sendDisabled = !targetStr;
+  const sendDisabled = !targetStr || composerDisabled;
   const modelSettingsNode = modelSelectSlot?.({
     value: effectiveModel,
     disabled: !targetStr || sending || busy || modelSavePending,
@@ -935,6 +946,17 @@ export function EntityExecutionPanel({
         leadingSlot={<QueueChip process={activeProcess} />}
         history={inputHistory}
         animateEnqueue
+        // The PROCESS id, which is what makes a draft follow the session across
+        // a view-mode switch: vibe renders this panel (pinned via
+        // `initialProcessId`) while Standard renders ChatComposerBar, and both
+        // are bound to the same process by the dock URL. Keying on the surface
+        // instead would give the two composers different scopes and lose the
+        // draft at exactly the moment the user swaps modes.
+        //
+        // It resolves asynchronously, so it starts undefined — CompactExecutionInput
+        // carries live text across that first undefined -> id transition rather
+        // than clearing it.
+        draftScope={activeProcess?.id}
       />
       <ConfirmDialog
         open={!!pendingDelete}
