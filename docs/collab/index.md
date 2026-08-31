@@ -76,7 +76,7 @@ skill, …) are anchored to the conversation and recursively auto-share.
    installation-gated status receipts), the OSS receive/upsert path, the
    materialize pipeline, conversation-list reconcile/staleness, and the
    URL-first conversation loader cascade. (Supersedes the old root
-   `DESIGN_loadConversation.md`.)
+   [`DESIGN_loadConversation.md`](../historical/DESIGN_loadConversation.md).)
 
 ## Glossary
 
