@@ -1,7 +1,14 @@
 ---
 id: f08b35a5-be43-479d-b6ae-254cfe086e9d
 name: tagit
-description: ''
+description: >-
+  Turn a proven root cause into a durable breadcrumb. Writes the rules you
+  established into a tag doc (a real wiki page) and drops a `tag` capsule on top
+  of the failing test pointing at it, so the next agent to hit that test starts
+  from proven ground truth instead of re-deriving it. Use AFTER an RCA has
+  proven a cause with an on/off lever, or whenever a scenario is understood well
+  enough to state its rules and internals. Triggers on "tagit", "capture these
+  rules", "breadcrumb this test", "write this up as a tag".
 tags: ''
 eval: 'false'
 version: 2
