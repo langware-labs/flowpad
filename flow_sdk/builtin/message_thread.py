@@ -8,10 +8,13 @@ FlowMessage reference dangles. (Contrast the obvious alternative, deriving the
 conversation id from the thread key: correct until the first merge, then
 unrecoverable.)
 
-**Identity is derived, so nothing has to look it up.**
-``mint_uuid(f"message_thread:{channel}:{thread_key}")`` — the projector knows a
-message's thread id from the message alone, and a re-poll converges on the same
-row. Keyed on CHANNEL, not provider: a Gmail thread ingested through the
+**Identity is the natural key, looked up — not derived.** ``find_existing``
+resolves ``(channel, thread_key)`` to the row that already holds it (the key is
+declared once, in ``TypeInfo.natural_key``); the id itself is an ordinary uuid4
+minted on first sight. Same guarantee the old v5-derived id gave — a re-poll
+converges on one row — relocated from id arithmetic to a lookup, so fixing a
+channel value is an UPDATE of the key columns, never a re-mint that orphans
+read state. Keyed on CHANNEL, not provider: a Gmail thread ingested through the
 harness transport today and the API transport tomorrow must resolve to ONE
 thread (see ``cloud_origin.CloudOrigin``).
 
@@ -28,7 +31,6 @@ from __future__ import annotations
 from typing import ClassVar, FrozenSet
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
-from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.projected_fields import ProjectedFields
 from flow_sdk.schema.types import EntityType
@@ -64,7 +66,13 @@ class MessageThread(ProjectedFields, Entity):
     projection_writer: ClassVar[str] = "recompute_thread_projection"
     _api_visible: ClassVar[bool] = True
 
-    @staticmethod
-    def allocate_deterministic_id(channel: str, thread_key: str) -> str:
-        """v5 id from (channel, thread key) — derived, never looked up."""
-        return mint_uuid(f"message_thread:{channel}:{thread_key}")
+    @classmethod
+    async def find_existing(cls, channel: str, thread_key: str) -> "MessageThread | None":
+        """THE identity lookup — the row for this natural key, or None.
+
+        The key is declared once, on the type (``TypeInfo.natural_key``); this
+        is its named single-row entry point, indexed by
+        ``ix_entities_message_thread_natural_key``. Same shape as
+        ``SourceItem.find_existing``.
+        """
+        return await cls.get_one({"channel": channel, "thread_key": thread_key})

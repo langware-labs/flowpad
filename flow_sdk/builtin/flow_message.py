@@ -376,6 +376,17 @@ class FlowMessage(Entity):
         sharing=Sharing.PRIVATE,
         description="Local row pointers behind `origin`; never leaves this machine",
     )
+    # The queryable twin of ``origin_local.source_item_id``. ``origin_local``
+    # is a nested JSON value the SQLite driver cannot index or IN-query, so the
+    # projection, the purge cascade and read-time hydration all key on this
+    # top-level copy instead. Set only on reference rows (messages projected
+    # from an ingested SourceItem); None = Flowpad-native. PRIVATE for the same
+    # reason as ``origin_local``: it is a row id in OUR database.
+    source_item_id: Optional[str] = APIField(
+        None,
+        sharing=Sharing.PRIVATE,
+        description="SourceItem this row references; None = Flowpad-native",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -867,6 +878,20 @@ class FlowMessage(Entity):
             },
             action="set_body_status",
         )
+
+    async def save(self, owner=None, notify: bool = True):
+        """A reference row never persists a body.
+
+        ``text`` on a row carrying ``source_item_id`` is hydrated at read time
+        from the SourceItem it references. Any consumer that loads a hydrated
+        row and saves it back — an ``is_read`` toggle, an archive — would
+        otherwise persist the hydrated body and quietly resurrect the copy
+        model this field exists to end. Blanking here, at the one write
+        chokepoint, is what makes hydration safe everywhere else.
+        """
+        if self.source_item_id:
+            self.text = ""
+        return await super().save(owner, notify=notify)
 
     async def download_body(
         self,

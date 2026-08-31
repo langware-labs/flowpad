@@ -1,4 +1,4 @@
-"""The inbox projection — derived identity, subject threading, self-authorship.
+"""The inbox projection — lookup identity, subject threading, self-authorship.
 
 The pure half is table-tested here. The projection round-trip (SourceItem →
 Conversation + FlowMessage) is covered by the DB-backed tests below.
@@ -9,7 +9,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.inbox.projection import (
     channel_of,
     is_message,
@@ -57,16 +56,12 @@ class TestThreadKey:
         assert thread_key_for(item, "Re: Q3 planning") == "q3 planning"
 
 
-class TestDerivedIdentity:
-    def test_the_same_thread_through_two_transports_is_one_thread(self):
-        # The whole reason the key is CHANNEL-scoped and not provider-scoped:
-        # a harness-ingested Gmail thread and an API-ingested one must merge.
-        assert (MessageThread.allocate_deterministic_id("gmail", "t-1")
-                == MessageThread.allocate_deterministic_id("gmail", "t-1"))
-
-    def test_two_channels_never_collide_on_one_key(self):
-        assert (MessageThread.allocate_deterministic_id("gmail", "t-1")
-                != MessageThread.allocate_deterministic_id("slack", "t-1"))
+class TestLookupIdentity:
+    """Identity converges by LOOKUP now — `find_existing` over the natural key
+    `(channel, thread_key)` — with ordinary uuid4 ids. The invariants the old
+    derived ids carried are re-pinned at the row level in
+    `test_flow_message_reference_row.py::test_message_thread_resolves_by_natural_key`
+    (same key = one row; another channel = a miss)."""
 
     def test_channel_falls_back_to_provider_for_rows_predating_the_field(self):
         assert channel_of(SimpleNamespace(channel="gmail", provider="agent")) == "gmail"
@@ -223,63 +218,3 @@ class TestSelfAddresses:
 
         source = SimpleNamespace(account_identities=["a@x.io", "b@x.io"], account_key="")
         assert "b@x.io" in self_addresses(source)
-
-
-class TestRefreshOwnsOnlyItsFields:
-    """A SourceItem CACHES a mutable cloud record, so the projection must be
-    able to refresh — but only the fields it owns.
-
-    Regression: `materialize_flow_message` is create-only for local-origin
-    payloads, so without `_refresh_projected_fields` a subject edited in Gmail,
-    a corrected sender, or a newly-available permalink would never reach the
-    conversation. The first run's snapshot would be frozen forever.
-    """
-
-    @pytest.mark.asyncio
-    async def test_a_changed_snapshot_is_written_back(self, monkeypatch):
-        from flow_sdk.inbox import projection
-
-        saved: dict = {}
-        fm = SimpleNamespace(id="m1", text="old subject", sender_name="old",
-                             is_read=True, thread_id="t", reply_to_id=None,
-                             sender_id="s", origin=None)
-
-        async def _save(**kw):
-            saved.update(fm.__dict__)
-        fm.save = _save
-        await projection._refresh_projected_fields(
-            fm, {"text": "new subject", "sender_name": "Ada"}, notify=False,
-        )
-        assert fm.text == "new subject"
-        assert fm.sender_name == "Ada"
-        # Local state is the USER's — a refresh must never mark mail unread again.
-        assert fm.is_read is True
-        assert saved, "a changed snapshot must be persisted"
-
-    @pytest.mark.asyncio
-    async def test_an_unchanged_snapshot_writes_nothing(self, monkeypatch):
-        from flow_sdk.inbox import projection
-
-        calls = []
-        fm = SimpleNamespace(id="m1", text="same", sender_name="Ada", origin=None)
-
-        async def _save(**kw):
-            calls.append(1)
-        fm.save = _save
-        await projection._refresh_projected_fields(
-            fm, {"text": "same", "sender_name": "Ada"}, notify=False,
-        )
-        # The steady-state poll must cost a read and nothing else — no save,
-        # no WS broadcast, no unread recompute storm.
-        assert calls == []
-
-    @pytest.mark.asyncio
-    async def test_a_field_the_projection_does_not_own_is_ignored(self, monkeypatch):
-        from flow_sdk.inbox import projection
-
-        fm = SimpleNamespace(id="m1", text="same", is_read=False, origin=None)
-        fm.save = lambda **kw: _resolved(None)
-        await projection._refresh_projected_fields(
-            fm, {"text": "same", "is_read": True}, notify=False,
-        )
-        assert fm.is_read is False
