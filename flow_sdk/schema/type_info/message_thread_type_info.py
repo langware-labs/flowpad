@@ -5,10 +5,11 @@ indexer's walk can never reach it and the projector can never contend with the
 indexer's SQLite writer. Not ``db_only`` either: a thread's ``title`` is a mail
 subject, and finding a conversation by subject is the obvious thing to want.
 
-``creatable=False``: a thread is born from an ingested record, with an id
-derived from ``(channel, thread_key)``. A hand-POSTed row would get a random
-uuid4 that the projector could never converge with — the same permanent-
-duplicate hazard SOURCE_ITEM's gate exists to prevent.
+``creatable=False``: a thread is born from an ingested record and resolved
+by its natural key ``(channel, thread_key)`` — a lookup, exactly like
+SOURCE_ITEM. A hand-POSTed row would sit beside the projector's row with the
+same key and fork the thread, the permanent-duplicate hazard SOURCE_ITEM's
+gate exists to prevent.
 """
 from typing import Optional
 
@@ -35,6 +36,9 @@ MESSAGE_THREAD = TypeMetadata(
     icon="MessagesSquare",
     api_visible=True,
     creatable=False,
-    index_fields=["name", "channel", "conversation_id"],
+    index_fields=["name", "channel", "thread_key", "conversation_id"],
     meta_model=MessageThreadMeta,
+    # The DB medium's identity: the projector resolves a thread by this key
+    # (``DbSerializer.resolve_key``), minting an ordinary uuid4 only on miss.
+    natural_key=("channel", "thread_key"),
 )

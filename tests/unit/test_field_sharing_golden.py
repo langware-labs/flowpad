@@ -269,7 +269,8 @@ def test_the_two_egress_seams_now_agree():
             # `origin_local` holds the DataSource/SourceItem row ids behind a
             # cached cloud record. PRIVATE, while its sibling `origin` (channel +
             # permalink) stays SHARED so a received message keeps its badge.
-            ["origin_local"],
+            # `source_item_id` is its queryable twin — same row-id reasoning.
+            ["origin_local", "source_item_id"],
             # Per-device inbox state: travels outward, but a hub refresh must not reset it.
             [
                 "asset_occurrences",

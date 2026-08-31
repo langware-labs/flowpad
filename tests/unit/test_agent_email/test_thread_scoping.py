@@ -2,7 +2,7 @@
 
 The hub's own notes are explicit: AgentMail's `thread_id` is scoped to the
 mailbox it came from — "never use it as a cross-agent key". The inbox
-projection derives a MessageThread id from `(channel, thread_key)` alone, and
+projection resolves a MessageThread by `(channel, thread_key)` alone, and
 every cloud mailbox reports the same channel, so a bare provider id would let
 two agents collapse onto one thread.
 
@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.ingest.drivers.cloud_email import CloudEmailDriver
 
 pytestmark = [pytest.mark.timeout(30)]  # do not increase timeout without approval
@@ -37,14 +36,6 @@ def _key(agent_id: str, thread_id: str):
 def test_two_agents_sharing_a_provider_thread_id_do_not_collide():
     """The whole point. Same provider id, different mailboxes, different threads."""
     assert _key("agent-a", "thr_1") != _key("agent-b", "thr_1")
-
-
-def test_the_derived_thread_ids_also_differ():
-    """Assert one level down too — the keys differing is only useful if what the
-    projection MINTS from them differs."""
-    a = MessageThread.allocate_deterministic_id("email", _key("agent-a", "thr_1"))
-    b = MessageThread.allocate_deterministic_id("email", _key("agent-b", "thr_1"))
-    assert a != b
 
 
 def test_one_agent_keeps_one_thread_stable():
