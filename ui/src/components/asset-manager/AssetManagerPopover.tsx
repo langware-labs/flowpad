@@ -375,7 +375,7 @@ export function AssetManagerPopover({
       d,
       type: _parseTypeid(d.typeid).type,
       scope: assetScope(d),
-      label: _displayLabelForTypeid(d.typeid),
+      label: _displayLabelForTypeid(d.typeid, d.name),
       used: assetDescriptorHasUsage(d),
       selected: selected.has(d.typeid),
       improvable: !!canImprove?.(d),

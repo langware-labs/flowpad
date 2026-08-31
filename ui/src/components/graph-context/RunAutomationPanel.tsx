@@ -43,7 +43,7 @@ export function RunAutomationPanel({ ctx }: { ctx: GraphContext }) {
   const handlePick = useCallback((d: AssetDescriptor) => {
     pendingRef.current = d;
     const { type } = parseTypeid(d.typeid);
-    const name = displayLabelForTypeid(d.typeid);
+    const name = displayLabelForTypeid(d.typeid, d.name);
     setInstruction(
       type === 'subagent'
         ? t`Act as the "${name}" agent and work on the current context.`

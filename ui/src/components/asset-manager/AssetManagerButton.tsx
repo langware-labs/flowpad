@@ -265,7 +265,7 @@ export function AssetManagerButton({ process, trigger }: AssetManagerButtonProps
         assetKey: descriptorKey(descriptor),
         assetTypeid: descriptor.typeid,
         assetPath,
-        assetLabel: _displayLabelForTypeid(descriptor.typeid),
+        assetLabel: _displayLabelForTypeid(descriptor.typeid, descriptor.name),
         assetType: type,
         workdir: folderBacked ? assetPath : dirname(assetPath),
         file,
@@ -455,7 +455,7 @@ export function AssetManagerButton({ process, trigger }: AssetManagerButtonProps
             <DialogTitle>
               <Trans>What would you like to fix?</Trans>
             </DialogTitle>
-            <DialogDescription>{fixDescriptor ? _displayLabelForTypeid(fixDescriptor.typeid) : null}</DialogDescription>
+            <DialogDescription>{fixDescriptor ? _displayLabelForTypeid(fixDescriptor.typeid, fixDescriptor.name) : null}</DialogDescription>
           </DialogHeader>
           <Textarea
             value={fixText}

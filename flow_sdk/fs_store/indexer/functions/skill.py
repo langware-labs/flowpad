@@ -161,15 +161,21 @@ def parse_skill_yaml_from_dir(skill_dir: Path) -> dict[str, Any]:
     return _yaml_load(fm) or {}
 
 
-def skill_id(ref: FSRef) -> str:
+def skill_id(ref: FSRef, yaml_fields: dict[str, Any] | None = None) -> str:
     """Cheap id (no write): `.flow/id` capsule, else valid frontmatter id, else
-    the transitional uuid5(name) read fallback for legacy rows."""
+    the transitional uuid5(name) read fallback for legacy rows.
+
+    ``yaml_fields`` lets a caller that has ALREADY parsed the folder's
+    yaml/frontmatter hand it in, so the fallback path doesn't stat and re-parse
+    the same files a second time. Omitted, they are read on demand as before —
+    the id policy itself stays owned here either way."""
     path = ref._path
     if path.is_dir():
         cap = read_folder_capsule_id(path)
         if cap:
             return cap
-        yaml_fields = parse_skill_yaml_from_dir(path)
+        if yaml_fields is None:
+            yaml_fields = parse_skill_yaml_from_dir(path)
         fm_id = read_frontmatter_id_from_yaml(yaml_fields)
         if fm_id:
             return fm_id

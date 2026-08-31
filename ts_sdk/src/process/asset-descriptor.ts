@@ -46,6 +46,11 @@ export interface AssetDescriptor {
   project_id?: string | null;
   /** Whether the backing entity has a cloud counterpart. Omitted by older servers. */
   remote?: boolean;
+  /** Display name, sent ONLY for an on-disk asset that has no entity row yet.
+   *  Every other row resolves its label from the entity cache by typeid; a
+   *  not-yet-indexed one has nothing to resolve, so the backend carries the
+   *  name it read off the file. Null/absent for cache-resolvable rows. */
+  name?: string | null;
   /** Lightweight usage evidence owned by the backend. */
   usage?: AssetUsage[];
 }

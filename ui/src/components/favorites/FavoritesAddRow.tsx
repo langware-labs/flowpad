@@ -47,7 +47,7 @@ export function FavoritesAddRow({ parentId }: { parentId: string }) {
       {
         entityType: type,
         entityId: id,
-        title: displayLabelForTypeid(d.typeid),
+        title: displayLabelForTypeid(d.typeid, d.name),
         nav: d.posix_path ? { asset_ref: d.posix_path } : undefined,
       },
       parentId,
