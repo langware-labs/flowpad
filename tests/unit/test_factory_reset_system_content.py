@@ -206,6 +206,27 @@ async def test_factory_reset_awaits_canonical_system_content_pass(
         system_content_mock,
     )
 
+    # The service-row reinstall: a wipe deletes these rows, and the watcher
+    # must be stopped before re-seeding and re-armed after, or FSOp triggers
+    # come back stored but unwatched.
+    from flow_sdk.server import builtin_triggers as builtin_triggers_module
+    from flow_sdk.server import fsop_watcher as fsop_watcher_module
+
+    async def seed_service_entities() -> None:
+        events.append("seed_service_entities")
+
+    async def watcher_stop() -> None:
+        events.append("watcher_stop")
+
+    async def watcher_rearm() -> None:
+        events.append("watcher_rearm")
+
+    monkeypatch.setattr(
+        builtin_triggers_module, "seed_service_entities", seed_service_entities
+    )
+    monkeypatch.setattr(fsop_watcher_module.fsop_watcher, "stop", watcher_stop)
+    monkeypatch.setattr(fsop_watcher_module.fsop_watcher, "rearm", watcher_rearm)
+
     result = await system_tools.clear_all_data()
 
     system_content_mock.assert_awaited_once_with()
@@ -214,6 +235,14 @@ async def test_factory_reset_awaits_canonical_system_content_pass(
     assert events.index("cancel_auto_indexes") < events.index("clear_index")
     assert events.index("capability_discovery") > events.index("bootstrap")
     assert events.index("system_content") > events.index("bootstrap")
+    # Order is load-bearing in both directions: stopping after the seed would
+    # cancel the tasks just spawned, and re-arming before it would spawn tasks
+    # holding pre-wipe entities.
+    assert (
+        events.index("watcher_stop")
+        < events.index("seed_service_entities")
+        < events.index("watcher_rearm")
+    )
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="real child regression uses /bin/sh")
@@ -292,3 +321,41 @@ async def test_factory_reset_terminates_live_pty_children_before_db_wipe(
     finally:
         await provider.close_pty_session(provider_node_id, shell_id)
         PtyRegistry.reset_instance()
+
+
+@pytest.mark.asyncio
+async def test_rearm_watches_fsop_triggers_the_reset_left_stored() -> None:
+    """After a reset, an FSOp trigger must come back WATCHING, not merely stored.
+
+    The reset stops the watcher (it must; stale pre-wipe entities collide on
+    `uname`) and re-seeds the rows. SCHEDULE triggers re-register themselves on
+    save, so the heartbeat recovers — but FSOp ones do not, and would come back
+    as rows with nothing watching them. Counting restored rows cannot see that,
+    which is why this asserts on the watcher's task table.
+    """
+    from flow_sdk.builtin.trigger import Trigger, TriggerType
+    from flow_sdk.server.fsop_watcher import fsop_watcher
+
+    trigger = Trigger(
+        id=str(uuid.uuid4()),
+        name="watcher under test",
+        trigger_type=TriggerType.FSOP,
+    )
+
+    async def _one_fsop_trigger(_type):
+        return [trigger]
+
+    # The post-wipe state: watcher stopped, so its task table is empty.
+    await fsop_watcher.stop()
+    assert len(fsop_watcher) == 0
+
+    original = Trigger.list_by_type
+    Trigger.list_by_type = _one_fsop_trigger  # type: ignore[assignment]
+    try:
+        await fsop_watcher.rearm()
+        assert trigger.id in fsop_watcher._tasks, (
+            "a re-seeded FSOp trigger was stored but never watched"
+        )
+    finally:
+        Trigger.list_by_type = original  # type: ignore[assignment]
+        await fsop_watcher.stop()

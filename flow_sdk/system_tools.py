@@ -554,37 +554,36 @@ async def clear_all_data() -> ClearAllResult:
         except Exception as e:  # noqa: BLE001
             logger.warning(f"clear_all_data: failed to re-seed system content (non-fatal): {e}")
 
-        # Re-install the service triggers, the way startup installs them.
+        # Re-seed the service rows, through the same seam startup uses.
         #
-        # They are ROWS, so the wipe deleted them, and `set_service_triggers()`
-        # otherwise runs only from `_on_server_startup` — leaving a factory
-        # reset with no `builtin_system_heartbeat`, so the cron kept logging
-        # "executed successfully" while nothing routed it into
-        # `_dispatch_heartbeat` and EVERY `register_heartbeat_task` job (e.g.
+        # They are ROWS, so the wipe deleted them; nothing else re-seeds them,
+        # leaving a factory reset with no `builtin_system_heartbeat` — the cron
+        # kept logging "executed successfully" while nothing routed it into
+        # `_dispatch_heartbeat`, so every `register_heartbeat_task` job (e.g.
         # data-source ingestion) silently stopped until the process restarted.
         #
-        # STOPPING THE WATCHER FIRST IS LOAD-BEARING, not tidiness. It holds
-        # pre-wipe `Trigger` entities in its per-trigger tasks; re-seeding mints
-        # rows with NEW ids, and the stale entities' `update()` then falls
-        # through to `_create_entity` and collides on `uname` — a 409
-        # "already exist" storm that took the backend out mid-suite (measured:
-        # 24/51 failures in the tab-lifecycle matrix, 515 conflicts in one run;
-        # re-seeding without this stop is WORSE than the bug it fixes).
-        # Deliberately stop-then-seed, NOT startup's stop → seed → `start()`:
-        # `set_service_triggers()` already re-registers each row it writes via
-        # `_register_post_save`, so a further `start()` only adds its per-trigger
-        # `_catch_up_if_changed` disk walk. This runs on EVERY `resetDb()`, and
-        # that walk was enough to push the tab-lifecycle matrix's restart test
-        # past its 60s budget (failed at 50.9s) — the fix must not make the
-        # reset path expensive.
+        # Two invariants constrain any edit here:
+        #  1. STOP THE WATCHER FIRST. It holds pre-wipe `Trigger` entities in
+        #     its per-trigger tasks; re-seeding mints rows with NEW ids, and the
+        #     stale entities' `update()` then falls through to `_create_entity`
+        #     and collides on `uname` — a 409 storm that takes the backend out
+        #     mid-suite. Re-seeding without this stop is worse than the bug.
+        #  2. DO NOT call `fsop_watcher.start()`. `rearm()` spawns the same
+        #     watch tasks without `start()`'s per-trigger catch-up disk walk.
+        #     This runs on EVERY `resetDb()`; that walk alone pushed a
+        #     60s-budget test to 50.9s. The reset path must stay cheap.
+        #     Re-arming is NOT optional: SCHEDULE triggers re-register
+        #     themselves on save, but FSOp ones would come back stored and
+        #     unwatched, which no row count can see.
         try:
-            from flow_sdk.server.builtin_triggers import set_service_triggers  # noqa: PLC0415
+            from flow_sdk.server.builtin_triggers import seed_service_entities  # noqa: PLC0415
             from flow_sdk.server.fsop_watcher import fsop_watcher  # noqa: PLC0415
 
             await fsop_watcher.stop()
-            await set_service_triggers()
+            await seed_service_entities()
+            await fsop_watcher.rearm()
         except Exception as e:  # noqa: BLE001
-            logger.warning(f"clear_all_data: failed to re-install service triggers (non-fatal): {e}")
+            logger.warning(f"clear_all_data: failed to re-install service rows (non-fatal): {e}")
 
     # The triggering HTTP request can be CANCELLED at any await (ASGI client
     # disconnect — e.g. the test runner being killed mid-clear). Without a
