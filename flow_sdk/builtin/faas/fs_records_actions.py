@@ -2017,6 +2017,10 @@ class FsRecordsActionsMixin:
         expanded = str(Path(raw_path).expanduser())
         if not Path(expanded).is_absolute():
             expanded = "/" + expanded
+        # `resolve()` is what makes that anchor real on Windows: `/Users\…` is rooted
+        # but DRIVE-LESS, so only pathlib can bind it to a drive — and the resolved
+        # native string is the exact form `asset_ref` is stored in, so lookups match.
+        expanded = str(Path(expanded).resolve())
 
         # Pass 1 + fast recovery (targeted single-file parse + sync) live in
         # the shared ``discover_record_by_path`` helper — also used by

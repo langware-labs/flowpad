@@ -2626,9 +2626,9 @@ class Entity(DBEntity):
         if ar is None or getattr(ar, "_path", None) is None:
             return
         create_target = fresh_owned_create_target(ar)
-        from flow_sdk.fs_store.path_utils import canonical_posix_path
-
-        path_str = canonical_posix_path(ar.path)
+        # ``ar.path`` is FSRef's pathlib-resolved native string — the ONE stored
+        # ``asset_ref`` form; a POSIX render here made it unfindable on Windows.
+        path_str = ar.path
         if hasattr(self, "asset_ref"):
             self.asset_ref = path_str
         # parent_path lets DocsCategory / PlansCategory filter the markdown
