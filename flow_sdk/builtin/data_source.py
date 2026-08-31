@@ -501,13 +501,18 @@ class DataSource(Entity):
             # Stamp the channel at CREATE, not first poll: the credential probe
             # keys on it (Verify on a fresh source probed nothing) and the UI
             # badges by it. `sync_source` keeps re-stamping every poll, so this
-            # is the first answer, not a fork of the rule.
+            # is the first answer, not a fork of the rule. The driver is asked
+            # DIRECTLY — not through `channel_of_driver`, whose provider
+            # fallback is indistinguishable from a driver whose channel simply
+            # IS its provider name (agentmail). A driver that answers empty
+            # (agent transport with no connector yet) stamps nothing.
             driver = self._driver()
             if driver is not None:
-                from flow_sdk.ingest.driver import channel_of_driver  # noqa: PLC0415
-
-                stamped = channel_of_driver(driver, self)
-                if stamped and stamped != self.provider:
+                try:
+                    stamped = str(driver.channel_for(self) or "").strip()
+                except Exception:  # noqa: BLE001 — a probe must never fail a save
+                    stamped = ""
+                if stamped:
                     self.channel = stamped
         self._stamp_origin()
         return await super().save(*args, **kwargs)
