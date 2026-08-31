@@ -492,6 +492,10 @@ msgstr ""
 msgid "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
 msgstr "{name} עדיין לא מותקן על המחשב הזה. יש לעקוב אחר מדריך ההתקנה המהיר ואז לחזור לכאן כדי להתחבר."
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "{name} said: {statusReason}"
+msgstr "{name} מדווח: {statusReason}"
+
 #: src/components/conversation/LiveSessionGroup.tsx
 msgid "{promptCount} prompts · {replyCount} replies"
 msgstr "{promptCount} פרומפטים · {replyCount} תגובות"
@@ -15210,6 +15214,10 @@ msgstr "יציאה מהסנדבוקס"
 msgid "Sign-in"
 msgstr "התחברות"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Sign-in not confirmed"
+msgstr "ההתחברות לא אומתה"
+
 #: src/components/account/user-info.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
@@ -17869,6 +17877,10 @@ msgstr "צפייה"
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "Watchers register patterns via <0>Shell.addTrigger</0>; matched lines appear here."
 msgstr "משקיפים רושמים דפוסים דרך <0>Shell.addTrigger</0>; שורות תואמות מופיעות כאן."
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "We couldn't confirm this sign-in: {statusReason}"
+msgstr "לא הצלחנו לאמת את ההתחברות: {statusReason}"
 
 #: src/notifications/ingest.ts
 msgid "We couldn't find what you were looking for on the cloud."

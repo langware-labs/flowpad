@@ -13,6 +13,7 @@ import {
   WorkerModelTier,
   type LmApiKeySummary,
   type LmApiKeyValidation,
+  type WorkerAuthStatus,
 } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { Badge } from '@src/components/ui/badge';
@@ -35,7 +36,7 @@ import { openHarnessLoginModal, useHarnessLoginStore } from './harness-login-sto
 const INSTALL_WIKI_PAGE = 'Install a harness';
 
 type Worker = 'claude' | 'codex' | 'copilot' | 'opencode';
-type Status = 'unavailable' | 'signedin' | 'awaiting' | 'busy' | 'signedout';
+type Status = 'unavailable' | 'signedin' | 'awaiting' | 'busy' | 'signedout' | 'unverified';
 type AuthMode = 'device' | 'api';
 
 const workerOf = (kind: string) => kind.split('.')[1] as Worker;
@@ -89,23 +90,50 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
   const capabilityId = snapshot.capability?.id ?? null;
   const typeId = useMemo(() => (capabilityId ? new TypeId(Capability.type, capabilityId) : null), [capabilityId]);
   const { data: capability } = useEntity<Capability>(typeId, { enabled: !!typeId, watch: true });
-  // The badge below reads ``login_state``, a PERSISTED field written by the last
-  // device login or auth test — and nothing invalidates it when the user signs
-  // out of the CLI in a terminal. So the modal would open claiming "Signed in"
-  // over a harness that is demonstrably logged out, which is worse than saying
-  // nothing: it contradicts the very error that opened it.
+  // The badge below reads ``login_state``, written by the last device login or
+  // auth test — and nothing invalidates it when the user signs out of the CLI in
+  // a terminal. So the modal would open claiming "Signed in" over a harness that
+  // is demonstrably logged out, which is worse than saying nothing: it
+  // contradicts the very error that opened it.
   //
   // ``authStatus()`` re-runs the vendor's own probe and the backend mirrors the
   // fresh result onto ``login_state`` and broadcasts it, so the watched row
   // self-corrects. Silent by design — this is a refresh, not a user-invoked
   // check, and the visible ``testAuth`` below keeps its toasts.
+  //
+  // The verdict is KEPT rather than discarded, because the probe has a third
+  // answer and it is not "signed in". ``not_installed``/``unknown`` mean the
+  // probe never reached a verdict (a 5s timeout, output it could not parse) and
+  // the backend then deliberately leaves ``login_state`` untouched — correct,
+  // since an undetermined probe is evidence about the probe, not about login.
+  // But rendering the untouched value as a green "Signed in" turns that silence
+  // into a positive claim. ``unverified`` says what actually happened.
   const modalOpen = useHarnessLoginStore((s) => s.open);
+  const [probe, setProbe] = useState<WorkerAuthStatus | null>(null);
   useEffect(() => {
-    if (!modalOpen || !capability) return;
-    void capability.authStatus().catch(() => undefined);
+    if (!modalOpen || !capability) {
+      setProbe(null);
+      return;
+    }
+    let live = true;
+    void capability
+      .authStatus()
+      .then((r) => live && setProbe(r))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
     // Re-probe per open, per capability — not on every unrelated row update.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modalOpen, capabilityId]);
+
+  // What the harness itself said while refusing a turn ("Not logged in · Please
+  // run /login"), when that is why this modal is open. The vendor's own denial
+  // is the best evidence available about THIS box — better than a cached
+  // ``login_state`` and better than a probe that timed out — so it wins over
+  // both. ``useHarnessLoginOnAuthError`` also reports it to the backend; this
+  // keeps the row honest even when that write fails.
+  const deniedBy = useHarnessLoginStore((s) => (s.signedOut?.kind === kind ? s.signedOut.message : null));
 
   const [busy, setBusy] = useState(false);
   // Separate from `busy` so re-testing auth doesn't compute status to 'busy'.
@@ -145,10 +173,20 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
 
   const installed = snapshot.checked && snapshot.available;
   const loginState = capability?.login_state ?? null;
+  const undetermined = probe != null && (probe.status === 'unknown' || probe.status === 'not_installed');
+  // Only the `authenticated` arm changes: a positive claim now has to survive
+  // the harness's own denial and an inconclusive probe. Everything else keeps
+  // its old precedence — in particular a login in flight still reads as
+  // awaiting/busy, since a denial from a turn that ran BEFORE the user started
+  // signing in says nothing about the sign-in they are doing right now.
   const status: Status = !installed
     ? 'unavailable'
     : loginState === 'authenticated'
-      ? 'signedin'
+      ? deniedBy
+        ? 'signedout'
+        : undetermined
+          ? 'unverified'
+          : 'signedin'
       : loginState === 'awaiting_user'
         ? 'awaiting'
         : busy || loginState === 'starting'
@@ -174,7 +212,8 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
     if (!capability) return;
     setTesting(true);
     try {
-      const r = await capability.authStatus();
+      // User-invoked: this is the one probe allowed to clear a recorded refusal.
+      const r = await capability.authStatus(true);
       if (r.status === 'logged_in') {
         notify.success({ title: t`Still signed in`, message: r.message || undefined, durationMs: 3000 });
       } else {
@@ -231,6 +270,10 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
   return {
     capability,
     status,
+    // Why this row is not simply "signed in", in the most authoritative words
+    // available: the harness's own refusal first, else what the probe said when
+    // it could not decide.
+    statusReason: deniedBy || (undetermined ? probe?.message?.trim() || null : null),
     statusText: statusTextFor(status),
     name,
     account: FRIENDLY[worker]?.account,
@@ -302,6 +345,11 @@ const STATUS_TEXT: Record<Status, { label: MessageDescriptor; dot: string; tone:
     label: msg`Starting…`,
     dot: 'bg-sky-400 shadow-[0_0_7px] shadow-sky-400/60 animate-pulse',
     tone: 'text-sky-500',
+  },
+  unverified: {
+    label: msg`Sign-in not confirmed`,
+    dot: 'bg-amber-400 shadow-[0_0_7px] shadow-amber-400/60',
+    tone: 'text-amber-500',
   },
   signedout: {
     label: msg`Not signed in`,
@@ -525,11 +573,24 @@ function LlmKeysSection({ keys, refreshKeys }: { keys: LmApiKeySummary[]; refres
 }
 
 /** Detail: one assistant, focused on the single next action. */
-function HarnessDetail({ kind, onBack, keys }: { kind: string; onBack: () => void; keys: LmApiKeySummary[] }) {
+function HarnessDetail({
+  kind,
+  onBack,
+  onDone,
+  keys,
+}: {
+  kind: string;
+  onBack: () => void;
+  /** Dismiss the whole modal — the sign-in is finished, so the user goes back
+   *  to whatever they were doing, not back to the assistants list. */
+  onDone: () => void;
+  keys: LmApiKeySummary[];
+}) {
   const { t } = useLingui();
   const {
     capability,
     status,
+    statusReason,
     statusText: st,
     name,
     account,
@@ -662,7 +723,7 @@ function HarnessDetail({ kind, onBack, keys }: { kind: string; onBack: () => voi
                 {testing && <Loader2 className="h-4 w-4 animate-spin" />}
                 <Trans>Test</Trans>
               </Button>
-              <Button variant="outline" className="flex-1" onClick={onBack}>
+              <Button variant="outline" className="flex-1" data-testid="harness-done" onClick={onDone}>
                 <Trans>Done</Trans>
               </Button>
             </div>
@@ -744,6 +805,20 @@ function HarnessDetail({ kind, onBack, keys }: { kind: string; onBack: () => voi
                 — FlowPad never sees your password.
               </Trans>
             </DialogDescription>
+            {statusReason && (
+              <div
+                data-testid="harness-status-reason"
+                className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-center text-xs text-amber-500"
+              >
+                {status === 'unverified' ? (
+                  <Trans>We couldn't confirm this sign-in: {statusReason}</Trans>
+                ) : (
+                  <Trans>
+                    {name} said: {statusReason}
+                  </Trans>
+                )}
+              </div>
+            )}
             <Button className="w-full gap-1.5" disabled={status === 'busy'} onClick={() => void signIn()}>
               {status === 'busy' && <Loader2 className="h-4 w-4 animate-spin" />}
               <Trans>Sign in with {account}</Trans>
@@ -1136,7 +1211,15 @@ export function HarnessLoginModalRoot() {
         {selected === 'mapping' ? (
           <MappingView onBack={() => setSelected(null)} />
         ) : selected ? (
-          <HarnessDetail kind={selected} onBack={() => setSelected(null)} keys={keys} />
+          <HarnessDetail
+            kind={selected}
+            onBack={() => setSelected(null)}
+            onDone={() => {
+              markHarnessGateSeen();
+              setOpen(false);
+            }}
+            keys={keys}
+          />
         ) : (
           <div className="flex max-h-[80vh] flex-col overflow-y-auto">
             <DialogTitle className="text-lg font-semibold">
