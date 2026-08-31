@@ -25,7 +25,14 @@ import subprocess
 # `claude mcp list` rows look like:
 #   "<name>: <launch> - ✔ Connected"   /   "<name>: <launch> - �’ Failed to connect"
 # Capture the name and the launch line; tolerate the trailing " - <status>".
-_CLI_ROW = re.compile(r"^(?P<name>[^:]+):\s*(?P<launch>.*?)(?:\s+-\s+[^-]*)?$")
+#
+# The name is GREEDY to the last colon *followed by whitespace*. Both halves
+# are load-bearing: plugin-provided servers are named "plugin:<plugin>:<server>"
+# (e.g. "plugin:slack:slack"), so a first-colon split truncates every one of
+# them to the literal "plugin" and collapses them into a single row; and
+# requiring \s+ after the colon keeps "https://" and "127.0.0.1:64655" in the
+# launch line from being mistaken for the delimiter.
+_CLI_ROW = re.compile(r"^(?P<name>.+):\s+(?P<launch>.*?)(?:\s+-\s+[^-]*)?$")
 
 # Hard cap on the CLI probe (user-approved, mirrors the capability env-probe).
 _CLI_TIMEOUT_SECONDS = 10.0
