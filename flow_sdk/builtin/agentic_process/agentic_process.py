@@ -457,10 +457,7 @@ def disk_asset_descriptors(
         skill_fn,
         skill_id,
     )
-    from flow_sdk.fs_store.indexer.functions.subagent import (  # noqa: PLC0415
-        subagent_fn,
-        subagent_peek_entity_id,
-    )
+    from flow_sdk.fs_store.indexer.functions.subagent import subagent_fn  # noqa: PLC0415
     from flow_sdk.fs_store.indexer.index_function import IndexerOptions  # noqa: PLC0415
     from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
@@ -507,7 +504,7 @@ def disk_asset_descriptors(
                     continue
                 out.append(
                     AssetDescriptor(
-                        typeid=f"subagent-{subagent_peek_entity_id(ref)}",
+                        typeid=str(AgenticProcess._agent_entity_ref(ref)),
                         source=source,
                         posix_path=key,
                         source_dir=src_dir,
@@ -596,10 +593,12 @@ async def scan_path_asset_descriptors(
     # Ranked (longest prefix first) so a nested project dir claims a path
     # before the home catchall reaches it. Threaded: the reads are sync and
     # the loop must not park on them.
+    # Skipped entirely once the DB pass has filled ``limit`` — the walk's
+    # output would be sliced to nothing anyway.
+    if limit and len(descriptors) >= limit:
+        return descriptors
     disk = await asyncio.to_thread(disk_asset_descriptors, ranked, set(types), db_paths)
-    if limit:
-        disk = disk[: max(0, limit - len(descriptors))]
-    descriptors.extend(disk)
+    descriptors.extend(disk[: limit - len(descriptors)] if limit else disk)
     return descriptors
 
 
@@ -5163,17 +5162,21 @@ class AgenticProcess(Entity):
         return ApiSuccessResponse(data={"ok": True, "name": name, "ref": str(ref)})
 
     @staticmethod
-    def _agent_entity_ref(path: "Path") -> TypeId:
+    def _agent_entity_ref(path: "Path | FSRef") -> TypeId:
         """Entity ref for an agent .md path — the single ``agent path → TypeId``
-        seam (read-only; same uuid the indexer mints for the file)."""
+        seam (read-only; same uuid the indexer mints for the file).
+
+        Accepts an ``FSRef`` as well as a path because ``FSRef.__init__``
+        resolves, and the disk walker already holds the ref the walk yielded —
+        re-wrapping its path there would buy a realpath syscall per agent file
+        inside the very walk this function's caller tries to skip.
+        """
         from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
         from flow_sdk.fs_store.indexer.functions.subagent import subagent_peek_entity_id  # noqa: PLC0415
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
-        return TypeId(
-            type=RecordType.SUBAGENT.value,
-            id=subagent_peek_entity_id(FSRef(path, record_type=RecordType.SUBAGENT)),
-        )
+        ref = path if isinstance(path, FSRef) else FSRef(path, record_type=RecordType.SUBAGENT)
+        return TypeId(type=RecordType.SUBAGENT.value, id=subagent_peek_entity_id(ref))
 
     def _drop_legacy_agent_name(self, name: str | None) -> None:
         """Migrate-on-touch: strip a legacy ``embedded_subagent_ids`` name entry."""

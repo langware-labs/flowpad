@@ -18,7 +18,6 @@ import mimetypes
 from pathlib import Path
 
 import anyio
-from bs4 import BeautifulSoup
 from fastapi import HTTPException
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, Response, StreamingResponse
@@ -58,6 +57,8 @@ def inject_api_origin(html: str) -> str:
 
 def inject_base_tag(html: str, base_url: str) -> str:
     """Inject ``<base href=...>`` into ``<head>``, creating the head if needed."""
+    from bs4 import BeautifulSoup  # noqa: PLC0415 — an HTML parser is not startup work
+
     soup = BeautifulSoup(html, "html.parser")
 
     head = soup.head
