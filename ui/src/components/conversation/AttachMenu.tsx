@@ -151,7 +151,7 @@ export function AssetRefChips({ assetRefs, onChange, disabled }: AssetRefChipsPr
     <ul className="space-y-1" data-testid="attach-menu-asset-list">
       {assetRefs.map((a) => {
         const { type } = parseTypeid(a.typeid);
-        const label = displayLabelForTypeid(a.typeid);
+        const label = displayLabelForTypeid(a.typeid, a.name);
         return (
           <li
             key={`${a.typeid}|${a.source}`}

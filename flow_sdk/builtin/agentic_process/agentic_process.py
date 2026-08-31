@@ -258,6 +258,11 @@ class AssetDescriptor:
     project_id: str | None = None  # owning project (path-discovered / spec rows); None for EMBEDDED/INLINE
     usage: list[AssetUsage] = field(default_factory=list)
     remote: bool | None = None  # None until a reference-only descriptor is hydrated
+    # Display name, carried ONLY for a descriptor with no entity row yet (an
+    # on-disk asset the indexer has not reached). Every other row resolves its
+    # label from the entity cache by typeid; a disk row has nothing to resolve,
+    # so without this the picker renders the raw ``skill-<uuid>``.
+    name: str | None = None
 
     def to_row(self) -> dict:
         """Single owner of the get-assets wire row — used by BOTH the process
@@ -269,6 +274,7 @@ class AssetDescriptor:
             "source_dir": self.source_dir,
             "project_id": self.project_id,
             "remote": bool(self.remote),
+            "name": self.name,
             "usage": [
                 {
                     "kind": u.kind.value,
@@ -410,6 +416,112 @@ def collect_base_source_dirs(project) -> tuple[list[tuple[str, AssetSource]], se
     return pairs, seen
 
 
+def disk_asset_descriptors(
+    ranked: list[tuple[str, AssetSource]],
+    types: set[str],
+    seen_paths: set[str],
+) -> list[AssetDescriptor]:
+    """On-disk skills/subagents that have no entity row yet.
+
+    The picker's question is "what can this process use", and that is a
+    filesystem fact — not a DB one. Relying on ``Entity.assets_by_path`` alone
+    made the answer "what has been indexed", so a project added but never
+    indexed listed nothing at all despite having real ``.claude/skills``
+    folders on disk.
+
+    Discovery is DELEGATED to the indexer's own walkers (``skill_fn`` /
+    ``subagent_fn``) rather than re-deriving where assets live, so this pass
+    cannot drift from the indexer: a new harness dot-dir in ``WORKER_PREFIX``
+    or a new skill marker file is picked up here for free. Both walkers ignore
+    their options argument, so one throwaway ``IndexerOptions`` serves all of
+    them, and they key off ``node.path`` alone.
+
+    Strictly read-only. Ids come from the peek seams (``skill_id`` /
+    ``subagent_peek_entity_id``), which ADOPT an existing ``.flow/id`` capsule
+    or frontmatter id rather than minting one, so a later index converges on
+    the same id instead of creating a second row for the same file.
+
+    ``seen_paths`` carries the paths the DB pass already considered; a path is
+    checked against it BEFORE the folder's yaml is parsed, so an indexed
+    corpus never pays for id or name resolution.
+
+    Serves ``skill`` and ``subagent`` only. ``Project.get_assets_action`` may
+    also ask for ``markdown``/``spec``; those still answer from the DB alone,
+    so an unindexed markdown doc stays invisible. Widening that means giving
+    those types the same walker + read-only-peek pair, not a new mechanism.
+    """
+    from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.functions.skill import (  # noqa: PLC0415
+        parse_skill_yaml_from_dir,
+        resolve_skill_name,
+        skill_fn,
+        skill_id,
+    )
+    from flow_sdk.fs_store.indexer.functions.subagent import (  # noqa: PLC0415
+        subagent_fn,
+        subagent_peek_entity_id,
+    )
+    from flow_sdk.fs_store.indexer.index_function import IndexerOptions  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+    opts = IndexerOptions()
+    out: list[AssetDescriptor] = []
+
+    def claim(path: Path) -> str | None:
+        """Canonical path, or None when an earlier source or the DB pass owns it."""
+        try:
+            key = canonical_posix_path(path)
+        except (OSError, ValueError):
+            return None
+        if not key or key in seen_paths:
+            return None
+        seen_paths.add(key)
+        return key
+
+    for src_dir, source in ranked:
+        # The walkers read ``node.path`` and nothing else; the record type only
+        # has to be one they are registered under.
+        nodes = [FSRef(src_dir, record_type=RecordType.REAL_PROJECT_CWD)]
+        if "skill" in types:
+            for ref in skill_fn(nodes, opts):
+                key = claim(ref._path)
+                if key is None:
+                    continue
+                # Parsed once and threaded into ``skill_id`` — its fallback
+                # would otherwise re-read and re-parse the same SKILL.md.
+                fields = parse_skill_yaml_from_dir(ref._path)
+                out.append(
+                    AssetDescriptor(
+                        typeid=f"skill-{skill_id(ref, fields)}",
+                        source=source,
+                        posix_path=key,
+                        source_dir=src_dir,
+                        name=resolve_skill_name(fields, ref._path.name),
+                    )
+                )
+        if "subagent" in types:
+            for ref in subagent_fn(nodes, opts):
+                key = claim(ref._path)
+                if key is None:
+                    continue
+                out.append(
+                    AssetDescriptor(
+                        typeid=f"subagent-{subagent_peek_entity_id(ref)}",
+                        source=source,
+                        posix_path=key,
+                        source_dir=src_dir,
+                        # The filename stem is the harness's own agent name and
+                        # the peek seam's own fallback. Reading the frontmatter
+                        # for a nicer label would parse the file a second time
+                        # to win a name the entity cache supplies the moment
+                        # this asset is indexed.
+                        name=ref._path.stem,
+                    )
+                )
+    return out
+
+
 async def scan_path_asset_descriptors(
     sources: list[tuple[str, AssetSource]],
     own_project_id: str,
@@ -443,11 +555,18 @@ async def scan_path_asset_descriptors(
     )
     ranked = sorted(sources, key=lambda s: -len(s[0]))
     descriptors: list[AssetDescriptor] = []
+    # Every path the DB pass CONSIDERED — not just the ones it emitted. A row
+    # it deliberately dropped (SYSTEM, or a foreign project's asset under the
+    # home catchall) is an exclusion, not an absence, and the filesystem pass
+    # below must not resurrect it: entities are materialized to disk, so the
+    # dropped row's folder is sitting right there with a real SKILL.md.
+    db_paths: set[str] = set()
     for ent in entities:
         ar_raw = getattr(ent, "asset_ref", None) or ""
         if not ar_raw:
             continue
         ar = canonical_posix_path(ar_raw)
+        db_paths.add(ar)
         match = AgenticProcess._source_match_for_asset(ar, ranked, ent, own_project_id)
         if match is None:
             continue
@@ -472,6 +591,15 @@ async def scan_path_asset_descriptors(
                 remote=bool(getattr(ent, "remote", False)),
             )
         )
+
+    # Filesystem pass — the assets that exist on disk but have no row yet.
+    # Ranked (longest prefix first) so a nested project dir claims a path
+    # before the home catchall reaches it. Threaded: the reads are sync and
+    # the loop must not park on them.
+    disk = await asyncio.to_thread(disk_asset_descriptors, ranked, set(types), db_paths)
+    if limit:
+        disk = disk[: max(0, limit - len(descriptors))]
+    descriptors.extend(disk)
     return descriptors
 
 
