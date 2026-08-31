@@ -596,7 +596,14 @@ async def _handle_hook_op_event(
         logger.info(f"Skillit log event: {event_name or 'unknown'}")
         return ApiSuccessResponse(data={"status": "received"})
 
-    logger.info(f"[hook_op] Unhandled event: type={record_type}, event_name={event_name}")
+    # DEBUG, not INFO: this is the fall-through of the ENTITY-REFLECTION
+    # dispatch, and reaching it is the normal case for the per-step sniffer
+    # events (`flow_message_materialized`, `conversation_updated`). Those are
+    # not dropped — `_route_to_source_process` above already delivered them to
+    # the process that fired them, which is what drives the live UI. "Unhandled"
+    # only means "no entity to reflect", so logging it at INFO put two lines per
+    # agent message into the service log for a non-event.
+    logger.debug(f"[hook_op] Unhandled event: type={record_type}, event_name={event_name}")
     return ApiSuccessResponse(data={"status": "received", "event_name": event_name})
 
 
@@ -719,7 +726,10 @@ async def listen_action(request):
         if webhook_type == WebhookType.HOOK_OP:
             try:
                 sync_payload = HookOpPayload(**raw_payload)
-                logger.info(
+                # DEBUG: this says only "the payload parsed", on the success
+                # path of an endpoint every agent message hits twice. The
+                # INVALID branch below stays at ERROR — that one is news.
+                logger.debug(
                     f"[HOOK_OP] Valid type={raw_payload.get('type')} op={raw_payload.get('operation')} id={raw_payload.get('id')}"
                 )
             except Exception as e:
