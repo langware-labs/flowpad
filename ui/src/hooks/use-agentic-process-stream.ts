@@ -16,9 +16,18 @@
  */
 
 import { AgenticProcess, FlowData } from '@sdk';
+import { useHistoryLoadAlert } from '@src/hooks/use-history-load-alert';
 import { useCallback, useRef, useSyncExternalStore } from 'react';
 
 export function useAgenticProcessStream(process: AgenticProcess | null): FlowData[] {
+  // Every surface that renders the stream comes through here, so this is the one
+  // place that sees "the stream is empty" — including the case where it is empty
+  // because the replay was DROPPED rather than because nothing was said. Raising
+  // the alert here covers each of those surfaces once, instead of asking every
+  // caller to remember to wire it (FLOWPAD-2038). `notify` dedupes per process,
+  // so several surfaces observing the same process still yield one toast.
+  useHistoryLoadAlert(process);
+
   const snapshotRef = useRef<FlowData[]>([]);
 
   const subscribe = useCallback((cb: () => void) => {
