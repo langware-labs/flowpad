@@ -125,6 +125,20 @@ def is_message(item) -> bool:
     return tag_is_within(item.kind or "", MESSAGE_KIND_ROOT)
 
 
+def _thread_title(item) -> str:
+    """A chat thread's display title: the root message's opening line.
+
+    First line only, bounded, ellipsized on a word where possible. Empty when
+    the item has no body — the caller then falls back to the thread key.
+    """
+    opening = (getattr(item, "body", "") or "").strip().splitlines()[0:1]
+    text = opening[0].strip() if opening else ""
+    if len(text) <= 60:
+        return text
+    cut = text[:60].rsplit(" ", 1)[0] or text[:60]
+    return f"{cut}…"
+
+
 def channel_of(source) -> str:
     """The user-facing channel for a DataSource.
 
@@ -201,8 +215,12 @@ async def project_source_item(
                 channel=channel,
                 thread_key=key,
                 conversation_id=mint_uuid(),
-                title=subject or key,
-                name=subject or key,
+                # A mail thread titles by subject. A chat message has none, and
+                # falling back to the KEY put raw Slack ts digits in the inbox;
+                # the root message's opening is what Slack itself titles a
+                # thread by. Stamped at birth only, so it never churns.
+                title=subject or _thread_title(item) or key,
+                name=subject or _thread_title(item) or key,
             )
             await thread.save(notify=False)
     thread_id = str(thread.id)
