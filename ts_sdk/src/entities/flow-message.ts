@@ -192,6 +192,9 @@ export interface IFlowMessage extends IEntity {
   /** Local id of the message this replies to — provenance for quoting, NOT how
    *  threading is decided. */
   reply_to_id?: string | null;
+  /** Set on a REFERENCE row: the SourceItem whose body this message renders.
+   *  The stored row's `text` is always empty; reads arrive hydrated. */
+  source_item_id?: string | null;
 }
 
 // `implements IFlowMessage` only checks the class; it contributes no members, so every
@@ -227,6 +230,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   origin?: ICloudOrigin | null;
   thread_id?: string | null;
   reply_to_id?: string | null;
+  source_item_id?: string | null;
   static type: string = 'flow_message';
 
   constructor(entity: Partial<IFlowMessage> = {}) {
@@ -256,6 +260,20 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.origin = entity.origin ?? null;
     this.thread_id = entity.thread_id ?? null;
     this.reply_to_id = entity.reply_to_id ?? null;
+    this.source_item_id = entity.source_item_id ?? null;
+  }
+
+  /**
+   * Store merge hook (see `DataManager.castAndDeepAssign`). A reference row
+   * (`source_item_id` set) stores no body server-side: reads arrive hydrated,
+   * but write-path UPDATE broadcasts (an `is_read` toggle re-emitting the
+   * stored row) carry `text: ""`. Dropping the empty field before the merge
+   * keeps the body we already hold instead of blanking the open conversation.
+   */
+  onEntityUpdate(source: Partial<IFlowMessage>): void {
+    if (source.source_item_id && !source.text && this.text) {
+      delete source.text;
+    }
   }
 
   /** Promote a draft message to a real reply: flips is_draft=false, appends to conversation.jsonl, pushes to hub. */

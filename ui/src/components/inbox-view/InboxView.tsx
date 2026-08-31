@@ -52,7 +52,8 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
-import { updateMessage, bulkUpdateMessages } from './inbox-api';
+import { updateMessage, bulkUpdateMessages, searchInbox } from './inbox-api';
+import { SourceChip } from '@src/components/conversation/channel-attribution';
 import {
   conversationFacets,
   actionsFor,
@@ -376,6 +377,9 @@ export function ConversationListRow({
       </span>
       <span className="min-w-0 flex-1 truncate" data-testid="inbox-row-subject-line">
         <CategoryChips facets={facets} className="me-1" />
+        {/* Channel conversations carry exactly one compact source chip; hub
+            rows have no origin and render none — absence means "ours". */}
+        <SourceChip origin={latestMessage?.origin} className="me-1" />
         <span className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>{subject}</span>
         {snippet && (
           <>
@@ -467,37 +471,29 @@ export function InboxView() {
   if (isSuccess) hasLoadedOnce.current = true;
   const initialLoading = isLoading && !hasLoadedOnce.current;
 
-  // Text search over message bodies. The substring match runs in the DB —
-  // a ``$LIKE`` filter on FlowMessage.text (SQL ``LIKE %needle%``, spans ALL
-  // messages: read, archived, any thread position) — so only the matching
-  // messages reach the client; we just collect their conversation ids. The
-  // watch is only enabled while a query is typed, and stays live via the
-  // entity-update channel.
+  // Text search over message bodies — server-side, via the `inbox-search`
+  // action rather than a `$LIKE` entity query: under the reference model a
+  // channel message's body lives on its SourceItem (the FlowMessage row stores
+  // `text: ""`), so the backend searches BOTH residences and hands back
+  // conversation ids. Debounced per keystroke; the previous result is held
+  // while the next request is in flight so the list doesn't blank.
   const [searchQuery, setSearchQuery] = useState('');
   const needle = searchQuery.trim();
   const searchActive = needle !== '';
-  const msgRequest = useMemo(
-    () =>
-      new QueryRequest({
-        type: FlowMessage.type,
-        query: { match: { op: '$LIKE', operands: ['text', needle] } },
-        name: 'inbox message search',
-      }),
-    [needle],
-  );
-  const { data: matchedMessages } = useEntitiesQuery<FlowMessage>(msgRequest, { enabled: searchActive });
-  // Hold the last result while the next keystroke's query is in flight so the
-  // list doesn't blank between keystrokes (useEntitiesQuery resets data to
-  // undefined on every request change).
-  const lastMatchIdsRef = useRef<Set<string>>(new Set());
-  const matchIds = useMemo(() => {
-    if (matchedMessages) {
-      lastMatchIdsRef.current = new Set(
-        matchedMessages.map((m) => m.conversation_id).filter((id): id is string => !!id),
-      );
-    }
-    return lastMatchIdsRef.current;
-  }, [matchedMessages]);
+  const [matchIds, setMatchIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!searchActive) return;
+    let stale = false;
+    const timer = setTimeout(() => {
+      void searchInbox(needle).then((ids) => {
+        if (!stale) setMatchIds(ids);
+      });
+    }, 200);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [needle, searchActive]);
 
   const sorted = useMemo(() => {
     const list = searchActive ? conversations.filter((c) => c.id && matchIds.has(c.id)) : [...conversations];

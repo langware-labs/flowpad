@@ -46,6 +46,8 @@ export interface IDataSourceSpec extends IEntity {
   title?: string;
   description?: string;
   icon_name?: string;
+  /** Per-CHANNEL glyphs for a multi-channel transport (agent: gmail→Mail, slack→Slack). */
+  channel_icon_names?: Record<string, string>;
   setup_wiki?: string;
   runtime?: string;
   reflect?: string[];
@@ -81,6 +83,7 @@ export class DataSourceSpec extends APIEntity<DataSourceSpec> implements IDataSo
    * glyph does not need that name at all.
    */
   icon_name: string = '';
+  channel_icon_names: Record<string, string> = {};
   setup_wiki: string = '';
   runtime: string = 'builtin';
   reflect: string[] = [];
