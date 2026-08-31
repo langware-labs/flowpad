@@ -93,8 +93,21 @@ async def reindex_paths(
         # ORIGINAL id (same entity updates) instead of forking a fresh v4. Only
         # consulted on a capsule miss; folder/carrier-intact types ignore it.
         entity_id = getattr(entity, "id", None)
+        # Thread the row's OWN scope/project_id too. Without them
+        # ``discover_record_by_path`` falls back to ``classify_path(path)``, which
+        # knows only three roots (system / user_home / cwd) and calls anything under
+        # the user's home ``user`` — so resyncing an asset in a project stored at
+        # ``~/Flowpad workspace/<proj>`` relabels it ``scope='user'`` and
+        # ``apply_scope_filter`` then hides it from its own project. This is a
+        # resync of an entity we ALREADY resolved: its stored labels are
+        # authoritative and a path guess must not overwrite them.
         return await discover_record_by_path(
-            entity.type, target, notify=True, proposed_id=str(entity_id) if entity_id else None
+            entity.type,
+            target,
+            notify=True,
+            proposed_id=str(entity_id) if entity_id else None,
+            scope=entity.scope,
+            project_id=entity.project_id,
         )
 
     # De-dupe while preserving order.
