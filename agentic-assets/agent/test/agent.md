@@ -8,10 +8,10 @@ additional_dirs: []
 load_flowpad_assistant: false
 cli_options: {}
 enabled: true
-version: 4
+version: 5
 ---
 
-agent agent
+agent agent dfgdfgdf 
 
 <!-- flowpad:capsule identity
 version: 1
