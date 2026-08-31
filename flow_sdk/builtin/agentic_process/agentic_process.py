@@ -4189,17 +4189,54 @@ class AgenticProcess(Entity):
                         # composer gate: paste-with-Enter vendors use the short
                         # cadence; discrete-Enter vendors use the long one.
                         delay = 1.5 if submits_on_paste else 3.0
-                        for _ in range(8):
-                            await asyncio.sleep(delay)
-                            if user_turn_landed.is_set():
-                                return
+                        attempts = 8
+                        for attempt in range(1, attempts + 1):
                             try:
+                                await asyncio.sleep(delay)
+                                if user_turn_landed.is_set():
+                                    return
                                 # Retry: discrete Enter only — never re-paste
                                 # (would concatenate). A \r on an empty/submitted
                                 # input box is a harmless no-op.
                                 await self.send(b"\r")
-                            except Exception:
+                            except asyncio.CancelledError:
+                                # BaseException — never reaches ``except Exception``,
+                                # so without this the cadence dies silently. Re-raised.
+                                logger.warning(
+                                    "prompt-pty: Enter-nudge CANCELLED for %s on attempt %d/%d "
+                                    "(user_turn_landed=%s) — remaining nudges dropped; a prompt "
+                                    "already typed into the composer stays unsubmitted",
+                                    self.id,
+                                    attempt,
+                                    attempts,
+                                    user_turn_landed.is_set(),
+                                )
+                                raise
+                            except Exception as e:
+                                # Which attempt failed is the diagnosis: #1 = the write
+                                # path was never usable; later = the PTY died mid-cadence.
+                                logger.warning(
+                                    "prompt-pty: Enter-nudge send failed for %s on attempt %d/%d — "
+                                    "abandoning remaining retries (message may be "
+                                    "left typed but unsubmitted): %r",
+                                    self.id,
+                                    attempt,
+                                    attempts,
+                                    e,
+                                    exc_info=True,
+                                )
                                 return
+                        # Every nudge landed and no user turn appeared. Previously the
+                        # loop just ended, so this left no trace despite nothing raising.
+                        if not user_turn_landed.is_set():
+                            logger.warning(
+                                "prompt-pty: Enter-nudge exhausted for %s — %d Enter(s) sent over "
+                                "~%.1fs with no exception and the user turn never landed; the bytes "
+                                "reached the PTY but the TUI did not submit them",
+                                self.id,
+                                attempts,
+                                attempts * delay,
+                            )
 
                     async def _nudge_submit() -> None:
                         if needs_initial_type:
@@ -4371,6 +4408,20 @@ class AgenticProcess(Entity):
                             await handler.on_flow_data(self._pty_inactivity_result(landed))
                             return
                         await asyncio.sleep(poll_interval)
+            except asyncio.CancelledError:
+                # ``_stream_body``'s finally cancels this on client disconnect — the
+                # only exit here that logged nothing (every ``return`` above does).
+                logger.warning(
+                    "prompt-pty: turn CANCELLED for %s (%s) — client stream closed "
+                    "(navigation / reload / tab close). user_turn_landed=%s, "
+                    "nudge_task_done=%s. A prompt already delivered to the PTY but not "
+                    "yet submitted is abandoned here with no further retries",
+                    self.id,
+                    worker_type,
+                    user_turn_landed.is_set(),
+                    nudge_task.done() if nudge_task is not None else None,
+                )
+                raise
             except Exception as e:
                 logger.exception("prompt-pty: turn error")
                 await handler.add_str_to_queue(Exception(f"prompt-pty error: {e}"))

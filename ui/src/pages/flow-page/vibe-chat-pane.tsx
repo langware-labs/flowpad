@@ -25,10 +25,27 @@ import { VibeWorkerSwitchDialog, type VibeWorkerSwitchIntent } from './VibeWorke
 interface VibeChatPaneProps {
   process: AgenticProcess | null;
   workContext?: AssetWorkContext | null;
+  /**
+   * Host-owned "New is creating a session right now" flag (FLOWPAD-2045).
+   *
+   * The pane can UNMOUNT mid-creation: `New` rebinds the URL the moment the new
+   * process lands, and the host stops rendering the pane for the render or two
+   * it takes the entity to resolve. Local state dies with it and the gate would
+   * never lift — so a host that gates surfaces of its OWN on this flag (the vibe
+   * workspace greys its starter chips) owns the state and passes it back down.
+   * Hosts that don't care omit both and the pane keeps its local copy.
+   */
+  newSessionPending?: boolean;
+  onNewSessionPendingChange?: (pending: boolean) => void;
 }
 
 /** Process-bound chat shared by the process Display and asset-child shells. */
-export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps) {
+export function VibeChatPane({
+  process,
+  workContext = null,
+  newSessionPending,
+  onNewSessionPendingChange,
+}: VibeChatPaneProps) {
   const { t } = useLingui();
   const { project } = useAgentContext();
   const { navigation } = useDockNavigation();
@@ -42,7 +59,15 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
     workdir: string | null | undefined;
   } | null>(null);
   const [workerSwitchIntent, setWorkerSwitchIntent] = useState<VibeWorkerSwitchIntent | null>(null);
-  const [startingNewSession, setStartingNewSession] = useState(false);
+  const [localNewSessionPending, setLocalNewSessionPending] = useState(false);
+  const startingNewSession = newSessionPending ?? localNewSessionPending;
+  const markNewSessionPending = useCallback(
+    (pending: boolean) => {
+      setLocalNewSessionPending(pending);
+      onNewSessionPendingChange?.(pending);
+    },
+    [onNewSessionPendingChange],
+  );
 
   // "New" must EAGERLY create the fresh AgenticProcess and rebind the
   // workspace URL — not just clear the panel's local composer state. Vibe is
@@ -65,7 +90,12 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
         return;
       }
       startNewSession();
-      setStartingNewSession(true);
+      // Held until createVibeProcessForProject has BOTH created the process and
+      // rebound the URL to it, so nothing the user can click in between (the
+      // composer, the display's starter chips) is still aimed at the old
+      // session. FLOWPAD-2045: a starter chip clicked in that window sent its
+      // prompt into the previous chat, and the new one stayed empty forever.
+      markNewSessionPending(true);
       try {
         await createVibeProcessForProject({
           projectId,
@@ -77,7 +107,7 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
         console.error('[Vibe] Failed to start a new session:', error);
         notify.error({ title: t`Could not start`, message: t`Failed to start the build session.` });
       } finally {
-        setStartingNewSession(false);
+        markNewSessionPending(false);
       }
     },
     [
@@ -87,6 +117,7 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
       process?.project_id,
       navigation,
       defaultWorkerType,
+      markNewSessionPending,
       t,
     ],
   );
@@ -178,6 +209,7 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
         className="h-full border-e border-border"
         dense
         allowAttachments
+        composerDisabled={startingNewSession}
         leadingSlot={({ startNewSession }) => (
           <button
             type="button"

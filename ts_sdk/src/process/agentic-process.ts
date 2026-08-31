@@ -44,6 +44,7 @@ import {
   ProcessStatus,
   WorkerMode,
   WorkerStatus,
+  isBusy,
   isProcessRunning,
   isReadyForInput,
   isWorkerRunning,
@@ -1924,6 +1925,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       return;
     }
 
+    // Don't echo a turn the process can't accept — it'll 409, and with nothing
+    // persisted to match, the echo is stuck on screen forever (FLOWPAD-2045).
+    if (isBusy(this)) {
+      return;
+    }
+
     // Guard against double-submitting the SAME text — but only against a live
     // placeholder, never against a persisted row: matching history too would
     // silently swallow a message the user deliberately sends twice ("hi", then
@@ -2085,7 +2092,23 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         this._historyLoaded = true;
       } catch (error) {
         console.error(`[AgenticProcess] Failed to load history for process ${this.id}:`, error);
-        // Don't throw - history loading failure shouldn't break the app
+        // Don't throw - history loading failure shouldn't break the app.
+        //
+        // But it must not stay SILENT either. Every row is ingested in the one
+        // loop above, so a single malformed row throws out of the whole loop and
+        // the stream is left EMPTY — the pane then renders exactly like a session
+        // that genuinely has no history, with nothing to distinguish "nothing was
+        // said" from "your conversation failed to load" (FLOWPAD-2038, where one
+        // `&quot;` in a transcript emptied a 1600-row chat).
+        //
+        // Note the callers' `loadHistory().catch(...)` handlers can never see
+        // this: the promise resolves. So the failure is announced here, as an
+        // event, and the mounted surface turns it into a user-visible alert —
+        // the SDK has no notification layer of its own and must not reach into
+        // the UI's. NOT named 'error': that is EventEmitter's special-cased name
+        // and would throw again when no listener is attached, which is the exact
+        // amplification that made this bug swallow the entire replay.
+        this.emit('history-error', { process: this, error });
       } finally {
         this._historyLoading = null;
       }
@@ -2439,6 +2462,25 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     } finally {
       this._setPromptingDelta(-1);
     }
+  }
+
+  /**
+   * `prompt()` when idle, `enqueue()` when a turn is running — `isBusy` (wire)
+   * or `isPrompting` (just fired locally, not yet reflected back). The one
+   * fork every "send" surface should use instead of racing `prompt()` into a
+   * 409 (FLOWPAD-2045). `opts.permissionMode` is dropped on the queue path —
+   * it carries prompt text only.
+   */
+  async promptOrEnqueue(
+    text: string,
+    abortController?: AbortController,
+    opts?: { permissionMode?: PermissionMode },
+  ): Promise<void> {
+    if (isBusy(this) || this.isPrompting) {
+      await this.enqueue(text);
+      return;
+    }
+    await this.prompt(text, abortController, opts);
   }
 
   /**

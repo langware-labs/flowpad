@@ -2571,6 +2571,10 @@ msgstr "Chat"
 msgid "Chat history"
 msgstr "Chat history"
 
+#: src/hooks/use-history-load-alert.ts
+msgid "Chat history failed to load"
+msgstr "Chat history failed to load"
+
 #: src/components/ui/settings-pane.tsx
 msgid "Chat Settings"
 msgstr "Chat Settings"
@@ -9525,7 +9529,6 @@ msgid "Message Attachment"
 msgstr "Message Attachment"
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
-#: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 msgid "Message not queued"
 msgstr "Message not queued"
 
@@ -16536,6 +16539,10 @@ msgstr "This conversation came from a project on another machine. Pick the local
 #: src/components/inbox-view/InboxView.tsx
 msgid "This conversation is local-only. It will be removed from this device."
 msgstr "This conversation is local-only. It will be removed from this device."
+
+#: src/hooks/use-history-load-alert.ts
+msgid "This conversation is still saved, but part of it could not be read, so the chat is showing empty. Reloading may help. Details: {detail}"
+msgstr "This conversation is still saved, but part of it could not be read, so the chat is showing empty. Reloading may help. Details: {detail}"
 
 #: src/routes/loaders/load-conversation.ts
 msgid "This conversation no longer exists or is unavailable."

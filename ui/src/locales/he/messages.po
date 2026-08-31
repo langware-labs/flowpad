@@ -2571,6 +2571,10 @@ msgstr "צ'אט"
 msgid "Chat history"
 msgstr "היסטוריית צ'אט"
 
+#: src/hooks/use-history-load-alert.ts
+msgid "Chat history failed to load"
+msgstr ""
+
 #: src/components/ui/settings-pane.tsx
 msgid "Chat Settings"
 msgstr "הגדרות צ'אט"
@@ -9525,7 +9529,6 @@ msgid "Message Attachment"
 msgstr "קובץ מצורף להודעה"
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
-#: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 msgid "Message not queued"
 msgstr "ההודעה לא נוספה לתור"
 
@@ -16536,6 +16539,10 @@ msgstr "שיחה זו באה מפרויקט במכונה אחרת. בחר את �
 #: src/components/inbox-view/InboxView.tsx
 msgid "This conversation is local-only. It will be removed from this device."
 msgstr "שיחה זו היא רק מקומית. היא תוסר מהתקן זה."
+
+#: src/hooks/use-history-load-alert.ts
+msgid "This conversation is still saved, but part of it could not be read, so the chat is showing empty. Reloading may help. Details: {detail}"
+msgstr ""
 
 #: src/routes/loaders/load-conversation.ts
 msgid "This conversation no longer exists or is unavailable."
