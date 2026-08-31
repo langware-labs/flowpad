@@ -272,6 +272,18 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
 
     local = get_local_provider(provider)
 
+    # Explicit escape hatch: ``auth?flow=device`` runs the LOCAL grant even when
+    # the hub could carry the code flow. Exists for the case where the hub
+    # completes the flow but refuses to release the token value (see
+    # ``_handle_wait_callback``'s hub_release_failed) — the local grant is then
+    # the only one that actually lands a usable credential.
+    requested_flow = (request_info.request_parameters or {}).get("flow") if request_info else None
+    if requested_flow == "device":
+        if local is None:
+            return ApiFailResponse(message=f"Provider {provider} has no local flow")
+        logger.info("OAuth: %s local flow explicitly requested; skipping the hub", provider)
+        return await get_desktop_oauth_auth_url(provider, user_id)
+
     # A real authorization-code grant wins. The only local flow that is NOT one
     # is GitHub's device grant — it makes the user retype a code and is bounded
     # by what a device-flow app is registered for — so when the hub can run the
@@ -371,11 +383,23 @@ async def _handle_wait_callback(provider: str, state: str) -> ApiResponse:
         # its popup open and the hub keeps the session.
         return ApiSuccessResponse(data={"status": "polling"})
 
-    await _adopt_hub_credential(provider, local_name or hub_name, hub_name)
+    adopted = await _adopt_hub_credential(provider, local_name or hub_name, hub_name)
+    if not adopted:
+        # The hub confirmed the token row but refused to release its value, so
+        # nothing landed in local SOD. Reporting success here would leave the
+        # Connections tab saying Connected while every local consumer (git
+        # push, gh, asset publish) keeps failing — the exact lie this guards.
+        return ApiFailResponse(
+            message=(
+                f"The hub holds the {provider} token but did not release its value; "
+                f"reconnect with the local device flow (auth?flow=device)"
+            ),
+            data={"status": "hub_release_failed", "provider": provider},
+        )
     return ApiSuccessResponse(data={"status": "success", "provider": provider})
 
 
-async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -> None:
+async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -> bool:
     """Make a hub-held token usable on this machine.
 
     Two different needs, so two behaviours:
@@ -388,6 +412,9 @@ async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -
     * A provider with no local consumer — Slack — gets a value-free row only.
       The token stays on the hub and is resolved when a worker actually needs it,
       which is the rule the rest of the secret plane follows.
+
+    Returns False only in the lie case: a provider with local consumers whose
+    value the hub refused to release. Row-only providers return True.
     """
     from flow_sdk.app.actions.desktop_oauth import record_credential  # noqa: PLC0415
     from flow_sdk.core.entity.entity_env.env_types import EnvVar, EnvVarType  # noqa: PLC0415
@@ -399,8 +426,9 @@ async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -
 
     user = await get_current_request_user_fresh()
     if user is None:
-        return
+        return False
 
+    adopted = True
     if get_local_provider(provider) is not None:
         value = await hub_credential_value(hub_name)
         if value:
@@ -410,6 +438,7 @@ async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -
             logger.info("OAuth: adopted the hub's %s token into local %s", provider, local_name)
         else:
             logger.warning("OAuth: hub holds %s but would not release its value", hub_name)
+            adopted = False
 
     # A provider the hub owns outright has no local value to record, but the row
     # still has to exist or the table reads it as MISSING.
@@ -423,6 +452,7 @@ async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -
             )
         )
         await user.update()
+    return adopted
 
 
 async def _handle_test(provider: str) -> ApiResponse:
