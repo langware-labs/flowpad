@@ -218,14 +218,15 @@ async def test_factory_reset_awaits_canonical_system_content_pass(
     async def watcher_stop() -> None:
         events.append("watcher_stop")
 
-    async def watcher_rearm() -> None:
+    async def watcher_rearm(*, catch_up: bool = True) -> None:
+        assert catch_up is False, "the reset path must skip the catch-up disk walk"
         events.append("watcher_rearm")
 
     monkeypatch.setattr(
         builtin_triggers_module, "seed_service_entities", seed_service_entities
     )
     monkeypatch.setattr(fsop_watcher_module.fsop_watcher, "stop", watcher_stop)
-    monkeypatch.setattr(fsop_watcher_module.fsop_watcher, "rearm", watcher_rearm)
+    monkeypatch.setattr(fsop_watcher_module.fsop_watcher, "start", watcher_rearm)
 
     result = await system_tools.clear_all_data()
 
@@ -352,7 +353,7 @@ async def test_rearm_watches_fsop_triggers_the_reset_left_stored() -> None:
     original = Trigger.list_by_type
     Trigger.list_by_type = _one_fsop_trigger  # type: ignore[assignment]
     try:
-        await fsop_watcher.rearm()
+        await fsop_watcher.start(catch_up=False)
         assert trigger.id in fsop_watcher._tasks, (
             "a re-seeded FSOp trigger was stored but never watched"
         )

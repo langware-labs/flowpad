@@ -22,6 +22,15 @@ export function displayLabelForTypeid(typeid: string, fallbackName?: string | nu
   }
 }
 
+/**
+ * Descriptor-level label. Every surface already holds the whole descriptor, so
+ * take it whole — a call site cannot forget to thread the on-disk `name`
+ * fallback (forgetting it silently regresses to a raw `skill-<uuid>`).
+ */
+export function displayLabelForDescriptor(d: { typeid: string; name?: string | null }): string {
+  return displayLabelForTypeid(d.typeid, d.name);
+}
+
 export function parseTypeid(typeid: string): { type: string; id: string } {
   const dash = typeid.indexOf('-');
   if (dash < 0) return { type: typeid, id: '' };

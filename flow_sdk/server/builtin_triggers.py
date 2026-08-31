@@ -182,7 +182,7 @@ async def _register_post_save(entity: Trigger) -> None:
             # (set_service_triggers runs BEFORE fsop_watcher.start), so we
             # don't need to spawn the awatch task here — the boot order
             # covers it. The factory-reset path has no such walk following it,
-            # so it re-arms explicitly via `fsop_watcher.rearm()`.
+            # so it re-arms explicitly via `fsop_watcher.start(catch_up=False)`.
             from flow_sdk.server.fsop_watcher import fsop_watcher
 
             if len(fsop_watcher) and entity.id not in fsop_watcher._tasks:

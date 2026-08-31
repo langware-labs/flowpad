@@ -37,7 +37,7 @@ vi.mock('@src/components/asset-manager/asset-row-helpers', () => ({
     const dash = typeid.indexOf('-');
     return { type: typeid.slice(0, dash), id: typeid.slice(dash + 1) };
   },
-  displayLabelForTypeid: (typeid: string) => `label:${typeid}`,
+  displayLabelForDescriptor: (d: { typeid: string }) => `label:${d.typeid}`,
 }));
 
 const { FavoritesAddRow } = await import('@src/components/favorites/FavoritesAddRow');
