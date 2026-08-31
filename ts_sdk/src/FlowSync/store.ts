@@ -1794,8 +1794,17 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (typeof obj !== 'object' || obj === null) {
       return undefined;
     }
-    // Object may be a proxy or a json object
-    if ('type' in obj) {
+    // Object may be a proxy or a json object.
+    //
+    // Test the VALUE, not key presence. `APIEntity` DECLARES `type?: string`,
+    // and `ui/tsconfig.app.json` compiles with `useDefineForClassFields: true`
+    // (ts_sdk's own tsconfig has it false), so under the UI build every
+    // instance gets an own `type` property initialised to `undefined`.
+    // `'type' in obj` is therefore always true there, and a key-presence check
+    // returned `undefined` for any entity built in code rather than from the
+    // wire — `new Project({id, name})` threw "Invalid entity type or ID".
+    // The static the class registers under is the right answer in that case.
+    if (obj.type) {
       return obj.type;
     } else if ('constructor' in obj && 'type' in obj.constructor) {
       return obj.constructor.type;
