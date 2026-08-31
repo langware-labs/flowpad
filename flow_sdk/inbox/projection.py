@@ -471,7 +471,8 @@ async def reconcile_source(data_source_id: str, *, limit: int = RECONCILE_BATCH)
             match=ExpressionNode(
                 op=QueryOp.IN, operands=["source_item_id", [str(i.id) for i in items]]
             )
-        )
+        ),
+        hydrate=False,  # placement check reads ids only
     )
     placed = {str(m.source_item_id) for m in existing}
     missing = [i for i in items if str(i.id) not in placed]
@@ -514,6 +515,89 @@ async def reconcile_source(data_source_id: str, *, limit: int = RECONCILE_BATCH)
         await recompute_thread_projection(thread_id)
     logger.info("[inbox] reconciled %d/%d items for source %s", projected, len(missing), data_source_id)
     return projected
+
+
+async def remove_projection_for_items(item_ids, *, notify: bool = True) -> int:
+    """Delete the reference rows for purged SourceItems and heal their containers.
+
+    Mandatory under the reference model, where it was merely hygiene under the
+    copy: an orphaned reference renders BLANK, not stale-but-readable, so a
+    purge that left the messages behind would fill the inbox with empty rows.
+
+    Per doomed message: destroy the row, prune its conversation pointer. Then
+    per touched thread: recount, or delete it when nothing remains; a
+    conversation with no messages and no threads left goes with it. Hub-native
+    messages never carry ``source_item_id``, so a mixed conversation only ever
+    loses its channel half.
+    """
+    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+    from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+    from flow_sdk.fs_store.operations.conversation import prune_message_pointer  # noqa: PLC0415
+    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+    ids = [str(i) for i in item_ids if i]
+    if not ids:
+        return 0
+    doomed = await FlowMessage.get_all(
+        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["source_item_id", ids])),
+        hydrate=False,
+    )
+    if not doomed:
+        return 0
+
+    touched_threads = {str(fm.thread_id) for fm in doomed if fm.thread_id}
+    touched_convs = {str(fm.conversation_id) for fm in doomed if fm.conversation_id}
+    for fm in doomed:
+        conv_id = str(fm.conversation_id or "")
+        try:
+            await fm.destroy()
+        except Exception:  # noqa: BLE001 — one stuck row must not stall the purge
+            logger.exception("[inbox] purge: destroy failed for flow_message %s", fm.id)
+            continue
+        if conv_id:
+            try:
+                rec = FSRecord(type=RecordType.CONVERSATION, id=conv_id)
+                await prune_message_pointer(rec, str(fm.id), notify=notify)
+            except Exception:  # noqa: BLE001
+                logger.exception("[inbox] purge: pointer prune failed fm=%s conv=%s", fm.id, conv_id)
+
+    for thread_id in touched_threads:
+        thread = await MessageThread.get_one({"id": thread_id})
+        if thread is None:
+            continue
+        remaining = await FlowMessage.get_all(
+            QueryFilter(
+                match=ExpressionNode(op=QueryOp.EQ, operands=["thread_id", thread_id]), limit=1
+            ),
+            hydrate=False,
+        )
+        if remaining:
+            await recompute_thread_projection(thread_id, thread=thread, notify=notify)
+        else:
+            await thread.destroy()
+
+    for conv_id in touched_convs:
+        remaining = await FlowMessage.get_all(
+            QueryFilter(
+                match=ExpressionNode(op=QueryOp.EQ, operands=["conversation_id", conv_id]), limit=1
+            ),
+            hydrate=False,
+        )
+        threads_left = await MessageThread.get_all(
+            QueryFilter(
+                match=ExpressionNode(op=QueryOp.EQ, operands=["conversation_id", conv_id]), limit=1
+            )
+        )
+        if not remaining and not threads_left:
+            conv = await Conversation.get_one({"id": conv_id})
+            if conv is not None:
+                await conv.destroy()
+
+    _touch()
+    return len(doomed)
 
 
 # ── bus wiring ───────────────────────────────────────────────────────────────

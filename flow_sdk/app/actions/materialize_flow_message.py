@@ -254,6 +254,11 @@ async def materialize_flow_message(
         from flow_sdk.api.api_types.messages import DataOpMessage, OperationType  # noqa: PLC0415
         from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
 
+        # A reference row was just saved with text="" (the save() guard). The
+        # live CREATE is a display event — hydrate in memory first, or an open
+        # conversation renders the arrival blank until its next full fetch.
+        if getattr(fm, "source_item_id", None):
+            await FlowMessage._hydrate([fm])
         await handle_entity_op(DataOpMessage(data=fm, op=OperationType.CREATE, to_entity=fm.typeid))
 
     # Resolve parent (Task preferred, else Project) for the record's parent_ref.
@@ -318,6 +323,11 @@ async def materialize_flow_message(
         try:
             from flow_sdk.api.api_types.messages import OperationType  # noqa: PLC0415
 
+            # The parent-stamp save above re-blanked a reference row's text
+            # (the save() guard); this emit is a display event, so hydrate
+            # again — same reason as the CREATE emit.
+            if getattr(fm, "source_item_id", None) and not fm.text:
+                await FlowMessage._hydrate([fm])
             await conv.emit_child_op(fm, OperationType.CHILD_CREATED)
         except Exception as e:  # noqa: BLE001
             logger.warning("[materialize_flow_message] child announce conv=%s failed: %s", conv.id, e)

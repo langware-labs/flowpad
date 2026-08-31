@@ -181,7 +181,12 @@ async def _load_and_count() -> int:
     )
     return count_unread(
         conversations=await Conversation.get_all(QueryFilter(type=EntityType.CONVERSATION.value)),
-        fm_by_id={m.id: m for m in await FlowMessage.get_all(QueryFilter(type=EntityType.FLOW_MESSAGE.value))},
+        # hydrate=False: the formula reads is_read/sender/is_draft, never text —
+        # joining every reference row's SourceItem here would put a whole-mailbox
+        # join on every mutation's recompute.
+        fm_by_id={m.id: m for m in await FlowMessage.get_all(
+            QueryFilter(type=EntityType.FLOW_MESSAGE.value), hydrate=False
+        )},
         invitations=invitations,
         self_ids=await User.self_ids(),
         viewer_email=email,
