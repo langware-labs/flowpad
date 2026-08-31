@@ -355,15 +355,20 @@ async def _retire_row(path: str) -> None:
     Uses the same `remove_orphan_row` helper as the sweep, so the narrower
     type-scoped delete (no relationship cascade) applies here too.
     """
-    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
     from flow_sdk.fs_store.orphan_removal import remove_orphan_row  # noqa: PLC0415
+    from flow_sdk.fs_store.reindex import owning_asset_for_removed_path  # noqa: PLC0415
 
     try:
-        entity = await Entity.get_by_asset_ref(path, resolve_containing=False)
+        entity, root_gone = await owning_asset_for_removed_path(path)
     except Exception:  # noqa: BLE001
         logger.debug("[reflect] could not resolve %s for removal", path, exc_info=True)
         return
     if entity is None:
+        return
+    if not root_gone:
+        # An inner file of a folder asset went away but the asset root is still
+        # there — that is an edit, not a deletion. Reaping here would destroy a
+        # skill because one of its files was removed.
         return
     await remove_orphan_row(str(entity.id), entity.get_type())
 
@@ -451,10 +456,19 @@ async def reflect_refs(
             # ORIGINAL as primary — so the re-parse is discarded and the row stays
             # pointing at a file we are about to remove. One origin owns one
             # placement; retiring the old one is what makes that true.
-            _retire_stale_placement(source, known, placed)
+            # Compare and re-parse at the TYPE's asset root, not the touched
+            # file. A folder-layout asset is named by its DIRECTORY, so the raw
+            # leaf path is the wrong unit twice over: `_retire_stale_placement`
+            # would read the asset's own root as a stale placement and delete
+            # it, and `discover_record_by_path` given the inner main_file
+            # resolves nothing and silently drops the re-parse.
+            from flow_sdk.fs_store.reindex import asset_target_for  # noqa: PLC0415
+
+            target = asset_target_for(known.type, placed)
+            _retire_stale_placement(source, known, target)
             await discover_record_by_path(
                 known.type,
-                placed,
+                target,
                 notify=True,
                 proposed_id=str(known.id),
             )

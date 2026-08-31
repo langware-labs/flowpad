@@ -38,6 +38,62 @@ _EXT_MINT_CANDIDATES: dict[str, tuple[str, ...]] = {
 }
 
 
+async def owning_asset_for_removed_path(path: str):
+    """``(row, root_gone)`` for a path a source reports as gone.
+
+    THE removal policy, in one place, because two callers need it and they must
+    not drift: ``reindex_paths``'s removal loop and ``reflect._retire_row``.
+
+    Exact match first, then containment — a folder-layout asset is named by its
+    ROOT, so an inner file's path never matches it exactly and an exact-only
+    lookup silently finds nothing and leaves a zombie row. ``root_gone`` is then
+    decided on the ROW'S OWN ``asset_ref``, never on the touched path: deleting
+    ONE file inside a folder asset must not reap the asset, and only the root
+    answers that. ``source_unreachable`` keeps the existing policy that an
+    unreadable volume is not a deletion.
+    """
+    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import source_unreachable  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import LayoutKind, SchemaRegistry  # noqa: PLC0415
+
+    row = await Entity.get_by_asset_ref(path, resolve_containing=False, strict=True)
+    if row is None:
+        row = await Entity.get_by_asset_ref(path, resolve_containing=True, strict=True)
+    if row is None:
+        return None, False
+    root = str(getattr(row, "asset_ref", "") or "")
+    if not root:
+        return row, False
+    # "Still there?" is the TYPE's question, not a bare stat: removing a folder
+    # asset's main_file leaves the directory behind, and an ``exists()`` on that
+    # empty shell reports a live asset that has no content. ``layout_of(verify)``
+    # is the registry's own answer — it requires the main_file for a folder type.
+    info = SchemaRegistry.get(row.get_type())
+    alive = (
+        info.layout_of(Path(root), verify=True).kind is not LayoutKind.NONE
+        if info is not None
+        else Path(root).exists()
+    )
+    return row, (not alive and not source_unreachable(root))
+
+
+def asset_target_for(record_type: str, path: str) -> str:
+    """The path ``discover_record_by_path`` must be handed for ``record_type``.
+
+    A folder-layout asset's root is its DIRECTORY; handed the inner ``main_file``
+    it resolves nothing and returns None, and the caller silently loses the
+    re-parse. The registry already answers this (``TypeInfo.layout_of().ref``),
+    so ask it instead of passing the raw touched path through.
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(record_type)
+    if info is None:
+        return path
+    ref = info.layout_of(Path(path)).ref
+    return str(ref) if ref is not None else path
+
+
 @dataclass
 class ReindexResult:
     reindexed: list[str] = field(default_factory=list)
@@ -55,8 +111,33 @@ def _norm(p: str) -> str:
     return str(Path(p).expanduser())
 
 
-def _mint_candidates(path: str) -> tuple[str, ...]:
-    return _EXT_MINT_CANDIDATES.get(Path(path).suffix.lower(), ())
+def _mint_candidates(path: str) -> tuple[tuple[str, str], ...]:
+    """``(type, target path)`` pairs to try, most specific first.
+
+    A folder-layout type names its carrier with a FIXED ``main_file``
+    (``SKILL.md``), so a name match identifies the type unambiguously — exactly
+    the property the extension map lacks and the reason it stays restricted. Ask
+    the registry's own classifier (``TypeInfo.layout_of``) rather than guessing
+    from the suffix, and hand back the layout's ``ref``: a folder asset's root is
+    its DIRECTORY, and ``discover_record_by_path`` cannot mint one from the inner
+    file path. Without this the incremental path mints ``SKILL.md`` as a plain
+    markdown whose asset_ref is the FILE, and every sibling written into that
+    folder then fails to resolve to an owner and fragments into its own entity.
+    """
+    from flow_sdk.fs_store.schema_registry import LayoutKind, SchemaRegistry  # noqa: PLC0415
+
+    p = Path(path)
+    out: list[tuple[str, str]] = []
+    for type_name in SchemaRegistry.get_all_types():
+        info = SchemaRegistry.get(type_name)
+        if info is None or info.main_layout != "folder" or not info.main_file:
+            continue
+        layout = info.layout_of(p, verify=True)
+        if layout.kind is LayoutKind.NONE or layout.ref is None:
+            continue
+        out.append((type_name, str(layout.ref)))
+    out.extend((cand, path) for cand in _EXT_MINT_CANDIDATES.get(p.suffix.lower(), ()))
+    return tuple(out)
 
 
 async def reindex_paths(
@@ -127,9 +208,9 @@ async def reindex_paths(
                 result.skipped.append(path)
                 continue
             minted = False
-            for cand in _mint_candidates(path):
+            for cand, target in _mint_candidates(path):
                 try:
-                    if await discover_record_by_path(cand, path, notify=True, strict_owner=True) is not None:
+                    if await discover_record_by_path(cand, target, notify=True, strict_owner=True) is not None:
                         result.minted.append(path)
                         minted = True
                         break
@@ -159,11 +240,23 @@ async def reindex_paths(
                     result.reindexed.append(path)
                 continue
 
-            # Inner file removed from a still-present folder asset → resync folder.
+            # A file removed from inside a folder asset. Which of the two cases it
+            # is depends on the asset ROOT, not on the touched path: the root is
+            # what the row names now that folder types are typed correctly, and an
+            # exact-match lookup on an inner path can no longer find it.
             folder = await Entity.get_by_asset_ref(path, resolve_containing=True, strict=True)
             if folder is not None:
-                await _resync(folder, path)
-                result.reindexed.append(path)
+                root = str(getattr(folder, "asset_ref", "") or "")
+                if root and not Path(root).exists() and not source_unreachable(root):
+                    # The whole asset is gone — reap it, or deleting a skill would
+                    # leave a row pointing at nothing, searchable forever.
+                    await remove_orphan_row(str(folder.id), folder.get_type())
+                    result.orphaned.append(path)
+                else:
+                    # Root still there: ONE inner file went away. Never reap on
+                    # this branch — that asymmetry is load-bearing.
+                    await _resync(folder, path)
+                    result.reindexed.append(path)
             else:
                 result.skipped.append(path)
         except Exception as exc:  # noqa: BLE001

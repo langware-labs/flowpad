@@ -31,7 +31,7 @@ async def test_create(git_db, asset_repo, make_source, mode, kind):
     await sync_source(source)
 
     assert await entity_at(landing / kind.rel()) is not None, f"{mode}/{kind.name}: no entity"
-    assert await searchable(FIRST_TOKEN), "body did not reach the index"
+    assert await searchable(FIRST_TOKEN, kind.record_type), "body did not reach the index"
 
 
 @matrix
@@ -48,8 +48,8 @@ async def test_update(git_db, asset_repo, make_source, mode, kind):
     await sync_source(source)
 
     assert await id_at(landing / kind.rel()) == before, "update forked the entity"
-    assert await searchable(SECOND_TOKEN), "new content is not searchable"
-    assert not await searchable(FIRST_TOKEN), "stale content still searchable"
+    assert await searchable(SECOND_TOKEN, kind.record_type), "new content is not searchable"
+    assert not await searchable(FIRST_TOKEN, kind.record_type), "stale content still searchable"
 
 
 @matrix
@@ -85,4 +85,4 @@ async def test_delete(git_db, asset_repo, make_source, mode, kind):
     await sync_source(source)
 
     assert await entity_at(landing / kind.rel()) is None
-    assert not await searchable(FIRST_TOKEN), "deleted content still searchable"
+    assert not await searchable(FIRST_TOKEN, kind.record_type), "deleted content still searchable"
