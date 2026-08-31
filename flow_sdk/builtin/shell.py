@@ -832,6 +832,16 @@ class Shell(Entity):
         the PTY is gone or closes before the marker appears — the caller must
         not type. Callers own cancellation (e.g. the prompt turn's nudge task
         is cancelled when the turn stream closes).
+
+        Readiness LATCHES per generation. The scan is bounded to the tail of the
+        accumulated output, but the vendor emits its marker only on a full
+        composer redraw — after one long turn that paint sits far outside the
+        window, and since an idle composer has no reason to repaint, the gate
+        would wait for something that is never coming and every later prompt
+        would fall through to the turn loop's blind last-resort delivery.
+        Latching keeps the cold-boot interstitial protection (an unbooted
+        generation has no latch, so it still scans) while making a booted one
+        answer in O(1).
         """
         from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
             pump_composer_ready,
@@ -846,6 +856,10 @@ class Shell(Entity):
         session = pty_registry.states.get(pty_key)
         if session is None:
             return False
+        # Already confirmed ready for THIS generation — a respawn advances
+        # ``generation_start_seq`` past the latch and forces a fresh scan.
+        if session.composer_ready_seq is not None and session.composer_ready_seq > session.generation_start_seq:
+            return True
         q: asyncio.Queue = asyncio.Queue()
         session.sequenced_output_queues.append(q)
         try:
@@ -855,11 +869,14 @@ class Shell(Entity):
             else:
                 initial, snapshot_max_seq = b"", session.generation_start_seq
 
-            return await pump_composer_ready(
+            ready = await pump_composer_ready(
                 pattern,
                 initial,
                 lambda: _next_unseen_pty_output(q, snapshot_max_seq),
             )
+            if ready:
+                session.composer_ready_seq = session.seq
+            return ready
         finally:
             try:
                 session.sequenced_output_queues.remove(q)

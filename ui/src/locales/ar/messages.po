@@ -776,6 +776,10 @@ msgstr "يلزم تخصيص صدفة جديدة. (إجراء من الخادم �
 msgid "A live session is already running in this conversation"
 msgstr "هناك جلسة حية جارية بالفعل في هذه المحادثة"
 
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "A new project folder — everything you create is scoped to it"
+msgstr ""
+
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "A project with that name exists"
 msgstr "يوجد مشروع بهذا الاسم بالفعل"
@@ -3008,6 +3012,10 @@ msgstr "استنساخ @ {branch}"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Clone & Open"
 msgstr "استنساخ وفتح"
+
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "Clone a git repo (or reuse a local clone) as a new project"
+msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
 msgid "Clone a git repo (or reuse a local clone) as context"
@@ -7096,9 +7104,9 @@ msgstr "من {senderName}"
 msgid "from first"
 msgstr "من الأول"
 
-#: src/components/quick-create/QuickCreateMenu.tsx
-#~ msgid "From git"
-#~ msgstr "من Git"
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "From git"
+msgstr "من Git"
 
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "from the keychain"
@@ -7642,6 +7650,7 @@ msgstr "إخفاء من الأخيرة — يبقى ظاهراً في الصند
 msgid "Hide from Recent conversations"
 msgstr "إخفاء من المحادثات الأخيرة"
 
+#: src/components/code-editor/CodeEditor.tsx
 #: src/components/code-editor/CodeEditor.tsx
 #~ msgid "Hide hidden files"
 #~ msgstr "إخفاء الملفات المخفية"
@@ -9923,6 +9932,7 @@ msgstr "إضافة خيار"
 #: src/components/open-project-component/project-actions-row.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "New project"
 msgstr "مشروع جديد"
 
@@ -10212,10 +10222,6 @@ msgstr "لم يتم تحديد مستند"
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "no edges"
 msgstr "لا توجد حواف"
-
-#: src/components/assets/editor/app/AssetAppHost.tsx
-#~ msgid "No editor app named on this dock."
-#~ msgstr ""
 
 #: src/components/conversation/EmojiPicker.tsx
 msgid "No emoji found"
@@ -11188,10 +11194,6 @@ msgstr "فتح .env.local عند هذا السطر"
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
 msgid "Open {0}"
 msgstr "افتح {0}"
-
-#: src/components/data-sources/SourceMenu.tsx
-#~ msgid "Open {app}"
-#~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Open {label}"
@@ -12375,6 +12377,7 @@ msgstr "التقدم"
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
@@ -16501,10 +16504,6 @@ msgstr "لم يعد هذا التطبيق متاحًا."
 msgid "This asset can't be shared with Git. Turn Git sharing off to send a copy."
 msgstr "لا يمكن مشاركة هذا المورد عبر Git. يُرجى إيقاف مشاركة Git لإرسال نسخة."
 
-#: src/components/assets/editor/app/AssetAppHost.tsx
-#~ msgid "This asset has no editor \"{app}\"."
-#~ msgstr ""
-
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This asset has no file path."
 msgstr "لا يوجد مسار ملف لهذا الأصل."
@@ -16512,10 +16511,6 @@ msgstr "لا يوجد مسار ملف لهذا الأصل."
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This can take up to a minute if it was asleep."
 msgstr "قد يستغرق هذا حتى دقيقة واحدة إذا كانت في وضع السكون."
-
-#: src/components/code-editor/CodeEditor.tsx
-#~ msgid "This cannot be undone."
-#~ msgstr ""
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "This chat has no resumable session."

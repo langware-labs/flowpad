@@ -1334,16 +1334,27 @@ async def pump_composer_ready(
     awaitable callable yielding subsequent raw output chunks, with ``None`` as
     the close sentinel (PTY died / stream ended → returns False: the caller
     must NOT type). Purely event-driven: it only ever waits on the next paint.
+
+    ``initial`` is scanned WHOLE. It is already scoped to this PTY generation
+    (``generation_start_seq``), and that — not a byte count — is what keeps a
+    pre-restart banner from authorizing input into a new process. Trimming it to
+    a trailing window on top of that silently loses the marker instead: a vendor
+    paints its composer-ready frame only on a FULL redraw, so one chatty turn
+    can leave that paint hundreds of KB back, and an idle composer has no reason
+    to repaint it. The gate would then wait for a frame that is never coming.
+    The window still bounds the INCREMENTAL buffer, where it only has to hold a
+    marker split across consecutive paints.
     """
+    if pattern.search(strip_pty_controls(initial)):
+        return True
     buf = initial[-_COMPOSER_SCAN_WINDOW:]
     while True:
-        text = strip_pty_controls(buf)
-        if pattern.search(text):
-            return True
         chunk = await next_chunk()
         if chunk is None:
             return False
         buf = (buf + chunk)[-_COMPOSER_SCAN_WINDOW:]
+        if pattern.search(strip_pty_controls(buf)):
+            return True
 
 
 # ─────────────────────────────────────────────────────────────────────────────

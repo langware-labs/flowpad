@@ -96,6 +96,14 @@ export interface UserMessageEntry extends BaseEntry {
   kind: 'user_message';
   text: string;
   role: string; // "user" by default; non-user roles route to SystemEntry upstream
+  /**
+   * Framework-injected user line — a skill body, a slash-command expansion, a
+   * Flowpad agent wrapper. The server has always sent this (`UserMessage.to_dict`
+   * in flow_sdk/transcript_analyzer); mirroring it lets surfaces tell "what the
+   * human sent" from "what the harness fed the model" without re-sniffing text.
+   * Consumed by `promptDisplayText`, which collapses the expanded SKILL.md row.
+   */
+  is_meta?: boolean;
 }
 
 export interface AssistantMessageEntry extends BaseEntry {
