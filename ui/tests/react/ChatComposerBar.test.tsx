@@ -35,12 +35,12 @@ vi.mock('@src/components/agentic-progress/shared/status-indicator', () => ({
 vi.mock('@src/notifications/notify', () => ({ notify: { error: vi.fn() } }));
 
 // Capture what ChatComposerBar hands the real input: `disabled`, `running`,
-// `placeholder`, and the plan `leadingSlot`.
+// `placeholder`, the plan `leadingSlot`, and the draft scope.
 vi.mock('@src/components/entity-execution-panel/CompactExecutionInput', () => ({
   CompactExecutionInput: (props: any) =>
     createElement(
       'div',
-      { 'data-testid': 'composer' },
+      { 'data-testid': 'composer', 'data-draft-scope': props.draftScope ?? '' },
       createElement(
         'button',
         { 'data-testid': 'send-btn', disabled: !!props.disabled },
@@ -115,5 +115,22 @@ describe('ChatComposerBar — plan-mode gating', () => {
     expect(screen.getByTestId('plan-mode-pill')).toHaveAttribute('aria-pressed', 'true');
     // The plan-mode placeholder is distinct from the normal "Message the agent…".
     expect(screen.getByTestId('send-btn').textContent ?? '').toMatch(/plan/i);
+  });
+});
+
+// FLOWPAD-2035: the composer keeps an unsent draft across unmount, filed under
+// the scope handed down here. Getting this wrong is how one agent's draft would
+// appear in another's composer, a keystroke away from being sent there.
+describe('ChatComposerBar — draft scope', () => {
+  it('scopes the draft to the process, so two chats cannot share one', () => {
+    const a = makeProcess(false);
+    const b = { ...makeProcess(false), id: 'proc-2' };
+
+    const first = render(createElement(ChatComposerBar, { process: a }));
+    expect(screen.getByTestId('composer')).toHaveAttribute('data-draft-scope', 'proc-1');
+    first.unmount();
+
+    render(createElement(ChatComposerBar, { process: b }));
+    expect(screen.getByTestId('composer')).toHaveAttribute('data-draft-scope', 'proc-2');
   });
 });
