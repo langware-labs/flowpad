@@ -30,7 +30,6 @@ from flow_sdk.config import AGENT_MOUNT_FOLDER, PLATFORM_WIN32, StorageProvider
 from flow_sdk.core import Entity, action
 from flow_sdk.core.entity.entity_model import migrate_presence_shaped_members
 from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializeOptions
-from flow_sdk.core.flow.mcp_server import MCPConnector, mcp_connector_pool
 from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.api.api_types.identifier import mint_uuid
@@ -1153,6 +1152,11 @@ class Project(Entity):
         return None
 
     async def get_mcp_connector(self):
+        # Deferred: `mcp_server` subclasses pydantic_ai's MCPServerStreamableHTTP
+        # at module scope, so importing it up here put mcp + pydantic_ai (~207ms)
+        # into every entity import, and so into server startup.
+        from flow_sdk.core.flow.mcp_server import MCPConnector, mcp_connector_pool  # noqa: PLC0415
+
         project_compute_node = await self.get_compute_node()
         if project_compute_node:
             return MCPConnector(compute_node=project_compute_node)
@@ -1171,6 +1175,8 @@ class Project(Entity):
 
     @classmethod
     async def get_mcp_connector_for_process(cls, process_typeid: TypeId):
+        from flow_sdk.core.flow.mcp_server import MCPConnector  # noqa: PLC0415
+
         compute_node = await ComputeNode.get_one(source_entity=process_typeid)
         if compute_node:
             return MCPConnector(compute_node=compute_node)

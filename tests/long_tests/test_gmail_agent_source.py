@@ -244,7 +244,7 @@ def _assert_matches_mailbox(expected: dict, ingested: dict) -> None:
         pytest.skip("recorded text drifted from the mailbox:\n  " + "\n  ".join(drift))
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(900)  # approved: one turn + the driver's own 300s fetch deadline
+@pytest.mark.timeout(10)  # dont touch this timeout without approval: it is a sanity check, not a fetch
 async def test_connect_agent_setup(assistant):
     if not FIXTURE.is_file():
         pytest.skip("set GMAIL_FIXTURE to a mailbox reference CSV — none found")
