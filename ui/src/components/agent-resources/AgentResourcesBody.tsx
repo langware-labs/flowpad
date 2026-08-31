@@ -6,11 +6,11 @@ import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { cn } from '@src/lib/utils';
 import { useSourceSpecs } from '@src/components/data-sources/use-source-specs';
-import { useAgentSkillsWiring } from './useAgentSkillsWiring';
+import { useAgentListWiring } from './useAgentListWiring';
 import type { AgentDocument } from './useAgentDocument';
 import { useProjectDocs } from './useProjectDocs';
 import { useWirableSkills } from './useWirableSkills';
-import { useMcpCapabilities } from './useMcpCapabilities';
+import { useWirableMcpServers } from './useWirableMcpServers';
 
 /** Muted one-liner for a section with nothing in it. */
 function Empty({ children }: { children: ReactNode }) {
@@ -61,46 +61,6 @@ function ResourceRow({
 }
 
 /**
- * An MCP server row.
- *
- * Read-only, unlike the other sections: `Agent.mcp_servers` is typed
- * `list[TypeId]` on the backend, and a capability's id identifies the
- * CAPABILITY, not the server. Writing it would put a `capability-<uuid>` where
- * an `mcp_server-<uuid>` belongs, and the `mcp_server` type has no entity class
- * to mint one from. Listing is honest today; the checkbox lands when the id
- * question is settled.
- */
-function McpRow({
-  icon: Icon,
-  label,
-  workerType,
-  hint,
-  testId,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  workerType: string;
-  hint?: string;
-  testId: string;
-}) {
-  return (
-    <div
-      className="flex items-center gap-2 px-2 py-1.5 text-sm text-muted-foreground"
-      title={hint ? `${hint} — ${workerType}` : label}
-      data-testid={testId}
-    >
-      {/* Aligns the label with the checkbox rows above it. */}
-      <span className="h-3.5 w-3.5 flex-shrink-0" aria-hidden />
-      <Icon className="h-3.5 w-3.5 flex-shrink-0" />
-      <span className="truncate">{label}</span>
-      {workerType && (
-        <span className="ms-auto flex-shrink-0 truncate text-[10px] text-muted-foreground/70">{workerType}</span>
-      )}
-    </div>
-  );
-}
-
-/**
  * The four-section body of the agent-resources navigator.
  *
  * Only Skills persists (into `agent.skills`). Data sources and Docs keep their
@@ -114,9 +74,10 @@ export function AgentResourcesBody({ doc }: { doc: AgentDocument }) {
 
   const { specs, isLoading: specsLoading } = useSourceSpecs();
   const { skills, isLoading: skillsLoading } = useWirableSkills();
-  const { servers: mcpServers, isLoading: mcpLoading } = useMcpCapabilities();
+  const { servers: mcpServers, isLoading: mcpLoading } = useWirableMcpServers();
   const { docs, isLoading: docsLoading } = useProjectDocs();
-  const { declared, pendingId, toggle } = useAgentSkillsWiring(doc);
+  const { declared, pendingId, toggle } = useAgentListWiring(doc, 'skills');
+  const mcp = useAgentListWiring(doc, 'mcp_servers');
 
   // Unpersisted, deliberately (see the component docstring).
   const [pickedSources, setPickedSources] = useState<Set<string>>(new Set());
@@ -131,7 +92,7 @@ export function AgentResourcesBody({ doc }: { doc: AgentDocument }) {
 
   const skillIcon = iconForType(Skill.type);
   const docIcon = iconForType(Markdown.type);
-  // Generic fallback glyph for a capability row that carries none of its own.
+  // MCP servers have no per-type registry glyph of their own.
   const mcpIcon = lucideByName('Plug');
 
   // One row per source NAME, not per spec row. `DataSourceSpec` has derived
@@ -164,6 +125,12 @@ export function AgentResourcesBody({ doc }: { doc: AgentDocument }) {
   // free-text box, which used to be the way to see them, is gone.
   const listedIds = new Set(skills.map((s) => s.typeId?.toString()).filter(Boolean));
   const orphanIds = [...declared].filter((id) => !listedIds.has(id));
+
+  // Same for MCP: an id on the agent that matches no known server. The old
+  // Advanced-tab text box committed whatever was typed, so a hand-entered
+  // value that is not a real TypeId shows up here rather than vanishing.
+  const listedMcpIds = new Set(mcpServers.map((s) => s.id));
+  const mcpOrphanIds = [...mcp.declared].filter((id) => !listedMcpIds.has(id));
 
   return (
     <div className="flex flex-col py-1">
@@ -198,25 +165,35 @@ export function AgentResourcesBody({ doc }: { doc: AgentDocument }) {
         id="mcp-servers"
         label={t`MCP servers`}
         isLoading={mcpLoading}
-        itemCount={mcpServers.length}
+        itemCount={mcpServers.length + mcpOrphanIds.length}
         emptyState={
           <Empty>
             <Trans>No MCP servers found</Trans>
           </Empty>
         }
       >
-        {mcpServers.map(({ capability, service, workerType }) => (
-          <McpRow
-            key={capability.kind}
-            // The capability's own glyph when the backend gave it one, else the
-            // type glyph — never a hardcoded per-server icon.
-            icon={capability.icon ? lucideByName(capability.icon) : mcpIcon}
-            label={service}
-            // The config OWNER, which is not necessarily a runtime Flowpad can
-            // spawn — worth showing, because two rows can differ only by this.
-            workerType={workerType}
-            hint={capability.name}
-            testId={`agent-resource-mcp-${capability.kind}`}
+        {mcpServers.map((server) => (
+          <ResourceRow
+            key={server.id}
+            icon={mcpIcon}
+            label={server.name}
+            hint={server.scope}
+            checked={mcp.declared.has(server.id)}
+            disabled={!doc.ready || mcp.pendingId === server.id}
+            onToggle={(next) => void mcp.toggle(server.id, next)}
+            testId={`agent-resource-mcp-${server.name}`}
+          />
+        ))}
+        {mcpOrphanIds.map((id) => (
+          <ResourceRow
+            key={id}
+            icon={mcpIcon}
+            label={id}
+            hint={t`Declared on this agent but no matching MCP server was found`}
+            checked
+            disabled
+            onToggle={() => {}}
+            testId={`agent-resource-mcp-unresolved-${id}`}
           />
         ))}
       </NavigatorSection>
@@ -245,7 +222,7 @@ export function AgentResourcesBody({ doc }: { doc: AgentDocument }) {
               hint={skill.description}
               checked={declared.has(id)}
               disabled={!doc.ready || pendingId === id}
-              onToggle={(next) => void toggle(skill, next)}
+              onToggle={(next) => void toggle(id, next)}
               testId={`agent-resource-skill-${skill.name}`}
             />
           );
