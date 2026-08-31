@@ -222,16 +222,13 @@ export class Task extends APIEntity<Task> implements ITask {
 
   /** Default open target: the generic task asset editor (URL-first). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('task') ?? this.defaultDockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {
-    return this.assetEditorPointer('task') ?? super.editorDockPointer;
+    return this.assetEditorPointer() ?? super.editorDockPointer;
   }
 
-  override get searchDockPointer(): DockPointerData {
-    return this.assetEditorPointer('task') ?? this.dockPointer;
-  }
 
   /** FrontMatterFsRef for task.md (frontmatter fields + description body). */
   get doc(): FrontMatterFsRef | null {

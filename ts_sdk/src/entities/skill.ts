@@ -47,16 +47,13 @@ export class Skill extends APIEntity<Skill> {
 
   /** Default open target: the asset editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('skill') ?? this.defaultDockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {
-    return this.assetEditorPointer('skill') ?? super.editorDockPointer;
+    return this.assetEditorPointer() ?? super.editorDockPointer;
   }
 
-  override get searchDockPointer(): DockPointerData {
-    return this.assetEditorPointer('skill') ?? this.dockPointer;
-  }
 
   /** FrontMatterFsRef for SKILL.md. Resolves compute node from dataContext. */
   get doc(): FrontMatterFsRef | null {
