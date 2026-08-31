@@ -2790,8 +2790,6 @@ msgstr "מזהה סשן Claude שאליו משויכת ההערה"
 #~ msgid "Claude Terminal"
 #~ msgstr "טרמינל קלוד"
 
-#: src/components/project-activity-strip/ProjectActivityStrip.tsx
-#: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/components/project-resource-list/resource-meta.ts
 msgid "CLAUDE.md"
 msgstr "CLAUDE.md"
@@ -3297,8 +3295,6 @@ msgstr "בקרוב"
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
-#: src/components/project-activity-strip/ProjectActivityStrip.tsx
-#: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/components/project-resource-list/resource-meta.ts
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #: src/i18n/type-labels.ts
@@ -7707,8 +7703,6 @@ msgstr "כותרת דף הבית נשמרה"
 msgid "hook"
 msgstr "חוק"
 
-#: src/components/project-activity-strip/ProjectActivityStrip.tsx
-#: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/components/project-resource-list/resource-meta.ts
 msgid "Hook"
 msgstr "הוק"
@@ -9414,7 +9408,7 @@ msgstr "המספר המרבי של סיבובים אגנטיים"
 msgid "Maximum tokens per model response"
 msgstr "מספר הטוקנים המרבי לתגובת המודל"
 
-#: src/components/project-resource-list/ProjectResourceList.tsx
+#: src/components/project-resource-list/resource-meta.ts
 msgid "MCP"
 msgstr "MCP"
 
@@ -9422,7 +9416,6 @@ msgstr "MCP"
 msgid "Mcp Server"
 msgstr "שרת MCP"
 
-#: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-resource-list/resource-meta.ts
 msgid "MCP Server"
 msgstr "שרת MCP"
@@ -12159,8 +12152,6 @@ msgstr "אנא נסו שוב."
 msgid "plugin"
 msgstr "תוסף"
 
-#: src/components/project-activity-strip/ProjectActivityStrip.tsx
-#: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/components/project-resource-list/resource-meta.ts
 #: src/i18n/type-labels.ts
 msgid "Plugin"
@@ -14582,8 +14573,6 @@ msgid "session"
 msgstr "סשן"
 
 #: src/components/conversation/ConversationContextPanel.tsx
-#: src/components/project-activity-strip/ProjectActivityStrip.tsx
-#: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/components/project-resource-list/resource-meta.ts
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Session"
@@ -15257,8 +15246,6 @@ msgstr "כישור"
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
-#: src/components/project-activity-strip/ProjectActivityStrip.tsx
-#: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/components/project-resource-list/resource-meta.ts
 #: src/components/quick-create/registry.ts
 msgid "Skill"
@@ -15833,8 +15820,6 @@ msgstr ""
 
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
-#: src/components/project-activity-strip/ProjectActivityStrip.tsx
-#: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/components/project-resource-list/resource-meta.ts
 msgid "SubAgent"
 msgstr "SubAgent"
@@ -16904,8 +16889,6 @@ msgstr "היום"
 msgid "Today's cost"
 msgstr "עלות היום"
 
-#: src/components/project-activity-strip/ProjectActivityStrip.tsx
-#: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/components/project-resource-list/resource-meta.ts
 msgid "Todo"
 msgstr "לביצוע"

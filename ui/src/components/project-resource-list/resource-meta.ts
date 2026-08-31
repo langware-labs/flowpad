@@ -7,13 +7,20 @@ import type { ProjectResourceType } from './ProjectResourceList';
 export interface ResourceMeta {
   /** Lazy lingui descriptor — render with `i18n._(...)`. */
   label: MessageDescriptor;
+  /**
+   * Abbreviated label for width-constrained surfaces, where one exists.
+   * The only reason this field is here: `ProjectResourceList` kept its own copy
+   * of this whole table solely to say `MCP` where the others say `MCP Server`.
+   * One differing cell is not a reason for a third table.
+   */
+  shortLabel?: MessageDescriptor;
   icon: LucideIcon;
 }
 
 export const RESOURCE_META: Record<ProjectResourceType, ResourceMeta> = {
   claude_session: { label: msg`Session`, icon: FolderOpen },
   skill: { label: msg`Skill`, icon: Sparkles },
-  mcp_server: { label: msg`MCP Server`, icon: Plug },
+  mcp_server: { label: msg`MCP Server`, shortLabel: msg`MCP`, icon: Plug },
   plugin: { label: msg`Plugin`, icon: Settings },
   hook: { label: msg`Hook`, icon: Terminal },
   command: { label: msg`Command`, icon: Command },
