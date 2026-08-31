@@ -22,6 +22,8 @@ allowed-tools:
 - Bash(flow schema info:*)
 - Bash(flow record index:*)
 - Bash(flow record search:*)
+- Bash(flow show entity:*)
+- Bash(flow show file:*)
 - Bash(flow process restart:*)
 - Bash(curl:*)
 - Read
@@ -101,7 +103,7 @@ If the matched key is `null`, tell the user that nothing is set for that scope �
 
 ## Other actions
 
-For any action other than `context`, open the matching file in this skill directory and follow it literally. Do not improvise from the action summaries above — those are routing hints, not specifications.
+For any action other than `context`, open the matching file in this skill directory and follow it literally. Do not improvise from the table below — the files are the specification.
 
 | Action | File |
 | --- | --- |
@@ -110,5 +112,5 @@ For any action other than `context`, open the matching file in this skill direct
 | process  | [`process.md`](process.md) |
 | message  | [`message.md`](message.md) |
 
-When composing actions (e.g. "create a task and open it"), read both files end-to-end before you start running commands. If the second half is a show/open, hand off to the
-`flowpad-navigation` skill rather than improvising a command here.
+When composing two actions in this skill (e.g. `search` then `records`), read both
+files end-to-end before you start running commands.

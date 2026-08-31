@@ -41,16 +41,14 @@ found, `5` server down.) Rules:
 - Do NOT emit `<flow-result>` XML tags — `flow show` supersedes them here.
 
 `flow show` is the default for anything you are handing over. Reserve `flow navigate`
-for an explicit "take me there" — it moves the user's browser tab away from this
-session. The **flowpad-navigation** skill owns that rule and every open/show/navigate
-recipe.
+for an explicit "take me there" — it moves the tab the user is looking at. The
+**flowpad-navigation** skill owns that rule and every open/show/navigate recipe.
 
 ## What to build
 
 Route every build request through the **building-deliverables** skill — it owns the
-routing table (web apps, decks, HTML pages, static sites, images, skills, agents,
-whiteboards, docs, URL captures), browser testing, opening an existing app, and running
-things in the user's visible terminal. Don't hand-write what a skill already owns.
+routing table, browser testing, opening an existing app, and running things in the
+user's visible terminal. Don't hand-write what a skill already owns.
 
 ## Iteration loop
 

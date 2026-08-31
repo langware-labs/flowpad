@@ -7,9 +7,8 @@ The pipeline is the same for every record type:
 1. **Discover** the type with `flow schema info <type>`.
 2. **Materialize** the record on disk at the location the schema's `creation.location` points to.
 3. **Index** that path with `flow record index <path>` so the indexer parses + persists it.
-4. (Optional) **Open** the new record: in standard assistant mode use
-   the `flowpad-navigation` skill — `flow show entity <typeid>` is the default in every mode
-   so the result appears in the active display pane.
+4. (Optional) **Open** the new record with `flow show entity <typeid>` — see the
+   `flowpad-navigation` skill.
 
 Never call backend APIs directly, never edit the SQLite DB, never write outside the documented `creation.location` — the indexer is the single chokepoint.
 
@@ -92,9 +91,6 @@ Always pass `--types` when you know the type — it scopes parsing/upsert to you
 
 The new TypeId is `<type>-<uid_field_value>` — for tasks that's `task-<task_id>`, for skills it's `skill-<skill_id>`, etc. The `after_index` hint in `flow schema info` tells you the exact form. Pass it to `flow show entity <typeid>` per the `flowpad-navigation` skill.
 
-`flow show` is the default in every mode; use
-`flow show entity <typeid>` instead so the entity opens in the display pane.
-
 ## Worked example — create a task and open it
 
 ```bash
@@ -118,7 +114,7 @@ JSON
 flow record index "$(pwd)/tasks/release-notes-0.2.9/manifest.json" --types task
 
 # 4. Open it — `flow show` in every mode (pins the display pane, else opens a tab).
-flow show entity "task-$TASK_ID"        # vibe/creator: into the active display pane
+flow show entity "task-$TASK_ID"
 # flow navigate entity "task-$TASK_ID"  # ONLY on an explicit "take me there"
 ```
 

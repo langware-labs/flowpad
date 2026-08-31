@@ -18,11 +18,14 @@ from pathlib import Path
 
 from flow_sdk.config import flowpad_assistant_project_root
 
-# The browser-tab command the vibe display contract reserves for an explicit
-# "take me there" (vibe.md: "`flow show` is the default ... Reserve `flow navigate`").
+# The browser-tab command, reserved for an explicit "take me there".
 _NAVIGATE = re.compile(r"\bflow\s+navigate\b")
 # The Display/vibe-safe alternative that must accompany any navigate directive.
 _SHOW = re.compile(r"\bflow\s+show\b")
+# A blanket prohibition — the thing that is actually wrong. Wording-independent, so a
+# persona may be reworded freely as long as it does not forbid the verb outright.
+_BLANKET_BAN = re.compile(r"(?:never|do\s*not|don'?t)\s+(?:use\s+)?`?flow\s+navigate", re.IGNORECASE)
+
 # A skill section is about opening a file when its heading names a file/opening.
 _FILE_OPEN_HEADING = re.compile(r"\bfile\b|\bopen(?:ing)?\b", re.IGNORECASE)
 
@@ -34,27 +37,39 @@ def _sections(markdown: str) -> list[tuple[str, str]]:
     return list(zip(parts[1::2], parts[2::2]))
 
 
-def _vibe_defaults_to_show() -> bool:
-    """vibe.md must state ``flow show`` as the default for handing work over.
+def _shipped_markdown() -> list[Path]:
+    """Every shipped prompt asset: personas AND skills.
 
-    This used to assert the blanket string "Never use `flow navigate`". That ban
-    contradicted the flowpad-navigation skill, which (correctly) reserves
-    ``flow navigate`` for an explicit "take me there" — so a vibe session could not
-    honour "take me to preferences". The premise the scan below actually needs is
-    the weaker, true one: show is the DEFAULT, navigate is the narrow exception.
+    Personas matter as much as skills here — a ``kind: vibe`` persona is embedded
+    into the SAME session as ``vibe.md`` (``systemVibeKindSubagentRefs``), so a rule
+    in one lands in the same system prompt as the other.
     """
-    agent = flowpad_assistant_project_root() / ".claude" / "agents" / "vibe.md"
-    text = agent.read_text()
-    return "`flow show` is the default" in text and "Reserve `flow navigate`" in text
+    root = flowpad_assistant_project_root() / ".claude"
+    return sorted(root.glob("agents/*.md")) + sorted(root.rglob("skills/**/*.md"))
+
+
+def test_no_shipped_asset_bans_flow_navigate_outright():
+    """``flow navigate`` is reserved, not forbidden.
+
+    The earlier contract asserted the literal string "Never use `flow navigate`" in
+    vibe.md. That ban contradicted the flowpad-navigation skill, which reserves the
+    verb for an explicit "take me there" — so a vibe session could not honour "take
+    me to preferences". Asserting the *absence of a blanket ban* states the real
+    invariant and, unlike pinning a replacement sentence, survives rewording.
+    """
+    offenders = [
+        str(path.relative_to(flowpad_assistant_project_root()))
+        for path in _shipped_markdown()
+        if _BLANKET_BAN.search(path.read_text())
+    ]
+    assert not offenders, (
+        "these shipped assets forbid `flow navigate` outright, contradicting the "
+        "flowpad-navigation skill, which reserves it for an explicit 'take me "
+        "there':\n  " + "\n  ".join(offenders)
+    )
 
 
 def test_file_open_skills_do_not_route_through_flow_navigate():
-    # Premise guard: the contract only holds because vibe.md defaults to `flow show`.
-    assert _vibe_defaults_to_show(), (
-        "vibe.md no longer states `flow show` as the default with `flow navigate` "
-        "reserved for an explicit 'take me there'"
-    )
-
     skills_root = flowpad_assistant_project_root() / ".claude" / "skills"
     offenders: list[str] = []
     for skill_md in skills_root.rglob("*.md"):

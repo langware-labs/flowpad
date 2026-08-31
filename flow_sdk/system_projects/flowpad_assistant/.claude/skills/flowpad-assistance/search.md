@@ -69,7 +69,7 @@ Success — exit 0, single JSON line:
 1. `flow record search "<X>" all 5`
 2. If `total == 0`, tell the user nothing matched. Stop.
 3. If `total == 1`, treat it as the answer.
-4. If `total > 1`, pick the best match by name/recency and tell the user *"found N — opening the most recent: <name>"* before navigating.
+4. If `total > 1`, pick the best match by name/recency and tell the user *"found N — opening the most recent: <name>"* before opening it.
 5. Pass `<record_type>-<record_id>` to `flow show entity`. See the `flowpad-navigation` skill.
 
 ### "What did I work on today / this week?"
