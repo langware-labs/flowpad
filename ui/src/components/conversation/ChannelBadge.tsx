@@ -1,8 +1,7 @@
-import { ExternalLink, Mail, MessageSquare, Sparkles, SquareKanban } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import { isAddressable, type ICloudOrigin } from '@sdk';
-import { providerMark } from '@src/components/connections-manager/provider-marks';
-import { humanizeType } from '@src/utils/humanize';
+import { useChannelAttribution } from './channel-attribution';
+
+export { channelLabel } from './channel-attribution';
 
 /**
  * The channel mark on a message that CACHES a cloud record.
@@ -10,53 +9,25 @@ import { humanizeType } from '@src/utils/humanize';
  * The rule is `origin === null → nothing`, so a Flowpad-native message is
  * unmarked by construction — no flag to keep in sync, no backfill.
  *
- * ONE map, keyed by `origin.kind` (the channel). Per the type-icon rule a
- * glyph never belongs at a call site; entity icons come from the backend
- * registry, but a channel is not an entity type and brand marks are not
- * `currentColor` glyphs, so this is the registry for that axis. Slack's real
- * four-colour mark comes from the existing `providerMark` table rather than a
- * second copy of the same SVG. ONE entry per channel — two parallel maps
- * drift, and a channel added to only one renders half-labelled.
+ * The glyph is spec-resolved (`useChannelAttribution`): the same
+ * `data_source_spec` assets the Data Sources screen renders name every
+ * channel's icon, so Slack shows one mark everywhere and a new channel needs
+ * no frontend release — there is deliberately NO per-vendor map here.
  */
-const CHANNELS: Record<string, { icon: LucideIcon; label: string }> = {
-  gmail: { icon: Mail, label: 'Gmail' },
-  email: { icon: Mail, label: 'Email' },
-  slack: { icon: MessageSquare, label: 'Slack' },
-  jira: { icon: SquareKanban, label: 'Jira' },
-  notion: { icon: Sparkles, label: 'Notion' },
-};
-
-export function channelLabel(kind: string | undefined): string {
-  const key = (kind || '').trim().toLowerCase();
-  // `humanizeType` is the app's title-caser and handles `[-_]`, so an
-  // uncurated `google_chat` reads "Google Chat" here exactly as it does
-  // everywhere else — a local capitalise would render "Google_chat".
-  return CHANNELS[key]?.label ?? (key ? humanizeType(key) : '');
-}
-
 export function ChannelBadge({ origin }: { origin: ICloudOrigin | null | undefined }) {
+  const { attributionFor } = useChannelAttribution();
   // Internal messages get no icon — the whole point of `origin` being nullable.
-  if (!origin?.kind) return null;
+  const attribution = attributionFor(origin);
+  if (!attribution) return null;
 
-  const kind = origin.kind.trim().toLowerCase();
-  const Mark = providerMark(kind);
-  const Icon = CHANNELS[kind]?.icon;
-  const label = channelLabel(kind);
+  const { icon: Icon, label } = attribution;
   const openable = isAddressable(origin);
-
-  const glyph = Mark ? (
-    <Mark className="h-3 w-3" />
-  ) : Icon ? (
-    <Icon className="h-3 w-3" />
-  ) : (
-    <ExternalLink className="h-3 w-3" />
-  );
 
   // Openable origins are a link; the rest is the same pill, inert. Rendering
   // an <a> with no href would be a lie the keyboard notices.
   const body = (
     <>
-      {glyph}
+      <Icon className="h-3 w-3" />
       <span className="font-medium">{label}</span>
     </>
   );
@@ -72,7 +43,7 @@ export function ChannelBadge({ origin }: { origin: ICloudOrigin | null | undefin
   }
   return (
     <a
-      href={origin.url}
+      href={origin!.url}
       target="_blank"
       rel="noreferrer noopener"
       data-testid="channel-badge"
