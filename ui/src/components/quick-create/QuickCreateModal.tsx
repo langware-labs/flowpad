@@ -7,7 +7,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useProjects } from '@src/hooks/use-projects';
 import { FolderOpen } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
-import { useIsAdvanced } from '@src/components/view-mode';
 import { ALL_SECTIONS, QuickCreatePanel, type PanelHandlers } from './QuickCreatePanel';
 
 interface QuickCreateModalProps {
@@ -30,14 +29,13 @@ export function QuickCreateModal({ open, onOpenChange, panelProps }: QuickCreate
   const { project: currentProject } = useProject();
   const { projects, isLoading: isLoadingProjects } = useProjects();
   const [projectModalOpen, setProjectModalOpen] = useState(false);
-  // Context folders are an Advanced concept — the section is dropped entirely
-  // in Standard/Vibe rather than reserved, so the dialog closes the gap instead
-  // of leaving a hole where the tiles were.
-  const isAdvanced = useIsAdvanced();
-  const sections = useMemo(
-    () => (isAdvanced ? ALL_SECTIONS : ALL_SECTIONS.filter((s) => s !== 'folder')),
-    [isAdvanced],
-  );
+  // Everything this dialog offers is something you CREATE. Adding a context
+  // folder points the project at something that ALREADY EXISTS — the opposite
+  // act — and its "Project" tile, sitting under a "Create new" title, is what
+  // users clicked expecting to make a project and got a project picker. The
+  // section lives on where it reads correctly: project home's own folders card
+  // and the Assets navigator's "+".
+  const sections = useMemo(() => ALL_SECTIONS.filter((s) => s !== 'folder'), []);
 
   const projectItems = useMemo(() => projectEntitiesToSelectorItems(projects), [projects]);
 

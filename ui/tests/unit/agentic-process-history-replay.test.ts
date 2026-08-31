@@ -1,10 +1,4 @@
-import {
-  AgenticProcess,
-  FlowData,
-  FlowDataSource,
-  FlowElementTypes,
-  dataManager,
-} from '@sdk';
+import { AgenticProcess, FlowData, FlowDataSource, FlowElementTypes, dataManager } from '@sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const PROCESS_ID = '00000000-0000-4000-8000-0000000000d1';
@@ -15,8 +9,7 @@ interface ProcessHistoryInternals {
 
 /** Typed view over the opaque `processEntry` payload for assertions. */
 function transcriptEntryOf(item: FlowData): { id?: string; kind?: string } | undefined {
-  return (item.processEntry as { transcript_entry?: { id?: string; kind?: string } } | null)
-    ?.transcript_entry;
+  return (item.processEntry as { transcript_entry?: { id?: string; kind?: string } } | null)?.transcript_entry;
 }
 
 function processEntry(id: string, kind: string) {
@@ -168,12 +161,15 @@ describe('AgenticProcess canonical history replay', () => {
       use_worker_history: true,
     } as never);
     const process = new AgenticProcess({ id: PROCESS_ID });
-    process.appendUserMessage('stale optimistic row');
+    process.appendUserMessage('undelivered prompt');
 
     await process.loadHistory({ force: true });
 
     const outputs = process.getOutputs();
-    expect(outputs).toHaveLength(history.length);
+    // The echo survives: history carries no row for it, so it is a message still
+    // in flight, not a stale duplicate — same rule the non-forced path applies.
+    expect(outputs).toHaveLength(history.length + 1);
+    expect(outputs.at(-1)?.content).toBe('undelivered prompt');
     expect(outputs.filter((item) => item.content === 'same prompt')).toHaveLength(3);
     expect(outputs.filter((item) => item.elementType === FlowElementTypes.CHAT).map((item) => item.content)).toEqual([
       'commentary',
@@ -187,7 +183,11 @@ describe('AgenticProcess canonical history replay', () => {
     });
     expect(transcriptEntryOf(tool)).toMatchObject({ id: 'tool-1', kind: 'tool_use' });
     expect(tool.timestamp).toBe('2026-07-10T06:00:00.600Z');
-    expect(outputs.every((item) => item.source === FlowDataSource.History)).toBe(true);
+    // Every TRANSCRIPT row is tagged History; the carried-over echo is a live
+    // placeholder by definition — it has no transcript row to be tagged from.
+    expect(
+      outputs.filter((item) => !item.isOptimisticEcho).every((item) => item.source === FlowDataSource.History),
+    ).toBe(true);
   });
 
   it('non-force replay reconciles live overlap one-for-one without erasing repeated content', async () => {
@@ -222,11 +222,7 @@ describe('AgenticProcess canonical history replay', () => {
 
     const outputs = process.getOutputs();
     expect(outputs).toHaveLength(3);
-    expect(outputs.map((item) => transcriptEntryOf(item)?.id)).toEqual([
-      'user-1',
-      'user-2',
-      'user-3',
-    ]);
+    expect(outputs.map((item) => transcriptEntryOf(item)?.id)).toEqual(['user-1', 'user-2', 'user-3']);
     expect(outputs.filter((item) => item.content === 'same prompt')).toHaveLength(3);
     expect(outputs.filter((item) => item.source === FlowDataSource.Stream)).toHaveLength(1);
     expect(outputs.filter((item) => item.source === FlowDataSource.History)).toHaveLength(2);

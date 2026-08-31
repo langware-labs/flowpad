@@ -82,7 +82,11 @@ afterEach(() => {
 });
 
 describe('VibeChatPane', () => {
-  it('binds history to the parent target and rebinds selection through navigation', () => {
+  it('binds history to the project chat target and rebinds selection through navigation', () => {
+    // Deliberately NOT the project's own id: a runner-minted session's target
+    // (e.g. a diagnosis) must not leak into the composer's history key. The
+    // panel binds to the PROJECT's chat target (FLOWPAD-2054) regardless of
+    // what the open process itself is keyed to.
     const process = {
       id: '5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       target_typeid_str: 'markdown-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -91,7 +95,7 @@ describe('VibeChatPane', () => {
 
     render(<VibeChatPane process={process} />);
 
-    expect(mocks.panelProps?.target).toBe(process.target_typeid_str);
+    expect(mocks.panelProps?.target).toBe('project-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
     expect(mocks.panelProps?.initialProcessId).toBe(process.id);
     fireEvent.click(screen.getByTestId('pick-history'));
     // NO mode is passed: a past build reopens in the mode it was last seen in

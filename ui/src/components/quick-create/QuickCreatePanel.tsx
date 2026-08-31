@@ -1,4 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
+import { dataContext, isHubOnly } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { BindSecretDialog } from '@src/components/project-home/BindSecretDialog';
@@ -9,6 +10,8 @@ import {
   type ContextFolderSource,
 } from '@src/components/assets/context-folder-sources';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
+import { NewProjectDialog, NewProjectFromGitDialog, useGitCloneDialogSubmit } from '@src/components/project-selector';
+import { normalizePath, useProjectOpener } from '@src/components/open-project-component/use-open-project';
 import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { useLoginRequired, useResumeAfterLogin } from '@src/hooks/use-login-required';
 import { useAssetTypes } from '@src/hooks/use-asset-types';
@@ -20,10 +23,11 @@ import { tagAttrs } from '@src/tags/tag-attrs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openNewChat } from '@src/navigation/open-new-chat';
 import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
-import { Info, KeyRound, Loader2, MessageSquarePlus } from 'lucide-react';
+import { GitBranch, Info, KeyRound, Loader2, MessageSquarePlus } from 'lucide-react';
 import {
   Fragment,
   forwardRef,
+  useCallback,
   useMemo,
   useState,
   type ButtonHTMLAttributes,
@@ -50,6 +54,7 @@ const COPILOT_WIKI = 'Copilot sessions';
 const OPENCODE_WIKI = 'OpenCode sessions';
 const SECRET_WIKI = 'Project secrets';
 const CONVERSATION_WIKI = 'Conversations';
+const PROJECT_WIKI = 'Flowpad project';
 
 /** A dense grid — a card under every tile the pointer crosses is noise. */
 const TILE_TIP_DELAY = 500;
@@ -188,8 +193,29 @@ export function useQuickCreatePick() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [bindSecretOpen, setBindSecretOpen] = useState(false);
   const [newMessageOpen, setNewMessageOpen] = useState(false);
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [newGitProjectOpen, setNewGitProjectOpen] = useState(false);
   const ctxFolder = useAddContextFolder({ project });
   const { checkLoginAndProceed, showLoginDialog, closeLoginDialog } = useLoginRequired();
+
+  // Creating a project is the same flow the home surfaces run (ProjectActionsRow):
+  // resolve-or-create the folder's project, then adopt it as the current context —
+  // so the assets the user creates next land in the project they just made.
+  const { pickFolder, ensureProjectAndSetContext, computeNode } = useProjectOpener({
+    onError: (message) => notify.error({ title: message }),
+  });
+  const handleCreateGitProject = useGitCloneDialogSubmit(computeNode?.id);
+  const defaultWorkspacePath = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '', []);
+  // A hub project is a pure entity with no folder behind it — the dialog drops
+  // the folder row there, exactly as ProjectActionsRow does.
+  const withFolder = !isHubOnly();
+
+  const handleCreateProject = useCallback(
+    async (name: string, parentFolder: string) => {
+      await ensureProjectAndSetContext(parentFolder ? `${normalizePath(parentFolder)}/${name}` : name);
+    },
+    [ensureProjectAndSetContext],
+  );
 
   // A conversation with anyone remote needs a cloud session, so gate before
   // opening — and reopen the dialog the user was reaching for once a forced
@@ -226,6 +252,19 @@ export function useQuickCreatePick() {
       <BindSecretDialog project={project ?? null} open={bindSecretOpen} onOpenChange={setBindSecretOpen} />
       {ctxFolder.dialogs}
       <NewConversationDialog open={newMessageOpen} onClose={() => setNewMessageOpen(false)} />
+      <NewProjectDialog
+        open={newProjectOpen}
+        onOpenChange={setNewProjectOpen}
+        defaultParentFolder={defaultWorkspacePath}
+        withFolder={withFolder}
+        onPickFolder={withFolder ? () => pickFolder(defaultWorkspacePath || undefined) : undefined}
+        onCreate={handleCreateProject}
+      />
+      {/* Mounted only while open — keeps the repo/branch pickers out of every
+          surface that hosts these dialogs. */}
+      {newGitProjectOpen && (
+        <NewProjectFromGitDialog open onOpenChange={setNewGitProjectOpen} onCreate={handleCreateGitProject} />
+      )}
       <LoginDialog open={showLoginDialog} onOpenChange={closeLoginDialog} />
     </>
   );
@@ -235,6 +274,8 @@ export function useQuickCreatePick() {
     onBindSecret: () => setBindSecretOpen(true),
     onAddFolder: ctxFolder.pick,
     onNewMessage,
+    onNewProject: () => setNewProjectOpen(true),
+    onNewProjectFromGit: () => setNewGitProjectOpen(true),
   };
 
   return { panelProps, dialogs };
@@ -245,8 +286,8 @@ export function useQuickCreatePick() {
 export type PanelHandlers = Omit<QuickCreatePanelProps, 'onDone' | 'sections' | 'extraSessionTiles'>;
 
 /** The tile groups this panel can render, in order. */
-export type QuickCreateSection = 'session' | 'message' | 'asset' | 'folder';
-export const ALL_SECTIONS: QuickCreateSection[] = ['session', 'message', 'asset', 'folder'];
+export type QuickCreateSection = 'session' | 'message' | 'project' | 'asset' | 'folder';
+export const ALL_SECTIONS: QuickCreateSection[] = ['session', 'message', 'project', 'asset', 'folder'];
 
 export interface QuickCreatePanelProps {
   /** Open the per-type create dialog (name / folder / scope) for an asset type. */
@@ -257,6 +298,10 @@ export interface QuickCreatePanelProps {
   onAddFolder: (source: ContextFolderSource, scope: ContextFolderScope) => void;
   /** Open the new-conversation dialog (behind the cloud-login gate). */
   onNewMessage: () => void;
+  /** Open the create-a-project dialog (name + parent folder). */
+  onNewProject: () => void;
+  /** Open the clone-a-repo-as-a-new-project dialog. */
+  onNewProjectFromGit: () => void;
   /** Dismiss the host, if there is one to dismiss. A modal closes; a page no-ops. */
   onDone?: () => void;
   /**
@@ -299,6 +344,8 @@ export function QuickCreatePanel({
   onBindSecret,
   onAddFolder,
   onNewMessage,
+  onNewProject,
+  onNewProjectFromGit,
   extraSessionTiles = [],
   onDone,
   sections = ALL_SECTIONS,
@@ -447,6 +494,39 @@ export function QuickCreatePanel({
           onClick={() => {
             onDone?.();
             onNewMessage();
+          }}
+        />
+      </TileSection>
+    ),
+    // A project is not a file asset (it isn't in QUICK_CREATE_REGISTRY and the
+    // server never reports it `creatable`), so it gets its own group with
+    // hardcoded tiles — the same pair the "New" dropdown offers. Before this
+    // group existed, "Create new" had no way to create a project at all.
+    project: (
+      <TileSection title={<Trans>New project</Trans>}>
+        {/* Backend type registry owns the glyph (TypeInfo.icon) — the same
+            briefcase every other surface draws for a project, never a
+            hand-picked lucide stand-in. */}
+        <TippedTile
+          wikiword={PROJECT_WIKI}
+          Icon={iconForType('project') as TileIcon}
+          label={t`Project`}
+          tip={t`A new project folder — everything you create is scoped to it`}
+          data-testid="quick-create-new-project"
+          onClick={() => {
+            onDone?.();
+            onNewProject();
+          }}
+        />
+        <TippedTile
+          wikiword={PROJECT_WIKI}
+          Icon={GitBranch}
+          label={t`From git`}
+          tip={t`Clone a git repo (or reuse a local clone) as a new project`}
+          data-testid="quick-create-new-project-from-git"
+          onClick={() => {
+            onDone?.();
+            onNewProjectFromGit();
           }}
         />
       </TileSection>

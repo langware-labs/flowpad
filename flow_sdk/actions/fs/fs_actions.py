@@ -314,6 +314,7 @@ async def fetch_remote_entity_file(typeid, vfs_path: str, storage: "LocalStorage
     try:
         from pathlib import Path
 
+        from flow_sdk.builtin.flow_message import BODY_FILENAME
         from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
         from flow_sdk.utils.hub import hub_base_url, hub_get
@@ -324,6 +325,15 @@ async def fetch_remote_entity_file(typeid, vfs_path: str, storage: "LocalStorage
     try:
         # A type the hub doesn't host has no endpoint to fall back to.
         et = BuiltinEntityType(str(typeid.type))
+        # A message keeps exactly ONE object on the hub: the packed ``body.flowmsg``
+        # bundle. Its attachments (``data/<name>``, ``prompt/<name>``) only ever come
+        # into being locally, when that bundle is unpacked — they are never uploaded
+        # per-file, so asking the hub for one cannot succeed. Without this the miss
+        # that precedes an unpack turns into a guaranteed hub 404, which the error
+        # reporter escalates into a "Cloud Request Failed" warning at the user while
+        # the UI is already showing the correct Download affordance.
+        if et is BuiltinEntityType.FLOW_MESSAGE and vfs_path != BODY_FILENAME:
+            return False
         entity_cls = SchemaRegistry.get_entity_cls(str(typeid.type))
         entity = await entity_cls.get_one({"id": str(typeid.id)}) if entity_cls else None
     except Exception as e:  # noqa: BLE001
