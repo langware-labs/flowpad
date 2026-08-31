@@ -51,9 +51,14 @@ export function DataSourceCard({ source, spec, onEdit, onReplay, onDelete }: Pro
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  // The spec's glyph when one is installed, else the type's. A screen of
-  // sources is scanned by provider, not by 'these are all data sources'.
-  const Icon = spec?.icon_name ? lucideByName(spec.icon_name) : iconForType(DataSource.type);
+  // The spec's glyph when one is installed, else the type's — and for a
+  // multi-channel transport (agent), the CHANNEL's own glyph from the spec's
+  // channel_icon_names, so a Gmail card and a Slack card don't both read
+  // "robot". A screen of sources is scanned by what they reach, not by
+  // 'these are all data sources'.
+  const channelIcon = source.channel ? spec?.channel_icon_names?.[source.channel] : undefined;
+  const iconName = channelIcon || spec?.icon_name;
+  const Icon = iconName ? lucideByName(iconName) : iconForType(DataSource.type);
 
   // Gated on `open`: a collapsed card issues no request at all (the hook
   // returns before `watchQuery` when disabled), and the filter means one

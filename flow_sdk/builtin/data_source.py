@@ -497,6 +497,18 @@ class DataSource(Entity):
                 # config_error the card can actually explain.
                 self.status = SourceStatus.ACTIVE.value
         await self._coerce_config()
+        if not (self.channel or "").strip():
+            # Stamp the channel at CREATE, not first poll: the credential probe
+            # keys on it (Verify on a fresh source probed nothing) and the UI
+            # badges by it. `sync_source` keeps re-stamping every poll, so this
+            # is the first answer, not a fork of the rule.
+            driver = self._driver()
+            if driver is not None:
+                from flow_sdk.ingest.driver import channel_of_driver  # noqa: PLC0415
+
+                stamped = channel_of_driver(driver, self)
+                if stamped and stamped != self.provider:
+                    self.channel = stamped
         self._stamp_origin()
         return await super().save(*args, **kwargs)
 
