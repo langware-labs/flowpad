@@ -1,5 +1,5 @@
 import { t } from '@lingui/core/macro';
-import { dataContext, FSRef, Markdown, PageId, TypeId, Whiteboard, type APIEntity, type WikiResolveResult } from '@sdk';
+import { dataContext, FSRef, Markdown, PageId, TypeId, Whiteboard, type APIEntity, type WikiResolveResult, type AnyEntity } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -278,7 +278,7 @@ function WikiPlainMarkdown({
   fragment,
   authority,
 }: {
-  entity: APIEntity<any>;
+  entity: AnyEntity;
   mainRef: FSRef;
   wikiRef: string;
   name: string;

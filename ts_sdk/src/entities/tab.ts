@@ -1,4 +1,4 @@
-import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, registerEntity, type AnyEntity } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models';
 import { IDockPointer } from '../models/DockPointer';
@@ -296,7 +296,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
   static async resolveDockTarget(dock: IDockPointer): Promise<{
     targetTypeId: TypeId | null;
     target:
-      | (APIEntity<any> &
+      | (AnyEntity &
           TerminalTargetFields & { project_id?: string | null; cwd?: string | null; workdir?: string | null })
       | null;
     projectId: string | null;
@@ -306,12 +306,12 @@ export class Tab extends APIEntity<Tab> implements ITab {
     let targetTypeId = dock.targetTypeId ?? null;
     const target = (
       targetTypeId
-        ? await dataManager.getByTypeId<APIEntity<any>>(targetTypeId).catch(() => null)
+        ? await dataManager.getByTypeId<AnyEntity>(targetTypeId).catch(() => null)
         : dock.vfsPath
-          ? await dataManager.getEntityByPath<APIEntity<any>>(dock.vfsPath.machinePath)
+          ? await dataManager.getEntityByPath<AnyEntity>(dock.vfsPath.machinePath)
           : null
     ) as
-      | (APIEntity<any> &
+      | (AnyEntity &
           TerminalTargetFields & { project_id?: string | null; cwd?: string | null; workdir?: string | null })
       | null;
     if (!targetTypeId && target) targetTypeId = target.typeId;

@@ -1,23 +1,5 @@
 import { t } from '@lingui/core/macro';
-import {
-  APIEntity,
-  Artifact,
-  createConversationForShare,
-  dataContext,
-  dataManager,
-  FlowMessage,
-  gitOriginCloneUrl,
-  isImagePath,
-  launchWizard,
-  MessageAttachment,
-  Prompt,
-  Task,
-  TypeId,
-  User,
-  type AgenticProcess,
-  type GitOrigin,
-  type WorkerStatus,
-} from '@sdk';
+import { APIEntity, Artifact, createConversationForShare, dataContext, dataManager, FlowMessage, gitOriginCloneUrl, isImagePath, launchWizard, MessageAttachment, Prompt, Task, TypeId, User, type AgenticProcess, type GitOrigin, type WorkerStatus, type AnyEntity } from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -806,7 +788,7 @@ export function MessageEntityChip({
   const { start: startSkillRun, picker: runPicker } = useRunSkillWithProjectPrompt();
   const [reviewOpen, setReviewOpen] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = useEntity<APIEntity<any>>(typeId);
+  const { data } = useEntity<AnyEntity>(typeId);
   const state = chipStateFor(!!data, attachment, forceShow);
   if (state === 'hidden') return null;
   // Git-link chip: a git context folder shared through push-notify. The chip

@@ -1,4 +1,4 @@
-import { APIEntity, registerEntity } from '../APIEntity';
+import { APIEntity, registerEntity, type AnyEntity } from '../APIEntity';
 import { TypeId } from '../FlowSync';
 import { IEntity, EntityMerge } from '../IEntity';
 import type { InstructionSection, PageData } from '../types/pageData';
@@ -53,7 +53,7 @@ export class Page extends APIEntity<Page> implements IPage {
 
   async analyze(context: TypeId[] = []): Promise<void> {
     if (!this.saved) return undefined;
-    await this.post<APIEntity<any>>('analyze', { context });
+    await this.post<AnyEntity>('analyze', { context });
   }
 
   addFunc(funcTitle: string, funcContent?: any): void {

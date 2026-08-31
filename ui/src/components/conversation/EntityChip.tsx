@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { ExternalLink } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
-import { APIEntity, TypeId, dataManager, workerFromSessionType } from '@sdk';
+import { APIEntity, TypeId, dataManager, workerFromSessionType, type AnyEntity } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
@@ -305,7 +305,7 @@ export function ContextEntityChip({ typeId, inside, onClick, projectId, title, s
   // Generic context chips can point at any entity type; the SDK hook's recursive
   // entity generic has no concrete type here.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, notFound } = useEntity<APIEntity<any>>(typeId);
+  const { data, notFound } = useEntity<AnyEntity>(typeId);
   // ``notFound`` is a terminal 404 — the target has no local row (e.g. a
   // dangling/unmaterialized context reference). Render a muted, non-navigable
   // chip; the SDK's negative cache keeps us from re-fetching every render.

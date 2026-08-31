@@ -1,5 +1,5 @@
 import { t } from '@lingui/core/macro';
-import type { APIEntity, AssetOccurrence } from '@sdk';
+import type { APIEntity, AssetOccurrence, AnyEntity } from '@sdk';
 import { AlertTriangle } from 'lucide-react';
 import { createContext, type ReactNode, useContext, useMemo } from 'react';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
@@ -9,7 +9,7 @@ import { WikiLabel } from '@src/components/wiki-tip/WikiLabel';
 import { useAssistantWikiSpace } from '@src/components/wiki-tip/assistant-wiki';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 
-type CollisionEntity = APIEntity<any>;
+type CollisionEntity = AnyEntity;
 
 interface AssetCollisionContextValue {
   entity: CollisionEntity | null;

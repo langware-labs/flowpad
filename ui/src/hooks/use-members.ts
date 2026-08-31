@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { APIEntity, getMembers, type Participant, type TypeId } from '@sdk';
+import { APIEntity, getMembers, type Participant, type TypeId, type AnyEntity } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import {
   useMembershipAvailability,
@@ -31,7 +31,7 @@ export interface UseMembersResult {
   /** The entity itself, already resolved here for the roster — exposed so
    *  callers needing it (e.g. to publish before minting an invite link) don't
    *  mount a second ``useEntity`` for the same typeId. */
-  entity: APIEntity<any> | null | undefined;
+  entity: AnyEntity | null | undefined;
   /** Members + roles. Sourced from the local entity cache, then refreshed
    *  on mount via the generic ``members`` action (which the local server
    *  reflects to the hub when ``entity.remote=true``). */
@@ -85,7 +85,7 @@ export interface UseMembersResult {
  * Multiple consumers for the same typeId share an in-flight fetch.
  */
 export function useMembers(typeId: TypeId | null): UseMembersResult {
-  const { data: entity } = useEntity<APIEntity<any>>(typeId);
+  const { data: entity } = useEntity<AnyEntity>(typeId);
   const { available, reason } = useMembershipAvailability();
   const [refreshed, setRefreshed] = useState<Participant[] | null>(null);
   const [loading, setLoading] = useState<boolean>(false);

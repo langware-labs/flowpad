@@ -1,4 +1,4 @@
-import { tabManager, type APIEntity, type TypeId } from '@sdk';
+import { tabManager, type APIEntity, type TypeId, type AnyEntity } from '@sdk';
 import type { DockPointer } from '@src/navigation/DockPointer';
 import type { FavoriteRef } from '@src/hooks/use-favorites';
 
@@ -20,7 +20,7 @@ import type { FavoriteRef } from '@src/hooks/use-favorites';
  */
 export function favoriteTargetForDock(
   dock: DockPointer | null | undefined,
-  entity: { typeId: TypeId | null; entity: APIEntity<any> | null } | null,
+  entity: { typeId: TypeId | null; entity: AnyEntity | null } | null,
   fallbackTitle: string,
 ): FavoriteRef | null {
   if (entity?.typeId) {

@@ -1,4 +1,4 @@
-import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, registerEntity, type AnyEntity } from '../APIEntity';
 import { ExpressionNode, QueryFilter, QueryRequest } from '../FlowSync/query';
 import { IEntity, EntityMerge } from '../IEntity';
 
@@ -140,9 +140,9 @@ export class Group extends APIEntity<Group> implements IGroup {
    * adapters to turn a drag payload back into the entity whose
    * ``setGroup``/``move`` must run — resolution is SDK logic, not tsx.
    */
-  static async resolveEntity(type: string, id: string): Promise<APIEntity<any> | null> {
+  static async resolveEntity(type: string, id: string): Promise<AnyEntity | null> {
     const { TypeId } = await import('../models/TypeId');
-    return (await dataManager.getByTypeId<any>(new TypeId(type, id))) as APIEntity<any> | null;
+    return (await dataManager.getByTypeId<any>(new TypeId(type, id))) as AnyEntity | null;
   }
 
   async rename(name: string): Promise<Group> {

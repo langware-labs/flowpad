@@ -1,5 +1,5 @@
 import type { EntityMerge } from '../IEntity';
-import { APIEntity } from '../APIEntity';
+import { APIEntity, type AnyEntity } from '../APIEntity';
 import { LabelInfo } from '../models/LabelInfo';
 
 export interface ILabel extends LabelInfo {
@@ -44,7 +44,7 @@ export class Label extends APIEntity<Label> implements ILabel {
     return 'label';
   }
 
-  static isType<U extends APIEntity<U>>(this: { new (): U; type: string }, entity: APIEntity<any> | null): entity is U {
+  static isType<U extends APIEntity<U>>(this: { new (): U; type: string }, entity: AnyEntity | null): entity is U {
     return entity !== null && entity.constructor === this;
   }
 
