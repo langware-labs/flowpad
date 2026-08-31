@@ -554,21 +554,6 @@ async def clear_all_data() -> ClearAllResult:
         except Exception as e:  # noqa: BLE001
             logger.warning(f"clear_all_data: failed to re-seed system content (non-fatal): {e}")
 
-        # Re-install the service triggers. They are ROWS, so the wipe deletes
-        # them, and `set_service_triggers()` otherwise runs only from
-        # `_on_server_startup`. Without this a factory reset silently killed
-        # EVERY `register_heartbeat_task` job until the process restarted: the
-        # cron kept logging "executed successfully", but with
-        # `builtin_system_heartbeat` gone nothing routed it into
-        # `_dispatch_heartbeat`, so (e.g.) a data source sat at `never_synced`
-        # forever with no error to explain it. Idempotent — it upserts.
-        try:
-            from flow_sdk.server.builtin_triggers import set_service_triggers  # noqa: PLC0415
-
-            await set_service_triggers()
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"clear_all_data: failed to re-install service triggers (non-fatal): {e}")
-
     # The triggering HTTP request can be CANCELLED at any await (ASGI client
     # disconnect — e.g. the test runner being killed mid-clear). Without a
     # shield, the cancellation can land between ``db_path.unlink()`` and
