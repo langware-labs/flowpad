@@ -8998,6 +8998,10 @@ msgstr "جارٍ تحميل المقاييس..."
 msgid "Loading organizations…"
 msgstr ""
 
+#: src/components/html-preview/HtmlPreview.tsx
+msgid "Loading preview…"
+msgstr ""
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Loading project resources..."
 msgstr "جاري تحميل موارد المشروع..."
@@ -16936,8 +16940,8 @@ msgid "Tomorrow"
 msgstr "غداً"
 
 #: src/components/html-preview/HtmlPreview.tsx
-msgid "Too large to preview:"
-msgstr ""
+#~ msgid "Too large to preview:"
+#~ msgstr ""
 
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Too many attempts. Wait a few minutes and try again."

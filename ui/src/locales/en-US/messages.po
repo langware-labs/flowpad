@@ -8998,6 +8998,10 @@ msgstr "Loading metrics..."
 msgid "Loading organizations…"
 msgstr "Loading organizations…"
 
+#: src/components/html-preview/HtmlPreview.tsx
+msgid "Loading preview…"
+msgstr "Loading preview…"
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Loading project resources..."
 msgstr "Loading project resources..."
@@ -16936,8 +16940,8 @@ msgid "Tomorrow"
 msgstr "Tomorrow"
 
 #: src/components/html-preview/HtmlPreview.tsx
-msgid "Too large to preview:"
-msgstr "Too large to preview:"
+#~ msgid "Too large to preview:"
+#~ msgstr "Too large to preview:"
 
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Too many attempts. Wait a few minutes and try again."

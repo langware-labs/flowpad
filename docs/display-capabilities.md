@@ -57,7 +57,7 @@ same way on every surface.
 |---|---|---|
 | `.md` / `.markdown` (+ mdx/md.out via `isMarkdownDocumentPath`) | MARKDOWN | `PlainMarkdownAssetEditor` |
 | `.mcp.html` / `.mcp.htm` (checked before .html) | MCP_APP | `McpAppPreview` (MCP sandbox; agent bridge when the vibe display threads the process, bridge-less elsewhere) |
-| `.html` / `.htm` | HTML | `HtmlPreview` (live sandboxed srcDoc, `allow-scripts` only) |
+| `.html` / `.htm` | HTML | `HtmlPreview` (iframe on the file's own `fs/serve` url, `allow-same-origin`) |
 | png jpg jpeg gif webp svg avif bmp ico | IMAGE | `MediaViewer` (`<img>` via fs `download` URL) |
 | mp4 webm mov | VIDEO | `MediaViewer` (`<video>`) |
 | mp3 wav m4a ogg | AUDIO | `MediaViewer` (`<audio>`) |
@@ -137,7 +137,7 @@ diagnosis, home. Every route has a chrome-less `/win/` twin (same tabHash).
 
 | Tier | Surface | Origin model | Powers |
 |---|---|---|---|
-| 1 (most locked) | `HtmlPreview` — shown `.html` | `srcDoc` + `sandbox="allow-scripts"` only → **opaque origin** | scripts only; no network to API (no CORS), no storage, no bridge |
+| 1 (was: most locked) | `HtmlPreview` — shown `.html` | backend-origin `fs/serve/<path>` url, `allow-same-origin` — see below | same as tier 3 in practice; its own relative pages/assets resolve because the url mirrors the path |
 | 2 | MCP sandbox — `McpAppPreview` (vibe), `ShowView` (`/dock/show`, skill `ui/<component>.html`), `AppHost` (`/dock/apps/<uname>`) | backend-origin `sandbox_proxy.html`, per-request CSP (`_sandbox_csp`, default `connect-src 'none'`) | JSON-RPC bridge; only the vibe `.mcp.html` path routes `ui/message` back to the agent; guest tool calls stubbed everywhere |
 | 3 | `PersistentIframe` — webapp by port | real origin, `allow-same-origin allow-scripts allow-forms allow-popups …` + broad `allow=` list | full browser powers on its own origin |
 | 4 (full) | Bespoke asset editors / native views | app origin, no iframe | full app access |
@@ -145,16 +145,38 @@ diagnosis, home. Every route has a chrome-less `/win/` twin (same tabHash).
 No host currently passes `csp`/`connectDomains` to the sandbox proxy, so tier
 2's network is always fully closed in practice.
 
+**Tier 1 is no longer meaningfully locked, and the reason is worth recording.**
+It shipped withholding `allow-same-origin`, on the reasoning that an opaque
+origin costs only `localStorage` while keeping an agent-written page away from
+the API. On a **cookie-gated** instance that is wrong: an opaque origin's *site
+for cookies* is null, so every request the document itself makes is cross-site
+and the `SameSite=Lax` `__Host-cookie-gate` cookie is withheld. The frame's
+first load is parent-initiated and carries the cookie, so the page renders —
+then its own images and its own link clicks each come back as the gate's
+Forbidden page. The host is identical; the host is not what the browser decides
+on. A desktop install is never gated, so **no local test can see this**.
+
+Withholding the flag therefore does not buy isolation, it buys a broken page.
+Genuine isolation for shown HTML needs a separate, un-gated origin to serve
+from — see [§8](#8-open-questions) Q1.
+
 ## 6. Backend serving surfaces
 
 - SPA index + deep-link fallback with `__FLOWPAD_API_URL__` injection
   (`ui.py:49-74`, `app.py:601`).
 - `/assets/*` hashed bundle; explicit public root files (favicon/logo/ws-test).
 - `/mcp-sandbox/sandbox_proxy.html` — the only CSP-bearing surface.
-- **`MicroApp.view`** (`faas/micro_app.py:145`) — the ONLY raw-bytes/MIME
-  path in the backend (ETag/304, streaming, `<base>` injection for HTML,
-  traversal-guarded). `view_external_domain` + `WebDomain` host routing are a
-  cloud seam with **no OSS caller**.
+- **`MicroApp.view`** (`faas/micro_app.py:145`) and **`fs/serve`**
+  (`actions/fs/fs_actions.py`) — the two raw-bytes/MIME paths, and both are
+  thin callers of the one implementation, `serve_app_bytes` (ETag/304,
+  streaming, utf-8 html read, API-origin injection, traversal-guarded). They
+  differ in three flags, one per way "an app" and "a file" are not the same
+  thing: `<base>` injection (an app is served under a path that is not its
+  own; `fs/serve`'s url IS the file's path), the `index.html` fallback (an
+  app's router owns unknown paths, a file has no router), and caching (an
+  hour for a release, `no-store` for a file being edited).
+  `view_external_domain` + `WebDomain` host routing are a cloud seam with
+  **no OSS caller**.
 - `/sdk` mount (`app.py:582`) — **dead**: `server/static/sdk/` is empty; no
   build step populates it (intended `/sdk/flowpad-sdk.js`).
 - Everything else (fs-records, assets.py, transcripts, docs-graph) serves
@@ -183,8 +205,10 @@ No host currently passes `csp`/`connectDomains` to the sandbox proxy, so tier
    `TypeInfo.icon` but viewer/tab icons from a separate hardcoded
    `VIEWER_REGISTRY` — parallel systems kept aligned by hand.
 6. **No unified refresh contract**: webapp iframe reloads on
-   `showNonce+refreshStamp`; Html/McpApp previews only on React key remount;
-   asset editors on turn-edge remount.
+   `showNonce+refreshStamp`; `HtmlPreview` on the FS store's per-path
+   `revision` carried in its src query (the response is `no-store`, but a
+   frame keeps its document until src changes); McpApp preview on React key
+   remount; asset editors on turn-edge remount.
 7. **`show` is fire-and-forget**: exit 0 ≠ presented (documented), no
    feedback channel to the agent; port targets are never liveness-checked at
    resolve time.
@@ -223,12 +247,28 @@ No host currently passes `csp`/`connectDomains` to the sandbox proxy, so tier
 
 1. **Trust tiers as a first-class concept?** Should the display address carry
    an explicit trust/serving tier (preview | sandboxed-app | served-app |
-   native) instead of inferring it from extension+surface? Concretely: a
-   `flow show file <x.html> --serve` (or `served-html` DisplayTargetKind)
-   that mounts the file on the backend origin (ephemeral MicroApp) and
-   renders via the tier-3 iframe — enabling SDK-powered HTML apps — while
-   plain `show file *.html` stays tier 1. (Origin discussion: SDK-in-HTML
-   demo analysis, 2026-07.)
+   native) instead of inferring it from extension+surface?
+
+   The `--serve` half of this is **answered, and the answer was that no new
+   address was needed**. Every shown `.html` is now served from `fs/serve`, so
+   the file has a real url and its relative pages, assets and anchors resolve —
+   the whole class of "the preview has no address" bugs. No flag, no
+   `served-html` kind, no ephemeral MicroApp: the frontend already knows a path
+   is HTML from its extension, so nothing had to change in `resolve_display_target`.
+
+   `allow-same-origin` IS granted, after shipping once without it. Withholding
+   it gives the frame an opaque origin, whose *site for cookies* is null, so a
+   gated instance withholds the `SameSite=Lax` gate cookie from everything the
+   document itself requests — broken images and a Forbidden page on every link
+   ([§5](#5-foreign-html--the-four-trust-tiers)). It bought no isolation, only a
+   broken page.
+
+   So the real remaining question is unchanged and now unavoidable: **isolating
+   shown HTML requires a separate, un-gated origin to serve it from.** A distinct
+   host cannot carry the `__Host-` gate cookie, so that origin has to be either
+   outside the gate or admitted by it explicitly — plus the port/subdomain and
+   e2b exposure that come with it. Until then, a shown `.html` runs with the
+   same powers as a `flow app serve` app.
 2. **Should tier 2 ever get network?** The `csp`/`connectDomains` lever
    exists end-to-end but is never used. Is a scoped grant (backend origin
    only, token-limited API) the sanctioned way for MCP apps to read data, or

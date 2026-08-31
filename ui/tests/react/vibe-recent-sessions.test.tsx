@@ -124,9 +124,7 @@ describe('VibeRecentSessions', () => {
   });
 
   it('caps the compact mixed feed at five rows', () => {
-    activityItems = Array.from({ length: 7 }, (_, i) => (
-      i % 2 ? sessionItem(i + 1) : entityItem(i + 1)
-    ));
+    activityItems = Array.from({ length: 7 }, (_, i) => (i % 2 ? sessionItem(i + 1) : entityItem(i + 1)));
     render(<VibeRecentSessions />);
 
     expect([
@@ -146,7 +144,7 @@ describe('VibeRecentSessions', () => {
     expect(navigateToResult).toHaveBeenCalledWith(item.result, expect.any(Object));
   });
 
-  it('keeps worker sessions resumable in the vibe skin', async () => {
+  it('reopens a worker session in ITS mode, not the vibe skin it was picked from', async () => {
     const user = userEvent.setup();
     const terminalDockPointer = { viewType: 'shell' };
     getByWorkerId.mockResolvedValue({ id: 'p1', terminalDockPointer });
@@ -156,10 +154,11 @@ describe('VibeRecentSessions', () => {
     await user.click(screen.getByTestId('vibe-recent-session'));
 
     expect(getByWorkerId).toHaveBeenCalledWith('w1', 'claude');
-    await waitFor(() => expect(openDockPointer).toHaveBeenCalledWith(
-      terminalDockPointer,
-      { viewMode: 'vibe' },
-    ));
+    // No mode option: the session's own `last_mode` decides (seeded onto the
+    // URL by `openDock`). Pinning vibe here dragged a session the user had put
+    // in Terminal back into the vibe skin every time they reopened it. A
+    // session with no memory still inherits vibe, the mode it was picked from.
+    await waitFor(() => expect(openDockPointer).toHaveBeenCalledWith(terminalDockPointer, undefined));
   });
 
   it('opens a full mixed activity dialog from More', async () => {
@@ -187,10 +186,7 @@ describe('VibeRecentSessions', () => {
     await user.click(screen.getByTestId('vibe-recent-show-more'));
     await user.click(screen.getByTestId('recent-activity-load-more'));
 
-    expect(useRecentActivitySpy).toHaveBeenLastCalledWith(
-      { mode: 'project', activeProjectId: 'proj-1' },
-      100,
-    );
+    expect(useRecentActivitySpy).toHaveBeenLastCalledWith({ mode: 'project', activeProjectId: 'proj-1' }, 100);
   });
 
   it('can expand the full dialog across all projects', async () => {
@@ -201,9 +197,6 @@ describe('VibeRecentSessions', () => {
     await user.click(screen.getByTestId('vibe-recent-show-more'));
     await user.click(screen.getByTestId('recent-activity-all-projects'));
 
-    expect(useRecentActivitySpy).toHaveBeenLastCalledWith(
-      { mode: 'all' },
-      50,
-    );
+    expect(useRecentActivitySpy).toHaveBeenLastCalledWith({ mode: 'all' }, 50);
   });
 });

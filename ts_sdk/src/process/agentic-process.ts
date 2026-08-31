@@ -357,6 +357,10 @@ export interface IAgenticProcess extends IEntity {
   connection_id?: string | null;
   /** True when PTY OSC title escapes may update `name`. Cleared the first time the user manually renames this tab. */
   auto_rename?: boolean;
+  /** Last view mode this session was viewed in (`vibe|standard|advanced|dev`).
+   *  Per-session memory: opening the session applies it, changing mode while it
+   *  is open records the new one. See `applyProcessViewMode`. */
+  last_mode?: string | null;
   /**
    * Derived: true when the worker is ready for a new user prompt.
    * Computed server-side via ``is_ready_for_input``. Read-only on the wire.
@@ -941,6 +945,19 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /** True when PTY OSC title escapes may update `name`. Cleared the first time the user manually renames this tab. */
   auto_rename: boolean = true;
+
+  /**
+   * The view mode this session was last seen in — per-SESSION mode memory.
+   *
+   * Mode used to be one global preference (plus a per-project `last_mode`), so
+   * switching to Terminal repainted every open session, not the one in hand.
+   * The mode is a property of the session you are looking at: opening a session
+   * applies this, and switching mode while it is open writes it back. Null on a
+   * session that has never been opened under a mode — it adopts (and records)
+   * the current one on first open. Written only through
+   * `applyProcessViewMode` / `stampProcessViewMode` in `view-mode-context`.
+   */
+  last_mode: string | null = null;
 
   /** Backend-owned lifecycle status. */
   private _status: ProcessStatus = ProcessStatus.NEW;
@@ -1602,6 +1619,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.sidecar_shell_id = entity.sidecar_shell_id;
     this.connection_id = entity.connection_id;
     this.auto_rename = entity.auto_rename ?? true;
+    this.last_mode = entity.last_mode ?? null;
     this.project_id = entity.project_id ?? null;
     this.collaboration_room_id = entity.collaboration_room_id ?? null;
     this.target_typeid_str = entity.target_typeid_str ?? null;
