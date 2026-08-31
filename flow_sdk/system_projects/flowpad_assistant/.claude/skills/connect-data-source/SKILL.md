@@ -2,7 +2,7 @@
 id: aa478f19-3dad-4794-a34a-9e6863d50860
 name: connect-data-source
 description: >-
-  Connects a data source to Flowpad end to end — "connect my Notion", "pull my RSS
+  Connects a data source to Flowpad end to end — "connect my gmail", "pull my RSS
   feeds in", "sync these Slack channels", "watch this git repo", "index my Google
   Drive", "start ingesting my mail" — turning the request into a source that
   actually produces records, then showing the Data Sources screen. Also diagnoses a
