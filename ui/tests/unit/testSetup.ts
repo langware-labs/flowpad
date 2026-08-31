@@ -35,6 +35,15 @@ vi.stubGlobal('ResizeObserver', ResizeObserverMock);
 // Reset per test. This is state isolation, not a wait/retry: the leak is the
 // previous test's query string, and this deletes it. A test that needs a
 // specific URL still sets it in its own body or `beforeEach`, which run after.
+//
+// The guard is LOAD-BEARING — do not "simplify" it away because `replaceState`
+// is idempotent. Calling it unconditionally on every one of the tier's 4393
+// tests breaks `prepare-avatar-image.test.ts` ("RangeError: Offset is outside
+// the bounds of the DataView"), which passes on its own and fails only in the
+// full tier. Measured, repeatedly: unguarded -> 2 failed, guarded -> 4393
+// passed. Only touch the URL when it actually needs resetting.
 beforeEach(() => {
-  window.history.replaceState(null, '', '/');
+  if (window.location.search || window.location.hash || window.location.pathname !== '/') {
+    window.history.replaceState(null, '', '/');
+  }
 });
