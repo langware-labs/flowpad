@@ -2,8 +2,8 @@
 id: fcb36e00-bcdd-468f-becc-4bf077bd755b
 title: Terminal RTL/bidi rendering contract
 tags: ''
-description: A terminal row must be ONE bidi paragraph; xterm's injected display:inline-block
-version: 2
+description: A terminal row must be ONE bidi paragraph; xterm''s injected display:inline-block
+version: 3
 ---
 
 # Terminal RTL/bidi rendering contract
