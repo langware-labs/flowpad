@@ -47,6 +47,6 @@ export class ClaudeMd extends APIEntity<ClaudeMd> implements IClaudeMd {
 
   /** Default open target: the asset editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('claude_md') ?? this.defaultDockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 }

@@ -118,15 +118,11 @@ export class SubAgent extends APIEntity<SubAgent> {
 
   /** Default open target: the asset editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('subagent') ?? this.defaultDockPointer;
-  }
-
-  override get searchDockPointer(): DockPointerData {
-    return this.assetEditorPointer('subagent') ?? this.dockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {
-    return this.searchDockPointer;
+    return this.dockPointer;
   }
 
   /** FrontMatterFsRef for the agent .md file. */

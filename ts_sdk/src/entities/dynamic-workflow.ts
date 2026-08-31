@@ -27,16 +27,13 @@ export class DynamicWorkflow extends APIEntity<DynamicWorkflow> {
   }
 
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('dynamic_workflow') ?? this.defaultDockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {
-    return this.assetEditorPointer('dynamic_workflow') ?? super.editorDockPointer;
+    return this.assetEditorPointer() ?? super.editorDockPointer;
   }
 
-  override get searchDockPointer(): DockPointerData {
-    return this.assetEditorPointer('dynamic_workflow') ?? this.dockPointer;
-  }
 
   /** Create a new dynamic workflow under the given project (or user-home).
    *  The backend materializes the starter `.js` script at its asset_ref. */

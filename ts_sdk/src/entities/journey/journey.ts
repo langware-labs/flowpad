@@ -155,14 +155,11 @@ export class Journey extends APIEntity<Journey> implements IJourney {
 
   /** Default open target: the journey overview viewer (not the markdown editor). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('journey') ?? this.defaultDockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {
-    return this.assetEditorPointer('journey') ?? super.editorDockPointer;
+    return this.assetEditorPointer() ?? super.editorDockPointer;
   }
 
-  override get searchDockPointer(): DockPointerData {
-    return this.assetEditorPointer('journey') ?? this.dockPointer;
-  }
 }

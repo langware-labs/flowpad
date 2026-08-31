@@ -39,14 +39,11 @@ export class DeckTemplate extends APIEntity<DeckTemplate> {
 
   /** Default open target: the deck-template gallery viewer (URL-first target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('deck_template') ?? this.defaultDockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {
-    return this.assetEditorPointer('deck_template') ?? super.editorDockPointer;
+    return this.assetEditorPointer() ?? super.editorDockPointer;
   }
 
-  override get searchDockPointer(): DockPointerData {
-    return this.assetEditorPointer('deck_template') ?? this.dockPointer;
-  }
 }

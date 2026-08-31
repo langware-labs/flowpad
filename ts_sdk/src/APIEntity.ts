@@ -674,8 +674,13 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * has no asset file yet. Asset subclasses return this from `dockPointer`
    * (falling back to `this.defaultDockPointer`); the `editor/<type>/<ref>` format
    * lives here once so it stays consistent across every asset type.
+   *
+   * `typeSegment` defaults to this entity's own type, which is what all 32 call
+   * sites passed as a hand-written literal. A typo in one of those was silent —
+   * `editorForType` just returns undefined and the entity gets a permanently
+   * inert editor link.
    */
-  protected assetEditorPointer(typeSegment: string): DockPointerData | null {
+  protected assetEditorPointer(typeSegment: string = this.getType()): DockPointerData | null {
     const editor = editorForType(typeSegment);
     if (!editor) return null;
     // Stable typeid form: editor/<editor>/typeid/<type>-<id>. `this.typeId`
