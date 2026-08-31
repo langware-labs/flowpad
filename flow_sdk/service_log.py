@@ -91,6 +91,14 @@ if _log_level is None:
     _log_level = logging.DEBUG if default_service_config.development else logging.WARNING
 __logger.setLevel(_log_level)
 
+#: ``watchfiles`` inherits the root level and emits one INFO line per accepted
+#: filesystem change — and the FSOp watcher is subscribed to agent transcript
+#: JSONLs, which are appended continuously while a worker streams. Measured: 128
+#: of the 651 lines one end-to-end test produced, each reading only "1 change
+#: detected" with no path. The variant that names the paths is watchfiles' DEBUG
+#: branch, so INFO was both the loudest and the least useful of the two.
+logging.getLogger("watchfiles").setLevel(logging.WARNING)
+
 
 def init_dev_file_logging() -> Path | None:
     """Mirror all log output to a timestamped file on disk (development only).

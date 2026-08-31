@@ -1,5 +1,4 @@
-import { WorkerCliOptions, shellQuote } from './base'
-import { CODEX_MODEL_TIERS, resolveModelTier } from './model-tiers'
+import { WorkerCliOptions } from './base'
 
 export interface CodexAgentOptionsOptions {
   session_id?: string | null
@@ -24,8 +23,6 @@ export class CodexAgentOptions extends WorkerCliOptions {
   json_stream: boolean
   ephemeral: boolean
 
-  static DEFAULT_REASONING_EFFORT = 'low'
-
   constructor(opts: CodexAgentOptionsOptions = {}) {
     super(opts.workdir ?? undefined, opts.env_vars)
     this.session_id = opts.session_id ?? undefined
@@ -36,32 +33,6 @@ export class CodexAgentOptions extends WorkerCliOptions {
     this.addDirs = opts.add_dirs ?? []
     this.json_stream = opts.json_stream ?? true
     this.ephemeral = opts.ephemeral ?? true
-  }
-
-  get resolvedModel(): string | undefined {
-    return resolveModelTier(CODEX_MODEL_TIERS, this.model)
-  }
-
-  protected _commonTail(): string[] {
-    const tail: string[] = []
-    if (this.workdir) tail.push(`-C ${shellQuote(this.workdir)}`)
-    if (this.resolvedModel) tail.push(`-m ${shellQuote(this.resolvedModel)}`)
-    for (const d of this.addDirs) tail.push(`--add-dir ${shellQuote(d)}`)
-    if (this.resume && this.session_id) tail.push(`resume ${shellQuote(this.session_id)}`)
-    return tail
-  }
-
-  protected _buildWorkerArgs(): string[] {
-    const bypass = this.permission_mode === 'bypassPermissions'
-      ? ['--dangerously-bypass-approvals-and-sandbox']
-      : []
-    if (!this.json_stream) return ['codex', ...bypass, ...this._commonTail()]
-
-    const head = ['codex', 'exec', '--skip-git-repo-check', ...bypass]
-    if (this.ephemeral) head.push('--ephemeral')
-    head.push('--json')
-    head.push('-c', `model_reasoning_effort=${CodexAgentOptions.DEFAULT_REASONING_EFFORT}`)
-    return [...head, ...this._commonTail(), '-']
   }
 
   toJson(): Record<string, any> {

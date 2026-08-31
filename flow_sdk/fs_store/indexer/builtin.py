@@ -53,6 +53,10 @@ INDEXABLE_TYPES: list[RecordType] = [
     RecordType.SPREADSHEET,
     RecordType.USAGE_REPORT,
     RecordType.ASSET_CLEANUP_REPORT,
+    # Webapp assets. Safe alongside the rows `flow app serve` registers for a
+    # folder in the user's checkout: those carry no asset_ref, and a row with no
+    # asset_ref is not file-backed, so it is never an orphan candidate.
+    RecordType.MICRO_APP,
 ]
 
 

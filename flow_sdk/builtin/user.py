@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from pydantic import field_validator
 
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.visitor import Visitor
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.core.entity.entity_model import Entity
@@ -278,7 +278,7 @@ class User(Entity):
                 return await existing.save()
             return existing
 
-        from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
+        from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
 
         contact = cls(
             id=mint_uuid(key=f"contact:{user_id or email}"),

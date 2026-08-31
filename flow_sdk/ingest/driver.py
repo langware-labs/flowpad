@@ -23,15 +23,16 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional, Protocol
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from flow_sdk._compat import StrEnum
+from flow_sdk.utils.kind_registry import KindRegistry
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.data_source import DataSource
-    from flow_sdk.ingest.models import IngestItem
+    from flow_sdk.builtin.source_item import SourceItemSpec
 
 
 class SendStatus(StrEnum):
@@ -133,7 +134,7 @@ class SegmentCursorView:
 class FetchResult:
     """What a driver found, plus the state it wants carried to next time."""
 
-    items: list["IngestItem"] = field(default_factory=list)
+    items: list["SourceItemSpec"] = field(default_factory=list)
     #: Asset ROOTS that changed, for drivers whose payload is already local and
     #: whose destination is the filesystem rather than a ``SourceItem`` — the
     #: folder driver today. A path here is the asset root in the sense
@@ -141,7 +142,7 @@ class FetchResult:
     #: FILE for file-layout ones.
     #:
     #: Deliberately separate from ``items`` rather than a variant of it. Reading
-    #: a file's bytes into an ``IngestItem`` only to write them straight back to
+    #: a file's bytes into a ``SourceItemSpec`` only to write them straight back to
     #: disk is pure waste, and a driver that returns refs is announcing that its
     #: destination is ``reflect``, not ``ingest_items``.
     refs: list[str] = field(default_factory=list)
@@ -167,13 +168,11 @@ class FetchResult:
     unchanged: bool = False
 
 
-class IngestDriver(Protocol):
-    """Implemented once per provider, in ``flow_sdk/ingest/drivers/``.
+class IngestDriver:
+    """Base for every provider driver in ``flow_sdk/ingest/drivers/``.
 
-    Structural, never subclassed — it documents the contract and types the
-    registry. Deliberately not ``runtime_checkable``: that would only compare
-    method *names*, which almost anything passes, and would read as a
-    validation guarantee that registration does not actually make.
+    The optional hooks are class attributes defaulting to ``None``/``False``,
+    so the engine reads them directly instead of probing with ``getattr``.
     """
 
     provider: str
@@ -181,7 +180,7 @@ class IngestDriver(Protocol):
     #: the row by ``sync_source`` so the driver is the single owner.
     kind: str
     # NOTE: a record-emitting driver also carries `record_kind` — the ontology
-    # kind it stamps on each IngestItem, which decides inbox membership. It is
+    # kind it stamps on each SourceItemSpec, which decides inbox membership. It is
     # deliberately NOT declared here: only the driver that stamps it ever reads
     # it, and listing it made the three filesystem drivers carry an empty stub
     # to satisfy a field the engine never consults.
@@ -198,6 +197,12 @@ class IngestDriver(Protocol):
     #: the same way ``channel_for`` is — a driver that cannot send simply omits
     #: ``send`` and leaves this False, and stays a three-line class.
     sends: bool = False
+    #: Ceiling on segments synced per pass; None means the caller's budget.
+    segment_budget: Optional[int] = None
+    #: OPTIONAL identity resolver ``(source, ref) -> origin_id`` for unstamped sources.
+    origin_id_for: Optional[Callable[..., str]] = None
+    #: OPTIONAL ``(source) -> FSOrigin`` — where the source's tree lives; stamped on save.
+    origin_for: Optional[Callable[..., Any]] = None
 
     async def send(
         self,
@@ -220,37 +225,17 @@ class IngestDriver(Protocol):
         MUST NOT raise ``SourceError``: that health drives DataSource parking,
         and one failed reply must never stop a mailbox syncing.
         """
-        ...
+        raise NotImplementedError
 
-    def channel_for(self, source: "DataSource") -> str:
-        """OPTIONAL. The user-facing CHANNEL this source reaches — gmail | slack | jira.
+    #: OPTIONAL. The user-facing CHANNEL this source reaches — gmail | slack | jira.
+    channel_for: Optional[Callable[["DataSource"], str]] = None
 
-        Distinct from ``provider``, which is the transport: one driver can
-        reach several channels (the agent transport does), and one channel can
-        be reached by several drivers (a harness Gmail source and an API one).
-        The message badge and the thread key both key on the channel, so the
-        two transports resolve to the SAME thread.
 
-        Optional. Drivers that are their own channel (rss, hackernews) inherit
-        the default in ``channel_of_driver``.
-        """
-        ...
+    #: OPTIONAL. Can this source actually read what it was configured for?
+    verify: Optional[Callable[["DataSource"], Any]] = None  # async (source) -> SetupVerdict
 
-    async def verify(self, source: "DataSource") -> "SetupVerdict":
-        """OPTIONAL. Can this source actually read what it was configured for?
 
-        Distinct from health, which is about whether the LAST run worked. This
-        answers "is the setup finished" — and for several providers that is a
-        step only a human can take. Slack will not let an app read a channel the
-        bot was never invited to, and no amount of correct configuration on our
-        side changes that.
-
-        A driver that omits this needs no setup beyond its config, and its
-        sources go straight to ACTIVE.
-        """
-        ...
-
-    async def segments(self, source: "DataSource") -> list[SegmentRef]:
+    async def segments(self, source: "DataSource") -> list[SegmentRef]:  # noqa: D102
         """The syncable units of ``source``.
 
         Async for every driver, not because the nine builtins need it — they
@@ -258,11 +243,11 @@ class IngestDriver(Protocol):
         authored module has to SPAWN it to know, and one signature that is true
         for all ten beats nine truths and a special case at the call site.
         """
-        ...
+        raise NotImplementedError
 
     async def fetch(self, source: "DataSource", cursor: SegmentCursorView) -> FetchResult:
         """Fetch one stream. Raise ``SourceError`` to classify a failure."""
-        ...
+        raise NotImplementedError
 
 
 def channel_of_driver(driver: "IngestDriver", source: "DataSource") -> str:
@@ -271,10 +256,9 @@ def channel_of_driver(driver: "IngestDriver", source: "DataSource") -> str:
     The seam that lets a single-channel driver stay a three-line class while
     the agent transport reads its connector out of config.
     """
-    resolver = getattr(driver, "channel_for", None)
-    if callable(resolver):
+    if driver.channel_for is not None:
         try:
-            resolved = (resolver(source) or "").strip()
+            resolved = (driver.channel_for(source) or "").strip()
             if resolved:
                 return resolved
         except Exception:
@@ -283,7 +267,7 @@ def channel_of_driver(driver: "IngestDriver", source: "DataSource") -> str:
             # every thread in the mailbox, permanently, while still looking
             # like a successful poll.
             logger.exception("[ingest] channel_for failed for %s; falling back to provider", getattr(source, "id", "?"))
-    return str(getattr(driver, "provider", "") or "")
+    return str(driver.provider or "")
 
 
 #: The `context_data` key naming the source a spawned worker belongs to.
@@ -300,13 +284,14 @@ def ingest_run_context(source: "DataSource") -> dict[str, str]:
     return {RUN_SOURCE_KEY: str(getattr(source, "id", "") or "")}
 
 
-_REGISTRY: dict[str, IngestDriver] = {}
+#: Keyed by ``provider``. A miss answers ``None`` — an unknown provider is a
+#: diagnosable source state (``unknown_provider``), not a crash in the poller.
+DRIVERS: "KindRegistry[IngestDriver]" = KindRegistry("ingest provider", key="provider")
 
 
 def register_driver(driver: IngestDriver) -> IngestDriver:
-    _REGISTRY[driver.provider] = driver
-    return driver
+    return DRIVERS.register(driver)
 
 
 def get_driver(provider: str) -> Optional[IngestDriver]:
-    return _REGISTRY.get(provider)
+    return DRIVERS.get_or_none(provider)

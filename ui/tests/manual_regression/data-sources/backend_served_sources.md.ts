@@ -29,7 +29,7 @@ interface Spec {
   id: string;
   name: string;
   title?: string;
-  config_schema?: Record<string, SpecField>;
+  config?: Record<string, SpecField>;
 }
 
 let specs: Spec[] = [];
@@ -130,7 +130,7 @@ test.describe('Data sources are served by the backend', () => {
     await openScreen(page);
     const dialog = await openDialog(page, 'rss');
 
-    const schema = specNamed('rss').config_schema ?? {};
+    const schema = specNamed('rss').config ?? {};
     expect(Object.keys(schema).length).toBeGreaterThan(0);
 
     for (const [key, field] of Object.entries(schema)) {

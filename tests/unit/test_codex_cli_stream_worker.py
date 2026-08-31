@@ -118,6 +118,10 @@ def test_build_spawn_missing_binary_raises_typed_error(tmp_path: Path, monkeypat
 
 def test_build_spawn_no_capability_raises_typed_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     clear_harness_capability(monkeypatch, "codex")
+    # Pin another vendor as installed: `no_worker_message` falls back to a
+    # generic "nothing is installed" when NO vendor resolves, so on a bare CI
+    # image this asserted the wrong branch. See the twin in the claude worker test.
+    seed_harness_capability(monkeypatch, "claude", make_fake_cli_bin(tmp_path, "claude"))
 
     with pytest.raises(WorkerSpawnError, match=r"no harness\.codex\.cli installation discovered"):
         CodexCLIStreamWorker()._build_spawn(AgenticContext(workdir=str(tmp_path)), "hello")

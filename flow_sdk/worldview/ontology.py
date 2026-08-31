@@ -9,6 +9,10 @@ importer migration retires this module.
 
 from __future__ import annotations
 
+from typing import Annotated
+
+from pydantic import BeforeValidator
+
 from flow_sdk.tags.grammar import (
     TAG_PATTERN as KIND_PATTERN,
     normalize_tag,
@@ -16,7 +20,7 @@ from flow_sdk.tags.grammar import (
     tag_is_within,
 )
 
-__all__ = ["KIND_PATTERN", "kind_ancestors", "kind_matches", "normalize_kind"]
+__all__ = ["KIND_PATTERN", "KindStr", "kind_ancestors", "kind_matches", "normalize_kind"]
 
 
 def normalize_kind(kind: str) -> str:
@@ -42,3 +46,9 @@ def kind_matches(query: str, candidate: str) -> bool:
 def kind_ancestors(kind: str, *, include_self: bool = False) -> list[str]:
     """Return dot ancestors from broadest to narrowest."""
     return tag_ancestors(normalize_kind(kind), include_self=include_self)
+
+
+#: A pydantic field type for a ``kind`` column: normalized (and rejected when
+#: malformed) on input, exactly as ``normalize_kind`` does. One definition for
+#: every entity that carries a kind — Artifact, Deployment, MicroApp.
+KindStr = Annotated[str, BeforeValidator(normalize_kind)]

@@ -193,7 +193,7 @@ describe('context folder share over git — two instances', () => {
       return rows.find((r) => r.asset_id === folderId) ?? null;
     }, 20_000, 'staged folder MessageAttachment on bob');
     // The origin travelled; the repository bytes did NOT.
-    expect(staged.git_origin?.provider).toBe('file');
+    expect(staged.origin?.provider).toBe('file');
     expect(staged.transfer_mode).toBe('git');
 
     // 4. Install → the row materializes. Deliberately NO clone at this gate.

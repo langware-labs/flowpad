@@ -8,13 +8,14 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.capsules import AssetCapsule
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identity_backend import (
-    CapsuleIdentityBackend,
-    DerivedIdentityBackend,
-    NativeJsonIdentityBackend,
+from flow_sdk.fs_store.identity_carrier import (
+    DerivedCarrier,
+    FolderJsonCarrier,
+    FrontmatterCarrier,
+    NativeJsonCarrier,
 )
+from flow_sdk.fs_store.indexer._frontmatter import read_frontmatter_id
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.types import EntityType
 
@@ -28,7 +29,7 @@ INDEXED_TYPES = {
     "claude_session", "codex_session", "command", "copilot_session",
     "data_source_spec",
     "dataset", "deck_template", "deck", "dynamic_workflow",
-    "helpdesk", "journey", "markdown_index", "markdown", "mcp_server", "plan", "plugin",
+    "helpdesk", "journey", "markdown_index", "markdown", "mcp_server", "micro_app", "plan", "plugin",
     "project", "prompt", "secret_origin", "skill", "spec", "spreadsheet",
     "task", "todo_file", "usage_report", "whiteboard", "workflow_run",
 }
@@ -72,24 +73,27 @@ def test_every_registered_extractor_has_one_identity_backend() -> None:
     assert actual == INDEXED_TYPES
     for name in sorted(actual):
         info = _info(name)
-        assert info.identity_backend is not None, name
+        assert info.identity_carrier is not None, name
 
 
 def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
     capsule_types = set(FRONTMATTER_ALL) | set(FOLDER_PORTABLE)
     native_types = set(JSON_STABLE)
     derived_types = INDEXED_TYPES - capsule_types - native_types
-    # 18 capsule: base's 17 + `agent`. 14 derived: base's addition, untouched here.
-    assert (len(capsule_types), len(native_types), len(derived_types)) == (18, 3, 15)
+    # 18 capsule: base's 17 + `agent`. 16 derived: + `micro_app`, whose webapp.json
+    # carries no id so a shipped app has the same id on every machine.
+    assert (len(capsule_types), len(native_types), len(derived_types)) == (18, 3, 16)
 
     for name in sorted(INDEXED_TYPES):
         info = _info(name)
+        # A markdown main document carries its id in its frontmatter; a folder
+        # whose main is JSON keeps the json capsule.
         expected_backend = (
-            CapsuleIdentityBackend if name in capsule_types
-            else NativeJsonIdentityBackend if name in native_types
-            else DerivedIdentityBackend
+            (FrontmatterCarrier, FolderJsonCarrier) if name in capsule_types
+            else NativeJsonCarrier if name in native_types
+            else DerivedCarrier
         )
-        assert isinstance(info.identity_backend, expected_backend), name
+        assert isinstance(info.identity_carrier, expected_backend), name
         assert tuple((spec.name, spec.version) for spec in info.capsules) == (
             (("identity", 1),) if name in capsule_types else ()
         ), name
@@ -107,7 +111,7 @@ def test_file_canonical_id_is_adopted_unchanged_without_write(
     before = path.read_bytes()
     info = _info(type_name)
     assert info.mint_entity_id(path) == existing
-    assert info.mint_entity_id(path, derive=True, overwrite=True) == existing
+    assert info.mint_entity_id(path) == existing
     assert path.read_bytes() == before
 
 
@@ -118,7 +122,7 @@ def test_file_invalid_canonical_does_not_mask_valid_legacy(
     path = tmp_path / "asset.md"
     _frontmatter(path, canonical=V7, legacy=V5)
     before = path.read_bytes()
-    assert _info(type_name).mint_entity_id(path, derive=True, overwrite=True) == V5
+    assert _info(type_name).mint_entity_id(path) == V5
     assert path.read_bytes() == before, "legacy adoption never cleans/backfills"
 
 
@@ -129,10 +133,10 @@ def test_missing_portable_file_mints_persists_and_is_idempotent(
     path = tmp_path / "asset.md"
     path.write_text("body", encoding="utf-8")
     info = _info(type_name)
-    first = info.mint_entity_id(path, derive=True, overwrite=True)
+    first = info.mint_entity_id(path)
     assert uuid.UUID(first).version == 4
-    assert AssetCapsule.from_path(path).read("identity").data["id"] == first
-    assert info.mint_entity_id(path, derive=True, overwrite=True) == first
+    assert read_frontmatter_id(path) == first
+    assert info.mint_entity_id(path) == first
 
 
 @pytest.mark.parametrize("type_name", FRONTMATTER_STABLE)
@@ -143,7 +147,7 @@ def test_missing_stable_file_mints_exact_path_v5_and_persists(
     path.write_text("body", encoding="utf-8")
     expected = str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
     info = _info(type_name)
-    assert info.mint_entity_id(path, derive=True, overwrite=True) == expected
+    assert info.mint_entity_id(path) == expected
 
 
 def test_missing_command_uses_scope_natural_key_dns_v5_and_persists(tmp_path: Path) -> None:
@@ -152,9 +156,9 @@ def test_missing_command_uses_scope_natural_key_dns_v5_and_persists(tmp_path: Pa
     ref = FSRef(path, scope="project")
     expected = str(uuid.uuid5(uuid.NAMESPACE_DNS, "command:project:deploy"))
     info = _info("command")
-    assert info.mint_entity_id(ref, derive=True, overwrite=True) == expected
-    assert AssetCapsule.from_path(path).read("identity").data["id"] == expected
-    assert info.mint_entity_id(path, derive=True, overwrite=True) == expected
+    assert info.mint_entity_id(ref) == expected
+    assert read_frontmatter_id(path) == expected
+    assert info.mint_entity_id(path) == expected
 
 
 @pytest.mark.parametrize("type_name", FOLDER_PORTABLE)
@@ -169,7 +173,7 @@ def test_folder_capsule_adopted_unchanged_without_write(
     before = capsule.read_bytes()
     info = _info(type_name)
     assert info.mint_entity_id(folder) == existing
-    assert info.mint_entity_id(folder, derive=True, overwrite=True) == existing
+    assert info.mint_entity_id(folder) == existing
     assert capsule.read_bytes() == before
 
 
@@ -180,10 +184,10 @@ def test_missing_folder_id_mints_persists_and_is_idempotent(
     folder = tmp_path / type_name
     folder.mkdir()
     info = _info(type_name)
-    first = info.mint_entity_id(folder, derive=True, overwrite=True)
+    first = info.mint_entity_id(folder)
     assert uuid.UUID(first).version == 4
-    assert AssetCapsule.from_path(folder).read("identity").data["id"] == first
-    assert info.mint_entity_id(folder, derive=True, overwrite=True) == first
+    assert info.read_id(folder) == first, "persisted in the folder's carrier (json capsule; a main doc's header when one exists)"
+    assert info.mint_entity_id(folder) == first
 
 
 def _folder_with_legacy(root: Path, type_name: str) -> Path:
@@ -215,18 +219,17 @@ def test_invalid_folder_capsule_falls_through_to_valid_legacy_without_backfill(
     folder = _folder_with_legacy(tmp_path, type_name)
     capsule = folder / ".flow" / "id"
     before = capsule.read_bytes()
-    assert _info(type_name).mint_entity_id(folder, derive=True, overwrite=True) == V5
+    assert _info(type_name).mint_entity_id(folder) == V5
     assert capsule.read_bytes() == before
 
 
-def test_markdown_default_body_leaves_identity_to_capsule() -> None:
-    from types import SimpleNamespace
+def test_markdown_render_puts_identity_first_in_frontmatter() -> None:
+    from flow_sdk.builtin.claude_memory_entities import Docs
 
-    from flow_sdk.schema.type_info.markdown_type_info import _markdown_default_body
-
-    body = _markdown_default_body(SimpleNamespace(id=V4, name="A", title="A"))
-    assert f"id: {V4}" not in body
-    assert "# A" in body
+    info = _info("markdown")
+    text = info.serializer().render(Docs(id=V4, name="A", title="A"), info)
+    assert text.startswith(f"---\nid: {V4}\n"), "the header IS the carrier: an owned render keeps the id first"
+    assert "title: A" in text
 
 
 @pytest.mark.parametrize("type_name", JSON_STABLE)
@@ -239,7 +242,7 @@ def test_json_canonical_id_is_adopted_unchanged(
     before = path.read_bytes()
     info = _info(type_name)
     assert info.mint_entity_id(path) == existing
-    assert info.mint_entity_id(path, derive=True, overwrite=True) == existing
+    assert info.mint_entity_id(path) == existing
     assert path.read_bytes() == before
 
 
@@ -251,7 +254,7 @@ def test_missing_json_id_mints_exact_path_v5_and_persists(
     path.write_text('{"name": "R"}\n', encoding="utf-8")
     expected = str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
     info = _info(type_name)
-    assert info.mint_entity_id(path, derive=True, overwrite=True) == expected
+    assert info.mint_entity_id(path) == expected
     assert json.loads(path.read_text(encoding="utf-8"))["id"] == expected
 
 
@@ -322,9 +325,9 @@ DETERMINISTIC_TYPES = (
 def test_deterministic_provider_exact_v5_matrix(tmp_path: Path, type_name: str) -> None:
     ref, stable_key, namespace = _deterministic_case(tmp_path, type_name)
     info = _info(type_name)
-    assert info.mint_entity_id(ref) is None
-    assert info.id_stable_key_fn(ref) == stable_key
-    assert info.mint_entity_id(ref, derive=True, overwrite=True) == str(uuid.uuid5(namespace, stable_key))
+    assert info.read_id(ref) is None
+    assert info.stable_key_for(ref) == stable_key
+    assert info.mint_entity_id(ref) == str(uuid.uuid5(namespace, stable_key))
 
 
 @pytest.mark.parametrize("type_name", ("claude_session", "codex_session", "copilot_session", "dynamic_workflow", "secret_origin"))
@@ -346,4 +349,4 @@ def test_provider_embedded_valid_id_is_adopted(tmp_path: Path, type_name: str) -
     else:
         path.write_text(json.dumps({"data": {"id": V4}}))
         ref = FSRef(path)
-    assert _info(type_name).mint_entity_id(ref, derive=True, overwrite=True) == V4
+    assert _info(type_name).mint_entity_id(ref) == V4

@@ -10,7 +10,7 @@ from flow_sdk.settings import is_desktop
 from pydantic import BaseModel
 
 from flow_sdk.flowpad_types.enums import BuiltInConstant, RelationshipDirection
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, EntityChild, RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.entity_factory import type_registry as _entity_registry
@@ -318,6 +318,10 @@ class DBDriver(Generic[RecordType]):
     ) -> tuple[Optional[RecordType], bool]:
         """Atomically update only recency; return ``(current, stamped)``."""
         raise NotImplementedError("stamp_last_active_at is not implemented")
+
+    async def stamp_tab_order(self, entity_id: str, tab_order: int) -> tuple[Optional[RecordType], bool]:
+        """Atomically update only ``tab_order``; no-op on hidden/missing rows."""
+        raise NotImplementedError("stamp_tab_order is not implemented")
 
     async def compare_and_set_data_field(
         self,

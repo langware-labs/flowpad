@@ -207,7 +207,7 @@ def _entity_typeid_or_none(target: str):
     file path is the fallback for anything that isn't a clean TypeId.
     """
     from flow_sdk.api.api_types.identifier import is_valid_uuid  # noqa: PLC0415
-    from flow_sdk.api.type_id import TypeId  # noqa: PLC0415
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
 
     try:
         tid = TypeId(target)

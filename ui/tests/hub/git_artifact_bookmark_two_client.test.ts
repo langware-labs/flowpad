@@ -129,7 +129,7 @@ async function shareArtifact(createBookmark: boolean) {
       path: fixture.appDir,
       artifact_type: 'WEBAPP',
       port: '45678',
-      git_origin: fixture.gitOrigin,
+      origin: fixture.gitOrigin,
     } as any),
   );
   await artifact.save();

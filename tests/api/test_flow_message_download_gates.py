@@ -30,11 +30,9 @@ import pytest
 # registered in the pytest process — otherwise SchemaRegistry.get("prompt")
 # is None and unpack_bundle treats the entry as a generic DB-record (no parking).
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401
-
 from flow_sdk.builtin.flow_message import BODY_FILENAME, AttachmentType, BodyStatus, FlowMessage
 from flow_sdk.builtin.message_attachment import MessageAttachment
 from flow_sdk.fs_store.operations import flow_message as fm_data_ops
-
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 

@@ -2,19 +2,7 @@ import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useEffect, useMemo, useState } from 'react';
 import { LayoutGrid, type LucideIcon } from 'lucide-react';
-import {
-  APIEntity,
-  dataManager,
-  Organization,
-  PageId,
-  Project,
-  tabManager,
-  TypeId,
-  ViewType,
-  Wiki,
-  WikiEntry,
-  WorldViewProjection,
-} from '@sdk';
+import { APIEntity, dataManager, Organization, PageId, Project, tabManager, TypeId, ViewType, Wiki, WikiEntry, WorldViewProjection, type AnyEntity } from '@sdk';
 import { DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
 import { wikiAuthorityForPage } from '@src/components/wiki/resolve-wiki';
 import { useWikiResolveResult } from '@src/routes/loaders/wiki-resolve-store';
@@ -90,7 +78,7 @@ const VIEW_CRUMB_ICON = LayoutGrid;
 /** A label good enough for a crumb, never a raw `type-uuid`. `displayName`
  *  falls back to a fabricated id string when an entity has no real name; the
  *  type's own label reads far better in an address bar. */
-function entityLabel(entity: APIEntity<any> | null, typeId: TypeId | null): string {
+function entityLabel(entity: AnyEntity | null, typeId: TypeId | null): string {
   const synthetic = (entity as { hasSyntheticDisplayName?: boolean } | null)?.hasSyntheticDisplayName;
   const name = entity?.displayName?.trim();
   if (name && !synthetic) return name;
@@ -176,7 +164,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
   const wikiPageTypeId = wikiResolve?.kind === 'resolved' ? wikiResolve.target_typeid : null;
   const [wikiCrumb, setWikiCrumb] = useState<{ typeId: TypeId; label: string } | null>(null);
 
-  const [resolved, setResolved] = useState<{ typeId: TypeId | null; entity: APIEntity<any> | null }>({
+  const [resolved, setResolved] = useState<{ typeId: TypeId | null; entity: AnyEntity | null }>({
     typeId: null,
     entity: null,
   });
@@ -197,7 +185,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
           ? await project?.getDefaultWiki().catch(() => null)
           : await dataManager.getByTypeId<Wiki>(new TypeId(Wiki.type, space)).catch(() => null);
       if (!live || !wiki) return;
-      setWikiCrumb({ typeId: wiki.typeId, label: entityLabel(wiki as APIEntity<any>, wiki.typeId) });
+      setWikiCrumb({ typeId: wiki.typeId, label: entityLabel(wiki as AnyEntity, wiki.typeId) });
     })();
 
     return () => {
@@ -226,11 +214,11 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
         const { targetTypeId, target } = wikiPageTypeId
           ? {
               targetTypeId: wikiPageTypeId,
-              target: await dataManager.getByTypeId<APIEntity<any>>(wikiPageTypeId).catch(() => null),
+              target: await dataManager.getByTypeId<AnyEntity>(wikiPageTypeId).catch(() => null),
             }
           : await tabManager.resolveDockTarget(dock);
         if (!live) return;
-        setResolved({ typeId: targetTypeId ?? null, entity: (target as APIEntity<any>) ?? null });
+        setResolved({ typeId: targetTypeId ?? null, entity: (target as AnyEntity) ?? null });
 
         const parentRef = (target as { parent_type_id?: string | null } | null)?.parent_type_id ?? null;
         const chain = await resolveAncestorChain(parentRef, () => live);
@@ -261,9 +249,13 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     // Before Phase 1 lands, the context's active entity is often already the
     // thing this dock points at — an exact label with no fetch.
     if (targetTypeId && activeEntityTypeId?.toString() === targetTypeId.toString()) {
-      return entityLabel(activeEntity as APIEntity<any>, targetTypeId);
+      return entityLabel(activeEntity as AnyEntity, targetTypeId);
     }
     if (targetTypeId) return labelForType(targetTypeId.type);
+    // A raw VFS file is not an entity, so nothing resolves for it — but it is
+    // still a file with a name, and the tab label ("<project>'s Assets") names
+    // the container it was opened in, not the thing on screen.
+    if (dock?.resourceVfsPath?.filename) return dock.resourceVfsPath.filename;
     return viewLabel(dock);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolved.entity, targetTypeId, activeEntity, activeEntityTypeId, wikiRef, dockKey]);

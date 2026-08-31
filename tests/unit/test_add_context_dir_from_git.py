@@ -37,7 +37,7 @@ import pytest
 
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.folder import Folder
-from flow_sdk.builtin.git_origin import GitOrigin
+from flow_sdk.fs_store.origin.git_origin import GitOrigin
 from flow_sdk.builtin.helpdesk import Helpdesk
 from flow_sdk.builtin.project import Project
 from flow_sdk.fs_store.path_utils import canonical_posix_path
@@ -405,7 +405,7 @@ async def test_an_unpinned_attach_still_pins_the_remote_default_branch(
     ``matches_repo`` skips its branch check when the origin names no branch
     (``if require_branch and self.branch``), so ANY checkout of this URL
     anywhere on disk matches — on any branch, at any commit — and
-    ``_resolve_git_checkout`` gates its pull on the same condition, so nothing
+    ``GitOriginDriver.materialize`` gates its pull on the same condition, so nothing
     corrects it afterwards. The attach then silently adopts a checkout it never
     made, and a desk resolved from it carries whatever queue id that stale copy
     happens to hold.

@@ -139,7 +139,7 @@ async def test_is_alive_true_after_start():
     """is_alive is True after start() spawns an OS PTY."""
     shell = _shell()
     try:
-        await shell.start()
+        await shell.start_pty()
         assert shell.is_alive is True
     finally:
         pty = shell.compute_node.get_pty(shell.id)
@@ -161,7 +161,7 @@ async def test_pty_property_returns_handle_after_start():
     """shell.pty returns a live Pty handle after start()."""
     shell = _shell()
     try:
-        await shell.start()
+        await shell.start_pty()
         assert shell.pty is not None
         assert shell.pty.is_alive
     finally:
@@ -179,7 +179,7 @@ async def test_start_returns_true_on_first_call():
     """start() returns True when a new PTY is spawned."""
     shell = _shell()
     try:
-        result = await shell.start()
+        result = await shell.start_pty()
         assert result is True
     finally:
         pty = shell.compute_node.get_pty(shell.id)
@@ -192,9 +192,9 @@ async def test_start_returns_false_when_already_alive():
     """start() returns False if the PTY is already running."""
     shell = _shell()
     try:
-        await shell.start()
+        await shell.start_pty()
         assert shell.is_alive
-        result = await shell.start()
+        result = await shell.start_pty()
         assert result is False
     finally:
         pty = shell.compute_node.get_pty(shell.id)
@@ -210,7 +210,7 @@ async def test_start_returns_false_when_already_alive():
 async def test_stop_kills_pty_and_sets_idle():
     """stop() kills the PTY and sets status='idle'."""
     shell = _shell()
-    await shell.start()
+    await shell.start_pty()
     assert shell.is_alive
     await shell.stop()
     assert shell.is_alive is False
@@ -221,7 +221,7 @@ async def test_stop_kills_pty_and_sets_idle():
 async def test_restart_respawns_pty():
     """restart() stops then starts — shell is alive again afterwards."""
     shell = _shell()
-    await shell.start()
+    await shell.start_pty()
     assert shell.is_alive
     await shell.restart()
     assert shell.is_alive
@@ -264,7 +264,7 @@ async def test_read_returns_empty_bytes_when_no_record():
 async def test_write_echo_visible_in_read():
     """write('echo X') → X appears in read() output."""
     shell = _shell()
-    await shell.start()
+    await shell.start_pty()
     try:
         await shell.write("echo shell_api_unit_marker")
         out = await _poll(shell, b"shell_api_unit_marker")
@@ -279,7 +279,7 @@ async def test_write_echo_visible_in_read():
 async def test_write_bracketed_paste_in_output():
     """write() uses bracketed paste — the text appears in PTY output intact."""
     shell = _shell()
-    await shell.start()
+    await shell.start_pty()
     try:
         # The bracketed-paste markers are consumed by the shell; the text is echoed as-is.
         await shell.write("echo bracketed_paste_check")
@@ -299,7 +299,7 @@ async def test_write_bracketed_paste_in_output():
 async def test_output_yields_bytes():
     """output() yields bytes produced by the PTY."""
     shell = _shell()
-    await shell.start()
+    await shell.start_pty()
     try:
         collected: list[bytes] = []
 

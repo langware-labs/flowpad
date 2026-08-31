@@ -12,9 +12,8 @@ import { Trans } from '@lingui/react/macro';
 export function WikiModalRoot() {
   const open = useWikiModalStore((s) => s.open);
   const setOpen = useWikiModalStore((s) => s.setOpen);
-  const wikiword = useWikiModalStore((s) => s.wikiword);
-  const space = useWikiModalStore((s) => s.space);
-  const fragment = useWikiModalStore((s) => s.fragment);
+  const target = useWikiModalStore((s) => s.payload);
+  const wikiword = target?.wikiword ?? '';
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -27,7 +26,7 @@ export function WikiModalRoot() {
         </DialogHeader>
         <div className="h-[70vh] overflow-auto">
           {open && wikiword ? (
-            <WikiResolveView name={wikiword} space={space} fragment={fragment} variant="plain" />
+            <WikiResolveView name={wikiword} space={target?.space ?? '@local'} fragment={target?.fragment} variant="plain" />
           ) : null}
         </div>
       </DialogContent>

@@ -1,3 +1,7 @@
+---
+id: 0c4affe0-acb6-4b2e-9e0f-2e447455f8cd
+---
+
 # Type icons
 
 Files here are served at `/icons/<name>` and are addressable from any
@@ -28,8 +32,3 @@ run. This directory ships in the wheel via its own `package-data` entry.
 assets we own or that carry a license permitting redistribution without
 attribution in the UI itself.
 
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 0c4affe0-acb6-4b2e-9e0f-2e447455f8cd
-flowpad:endcapsule identity -->

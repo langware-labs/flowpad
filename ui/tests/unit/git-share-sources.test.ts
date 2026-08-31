@@ -32,7 +32,7 @@ describe('git share source gating', () => {
   });
 
   it('artifact shares expose the Git toggle without auto-forcing git', () => {
-    const artifact = new Artifact({ id: ART_ID, name: 'app', path: '/repo/app', git_origin: null });
+    const artifact = new Artifact({ id: ART_ID, name: 'app', path: '/repo/app', origin: null });
     const src = artifactShareSource(artifact);
     expect(src.gitPreflightRef?.toString()).toBe(artifact.typeId.toString());
     // Auto-force removed: the source never statically selects git mode; the

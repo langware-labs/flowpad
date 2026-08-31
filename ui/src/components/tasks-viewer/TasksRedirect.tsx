@@ -19,9 +19,8 @@ export function TasksRedirect() {
         ? new TypeId(head)
         : new TypeId(Task.type, head)
       : null;
-    navigation.openDock(
+    navigation.replaceDock(
       typeId ? DockPointer.forAssetEditorByTypeId('task', typeId) : DockPointer.forAssetList('task'),
-      { replace: true },
     );
   }, [pointer, navigation]);
 

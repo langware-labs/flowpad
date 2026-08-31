@@ -19,7 +19,7 @@ tests pin the fixed semantics:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -75,24 +75,30 @@ async def _run_delete(mode: str, leave_error: Exception | None):
     hub_call = AsyncMock(side_effect=leave_error) if leave_error else AsyncMock()
     hard_delete = AsyncMock()
     decline = AsyncMock()
+    suppress = Mock()
     with (
         patch(f"{_MOD}.Conversation.get_one", new=AsyncMock(return_value=_conv())),
         patch(f"{_MOD}._hub_leave_conversation", new=hub_call),
         patch(f"{_MOD}._hub_delete_conversation", new=hub_call),
         patch(f"{_MOD}._hard_delete_local_conversation", new=hard_delete),
         patch(f"{_MOD}._decline_linked_invitation", new=decline),
+        patch(
+            "flow_sdk.cloud_client.hub_bridge.hub_ws_bridge.suppress_conversation_materialization",
+            new=suppress,
+        ),
         patch("flow_sdk.utils.hub.hub_base_url", return_value="https://hub.test"),
         patch(f"{_MOD}.hub_base_url", return_value="https://hub.test"),
     ):
         resp = await handle_conversation_delete(CONV_ID, mode, "user-x")
-    return resp, hard_delete, decline
+    return resp, hard_delete, decline, suppress
 
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_leave_nr1_still_deletes_locally_and_declines_invitation():
-    resp, hard_delete, decline = await _run_delete("leave", NR1)
+    resp, hard_delete, decline, suppress = await _run_delete("leave", NR1)
     assert resp.status == "SUCCESS"
+    suppress.assert_called_once_with(CONV_ID)
     hard_delete.assert_awaited_once()
     decline.assert_awaited_once_with(CONV_ID)
 
@@ -100,16 +106,18 @@ async def test_leave_nr1_still_deletes_locally_and_declines_invitation():
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_delete_for_all_404_still_deletes_locally():
-    resp, hard_delete, _ = await _run_delete("delete_for_all", HubError(404, "gone"))
+    resp, hard_delete, _, suppress = await _run_delete("delete_for_all", HubError(404, "gone"))
     assert resp.status == "SUCCESS"
+    suppress.assert_called_once_with(CONV_ID)
     hard_delete.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_real_hub_error_keeps_local_row():
-    resp, hard_delete, decline = await _run_delete("leave", HubError(500, "boom"))
+    resp, hard_delete, decline, suppress = await _run_delete("leave", HubError(500, "boom"))
     assert resp.status == "FAIL"
+    suppress.assert_not_called()
     hard_delete.assert_not_awaited()
     decline.assert_not_awaited()
 

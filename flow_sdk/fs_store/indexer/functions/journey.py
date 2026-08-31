@@ -13,11 +13,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flow_sdk.graph_workflow_manager.graph_workflow_doc import GraphWorkflowDoc, parse_graph_workflow_doc
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions._folder_capsule import read_folder_capsule_id
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.graph_workflow_manager.graph_workflow_doc import GraphWorkflowDoc, parse_graph_workflow_doc
 
 GRAPH_JSON = "graph.json"
 
@@ -35,7 +35,7 @@ def journey_id_from_folder(ref: FSRef | Path) -> object | None:
     if cap:
         return cap
     doc = _load_doc(path)
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
 
     return adopt_entity_id(doc.id if doc else None)
 

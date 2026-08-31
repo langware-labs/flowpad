@@ -32,9 +32,9 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from flow_sdk.ingest.driver import FetchResult, SetupVerdict, SegmentCursorView, SegmentRef
+from flow_sdk.builtin.source_item import SourceItemSpec
+from flow_sdk.ingest.driver import IngestDriver, FetchResult, SegmentCursorView, SegmentRef, SetupVerdict
 from flow_sdk.ingest.health import SourceError
-from flow_sdk.ingest.models import IngestItem
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ HISTORY_PAGE = 15
 TRANSIENT_ERRORS = {"ratelimited", "rate_limited", "service_unavailable", "internal_error"}
 
 
-class SlackDriver:
+class SlackDriver(IngestDriver):
     provider = "slack"
     kind = "datasource.api.slack"
     #: `content.message.*` is what the inbox projection accepts, so a Slack
@@ -135,7 +135,7 @@ class SlackDriver:
         if not messages:
             return FetchResult(items=[], next_state=state, unchanged=True)
 
-        items: list[IngestItem] = []
+        items: list[SourceItemSpec] = []
         newest = oldest or ""
         for message in messages:
             ts = str(message.get("ts") or "")
@@ -150,8 +150,8 @@ class SlackDriver:
 
             thread_ts = str(message.get("thread_ts") or "") or None
             items.append(
-                IngestItem(
-                    source_id=source.id,
+                SourceItemSpec(
+                    data_source_id=source.id,
                     provider=self.provider,
                     kind=self.record_kind,
                     segment_key=cursor.segment_key,
@@ -159,7 +159,7 @@ class SlackDriver:
                     # `ts` is unique within a channel and the channel IS the
                     # stream, so it is already the natural key.
                     external_id=ts,
-                    title="",
+                    name="",
                     body=str(message.get("text") or ""),
                     occurred_at=_iso(ts),
                     author_external_id=str(message.get("user") or message.get("bot_id") or "")

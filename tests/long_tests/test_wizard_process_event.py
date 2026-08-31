@@ -22,7 +22,6 @@ import websockets
 
 from tests.test_settings import test_service_config
 
-
 pytestmark = pytest.mark.skipif(
     not test_service_config.deep_testing,
     reason="Skipping long tests when DEEP_TESTING is disabled",

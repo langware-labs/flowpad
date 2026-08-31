@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import ReactMarkdown, { type Components } from 'react-markdown';
+import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
 import remarkGfm from 'remark-gfm';
@@ -57,7 +57,7 @@ export function useReactMarkdownAnchor(source: string): {
  * element. Inline elements (em, strong, code) are not anchored — they live
  * inside their parent block.
  */
-function dataLine(node: Parameters<NonNullable<Components['p']>>[0]['node']): number | undefined {
+function dataLine(node: ExtraProps['node']): number | undefined {
   const line = node?.position?.start?.line;
   return typeof line === 'number' ? line : undefined;
 }

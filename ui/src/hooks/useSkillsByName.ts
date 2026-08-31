@@ -26,7 +26,12 @@ export interface SkillsByName {
  */
 export function useSkillsByName(): SkillsByName {
   const { data: skills = [] } = useEntitiesQuery<Skill>(skillsQuery);
-  const byName = useMemo(() => new Map(skills.map((s) => [s.name, s])), [skills]);
+  const byName = useMemo(
+    // A nameless skill has no key a caller could ever look up — indexing it under
+    // `null` would only put a phantom entry in a `Map<string, Skill>`.
+    () => new Map(skills.flatMap((s) => (s.name ? [[s.name, s] as const] : []))),
+    [skills],
+  );
   const isEvalByName = (name: string) => byName.get(name)?.isEval ?? false;
   return { skills, byName, isEvalByName };
 }

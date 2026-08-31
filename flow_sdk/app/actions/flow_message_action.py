@@ -15,6 +15,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple, Optional
+from weakref import WeakValueDictionary
 
 from flow_sdk import inbox
 from flow_sdk._compat import UTC
@@ -47,6 +48,15 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 from flow_sdk.utils.hub import HubError, hub_base_url, hub_get, hub_post
 
 logger = logging.getLogger(__name__)
+
+# Same-message body pulls can arrive concurrently from the conversation sync and
+# the eager hub bridge. ``unpack_bundle`` replaces one shared staging directory,
+# so those callers must not run its rmtree/copytree sequence at the same time.
+# Locks are loop-scoped (asyncio locks cannot cross pytest/server event loops)
+# and weakly held so a long-lived backend does not retain one per message.
+_BUNDLE_DOWNLOAD_LOCKS: "WeakValueDictionary[tuple[object, str], asyncio.Lock]" = (
+    WeakValueDictionary()
+)
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.invitation import Invitation
@@ -984,6 +994,11 @@ async def handle_conversation_delete_archived(someone_typeid: str) -> ApiRespons
                     # intent is removal, so clean up the linked invitation
                     # and proceed with the local delete.
                     await _decline_linked_invitation(conv.id)
+            # The hub mutation is committed (or this is local-only). Block any
+            # already-queued inbound materializer before removing the parent.
+            from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
+
+            hub_ws_bridge.suppress_conversation_materialization(conv.id)
             await _hard_delete_local_conversation(conv)
             deleted.append(conv.id)
         except HubError as e:
@@ -1063,6 +1078,13 @@ async def handle_conversation_delete(
                 message=f"Hub {e.status_code}: {e.reason}",
             )
 
+    # The hub mutation is committed (or this is local-only). A detached hub
+    # message materializer may still be queued, so establish the tombstone
+    # before the local cascade removes its parent. The generic graph DELETE has
+    # the same guard; the canonical conversation lifecycle must own it too.
+    from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
+
+    hub_ws_bridge.suppress_conversation_materialization(conversation_id)
     await _hard_delete_local_conversation(conv)
     return ApiSuccessResponse(data={"id": conversation_id, "mode": mode})
 
@@ -1793,6 +1815,16 @@ def _save_last_fetch(ts: str) -> None:
     _last_fetch_path().write_text(_json.dumps({"last_fetch": ts}))
 
 
+def _bundle_download_lock(fm_id: str) -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    key = (loop, fm_id)
+    lock = _BUNDLE_DOWNLOAD_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _BUNDLE_DOWNLOAD_LOCKS[key] = lock
+    return lock
+
+
 async def _download_and_unpack_bundle(
     fm_id: str,
     attachment_filename: str,
@@ -1823,6 +1855,28 @@ async def _download_and_unpack_bundle(
     ``on_progress`` — optional async callback fired as download bytes land;
     when set the hub GET is streamed instead of buffered whole.
     """
+    async with _bundle_download_lock(fm_id):
+        return await _download_and_unpack_bundle_locked(
+            fm_id,
+            attachment_filename,
+            body_status=body_status,
+            overwrite=overwrite,
+            raise_on_conflict=raise_on_conflict,
+            on_progress=on_progress,
+            hub_updated=hub_updated,
+        )
+
+
+async def _download_and_unpack_bundle_locked(
+    fm_id: str,
+    attachment_filename: str,
+    *,
+    body_status: "str | BodyStatus | None" = None,
+    overwrite: bool = False,
+    raise_on_conflict: bool = False,
+    on_progress=None,
+    hub_updated: str | None = None,
+) -> bool:
     from flow_sdk.builtin.flow_message_bundle import (
         FlowMessageExistsError,
         unpack_bundle,
@@ -4547,7 +4601,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
             if ent is not None:
                 if (
                     membership_target.target_type == BuiltinEntityType.PROJECT.value
-                    and getattr(ent, "git_origin", None) is not None
+                    and getattr(ent, "origin", None) is not None
                 ):
                     try:
                         await ent.setup_from_git_origin()

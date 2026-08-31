@@ -105,7 +105,7 @@ Notable structural facts:
 
 - **Two-stage into-file walks.** Hooks and MCP servers are discovered in two steps: `<root> → *_SOURCE` (one FSRef per `settings.json` / `.mcp.json`-like file), then `*_SOURCE → leaf` (one FSRef per entry, each carrying a distinct RFC-6901 `json_path` so fragment records sharing one file are not collapsed by the DFS dedup key `(path, record_type, json_path)`).
 - **`real_project_cwd_fn` is intentionally NOT registered** on `USER_HOME_FOLDER`. Project-cwd fan-out used to be implicit (any user-home scan silently walked every project tree). Project-cwd roots are now contributed explicitly by the scope filter via `_resolve_scoped_roots` — callers wanting all projects pass a `ScopeFilter` from `get_all_scope_filter()`.
-- **A project root can be read-only.** `_resolve_scoped_roots` stamps `read_only` on a root whose mount is in `Folder.borrowed_checkout_paths()` — someone else's repo, which the walk must not write identity capsules into (why, and who else asks: [fs-ref.md](../fs-ref.md)). The set is fetched once per scan, not per root; `read_only` then propagates down the parent chain.
+- **A project root can be read-only.** `_resolve_scoped_roots` stamps `read_only` on a root whose mount is in `Folder.borrowed_checkout_paths()` — someone else's repo, which the walk must not write identity into (why, and who else asks: [fs-ref.md](../fs-ref.md)). The set is fetched once per scan, not per root; `read_only` then propagates down the parent chain.
 - **Codex projects** are consolidated into `RecordType.PROJECT` (`codex_projects_fn` is annotated `PROJECT`); `CODEX_PROJECT` is a deprecated alias.
 
 ### Type-gating the dispatch
@@ -143,12 +143,12 @@ The dispatch callables:
 
 | Slot | Signature | Role |
 |---|---|---|
-| `from_disk_fn` | `(FSRef, resolved_id) -> list[FSRecord]` (sync or async) | Parse payload using the identity resolved once by the caller. |
-| `capsules` / `identity_backend` | `tuple[CapsuleSpec, ...]`, backend | Declare named capsules and observe canonical plus legacy/native identity carriers. |
+| `from_disk_fn` | `(FSRef, resolved_id) -> list[FSRecord]` (sync or async) | Parse payload using the identity resolved once by the caller. Defaults to the generic `spec_extractor` for any type with an `asset_spec`. |
+| `capsules` / `identity_carrier` | `tuple[CapsuleSpec, ...]`, carrier | Declare named capsules and WHERE the id lives (frontmatter / folder json / native json / derived); legacy carriers are read and converted. |
 | `id_stable_key_fn` / `id_namespace` | `(FSRef) -> str`, `UUID` | Optional natural/path key and namespace for deterministic v5 identity. |
 | `asset_hash_fn` | `(...) -> str` | Content hash for the type's primary asset (used by skip-fresh / sentinel logic). |
 | `post_sync_fn` | hook | Post-sync side effects. |
-| `default_body_fn` | hook | Default-body writer for `FSRecord.upsert_main_ref` on create. |
+| `default_body_fn` | hook | Default-body writer for a type with no `asset_spec` (`dynamic_workflow`) on create. |
 
 Example (`flow_sdk/schema/type_info/skill_type_info.py`):
 
@@ -159,9 +159,9 @@ SKILL = TypeMetadata(
     indexed_by_default=True, api_visible=True,
     index_fields=["description"],
     main_subdir=".claude/skills", main_layout="folder",
-    from_disk_fn=extract_skill,
+    fts_content=("name", "description", "body"),   # from_disk_fn defaults to spec_extractor
     capsules=(CapsuleSpec("identity"),),
-    identity_backend=capsule_identity(skill_id_from_folder),
+    identity_carrier=folder_md_identity(skill_id_from_folder),
     asset_hash_fn=skill_asset_hash,
 )
 ```

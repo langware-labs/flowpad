@@ -133,7 +133,7 @@ class TestMapping:
         # where every cloud mailbox reports the same channel — so a bare id
         # lets two agents collapse onto one thread.
         assert item.thread_key == f"{AGENT_ID}:t-1"
-        assert item.title == "Round trip"
+        assert item.name == "Round trip"
         assert item.occurred_at == "2026-08-04T08:28:47.206Z"
         assert item.kind == "content.message.email"
         assert item.segment_key == AGENT_ID

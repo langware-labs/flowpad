@@ -122,10 +122,13 @@ class FsRecordsActionsMixin:
                 if mount is None:
                     proj = await Project.get_one(QueryFilter.parse({"id": pid}))
                     if proj is None:
-                        return ApiFailResponse(
-                            message=f"Project '{pid}' not found",
-                            status_code=404,
-                        )
+                        # ``list-projects`` also enumerates indexer-known
+                        # directories that have no Project row yet (their id is
+                        # the derived uuid5(cwd)); the scanner's "every project"
+                        # picker sends those too. One unknown token must not
+                        # fail the whole index — skip it like a mount-less row.
+                        logging.warning("[fs-records/index] unknown project '%s' in scope — skipped", pid)
+                        continue
                     mount = getattr(proj, "fs_storage_mount_path", None)
                 if not mount:
                     # Stale entity with no mount — skip silently (matches the
@@ -239,9 +242,7 @@ class FsRecordsActionsMixin:
                 if ent_name:
                     rec = FSRecord.load_or_none(ent.type or ent.get_type(), ent_name)
             if rec:
-                ar = getattr(rec, "_asset_ref", None)
-                if ar is not None:
-                    return getattr(ar, "path", None) or ""
+                return rec.asset_path
         except Exception:
             pass
         return ""
@@ -649,7 +650,7 @@ class FsRecordsActionsMixin:
         if info is None:
             return None
         try:
-            return info.mint_entity_id(ref, derive=True, overwrite=True)
+            return info.mint_entity_id(ref)
         except Exception:
             return None
 
@@ -714,10 +715,19 @@ class FsRecordsActionsMixin:
                     "type": key,
                     "count": 0,
                     "total_bytes": 0,
+                    "scan_ms": 0.0,
                     "_records": [],
                 },
             )
             bucket["count"] += 1
+            # Per-type projection cost, actually measured. This used to be
+            # assigned the literal 0.0 after the loop, so every row advertised
+            # 0.0 while the aggregate carried the real number — the per-type
+            # column was decoration. Timed here because this stat() per ref IS
+            # the per-type share of the request: the walk that produced `nodes`
+            # is untyped (its cost is `walk_ms`), and everything after this is
+            # the diff, which reports itself.
+            _t_type = time.perf_counter()
             try:
                 stat = node._path.stat()
                 bucket["total_bytes"] += stat.st_size
@@ -733,10 +743,11 @@ class FsRecordsActionsMixin:
                     )
             except OSError:
                 pass
+            bucket["scan_ms"] += (time.perf_counter() - _t_type) * 1000
 
         for bucket in by_type.values():
             bucket["avg_bytes"] = bucket["total_bytes"] // bucket["count"] if bucket["count"] else 0
-            bucket["scan_ms"] = 0.0
+            bucket["scan_ms"] = round(bucket["scan_ms"], 2)
 
         # A full-coverage walk can classify freshness and orphans on disk.
         do_diff = not scope_explicit
@@ -795,6 +806,9 @@ class FsRecordsActionsMixin:
                             "count": 0,
                             "total_bytes": 0,
                             "avg_bytes": 0,
+                            # Genuinely zero: this bucket is minted by the DIFF
+                            # for a type the walk produced no refs for, so no
+                            # per-type projection work happened.
                             "scan_ms": 0.0,
                             "_records": [],
                         },
@@ -1507,6 +1521,7 @@ class FsRecordsActionsMixin:
         # ``discover_record_by_path`` still stamps an already-known owning
         # project through its targeted project-mount lookup.
         if _p is not None and filter_type and _p.is_file() and not rebuild and not force:
+            _t_direct = time.perf_counter()
             try:
                 found = await discover_record_by_path(filter_type, str(_p))
             except Exception as e:
@@ -1516,20 +1531,24 @@ class FsRecordsActionsMixin:
                 )
             indexed_typeid = f"{filter_type}-{found.id}" if found is not None and getattr(found, "id", None) else None
             indexed_typeids = [indexed_typeid] if indexed_typeid else []
+            # Measured, not 0.0: this branch really does parse and sync the
+            # file, so reporting zero made a single-file index look free and
+            # left the endpoint's only SLO (< 1s) unobservable in its own payload.
+            _direct_ms = round((time.perf_counter() - _t_direct) * 1000, 2)
             type_row = {
                 "type": filter_type,
                 "indexed": 1 if indexed_typeid else 0,
                 "new": 1 if indexed_typeid else 0,
                 "skipped": 0,
                 "errors": 0,
-                "duration_ms": 0.0,
+                "duration_ms": _direct_ms,
                 "orphans_found": 0,
                 "orphans_db_removed": 0,
                 "orphans_disk_removed": 0,
             }
             SchemaRegistry.append_index(
                 trigger=trigger,
-                duration_ms=0.0,
+                duration_ms=_direct_ms,
                 total_indexed=1 if indexed_typeid else 0,
                 types=[],
                 type_name=filter_type,
@@ -1554,10 +1573,20 @@ class FsRecordsActionsMixin:
         from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter  # noqa: PLC0415
         from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
 
+        # `create_missing=False`: resolving the scope must NOT write entities.
+        # The ScopeFilter is complete either way — an unmaterialized cwd still
+        # yields `Project.derive_id_for_path(cwd)` — and the index run itself
+        # materializes every missing project inside the job, via
+        # `real_project_cwd_fn` -> `get_all_projects(create_missing=True)`.
+        # Minting here was duplicate work done BEFORE the index single-flight
+        # guard is taken: measured 38.854s on a cold DB (vs 1.4s warm) while
+        # the index job itself is 2.4s, so a second request arriving in that
+        # window died with `409 Job 'index' already running` and the api-tier
+        # tests failed as either a 30s timeout or a 409 depending on warmth.
         scope_filter = (
             await resolve_project_scope(ScopeFilter.from_query_params(qp), create_missing=True)
             if (qp.get("user") is not None or qp.get("projects") is not None)
-            else await get_all_scope_filter(create_missing=True)
+            else await get_all_scope_filter(create_missing=False)
         )
         # Single-project narrowing — derived from the ScopeFilter, used below
         # to short-circuit non-project indexer work paths.
@@ -1679,6 +1708,8 @@ class FsRecordsActionsMixin:
                     data={
                         "type": filter_type,
                         "indexed": 0,
+                        "new": 0,
+                        "skipped": 0,
                         "errors": 0,
                         "orphans_found": 0,
                         "orphans_db_removed": 0,
@@ -1691,7 +1722,15 @@ class FsRecordsActionsMixin:
             return ApiSuccessResponse(
                 data={
                     "type": one["type"],
+                    # Same three counters the aggregate payload carries, and the
+                    # same meanings: `indexed` is everything PROCESSED, split into
+                    # `new` (re-parsed) and `skipped` (fresh, left alone). Without
+                    # the split a per-type caller sees "indexed: 2107" for a run
+                    # that actually re-parsed nothing, and cannot tell a no-op
+                    # re-index from a full one.
                     "indexed": one["indexed"],
+                    "new": one["new"],
+                    "skipped": one["skipped"],
                     "errors": one["errors"],
                     "orphans_found": one["orphans_found"],
                     "orphans_db_removed": one["orphans_db_removed"],
@@ -2089,24 +2128,30 @@ class FsRecordsActionsMixin:
     # -- fs-records CRUD action --------------------------------------------------
 
     async def _materialize_main_body(self, rec, record_type: str) -> None:
-        """Write a just-created folder-asset's main body to disk (default_body →
-        e.g. ``SKILL.md``) so the new asset is discoverable by a disk-walking
-        scan. No-op for types without a ``default_body_fn``/``entity_cls`` or an
-        unresolved ``asset_ref``, and idempotent (``upsert_main_ref`` skips an
-        existing file). Bridges the gap that ``sync_to_db`` (DB row + metadata
-        shadow only) leaves for the FSRecord create path."""
+        """Write a just-created asset to disk through the type's serializer
+        (``SKILL.md``, ``agent.md``…) so the new asset is discoverable by a
+        disk-walking scan. Bridges the gap that ``sync_to_db`` (DB row +
+        metadata shadow only) leaves for the FSRecord create path."""
+        from pathlib import Path  # noqa: PLC0415
+
         from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+        from flow_sdk.fs_store.origin.local_origin import local_origin_for_path  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         info = SchemaRegistry.get(record_type)
-        if info is None or info.default_body_fn is None or info.entity_cls is None:
+        if info is None or info.entity_cls is None:
             return
         entity = await info.entity_cls.get_one({"id": rec.id})
         ar = getattr(entity, "asset_ref", None) if entity is not None else None
         if not ar:
             return
         rec.asset_ref = FSRef(ar)
-        await asyncio.to_thread(rec.upsert_main_ref, entity)
+        # The write is the serializer's: nothing to render ⇒ a no-op; an
+        # existing file is left alone (the store policy).
+        origin = local_origin_for_path(info.storage_root_for(Path(ar)))
+        committed = await asyncio.to_thread(info.serializer().store, entity, origin, type_name=record_type)
+        if committed.id:
+            rec.__dict__["id"] = committed.id
 
     async def _fs_records_action(self) -> ApiResponse:
         """CRUD gateway for filesystem-backed typed records.
@@ -2544,7 +2589,7 @@ class FsRecordsActionsMixin:
         """
         try:
             from flow_sdk.api.messages import DataOpMessage, OperationType
-            from flow_sdk.api.type_id import TypeId
+            from flow_sdk.fs_store.type_id import TypeId
             from flow_sdk.core.network.resource_tracker import handle_entity_op
 
             op_enum = OperationType(op)
@@ -2617,8 +2662,6 @@ async def discover_record_by_path(
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415 — trigger auto-registration
     from flow_sdk.fs_store.fs_ref import FSRef as _FSRef  # noqa: PLC0415
     from flow_sdk.fs_store.indexer.roots import classify_path  # noqa: PLC0415
-    from flow_sdk.fs_store.fs_record import carrier_writes_are_suppressed  # noqa: PLC0415
-    from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
     from flow_sdk.fs_store.record_list import RecordList  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType as _RT  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
@@ -2630,10 +2673,7 @@ async def discover_record_by_path(
 
     def _find() -> object | None:
         for rec in RecordList(type_name=record_type):
-            ref = getattr(rec, "asset_ref", None) or getattr(rec, "_asset_ref", None)
-            ref_path = getattr(ref, "path", None) if ref is not None else None
-            if ref_path is None:
-                ref_path = str(ref) if ref else ""
+            ref_path = rec.asset_path
             if _normalize_asset_path(ref_path) == target_norm:
                 return rec
         return None
@@ -2664,31 +2704,12 @@ async def discover_record_by_path(
                 _owner_id = proposed_id or await owner_id_for(
                     record_type, expanded, strict=strict_owner
                 )
-                # When the operation forbids touching the source bytes, resolve
-                # READ-ONLY: `derive=False` answers only from evidence already
-                # present and `overwrite=False` commits nothing.
-                #
-                # Read from the operation's context rather than taken as an
-                # argument. The same policy as a parameter would have to be
-                # threaded correctly by every caller, and a caller that forgot
-                # would stamp a capsule into bytes that are not ours — a git
-                # working tree, where it is then committed and pushed to
-                # everyone who pulls.
-                #
-                # A suppressed resolve has no carrier to fall back on, so a
-                # genuinely new asset is given a fresh id here. Identity for
-                # such a source converges through an `origin_id` lookup, not
-                # through anything derived from the bytes.
-                _suppressed = carrier_writes_are_suppressed()
-                resolved_id = _info.mint_entity_id(
-                    one_ref,
-                    owner_id=_owner_id,
-                    proposed_id=proposed_id,
-                    derive=not _suppressed,
-                    overwrite=not _suppressed,
-                )
-                if _suppressed and not resolved_id:
-                    resolved_id = str(mint_uuid())
+                # The seam owns the write gates (read_only, suppressed carrier
+                # writes for a git working tree): a suppressed resolve answers
+                # from the carrier or a stable path-derived id and touches no
+                # bytes; identity for such a source converges through an
+                # `origin_id` lookup, not through anything derived from the bytes.
+                resolved_id = _info.mint_entity_id(one_ref, owner_id=_owner_id, proposed_id=proposed_id)
 
                 # Match the full indexer's deterministic primary ranking. A
                 # non-primary path remains observable but is neither parsed nor
@@ -2721,7 +2742,7 @@ async def discover_record_by_path(
                             record_type=_RT(record_type),
                             scope=classify_path(candidate),
                         )
-                        candidate_id = _info.mint_entity_id(candidate_ref)
+                        candidate_id = _info.read_id(candidate_ref)
                         if not candidate_id:
                             return None
                         return record_type, candidate_id, canonical_posix_path(candidate)
@@ -2758,7 +2779,20 @@ async def discover_record_by_path(
                         _decision.primary_path,
                         ",".join(_decision.duplicate_paths),
                     )
-                if _decision is not None and canonical_posix_path(expanded) != _decision.primary_path:
+                # The primary-path rule breaks ties between occurrences that
+                # nothing else can order. It must NOT overrule a caller that
+                # already resolved the row and said so: ``proposed_id`` is the
+                # authority (reflect passes the origin's own row; reindex passes
+                # the entity it just looked up), and this path comparison is a
+                # heuristic about which copy is canonical. Letting the heuristic
+                # win discards the re-parse — the edit never reaches the index,
+                # and a placement change looks like a fork.
+                _authoritative = bool(proposed_id) and str(proposed_id) == str(resolved_id)
+                if (
+                    _decision is not None
+                    and not _authoritative
+                    and canonical_posix_path(expanded) != _decision.primary_path
+                ):
                     await _reflect_collision()
                     return None
 
@@ -2783,10 +2817,7 @@ async def discover_record_by_path(
                         object.__setattr__(rec, "project_id", project_id)
                     elif owner_pid:
                         object.__setattr__(rec, "project_id", owner_pid)
-                    ref = getattr(rec, "asset_ref", None) or getattr(rec, "_asset_ref", None)
-                    ref_path = getattr(ref, "path", None) if ref is not None else None
-                    if ref_path is None:
-                        ref_path = str(ref) if ref else ""
+                    ref_path = rec.asset_path
                     synced = False
                     try:
                         await rec.sync_to_db(notify=notify)

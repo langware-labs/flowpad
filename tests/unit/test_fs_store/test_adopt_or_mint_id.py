@@ -1,7 +1,7 @@
-"""Named identity-capsule policy through ``TypeInfo.mint_id``.
+"""The markdown miss-policy through ``TypeInfo.mint_entity_id``.
 
-The universal miss-policy for shareable file entities: adopt a valid v4/v5 id
-from legacy frontmatter, else mint a random v4 into the named comment capsule
+Adopt a valid v4/v5 frontmatter ``id:``, else mint a random v4 INTO the
+frontmatter
 (never derive uuid5(path) as the persisted id — that collides across
 machines on share). uuid5(path) survives only as the read-only-file fallback.
 """
@@ -31,7 +31,7 @@ V7 = "018f0000-0000-7000-8000-000000000000"  # valid syntax, foreign version
 def _mint(ref: FSRef) -> str:
     info = SchemaRegistry.get("markdown")
     assert info is not None
-    return info.mint_entity_id(ref, derive=True, overwrite=True)
+    return info.mint_entity_id(ref)
 
 
 def _ver(u: str) -> int:
@@ -44,6 +44,7 @@ def _fm_id(p: Path):
 
 
 def _capsule_id(p: Path):
+    """The legacy markdown capsule — must stay absent: nothing writes it any more."""
     data = AssetCapsule.from_path(p).read("identity")
     return data.data.get("id") if data else None
 
@@ -93,8 +94,8 @@ def test_no_id_mints_v4_and_persists(tmp_path: Path) -> None:
     got = _mint(FSRef(p))
     assert _ver(got) == 4
     assert got != str(uuid.uuid5(uuid.NAMESPACE_URL, str(p.resolve()))), "not uuid5(path)"
-    assert _fm_id(p) is None
-    assert _capsule_id(p) == got
+    assert _fm_id(p) == got
+    assert _capsule_id(p) is None, "the capsule is legacy: nothing writes it"
     assert "# body only" in p.read_text(encoding="utf-8")
 
 

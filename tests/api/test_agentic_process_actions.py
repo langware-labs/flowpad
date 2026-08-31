@@ -111,6 +111,61 @@ async def test_show_view_resolves_a_screen_and_persists_it(bootstrapped_client, 
     assert row["context_data"]["last_shown"] == shown
 
 
+@pytest.mark.asyncio
+async def test_show_app_addresses_the_artifact_and_derives_the_runtime(bootstrapped_client, user):
+    """`flow show app` — the form that had no caller until now.
+
+    The resolver has always accepted `artifact_id`, but only artifact REGISTRATION
+    ever passed it, so an agent that built an app in one turn could re-show it in a
+    later turn only by its port. That is exactly the stale-port-as-identity failure
+    `_app_payload` derives the runtime to avoid: the port belongs to whichever dev
+    server happens to be up, the ARTIFACT is the app.
+
+    With no Deployment and no MicroApp the app is `unbuilt` — a real answer, and the
+    one that proves the runtime is derived rather than supplied.
+    """
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    created = await bootstrapped_client.post(
+        "/api/v1/graph/artifact", json={"name": "vibe app", "kind": "application.web"}
+    )
+    assert created.status_code == 200, created.text
+    artifact_id = ApiResponse(**created.json()).data["id"]
+
+    resp = await bootstrapped_client.post(f"{base}/show", json={"artifact_id": artifact_id})
+    assert resp.status_code == 200, resp.text
+    shown = ApiResponse(**resp.json()).data
+    assert shown["kind"] == "app"
+    assert shown["artifact_id"] == artifact_id
+    assert shown["typeid"] == f"artifact-{artifact_id}"
+    assert shown["runtime"] == "unbuilt"
+    # No port is invented for an app that has no dev server.
+    assert "port" not in shown
+
+    row = await get_agentic_process(bootstrapped_client, pid)
+    assert row["context_data"]["last_shown"] == shown
+
+
+@pytest.mark.asyncio
+async def test_show_app_rejects_a_bad_artifact_id(bootstrapped_client, user):
+    """400 for a malformed id, 404 for a well-formed one naming nothing — the same
+    split every other show form uses, so the CLI's exit codes stay meaningful."""
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    bad = await bootstrapped_client.post(f"{base}/show", json={"artifact_id": "not-an-id"})
+    assert bad.status_code == 400, bad.text
+
+    missing = await bootstrapped_client.post(
+        f"{base}/show", json={"artifact_id": "6ba7b810-9dad-41d1-80b4-00c04fd430c8"}
+    )
+    assert missing.status_code == 404, missing.text
+
+    row = await get_agentic_process(bootstrapped_client, pid)
+    assert "last_shown" not in (row.get("context_data") or {})
+
+
 async def test_show_view_carries_query_options(bootstrapped_client, user):
     """Options ride the address, so `search?q=…` reaches the screen intact."""
     pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
@@ -410,7 +465,6 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
         "kind": "local",
         "base": str(tmp_path),
         "rel_path": "frontend",
-        "project_id": "",
     }
     assert deployment["kind"] == "runtime.web"
     assert deployment["artifact_id"] == artifact["id"]

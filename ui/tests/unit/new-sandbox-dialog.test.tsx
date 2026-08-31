@@ -60,17 +60,17 @@ const withRepo = {
   id: 'p-hub',
   name: 'flowpad-hub',
   displayName: 'flowpad-hub',
-  git_origin: { provider: 'github', owner: 'langware-labs', name: 'flowpad-hub', branch: 'main', rel_path: '.' },
+  origin: { provider: 'github', owner: 'langware-labs', name: 'flowpad-hub', branch: 'main', rel_path: '.' },
 } as never;
 
 const desk = {
   id: 'p-desk',
   name: 'acme-support',
   displayName: 'acme-support',
-  git_origin: { provider: 'github', owner: 'acme', name: 'acme-support', branch: 'main', rel_path: '.' },
+  origin: { provider: 'github', owner: 'acme', name: 'acme-support', branch: 'main', rel_path: '.' },
 } as never;
 
-const repoLess = { id: 'p-notes', name: 'scratch-notes', displayName: 'scratch-notes', git_origin: null } as never;
+const repoLess = { id: 'p-notes', name: 'scratch-notes', displayName: 'scratch-notes', origin: null } as never;
 
 function renderDialog(props: Record<string, unknown> = {}) {
   return render(

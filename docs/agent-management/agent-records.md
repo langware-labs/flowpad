@@ -64,7 +64,7 @@ Current storage model:
 Default metadata root:
 
 ```text
-<records_root>/<type>/<type>-@<uid>/
+<records_root>/<type>/<id>/
   metadata.json                     # flat JSON dict of all persisted fields
   <epoch>_<hash>_<pathdigest>.hash  # index sentinel (zero-byte)
 ```
@@ -77,7 +77,7 @@ Record data/blob root:
 ~/.flow/records_data/
 ```
 
-`record_stem(record_type, uid)` builds `<type>-@<uid>`. Legacy
+`record_stem(record_type, uid)` builds the portable `<type>-<id>` token (not the shadow-folder name, which is the bare id). Legacy
 `.flow_record/record.json` and old `data.json` records are read and migrated to
 `metadata.json` on load/save.
 
@@ -103,7 +103,7 @@ location/runtime attributes such as `source_file`, `path`, `json_path`,
 | `path`              | \`str   | None\`      | Record folder path                                                 |
 | `record_dir`        | \`Path  | None\`      | `path`, or `source_file.parent`                                    |
 | `record_data_dir`   | \`Path  | None\`      | Alias for `record_dir`                                             |
-| `default_path`      | \`Path  | None\`      | `records_root / type / <type>-@<id>`                               |
+| `default_path`      | \`Path  | None\`      | `records_root / type / <id>`                               |
 | `record_folder_ref` | \`FSRef | None\`      | FSRef for the metadata folder, lazily resolved from `default_path` |
 | `asset_ref`         | \`FSRef | None\`      | External content ref, private in memory and serialized as a path   |
 
@@ -351,7 +351,7 @@ Important naming:
 Per-process artifacts live under the record folder:
 
 ```text
-<records_root>/agentic_process/agentic_process-@<id>/
+<records_root>/agentic_process/<id>/
   metadata.json
   execution/
     input/
@@ -700,7 +700,7 @@ last_active_at = now
 The PTY stream file lives under the records data root:
 
 ```text
-~/.flow/records_data/shell/shell-@<shell-id>/<pty_pid>.pty
+~/.flow/records_data/shell/<shell-id>/<pty_pid>.pty
 ```
 
 `Shell.read()` reads this file through `ShellRecord.pty_stream_ref`. `Shell.output()`

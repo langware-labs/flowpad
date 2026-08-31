@@ -1,7 +1,8 @@
 """The ingestor's write side.
 
-``ingest_items`` mints the deterministic v5 id, gates on the content digest,
-preserves local state across re-delivery, and emits the ``ingest.*`` family.
+``ingest_items`` resolves the row by its natural key, gates on the content
+digest, preserves local state across re-delivery, and emits the ``ingest.*``
+family.
 Until now its only caller was ``sync_source`` ← the heartbeat poller, so the
 only way to produce a ``SourceItem`` was to wait for a timer — and anything
 else that wanted to record one (an agent, a test, a CLI) had to go around the
@@ -32,26 +33,24 @@ MAX_ITEMS_PER_REQUEST = 500
 
 
 def _to_item(raw: dict[str, Any]):
-    from flow_sdk.ingest.models import IngestItem  # noqa: PLC0415
+    """One wire dict → the envelope. The spec's own contract does the refusing:
+    a missing header field and an unknown key (a caller that misspelled `name`
+    as `subject` would otherwise get a row with an empty name) both raise."""
+    from pydantic import ValidationError  # noqa: PLC0415
 
-    missing = [k for k in ("source_id", "provider", "kind", "segment_key", "external_id")
-               if not str(raw.get(k) or "").strip()]
-    if missing:
-        raise ValueError(f"missing required field(s): {', '.join(missing)}")
-    allowed = {f for f in IngestItem.__dataclass_fields__}
-    unknown = set(raw) - allowed
-    if unknown:
-        # Refuse rather than drop: a caller that misspelled `title` as `subject`
-        # would otherwise get a row with an empty name and no way to notice.
-        raise ValueError(f"unknown field(s): {', '.join(sorted(unknown))}")
-    return IngestItem(**{k: v for k, v in raw.items() if k in allowed})
+    from flow_sdk.builtin.source_item import SourceItemSpec  # noqa: PLC0415
+
+    try:
+        return SourceItemSpec.model_validate(raw)
+    except ValidationError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 @router.post("/items")
 async def ingest_items_route(request: Request):
     """Ingest a batch through the same path the poller uses.
 
-    Body: ``{"items": [ {<IngestItem>}, … ], "first_run"?: bool}``.
+    Body: ``{"items": [ {<SourceItemSpec>}, … ], "first_run"?: bool}``.
     ``first_run`` lets a caller that knows it is backfilling say so; otherwise
     the batch size decides, exactly as it does for a driver.
     """

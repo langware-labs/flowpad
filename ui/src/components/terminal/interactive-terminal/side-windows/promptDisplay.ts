@@ -54,7 +54,11 @@ export function embeddedAgentUserMessage(text: string): string | null {
  * How one transcript user row should read in the Prompts index — or `null`
  * when it is not a prompt the human sent and the index should skip it.
  */
-export function promptDisplayText(text: string, isMeta: boolean): string | null {
+// `isMeta` is optional because the transcript entry is the server payload
+// verbatim (no client-side constructor to default it), and rows written before
+// the field existed simply omit it. Absent means "not framework-injected" —
+// the same default the retired UserMessage class applied via `?? false`.
+export function promptDisplayText(text: string, isMeta?: boolean): string | null {
   const trimmed = (text ?? '').trim();
   if (!trimmed) return null;
   const slash = slashCommandText(trimmed);

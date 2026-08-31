@@ -73,7 +73,15 @@ const FALLBACK: ChatPlanModeValue = {
 
 const Ctx = createContext<ChatPlanModeValue | null>(null);
 
-export function ChatPlanModeProvider({ process, children }: { process: AgenticProcess | null; children: ReactNode }) {
+export function ChatPlanModeProvider({
+  process,
+  children,
+}: {
+  // InteractiveTerminal's `process` is optional; every read below is guarded by
+  // `!!process`, so absent and null behave identically here.
+  process: AgenticProcess | null | undefined;
+  children: ReactNode;
+}) {
   const canAnswerInline = !!process && process.isHeadless;
   const planToggleEnabled = canAnswerInline && !!process.supports_plan_mode;
   const respondEnabled = !!process;

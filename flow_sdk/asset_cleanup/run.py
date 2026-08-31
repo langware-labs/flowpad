@@ -167,16 +167,12 @@ async def run_asset_cleanup(
     if projects:
         instruction += "\n## Projects\n\n" + json.dumps(projects, indent=2) + "\n"
 
-    # The headless driver resolves the claude binary from the discovered
-    # harness capability; outside a booted server no sweep has run yet and the
-    # worker would silently abort ("binary not found") while wait() polls a
-    # transcript that never appears. Discover first, then fail fast.
+    # Fail fast rather than let wait() poll a transcript that never appears:
+    # resolution is lazy, so this is the same answer the spawn itself would get.
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
         worker_path_env,
     )
-    from flow_sdk.core.capabilities.discovery import ensure_discovered  # noqa: PLC0415
 
-    await ensure_discovered()
     if worker_path_env("claude") is None:
         raise RuntimeError("claude CLI not discovered — cannot run asset_cleanup")
 

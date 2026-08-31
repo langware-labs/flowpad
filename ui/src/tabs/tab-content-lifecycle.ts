@@ -77,7 +77,13 @@ async function materializeTab(
   // (`_PARENT_FORBIDDEN_TARGET_TYPES` + `_pointer_is_adoptable_child`) as the
   // second belt. Resolving the host is a pure store read, which is what makes it
   // legal here at all: route loaders must stay fast.
-  const addressesAdoptable = isAdoptableChildDock(dock);
+  // `shown` is the URL saying the AGENT put this here (the workspace's active
+  // display), which widens adoption to navigation surfaces: `flow show view events`
+  // means "here is a screen for this session", not "leave". The flag existed for
+  // exactly this and had no caller — the non-vibe listener passes an explicit
+  // `parentTabId` instead — so a shown SCREEN arriving by navigation would have been
+  // judged non-adoptable and silently dropped out of the workspace.
+  const addressesAdoptable = isAdoptableChildDock(dock, { shown: dock.isActiveDisplay });
   const parentTabId = addressesAdoptable
     ? (options.parentTabId ?? hostTabIdFromDock(dock))
     : null;
@@ -138,9 +144,20 @@ async function materializeTab(
   // from a target, and a project-less shell is a legitimate GLOBAL terminal.
   // Widening this to every adoptable dock would re-mint those on every single
   // navigation chasing a project_id that is correctly null.
+  // The workspace's ACTIVE DISPLAY is the one dock whose identity is stable while
+  // its TARGET moves: `tabHash` is the host, so the lookup above finds the same row
+  // on every `flow show` and the reuse short-circuit would return before the backend
+  // ever hears about the new target — leaving the chip frozen on whatever was shown
+  // first. Compare the stored pointer, which is the field that actually changes, so
+  // a re-show falls through to `ensureDock` and the backend's repoint clause runs.
+  // Same shape as `lensProjectStale` above: a per-dock reason the cached row is out
+  // of date, expressed where the reuse decision is made.
+  const displayRepoint = dock.isActiveDisplay && !!existingTab && existingTab.pointer !== dock.toJSON();
+
   if (
     existingTab &&
     !lensProjectStale &&
+    !displayRepoint &&
     (existingTab.project_id || !isContentAssetDock(dock)) &&
     !needsReparent &&
     !staleParentEdge
@@ -222,9 +239,21 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
   // behind a FETCHING entity ref. A shell dock has no such morph, and routing
   // it through materializeTab on every navigation is exactly what re-asserts
   // its workspace adoption when it is reopened from inside the workspace.
+  //
+  // The skip rests on "same key ⇒ same content", which holds for every dock whose
+  // key IS its content. The workspace's ACTIVE DISPLAY is keyed by its host, so the
+  // agent's next `flow show` arrives under the same key with a different target —
+  // taking the presentation-morph path there would swap what is on screen while
+  // never telling the backend, and the chip would stay pinned to whatever was shown
+  // first. Tested as STALENESS rather than as "is it the active display", so a
+  // re-show of the same target still takes the cheap path instead of paying a tab
+  // round trip for a navigation that changes nothing.
   const opened = tabManager.lifecycle.get(key);
+  const displayStale =
+    dock.isActiveDisplay && tabForDockKey(tabManager.getSnapshot(), key)?.pointer !== dock.toJSON();
   if (
     isContentAssetDock(dock) &&
+    !displayStale &&
     opened?.state === TabLifecycleState.Opened &&
     opened.tabId &&
     options.parentTabId === undefined

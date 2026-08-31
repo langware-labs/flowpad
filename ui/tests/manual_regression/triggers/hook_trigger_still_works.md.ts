@@ -2,7 +2,7 @@
  * Regression test: existing hook triggers continue to work after the merge.
  *
  * Verifies:
- * - Hook triggers appear in the "Hook Triggers" section
+ * - Hook triggers appear in the "On agent hook" section
  * - Selecting a hook trigger shows trigger.py content in center panel
  * - System-scope triggers are read-only
  * - Log button opens lens (no crash)
@@ -21,9 +21,9 @@ test('hook triggers render correctly — no regression after merge', async ({ pa
   await gotoTriggers(page);
 
   // Check if any hook triggers exist (system triggers from discover). The
-  // section header AND the empty-state text both contain "hook triggers" —
-  // use exact match on the header span to disambiguate.
-  const hookSection = page.getByText('Hook Triggers', { exact: true }).first();
+  // navigator groups by firing cause — the hook section is titled "On agent
+  // hook"; the empty-state text below it says "No hook triggers yet".
+  const hookSection = page.getByText('On agent hook', { exact: true }).first();
   const hasHookSection = await hookSection.isVisible({ timeout: 3_000 }).catch(() => false);
   // Detect empty state explicitly: section header visible AND a "No hook
   // triggers" placeholder exists ⇒ skip the click-and-validate flow.
@@ -36,7 +36,7 @@ test('hook triggers render correctly — no regression after merge', async ({ pa
 
   if (!hasHookTriggers) {
     // No hook triggers in this environment — just verify the page loads without crash
-    await page.getByText('Schedule Triggers', { exact: true }).first().waitFor({ state: 'visible', timeout: 10_000 });
+    await page.getByText('On schedule', { exact: true }).first().waitFor({ state: 'visible', timeout: 10_000 });
     const criticalErrors = errors.filter(e =>
       !e.includes('favicon') && !e.includes('ResizeObserver') && !e.includes('net::ERR_'),
     );

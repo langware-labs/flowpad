@@ -1,9 +1,10 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { isApiError } from '../ApiResponse';
 import { dataContext } from '../FlowSync/context';
-import { IEntity } from '../IEntity';
+import { QueryRequest } from '../FlowSync/query';
+import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models';
-import { DockPointerData } from '../models/DockPointer';
+import { TargetedDock } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { PtyConnection } from '../services/shell/ptyConnection';
 import { ViewType } from '../utils/ui/view-types';
@@ -69,6 +70,15 @@ export interface IShell extends IEntity {
 // stays armed and resumes when the backend resumes delivery. See
 // InteractiveTerminal's on_reconnected handler for the gap-replay repaint.
 
+/**
+ * Declaration merge: `implements IShell` only CHECKS the class, it adds no
+ * members — so every field declared solely on IShell read as "does not exist
+ * on type Shell", even though `deepAssign` populates them from the wire.
+ * This interface makes them part of the class type.
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Shell extends EntityMerge<IShell> {}
+
 @registerEntity
 export class Shell extends APIEntity<Shell> implements IShell {
   static type: string = 'shell';
@@ -104,8 +114,8 @@ export class Shell extends APIEntity<Shell> implements IShell {
   /** True once this shell's tab has been the active tab at least once. */
   private _hasEverBeenActive = false;
 
-  get dockPointer(): DockPointerData {
-    return new DockPointerData(ViewType.SHELL, this.typeId?.toString());
+  get dockPointer(): TargetedDock {
+    return new TargetedDock(ViewType.SHELL, this.typeId.toString());
   }
 
   get computeNodeTypeId(): TypeId | null {
@@ -252,9 +262,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
     const workdir = opts.workdir ?? this.workdir ?? undefined;
     const { ConnectionManager } = await import('../websocket');
     const connection_id = ConnectionManager.getInstance().id;
-    const action = new ActionInfo('open', Shell.type, this.id, 'POST');
-    action.bodyParameters = { connection_id, cols, rows, ...(workdir ? { working_dir: workdir } : {}) };
-    const result = await dataManager.callAction<any, Record<string, unknown> | null>(action);
+    const result = await this.post<Record<string, unknown> | null>('open', { connection_id, cols, rows, ...(workdir ? { working_dir: workdir } : {}) });
     if (!result) throw new Error(`Shell ${this.id} could not be opened`);
     Object.assign(this, result);
     this.pty_pid = (result.pty_id as string | undefined) ?? (result.pty_pid as string | undefined) ?? this.id;
@@ -326,9 +334,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
   }
 
   async run(command: string): Promise<ShellResult> {
-    const action = new ActionInfo('run', Shell.type, this.id, 'POST');
-    action.bodyParameters = { command };
-    const result = await dataManager.callAction<any, any>(action);
+    const result = await this.post<any>('run', { command });
     return {
       stdout: result?.stdout ?? '',
       stderr: result?.stderr ?? '',
@@ -337,9 +343,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
   }
 
   async setEnv(vars: Record<string, string>): Promise<void> {
-    const action = new ActionInfo('set-env', Shell.type, this.id, 'POST');
-    action.bodyParameters = { vars };
-    const result = await dataManager.callAction<any, any>(action);
+    const result = await this.post<any>('set-env', { vars });
     // Apply the server's merged env locally (same convention as `open()`), so a
     // read of `this.env` right after the await is correct without racing the
     // `data_op_msg` WS delivery that would otherwise be the only writer.
@@ -405,7 +409,10 @@ export class Shell extends APIEntity<Shell> implements IShell {
   }
 
   static async getActiveSessions(): Promise<Shell[]> {
-    const all = await Shell.query<Shell>({});
+    // Spelled out rather than `{}`: `query` overrides `type` and reuses the
+    // request's `name`, so this is the exact request the old bare-object call
+    // produced once the static filled it in.
+    const all = await Shell.query<Shell>(new QueryRequest({ type: Shell.type, name: `${Shell.type} static query` }));
     return all.filter((s) => s.status !== ShellStatus.CLOSED).sort((a, b) => (a.tab_order ?? 0) - (b.tab_order ?? 0));
   }
 }

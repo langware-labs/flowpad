@@ -12,7 +12,7 @@ import { canonicalPath } from './use-ensure-project';
  */
 export function projectListToSelectorItems(projects: ProjectListItem[]): ProjectSelectorItem[] {
   return projects
-    .filter((p) => !!p.cwd)
+    .filter((p): p is ProjectListItem & { cwd: string } => !!p.cwd)
     .map((p) => ({
       id: canonicalPath(p.cwd),
       name: getProjectDisplayName(p),

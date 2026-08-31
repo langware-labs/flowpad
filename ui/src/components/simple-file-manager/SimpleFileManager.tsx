@@ -38,14 +38,7 @@ import { writeBrowseableDrag } from '@src/components/browseable-tree/drag';
 import { attachMultiDragGhost, buildRowDragItem } from './drag-payload';
 import { fileShareSource } from '@src/hooks/share-sources';
 import { FileItem, SimpleFileManagerProps, SortDirection, SortField } from './types';
-
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '-';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
+import { formatBytes } from '@src/utils/format-bytes';
 
 function formatDate(date: Date): string {
   return date.toLocaleDateString(undefined, {
@@ -992,7 +985,9 @@ export function SimpleFileManager({
                           </TableCell>
                           {!compact && (
                             <>
-                              <TableCell className="text-muted-foreground">{formatFileSize(item.size)}</TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {item.size ? formatBytes(item.size) : '-'}
+                              </TableCell>
                               <TableCell className="text-muted-foreground">{formatDate(item.modifiedAt)}</TableCell>
                               <TableCell>
                                 {item.type === 'file' && isEditableFile(item.name) && (
@@ -1196,7 +1191,7 @@ export function SimpleFileManager({
         </div>
       )}
 
-      {/* Delete Dialog - for file list selection only (tree deletion handled by DirectoryTree) */}
+      {/* Delete Dialog - for file list selection only (the tree deletes through its own toolbar) */}
       {showDeleteDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-80 rounded-lg bg-background p-4 shadow-lg">

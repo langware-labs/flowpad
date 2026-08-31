@@ -22,12 +22,16 @@ import fs from 'fs';
 import path from 'path';
 import { expect, test } from '@playwright/test';
 import { withViewMode, type QaViewMode } from '../_shared/view-mode';
+import { apiOrigin } from '../_shared/api';
 
 // ESM scope: no `__dirname`. Derive it from this module's own URL.
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 const REPO_ROOT = path.resolve(HERE, '../../../..');
 const INSTANCE = process.env.FLOW_INSTANCE || 'dock7';
-const BACKEND = process.env.DOCK_SWEEP_BACKEND || 'http://localhost:6007';
+// Resolve the backend the way every other manual-regression file does
+// (FLOW_INSTANCE -> .env.<instance>.local, then LOCAL_SERVER_PORT). A literal
+// port here silently pointed the sweep at whatever happened to own :6007.
+const BACKEND = process.env.DOCK_SWEEP_BACKEND || apiOrigin();
 
 // Read rather than `import`: Playwright runs these as ESM, where a JSON import
 // needs an import attribute Node's loader rejects here.
@@ -110,6 +114,47 @@ test.describe('dock sweep', () => {
         // the mode is always set explicitly and never inherited.
         await page.goto(withViewMode('/dock/desktop', mode));
         await expect(page.locator('html')).toHaveAttribute('data-view', mode);
+        // `data-view` proves the page rendered, not that the backend can steer
+        // it: a navigate targets the tab's WebSocket registration, which lands
+        // after first paint, and the previous case just closed its own page.
+        // Ask the control plane the same question `flow context` asks — but a
+        // single 200 is NOT enough, and that was this file's whole flakiness:
+        // the closed page's socket is still registered for a moment, so the
+        // poll is satisfied by the PREVIOUS case's dying connection, which is
+        // then reaped before `flow navigate` runs — and the CLI sees an empty
+        // `_active_connections` and fails `No active tab`. (Measured: right
+        // after `goto`, context answered 200 instantly from the prior page's
+        // socket, and this address re-navigates once after first paint, so the
+        // new tab's own socket lands later still.)
+        // Require the SAME connection_id on two consecutive reads: a dying
+        // registration cannot survive both, a settled one does. Same 15s
+        // budget — only the predicate got stricter.
+        let lastCid: string | null = null;
+        let lastUrl: string | null = null;
+        await expect
+          .poll(
+            async () => {
+              const urlBefore = page.url();
+              const r = await fetch(`${BACKEND}/api/v1/agent/context`);
+              if (r.status !== 200) {
+                lastCid = null;
+                lastUrl = null;
+                return false;
+              }
+              const cid = ((await r.json()) as { connection_id?: string }).connection_id ?? null;
+              // Settled means BOTH: the same socket answered twice, and the page
+              // did not navigate between those answers. This address
+              // re-navigates once after first paint, and that re-dial is what
+              // reopens the `No active tab` window even after a good read.
+              const settled =
+                cid !== null && cid === lastCid && urlBefore === lastUrl && page.url() === urlBefore;
+              lastCid = cid;
+              lastUrl = urlBefore;
+              return settled;
+            },
+            { timeout: 15_000 },
+          )
+          .toBe(true);
 
         const res = flow(['navigate', 'view', address]);
 

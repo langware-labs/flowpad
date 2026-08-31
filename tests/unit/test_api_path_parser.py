@@ -19,7 +19,7 @@ from flow_sdk.core.loaders import load_entities
 load_entities()
 
 from flow_sdk.api.api_request import APIRequest
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 
 
 async def test_api_request_parse_no_graph():

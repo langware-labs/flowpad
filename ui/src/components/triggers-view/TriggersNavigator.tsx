@@ -4,8 +4,7 @@ import { NavigatorPanel } from '@src/components/navigator-panel/NavigatorPanel';
 import type { NavigatorDescriptor } from '@src/components/navigator-panel/types';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { ViewType } from '@src/types/ViewType';
-import { type ITrigger } from '@sdk';
+import { Trigger } from '@sdk';
 import { defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
 import { useTriggers } from '@src/hooks/useTriggers';
 import { useProject } from '@src/hooks/useProject';
@@ -54,7 +53,7 @@ export function TriggersNavigator() {
     ? 0
     : triggers.filter((t) => (t.scope || 'user') === 'system').length;
 
-  const selectedTrigger = useMemo<ITrigger | null>(() => {
+  const selectedTrigger = useMemo<Trigger | null>(() => {
     const id = currentDock?.options?.trigger;
     return id ? triggers.find((t) => t.id === id) ?? null : null;
   }, [currentDock, triggers]);
@@ -72,7 +71,7 @@ export function TriggersNavigator() {
   // toggle: selecting a rule while system rules are shown must not hide them
   // (and would hide the very rule you just clicked).
   const handleSelect = useCallback(
-    (t: ITrigger) => {
+    (t: Trigger) => {
       if (!t.id) return;
       navigation.openDock(
         DockPointer.forEvents(t.id, { system: includeSystem }).withScopeFilter(urlScope),
@@ -89,8 +88,8 @@ export function TriggersNavigator() {
   }, [navigation, urlScope, includeSystem]);
 
   const handleOpenLog = useCallback(
-    (t: ITrigger) => {
-      if (t.id) navigation.openTab(ViewType.LENS, DockPointer.forLens('trigger', 'log', t.id));
+    (t: Trigger) => {
+      if (t.id) navigation.openDock(DockPointer.forLens('trigger', 'log', t.id));
     },
     [navigation],
   );

@@ -29,17 +29,11 @@ def local_asset_vfs_binding(entity) -> LocalAssetVFSBinding | None:
     if info is None or not info.git_publishable or not raw_asset_ref:
         return None
 
-    asset_ref = Path(raw_asset_ref)
-    if info.main_layout == "folder":
-        root = info.folder_for(asset_ref)
-        if not info.main_file:
-            return None
-        main_ref = info.main_file
-    elif info.main_layout == "file":
-        root = asset_ref.parent
-        main_ref = asset_ref.name
-    else:
+    layout = info.layout_of(Path(raw_asset_ref))
+    if layout.body is None:
         return None
+    root = layout.root if info.main_layout == "folder" else layout.body.parent
+    main_ref = layout.body.name
 
     resolved_root = root.resolve(strict=True)
     resolved_main = (resolved_root / main_ref).resolve(strict=True)

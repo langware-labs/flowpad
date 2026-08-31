@@ -105,7 +105,7 @@ async def test_changed_ids_are_hydrated_and_filtered(hn_server):
         f"got {ids} — comments and deleted items must be filtered out by type"
     )
     story = next(i for i in result.items if i.external_id == "101")
-    assert story.title == "A story about narwhals"
+    assert story.name == "A story about narwhals"
     assert story.author_display == "ada"
     assert story.permalink.endswith("id=101")
 

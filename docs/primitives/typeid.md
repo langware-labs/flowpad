@@ -122,8 +122,9 @@ This order matters because some strings could match multiple patterns.
 
 ### Python
 
-**Canonical location:** `flow_sdk/fs_store/type_id.py`
-**Backward-compat re-export:** `flow_sdk/api/type_id.py` (imports and re-exports from canonical location)
+**Canonical location:** `flow_sdk/fs_store/type_id.py` — the only import path. The
+`flow_sdk/api/type_id.py` and `flow_sdk/api/api_types/type_id.py` re-export shims
+were deleted once every caller was moved onto the canonical module.
 
 Plain Python class with `__slots__` for immutability. Not a Pydantic `BaseModel`, but provides Pydantic v2 compatibility via `__get_pydantic_core_schema__` and `__get_pydantic_json_schema__` hooks, so it works seamlessly as a Pydantic field type.
 
@@ -339,10 +340,7 @@ In HTTP routes, the TypeId is split across path segments:
 | Language   | File                                                                | Purpose                                                 |
 | ---------- | ------------------------------------------------------------------- | ------------------------------------------------------- |
 | Python     | `flow_sdk/fs_store/type_id.py`                                      | `TypeId` class (canonical)                              |
-| Python     | `flow_sdk/api/type_id.py`                                           | Backward-compat re-export of `TypeId`                   |
-| Python     | `flow_sdk/fs_store/identifier.py`                                   | `IdentifierType` enum, patterns, validators (canonical) |
-| Python     | `flow_sdk/api/identifier.py`                                        | Backward-compat re-export of identifier module          |
-| Python     | `flow_sdk/api/validation.py`                                        | `UUID_PATTERN` constant                                 |
+| Python     | `flow_sdk/api/api_types/identifier.py`                              | `IdentifierType` enum, patterns, validators, `mint_uuid` (canonical) |
 | Python     | `flow_sdk/fs_store/schema_registry.py`                              | `SchemaRegistry` — unified type registry (canonical)    |
 | Python     | `flow_sdk/schema/entity_factory.py`                                 | DB entity registry shim (delegates to SchemaRegistry)   |
 | Python     | `flow_sdk/fs_store/factory/type_registry.py`                        | FS record registry shim (delegates to SchemaRegistry)   |

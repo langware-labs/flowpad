@@ -143,7 +143,7 @@ function kindMeta(op: GenericEntry, t: any): KindMeta | null {
         iconClassName: 'text-purple-500',
         label: t`Skill`,
         primary: op.skill_name,
-        chips: op.invocation_kind ? [op.invocation_kind.replaceAll('_', ' ')] : [],
+        chips: op.invocation_kind ? [op.invocation_kind.replace(/_/g, ' ')] : [],
       };
     case 'tool_use':
       return {

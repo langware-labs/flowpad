@@ -819,7 +819,9 @@ function SessionInfoPopover({
     [t`Working Dir`, workdir],
     [t`Harness worker Session Name`, sessionName || (process.session_id ? '(loading…)' : 'none')],
     [t`Harness worker Session ID`, process.session_id || 'none'],
-    [t`PTY ID`, process.pty_pid || 'none (detached)'],
+    // `pty_pid` lives on the linked SHELL, not on the process — reading it off
+    // `process` made this row read 'none (detached)' for every live PTY.
+    [t`PTY ID`, linkedShell?.pty_pid || 'none (detached)'],
     [t`Permission`, permMode],
   ];
   if (cliCapabilities.chrome) rows.push([t`Chrome`, chrome ? 'enabled' : 'disabled']);

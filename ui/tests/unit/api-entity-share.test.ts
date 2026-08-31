@@ -21,7 +21,7 @@ describe('APIEntity.share', () => {
       name: 'canonical-project',
       remote: true,
       hub_published_at: '2026-08-03T12:00:00+00:00',
-      git_origin: {
+      origin: {
         kind: 'git',
         provider: 'github',
         owner: 'flowpad-test',
@@ -39,7 +39,7 @@ describe('APIEntity.share', () => {
     expect(project.name).toBe('canonical-project');
     expect(project.remote).toBe(true);
     expect(project.hub_published_at).toBe('2026-08-03T12:00:00+00:00');
-    expect(project.git_origin).toEqual(canonical.git_origin);
+    expect(project.origin).toEqual(canonical.origin);
     expect(call.mock.calls[0][0].bodyParameters).toEqual({});
   });
 

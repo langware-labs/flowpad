@@ -1,6 +1,6 @@
 import { ActionInfo } from '../models/ActionInfo';
 import { APIEntity, registerEntity } from '../APIEntity';
-import type { IEntity } from '../IEntity';
+import type { IEntity, EntityMerge } from '../IEntity';
 
 export type AppLocationType = 'Folder' | 'Builtin' | 'GCPBucket' | 'Artifact';
 
@@ -12,7 +12,16 @@ export interface IMicroApp extends IEntity {
   /** The Artifact this delivers. Null for standalone folder/builtin apps. */
   artifact_id?: string | null;
   project_id?: string | null;
+  /** Dot-path ontology kind (backend default `application.web`); an index field
+   *  on the type — see `flow_sdk/builtin/faas/micro_app.py`. */
+  kind?: string | null;
 }
+
+// `implements IMicroApp` only checks the class; it contributes no members, so every
+// field declared solely on IMicroApp read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface MicroApp extends EntityMerge<IMicroApp> {}
 
 /**
  * MicroApp is the *delivery* plane of an app: its built output, served by the
@@ -33,6 +42,7 @@ export class MicroApp extends APIEntity<MicroApp> implements IMicroApp {
   domains: string[] | null;
   artifact_id: string | null;
   project_id: string | null;
+  kind: string | null;
 
   constructor(entity: Partial<IMicroApp> | IEntity = {}) {
     super(entity);
@@ -43,6 +53,7 @@ export class MicroApp extends APIEntity<MicroApp> implements IMicroApp {
     this.domains = app.domains ?? null;
     this.artifact_id = app.artifact_id ?? null;
     this.project_id = app.project_id ?? null;
+    this.kind = app.kind ?? null;
   }
 
   /**

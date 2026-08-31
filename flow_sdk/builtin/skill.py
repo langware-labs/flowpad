@@ -6,12 +6,24 @@ On-disk parsing (walker / id / extract) lives in
 """
 from __future__ import annotations
 
-from typing import ClassVar, Type
+from typing import ClassVar, Optional, Type
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.context_data_schemas import SkillContextData
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.schema.data_spec import Body, FrontMatter
+
+
+class SkillSpec(FrontMatter):
+    """``SKILL.md`` — the shape of the document: ``name``/``description`` in the
+    frontmatter, the markdown ``Body``. The folder's other header sources
+    (``skill.yaml``/``skill.yml``) and the ``-@`` folder-name rule are
+    ``derive_skill``'s — facts of the folder, not of this file."""
+
+    name: Optional[str] = None
+    description: Optional[str] = None
+    body: Body = ""
 
 
 class Skill(Entity):
@@ -32,5 +44,3 @@ class Skill(Entity):
     context_data_schema: ClassVar[Type] = SkillContextData
     # A Skill's asset is the whole folder. Hub transport preserves every
     # relative file while its primary content remains canonically /SKILL.md.
-    _hub_asset_layout: ClassVar[str] = "folder"
-    _hub_main_file: ClassVar[str] = "SKILL.md"

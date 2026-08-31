@@ -44,9 +44,9 @@ def _remember_builtins() -> set[str]:
     global _BUILTIN_NAMES
     if not _BUILTIN_NAMES:
         import flow_sdk.ingest.drivers  # noqa: F401, PLC0415 — register shipped drivers
-        from flow_sdk.ingest.driver import _REGISTRY  # noqa: PLC0415
+        from flow_sdk.ingest.driver import DRIVERS  # noqa: PLC0415
 
-        _BUILTIN_NAMES = set(_REGISTRY)
+        _BUILTIN_NAMES = set(DRIVERS.kinds())
     return _BUILTIN_NAMES
 
 
@@ -100,10 +100,10 @@ async def refresh_spec_drivers(name: Optional[str] = None) -> None:
 
 def _forget(seen: set[str]) -> None:
     """Drop adapters whose spec is gone, so a deleted source stops resolving."""
-    from flow_sdk.ingest.driver import _REGISTRY  # noqa: PLC0415
+    from flow_sdk.ingest.driver import DRIVERS  # noqa: PLC0415
 
     for stale in _REGISTERED - seen:
-        _REGISTRY.pop(stale, None)
+        DRIVERS.unregister(stale)
         logger.info("[ingest] authored source %r is gone; unregistered", stale)
     _REGISTERED.intersection_update(seen)
 
@@ -115,9 +115,12 @@ async def _all_specs(name: Optional[str] = None) -> list:
     warm, and an unfiltered enumeration of a type is the shape this repo bans
     for anything user-facing. `builtin` specs need no driver anyway.
     """
-    from flow_sdk.builtin.data_source_spec import DataSourceSpec  # noqa: PLC0415
+    from flow_sdk.builtin.data_source_spec import (
+        DataSourceSpec,  # noqa: PLC0415
+        Runtime,  # noqa: PLC0415
+    )
 
-    query = {"runtime": "script"}
+    query = {"runtime": Runtime.SCRIPT.value}
     if name:
         query["name"] = name
     return list(await DataSourceSpec.get_all(query) or [])

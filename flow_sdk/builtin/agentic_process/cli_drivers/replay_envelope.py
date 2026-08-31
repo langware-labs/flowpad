@@ -33,10 +33,11 @@ Routing it through here would change every live claude frame.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Callable
 
-from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData, FlowDataType
+from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData, FlowDataType, FlowElementType
 from flow_sdk.transcript_analyzer import AgentTranscriptFile
 from flow_sdk.transcript_analyzer.derive import derive_entry
 from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
@@ -49,6 +50,54 @@ ElementTypeForKind = Callable[[str], str]
 #: to fall through. Copilot uses it to expand its own ``flowpad.*`` terminal
 #: events, which are FlowPad-authored envelopes rather than vendor entries.
 EntryFrames = Callable[[Any, Any], "list[FlowData] | None"]
+
+
+# ── Vendor-neutral frames ─────────────────────────────────────────────────────
+#
+# STATUS/ERROR/END frames and the log-safe payload dump carry no vendor
+# knowledge at all: every driver had a byte-identical private copy of each.
+
+
+def status_frame(subtype: str, value: str = "") -> FlowData:
+    """A ``<flow-status subtype=…>`` frame."""
+    return FlowData(
+        flow_value=value,
+        attributes={
+            "element-type": FlowElementType.STATUS,
+            "data-type": FlowDataType.TEXT,
+            "subtype": subtype,
+        },
+    )
+
+
+def error_frame(message: str) -> FlowData:
+    """An ``<flow-error>`` frame."""
+    return FlowData(
+        flow_value=message,
+        attributes={
+            "element-type": FlowElementType.ERROR,
+            "data-type": FlowDataType.TEXT,
+        },
+    )
+
+
+def final_end_frame() -> FlowData:
+    """The terminal ``<flow-end>`` frame."""
+    return FlowData(
+        flow_value="",
+        attributes={
+            "element-type": FlowElementType.END,
+            "data-type": FlowDataType.TEXT,
+        },
+    )
+
+
+def safe_dump(obj: Any) -> str:
+    """JSON for a log line: never raises, never longer than 400 chars."""
+    try:
+        return json.dumps(obj, default=str)[:400]
+    except (TypeError, ValueError):
+        return str(obj)[:400]
 
 
 def _envelope(entry, element_type_for_kind: ElementTypeForKind, kind: str) -> dict:

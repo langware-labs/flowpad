@@ -62,7 +62,9 @@ export function OwnerButton({ task }: OwnerButtonProps) {
       task.markEdit();
       notify.success({
         title: t`Task assigned`,
-        message: t`${person.name || person.email} now has "${task.title}".`,
+        // `assign` above throws unless the participant carries an email, so one
+        // of these is always a real string by the time this toast renders.
+        message: t`${person.name || person.email || ''} now has "${task.title}".`,
       });
     } catch (e: unknown) {
       notify.error({

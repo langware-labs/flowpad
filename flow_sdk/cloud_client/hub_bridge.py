@@ -21,7 +21,9 @@ from typing import Any, Callable, Optional
 
 from flow_sdk import inbox
 from flow_sdk.cloud_client.ws_client import HubWebSocketManager, hub_ws_manager
+from flow_sdk.fs_store.serializer.hub import HubSerializer
 from flow_sdk.preferences import message_status_sharing_enabled
+from flow_sdk.tags.envelope import parse_target
 
 logger = logging.getLogger(__name__)
 
@@ -154,31 +156,6 @@ async def _maybe_eager_pull_bundle(
         _INFLIGHT_BUNDLE_PULLS.discard(fm_id)
 
 
-@dataclass
-class _Subscription:
-    """Internal record for ``HubWsBridge.subscribe()`` filters."""
-
-    callback: Callable
-    scope_id: Optional[str]
-    entity_type: Optional[str]
-    op: Optional[str]
-
-
-def _parse_to_entity(to_entity: Any) -> tuple[Optional[str], Optional[str]]:
-    """Normalize the to_entity field of a data_op_msg into (type, id)."""
-    if isinstance(to_entity, str):
-        if "-" in to_entity:
-            etype, eid = to_entity.split("-", 1)
-            return etype, eid
-        if ":" in to_entity:
-            etype, eid = to_entity.split(":", 1)
-            return etype, eid
-        return None, None
-    if isinstance(to_entity, dict):
-        return to_entity.get("type"), to_entity.get("id")
-    if hasattr(to_entity, "type") and hasattr(to_entity, "id"):
-        return to_entity.type, to_entity.id
-    return None, None
 
 
 async def _fill_empty_blobs(cls: Any, entity_type: str, entity_id: str, data: Any) -> Any:
@@ -244,10 +221,6 @@ class HubWsBridge:
         # detached inbound materializer may already be in flight when DELETE
         # lands; this set lets it abort before write or roll its write back.
         self._deleted_conv_ids: set[str] = set()
-        # Generic subscribers — see ``subscribe()``. Used by
-        # ``Entity.cloud_watch()`` to expose the hub event stream scoped to
-        # any entity (its own UPDATEs + its children's CREATE/UPDATE/DELETE).
-        self._subscriptions: list = []
 
     def install(self) -> None:
         """Register inbound handlers on the manager. Idempotent."""
@@ -274,46 +247,6 @@ class HubWsBridge:
     def conversation_materialization_suppressed(self, conversation_id: str) -> bool:
         return conversation_id in self._deleted_conv_ids
 
-    def subscribe(
-        self,
-        callback,
-        *,
-        scope_id: Optional[str] = None,
-        entity_type: Optional[str] = None,
-        op: Optional[str] = None,
-    ):
-        """Generic inbound subscription on the hub event stream.
-
-        ``callback(event: EntityEvent)`` is invoked synchronously inside the
-        bridge's inbound dispatcher for every hub ``data_op_msg`` that
-        matches all the (optional) filters:
-
-        - ``scope_id``    — match when the event's ``entity_id`` *or*
-                            ``parent_id`` equals this id (covers "events
-                            about me" + "events about my children").
-        - ``entity_type`` — match when ``entity_type`` equals this string.
-        - ``op``          — match when ``op`` equals this string
-                            ("create"/"update"/"delete").
-
-        Returns an unsubscribe callable. Safe to register from any task.
-        """
-
-        sub = _Subscription(
-            callback=callback,
-            scope_id=scope_id,
-            entity_type=entity_type,
-            op=op,
-        )
-        self._subscriptions.append(sub)
-
-        def _unsub() -> None:
-            try:
-                self._subscriptions.remove(sub)
-            except ValueError:
-                pass
-
-        return _unsub
-
     def _dispatch_event(
         self,
         *,
@@ -324,14 +257,12 @@ class HubWsBridge:
         parent_id: Optional[str],
         data: dict,
     ) -> None:
-        """Fan a hub event to matching generic subscribers.
+        """Relay a hub event onto the unified bus.
 
         Called from the inbound ``_on_data_op`` dispatcher AFTER any
-        type-specific materialization, so subscribers observe the local
-        store in its post-event state.
+        type-specific materialization, so listeners observe the local store in
+        its post-event state.
         """
-        from flow_sdk.cloud_client.events import EntityEvent  # noqa: PLC0415
-
         # Unified-bus dual-publish (docs/flow-events.md phase 6): hub-origin
         # events relay under their OWN family — see hub_on_tag.py.
         from flow_sdk.cloud_client.hub_on_tag import emit_hub_entity
@@ -345,28 +276,6 @@ class HubWsBridge:
             str(data.get("actor")) if isinstance(data, dict) and data.get("actor") else None,
         )
 
-        if not self._subscriptions:
-            return
-        event = EntityEvent(
-            op=op,
-            entity_type=entity_type,
-            entity_id=entity_id,
-            parent_type=parent_type,
-            parent_id=parent_id,
-            data=data,
-        )
-        for sub in list(self._subscriptions):
-            if sub.entity_type and sub.entity_type != entity_type:
-                continue
-            if sub.op and sub.op != op:
-                continue
-            if sub.scope_id and sub.scope_id not in (entity_id, parent_id):
-                continue
-            try:
-                sub.callback(event)
-            except Exception:
-                logger.exception("hub_bridge: subscriber raised entity=%s/%s op=%s", entity_type, entity_id, op)
-
     async def _on_data_op(self, message: dict) -> None:
         """Inbound data_op_msg dispatcher.
 
@@ -376,11 +285,11 @@ class HubWsBridge:
         from flow_sdk.app.actions.membership_sync import MEMBERSHIP_MIRROR_TYPES  # noqa: PLC0415
 
         op = str(message.get("op") or "").lower()
-        etype, eid = _parse_to_entity(message.get("to_entity"))
+        etype, eid = parse_target(message.get("to_entity"))
         # Parent envelope: hub sends a flow_message CREATE with from_entity =
         # the parent conversation. Used as the authoritative source for
         # conversation_id since the FlowMessage payload doesn't carry it.
-        from_etype, from_eid = _parse_to_entity(message.get("from_entity"))
+        from_etype, from_eid = parse_target(message.get("from_entity"))
         data = message.get("data")
         if not etype or not eid or not isinstance(data, dict):
             logger.debug("hub_bridge: ignoring data_op_msg with missing parts: %s", message)
@@ -420,10 +329,9 @@ class HubWsBridge:
         except Exception:
             logger.exception("hub_bridge: error handling data_op_msg type=%s op=%s id=%s", etype, op, eid)
 
-        # Generic fan-out to ``Entity.cloud_watch()`` subscribers — runs for
-        # EVERY data_op_msg regardless of whether a type-specific handler
-        # materialized it locally. Subscribers see entities the bridge does
-        # not natively understand (rooms, devices, …) as plain events.
+        # Unified-bus relay — runs for EVERY data_op_msg regardless of whether
+        # a type-specific handler materialized it locally, so listeners see
+        # entities the bridge does not natively understand (rooms, devices, …).
         # For flow_message CREATE the bridge resolved the conversation_id
         # via parents_path; pass it as parent_id so subscribers scoped to a
         # conversation receive child events even when the hub omitted
@@ -917,11 +825,9 @@ class HubWsBridge:
         # this bit later; immediate assignment has no accept transition, so the
         # bridge must establish the invariant at the ingest boundary.
         clean["remote"] = True
-        # Wire adapter: the hub sends the roster under the ``participants`` key
-        # (its Conversation field + fanout contract); the local cache field is
-        # ``members`` (generic, on the Entity base). Map it at ingest.
-        if "participants" in clean:
-            clean["members"] = clean.pop("participants")
+        # Wire adapter: the roster's hub key (``participants``) → the local
+        # ``members`` cache, from the one declaration on ``Conversation``.
+        clean = HubSerializer.unwire(Conversation, clean)
 
         self.remember_hub_conversation(conv_id)
 
@@ -1149,10 +1055,13 @@ class HubWsBridge:
         *,
         conversation_id: str,
         text: str,
+        flow_message_id: Optional[str] = None,
         sender_name: Optional[str] = None,
         timeout: float = 10.0,
     ) -> dict:
         body: dict = {"text": text}
+        if flow_message_id:
+            body["id"] = flow_message_id
         if sender_name:
             body["sender_name"] = sender_name
         return await self.manager.send_request(

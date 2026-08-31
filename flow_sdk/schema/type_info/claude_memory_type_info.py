@@ -1,8 +1,7 @@
 """Type metadata for CLAUDE_MEMORY."""
 from flow_sdk.fs_store.indexer.functions._asset_identity import (
     IDENTITY_CAPSULE,
-    capsule_identity,
-    frontmatter_id,
+    frontmatter_identity,
     resolved_path_key,
 )
 from flow_sdk.fs_store.indexer.functions.claude_memory import (
@@ -13,6 +12,7 @@ from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
 CLAUDE_MEMORY = TypeMetadata(
+    hub_main_file="document.md",
     type=EntityType.CLAUDE_MEMORY,
     icon="Brain",
     browseable_by=ViewMode.ADVANCED,
@@ -21,6 +21,6 @@ CLAUDE_MEMORY = TypeMetadata(
     index_fields=["name"],
     from_disk_fn=extract_claude_memory,
     capsules=(IDENTITY_CAPSULE,),
-    identity_backend=capsule_identity(frontmatter_id),
+    identity_carrier=frontmatter_identity(),
     id_stable_key_fn=resolved_path_key,
 )

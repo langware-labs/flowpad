@@ -25,7 +25,6 @@ import pytest
 
 from .conftest import run_cell
 
-
 MIGRATION_VERSION = "v0.0.0-test"
 
 

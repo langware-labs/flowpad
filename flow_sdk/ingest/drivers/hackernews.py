@@ -23,10 +23,9 @@ from typing import Optional
 
 import httpx
 
+from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest import http
-from flow_sdk.ingest.driver import FetchResult, SegmentCursorView, SegmentRef
-from flow_sdk.ingest.health import SourceError
-from flow_sdk.ingest.models import IngestItem
+from flow_sdk.ingest.driver import IngestDriver, FetchResult, SegmentCursorView, SegmentRef
 
 _BASE = "https://hacker-news.firebaseio.com/v0"
 #: Items hydrated per run — a bound on work per tick, with no sleeping.
@@ -38,7 +37,7 @@ _MAX_ITEMS_PER_RUN = 60
 STREAM_KEY = "updates"
 
 
-class HackerNewsDriver:
+class HackerNewsDriver(IngestDriver):
     provider = "hackernews"
     kind = "datasource.api.hackernews"
     record_kind = "content.feed.item"
@@ -66,7 +65,7 @@ class HackerNewsDriver:
                 *(self._item(client, base, i) for i in ids), return_exceptions=True
             )
 
-        items: list[IngestItem] = []
+        items: list[SourceItemSpec] = []
         newest: Optional[datetime] = None
         for raw in raw_items:
             if isinstance(raw, BaseException) or not isinstance(raw, dict):
@@ -84,14 +83,14 @@ class HackerNewsDriver:
             if when is not None and (newest is None or when > newest):
                 newest = when
             items.append(
-                IngestItem(
-                    source_id=source.id,
+                SourceItemSpec(
+                    data_source_id=source.id,
                     provider=self.provider,
                     kind=self.record_kind,
                     segment_key=cursor.segment_key,
                     segment_label="Hacker News",
                     external_id=str(raw.get("id")),
-                    title=str(raw.get("title") or ""),
+                    name=str(raw.get("title") or ""),
                     body=str(raw.get("text") or raw.get("url") or ""),
                     occurred_at=when.isoformat() if when else None,
                     author_external_id=raw.get("by"),
@@ -117,7 +116,7 @@ class HackerNewsDriver:
         )
 
     async def _changed_ids(self, client: httpx.AsyncClient, base: str) -> list[int]:
-        payload = await self._get_json(client, f"{base}/updates.json")
+        payload = await http.request_json(client, "GET", f"{base}/updates.json")
         if not isinstance(payload, dict):
             return []
         out: list[int] = []
@@ -129,14 +128,8 @@ class HackerNewsDriver:
         return out
 
     async def _item(self, client: httpx.AsyncClient, base: str, item_id: int) -> Optional[dict]:
-        return await self._get_json(client, f"{base}/item/{item_id}.json")
+        return await http.request_json(client, "GET", f"{base}/item/{item_id}.json")
 
-    async def _get_json(self, client: httpx.AsyncClient, url: str):
-        response = await http.get(client, url)
-        try:
-            return response.json()
-        except ValueError as exc:
-            raise SourceError.transient("bad_json", str(exc)) from exc
 
 
 def _epoch_to_dt(value) -> Optional[datetime]:

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identifier import is_valid_entity_id
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.indexer.functions.workflow_run import extract_workflow_run
 from flow_sdk.fs_store.indexer.functions.dynamic_workflows import _id_for_path
@@ -24,7 +24,7 @@ def _journal(path: Path, script_path: Path) -> Path:
 
 def _rec(journal: Path):
     ref = FSRef(journal, record_type=RecordType.WORKFLOW_RUN)
-    return extract_workflow_run(ref, SchemaRegistry.get("workflow_run").mint_entity_id(ref, derive=True, overwrite=True))[0]
+    return extract_workflow_run(ref, SchemaRegistry.get("workflow_run").mint_entity_id(ref))[0]
 
 
 def test_skill_bundled_run_links_to_workflow_and_skill(tmp_path):

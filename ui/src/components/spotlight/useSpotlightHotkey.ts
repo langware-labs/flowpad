@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useSpotlightStore } from '@src/store/use-spotlight-store';
+import { toggleSpotlight } from '@src/store/use-spotlight-store';
 
 /** True when the keyboard event originated inside a text input / contenteditable.
  *  We skip the Spotlight hotkey there so Cmd/Ctrl+K stays available for editor
@@ -19,7 +19,7 @@ export function useSpotlightHotkey(): void {
       if (!(e.metaKey || e.ctrlKey)) return;
       if (isTextInputTarget(e.target)) return;
       e.preventDefault();
-      useSpotlightStore.getState().toggleSpotlight();
+      toggleSpotlight();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);

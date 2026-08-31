@@ -1,5 +1,5 @@
 import { AgenticProcess, Tab } from '@sdk';
-import { EntryKind } from '@sdk/transcript-analyzer';
+import { isToolUse, type GenericEntry } from '@sdk';
 import { launchSkillEval, loadSkillsByName } from '@src/components/assets/editor/skill/skill-eval-analysis';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { registerTabContentAdapter, type TabContentAdapter } from '@src/tabs/tab-content-lifecycle';
@@ -17,8 +17,8 @@ import { ViewType } from '@src/types/ViewType';
 function usedSkillNames(transcript: { entries: unknown[] }): Set<string> {
   const names = new Set<string>();
   for (const raw of transcript.entries) {
-    const e = raw as { kind?: string; tool_name?: string; tool_input?: Record<string, unknown> };
-    if (e.kind !== EntryKind.TOOL_USE) continue;
+    const e = raw as GenericEntry;
+    if (!isToolUse(e)) continue;
     if ((e.tool_name ?? '').toLowerCase() !== 'skill') continue;
     const skill = e.tool_input?.skill;
     if (typeof skill === 'string' && skill) names.add(skill);

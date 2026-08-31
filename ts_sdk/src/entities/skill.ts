@@ -2,7 +2,6 @@ import { APIEntity, registerEntity } from '../APIEntity';
 import { dataContext } from '../FlowSync/context';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
-import { ViewType } from '../utils/ui/view-types';
 
 /**
  * Skill entity — backed by a SkillRecord on disk (~/.claude/skills/<name>/).
@@ -15,6 +14,13 @@ export class Skill extends APIEntity<Skill> {
   static type: string = 'skill';
   static override icon = 'Sparkles';
 
+  /** The skill's identity — its folder name. Non-null and never absent: the
+   *  backend declares `name: str = APIField(default="")`, and every caller
+   *  indexes skills by it. Narrower than the base `name?: string | null`.
+   *  Assigned in the constructor like every other field here — a bare field
+   *  declaration would re-DEFINE it as `''` after `super()` copied the wire
+   *  value (the app compiles with `useDefineForClassFields: true`). */
+  name: string = '';
   description: string = '';
   asset_ref?: string;
   scope?: string;
@@ -23,6 +29,7 @@ export class Skill extends APIEntity<Skill> {
 
   constructor(entity: Partial<Skill> = {}) {
     super(entity);
+    this.name = entity.name ?? '';
     this.description = entity.description ?? '';
     this.asset_ref = entity.asset_ref;
     this.scope = entity.scope;
@@ -40,16 +47,13 @@ export class Skill extends APIEntity<Skill> {
 
   /** Default open target: the asset editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('skill') ?? super.dockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {
-    return this.assetEditorPointer('skill') ?? super.editorDockPointer;
+    return this.assetEditorPointer() ?? super.editorDockPointer;
   }
 
-  override get searchDockPointer(): DockPointerData {
-    return this.assetEditorPointer('skill') ?? this.dockPointer;
-  }
 
   /** FrontMatterFsRef for SKILL.md. Resolves compute node from dataContext. */
   get doc(): FrontMatterFsRef | null {

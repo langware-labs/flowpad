@@ -1,10 +1,16 @@
 import { APIEntity, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 
 export interface IWorkspace extends IEntity {
   name?: string;
   namespace?: string;
 }
+
+// `implements IWorkspace` only checks the class; it contributes no members, so every
+// field declared solely on IWorkspace read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Workspace extends EntityMerge<IWorkspace> {}
 
 @registerEntity
 export class Workspace extends APIEntity<Workspace> implements IWorkspace {

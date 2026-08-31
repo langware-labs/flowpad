@@ -51,6 +51,54 @@ def get_capability_value(kind: str) -> CapabilityValue | None:
     return _VALUES.get(kind)
 
 
+def resolve_capability_value(kind: str) -> CapabilityValue | None:
+    """``kind``'s resolved value — swept, else PATH, else ``None``.
+
+    **Never runs a sweep**, and never awaits: this is what a spawn calls, and a
+    spawn must be immediate. A sweep costs seconds — an env-probe subprocess plus
+    ``registry.test()`` per capability so the UI's badges stay fresh — none of
+    which answers the only question here, "where is this binary".
+
+    Resolution order:
+
+    1. a swept value, if there is one. Authoritative — including a swept
+       ``value=None``, which is a real "looked, absent".
+    2. otherwise, for a CLI capability, ``shutil.which`` against this process's
+       PATH. A hit is recorded, so it is probed once and never again.
+
+    A miss is deliberately NOT recorded. The sweep resolves against a LOGIN-shell
+    PATH (see ``env_probe``) so a GUI-launched backend still sees nvm/homebrew;
+    this fallback only has the process PATH, so a miss here can be wrong.
+    Remembering a wrong "absent" would outlive the reason for it, and would also
+    remove the only way a CLI installed outside Flowpad is ever picked up. The
+    re-probe costs a ``which``.
+
+    Returns None for capabilities that are not a CLI lookup (Chrome, GitHub, the
+    ``harness`` reference) — those need a real sweep and never block a spawn.
+    """
+    existing = _VALUES.get(kind)
+    if existing is not None:
+        return existing
+
+    # Imported past the fast path: a memoized hit is then a single dict lookup,
+    # and this runs a few times per spawn.
+    from flow_sdk.core.capabilities.registry import CliCapabilityRunner, get_capability_registry
+
+    try:
+        runner = get_capability_registry().get(kind)
+    except KeyError:
+        return None
+    if not isinstance(runner, CliCapabilityRunner):
+        return None
+
+    resolved = shutil.which(runner.executable)
+    if not resolved:
+        return None
+    value = runner.value_from_executable_path(resolved, source="this process's PATH")
+    set_capability_value(value)
+    return value
+
+
 async def ensure_discovered() -> bool:
     """Ensure at least one full discovery sweep has completed.
 
@@ -93,16 +141,33 @@ async def _run_env_probe(executables: list[str]) -> dict:
                     proc.communicate(), timeout=PROBE_TIMEOUT_SECONDS
                 )
             except asyncio.TimeoutError:
-                proc.kill()
-                await proc.wait()
-                raise RuntimeError(f"env probe exceeded {PROBE_TIMEOUT_SECONDS}s")
+                # The timeout fires on OUR clock, not on the child's liveness,
+                # so the child is often already reaped by now — and uvloop raises
+                # ProcessLookupError for a kill on a reaped process. Swallow it
+                # so the RuntimeError below is what reaches the caller.
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except ProcessLookupError:
+                    pass
+                raise RuntimeError(
+                    f"env probe exceeded {PROBE_TIMEOUT_SECONDS}s"
+                ) from None
             if proc.returncode == 0:
                 return json.loads(out.decode("utf-8"))
             raise RuntimeError(
                 f"env probe exited {proc.returncode}: {err.decode('utf-8', 'replace')[:200]}"
             )
         except Exception as exc:
-            logger.warning("Capability env probe failed (%s) — falling back to process PATH", exc)
+            # Name the TYPE, never just str(exc). Several exceptions that land
+            # here — ProcessLookupError, NotImplementedError, CancelledError —
+            # carry an empty message, so this logged "failed ()" for a long time
+            # and nobody could tell what had gone wrong.
+            logger.warning(
+                "Capability env probe failed (%s: %s) — falling back to process PATH",
+                type(exc).__name__,
+                exc,
+            )
     return {
         "path": os.environ.get("PATH", ""),
         "executables": {exe: shutil.which(exe) for exe in executables},

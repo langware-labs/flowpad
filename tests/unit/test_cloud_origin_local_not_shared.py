@@ -24,7 +24,7 @@ import json
 import pytest
 
 import flow_sdk.models.entities  # noqa: F401 — registers the entity types
-from flow_sdk.builtin.cloud_origin import CloudOrigin, CloudOriginLocal
+from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal
 from flow_sdk.builtin.flow_message import FlowMessage
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval

@@ -43,7 +43,7 @@ from flow_sdk.builtin.project import Project
 #   task     -> agentic-assets/task/<name>/task.md    functions/repo_assets.py
 ASSET_TYPES = ("skill", "subagent", "markdown", "task")
 
-_TASK_MD = "---\nid: {tid}\ntitle: {name}\nstatus: to_do\ntask_type: Task\nkind: standard\n---\n\n# {name}\n"
+_TASK_MD = "---\nid: {tid}\ntitle: {name}\nstatus: to_do\ntask_type: Task\nkind: standard\n---\n"
 
 
 @dataclass(frozen=True)

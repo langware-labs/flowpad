@@ -1,8 +1,11 @@
 ---
 id: a9d1ebb8-ecc7-49d7-a41a-6b3c09c5c8c6
 name: git-setup
-description: Wizard agent for preparing a local git checkout for a shared Flowpad
-  artifact
+description: >-
+  Wizard agent that prepares a local git checkout for a shared Flowpad artifact —
+  clones or locates the repository, puts it on the expected branch, and reports the
+  working path. Use when a received artifact needs its source repo present on this
+  machine before it can be run or edited.
 tools: Bash, Read, Glob, Grep
 ---
 

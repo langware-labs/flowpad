@@ -11,17 +11,17 @@ Two things this package cannot run without, both lifted from
 * an isolated SQLite driver bound to ``Entity``, so a matrix that mints and
   deletes entities cannot leak rows into its neighbours.
 """
-import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — side-effect: register_all()
-import flow_sdk.ingest.drivers  # noqa: F401 — side-effect: register_driver() for every shipped driver
-
-import flow_sdk.db.drivers.db_driver as db_driver_mod
 import pytest
 import pytest_asyncio
+
+import flow_sdk.db.drivers.db_driver as db_driver_mod
+import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — side-effect: register_all()
+import flow_sdk.ingest.drivers  # noqa: F401 — side-effect: register_driver() for every shipped driver
 from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.project import Project
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_driver import DBConfig
 from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver
-from flow_sdk.builtin.project import Project
 from flow_sdk.ingest.reflect import ReflectMode
 
 

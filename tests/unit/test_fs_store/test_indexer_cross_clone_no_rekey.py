@@ -26,7 +26,11 @@ from flow_sdk.fs_store.indexer.functions.markdown import markdown_flat_fn
 from flow_sdk.fs_store.record_types import RecordType
 from tests.unit.test_fs_store._md_harness import (
     MD_OPTS as _OPTS,
+)
+from tests.unit.test_fs_store._md_harness import (
     fm_id as _fm_id,
+)
+from tests.unit.test_fs_store._md_harness import (
     md_indexer as _md_indexer,
 )
 

@@ -1,6 +1,6 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { isApiError } from '../ApiResponse';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 
 export interface IWebDomain extends IEntity {
@@ -8,6 +8,12 @@ export interface IWebDomain extends IEntity {
   verified?: boolean;
   micro_app_id: string;
 }
+
+// `implements IWebDomain` only checks the class; it contributes no members, so every
+// field declared solely on IWebDomain read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface WebDomain extends EntityMerge<IWebDomain> {}
 
 @registerEntity
 export class WebDomain extends APIEntity<WebDomain> implements IWebDomain {

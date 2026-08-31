@@ -174,6 +174,10 @@ export interface BootstrapInfo {
    *  `"desk"`; a hub backend reports its own set. Navigation to a page not in
    *  this list redirects to the first supported page's home. Absent ⇒ desk-only. */
   supported_pages?: string[];
+  /** Data-privacy mode this instance is in, from the backend's
+   *  `instance_settings/privacy_mode.py`. Seeds `privacyManager`; live changes
+   *  arrive afterwards on `privacy_mode_msg`. */
+  privacy_mode?: 'local' | 'connected';
   /** One-time startup notice (e.g. secrets were reset). Absent normally. */
   notice?: BootstrapNotice;
 }

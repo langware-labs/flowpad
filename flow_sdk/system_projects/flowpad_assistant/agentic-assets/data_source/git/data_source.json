@@ -5,9 +5,8 @@
   "icon_name": "GitBranch",
   "description": "A repository as a source. Diffs commits, never walks the tree.",
   "reflect": [
-    "in-place",
-    "materialize",
-    "vendor"
+    "none",
+    "copy"
   ],
   "config": {
     "repo": {

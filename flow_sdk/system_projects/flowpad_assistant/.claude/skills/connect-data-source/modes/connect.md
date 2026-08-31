@@ -10,7 +10,7 @@
 > **5. Credentials and invites are the user's step** — name the exact click.
 
 The default mode. The user said something like *"pull my RSS feeds in"*. Take it
-through the five gates and stop at the first that fails.
+through the six gates and stop at the first that fails.
 
 `SC` below means `python3 <this skill>/scripts/source_ctl.py`.
 
@@ -23,7 +23,12 @@ through the five gates and stop at the first that fails.
    do not force a near-match. Pointing `rss` at a Notion export produces a
    source that syncs the wrong nouns and looks healthy.
 3. **Credential need** comes from the spec's `auth`:
-   - absent → nothing to do (rss, hackernews, folder, git).
+   - absent → nothing to do (rss, hackernews, folder, git) — **except the `agent`
+     transport**, which declares no `auth` because the credential is not ours to
+     hold. Its prerequisite is a launchable, logged-in harness with the connector
+     already authorised. Check the harness (`ensure_launchable`) rather than
+     reading the empty `auth` as "nothing to check": skipping it produces a source
+     that parks on `config_error` and reads like a broken mailbox.
    - `{env: [NAME]}` → the variable must be set **before the backend started**;
      a key exported afterwards is not visible to it.
    - `{connector, scopes}` → a human OAuth step. Say which provider, point at
@@ -33,7 +38,7 @@ through the five gates and stop at the first that fails.
 
 ## Gate 2 — connect
 
-1. Build `config` per `references/mapping.md` — typed from `config_schema`,
+1. Build `config` per `references/mapping.md` — typed from `config`,
    empty values omitted, `pattern` checked per value before sending.
 2. `SC create '<json>'`. Read `dropped` in the reply: the create route silently
    discards keys it does not recognise, so a non-empty `dropped` means a field
@@ -73,8 +78,27 @@ files source (`reflect` is `copy`/`symlink`), check the paths exist under
 `reflect_into` — if that is empty, nothing was placed anywhere and the source
 still reads healthy.
 
-## Gate 5 — view
+## Gate 5 — declare
+
+The run has produced something; say so in the graph rather than in prose.
+
+```bash
+flow artifact entity data_source-<id>          # --no-show when nothing is watching
+```
+
+**After the test gate, never before.** An artifact is a claim that a deliverable
+exists; pointing one at a source that does not fetch advertises something broken,
+and whatever reads artifacts downstream has no way to tell.
+
+Exit codes are the contract worth reading: `0` recorded, `2` not a TypeId, `4` no
+such entity, `5` no backend. `--name` overrides the display name; the default is
+the source's own.
+
+**Passes when** the call exits `0`.
+
+## Gate 6 — view
 
 `flow show view data-sources`, then `SC list` to confirm the card is in the
 listing. Exit `0` means recorded, not seen — never claim the user looked at it.
-Close by naming the source, what it produced, and its cadence.
+Close by naming the source, what it produced, and its cadence — and offer the
+next step: *"want to say what you need out of each item?"* → `modes/define.md`.

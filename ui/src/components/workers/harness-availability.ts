@@ -15,6 +15,21 @@ import { useOptionalHarnessCapabilities } from '@src/contexts/HarnessCapabilitie
 import { LAUNCHABLE_WORKERS, type WorkerType } from './worker-types';
 
 /**
+ * Worker → the field carrying its harness capability on the context.
+ *
+ * A ternary ladder used to stand here, and it only knew three vendors: every
+ * worker that was not claude_code or codex fell through to `copilot`, so an
+ * OpenCode launch reported Copilot's harness and a missing `opencode` binary
+ * was never flagged. One row per vendor, like HARNESS_CAPABILITY_BY_WORKER.
+ */
+const HARNESS_FIELD_BY_WORKER: Record<WorkerType, 'claude' | 'codex' | 'copilot' | 'opencode'> = {
+  claude_code: 'claude',
+  codex: 'codex',
+  copilot: 'copilot',
+  opencode: 'opencode',
+};
+
+/**
  * Opener warning for a harness: set when its backend capability check ran and
  * failed. An UNCHECKED capability is not a missing one — it fails open, so a
  * harness nobody has probed yet stays fully usable.
@@ -28,7 +43,7 @@ export interface HarnessAvailability {
   /** Per-worker capability warning, or null when the harness is fine/unknown. */
   warnings: Record<WorkerType, string | null>;
   /**
-   * Resolve the three harness capabilities, at a seam where the user has shown
+   * Resolve every harness capability, at a seam where the user has shown
    * intent (opening the picker). Necessary because the app subscribes with
    * `autoCheck: false`: the startup discovery sweep writes `last_check`, which
    * `CapabilityManager.getResult()` does not read, so without this every
@@ -48,8 +63,7 @@ export function useHarnessAvailability(): HarnessAvailability {
     const byWorker = {} as Record<WorkerType, string | null>;
     for (const worker of LAUNCHABLE_WORKERS) {
       // No provider (isolated render) ⇒ nothing known ⇒ nothing flagged.
-      const capability =
-        worker === 'claude_code' ? harnesses?.claude : worker === 'codex' ? harnesses?.codex : harnesses?.copilot;
+      const capability = harnesses?.[HARNESS_FIELD_BY_WORKER[worker]];
       byWorker[worker] = capability ? harnessWarning(capability) : null;
     }
     return byWorker;

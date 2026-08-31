@@ -22,7 +22,7 @@ from flow_sdk.core.entity.entity_env.env_types import (
     EnvVarType,
 )
 from flow_sdk.core.entity.entity_env.env_utils import is_confidential, mask_confidential_value
-from flow_sdk.api.api_types.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.request_context.methods import get_entity_credentials
 from flow_sdk.schema.type_info import register_all
@@ -84,7 +84,7 @@ async def test_update_env_var_description_and_value(sod_env):
     project.set_env_var(entity_var)
     await project.update()
 
-    project.update_env_var_description("SECRET_KEY", "second")
+    project.update_env_var("SECRET_KEY", description="second")
     await store_env_var_value(project.get_env_var("SECRET_KEY"), "sk-second-bbbb", project.typeid)
     await project.update()
 

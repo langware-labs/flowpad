@@ -1,6 +1,7 @@
 export { defineGlobal } from './globals';
 export * from './icon-asset';
 export * from './wiki-word';
+export * from './shell-quote';
 export * from './skill-labels';
 export * from './ui/retired-views';
 export * from './ui/view-types';

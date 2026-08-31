@@ -18,99 +18,51 @@ Nothing else is ever printed — a caller parses stdout whole.
 """
 from __future__ import annotations
 
-import argparse
-import json
 import sys
 import time
-from functools import lru_cache
-from typing import Any
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
 
 
-@lru_cache(maxsize=1)
-def _api() -> str:
-    """Base URL, resolved once. `discover_port` reads `server.json` off disk and
-    the port cannot change inside one invocation — `observe` alone would have
-    re-read it three times per loop iteration."""
-    from flow_sdk.cli.commands._common import discover_port  # noqa: PLC0415
-
-    return f"http://127.0.0.1:{discover_port()}/api/v1"
-
-
-def _envelope(resp) -> Any:
-    """The SUCCESS envelope's `data`, or a described failure.
-
-    A body that is not JSON is the cookie gate's HTML 403, which used to surface
-    from here as a bare `JSONDecodeError` — unactionable, and stdout JSON is the
-    only evidence this skill's caller gets. `bad_response_message` is the same
-    sentence the CLI shows for it.
-    """
-    from flow_sdk.cli.commands._common import bad_response_message  # noqa: PLC0415
-
-    try:
-        body = resp.json() or {}
-    except ValueError:
-        # RuntimeError, not SystemExit: `main` turns an Exception into the
-        # one-JSON-object contract, and a BaseException would escape it.
-        raise RuntimeError(bad_response_message(resp))
-    return body.get("data")
-
-
-def _get(path: str, **params: Any) -> Any:
-    """GET a graph path. `params` are FILTERED SERVER-SIDE.
-
-    The list routes parse a `filter` JSON param and honour a top-level `limit`,
-    so asking for one source's rows costs one source's rows. Pulling the whole
-    collection and filtering here would scale with everything the instance has
-    ever ingested — and `observe` reads on a loop.
-    """
-    from urllib.parse import urlencode  # noqa: PLC0415
-
-    from flow_sdk.cli.commands._common import local_get  # noqa: PLC0415
-
-    limit = params.pop("limit", None)
-    query = {}
-    if params:
-        query["filter"] = json.dumps(params)
-    if limit is not None:
-        query["limit"] = str(limit)
-    url = f"{_api()}{path}" + (f"?{urlencode(query)}" if query else "")
-    return _envelope(local_get(url))
-
-
-def _post(path: str, body: dict | None = None) -> Any:
-    from flow_sdk.cli.commands._common import local_post  # noqa: PLC0415
-
-    return _envelope(local_post(f"{_api()}{path}", json=body or {}))
-
+from _ctl_common import api_base, create_and_verify, json_arg, run  # noqa: E402
+from _ctl_common import get as _get
+from _ctl_common import one_source as _one
+from _ctl_common import post as _post
+from _ctl_common import sources as _sources
 
 #: Ceiling for a "how many landed" read. High enough that a normal source is
 #: counted exactly, low enough that the observe loop never drags a corpus.
 COUNT_CEILING = 500
 
+#: Imported, not spelled again: the kind is declared beside the manifest that
+#: carries it (``flow_sdk.builtin.faas.webapp_spec``) and seeded in the tag
+#: registry, so the browser can describe what drives the menu.
+from flow_sdk.builtin.faas.webapp_spec import EDITOR_KIND  # noqa: E402
 
-def _sources() -> list[dict]:
-    # Unfiltered on purpose: `_one` needs the whole set to detect an ambiguous
-    # name, and this table has one row per configured source.
-    return list(_get("/graph/data_source") or [])
 
+def _editors_by_spec() -> dict[str, dict]:
+    """Every definition's editor app, keyed by spec id — in ONE request.
 
-def _one(ref: str) -> dict:
-    """A source by id, or by an unambiguous name/provider match.
-
-    Ambiguity is an error, never a guess: acting on the wrong source is worse
-    than asking which one.
+    An editor is a webapp asset NESTED inside the definition, so finding one is
+    a containment query: there is no registry of editors to consult, and a
+    definition that grows one needs no code change to appear here. Asking per
+    spec would be a round-trip per installed definition on a listing that runs
+    at the top of nearly every flow; the whole set is bounded by how many apps
+    are installed, not by anything ingested, so one unfiltered read is cheaper
+    and does not grow with the corpus.
     """
-    rows = _sources()
-    exact = [r for r in rows if r.get("id") == ref]
-    if exact:
-        return exact[0]
-    needle = ref.strip().lower()
-    hits = [r for r in rows if needle in str(r.get("name") or "").lower() or needle == str(r.get("provider") or "").lower()]
-    if not hits:
-        raise LookupError(f"no data source matches {ref!r}")
-    if len(hits) > 1:
-        raise LookupError(f"{ref!r} matches {len(hits)}: " + ", ".join(f"{r.get('name')} ({r.get('id')})" for r in hits))
-    return hits[0]
+    from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
+
+    out: dict[str, dict] = {}
+    for row in _get("/graph/micro_app") or []:
+        parent = str(row.get("parent_type_id") or "")
+        if not parent.startswith("data_source_spec-"):
+            continue
+        if not kind_matches(EDITOR_KIND, str(row.get("kind") or "")):
+            continue
+        out.setdefault(parent.split("-", 1)[1], {"typeid": f"micro_app-{row.get('id')}", "name": row.get("name")})
+    return out
 
 
 def _cursors(source_id: str) -> list[dict]:
@@ -134,6 +86,7 @@ def _item_count(source_id: str) -> int:
 
 def cmd_specs(args) -> dict:
     """What source types are installed. NEVER work from a memorised list."""
+    editors = _editors_by_spec()
     return {
         "specs": [
             {
@@ -144,7 +97,9 @@ def cmd_specs(args) -> dict:
                 "reflect": s.get("reflect") or [],
                 "auth": s.get("auth"),
                 "setup_wiki": s.get("setup_wiki") or "",
-                "config_schema": s.get("config_schema") or {},
+                "config": s.get("config") or {},
+                #: `flow show view "app/<typeid>?source=<source id>"` opens it.
+                "editor": editors.get(s.get("id")),
             }
             for s in (_get("/graph/data_source_spec") or [])
         ]
@@ -170,14 +125,10 @@ def cmd_create(args) -> dict:
     field returns 200 with the value missing. So the evidence for the setup gate
     is the read-back, never the 201.
     """
-    payload = json.loads(sys.stdin.read() if args.json == "-" else args.json)
+    payload = json_arg(args.json)
     payload.setdefault("status", "new")
-    created = _post("/graph/data_source", payload) or {}
-    source_id = created.get("id")
-    if not source_id:
-        raise RuntimeError("create returned no id")
-    row = _get(f"/graph/data_source/{source_id}") or {}
-    dropped = [k for k, v in payload.items() if k != "status" and row.get(k) != v]
+    keys = tuple(k for k in payload if k != "status")
+    source_id, row, dropped = create_and_verify("/graph/data_source", payload, keys)
     return {
         "id": source_id,
         "typeid": f"data_source-{source_id}",
@@ -267,7 +218,7 @@ def cmd_snapshot(args) -> dict:
     source = _one(args.source)
     sid = source["id"]
     return {
-        "source": {k: source.get(k) for k in ("id", "name", "provider", "status", "health", "error_code", "error_detail", "setup_detail", "segment_count", "poll_interval_seconds", "window_days", "reflect", "reflect_into", "required_capabilities", "last_synced_at", "verified_at", "next_poll_at")},
+        "source": {k: source.get(k) for k in ("id", "name", "provider", "status", "health", "error_code", "error_detail", "setup_detail", "segment_count", "poll_interval_seconds", "window_days", "origin", "reflect", "reflect_into", "required_capabilities", "last_synced_at", "verified_at", "next_poll_at")},
         "cursors": [{k: c.get(k) for k in ("segment_key", "segment_label", "health", "error_code", "error_detail", "last_synced_at", "consecutive_failures")} for c in _cursors(sid)],
         "item_count": _item_count(sid),
     }
@@ -293,7 +244,7 @@ def cmd_delete(args) -> dict:
     # `local_request`, not a bare `requests.delete`: the cookie gate has no path
     # and no loopback exemption, so a hand-built call takes the gate's 403 HTML
     # while every other verb here works.
-    resp = local_request("DELETE", f"{_api()}/graph/data_source/{source['id']}", timeout=30)
+    resp = local_request("DELETE", f"{api_base()}/graph/data_source/{source['id']}", timeout=30)
     return {"id": source["id"], "deleted": resp.ok}
 
 
@@ -310,23 +261,5 @@ VERBS = {
 }
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    subs = parser.add_subparsers(dest="verb", required=True)
-    for name, (_fn, params) in VERBS.items():
-        sub = subs.add_parser(name)
-        for flag, kwargs in params:
-            sub.add_argument(flag, **kwargs)
-    args = parser.parse_args()
-
-    try:
-        payload = VERBS[args.verb][0](args)
-    except Exception as exc:  # noqa: BLE001 — the contract is a JSON object, always
-        print(json.dumps({"ok": False, "error_code": type(exc).__name__, "error": str(exc)}))
-        return 1
-    print(json.dumps({"ok": True, **payload}, default=str))
-    return 0
-
-
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run(VERBS, __doc__))

@@ -24,10 +24,12 @@ from typing import Any, Optional, Type
 from pydantic import TypeAdapter
 
 from flow_sdk._compat import UTC
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.organization import Organization
 from flow_sdk.core.entity.entity_model import Entity, remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+
+from flow_sdk.fs_store.serializer.hub import HubSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +52,7 @@ MEMBERSHIP_MIRROR_TYPES: frozenset[str] = frozenset(
 _MIRRORED_FIELDS = (
     "name",
     "title",
-    "git_origin",
+    "origin",
     "helpdesk",
     "account",
     "domain",
@@ -75,7 +77,7 @@ def _validated_field(cls: Type[Entity], name: str, value: Any) -> Any:
     """Coerce a raw hub value into the target field's declared type.
 
     The create path gets this free from ``cls.model_validate``; the update path
-    used to ``setattr`` raw JSON, so a typed field (e.g. ``Project.git_origin``)
+    used to ``setattr`` raw JSON, so a typed field (e.g. ``Project.origin``)
     ended up holding a dict and every consumer had to re-check. Validate here,
     at the mirror boundary, and fall back to the raw value if it doesn't fit.
     """
@@ -106,7 +108,7 @@ def _shared_secret_origin_payload(
     """
     from flow_sdk.builtin.secret_origin import is_valid_secret_origin_env_var  # noqa: PLC0415
     from flow_sdk.builtin.secret_origin_driver import normalize_secret_origin_kind  # noqa: PLC0415
-    from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
+    from flow_sdk.builtin.secret_origin_refs import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
 
     locator_data = item.get("locator") if isinstance(item.get("locator"), dict) else None
     if not locator_data:
@@ -155,6 +157,7 @@ async def materialize_remote_membership_entity(
     if not ent_id:
         return None
 
+    data = HubSerializer.unwire(cls, data)   # the hub's wire names → field names
     fields = tuple(k for k in _MIRRORED_FIELDS if k in cls.model_fields)
     existing = await cls.get_one({"id": ent_id})
     if existing is None:
@@ -222,7 +225,7 @@ async def materialize_project_context_folders(
         return 0
 
     from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
-    from flow_sdk.builtin.fs_origin_field import FS_ORIGIN_ADAPTER  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.field import ORIGIN_ADAPTER  # noqa: PLC0415
 
     changed = False
     count = 0
@@ -237,7 +240,7 @@ async def materialize_project_context_folders(
         if raw_origin is None:
             continue
         try:
-            origin = FS_ORIGIN_ADAPTER.validate_python(raw_origin)
+            origin = ORIGIN_ADAPTER.validate_python(raw_origin)
         except Exception as exc:  # noqa: BLE001
             logger.debug("[membership-sync] invalid shared context origin for %s: %s", tid, exc)
             continue

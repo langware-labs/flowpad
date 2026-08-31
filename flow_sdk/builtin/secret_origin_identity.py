@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import uuid
 
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 
 
 def stable_key(project_id: str, env_var: str) -> str:

@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from flow_sdk.assets.git_origin import PortableGitOrigin
 from flow_sdk.assets.projection import layout_for_origin, project_asset_tree
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 

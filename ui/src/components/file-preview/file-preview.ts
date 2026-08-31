@@ -1,5 +1,5 @@
-import { create } from 'zustand';
 import type { TypeId } from '@sdk';
+import { createOverlayStore } from '@src/store/create-overlay-store';
 
 /**
  * Global store backing `openFilePreview(target)` — peek a file from anywhere
@@ -24,19 +24,9 @@ export interface FilePreviewTarget {
   typeId: TypeId;
 }
 
-interface FilePreviewStore {
-  target: FilePreviewTarget | null;
-  show: (target: FilePreviewTarget) => void;
-  close: () => void;
-}
-
-export const useFilePreviewStore = create<FilePreviewStore>((set) => ({
-  target: null,
-  show: (target) => set({ target }),
-  close: () => set({ target: null }),
-}));
+const store = createOverlayStore<FilePreviewTarget>();
+export const useFilePreviewStore = store.useStore;
+export const closeFilePreview = store.close;
 
 /** Peek `target.path` in a sheet, scrolled to and marking `target.line`. */
-export function openFilePreview(target: FilePreviewTarget): void {
-  useFilePreviewStore.getState().show(target);
-}
+export const openFilePreview = store.open;

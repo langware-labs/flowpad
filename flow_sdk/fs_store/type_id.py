@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, Optional, TypeGuard
 
-from flow_sdk.fs_store.identifier import (
+from flow_sdk.api.api_types.identifier import (
     IdentifierType,
     is_valid_identifier,
     is_valid_key,

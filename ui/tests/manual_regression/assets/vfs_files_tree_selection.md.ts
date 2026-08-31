@@ -29,14 +29,23 @@ test('a VFS editor URL selects the real file in the Files tree', async ({ page, 
     );
 
     await expect(page.getByRole('button', { name: 'view', exact: true })).toBeVisible();
-    const pageHeader = page.getByTestId('assets-page-header');
-    await expect(pageHeader).toContainText('interface.md');
-    await expect(pageHeader.getByTestId('assets-page-header-path')).toContainText('/docs/agent');
-    await expect(pageHeader.getByTestId('assets-page-header-copy-path')).toBeVisible();
-    await expect(pageHeader.locator('[data-entity-type-icon]')).toBeVisible();
+    // The editor's identity row moved into the top navigation bar: the current
+    // crumb names the file and its details popover carries the path, the copy
+    // button and the reveal actions. Discuss sits in the bar's action cluster.
+    const crumb = page.getByTestId('top-nav-crumb-details-trigger');
+    await expect(crumb).toContainText('interface.md');
+    await expect(crumb.locator('svg')).toBeVisible();
+    await crumb.click();
+    const details = page.getByTestId('top-nav-crumb-details');
+    await expect(details).toContainText('interface.md');
+    await expect(details.getByTestId('top-nav-crumb-copy-path')).toContainText('/docs/agent/interface.md');
+    await expect(details.getByTestId('top-nav-crumb-open-files')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(details).toBeHidden();
     // A raw external VFS file is not an indexed entity, so entity-only actions
     // (Share / favorite) are intentionally absent. Discuss remains available.
-    await expect(pageHeader.getByTestId('asset-discuss-in-vibe')).toBeVisible();
+    await expect(page.getByTestId('top-nav-actions').getByTestId('asset-discuss-in-vibe')).toBeVisible();
+    await expect(page.getByTestId('assets-page-header')).toHaveCount(0);
 
     const editorHeader = page.getByTestId('asset-editor-header');
     await expect(editorHeader.getByText('interface.md', { exact: true })).toHaveCount(0);

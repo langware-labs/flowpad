@@ -114,7 +114,13 @@ def kill_owned(
     return result
 
 
-def kill_port_if_owned(port: int, name: str, table: ProcTable) -> KillResult:
+def kill_port_if_owned(
+    port: int,
+    name: str,
+    table: ProcTable,
+    *,
+    roles: frozenset[Role] | None = None,
+) -> KillResult:
     """Kill the listener on ``port`` only if it is verifiably ``name``'s.
 
     The bash implementation killed whatever the registry's recorded port
@@ -133,7 +139,7 @@ def kill_port_if_owned(port: int, name: str, table: ProcTable) -> KillResult:
                 f"port {port} is held by {owner}, not '{name}' — refusing to signal it"
             )
         return result
-    return kill_owned(name, table, extra=table.listeners(port))
+    return kill_owned(name, table, roles=roles, extra=table.listeners(port))
 
 
 def spawn_detached(

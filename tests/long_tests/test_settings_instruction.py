@@ -73,13 +73,6 @@ _INFRA_ERROR_TOKENS = (
 )
 
 
-@pytest.fixture(scope="module")
-async def _workers_discovered():
-    from flow_sdk.core.capabilities.discovery import ensure_discovered
-
-    await ensure_discovered()
-
-
 @pytest.fixture(autouse=True)
 def _resolve_claude_transcript_from_real_cli_home(monkeypatch):
     """Point the Claude transcript resolver at the *real* ``~/.claude`` the CLI writes to.
@@ -165,7 +158,7 @@ async def _await_and_assert_marker(
 
 
 @pytest.mark.parametrize("worker_type, cli_name", _WORKERS)
-async def test_settings_instruction_is_obeyed(worker_type, cli_name, tmp_path: Path, _workers_discovered):
+async def test_settings_instruction_is_obeyed(worker_type, cli_name, tmp_path: Path):
     if shutil.which(cli_name) is None:
         pytest.skip(f"{cli_name} CLI not installed")
 
@@ -201,7 +194,7 @@ async def test_settings_instruction_is_obeyed(worker_type, cli_name, tmp_path: P
 
 @pytest.mark.parametrize("worker_type, cli_name", _WORKERS)
 async def test_settings_instruction_is_obeyed_pty(
-    worker_type, cli_name, tmp_path: Path, bootstrapped_client, _workers_discovered
+    worker_type, cli_name, tmp_path: Path, bootstrapped_client
 ):
     """Same guarantee as the headless test, but through the interactive PTY/vibe
     transport (``pty_mode=True``).

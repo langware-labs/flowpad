@@ -1,4 +1,4 @@
-import { APIEntity, dataManager, Project, TypeId } from '@sdk';
+import { APIEntity, dataManager, Project, TypeId, type AnyEntity } from '@sdk';
 
 /**
  * Walk an entity's containment chain — the `parent_type_id` edges — so a
@@ -28,7 +28,7 @@ export const MAX_ANCESTOR_HOPS = 8;
 
 export interface AncestorNode {
   typeId: TypeId;
-  entity: APIEntity<any>;
+  entity: AnyEntity;
 }
 
 /**
@@ -64,9 +64,9 @@ export async function resolveAncestorChain(
     }
     if (typeId.type === Project.type) break;
 
-    let entity: APIEntity<any> | null = null;
+    let entity: AnyEntity | null = null;
     try {
-      entity = await dataManager.getByTypeId<APIEntity<any>>(typeId);
+      entity = await dataManager.getByTypeId<AnyEntity>(typeId);
     } catch {
       break; // missing / unauthorized / hub 404 — truncate the trail
     }

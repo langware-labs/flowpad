@@ -8,10 +8,10 @@ from typing import Any, ClassVar
 from pydantic import field_validator, model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
-from flow_sdk.builtin.fs_origin_field import FSOriginField
+from flow_sdk.fs_store.origin.local_origin import local_origin_for_path
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
-from flow_sdk.worldview.ontology import kind_matches, normalize_kind
+from flow_sdk.worldview.ontology import KindStr, kind_matches
 
 LEGACY_ARTIFACT_KIND_MAP: dict[str, str] = {
     "WEBAPP": "application.web",
@@ -25,27 +25,6 @@ LEGACY_ARTIFACT_KIND_MAP: dict[str, str] = {
 }
 
 
-def _legacy_origin(data: dict[str, Any]) -> dict[str, Any] | None:
-    origin = data.get("origin") or data.get("git_origin")
-    metadata = data.get("metadata")
-    if origin is None and isinstance(metadata, dict):
-        origin = metadata.get("git_origin")
-    if isinstance(origin, dict):
-        normalized = dict(origin)
-        normalized.setdefault("kind", "git")
-        return normalized
-
-    raw_path = str(data.get("path") or "").strip()
-    if not raw_path:
-        return None
-    path = Path(raw_path).expanduser()
-    if not path.is_absolute():
-        return None
-    if path.name:
-        return {"kind": "local", "base": str(path.parent), "rel_path": path.name}
-    return {"kind": "local", "base": str(path), "rel_path": "."}
-
-
 class Artifact(Entity):
     """A provider-neutral logical component in an application composition.
 
@@ -55,12 +34,8 @@ class Artifact(Entity):
 
     type: str = APIField(default=EntityType.ARTIFACT.value)
     name: str = APIField(description="Display name")
-    kind: str = APIField(description="Open dot-path ontology kind")
+    kind: KindStr = APIField(description="Open dot-path ontology kind")
     description: str | None = APIField(default=None, description="Human-readable description")
-    origin: FSOriginField | None = APIField(
-        default=None,
-        description="Optional source locator (for example GitOrigin or LocalOrigin)",
-    )
     #: An artifact REFERENCES an asset; it never owns the path. Both rows carry
     #: the same ``asset_ref``, so without this the artifact would compete with
     #: the real entity in ``Entity.get_by_asset_ref`` and win or lose by registry
@@ -109,16 +84,11 @@ class Artifact(Entity):
         if not data.get("kind"):
             old_type = str(data.get("artifact_type") or "FILE").strip().upper()
             data["kind"] = LEGACY_ARTIFACT_KIND_MAP.get(old_type, "content.file")
-        if data.get("origin") is None:
-            origin = _legacy_origin(data)
-            if origin is not None:
-                data["origin"] = origin
+        raw_path = str(data.get("path") or "").strip()
+        if data.get("origin") is None and raw_path and Path(raw_path).expanduser().is_absolute():
+            # The registration input names a PATH; the origin is its local locator.
+            data["origin"] = local_origin_for_path(Path(raw_path).expanduser())
         return data
-
-    @field_validator("kind", mode="before")
-    @classmethod
-    def _valid_kind(cls, value: Any) -> str:
-        return normalize_kind(value)
 
     async def setup_on_receive(self, *, project_id=None, workdir=None) -> dict:
         """Only application.web artifacts invoke the artifact setup skill."""

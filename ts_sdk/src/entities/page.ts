@@ -1,7 +1,6 @@
-import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { APIEntity, registerEntity, type AnyEntity } from '../APIEntity';
 import { TypeId } from '../FlowSync';
-import { IEntity } from '../IEntity';
-import { ActionInfo } from '../models';
+import { IEntity, EntityMerge } from '../IEntity';
 import type { InstructionSection, PageData } from '../types/pageData';
 import { Workspace } from './workspace';
 
@@ -22,6 +21,12 @@ export interface IPage extends IEntity {
   tags?: string[];
   readonly is_private?: boolean;
 }
+
+// `implements IPage` only checks the class; it contributes no members, so every
+// field declared solely on IPage read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Page extends EntityMerge<IPage> {}
 
 @registerEntity
 export class Page extends APIEntity<Page> implements IPage {
@@ -48,9 +53,7 @@ export class Page extends APIEntity<Page> implements IPage {
 
   async analyze(context: TypeId[] = []): Promise<void> {
     if (!this.saved) return undefined;
-    const actionInfo = new ActionInfo('analyze', this.typeId.type, this.typeId.id, 'POST');
-    actionInfo.bodyParameters = { context };
-    await dataManager.callAction<Partial<{ context: TypeId[] }>, APIEntity<any>>(actionInfo);
+    await this.post<AnyEntity>('analyze', { context });
   }
 
   addFunc(funcTitle: string, funcContent?: any): void {

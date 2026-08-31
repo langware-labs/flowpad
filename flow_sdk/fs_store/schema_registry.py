@@ -17,14 +17,16 @@ import json
 import logging
 import uuid
 from collections.abc import Container
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
+from functools import cache
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, Optional, get_args, get_origin
 
+from flow_sdk._compat import StrEnum
 from flow_sdk.capsules import CapsuleSpec
-from flow_sdk.fs_store.identifier import adopt_entity_id, is_valid_entity_id, mint_uuid
-from flow_sdk.fs_store.identity_backend import IdentityBackend, IdentityObservation, IdentityState
+from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
+from flow_sdk.fs_store.identity_carrier import CarrierId, FrontmatterCarrier, IdentityCarrier
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.schema.view_mode import ViewMode, view_mode_rank, visible_in
@@ -100,49 +102,6 @@ def _read_last_entry(path: Path) -> dict[str, Any] | None:
 
 
 @dataclass
-class ScanResult:
-    """Result of scanning a single record type."""
-
-    type_name: str
-    count: int
-    total_bytes: int
-    scan_ms: float
-    last_scan_at: str | None = None
-    records: list[dict] | None = None
-    avg_bytes: int = 0
-    min_bytes: int = 0
-    max_bytes: int = 0
-
-
-@dataclass
-class IndexResult:
-    """Result of indexing a single record type."""
-
-    type_name: str
-    indexed: int
-    skipped: int
-    duration_ms: float
-    last_index_at: str | None = None
-    errors: int = 0
-    fresh: int = 0
-
-
-PROGRESS_EMIT_EVERY: int = 25  # emit one event per this many records
-
-
-@dataclass
-class IndexRequest:
-    """Declarative description of a scan+index operation."""
-
-    types: list[str] | None = None
-    actions: list[str] = field(default_factory=lambda: ["scan", "index"])
-    start_time: datetime | None = None
-    end_time: datetime | None = None
-    trigger: str = "manual"
-    limit_per_type: int | None = None
-
-
-@dataclass
 class ClearResult:
     fts_cleared: int
     entities_cleared: int
@@ -215,6 +174,25 @@ def humanize_type(type_name: str) -> str:
     return " ".join(w[:1].upper() + w[1:] for w in type_name.replace("-", " ").replace("_", " ").split())
 
 
+class LayoutKind(StrEnum):
+    FOLDER = "folder"        # the path IS the asset folder
+    MAIN_FILE = "main_file"  # the inner main file of a folder asset
+    FILE = "file"            # a file-layout asset
+    NONE = "none"            # not this type's shape
+
+
+@dataclass(frozen=True)
+class Layout:
+    kind: LayoutKind
+    root: "Path | None"   # the folder (folder types) / the file; None iff NONE
+    body: "Path | None"   # the writable main document
+    ref: "Path | None"    # where asset_ref points (``asset_ref_for(root)``)
+
+
+_NO_LAYOUT = Layout(LayoutKind.NONE, None, None, None)
+
+
+
 @dataclass
 class TypeInfo:
     """Metadata for a single record/entity type."""
@@ -241,6 +219,11 @@ class TypeInfo:
 
     # --- Runtime refs (NOT in hash, NOT persisted) ---
     entity_cls: type | None = field(default=None, compare=False, repr=False)
+    # The type's SHAPE — the ``DataSpec`` whose fields (and field TYPES) are
+    # what the medium persists: frontmatter scalars, a ``Body``, a
+    # ``FreeSection``, ``FileRef``s, rows, sub-assets. None ⇒ the legacy path
+    # (``default_body_fn`` / ``from_disk_fn``). Runtime-only, not in the hash.
+    asset_spec: type | None = field(default=None, compare=False, repr=False, metadata={"serialization": True})
     # Optional post-sync hook: async Callable[[FSRecord], None] — runs after
     # FSRecord.sync_to_db completes its entity/FTS/wiki writes. Used by
     # types that reconcile cross-record relationships (e.g. markdown folder-doc
@@ -250,13 +233,17 @@ class TypeInfo:
     # in ``fs_store/indexer/functions/<type>.py``. The indexer reads these
     # instead of duck-typing classmethods on the entity:
     #   from_disk_fn:      Callable[[FSRef, str], list[FSRecord]] — parse payload
-    #   identity_backend:  IdentityBackend — carrier observation/persistence
+    #   identity_carrier:  IdentityCarrier — WHERE the id lives (frontmatter / folder json / …)
     #   id_stable_key_fn:  Callable[[FSRef | Path], str | None] — v5 key
     #   asset_hash_fn:     Callable[[FSRef], float] — cheap freshness stat
     from_disk_fn: Any = field(default=None, compare=False, repr=False)
     capsules: tuple[CapsuleSpec, ...] = field(default_factory=tuple)
-    identity_backend: IdentityBackend | None = field(default=None, compare=False, repr=False)
+    identity_carrier: IdentityCarrier | None = field(default=None, compare=False, repr=False)
     id_stable_key_fn: Any = field(default=None, compare=False, repr=False)
+    #   identity_key_fn:   Callable[[FSRef | Path], str] — the type's natural key.
+    #     The v5 key is derived as f"{type_name}:{identity_key_fn(ref)}"; set this
+    #     instead of id_stable_key_fn unless the type needs a different shape.
+    identity_key_fn: Any = field(default=None, compare=False, repr=False)
     id_namespace: uuid.UUID = field(default=uuid.NAMESPACE_URL, compare=False, repr=False)
     asset_hash_fn: Any = field(default=None, compare=False, repr=False)
     # Per-type default-body writer: Callable[[entity], str]. Read by
@@ -295,6 +282,44 @@ class TypeInfo:
     # and ``FSRecord.meta_dict`` returns a typed instance when it is set.
     # Runtime-only; not part of the schema hash.
     meta_model: Any = field(default=None, compare=False, repr=False)
+    # --- Serialization (HOW/WHERE) — runtime-only, not part of the schema hash ---
+    # The origin kind a store/load defaults to when the caller passes none:
+    # "local" (disk) for asset types, "db" for db_only types.
+    default_origin_kind: str = field(default="local", compare=False, repr=False, metadata={"serialization": True})
+    # The path names the entity when the header carries no name: the folder
+    # name for a folder type (an Agent at ``agent/q/`` is ``q``), the file stem
+    # for a file type (``prompts/greet.md`` is ``greet``). A LAYOUT fact.
+    name_from_path: bool = field(default=False, compare=False, repr=False, metadata={"serialization": True})
+    # JSON main docs: ``"sections"`` = ``{metadata, data}`` (a dataset);
+    # ``"flat"`` = the header's keys merged into the payload's own document (a
+    # trace/report whose file predates us). None ⇒ flat when the class has no
+    # ``data_field``, sections otherwise.
+    manifest_layout: str | None = field(default=None, compare=False, repr=False, metadata={"serialization": True})
+    # Facts the DISK carries that the header cannot say: counts over rows,
+    # links scraped from a body, a name from the path. ``(data, root, header_raw)``
+    # mutates the entity kwargs after the main doc and fields are read, before
+    # the class is constructed.
+    derive_fields_fn: Any = field(default=None, compare=False, repr=False, metadata={"serialization": True})
+    # The entity field naming the rows' on-disk layout (``"data_layout"`` for a
+    # dataset). Tells the disk serializer this type has layout-written rows,
+    # without the serializer ever naming the type.
+    rows_layout_field: str | None = field(default=None, compare=False, repr=False, metadata={"serialization": True})
+    # The canonical filename the asset's main doc is published under on the hub
+    # (``document.md`` for a markdown doc, ``SKILL.md`` for a skill folder).
+    # Also the opt-in: ``None`` keeps the generic embedded-VFS push.
+    hub_main_file: str | None = field(default=None, compare=False, repr=False, metadata={"serialization": True})
+    # Row identity for row-only types: the fields whose tuple resolves an
+    # existing row (``SourceItem``: data_source · segment · external id). None ⇒
+    # identity is ``id`` alone. Read by ``DbSerializer.resolve``/``upsert``.
+    natural_key: tuple[str, ...] | None = field(default=None, compare=False, repr=False, metadata={"serialization": True})
+    # The no-op gate: the fields whose canonical digest decides "unchanged" on
+    # re-delivery. None ⇒ no gate (every save writes).
+    digest_fields: tuple[str, ...] | None = field(default=None, compare=False, repr=False, metadata={"serialization": True})
+    # The row field that HOLDS the digest the gate compares against.
+    digest_field: str = field(default="content_digest", compare=False, repr=False, metadata={"serialization": True})
+    # A row-only (``db_only``) type that is nonetheless searchable: the row field
+    # FTS indexes as ``content`` — fed from the row, no metadata.json shadow.
+    fts_content: tuple[str, ...] = field(default=(), compare=False, repr=False, metadata={"serialization": True})
     # --- Placement axis (the harness-aware replacement for ``main_subdir``) ---
     # ``asset_class`` is the "definition" (INTERNAL / HARNESS / SHARED / NONE);
     # ``harness`` names the owning harness for HARNESS types; ``family`` is the
@@ -360,7 +385,7 @@ class TypeInfo:
         return (
             self.cloud_file_transport == "git"
             and self.from_disk_fn is not None
-            and self.identity_backend is not None
+            and self.identity_carrier is not None
         )
 
     def asset_ref_for(self, folder: Path) -> Path:
@@ -375,24 +400,72 @@ class TypeInfo:
             return folder / self.main_file
         return folder
 
+    def layout_of(self, path: Path, *, verify: bool = False) -> "Layout":
+        """THE path→layout classifier. A folder type names its folder (``FOLDER``)
+        or the inner main file (``MAIN_FILE`` → root is the parent); a file type
+        names the file (``FILE``). ``NONE`` when the path is not this type's shape.
+        ``verify`` additionally requires the main file / the file to exist —
+        the indexer's gate; every other mapper is a total, stat-light projection.
+        Names compare case-insensitively (the default filesystem does)."""
+        if self.main_layout == "folder":
+            # Decide by NAME; the one stat keeps a real directory named like the
+            # main file a directory. ``verify`` is where existence is required.
+            names_main = bool(self.main_file) and path.name.lower() == self.main_file.lower()
+            if names_main and not path.is_dir():
+                root, kind = path.parent, LayoutKind.MAIN_FILE
+            else:
+                root, kind = path, LayoutKind.FOLDER
+                if verify and not (path.is_dir() and self.main_file and (path / self.main_file).is_file()):
+                    return _NO_LAYOUT
+            body = root / self.main_file if self.main_file else None
+            return Layout(kind, root, body, self.asset_ref_for(root))
+        if (verify and not path.is_file()) or path.suffix.lower() != (self.main_ext or "").lower():
+            return _NO_LAYOUT
+        return Layout(LayoutKind.FILE, path, path, path)
+
     def body_path_for(self, asset_path: Path) -> Path:
-        """Map an asset_ref path to the writable main-body file.
+        """The writable main-body file for an asset_ref (the file itself for a
+        file type; ``<folder>/<main_file>`` for a folder type)."""
+        return self.layout_of(asset_path).body or asset_path
 
-        Folder-layout types whose asset_ref is the bare folder (skill-style,
-        ``main_file_is_asset_ref=False``) keep the body at ``<folder>/<main_file>``;
-        every other shape's asset_ref already IS the body target.
-        """
-        if self.main_layout == "folder" and self.main_file and not self.main_file_is_asset_ref:
-            return asset_path / self.main_file
-        return asset_path
+    def record_for(self, ref: Any) -> Any:
+        """Parse ONE asset: resolve its id through the one id seam (a
+        ``read_only`` ref derives without stamping) and run ``from_disk_fn``;
+        the first record or None."""
+        if self.from_disk_fn is None:
+            return None
+        resolved = self.mint_entity_id(ref)
+        records = self.from_disk_fn(ref, resolved)
+        return records[0] if records else None
 
-    def folder_for(self, asset_ref: Path) -> Path:
-        """Map an asset_ref back to its owning folder (inverse of ``asset_ref_for``).
+    def storage_root_for(self, path: Path) -> Path:
+        """The asset ROOT a serializer stores at — the folder for a folder-layout
+        type even when ``asset_ref`` names the inner main file; the file
+        otherwise. Inverse of ``asset_ref_for``."""
+        return self.layout_of(path).root or path
 
-        Bare-folder asset_ref (skill-style) IS the folder; spec-style inner-file
-        asset_ref → its containing dir. Callers gate on ``main_layout == "folder"``.
-        """
-        return asset_ref if self.folder_backed else asset_ref.parent
+    @property
+    def effective_meta_model(self) -> Any:
+        """The FS↔DB field-membership model for this type.
+
+        A hand-written ``meta_model`` wins. Otherwise it is DERIVED from the
+        type's ``asset_spec`` (what the asset file holds) ∪ its
+        ``Persist.TRUE`` fields (what the shadow index must carry — the
+        indexer-computed counts) ∪ ``BaseMeta``. One declaration: the class.
+        Membership only, never strict validation (``base_meta.py``)."""
+        if self.meta_model is not None:
+            return self.meta_model
+        if self.entity_cls is None or self.asset_spec is None:
+            return None
+        return _derived_meta_model(self.entity_cls, self.asset_spec)
+
+    def serializer(self, origin: Any = None) -> Any:
+        """The ``DataSerializer`` for ``origin`` (by its kind), else this type's
+        default. HOW/WHERE is the serializer's; this type only names a default."""
+        from flow_sdk.fs_store.serializer.registry import get_serializer  # noqa: PLC0415
+
+        kind = getattr(origin, "kind", None) or self.default_origin_kind
+        return get_serializer(kind, self)
 
     @property
     def folder_backed(self) -> bool:
@@ -404,200 +477,134 @@ class TypeInfo:
         carries a redundant flag."""
         return self.main_layout == "folder" and not self.main_file_is_asset_ref
 
+    def stable_key_for(self, ref) -> str | None:
+        """The v5 key text for *ref*, or None when this type has no stable key.
+
+        Types that only need "``<type>:<natural key>``" declare
+        ``identity_key_fn``; ``id_stable_key_fn`` stays the escape hatch for a
+        different shape. The derived text is byte-identical to the per-type
+        ``*_stable_key`` helpers it replaced — v5 ids depend on it.
+        """
+        if self.id_stable_key_fn is not None:
+            return self.id_stable_key_fn(ref)
+        if self.identity_key_fn is not None:
+            return f"{self.type_name}:{self.identity_key_fn(ref)}"
+        return None
+
     @staticmethod
     def _identity_path(ref: Any) -> Path:
         """Return the concrete asset path accepted by identity callbacks."""
         return Path(getattr(ref, "_path", ref))
 
-    def capsule_target_for(self, ref: Any) -> Path:
-        """Return the owning file/folder used by this type's capsule backend."""
+    def carrier_path_for(self, ref: Any) -> Path:
+        """The file or folder this type's identity carrier lives in: the main
+        markdown document for a frontmatter carrier (``<folder>/<main_file>`` on
+        a folder type), the folder for a folder-json carrier, the file otherwise."""
         path = self._identity_path(ref)
-        if not self.folder_backed:
-            return path
-        if path.is_dir():
-            return path
-        if self.main_file and path.name == self.main_file:
-            return path.parent
-        return path
+        if isinstance(self.identity_carrier, FrontmatterCarrier) and self.folder_backed and self.main_file:
+            root = self.storage_root_for(path)
+            main = root / self.main_file
+            return main if main.is_file() else root   # no main doc (a yaml-only skill): the folder carries
+        return self.storage_root_for(path) if self.folder_backed else path
 
-    def _observe(self, ref: Any, *, target: "Path | None" = None) -> "IdentityObservation | None":
-        """Read + parse the source's identity carrier ONCE, failing closed.
+    def _read_carrier(self, ref: Any) -> "tuple[Path | None, CarrierId]":
+        """The carrier path and what it holds; raises ``MalformedCarrier`` — a
+        corrupt source must never be silently re-identified."""
+        if self.identity_carrier is None:
+            return None, CarrierId()
+        path = self.carrier_path_for(ref)
+        return path, self.identity_carrier.read(path)
 
-        A MALFORMED carrier raises — a corrupt source must never be silently
-        re-identified. ``target`` lets a caller that already resolved the
-        capsule path skip re-resolving it (a stat for folder-backed types).
-        """
-        if self.identity_backend is None:
-            return None
-        observation = self.identity_backend.observe(
-            target if target is not None else self.capsule_target_for(ref)
-        )
-        if observation.state is IdentityState.MALFORMED:
-            if observation.error is not None:
-                raise observation.error
-            raise ValueError(observation.detail or "malformed asset identity")
-        return observation
+    def read_id(self, ref: Any) -> str | None:
+        """The valid id the source already carries, else None. Never writes —
+        the probe collision ranking and create guards rely on."""
+        return self._read_carrier(ref)[1].id
 
     def mint_entity_id(
         self,
         ref: Any,
         *,
+        proposed_id: str | None = None,
         owner_id: str | None = None,
         live_ids: "Container[str] | None" = None,
-        proposed_id: str | None = None,
-        derive: bool = False,
-        overwrite: bool = False,
-    ) -> str | None:
-        """**The** entity-id seam for a filesystem asset. Nothing else may mint.
+    ) -> str:
+        """**The** entity-id seam for a filesystem asset: read the carrier; if
+        it names a live id that is the answer; else the owning row; else mint
+        and write. Nothing else may mint.
 
-        An asset's id lives in the source (a capsule), but a full-content
-        rewrite — what an agent does on every revision — WIPES that carrier.
-        Deriving from the source alone then invents a fresh id for a path a row
-        already owns, forking the entity; the same-path sweep reaps the old row
-        and every reference pinned to it dangles. So a carrier-less source is
-        not a new asset: it is an existing one whose id must be RECOVERED.
+        An asset's id lives in its source, but a full-content rewrite — what an
+        agent does on every revision — can wipe that carrier. A carrier-less
+        source is therefore not a new asset when a row already owns the path:
+        it is that row, and its id is stamped back (``owner_id``). ``live_ids``
+        is the liveness oracle for a carrier that names a DIFFERENT id: ``None``
+        means "cannot prove dead", so the carrier wins; only the index walk,
+        holding the complete per-type id set, may conclude a carrier is a fossil.
 
-        Order: **carrier → owning row → derive**, decided by carrier LIVENESS.
-        ``live_ids`` is that oracle, and ``None`` means "cannot prove dead" — so
-        a valid carrier always wins unless the caller holds the complete
-        per-type id set (only the index walk does).
-
-        ``derive`` and ``overwrite`` are orthogonal and both default to the
-        inert corner. The default is **probe**: answer from evidence, return
-        ``None`` when there is none. That ``None`` is load-bearing — collision
-        ranking, create guards and the publication assertion all need to tell
-        "the carrier says X" from "we would compute X", and a derived value
-        makes two unstamped copies look identical.
-
-        Contract:
-
-        * **Sync, and never touches the DB.** ``owner_id``/``live_ids`` come
-          from the caller, which keeps DB-free callers and the
-          zero-extra-query index walk working.
-        * **Never writes ``asset_ref``.** Primary-path selection belongs to
-          ``resolve_asset_collisions`` alone — writing it here would let a copy
-          steal the original's path and flip the row every walk.
-        * Only an ABSENT carrier is ever stamped; an INVALID one keeps its
-          bytes, and read-only refs and derived backends are never written.
-
-        Known trade-off: because an absent carrier yields to the owning row,
-        deleting a file and creating a DIFFERENT file at the same path before
-        the next index makes the new content adopt the old entity. That is the
-        price of keeping every reference alive across a rewrite, and it applies
-        only while the old row exists — once swept as an orphan, a fresh id is
-        minted.
+        Writes happen only when the carrier is writable, the ref is not
+        ``read_only``, and carrier writes are not suppressed (a git-tracked
+        source) — the same gates for every caller. A carrier that holds a
+        present-but-invalid value (a hand-written v7) keeps its bytes and gets
+        a stable path-derived v5. A legacy markdown capsule is converted into
+        the frontmatter in place, id unchanged. Sync; never touches the DB.
         """
-        # Before any early return: the historic `mint_id` raised on a bad
-        # proposed_id and `resolve_id` did not, so a caller could silently get
-        # the carrier back instead of the error.
+        from flow_sdk.fs_store.fs_record import carrier_writes_are_suppressed  # noqa: PLC0415
+        from flow_sdk.fs_store.identity_carrier import LEGACY_CONVERTIBLE  # noqa: PLC0415
+
         if proposed_id is not None and not is_valid_entity_id(proposed_id):
             raise ValueError("proposed entity id must be a UUID v4 or v5")
 
-        # One capsule-target resolution per call: for folder-backed types this
-        # is a stat, and it used to run up to three times per asset per walk.
-        target = self.capsule_target_for(ref) if self.identity_backend is not None else None
-        observation = self._observe(ref, target=target)
-        carrier = (
-            adopt_entity_id(observation.candidate)
-            if observation is not None and observation.state is IdentityState.VALID
-            else None
+        path, carrier = self._read_carrier(ref)
+        can_write = (
+            path is not None
+            and self.identity_carrier.writable
+            and not bool(getattr(ref, "read_only", False))
+            and not carrier_writes_are_suppressed()
         )
 
-        if carrier is not None and (
-            owner_id is None or carrier == owner_id or live_ids is None or carrier in live_ids
+        if carrier.id is not None and (
+            owner_id is None or carrier.id == owner_id or live_ids is None or carrier.id in live_ids
         ):
-            return carrier
+            if carrier.source in LEGACY_CONVERTIBLE and can_write and hasattr(self.identity_carrier, "convert") and path.is_file():
+                try:
+                    self.identity_carrier.convert(path, carrier.id)  # type: ignore[union-attr]
+                except OSError:
+                    logging.debug("[asset-id] capsule→frontmatter conversion skipped for %s", path, exc_info=True)
+            return carrier.id
 
-        # A derived/provider identity is a pure function of the source, so an
-        # owning row must never override it — a stale row on a rotated session
-        # path would otherwise swallow a genuinely different session.
-        if owner_id and self.identity_backend is not None and self.identity_backend.persists_identity:
-            absent = observation is None or observation.state is IdentityState.ABSENT
-            if overwrite and absent and not bool(getattr(ref, "read_only", False)):
-                # store_if_absent is enough here (the carrier IS absent) and
-                # keeps the write path identical to a normal mint.
-                self.identity_backend.store_if_absent(target, owner_id)
-            elif not absent:
+        # An owning row wins over an absent or dead carrier — but never for a
+        # derived identity, which is a pure function of the source (a stale row
+        # on a rotated session path must not swallow a different session).
+        if owner_id and self.identity_carrier is not None and self.identity_carrier.writable:
+            if carrier.id is not None:
                 logging.warning(
                     "[asset-id] %s carrier %r names no live entity; path is owned by %s (%s)",
-                    self.type_name,
-                    observation.candidate,
-                    owner_id,
-                    self._identity_path(ref),
+                    self.type_name, carrier.id, owner_id, self._identity_path(ref),
                 )
+            elif carrier.raw is None and can_write:
+                try:
+                    self.identity_carrier.write_if_absent(path, owner_id)
+                except OSError:
+                    logging.debug("[asset-id] re-stamp skipped for %s", path, exc_info=True)
             return owner_id
 
-        if not derive:
-            # Probe mode: the evidence is exhausted and computing a value here
-            # is exactly what breaks collision ranking and create guards.
-            return None
+        stable_key = self.stable_key_for(ref)
+        fallback_key = str(self._identity_path(ref).resolve())
+        if carrier.raw is not None:
+            # Present but not a UUID we accept: keep the bytes, derive a stable
+            # v5 until the source is repaired.
+            return mint_uuid(stable_key or fallback_key, namespace=self.id_namespace)
 
-        # Reuse the observation above — deriving must not re-read the carrier.
-        return self._derive(
-            ref, observation, proposed_id=proposed_id, commit=overwrite, target=target
-        )
-
-    def _derive(
-        self,
-        ref: Any,
-        observation: "IdentityObservation | None",
-        *,
-        proposed_id: str | None = None,
-        commit: bool = True,
-        target: "Path | None" = None,
-    ) -> str:
-        """Lego piece 3: compute this type's configured id, optionally committing it.
-
-        Portable assets have no stable key: they receive a random v4 only when
-        their backend commits it. If the asset cannot carry that id, the stable
-        path-v5 fallback keeps repeated scans idempotent. Natural/provider
-        identities supply ``id_stable_key_fn`` and derive deterministic v5 ids.
-
-        Takes the already-read ``observation`` (and, from the walk, the already
-        -computed ``target``) so an asset's carrier is parsed once and its
-        capsule path stat-ed once per resolution — this runs per asset on every
-        index walk.
-        """
-        if observation is not None and observation.state is IdentityState.VALID:
-            return str(observation.candidate)  # before any path work — it is unused here
-
-        path = target if target is not None else self.capsule_target_for(ref)
-        stable_key = self.id_stable_key_fn(ref) if self.id_stable_key_fn is not None else None
-        # Invalid canonical data is never overwritten or treated as a brand-new
-        # portable asset.  Derive a stable v5 until the source is repaired.
-        if observation is not None and observation.state is IdentityState.INVALID_ID:
-            return mint_uuid(stable_key or str(path.resolve()), namespace=self.id_namespace)
-
-        # ``commit=False`` (a read-only derive) falls through to the stable
-        # path-v5 below for portable types: a random v4 that is never persisted
-        # would differ on every call, so it is not an answer. Don't draw one.
-        read_only = bool(getattr(ref, "read_only", False))
-        if commit and self.identity_backend is not None and not read_only:
-            minted = proposed_id or mint_uuid(stable_key, namespace=self.id_namespace)
-            committed = self.identity_backend.store_if_absent(path, minted)
-            if committed.state is IdentityState.VALID:
-                return str(committed.candidate)
-            if committed.state is IdentityState.MALFORMED and committed.error is not None:
-                from flow_sdk.capsules import (  # noqa: PLC0415
-                    DuplicateCapsuleError,
-                    MalformedCapsuleError,
-                    UnsupportedCapsuleVersionError,
-                )
-
-                # OS/storage write failures fall back deterministically below;
-                # source corruption still fails closed.
-                if isinstance(
-                    committed.error,
-                    (MalformedCapsuleError, DuplicateCapsuleError, UnsupportedCapsuleVersionError),
-                ):
-                    raise committed.error
-
-            if stable_key:
-                return minted
-        elif stable_key or proposed_id:
-            # No commit: a keyed id is still deterministic, so it is an answer.
-            return proposed_id or mint_uuid(stable_key, namespace=self.id_namespace)
-        return mint_uuid(str(path.resolve()), namespace=self.id_namespace)
+        new_id = proposed_id or mint_uuid(stable_key, namespace=self.id_namespace)
+        if can_write:
+            try:
+                return self.identity_carrier.write_if_absent(path, new_id)  # type: ignore[union-attr]
+            except OSError:
+                logging.debug("[asset-id] mint write failed for %s", path, exc_info=True)
+        # Not written: only a keyed id is deterministic enough to be an answer;
+        # a random v4 that lands nowhere would differ on every call.
+        if proposed_id or stable_key:
+            return new_id
+        return mint_uuid(fallback_key, namespace=self.id_namespace)
 
     @property
     def _resolved_layout(self) -> "tuple[Any, Any, str | None]":
@@ -726,10 +733,103 @@ class TypeInfo:
 # ---------------------------------------------------------------------------
 
 
+@cache
+def _derived_meta_model(cls: type, spec: type) -> type:
+    """``create_model(<Cls>Meta, __base__=BaseMeta, <spec ∪ Persist.TRUE fields>)``, once per class."""
+    from pydantic import create_model  # noqa: PLC0415
+
+    from flow_sdk.api.api_types.api_field import Persist, persist_policy  # noqa: PLC0415
+    from flow_sdk.fs_store.serializer.fields import spec_layout  # noqa: PLC0415
+    from flow_sdk.schema.type_info.base_meta import BaseMeta  # noqa: PLC0415
+
+    # The body / free section are the DOCUMENT, not metadata: they never
+    # enter the shadow (the body rides ``content`` for FTS instead).
+    names = set(spec_layout(spec).header_fields)
+    names |= {name for name, model_field in cls.model_fields.items() if persist_policy(model_field) == Persist.TRUE}
+    # A header field the class marks Persist.FALSE (a DB-only payload such
+    # as SourceItem.raw) is selected by the header but never mirrored.
+    names -= {name for name, model_field in cls.model_fields.items() if persist_policy(model_field) == Persist.FALSE}
+    names -= set(BaseMeta.model_fields) | {"id", "type"}
+    return create_model(
+        f"{cls.__name__}Meta",
+        __base__=BaseMeta,
+        **{name: (Optional[Any], None) for name in sorted(names)},
+    )
+
+
+def _core_compatible(spec: Any, entity: Any) -> bool:
+    """Equal cores, or the entity NARROWS the spec's core (``str`` → ``TypeId`` /
+    a ``StrEnum``), recursing through ``list[...]``. ``Any`` on the spec accepts all."""
+    from flow_sdk.fs_store.serializer.fields import unwrap_annotation  # noqa: PLC0415
+
+    if spec == entity or spec is Any:
+        return True
+    # ``typing.Dict[str, Any]`` and ``dict[str, Any]`` are one core: compare
+    # origin and arguments, not the alias objects.
+    s_origin, e_origin = get_origin(spec), get_origin(entity)
+    if s_origin is not None and e_origin is not None:
+        if s_origin is not e_origin:
+            return False
+        s_args, e_args = get_args(spec), get_args(entity)
+        return len(s_args) == len(e_args) and all(
+            _core_compatible(unwrap_annotation(a), unwrap_annotation(b)) for a, b in zip(s_args, e_args)
+        )
+    # One side bare (``dict``), the other parameterised (``dict[str, Any]``):
+    # compare the base classes.
+    s_base, e_base = s_origin or spec, e_origin or entity
+    if not (isinstance(s_base, type) and isinstance(e_base, type)):
+        return False
+    # A string on disk may be held as a ``str`` subclass (a ``StrEnum``) or a
+    # custom type that validates from one (``TypeId`` declares its own pydantic
+    # schema) — the row narrows. Not an ``int`` or a ``dict``.
+    if s_base is str:
+        return issubclass(e_base, str) or hasattr(e_base, "__get_pydantic_core_schema__")
+    return issubclass(e_base, s_base)
+
+
+def check_asset_spec(type_name: str, entity_cls: type, spec: type) -> None:
+    """Every spec field is an entity field with a compatible core type. The
+    spec is the lenient DISK form; the entity may narrow. Raises ``TypeError``
+    naming the field — at registration, not on the first save."""
+    from flow_sdk.fs_store.serializer.fields import (  # noqa: PLC0415
+        FieldKind,
+        asset_class,
+        asset_info,
+        field_kinds,
+        unwrap_annotation,
+    )
+
+    entity_fields = getattr(entity_cls, "model_fields", {})
+    kinds = dict(field_kinds(spec))
+    for name, spec_field in spec.model_fields.items():
+        if name not in entity_fields:
+            raise TypeError(f"{type_name}: asset_spec field {name!r} is not a field of {entity_cls.__name__}")
+        want = unwrap_annotation(spec_field.annotation)
+        got = unwrap_annotation(entity_fields[name].annotation)
+        if not _core_compatible(want, got):
+            raise TypeError(f"{type_name}.{name}: asset_spec declares {want!r} but {entity_cls.__name__} holds {got!r}")
+        if kinds[name] is FieldKind.SUB_ASSET_LIST:
+            # A list of assets is a directory of FILES, one per element — a
+            # class-shape fact, refused here rather than on the first save.
+            sub_cls, _ = asset_class(spec_field.annotation)
+            if asset_info(sub_cls).main_layout != "file":
+                raise TypeError(f"{type_name}.{name}: a list of {sub_cls.__name__} is a directory of files, but {sub_cls.__name__} is folder-layout")
+
+
+#: The TypeInfo slots the serializers read (``metadata={"serialization": True}``); merged by "non-default wins".
+_SERIALIZATION_SLOTS = tuple(f for f in fields(TypeInfo) if f.metadata.get("serialization"))
+
+
 class SchemaRegistry:
     """Unified type registry + scan/index orchestration."""
 
     _types: ClassVar[dict[str, TypeInfo]] = {}
+    # kind → a class or a DataSpec. Lives HERE, not in a second registry: a kind
+    # is a name in the same namespace type names draw from, and one lookup
+    # table is the standing rule. Runtime-only, like ``entity_cls`` — not part
+    # of ``to_dict()`` or the schema hash. A miss is None, never a mint.
+    _kinds: ClassVar[dict[str, Any]] = {}
+    _kind_of_shape: ClassVar[dict[int, str]] = {}   # id(shape) → kind; the O(1) inverse
     _subtypes: ClassVar[dict[str, list[str]]] = {}
     _default_index_types: ClassVar[list[str]] = []
     # Whether the declarative type-info registrations have run in this process.
@@ -759,9 +859,11 @@ class SchemaRegistry:
         # times, which must not re-enter this loader.
         cls._loaded = True
         try:
+            from flow_sdk.schema.data_spec._kinds import register_builtin_kinds  # lazy: avoid import cycle
             from flow_sdk.schema.type_info import register_all  # lazy: avoid import cycle
 
             register_all()
+            register_builtin_kinds()
         except Exception:
             cls._loaded = False  # let the next access retry rather than wedge
             raise
@@ -769,6 +871,35 @@ class SchemaRegistry:
     # ---------------------------------------------------------------------------
     # Registration
     # ---------------------------------------------------------------------------
+
+    @classmethod
+    def register_kind(cls, kind: str, shape: Any) -> None:
+        """Bind a kind to a class or a ``DataSpec`` so a bare kind can name it."""
+        from flow_sdk.schema.data_spec._kinds import PRIMITIVES  # noqa: PLC0415
+        from flow_sdk.tags.grammar import normalize_tag  # noqa: PLC0415
+
+        kind = normalize_tag(kind)
+        if kind in PRIMITIVES:
+            raise ValueError(f"{kind!r} is a reserved primitive and cannot be registered")
+        cls._kinds[kind] = shape
+        cls._kind_of_shape[id(shape)] = kind
+
+    @classmethod
+    def kind_for(cls, shape: Any) -> "str | None":
+        """The kind a class is registered under, or None. Inverse of ``kind_type``."""
+        cls._ensure_loaded()
+        return cls._kind_of_shape.get(id(shape))
+
+    @classmethod
+    def kind_type(cls, kind: str) -> Any:
+        """The class or ``DataSpec`` a kind names, or None (anonymous — not an
+        error). Entity type names resolve through the same table: ONE namespace."""
+        cls._ensure_loaded()
+        hit = cls._kinds.get(kind)
+        if hit is not None:
+            return hit
+        info = cls._types.get(kind)
+        return info.entity_cls if info is not None else None
 
     @classmethod
     def register_crud_type(cls, type_name: str, *, icon: str | None = None) -> None:
@@ -834,10 +965,10 @@ class SchemaRegistry:
                         )
                     merged_capsules[spec.name] = spec
                 existing.capsules = tuple(merged_capsules[name] for name in sorted(merged_capsules))
-            if info.identity_backend is not None:
-                if existing.identity_backend is not None and existing.identity_backend != info.identity_backend:
-                    raise ValueError(f"Conflicting identity backend registration for type {info.type_name!r}")
-                existing.identity_backend = info.identity_backend
+            if info.identity_carrier is not None:
+                if existing.identity_carrier is not None and existing.identity_carrier != info.identity_carrier:
+                    raise ValueError(f"Conflicting identity carrier registration for type {info.type_name!r}")
+                existing.identity_carrier = info.identity_carrier
             if info.id_stable_key_fn is not None:
                 existing.id_stable_key_fn = info.id_stable_key_fn
             if info.id_namespace != uuid.NAMESPACE_URL:
@@ -858,6 +989,11 @@ class SchemaRegistry:
                 existing.metadata = info.metadata
             if info.meta_model is not None:
                 existing.meta_model = info.meta_model
+            # Serialization slots: a declared (non-default) value wins the merge.
+            for slot in _SERIALIZATION_SLOTS:
+                value = getattr(info, slot.name)
+                if value != slot.default:
+                    setattr(existing, slot.name, value)
             if info.entity_cls is not None:
                 if existing.entity_cls is None:
                     existing.entity_cls = info.entity_cls
@@ -909,6 +1045,24 @@ class SchemaRegistry:
 
         if info.indexed_by_default and info.type_name not in cls._default_index_types:
             cls._default_index_types.append(info.type_name)
+        final = cls._types[info.type_name]
+        if final.from_disk_fn is None and final.asset_spec is not None and not final.db_only:
+            from flow_sdk.fs_store.serializer.record import spec_extractor  # noqa: PLC0415
+
+            final.from_disk_fn = spec_extractor(info.type_name)   # the spec IS the parser
+        if info.asset_spec is not None:
+            from flow_sdk.fs_store.serializer.fields import field_kinds  # noqa: PLC0415
+
+            field_kinds.cache_clear()   # a new asset type can turn a field into a sub-asset
+
+    @classmethod
+    def check_asset_specs(cls) -> None:
+        """The shape and the row must agree — run once every class is complete
+        (``register_all``'s post-pass), never from an entity's ``__init_subclass__``.
+        A violation RAISES; it is a class-shape bug, not a degraded type."""
+        for info in cls._types.values():
+            if info.asset_spec is not None and info.entity_cls is not None:
+                check_asset_spec(info.type_name, info.entity_cls, info.asset_spec)
 
     @classmethod
     def get(cls, type_name: "str | TypeId") -> TypeInfo | None:
@@ -1173,7 +1327,11 @@ class SchemaRegistry:
                     "id": str(uuid.uuid4()),
                     "type": "index_log",
                     "index_trigger": trigger,
-                    "duration_ms": 0.0,
+                    # The caller's per-type dict already carries a measured
+                    # duration (``types_out`` in fs_records_actions); reading
+                    # ``indexed`` from it while writing a literal 0.0 here left
+                    # every aggregate run's audit trail timeless.
+                    "duration_ms": t.get("duration_ms", 0.0),
                     "total_indexed": t.get("indexed", 0),
                     "type_name": t_name,
                     "created_at": now,
@@ -1261,12 +1419,30 @@ class SchemaRegistry:
         ``stale`` now means "changes pending next index", not a 24h timer.
         Orphan counts come from a scan, not from here.
         """
+        import asyncio  # noqa: PLC0415
+
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
+        from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
 
         driver = get_db_driver()
         per_type: list[TypeIndexStatus] = []
         latest_iso: str | None = None
-        for type_name in types or cls.get_default_index_types():
+        target_types = list(types or cls.get_default_index_types())
+
+        # `stale` is the endpoint's documented contract — "changes pending next
+        # index" — and it used to be the literal False on every row, so the
+        # freshness signal could never be true outside the single-project
+        # branch below. It is now the same question that branch asks
+        # (`index_required`), asked per type. `orphan_count` stays 0 by design:
+        # orphans come from a scan, not from here.
+        # One thread hop for the whole sweep, not one per type: the walk never
+        # yields to the loop between types, so 30+ dispatches bought nothing.
+        def _stale_by_type() -> dict[str, bool]:
+            return {t: FSRecord.type_has_pending_changes(t) for t in target_types}
+
+        stale_by_type = await asyncio.to_thread(_stale_by_type)
+
+        for type_name in target_types:
             type_last = cls.get_last_index_at(type_name)  # JSONL run-history (audit)
             if type_last and (latest_iso is None or type_last > latest_iso):
                 latest_iso = type_last
@@ -1276,7 +1452,7 @@ class SchemaRegistry:
                     type_name=type_name,
                     last_indexed_at=type_last,
                     entity_count=count,
-                    stale=False,
+                    stale=stale_by_type.get(type_name, False),
                     orphan_count=0,
                 )
             )
@@ -1298,7 +1474,8 @@ class SchemaRegistry:
         return IndexStatus(
             never_indexed=all(t.last_indexed_at is None for t in per_type),
             last_indexed_at=latest_iso,
-            stale=False,
+            # Rolled up from the per-type answers rather than hardcoded.
+            stale=any(t.stale for t in per_type),
             default_types=cls.get_default_index_types(),
             per_type=per_type,
             total_orphans=0,

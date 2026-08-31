@@ -2,7 +2,6 @@ import { APIEntity, registerEntity } from '../APIEntity';
 import { dataContext } from '../FlowSync/context';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
-import { ViewType } from '../utils/ui/view-types';
 
 /**
  * Whiteboard entity — backed by a WhiteboardRecord on disk
@@ -35,16 +34,13 @@ export class Whiteboard extends APIEntity<Whiteboard> {
 
   /** Default open target: the asset editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('whiteboard') ?? super.dockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {
-    return this.assetEditorPointer('whiteboard') ?? super.editorDockPointer;
+    return this.assetEditorPointer() ?? super.editorDockPointer;
   }
 
-  override get searchDockPointer(): DockPointerData {
-    return this.assetEditorPointer('whiteboard') ?? this.dockPointer;
-  }
 
   /** FrontMatterFsRef for WHITE_BOARD.md. Resolves compute node from dataContext. */
   get doc(): FrontMatterFsRef | null {

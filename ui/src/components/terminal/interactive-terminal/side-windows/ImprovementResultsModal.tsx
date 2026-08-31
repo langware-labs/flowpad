@@ -35,7 +35,10 @@ export const ImprovementResultsModal: React.FC<ImprovementResultsModalProps> = (
   onCommitted,
   valueNote,
 }) => {
-  const computeNodeId = skillFile.typeId.id;
+  // `typeId` is protected on FSRef; `localComputeNodeId` is the public accessor
+  // (null for a hub-backed ref, which has no machine to run git on — fall back
+  // to GitWorkdir's own '@local' default).
+  const computeNodeId = skillFile.localComputeNodeId ?? '@local';
   const workdir = skillFile.parent.path;
   const file = skillFile.path.slice(skillFile.path.lastIndexOf('/') + 1);
 
@@ -99,7 +102,8 @@ export const ImprovementResultsModal: React.FC<ImprovementResultsModalProps> = (
       action.bodyParameters = { workdir, file };
       const r = await dataManager.callAction<null, { committed: boolean; version?: number }>(action);
       if (r?.committed) {
-        notify.success({ title: t`Committed ${skillName} v${r.version}` });
+        const version = r.version ?? '?';
+        notify.success({ title: t`Committed ${skillName} v${version}` });
         invalidateGitStatus(computeNodeId, workdir);
         onCommitted?.();
         onClose();

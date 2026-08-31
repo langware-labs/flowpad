@@ -10,7 +10,6 @@ from typing_extensions import Annotated
 
 from flow_sdk._version import __version__
 from flow_sdk.cli.auth.hub_login import delete_api_key, is_logged_in, set_api_key
-from flow_sdk.cli.cli_command import CLICommand
 from flow_sdk.cli.cli_context import ClaudeScope, CLIContext
 from flow_sdk.cli.commands.prompt_cmd import run_prompt_command
 from flow_sdk.cli.commands.setup_cmd.setup_cmd import run_setup
@@ -76,12 +75,11 @@ def setup(
     Example: flow setup claude-code
     """
     context = get_context()
-    cmd = CLICommand(f"setup {agent_name}", context=context)
 
     # Set first_time_prompt flag when running setup
     set_config_value("first_time_prompt", "true")
 
-    run_setup(agent_name, cmd)
+    run_setup(agent_name, context)
 
 
 @app.command()
@@ -92,9 +90,7 @@ def prompt(prompt_text: Annotated[Optional[str], typer.Argument(help="Prompt tex
     Example: flow prompt "analyze this code"
     """
     if prompt_text:
-        context = get_context()
-        cmd = CLICommand(f"prompt {prompt_text}", context=context)
-        run_prompt_command(prompt_text, cmd)
+        run_prompt_command(prompt_text)
 
 
 @app.command()
@@ -1495,7 +1491,7 @@ def uninstall():
 
 
 def cli_main():
-    """Entry point that can be used with CLICommand.
+    """Entry point for the installed ``flow`` console script.
 
     Wraps app() with tee streams to capture stdout/stderr and log each
     CLI invocation to ~/.flow/logs/cli.log.jsonl.

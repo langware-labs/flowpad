@@ -10,7 +10,8 @@ export enum FilterName {
 
 export interface FilterDefinition {
   name: FilterName;
-  label: string;
+  /** Lazy lingui descriptor — render with `i18n._(...)`. */
+  label: MessageDescriptor;
   filterFn: (item: FileItem) => boolean;
 }
 

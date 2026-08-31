@@ -1,6 +1,6 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { QueryRequest } from '../FlowSync/query';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { HttpMethod } from '../models/ApiUrl';
 import { TypeId } from '../models/TypeId';
@@ -36,6 +36,12 @@ export interface ITrigger extends IEntity {
   last_seen_mtime?: number;
   last_seen_size?: number;
 }
+
+// `implements ITrigger` only checks the class; it contributes no members, so every
+// field declared solely on ITrigger read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Trigger extends EntityMerge<ITrigger> {}
 
 /**
  * Entity representing a trigger that matches hook data and executes actions

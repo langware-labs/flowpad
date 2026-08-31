@@ -36,6 +36,9 @@ from flow_sdk.transcript_analyzer import TranscriptFormat
 from flow_sdk.transcript_analyzer.resolver import sqlite_source_mtime
 
 from .event_to_flowdata import _element_type_for_kind
+from flow_sdk.builtin.agentic_process.cli_drivers.session_paths import (
+    transcript_path_for_process,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,12 +60,8 @@ _PART_TYPE_TO_EVENT: dict[str, str] = {
 
 
 def opencode_transcript_path_for_process(process_id: str) -> Path:
-    """Process-local JSONL tee path for OpenCode stdout events."""
-    from flow_sdk.fs_store.record_paths import shadow_dir_for
-
-    directory = shadow_dir_for("agentic_process", process_id)
-    directory.mkdir(parents=True, exist_ok=True)
-    return directory / "opencode_transcript.jsonl"
+    """Process-local JSONL tee path for opencode's stdout events."""
+    return transcript_path_for_process("opencode", process_id)
 
 
 def opencode_session_projection_path(process_id: str | None, session_id: str) -> Path:

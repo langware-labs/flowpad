@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.ingest import reflect
 from flow_sdk.ingest.driver import get_driver
 from flow_sdk.ingest.reflect import (
     ReflectMode,
@@ -38,7 +39,7 @@ async def test_placement_alone_writes_nothing_to_the_graph(
     source, _project = await make_source(mode)
     reflector = get_reflector(mode)
 
-    placed = reflector.place(source, str(path))
+    placed = reflector.place(source, str(path), await reflect._materialize(source))
 
     assert placed, "nothing was placed"
     assert await Entity.get_by_asset_ref(str(path), resolve_containing=True) is None

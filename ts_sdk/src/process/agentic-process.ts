@@ -8,6 +8,7 @@
  * - stackFrame: Access to execution variables
  */
 
+import { perfTime } from '../utils/perf';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { isApiError } from '../ApiResponse';
 import { IEntity } from '../IEntity';
@@ -32,7 +33,7 @@ function parseFsRef(value: FSRef | FSRefJson | null | undefined): FSRef | null {
   return value instanceof FSRef ? value : FSRef.fromJson(value);
 }
 import type { AssetDescriptor } from './asset-descriptor';
-import { DockPointerData } from '../models/DockPointer';
+import { DockPointerData, TargetedDock } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
@@ -51,10 +52,6 @@ import {
   isWorkerTerminal,
   type WorkerType,
 } from './agentic-types';
-import type {
-  TranscriptFormat as TranscriptFormatType,
-  TranscriptSource as TranscriptSourceType,
-} from '../transcript-analyzer';
 import {
   clearProcessHookCallbacks,
   dispatchProcessHook,
@@ -74,44 +71,15 @@ import type { HookEventType } from '../claude_hook_events/event-types';
 /**
  * Result returned by AgenticProcess.spawn().
  */
-/**
- * Resolved `flow show` display target — the payload of the `on_show` entity
- * event, produced by the backend's `resolve_display_target`
- * (flow_sdk/core/display_target.py). Discriminated by `kind`.
- */
-export interface ShowTarget {
-  /** Mirrors python `DisplayTargetKind` (flow_sdk/core/display_target.py). */
-  kind?: 'entity' | 'vfs' | 'webapp' | 'app' | 'shell' | string;
-  /** entity: canonical `<type>-<id>` string. */
-  typeid?: string;
-  type?: string;
-  id?: string;
-  /** entity (when shown by path) | vfs: the resolved absolute path. */
-  path?: string;
-  /** webapp: the dev-server port. */
-  port?: number | string;
-  /** dock: a SCREEN — the frontend's own dock-address fields, so the client
-   *  builds its DockPointer without re-parsing a URL. */
-  view_type?: string;
-  pointer?: string | null;
-  options?: Record<string, string> | null;
-  page?: string;
-}
+export type { DisplayEntry, ShowTarget } from '../models/ShowTarget';
+import type { DisplayEntry, ShowTarget } from '../models/ShowTarget';
 
-/**
- * One entry in a process's display history — `context_data.display_stack`. The
- * backend flattens the `flow show` target and stamps it with `shown_at`, so an
- * entry IS a {@link ShowTarget} plus its server timestamp. Newest last.
- */
-export interface DisplayEntry extends ShowTarget {
-  /** ISO 8601 server timestamp — when the agent showed this target. */
-  shown_at?: string;
-}
 
 export interface SpawnResult {
   process: AgenticProcess;
-  /** Set in PTY mode */
-  shell?: Shell;
+  /** Set in PTY mode. Null when the spawn ran but the process has no shell yet
+   *  — `AgenticProcess.shell()` answers null, and that value is passed through. */
+  shell?: Shell | null;
   /** Set in both modes */
   workerSessionId?: string | null;
 }
@@ -446,6 +414,23 @@ export interface IAgenticProcess extends IEntity {
 }
 
 /**
+ * Declaration merge: `implements IAgenticProcess` only CHECKS the class, it adds no
+ * members — so every field declared solely on IAgenticProcess read as "does not exist
+ * on type AgenticProcess", even though `deepAssign` populates them from the wire.
+ * This interface makes them part of the class type.
+ *
+ * The four `*_folder` fields are omitted: the interface describes the WIRE shape
+ * (`FSRefJson`), while the class holds the hydrated `FSRef` its constructor
+ * parses out of it (see `parseFsRef`). The class declaration is the accurate one.
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface AgenticProcess
+  extends Omit<
+    IAgenticProcess,
+    'expand' | 'id' | 'is_private' | 'members' | 'exe_folder' | 'input_folder' | 'output_folder' | 'assets_folder'
+  > {}
+
+/**
  * AgenticProcess Entity - A running instruction execution process
  *
  * Created by AgenticProcess.spawn(), this entity tracks execution state
@@ -465,8 +450,12 @@ export interface IAgenticProcess extends IEntity {
  * console.log('Stack frame:', process.stackFrame);
  * ```
  */
+// Deliberately no `implements IAgenticProcess`: that interface is the WIRE
+// shape, and this class stores the four `*_folder` fields hydrated (`FSRef`,
+// parsed from the wire's `FSRefJson`). Every other member is still checked
+// against it through the declaration merge above.
 @registerEntity
-export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenticProcess {
+export class AgenticProcess extends APIEntity<AgenticProcess> {
   /** Entity type for AgenticProcess */
   static type: string = 'agentic_process';
 
@@ -817,8 +806,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * Live interactive terminal — `/dock/shell/agentic_process-<id>`.
    * Use this when the user wants to attach to (or launch) the running PTY.
    */
-  get terminalDockPointer(): DockPointerData {
-    return new DockPointerData(ViewType.SHELL, `${AgenticProcess.type}${TypeId.DELIMITER}${this.id}`);
+  get terminalDockPointer(): TargetedDock {
+    // A template literal, so `pointer` is always a string here.
+    return new TargetedDock(ViewType.SHELL, `${AgenticProcess.type}${TypeId.DELIMITER}${this.id}`);
   }
 
   openTerminalDock(extraOptions?: Record<string, string>): void {
@@ -899,10 +889,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * React component via the ``pickProcessIcon`` registry. Two axes drive
    * the choice:
    *
+   * NOT named ``icon``: that is `APIEntity`'s per-row/TypeInfo glyph, a
+   * different concept. Sharing the name shadowed the base accessor pair and
+   * cost a per-construction reflection guard to work around.
+   *
    * - **vendor**: ``worker_type`` ('claude' / 'codex' / 'copilot' / fallback)
    * - **state**: fresh-start vs ``wasRestoredFromSession``
    */
-  get icon(): ProcessIconKey {
+  get processIconKey(): ProcessIconKey {
     const wt = (this.worker_type ?? '').toLowerCase();
     const restored = this.wasRestoredFromSession;
     if (wt === 'codex') return restored ? 'codex-restore' : 'codex';
@@ -994,6 +988,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /** Transcript-derived worker status, or undefined when the backend reports none. */
+  /**
+   * Backend-computed explanation of the current worker_status — e.g. the
+   * signed-out-harness case the CLI already named. Sent on every process
+   * payload (`AgenticProcess.to_dict`) and landed by deepAssign; it simply was
+   * never declared here, so every read of it was a type error.
+   */
+  worker_status_detail?: string | null;
+
   get workerStatus(): WorkerStatus | undefined {
     return this._workerStatus;
   }
@@ -1090,16 +1092,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   process_hook_events: HookEventType[] = [];
 
   async setHook(event: HookEventType): Promise<boolean> {
-    const action = new ActionInfo('set-hook', AgenticProcess.type, this.id, 'POST');
-    action.bodyParameters = { event };
-    const response = await dataManager.callAction<{ event: HookEventType }, { changed: boolean }>(action);
+    const response = await this.post<{ changed: boolean }>('set-hook', { event });
     return response.changed;
   }
 
   async removeHook(event: HookEventType): Promise<boolean> {
-    const action = new ActionInfo('remove-hook', AgenticProcess.type, this.id, 'POST');
-    action.bodyParameters = { event };
-    const response = await dataManager.callAction<{ event: HookEventType }, { changed: boolean }>(action);
+    const response = await this.post<{ changed: boolean }>('remove-hook', { event });
     return response.changed;
   }
 
@@ -1186,9 +1184,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /** Append a directory to additional_dirs (passed to Claude via --add-dir). */
   async addDir(path: string): Promise<void> {
-    const actionInfo = new ActionInfo('add-dir', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { path };
-    await dataManager.callAction(actionInfo);
+    await this.post('add-dir', { path });
     if (!(this.additional_dirs ?? []).includes(path)) {
       this.additional_dirs = [...(this.additional_dirs ?? []), path];
     }
@@ -1200,9 +1196,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * worker's system prompt at launch (see contextProcess.md). Pre-launch only.
    */
   async setGraphContext(graphContextId: string): Promise<void> {
-    const actionInfo = new ActionInfo('set-graph-context', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { graph_context_id: graphContextId };
-    await dataManager.callAction(actionInfo);
+    await this.post('set-graph-context', { graph_context_id: graphContextId });
   }
 
   /**
@@ -1211,16 +1205,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * resolved payload comes back to subscribers via {@link onShow}.
    */
   async show(target: { typeid?: string; path?: string; port?: number; view?: string }): Promise<void> {
-    const actionInfo = new ActionInfo('show', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = target;
-    await dataManager.callAction(actionInfo);
+    await this.post('show', target);
   }
 
   /** Remove a directory from additional_dirs. No-op if not present. */
   async removeDir(path: string): Promise<void> {
-    const actionInfo = new ActionInfo('remove-dir', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { path };
-    await dataManager.callAction(actionInfo);
+    await this.post('remove-dir', { path });
     this.additional_dirs = (this.additional_dirs ?? []).filter((d) => d !== path);
   }
 
@@ -1231,29 +1221,22 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /** Append a prompt to the tail of the queue. */
   async enqueue(prompt: string, source: string = 'ui'): Promise<void> {
-    const actionInfo = new ActionInfo('enqueue', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { prompt, source };
-    await dataManager.callAction(actionInfo);
+    await this.post('enqueue', { prompt, source });
   }
 
   /** Remove a queued prompt by its id (string) or list index (number). */
   async dequeue(idOrIndex: string | number): Promise<void> {
-    const actionInfo = new ActionInfo('dequeue', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = typeof idOrIndex === 'number' ? { index: idOrIndex } : { id: idOrIndex };
-    await dataManager.callAction(actionInfo);
+    await this.post('dequeue', typeof idOrIndex === 'number' ? { index: idOrIndex } : { id: idOrIndex });
   }
 
   /** Drop every pending prompt. */
   async clearQueue(): Promise<void> {
-    const actionInfo = new ActionInfo('clear-queue', AgenticProcess.type, this.id, 'POST');
-    await dataManager.callAction(actionInfo);
+    await this.post('clear-queue');
   }
 
   /** Enable/disable draining. Disabled keeps entries but stops injection. */
   async setQueueEnabled(enabled: boolean): Promise<void> {
-    const actionInfo = new ActionInfo('set-queue-enabled', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { enabled };
-    await dataManager.callAction(actionInfo);
+    await this.post('set-queue-enabled', { enabled });
   }
 
   // ── Pin-from-history (docs/prompt-library.md) ───────────────────────────────
@@ -1264,44 +1247,31 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /** Pin a history item's text into the prompt library. Idempotent by normalized text. */
   async pinPrompt(text: string, name?: string): Promise<{ promptId: string }> {
-    const actionInfo = new ActionInfo('pin-prompt', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { text, ...(name ? { name } : {}) };
-    const result = await dataManager.callAction<
-      { text: string; name?: string },
-      { prompt_id: string; pinned: boolean }
-    >(actionInfo);
+    const result = await this.post<{ prompt_id: string; pinned: boolean }>('pin-prompt', {
+      text,
+      ...(name ? { name } : {}),
+    });
     return { promptId: result.prompt_id };
   }
 
   /** Unpin: remove the prompt↔process link and delete the prompt from the library. */
   async unpinPrompt(promptId: string): Promise<void> {
-    const actionInfo = new ActionInfo('unpin-prompt', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { prompt_id: promptId };
-    await dataManager.callAction(actionInfo);
+    await this.post('unpin-prompt', { prompt_id: promptId });
   }
 
   /** Record that this process executed a library prompt: mutual private
    *  cross-link + usage bump (conversation Approve & Execute path). */
   async linkExecutedPrompt(promptId: string): Promise<void> {
-    const actionInfo = new ActionInfo('link-executed-prompt', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { prompt_id: promptId };
-    await dataManager.callAction(actionInfo);
+    await this.post('link-executed-prompt', { prompt_id: promptId });
   }
 
   async shell(): Promise<Shell | null> {
-    if (!this.shell_id) return null;
-    const w = (typeof window !== 'undefined' ? window : undefined) as { __shellNavT0?: number } | undefined;
-    const t0 = w?.__shellNavT0;
-    const stamp = (label: string, start: number) => {
-      if (t0 === undefined) return;
-      const now = performance.now();
-      // eslint-disable-next-line no-console
-      console.log(`[PERF] +${(now - t0).toFixed(0)}ms ${label} took ${(now - start).toFixed(1)}ms`);
-    };
-    const sGet = performance.now();
-    const result = await Shell.getById<Shell>(this.shell_id);
-    stamp('process.shell: Shell.getById', sGet);
-    return result;
+    // Captured, not read inside the closure: the guard's narrowing does not
+    // survive into a callback, and pinning the id at call time is what the
+    // straight-line version did anyway.
+    const shellId = this.shell_id;
+    if (!shellId) return null;
+    return perfTime('process.shell: Shell.getById', () => Shell.getById<Shell>(shellId));
   }
 
   /** The PTY connection for this process — delegates to the linked Shell. */
@@ -1420,65 +1390,37 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * ``[Request interrupted by user for tool use]`` synthetic. Hydrates
    * each entry via the analyzer's ``fromJson`` factory.
    */
-  async getPrompts(): Promise<import('../transcript-analyzer').UserMessageEntry[]> {
-    const { fromJson, UserMessageEntry } = await import('../transcript-analyzer');
+  async getPrompts(): Promise<import('../utils/agent-transcript').UserMessageEntry[]> {
+    const { isUserMessage } = await import('../utils/agent-transcript');
     const actionInfo = new ActionInfo('transcript', AgenticProcess.type, this.id, 'POST');
     actionInfo.subpath = 'prompts';
     const response = await dataManager.callAction<unknown, { prompts?: Record<string, unknown>[] | null }>(actionInfo);
-    const raw = response?.prompts ?? [];
-    const out: import('../transcript-analyzer').UserMessageEntry[] = [];
-    for (const r of raw) {
-      const entry = fromJson(r);
-      if (entry instanceof UserMessageEntry) out.push(entry);
-    }
-    return out;
+    const raw = (response?.prompts ?? []) as unknown as import('../utils/agent-transcript').GenericEntry[];
+    return raw.filter(isUserMessage);
   }
 
   /** Fetch deterministic extractive context for continuing with another worker. */
   async continuationPrompt(): Promise<string> {
-    const actionInfo = new ActionInfo('continuation-prompt', AgenticProcess.type, this.id, 'GET');
-    const response = await dataManager.callAction<unknown, { prompt: string }>(actionInfo);
+    const response = await this.get<{ prompt: string }>('continuation-prompt');
     return response.prompt;
   }
 
   /**
    * Fetch the parsed worker transcript from the process-specific transcript source.
    */
-  async getTranscript(): Promise<import('../transcript-analyzer').AgentTranscript> {
-    const { AgentTranscript, TranscriptFormat, TranscriptSource, fromJson } = await import('../transcript-analyzer');
+  async getTranscript(): Promise<import('../utils/agent-transcript').ParsedTranscript> {
+    const { parseTranscriptResponse } = await import('../utils/agent-transcript');
     const actionInfo = new ActionInfo('transcript', AgenticProcess.type, this.id, 'POST');
     actionInfo.subpath = 'full';
-    const response = await dataManager.callAction<
-      unknown,
-      {
-        worker_type?: string | null;
-        session_id?: string | null;
-        path?: string | null;
-        transcript_path?: string | null;
-        transcript_format?: string | null;
-        transcript_source?: string | null;
-        entries?: Record<string, unknown>[] | null;
-      }
-    >(actionInfo);
-    const rawEntries = response?.entries ?? [];
-    const entries = rawEntries.map((entry) => fromJson(entry));
-    const format = Object.values(TranscriptFormat).includes(response?.transcript_format as never)
-      ? (response?.transcript_format as TranscriptFormatType)
-      : null;
-    const source = Object.values(TranscriptSource).includes(response?.transcript_source as never)
-      ? (response?.transcript_source as TranscriptSourceType)
-      : null;
-    const path = response?.path ?? response?.transcript_path ?? '';
-    return new AgentTranscript(
-      response?.worker_type ?? this.worker_type ?? '',
-      entries,
-      response?.session_id ?? this.session_id ?? '',
-      {
-        path,
-        transcript_format: format,
-        transcript_source: source,
-      },
-    );
+    const response = await dataManager.callAction<unknown, Record<string, unknown>>(actionInfo);
+    // `parseTranscriptResponse` validates and normalises the same payload this
+    // method used to rebuild by hand; only the entity-level fallbacks are ours.
+    return parseTranscriptResponse({
+      ...response,
+      worker_type: response?.worker_type ?? this.worker_type ?? '',
+      session_id: response?.session_id ?? this.session_id ?? '',
+      path: response?.path ?? response?.transcript_path ?? '',
+    });
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1594,7 +1536,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     super(entity);
     this.instruction_content = entity.instruction_content;
     this.asset_ref = entity.asset_ref;
-    this.context = entity.context;
     this.context_data = entity.context_data;
     this.deployment_id = entity.deployment_id ?? null;
     this.favorite_index = entity.favorite_index;
@@ -1993,8 +1934,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
     this._historyLoading = (async () => {
       try {
-        const actionInfo = new ActionInfo('get-history', AgenticProcess.type, this.id, 'GET');
-        const response = await dataManager.callAction<void, HistoryResponse>(actionInfo);
+        const response = await this.get<HistoryResponse>('get-history');
 
         if (!response || !response.history) {
           return;
@@ -2221,9 +2161,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * The sub-agent spec is merged into cli_config on the backend and persisted.
    */
   async loadEmbeddedSubagent(sourcePath: string): Promise<void> {
-    const actionInfo = new ActionInfo('load-embedded-subagent', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { asset_ref: sourcePath };
-    await dataManager.callAction(actionInfo);
+    await this.post('load-embedded-subagent', { asset_ref: sourcePath });
   }
 
   /**
@@ -2233,9 +2171,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * through to the next session — no re-materialization needed.
    */
   async loadEmbeddedSkill(sourcePath: string): Promise<void> {
-    const actionInfo = new ActionInfo('load-embedded-skill', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { asset_ref: sourcePath };
-    await dataManager.callAction(actionInfo);
+    await this.post('load-embedded-skill', { asset_ref: sourcePath });
   }
 
   /**
@@ -2251,8 +2187,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * were read in the session.
    */
   async getAssets(): Promise<AssetDescriptor[]> {
-    const actionInfo = new ActionInfo('get-assets', AgenticProcess.type, this.id, 'GET');
-    const response = await dataManager.callAction<void, { assets?: AssetDescriptor[] }>(actionInfo);
+    const response = await this.get<{ assets?: AssetDescriptor[] }>('get-assets');
     return response?.assets ?? [];
   }
 
@@ -2367,9 +2302,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   readonly embeddedAssets = {
     attach: async (entityOrRef: { typeId?: TypeId } | TypeId | string): Promise<void> => {
       const ref = this._coerceRef(entityOrRef);
-      const actionInfo = new ActionInfo('attach-embedded-asset', AgenticProcess.type, this.id, 'POST');
-      actionInfo.bodyParameters = { entity_ref: ref.toString() };
-      await dataManager.callAction(actionInfo);
+      await this.post('attach-embedded-asset', { entity_ref: ref.toString() });
       // The WS broadcast lands embedded_asset_refs as plain stringified TypeIds
       // (the server serializes them that way); avoid duplicating by comparing
       // on the string form instead of property-by-property on TypeId.
@@ -2380,9 +2313,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     },
     detach: async (entityOrRef: { typeId?: TypeId } | TypeId | string): Promise<void> => {
       const ref = this._coerceRef(entityOrRef);
-      const actionInfo = new ActionInfo('detach-embedded-asset', AgenticProcess.type, this.id, 'POST');
-      actionInfo.bodyParameters = { entity_ref: ref.toString() };
-      await dataManager.callAction(actionInfo);
+      await this.post('detach-embedded-asset', { entity_ref: ref.toString() });
       const refStr = ref.toString();
       this.embedded_asset_refs = (this.embedded_asset_refs ?? []).filter((r) => String(r) !== refStr);
     },
@@ -2589,9 +2520,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * update, so a watched process reflects the new `visible` on the entity.
    */
   async setVisible(visible: boolean): Promise<void> {
-    const actionInfo = new ActionInfo('set-visible', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { visible };
-    await dataManager.callAction(actionInfo);
+    await this.post('set-visible', { visible });
     // Optimistic + latched until the wire agrees (see onEntityUpdate).
     this.stageTransportIntent({ visible });
   }
@@ -2608,9 +2537,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * queue on the headless path (e.g. `{ source }`).
    */
   async input(text: string, options?: { queueOptions?: Record<string, unknown> }): Promise<void> {
-    const actionInfo = new ActionInfo('input', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { text, ...(options ? { options } : {}) };
-    await dataManager.callAction(actionInfo);
+    await this.post('input', { text, ...(options ? { options } : {}) });
   }
 
   /**
@@ -2635,8 +2562,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * a 5 s grace then SIGKILL; a final ``<flow-end>`` arrives on the stream.
    */
   async cancelPrompt(): Promise<void> {
-    const actionInfo = new ActionInfo('cancel-prompt', AgenticProcess.type, this.id, 'POST');
-    await dataManager.callAction(actionInfo);
+    await this.post('cancel-prompt');
   }
 
   /**
@@ -2834,8 +2760,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       dataManager.notifyEntityChanged(shell);
     }
 
-    const actionInfo = new ActionInfo('exit', AgenticProcess.type, this.id, 'POST');
-    await dataManager.callAction(actionInfo);
+    await this.post('exit');
 
     // Shell entity is kept alive by the backend — do NOT call shell.close()
   }
@@ -2853,8 +2778,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   async recoverProject(): Promise<import('../entities/project').Project> {
     const { Project } = await import('../entities/project');
-    const action = new ActionInfo('recover-project', AgenticProcess.type, this.id, 'POST');
-    const response = await dataManager.callAction<void, { project: unknown }>(action);
+    const response = await this.post<{ project: unknown }>('recover-project');
     if (!response?.project) {
       throw new Error('recover-project returned no project entity');
     }
@@ -2884,8 +2808,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       }
     }
 
-    const actionInfo = new ActionInfo('close', AgenticProcess.type, this.id, 'POST');
-    await dataManager.callAction(actionInfo);
+    await this.post('close');
 
     // Dispose frontend PTY client — backend already deleted the shell entity.
     if (this.shell_id) {
@@ -3003,9 +2926,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @returns The new AgenticProcess, already opened with a live PTY.
    */
   async fork(visible = false): Promise<AgenticProcess> {
-    const actionInfo = new ActionInfo('fork', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { visible };
-    const data = await dataManager.callAction<{ visible: boolean }, Record<string, unknown>>(actionInfo);
+    const data = await this.post<Record<string, unknown>>('fork', { visible });
     if (!data?.id) throw new Error('Fork failed: backend returned no process data');
     dataManager.updateEntityFromJson(data);
     const newProcess = await dataManager.getByTypeId<AgenticProcess>(
@@ -3586,9 +3507,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @param options - Optional options (e.g., clearContext to inject /clear first)
    */
   async executePlan(filePath: string, options?: { clearContext?: boolean }): Promise<void> {
-    const actionInfo = new ActionInfo('execute-plan', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { file_path: filePath, clear_context: options?.clearContext };
-    return dataManager.callAction(actionInfo);
+    return this.post('execute-plan', { file_path: filePath, clear_context: options?.clearContext });
   }
 
   /**
@@ -3596,8 +3515,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @param filePath - Absolute path to the plan file
    */
   async updatePlan(filePath: string): Promise<void> {
-    const actionInfo = new ActionInfo('update-plan', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { file_path: filePath };
-    return dataManager.callAction<void, void>(actionInfo);
+    return this.post<void>('update-plan', { file_path: filePath });
   }
 }

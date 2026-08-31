@@ -21,7 +21,7 @@
  * Assumes the backend + frontend are already running (see playwright.config.ts).
  */
 import { test, expect, type Page } from '@playwright/test';
-import { dismissSetupModal, activePanel, ensureAdvancedView, skipIfPtyExhausted, startClaudeSession } from './helpers';
+import { RIBBON_TABS, dismissSetupModal, activePanel, ensureAdvancedView, skipIfPtyExhausted, startClaudeSession } from './helpers';
 
 let cachedAgenticUrl: string | null = null;
 
@@ -34,16 +34,16 @@ async function gotoAgenticProcess(page: Page): Promise<string> {
     await page.goto(fixed);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     return fixed.split('?')[0];
-  }
+}
 
   if (cachedAgenticUrl) {
     await page.goto(cachedAgenticUrl);
     const ok = await activePanel(page)
-      .locator('.border-t .ms-auto')
+      .locator(RIBBON_TABS)
       .isVisible({ timeout: 10_000 })
       .catch(() => false);
     if (ok) return cachedAgenticUrl;
-  }
+}
 
   await page.goto('/dock/shell/new_terminal');
   const skip = page.getByRole('button', { name: 'Skip' });
@@ -55,16 +55,16 @@ async function gotoAgenticProcess(page: Page): Promise<string> {
       await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 60_000 });
       await startClaudeSession(page);
       await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 60_000 });
-    }
+  }
 
     // The Dir side window is a ribbon panel — Advanced-view only; the backend
     // pref now wins over the localStorage seed, so flip to Advanced at runtime.
     await ensureAdvancedView(page);
-    await expect(activePanel(page).locator('.border-t .ms-auto')).toBeVisible({ timeout: 60_000 });
-  } catch (e) {
+    await expect(activePanel(page).locator(RIBBON_TABS)).toBeVisible({ timeout: 60_000 });
+} catch (e) {
     await skipIfPtyExhausted(page);
     throw e;
-  }
+}
   await page.waitForTimeout(3_000);
   cachedAgenticUrl = page.url().split('?')[0];
   return cachedAgenticUrl;
@@ -73,12 +73,17 @@ async function gotoAgenticProcess(page: Page): Promise<string> {
 test.describe('Dir side window scrolling', () => {
   test.beforeEach(async ({ page }) => {
     await dismissSetupModal(page);
-  });
+});
 
   test('dir panel scrolls (not clipped) when the directory overflows the viewport', async ({ page }) => {
     // A deliberately short viewport makes overflow deterministic even for a
-    // sparse project root. This is layout input, not a timing allowance.
-    await page.setViewportSize({ width: 1280, height: 320 });
+    // sparse project root. This is layout input, not a timing allowance. It
+    // must still leave the side window taller than the Dir panel's fixed chrome
+    // (path header + filter row + list padding, ~90px) once the tab strip,
+    // ribbon and prompt input have taken their share — otherwise the panel
+    // "overflows" on chrome alone and the measurement says nothing about the
+    // list's scroll chain.
+    await page.setViewportSize({ width: 1280, height: 480 });
 
     await gotoAgenticProcess(page);
 
@@ -93,7 +98,7 @@ test.describe('Dir side window scrolling', () => {
     // Advanced-only; gotoAgenticProcess already flipped to Advanced. Select it by
     // its FolderTree icon (index-independent — the ribbon gains/loses buttons).
     await ensureAdvancedView(page);
-    const dirButton = activePanel(page).locator('.border-t .ms-auto button:has(svg.lucide-folder-tree)');
+    const dirButton = activePanel(page).locator(`${RIBBON_TABS} button:has(svg.lucide-folder-tree)`);
     await expect(dirButton).toBeVisible({ timeout: 15_000 });
     await dirButton.click();
 
@@ -127,8 +132,8 @@ test.describe('Dir side window scrolling', () => {
         // Clipped iff the panel's content is taller than the wrapper that's
         // supposed to bound it (block wrapper ⇒ panel overflows & is cut off).
         clipped: dirRoot.scrollHeight > wrapper.clientHeight + 1,
-      };
-    });
+    };
+  });
 
     expect(metrics, 'dir tree scroll chain not found in active panel').not.toBeNull();
     const m = metrics!;
@@ -153,5 +158,5 @@ test.describe('Dir side window scrolling', () => {
       `inner scroll box should overflow (scrollHeight ${m.scrollScrollH} > clientHeight ${m.scrollClientH})`,
     ).toBeGreaterThan(m.scrollClientH);
     expect(m.movedScrollTop, 'scrolling the dir list did not move scrollTop').toBeGreaterThan(0);
-  });
+});
 });

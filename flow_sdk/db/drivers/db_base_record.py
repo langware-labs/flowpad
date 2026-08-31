@@ -30,7 +30,7 @@ from flow_sdk.api.api_types.api_field import (
     is_db_excluded,
     sharing_policy,
 )
-from flow_sdk.api.api_types.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.types import EntityType
 from flow_sdk.utils.serialization import iso_to_datetime
 

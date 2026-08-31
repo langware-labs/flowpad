@@ -19,10 +19,9 @@ Mocked targets (existing module paths still in use after the refactor):
 """
 
 import json
-
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 
 TEST_API_KEY = "fp_production_testkey123456789abc"
 USER_INFO = {"id": "user_abc123", "name": "Test User", "email": "test@example.com"}
@@ -461,3 +460,24 @@ async def test_bootstrap_cloud_login_available_false(bootstrapped_client):
     desktop_info = payload.get("data", {}).get("desktop_info") or payload.get("desktop_info")
     assert desktop_info is not None
     assert desktop_info.get("cloud_login_available") is False
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_hub_outage_preserves_stored_login():
+    """A transient validation failure must not turn an outage into logout."""
+    from flow_sdk.server.routes.bootstrap import is_cloud_login_available
+
+    with (
+        patch("flow_sdk.cli.auth.secrets.is_secrets_enabled", return_value=True),
+        patch("flow_sdk.cli.auth.hub_login.get_api_key", return_value=TEST_API_KEY),
+        patch(
+            "flow_sdk.cli.auth.hub_login.validate_api_key_async",
+            new=AsyncMock(side_effect=ConnectionError("hub unavailable")),
+        ),
+        patch("flow_sdk.cli.auth.hub_login.delete_api_key") as delete_api_key,
+        patch("flow_sdk.cli.app_config.set_user") as set_user,
+    ):
+        assert await is_cloud_login_available() is False
+
+    delete_api_key.assert_not_called()
+    set_user.assert_not_called()

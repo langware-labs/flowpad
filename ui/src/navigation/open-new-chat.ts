@@ -54,7 +54,9 @@ export async function openNewChat(
 
   const process = await computeNode.createProcess(
     {
-      workdir: options.cwd || project?.fs_storage_mount_path,
+      // `?? undefined`: a project with no mount path has `null` there, and `workdir`
+      // is an optional string — undefined drops off the wire, null would be sent.
+      workdir: options.cwd || project?.fs_storage_mount_path || undefined,
       ...(projectId ? { projectId } : {}),
       ...(options.workerType ? { workerType: options.workerType } : {}),
       processType: ProcessKind.Chat,

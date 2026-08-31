@@ -1,10 +1,7 @@
 import {
   dataContext,
   detectLanguage,
-  downloadFile,
   EditorLanguage,
-  FSEntry,
-  fsManager,
   isImagePath,
   Shell,
   TypeId,
@@ -12,17 +9,15 @@ import {
 } from '@sdk';
 import { TabbedTerminal } from '@src/components/terminal';
 import { Button } from '@src/components/ui/button';
-import { InputDialog } from '@src/components/ui/input-dialog';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@src/components/ui/resizable';
 import { ScrollArea, ScrollBar } from '@src/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { useFS } from '@src/hooks/useFS';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { TabInfo, useEditorStore } from '@src/store/use-editor-store';
-import { ChevronDown, ChevronUp, Download, Eye, EyeOff, Pin, TerminalIcon, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Pin, TerminalIcon, X } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DirectoryTree, ItemHandler } from '../directory-tree';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import DiffViewer from './DiffViewer';
 import { EditorPane } from './EditorPane';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
@@ -62,7 +57,6 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
   const fs = useFS(effectiveTypeId);
 
   const { navigation, currentDock } = useDockNavigation();
-  const [showHiddenItems, setShowHiddenItems] = useState(false);
 
   // `?line=` on the dock (written by `DockPointer.forFile`) is a deep link into
   // the active file — e.g. an interface block's "Open in editor". Only the
@@ -74,117 +68,11 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
   }, [currentDock]);
 
   // Dialog state for file/folder creation
-  const [showFileInput, setShowFileInput] = useState(false);
-  const [showFolderInput, setShowFolderInput] = useState(false);
-  const pendingActionRef = useRef<{ item: FSEntry; callback: (name: string) => Promise<void> } | null>(null);
 
-  // Ref to trigger refresh of DirectoryTree
-  const [treeRefreshKey, setTreeRefreshKey] = useState(0);
-  const handleRefresh = useCallback(() => {
-    setTreeRefreshKey((prev) => prev + 1);
-  }, []);
 
-  // Create root FSEntry for the project directory (used by DirectoryTree)
-  const rootFolders = useMemo(() => {
-    if (!projectTypeId) return [];
-    return [
-      new FSEntry({
-        is_dir: true,
-        vfs_abs_path: `${projectTypeId.type}-${projectTypeId.id}/.`,
-        size: 0,
-        display_name: project?.displayName || t`Project`,
-      }),
-    ];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectTypeId, project?.displayName, treeRefreshKey, t]);
 
-  // ItemHandler for DirectoryTree with file/folder actions
-  const itemHandler = useMemo(
-    () =>
-      new ItemHandler({
-        actions: [
-          // ItemHandler.runSkillAction((item, e) => {
-          //   e.stopPropagation();
-          //   // Navigate to execute-flow page with the FSEntry (full VFS context)
-          //   navigation.openExecuteFlow({ file: item });
-          // }),
-          ItemHandler.createFileAction((item, e) => {
-            e.stopPropagation();
-            if (!projectTypeId) return;
 
-            pendingActionRef.current = {
-              item,
-              callback: async (fileName: string) => {
-                try {
-                  const newPath = `${item.relativePath}/${fileName}`.replace(/\/+/g, '/');
-                  await fsManager.writeFile(projectTypeId, newPath, '');
-                  handleRefresh();
-                  // Open the new file in editor
-                  navigation.openEditor(newPath);
-                } catch (error) {
-                  console.error('[CodeEditor] Failed to create file:', error);
-                }
-              },
-            };
-            setShowFileInput(true);
-          }),
-          ItemHandler.createFolderAction((item, e) => {
-            e.stopPropagation();
-            if (!projectTypeId) return;
 
-            pendingActionRef.current = {
-              item,
-              callback: async (folderName: string) => {
-                try {
-                  const newPath = `${item.relativePath}/${folderName}`.replace(/\/+/g, '/');
-                  await fsManager.mkdir(projectTypeId, newPath);
-                  handleRefresh();
-                } catch (error) {
-                  console.error('[CodeEditor] Failed to create folder:', error);
-                }
-              },
-            };
-            setShowFolderInput(true);
-          }),
-          ItemHandler.refreshAction((_item, e) => {
-            e.stopPropagation();
-            handleRefresh();
-          }),
-          // Delete is handled by DirectoryTree's built-in delete (enableBuiltInDelete=true)
-        ],
-      }),
-    [projectTypeId, navigation, handleRefresh],
-  );
-
-  // Dialog callbacks
-  const handleFileInputConfirm = useCallback((fileName: string) => {
-    if (pendingActionRef.current) {
-      void pendingActionRef.current.callback(fileName);
-      pendingActionRef.current = null;
-    }
-  }, []);
-
-  const handleFolderInputConfirm = useCallback((folderName: string) => {
-    if (pendingActionRef.current) {
-      void pendingActionRef.current.callback(folderName);
-      pendingActionRef.current = null;
-    }
-  }, []);
-
-  // Filter definition for hiding hidden files
-  const filterDefinitions = useMemo(
-    () => [
-      {
-        name: 'hidden' as const,
-        label: t`Hide hidden files`,
-        filterFn: (item: FSEntry) => !item.name.startsWith('.'),
-      },
-    ],
-    [t],
-  );
-
-  // Track enabled filters based on showHiddenItems toggle
-  const enabledFilters = useMemo(() => (showHiddenItems ? [] : ['hidden']), [showHiddenItems]);
 
   // Track open files for tab management (content loaded on demand)
   const [openFiles, setOpenFiles] = useState<EditorFile[]>([]);
@@ -210,11 +98,6 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
   const [pendingOpenFile, setPendingOpenFile] = useState<string | null>(null);
   const [diffTab, setDiffTab] = useState<{ checkpoint_hash: string } | null>(null);
 
-  // Convert activeTab to vfs_abs_path format for DirectoryTree selection
-  const selectedPath = useMemo(() => {
-    if (!activeTab || !projectTypeId) return null;
-    return `${projectTypeId.type}-${projectTypeId.id}/${activeTab}`;
-  }, [activeTab, projectTypeId]);
 
   useEffect(() => {
     setEditorTabs([...openTabs]);
@@ -306,18 +189,6 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
     [fs, effectiveTypeId],
   );
 
-  // Handle file selection from DirectoryTree
-  const handleFileSelect = useCallback(
-    (item: FSEntry | null) => {
-      if (!item || item.is_dir) {
-        // Null or folder - DirectoryTree handles expand/collapse
-        return;
-      }
-      // File - navigate to open in editor (URL-first approach)
-      navigation.openEditor(item.relativePath);
-    },
-    [navigation],
-  );
 
   // Sync with activePath prop (unified: handles both state-driven from URL and streaming content)
   useEffect(() => {
@@ -412,7 +283,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
       dataContext.setActiveShellId(runShell.id);
       dataContext.setActiveTerminalTargetTypeId(new TypeId(Shell.type, runShell.id));
 
-      if (!runShell.pty?.isLive) {
+      if (!runShell.ptyConnection?.isLive) {
         await runShell.start({
           cols: 80,
           rows: 24,
@@ -425,53 +296,6 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
     [setIsTerminalExpanded],
   );
 
-  const downloadAllFiles = useCallback(async () => {
-    if (!fs) return;
-    const allFilesBlob = await fs.downloadZip('/');
-    downloadFile({ name: 'flowpad-files.zip', content: allFilesBlob });
-  }, [fs]);
-
-  const renderExplorerPanel = () => (
-    <div className="h-full border-e bg-muted/20">
-      <div className="flex items-center justify-between border-b bg-muted/50 p-1">
-        <h2 className="p-2 text-sm font-medium text-foreground">
-          <Trans>Explorer</Trans>
-        </h2>
-        <div className="flex items-center">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setShowHiddenItems(!showHiddenItems)}
-            title={showHiddenItems ? t`Hide hidden files` : t`Show hidden files`}
-          >
-            {showHiddenItems ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => void downloadAllFiles()}
-            className="ms-auto"
-            title={t`Download all files`}
-          >
-            <Download className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-      <DirectoryTree
-        rootFolders={rootFolders}
-        selectedPath={selectedPath}
-        itemHandler={itemHandler}
-        filterDefinitions={filterDefinitions}
-        enabledFilters={enabledFilters}
-        events={{
-          onSelect: handleFileSelect,
-          onItemDoubleClick: handleFileSelect,
-          onItemDeleted: handleRefresh,
-        }}
-        className="h-full"
-      />
-    </div>
-  );
 
   const renderEditorContent = () => (
     <div className="flex h-full flex-col">
@@ -631,9 +455,6 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
     <>
       <div className="flex h-full w-full flex-col bg-background">
         {renderEditorContent()}
-        {/* Panels hidden -- code preserved for future use */}
-        {/* eslint-disable-next-line no-constant-binary-expression */}
-        {false && renderExplorerPanel()}
         {/* eslint-disable-next-line no-constant-binary-expression */}
         {false && renderTerminalPanel()}
         {/* eslint-disable-next-line no-constant-binary-expression */}
@@ -647,28 +468,8 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
       </div>
 
       {/* File creation dialog */}
-      <InputDialog
-        open={showFileInput}
-        onOpenChange={(open) => {
-          setShowFileInput(open);
-          if (!open) pendingActionRef.current = null;
-        }}
-        title={t`Create File`}
-        placeholder={t`Enter file name`}
-        onConfirm={handleFileInputConfirm}
-      />
 
       {/* Folder creation dialog */}
-      <InputDialog
-        open={showFolderInput}
-        onOpenChange={(open) => {
-          setShowFolderInput(open);
-          if (!open) pendingActionRef.current = null;
-        }}
-        title={t`Create Folder`}
-        placeholder={t`Enter folder name`}
-        onConfirm={handleFolderInputConfirm}
-      />
     </>
   );
 };

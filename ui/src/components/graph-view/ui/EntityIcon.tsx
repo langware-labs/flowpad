@@ -1,5 +1,5 @@
 import { useLingui } from '@lingui/react/macro';
-import type { APIEntity } from '@sdk';
+import type { APIEntity, AnyEntity } from '@sdk';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { glyphActionClassName } from '@src/components/entity-actions/action-button-styles';
 import { WikiTip } from '@src/components/wiki-tip';
@@ -48,7 +48,7 @@ export type EntityIconProps = Omit<LucideProps, 'ref' | 'type' | 'size'> &
   };
 
 export type EntityIconWithSubProps = EntityLocationLinkProps & {
-  entity: APIEntity<any>;
+  entity: AnyEntity;
   density?: EntityIconDensity;
   containerClassName?: string;
   typeStackClassName?: string;

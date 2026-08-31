@@ -93,7 +93,7 @@ class Tag(Entity):
         copies converge on the same deterministic id; a nameless construction
         falls back to uuid4 (and is rejected later by field validation).
         """
-        from flow_sdk.fs_store.identifier import mint_uuid
+        from flow_sdk.api.api_types.identifier import mint_uuid
 
         name = data.get("name") or ""
         if name:
@@ -154,6 +154,7 @@ SYSTEM_TAG_SEED: tuple[tuple[str, str, str], ...] = (
     # ── kind ontology ──
     ("application", "Applications", "Deployable application compositions"),
     ("application.web", "Web application", "A web app (folder or checkout that serves)"),
+    ("application.web.editor", "Asset editor", "A web app nested in an asset, which edits that asset"),
     ("workload", "Workloads", "Running compute shapes"),
     ("workload.service", "Service", "A long-running service"),
     ("workload.service.http", "HTTP service", "A long-running HTTP service"),

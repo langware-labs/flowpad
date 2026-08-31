@@ -23,11 +23,12 @@ import logging
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
-    from flow_sdk.ingest.models import IngestItem, IngestReport
+    from flow_sdk.builtin.source_item import SourceItemSpec
+    from flow_sdk.ingest.models import IngestReport
 
 logger = logging.getLogger(__name__)
 
-def emit_item_tag(item: "IngestItem", entity_id: str, status: str) -> None:
+def emit_item_tag(item: "SourceItemSpec", entity_id: str, status: str) -> None:
     """Announce one ingested record. The verb IS the status.
 
     ``unchanged`` is silent — a no-op poll costing nothing downstream is the
@@ -42,7 +43,7 @@ def emit_item_tag(item: "IngestItem", entity_id: str, status: str) -> None:
             f"ingest.{item.provider}.item.{status}",
             target_of("source_item", entity_id),
             {
-                "source_id": item.source_id,
+                "source_id": item.data_source_id,
                 "provider": item.provider,
                 "kind": item.kind,
                 "segment_key": item.segment_key,
@@ -50,7 +51,7 @@ def emit_item_tag(item: "IngestItem", entity_id: str, status: str) -> None:
                 "occurred_at": item.occurred_at,
                 "entity_id": entity_id,
             },
-            ctx={"scope": [target_of("data_source", item.source_id)]},
+            ctx={"scope": [target_of("data_source", item.data_source_id)]},
         )
     except Exception:
         logger.debug("ingest.on_tag: item emission failed", exc_info=True)

@@ -543,8 +543,9 @@ async def is_cloud_login_available() -> bool:
     will prompt before any subsequent login attempt.
 
     Returns False on any failure (no sentinel, no key, network error, invalid
-    token). Logout cleanup is the caller's responsibility — bootstrap only
-    reports the current validity.
+    token). Credential invalidation belongs to the hub client auth seam, which
+    can distinguish a real auth-failure envelope/local expiry from an outage or
+    an authorization denial. Bootstrap only reports current availability.
     """
     api_key = None
     try:
@@ -574,18 +575,10 @@ async def is_cloud_login_available() -> bool:
         await asyncio.wait_for(validate_api_key_async(api_key), timeout=3.0)
         return True
     except Exception:
-        # Stored token failed validation (expired, revoked, network error). When
-        # we definitely had a key, drop it from the keychain and clear the user
-        # record so the UI reflects logged-out state without further round-trips.
-        if api_key:
-            try:
-                from flow_sdk.cli.app_config import set_user
-                from flow_sdk.cli.auth.hub_login import delete_api_key
-
-                await asyncio.wait_for(asyncio.to_thread(delete_api_key), timeout=2.0)
-                set_user({})
-            except Exception:
-                pass
+        # Never erase credentials on a generic validation exception. The hub
+        # client hooks already invalidate on the only authoritative signals:
+        # local expiry and a 2xx auth-failure envelope. A connection failure,
+        # 5xx, or bare 401/403 may be transient or an authorization denial.
         return False
 
 
@@ -811,108 +804,69 @@ async def get_or_create_local_user() -> User:
     return user
 
 
-async def get_or_create_local_project(desktop_user: Optional[Entity] = None) -> Project:
-    """Get or create the @local project.
+async def _get_or_create_local(cls, *, name: str, owner: Optional[Entity]):
+    """Get or create the singleton ``@local`` row of *cls* (Project / Workspace).
 
-    Creates a Project entity with uname="local" if it doesn't exist.
-    Sets visitor_role to "owner" for unrestricted access and assigns desktop user as owner.
+    Both are the same recipe: a stable per-machine id, a ``uname="local"``
+    fallback lookup for rows minted before that id existed, and a create with
+    ``visitor_role="owner"`` that tolerates a concurrent creator.
 
-    Args:
-        desktop_user: The desktop User entity to set as owner
-
-    Migrated from FlowPad: flowpad/hub/core/desktop_loader.py (init_local_project)
+    Migrated from FlowPad: flowpad/hub/core/desktop_loader.py
+    (init_local_project / init_local_workspace).
     """
-    local_id = _local_entity_id("project")
+    entity_type = cls.__name__.lower()
+    local_id = _local_entity_id(entity_type)
 
-    project = await Project.get_by_id(local_id)
-    if project:
-        logging.info(f"@local project already exists (by stable id): {project.id}")
-        return project
-    project = await get_local_entity(Project)
-    if project:
-        if project.id != local_id:
+    entity = await cls.get_by_id(local_id)
+    if entity:
+        logging.info("@local %s already exists (by stable id): %s", entity_type, entity.id)
+        return entity
+    entity = await get_local_entity(cls)
+    if entity:
+        if entity.id != local_id:
             logging.warning(
-                "@local project has legacy random id %s; expected stable %s. "
+                "@local %s has legacy random id %s; expected stable %s. "
                 "Keeping existing row to preserve references — wipe the DB to migrate.",
-                project.id,
+                entity_type,
+                entity.id,
                 local_id,
             )
-        logging.info(f"@local project already exists: {project.id}")
-        return project
+        logging.info("@local %s already exists: %s", entity_type, entity.id)
+        return entity
 
-    logging.info("Creating @local project for desktop environment")
-    project = Project(
+    logging.info("Creating @local %s for desktop environment", entity_type)
+    entity = cls(
         id=local_id,
-        type="project",
+        type=entity_type,
         uname="local",
-        name="my_first_project",
+        name=name,
         visitor_role="owner",
     )
     try:
-        await project.save(owner=desktop_user)
+        await entity.save(owner=owner)
     except Exception as save_error:
         if "already exist" in str(save_error):
-            logging.info("@local project already exists (race/cache miss), fetching it")
+            logging.info("@local %s already exists (race/cache miss), fetching it", entity_type)
             # Bypass uname_cache in case it has a stale entry
-            existing = await Project.get_by_prop("uname", "local", "project")
+            existing = await cls.get_by_prop("uname", "local", entity_type)
             if existing:
                 return existing
         raise save_error
-    await project.set_visitor_role("owner")
-    logging.info(f"Created @local project: {project.id} with owner: {desktop_user.id if desktop_user else 'None'}")
-    return project
+    await entity.set_visitor_role("owner")
+    logging.info(
+        "Created @local %s: %s with owner: %s", entity_type, entity.id, owner.id if owner else "None"
+    )
+    return entity
+
+
+async def get_or_create_local_project(desktop_user: Optional[Entity] = None) -> Project:
+    """Get or create the @local project (uname="local", visitor_role="owner")."""
+    return await _get_or_create_local(Project, name="my_first_project", owner=desktop_user)
 
 
 async def get_or_create_local_workspace(desktop_user: Optional[Entity] = None) -> Workspace:
-    """Get or create the @local workspace.
-
-    Creates a Workspace entity with uname="local" if it doesn't exist.
-    Sets visitor_role to "owner" for unrestricted access and assigns desktop user as owner.
-
-    Args:
-        desktop_user: The desktop User entity to set as owner
-
-    Migrated from FlowPad: flowpad/hub/core/desktop_loader.py (init_local_workspace)
-    """
-    local_id = _local_entity_id("workspace")
-
-    workspace = await Workspace.get_by_id(local_id)
-    if workspace:
-        logging.info(f"@local workspace already exists (by stable id): {workspace.id}")
-        return workspace
-    workspace = await get_local_entity(Workspace)
-    if workspace:
-        if workspace.id != local_id:
-            logging.warning(
-                "@local workspace has legacy random id %s; expected stable %s. "
-                "Keeping existing row to preserve references — wipe the DB to migrate.",
-                workspace.id,
-                local_id,
-            )
-        logging.info(f"@local workspace already exists: {workspace.id}")
-        return workspace
-
-    logging.info("Creating @local workspace for desktop environment")
-    workspace = Workspace(
-        id=local_id,
-        type="workspace",
-        uname="local",
-        name="Local Desktop Workspace",
-        visitor_role="owner",
-    )
-    try:
-        await workspace.save(owner=desktop_user)
-    except Exception as save_error:
-        if "already exist" in str(save_error):
-            logging.info("@local workspace already exists (race/cache miss), fetching it")
-            # Bypass uname_cache in case it has a stale entry
-            existing = await Workspace.get_by_prop("uname", "local", "workspace")
-            if existing:
-                return existing
-        raise save_error
-    await workspace.set_visitor_role("owner")
-    logging.info(f"Created @local workspace: {workspace.id} with owner: {desktop_user.id if desktop_user else 'None'}")
-    return workspace
+    """Get or create the @local workspace (uname="local", visitor_role="owner")."""
+    return await _get_or_create_local(Workspace, name="Local Desktop Workspace", owner=desktop_user)
 
 
 @functools.lru_cache(maxsize=8)
@@ -1278,7 +1232,7 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
     from flow_sdk.db import get_db_driver  # noqa: PLC0415
     from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry  # noqa: PLC0415
     from flow_sdk.fs_store.fs_ref import FSRef as _FSRef  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown, markdown_id  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     fts_entries: list[FtsEntry] = []
     for proj in projects:
@@ -1295,11 +1249,9 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
                     # refactor 4f94fb92, and bootstrap must not stamp identity
                     # capsules into tracked repo/system docs. Deterministic id
                     # also makes this seeding idempotent across bootstraps.
-                    _md_ref = _FSRef(md_path)
-                    records = extract_markdown(_md_ref, markdown_id(_md_ref))
-                    if not records:
+                    rec = SchemaRegistry.get("markdown").record_for(_FSRef(md_path, read_only=True))
+                    if rec is None:
                         continue
-                    rec = records[0]
                     # System-project ownership is authoritative at seed time.
                     # A desktop clear recreates the project with a fresh id,
                     # while the shipped record metadata may still carry the

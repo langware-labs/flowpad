@@ -22,20 +22,34 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.indexer.functions.dataset import (
     dataset_asset_hash,
-    extract_dataset,
     iter_examples,
 )
 from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.unit.test_fs_store._dataset_tree import (
+    is_file as _is_file,
+)
+from tests.unit.test_fs_store._dataset_tree import (
+    keys as _keys,
+)
+from tests.unit.test_fs_store._dataset_tree import (
+    node as _node,
+)
+from tests.unit.test_fs_store._dataset_tree import (
+    paths as _paths,
+)
+from tests.unit.test_fs_store._dataset_tree import (
+    sidecar as _sidecar,
+)
 
 
 def _mint(ref: FSRef) -> str:
-    return SchemaRegistry.get("dataset").mint_entity_id(ref, derive=True, overwrite=True)
+    return SchemaRegistry.get("dataset").mint_entity_id(ref)
 
 
 def _extract(ref: FSRef):
-    return extract_dataset(ref, _mint(ref))
+    return SchemaRegistry.get("dataset").from_disk_fn(ref, _mint(ref))
 
 # do not increase timeout without approval — these are pure-sync parses (<1s).
 pytestmark = pytest.mark.timeout(5)
@@ -129,7 +143,7 @@ def test_csv_happy_path(tmp_path: Path) -> None:
     rec = records[0]
     assert rec.type == RecordType.DATASET
     assert rec.name == "QA set"
-    meta = rec.meta_dict()["metadata"]
+    meta = rec.meta_dict()
     assert meta["num_examples"] == 3
     assert meta["kind_counts"] == {"train": 2, "eval": 1}
 
@@ -157,8 +171,8 @@ def test_csv_field_spec_maps_columns(tmp_path: Path) -> None:
         dataset_id="ds-1",
     )
     assert len(rows) == 1
-    assert rows[0].input == "capital of France?"
-    assert rows[0].expected == "Paris"
+    assert _node(rows[0], "input") == "capital of France?"
+    assert _node(rows[0], "ground_truth") == "Paris"
     assert rows[0].metadata == {"difficulty": "easy"}
     assert rows[0].kind == ExampleKind.TRAIN  # no kind column → default
 
@@ -176,14 +190,14 @@ def test_io_folder_happy_path(tmp_path: Path) -> None:
     )
     records = _extract(FSRef(ds))
     assert len(records) == 1
-    meta = records[0].meta_dict()["metadata"]
+    meta = records[0].meta_dict()
     assert meta["num_examples"] == 2
     assert meta["kind_counts"] == {"eval": 1, "train": 1}
 
     rows = iter_examples(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-io")
     by_name = {r.metadata.get("kind", "train"): r for r in rows}
-    assert by_name["eval"].input == "hello"
-    assert by_name["eval"].expected == "world"
+    assert _node(by_name["eval"], "input") == "input.txt"
+    assert _node(by_name["eval"], "ground_truth") == "expected.txt"
     assert by_name["eval"].kind == ExampleKind.EVAL
 
 
@@ -195,8 +209,8 @@ def test_io_folder_missing_expected_is_none(tmp_path: Path) -> None:
     )
     rows = iter_examples(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-u")
     assert len(rows) == 1
-    assert rows[0].input == "prompt only"
-    assert rows[0].expected is None
+    assert _node(rows[0], "input") == "input.txt"
+    assert not _keys(rows[0], "ground_truth")
 
 
 # ── walker ────────────────────────────────────────────────────────────────────
@@ -281,8 +295,6 @@ def test_example_id_is_deterministic(tmp_path: Path) -> None:
 
 # ══ extended io_folder: slots, multi-output, consensus GT, sidecar metadata ══
 
-from flow_sdk.builtin.dataset import ArtifactKind  # noqa: E402
-
 
 def _one(ds: Path):
     rows = iter_examples(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-x")
@@ -290,35 +302,13 @@ def _one(ds: Path):
     return rows[0]
 
 
-# ── back-compat scalars coexist with structured slots ──
-
-def test_io_folder_backcompat_scalars(tmp_path: Path) -> None:
-    ds = _seed_io_dataset(
-        tmp_path, "bc",
-        examples={"0001": {"input": "hello", "expected": "world", "meta": {"kind": "eval"}}},
-    )
-    ex = _one(ds)
-    assert ex.input == "hello"
-    assert ex.expected == "world"
-    assert ex.kind == ExampleKind.EVAL
-    assert ex.metadata.get("kind") == "eval"
-    # structured slot exists alongside the scalar
-    assert ex.input_slot.primary.kind == ArtifactKind.FILE
-    assert ex.input_slot.primary.text == "hello"
-    assert ex.input_slot.primary.path == "input.txt"
-    # legacy expected.txt folded onto the ground_truth slot
-    assert ex.ground_truth_slot.name == "ground_truth"
-    assert ex.ground_truth_slot.primary.text == "world"
-
-
 # ── Rule 1: input file vs folder ──
 
 def test_input_file_with_extension(tmp_path: Path) -> None:
     ds = _seed_io_dataset(tmp_path, "im", examples={"0001": {"files": {"input.md": "# hi"}}})
     ex = _one(ds)
-    assert ex.input_slot.primary.kind == ArtifactKind.FILE
-    assert ex.input_slot.primary.path == "input.md"
-    assert ex.input == "# hi"
+    assert _is_file(_node(ex, "input"))
+    assert _node(ex, "input") == "input.md"
 
 
 def test_input_folder_lists_files(tmp_path: Path) -> None:
@@ -326,10 +316,8 @@ def test_input_folder_lists_files(tmp_path: Path) -> None:
         tmp_path, "if", examples={"0001": {"dirs": {"input": {"a.txt": "A", "b.txt": "B"}}}}
     )
     ex = _one(ds)
-    assert ex.input_slot.primary.kind == ArtifactKind.FOLDER
-    assert ex.input_slot.primary.files == ["input/a.txt", "input/b.txt"]
-    assert ex.input_slot.primary.text is None
-    assert ex.input == ""  # folder → no scalar text
+    assert not _is_file(_node(ex, "input"))
+    assert _paths(_node(ex, "input")) == ["input/a.txt", "input/b.txt"]
 
 
 def test_input_binary_not_read(tmp_path: Path) -> None:
@@ -337,10 +325,8 @@ def test_input_binary_not_read(tmp_path: Path) -> None:
         tmp_path, "ib", examples={"0001": {"files": {"input.pdf": b"%PDF-1.4\x00\xff"}}}
     )
     ex = _one(ds)  # must not raise UnicodeDecodeError
-    assert ex.input_slot.primary.kind == ArtifactKind.FILE
-    assert ex.input_slot.primary.path == "input.pdf"
-    assert ex.input_slot.primary.text is None
-    assert ex.input == ""
+    assert _is_file(_node(ex, "input"))
+    assert _node(ex, "input") == "input.pdf"  # referenced, never read
 
 
 def test_input_file_beats_folder(tmp_path: Path) -> None:
@@ -349,9 +335,9 @@ def test_input_file_beats_folder(tmp_path: Path) -> None:
         examples={"0001": {"files": {"input.txt": "scalar"}, "dirs": {"input": {"x.txt": "X"}}}},
     )
     ex = _one(ds)
-    assert ex.input_slot.primary.kind == ArtifactKind.FILE
-    assert ex.input == "scalar"
-    assert len(ex.input_slot.artifacts) == 1  # folder ignored
+    assert _is_file(_node(ex, "input"))
+    assert _node(ex, "input") == "input.txt"
+    assert len(_keys(ex, "input")) == 1  # folder ignored
 
 
 def test_input_layout_hint(tmp_path: Path) -> None:
@@ -372,9 +358,8 @@ def test_missing_input_skips_example(tmp_path: Path) -> None:
 def test_output_single_file(tmp_path: Path) -> None:
     ds = _seed_io_dataset(tmp_path, "o1", examples={"0001": {"input": "i", "files": {"output.txt": "out"}}})
     ex = _one(ds)
-    assert len(ex.output_slot.artifacts) == 1
-    assert ex.output_slot.primary.index is None
-    assert ex.output_slot.primary.text == "out"
+    assert _keys(ex, "output") == ["output"]
+    assert _node(ex, "output") == "output.txt"
 
 
 def test_output_folder(tmp_path: Path) -> None:
@@ -382,8 +367,8 @@ def test_output_folder(tmp_path: Path) -> None:
         tmp_path, "of", examples={"0001": {"input": "i", "dirs": {"output": {"o.json": "{}"}}}}
     )
     ex = _one(ds)
-    assert ex.output_slot.primary.kind == ArtifactKind.FOLDER
-    assert ex.output_slot.primary.files == ["output/o.json"]
+    assert not _is_file(_node(ex, "output"))
+    assert _paths(_node(ex, "output")) == ["output/o.json"]
 
 
 def test_output_numbered_ordered(tmp_path: Path) -> None:
@@ -392,10 +377,8 @@ def test_output_numbered_ordered(tmp_path: Path) -> None:
         examples={"0001": {"input": "i", "files": {"output-2.txt": "B", "output-1.txt": "A", "output-3.txt": "C"}}},
     )
     ex = _one(ds)
-    idxs = [a.index for a in ex.output_slot.artifacts]
-    assert idxs == [1, 2, 3]
-    ids = [a.id for a in ex.output_slot.artifacts]
-    assert len(set(ids)) == 3
+    idxs = _keys(ex, "output")
+    assert idxs == ["output-1", "output-2", "output-3"]
 
 
 def test_output_bare_and_numbered_coexist(tmp_path: Path) -> None:
@@ -404,7 +387,7 @@ def test_output_bare_and_numbered_coexist(tmp_path: Path) -> None:
         examples={"0001": {"input": "i", "files": {"output.txt": "bare", "output-1.txt": "one"}}},
     )
     ex = _one(ds)
-    assert [a.index for a in ex.output_slot.artifacts] == [None, 1]  # bare first
+    assert _keys(ex, "output") == ["output", "output-1"]  # bare first
 
 
 def test_output_numbered_folder_binary(tmp_path: Path) -> None:
@@ -413,14 +396,14 @@ def test_output_numbered_folder_binary(tmp_path: Path) -> None:
         examples={"0001": {"input": "i", "dirs": {"output-1": {"a.bin": b"\x00\x01"}}}},
     )
     ex = _one(ds)
-    assert ex.output_slot.primary.kind == ArtifactKind.FOLDER
-    assert ex.output_slot.primary.index == 1
-    assert ex.output_slot.primary.files == ["output-1/a.bin"]
+    assert not _is_file(_node(ex, "output"))
+    assert _keys(ex, "output") == ["output-1"]
+    assert _paths(_node(ex, "output")) == ["output-1/a.bin"]
 
 
 def test_output_never_feeds_expected(tmp_path: Path) -> None:
     ds = _seed_io_dataset(tmp_path, "one", examples={"0001": {"input": "i", "files": {"output.txt": "o"}}})
-    assert _one(ds).expected is None  # output is candidate, not gold
+    assert not _keys(_one(ds), "ground_truth")  # output is candidate, not gold
 
 
 # ── Rule 3: ground_truth file/folder + consensus + gold ──
@@ -428,8 +411,7 @@ def test_output_never_feeds_expected(tmp_path: Path) -> None:
 def test_gt_single_file(tmp_path: Path) -> None:
     ds = _seed_io_dataset(tmp_path, "g1", examples={"0001": {"input": "i", "files": {"ground_truth.txt": "gt"}}})
     ex = _one(ds)
-    assert ex.ground_truth_slot.primary.text == "gt"
-    assert ex.expected == "gt"
+    assert _node(ex, "ground_truth") == "ground_truth.txt"
 
 
 def test_gt_folder_structured(tmp_path: Path) -> None:
@@ -438,9 +420,8 @@ def test_gt_folder_structured(tmp_path: Path) -> None:
         examples={"0001": {"input": "i", "dirs": {"ground_truth": {"grade.json": '{"total":24}'}}}},
     )
     ex = _one(ds)
-    assert ex.ground_truth_slot.primary.kind == ArtifactKind.FOLDER
-    assert ex.ground_truth_slot.primary.files == ["ground_truth/grade.json"]
-    assert ex.expected is None  # structured folder gold → no scalar
+    assert not _is_file(_node(ex, "ground_truth"))
+    assert _paths(_node(ex, "ground_truth")) == ["ground_truth/grade.json"]
 
 
 def test_gt_multiple_annotations(tmp_path: Path) -> None:
@@ -451,8 +432,7 @@ def test_gt_multiple_annotations(tmp_path: Path) -> None:
         }}},
     )
     ex = _one(ds)
-    assert [a.index for a in ex.ground_truth_slot.artifacts] == [1, 2, 3]
-    assert len({a.id for a in ex.ground_truth_slot.artifacts}) == 3
+    assert _keys(ex, "ground_truth") == ["ground_truth-1", "ground_truth-2", "ground_truth-3"]
 
 
 def test_gt_takes_precedence_over_output(tmp_path: Path) -> None:
@@ -460,42 +440,30 @@ def test_gt_takes_precedence_over_output(tmp_path: Path) -> None:
         tmp_path, "gp",
         examples={"0001": {"input": "i", "files": {"output.txt": "o", "ground_truth.txt": "g"}}},
     )
-    assert _one(ds).expected == "g"
+    assert _node(_one(ds), "ground_truth") == "ground_truth.txt"
 
 
 def test_legacy_expected_maps_to_gt(tmp_path: Path) -> None:
     ds = _seed_io_dataset(tmp_path, "le", examples={"0001": {"input": "i", "expected": "w"}})
     ex = _one(ds)
-    assert ex.expected == "w"
-    assert ex.ground_truth_slot.name == "ground_truth"
-    # id is re-stamped under the ground_truth base, not "expected"
-    assert ex.ground_truth_slot.primary.id == str(
-        uuid.uuid5(uuid.NAMESPACE_DNS, f"{ex.id}:ground_truth")
-    )
+    # legacy expected.txt is re-keyed under ground_truth; the path is unchanged
+    assert _keys(ex, "ground_truth") == ["ground_truth"]
+    assert _node(ex, "ground_truth") == "expected.txt"
 
 
 def test_native_gt_wins_over_legacy_expected(tmp_path: Path) -> None:
+    """A native ``ground_truth`` beats the legacy alias — and the alias is DROPPED.
+
+    Asserts the whole key set, not just the winner: `expected.txt` leaving the
+    tree entirely is the actual behaviour and nothing else pinned it.
+    """
     ds = _seed_io_dataset(
-        tmp_path, "ng",
-        examples={"0001": {"input": "i", "expected": "w", "files": {"ground_truth.txt": "g"}}},
-    )
-    assert _one(ds).expected == "g"
-
-
-# ── Rule 4: sidecars + metadata files ──
-
-def test_slot_sidecar_attaches_to_artifact(tmp_path: Path) -> None:
-    ds = _seed_io_dataset(
-        tmp_path, "sc",
-        examples={"0001": {"files": {
-            "input.pdf": b"%PDF",
-            "input.json": _doc(metadata={"pages": 3}, data={"raw": [1, 2]}),
-        }}},
+        tmp_path, "ngt",
+        examples={"0001": {"input": "i", "expected": "legacy", "files": {"ground_truth.txt": "g"}}},
     )
     ex = _one(ds)
-    assert ex.input_slot.primary.metadata == {"pages": 3}   # flowpad-managed section
-    assert ex.input_slot.primary.data == {"raw": [1, 2]}    # free section
-    assert ex.input_slot.primary.kind == ArtifactKind.FILE  # pdf is the data, json is the sidecar
+    assert ex.output is None and _keys(ex, "ground_truth") == ["ground_truth"]   # the legacy alias is dropped
+    assert _node(ex, "ground_truth") == "ground_truth.txt"
 
 
 def test_numbered_sidecar_attaches_per_index(tmp_path: Path) -> None:
@@ -506,9 +474,8 @@ def test_numbered_sidecar_attaches_per_index(tmp_path: Path) -> None:
                            "files": {"ground_truth-2.json": _doc(metadata={"rater": "B"})}}},
     )
     ex = _one(ds)
-    gt = ex.ground_truth_slot.primary
-    assert gt.index == 2
-    assert gt.metadata == {"rater": "B"}
+    assert _keys(ex, "ground_truth") == ["ground_truth-2"]
+    assert _sidecar(ex, "ground_truth-2.json").get("metadata", {}) == {"rater": "B"}
 
 
 def test_orphan_bare_sidecar_to_slot_metadata(tmp_path: Path) -> None:
@@ -517,18 +484,48 @@ def test_orphan_bare_sidecar_to_slot_metadata(tmp_path: Path) -> None:
         examples={"0001": {"input": "i", "files": {"output.json": _doc(metadata={"note": "x"})}}},
     )
     ex = _one(ds)
-    assert ex.output_slot.artifacts == []
-    assert ex.output_slot.metadata == {"note": "x"}
+    assert not _keys(ex, "output")  # a lone sidecar is not data
+    assert _sidecar(ex, "output.json").get("metadata", {}) == {"note": "x"}
 
 
-def test_json_is_metadata_not_data(tmp_path: Path) -> None:
+def test_sidecar_only_gold_is_not_annotated(tmp_path: Path) -> None:
+    """A lone ``ground_truth.json`` is metadata ABOUT gold, not gold.
+
+    It used to be counted as annotated (the slot existed because a sidecar did),
+    which disagreed with the example's own absent gold. "Annotated" now means a
+    real gold DATA key.
+    """
     ds = _seed_io_dataset(
-        tmp_path, "jmd",
+        tmp_path, "sog",
         examples={"0001": {"input": "i", "files": {"ground_truth.json": _doc(metadata={"m": 1})}}},
     )
-    ex = _one(ds)
-    assert ex.expected is None  # a bare .json is metadata, not gold data
-    assert ex.ground_truth_slot.metadata == {"m": 1}
+    assert not _keys(_one(ds), "ground_truth")
+    meta = _extract(FSRef(ds))[0].meta_dict()
+    assert meta["num_annotated"] == 0
+
+
+def test_sidecar_only_input_skips_example(tmp_path: Path) -> None:
+    """An example whose only ``input*`` entry is a sidecar has no input at all."""
+    ds = _seed_io_dataset(
+        tmp_path, "soi",
+        examples={"0001": {"files": {"input.json": _doc(metadata={"pages": 1})}}},
+    )
+    assert iter_examples(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-x") == []
+
+
+def test_occurrence_order_rides_on_key_order(tmp_path: Path) -> None:
+    """Ordering (bare first, then numbered ascending) is carried by KEY ORDER now.
+
+    Dict equality ignores key order, so the whole-tree comparison in the loader
+    suite cannot catch an ordering regression — this asserts the sequence.
+    """
+    ds = _seed_io_dataset(
+        tmp_path, "ord",
+        examples={"0001": {"input": "i", "files": {
+            "output-2.txt": "b", "output.txt": "bare", "output-10.txt": "j", "output-1.txt": "a",
+        }}},
+    )
+    assert _keys(_one(ds), "output") == ["output", "output-1", "output-2", "output-10"]
 
 
 def test_example_json_canonical(tmp_path: Path) -> None:
@@ -596,24 +593,10 @@ def test_dataset_json_extra_keys_preserved_in_record(tmp_path: Path) -> None:
         manifest_data={"owner": "eran"},
     )
     rec = _extract(FSRef(ds))[0]
-    assert rec.meta_dict()["metadata"]["data"]["owner"] == "eran"  # free dataset data section
+    assert rec.meta_dict()["data"]["owner"] == "eran"  # free dataset data section
 
 
 # ── determinism / counts / hash ──
-
-def test_slot_ids_deterministic(tmp_path: Path) -> None:
-    ds = _seed_io_dataset(
-        tmp_path, "sid",
-        examples={"0001": {"input": "i", "files": {"output-1.txt": "a", "output-2.txt": "b"}}},
-    )
-    r1 = iter_examples(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-x")
-    r2 = iter_examples(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-x")
-    ids1 = [a.id for a in r1[0].output_slot.artifacts]
-    ids2 = [a.id for a in r2[0].output_slot.artifacts]
-    assert ids1 == ids2
-    ex_id = r1[0].id
-    assert ids1[0] == str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{ex_id}:output-1"))
-
 
 def test_extract_surfaces_new_counts(tmp_path: Path) -> None:
     ds = _seed_io_dataset(
@@ -624,7 +607,7 @@ def test_extract_surfaces_new_counts(tmp_path: Path) -> None:
             "0003": {"input": "i", "files": {"ground_truth.txt": "g"}},       # annotated
         },
     )
-    meta = _extract(FSRef(ds))[0].meta_dict()["metadata"]
+    meta = _extract(FSRef(ds))[0].meta_dict()
     assert meta["num_examples"] == 3
     assert meta["num_binary_inputs"] == 1
     assert meta["num_multi_output"] == 1
@@ -668,19 +651,18 @@ def test_mixed_dataset_endtoend(tmp_path: Path) -> None:
     legacy, rich = rows[0], rows[1]
 
     # legacy example: scalars intact
-    assert legacy.input == "legacy-in"
-    assert legacy.expected == "legacy-gold"
+    assert _node(legacy, "input") == "input.txt"
+    assert _node(legacy, "ground_truth") == "expected.txt"
     assert legacy.kind == ExampleKind.EVAL
 
     # rich example: structured slots
-    assert rich.input_slot.primary.kind == ArtifactKind.FOLDER
-    assert rich.input == ""
-    assert [a.index for a in rich.output_slot.artifacts] == [1, 2]
-    assert rich.ground_truth_slot.primary.metadata == {"rater": "A"}  # bare sidecar → bare folder artifact
-    assert [a.index for a in rich.ground_truth_slot.artifacts] == [None, 2]
+    assert not _is_file(_node(rich, "input"))
+    assert _keys(rich, "output") == ["output-1", "output-2"]
+    assert _sidecar(rich, "ground_truth.json").get("metadata", {}) == {"rater": "A"}  # bare sidecar → bare folder artifact
+    assert _keys(rich, "ground_truth") == ["ground_truth", "ground_truth-2"]
     assert rich.layout == "pages"
 
-    meta = _extract(FSRef(ds))[0].meta_dict()["metadata"]
+    meta = _extract(FSRef(ds))[0].meta_dict()
     assert meta["num_examples"] == 2
     assert meta["num_multi_output"] == 1
     assert meta["num_annotated"] == 2  # both examples have a ground_truth slot
@@ -719,9 +701,9 @@ def test_bare_sidecar_two_section(tmp_path: Path) -> None:
                            "files": {"output.json": _doc(metadata={"k": 1}, data={"free": True})}}},
     )
     ex = _one(ds)
-    assert ex.output_slot.artifacts == []
-    assert ex.output_slot.metadata == {"k": 1}
-    assert ex.output_slot.data == {"free": True}
+    assert not _keys(ex, "output")  # a lone sidecar is not data
+    assert _sidecar(ex, "output.json").get("metadata", {}) == {"k": 1}
+    assert _sidecar(ex, "output.json").get("data", {}) == {"free": True}
 
 
 def test_example_meta_two_section_merge(tmp_path: Path) -> None:
@@ -746,17 +728,54 @@ def test_dataset_json_two_section(tmp_path: Path) -> None:
         manifest={"data_layout": "io_folder", "title": "T"},
         manifest_data={"owner": "eran", "team": "ml"},
     )
-    meta = _extract(FSRef(ds))[0].meta_dict()["metadata"]
+    meta = _extract(FSRef(ds))[0].meta_dict()
     assert meta["data_layout"] == "io_folder"          # known field from metadata section
     assert meta["data"] == {"owner": "eran", "team": "ml"}  # free dataset data section
 
 
-def test_dataset_schema_passthrough(tmp_path: Path) -> None:
-    schema = {"input": {"scan": {"type": "object"}}}
+def test_dataset_spec_is_parsed_and_compacted(tmp_path: Path) -> None:
+    """The spec slot is a `DataSpec`, not an opaque blob.
+
+    Stored in the authoring form it was written in — a dict is an object, a
+    string is a kind — with kinds normalized through the tag grammar, so the
+    manifest a human reads back is the manifest they wrote.
+    """
     ds = _seed_io_dataset(
-        tmp_path, "schema",
+        tmp_path, "spec",
         examples={"0001": {"input": "i"}},
-        manifest={"data_layout": "io_folder", "schema": schema},
+        manifest={"data_layout": "io_folder",
+                  "spec": {"examples": [{"input": {"category": "  String  "},
+                                         "output": {"attachments": ["content.file"]}}]}},
     )
-    meta = _extract(FSRef(ds))[0].meta_dict()["metadata"]
-    assert meta["schema"] == schema  # opaque known field, surfaced verbatim
+    meta = _extract(FSRef(ds))[0].meta_dict()
+    assert meta["spec"] == {"examples": [{"input": {"category": "string"},
+                                          "output": {"attachments": ["content.file"]}}]}
+
+
+def test_dataset_without_a_spec_declares_none(tmp_path: Path) -> None:
+    """Declaring no shape is legal — and the key is simply ABSENT, so indexing an
+    existing dataset does not rewrite its metadata to add an explicit null."""
+    ds = _seed_io_dataset(
+        tmp_path, "no-spec",
+        examples={"0001": {"input": "i"}},
+        manifest={"data_layout": "io_folder"},
+    )
+    assert "spec" not in _extract(FSRef(ds))[0].meta_dict()
+
+
+def test_a_malformed_spec_degrades_the_slot_not_the_dataset(tmp_path: Path) -> None:
+    """A bad spec must never cost the examples.
+
+    Raising out of the extractor would drop every Example record it also emits;
+    the walk marks only the dataset's own id as seen before parsing, so an
+    `orphan_action=DELETE` sweep would then reap example rows that parsed fine.
+    """
+    ds = _seed_io_dataset(
+        tmp_path, "bad-spec",
+        examples={"0001": {"input": "i"}},
+        manifest={"data_layout": "io_folder",
+                  "spec": {"examples": [{"input": {"a": "Not A Kind!"}, "output": ["x", "y"]}]}},   # bad kind + 2-list
+    )
+    records = _extract(FSRef(ds))
+    assert "spec" not in records[0].meta_dict()
+    assert records[0].meta_dict()["num_examples"] == 1  # the row survived

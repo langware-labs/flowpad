@@ -1,5 +1,5 @@
 """Type metadata for WHITEBOARD."""
-from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, folder_capsule_id
+from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, folder_md_identity
 from flow_sdk.fs_store.indexer.functions.whiteboard import (
     extract_whiteboard,
     whiteboard_asset_hash,
@@ -27,6 +27,6 @@ WHITEBOARD = TypeMetadata(
     main_file="WHITE_BOARD.md",
     from_disk_fn=extract_whiteboard,
     capsules=(IDENTITY_CAPSULE,),
-    identity_backend=capsule_identity(folder_capsule_id, whiteboard_id_from_folder),
+    identity_carrier=folder_md_identity(whiteboard_id_from_folder),
     asset_hash_fn=whiteboard_asset_hash,
 )

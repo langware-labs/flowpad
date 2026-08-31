@@ -14,7 +14,6 @@ merges the flags onto the existing row.
 from __future__ import annotations
 
 import json
-import uuid
 from pathlib import Path
 
 try:

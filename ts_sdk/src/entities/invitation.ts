@@ -1,5 +1,5 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 
 export interface IInvitation extends IEntity {
@@ -20,6 +20,12 @@ export interface IInvitation extends IEntity {
   sender_name?: string;
   sender_user_id?: string;
 }
+
+// `implements IInvitation` only checks the class; it contributes no members, so every
+// field declared solely on IInvitation read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Invitation extends EntityMerge<IInvitation> {}
 
 @registerEntity
 export class Invitation extends APIEntity<Invitation> implements IInvitation {
@@ -54,7 +60,7 @@ export class Invitation extends APIEntity<Invitation> implements IInvitation {
   }
 }
 
-export interface DeclineInvitationParams {
+export type DeclineInvitationParams = {
   invitation_id: string;
 }
 

@@ -77,9 +77,7 @@ export class Wiki extends APIEntity<Wiki> {
   }
 
   async bind(word: string, target: TypeId): Promise<WikiEntry> {
-    const action = new ActionInfo('bind', Wiki.type, this.id, 'POST');
-    action.bodyParameters = { word, target_typeid: target.toString() };
-    const result = await dataManager.callAction<void, IEntity>(action);
+    const result = await this.post<IEntity>('bind', { word, target_typeid: target.toString() });
     return dataManager.updateEntityFromJson<WikiEntry>(result);
   }
 

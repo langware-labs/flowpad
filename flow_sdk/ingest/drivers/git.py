@@ -25,9 +25,8 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
 
-from flow_sdk.ingest.driver import FetchResult, SetupVerdict, SegmentCursorView, SegmentRef
+from flow_sdk.ingest.driver import IngestDriver, FetchResult, SegmentCursorView, SegmentRef, SetupVerdict
 from flow_sdk.ingest.health import SourceError
 from flow_sdk.utils.git import _run_git, git_remote_url
 
@@ -42,10 +41,9 @@ RENAME_SIMILARITY = "50%"
 
 
 def _repo_of(source) -> Path:
-    """The repository root, normalized once. ``GitDriver.source_root`` is the
-    optional-valued view of this, so both spellings resolve identically — a
-    driver that held an unresolved path while ``reflect`` held a resolved one
-    would compute ``relative_to`` against a different prefix than it stamps."""
+    """The repository root, normalized once. ``GitDriver.origin_for`` stamps
+    exactly this, so the driver and reflection compute ``relative_to`` against
+    the same prefix."""
     raw = (source.config or {}).get("repo") or ""
     if not raw:
         raise SourceError.config("no_repo", "config.repo is not set")
@@ -79,22 +77,31 @@ def _head(repo: Path) -> str:
     return _git(repo, "rev-parse", "HEAD").strip()
 
 
-class GitDriver:
+class GitDriver(IngestDriver):
     provider = "git"
     kind = "datasource.vcs.git"
     #: Declared for protocol symmetry only. This driver never produces an
-    #: IngestItem — its payload lands as files, not as records.
+    #: SourceItemSpec — its payload lands as files, not as records.
     record_kind = ""
     #: A tracked file is not ours to rewrite. Identity comes from `origin_id`,
     #: so the working tree stays byte-clean and `git status` after an index
     #: pass shows nothing.
     stamps_identity = False
 
-    def source_root(self, source):
-        """The repository root — refs are repo-relative, and must stay so."""
+    def origin_for(self, source):
+        """The checkout, as the origin refs are relative to.
+
+        A ``LocalOrigin`` even when the repository has a remote: ``config.repo``
+        IS the tree this driver diffs, and what lands locally is what was
+        committed there — pushed or not. A repository that has to be obtained
+        first is a ``GitOrigin``, which reflection materializes through the
+        origin driver; that is a different source configuration, not this one.
+        """
+        from flow_sdk.fs_store.origin.local_origin import local_origin_for_path  # noqa: PLC0415
+
         if not ((source.config or {}).get("repo") or ""):
             return None
-        return _repo_of(source)
+        return local_origin_for_path(_repo_of(source))
 
     def origin_id_for(self, source, ref: str) -> str:
         """``GitOrigin.key()`` — the repo-relative position of this asset.
@@ -108,7 +115,7 @@ class GitDriver:
         inode handle is not — so a deleted or renamed-from path still resolves
         to its row.
         """
-        from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
+        from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
 
         repo = _repo_of(source)
         rel = Path(ref).resolve().relative_to(repo).as_posix()

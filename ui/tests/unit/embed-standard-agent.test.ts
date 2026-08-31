@@ -17,7 +17,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  */
 
 const apiMock = vi.hoisted(() => ({ get: vi.fn() }));
-vi.mock('@sdk', () => ({ apiClient: apiMock }));
+// The listing lives in vibe-personas, which imports the client as `@sdk/client`'s
+// default export; the SDK barrel re-exports it as `apiClient`. Mock both spellings.
+vi.mock('@sdk/client', () => ({ default: apiMock }));
+vi.mock('@sdk', () => ({ apiClient: apiMock, AgentKind: { Vibe: 'vibe' } }));
 
 /**
  * The resolved ref is cached in a module-level variable, so every test needs a

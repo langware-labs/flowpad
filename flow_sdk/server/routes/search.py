@@ -42,9 +42,7 @@ async def _entity_asset_ref(ent) -> str:
             if ent_name:
                 rec = FSRecord.load_or_none(ent.type or ent.get_type(), ent_name)
         if rec:
-            ar = getattr(rec, "_asset_ref", None)
-            if ar is not None:
-                return getattr(ar, "path", None) or ""
+            return rec.asset_path
     except Exception:
         pass
     return ""

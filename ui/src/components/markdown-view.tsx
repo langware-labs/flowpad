@@ -1,6 +1,5 @@
-import { copyToClipboard } from '@sdk';
-import { Check, Copy } from 'lucide-react';
-import React, { useRef, useState } from 'react';
+import { CopyButton } from '@src/components/ui/copy-button';
+import React, { useRef } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
@@ -29,7 +28,6 @@ function extractLanguage(children: React.ReactNode): string {
  */
 function CodeBlock({ children, codeChrome }: { children: React.ReactNode; codeChrome: boolean }) {
   const preRef = useRef<HTMLPreElement>(null);
-  const [copied, setCopied] = useState(false);
   const { t } = useLingui();
 
   if (!codeChrome) {
@@ -44,11 +42,6 @@ function CodeBlock({ children, codeChrome }: { children: React.ReactNode; codeCh
   }
 
   const language = extractLanguage(children);
-  const copy = async () => {
-    await copyToClipboard(preRef.current?.textContent ?? '');
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
 
   return (
     <div dir="ltr" className="group my-3 overflow-hidden rounded-lg border bg-muted/60">
@@ -56,15 +49,13 @@ function CodeBlock({ children, codeChrome }: { children: React.ReactNode; codeCh
         <span className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
           {language || t`code`}
         </span>
-        <button
-          type="button"
-          onClick={() => void copy()}
-          aria-label={t`Copy code`}
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-          {copied ? t`Copied` : t`Copy`}
-        </button>
+        <CopyButton
+          value={() => preRef.current?.textContent ?? ''}
+          title={t`Copy code`}
+          label={t`Copy`}
+          copiedLabel={t`Copied`}
+          className="rounded px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        />
       </div>
       <pre
         ref={preRef}

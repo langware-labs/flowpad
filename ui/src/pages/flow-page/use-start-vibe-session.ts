@@ -18,6 +18,7 @@ import { notify } from '@src/notifications';
 import { appendUploadedFileRefs } from '@src/utils/upload-to-input-dir';
 import { useLingui } from '@lingui/react/macro';
 import { useCallback } from 'react';
+import { systemSubagentRef, systemVibeKindSubagentRefs } from './vibe-personas';
 import { chatTargetForProject } from '@src/lib/chat-target';
 import { VIBE_MODEL_DEFAULT, type VibeModelTier } from './vibe-model-select';
 import type { WorkerType } from '@src/components/workers/worker-types';
@@ -41,16 +42,6 @@ import type { WorkerType } from '@src/components/workers/worker-types';
 // what the seam expects: `load_embedded_subagent_action` parses the file with
 // `extract_subagent_from_path`, and the Agent asset has no subagent `name`, so
 // it materialized as a nameless "you are the 'agent' agent".
-let vibeSubagentRefCache: string | null = null;
-async function resolveVibeSubagentRef(): Promise<string | null> {
-  if (vibeSubagentRefCache) return vibeSubagentRefCache;
-  const rows = await apiClient.get<{ name?: string; scope?: string; asset_ref?: string }[]>(
-    '/graph/subagent?include_system=true',
-  );
-  vibeSubagentRefCache = (rows ?? []).find((r) => r.name === 'vibe' && r.scope === 'system')?.asset_ref ?? null;
-  return vibeSubagentRefCache;
-}
-
 /** Minimal navigation surface the launcher needs (from useDockNavigation). */
 type OpenShell = { openShellProcess: (procId: string, opts?: { viewMode?: ViewMode }) => void };
 
@@ -64,7 +55,7 @@ type OpenShell = { openShellProcess: (procId: string, opts?: { viewMode?: ViewMo
  */
 export async function embedVibeSubagent(proc: AgenticProcess): Promise<void> {
   try {
-    const vibeRef = await resolveVibeSubagentRef();
+    const vibeRef = await systemSubagentRef('vibe');
     if (vibeRef) await proc.loadEmbeddedSubagent(vibeRef);
     else console.warn('[Vibe] vibe sub-agent not indexed; continuing without persona');
   } catch (e) {
@@ -88,6 +79,10 @@ export async function embedVibeSubagent(proc: AgenticProcess): Promise<void> {
  * list), scoped to the process's project.
  */
 async function embedVibeKindSubagents(proc: AgenticProcess): Promise<void> {
+  // SDK-shipped personas first (e.g. `data-integrations`): they ride every vibe
+  // session, and only surface with include_system=true — the same raw route
+  // the standard vibe persona is resolved through.
+  await Promise.all((await systemVibeKindSubagentRefs()).map((ref) => proc.loadEmbeddedSubagent(ref)));
   const projectId = proc.project_id;
   if (!projectId) return;
   const req = new QueryRequest({

@@ -1,5 +1,5 @@
 import { APIEntity, registerEntity } from '../../APIEntity';
-import { IEntity } from '../../IEntity';
+import { IEntity, EntityMerge } from '../../IEntity';
 import type { JourneyGraph } from './journey-graph';
 
 /** new → launched → complete, plus `restarted` for a superseded journal. */
@@ -22,6 +22,12 @@ export interface IJourneyJournal extends IEntity {
   steps_left?: number;
   entries?: JourneyJournalEntry[];
 }
+
+// `implements IJourneyJournal` only checks the class; it contributes no members, so every
+// field declared solely on IJourneyJournal read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface JourneyJournal extends EntityMerge<IJourneyJournal> {}
 
 /**
  * Per-user progress through a `Journey` — and THE object every journey

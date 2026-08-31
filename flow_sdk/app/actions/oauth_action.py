@@ -168,18 +168,7 @@ async def _handle_status(provider: str) -> ApiResponse:
     """
     try:
         if provider == "anthropic":
-            credentials, error = await get_anthropic_token_for_current_user()
-            if error is not None:
-                return ApiSuccessResponse(
-                    message="Connection status checked",
-                    data={
-                        "status": "error",
-                        "has_token": False,
-                        "is_attached": False,
-                        "auth_method": "anthropic",
-                        "error": error,
-                    },
-                )
+            credentials = await get_anthropic_token_for_current_user()
             return ApiSuccessResponse(
                 message="Connection status checked",
                 data={
@@ -191,19 +180,7 @@ async def _handle_status(provider: str) -> ApiResponse:
             )
 
         if provider == "github":
-            token, error = await _get_github_token_for_current_user()
-            if error is not None:
-                # SOD driver outage / FK ValueError / DB error — distinct from "no token".
-                return ApiSuccessResponse(
-                    message="Connection status checked",
-                    data={
-                        "status": "error",
-                        "has_token": False,
-                        "is_attached": False,
-                        "auth_method": "github",
-                        "error": error,
-                    },
-                )
+            token = await _get_github_token_for_current_user()
             return ApiSuccessResponse(
                 message="Connection status checked",
                 data={
@@ -478,45 +455,12 @@ async def _handle_test(provider: str) -> ApiResponse:
     return ApiSuccessResponse(data=result.as_data())
 
 
-async def _get_github_token_for_current_user() -> tuple[str | None, str | None]:
-    """Look up the current request's user and return ``(token, error)``.
+async def _get_github_token_for_current_user() -> str | None:
+    """The current request user's GitHub token via ``token_for``'s tiers
+    (request user → local user → hub). Kept as a name: tests patch it here."""
+    from flow_sdk.core.oauth.provider_registry import GITHUB, token_for  # noqa: PLC0415
 
-    Returns ``(token, None)`` on success (token may be None if no SOD entry).
-    Returns ``(None, error_str)`` when something went wrong — so callers can
-    distinguish a genuine 'no credential' from an infrastructure failure."""
-    try:
-        from flow_sdk.builtin.user import User
-        from flow_sdk.request_context.methods import get_user_credentials
-
-        request_info = get_current_request_info()
-        if not request_info or not getattr(request_info, "user", None):
-            return None, None  # no request user → treat as missing (not an error)
-        user = await User.get_by_typeid(request_info.user)
-        if not user:
-            return None, None
-        # Same FK convention as the write side in record_credential — and the
-        # same NAME source, so a rename cannot leave the write and read halves
-        # pointing at different SOD entries.
-        try:
-            token = await get_user_credentials(user, _github_credentials_name(), user.id)
-            return token, None
-        except KeyError:
-            # Standard "no SOD entry" — distinct from infrastructure errors below.
-            return None, None
-    except Exception as e:
-        logger.warning(f"github token lookup failed: {e}")
-        return None, str(e)
-
-
-def _github_credentials_name() -> str:
-    """The SOD entry GitHub's token lives in, from the registry.
-
-    The fallback keeps a de-registered provider readable rather than turning a
-    lookup into a crash — the same shape `flow_source_control` uses.
-    """
-    from flow_sdk.core.oauth.provider_registry import GITHUB, user_credentials_name  # noqa: PLC0415
-
-    return user_credentials_name(GITHUB) or "github_credentials"
+    return await token_for(GITHUB)
 
 
 async def _handle_github_disconnect() -> ApiResponse:
@@ -531,7 +475,10 @@ async def _handle_github_disconnect() -> ApiResponse:
         user = await User.get_by_typeid(request_info.user)
         if not user:
             return ApiFailResponse(message="User not found")
-        name = _github_credentials_name()
+        from flow_sdk.core.oauth import resolve_user_credentials_name  # noqa: PLC0415
+        from flow_sdk.core.oauth.provider_registry import GITHUB  # noqa: PLC0415
+
+        name = await resolve_user_credentials_name(GITHUB) or "github_credentials"
         await delete_user_credentials(user, name, user.id)
         # Drop the visibility row too, or the provider keeps reading CONNECTED.
         from flow_sdk.app.actions.desktop_oauth import _drop_credential_row  # noqa: PLC0415

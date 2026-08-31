@@ -327,11 +327,11 @@ Serialized wire format (`to_dict()`):
 | `to_entity` | `str` | `"{entity_type}-{entity_id}"` in hyphen-separated TypeId format |
 | `data` | `dict` or `None` | Entity data dict (omitted when `None`, e.g. for delete) |
 
-There is also a Pydantic version defined in `flow_sdk/api/messages.py` (`DataOpMessage` extends `EntityMessage` which extends `BaseMessage`; `EntityMessage.to_entity` is a `TypeId`) used in contexts where Pydantic model validation is needed. The `resource_tracker.py` version is a plain class used inside the notification path to avoid circular imports. `_to_message_dict` accepts a plain dict, any object with `model_dump()` (the Pydantic form), or any object with `to_dict()` (this plain form).
+The one definition is the Pydantic `DataOpMessage` in `flow_sdk/api/api_types/messages.py` (`DataOpMessage` extends `EntityMessage` which extends `BaseMessage`; `EntityMessage.to_entity` is a `TypeId`), re-exported by `flow_sdk/api/messages.py`. `resource_tracker.py` no longer carries a plain-class twin: `_to_message_dict` accepts a plain dict or any object with `model_dump()`, and stamps the process-wide wire `instance_id` at the one outbound funnel.
 
 ### WSMessageType Enum
 
-**File:** `flow_sdk/api/messages.py`
+**File:** `flow_sdk/api/api_types/messages.py` (re-exported by `flow_sdk/api/messages.py`, which adds only the app-only frames: `PrivacyModeMessage`, `ToplogStateMessage`, `TagMessage`, `BroadcastMessage`, `LlmConfigMessage`)
 
 | Value | String | Purpose |
 |-------|--------|---------|

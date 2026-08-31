@@ -1,25 +1,11 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
-import { apiBase } from '../_shared/api';
+import { waitForIndexerIdle, apiBase } from '../_shared/api';
 
 const API = apiBase();
 
 // Poll the backend's authoritative activity-status until the indexer is idle
 // (data === null). Bounded so it never silently rides past the per-test cap.
-async function waitForIndexerIdle(request: APIRequestContext, budgetMs = 45_000) {
-  const deadline = Date.now() + budgetMs;
-  while (Date.now() < deadline) {
-    const res = await request
-      .get(`${API}/api/v1/graph/compute_node/@local/fs-records/activity-status`)
-      .catch(() => null);
-    if (res && res.ok()) {
-      const body = await res.json().catch(() => ({}));
-      if (body?.data == null) return true;
-    }
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  return false;
-}
 
 // Rebuild-index UI in the search view. The rebuild is explicit-click-only.
 //

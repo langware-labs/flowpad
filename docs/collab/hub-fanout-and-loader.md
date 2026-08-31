@@ -12,7 +12,7 @@ status are asymmetric), the **OSS receive/upsert path** (`hub_bridge`), the
 reconcile/staleness** (client-side revival), and the **conversation loader
 cascade** (the URL → entity → context resolution).
 
-It supersedes the old root `DESIGN_loadConversation.md` — the loader rationale
+It supersedes the old [`DESIGN_loadConversation.md`](../historical/DESIGN_loadConversation.md) — the loader rationale
 from that design doc is folded into the [Loader cascade](#5-conversation-loader-cascade)
 section below; that file can be deleted.
 

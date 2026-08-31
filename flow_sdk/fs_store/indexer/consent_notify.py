@@ -28,19 +28,12 @@ def surface_pending_consent() -> int:
     events = drain_pending_consent()
     if not events:
         return 0
-    from flow_sdk.discovery.notify import send_resource_sync  # noqa: PLC0415
-    from flow_sdk.fs_store.sync_protocol import SyncOperation  # noqa: PLC0415
+    from flow_sdk.discovery.notify import send_event  # noqa: PLC0415
 
     sent = 0
     for ev in events:
         try:
-            send_resource_sync(
-                type=CONSENT_EVENT_KIND,
-                id=str(ev.get("category", "")),
-                operation=SyncOperation.EVENT,
-                data={"event_data": ev},
-                log_context="index_folder_consent",
-            )
+            send_event(CONSENT_EVENT_KIND, ev)
             sent += 1
         except Exception as e:  # noqa: BLE001
             logger.warning("surface_pending_consent: emit failed: %s", e)

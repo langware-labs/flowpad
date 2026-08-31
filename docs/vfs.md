@@ -19,7 +19,7 @@ vfs://{type}-{id}/{entity_sub_path}
 | `{id}`              | Yes      | Entity identifier (see [ID Formats](#id-formats) below)                 |
 | `{entity_sub_path}` | No       | Path within the entity's storage. No leading `/`, forward slashes only. |
 
-The `{type}-{id}` portion is a standard [TypeId](../flow_sdk/api/type_id.py).
+The `{type}-{id}` portion is a standard [TypeId](../flow_sdk/fs_store/type_id.py).
 
 ## ID Formats
 

@@ -46,15 +46,6 @@ pytestmark = [
 ]
 
 
-@pytest.fixture(scope="module")
-async def _workers_discovered():
-    """One capability-discovery sweep so drivers resolve their CLI binaries
-    (the server does this at boot; tests must trigger it explicitly)."""
-    from flow_sdk.core.capabilities.discovery import ensure_discovered
-
-    await ensure_discovered()
-
-
 def _worker_unavailable(tf):
     """The PROVIDER refused the turn (quota / rate limit), or None.
 
@@ -84,7 +75,7 @@ def _worker_read_sentinel(tf, sentinel_path: str, token: str) -> bool:
 # do not increase timeout without approval
 @pytest.mark.timeout(120)
 async def test_worker_mounts_context_folder(
-    initialize_test_db, local_compute_node, _workers_discovered,
+    initialize_test_db, local_compute_node,
     tmp_path, make_process, worker_id,
 ) -> None:
     if shutil.which(worker_id) is None:

@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+from flow_sdk.flowpad_types.vendors import vendor_for_path
 from flow_sdk.transcript_analyzer.entry import TranscriptEntry
 from flow_sdk.transcript_streamer.cursors import TranscriptCursorStore
 from flow_sdk.transcript_streamer.streamer import TranscriptStreamer
@@ -43,19 +44,10 @@ def _infer_worker_type(path: Path) -> str:
     Returns the key understood by :func:`flow_sdk.transcript_analyzer.parsers.get_parser_class`:
     ``"claude"``, ``"codex"``, or ``"copilot"``.
     """
-    parts = path.parts
-    if ".claude" in parts:
-        return "claude"
-    if ".codex" in parts:
-        return "codex"
-    if ".copilot" in parts:
-        return "copilot"
-    # OpenCode keeps sessions in a SQLite database with no dot-dir of its own,
-    # so the file the streamer watches is always one FlowPad wrote into the
-    # process shadow dir. Key on that stem rather than on a vendor path.
-    if path.name.startswith(("opencode_transcript", "session_ses_")):
-        return "opencode"
-    raise ValueError(f"Cannot infer worker_type from path: {path}")
+    vendor = vendor_for_path(path)
+    if vendor is None:
+        raise ValueError(f"Cannot infer worker_type from path: {path}")
+    return vendor.key
 
 
 class TranscriptStreamerRegistry:

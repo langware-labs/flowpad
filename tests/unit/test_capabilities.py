@@ -7,6 +7,7 @@ import pytest
 
 import flow_sdk.core.capabilities.discovery as discovery_mod
 from flow_sdk.core.capabilities import CapabilityKind, CapabilityResult, get_capability_registry
+from flow_sdk.schema.data_spec import DataSpec
 from flow_sdk.core.capabilities.discovery import get_capability_value, set_capability_value
 from flow_sdk.core.capabilities.models import CapabilityValue
 
@@ -26,7 +27,7 @@ def _seed_cli_value(kind: str, folder: str) -> None:
         CapabilityValue(
             kind=kind,
             value={"path": folder, "ref_type": "folder"},
-            value_type="folder",
+            value_spec=DataSpec.parse("fs_ref"),
             message="seeded",
         )
     )
@@ -441,7 +442,7 @@ async def test_run_discovery_populates_dict_and_mirrors_rows(monkeypatch, tmp_pa
 
     codex = get_capability_value(CapabilityKind.CODEX_CLI.value)
     assert codex is not None and codex.value["path"] == str(bin_dir)
-    assert codex.value_type == "folder"
+    assert codex.value_type == "fs_ref"
 
     claude = get_capability_value(CapabilityKind.CLAUDE_CLI.value)
     assert claude is not None and claude.value is None  # probed, absent
@@ -453,7 +454,7 @@ async def test_run_discovery_populates_dict_and_mirrors_rows(monkeypatch, tmp_pa
     # Rows mirrored (changed rows saved with the new value + refreshed badge).
     mirrored = {kind: (value, value_type, last_check) for kind, value, value_type, last_check in saved_rows}
     assert mirrored[CapabilityKind.CODEX_CLI.value][0]["path"] == str(bin_dir)
-    assert mirrored[CapabilityKind.CODEX_CLI.value][1] == "folder"
+    assert mirrored[CapabilityKind.CODEX_CLI.value][1] == "fs_ref"   # the spec's kind IS the row's value_type
     # last_check refreshed in the same sweep → badge agrees with the value.
     assert mirrored[CapabilityKind.CODEX_CLI.value][2]["available"] is True
     assert mirrored[CapabilityKind.CLAUDE_CLI.value][2]["available"] is False
@@ -636,11 +637,24 @@ def test_worker_path_env_prepends_discovered_folder(monkeypatch):
     assert env == {"PATH": "/discovered/bin:/usr/bin:/bin"}
 
 
-def test_worker_path_env_none_when_capability_absent():
+def test_worker_path_env_none_when_capability_absent(monkeypatch):
+    """Absent means absent everywhere — no discovered value AND not on PATH.
+
+    ``clear_harness_capability`` supplies both halves. An empty discovery dict is
+    no longer sufficient on its own: resolution falls back to ``shutil.which``,
+    so on a machine that has codex installed this would otherwise resolve and the
+    assertion would quietly stop asserting anything.
+    """
+    from tests.utils.fake_cli import clear_harness_capability
+
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_path_env
 
+    clear_harness_capability(monkeypatch, "codex")
     assert worker_path_env("codex") is None
-    set_capability_value(CapabilityValue(kind=CapabilityKind.CODEX_CLI.value, value=None, value_type="folder"))
+
+    # A SWEPT negative also wins over the PATH fallback — a sweep looked with the
+    # login-shell PATH and found nothing, which outranks what this process sees.
+    set_capability_value(CapabilityValue(kind=CapabilityKind.CODEX_CLI.value, value=None, spec=DataSpec.parse("fs_ref")))
     assert worker_path_env("codex") is None
 
 
@@ -650,8 +664,8 @@ async def test_cli_runner_discover_produces_folder_value():
 
     found = await runner.discover({"path": "/x", "executables": {"codex": "/some/dir/codex"}})
     assert found.value["path"] == "/some/dir"
-    assert found.value_type == "folder"
+    assert found.value_type == "fs_ref"
 
     missing = await runner.discover({"path": "/x", "executables": {"codex": None}})
     assert missing.value is None
-    assert missing.value_type == "folder"
+    assert missing.value_type == "fs_ref"

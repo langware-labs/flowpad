@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.ingest import reflect
 from flow_sdk.ingest.reflect import ReflectMode, origin_id_for
 
 from ._harness import id_at, poll, write_doc
@@ -51,13 +52,6 @@ async def test_re_observing_the_same_origin_keeps_one_entity(
     assert await id_at(landed) == first, f"{mode}: re-observation forked the entity"
 
 
-@pytest.mark.xfail(
-    reason="changing reflect mode leaves the previous placement on disk; the "
-           "stale copy is then read as a duplicate occurrence and the re-parse "
-           "is discarded. Retiring it would mean deleting a file outside the "
-           "currently-configured target, which reflection deliberately refuses.",
-    strict=True,
-)
 async def test_switching_reflect_mode_keeps_one_entity(
     folder_db, watched, project, make_source
 ):
@@ -94,7 +88,7 @@ async def test_the_origin_is_recorded_on_the_row(folder_db, watched, make_source
 
     ent = await Entity.get_by_asset_ref(str(path), resolve_containing=True)
     assert ent is not None
-    assert ent.origin_id == origin_id_for(source, str(path))
+    assert ent.origin_id == origin_id_for(source, str(path), await reflect._materialize(source))
 
 
 async def test_identity_does_not_depend_on_a_capsule_in_the_users_file(

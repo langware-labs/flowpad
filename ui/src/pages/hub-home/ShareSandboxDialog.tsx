@@ -1,4 +1,4 @@
-import type { ComputeNode } from '@sdk';
+import type { ComputeNode, ConversationParticipant } from '@sdk';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -32,12 +32,6 @@ import {
   sandboxShareLink,
   shareSandboxByEmail,
 } from './share-sandbox';
-
-interface Participant {
-  email?: string | null;
-  name?: string | null;
-  id?: string;
-}
 
 export interface ShareSandboxDialogProps {
   open: boolean;
@@ -94,7 +88,9 @@ export function ShareSandboxDialog({
   onLaunchInstead,
 }: ShareSandboxDialogProps) {
   const { t } = useLingui();
-  const [selected, setSelected] = useState<Participant[]>([]);
+  // The picker owns this type; a local near-copy of it is what made `selected`
+  // unassignable to `ContactPicker.value`.
+  const [selected, setSelected] = useState<ConversationParticipant[]>([]);
   const [transfer, setTransfer] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
