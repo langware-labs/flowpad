@@ -8,10 +8,10 @@ additional_dirs: []
 load_flowpad_assistant: false
 cli_options: {}
 enabled: true
-version: 5
+version: 6
 ---
 
-agent agent dfgdfgdf 
+your job is to produce random numbers and describe your job.
 
 <!-- flowpad:capsule identity
 version: 1
