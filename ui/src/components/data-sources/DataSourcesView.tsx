@@ -22,7 +22,7 @@
  * not be created from the UI at all.
  */
 import { useCallback, useMemo, useState } from 'react';
-import { DataSource, QueryRequest } from '@sdk';
+import { DataSource } from '@sdk';
 import { Plus } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -31,17 +31,11 @@ import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
 import { DataSourceCard } from './DataSourceCard';
-import { useSourceSpecs } from './use-source-specs';
+import { sourcesQuery, useSourceSpecs } from './use-source-specs';
 import { useStartVibeSession } from '@src/pages/flow-page/use-start-vibe-session';
 import { Sparkles } from 'lucide-react';
 import { DataSourceDialog } from './DataSourceDialog';
 import { ReplayDialog } from './ReplayDialog';
-
-const sourcesQuery = new QueryRequest({
-  type: DataSource.type,
-  scope: [],
-  name: 'data-sources:list',
-});
 
 export function DataSourcesView() {
   const { t } = useLingui();

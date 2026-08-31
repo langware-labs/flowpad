@@ -174,7 +174,12 @@ def accepted_fields() -> str:
 
 
 def _run_contract_prefix(source, config: dict) -> list[str]:
-    """'## This run' lines both prompts open with — one owner, no drift."""
+    """'## This run' lines both prompts open with — one owner, no drift.
+
+    ``profile_of`` validates the connector (raising the config error) before
+    any prompt is built, so reading it here cannot print an empty value.
+    """
+    profile_of(config)  # every prompt path re-asserts the invariant it prints
     return [
         f"- data-source id (`data_source_id`): `{source.id}`",
         f"- provider: `{config.get('connector')}`",

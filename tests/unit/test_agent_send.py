@@ -134,7 +134,7 @@ class TestInstruction:
     def test_the_body_is_fenced_verbatim(self):
         text = "please  DON'T   fix my spacing\nor my grammer"
         out = AgentDriver._send_instruction(
-            _source(), {}, "/tmp/sent.json",
+            _source(), {"connector": "gmail"}, "/tmp/sent.json",
             thread_key="t-1", to="a@b.c", text=text, subject="Re: x",
         )
         # Fenced so the model can see exactly where the user's words begin and
@@ -144,7 +144,7 @@ class TestInstruction:
 
     def test_it_carries_the_absolute_cli_path(self):
         out = AgentDriver._send_instruction(
-            _source(), {}, "/tmp/sent.json",
+            _source(), {"connector": "gmail"}, "/tmp/sent.json",
             thread_key="t", to="a@b.c", text="hi", subject="",
         )
         # A bare `flow` on PATH resolved to a pyenv shim of an older build.
@@ -153,7 +153,7 @@ class TestInstruction:
 
     def test_a_threadless_send_says_so_rather_than_sending_blank(self):
         out = AgentDriver._send_instruction(
-            _source(), {}, "/tmp/sent.json",
+            _source(), {"connector": "gmail"}, "/tmp/sent.json",
             thread_key="", to="a@b.c", text="hi", subject="Hello",
         )
         assert "start a new thread" in out

@@ -880,7 +880,7 @@ class FlowMessage(Entity):
         )
 
     async def save(self, owner=None, notify: bool = True):
-        """A reference row never persists a body.
+        """A reference row never PERSISTS a body — but keeps holding one.
 
         ``text`` on a row carrying ``source_item_id`` is hydrated at read time
         from the SourceItem it references. Any consumer that loads a hydrated
@@ -888,10 +888,22 @@ class FlowMessage(Entity):
         otherwise persist the hydrated body and quietly resurrect the copy
         model this field exists to end. Blanking here, at the one write
         chokepoint, is what makes hydration safe everywhere else.
+
+        Blank-around, not blank-forever: the in-memory instance gets its text
+        back after the write, so a caller that goes on to render or emit the
+        row (materialize's live CREATE, a child-edge announce) is holding the
+        read shape, not the stored one. The base save's own notify still fires
+        while the field is blank — the TS-side ``onEntityUpdate`` guard exists
+        for exactly that broadcast.
         """
-        if self.source_item_id:
-            self.text = ""
-        return await super().save(owner, notify=notify)
+        if not self.source_item_id:
+            return await super().save(owner, notify=notify)
+        hydrated = self.text
+        self.text = ""
+        try:
+            return await super().save(owner, notify=notify)
+        finally:
+            self.text = hydrated
 
     # ── read-time hydration — the other half of the reference model ────────
     #

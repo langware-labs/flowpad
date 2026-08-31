@@ -19,7 +19,7 @@ import { useAuth, useEntitiesQuery, useEntity, useProject } from '@sdk/react/hoo
 import type { ITask } from '@sdk/entities/task';
 import { isHelpdeskKind } from '@sdk/entities/conversation';
 import { ThreadStack } from './ThreadStack';
-import { channelLabel } from './ChannelBadge';
+import { channelLabel } from './channel-attribution';
 import { syncConversationMessages, updateMessage } from '@src/components/inbox-view/inbox-api';
 import { FlowMessageKind, markFlowMessagesReceived } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';

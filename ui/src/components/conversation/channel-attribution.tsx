@@ -1,10 +1,10 @@
 import { useCallback } from 'react';
 import { MessageSquare } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { DataSource, QueryRequest } from '@sdk';
+import { DataSource } from '@sdk';
 import type { ICloudOrigin, ICloudOriginLocal } from '@sdk';
 import { Badge } from '@src/components/ui/badge';
-import { useSourceSpecs } from '@src/components/data-sources/use-source-specs';
+import { sourcesQuery, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { cn } from '@src/lib/utils';
@@ -29,11 +29,6 @@ import { humanizeType } from '@src/utils/humanize';
  */
 
 // Same global cached queries the Data Sources screen runs — no new fetches.
-const sourcesQuery = new QueryRequest({
-  type: DataSource.type,
-  scope: [],
-  name: 'data-sources:list',
-});
 
 export interface ChannelAttribution {
   icon: LucideIcon;
