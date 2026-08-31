@@ -52,12 +52,16 @@ export function AgentSelectField({
 /**
  * Comma-separated list editor for a DECLARED-ONLY field.
  *
- * `tools`, `disallowed_tools`, `skills`, `mcp_servers` and `subagents`
- * round-trip through `agent.md` and show on the agent's card, but nothing
- * projects them into the worker yet — no `AgentOptions` subclass has a field
- * to carry them. An earlier version of this control offered
- * "inherited / revoke all", which claimed a gate the system does not apply.
- * It says what is true instead, and the affordance returns with enforcement.
+ * `tools`, `disallowed_tools` and `subagents` round-trip through `agent.md` and
+ * show on the agent's card, but nothing projects them into the worker yet — no
+ * `AgentOptions` subclass has a field to carry them. An earlier version of this
+ * control offered "inherited / revoke all", which claimed a gate the system
+ * does not apply. It says what is true instead, and the affordance returns with
+ * enforcement.
+ *
+ * `skills` and `mcp_servers` are no longer edited here — the agent-resources
+ * navigator (Zone B) wires them against the real installed lists. They carry
+ * the same not-yet-enforced caveat there.
  */
 export function AgentListField({
   label,

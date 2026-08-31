@@ -23,6 +23,7 @@ import { buildDockUrl, isRootAddress, parseDockUrl, parseQueryParams, rootDockAd
 import { isValidView } from './validators';
 import { AssetEditor, AssetMode, AssetRoutingMethod, editorForType, LOCAL_COMPUTE_NODE } from './asset-doc-types';
 import {
+  assetEditorOf,
   assetEditorValue,
   assetWikiValue,
   normalizeAssetVfsPath,
@@ -2238,6 +2239,23 @@ export class DockPointer implements IDockPointer {
    */
   get wikiRef(): AssetWikiRef | null {
     return parseAssetWikiRef(this.viewType === ViewType.ASSETS ? this.pointer : this.assetSubPointer);
+  }
+
+  /**
+   * The asset EDITOR this route opens, or null when it isn't an `editor/…` dock.
+   *
+   * The fourth member of the addressing family beside `targetTypeId`,
+   * `resourceVfsPath` and `wikiRef` — and the only one that answers WHICH
+   * EDITOR rather than WHAT SUBJECT. That distinction is the point: the editor
+   * segment is in the URL for both routing methods, so a caller learns the
+   * route opens an agent (vs a subagent, vs a skill) with no entity resolution
+   * and no async gap. Zone B uses it to pick its navigator on first render.
+   *
+   * Covers the project-rebased form through the same `assetSubPointer`
+   * un-rebase `resourceVfsPath` and `wikiRef` use.
+   */
+  get assetEditor(): AssetEditor | null {
+    return assetEditorOf(this.viewType === ViewType.ASSETS ? this.pointer : this.assetSubPointer);
   }
 
   /**
