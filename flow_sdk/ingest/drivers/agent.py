@@ -102,6 +102,22 @@ DEFAULT_AGENT = "email-summarizer"
 DEFAULT_SUBAGENT = "email_analyzer"
 
 
+def accepted_fields() -> str:
+    """The write route's field names, read off the schema that enforces them.
+
+    The agent contracts spell these out with the semantics of each one, which is
+    the part worth writing by hand. The NAMES are not: they drifted once already
+    — the contracts asked for `source_id`/`stream_key`/`title` long after
+    ``SourceItemSpec`` had renamed them, and because the spec is ``extra="forbid"``
+    every such call was refused outright while the prompt kept saying otherwise.
+    Naming them from the schema at prompt-build time means the next rename cannot
+    reopen that gap silently.
+    """
+    from flow_sdk.builtin.source_item import SourceItemSpec  # noqa: PLC0415
+
+    return ", ".join(f"`{name}`" for name in SourceItemSpec.model_fields)
+
+
 class AgentDriver(IngestDriver):
     """One driver, any connector. `provider` stays `agent`; the connector rides
     in `kind` so the ontology reads `datasource.agent.<connector>`."""
@@ -122,9 +138,18 @@ class AgentDriver(IngestDriver):
         return str((source.config or {}).get("connector") or "").strip()
 
     async def segments(self, source) -> list[SegmentRef]:
+        """The mailboxes this source walks, one cursor each.
+
+        ``segments`` is the name the manifest declares and the word the rest of
+        ingestion uses (``SegmentRef``, ``segment_key``, ``IngestDriver.segments``),
+        so it is what an authored config carries. ``streams``/``stream`` are read
+        after it only so rows written before the names converged keep their
+        cursors — a source that silently dropped its configured mailboxes would
+        look healthy while syncing one.
+        """
         config = getattr(source, "config", None) or {}
-        keys = config.get("streams") or [config.get("stream") or "INBOX"]
-        return [SegmentRef(key=str(k), label=str(k)) for k in keys]
+        keys = config.get("segments") or config.get("streams") or [config.get("stream") or "INBOX"]
+        return [SegmentRef(key=str(k), label=str(k)) for k in keys if str(k).strip()]
 
     async def fetch(self, source, cursor: SegmentCursorView) -> FetchResult:
         config = getattr(source, "config", None) or {}
@@ -368,7 +393,7 @@ class AgentDriver(IngestDriver):
             "---",
             "## This run",
             "",
-            f"- data-source id (`source_id`): `{source.id}`",
+            f"- data-source id (`data_source_id`): `{source.id}`",
             f"- provider: `{config.get('connector') or 'gmail'}`",
             f"- reply into thread (`thread_key`): `{thread_key or '(none — start a new thread)'}`",
             f"- send to: `{to}`",
@@ -377,6 +402,9 @@ class AgentDriver(IngestDriver):
             f"- the `flow` CLI to use, by absolute path: `{flow_cli}`",
             "  (run exactly `… record create source_item --json <file>` — a bare",
             "  `flow` on PATH may be an older build without this command)",
+            f"- the ONLY field names the write route accepts, from its own schema: "
+            f"{accepted_fields()}. Any other key is refused and the whole batch "
+            f"is rejected — send no others, and spell these exactly.",
             "",
             "### The message body — send exactly this, and nothing else",
             "",
@@ -471,7 +499,7 @@ class AgentDriver(IngestDriver):
         return (
             f"{body}\n\n---\n"
             f"## This run\n\n"
-            f"- data-source id (`source_id`): `{source.id}`\n"
+            f"- data-source id (`data_source_id`): `{source.id}`\n"
             f"- provider: `{config.get('connector') or 'gmail'}`\n"
             f"- mailbox (`segment_key`): `{cursor.segment_key}`\n"
             f"- fetch messages newer than: `{seen or window}`\n"
@@ -480,6 +508,9 @@ class AgentDriver(IngestDriver):
             f"- the `flow` CLI to use, by absolute path: `{flow_cli}`\n"
             f"  (run exactly `{flow_cli} record create source_item --json <file>` — "
             f"a bare `flow` on PATH may be an older build without this command)\n"
+            f"- the ONLY field names the write route accepts, from its own schema: "
+            f"{accepted_fields()}. Any other key is refused and the whole batch "
+            f"is rejected — send no others, and spell these exactly.\n"
         )
 
     # ── the receipt ───────────────────────────────────────────────────────────
