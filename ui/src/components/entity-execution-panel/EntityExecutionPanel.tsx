@@ -48,6 +48,7 @@ import {
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { selectHistoryProcesses } from './history-processes';
 import { useProcessesForTarget } from './hooks/useProcessesForTarget';
+import { useProcessesForProject } from './hooks/useProcessesForProject';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { ChatPlanModeProvider } from '@src/components/terminal/interactive-terminal/chat-plan-mode-context';
 import { PlanInteractionBar } from '@src/components/terminal/interactive-terminal/PlanInteractionBar';
@@ -57,6 +58,14 @@ import { normalizeWorkerType, type WorkerType } from '@src/components/workers/wo
 import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
 
 const EMPTY_TURN_GROUPS: TurnGroup[] = [];
+
+/** Newest-first, on whichever timestamp the row carries. */
+const byRecency = (processes: readonly AgenticProcess[]): AgenticProcess[] =>
+  [...processes].sort((a, b) => {
+    const ta = new Date(a.updated_date || a.created_date || 0).getTime();
+    const tb = new Date(b.updated_date || b.created_date || 0).getTime();
+    return tb - ta;
+  });
 
 const isUserMessage = (m: FlowData) =>
   m.elementType === FlowElementTypes.USER_MESSAGE || (m.attributes && m.attributes.role === 'user');
@@ -119,6 +128,22 @@ interface EntityExecutionPanelProps {
   /** Optional content rendered immediately after the (left-placed) history
    *  trigger — e.g. Vibe's "Collaborate" button next to the "Recent" pill. */
   afterHistorySlot?: React.ReactNode;
+  /**
+   * Opt in to a PROJECT-scoped history list (`useProcessesForProject`) instead
+   * of the default target-scoped one. For a project-level composer — Vibe —
+   * "past chats" means every conversational session of the project, not only
+   * the ones sharing this panel's `target`: a session launched from a
+   * diagnosis or a transcript is keyed to THAT entity by its launcher (which
+   * needs the key to reconnect instead of spawning a duplicate), so a
+   * target-keyed list drops it for a reason the user never chose.
+   *
+   * Only the list the dropdown offers — and the delete / clear-all that act on
+   * exactly what it shows — moves. Which session the panel BINDS to, and the
+   * target new sessions are created with, stay target-scoped. Entity-scoped
+   * callers (a doc chat, an agent chat) leave this unset and are unchanged:
+   * there, "the chats of this entity" is precisely the right list.
+   */
+  historyProjectId?: string | null;
   /** Show an editable one-liner with the active process's name directly below
    *  the header (Vibe). Off by default so other consumers are unchanged. */
   showProcessNameBar?: boolean;
@@ -266,6 +291,7 @@ export function EntityExecutionPanel({
   historyTriggerLabel,
   historyOnLeft = false,
   afterHistorySlot,
+  historyProjectId = null,
   showProcessNameBar = false,
   pastSessionsLabel = 'Past executions',
   noPastSessionsLabel = 'No past executions',
@@ -302,13 +328,21 @@ export function EntityExecutionPanel({
     processType,
     deploymentId,
   });
-  const sortedProcesses = useMemo(() => {
-    return [...processes].sort((a, b) => {
-      const ta = new Date(a.updated_date || a.created_date || 0).getTime();
-      const tb = new Date(b.updated_date || b.created_date || 0).getTime();
-      return tb - ta;
-    });
-  }, [processes]);
+  const sortedProcesses = useMemo(() => byRecency(processes), [processes]);
+
+  // 1b. The pool the HISTORY dropdown draws from. Same set by default; a
+  //     project-level composer opts into the project's conversational sessions
+  //     via `historyProjectId` (see the prop docs). Kept separate from
+  //     `sortedProcesses` on purpose: that one decides which session this panel
+  //     binds to and what target a new one is stamped with, and neither may
+  //     widen to the project.
+  const { processes: projectProcesses } = useProcessesForProject(historyProjectId, {
+    enabled: !!historyProjectId,
+  });
+  const sortedHistorySource = useMemo(
+    () => (historyProjectId ? byRecency(projectProcesses) : sortedProcesses),
+    [historyProjectId, projectProcesses, sortedProcesses],
+  );
 
   // Worker-history join — same backend action that powers the terminal's
   // full HistoryModal. The dropdown rows merge each AgenticProcess with its
@@ -375,11 +409,12 @@ export function EntityExecutionPanel({
   const activeProcess: AgenticProcess | null =
     forceNew && !resolvedMatchesLocal ? localProcess : (resolvedProcess ?? localProcess);
 
-  // Rows the dropdown OFFERS. NOT `sortedProcesses`: that also drives the
-  // auto-latest pick, clear-all and delete, which must keep seeing every process.
+  // Rows the dropdown OFFERS. NOT `sortedHistorySource`: that also drives
+  // clear-all and delete, which must keep seeing every process (empties
+  // included — you can still clear what the list hides).
   const historyProcesses = useMemo(
-    () => selectHistoryProcesses(sortedProcesses, workerHistoryByProcessId, activeProcess?.id ?? null),
-    [sortedProcesses, workerHistoryByProcessId, activeProcess?.id],
+    () => selectHistoryProcesses(sortedHistorySource, workerHistoryByProcessId, activeProcess?.id ?? null),
+    [sortedHistorySource, workerHistoryByProcessId, activeProcess?.id],
   );
   // The Agent this process runs AS — signs its assistant turns. Cache-first,
   // live (a rename / new avatar repaints); null for a plain session.
@@ -745,15 +780,15 @@ export function EntityExecutionPanel({
   }, []);
 
   const handleClearAll = useCallback(() => {
-    setPendingDelete({ kind: 'all', count: sortedProcesses.length });
-  }, [sortedProcesses.length]);
+    setPendingDelete({ kind: 'all', count: sortedHistorySource.length });
+  }, [sortedHistorySource.length]);
 
   const performDelete = useCallback(async () => {
     if (!pendingDelete) return;
     const idsToDelete =
       pendingDelete.kind === 'one'
         ? [pendingDelete.id]
-        : sortedProcesses.map((p) => p.id).filter((id): id is string => !!id);
+        : sortedHistorySource.map((p) => p.id).filter((id): id is string => !!id);
 
     // Clear active picks that point at to-be-deleted ids so the panel doesn't
     // try to render a process that no longer exists between the WS deletion
@@ -763,7 +798,10 @@ export function EntityExecutionPanel({
     if (pendingDelete.kind === 'all') setForceNew(false);
 
     for (const id of idsToDelete) {
-      const proc = sortedProcesses.find((p) => p.id === id);
+      // Resolved from the SAME pool the row was offered from — a project-scoped
+      // row is absent from `sortedProcesses`, and looking it up there would make
+      // its trash button a silent no-op.
+      const proc = sortedHistorySource.find((p) => p.id === id);
       if (!proc) continue;
       try {
         await proc.delete();
@@ -771,7 +809,7 @@ export function EntityExecutionPanel({
         console.error('[EntityExecutionPanel] delete failed for', id, err);
       }
     }
-  }, [pendingDelete, sortedProcesses, selectedProcessId, localProcess?.id]);
+  }, [pendingDelete, sortedHistorySource, selectedProcessId, localProcess?.id]);
 
   // Headless AND PTY turns now broadcast their worker-status transitions
   // mid-turn (the backend removed the INITIALIZING pin), so the reactive

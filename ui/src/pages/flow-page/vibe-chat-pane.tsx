@@ -91,16 +91,26 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
     ],
   );
 
-  // A process created OUTSIDE the vibe flow — e.g. a plain shell/PTY tab opened
-  // in vibe mode — carries no `target_typeid_str`, and a null target hard-disables
-  // the composer (EntityExecutionPanel's documented contract). Key it to the
-  // project it already belongs to, the same way the vibe flow would have.
-  // Strictly a *process has no target* compensation: with no process resolved
-  // yet there is nothing to host, so stay null rather than opening a composer
-  // that would lazily mint a session.
+  // The vibe composer is the PROJECT's build surface, so its target is the
+  // project's chat target — the one key `openNewChat` and
+  // `createVibeProcessForProject` both stamp (see `chatTargetForProject`).
+  //
+  // Deliberately NOT read off the open process. A session minted by a task
+  // runner carries THAT runner's subject entity as its target — a diagnosis
+  // terminal is keyed to its FlowpadDiagnosis so a second "Open in terminal"
+  // click reconnects instead of spawning a duplicate. Inheriting it pointed the
+  // composer at an entity owning no builds, which disabled "Recent" outright,
+  // and would have stamped the same wrong target on the next chat created here.
+  //
+  // The process's own target survives only as a project-less fallback: a null
+  // target hard-disables the composer (EntityExecutionPanel's documented
+  // contract), and with no process resolved there is nothing to host at all.
+  const chatProjectId = project?.id ?? process?.project_id ?? null;
   const chatTarget = !process
     ? null
-    : (process.target_typeid_str ?? (process.project_id ? chatTargetForProject(process.project_id) : null));
+    : chatProjectId
+      ? chatTargetForProject(chatProjectId)
+      : (process.target_typeid_str ?? null);
 
   const handleActiveWorkerChange = useCallback(
     ({
@@ -186,6 +196,10 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
         historyLabel={t`Build history`}
         historyTriggerLabel={t`Recent`}
         historyOnLeft
+        // "Recent" lists the PROJECT's conversational sessions, not just those
+        // sharing this panel's target — so a session opened from a diagnosis or
+        // a transcript is reachable from the build composer it belongs to.
+        historyProjectId={chatProjectId}
         showProcessNameBar
         afterHistorySlot={
           <VibeAssignTaskButton projectId={project?.id ?? null} sessionTypeId={process?.typeId ?? null} />
