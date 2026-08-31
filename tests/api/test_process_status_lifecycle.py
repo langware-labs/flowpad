@@ -6,7 +6,6 @@ import pytest
 
 from flow_sdk.responses.response import ApiResponse
 
-
 # Wire ``status`` values for a live process — the raw lifecycle FSM value is
 # emitted verbatim now (turn-in-flight is the separate ``busy`` boolean).
 LIVE_WIRE_STATUSES = {"running"}

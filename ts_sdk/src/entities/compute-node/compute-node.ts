@@ -12,7 +12,6 @@ import { APIEntity, dataManager, registerEntity } from '../../APIEntity';
 import { isApiError } from '../../ApiResponse';
 import { TypeId } from '../../models/TypeId';
 import type { IAgenticProcess } from '../../process/agentic-process';
-import { ConnectionManager } from '../../websocket';
 import {
   FlowData,
   FlowElementTypes,
@@ -23,7 +22,7 @@ import {
   ShellInputFlowData,
   ShellOutputFlowData,
 } from '../../flow_processing';
-import { IEntity } from '../../IEntity';
+import { IEntity, EntityMerge } from '../../IEntity';
 import { ActionInfo } from '../../models';
 import { hostTerminalTheme } from '../../utils/runtime';
 import {
@@ -37,7 +36,6 @@ import {
 import type { MachineStatus, ProcessInfo } from './machine-status';
 import { ServiceControlError, type ServiceRuntimeDescriptor } from './service-control';
 import { Shell } from '../shell';
-import { PtyConnection } from '../../services/shell/ptyConnection';
 import { GitWorkdir } from '../git-workdir';
 
 /**
@@ -47,7 +45,6 @@ import { GitWorkdir } from '../git-workdir';
 export const WORKSPACE_FLAVOR = 'workspace';
 
 /** Callback for when a new machine session is detected */
-export type MachineSessionCallback = (sessionId: string, session: Shell) => void;
 
 /** CLI worker kind shared across resolver APIs. */
 export type WorkerKind = 'claude' | 'codex' | 'copilot' | 'opencode';
@@ -83,7 +80,10 @@ export function vfsToOsPath(vfsPath: string, root: string): string {
 /**
  * Interface for ComputeNode entity data.
  */
-export interface IComputeNode extends IEntity {
+// `status` is omitted from the base: a compute_node row has no persisted status
+// field, and the name is taken on the class by the async `status()` call that
+// asks the provider what the machine is doing.
+export interface IComputeNode extends Omit<IEntity, 'status'> {
   name: string;
   runtime: RuntimeEnvironment;
   node_provider_type?: ComputeProviderType;
@@ -100,6 +100,15 @@ export interface IComputeNode extends IEntity {
    *  "never looked". Read-only: server-owned, never sent. */
   logged_in_user?: string | null;
 }
+
+/**
+ * Declaration merge: `implements IComputeNode` only CHECKS the class, it adds no
+ * members — so every field declared solely on IComputeNode read as "does not exist
+ * on type ComputeNode", even though `deepAssign` populates them from the wire.
+ * This interface makes them part of the class type.
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface ComputeNode extends EntityMerge<IComputeNode> {}
 
 /**
  * ComputeNode entity class.
@@ -129,12 +138,8 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   private knownMachineSessions: Set<string> = new Set();
 
   /** Callback for when a new machine session is detected */
-  private machineSessionCallback: MachineSessionCallback | null = null;
 
   /** Bound handler for WebSocket data ops (for cleanup) */
-  private boundDataOpHandler:
-    | ((toEntity: string, op: string, data: { active_pty_sessions?: string[] }) => void)
-    | null = null;
 
   constructor(entity: Partial<IComputeNode> = {}) {
     super(entity);
@@ -295,26 +300,6 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   }
 
   /**
-   * Create a new shell session in this node's frontend cache.
-   * @param sessionId - Unique session identifier
-   * @param name - Display name for the session
-   * @returns The created Shell
-   */
-  async createSession(sessionId: string, name: string): Promise<Shell> {
-    if (this.sessions.has(sessionId)) {
-      console.warn(`[ComputeNode] Session '${sessionId}' already exists`);
-      return this.sessions.get(sessionId)!;
-    }
-    const shell = Shell.create(this, { name });
-    // Override the auto-generated ID with the requested sessionId
-    (shell as any).id = sessionId;
-    shell.pty = new PtyConnection();
-    shell.pty.computeNodeId = this.id;
-    this.sessions.set(sessionId, shell);
-    return shell;
-  }
-
-  /**
    * Get a session from this node's frontend cache.
    * @param sessionId - Session identifier
    * @returns ShellSession or undefined if not found
@@ -396,92 +381,6 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    */
   get sessionCount(): number {
     return this.sessions.size;
-  }
-
-  // ============================================================
-  // Machine Session WebSocket Watching
-  // ============================================================
-
-  /**
-   * Start watching for machine session updates via WebSocket.
-   * When new PTY sessions are detected in `active_pty_sessions`, creates local shell sessions.
-   * @param onNewSession - Callback invoked when a new machine session is detected
-   */
-  startWatchingMachineSessions(onNewSession?: MachineSessionCallback): void {
-    this.machineSessionCallback = onNewSession || null;
-
-    // Already watching
-    if (this.boundDataOpHandler) {
-      return;
-    }
-
-    const manager = ConnectionManager.getInstance();
-    if (!manager.connected) {
-      console.warn('[ComputeNode] Cannot watch machine sessions: ConnectionManager not connected');
-      return;
-    }
-
-    this.boundDataOpHandler = (toEntity: string, _op: string, data: { active_pty_sessions?: string[] }) => {
-      // on_data_op emits the entity as a string (e.g. "compute_node-@local").
-      // Parse it and only handle updates for this compute node.
-      let parsedTypeId: TypeId;
-      try {
-        parsedTypeId = new TypeId(toEntity);
-      } catch {
-        return;
-      }
-      if (parsedTypeId.type !== 'compute_node' || parsedTypeId.id !== this.id) {
-        return;
-      }
-
-      const activeMachineSessions = data.active_pty_sessions;
-      if (!activeMachineSessions || !Array.isArray(activeMachineSessions)) {
-        return;
-      }
-
-      // Find new sessions that we haven't seen before
-      for (const sessionId of activeMachineSessions) {
-        if (!this.knownMachineSessions.has(sessionId)) {
-          this.knownMachineSessions.add(sessionId);
-
-          // Create Shell entity for the new machine session
-          const sessionName = `Terminal ${sessionId.substring(0, 8)}`;
-          void this.createSession(sessionId, sessionName).then((shell) => {
-            // Mark PTY as started — the PTY is already running on the backend
-            shell.pty = shell.pty ?? new PtyConnection();
-            shell.pty.started = true;
-            shell.pty.computeNodeId = this.id;
-            shell.status = 'running';
-
-            // Notify callback if provided
-            if (this.machineSessionCallback) {
-              this.machineSessionCallback(sessionId, shell);
-            }
-          });
-        }
-      }
-    };
-
-    manager.on('on_data_op', this.boundDataOpHandler);
-  }
-
-  /**
-   * Stop watching for machine session updates.
-   */
-  stopWatchingMachineSessions(): void {
-    if (this.boundDataOpHandler) {
-      const manager = ConnectionManager.getInstance();
-      manager.off('on_data_op', this.boundDataOpHandler);
-      this.boundDataOpHandler = null;
-    }
-    this.machineSessionCallback = null;
-  }
-
-  /**
-   * Check if currently watching for machine session updates.
-   */
-  get isWatchingMachineSessions(): boolean {
-    return this.boundDataOpHandler !== null;
   }
 
   /**
@@ -937,9 +836,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * @param data - JSON data to write
    */
   async saveJsonFile(path: string, data: unknown): Promise<void> {
-    const action = new ActionInfo('save-json-file', ComputeNode.type, this.id, 'POST');
-    action.bodyParameters = { path, data };
-    await dataManager.callAction(action);
+    await this.post('save-json-file', { path, data });
   }
 
   /**
@@ -950,8 +847,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * @returns number of sessions cleared
    */
   async resetPty(): Promise<number> {
-    const action = new ActionInfo('reset-pty', ComputeNode.type, this.id, 'POST');
-    const response = await dataManager.callAction<void, { cleared: number }>(action);
+    const response = await this.post<{ cleared: number }>('reset-pty');
     return (response as any)?.data?.cleared ?? 0;
   }
 
@@ -969,9 +865,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * Returns null if the user cancelled.
    */
   async openPathDialog(initialDir?: string, mode: 'folder' | 'file' = 'folder'): Promise<string | null> {
-    const action = new ActionInfo('pick-folder', ComputeNode.type, this.id, 'POST');
-    action.bodyParameters = { ...(initialDir ? { initial_dir: initialDir } : {}), mode };
-    const response = await dataManager.callAction<void, { path: string | null }>(action);
+    const response = await this.post<{ path: string | null }>('pick-folder', { ...(initialDir ? { initial_dir: initialDir } : {}), mode });
     return (response as any)?.path ?? null;
   }
 

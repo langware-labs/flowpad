@@ -16,9 +16,9 @@ import pytest
 
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
-from flow_sdk.ingest.driver import FetchResult, SegmentRef, register_driver
+from flow_sdk.ingest.driver import IngestDriver, FetchResult, SegmentRef, register_driver
 from flow_sdk.ingest.health import SourceError, SourceHealth
-from flow_sdk.ingest.models import IngestItem
+from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest.sync import sync_source
 
 NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
@@ -53,7 +53,7 @@ def test_cursor_state_is_opaque_to_the_subsystem():
     )
 
 
-class _FakeDriver:
+class _FakeDriver(IngestDriver):
     """A driver whose behaviour each test dictates per stream."""
 
     provider = "faketest"
@@ -76,14 +76,14 @@ class _FakeDriver:
         return outcome
 
 
-def _item(source_id, segment_key, n) -> IngestItem:
-    return IngestItem(
-        source_id=source_id,
+def _item(data_source_id, segment_key, n) -> SourceItemSpec:
+    return SourceItemSpec(
+        data_source_id=data_source_id,
         provider="faketest",
         kind="content.feed.item",
         segment_key=segment_key,
         external_id=f"{segment_key}-{n}",
-        title=f"item {n}",
+        name=f"item {n}",
         body=f"body {n}",
     )
 

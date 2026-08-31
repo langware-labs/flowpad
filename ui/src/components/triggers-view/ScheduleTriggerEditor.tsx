@@ -12,7 +12,7 @@ import { scopeColor } from './scope-colors';
 
 interface Props {
   /** null = create mode */
-  trigger: ITrigger | null;
+  trigger: Trigger | null;
   onSaved: (trigger: ITrigger) => void;
   onCancel?: () => void;
 }

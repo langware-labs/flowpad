@@ -191,7 +191,9 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
           <PopoverContent className="w-auto p-3" align="start">
             <AgentAvatarPicker
               value={agent.avatar}
-              onValueChange={(value) => save({ avatar: value })}
+              onValueChange={async (value) => {
+                await save({ avatar: value });
+              }}
               onImageSelected={handleAvatarImage}
             />
           </PopoverContent>

@@ -29,11 +29,12 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from flow_sdk._compat import StrEnum
+from flow_sdk.flowpad_types.vendors import vendor_by, vendor_or_none
 
 if TYPE_CHECKING:
     # Type-only: keeps this module's runtime imports to stdlib + ``_compat`` (see
     # the module docstring) while still naming the real origin type.
-    from flow_sdk.builtin.fs_origin import FSOrigin
+    from flow_sdk.fs_store.origin.fs_origin import FSOrigin
 
 
 class HarnessType(StrEnum):
@@ -104,41 +105,20 @@ WORKER_PREFIX: dict[str, str] = {
     HarnessType.COPILOT: ".github",
 }
 
-# Driver/worker name (``FLOWPAD_DEFAULT_WORKER`` value, ``WorkerType`` variants)
-# → placement harness. Accepts the driver aliases so the env var can be set to
-# any name the agentic-process layer already understands.
-_WORKER_NAME_TO_TYPE: dict[str, "HarnessType"] = {
-    "claude": HarnessType.CLAUDE,
-    "claude_code": HarnessType.CLAUDE,
-    "claude_code_cli": HarnessType.CLAUDE,
-    "codex": HarnessType.AGENTS,
-    "opencode": HarnessType.AGENTS,
-    "agents": HarnessType.AGENTS,
-    "copilot": HarnessType.COPILOT,
-    "github": HarnessType.GITHUB,
-}
-
-
 def coerce_harness(value: object) -> "HarnessType | None":
-    """Best-effort map a capability kind / worker name / harness value onto a
-    ``HarnessType``. Returns None when nothing recognizes it."""
+    """Best-effort map a worker name (any spelling ``VENDORS`` knows, so the
+    ``FLOWPAD_DEFAULT_WORKER`` env var accepts every alias), a capability leaf
+    kind (``harness.<tool>.cli``) or a harness value onto a ``HarnessType``.
+    Returns None when nothing recognizes it."""
     if not value:
         return None
     v = str(value).strip().lower()
-    if v in _WORKER_NAME_TO_TYPE:
-        return _WORKER_NAME_TO_TYPE[v]
+    vendor = vendor_or_none(v) or vendor_by("capability_kind", v)
+    if vendor is not None:
+        return HarnessType(vendor.harness)
     if v in WORKER_PREFIX:  # already a harness value
         return HarnessType(v)
-    # Capability leaf kinds (``harness.<tool>.cli``). Keyed off ``CapabilityKind``
-    # so a kind rename can't silently drift; codex speaks the ``.agents`` standard.
-    from flow_sdk.core.capabilities.models import CapabilityKind  # noqa: PLC0415
-
-    return {
-        CapabilityKind.CLAUDE_CLI.value: HarnessType.CLAUDE,
-        CapabilityKind.CODEX_CLI.value: HarnessType.AGENTS,
-        CapabilityKind.OPENCODE_CLI.value: HarnessType.AGENTS,
-        CapabilityKind.COPILOT_CLI.value: HarnessType.COPILOT,
-    }.get(v)
+    return None
 
 
 async def resolve_default_harness() -> "HarnessType":
@@ -363,7 +343,7 @@ def _origin_rel_dir(origin: "FSOrigin | None") -> str | None:
     rel = (origin.rel_path or "").strip() if origin is not None else ""
     if not rel:
         return None
-    from flow_sdk.builtin.fs_origin import is_safe_rel_path  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.fs_origin import is_safe_rel_path  # noqa: PLC0415
 
     if not is_safe_rel_path(rel):
         return None

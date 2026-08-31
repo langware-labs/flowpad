@@ -29,8 +29,9 @@ function EntryIcon({ entry }: { entry: DisplayEntry }) {
 }
 
 interface DisplayHistoryButtonProps {
-  /** The process's display stack (oldest first, as stored). */
-  stack: DisplayEntry[];
+  /** The process's display stack (oldest first, as stored). Read-only: the
+   *  component reverses a copy, and `displayHistory` hands back a readonly view. */
+  stack: readonly DisplayEntry[];
   /** Open a past display as its own standard tab. */
   onOpen: (entry: DisplayEntry) => void;
 }

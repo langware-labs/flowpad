@@ -49,7 +49,7 @@ describe('Artifact and Deployment SDK models', () => {
       type: 'artifact',
       name: 'Website',
       artifact_type: 'WEBAPP',
-      git_origin: {
+      origin: {
         provider: 'github',
         owner: 'flowpad',
         name: 'website',

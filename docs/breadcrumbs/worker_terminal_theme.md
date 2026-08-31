@@ -1,8 +1,13 @@
 ---
+id: 28087103-5de7-4488-a38b-136791cf0ed3
 title: Worker terminal theme is pinned at launch
-tags: [breadcrumb.test.worker_terminal_theme.rules]
-description: A worker's text colours come from the CLI's own theme setting read at spawn, so the theme must ride the call that SPAWNS the PTY — createProcess — not the later open, and not the host xterm palette.
+tags:
+- breadcrumb.test.worker_terminal_theme.rules
+description: A worker's text colours come from the CLI's own theme setting read at
+  spawn, so the theme must ride the call that SPAWNS the PTY — createProcess — not
+  the later open, and not the host xterm palette.
 ---
+
 # Worker terminal theme is pinned at launch
 
 > Ground truth. Proven by RCA on 2026-08-24. Do not edit without the user's approval.
@@ -90,9 +95,3 @@ into `settings_json`, which `claude/cli.py` renders as `--settings <json>`.
   and matches a dark terminal by accident. Dark cannot fail, so it cannot pass.
 * **Comparing an existing tab** → printed text keeps the colours it was written
   with. Only a newly spawned worker shows the change.
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 28087103-5de7-4488-a38b-136791cf0ed3
-flowpad:endcapsule identity -->

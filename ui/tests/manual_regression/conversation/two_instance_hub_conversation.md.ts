@@ -54,26 +54,30 @@ test('binding criterion: real alice↔bob conversation through the local hub', a
     );
   }
   test.setTimeout(60_000);
-  const rq = await pwRequest.newContext();
+  // Each identity owns its own cookie jar. The hub accepts JWT cookies as well
+  // as bearer headers, so logging both users into one context can make the last
+  // login override an otherwise-correct Authorization header.
+  const aliceRq = await pwRequest.newContext();
+  const bobRq = await pwRequest.newContext();
 
   // Hub liveness.
-  expect((await rq.get(`${HUB}/api/v1/login/test`)).status()).toBe(200);
+  expect((await aliceRq.get(`${HUB}/api/v1/login/test`)).status()).toBe(200);
 
   // Two distinct hub users, each with their own JWT.
-  const alice = await hubLogin(rq, ALICE_EMAIL, ALICE_PW);
-  const bob = await hubLogin(rq, BOB_EMAIL, BOB_PW);
+  const alice = await hubLogin(aliceRq, ALICE_EMAIL, ALICE_PW);
+  const bob = await hubLogin(bobRq, BOB_EMAIL, BOB_PW);
   expect(bob.id, 'bob id matches the provided QA_BOB_HUB_ID').toBe(BOB_HUB_ID);
   expect(alice.id).not.toBe(bob.id);
 
   // alice creates a hub project.
-  const proj = await rq.post(`${HUB}/api/v1/graph/project`, { ...auth(alice.token), data: { name: `alice-bob-chat-${Date.now()}` } });
+  const proj = await aliceRq.post(`${HUB}/api/v1/graph/project`, { ...auth(alice.token), data: { name: `alice-bob-chat-${Date.now()}` } });
   expect(proj.status()).toBe(200);
   const pid: string = (await proj.json()).data.id;
 
   // The hub's consent boundary requires the receiver to be an explicit project
   // member before a guest conversation can target them. Alice invites Bob and
   // Bob accepts with his own authenticated identity.
-  const invite = await rq.post(`${HUB}/api/v1/graph/project/${pid}/members`, {
+  const invite = await aliceRq.post(`${HUB}/api/v1/graph/project/${pid}/members`, {
     ...auth(alice.token),
     data: {
       recipient_email: BOB_EMAIL,
@@ -81,22 +85,28 @@ test('binding criterion: real alice↔bob conversation through the local hub', a
     },
   });
   expect(invite.status()).toBe(200);
-  const pendingRes = await rq.get(`${HUB}/api/v1/graph/invitation/pending`, auth(bob.token));
+  const pendingRes = await bobRq.get(`${HUB}/api/v1/graph/invitation/pending`, auth(bob.token));
   expect(pendingRes.status()).toBe(200);
   const pending = ((await pendingRes.json()).data ?? []) as Array<{
     id: string;
     target?: { type?: string; id?: string } | null;
   }>;
   const projectInvite = pending.find((row) => row.target?.type === 'project' && row.target.id === pid);
-  expect(projectInvite, 'bob receives the project membership invitation').toBeTruthy();
-  const accepted = await rq.get(
-    `${HUB}/api/v1/graph/members/accept?invitation-id=${projectInvite!.id}`,
-    { ...auth(bob.token), maxRedirects: 0 },
-  );
-  expect(accepted.status()).toBe(302);
+  if (projectInvite) {
+    const accepted = await bobRq.get(
+      `${HUB}/api/v1/graph/members/accept?invitation-id=${projectInvite.id}`,
+      { ...auth(bob.token), maxRedirects: 0 },
+    );
+    expect(accepted.status()).toBe(302);
+  } else {
+    // The default local-hub policy auto-accepts at invite time, so a healthy
+    // invitation is absent from the pending feed and access is already live.
+    const sharedProject = await bobRq.get(`${HUB}/api/v1/graph/project/${pid}`, auth(bob.token));
+    expect(sharedProject.status(), 'auto-accepted project is readable by bob').toBe(200);
+  }
 
   // alice starts a guest conversation addressed to bob by id, first message "hi".
-  const startRes = await rq.post(`${HUB}/api/v1/graph/project/${pid}/start_guest_conversation`, {
+  const startRes = await aliceRq.post(`${HUB}/api/v1/graph/project/${pid}/start_guest_conversation`, {
     ...auth(alice.token),
     data: { text: 'hi', receiver_address: bob.id, receiver_address_type: 'id' },
   });
@@ -108,25 +118,25 @@ test('binding criterion: real alice↔bob conversation through the local hub', a
 
   // bob discovers the conversation in his list and can read the first message.
   await expect(async () => {
-    const list = (await (await rq.get(`${HUB}/api/v1/graph/conversation`, auth(bob.token))).json()).data ?? [];
+    const list = (await (await bobRq.get(`${HUB}/api/v1/graph/conversation`, auth(bob.token))).json()).data ?? [];
     expect(list.some((c: { id: string }) => c.id === conv), 'bob sees the conversation').toBe(true);
   }).toPass({ timeout: 15_000 });
 
   await expect(async () => {
-    const msgs = (await (await rq.get(`${HUB}/api/v1/graph/conversation/${conv}/flow_message`, auth(bob.token))).json()).data ?? [];
+    const msgs = (await (await bobRq.get(`${HUB}/api/v1/graph/conversation/${conv}/flow_message`, auth(bob.token))).json()).data ?? [];
     const hi = msgs.find((m: { text: string }) => m.text === 'hi');
     expect(hi, 'bob reads alice\'s "hi"').toBeTruthy();
     expect(hi.sender_id).toBe(alice.id);
   }).toPass({ timeout: 15_000 });
 
   // bob replies "whats app".
-  const reply = await rq.post(`${HUB}/api/v1/graph/conversation/${conv}/add_message`, { ...auth(bob.token), data: { text: 'whats app' } });
+  const reply = await bobRq.post(`${HUB}/api/v1/graph/conversation/${conv}/add_message`, { ...auth(bob.token), data: { text: 'whats app' } });
   expect(reply.status()).toBe(200);
   expect((await reply.json()).data.text).toBe('whats app');
 
   // alice reads back the full transcript — both messages, both senders, ordered.
   await expect(async () => {
-    const msgs = ((await (await rq.get(`${HUB}/api/v1/graph/conversation/${conv}/flow_message`, auth(alice.token))).json()).data ?? [])
+    const msgs = ((await (await aliceRq.get(`${HUB}/api/v1/graph/conversation/${conv}/flow_message`, auth(alice.token))).json()).data ?? [])
       .slice()
       .sort((a: { created_date?: string }, b: { created_date?: string }) => (a.created_date ?? '').localeCompare(b.created_date ?? ''));
     const texts = msgs.map((m: { text: string }) => m.text);
@@ -138,5 +148,6 @@ test('binding criterion: real alice↔bob conversation through the local hub', a
     expect(wa.sender_id).toBe(bob.id);
   }).toPass({ timeout: 15_000 });
 
-  await rq.dispose();
+  await aliceRq.dispose();
+  await bobRq.dispose();
 });

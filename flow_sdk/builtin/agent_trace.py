@@ -7,16 +7,40 @@ row carries only the small summary fields the UI needs to answer "what
 happened, did it go well" instantly (verdict banner, counts, cost).
 
 ``trace`` is a create-time ferry (db-excluded): it carries the payload through
-the create POST into ``default_body_fn`` (which materializes trace.json) and is
+the create POST into the serializer (which materializes trace.json as the ``FreeSection``) and is
 never persisted or returned on GET — viewers stream the file via FSRef instead.
 """
 
-import json
-from typing import Optional
+from typing import ClassVar, Optional
 
 from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Sharing
 from flow_sdk.core import Entity
+from flow_sdk.schema.data_spec import FreeSection, SectionedHeader
 from flow_sdk.schema.types import EntityType
+
+
+class AgentTraceSpec(SectionedHeader):
+    """``trace.json`` — a FLAT document: the payload IS the file, and the
+    summary fields the row needs live under its ``summary`` key. ``name`` comes
+    from the folder when the file carries none."""
+
+    _section: ClassVar[str | None] = "summary"
+    _section_fields: ClassVar[frozenset[str]] = frozenset(
+        {"verdict", "verdict_reason", "duration_ms", "cost_usd", "issue_count", "divergence_count", "lane_count"}
+    )
+
+    name: Optional[str] = None
+    session_id: Optional[str] = None
+    worker_type: Optional[str] = None
+    analyzed_process_id: Optional[str] = None
+    verdict: Optional[str] = None
+    verdict_reason: Optional[str] = None
+    duration_ms: Optional[int] = None
+    cost_usd: Optional[float] = None
+    issue_count: Optional[int] = None
+    divergence_count: Optional[int] = None
+    lane_count: Optional[int] = None
+    trace: Optional[FreeSection] = None
 
 
 class AgentTrace(Entity):
@@ -39,7 +63,7 @@ class AgentTrace(Entity):
     # Create-time ferry only: JSON text consumed by default_body_fn (which
     # materializes trace.json at asset_ref). Never persisted to DB/blob —
     # viewers stream the file, GETs stay summary-sized.
-    trace: Optional[str] = NoDBAPIField(default=None)
+    trace: Optional[dict] = NoDBAPIField(default=None)
 
     @classmethod
     def from_trace(cls, trace: dict, *, name: str | None = None) -> "AgentTrace":
@@ -59,5 +83,5 @@ class AgentTrace(Entity):
             issue_count=summary.get("issue_count") or 0,
             divergence_count=summary.get("divergence_count") or 0,
             lane_count=summary.get("lane_count") or 1,
-            trace=json.dumps(trace),
+            trace=trace,
         )

@@ -82,7 +82,7 @@ async def test_workspace_folders_materialize_as_projects(project_db, tmp_path, m
     monkeypatch.setattr(isettings, "get_instance_settings", lambda: patched)
 
     from flow_sdk.builtin.project import Project
-    from flow_sdk.fs_store.identifier import is_valid_entity_id
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id
     from flow_sdk.fs_store.path_utils import canonical_posix_path
 
     # tmp_path is under the system temp dir, so include_temp=True is required

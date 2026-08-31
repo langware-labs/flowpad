@@ -1,8 +1,13 @@
 ---
+id: 5d88dc9f-ca9f-439a-9321-4346917b7532
 title: Bootstrap's default_project — which project a machine opens
-tags: [breadcrumb.test.bootstrap_default_project.rules]
-description: The browser's remembered project outranks everything; below it default_project is the hub's one-shot instruction, then the last active non-system project, then @local — resolved per-caller, never baked into the 30s bootstrap cache.
+tags:
+- breadcrumb.test.bootstrap_default_project.rules
+description: The browser's remembered project outranks everything; below it default_project
+  is the hub's one-shot instruction, then the last active non-system project, then
+  @local — resolved per-caller, never baked into the 30s bootstrap cache.
 ---
+
 # Bootstrap's default_project — which project a machine opens
 
 > Ground truth. Proven by RCA on 2026-08-18. Do not edit without the user's approval.
@@ -190,9 +195,3 @@ had activated a project. It was found by accident and it briefly produced a fals
 regressions" report. The api tier shares one database, so a global-state assertion
 anywhere can hide this shape; running the tier in reversed file order is the cheap check
 (done 2026-08-18: 799 pass both directions, that test was the only one).
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 5d88dc9f-ca9f-439a-9321-4346917b7532
-flowpad:endcapsule identity -->

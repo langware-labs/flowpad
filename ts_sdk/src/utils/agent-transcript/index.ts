@@ -54,4 +54,6 @@ export {
   isUnknown,
 } from './entries';
 
+export { TranscriptFormat, TranscriptSource } from './entries';
+
 export { parseTranscriptResponse } from './parser';

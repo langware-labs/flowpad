@@ -46,7 +46,7 @@ test.describe('Wiki folder tree (asset browseable tree)', () => {
   // just validates the chevron expanded successfully.
   test('Folder tree renders markdown vault roots on expand', async ({ page, request }) => {
     await dismissSetupModal(page);
-    await page.goto('/dock/assets/list/markdown');
+    await page.goto('/dock/assets/list/markdown?scope-mode=all');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
     const chevron = page.locator('[data-testid^="browseable-chevron-asset-type:markdown"]').first();
@@ -92,7 +92,7 @@ test.describe('Wiki folder tree (asset browseable tree)', () => {
   // Skipped (soft) when no markdown vaults exist — there is nothing to click.
   test('Clicking a vault-root folder navigates to folder URL and shows breadcrumb', async ({ page, request }) => {
     await dismissSetupModal(page);
-    await page.goto('/dock/assets/list/markdown');
+    await page.goto('/dock/assets/list/markdown?scope-mode=all');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
     // The markdown root is auto-expanded by ``expandParentsForPointer`` for
@@ -130,7 +130,7 @@ test.describe('Wiki folder tree (asset browseable tree)', () => {
   // ── Test 9: Scan toolbar action on the Markdown root triggers reindex ─────
   test('Scan toolbar action on markdown root triggers POST /fs-records/index?type=markdown', async ({ page }) => {
     await dismissSetupModal(page);
-    await page.goto('/dock/assets/list/markdown');
+    await page.goto('/dock/assets/list/markdown?scope-mode=all');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
     // Collect console errors for the "no console errors" assertion.
@@ -141,7 +141,12 @@ test.describe('Wiki folder tree (asset browseable tree)', () => {
 
     // The toolbar button is rendered inside the aria-level=1 markdown type row.
     // Hover over the row to reveal the toolbar (in case visibility is hover-gated).
-    const typeRow = page.locator('[role="treeitem"][aria-level="1"]').filter({ hasText: /markdown/i }).first();
+    // The root's label comes from the type registry ("Documents"); identify it
+    // by the chevron testid prefix (spec rule), never by label text.
+    const typeRow = page
+      .locator('[role="treeitem"][aria-level="1"]')
+      .filter({ has: page.locator('[data-testid^="browseable-chevron-asset-type:markdown"]') })
+      .first();
     await expect(typeRow).toBeVisible({ timeout: 10_000 });
     await typeRow.hover();
 

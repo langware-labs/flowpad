@@ -217,7 +217,7 @@ def _patch_entity_lookup(monkeypatch, entity):
 async def test_cache_miss_fills_from_hub_for_any_remote_entity(monkeypatch, tmp_path):
     """The generalized fallback: no longer flow_message-only."""
     from flow_sdk.actions.fs.fs_actions import fetch_remote_entity_file
-    from flow_sdk.api.api_types.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
 
     _patch_hub_get(monkeypatch, b"file-bytes")
     _patch_entity_lookup(monkeypatch, _entity(remote=True))
@@ -234,7 +234,7 @@ async def test_cache_miss_fills_from_hub_for_any_remote_entity(monkeypatch, tmp_
 @pytest.mark.asyncio
 async def test_cache_miss_does_not_hit_hub_for_local_only_entity(monkeypatch, tmp_path):
     from flow_sdk.actions.fs.fs_actions import fetch_remote_entity_file
-    from flow_sdk.api.api_types.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
 
     _patch_hub_get(monkeypatch, b"file-bytes")
     _patch_entity_lookup(monkeypatch, _entity(remote=False))
@@ -249,7 +249,7 @@ async def test_cache_miss_does_not_hit_hub_for_local_only_entity(monkeypatch, tm
 async def test_cache_miss_returns_false_when_hub_has_nothing(monkeypatch, tmp_path):
     """Hub 404 → False, so the caller 404s exactly as it did before."""
     from flow_sdk.actions.fs.fs_actions import fetch_remote_entity_file
-    from flow_sdk.api.api_types.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
 
     _patch_hub_get(monkeypatch, None)
     _patch_entity_lookup(monkeypatch, _entity(remote=True))
@@ -341,13 +341,23 @@ class _RecordBackedEntity:
 
 
 class _FileBackedEntity(_RecordBackedEntity):
-    _hub_asset_layout = "file"
-    _hub_main_file = "document.md"
+    type: str = "probe_file_backed"
 
 
 class _FolderBackedEntity(_RecordBackedEntity):
-    _hub_asset_layout = "folder"
-    _hub_main_file = "SKILL.md"
+    type: str = "probe_folder_backed"
+
+
+def _register_hub_layout_probes() -> None:
+    """Hub layout is ``TypeInfo``'s (``main_layout`` / ``main_file``) — the same
+    facts the disk serializer reads — so the probes declare it there."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
+
+    SchemaRegistry.register(TypeInfo(type_name="probe_file_backed", main_layout="file", hub_main_file="document.md"))
+    SchemaRegistry.register(TypeInfo(type_name="probe_folder_backed", main_layout="folder", main_file="SKILL.md", hub_main_file="SKILL.md"))
+
+
+_register_hub_layout_probes()
 
 
 @pytest.mark.asyncio

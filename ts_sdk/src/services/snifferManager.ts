@@ -4,10 +4,9 @@ import { AgentHook } from '../entities/agent-hook';
 import { ActionInfo } from '../models/ActionInfo';
 import { HttpMethod } from '../models/ApiUrl';
 import { TypeId } from '../FlowSync';
-import type { HooksSnifferStatus } from './hooksSnifferService';
+import { HOOKS_SNIFFER_ACTION, type HooksSnifferStatus } from './hooksSnifferService';
 import { SnifferHook } from './sniffer-hook';
 
-const HOOKS_SNIFFER_ACTION = 'hooks-sniffer';
 
 /** The user's last explicit sniffer decision. `null` = never decided, so the
  *  backend state stands. Owned here so every surface that flips the sniffer

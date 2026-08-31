@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from flow_sdk.flowpad_types.vendors import VENDORS
+
 
 def _claude_projects_dir() -> Path:
     # FLOWPAD_CLAUDE_HOME / CLAUDE_CONFIG_DIR redirects Claude's home (test
@@ -71,16 +73,10 @@ def _validate_path_component(value: str, field: str) -> None:
 # this direction — anything needing "which entity type is a <worker> transcript"
 # reads it here rather than re-listing the three types. ``workflow`` has no
 # session entity (its journals are run artifacts), hence its absence.
-SESSION_TYPE_BY_WORKER: dict[str, str] = {
-    "claude": "claude_session",
-    "codex": "codex_session",
-    "copilot": "copilot_session",
-    # No ``opencode`` row on purpose: opencode keeps sessions in a SQLite
-    # database rather than one file per session, so there is nothing for the
-    # filesystem indexer to mint a session *entity* from. Its transcripts are
-    # still resolvable by session id (``_resolve_opencode`` projects the store),
-    # which is a different direction than this map.
-}
+# Derived from ``VENDORS``: opencode has no row on purpose — it keeps sessions
+# in a SQLite store, so there is no per-session file to mint an entity from
+# (its transcripts are still resolvable by id: ``_resolve_opencode``).
+SESSION_TYPE_BY_WORKER: dict[str, str] = {v.key: v.session_entity_type for v in VENDORS if v.session_entity_type}
 
 
 def resolve_session_jsonl(worker_type: str, session_id: str) -> Path:

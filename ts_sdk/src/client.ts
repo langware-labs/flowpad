@@ -48,7 +48,29 @@ export function clearStats() {
 
 export type ExecutionContext = 'browser' | 'node';
 
-export type ApiAxiosInstance = AxiosInstance;
+/**
+ * Axios, retyped to say what this client ACTUALLY returns.
+ *
+ * `initApiClient`'s response interceptor returns `response.data.data` — it
+ * unwraps the backend's `{status, data}` envelope, which is the whole reason
+ * CLAUDE.md points non-entity REST calls at `apiClient` instead of `fetch`.
+ * Axios's own types cannot express that: they still promise
+ * `AxiosResponse<T>`, so every `apiClient.get<T>(…)` in the tree was typed as
+ * the envelope while holding the payload. Callers wrote the correct runtime
+ * code (`const rows = await apiClient.get<Row[]>(…); rows.map(…)`) and the
+ * compiler called it an error.
+ */
+export interface ApiAxiosInstance
+  extends Omit<AxiosInstance, 'request' | 'get' | 'delete' | 'head' | 'options' | 'post' | 'put' | 'patch'> {
+  request<T = unknown, D = unknown>(config: AxiosRequestConfig<D>): Promise<T>;
+  get<T = unknown, D = unknown>(url: string, config?: AxiosRequestConfig<D>): Promise<T>;
+  delete<T = unknown, D = unknown>(url: string, config?: AxiosRequestConfig<D>): Promise<T>;
+  head<T = unknown, D = unknown>(url: string, config?: AxiosRequestConfig<D>): Promise<T>;
+  options<T = unknown, D = unknown>(url: string, config?: AxiosRequestConfig<D>): Promise<T>;
+  post<T = unknown, D = unknown>(url: string, data?: D, config?: AxiosRequestConfig<D>): Promise<T>;
+  put<T = unknown, D = unknown>(url: string, data?: D, config?: AxiosRequestConfig<D>): Promise<T>;
+  patch<T = unknown, D = unknown>(url: string, data?: D, config?: AxiosRequestConfig<D>): Promise<T>;
+}
 
 export const invalidTokenMessage = 'Invalid token, login required';
 export const invalidRefreshTokenMessage = 'Invalid refresh token, login required';
@@ -140,7 +162,12 @@ function initApiClient(client: ApiAxiosInstance) {
 
 export function getApiClient(): ApiAxiosInstance {
   const conf = config;
-  const client: ApiAxiosInstance = axios.create({
+  // The one honest cast in this file: `axios.create` hands back a plain
+  // AxiosInstance, and `initApiClient` below is what converts it into an
+  // ApiAxiosInstance by installing the unwrapping interceptor. The conversion
+  // is a runtime fact no signature can carry, so it is asserted here, once, at
+  // the seam — not at the hundreds of call sites downstream.
+  const client = axios.create({
     headers: { Accept: 'application/json' },
     baseURL: conf.SERVER_URL,
     withCredentials: true,
@@ -149,7 +176,7 @@ export function getApiClient(): ApiAxiosInstance {
     },
   });
   initApiClient(client);
-  return client;
+  return client as unknown as ApiAxiosInstance;
 }
 
 export function getErrorMessages(error: AxiosError): string {

@@ -1,5 +1,5 @@
 import { APIEntity, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 
 /**
  * GraphWorkflowNode — derived record-keeping row for a node inside an GraphWorkflow
@@ -13,6 +13,12 @@ export interface IGraphWorkflowNode extends IEntity {
   program_ref?: string;
   enabled?: boolean;
 }
+
+// `implements IGraphWorkflowNode` only checks the class; it contributes no members, so every
+// field declared solely on IGraphWorkflowNode read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface GraphWorkflowNode extends EntityMerge<IGraphWorkflowNode> {}
 
 @registerEntity
 export class GraphWorkflowNode extends APIEntity<GraphWorkflowNode> implements IGraphWorkflowNode {

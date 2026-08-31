@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, ClassVar, List, Optional
 from flow_sdk.config import default_service_config
 from flow_sdk import service_log
 from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.db.db_entity import DBEntity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.core.entity.entity_model import Entity

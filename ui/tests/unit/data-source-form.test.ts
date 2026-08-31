@@ -15,19 +15,19 @@ import {
 } from '@src/components/data-sources/source-form';
 
 const rss = {
-  config_schema: {
+  config: {
     feed_urls: { type: 'lines', required: true, label: 'Feed URLs', pattern: '^https?://' },
   },
 } as never;
 
 const slack = {
-  config_schema: {
+  config: {
     channels: { type: 'lines', required: true, label: 'Channel IDs', pattern: '^[CGD][A-Z0-9]{6,}$' },
   },
 } as never;
 
 const hn = {
-  config_schema: {
+  config: {
     types: { type: 'csv', label: 'Item types' },
     min_score: { type: 'number', label: 'Minimum score' },
   },
@@ -69,7 +69,7 @@ describe('validateDraft replaces the per-provider branches', () => {
 describe('accountKeyFor', () => {
   it('takes the FIRST value of the marked field — appending must not rename', () => {
     const spec = {
-      config_schema: { feed_urls: { type: 'lines', account_key: true } },
+      config: { feed_urls: { type: 'lines', account_key: true } },
     } as never;
     expect(accountKeyFor(draft('rss', { feed_urls: 'https://a.dev\nhttps://b.dev' }), spec)).toBe('https://a.dev');
   });

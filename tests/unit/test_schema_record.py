@@ -6,45 +6,9 @@ import json
 from unittest import mock
 
 from flow_sdk.fs_store.schema_registry import (
-    IndexRequest,
-    IndexResult,
-    ScanResult,
     SchemaRegistry,
     _append_jsonl,
 )
-
-# ---------------------------------------------------------------------------
-# Dataclass field tests
-# ---------------------------------------------------------------------------
-
-
-def test_scan_result_fields():
-    sr = ScanResult(type_name="skill", count=3, total_bytes=1024, scan_ms=12.5)
-    assert sr.type_name == "skill"
-    assert sr.count == 3
-    assert sr.total_bytes == 1024
-    assert sr.scan_ms == 12.5
-    assert sr.last_scan_at is None
-
-
-def test_index_result_fields():
-    ir = IndexResult(type_name="bookmark", indexed=5, skipped=1, duration_ms=88.0)
-    assert ir.type_name == "bookmark"
-    assert ir.indexed == 5
-    assert ir.skipped == 1
-    assert ir.duration_ms == 88.0
-    assert ir.last_index_at is None
-
-
-def test_index_request_defaults():
-    req = IndexRequest()
-    assert req.actions == ["scan", "index"]
-    assert req.types is None
-    assert req.start_time is None
-    assert req.end_time is None
-    assert req.trigger == "manual"
-    assert req.limit_per_type is None
-
 
 # ---------------------------------------------------------------------------
 # append_scan / append_index + log file tests

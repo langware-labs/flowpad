@@ -43,6 +43,20 @@ function toStringRecord(obj?: Record<string, unknown>): Record<string, string> {
   return result;
 }
 
+/**
+ * How a dock commit should enter browser history.
+ *
+ * Default is a PUSH, because a navigation is normally something the user chose and
+ * Back should undo it. `replace` is for a commit the user did NOT initiate — the
+ * agent re-pointing the vibe workspace's active display, or a loader restoring it —
+ * where each push would otherwise cost the user one Back press to escape a history
+ * they never asked for, and where a pushed entry would immediately redirect forward
+ * again (the classic redirect trap).
+ */
+export interface NavigationCommitOptions {
+  replace?: boolean;
+}
+
 interface PendingDockNavigation {
   /**
    * Where we are GOING. `navigate()` is async — React Router runs loaders before
@@ -206,11 +220,18 @@ export class NavigationActions {
   }
 
   // `viewType:pointer` label for the navigation toplog trace.
-  private static dockLabel(d: { viewType: string; pointer?: string | null } | null): string | null {
+  // `viewType` is optional because a DockPointer's is — this is a log label, and
+  // every caller hands it a real DockPointer.
+  private static dockLabel(d: { viewType?: string; pointer?: string | null } | null): string | null {
     return d ? `${d.viewType}:${d.pointer ?? ''}` : null;
   }
 
-  private commitBrowserNavigation(target: DockPointer, fullUrl: string, routerUrl: string): void {
+  private commitBrowserNavigation(
+    target: DockPointer,
+    fullUrl: string,
+    routerUrl: string,
+    opts?: NavigationCommitOptions,
+  ): void {
     this.markPendingNavigation(target, fullUrl);
 
     const from = NavigationActions.getCurrentBrowserUrl();
@@ -220,6 +241,7 @@ export class NavigationActions {
       to: fullUrl,
       routerUrl,
       willNavigate,
+      replace: opts?.replace === true,
       historyLen: window.history.length,
     });
     if (willNavigate) {
@@ -227,7 +249,7 @@ export class NavigationActions {
       // A hand-written pushState/popstate updates useLocation but can bypass
       // data-router revalidation, leaving the new URL rendered against stale
       // context. Every dock transition therefore enters through navigate().
-      void this.navigate(routerUrl);
+      void this.navigate(routerUrl, opts?.replace ? { replace: true } : undefined);
     }
   }
 
@@ -322,7 +344,7 @@ export class NavigationActions {
    * than a hand-copied loop here. Also the surface a journey names as
    * `start: {kind: "root"}`.
    */
-  openHomeRoot(highlightWord?: string): void {
+  private openHomeRoot(highlightWord?: string): void {
     const root = DockPointer.root();
     this.openDock(highlightWord ? root.withHighlight(highlightWord) : root);
   }
@@ -386,9 +408,13 @@ export class NavigationActions {
    *
    * @param pointer - DockPointer to navigate to, or null to close dock
    */
-  openDock(pointer: DockPointer | null): void;
-  openDock(pointer: IDockPointer, extraOptions?: Record<string, string>): void;
-  openDock(pointer: IDockPointer | DockPointer | null, extraOptions?: Record<string, string>): void {
+  openDock(pointer: DockPointer | null, extraOptions?: Record<string, string>, opts?: NavigationCommitOptions): void;
+  openDock(pointer: IDockPointer, extraOptions?: Record<string, string>, opts?: NavigationCommitOptions): void;
+  openDock(
+    pointer: IDockPointer | DockPointer | null,
+    extraOptions?: Record<string, string>,
+    opts?: NavigationCommitOptions,
+  ): void {
     NavigationActions.clearCommittedPendingNavigation();
     const currentPath = window.location.pathname;
     const currentUrl = NavigationActions.getCurrentBrowserUrl();
@@ -532,7 +558,7 @@ export class NavigationActions {
     const basePath = stripDockPortion(currentPath);
     const url = basePath && fullUrl.startsWith(basePath) ? fullUrl.substring(basePath.length) : fullUrl;
 
-    this.commitBrowserNavigation(targetDock, fullUrl, url);
+    this.commitBrowserNavigation(targetDock, fullUrl, url, opts);
   }
 
   /**
@@ -543,32 +569,6 @@ export class NavigationActions {
     const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
     const fullUrl = base.toUrl(window.location.pathname);
     return `${window.location.origin}${fullUrl}`;
-  }
-
-  /**
-   * Open a dock pointer in a separate browser tab named "flowpad-shell".
-   *
-   * - Reuses the existing browser tab named "flowpad-shell" if one is open,
-   *   so repeated clicks land in the same secondary tab instead of spawning new ones.
-   * - Leaves the current tab (e.g. the conversation view) untouched.
-   *
-   * Useful for shell / Claude Code sessions launched from a non-shell view.
-   */
-  openInBrowserTab(pointer: IDockPointer | DockPointer): void {
-    const absoluteUrl = this.getDockUrl(pointer);
-    const opened = window.open(absoluteUrl, 'flowpad-shell');
-    if (opened) opened.focus();
-  }
-
-  /**
-   * Open a dock pointer in a NEW browser tab (`_blank`), one per call —
-   * unlike {@link openInBrowserTab}, which reuses the single named
-   * "flowpad-shell" tab. Used by pop-out flows where each popped entity
-   * must get its own window. Inside Electron, the main process's
-   * setWindowOpenHandler routes this to the system browser.
-   */
-  openInNewBrowserTab(pointer: IDockPointer | DockPointer): void {
-    window.open(this.getDockUrl(pointer), '_blank', 'noopener,noreferrer');
   }
 
   /**
@@ -594,6 +594,22 @@ export class NavigationActions {
     //console.log('[NavigationActions] 🚪 closeDock completed');
   }
 
+  /**
+   * Commit a pointer WITHOUT adding a history entry.
+   *
+   * Same path as {@link openDock} — sticky options, host carry, round-trip check and
+   * all — differing only in how it enters history. Exists so the intent reads at the
+   * call site: this navigation was not the user's choice, so Back should skip it.
+   *
+   * The caller is the vibe workspace's active display, where the agent may show a
+   * dozen targets in one turn. Pushing each would bury whatever the user was doing a
+   * dozen Back presses deep; the show history stays browsable through the display
+   * history popover, which is where it belongs.
+   */
+  replaceDock(pointer: DockPointer | null, extraOptions?: Record<string, string>): void {
+    this.openDock(pointer, extraOptions, { replace: true });
+  }
+
   // ========== Tab Navigation (Shortcuts) ==========
 
   openTab(tabType: ViewType, options?: TabOptions): void {
@@ -613,22 +629,7 @@ export class NavigationActions {
     this.openDock(new DockPointer(viewType, pointer, undefined, undefined, page));
   }
 
-  closeTab(tabType: ViewType): void {
-    // Closing a tab doesn't navigate - it's a store action
-    // This is an exception to URL-first principle (closing doesn't change URL)
-    console.warn('[Navigation] closeTab is not URL-based, implement via store action', tabType);
-  }
-
-  switchToTab(tabType: ViewType): void {
-    // Switching is the same as opening (idempotent)
-    this.openTab(tabType);
-  }
-
   // ========== Content Navigation (Shortcuts) ==========
-
-  openAssetList(typeName: string): void {
-    this.openDock(DockPointer.forAssetList(typeName));
-  }
 
   /**
    * Open the Assets dock at its default surface: the project home when a
@@ -864,44 +865,6 @@ export class NavigationActions {
   }
 
   /**
-   * Open file explorer with optional path
-   * @param path - Optional path to navigate to (file or folder)
-   *   - If folder: opens that folder
-   *   - If file: opens containing folder with file selected
-   *   - If omitted: opens root
-   */
-  openExplorer(path?: string): void {
-    const pointer = DockPointer.forExplorer(path);
-    this.openDock(pointer);
-  }
-
-  /**
-   * Open the show view for an entity's MCP UI
-   * @param typeId - TypeId string (e.g., "agent-@my-agent")
-   * @param page - Page name
-   * @param component - Component name
-   */
-  openShow(typeId: string, page?: string, component?: string): void {
-    const pointer = DockPointer.forShow(typeId, page, component);
-    this.openDock(pointer);
-  }
-
-  /**
-   * Open HOME/LiveStatus view with optional tab and item
-   * URL structure: /dock/home/<tab>?item=<item>&scope=<scope>&project=<project>
-   *
-   * @param tab - Tab name (e.g., "summary", "projects", "sessions")
-   * @param item - Optional item within the tab
-   * @param options - Optional scope filter options
-   * @param options.scope - Scope filter: 'all' | 'global' | 'project'
-   * @param options.project - Project encoded name (when scope is 'project')
-   */
-  openHome(tab?: string, item?: string, options?: { scope?: string; project?: string; expand?: boolean }): void {
-    const pointer = DockPointer.forHome(tab, item, options);
-    this.openDock(pointer);
-  }
-
-  /**
    * Open System Profile view with optional tab and item
    * URL structure: /dock/system_profile/<tab>?item=<item>&scope=<scope>&project=<project>
    *
@@ -931,15 +894,6 @@ export class NavigationActions {
   }
 
   /**
-   * Open tasks view
-   * @param taskId - Optional task ID to view/edit
-   */
-  openTasks(taskId?: string): void {
-    const pointer = DockPointer.forTasks(taskId);
-    this.openDock(pointer);
-  }
-
-  /**
    * Open record search view
    * @param query - Optional initial query string
    * @param filters - Optional filter options
@@ -960,16 +914,6 @@ export class NavigationActions {
   }
 
   /**
-   * Open settings viewer
-   * @param fieldName - Optional field name to scroll to / highlight
-   * @param filter - Optional search filter string
-   */
-  openSettings(fieldName?: string, filter?: string): void {
-    const pointer = DockPointer.forSettings(fieldName, filter);
-    this.openDock(pointer);
-  }
-
-  /**
    * Open the user Preferences screen
    * @param category - Optional category whose tab should be active
    */
@@ -986,23 +930,6 @@ export class NavigationActions {
   openCredentials(tab?: CredentialsSubview, projectId?: string): void {
     const pointer = DockPointer.forCredentials(tab, projectId);
     this.openDock(pointer);
-  }
-
-  // ========== Entity Navigation ==========
-
-  openEntity(entity: unknown): void {
-    // TODO: Determine appropriate dock based on entity type
-    // For now, log a warning
-    console.warn('[Navigation] openEntity not yet implemented', { entity });
-  }
-
-  openCodeRef(codeRef: { path: string }): void {
-    if (codeRef.path) {
-      // Use openFile to automatically choose the right viewer based on file type
-      this.openFile(codeRef.path);
-    } else {
-      console.warn('[Navigation] openCodeRef called with invalid codeRef', codeRef);
-    }
   }
 
   // ========== History Navigation ==========

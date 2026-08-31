@@ -13,7 +13,7 @@ The `flow_sdk.fs_store` package provides file-system backed records. There is no
 | Subject | Doc |
 |---|---|
 | The record class (`FSRecord`), meta, save/load, index-state (`.hash` sentinel, `index_required`, `orphan`) | [record-model.md](data-management/record-model.md) |
-| Shadow-folder layout (`<records_root>/<type>/<type>-@<id>/`), per-type source mapping | [folder-layout.md](data-management/folder-layout.md) |
+| Shadow-folder layout (`<records_root>/<type>/<id>/`), per-type source mapping | [folder-layout.md](data-management/folder-layout.md) |
 | Entity ↔ Record sync (`sync_to_db` pipeline, FTS5, wiki edges, DataOps) | [entity-index-sync.md](data-management/entity-index-sync.md) |
 | The FSIndexer walk (roots, walkers, skip-fresh, orphan actions, triggers) | [scan-and-discovery.md](data-management/scan-and-discovery.md) |
 | Gitignore-aware traversal used by the walkers | [gitignore-walk.md](data-management/gitignore-walk.md) |

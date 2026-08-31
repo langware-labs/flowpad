@@ -3,7 +3,6 @@
 Tests VFSPath, storage drivers, FSEntry entities, and API responses.
 """
 
-import asyncio
 import os
 import tempfile
 from io import BytesIO
@@ -11,10 +10,10 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.api.fs.fs_api import VFSPath, EntityFSReqInfo, parse_custom_uri
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.api.fs.fs_api import VFSPath, parse_custom_uri
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.models import FSEntry
-from flow_sdk.responses import ApiSuccessResponse, ApiFailResponse, ApiResponseStatus
+from flow_sdk.responses import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.storage import LocalStorageDriver
 
 

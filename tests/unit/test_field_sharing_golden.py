@@ -230,14 +230,14 @@ def test_the_two_egress_seams_now_agree():
             # Task is the ONLY type declaring TypeInfo.local_fields.
             # `git_origin`: re-declared PRIVATE here, so this type keeps the
             # pre-2259df26 answer while the base now shares it.
-            ["git_origin", "my_process_id", "project_name", "project_root"],
+            ["origin", "my_process_id", "project_name", "project_root"],
             BASE_LOCAL_ONLY,
             [
                 "artifacts",
                 "env_vars",
                 "expand",
                 "fs_storage_provider",
-                "git_origin",
+                "origin",
                 "last_active_at",
                 "last_edited_at",
                 "private_context_entities_",
@@ -255,7 +255,6 @@ def test_the_two_egress_seams_now_agree():
                 "env_vars",
                 "expand",
                 "fs_storage_provider",
-                "git_origin",
                 "last_active_at",
                 "last_edited_at",
                 "origin",
@@ -295,7 +294,6 @@ def test_the_two_egress_seams_now_agree():
                 "env_vars",
                 "expand",
                 "fs_storage_provider",
-                "git_origin",
                 "kind",
                 "last_active_at",
                 "last_edited_at",
@@ -315,7 +313,7 @@ def test_the_two_egress_seams_now_agree():
                 "env_vars",
                 "expand",
                 "fs_storage_provider",
-                "git_origin",
+                "origin",
                 "last_active_at",
                 "last_edited_at",
                 "private_context_entities_",
@@ -327,7 +325,7 @@ def test_the_two_egress_seams_now_agree():
             "flow_sdk.builtin.message_attachment",
             "MessageAttachment",
             {},
-            ["git_origin"],
+            ["origin"],
             BASE_LOCAL_ONLY,
             [
                 "env_vars",
@@ -335,6 +333,7 @@ def test_the_two_egress_seams_now_agree():
                 "fs_storage_provider",
                 "last_active_at",
                 "last_edited_at",
+                "origin",
                 "private_context_entities_",
                 "shared_context_entities",
             ],
@@ -345,7 +344,9 @@ def test_the_two_egress_seams_now_agree():
             "flow_sdk.builtin.conversation",
             "Conversation",
             {},
-            ["hub_updated_date"],
+            # `message_ids` joined `message_count` as PRIVATE: both are projections
+            # of the pointer log, rebuilt locally and never accepted from the hub.
+            ["hub_updated_date", "message_ids"],
             BASE_LOCAL_ONLY,
             # `message_count`/`message_ids` are projections; Conversation's setattr
             # guard refuses them, which is itself the policy under test elsewhere.
@@ -353,7 +354,7 @@ def test_the_two_egress_seams_now_agree():
                 "env_vars",
                 "expand",
                 "fs_storage_provider",
-                "git_origin",
+                "origin",
                 "kind",
                 "last_active_at",
                 "last_edited_at",

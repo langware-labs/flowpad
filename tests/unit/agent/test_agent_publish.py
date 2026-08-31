@@ -2,10 +2,10 @@
 
 from unittest.mock import AsyncMock
 
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.project import Project
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 
 
 async def test_publish_is_idempotent(monkeypatch):
@@ -20,7 +20,7 @@ async def test_publish_is_idempotent(monkeypatch):
     async def _publish(entity, actor):
         calls.append(1)
         entity.remote = True
-        entity.git_origin = {
+        entity.origin = {
             "provider": "github",
             "owner": "flowpad",
             "name": "flowpad-os",
@@ -35,7 +35,7 @@ async def test_publish_is_idempotent(monkeypatch):
     actor = TypeId(type="user", id=mint_uuid())
     assert await agent.ensure_on_hub(actor) is True
     assert agent.remote is True
-    assert agent.git_origin["rel_path"] == "agentic-assets/agent/joe"
+    assert agent.origin["rel_path"] == "agentic-assets/agent/joe"
     # second call is a no-op
     assert await agent.ensure_on_hub(actor) is False
     assert calls == [1]
@@ -48,7 +48,7 @@ async def test_legacy_remote_without_git_origin_is_republished(monkeypatch):
     async def _publish(entity, actor):
         calls.append(1)
         entity.remote = True
-        entity.git_origin = {"rel_path": "agentic-assets/agent/joe"}
+        entity.origin = {"rel_path": "agentic-assets/agent/joe"}
 
     monkeypatch.setattr("flow_sdk.assets.git_publish.publish_git_asset", _publish)
     agent = Agent(name="joe", remote=True)

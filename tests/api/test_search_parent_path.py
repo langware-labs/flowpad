@@ -40,7 +40,6 @@ async def _seed_md(tmp: Path, scan_roots: list[Path]) -> None:
 
     Scan roots are patched so vault_root attribution is deterministic.
     """
-    from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown
     from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
@@ -50,7 +49,7 @@ async def _seed_md(tmp: Path, scan_roots: list[Path]) -> None:
     ):
         for md in sorted(tmp.rglob("*.md")):
             ref = _FSRef(md)
-            rec = extract_markdown(ref, SchemaRegistry.get("markdown").mint_entity_id(ref, derive=True, overwrite=True))[0]
+            rec = SchemaRegistry.get("markdown").from_disk_fn(ref, SchemaRegistry.get("markdown").mint_entity_id(ref))[0]
             await rec.sync_to_db()
 
 

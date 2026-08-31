@@ -9,7 +9,7 @@ from starlette.requests import Request
 
 from flow_sdk.actions.action_registry import get_action_from_method
 from flow_sdk.api.api_request import APIRequest
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.config import default_service_config
 from flow_sdk.core.policy import PolicyResolver
 from flow_sdk.core.urls.service_urls import urls_service
@@ -105,22 +105,6 @@ class RequestInfo:
             visitor_typeid=self.visitor_typeid,
             token_hash=token_hash,
         )
-
-    @property
-    def is_post(self) -> bool:
-        return self.method == "post"
-
-    @property
-    def is_get(self) -> bool:
-        return self.method == "get"
-
-    @property
-    def is_put(self) -> bool:
-        return self.method == "put"
-
-    @property
-    def is_delete(self) -> bool:
-        return self.method == "delete"
 
     @property
     def method(self) -> str:

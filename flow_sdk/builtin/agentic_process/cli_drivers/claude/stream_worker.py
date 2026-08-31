@@ -78,6 +78,10 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowElementType,
 )
 from flow_sdk.instance_settings import get_instance_settings
+from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import (
+    error_frame,
+    status_frame,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +189,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         except WorkerSpawnError as e:
             # Surface the message on the chat stream, then propagate so the
             # turn runner latches status=FAILED + start_failure.
-            yield _error(str(e))
+            yield error_frame(str(e))
             raise
 
         logger.info("ClaudeCLIStreamWorker: launching %s", " ".join(argv))
@@ -204,7 +208,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         except Exception as e:
             logger.exception("ClaudeCLIStreamWorker: spawn failed")
             message = f"spawn failed: {e}"
-            yield _error(message)
+            yield error_frame(message)
             raise WorkerSpawnError("claude", message) from e
 
         # Deliver the prompt over stdin and KEEP the pipe open — it's the
@@ -288,7 +292,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
                 # sidecar marker replay).
                 yield abort_status_frame()
             elif self._proc and self._proc.returncode != 0:
-                yield _status(
+                yield status_frame(
                     "exit-error",
                     f"claude exited with code {self._proc.returncode}",
                 )
@@ -630,22 +634,3 @@ def _turn_debug_file(session_id: str | None) -> str | None:
     return str(logs_dir / f"{session_id or 'nosession'}-{stamp}.txt")
 
 
-def _error(message: str) -> FlowData:
-    return FlowData(
-        flow_value=message,
-        attributes={
-            "element-type": FlowElementType.ERROR,
-            "data-type": FlowDataType.TEXT,
-        },
-    )
-
-
-def _status(subtype: str, value: str = "") -> FlowData:
-    return FlowData(
-        flow_value=value,
-        attributes={
-            "element-type": FlowElementType.STATUS,
-            "data-type": FlowDataType.TEXT,
-            "subtype": subtype,
-        },
-    )

@@ -2,7 +2,7 @@
 
 Search local files, skills, agents, specs, plans, tasks, markdown docs, claude sessions, and any other indexed records via SQLite FTS5. Use this whenever the user asks to **find**, **look up**, **search for**, or **show me X** without giving an explicit TypeId.
 
-This is a read-only discovery action — it never writes to disk, never mutates the DB. Compose it with `navigate` to open whatever the user picks.
+This is a read-only discovery action — it never writes to disk, never mutates the DB. Compose it with the `flowpad-navigation` skill to open whatever the user picks.
 
 ## How to search
 
@@ -48,7 +48,7 @@ Success — exit 0, single JSON line:
 }
 ```
 
-`record_type` + `record_id` together form the TypeId (`<record_type>-<record_id>`) — pass that to [`navigate.md`](navigate.md) to open one.
+`record_type` + `record_id` together form the TypeId (`<record_type>-<record_id>`) — pass that to the `flowpad-navigation` skill to open one.
 
 `snippet` is FTS-highlighted with `<mark>…</mark>` around matched terms. Strip the markers when echoing back to the user.
 
@@ -69,8 +69,8 @@ Success — exit 0, single JSON line:
 1. `flow record search "<X>" all 5`
 2. If `total == 0`, tell the user nothing matched. Stop.
 3. If `total == 1`, treat it as the answer.
-4. If `total > 1`, pick the best match by name/recency and tell the user *"found N — opening the most recent: <name>"* before navigating.
-5. Pass `<record_type>-<record_id>` to `flow navigate entity`. See [`navigate.md`](navigate.md).
+4. If `total > 1`, pick the best match by name/recency and tell the user *"found N — opening the most recent: <name>"* before opening it.
+5. Pass `<record_type>-<record_id>` to `flow show entity`. See the `flowpad-navigation` skill.
 
 ### "What did I work on today / this week?"
 
@@ -102,7 +102,7 @@ curl -sG "http://127.0.0.1:$PORT/api/v1/graph/agentic_process" \
 
 ### Disambiguating
 
-When several rows have the same `name` (common for things named after files, e.g. `electron.md`), use `asset_ref` to disambiguate to the user. Don't navigate without confirmation when the user's phrasing is ambiguous.
+When several rows have the same `name` (common for things named after files, e.g. `electron.md`), use `asset_ref` to disambiguate to the user. Don't open one without confirmation when the user's phrasing is ambiguous.
 
 ## When to stop
 

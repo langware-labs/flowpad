@@ -227,48 +227,39 @@ class ClaudeAgentOptions(AgentOptions):
     # Serialisation
     # ------------------------------------------------------------------
 
-    def to_json(self) -> dict[str, Any]:
-        d = super().to_json()
-        d.update(
-            {
-                "worker_type": "claude",
-                "session_id": self.session_id,
-                "resume": self.resume,
-                "fork_session_id": self.fork_session_id,
-                "model": self.model,
-                "debug": self.debug,
-                "debug_file": self.debug_file,
-                "permission_mode": self.permission_mode,
-                "chrome": self.chrome,
-                "worktree": self.worktree,
-                "agents_json": self.agents_json,
-                "print_mode": self.print_mode,
-                "add_dirs": self.add_dirs,
-                "output_format": self.output_format,
-                "verbose": self.verbose,
-                "effort": self.effort,
-            }
-        )
-        return d
+    # ── Serialisation ───────────────────────────────────────────────────────
+    # The base AgentOptions.to_json / from_json do the work; this is the whole
+    # declaration of this vendor's wire shape. Key names and value types are
+    # frozen — see tests/unit/test_agent_options_serialization_golden.py.
 
-    @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "ClaudeAgentOptions":
-        return cls(
-            session_id=data.get("session_id"),
-            resume=bool(data.get("resume", False)),
-            fork_session_id=data.get("fork_session_id"),
-            model=data.get("model"),
-            debug=bool(data.get("debug", False)),
-            debug_file=data.get("debug_file"),
-            permission_mode=data.get("permission_mode", "bypassPermissions"),
-            chrome=bool(data.get("chrome", False)),
-            worktree=bool(data.get("worktree", False)),
-            agents_json=data.get("agents_json"),
-            workdir=data.get("workdir"),
-            env_vars=data.get("env_vars") or {},
-            print_mode=bool(data.get("print_mode", False)),
-            add_dirs=list(data.get("add_dirs") or []),
-            output_format=data.get("output_format"),
-            verbose=bool(data.get("verbose", False)),
-            effort=data.get("effort"),
-        )
+    WORKER_TYPE = "claude"
+    SERIALIZED_FIELDS = (
+        "session_id",
+        "resume",
+        "fork_session_id",
+        "model",
+        "debug",
+        "debug_file",
+        "permission_mode",
+        "chrome",
+        "worktree",
+        "agents_json",
+        "print_mode",
+        "add_dirs",
+        "output_format",
+        "verbose",
+        "effort",
+    )
+    _COERCE = {
+        "resume": bool,
+        "debug": bool,
+        "chrome": bool,
+        "worktree": bool,
+        "print_mode": bool,
+        "verbose": bool,
+        "add_dirs": lambda v: list(v or []),
+    }
+
+
+#: The options class ``factory`` builds for this vendor.
+AGENT_OPTIONS = ClaudeAgentOptions

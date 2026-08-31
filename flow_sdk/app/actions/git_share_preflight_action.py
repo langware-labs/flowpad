@@ -176,7 +176,7 @@ async def git_share_preflight(entity_type: str, entity_id: str) -> dict:
     Order matters — return the FIRST blocking reason so the sender gets one
     actionable fix at a time (fix the remote before we complain about a dirty
     tree, etc.)."""
-    from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
     from flow_sdk.schema.types import EntityType  # noqa: PLC0415
 
     src_root = await _resolve_asset_git_path(entity_type, entity_id)

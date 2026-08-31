@@ -181,13 +181,33 @@ async def _register_post_save(entity: Trigger) -> None:
             # FSOp triggers are picked up by the watcher's startup walk
             # (set_service_triggers runs BEFORE fsop_watcher.start), so we
             # don't need to spawn the awatch task here — the boot order
-            # covers it. Future-proof against re-ordering with an explicit
-            # call once the watcher is running:
+            # covers it. The factory-reset path has no such walk following it,
+            # so it re-arms explicitly via `fsop_watcher.start(catch_up=False)`.
             from flow_sdk.server.fsop_watcher import fsop_watcher
+
             if len(fsop_watcher) and entity.id not in fsop_watcher._tasks:
                 await fsop_watcher.on_trigger_saved(entity)
     except Exception:
         _log.exception("Post-save registration failed for trigger %r", entity.uname)
+
+
+async def seed_service_entities() -> None:
+    """Upsert every system-scope row a wipe destroys: the builtin triggers,
+    then the service GraphWorkflows.
+
+    The single seam for both callers — `_on_server_startup` (before
+    `fsop_watcher.start()`) and `clear_all_data()`, since a factory reset
+    deletes these rows like any other. Seeding them together is the point: a
+    caller cannot restore half the set, which is exactly the bug that shipped
+    when the reset path re-seeded triggers and left the flows behind.
+    """
+    await set_service_triggers()
+    try:
+        from flow_sdk.graph_workflow_manager.service_graph_workflows import set_service_graph_workflows
+
+        await set_service_graph_workflows()
+    except Exception:
+        _log.exception("set_service_graph_workflows failed")
 
 
 async def set_service_triggers() -> None:

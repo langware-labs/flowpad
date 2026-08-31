@@ -12,7 +12,7 @@ import { OpenCodeRestoreIcon } from './OpenCodeRestoreIcon';
 
 /**
  * UI-side resolver for the symbolic ``ProcessIconKey`` exposed by
- * ``AgenticProcess.icon``. The SDK can't import React components, so it
+ * ``AgenticProcess.processIconKey``. The SDK can't import React components, so it
  * publishes a key and the UI plugs the right glyph in here.
  *
  * Add new vendor pairs (fresh + restored) as worker types appear.

@@ -81,10 +81,13 @@ describe('process hook shared real-worker acceptance', () => {
           const hooks = JSON.parse(await plugin.child('hooks/hooks.json').read()) as {
             hooks: Record<string, Array<{ hooks: Array<{ args: string[] }> }>>;
           };
-          expect(hooks.hooks[contract.event][0].hooks[0].args.slice(-3)).toEqual([
+          // UserPromptSubmit is a response event: claude reads the hook's stdout,
+          // so the handler both reports AND blocks on the backend round trip.
+          expect(hooks.hooks[contract.event][0].hooks[0].args.slice(-4)).toEqual([
             'report',
             '--process-id',
             process.id,
+            '--wait-for-response',
           ]);
         } else {
           const hooks = JSON.parse(await plugin.child('hooks.json').read()) as {

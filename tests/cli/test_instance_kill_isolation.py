@@ -200,6 +200,63 @@ def test_a_role_filter_spares_the_other_half(iname):
                 p.wait()
 
 
+def test_port_cleanup_keeps_the_backend_role_filter(free_port, iname):
+    """A backend-only port sweep must not widen into an all-instance kill."""
+    import os
+    import subprocess
+    import sys
+
+    name = iname("port-roles")
+    port = free_port()
+    env = dict(os.environ)
+    env["FLOW_INSTANCE"] = name
+    listener = (
+        "import socket,sys,time; "
+        "s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); "
+        f"s.bind(('127.0.0.1',{port})); s.listen(1); "
+        "sys.stdout.write('ready\\n'); sys.stdout.flush(); time.sleep(300)"
+    )
+    ready = (
+        "import sys,time; sys.stdout.write('ready\\n'); "
+        "sys.stdout.flush(); time.sleep(300)"
+    )
+    backend = subprocess.Popen(
+        [sys.executable, "-c", listener, "flow_sdk.server.run"],
+        env=env,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    frontend = subprocess.Popen(
+        [sys.executable, "-c", ready, "vite", "--mode", name],
+        env=env,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert backend.stdout.readline().strip() == "ready"
+        assert frontend.stdout.readline().strip() == "ready"
+        table = liveness.scan()
+        if table.ports_degraded:
+            pytest.skip("socket attribution unavailable in this environment")
+
+        result = procs.kill_port_if_owned(
+            port,
+            name,
+            table,
+            roles=frozenset({Role.BACKEND}),
+        )
+
+        assert backend.pid in result.killed
+        assert frontend.pid not in result.killed
+        backend.wait(timeout=5)
+        assert _alive(frontend)
+    finally:
+        for p in (backend, frontend):
+            if _alive(p):
+                p.kill()
+                p.wait()
+
+
 # ── reconcile ────────────────────────────────────────────────────────────────
 def test_reconcile_clears_a_dead_pid_but_keeps_the_port(iname):
     """The port is what makes a relaunch land back where it was; the PID is a

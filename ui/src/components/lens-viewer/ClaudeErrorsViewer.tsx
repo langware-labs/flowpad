@@ -1065,7 +1065,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
                     className="mt-3 rounded bg-muted px-3 py-1 text-xs font-medium transition-colors hover:bg-muted/80"
                     onClick={() => setTimeSpan(widerSpan.value)}
                   >
-                    {widerCount} error{widerCount !== 1 ? 's' : ''} in the last {widerSpan.label} — switch
+                    {widerCount} error{widerCount !== 1 ? 's' : ''} in the last {i18n._(widerSpan.label)} — switch
                   </button>
                 )}
               </div>

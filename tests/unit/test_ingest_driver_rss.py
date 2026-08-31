@@ -74,7 +74,7 @@ async def test_atom_is_parsed_and_the_window_filters_old_entries(feed_server):
     assert ids[0].startswith("urn:uuid:1225")
 
     first = result.items[0]
-    assert first.title == "First atom entry"
+    assert first.name == "First atom entry"
     assert "zebrafish" in first.body
     assert first.author_display == "Ada"
     assert first.permalink == "https://example.test/a/1"

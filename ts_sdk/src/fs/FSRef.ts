@@ -51,6 +51,31 @@ export class FSRef {
     return new FSRef(`${this.path}${sep}${name}`, this.typeId, 'file', this.readOnly);
   }
 
+  /**
+   * Resolve a relative path (`../shared/base.json`, `sibling.html`) against this
+   * ref's own location, returning a ref to the target.
+   *
+   * Resolves against this ref's own path INCLUDING its last segment, so for a
+   * file ref one `..` cancels the filename rather than climbing a directory:
+   * `x/y/deck.html` + `../t.json` is `x/y/t.json`, its sibling. That is the
+   * behaviour deck manifests are written against. Pair it with {@link vpath} to
+   * address the result.
+   *
+   * Here rather than at a call site: DeckViewer had this loop inline and then
+   * hand-built `${typeId}/${path}` — the string {@link vpath} already produces
+   * — which meant reaching past `typeId`, deliberately not public. A path rule
+   * copied per consumer is a path rule that drifts.
+   */
+  resolve(rel: string): FSRef {
+    const segs = this.path.split('/').filter(Boolean);
+    for (const part of rel.split('/')) {
+      if (part === '' || part === '.') continue;
+      if (part === '..') segs.pop();
+      else segs.push(part);
+    }
+    return new FSRef(segs.join('/'), this.typeId, 'file', this.readOnly);
+  }
+
   get parent(): FSRef {
     const idx = this.path.lastIndexOf('/');
     const parentPath = idx > 0 ? this.path.slice(0, idx) : '/';
@@ -61,6 +86,18 @@ export class FSRef {
     const { fsManager } = await import('../services/fsService');
     const result = await fsManager.download(this.typeId, this.path);
     return typeof result === 'string' ? result : String(result);
+  }
+
+  /**
+   * Binary counterpart of {@link read} — the same VFS download, asked for as a
+   * Blob. Without it a caller with a binary file (a .xlsx, an image) has no way
+   * through this class and has to reach past it for the ref's TypeId, which is
+   * deliberately not public.
+   */
+  async readBlob(): Promise<Blob> {
+    const { fsManager } = await import('../services/fsService');
+    const result = await fsManager.download(this.typeId, this.path, { asBlob: true });
+    return result instanceof Blob ? result : new Blob([result]);
   }
 
   async write(content: string): Promise<void> {

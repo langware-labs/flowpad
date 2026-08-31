@@ -6,6 +6,7 @@ import { SideDrawer } from '@src/components/ui/side-drawer';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { providerMetaFor } from '@src/tabs/provider-meta';
 import { PromptIndexPanel, usePromptsForProcess } from '@src/components/terminal/interactive-terminal/side-windows';
+import { formatTimeAgoShort } from '@src/utils/format-time-ago';
 import { cn } from '@src/lib/utils';
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { useProject } from '@src/hooks/useProject';
@@ -35,20 +36,6 @@ function buildMetaSubline(entry: WorkerHistoryEntry): string {
 function pickLastPrompt(entry: WorkerHistoryEntry): string | null {
   const v = (entry.last_prompt ?? '').trim();
   return v ? v : null;
-}
-
-function timeAgo(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  const seconds = Math.floor((Date.now() - d.getTime()) / 1000);
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
 }
 
 function formatFullDate(iso: string | null | undefined): string {
@@ -487,7 +474,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                             className="ms-2 flex shrink-0 flex-col items-end leading-tight text-muted-foreground"
                             data-testid="history-row-time"
                           >
-                            <span className="text-xs">{timeAgo(entry.last_active_time)}</span>
+                            <span className="text-xs">{formatTimeAgoShort(entry.last_active_time)}</span>
                             <span className="text-[10px] opacity-70">{formatFullDate(entry.last_active_time)}</span>
                           </span>
                         </button>

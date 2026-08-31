@@ -27,7 +27,7 @@ _MAX_DEPTH = 32
 
 
 def repo_assets_fn(nodes: list[FSRef], opts: IndexerOptions) -> list[FSRef]:
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import LayoutKind, SchemaRegistry  # noqa: PLC0415
 
     # family (the <type> subdir) → its TypeInfo (layout + marker + record type).
     type_infos = SchemaRegistry.repo_family_to_info()
@@ -53,27 +53,20 @@ def repo_assets_fn(nodes: list[FSRef], opts: IndexerOptions) -> list[FSRef]:
                 continue
             record_type = EntityType(info.type_name)
             wanted = requested_types is None or record_type in requested_types
-            is_folder = info.main_layout == "folder"
             for entry in sorted(type_dir.iterdir()):
-                if is_folder:
-                    # Folder asset (spec/task/deck…): the <name>/ dir is the asset
-                    # folder, but only when it carries the type's marker file
-                    # (main_file) — the same "is this really an asset?" gate the
-                    # per-type walkers had; skips scaffolding/half-written dirs.
-                    # The FSRef points where the type's convention puts it (bare
-                    # folder, or inner main_file for spec-style) via asset_ref_for.
+                # The type's own classifier is the "is this really an asset?"
+                # gate (marker file present, right extension); ``layout.ref`` is
+                # where the type's convention points the FSRef.
+                layout = info.layout_of(entry, verify=True)
+                if layout.kind is LayoutKind.FOLDER:
                     # Recursion descends into the FOLDER for nested children.
-                    if not entry.is_dir():
-                        continue
-                    if info.main_file and not (entry / info.main_file).is_file():
-                        continue
-                    ref = FSRef(info.asset_ref_for(entry), record_type=record_type, parent=parent_ref)
+                    ref = FSRef(layout.ref, record_type=record_type, parent=parent_ref)
                     if wanted:
                         out.append(ref)
                     # Traverse unrequested folder assets too: a requested SPEC
                     # may be nested below an unrequested TASK/DECK parent.
                     scan(entry, ref, depth + 1)
-                elif entry.is_file() and entry.suffix == info.main_ext:
+                elif layout.kind is LayoutKind.FILE:
                     # File asset (markdown/prompt…): the <name>.<ext> file IS the
                     # asset — a leaf, no nesting.
                     if wanted:

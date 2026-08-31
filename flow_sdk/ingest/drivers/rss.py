@@ -21,16 +21,16 @@ from email.utils import parsedate_to_datetime
 from typing import Optional
 from xml.etree import ElementTree
 
+from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest import http
-from flow_sdk.ingest.driver import FetchResult, SegmentCursorView, SegmentRef
+from flow_sdk.ingest.driver import IngestDriver, FetchResult, SegmentCursorView, SegmentRef
 from flow_sdk.ingest.health import SourceError
-from flow_sdk.ingest.models import IngestItem
 from flow_sdk.utils.serialization import iso_to_datetime
 
 _ATOM = "{http://www.w3.org/2005/Atom}"
 
 
-class RssDriver:
+class RssDriver(IngestDriver):
     provider = "rss"
     kind = "datasource.feed.rss"
     record_kind = "content.feed.item"
@@ -55,7 +55,7 @@ class RssDriver:
         entries = _parse(response.text, cursor.segment_key)
         floor = _parse_iso(cursor.window_start)
 
-        items: list[IngestItem] = []
+        items: list[SourceItemSpec] = []
         newest: Optional[datetime] = None
         for entry in entries:
             when = entry.get("occurred_at_dt")
@@ -64,14 +64,14 @@ class RssDriver:
             if when is not None and (newest is None or when > newest):
                 newest = when
             items.append(
-                IngestItem(
-                    source_id=source.id,
+                SourceItemSpec(
+                    data_source_id=source.id,
                     provider=self.provider,
                     kind=self.record_kind,
                     segment_key=cursor.segment_key,
                     segment_label=cursor.segment_key,
                     external_id=entry["external_id"],
-                    title=entry.get("title") or "",
+                    name=entry.get("title") or "",
                     body=entry.get("body") or "",
                     occurred_at=when.isoformat() if when else None,
                     author_display=entry.get("author"),

@@ -9,8 +9,8 @@ package is organized into three groups (import from these in new code):
       HubWebSocketManager   persistent WebSocket proxy (ws_client)
   shared/     — protocol-neutral plumbing
       HubError, invalidate_hub_login, hub_error_reporter, EXPIRY_LEEWAY_SECONDS
-  events      — inbound WS bridge + entity events
-      HubWsBridge (hub_ws_bridge), EntityEvent
+  events      — inbound WS bridge
+      HubWsBridge (hub_ws_bridge)
 
 Top-level re-exports below keep the common names one import away; the original
 module paths (``cloud_client.client``, ``.ws_client``, ``.hub_bridge`` …) remain
@@ -30,14 +30,12 @@ __all__ = [
     # events
     "HubWsBridge",
     "hub_ws_bridge",
-    "EntityEvent",
 ]
 
 _LAZY = {
     "HubError": ("flow_sdk.cloud_client.shared.errors", "HubError"),
     "HubWsBridge": ("flow_sdk.cloud_client.hub_bridge", "HubWsBridge"),
     "hub_ws_bridge": ("flow_sdk.cloud_client.hub_bridge", "hub_ws_bridge"),
-    "EntityEvent": ("flow_sdk.cloud_client.events", "EntityEvent"),
 }
 
 

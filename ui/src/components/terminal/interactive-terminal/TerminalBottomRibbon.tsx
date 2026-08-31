@@ -102,7 +102,7 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
         </div>
 
         {/* Right: side tab toggle buttons */}
-        <div className="ms-auto flex items-center gap-1">
+        <div className="ms-auto flex items-center gap-1" data-testid="terminal-ribbon-tabs">
           <TooltipProvider delayDuration={400}>
             {ribbonTabs.map((tabId) => {
               const descriptor = SIDE_TABS[tabId];

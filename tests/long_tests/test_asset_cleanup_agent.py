@@ -19,6 +19,7 @@ Requires:
 from pathlib import Path
 
 import pytest
+
 from tests.test_settings import test_service_config
 
 pytestmark = [

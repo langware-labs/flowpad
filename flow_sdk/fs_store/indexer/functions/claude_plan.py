@@ -55,7 +55,7 @@ def _read_plan_frontmatter_id(path: Path) -> str | None:
         return None
     fields = _yaml_load(fm) or {}
     raw = fields.get("id") or fields.get("asset_id")
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
 
     return adopt_entity_id(raw)  # validate-on-adopt (v4/v5) → else caller derives uuid5(path)
 
@@ -72,7 +72,7 @@ def _extract_name_from_markdown(text: str) -> str | None:
 
 
 def _plan_id_from_path(path: Path) -> str:
-    from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
 
     return mint_uuid(str(path.resolve()))
 

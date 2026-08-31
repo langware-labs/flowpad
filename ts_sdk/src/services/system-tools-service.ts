@@ -675,7 +675,11 @@ export class SystemToolsService extends EventEmitter {
    */
   async resolveProjectContext(
     workdir: string | undefined,
-    entity?: { project_id?: string | null; parent_type_id?: string | null; save?: () => Promise<void> },
+    // `save` is `Promise<unknown>`, not `Promise<void>`: the real callers pass an
+    // entity whose `APIEntity.save()` resolves to the entity, and a `Promise<T>`
+    // is not assignable to a `Promise<void>` (the void-return special case does
+    // not apply through a Promise). Nothing here reads the result.
+    entity?: { project_id?: string | null; parent_type_id?: string | null; save?: () => Promise<unknown> },
   ): Promise<void> {
     const match = workdir ? await Project.getProjectByPath(workdir) : null;
     if (!match) {

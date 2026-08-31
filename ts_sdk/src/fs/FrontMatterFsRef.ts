@@ -14,26 +14,16 @@
 
 import { TypeId } from '../models/TypeId';
 import { FSRef } from './FSRef';
+import { parseFrontmatterDoc } from './frontmatter-parse';
 
 // ── Parse/serialize helpers ────────────────────────────────────────────────
 
 export function parseFrontmatter(raw: string): Record<string, string> {
-  const match = raw.match(/^---\s*\n([\s\S]*?)\n---/);
-  if (!match) return {};
-  const result: Record<string, string> = {};
-  for (const line of match[1].split('\n')) {
-    const colon = line.indexOf(':');
-    if (colon < 1) continue;
-    const key = line.slice(0, colon).trim();
-    const val = line.slice(colon + 1).trim().replace(/^["']|["']$/g, '');
-    if (key) result[key] = val;
-  }
-  return result;
+  return parseFrontmatterDoc(raw).fields;
 }
 
 export function extractBody(raw: string): string {
-  const match = raw.match(/^---\s*\n[\s\S]*?\n---\s*\n([\s\S]*)$/);
-  return match ? match[1] : raw;
+  return parseFrontmatterDoc(raw).body;
 }
 
 export function serializeDoc(fm: Record<string, string>, body: string): string {

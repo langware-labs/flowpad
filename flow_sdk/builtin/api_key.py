@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import ClassVar, List, Optional
 
 from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.core import Entity, action
 from flow_sdk.core.entity import Entity as EntityBase
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -303,38 +303,47 @@ class ApiKey(Entity):
 
 @action.all(action_name="api-keys", methods=["get", "post", "delete"], types="all")
 async def api_keys_action() -> ApiResponse:
-    """Stub action for API key management.
+    """Desktop API-key management with the same wire contract as the hub.
 
     GET: List all API keys (masked)
     POST: Create a new API key
     DELETE: Deactivate an API key
 
-    In desktop mode, API keys are not enforced but the action exists
-    for API wire compatibility.
+    In desktop mode, API keys are not enforced, but the SDK is shared with the
+    hub. Keep names, scoping, and response fields identical at this boundary.
     """
     request_info = get_current_request_info()
     if not request_info or not request_info.request:
         return ApiFailResponse(message="No request info available")
 
     method = request_info.request.method.upper()
+    target_typeid = request_info.target_entity_typeid
+    if target_typeid is None:
+        return ApiFailResponse(message="Target entity is required")
+
+    def wire_row(key: ApiKey) -> dict:
+        return {
+            "id": key.id,
+            "name": key.name or "unnamed",
+            "description": None,
+            # The full value is never persisted, so list/read can only expose
+            # the same opaque mask as the hub.
+            "visible_value": "****",
+            "target_typeid": key.bind_typeid,
+            "expires_at": key.expires_at.isoformat() if key.expires_at else None,
+            "last_used_at": key.last_used_at.isoformat() if key.last_used_at else None,
+            "is_active": key.is_active,
+            "allowed_ip_count": len(key.allowed_ip_hashes),
+            "allowed_machine_id_count": len(key.allowed_machine_id_hashes),
+        }
 
     if method == "GET":
         # List all API keys (with masked values)
         try:
-            keys = await ApiKey.get_all()
+            keys = await ApiKey.get_all_for_entity(target_typeid)
             if not keys:
                 return ApiSuccessResponse(data=[])
-            result = []
-            for key in keys:
-                result.append({
-                    "id": key.id,
-                    "name": key.name,
-                    "bind_typeid": key.bind_typeid,
-                    "is_active": key.is_active,
-                    "expires_at": str(key.expires_at) if key.expires_at else None,
-                    "last_used_at": str(key.last_used_at) if key.last_used_at else None,
-                })
-            return ApiSuccessResponse(data=result)
+            return ApiSuccessResponse(data=[wire_row(key) for key in keys])
         except Exception as e:
             logging.exception(f"api-keys list error: {e}")
             return ApiFailResponse(message=str(e))
@@ -347,12 +356,11 @@ async def api_keys_action() -> ApiResponse:
                 return ApiFailResponse(message="Invalid request body (expected JSON object)")
 
             name = body.get("name", "api_key")
-            bind_typeid = body.get("bind_typeid")
-            if not bind_typeid:
-                return ApiFailResponse(message="bind_typeid is required")
+            bind_typeid = str(target_typeid)
+            description = body.get("description")
 
             env = body.get("env", "live")
-            full_key, prefix = generate_api_key(env)
+            full_key, _prefix = generate_api_key(env)
             key_hash = ApiKey.hash_key(full_key)
 
             api_key = ApiKey(
@@ -363,13 +371,13 @@ async def api_keys_action() -> ApiResponse:
             )
             await api_key.save()
 
-            return ApiSuccessResponse(data={
-                "id": api_key.id,
-                "name": api_key.name,
-                "key": full_key,  # Shown ONCE at creation
-                "prefix": prefix,
-                "bind_typeid": api_key.bind_typeid,
+            result = wire_row(api_key)
+            result.update({
+                "api_key": full_key,  # Shown ONCE at creation
+                "description": description,
+                "visible_value": ApiKey.mask_key(full_key),
             })
+            return ApiSuccessResponse(data=result)
         except Exception as e:
             logging.exception(f"api-keys create error: {e}")
             return ApiFailResponse(message=str(e))
@@ -377,22 +385,29 @@ async def api_keys_action() -> ApiResponse:
     elif method == "DELETE":
         # Deactivate an API key
         try:
-            body = await request_info.get_post_data()
-            if not isinstance(body, dict):
-                return ApiFailResponse(message="Invalid request body (expected JSON object)")
-
-            key_id = body.get("id")
-            if not key_id:
-                return ApiFailResponse(message="id is required")
-
-            api_key = await ApiKey.get_by_id(key_id)
+            key_name = (request_info.sub_path or "").strip("/")
+            api_key = None
+            if key_name:
+                for candidate in await ApiKey.get_all_for_entity(target_typeid):
+                    if candidate.name == key_name and candidate.is_active:
+                        api_key = candidate
+                        break
+            else:
+                # Backward compatibility for older desktop-only callers. New
+                # clients address the shared API by name in the subpath.
+                body = await request_info.get_post_data()
+                key_id = body.get("id") if isinstance(body, dict) else None
+                if key_id:
+                    candidate = await ApiKey.get_by_id(key_id)
+                    if candidate and candidate.bind_typeid == str(target_typeid):
+                        api_key = candidate
             if not api_key:
-                return ApiFailResponse(message=f"API key not found: {key_id}")
+                return ApiFailResponse(message=f"API key not found: {key_name or 'missing id'}")
 
             api_key.is_active = False
             await api_key.save()
 
-            return ApiSuccessResponse(data={"id": key_id, "is_active": False})
+            return ApiSuccessResponse(data={"id": api_key.id, "is_active": False})
         except Exception as e:
             logging.exception(f"api-keys delete error: {e}")
             return ApiFailResponse(message=str(e))

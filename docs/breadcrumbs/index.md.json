@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "typeid": "markdown_index-bd7ef5f5-cf38-55ee-b3c9-b1549c57f267",
+  "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
+  "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
+  "folder_rel_path": "breadcrumbs",
+  "folder_name": "breadcrumbs",
+  "inputs_hash": "8242b1e65095f95fd949084344ead78876282e9c4235ed68e521233ee87f5369",
+  "template_version": 1,
+  "prompt_version": 1,
+  "self_summary": "Breadcrumb rules bound to failing tests: each page states the expected behaviour, internals, invariants and failure modes for one proven bug \u2014 chat activity readout, bootstrap's default project, dev port picking, SQLite NULL ordering, served HTML encoding, terminal bidi, and worker interpreter resolution.",
+  "files": [
+    {
+      "name": "agent_activity_readout.md",
+      "rel_path": "agent_activity_readout.md",
+      "title": "Agent activity readout rules",
+      "summary": "Breadcrumb rules for the chat activity line: naming the current operation, coarse worker-phase fallback, the 500ms floor, and refinement pass-through invariants.",
+      "content_hash": "afc410d5bf3a90ba333a879ccdf53808026bcdfe05e0b79aabfe56b8974cfa9d",
+      "size_bytes": 10755
+    },
+    {
+      "name": "bootstrap_default_project.md",
+      "rel_path": "bootstrap_default_project.md",
+      "title": "Bootstrap's default_project \u2014 which project a machine opens",
+      "summary": "Breadcrumb rules for which project a machine opens: browser memory outranks the server, then bootstrap's strict per-caller source order, never cached.",
+      "content_hash": "f3e5a3d36e81cdb647fc2d2637e134250491272e60ec7571739b6d79ff745928",
+      "size_bytes": 12288
+    },
+    {
+      "name": "dev_port_picking.md",
+      "rel_path": "dev_port_picking.md",
+      "title": "Dev port picking for agent-started servers",
+      "summary": "Breadcrumb rules for agent-started dev servers: request a port via flow app free-dev-port, one probe per invocation, and no lease against concurrent pickers.",
+      "content_hash": "08730b8ef1101025c5cc7843c45a87b241819f562493ffc4e8e81f62ed600eef",
+      "size_bytes": 3449
+    },
+    {
+      "name": "null_sort_order.md",
+      "rel_path": "null_sort_order.md",
+      "title": "NULL sort order in the SQLite driver",
+      "summary": "Breadcrumb rules for SQLite ordering on a field some entities lack: bucket tuples place missing values first, and never coerce them to empty string.",
+      "content_hash": "c2975af9a345bc04ed7a7d1812944f1297f82c960f83d9ced06010567bc17022",
+      "size_bytes": 2564
+    },
+    {
+      "name": "served_html_encoding.md",
+      "rel_path": "served_html_encoding.md",
+      "title": "Served app HTML must be read as UTF-8",
+      "summary": "Breadcrumb rules for serving a micro-app index.html byte-faithfully as UTF-8 whatever the host codepage, asserting the served text matches disk.",
+      "content_hash": "02d9a10c659ef69fa534b24818a819997cd75ba6a4a19a8b1346bb63028b685a",
+      "size_bytes": 5057
+    },
+    {
+      "name": "terminal_bidi.md",
+      "rel_path": "terminal_bidi.md",
+      "title": "Terminal RTL/bidi rendering contract",
+      "summary": "Breadcrumb rules for terminal RTL and bidi: a right-to-left sweep must yield PTY emission order, and why !important and avoiding inline-block are load-bearing.",
+      "content_hash": "fff49f7edf6fae077da1f8c6352ab2e40f881e879cda0e449f6acb1837f12af7",
+      "size_bytes": 9242
+    },
+    {
+      "name": "worker_interpreter.md",
+      "rel_path": "worker_interpreter.md",
+      "title": "Worker interpreter resolution",
+      "summary": "Breadcrumb rules for worker interpreter resolution: FLOWPAD_PYTHON is handed to the worker as an absolute path and used verbatim from any working directory.",
+      "content_hash": "c611afeeb60609228879e75f4a475fdd1337669e37ae15502fe2a7f075c1f787",
+      "size_bytes": 6916
+    }
+  ],
+  "subfolders": [],
+  "generated_at": "2026-08-23T22:11:28.823621+00:00",
+  "latest_process_ref": ""
+}

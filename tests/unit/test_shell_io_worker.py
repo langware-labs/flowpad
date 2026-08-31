@@ -91,7 +91,7 @@ async def test_write_then_submit_sends_two_distinct_ordered_writes(monkeypatch):
     import flow_sdk.compute.providers.desktop.local_pty_session as _lps
 
     shell = make_shell()
-    await shell.start()
+    await shell.start_pty()
     key, _created = await _seed_ready(shell)
 
     writes: list[bytes] = []
@@ -121,7 +121,7 @@ async def test_write_then_submit_sends_two_distinct_ordered_writes(monkeypatch):
 async def test_write_then_submit_actually_submits_to_shell():
     """Behavioural check: the discrete Enter submits, so the echoed command runs."""
     shell = make_shell()
-    await shell.start()
+    await shell.start_pty()
     key, _created = await _seed_ready(shell)
     try:
         await shell.write_then_submit("echo wts_marker")
@@ -232,7 +232,7 @@ async def test_worker_alive_raises_when_pty_dead():
     """A dead PTY under a shell that still has a worker_pid is a hard error —
     worker_alive raises rather than silently reporting a liveness answer."""
     shell = make_shell()
-    await shell.start()
+    await shell.start_pty()
     shell.worker_pid = os.getpid()  # a definitely-live pid; the raise precedes the pid check
     shell.worker_name = os.path.basename(sys.executable)
 
@@ -257,7 +257,7 @@ async def test_worker_alive_raises_when_pty_dead():
 async def test_worker_alive_true_when_cmdline_matches():
     """Live PTY + a live worker_pid whose cmdline basename matches worker_name."""
     shell = make_shell()
-    await shell.start()
+    await shell.start_pty()
     try:
         async with live_worker() as proc:
             shell.worker_pid = proc.pid
@@ -273,7 +273,7 @@ async def test_worker_alive_false_when_cmdline_mismatches():
     """Live PTY + a live worker_pid whose cmdline does NOT match worker_name →
     False (the process is alive but is not our worker)."""
     shell = make_shell()
-    await shell.start()
+    await shell.start_pty()
     try:
         async with live_worker() as proc:
             shell.worker_pid = proc.pid
@@ -294,7 +294,7 @@ async def test_set_worker_pid_direct_reads_pty_pid_immediately():
     """Direct-spawn path: the PTY PID *is* the worker PID, read straight from the
     provider (no child polling). worker_pid/worker_name/last_launch_cmd persist."""
     shell = make_shell()
-    await shell.start()
+    await shell.start_pty()
     try:
         cmd = _FakeCLIOptions()
         cn = shell.compute_node
@@ -325,7 +325,7 @@ async def test_launch_discovers_worker_child_and_persists_cmd():
     discovered by walking the shell's process tree. worker_pid/name/last_launch_cmd
     are stamped on the entity."""
     shell = make_shell()
-    await shell.start()
+    await shell.start_pty()
     key, _created = await _seed_ready(shell)
     try:
         cmd = _FakeCLIOptions(seconds="30")

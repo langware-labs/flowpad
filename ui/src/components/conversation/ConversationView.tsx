@@ -741,7 +741,6 @@ export function ConversationView({
               return (
                 <ThreadStack
                   key={item.key}
-                  threadId={item.threadId}
                   messageCount={item.messageCount}
                   onOpenThread={onThreadNavigate ? () => onThreadNavigate(item.threadId) : undefined}
                 >

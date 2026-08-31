@@ -9,8 +9,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — registers every type
 import pytest
+
+import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — registers every type
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
@@ -52,7 +53,7 @@ async def test_a_manifest_folder_becomes_an_entity(folder_db, tmp_path):
     assert ent is not None, "the walker did not pick up the manifest"
     assert ent.type == "data_source_spec"
     assert (ent.name, ent.title, ent.runtime) == ("rss", "RSS / Atom", "builtin")
-    assert ent.config_schema["feed_urls"]["required"] is True
+    assert ent.config["feed_urls"].required is True
 
 
 async def test_a_rejected_manifest_yields_no_entity(folder_db, tmp_path):

@@ -1,5 +1,5 @@
 import { t } from '@lingui/core/macro';
-import { dataManager, MessageAttachment, Project, TypeId } from '@sdk';
+import { type APIEntity, dataManager, MessageAttachment, Project, TypeId, type AnyEntity } from '@sdk';
 import { gitOriginCloneUrl, type GitOrigin } from '@sdk/models/GitOrigin';
 import { useEntity } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -24,7 +24,7 @@ import { StagedAssetViewer } from './StagedAssetViewer';
  *  clones/pulls it); staged bytes rode inside the .flowmsg; anything else is a
  *  hub-served reference fetched on open. */
 function sourceOf(ma: MessageAttachment): { label: string; Icon: typeof Cloud; detail: string | null } {
-  const origin = (ma.git_origin ?? null) as GitOrigin | null;
+  const origin = (ma.origin ?? null) as GitOrigin | null;
   if (ma.transfer_mode === 'git' || origin) {
     return { label: t`Git`, Icon: GitBranch, detail: origin ? gitOriginCloneUrl(origin) : null };
   }
@@ -32,7 +32,7 @@ function sourceOf(ma: MessageAttachment): { label: string; Icon: typeof Cloud; d
   return { label: t`Cloud`, Icon: Cloud, detail: null };
 }
 
-const isGitAttachment = (ma: MessageAttachment): boolean => ma.transfer_mode === 'git' || ma.git_origin != null;
+const isGitAttachment = (ma: MessageAttachment): boolean => ma.transfer_mode === 'git' || ma.origin != null;
 const typeWordOf = (type?: string): string => {
   const t = type || 'file';
   return t.charAt(0).toUpperCase() + t.slice(1).replace(/_/g, ' ');
@@ -73,7 +73,7 @@ function AssetParentSubscriber({
   typeId: TypeId | null;
   onParent: (maId: string, parentAssetId: string | null) => void;
 }) {
-  const { data } = useEntity<{ parent_id?: string | null }>(typeId);
+  const { data } = useEntity<AnyEntity & { parent_id?: string | null }>(typeId);
   const parentAssetId = data?.parent_id ? String(data.parent_id) : null;
   useEffect(() => {
     onParent(maId, parentAssetId);
@@ -93,7 +93,7 @@ function AssetParentSubscriber({
 function SelectedEntityViewer({ attachment }: { attachment: MessageAttachment }) {
   const typeId = attachment.asset_type === 'file' ? null : attachment.targetTypeId;
   const editor = typeId ? editorForType(typeId.type) : undefined;
-  const { data } = useEntity<{ asset_ref?: string | null }>(typeId);
+  const { data } = useEntity<AnyEntity & { asset_ref?: string | null }>(typeId);
   if (typeId && editor && data?.asset_ref) {
     const pointer = AssetDocPointer.forTypeId(editor, typeId).toPointer();
     return (
@@ -322,7 +322,7 @@ export function AssetReviewDialog({
     // dropped its `asset_ref` and every install-then-Open fell through to the
     // session-id form, which cannot resolve on a machine that never ran the
     // session. Fetching here costs one request on an explicit click.
-    const entity = await dataManager.getByTypeId<{ type: string; id: string }>(tid).catch(() => null);
+    const entity = await dataManager.getByTypeId<AnyEntity & { type: string }>(tid).catch(() => null);
     const pointer = buildDockPointer(entity ?? { type: tid.type, id: tid.id }, undefined);
     if (pointer) navigation.openDock(DockPointer.rebaseAssetsOntoProject(pointer, attachmentProjectId));
     onClose();

@@ -1,12 +1,11 @@
 import logging
 from abc import ABC, abstractmethod
-from contextlib import asynccontextmanager
 from functools import wraps
 from io import BytesIO
-from typing import Any, AsyncIterator, BinaryIO, List
+from typing import Any, AsyncIterator, List
 
 from flow_sdk.api.fs.fs_api import VFSPath
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 
 # FSEntry import is optional - it may not be defined yet in models
 try:
@@ -48,29 +47,6 @@ class AuthenticationError(StorageError):
     """Exception raised when authentication fails."""
 
     pass
-
-
-class StreamUploader:
-    def __init__(self, io_stream: BinaryIO) -> None:
-        self.fs_entry: FSEntry | None = None
-        self.io_stream: BinaryIO = io_stream
-        self.chunk_size = 1024 * 1024  # 1MB
-        self.file_size = io_stream.seek(0, 2)  # Get file size
-        io_stream.seek(0)  # Reset file pointer
-        self.uploaded_size = 0
-
-    @property
-    def progress(self) -> int:
-        return int(self.uploaded_size / self.file_size) * 100
-
-    @abstractmethod
-    @asynccontextmanager
-    async def create_resumable_upload_session(self):
-        yield
-
-    @abstractmethod
-    async def upload_next_chunk(self) -> int | None:
-        pass
 
 
 class StorageDriver(ABC):
@@ -160,19 +136,6 @@ class StorageDriver(ABC):
         pass
 
     @abstractmethod
-    async def stream_upload(self, upload_stream: BinaryIO, vfs_path: str = "/") -> StreamUploader:
-        """Upload a file to the storage device.
-
-        Args:
-            upload_stream: the file stream.
-            vfs_path: Destination path on the storage device.
-
-        Raises:
-            StorageError: If the upload fails.
-        """
-        pass
-
-    @abstractmethod
     async def upload(self, local_file_or_io: str | BytesIO, vfs_path: str = "/") -> None:
         """Upload a file to the storage device.
 
@@ -201,12 +164,6 @@ class StorageDriver(ABC):
             StorageError: If the download fails.
         """
         pass
-
-    @abstractmethod
-    async def stream_zip(self, vfs_path: str) -> AsyncIterator[bytes]:
-        """Asynchronously stream a zip file from the storage device."""
-        logger.warning("non implemented stream_zip used")
-        yield b""  # Dummy implementation
 
     @abstractmethod
     async def upload_zip(self, zip_file: BytesIO, vfs_path: str) -> None:

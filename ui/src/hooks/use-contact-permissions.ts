@@ -31,7 +31,7 @@ export function useContactPermissions(contact: ContactKey | null) {
 
 /** The (contact, project) row, or null. project null = the global row. */
 async function findRow(contact: ContactKey, projectId: string | null): Promise<ContactPermission | null> {
-  const all = await ContactPermission.query(new QueryRequest({}), true).catch(() => [] as ContactPermission[]);
+  const all = await ContactPermission.query(new QueryRequest({ type: ContactPermission.type }), true).catch(() => [] as ContactPermission[]);
   return (
     all.find(
       (p) => rowMatchesContact(p, contact) && (p.project_id ?? null) === (projectId ?? null),

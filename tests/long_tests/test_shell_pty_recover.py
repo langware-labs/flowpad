@@ -17,10 +17,11 @@ import asyncio
 import base64
 import json
 import os
-import signal
 import socket
 import subprocess
+
 import pytest
+
 from tests.test_settings import test_service_config
 
 pytestmark = pytest.mark.skipif(
@@ -35,7 +36,6 @@ import uuid
 import httpx
 import pytest
 import websockets
-
 
 # ---------------------------------------------------------------------------
 # Live server fixture

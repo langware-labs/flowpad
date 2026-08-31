@@ -16,7 +16,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from flow_sdk.core.capabilities.models import now_iso
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 
 # Virtual source node id for externally injected events (edges may route from it).
 EXTERNAL_SOURCE = "$external"

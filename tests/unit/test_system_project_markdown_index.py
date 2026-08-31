@@ -7,7 +7,6 @@ import pytest
 from flow_sdk import db as db_module
 from flow_sdk.core.entity import Entity
 from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry
-from flow_sdk.fs_store.indexer.functions import markdown as markdown_index
 from flow_sdk.server.routes.bootstrap import _index_system_project_markdowns
 
 
@@ -33,7 +32,10 @@ async def test_system_project_markdown_seed_populates_fts(
     )
     seeded_records = []
     fts_batches: list[list[FtsEntry]] = []
-    extract_markdown = markdown_index.extract_markdown
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+    info = SchemaRegistry.get("markdown")
+    extract_markdown = info.from_disk_fn
 
     def extract_with_stale_project(*args, **kwargs):
         records = extract_markdown(*args, **kwargs)
@@ -56,7 +58,7 @@ async def test_system_project_markdown_seed_populates_fts(
         async def fts_upsert(self, entries: list[FtsEntry]) -> None:
             fts_batches.append(entries)
 
-    monkeypatch.setattr(markdown_index, "extract_markdown", extract_with_stale_project)
+    monkeypatch.setattr(info, "from_disk_fn", extract_with_stale_project)
     monkeypatch.setattr(Entity, "from_record", classmethod(from_record))
     monkeypatch.setattr(db_module, "get_db_driver", lambda: Driver())
 

@@ -22,13 +22,12 @@ Public helpers used outside the indexer:
 from __future__ import annotations
 
 import json
-import uuid
 from pathlib import Path
 from typing import Iterator
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.fs_store.indexer.functions._codex_session_stats import (
     _get_codex_session_batch_stats,
 )
@@ -130,10 +129,6 @@ def codex_session_identity_key(ref: FSRef | Path) -> str:
 def codex_session_id_from_file(ref: FSRef | Path) -> str | None:
     key = codex_session_identity_key(ref)
     return key if is_valid_entity_id(key) else None
-
-
-def codex_session_stable_key(ref: FSRef | Path) -> str:
-    return f"{RecordType.CODEX_SESSION}:{codex_session_identity_key(ref)}"
 
 
 def extract_codex_session(ref: FSRef, resolved_id: str) -> list[FSRecord]:

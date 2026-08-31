@@ -1,14 +1,19 @@
 import { v4 as uuidv4 } from 'uuid';
 import { ActionInfo, ActionType, EntityExpansion, ExpansionType, JSONSchemaParser, Workspace } from '.';
-import { Record, RecordRefs } from './fs/Record';
+import type { IWorkspace } from './entities/workspace';
+// Aliased: a bare `Record` import shadows the global `Record<K,V>` utility for
+// this entire file, so every `Record<string, unknown>` in it resolved to the
+// FS record class and failed as a non-generic type.
+import { Record as FsRecord, RecordRefs } from './fs/Record';
 import { FrontMatterFsRef } from './fs/FrontMatterFsRef';
 import { Frontmatter } from './fs/Frontmatter';
-import { EntityFactory } from './schema/factory';
+import { EntityFactory, type EntityConstructor } from './schema/factory';
 import { ExpansionRequest, QueryRequest } from './FlowSync/query';
 import { DataManager, Manageable } from './FlowSync/store';
 import { FlowData, FlowDataStream } from './flow_processing';
 import { defaultEntityType, IEntity } from './IEntity';
-import { DockPointerData } from './models/DockPointer';
+import { DockPointerData, type IDockPointer } from './models/DockPointer';
+import type { ShowTarget } from './models/ShowTarget';
 import { editorForType } from './models/asset-editor';
 import { TypeId } from './models/TypeId';
 import { ViewType } from './utils/ui/view-types';
@@ -17,25 +22,18 @@ import { Callable } from './types';
 
 /**
  * The DisplayTarget an `install()` / `setup()` returns — what the receiver should
- * navigate to (`openDisplayTarget`). Mirrors the backend `_entity_payload` /
- * `resolve_display_target` shape. `kind:'entity'` pointing at an `agentic_process`
- * is a spawned Vibe setup session; other entities open in their editor; `webapp`
- * opens the port preview.
+ * navigate to (`openDisplayTarget`). `kind:'entity'` pointing at an
+ * `agentic_process` is a spawned Vibe setup session; other entities open in
+ * their editor; `webapp` opens the port preview.
+ *
+ * An alias for {@link ShowTarget}, not a fourth declaration of it. The backend
+ * builds both from the same place — `Entity.setup_on_receive`'s
+ * `_entity_payload` is the builder `resolve_display_target` uses — and this
+ * copy had already fallen behind by `artifact_id`, `micro_app_id`, `runtime`
+ * and `name`, so a `kind:'app'` target arriving here was typed as though it had
+ * no artifact or app id at all.
  */
-export interface ReceiveShowTarget {
-  /** Mirrors python `DisplayTargetKind` (flow_sdk/core/display_target.py). */
-  kind?: 'entity' | 'vfs' | 'webapp' | 'app' | 'shell' | 'dock';
-  typeid?: string;
-  type?: string;
-  id?: string;
-  path?: string;
-  port?: number | string;
-  /** dock: a SCREEN, addressed by view rather than by entity or file. */
-  view_type?: string;
-  pointer?: string | null;
-  options?: Record<string, string> | null;
-  page?: string;
-}
+export type ReceiveShowTarget = ShowTarget;
 
 /**
  * One row of an entity's member roster, as returned by the generic ``members``
@@ -80,6 +78,7 @@ export interface AssetOccurrence {
 }
 import { defineGlobal } from './utils/globals';
 import { WikiLink } from './types/wiki';
+import type { HttpMethod } from './models/ApiUrl';
 
 /**
  * True when ``v`` is a string with at least one non-whitespace character.
@@ -121,7 +120,7 @@ export function getProxy<T extends Manageable & { [key: string | symbol]: any }>
   });
 }
 
-export const registerEntity = (constructor: new (json?: IEntity) => unknown) => {
+export const registerEntity = (constructor: EntityConstructor) => {
   EntityFactory.registerEntity(constructor);
 };
 
@@ -161,6 +160,19 @@ const BASE_WIRE_FIELDS = new Set<string>([
 /** Backend-owned fields that hydrate into the cache but never ride a full save. */
 const SERVER_MANAGED_SAVE_FIELDS = new Set<string>(['last_edited_at']);
 
+/**
+ * Any entity, without caring which.
+ *
+ * `APIEntity<T>` is F-bounded — `T` is the SELF type (`clone(): T`,
+ * `save(): Promise<T>`) — so the obvious spellings do not work: `APIEntity<never>`
+ * makes nothing assignable, and `APIEntity<unknown>` does not satisfy its own
+ * bound. `any` is the one type argument that does, which is why it was already
+ * hand-written at ~40 sites. Named once so those sites say what they mean
+ * instead of each re-deriving the trick.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AnyEntity = APIEntity<any>;
+
 export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   static type?: string = defaultEntityType;
   static autoLoadExpansions: ExpansionType[] = [];
@@ -170,9 +182,16 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   // in the base constructor copies wire fields onto the instance, so
   // subclasses no longer need to redeclare or manually assign these.
   id: string;
+  /** The wire's own `type` discriminator, copied onto the instance by
+   *  `deepAssign` (absent on an entity constructed without one). Distinct from
+   *  the static `type` the class registers under — `getType()` reads that. */
+  type?: string;
   uname?: string;
-  name?: string;
-  title?: string;
+  // Nullable: the wire sends null for an unset name/title, and subclasses
+  // (Shell, Conversation) declare them that way. The base must admit it or
+  // every such subclass fails its own `APIEntity<T>` F-bound.
+  name?: string | null;
+  title?: string | null;
   key?: string;
   namespace?: string;
   tags?: string[];
@@ -196,9 +215,18 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   created_through?: string;
   updated_through?: string;
   schema_version?: string;
+  /**
+   * Epoch-ms of this entity's last activation, stamped server-side by the
+   * generic `activate` action (`Entity.last_active_at`, entity_model.py:375).
+   * A base-entity field the wire sends for EVERY type, and `IEntity` already
+   * declared it — but `APIEntity` did not, so `Project.last_active_at` (the
+   * open-recency sort in the project picker) read as "does not exist" even
+   * though `deepAssign` puts it on the instance.
+   */
+  last_active_at?: number | string | null;
   labels?: string[];
   root_vfs_path?: string;
-  fs_storage_mount_path?: string;
+  fs_storage_mount_path?: string | null;
   visitor_role?: string;
   /** Epoch-ms of the last successful content edit. */
   last_edited_at?: number | string | null;
@@ -263,8 +291,24 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     this._dirty = value;
   }
 
-  get icon(): string | null {
-    return (this.constructor as typeof APIEntity).icon;
+  _icon?: string | null;
+
+  /**
+   * This row's icon: a per-ROW `icon` from the wire when the backend sends one
+   * (`Organization.icon` is a real `APIField(None)`), otherwise the TYPE's
+   * registry glyph (`static icon`, from `TypeInfo.icon`).
+   *
+   * This USED to be a getter with no setter, which made `deepAssign` throw
+   * `Cannot set property icon of #<APIEntity> which has only a getter` for any
+   * entity whose payload carried an `icon` key — `new Team({icon})` crashed.
+   * The pair is what the two-level fallback needed all along.
+   */
+  get icon(): string | null | undefined {
+    return this._icon ?? (this.constructor as typeof APIEntity).icon;
+  }
+
+  set icon(value: string | null | undefined) {
+    this._icon = value ?? null;
   }
 
   get editorDockPointer(): DockPointerData {
@@ -373,7 +417,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return this._expand;
   }
 
-  set expand(value: any) {
+  set expand(value: EntityExpansion | undefined) {
     this._expand = value;
   }
 
@@ -579,7 +623,34 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return this._typeId;
   }
 
-  public get dockPointer(): DockPointerData {
+  /**
+   * The dock that opens this entity.
+   *
+   * Declared `IDockPointer | null` rather than `DockPointerData` because ONE
+   * subclass legitimately has no dock: `Tab.dockPointer` parses a stored
+   * pointer string and returns null when there is none or it will not parse.
+   * Its consumers have always null-checked (`if (!tab?.dockPointer) return`) —
+   * only this declaration disagreed with them.
+   *
+   * The 28 subclasses that always produce a pointer keep narrowing their own
+   * override back to `DockPointerData`, so code holding a concrete `Shell`,
+   * `Agent` or `Conversation` still gets a non-null type. The null only shows
+   * up when you read `.dockPointer` off a generic entity — where it might in
+   * fact be a Tab, so the check belongs there.
+   */
+  public get dockPointer(): IDockPointer | null {
+    return this.defaultDockPointer;
+  }
+
+  /**
+   * The generic "open this entity" dock, always non-null.
+   *
+   * Subclasses that compute a better pointer fall back to THIS rather than to
+   * `this.defaultDockPointer` — a named member instead of reaching back through the
+   * member they are overriding, and one that keeps its non-null type where
+   * `dockPointer` itself cannot (see above).
+   */
+  protected get defaultDockPointer(): DockPointerData {
     return new DockPointerData(ViewType.HOME, this.typeId?.toString());
   }
 
@@ -596,12 +667,33 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   }
 
   /**
+   * POST one of this entity's actions (`/graph/<type>/<id>/<action>`) with an
+   * optional JSON body and return the envelope's `data`. The one helper every
+   * entity's action methods share (`DataSource.pollNow`, `Dataset.promote`, …).
+   */
+  protected post<R>(action: string, body?: Record<string, unknown>): Promise<R> {
+    const info = new ActionInfo(action, this.getType(), this.id, 'POST' as HttpMethod);
+    if (body) info.bodyParameters = body;
+    return dataManager.callAction<undefined, R>(info);
+  }
+
+  /** GET one of this entity's actions and return the envelope's `data`. */
+  protected get<R>(action: string): Promise<R> {
+    return dataManager.callAction<undefined, R>(new ActionInfo(action, this.getType(), this.id, 'GET' as HttpMethod));
+  }
+
+  /**
    * Asset-editor dock pointer for a file-backed asset entity, or null when it
    * has no asset file yet. Asset subclasses return this from `dockPointer`
-   * (falling back to `super.dockPointer`); the `editor/<type>/<ref>` format
+   * (falling back to `this.defaultDockPointer`); the `editor/<type>/<ref>` format
    * lives here once so it stays consistent across every asset type.
+   *
+   * `typeSegment` defaults to this entity's own type, which is what all 32 call
+   * sites passed as a hand-written literal. A typo in one of those was silent —
+   * `editorForType` just returns undefined and the entity gets a permanently
+   * inert editor link.
    */
-  protected assetEditorPointer(typeSegment: string): DockPointerData | null {
+  protected assetEditorPointer(typeSegment: string = this.getType()): DockPointerData | null {
     const editor = editorForType(typeSegment);
     if (!editor) return null;
     // Stable typeid form: editor/<editor>/typeid/<type>-<id>. `this.typeId`
@@ -613,8 +705,16 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     }
   }
 
-  public get searchDockPointer(): DockPointerData {
-    return this.dockPointer;
+  /**
+   * Where a search hit for this entity navigates. Always non-null: a result row
+   * has to go SOMEWHERE, and the generic "open this entity" dock is the right
+   * floor. This used to return `this.dockPointer` while declaring
+   * `DockPointerData`, so for the one entity whose pointer can be absent (a Tab
+   * with no stored pointer, or one that will not parse) it handed back a null
+   * its callers were typed never to receive.
+   */
+  public get searchDockPointer(): DockPointerData | IDockPointer {
+    return this.dockPointer ?? this.defaultDockPointer;
   }
 
   /**
@@ -625,9 +725,14 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    */
   public openDock(extraOptions?: Record<string, string>): void {
     const nav = (window as any).navigation as
-      | { openDock: (pointer: DockPointerData, extraOptions?: Record<string, string>) => void }
+      | { openDock: (pointer: IDockPointer, extraOptions?: Record<string, string>) => void }
       | undefined;
-    nav?.openDock(this.dockPointer, extraOptions);
+    // No dock is the same no-op as no navigation: an entity that does not
+    // address one (a Tab whose stored pointer is missing or unparseable) has
+    // nowhere to send the dock.
+    const dock = this.dockPointer;
+    if (!dock) return;
+    nav?.openDock(dock, extraOptions);
   }
 
   public clone(): T {
@@ -702,6 +807,23 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
       }
     }
 
+    // `icon` is a prototype ACCESSOR over `_icon` (falling back to the class's
+    // static TypeInfo glyph), so the own-property loop above cannot see it and
+    // the `_icon` backing field is underscore-skipped. Emit it here, under
+    // exactly the filters that loop applies.
+    //
+    // This used to be done by installing an own enumerable accessor on every
+    // instance in the constructor. Measured, that cost ~300-430ns and ~176
+    // bytes per entity — on the hottest constructor in the app — and it needed
+    // a prototype-chain guard so it would not shadow a subclass override.
+    if (
+      baseObject.icon === undefined &&
+      (!this.schema || this.isDbField('icon'))
+    ) {
+      const icon = this.icon;
+      if (icon !== undefined) baseObject.icon = icon;
+    }
+
     // delete baseObject.expand?.roles;
     // delete baseObject.expand?.allowed_actions;
     // delete baseObject.expand?.auth_scopes;
@@ -742,7 +864,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
 
   public static isType<U extends APIEntity<U>>(
     this: { new (): U; type: string },
-    entity: APIEntity<any> | null,
+    entity: AnyEntity | null,
   ): entity is U {
     return entity?.getType() === this.type;
   }
@@ -1078,8 +1200,15 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * surfaces (artifact favorites/cards/chips, skill run). Returns the DisplayTarget
    * to navigate to (`openDisplayTarget`): the entity itself, or a spawned Vibe setup
    * session. `projectId` optionally overrides the entity's own project binding.
+   *
+   * Named for the backend hook (`Entity.setup_on_receive`) rather than the wire
+   * action, which stays `setup`. A bare `setup` here collided with two real,
+   * differently-shaped subclass actions — `Capability.setup` (a type-specific
+   * `@action.post("setup")` returning a CapabilityCheck) and
+   * `ComputeNode.setup` (a different endpoint entirely, `ops/setup`, returning
+   * the provider id). This one had no callers, so it is the one that moved.
    */
-  public async setup(projectId?: string | null): Promise<ReceiveShowTarget | null> {
+  public async setupOnReceive(projectId?: string | null): Promise<ReceiveShowTarget | null> {
     const info = new ActionInfo('setup', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters = { project_id: projectId ?? null };
     const res = await dataManager.callAction<unknown, { show?: ReceiveShowTarget | null }>(info);
@@ -1189,9 +1318,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   public async get_related_workspace(): Promise<Workspace | undefined> {
     if (!this.saved) return undefined;
     const actionInfo = new ActionInfo('get_related_workspace', this.typeId.type, this.typeId.id, 'GET');
-    const ws = await dataManager.callAction<undefined, APIEntity<Workspace>>(actionInfo);
+    // The action answers wire JSON, not a hydrated entity — hence `IWorkspace`.
+    const ws = await dataManager.callAction<undefined, IWorkspace>(actionInfo);
     if (!ws) return undefined;
-    let workspace = Workspace.getByIdFromCache(ws.id);
+    let workspace = ws.id ? Workspace.getByIdFromCache<Workspace>(ws.id) : null;
     if (!workspace) workspace = new Workspace(ws);
     return workspace;
   }
@@ -1497,7 +1627,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * Get the first and closest ancestor by type using the entity scope.
    * Uses the same logic as breadcrumbs to find ancestors.
    */
-  public async get_ancestor(ancestor_type: string): Promise<APIEntity<any> | null> {
+  public async get_ancestor(ancestor_type: string): Promise<AnyEntity | null> {
     if (!this.saved) {
       return null;
     }
@@ -1541,12 +1671,12 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * Returns a Record with recordFolderRef (record folder) and mainRef (primary content).
    * Use ref.child() to navigate further: entity.record().then(r => r.mainRef?.child("subdir"))
    */
-  public async record(options: { hubReflect?: boolean } = {}): Promise<Record> {
+  public async record(options: { hubReflect?: boolean } = {}): Promise<FsRecord> {
     const actionInfo = new ActionInfo('record', this.typeId.type, this.typeId.id, 'GET');
     actionInfo.subpath = 'refs';
     actionInfo.hubReflect = options.hubReflect === true;
     const result = await dataManager.callAction<void, RecordRefs>(actionInfo);
-    return new Record(result as RecordRefs);
+    return new FsRecord(result as RecordRefs);
   }
 
   /**
@@ -1721,7 +1851,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
 }
 
 // Create the singleton DataManager instance
-export const dataManager = new DataManager<APIEntity<any>>();
+export const dataManager = new DataManager<AnyEntity>();
 
 // Define store as a global for console debugability
 defineGlobal('store', dataManager);

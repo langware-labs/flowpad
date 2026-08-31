@@ -21,11 +21,16 @@ runs:
 
     # Nothing else in CI type-checks the frontend: vite build and vitest both
     # transform TS with esbuild, which strips types without checking them.
-    # DISABLED: type-check currently fails with ~1700 pre-existing errors, and
-    # a red first step hides the signal from every later step (and skips the
-    # e2e job via `needs`). Re-enable once the codebase typechecks.
+    # Off by default: the full type-check still has a long tail of pre-existing
+    # errors, and a red first step hides the signal from every later step (and
+    # skips the e2e job via `needs`). The ENFORCED gate lives in
+    # ui-typecheck.yml, which checks the directories that are already clean.
+    #
+    # The guard was `inputs.tcs` (typo) compared against a boolean; composite
+    # inputs are strings, so it could never run at any value. Both fixed, so
+    # passing `tsc: true` now genuinely runs it.
     - name: Type-check (tsc --noEmit)
-      if: ${{ inputs.tcs == true }}
+      if: ${{ inputs.tsc == 'true' }}
       run: npm run type-check
       shell: bash
       working-directory: ui

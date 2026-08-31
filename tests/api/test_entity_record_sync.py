@@ -11,9 +11,8 @@ import pytest
 import pytest_asyncio
 
 from flow_sdk.core.entity.entity_model import Entity
-from flow_sdk.fs_store.record_paths import set_default_records_root
-
 from flow_sdk.fs_store.fs_record import FSRecord as Record
+from flow_sdk.fs_store.record_paths import set_default_records_root
 from flow_sdk.responses.response import ApiResponse
 
 
@@ -65,7 +64,6 @@ async def test_vfs_record_fields_not_accepted(bootstrapped_client):
 @pytest.mark.asyncio
 async def test_write_through_entity_update_syncs_to_disk_record(bootstrapped_client):
     """PUT /graph/{type}/{id} writes entity fields back to the disk record when type has a Record class."""
-    import json
     import uuid
 
     from flow_sdk.builtin.workspace import Workspace

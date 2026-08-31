@@ -1,3 +1,4 @@
+import type { ShowTarget } from '@sdk';
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 /**
@@ -8,6 +9,7 @@ import type { MessageDescriptor } from '@lingui/core';
  * breaks Vite Fast Refresh) and a circular controller↔row-item import.
  */
 import { AgenticProcess, getDisplayStatus, isProcessRunning, ProcessStatus, Tab, TypeId } from '@sdk';
+import { formatTimeAgoShort } from '@src/utils/format-time-ago';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
@@ -17,7 +19,8 @@ import { resolveProcessDisplayName } from '@src/components/terminal/process-disp
 import { formatTimeAgo, useLastStatusChange } from '@src/store/pending-actions-store';
 import { useEntityLocationLabel } from '@src/components/graph-view/ui/EntityIcon';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { dockForDisplayTarget, type DisplayTargetLike } from '@src/navigation/display-target-pointer';
+import {dockForDisplayTarget} from '@src/navigation/display-target-pointer';
+
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Eye, SquareTerminal } from 'lucide-react';
 import React, { useMemo } from 'react';
@@ -26,7 +29,7 @@ import React, { useMemo } from 'react';
  *  chips' icon resolution and the vendor openers' glyph/color. */
 export const PROVIDER_META: Record<
   'claude' | 'codex' | 'copilot' | 'opencode' | 'shell',
-  { Icon: React.ComponentType<{ className?: string }>; iconClassName: string; label: string }
+  { Icon: React.ComponentType<{ className?: string }>; iconClassName: string; label: MessageDescriptor }
 > = {
   claude: { Icon: ClaudeIcon, iconClassName: 'text-orange-500', label: msg`Claude Code tab` },
   codex: { Icon: CodexIcon, iconClassName: 'text-emerald-500', label: msg`Codex tab` },
@@ -43,19 +46,6 @@ export const PROVIDER_META: Record<
 export function providerMetaFor(workerType: string | undefined | null) {
   const key = workerType === 'claude_code' ? 'claude' : workerType;
   return PROVIDER_META[key as keyof typeof PROVIDER_META] ?? PROVIDER_META.claude;
-}
-
-function timeAgo(date: Date | string | undefined | null): string {
-  if (!date) return '—';
-  const d = typeof date === 'string' ? new Date(date) : date;
-  const seconds = Math.floor((Date.now() - d.getTime()) / 1000);
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
 }
 
 function formatDateTime(date: Date | string | undefined | null): string {
@@ -114,8 +104,14 @@ const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: str
         </p>
       )}
       <div className="space-y-1 border-t pt-1.5">
-        <InfoRow label="Created" value={`${formatDateTime(process.created_date)} · ${timeAgo(process.created_date)}`} />
-        <InfoRow label="Updated" value={`${formatDateTime(process.updated_date)} · ${timeAgo(process.updated_date)}`} />
+        <InfoRow
+          label="Created"
+          value={`${formatDateTime(process.created_date)} · ${formatTimeAgoShort(process.created_date)}`}
+        />
+        <InfoRow
+          label="Updated"
+          value={`${formatDateTime(process.updated_date)} · ${formatTimeAgoShort(process.updated_date)}`}
+        />
         {workerSessionId && <InfoRow label="Session" value={workerSessionId.slice(0, 8) + '…'} />}
       </div>
     </div>
@@ -161,7 +157,7 @@ export const LazyProcessTooltip: React.FC<{
 export const ShownTargetBadge: React.FC<{ processId: string }> = ({ processId }) => {
   const { data: process } = useEntity<AgenticProcess>(new TypeId(AgenticProcess.type, processId));
   const { navigation } = useDockNavigation();
-  const shown = (process?.context_data as { last_shown?: DisplayTargetLike } | undefined)?.last_shown;
+  const shown = (process?.context_data as { last_shown?: ShowTarget } | undefined)?.last_shown;
   const projectId = process?.project_id ?? null;
   // Same project rebase the listener applies when it mints the tab — without it
   // this would navigate to the scope-collapsed Assets dock instead of the
@@ -239,13 +235,22 @@ export const ContentTabTooltip: React.FC<{
       )}
       <div className="space-y-1 border-t pt-1.5">
         {tab.created_date && (
-          <InfoRow label="Opened" value={`${formatDateTime(tab.created_date)} · ${timeAgo(tab.created_date)}`} />
+          <InfoRow
+            label="Opened"
+            value={`${formatDateTime(tab.created_date)} · ${formatTimeAgoShort(tab.created_date)}`}
+          />
         )}
         {tab.updated_date && (
-          <InfoRow label="Updated" value={`${formatDateTime(tab.updated_date)} · ${timeAgo(tab.updated_date)}`} />
+          <InfoRow
+            label="Updated"
+            value={`${formatDateTime(tab.updated_date)} · ${formatTimeAgoShort(tab.updated_date)}`}
+          />
         )}
         {lastActive != null && lastActive !== '' && (
-          <InfoRow label="Active" value={timeAgo(typeof lastActive === 'number' ? new Date(lastActive) : lastActive)} />
+          <InfoRow
+            label="Active"
+            value={formatTimeAgoShort(typeof lastActive === 'number' ? new Date(lastActive) : lastActive)}
+          />
         )}
       </div>
     </div>

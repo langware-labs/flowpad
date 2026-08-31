@@ -15,7 +15,6 @@ import uuid
 import pytest
 from starlette.testclient import TestClient
 
-
 pytestmark = pytest.mark.usefixtures("reset_db_for_testclient")
 
 

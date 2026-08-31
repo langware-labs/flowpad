@@ -34,6 +34,9 @@ from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import
     read_copilot_session_meta,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
+    user_turn_count as _user_turn_count,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
     load_session_history as _copilot_load_session_history,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
@@ -55,13 +58,15 @@ from flow_sdk.builtin.hooks.capabilities import process_capability, unsupported
 from flow_sdk.builtin.hooks.types import HookCapabilities, HookScope
 from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
-from flow_sdk.flowpad_types.enums import WorkerType
+from flow_sdk.flowpad_types.vendors import vendor_for
 from flow_sdk.responses.response import ApiFailResponse
 from flow_sdk.transcript_analyzer import (
     TranscriptDescriptor,
     TranscriptFormat,
     TranscriptSource,
 )
+
+VENDOR = vendor_for("copilot")
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
@@ -105,7 +110,7 @@ _HOOK_CAPABILITIES: "HookCapabilities" = {
 class CopilotDriver:
     """Vendor glue for GitHub Copilot CLI."""
 
-    name = WorkerType.COPILOT.value
+    name = VENDOR.key
     supports_process_hooks = True
     process_hooks_use_assets = True
     preassign_interactive_session_id = True
@@ -279,6 +284,10 @@ class CopilotDriver:
             **process._process_asset_context_kwargs(process_assets),
         )
 
+        from flow_sdk.builtin.agentic_process.cli_drivers import api_auth  # noqa: PLC0415
+
+        await api_auth.stamp_api_model(context, process)
+
         worker = CopilotCLIStreamWorker.for_process(process.id)
         return await run_headless_turn(
             self, process, worker, prompt=full_prompt, context=context, logger=logger
@@ -305,18 +314,41 @@ class CopilotDriver:
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         """Resolve the Copilot transcript for READING (history / prompts / status).
 
-        Transcript↔output alignment (mirror of codex): the session record
-        (``~/.copilot/session-state/<id>/events.jsonl``) is the canonical, complete
-        transcript — user-message entries AND assistant output. The process-local
-        file is only the tee'd stdout (assistant output, no user-message entry), so
-        ``transcript/prompts`` came back empty for headless. Prefer the exact session
-        record for an assigned id; use bounded latest-session discovery only for a
-        legacy process without an id, then fall back to that process's stdout tee.
+        Two candidate files, and which one is authoritative is not fixed:
+
+        * the session record (``~/.copilot/session-state/<id>/events.jsonl``) —
+          canonical and complete across BOTH transports, but written by the CLI
+          on its own schedule;
+        * this process's stdout tee — written by us, line by line, and proven
+          durable by :class:`TranscriptDurabilityGate` *before* the turn's
+          answer frame is ever released to a caller.
+
+        The session record lags its own stdout: on Copilot CLI 1.0.81 the
+        turn's ``assistant.message`` row reached ``events.jsonl`` ~5 s AFTER
+        the matching CHAT frame was released (1.0.78 measured 0.78 s). A caller
+        that reads ``transcript/full`` immediately after receiving the answer
+        therefore got a transcript missing the very turn it just observed —
+        deterministically, for every headless multi-turn conversation.
+
+        Note the tee is NOT "assistant output only" as an earlier revision of
+        this docstring claimed: Copilot's stdout echoes the user's own
+        ``user.message`` event, so the tee carries both halves of every
+        headless turn.
+
+        So: prefer the tee whenever it covers at least as many user turns as
+        the session record — it is then complete AND ahead. A process that ran
+        turns on the other transport (PTY writes no tee) makes the session
+        record strictly longer, and it wins, so mixed-transport history is
+        never truncated. This is a durability comparison, not a wait: no clock,
+        sleep, timeout or polling budget is involved.
         """
         session = self._session_descriptor(process)
-        if session is not None:
-            return session
-        return self._process_local_descriptor(process)
+        local = self._process_local_descriptor(process)
+        if session is None:
+            return local
+        if local is not None and _user_turn_count(local.path) >= _user_turn_count(session.path):
+            return local
+        return session
 
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         descriptor = self.transcript_descriptor(process)
@@ -393,3 +425,7 @@ class CopilotDriver:
         if not process.session_id:
             return False
         return find_copilot_session_jsonl(process.session_id) is not None
+
+
+#: The class ``get_driver`` instantiates for this vendor (looked up by ``VENDORS[...].package``).
+DRIVER = CopilotDriver

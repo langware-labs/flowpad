@@ -62,7 +62,14 @@ interface ExcalidrawComponentProps {
   theme?: 'light' | 'dark';
   UIOptions?: {
     welcomeScreen?: boolean;
-    canvasActions?: Record<string, boolean>;
+    // Mirrors the subset of Excalidraw's `UIOptions.canvasActions` this editor
+    // sets. `export` is NOT a boolean toggle upstream: it is `false` to hide the
+    // action, or the export options object.
+    canvasActions?: {
+      toggleTheme?: boolean;
+      saveAsImage?: boolean;
+      export?: false | { saveFileToDisk?: boolean };
+    };
   };
   children?: React.ReactNode;
 }

@@ -19,7 +19,7 @@ MCP_SERVER = TypeMetadata(
     # advertise the structured fields consumers should filter on.
     index_fields=["command", "url", "scope", "worker_type", "connector_type"],
     from_disk_fn=extract_mcp_server,
-    identity_backend=derived_identity(),
+    identity_carrier=derived_identity(),
     id_stable_key_fn=mcp_server_identity_key,
     id_namespace=uuid.NAMESPACE_DNS,
 )

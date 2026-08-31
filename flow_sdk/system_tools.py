@@ -527,6 +527,16 @@ async def clear_all_data() -> ClearAllResult:
         invalidate_bootstrap_cache()
         await bootstrap()
 
+        # The process-wide capability cache survives a database replacement,
+        # but the rows mirrored into the capabilities UI do not.  Bootstrap
+        # deliberately does not wait for discovery, so without an explicit
+        # sweep here a factory reset leaves freshly-seeded rows at state=none
+        # while workers continue using the cached installed values.  Complete
+        # the reset only after the canonical discovery seam has realigned both.
+        from flow_sdk.core.capabilities.discovery import run_discovery  # noqa: PLC0415
+
+        await run_discovery()
+
         # Rebuild the shipped system content through the same canonical pass as
         # process startup. The bootstrap() route handler above only restores the
         # @local graph; a factory reset also deletes the indexed system agents,
@@ -543,6 +553,37 @@ async def clear_all_data() -> ClearAllResult:
             await index_system_content()
         except Exception as e:  # noqa: BLE001
             logger.warning(f"clear_all_data: failed to re-seed system content (non-fatal): {e}")
+
+        # Re-seed the service rows, through the same seam startup uses.
+        #
+        # They are ROWS, so the wipe deleted them; nothing else re-seeds them,
+        # leaving a factory reset with no `builtin_system_heartbeat` — the cron
+        # kept logging "executed successfully" while nothing routed it into
+        # `_dispatch_heartbeat`, so every `register_heartbeat_task` job (e.g.
+        # data-source ingestion) silently stopped until the process restarted.
+        #
+        # Two invariants constrain any edit here:
+        #  1. STOP THE WATCHER FIRST. It holds pre-wipe `Trigger` entities in
+        #     its per-trigger tasks; re-seeding mints rows with NEW ids, and the
+        #     stale entities' `update()` then falls through to `_create_entity`
+        #     and collides on `uname` — a 409 storm that takes the backend out
+        #     mid-suite. Re-seeding without this stop is worse than the bug.
+        #  2. Restart with `catch_up=False`: it spawns the same watch tasks
+        #     without `start()`'s per-trigger catch-up disk walk. This runs on
+        #     EVERY `resetDb()`; that walk alone pushed a 60s-budget test to
+        #     50.9s. The reset path must stay cheap.
+        #     Re-arming is NOT optional: SCHEDULE triggers re-register
+        #     themselves on save, but FSOp ones would come back stored and
+        #     unwatched, which no row count can see.
+        try:
+            from flow_sdk.server.builtin_triggers import seed_service_entities  # noqa: PLC0415
+            from flow_sdk.server.fsop_watcher import fsop_watcher  # noqa: PLC0415
+
+            await fsop_watcher.stop()
+            await seed_service_entities()
+            await fsop_watcher.start(catch_up=False)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"clear_all_data: failed to re-install service rows (non-fatal): {e}")
 
     # The triggering HTTP request can be CANCELLED at any await (ASGI client
     # disconnect — e.g. the test runner being killed mid-clear). Without a

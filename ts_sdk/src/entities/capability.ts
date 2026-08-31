@@ -1,5 +1,5 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { HttpMethod } from '../models/ApiUrl';
 import { kindMatches } from '../models/Kind';
@@ -56,6 +56,10 @@ export interface WorkerAuthStatus {
 export interface ICapability extends IEntity {
   name: string;
   kind: string;
+  /** Entity scope this row is bound to; null on the global row. Mirrors the
+   *  backend `Capability.scope_type` / `.scope_id` (flow_sdk/builtin/capability.py). */
+  scope_type?: string | null;
+  scope_id?: string | null;
   description?: string;
   icon?: string | null;
   homepage_url?: string | null;
@@ -90,6 +94,15 @@ export interface ICapability extends IEntity {
   model_map?: Record<string, Record<string, string>>;
 }
 
+// `implements ICapability` only checks the class; it contributes no members, so every
+// field declared solely on ICapability read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// `icon` is omitted: `APIEntity` owns it as an accessor pair, and an
+// optional `icon?:` here is not identical to that required accessor, which
+// the merged interface cannot inherit from both sides.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Capability extends EntityMerge<ICapability> {}
+
 @registerEntity
 export class Capability extends APIEntity<Capability> implements ICapability {
   static type: string = 'capability';
@@ -119,32 +132,8 @@ export class Capability extends APIEntity<Capability> implements ICapability {
   api_provider: string | null = null;
   model_map: Record<string, Record<string, string>> = {};
 
-  private _icon: string | null = null;
-
-  // NOT redundant with the constructor's defineProperty: APIEntity's
-  // prototype exposes a getter-only `icon`, and `super(entity)` assigns
-  // fields before the constructor can install the own accessor — without
-  // this prototype-level setter that assignment throws. The defineProperty
-  // below additionally makes `icon` an own enumerable prop so serialization
-  // sees it.
-  get icon(): string | null {
-    return this._icon ?? Capability.icon;
-  }
-
-  set icon(value: string | null) {
-    this._icon = value ?? null;
-  }
-
   constructor(entity: Partial<ICapability> = {}) {
     super(entity);
-    Object.defineProperty(this, 'icon', {
-      enumerable: true,
-      configurable: true,
-      get: () => this._icon ?? Capability.icon,
-      set: (value: string | null | undefined) => {
-        this._icon = value ?? null;
-      },
-    });
     this.name = entity.name ?? this.name;
     this.kind = entity.kind ?? this.kind;
     this.scope_type = entity.scope_type ?? this.scope_type;

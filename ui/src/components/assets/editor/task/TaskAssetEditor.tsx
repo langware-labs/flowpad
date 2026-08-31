@@ -97,16 +97,18 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
   }, [parentId, taskKey]);
 
   const save = useCallback(async (patch: Partial<Task>) => {
-    const t = taskRef.current;
-    if (!t) return;
+    // NOT `t`: that shadowed the lingui `t` macro, so the catch below called the
+    // Task entity as a tagged template instead of translating the error title.
+    const current = taskRef.current;
+    if (!current) return;
     const changed = Object.entries(patch).some(
-      ([key, value]) => (t as unknown as Record<string, unknown>)[key] !== value,
+      ([key, value]) => (current as unknown as Record<string, unknown>)[key] !== value,
     );
     if (!changed) return;
-    Object.assign(t, patch);
+    Object.assign(current, patch);
     try {
-      await t.save();
-      t.markEdit();
+      await current.save();
+      current.markEdit();
     } catch (e) {
       notify.error({
         title: t`Could not save task`,

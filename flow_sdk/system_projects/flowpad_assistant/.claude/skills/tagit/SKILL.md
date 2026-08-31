@@ -11,7 +11,7 @@ description: >-
   rules", "breadcrumb this test", "write this up as a tag".
 tags: ''
 eval: 'false'
-version: 1
+version: 2
 ---
 
 # tagit — breadcrumb capsules on failing tests
@@ -30,12 +30,12 @@ it. This is ground truth, and it changes only with the user's approval.
 
 ## The shape
 
-| Piece | Value |
-|---|---|
-| tag | `breadcrumb.test.<slug>.rules` — `<slug>` is **≤3 words**, snake_case, a *topic*, not the pytest function name |
-| capsule | name `tag`, on top of the failing test, one per test |
-| doc | `docs/breadcrumbs/<slug>.md`, frontmatter `tags: [<tag>]` |
-| fence | a ```` ```breadcrumb ```` block at the TOP of the doc — renders the bound tests as clickable chips |
+| Piece   | Value                                                                                                           |
+| ------- | --------------------------------------------------------------------------------------------------------------- |
+| tag     | `breadcrumb.test.<slug>.rules` — `<slug>` is **≤3 words**, snake\_case, a *topic*, not the pytest function name |
+| capsule | name `tag`, on top of the failing test, one per test                                                            |
+| doc     | `docs/breadcrumbs/<slug>.md`, frontmatter `tags: [<tag>]`                                                       |
+| fence   | a ` ```breadcrumb ` block at the TOP of the doc — renders the bound tests as clickable chips                    |
 
 The slug is a topic so a test rename does not orphan the tag. `breadcrumb` is
 not a reserved root, so the tag can be blessed.
@@ -108,7 +108,7 @@ decorator and test-class hoisting, and merging into an existing breadcrumb — a
 of which fail *silently* when done by hand (an indented or duplicated block
 removes the whole file from `flow tag get` with no error anywhere).
 
-`--print-fence` emits the doc's ```breadcrumb block, already carrying the line
+`--print-fence` emits the doc's \`\`\`breadcrumb block, already carrying the line
 it just wrote. **Paste it verbatim** at the top of the doc, under the banner.
 Retyping it by hand is how the capsule and the card drift apart — the same
 reason the capsule itself goes through the script.
@@ -164,7 +164,7 @@ The `--with` is not optional in practice: the capsule is an edit to a *test
 file*, and a rules doc whose bound test isn't in the same commit tells a
 reviewer half the story.
 
-**Never pass `--link-project`.** If the project isn't linked to the cloud the
+**Never pass** **`--link-project`.** If the project isn't linked to the cloud the
 command exits **3**, mutates nothing, and returns `remediation` — print those
 lines and stop. Linking publishes a repo declaration to every member of the
 project; that is the user's decision, not yours. What it does and does not
@@ -177,18 +177,20 @@ itself failed. Only 7 means something is broken.
 ## Rules
 
 * **User-invoked only.** Never chain yourself onto an RCA.
+
 * **The doc is ground truth, not a log.** No dated append-only entries; revise
   the rules in place, with approval.
+
 * **Do not touch toplog.** `toplog learn` grows the *trace* catalog (what to
   log). tagit writes *design rules* (what must be true). Different vocabularies,
   different files — do not cross them.
 
 ## Reference
 
-| Need | Where |
-|---|---|
-| how the tag system binds docs and code | `docs/tags.md` |
-| how the `breadcrumb` fence renders and refreshes | `docs/renderable-fences.md` |
-| what cloud sharing does and does not upload | `docs/collab/cloud-sharing.md` |
-| capsule carriers, grammar, repeatable names | `docs/data-management/asset-capsules.md` |
-| reading a tag back | the `tag-context` skill |
+| Need                                             | Where                                    |
+| ------------------------------------------------ | ---------------------------------------- |
+| how the tag system binds docs and code           | `docs/tags.md`                           |
+| how the `breadcrumb` fence renders and refreshes | `docs/renderable-fences.md`              |
+| what cloud sharing does and does not upload      | `docs/collab/cloud-sharing.md`           |
+| capsule carriers, grammar, repeatable names      | `docs/data-management/asset-capsules.md` |
+| reading a tag back                               | the `tag-context` skill                  |

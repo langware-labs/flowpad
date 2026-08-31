@@ -16,7 +16,7 @@ export function SettingsView() {
   const initialFieldName = currentDock?.pointer ?? '';
 
   const { userRecords, projectRecords, localRecords, isLoading, error } =
-    useClaudeSettings(computeNodeId, projectDir, true);
+    useClaudeSettings(computeNodeId, projectDir ?? undefined, true);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">

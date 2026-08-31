@@ -1,4 +1,4 @@
-import { PageId, TypeId } from '@sdk';
+import { PageId, TypeId, type ShowTarget } from '@sdk';
 import { AssetDocPointer } from './AssetDocPointer';
 import { editorForType } from './asset-doc-types';
 import { DockPointer } from './DockPointer';
@@ -23,27 +23,6 @@ import { ViewType } from '@src/types/ViewType';
  * answers for the same target — they were three near-copies before this.
  */
 
-/** Structural shape of every resolved show target — deliberately all-optional so
- *  the SDK's `ShowTarget`, `ReceiveShowTarget` and `DisplayShowTarget` all fit. */
-export interface DisplayTargetLike {
-  kind?: string;
-  typeid?: string;
-  type?: string;
-  id?: string;
-  path?: string;
-  port?: number | string;
-  /** kind: 'app' — the Artifact is the address; runtime is derived, not pinned. */
-  artifact_id?: string;
-  runtime?: string;
-  name?: string;
-  /** kind: 'dock' — a SCREEN. The backend sends the frontend's own field names
-   *  (`flow_sdk/core/dock_address.py`, pinned by dock_address_contract.json) so
-   *  the pointer is built here without re-parsing a URL. */
-  view_type?: string;
-  pointer?: string | null;
-  options?: Record<string, string> | null;
-  page?: string;
-}
 
 /** Port targets (`webapp`, and an `app` whose dev server is up) → the port preview. */
 function webAppPointer(port: number | string | undefined): DockPointer | null {
@@ -55,12 +34,17 @@ function webAppPointer(port: number | string | undefined): DockPointer | null {
  * The dock a show target opens, or null when it addresses nothing openable.
  *
  * Null is a real answer, not a failure: an entity type with no registered
- * editor and no path has no surface to open (the `dataset` hole), and an `app`
- * that is `served`/`unbuilt` carries no port — its only runtime lives behind
- * Vibe's artifact-driven chrome. Callers skip silently rather than inventing a
- * destination; the target still lands in the process's display history.
+ * editor and no path has no surface to open (the `dataset` hole). Callers skip
+ * silently rather than inventing a destination; the target still lands in the
+ * process's display history.
+ *
+ * An `app` used to be the other null case — a `served`/`unbuilt` app carries no
+ * port, so there was nothing to address and its only runtime lived behind Vibe's
+ * artifact-driven pane chrome. `ViewType.APP` closes that: the ARTIFACT is the
+ * address and the runtime stays derived, which is what lets an app be shown,
+ * bookmarked and restored without a stale port ever becoming its identity.
  */
-export function dockForDisplayTarget(target: DisplayTargetLike | null | undefined): DockPointer | null {
+export function dockForDisplayTarget(target: ShowTarget | null | undefined): DockPointer | null {
   if (!target) return null;
 
   // A terminal is an address, not content — same dock a journey's open_terminal
@@ -83,6 +67,26 @@ export function dockForDisplayTarget(target: DisplayTargetLike | null | undefine
     );
   }
 
+  // An APP is addressed by its artifact. `runtime` rides in options — it is derived
+  // state that changes without the app changing (a dev server dies, a build lands),
+  // and options are excluded from `tabHash`, so switching dev⇄served re-points the
+  // SAME tab rather than forking one per runtime. The port is deliberately absent:
+  // it is a companion of `runtime=dev`, re-resolved from the Deployment on load.
+  // The pointer is the artifact TypeId the backend already minted (`_app_payload`
+  // sends both `artifact_id` and `typeid`) rather than one re-assembled here — the
+  // `<type>-<id>` spelling is what lets the backend's own pointer-entity gate 404 a
+  // bogus app address instead of handing the frontend a dock that renders nothing.
+  if (target.kind === 'app' && (target.artifact_id || target.micro_app_id)) {
+    const runtime = target.runtime === 'dev' || target.runtime === 'served' ? { runtime: target.runtime } : undefined;
+    // A webapp ASSET has no artifact: its own row is the address, and the backend
+    // sends that as the `typeid`. The artifact spelling stays the fallback for the
+    // built-from-source app, which is the only one that HAS an artifact.
+    const pointer = target.typeid ?? (target.artifact_id ? `artifact-${target.artifact_id}` : null);
+    if (pointer) return new DockPointer(ViewType.APP, pointer, runtime);
+  }
+
+  // A bare port with no artifact behind it — a dev server we were simply told
+  // about. It has nothing else to be identified by, so the port stays the address.
   if (target.kind === 'webapp' || target.kind === 'app') return webAppPointer(target.port);
 
   // Entity first, path second: an indexed asset opens in its bespoke editor,

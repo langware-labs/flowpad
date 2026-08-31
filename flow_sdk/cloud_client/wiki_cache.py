@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.core.entity.entity_model import Entity, remote_reflection
 from flow_sdk.db.db_entity import DBEntity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -25,30 +25,12 @@ class HubWikiCacheError(RuntimeError):
     """The Hub Wiki request could not be completed or materialized."""
 
 
-# Sender-local filesystem placement must never be adopted by a receiving
-# desktop.  Most of these fields are already stripped from ordinary share
-# payloads, but Hub reflected models may carry some of them for metadata browse.
-_REMOTE_PLACEMENT_FIELDS = frozenset(
-    {
-        "asset_ref",
-        "cwd",
-        "fs_storage_mount_path",
-        "installed_root",
-        "parent_path",
-        "path",
-        "project_id",
-        "translations",
-        "vault_root",
-    }
-)
-
-
 def _cache_payload(entity_cls: type[Entity], raw: dict[str, Any]) -> dict[str, Any]:
-    payload = {
-        key: value
-        for key, value in raw.items()
-        if key not in _REMOTE_PLACEMENT_FIELDS and entity_cls.is_api_field(key)
-    }
+    # Sender-local placement (asset_ref, path, project_id, vault_root, …) must
+    # never be adopted by a receiving desktop: exactly the fields the type
+    # declares ``Sharing.PRIVATE`` — one declaration, not a second list here.
+    private = entity_cls.fields_not_in_bundle()
+    payload = {key: value for key, value in raw.items() if key not in private and entity_cls.is_api_field(key)}
     payload["id"] = str(raw["id"])
     payload["remote"] = True
     return payload

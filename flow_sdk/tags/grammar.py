@@ -23,6 +23,7 @@ above (bus, ontology, capabilities, entities) imports downward into it.
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import Optional
 
 # Same segment character class as the legacy KIND_PATTERN — existing kinds and
@@ -33,16 +34,9 @@ TAG_PATTERN = re.compile(r"^[a-z0-9_-]+(?:\.[a-z0-9_-]+)*$")
 NAMESPACE_SEGMENT_PATTERN = re.compile(r"^--([a-z0-9_]+)--$")
 
 
-def normalize_tag(value: str) -> str:
-    """Normalize (strip + lower) and validate a tag name. Raises on invalid.
-
-    The STRICT gate — used wherever a tag is adopted as data (entity names,
-    kind fields). The bus itself never calls this on emit (bus stays
-    permissive; see ``bus.py``).
-    """
-    if not isinstance(value, str):
-        raise TypeError("tag must be a string")
-    normalized = value.strip().lower()
+@lru_cache(maxsize=4096)
+def _validated(normalized: str) -> str:
+    """Validate an already-lowered tag. Memoized — see ``normalize_tag``."""
     if not TAG_PATTERN.fullmatch(normalized):
         raise ValueError(
             "tag must contain dot-separated lowercase letters, numbers, '_' or '-'"
@@ -51,6 +45,23 @@ def normalize_tag(value: str) -> str:
         if NAMESPACE_SEGMENT_PATTERN.fullmatch(seg) and i != 0:
             raise ValueError("a --namespace-- marker is only legal as the first segment")
     return normalized
+
+
+def normalize_tag(value: str) -> str:
+    """Normalize (strip + lower) and validate a tag name. Raises on invalid.
+
+    The STRICT gate — used wherever a tag is adopted as data (entity names,
+    kind fields). The bus itself never calls this on emit (bus stays
+    permissive; see ``bus.py``).
+
+    Validation is memoized because the inputs are a small recurring vocabulary
+    adopted on a hot path: a dataset of N files stamps the same constant kind N
+    times, and each miss costs three regex fullmatches. Bounded, so an unbounded
+    or hostile vocabulary cannot grow the cache without limit.
+    """
+    if not isinstance(value, str):
+        raise TypeError("tag must be a string")
+    return _validated(value.strip().lower())
 
 
 def is_valid_tag(value: object) -> bool:

@@ -19,7 +19,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from flow_sdk._compat import UTC
-from flow_sdk.api.api_types.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, DBBaseRelationship, EntityChild
 from flow_sdk.db.drivers.db_driver import (
     _DB_LIFECYCLE_LOCK,
@@ -90,6 +90,22 @@ class FtsEntry:
             title=record.search_title or None,
             description=record.search_description or None,
             content=record.search_content or None,
+        )
+
+    @classmethod
+    def from_entity(cls, entity, *, info) -> "FtsEntry":
+        """Build the entry from the ROW — the other sanctioned constructor, for a
+        row-only type (``db_only``) that has no ``FSRecord`` shadow to read from.
+        Same four weighted columns; ``content`` is ``TypeInfo.fts_content``."""
+        from flow_sdk.fs_store.serializer.record import fts_content  # noqa: PLC0415
+
+        return cls(
+            entity_id=str(entity.id),
+            entity_type=entity.get_type(),
+            name=getattr(entity, "name", None) or None,
+            title=getattr(entity, "title", None) or None,
+            description=getattr(entity, "description", None) or None,
+            content=fts_content(entity, info) or None,
         )
 
     @property
@@ -284,7 +300,6 @@ async def _migrate_vfs_record_to_data_ref(conn) -> None:
 
 # Per-class caches of derived field lists. Both are pure functions of the class
 # (stable after class creation) but were recomputed on every save.
-_PERSIST_FIELDS_CACHE: "dict[type, tuple[str, ...]]" = {}
 _REL_PERSIST_FIELDS_CACHE: "dict[type, tuple[str, ...]]" = {}
 
 
@@ -1244,14 +1259,16 @@ class SQLiteDBDriver(DBDriver):
             # Create new entity - _create_entity checks unique constraints
             return await self._create_entity(entity, owner, session)
 
-    async def stamp_last_active_at(self, entity_id: str, timestamp_ms: int) -> tuple[DBBaseRecord | None, bool]:
-        """Atomically stamp recency without rewriting a stale entity snapshot.
-
-        The writer transaction first hydrates the authoritative row so a stale
-        pre-close Tab activation still observes ``visible=False`` and no-ops.
-        Otherwise ``json_set`` changes only ``last_active_at`` in one UPDATE
-        statement, preserving every other persisted field.
-        """
+    async def _stamp_data_field(
+        self,
+        entity_id: str,
+        field_name: str,
+        value: object,
+        *,
+        hidden_entity_type: str | None = None,
+        skip_if_unchanged: bool = False,
+    ) -> tuple[DBBaseRecord | None, bool]:
+        """Hydrate the authoritative row and atomically stamp one data field."""
         async with self._session_ctx() as session:
             current_result = await session.execute(select(EntitySchema).where(EntitySchema.id == entity_id))
             schema = current_result.scalar_one_or_none()
@@ -1259,13 +1276,12 @@ class SQLiteDBDriver(DBDriver):
                 return None, False
 
             current = self._schema_to_entity(schema)
-            if current.get_type() == "tab" and getattr(current, "visible", True) is False:
+            is_hidden = getattr(current, "visible", True) is False
+            if is_hidden and (hidden_entity_type is None or current.get_type() == hidden_entity_type):
+                return current, False
+            if skip_if_unchanged and getattr(current, field_name, None) == value:
                 return current, False
 
-            # Match the audit behavior of the former ``Entity.save()`` path,
-            # but derive it from the authoritative row.  In particular,
-            # apply_update_fields preserves an existing updated_date (the old
-            # save path did not reset it) while updating actor/provenance.
             self.apply_update_fields(current)
             await session.execute(
                 update(EntitySchema)
@@ -1276,14 +1292,45 @@ class SQLiteDBDriver(DBDriver):
                     updated_through=current.updated_through,
                     data=func.json_set(
                         func.coalesce(EntitySchema.data, "{}"),
-                        "$.last_active_at",
-                        timestamp_ms,
+                        f"$.{field_name}",
+                        value,
                     ),
                 )
             )
-            current.last_active_at = timestamp_ms
+            setattr(current, field_name, value)
             current._dirty = False
             return current, True
+
+    async def stamp_last_active_at(self, entity_id: str, timestamp_ms: int) -> tuple[DBBaseRecord | None, bool]:
+        """Atomically stamp recency without rewriting a stale entity snapshot.
+
+        The writer transaction first hydrates the authoritative row so a stale
+        pre-close Tab activation still observes ``visible=False`` and no-ops.
+        Otherwise ``json_set`` changes only ``last_active_at`` in one UPDATE
+        statement, preserving every other persisted field. Audit fields match
+        the former ``Entity.save()`` path but come from the authoritative row.
+        """
+        return await self._stamp_data_field(
+            entity_id,
+            "last_active_at",
+            timestamp_ms,
+            hidden_entity_type="tab",
+        )
+
+    async def stamp_tab_order(self, entity_id: str, tab_order: int) -> tuple[DBBaseRecord | None, bool]:
+        """Atomically set only ``tab_order`` — the order writer's half of the
+        soft-close race. ``_persist_global_order`` used to re-read the row and
+        ``save()`` it whole; a ``close_many`` committing ``visible=False``
+        between that read and the save was overwritten and the closed tab
+        resurrected. Same shape as :meth:`stamp_last_active_at`: hydrate the
+        authoritative row inside the writer transaction, no-op on a hidden or
+        missing tab, and ``json_set`` exactly one field."""
+        return await self._stamp_data_field(
+            entity_id,
+            "tab_order",
+            tab_order,
+            skip_if_unchanged=True,
+        )
 
     async def _patch_data_field(
         self,
@@ -2769,96 +2816,12 @@ class SQLiteDBDriver(DBDriver):
         )
 
     def _get_entity_data_dict(self, entity: DBBaseRecord) -> dict:
-        """Get dynamic fields as dict, excluding blob fields and db_excluded fields.
+        """The ``data`` column — the ``DbSerializer``'s decision, not the driver's.
+        Non-lossy (a Pydantic dump), and a field declared as bytes-on-disk
+        RAISES rather than vanishing from the row."""
+        from flow_sdk.fs_store.serializer import get_serializer  # noqa: PLC0415
 
-        Blob fields are stored separately in blob storage, not in the entity's
-        data column. This ensures blob fields are only loaded when explicitly
-        expanded via expand_blobs().
-
-        Fields marked with ``db_exclude=True`` (via `NoDBAPIField` / `NoDbBField`)
-        are runtime-only state (e.g. ``expand``) and must not be persisted —
-        otherwise two identical writes can produce different stored JSON if one
-        path happens to have triggered an expansion helper. Uses the
-        ``DBBaseRecord.is_db_excluded`` classmethod so inherited
-        ``db_exclude=True`` flags are honored across the MRO.
-        """
-        # Which fields persist into the ``data`` JSON is a pure function of the
-        # CLASS (model_fields, blob flags, db_exclude across the MRO), but this
-        # rebuilt two sets and re-walked the MRO per field on EVERY save.
-        cls = entity.__class__
-        persist_fields = _PERSIST_FIELDS_CACHE.get(cls)
-        if persist_fields is None:
-            base_fields = set(DBBaseRecord.model_fields.keys())
-            blob_fields = set(cls.get_blob_fields_names())
-            persist_fields = tuple(
-                n for n in cls.model_fields
-                if n not in base_fields and n not in blob_fields and not cls.is_db_excluded(n)
-            )
-            _PERSIST_FIELDS_CACHE[cls] = persist_fields
-        data = {}
-        for field_name in persist_fields:
-            value = getattr(entity, field_name, None)
-            if value is not None:
-                serialized = self._serialize_value(value)
-                if serialized is not None:
-                    data[field_name] = serialized
-        return data
-
-    def _serialize_value(self, value: Any) -> Any:
-        """Serialize a value to JSON-compatible format."""
-        import re
-        from enum import Enum
-
-        if value is None:
-            return None
-        # Handle enums - use .value to get the underlying value
-        if isinstance(value, Enum):
-            return value.value
-        # Skip non-serializable types
-        if hasattr(value, "__call__") or hasattr(value, "routes"):  # Skip functions/FastAPI apps
-            return None
-        # Skip compiled regex patterns
-        if isinstance(value, re.Pattern):
-            return value.pattern  # Store just the pattern string
-        # Handle TypeId - serialize to its string representation
-        from flow_sdk.fs_store.type_id import TypeId as _TypeId
-
-        if isinstance(value, _TypeId):
-            return str(value)
-        # Handle Pydantic models - use mode='json' to serialize enums properly
-        if hasattr(value, "model_dump"):
-            try:
-                return value.model_dump(mode="json")
-            except Exception:
-                return None
-        # Handle lists
-        if isinstance(value, list):
-            result = []
-            for v in value:
-                serialized = self._serialize_value(v)
-                if serialized is not None:
-                    result.append(serialized)
-            return result
-        # Handle dicts
-        if isinstance(value, dict):
-            result = {}
-            for k, v in value.items():
-                serialized = self._serialize_value(v)
-                if serialized is not None:
-                    result[k] = serialized
-            return result
-        # Handle datetime
-        if hasattr(value, "isoformat"):
-            return value.isoformat()
-        # Handle primitive types
-        if isinstance(value, (str, int, float, bool)):
-            return value
-        # Try to convert to string as fallback
-        try:
-            json.dumps(value)
-            return value
-        except (TypeError, ValueError):
-            return None
+        return get_serializer("db").data(entity)
 
     def _ensure_utc(self, dt: datetime | str | None) -> datetime | None:
         """Ensure datetime has UTC timezone info.

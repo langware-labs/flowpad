@@ -1,5 +1,4 @@
-import { WorkerCliOptions, shellQuote } from './base'
-import { COPILOT_MODEL_TIERS, resolveModelTier } from './model-tiers'
+import { WorkerCliOptions } from './base'
 
 export interface CopilotAgentOptionsOptions {
   session_id?: string | null
@@ -48,31 +47,8 @@ export class CopilotAgentOptions extends WorkerCliOptions {
     this.allow_all = opts.allow_all ?? true
   }
 
-  get resolvedModel(): string | undefined {
-    return resolveModelTier(COPILOT_MODEL_TIERS, this.model)
-  }
 
-  protected _commonTail(): string[] {
-    const tail: string[] = []
-    if (this.workdir) tail.push(`-C ${shellQuote(this.workdir)}`)
-    if (this.resolvedModel) tail.push(`--model ${shellQuote(this.resolvedModel)}`)
-    if (this.effort) tail.push(`--effort ${shellQuote(this.effort)}`)
-    for (const d of this.addDirs) tail.push(`--add-dir ${shellQuote(d)}`)
-    if (this.resume && this.session_id) tail.push(`--resume=${shellQuote(this.session_id)}`)
-    else if (this.session_id) tail.push(`--session-id ${shellQuote(this.session_id)}`)
-    return tail
-  }
 
-  protected _buildWorkerArgs(): string[] {
-    const allowAll = this.allow_all ? ['--allow-all'] : []
-    if (!this.json_stream) return ['copilot', ...allowAll, ...this._commonTail()]
-
-    const head = ['copilot', '--output-format=json', '--stream=on']
-    if (this.no_ask_user) head.push('--no-ask-user')
-    if (this.no_auto_update) head.push('--no-auto-update')
-    if (this.no_custom_instructions) head.push('--no-custom-instructions')
-    return [...head, ...allowAll, ...this._commonTail()]
-  }
 
   toJson(): Record<string, any> {
     return {

@@ -103,7 +103,7 @@ async function setMode(page: Page, mode: 'view' | 'editor') {
   const chip = page.locator(`[data-testid="editor-mode-chip-${mode}"]`);
   await page.locator('.ProseMirror, [data-testid="review-surface"]').first().waitFor({ state: 'visible', timeout: 15_000 });
   await expect(chip).toBeEnabled({ timeout: 10_000 });
-  await chip.click();
+  if ((await chip.getAttribute('data-mode-active')) !== 'true') await chip.click();
   await expect(chip).toHaveAttribute('data-mode-active', 'true', { timeout: 10_000 });
 }
 

@@ -5,7 +5,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { cn } from '@src/lib/utils';
 import { FileText, Info, MessageSquare, StickyNote, Tag } from 'lucide-react';
 import { useDockNavigation } from '@src/navigation';
-import { APIEntity } from '@sdk/APIEntity';
 import { useContext } from '@sdk/react/hooks';
 import React, { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -26,7 +25,9 @@ interface AnnotationGutterProps {
 
 const GUTTER_WIDTH = 24;
 
-function relTime(iso: string): string {
+// Callers pass either the ISO string an annotation carries or the `Date` a
+// Bookmark's `created_date` is typed as.
+function relTime(iso: string | Date): string {
   const diff = Date.now() - new Date(iso).getTime();
   const m = Math.floor(diff / 60_000);
   if (m < 1) return 'just now';
@@ -36,7 +37,7 @@ function relTime(iso: string): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-function fmtDate(iso: string): string {
+function fmtDate(iso: string | Date): string {
   const d = new Date(iso);
   return d.toLocaleString('en-GB', {
     day: 'numeric',

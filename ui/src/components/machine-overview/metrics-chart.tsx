@@ -139,7 +139,7 @@ export const MetricsChart = forwardRef<MetricsChartHandle, MetricsChartProps>(
                     labelFormatter={(label: string, payload: readonly { payload?: ChartDataPoint }[]) =>
                       payload?.[0]?.payload?.fullTime || label
                     }
-                    formatter={(value: number) => [`${value.toFixed(1)}%`, t`CPU`]}
+                    formatter={(value?: number) => [`${(value ?? 0).toFixed(1)}%`, t`CPU`]}
                   />
                   <ReferenceLine
                     y={80}
@@ -182,7 +182,7 @@ export const MetricsChart = forwardRef<MetricsChartHandle, MetricsChartProps>(
                     labelFormatter={(label: string, payload: readonly { payload?: ChartDataPoint }[]) =>
                       payload?.[0]?.payload?.fullTime || label
                     }
-                    formatter={(value: number) => [`${value.toFixed(1)}%`, t`Memory`]}
+                    formatter={(value?: number) => [`${(value ?? 0).toFixed(1)}%`, t`Memory`]}
                   />
                   <ReferenceLine
                     y={80}

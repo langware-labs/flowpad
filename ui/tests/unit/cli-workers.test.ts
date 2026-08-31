@@ -6,7 +6,14 @@ import {
   OpenCodeAgentOptions,
   AgenticProcess,
   factory,
+  shellQuote,
 } from '@sdk';
+
+// The client carries a worker's persisted CLI configuration and hands it back
+// verbatim; the BACKEND builds the actual command line. The vendor argv shapes
+// (opencode's positional TUI dir, no --add-dir, --session only on resume, the
+// model-tier aliases) are asserted where they are implemented, in
+// tests/unit/test_{claude,codex,copilot,opencode}_cli_cmd.py.
 
 // Simulates what the backend serializes into proc.cli_config
 const BACKEND_CLI_CONFIG = {
@@ -24,51 +31,31 @@ const BACKEND_CLI_CONFIG = {
   env_vars: { SOME_SERVER_VAR: 'server_value' },
 };
 
-describe('shellQuote (via toShellString output)', () => {
-  it('safe path — no quotes', () => {
-    const cmd = new ClaudeAgentOptions({ workdir: '/simple/path' });
-    expect(cmd.toShellString()).toContain('cd /simple/path');
+describe('shellQuote', () => {
+  it('safe chars pass through unquoted', () => {
+    expect(shellQuote('/simple/path')).toBe('/simple/path');
   });
 
-  it('path with space — single-quoted', () => {
-    const cmd = new ClaudeAgentOptions({ workdir: '/my project' });
-    expect(cmd.toShellString()).toContain("cd '/my project'");
+  it('a space forces single quotes', () => {
+    expect(shellQuote('/my project')).toBe("'/my project'");
   });
 
-  it("path with single-quote — '\\''  escape", () => {
-    const cmd = new ClaudeAgentOptions({ workdir: "/proj/it's" });
-    expect(cmd.toShellString()).toContain("cd '/proj/it'\\''s'");
+  it("a single quote becomes '\\''", () => {
+    expect(shellQuote("/proj/it's")).toBe("'/proj/it'\\''s'");
+  });
+
+  it('empty string becomes two quotes', () => {
+    expect(shellQuote('')).toBe("''");
   });
 });
 
 describe('WorkerCliOptions base structure', () => {
-  it('produces cd && env && args format', () => {
-    const cmd = new ClaudeAgentOptions({ workdir: '/proj' });
-    // CLAUDE_PROJECT_DIR is always auto-injected from workdir
-    expect(cmd.toShellString()).toMatch(/^cd \/proj && CLAUDE_PROJECT_DIR=\/proj claude/);
-  });
-
-  it('env vars appear between cd and args', () => {
+  it('carries workdir and env vars into toJson', () => {
     const cmd = new ClaudeAgentOptions({ workdir: '/proj' });
     cmd.addEnv('KEY', 'val');
-    const out = cmd.toShellString();
-    const cdIdx = out.indexOf('cd ');
-    const keyIdx = out.indexOf('KEY=');
-    const claudeIdx = out.indexOf('claude');
-    expect(cdIdx).toBeLessThan(keyIdx);
-    expect(keyIdx).toBeLessThan(claudeIdx);
-  });
-
-  it('single-line instruction appended quoted', () => {
-    const cmd = new ClaudeAgentOptions({ workdir: '/proj' });
-    expect(cmd.toShellString('fix the bug')).toContain("'fix the bug'");
-  });
-
-  it('multi-line instruction as heredoc', () => {
-    const cmd = new ClaudeAgentOptions({ workdir: '/proj' });
-    const out = cmd.toShellString('line1\nline2');
-    expect(out).toContain("$(cat <<'EOF'");
-    expect(out).toContain('line1\nline2');
+    const json = cmd.toJson();
+    expect(json.workdir).toBe('/proj');
+    expect(json.env_vars.KEY).toBe('val');
   });
 });
 
@@ -86,134 +73,51 @@ describe('ClaudeAgentOptions', () => {
     expect(cmd.envVars['CLAUDE_PROJECT_DIR']).toBe('/override');
   });
 
-  it('resume=true + session_id → --resume <id>', () => {
-    const cmd = new ClaudeAgentOptions({ session_id: 'abc-123', resume: true, workdir: '/proj' });
-    // abc-123 is safe chars — no shell quoting needed
-    expect(cmd.toShellString()).toContain('--resume abc-123');
-  });
-
-  it('resume=false + session_id → --session-id <id>, no --resume', () => {
-    const cmd = new ClaudeAgentOptions({ session_id: 'abc-123', resume: false, workdir: '/proj' });
-    const out = cmd.toShellString();
-    expect(out).toContain('--session-id abc-123');
-    expect(out).not.toContain('--resume');
-  });
-
-  it('persists model tiers raw but emits Claude model aliases', () => {
+  it('persists the model tier raw — resolution is the backend’s job', () => {
     const cmd = new ClaudeAgentOptions({ model: 'sm', workdir: '/proj' });
     expect(cmd.model).toBe('sm');
     expect(cmd.toJson().model).toBe('sm');
-    expect(cmd.toShellString()).toContain('--model haiku');
   });
 
-  it('debug=false → no --debug flag', () => {
-    const cmd = new ClaudeAgentOptions({ workdir: '/proj', debug: false });
-    expect(cmd.toShellString()).not.toContain('--debug');
+  it('debug defaults on and survives an explicit false', () => {
+    expect(new ClaudeAgentOptions({ workdir: '/proj' }).toJson().debug).toBe(true);
+    expect(new ClaudeAgentOptions({ workdir: '/proj', debug: false }).toJson().debug).toBe(false);
   });
 
-  it('debug=true (default) → --debug flag present', () => {
-    const cmd = new ClaudeAgentOptions({ workdir: '/proj' });
-    expect(cmd.toShellString()).toContain('--debug');
-  });
-
-  it('fork: --resume <src> --fork-session --session-id <new>', () => {
+  it('round-trips toJson → fromJson byte-for-byte', () => {
     const cmd = new ClaudeAgentOptions({
-      session_id: 'new-uuid',
+      session_id: 'abc',
       resume: true,
       fork_session_id: 'src-uuid',
+      debug: false,
       workdir: '/proj',
     });
-    const out = cmd.toShellString();
-    expect(out).toContain('--resume new-uuid');
-    expect(out).toContain('--fork-session');
-    expect(out).toContain('--session-id src-uuid');
-  });
-
-  it('round-trip: toJson → fromJson → toShellString matches', () => {
-    const cmd = new ClaudeAgentOptions({ session_id: 'abc', resume: true, debug: false, workdir: '/proj' });
     const cmd2 = ClaudeAgentOptions.fromJson(cmd.toJson());
-    expect(cmd2.toShellString()).toBe(cmd.toShellString());
+    expect(cmd2.toJson()).toEqual(cmd.toJson());
   });
 });
 
 describe('factory()', () => {
-  it('returns ClaudeAgentOptions instance for worker_type: claude', () => {
-    const cmd = factory({ worker_type: 'claude', workdir: '/proj' }, 'claude');
-    expect(cmd).toBeInstanceOf(ClaudeAgentOptions);
+  it.each([
+    ['claude', ClaudeAgentOptions],
+    ['codex', CodexAgentOptions],
+    ['copilot', CopilotAgentOptions],
+    ['opencode', OpenCodeAgentOptions],
+  ])('returns the %s options class', (workerType, cls) => {
+    const cmd = factory({ worker_type: workerType, workdir: '/proj' }, workerType);
+    expect(cmd).toBeInstanceOf(cls);
+    expect(cmd.toJson().worker_type).toBe(workerType);
   });
 
-  it('returns CodexAgentOptions and resolves portable tiers for codex', () => {
-    const cmd = factory({ worker_type: 'codex', model: 'sm', workdir: '/proj' }, 'codex');
-    expect(cmd).toBeInstanceOf(CodexAgentOptions);
-    expect(cmd.toJson().model).toBe('sm');
-    expect(cmd.toShellString()).toContain('-m gpt-5.4-mini');
+  it('maps the claude_code alias onto claude', () => {
+    expect(factory({ workdir: '/proj' }, 'claude_code')).toBeInstanceOf(ClaudeAgentOptions);
   });
 
-  it.each(['sm', 'md', 'lg'])('delegates portable Copilot tier %s to vendor auto', (tier) => {
-    const cmd = factory({ worker_type: 'copilot', model: tier, workdir: '/proj' }, 'copilot');
-    expect(cmd).toBeInstanceOf(CopilotAgentOptions);
-    expect(cmd.toJson().model).toBe(tier);
-    expect(cmd.toShellString()).not.toContain('--model');
+  it.each(['sm', 'md', 'lg'])('persists the portable tier %s untouched', (tier) => {
+    for (const wt of ['codex', 'copilot', 'opencode']) {
+      expect(factory({ worker_type: wt, model: tier, workdir: '/proj' }, wt).toJson().model).toBe(tier);
+    }
   });
-
-  it('passes concrete Copilot models through', () => {
-    const cmd = factory({ worker_type: 'copilot', model: 'claude-haiku-4.5', workdir: '/proj' }, 'copilot');
-    expect(cmd.toShellString()).toContain('--model claude-haiku-4.5');
-  });
-
-  it('returns OpenCodeAgentOptions and resolves portable tiers for opencode', () => {
-    const cmd = factory({ worker_type: 'opencode', model: 'md', workdir: '/proj' }, 'opencode')
-    expect(cmd).toBeInstanceOf(OpenCodeAgentOptions)
-    expect(cmd.toJson().model).toBe('md')
-    expect(cmd.toShellString()).toContain('--model openrouter/z-ai/glm-5.2')
-  })
-
-  it('mirrors the python opencode argv: no --add-dir, session only on resume', () => {
-    // opencode has no --add-dir (instructions ride the generated config), and
-    // --session only CONTINUES a session: the CLI exits 1 on an unknown id.
-    const fresh = factory(
-      { worker_type: 'opencode', workdir: '/proj', session_id: 'ses_abc', add_dirs: ['/proj/assets'] },
-      'opencode',
-    )
-    const freshCmd = fresh.toShellString()
-    expect(freshCmd).not.toContain('--add-dir')
-    expect(freshCmd).not.toContain('--session')
-
-    const resumed = factory(
-      { worker_type: 'opencode', workdir: '/proj', session_id: 'ses_abc', resume: true },
-      'opencode',
-    )
-    expect(resumed.toShellString()).toContain('--session ses_abc')
-  })
-
-  it('drops the run/json head for the interactive PTY shape', () => {
-    const tui = factory({ worker_type: 'opencode', workdir: '/proj', json_stream: false }, 'opencode')
-    const cmd = tui.toShellString()
-    expect(cmd).not.toContain('--format json')
-    expect(cmd).toContain('opencode --auto')
-  })
-
-  it('the interactive shape takes its directory POSITIONALLY, never as --dir', () => {
-    // Measured on 1.18.16: `opencode run` accepts `--dir`, the bare TUI accepts
-    // NEITHER `--dir` nor `--variant` — yargs dumps usage and exits 1. A command
-    // built with them dies before the composer paints, so this is not cosmetic.
-    const tui = factory(
-      { worker_type: 'opencode', workdir: '/proj', json_stream: false, variant: 'fast' },
-      'opencode',
-    )
-    const cmd = tui.toShellString()
-    expect(cmd).not.toContain('--dir')
-    expect(cmd).not.toContain('--variant')
-    expect(cmd).toContain('/proj')
-
-    const headless = factory(
-      { worker_type: 'opencode', workdir: '/proj', json_stream: true, variant: 'fast' },
-      'opencode',
-    )
-    const runCmd = headless.toShellString()
-    expect(runCmd).toContain('--dir /proj')
-    expect(runCmd).toContain('--variant fast')
-  })
 
   it('throws for unknown worker_type', () => {
     expect(() => factory({}, 'unknown')).toThrow('Unknown worker_type');
@@ -221,18 +125,17 @@ describe('factory()', () => {
 });
 
 describe('proc.cliOptions — frontend override of server cli_config', () => {
-  it('deserializes server config then overrides debug + env', () => {
+  it('deserializes server config, then local overrides win in toJson', () => {
     const cliOptions = factory(BACKEND_CLI_CONFIG, 'claude') as ClaudeAgentOptions;
-
     cliOptions.debug = false;
     cliOptions.addEnv('ENV_KEY', 'ENV_VAL');
 
-    const out = cliOptions.toShellString();
-
-    expect(out).toContain('SOME_SERVER_VAR=server_value');
-    expect(out).not.toContain('--debug');
-    expect(out).toContain('ENV_KEY=ENV_VAL');
-    expect(out).toContain('--resume 7a63c18b-1111-2222-3333-444444444444');
+    const json = cliOptions.toJson();
+    expect(json.debug).toBe(false);
+    expect(json.env_vars.SOME_SERVER_VAR).toBe('server_value');
+    expect(json.env_vars.ENV_KEY).toBe('ENV_VAL');
+    expect(json.session_id).toBe('7a63c18b-1111-2222-3333-444444444444');
+    expect(json.resume).toBe(true);
   });
 
   it('server CLAUDE_PROJECT_DIR is preserved from workdir auto-inject', () => {
@@ -240,34 +143,23 @@ describe('proc.cliOptions — frontend override of server cli_config', () => {
     expect(cliOptions.envVars['CLAUDE_PROJECT_DIR']).toBe('/home/user/myproject');
   });
 
-  it('shell.sendInput flow — toShellString + newline is valid PTY input', () => {
-    const cliOptions = factory(BACKEND_CLI_CONFIG, 'claude') as ClaudeAgentOptions;
-    const inputToShell = cliOptions.toShellString() + '\n';
-    expect(inputToShell.endsWith('\n')).toBe(true);
-    expect(inputToShell).toContain('claude');
-    expect(inputToShell).toContain('--resume');
-  });
-
-  it('cliOptions uses entity workdir, not cd . — the fromClaudeSession case', () => {
-    // Simulate: cli_config has no workdir (as stored by backend), workdir is on entity
+  it('cliOptions uses the entity workdir when cli_config omits it', () => {
+    // cli_config as stored by the backend has no workdir; it lives on the entity
     const proc = Object.assign(new AgenticProcess({}), {
       cli_config: { worker_type: 'claude', resume: true },
       worker_session_id: '7a63c18b-1111-2222-3333-444444444444',
       workdir: '/home/user/myproject',
     });
-    expect(proc.cliOptions.toShellString()).toMatch(/^cd \/home\/user\/myproject/);
-    expect(proc.cliOptions.toShellString()).not.toContain('cd .');
+    expect(proc.cliOptions.toJson().workdir).toBe('/home/user/myproject');
   });
 
-  it('cliOptions uses worker-specific tier resolution for non-Claude processes', () => {
+  it('cliOptions picks the worker-specific options class', () => {
     const proc = Object.assign(new AgenticProcess({}), {
       worker_type: 'codex',
       cli_config: { worker_type: 'codex', model: 'sm' },
       workdir: '/home/user/myproject',
     });
-
+    expect(proc.cliOptions).toBeInstanceOf(CodexAgentOptions);
     expect(proc.cliOptions.toJson().model).toBe('sm');
-    expect(proc.cliOptions.toShellString()).toContain('-m gpt-5.4-mini');
-    expect(proc.cliOptions.toShellString()).not.toContain('--model haiku');
   });
 });

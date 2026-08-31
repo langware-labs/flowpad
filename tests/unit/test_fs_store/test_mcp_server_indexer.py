@@ -23,20 +23,18 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.indexer.functions.mcp_server import (
     extract_mcp_server,
-    mcp_server_identity_key,
     mcp_servers_in_file_fn,
     mcp_source_files_fn,
 )
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
-
 PROJ_ALPHA = "/Users/alice/proj-alpha"
 PROJ_BETA = "/Users/alice/proj-beta"
 
 
 def _extract(ref: FSRef):
-    return extract_mcp_server(ref, SchemaRegistry.get("mcp_server").mint_entity_id(ref, derive=True, overwrite=True))
+    return extract_mcp_server(ref, SchemaRegistry.get("mcp_server").mint_entity_id(ref))
 
 
 def _make_home(tmp_path: Path) -> Path:
@@ -206,7 +204,7 @@ def test_extract_claude_user_server(tmp_path: Path) -> None:
     assert "npx" in d["description"] and "@mcp/github" in d["description"]
     # The legacy natural key remains stable, but TypeInfo exposes its UUIDv5.
     assert d["id"] == SchemaRegistry.get("mcp_server").mint_entity_id(
-        ref, derive=True, overwrite=True
+        ref
     )
 
 
@@ -258,12 +256,12 @@ def test_gen_uuid_matches_extracted_record_id(tmp_path: Path) -> None:
     be a filesystem-safe UUID (no ``:`` that would crash the Windows write).
     """
     from flow_sdk.core.entity.entity_model import Entity
-    from flow_sdk.fs_store.identifier import is_valid_entity_id
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id
 
     home = _make_home(tmp_path)
     for ref in _scan(_home_root(home)):
         (rec,) = _extract(ref)
-        gen = SchemaRegistry.get("mcp_server").mint_entity_id(ref, derive=True, overwrite=True)
+        gen = SchemaRegistry.get("mcp_server").mint_entity_id(ref)
         assert is_valid_entity_id(gen)
         assert not any(ch in gen for ch in ":/\\")
         assert gen == Entity.allocate_id(rec.to_dict())

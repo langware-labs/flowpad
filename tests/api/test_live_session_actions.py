@@ -29,6 +29,8 @@ from flow_sdk.builtin.flow_message import (
 )
 from flow_sdk.builtin.remote_worker_session import (
     RemoteWorkerSession,
+)
+from flow_sdk.builtin.remote_worker_session import (
     RemoteWorkerSessionStatus as S,
 )
 

@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 
 SCOPE_HASH_LENGTH = 8
 

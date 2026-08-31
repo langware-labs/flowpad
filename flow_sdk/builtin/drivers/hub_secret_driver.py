@@ -25,7 +25,7 @@ from typing import Any, Optional
 from pydantic import SecretStr
 
 from flow_sdk.builtin.secret_origin_driver import make_setup_hint
-from flow_sdk.builtin.secret_origin_locator import SecretOriginLocator
+from flow_sdk.builtin.secret_origin_refs import SecretOriginLocator
 
 logger = logging.getLogger(__name__)
 

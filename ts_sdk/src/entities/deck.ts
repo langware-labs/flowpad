@@ -39,14 +39,11 @@ export class Deck extends APIEntity<Deck> {
 
   /** Default open target: the deck presenter viewer (URL-first target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('deck') ?? super.dockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {
-    return this.assetEditorPointer('deck') ?? super.editorDockPointer;
+    return this.assetEditorPointer() ?? super.editorDockPointer;
   }
 
-  override get searchDockPointer(): DockPointerData {
-    return this.assetEditorPointer('deck') ?? this.dockPointer;
-  }
 }

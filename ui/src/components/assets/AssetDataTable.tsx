@@ -15,22 +15,22 @@ import {
   PaginationPrevious,
 } from '@src/components/ui/pagination';
 import { getColumns } from './columns/columnRegistry';
-import type { ColumnActions } from './columns/columnRegistry';
+import type { ColumnActions, ColumnDef } from './columns/columnRegistry';
 import { scopeTag } from './columns/columnHelpers';
-import type { SearchResult } from '@src/hooks/use-asset-search';
+import type { SearchRow } from '@src/hooks/search-row';
 import { useProjectList, getProjectDisplayName } from '@src/hooks/use-claude-projects';
 import { recordProjectIdForPath } from './utils';
 import { useContext } from '@src/hooks/useContext';
 import { fsManager } from '@sdk';
 
 interface Props {
-  results: SearchResult[];
+  results: SearchRow[];
   total: number;
   page: number;
   pageSize: number;
   onPageChange: (p: number) => void;
   recordType: string;
-  onRowClick?: (result: SearchResult) => void;
+  onRowClick?: (result: SearchRow) => void;
   onProjectFilter?: (label: string) => void;
 }
 
@@ -52,7 +52,7 @@ export function AssetDataTable({ results, total, page, pageSize, onPageChange, r
   // Resolve the folder to reveal externally for a row: parent directory of the
   // asset's source path. Falls back through the same fields the backend uses
   // when populating asset_ref.
-  const folderPathForRow = React.useCallback((r: SearchResult): string | null => {
+  const folderPathForRow = React.useCallback((r: SearchRow): string | null => {
     const raw = r.asset_ref || r.file_path || r.work_dir || '';
     if (!raw) return null;
     const trimmed = raw.replace(/\/+$/, '');
@@ -62,7 +62,7 @@ export function AssetDataTable({ results, total, page, pageSize, onPageChange, r
     return trimmed.slice(0, lastSlash);
   }, []);
 
-  const openScopeFolder = React.useCallback(async (r: SearchResult) => {
+  const openScopeFolder = React.useCallback(async (r: SearchRow) => {
     if (!computeNode?.typeId) return;
     const folder = folderPathForRow(r);
     if (!folder) return;
@@ -91,7 +91,7 @@ export function AssetDataTable({ results, total, page, pageSize, onPageChange, r
   }, [projects]);
 
   const renderScope = React.useCallback(
-    (r: SearchResult): React.ReactNode => {
+    (r: SearchRow): React.ReactNode => {
       if (r.scope !== 'user' && r.scope !== 'project') return '—';
       const folder = folderPathForRow(r);
       const canOpen = !!computeNode?.typeId && !!folder;
@@ -123,11 +123,11 @@ export function AssetDataTable({ results, total, page, pageSize, onPageChange, r
     [projectNameById, folderPathForRow, computeNode?.typeId, openScopeFolder],
   );
 
-  const baseColumns = [
-    { key: 'name', header: 'Name', render: (r: SearchResult) => r.name || r.uname || r.title || '—' },
-    { key: 'status', header: 'Status', render: (r: SearchResult) => r.status || '—' },
-    { key: 'scope', header: 'Scope', render: (r: SearchResult) => renderScope(r) },
-    { key: 'modified_at', header: 'Modified', render: (r: SearchResult) => formatDate(r.modified_at) },
+  const baseColumns: ColumnDef[] = [
+    { key: 'name', header: 'Name', render: (r: SearchRow) => r.name || r.uname || r.title || '—' },
+    { key: 'status', header: 'Status', render: (r: SearchRow) => r.status || '—' },
+    { key: 'scope', header: 'Scope', render: (r: SearchRow) => renderScope(r) },
+    { key: 'modified_at', header: 'Modified', render: (r: SearchRow) => formatDate(r.modified_at) },
   ];
 
   // Merge base cols with per-type cols (deduplicate by key)

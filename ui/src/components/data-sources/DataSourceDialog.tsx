@@ -225,7 +225,7 @@ export function DataSourceDialog({
                       key={p.name}
                       type="button"
                       data-testid={`provider-${p.name}`}
-                      onClick={() => setDraft(emptyDraft(p.name))}
+                      onClick={() => setDraft(emptyDraft(p.name ?? ''))}
                       className={`flex gap-2 rounded border p-2 text-start text-xs ${
                         draft.provider === p.name ? 'border-primary bg-primary/5' : 'border-border'
                       }`}

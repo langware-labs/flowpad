@@ -24,7 +24,7 @@ import { useOnTag } from '@sdk/react/hooks';
 import type { FlowEvent } from '@sdk/tags/EventBus';
 import { Button } from '@src/components/ui/button';
 import { Plus } from 'lucide-react';
-import { type ITrigger } from '@sdk';
+import { Trigger, type ITrigger } from '@sdk';
 import { defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -68,7 +68,7 @@ export function EventsView() {
     [currentDock, project?.id],
   );
 
-  const selectedRule = useMemo<ITrigger | null>(() => {
+  const selectedRule = useMemo<Trigger | null>(() => {
     const id = currentDock?.options?.trigger;
     return id ? (triggers.find((t) => t.id === id) ?? null) : null;
   }, [currentDock, triggers]);

@@ -262,14 +262,24 @@ class FSOpWatcher:
     def __len__(self) -> int:
         return len(self._tasks)
 
-    async def start(self) -> None:
-        """Walk existing FSOp triggers, catch up on missed changes, spawn tasks."""
+    async def start(self, *, catch_up: bool = True) -> None:
+        """Walk existing FSOp triggers, catch up on missed changes, spawn tasks.
+
+        ``catch_up=False`` is for the factory-reset path only: a reset stops the
+        watcher (it must — stale pre-wipe entities collide on ``uname``) and
+        then re-seeds the rows, so it restarts to avoid triggers coming back
+        stored but unwatched. It skips ``_catch_up_if_changed`` because that
+        per-trigger disk walk is too slow for a path that runs on every
+        ``resetDb()``, and a just-wiped-and-re-seeded row has no missed-change
+        window anyway.
+        """
         triggers = await Trigger.list_by_type(TriggerType.FSOP)
         for t in triggers:
-            try:
-                await _catch_up_if_changed(t)
-            except Exception:
-                _log.exception("Trigger %s: catch-up failed", t.name)
+            if catch_up:
+                try:
+                    await _catch_up_if_changed(t)
+                except Exception:
+                    _log.exception("Trigger %s: catch-up failed", t.name)
             self._spawn_task(t)
 
     async def stop(self) -> None:

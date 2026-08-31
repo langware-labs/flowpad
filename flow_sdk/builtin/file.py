@@ -20,7 +20,7 @@ from pathlib import Path, PurePosixPath
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.schema.types import EntityType
 from flow_sdk.utils.git import find_project_root, git_remote_url

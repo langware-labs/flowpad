@@ -18,18 +18,19 @@ import pytest
 
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.ingestor import ingest_items
-from flow_sdk.ingest.models import IngestItem, IngestMode
+from flow_sdk.builtin.source_item import SourceItemSpec
+from flow_sdk.ingest.models import IngestMode
 from flow_sdk.server.routes.ingest import MAX_ITEMS_PER_REQUEST, _to_item
 
 
 def _payload(**over) -> dict:
     base = {
-        "source_id": f"src-{uuid.uuid4().hex[:8]}",
+        "data_source_id": f"src-{uuid.uuid4().hex[:8]}",
         "provider": "agent",
         "kind": "content.message.email",
         "segment_key": "INBOX",
         "external_id": "msg-1",
-        "title": "Invoice #42",
+        "name": "Invoice #42",
         "body": "the body",
     }
     base.update(over)
@@ -40,7 +41,7 @@ def test_a_missing_header_field_is_refused_by_name():
     """The five header fields are what identity is minted from — a payload
     missing one cannot be silently accepted with a blank."""
     with pytest.raises(ValueError) as caught:
-        _to_item({"source_id": "s", "provider": "agent"})
+        _to_item({"data_source_id": "s", "provider": "agent"})
     message = str(caught.value)
     assert "kind" in message and "segment_key" in message and "external_id" in message
 
@@ -79,9 +80,9 @@ async def test_creating_the_same_item_twice_is_an_upsert_not_a_duplicate():
         "agent re-run would rewrite rows and re-fire triggers"
     )
 
-    rows = await SourceItem.get_all({"data_source_id": item.source_id})
+    rows = await SourceItem.get_all({"data_source_id": item.data_source_id})
     assert len(rows) == 1, f"{len(rows)} rows for one email — the natural key did not resolve"
-    found = await SourceItem.find_existing(item.source_id, item.segment_key, item.external_id)
+    found = await SourceItem.find_existing(item.data_source_id, item.segment_key, item.external_id)
     assert found is not None and found.id == rows[0].id, (
         "the row must be reachable by (source, stream, external_id) — that lookup "
         "is what makes a re-delivery an upsert instead of a duplicate"
@@ -96,18 +97,18 @@ async def test_local_state_survives_re_delivery():
     item = _to_item(_payload())
     await ingest_items([item], mode=IngestMode.INCREMENTAL)
 
-    row = (await SourceItem.get_all({"data_source_id": item.source_id}))[0]
+    row = (await SourceItem.get_all({"data_source_id": item.data_source_id}))[0]
     row.read = True
     row.starred = True
     await row.save()
 
     # Same identity, changed content — forces the update path rather than the
     # digest-gate short circuit.
-    moved = _to_item(_payload(source_id=item.source_id, body="the body, edited"))
+    moved = _to_item(_payload(data_source_id=item.data_source_id, body="the body, edited"))
     report = await ingest_items([moved], mode=IngestMode.INCREMENTAL)
     assert report.updated == 1
 
-    after = (await SourceItem.get_all({"data_source_id": item.source_id}))[0]
+    after = (await SourceItem.get_all({"data_source_id": item.data_source_id}))[0]
     assert after.body == "the body, edited", "the snapshot did not refresh"
     assert after.read is True and after.starred is True, (
         "local state was clobbered by re-delivery — the ingestor writes an "
@@ -122,8 +123,8 @@ async def test_a_large_batch_selects_backfill_so_it_cannot_storm():
     route does not ask callers to know this — `IngestMode.for_run` decides."""
     source = f"src-{uuid.uuid4().hex[:8]}"
     many = [
-        IngestItem(source_id=source, provider="agent", kind="content.message.email",
-                   segment_key="INBOX", external_id=f"m-{n}", title=f"mail {n}")
+        SourceItemSpec(data_source_id=source, provider="agent", kind="content.message.email",
+                   segment_key="INBOX", external_id=f"m-{n}", name=f"mail {n}")
         for n in range(40)
     ]
     assert IngestMode.for_run(first_run=False, item_count=len(many)) is IngestMode.BACKFILL

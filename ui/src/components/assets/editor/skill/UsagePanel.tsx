@@ -53,7 +53,9 @@ const usageScanInFlight = new Map<string, Promise<UsageSession[]>>();
 export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRef }) {
   const { t } = useLingui();
   const skillName = skill.name;
-  const computeNodeId = skillFile.typeId.id;
+  // A SKILL.md ref is always a compute-node ref, which is exactly what
+  // `localComputeNodeId` narrows to — no need to reach past FSRef's boundary.
+  const computeNodeId = skillFile.localComputeNodeId ?? '@local';
   const workdir = skillFile.parent.path;
   const file = skillFile.path.slice(skillFile.path.lastIndexOf('/') + 1);
   const { navigation } = useDockNavigation();

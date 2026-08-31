@@ -9,19 +9,17 @@ import uuid
 
 import pytest
 import pytest_asyncio
-
 from sqlalchemy import text
+
 from flow_sdk.db.drivers.sqlite.sqlite_driver import (
     _migrate_vfs_record_to_data_ref,
-    _parse_vfs_uri_to_ref,
-    SafeJSONEncoder,
 )
 
 
 @pytest_asyncio.fixture
 async def db_engine():
     """Create a temporary in-memory SQLite DB with entities table."""
-    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+    from sqlalchemy.ext.asyncio import create_async_engine
 
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
 

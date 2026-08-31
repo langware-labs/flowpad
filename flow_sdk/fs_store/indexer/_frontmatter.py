@@ -177,7 +177,7 @@ def read_frontmatter_id(
     so a valid legacy field remains backward-compatible. The file is never
     rewritten or backfilled by extraction.
     """
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
 
     path = _asset_path(path)
     try:
@@ -227,7 +227,7 @@ def write_frontmatter_id(path: Any, entity_id: str) -> bool:
     """Force ``entity_id`` into a file's frontmatter ``id:`` — returns whether it
     persisted. Preserves the body and every existing field, including legacy id
     fields: writing identity is not a cleanup or migration operation."""
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
 
     path = _asset_path(path)
     adopted = adopt_entity_id(entity_id)

@@ -8,10 +8,11 @@
  * (Runs). Both links are URL-first: they navigate, and the destination reads its
  * own scope off the URL.
  */
-import type { DataSource } from '@sdk';
-import { History, MoreHorizontal, Pencil, RadioTower, Rewind, Trash2 } from 'lucide-react';
+import type { DataSource, DataSourceSpec } from '@sdk';
+import { History, LayoutPanelLeft, MoreHorizontal, Pencil, RadioTower, Rewind, Trash2 } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useAssetApps } from '@src/hooks/flow-hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Button } from '@src/components/ui/button';
 import {
@@ -24,15 +25,20 @@ import {
 
 interface Props {
   source: DataSource;
+  /** The source's definition — the apps NESTED INSIDE it are offered here. */
+  spec?: DataSourceSpec | null;
   onToggleEnabled: () => void;
   onEdit: (source: DataSource) => void;
   onReplay: (source: DataSource) => void;
   onDelete: (source: DataSource) => void;
 }
 
-export function SourceMenu({ source, onToggleEnabled, onEdit, onReplay, onDelete }: Props) {
+export function SourceMenu({ source, spec, onToggleEnabled, onEdit, onReplay, onDelete }: Props) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
+  // The definition's own child apps. Nothing declares them: an app nested in the
+  // definition's folder IS its child, so shipping one is all it takes to appear.
+  const editors = useAssetApps(spec?.typeId);
 
   return (
     <DropdownMenu>
@@ -67,6 +73,19 @@ export function SourceMenu({ source, onToggleEnabled, onEdit, onReplay, onDelete
         {/* Narrowed to this source. `target` is the FlowEvent's own key, and
             `ingest.*.sync.*` already targets `data_source:<id>` — so this is a
             filter on the envelope, not a search over its text. */}
+        {/* Editor apps the definition ships, as ordinary child assets. Opened at
+            their own address like any other webapp; URL-first, so the app reads
+            the source id off its own query string. */}
+        {editors.map((app) => (
+          <DropdownMenuItem
+            key={app.id}
+            data-testid={`source-open-editor-${app.name}`}
+            onSelect={() => navigation.openDock(DockPointer.forAppEntity(app.typeId, { source: source.id }))}
+          >
+            <LayoutPanelLeft className="me-2 size-4" />
+            {t`Open ${app.name}`}
+          </DropdownMenuItem>
+        ))}
         <DropdownMenuItem
           onSelect={() => navigation.openDock(DockPointer.forEvents(undefined, { target: `data_source:${source.id}` }))}
         >

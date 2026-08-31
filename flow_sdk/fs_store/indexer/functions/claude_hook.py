@@ -26,13 +26,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-import uuid
 from datetime import datetime
 from pathlib import Path
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.source_file_records import (  # RFC-6901 (shared)

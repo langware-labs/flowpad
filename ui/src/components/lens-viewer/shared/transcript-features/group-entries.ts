@@ -11,7 +11,6 @@ import type {
   WebFetchEntry,
 } from '@sdk';
 import { isOperation, isToolUse } from '@sdk';
-import { pricingFor, type UsageEntry } from '@sdk/transcript-analyzer';
 
 import type { UnifiedEntry, UnifiedRole } from './types';
 
@@ -21,13 +20,13 @@ function baseId(id: string): string {
 }
 
 /** Aggregate adjacent `token_usage` entries (per-dim or legacy aggregate)
- *  into one `TokenUsage` view-model with cost resolved via pricingFor(). */
+ *  into one `TokenUsage` view-model. Cost is priced by the backend and
+ *  carried on each entry as `cost_usd`. */
 function aggregateUsage(usageEntries: ReadonlyArray<GenericEntry & { kind: 'token_usage' }>): import('./types').TokenUsage | null {
   if (usageEntries.length === 0) return null;
   let input = 0, output = 0, cacheRead = 0, cacheCreation = 0, reasoning = 0;
   let costUsd = 0;
   const model = (usageEntries[0] as { model?: string | null }).model ?? null;
-  const table = pricingFor(model);
   const isPerDim = (u: typeof usageEntries[number]) => typeof u.io === 'string' && typeof u.count === 'number';
   for (const u of usageEntries) {
     if (isPerDim(u)) {
@@ -42,10 +41,10 @@ function aggregateUsage(usageEntries: ReadonlyArray<GenericEntry & { kind: 'toke
       } else {
         input += count;
       }
-      costUsd += table.costOf(u as unknown as UsageEntry);
+      costUsd += u.cost_usd ?? 0;
     } else {
-      // Legacy aggregate shape — synthesize per-dim UsageEntry shapes so
-      // pricingFor() applies the same rules.
+      // Legacy aggregate shape. Token counts still aggregate; cost comes from
+      // the backend like every other entry (0 when it priced nothing).
       const ui = u.input_tokens ?? 0;
       const uo = u.output_tokens ?? 0;
       const ur = u.cache_read_tokens ?? u.cached_input_tokens ?? 0;
@@ -56,13 +55,7 @@ function aggregateUsage(usageEntries: ReadonlyArray<GenericEntry & { kind: 'toke
       cacheRead += ur;
       cacheCreation += uw;
       reasoning += ureasoning;
-      // Legacy servers don't disaggregate 5m vs 1h — assume 1h (matches
-      // what Sonnet-4 emits in practice; price is 2× input not 1.25×).
-      if (ui) costUsd += table.costOf({ count: ui, io: 'input', cache: 'none', cache_tier: 'none', unit: 'token', reasoning: false, tool: null, model } as unknown as UsageEntry);
-      if (uo) costUsd += table.costOf({ count: uo, io: 'output', cache: 'none', cache_tier: 'none', unit: 'token', reasoning: false, tool: null, model } as unknown as UsageEntry);
-      if (ur) costUsd += table.costOf({ count: ur, io: 'input', cache: 'read', cache_tier: 'none', unit: 'token', reasoning: false, tool: null, model } as unknown as UsageEntry);
-      if (uw) costUsd += table.costOf({ count: uw, io: 'input', cache: 'write', cache_tier: '1h', unit: 'token', reasoning: false, tool: null, model } as unknown as UsageEntry);
-      if (ureasoning) costUsd += table.costOf({ count: ureasoning, io: 'output', cache: 'none', cache_tier: 'none', unit: 'token', reasoning: true, tool: null, model } as unknown as UsageEntry);
+      costUsd += u.cost_usd ?? 0;
     }
   }
   return {

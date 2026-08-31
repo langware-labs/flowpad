@@ -1,5 +1,5 @@
 import { APIEntity, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 
 export interface IAnnotation extends IEntity {
   labels?: string[];
@@ -10,6 +10,12 @@ export interface IAnnotation extends IEntity {
   iso_timestamp?: string;
   data?: Record<string, any>;  // PTY: seq, seqOffset, line
 }
+
+// `implements IAnnotation` only checks the class; it contributes no members, so every
+// field declared solely on IAnnotation read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Annotation extends EntityMerge<IAnnotation> {}
 
 @registerEntity
 export class Annotation extends APIEntity<Annotation> implements IAnnotation {

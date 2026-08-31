@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.artifact import Artifact
 from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.worldview.models import (

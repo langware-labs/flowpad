@@ -1,5 +1,5 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { ICloudOrigin } from '../models/CloudOrigin';
 import { Callable } from '../types';
@@ -194,6 +194,12 @@ export interface IFlowMessage extends IEntity {
   reply_to_id?: string | null;
 }
 
+// `implements IFlowMessage` only checks the class; it contributes no members, so every
+// field declared solely on IFlowMessage read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface FlowMessage extends EntityMerge<IFlowMessage> {}
+
 @registerEntity
 export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage {
   text?: string;
@@ -269,8 +275,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
    *  folder) is erased. POSTs /api/v1/graph/flow_message/<id>/remove-message. */
   async remove(): Promise<void> {
     if (!this.id) throw new Error('remove requires this.id');
-    const action = new ActionInfo('remove-message', FlowMessage.type, this.id, 'POST');
-    await dataManager.callAction<unknown, unknown>(action);
+    await this.post<unknown>('remove-message');
   }
 
   // -------- Header / Body interface (principle #6) -------- //
@@ -298,9 +303,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
    *  POSTs /api/v1/graph/flow_message/<id>/upload_body. */
   async uploadBody(_opts: { onProgress?: (pct: number) => void; transferMode?: 'copy' | 'git' } = {}): Promise<this> {
     if (!this.id) throw new Error('uploadBody requires this.id');
-    const action = new ActionInfo('upload_body', FlowMessage.type, this.id, 'POST');
-    action.bodyParameters = { transfer_mode: _opts.transferMode ?? 'copy' };
-    await dataManager.callAction<unknown, unknown>(action);
+    await this.post<unknown>('upload_body', { transfer_mode: _opts.transferMode ?? 'copy' });
     this.body_status = BodyStatus.READY;
     this.attachment_filename = BODY_FILENAME;
     return this;
@@ -447,7 +450,7 @@ export async function uploadFlowMessage(
   return res!;
 }
 
-export interface CreateTaskBundleParams {
+export type CreateTaskBundleParams = {
   spec_title: string;
   spec_content?: string;
   task_title?: string;

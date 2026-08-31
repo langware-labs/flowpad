@@ -3,8 +3,7 @@ import { dataContext } from '../FlowSync/context';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
-import { TypeId } from '../models/TypeId';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import type { GitOrigin } from '../models/GitOrigin';
 import { normalizeEmail } from '../utils/utils';
 import type { ConversationParticipant } from './conversation';
@@ -86,7 +85,7 @@ export interface ITask extends IEntity {
   process_id?: string | null;
   project_name?: string | null;
   project_root?: string | null;
-  git_origin?: GitOrigin | null;
+  origin?: GitOrigin | null;
   recipient_email?: string | null;
   result_uname?: string | null;
   sender_email?: string | null;
@@ -99,6 +98,12 @@ export interface ITask extends IEntity {
   team_space_id?: string | null;
   worker_session_id?: string | null;
 }
+
+// `implements ITask` only checks the class; it contributes no members, so every
+// field declared solely on ITask read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Task extends EntityMerge<ITask> {}
 
 @registerEntity
 export class Task extends APIEntity<Task> implements ITask {
@@ -143,7 +148,7 @@ export class Task extends APIEntity<Task> implements ITask {
   process_id?: string | null;
   project_name?: string | null;
   project_root?: string | null;
-  git_origin?: GitOrigin | null;
+  origin?: GitOrigin | null;
   recipient_email?: string | null;
   result_uname?: string | null;
   sender_email?: string | null;
@@ -201,7 +206,7 @@ export class Task extends APIEntity<Task> implements ITask {
     this.process_id = entity.process_id;
     this.project_name = entity.project_name;
     this.project_root = entity.project_root;
-    this.git_origin = entity.git_origin;
+    this.origin = entity.origin;
     this.recipient_email = entity.recipient_email;
     this.result_uname = entity.result_uname;
     this.sender_email = entity.sender_email;
@@ -217,16 +222,13 @@ export class Task extends APIEntity<Task> implements ITask {
 
   /** Default open target: the generic task asset editor (URL-first). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('task') ?? super.dockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {
-    return this.assetEditorPointer('task') ?? super.editorDockPointer;
+    return this.assetEditorPointer() ?? super.editorDockPointer;
   }
 
-  override get searchDockPointer(): DockPointerData {
-    return this.assetEditorPointer('task') ?? this.dockPointer;
-  }
 
   /** FrontMatterFsRef for task.md (frontmatter fields + description body). */
   get doc(): FrontMatterFsRef | null {

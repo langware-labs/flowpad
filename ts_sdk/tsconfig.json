@@ -14,7 +14,7 @@
     "useDefineForClassFields": false,
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,
-    "typeRoots": ["../../ui/node_modules/@types", "../../ui/node_modules"],
+    "typeRoots": ["../ui/node_modules/@types", "../ui/node_modules"],
     "types": ["vite/client", "vitest/jsdom", "node"],
     /* Bundler mode */
     "moduleResolution": "bundler",

@@ -1,5 +1,6 @@
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
 import { selectViewMode } from '../_shared/view-mode';
+import { API, destroyVibeFixture, seedLastVibeChat, type VibeFixture } from '../vibe/_helpers';
 
 /**
  * Browser proof for the navigation collapse: the app root `/` is an ordinary
@@ -27,9 +28,11 @@ let page: Page;
  *  fetches, WS reconnects) must not mask or fake a result. The app's own DEV
  *  assertion — `fromUrl(url).toUrl() === url` on every navigation — lands here. */
 let errors: string[] = [];
+let fixture: VibeFixture;
 
-test.beforeAll(async ({ browser }) => {
+test.beforeAll(async ({ browser, request }) => {
   page = await browser.newPage();
+  fixture = await seedLastVibeChat(request, page, 'nav-collapse');
   page.on('console', (m: ConsoleMessage) => {
     if (m.type() !== 'error') return;
     if (/round.?trip|DockPointer|toUrl|fromUrl|navigat/i.test(m.text())) errors.push(m.text());
@@ -43,8 +46,9 @@ test.beforeAll(async ({ browser }) => {
 test.beforeEach(() => {
   errors = [];
 });
-test.afterAll(async () => {
+test.afterAll(async ({ request }) => {
   await page.close();
+  await destroyVibeFixture(request, fixture);
 });
 
 const here = () => page.evaluate(() => window.location.pathname + window.location.search);
@@ -191,25 +195,32 @@ test.describe('the root adopts scope', () => {
    * already showed the remembered project. Only a switch distinguishes "adopted
    * the URL's scope" from "rendered whatever was last active".
    */
-  test('`/?scope-…` switches the project in context', async () => {
+  test('`/?scope-…` switches the project in context', async ({ request }) => {
     await page.goto('/');
     await expect(page.getByTestId('footer')).toBeVisible();
 
     // Discovered at runtime, so the spec is not pinned to one instance's data.
     // Read through the app's own configured base URL rather than a port literal.
-    const projects = await page.evaluate(async () => {
-      const res = await fetch(`${window.__API_URL__}/api/v1/graph/project`);
-      const body = (await res.json()) as { data?: Array<{ id: string; name: string }> };
-      return (body.data ?? [])
-        .filter((p) => p.name && !p.name.includes('/') && p.name.length < 24)
-        .slice(0, 2)
-        .map((p) => ({ id: p.id, name: p.name }));
-    });
-    expect(projects.length, 'need two named projects to prove a switch').toBe(2);
+    // Two projects THIS test owns. Reading "any two" off the instance made the
+    // test depend on whatever the indexer had discovered — a cleared QA DB has
+    // one, so the switch could never be proven. Self-seed, then clean up.
+    const seeded = await Promise.all(
+      ['a', 'b'].map(async (suffix) => {
+        const name = `e2etest-nav-${suffix}`;
+        const created = await request.post(`${API}/api/v1/graph/project`, { data: { name } });
+        const body = (await created.json()) as { data?: { id: string } };
+        expect(body.data?.id, `seed project ${name}`).toBeTruthy();
+        return { id: body.data!.id, name };
+      }),
+    );
 
-    for (const project of projects) {
-      await page.goto(`/?scope-mode=project&scope-activeProjectId=${project.id}`);
-      await expect(page.getByTestId('footer')).toContainText(project.name);
+    try {
+      for (const project of seeded) {
+        await page.goto(`/?scope-mode=project&scope-activeProjectId=${project.id}`);
+        await expect(page.getByTestId('footer')).toContainText(project.name);
+      }
+    } finally {
+      await Promise.all(seeded.map((p) => request.delete(`${API}/api/v1/graph/project/${p.id}`).catch(() => undefined)));
     }
   });
 });

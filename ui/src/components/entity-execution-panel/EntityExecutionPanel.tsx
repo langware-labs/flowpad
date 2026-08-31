@@ -39,12 +39,8 @@ import { ChatActivityLine } from './ChatActivityLine';
 import { TurnEventChip } from '@src/components/floating-chat/TurnEventChip';
 import { useObservedTurn } from './hooks/useObservedTurn';
 import { useTurnActivity } from './hooks/useTurnActivity';
-import {
-  buildHistorySubline,
-  pickHistoryTitle,
-  timeAgo as historyTimeAgo,
-  WorkerIcon as HistoryWorkerIcon,
-} from './history-row';
+import { buildHistorySubline, pickHistoryTitle, WorkerIcon as HistoryWorkerIcon } from './history-row';
+import { formatTimeAgoShort } from '@src/utils/format-time-ago';
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { selectHistoryProcesses } from './history-processes';
 import { useProcessesForTarget } from './hooks/useProcessesForTarget';
@@ -360,7 +356,14 @@ export function EntityExecutionPanel({
   // count, worker icon) instead of bare ids and timestamps.
   // A metadata JOIN, not a rendered list: `selectHistoryProcesses` needs every row
   // to tell "empty" from "outside this 30-row window".
-  const { entries: workerHistoryEntries } = useWorkerHistory(30, { includeEmpty: true });
+  // Worker-history walks the local transcript corpora, so do not pay for it on
+  // every panel mount when its only consumer is still closed. Once requested,
+  // keep it enabled across later closes so reopening uses the same query state.
+  const [historyRequested, setHistoryRequested] = useState(false);
+  const { entries: workerHistoryEntries } = useWorkerHistory(30, {
+    enabled: historyRequested,
+    includeEmpty: true,
+  });
   const workerHistoryByProcessId = useMemo(() => {
     const map = new Map<string, WorkerHistoryEntry>();
     for (const entry of workerHistoryEntries) {
@@ -888,6 +891,7 @@ export function EntityExecutionPanel({
         historyLabel={historyLabel}
         historyTriggerLabel={historyTriggerLabel}
         historyOnLeft={historyOnLeft}
+        onHistoryOpen={() => setHistoryRequested(true)}
         afterHistorySlot={afterHistorySlot}
         pastSessionsLabel={pastSessionsLabel}
         noPastSessionsLabel={noPastSessionsLabel}
@@ -935,7 +939,7 @@ export function EntityExecutionPanel({
         ) : (
           messages.map((m) => (
             <ExecutionMessage
-              key={m.id ?? m.timestamp}
+              key={m.timestamp}
               flowData={m}
               worker={activeProcess?.worker_type ?? undefined}
               agent={launchingAgent}
@@ -1033,6 +1037,7 @@ function ExecutionHistoryHeader({
   historyLabel,
   historyTriggerLabel,
   historyOnLeft,
+  onHistoryOpen,
   afterHistorySlot,
   pastSessionsLabel,
   noPastSessionsLabel,
@@ -1055,6 +1060,8 @@ function ExecutionHistoryHeader({
   historyTriggerLabel?: string;
   /** Render the history trigger on the left (next to leadingSlot). */
   historyOnLeft?: boolean;
+  /** Starts the lazy worker-history enrichment when the menu is first opened. */
+  onHistoryOpen: () => void;
   /** Optional node rendered right after the left-placed history pill. */
   afterHistorySlot?: React.ReactNode;
   pastSessionsLabel: string;
@@ -1067,7 +1074,7 @@ function ExecutionHistoryHeader({
     'inline-flex h-7 flex-shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
 
   const historyDropdown = (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={(open) => open && onHistoryOpen()}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -1117,7 +1124,7 @@ function ExecutionHistoryHeader({
             const subline = buildHistorySubline(entry);
             // `updated_date` / `created_date` can come through as either an
             // ISO string or a Date depending on how the entity was hydrated;
-            // normalize to ISO so `timeAgo` can parse uniformly.
+            // normalize to ISO so `formatTimeAgoShort` can parse uniformly.
             const lastActiveRaw = entry?.last_active_time ?? p.updated_date ?? p.created_date ?? null;
             const lastActive: string | null =
               lastActiveRaw == null
@@ -1142,7 +1149,7 @@ function ExecutionHistoryHeader({
                   />
                   <span className="min-w-0 flex-1 truncate text-xs font-medium">{title}</span>
                   <span className="flex-shrink-0 text-[10px] tabular-nums text-muted-foreground">
-                    {historyTimeAgo(lastActive)}
+                    {formatTimeAgoShort(lastActive)}
                   </span>
                   {p.id && (
                     <button

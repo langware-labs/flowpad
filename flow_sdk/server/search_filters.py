@@ -179,7 +179,7 @@ async def resolve_project_scope(
     if sf.record_projects:
         return sf
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.fs_store.identifier import is_valid_uuid  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import is_valid_uuid  # noqa: PLC0415
     from flow_sdk.fs_store.indexer.roots import lookup_project_id_by_uname  # noqa: PLC0415
     from flow_sdk.fs_store.operations.all_projects import (  # noqa: PLC0415
         get_cached_projects,

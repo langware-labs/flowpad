@@ -1,11 +1,10 @@
 """The invariants that define a git source, asserted rather than described."""
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
-from flow_sdk.builtin.git_origin import GitOrigin
+from flow_sdk.fs_store.origin.git_origin import GitOrigin
+from flow_sdk.ingest import reflect
 from flow_sdk.ingest.change_event import change_tag, emit_change, handle_change, subscribe
 from flow_sdk.ingest.driver import SegmentCursorView, get_driver
 from flow_sdk.ingest.reflect import ReflectMode, origin_id_for
@@ -13,7 +12,7 @@ from flow_sdk.ingest.sync import sync_source
 from flow_sdk.utils.git import git_remote_url
 
 from ._harness import DOC, FIRST_TOKEN, entity_at, searchable
-from .conftest import commit, git
+from .conftest import git
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -26,7 +25,7 @@ async def test_the_working_tree_stays_clean(git_db, asset_repo, make_source):
     `origin_id` lookup precisely so this assertion can hold.
     """
     DOC.create(asset_repo)
-    source, _project, _landing = await make_source(ReflectMode.IN_PLACE.value)
+    source, _project, _landing = await make_source(ReflectMode.NONE.value)
 
     await sync_source(source)
 
@@ -40,7 +39,7 @@ async def test_the_driver_never_walks_the_filesystem(git_db, asset_repo, make_so
     lose exactly what git is here to provide: exact deletions and real renames.
     """
     DOC.create(asset_repo)
-    source, _project, _landing = await make_source(ReflectMode.IN_PLACE.value)
+    source, _project, _landing = await make_source(ReflectMode.NONE.value)
 
     walked: list[str] = []
     import os as _os
@@ -61,7 +60,7 @@ async def test_origin_id_is_the_documented_dedup_handle(git_db, asset_repo, make
     from everything that already reconciles on this one.
     """
     DOC.create(asset_repo)
-    source, _project, landing = await make_source(ReflectMode.IN_PLACE.value)
+    source, _project, landing = await make_source(ReflectMode.NONE.value)
     await sync_source(source)
 
     expected = GitOrigin.from_url(git_remote_url(str(asset_repo)), rel_path="a.md")
@@ -69,7 +68,7 @@ async def test_origin_id_is_the_documented_dedup_handle(git_db, asset_repo, make
 
     assert entity is not None
     assert entity.origin_id == str(expected.key())
-    assert origin_id_for(source, str(asset_repo / "a.md")) == str(expected.key())
+    assert origin_id_for(source, str(asset_repo / "a.md"), await reflect._materialize(source)) == str(expected.key())
 
 
 async def test_an_empty_event_still_reconciles(git_db, asset_repo, make_source):
@@ -79,7 +78,7 @@ async def test_an_empty_event_still_reconciles(git_db, asset_repo, make_source):
     recover from a bare nudge. For git that recovery is exact: diff the cursor's
     sha against HEAD.
     """
-    source, _project, landing = await make_source(ReflectMode.IN_PLACE.value)
+    source, _project, landing = await make_source(ReflectMode.NONE.value)
     await sync_source(source)
     DOC.create(asset_repo)  # committed AFTER the source last synced
 
@@ -100,12 +99,12 @@ async def test_the_bus_reaches_the_handler(git_db, asset_repo, make_source):
     proven is that an emitted event matches the pattern and is dispatched; the
     matrix drives `handle_change` directly for everything else.
     """
-    source, _project, _landing = await make_source(ReflectMode.IN_PLACE.value)
+    source, _project, _landing = await make_source(ReflectMode.NONE.value)
     seen: list[str] = []
 
     from flow_sdk.tags import on_tag
 
-    unsub = on_tag(f"ingest.*.change.received", lambda e: seen.append(e.data.get("source_id")))
+    unsub = on_tag("ingest.*.change.received", lambda e: seen.append(e.data.get("source_id")))
     try:
         emit_change(str(source.id), "git", reason="test")
     finally:

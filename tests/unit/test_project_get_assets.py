@@ -214,6 +214,7 @@ async def test_response_row_shape_matches_process_action(staging):
             "source_dir",
             "project_id",
             "remote",
+            "name",
             "usage",
         }
         assert row["usage"] == []

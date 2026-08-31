@@ -11,7 +11,7 @@ from pydantic import SecretStr
 
 from flow_sdk.builtin.drivers.hub_secret_driver import HubSecretDriver
 from flow_sdk.builtin.secret_origin_driver import SecretProvideUnsupported, get_secret_origin_driver
-from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER
+from flow_sdk.builtin.secret_origin_refs import SECRET_ORIGIN_ADAPTER
 
 PROJECT = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
 

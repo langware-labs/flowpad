@@ -78,6 +78,12 @@ describe('MarkdownEditor chrome', () => {
     expect(screen.getByTestId('editor-mode-chip-editor')).toBeTruthy();
     expect(screen.queryByTestId('plain-markdown-header')).toBeNull();
 
+    expect(screen.getByTestId('editor-mode-chip-view').getAttribute('data-mode-active')).toBe('true');
+    fireEvent.click(screen.getByTestId('editor-mode-chip-view'));
+    expect(decodeURIComponent(screen.getByTestId('location').textContent ?? '')).toBe(
+      '/dock/hub/assets/wiki/@hub/Guide',
+    );
+
     fireEvent.click(screen.getByTestId('editor-mode-chip-editor'));
     await waitFor(() =>
       expect(decodeURIComponent(screen.getByTestId('location').textContent ?? '')).toBe(

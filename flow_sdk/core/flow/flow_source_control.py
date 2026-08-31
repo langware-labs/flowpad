@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 from flow_sdk.builtin.faas.compute_node import ComputeNode
-from flow_sdk.builtin.git_origin import GitOrigin
+from flow_sdk.fs_store.origin.git_origin import GitOrigin
 from flow_sdk.config import PLATFORM_WIN32, ComputeProviderType
 from flow_sdk.core.entity.entity_env.env_utils import build_shared_var_name
 from flow_sdk.core.flow.models.execution.env_context import FlowEnv

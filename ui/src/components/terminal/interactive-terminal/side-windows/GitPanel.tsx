@@ -21,6 +21,7 @@ import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { GitPushIcon } from '@src/components/status-bar/GitPushIcon';
 import { GitFileDiffModal } from './GitFileDiffModal';
+import type { MessageDescriptor } from '@lingui/core';
 
 interface GitPanelProps {
   computeNodeId: string;
@@ -76,7 +77,7 @@ interface GitAction {
 
 // Per-status copy/icon for the state-aware discard action. `default` covers
 // every tracked-edit status (M/A/R/…) not given its own entry.
-const UNDO_VARIANTS: Record<string, { standard: string; advanced: string; tooltip: string; icon: LucideIcon }> = {
+const UNDO_VARIANTS: Record<string, { standard: MessageDescriptor; advanced: MessageDescriptor; tooltip: MessageDescriptor; icon: LucideIcon }> = {
   '?': {
     standard: msg`Remove`,
     advanced: msg`Discard (delete)`,
@@ -101,7 +102,7 @@ function actionsFor(file: GitStatusFile, mode: GitMode): GitAction[] {
   const view: GitAction = {
     key: 'diff',
     label: t`View`,
-    tooltip: msg`View the changes in this file`,
+    tooltip: t`View the changes in this file`,
     icon: Eye,
   };
 
@@ -134,21 +135,21 @@ function actionsFor(file: GitStatusFile, mode: GitMode): GitAction[] {
     ? {
         key: 'unstage',
         label: t`Unstage`,
-        tooltip: msg`Remove this file from the next commit (git restore --staged)`,
+        tooltip: t`Remove this file from the next commit (git restore --staged)`,
         icon: PlusSquare,
         subpath: 'unstage-file',
       }
     : {
         key: 'stage',
         label: t`Stage`,
-        tooltip: msg`Include this file in the next commit (git add)`,
+        tooltip: t`Include this file in the next commit (git add)`,
         icon: PlusSquare,
         subpath: 'stage-file',
       };
   const copyPath: GitAction = {
     key: 'copyPath',
     label: t`Copy path`,
-    tooltip: msg`Copy this file's path to the clipboard`,
+    tooltip: t`Copy this file's path to the clipboard`,
     icon: Copy,
   };
   return [view, stageAction, undo, copyPath];

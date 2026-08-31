@@ -75,15 +75,20 @@ def EntityField(
     role: str = "*",
     persist: Persist = Persist.DEFAULT,
     sharing: Sharing = Sharing.SHARED,
+    hub_name: str | None = None,
     json_schema_extra: dict[str, Any] | None = None,
     **kwargs,
 ):
-    json_schema_extra = json_schema_extra or {}
-    json_schema_extra.update({"role": role})
-    json_schema_extra.update({"blob": blob})
-    json_schema_extra.update({"db_exclude": db_exclude})
-    json_schema_extra.update({"persist": str(Persist(persist))})
-    json_schema_extra.update({"sharing": str(Sharing(sharing))})
+    json_schema_extra = {
+        **(json_schema_extra or {}),
+        "role": role,
+        "blob": blob,
+        "db_exclude": db_exclude,
+        "persist": str(Persist(persist)),
+        "sharing": str(Sharing(sharing)),
+        # The key the (release-pinned) hub reads this field under, when it differs.
+        **({"hub_name": hub_name} if hub_name else {}),
+    }
     return Field(default=default, default_factory=default_factory, json_schema_extra=json_schema_extra, **kwargs)
 
 

@@ -1,18 +1,13 @@
 import { systemTools, DatabaseStats } from '@sdk';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Database, RefreshCw } from 'lucide-react';
+import { formatBytes } from '@src/utils/format-bytes';
 import { useEffect, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 interface DbStatsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function DbStatsDialog({ open, onOpenChange }: DbStatsDialogProps) {

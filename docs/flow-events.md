@@ -1,3 +1,7 @@
+---
+id: 668e2408-1e99-4fd8-91dd-414aab27cc11
+---
+
 # FlowEvents — the unified event bus (delivery worklog)
 
 > **This document is the delivery ledger.** The language rationale and the full
@@ -483,7 +487,7 @@ after 8a target: 2 — the whales).
 ### Log
 
 **2026-07-31 — Tier A ✅.** Deleted 8 zero-constructor classes and their enum
-members from BOTH `api/messages.py` and the stale `api/api_types/messages.py`
+members from BOTH `api/messages.py` and the then-stale `api/api_types/messages.py` (2026-08-29: the fork is gone — `api_types/messages.py` is the single definition site, `api/messages.py` re-exports + app-only frames)
 (29→21 and 20→12): Echo, Hangup, Stream, Transcript, ComputeExe, ComputeCtrl,
 CommandStatus, ClientReady, plus the orphaned `ExeMessageSubType` /
 `CtlMessageSubType`. **Correction to the plan's Tier A list: `EntityMessage` and
@@ -615,8 +619,3 @@ subscribers all the way down.
 
 ### Log
 
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 668e2408-1e99-4fd8-91dd-414aab27cc11
-flowpad:endcapsule identity -->
