@@ -2000,6 +2000,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         // without also forcing would leave `_historyLoaded` set and no-op the load,
         // a footgun this removes. Cleared only after a successful fetch so an error
         // doesn't flash the view empty.
+        // A prompt whose delivery is still in flight has NO transcript row yet —
+        // and the backend never streams the user turn (the client's echo is the
+        // only copy anywhere). Clearing would therefore drop the message the user
+        // just sent, and the content-paired retract below can't save it: the clear
+        // has already run. Carry the un-persisted echoes across it instead.
+        const pendingEchoes = force ? this.flowDataStream.ownItems.filter((item) => item.isOptimisticEcho) : [];
         if (force) this.flowDataStream.clear();
 
         // Update session info
@@ -2038,11 +2044,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         // below run in ONE synchronous block after the fetch resolved — no
         // await separates them, so a live frame can never land between clear
         // and append. Frames that streamed in DURING the fetch are replaced
-        // by their transcript counterparts (history is authoritative); a frame
-        // not yet persisted to the transcript would be dropped, which is why
-        // callers only force-reload when no turn is in flight (post-switchMode
-        // reconcile behind the isReadyForInput toggle gate; the chat pane's
-        // useTurnCompletionReconcile on the busy→ready edge).
+        // by their transcript counterparts (history is authoritative). A user
+        // message not yet persisted is carried across the clear (pendingEchoes
+        // above) — a remount mid-turn must not erase what the user just sent;
+        // other un-persisted frames are still replaced by the transcript.
         // History is AUTHORITATIVE for user messages, so retire the echo of a
         // message it now carries rather than trying to reconcile it (the echo
         // is stamped at submit with a client clock and no transcript id, so it
@@ -2057,6 +2062,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         }
         const newItems = force ? historyItems : reconcileHistoryOverlap(historyItems, this.flowDataStream.items);
         if (newItems.length > 0) this.flowDataStream.append(newItems);
+        // Re-seat the still-undelivered echoes AFTER the transcript rows: they are
+        // the newest thing the user did. One the transcript now carries is dropped
+        // — the persisted row supersedes it, same rule as the retract above.
+        for (const echo of pendingEchoes) {
+          if (!persistedUserMessages.has(echo.content)) this.flowDataStream.ingest(echo);
+        }
         // Close any open groups after loading history
         this.flowDataStream.closeOpenGroups();
 
