@@ -33,11 +33,7 @@ def surface_pending_consent() -> int:
     sent = 0
     for ev in events:
         try:
-            send_event(
-                CONSENT_EVENT_KIND,
-                ev,
-                log_context="index_folder_consent",
-            )
+            send_event(CONSENT_EVENT_KIND, ev)
             sent += 1
         except Exception as e:  # noqa: BLE001
             logger.warning("surface_pending_consent: emit failed: %s", e)

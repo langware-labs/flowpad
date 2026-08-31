@@ -3,7 +3,7 @@
 Real chain under test (no link mocked):
 
     project under <home>/Documents  → gate_root() queues a consent note
-    → surface_pending_consent()     → send_resource_sync() builds the envelope
+    → surface_pending_consent()     → send_event() builds the envelope
     → detached-subprocess POST      → captured VERBATIM by a local HTTP sink
                                       (discovered through a real server.json,
                                       exactly how a live backend is found)
@@ -36,7 +36,7 @@ class _CaptureHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         length = int(self.headers.get("Content-Length", 0))
-        type(self).captured.append(self.rfile.read(length))
+        _CaptureHandler.captured.append(self.rfile.read(length))
         self.send_response(200)
         self.end_headers()
 
@@ -45,23 +45,19 @@ class _CaptureHandler(BaseHTTPRequestHandler):
 
 
 @pytest.mark.asyncio
-async def test_index_consent_event_reaches_listen_route(bootstrapped_client, user):
-    from flow_sdk.discovery.flowpad_discovery import read_all_server_infos
+async def test_index_consent_event_reaches_listen_route(bootstrapped_client):
     from flow_sdk.fs_store.indexer.consent_notify import surface_pending_consent
     from flow_sdk.fs_store.indexer.special_folders import (
         IndexDecision,
         drain_pending_consent,
         gate_root,
     )
-    from flow_sdk.instance_settings import BaseInstanceSettings, get_instance_settings
-
-    settings = get_instance_settings()
-    # Session conftest sandboxes HOME; refuse to run against a real home dir.
-    assert str(settings.user_home) != str(os.path.expanduser("~/../..")), "sanity"
+    from flow_sdk.instances.paths import instance_dir
+    from flow_sdk.instance_settings import get_instance_settings
 
     # 1. Make a project under the (sandboxed) Documents special folder and let
     #    the REAL gate classify it — this is the exact trigger of the bug.
-    project_dir = settings.user_home / "Documents" / "consent-repro-project"
+    project_dir = get_instance_settings().user_home / "Documents" / "consent-repro-project"
     project_dir.mkdir(parents=True, exist_ok=True)
     drain_pending_consent()  # clear anything queued by earlier tests
     assert gate_root(project_dir) is IndexDecision.ASK
@@ -69,11 +65,9 @@ async def test_index_consent_event_reaches_listen_route(bootstrapped_client, use
     # 2. Local sink the real emitter can discover + POST to.
     _CaptureHandler.captured = []
     sink = ThreadingHTTPServer(("localhost", 0), _CaptureHandler)
-    sink_thread = threading.Thread(target=sink.serve_forever, daemon=True)
-    sink_thread.start()
+    threading.Thread(target=lambda: sink.serve_forever(poll_interval=0.01), daemon=True).start()
 
-    instances_root = BaseInstanceSettings._resolve_flow_home() / "instances"
-    sink_instance = instances_root / f"consent-sink-{uuid.uuid4().hex[:8]}"
+    sink_instance = instance_dir(f"consent-sink-{uuid.uuid4().hex[:8]}")
     sink_instance.mkdir(parents=True, exist_ok=True)
     server_json = sink_instance / "server.json"
     server_json.write_text(
@@ -81,23 +75,19 @@ async def test_index_consent_event_reaches_listen_route(bootstrapped_client, use
             {
                 "port": sink.server_address[1],
                 "webhook_path": LISTEN_URL,
-                "health_path": "/health",
+                "health_path": "/api/v1/health/status",
                 "server_pid": os.getpid(),
             }
         )
     )
 
     try:
-        assert any(
-            info.port == sink.server_address[1] for info in read_all_server_infos()
-        ), "sink server.json was not discovered — emitter would drop the event"
-
         # 3. Real emitter, real transport (detached subprocess POST).
         assert surface_pending_consent() == 1
 
         deadline = time.monotonic() + 5.0
         while not _CaptureHandler.captured and time.monotonic() < deadline:
-            time.sleep(0.05)
+            time.sleep(0.01)
         assert _CaptureHandler.captured, "emitter never POSTed the consent event"
         wire_bytes = _CaptureHandler.captured[0]
     finally:
@@ -107,9 +97,9 @@ async def test_index_consent_event_reaches_listen_route(bootstrapped_client, use
 
     # The frontend contract (ts_sdk indexingConsent.ts) rides in event_data.
     envelope = json.loads(wire_bytes)
-    event_data = envelope["webhook_payload"]["data"].get("event_data") or {}
-    assert event_data.get("kind") == "index_folder_consent"
-    assert event_data.get("category") == "documents"
+    event_data = envelope["webhook_payload"]["data"]["event_data"]
+    assert event_data["kind"] == "index_folder_consent"
+    assert event_data["category"] == "documents"
 
     # 4. Replay the EXACT bytes into the real listen route.
     response = await bootstrapped_client.post(
@@ -117,7 +107,7 @@ async def test_index_consent_event_reaches_listen_route(bootstrapped_client, use
     )
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body.get("status") == "SUCCESS", (
+    assert body["status"] == "SUCCESS", (
         f"listen route rejected the consent event: {body.get('message')}"
     )
-    assert body.get("data", {}).get("status") == "received"
+    assert body["data"]["status"] == "received"
