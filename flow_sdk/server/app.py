@@ -276,16 +276,9 @@ async def _seed_service_triggers() -> None:
     """Upsert built-in system triggers (toplog filter watcher, etc.). Must run
     before `_start_fsop_watcher()` so the watcher's startup walk finds them."""
     try:
-        from flow_sdk.server.builtin_triggers import set_service_triggers
+        from flow_sdk.server.builtin_triggers import seed_service_entities
 
-        await set_service_triggers()
-        # Seed the system-scope service flows (mini-analyzer, daily-analysis).
-        try:
-            from flow_sdk.graph_workflow_manager.service_graph_workflows import set_service_graph_workflows
-
-            await set_service_graph_workflows()
-        except Exception:
-            logging.getLogger(__name__).exception("set_service_graph_workflows failed")
+        await seed_service_entities()
         print("  System triggers: upserted")
     except Exception:
         logging.getLogger(__name__).exception("System triggers: failed to seed")

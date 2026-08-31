@@ -302,6 +302,19 @@ class FSOpWatcher:
                 pass
         self._spawn_task(trigger)
 
+    async def rearm(self) -> None:
+        """Spawn one watch task per FSOp trigger, WITHOUT `start()`'s catch-up.
+
+        For the factory-reset path only. A reset stops the watcher (it must —
+        stale pre-wipe entities collide on `uname`) and then re-seeds the rows,
+        so without this the FSOp triggers come back stored but unwatched. It
+        deliberately skips `_catch_up_if_changed`: that per-trigger disk walk is
+        what makes `start()` too slow for a path that runs on every `resetDb()`,
+        and a just-wiped-and-re-seeded row has no missed-change window anyway.
+        """
+        for trigger in await Trigger.list_by_type(TriggerType.FSOP):
+            self._spawn_task(trigger)
+
     async def on_trigger_deleted(self, trigger_id: str) -> None:
         """Called by the entity delete lifecycle. Cancel the task for this trigger."""
         task = self._tasks.pop(trigger_id, None)

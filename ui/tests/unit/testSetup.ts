@@ -27,21 +27,14 @@ if (!window.ResizeObserver) {
 // Stub the global ResizeObserver
 vi.stubGlobal('ResizeObserver', ResizeObserverMock);
 
-// The unit tier runs every file in ONE thread against ONE jsdom document
-// (`pool: 'threads'`, `singleThread: true`), and that document's URL is never
-// reset between files. Production code legitimately reads the real browser URL
-// — `NavigationActions.currentBrowserViewMode()` does, to inherit `?viewMode`
-// onto a newly opened dock — so a file that leaves `?viewMode=standard` on
-// `window.location` silently changes the URLs a LATER file's MemoryRouter test
-// asserts on (`?editorMode=editor` arriving as
-// `?editorMode=editor&viewMode=standard`).
+// The unit tier runs every file in ONE thread against ONE jsdom document, and
+// that document's URL is never reset between files. Production code legitimately
+// reads the real browser URL, so a file that leaves a query string on
+// `window.location` silently changes the URLs a LATER file asserts on.
 //
-// Reset it per test so each one starts from a clean address. This is state
-// isolation, not a wait/retry: the leak is the previous test's query string,
-// and this deletes it. A test that needs a specific URL still sets it in its
-// own body or `beforeEach`, both of which run after this hook.
+// Reset per test. This is state isolation, not a wait/retry: the leak is the
+// previous test's query string, and this deletes it. A test that needs a
+// specific URL still sets it in its own body or `beforeEach`, which run after.
 beforeEach(() => {
-  if (window.location.search || window.location.hash || window.location.pathname !== '/') {
-    window.history.replaceState(null, '', '/');
-  }
+  window.history.replaceState(null, '', '/');
 });
