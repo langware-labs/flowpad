@@ -172,6 +172,7 @@ _REAL_HOME_TEST_MODULES = frozenset(
     {
         "test_agentic_process",
         "test_gmail_agent_source",
+        "test_slack_agent_source",
         "test_agentic_process_prompt_streaming",
         "test_agentic_cli_shell_mix",
         "test_claude_cli",

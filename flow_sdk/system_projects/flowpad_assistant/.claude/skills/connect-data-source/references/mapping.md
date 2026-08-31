@@ -19,7 +19,7 @@ Yes → reuse it. No → `modes/author.md`. "Close enough" is not reuse.
 | repo, this project's commits, a branch | `git` |
 | a folder, this directory, files on my disk | `folder` |
 | my email, mailbox, gmail, my inbox | `agent` — see below. Only ask when no harness can run |
-| a Slack channel (`C…`) | `slack` |
+| a Slack channel (`C…`) | `agent` with `connector: slack` — see below. The API driver `slack` is the fallback when no harness can run (it needs its own OAuth + bot invite) |
 
 A local git checkout is `git` if they care about commits and `folder` if they
 care about files. Ask only when the answer changes the config.
@@ -40,6 +40,19 @@ the case where the three-way question becomes real.
 {"provider": "agent", "config": {"connector": "gmail", "harness": "claude",
                                  "segments": ["INBOX"]}}
 ```
+
+Slack rides the same transport with a different connector — the worker reads
+the channels through the Slack connector the person already authorised in
+their harness, so there is no OAuth round trip and no bot to invite:
+
+```json
+{"provider": "agent", "config": {"connector": "slack", "harness": "claude",
+                                 "segments": ["C0123ABCD"]}}
+```
+
+* `segments` are channel **IDs** (`C…`), never names, and for slack they are
+  **required** — a channel id cannot be guessed the way mail assumes `INBOX`.
+  In Slack: click the channel name; the ID is at the bottom of the panel.
 
 * **`connector` is the channel AND half of every thread key.** Leaving it empty
   forks every thread in the mailbox, permanently — there is no repair pass.

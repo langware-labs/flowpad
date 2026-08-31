@@ -16,7 +16,7 @@ AGENT_ROOT = Path(flowpad_assistant_project_root()) / "agentic-assets" / "agent"
 EXPECTED = {
     "artifact-setup", "asset-cleanup", "capability-installer", "chrome-auth",
     "cloud-error-fixer", "diagnose", "email-summarizer", "emailer", "git-setup",
-    "migration-runner", "task-analyze", "vibe",
+    "migration-runner", "slack-poster", "slack-summarizer", "task-analyze", "vibe",
 }
 
 
@@ -33,6 +33,10 @@ COSTLIER_BY_DESIGN = {
     # completed the same send first try. Tool-calling reliability is worth more
     # than the token saving when the action cannot be undone.
     "emailer": "sonnet",
+    # Posting into a channel is just as irreversible as sending mail, and it is
+    # the same send-verb tool-calling pattern the emailer's incident documented.
+    # Same reasoning, same tier.
+    "slack-poster": "sonnet",
 }
 
 

@@ -13,7 +13,7 @@ import pytest
 from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchHealth
 from flow_sdk.ingest.driver import SendOutcome, SendStatus
 from flow_sdk.ingest.drivers.agent import (
-    DEFAULT_SEND_AGENT,
+    CONNECTOR_PROFILES,
     SEND_RECEIPT_FILENAME,
     AgentDriver,
     _send_slots,
@@ -164,8 +164,10 @@ class TestDriverContract:
         assert AgentDriver.sends is True
 
     def test_replying_uses_its_own_agent_not_the_summarizer(self):
-        # `email-summarizer`'s persona says "You do not open the mailbox".
-        assert DEFAULT_SEND_AGENT == "emailer"
+        # Each connector's send persona is distinct from its fetch persona —
+        # `email-summarizer`'s prose says "You do not open the mailbox".
+        for profile in CONNECTOR_PROFILES.values():
+            assert profile.send_agent != profile.agent
 
     def test_the_two_verbs_never_read_each_others_receipt(self):
         from flow_sdk.ingest.drivers.agent import RECEIPT_FILENAME
