@@ -339,16 +339,10 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
                     value={agent.subagents}
                     onCommit={(v) => void save({ subagents: v ?? [] })}
                   />
-                  <AgentListField
-                    label={t`Skills`}
-                    value={agent.skills}
-                    onCommit={(v) => void save({ skills: v ?? [] })}
-                  />
-                  <AgentListField
-                    label={t`MCP servers`}
-                    value={agent.mcp_servers}
-                    onCommit={(v) => void save({ mcp_servers: v ?? [] })}
-                  />
+                  {/* Skills and MCP servers are wired in the agent-resources
+                      pane (Zone B), which lists what actually exists instead of
+                      asking for typed ids. They are deliberately not duplicated
+                      here — two editors for one field is how they drift. */}
                   <AgentListField
                     label={t`Additional directories`}
                     value={agent.additional_dirs}

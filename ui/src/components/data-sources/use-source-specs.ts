@@ -23,10 +23,12 @@ const specsQuery = new QueryRequest({
 const EMPTY: DataSourceSpec[] = [];
 
 export function useSourceSpecs() {
-  const { data: specs = EMPTY } = useEntitiesQuery<DataSourceSpec>(specsQuery);
+  // `isLoading` is exposed because a consumer whose layout depends on emptiness
+  // (a section that opens iff non-empty) must tell "no specs" from "not yet".
+  const { data: specs = EMPTY, isLoading } = useEntitiesQuery<DataSourceSpec>(specsQuery);
   // `name` is the registry key AND the folder name AND the asset id — one noun,
   // so a lookup needs nothing else.
   const byName = useMemo(() => new Map(specs.map((s) => [s.name, s])), [specs]);
   const specFor = useCallback((provider: string) => byName.get(provider), [byName]);
-  return { specs, specFor };
+  return { specs, specFor, isLoading };
 }

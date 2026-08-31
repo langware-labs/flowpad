@@ -51,6 +51,40 @@ function splitFrontmatter(source: string): FrontmatterDocument {
   };
 }
 
+/** Frontmatter keys whose value is a plain list of strings. */
+export type AgentDocumentListKey = 'skills' | 'mcp_servers' | 'subagents' | 'additional_dirs';
+
+/**
+ * Read one list field straight out of `agent.md`'s frontmatter.
+ *
+ * The read half of `patchAgentDocument`, and the reason a caller can edit these
+ * lists without resolving the Agent ENTITY at all: the file is the record. That
+ * matters for an agent whose row isn't indexed — the document is still there
+ * and still authoritative, so it stays editable.
+ *
+ * Returns `[]` for a missing key, a non-list value, or unparseable frontmatter:
+ * this feeds a checkbox list, where "can't tell" and "nothing selected" render
+ * the same and must not throw.
+ */
+export function readAgentDocumentList(source: string, key: AgentDocumentListKey): string[] {
+  let yaml: string;
+  try {
+    ({ yaml } = splitFrontmatter(source));
+  } catch {
+    return [];
+  }
+  if (!yaml) return [];
+  try {
+    const document = parseDocument(yaml);
+    if (document.errors.length > 0 || !isMap(document.contents)) return [];
+    const node = document.get(key, true) as { toJSON?: () => unknown } | undefined;
+    const value = typeof node?.toJSON === 'function' ? node.toJSON() : document.get(key);
+    return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Losslessly patch the known Agent fields in agent.md.
  *
