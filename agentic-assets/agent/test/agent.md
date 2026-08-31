@@ -8,7 +8,7 @@ additional_dirs: []
 load_flowpad_assistant: false
 cli_options: {}
 enabled: true
-version: 3
+version: 4
 ---
 
 agent agent
