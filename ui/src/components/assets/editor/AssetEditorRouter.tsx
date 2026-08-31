@@ -1,23 +1,4 @@
-import {
-  Agent,
-  SubAgent,
-  AgentTrace,
-  APIEntity,
-  AssetCleanupReport,
-  dataManager,
-  Deck,
-  DeckTemplate,
-  DynamicWorkflow,
-  FSRef,
-  Journey,
-  Skill,
-  Spreadsheet,
-  Task,
-  TypeId,
-  UsageReport,
-  VFSPath,
-  Whiteboard,
-} from '@sdk';
+import { Agent, SubAgent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, Deck, DeckTemplate, DynamicWorkflow, FSRef, Journey, Skill, Spreadsheet, Task, TypeId, UsageReport, VFSPath, Whiteboard, type AnyEntity } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { lazy, Suspense, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -118,7 +99,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
     isLoading: entityLoading,
     isError: entityError,
     refetch: refetchEntity,
-  } = useEntity<APIEntity<any>>(typeId);
+  } = useEntity<AnyEntity>(typeId);
   const { computeNode, flow } = useAgentContext();
   const {
     data: entityRecord,
@@ -223,7 +204,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
     // with one save. Offer that; hand-edited types (markdown/skill) get retry
     // only, since rebuilding from a template would clobber user content.
     const ownsMainRef = !!dataManager.getAllTypeInfos?.().find((t) => t.type_name === typeId.type)?.owns_main_ref;
-    const orphan = typeIdEntity as APIEntity<any> | null;
+    const orphan = typeIdEntity as AnyEntity | null;
     return (
       <MissingAssetCard
         typeLabel={typeId.type}
@@ -430,7 +411,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
         <PlainMarkdownAssetEditor
           fsRef={fsRef}
           assetType={assetType}
-          resolvedEntity={typeIdEntity as APIEntity<APIEntity<any>> | undefined}
+          resolvedEntity={typeIdEntity as APIEntity<AnyEntity> | undefined}
           fragment={fragment}
           wikiLinkTarget={wikiLinkTarget}
         />

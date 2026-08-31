@@ -1,4 +1,4 @@
-import { APIEntity, normalizeEmail, QueryRequest, TypeId, User } from '@sdk';
+import { APIEntity, normalizeEmail, QueryRequest, TypeId, User, type AnyEntity } from '@sdk';
 import { useCallback, useMemo, useState } from 'react';
 import { Button } from '@src/components/ui/button';
 import { Loader2 } from 'lucide-react';
@@ -40,7 +40,7 @@ export function OrganizationPanel({ user }: OrganizationPanelProps) {
 function OrganizationBody({ user, orgId }: { user: User; orgId: string }) {
   const { t } = useLingui();
   const orgTypeId = useMemo(() => new TypeId('organization', orgId), [orgId]);
-  const { data: org } = useEntity<APIEntity<any>>(orgTypeId);
+  const { data: org } = useEntity<AnyEntity>(orgTypeId);
   const { members, ready, updating, stale, refresh } = useMembers(orgTypeId);
   const OrgIcon = iconForType('organization');
 
@@ -76,7 +76,7 @@ function TeamsSection({ user }: { user: User }) {
   // accepted a team invitation). The hub login returns only the organization,
   // so this is "teams seen locally", not necessarily every team on the hub.
   const request = useMemo(() => new QueryRequest({ type: 'team', query: {} }), []);
-  const { data: teams } = useEntitiesQuery<APIEntity<any>>(request);
+  const { data: teams } = useEntitiesQuery<AnyEntity>(request);
   const list = teams ?? [];
   if (list.length === 0) return null;
   return (
@@ -91,7 +91,7 @@ function TeamsSection({ user }: { user: User }) {
   );
 }
 
-function TeamRow({ team, selfId }: { team: APIEntity<any>; selfId: string }) {
+function TeamRow({ team, selfId }: { team: AnyEntity; selfId: string }) {
   const { t } = useLingui();
   const teamTypeId = useMemo(() => new TypeId('team', team.id), [team.id]);
   const { members, ready, updating, stale } = useMembers(teamTypeId);

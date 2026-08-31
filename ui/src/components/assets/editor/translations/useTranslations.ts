@@ -1,14 +1,6 @@
 import { t } from '@lingui/core/macro';
 import { useCallback, useMemo, useState } from 'react';
-import {
-  ActionInfo,
-  dataManager,
-  isProcessRunning,
-  ProcessKind,
-  type APIEntity,
-  type Translation,
-  type FSRefJson,
-} from '@sdk';
+import { ActionInfo, dataManager, isProcessRunning, ProcessKind, type APIEntity, type Translation, type FSRefJson, type AnyEntity } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { runSkillWorker } from '@src/components/assets/editor/skill/skill-eval-analysis';
@@ -36,7 +28,7 @@ interface AddTranslationResult {
 
 interface UseTranslationsArgs {
   /** The resolved backing entity (a Markdown-family asset). */
-  entity: APIEntity<any> | null;
+  entity: AnyEntity | null;
   /** VFS path the translator process is keyed to (the asset TypeId string). */
   chatTarget: string | null;
   /** On-disk path of the source (original) doc — used in the translator prompt. */

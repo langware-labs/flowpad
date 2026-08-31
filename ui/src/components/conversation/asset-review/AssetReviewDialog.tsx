@@ -1,5 +1,5 @@
 import { t } from '@lingui/core/macro';
-import { type APIEntity, dataManager, MessageAttachment, Project, TypeId } from '@sdk';
+import { type APIEntity, dataManager, MessageAttachment, Project, TypeId, type AnyEntity } from '@sdk';
 import { gitOriginCloneUrl, type GitOrigin } from '@sdk/models/GitOrigin';
 import { useEntity } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -73,7 +73,7 @@ function AssetParentSubscriber({
   typeId: TypeId | null;
   onParent: (maId: string, parentAssetId: string | null) => void;
 }) {
-  const { data } = useEntity<APIEntity<any> & { parent_id?: string | null }>(typeId);
+  const { data } = useEntity<AnyEntity & { parent_id?: string | null }>(typeId);
   const parentAssetId = data?.parent_id ? String(data.parent_id) : null;
   useEffect(() => {
     onParent(maId, parentAssetId);
@@ -93,7 +93,7 @@ function AssetParentSubscriber({
 function SelectedEntityViewer({ attachment }: { attachment: MessageAttachment }) {
   const typeId = attachment.asset_type === 'file' ? null : attachment.targetTypeId;
   const editor = typeId ? editorForType(typeId.type) : undefined;
-  const { data } = useEntity<APIEntity<any> & { asset_ref?: string | null }>(typeId);
+  const { data } = useEntity<AnyEntity & { asset_ref?: string | null }>(typeId);
   if (typeId && editor && data?.asset_ref) {
     const pointer = AssetDocPointer.forTypeId(editor, typeId).toPointer();
     return (
@@ -322,7 +322,7 @@ export function AssetReviewDialog({
     // dropped its `asset_ref` and every install-then-Open fell through to the
     // session-id form, which cannot resolve on a machine that never ran the
     // session. Fetching here costs one request on an explicit click.
-    const entity = await dataManager.getByTypeId<APIEntity<any> & { type: string }>(tid).catch(() => null);
+    const entity = await dataManager.getByTypeId<AnyEntity & { type: string }>(tid).catch(() => null);
     const pointer = buildDockPointer(entity ?? { type: tid.type, id: tid.id }, undefined);
     if (pointer) navigation.openDock(DockPointer.rebaseAssetsOntoProject(pointer, attachmentProjectId));
     onClose();

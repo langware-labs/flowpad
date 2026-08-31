@@ -11,7 +11,7 @@
  * Nothing here is specific to editors. Any app that wants to act on the thing
  * it ships with reads its subject the same way.
  */
-import { APIEntity, dataManager } from '../APIEntity';
+import { APIEntity, dataManager, type AnyEntity } from '../APIEntity';
 import { TypeId } from '../models/TypeId';
 
 /** The `micro_app` this page is being served as, from `location.pathname`. */
@@ -22,9 +22,9 @@ export function appTypeId(pathname: string = location.pathname): TypeId | null {
 
 export interface AppHost {
   /** The app's own delivery row. */
-  app: APIEntity<any>;
+  app: AnyEntity;
   /** The asset the app is nested inside — what it edits. Null at top level. */
-  subject: APIEntity<any> | null;
+  subject: AnyEntity | null;
 }
 
 /**

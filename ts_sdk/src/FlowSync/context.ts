@@ -14,7 +14,7 @@ import {
   WebDomain,
 } from '..';
 import { AgenticProcess } from '../process/agentic-process';
-import { APIEntity, dataManager } from '../APIEntity';
+import { APIEntity, dataManager, type AnyEntity } from '../APIEntity';
 import { ComputeNode } from '../entities/compute_node';
 import { Project } from '../entities/project';
 import { User } from '../entities/user';
@@ -444,7 +444,7 @@ class DataContext extends EventEmitter {
     return this.getContextEntityTypeId(ContextEntitiesEnum.CurrentActiveEntityTypeId);
   }
 
-  get activeEntity(): APIEntity<any> | null {
+  get activeEntity(): AnyEntity | null {
     return this.getContextEntity(ContextEntitiesEnum.CurrentActiveEntityTypeId);
   }
 
@@ -870,13 +870,13 @@ class DataContext extends EventEmitter {
     return this._contextEntitiesMap.get(entityKey) ?? null;
   }
 
-  getContextEntity(entityKey: ContextEntitiesEnum): APIEntity<any> | null {
+  getContextEntity(entityKey: ContextEntitiesEnum): AnyEntity | null {
     const typeId = this.getContextEntityTypeId(entityKey);
     if (!typeId) {
       return null;
     }
 
-    const entity = dataManager.getByTypeIdFromCache<APIEntity<any>>(typeId);
+    const entity = dataManager.getByTypeIdFromCache<AnyEntity>(typeId);
     return entity ?? null;
   }
 

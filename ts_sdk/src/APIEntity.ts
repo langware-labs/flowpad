@@ -160,6 +160,19 @@ const BASE_WIRE_FIELDS = new Set<string>([
 /** Backend-owned fields that hydrate into the cache but never ride a full save. */
 const SERVER_MANAGED_SAVE_FIELDS = new Set<string>(['last_edited_at']);
 
+/**
+ * Any entity, without caring which.
+ *
+ * `APIEntity<T>` is F-bounded — `T` is the SELF type (`clone(): T`,
+ * `save(): Promise<T>`) — so the obvious spellings do not work: `APIEntity<never>`
+ * makes nothing assignable, and `APIEntity<unknown>` does not satisfy its own
+ * bound. `any` is the one type argument that does, which is why it was already
+ * hand-written at ~40 sites. Named once so those sites say what they mean
+ * instead of each re-deriving the trick.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AnyEntity = APIEntity<any>;
+
 export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   static type?: string = defaultEntityType;
   static autoLoadExpansions: ExpansionType[] = [];
@@ -851,7 +864,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
 
   public static isType<U extends APIEntity<U>>(
     this: { new (): U; type: string },
-    entity: APIEntity<any> | null,
+    entity: AnyEntity | null,
   ): entity is U {
     return entity?.getType() === this.type;
   }
@@ -1614,7 +1627,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * Get the first and closest ancestor by type using the entity scope.
    * Uses the same logic as breadcrumbs to find ancestors.
    */
-  public async get_ancestor(ancestor_type: string): Promise<APIEntity<any> | null> {
+  public async get_ancestor(ancestor_type: string): Promise<AnyEntity | null> {
     if (!this.saved) {
       return null;
     }
@@ -1838,7 +1851,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
 }
 
 // Create the singleton DataManager instance
-export const dataManager = new DataManager<APIEntity<any>>();
+export const dataManager = new DataManager<AnyEntity>();
 
 // Define store as a global for console debugability
 defineGlobal('store', dataManager);
