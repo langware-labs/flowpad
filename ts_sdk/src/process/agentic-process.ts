@@ -8,6 +8,7 @@
  * - stackFrame: Access to execution variables
  */
 
+import { perfTime } from '../utils/perf';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { isApiError } from '../ApiResponse';
 import { IEntity } from '../IEntity';
@@ -1264,19 +1265,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   }
 
   async shell(): Promise<Shell | null> {
-    if (!this.shell_id) return null;
-    const w = (typeof window !== 'undefined' ? window : undefined) as { __shellNavT0?: number } | undefined;
-    const t0 = w?.__shellNavT0;
-    const stamp = (label: string, start: number) => {
-      if (t0 === undefined) return;
-      const now = performance.now();
-      // eslint-disable-next-line no-console
-      console.log(`[PERF] +${(now - t0).toFixed(0)}ms ${label} took ${(now - start).toFixed(1)}ms`);
-    };
-    const sGet = performance.now();
-    const result = await Shell.getById<Shell>(this.shell_id);
-    stamp('process.shell: Shell.getById', sGet);
-    return result;
+    // Captured, not read inside the closure: the guard's narrowing does not
+    // survive into a callback, and pinning the id at call time is what the
+    // straight-line version did anyway.
+    const shellId = this.shell_id;
+    if (!shellId) return null;
+    return perfTime('process.shell: Shell.getById', () => Shell.getById<Shell>(shellId));
   }
 
   /** The PTY connection for this process — delegates to the linked Shell. */

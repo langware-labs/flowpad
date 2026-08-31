@@ -1,3 +1,4 @@
+import { perfLog } from '../../utils/perf';
 import { dataContext } from '../../FlowSync/context';
 import type { OutputChunk } from '../../pty-sync/types.js';
 import type { OrphanEntry } from './ptyOrphanBuffer';
@@ -498,11 +499,7 @@ export class PtyConnection {
         throw new Error(`PTY ${targetPtyId} not found for shell ${this.shellId}`);
       }
 
-      const _t0 = (typeof window !== 'undefined' ? window : globalThis) as Record<string, unknown>;
-      if (_t0.__shellNavT0 !== undefined)
-        console.log(
-          `[PERF] +${(performance.now() - (_t0.__shellNavT0 as number)).toFixed(0)}ms PtyConnection.attach() attached=true (shell=${this.shellId.slice(0, 8)})`,
-        );
+      perfLog(`PtyConnection.attach() attached=true (shell=${this.shellId.slice(0, 8)})`);
 
       this._attachedPtyId = targetPtyId;
       this._attached = true;

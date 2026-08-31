@@ -1,3 +1,4 @@
+import { perfTime } from '../utils/perf';
 import { EventEmitter } from 'events';
 import { autorun, computed, makeObservable, observable, runInAction } from 'mobx';
 import { v4 as uuidv4 } from 'uuid';
@@ -768,32 +769,23 @@ class DataContext extends EventEmitter {
     // Per-step perf prints tied to the shell-nav T0 marker set by tab clicks.
     // Lets us see exactly which awaited step inside the context-set tail eats
     // the milliseconds (load vs loadHistory vs loadContextEntity).
-    const w = (typeof window !== 'undefined' ? window : undefined) as { __shellNavT0?: number } | undefined;
-    const t0 = w?.__shellNavT0;
-    const stamp = (label: string, start: number) => {
-      if (t0 === undefined) return;
-      const now = performance.now();
-      // eslint-disable-next-line no-console
-      console.log(`[PERF] +${(now - t0).toFixed(0)}ms ${label} took ${(now - start).toFixed(1)}ms`);
-    };
 
     let entity = dataManager.getByTypeIdFromCache(typeId);
     if (!entity) {
-      const s = performance.now();
-      entity = await this.loadContextEntity(typeId);
-      stamp(`_onAddedToContext(${_entityKey}) loadContextEntity (cache miss)`, s);
+      entity = await perfTime(`_onAddedToContext(${_entityKey}) loadContextEntity (cache miss)`, () =>
+        this.loadContextEntity(typeId),
+      );
     } else {
-      const s = performance.now();
-      await entity.load(); // tests mock flows never being fetched
-      stamp(`_onAddedToContext(${_entityKey}) entity.load (cache hit)`, s);
+      // tests mock flows never being fetched
+      await perfTime(`_onAddedToContext(${_entityKey}) entity.load (cache hit)`, () => entity!.load());
       // Check if cached entity has required expansions
       const entityConstructor = EntityFactory.getEntityConstructor(typeId.type);
       const expansionRequest = (entityConstructor as typeof APIEntity).getLoadingExpansions();
       if (!entity.isExpanded(expansionRequest)) {
-        const s2 = performance.now();
         // Entity exists in cache but doesn't have required expansions, reload it
-        await this.loadContextEntity(typeId);
-        stamp(`_onAddedToContext(${_entityKey}) loadContextEntity (re-expand)`, s2);
+        await perfTime(`_onAddedToContext(${_entityKey}) loadContextEntity (re-expand)`, () =>
+          this.loadContextEntity(typeId),
+        );
       }
     }
     if (_entityKey === ContextEntitiesEnum.CurrentWorkspaceTypeId && entity) {
@@ -813,9 +805,7 @@ class DataContext extends EventEmitter {
       if (!hasNodeProcess) {
         defineGlobal('process', entity);
       }
-      const s = performance.now();
-      await entity.loadHistory();
-      stamp(`_onAddedToContext(${_entityKey}) entity.loadHistory`, s);
+      await perfTime(`_onAddedToContext(${_entityKey}) entity.loadHistory`, () => entity.loadHistory());
     }
   }
 
