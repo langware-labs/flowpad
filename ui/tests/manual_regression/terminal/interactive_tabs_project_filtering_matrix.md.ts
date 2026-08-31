@@ -45,6 +45,8 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 
 interface OwnedInstance {
   name: string;
+  /** Backend port from `.env.<name>.local`, already validated against launcher.json. */
+  backendPort: number;
 }
 
 /**
@@ -107,46 +109,42 @@ function ownedInstance(): OwnedInstance {
       `Phase 11 restart preflight failed: '${name}' is not the matching live launcher-owned backend.`,
     );
   }
-  return { name };
+  return { name, backendPort };
 }
 
 async function restartOwnedInstance(instance: OwnedInstance): Promise<void> {
+  // `launch` scans UPWARD for a free port, so a port the dying backend still
+  // holds moves the instance — and this suite pins `API` at import, turning one
+  // restart into `ECONNREFUSED` for every test after it. Preventing that needs a
+  // fast backend-only restart that PRESERVES the DB (kill-then-wait blows the
+  // 60s test budget; `reset --backend-only` wipes the DB this test is proving
+  // survives), so until one exists we detect the drift rather than avoid it.
   execFileSync(path.join(REPO_ROOT, 'scripts', 'instance_ctl.sh'), ['launch', instance.name], {
     cwd: REPO_ROOT,
     stdio: 'pipe',
   });
-  // `launch` waits for the BACKEND, never the frontend — but it restarts vite
-  // too, and a cold vite has to re-transform the whole module graph before it
-  // serves. Reloading the page the moment the command returns therefore hit a
-  // dev server that was not listening yet: the document came back empty and
-  // `terminal-panels` never appeared, failing this test and cascading into
-  // every test after it (they all then talked to a backend the page had never
-  // reconnected to). Gate on the frontend actually answering, the same way
-  // instance_ctl gates on the backend. A readiness probe, not a timeout budget:
-  // it returns the instant the server responds.
+  // Re-run the same ownership preflight the suite opened with: it re-reads the
+  // env file and launcher.json and re-checks identity, PID liveness and port
+  // agreement. Only the comparison against the port we were PINNED to is new.
+  const relaunched = ownedInstance();
+  if (relaunched.backendPort !== instance.backendPort) {
+    throw new Error(
+      `'${instance.name}' came back on backend port ${relaunched.backendPort}, but this run is pinned to ${instance.backendPort}`,
+    );
+  }
+  // `launch` waits for the BACKEND only, but it restarts vite too. Reloading
+  // the moment it returns hit a dev server that was not listening yet, so
+  // `terminal-panels` never appeared and every later test talked to a backend
+  // the page had never reconnected to. Gate on the frontend answering — a
+  // readiness probe, not a budget: it returns the instant the server responds.
   const base = `http://localhost:${process.env.VITE_PORT ?? '4097'}`;
   const deadline = Date.now() + 90_000;
-  const ready = async (): Promise<boolean> => {
-    try {
-      // 1. vite is listening AND has served the shell. A 200 on `/` alone is
-      //    not enough: vite answers immediately and only then transforms the
-      //    module graph, so the first real load is cold.
-      if (!(await fetch(base)).ok) return false;
-      // 2. the backend is serving a real bootstrap again — `terminal-panels`
-      //    needs tab data, not just a document.
-      const boot = await fetch(`${API}/api/v1/graph/bootstrap`);
-      if (!boot.ok) return false;
-      return typeof (await boot.text()).match(/"types"/)?.[0] === 'string';
-    } catch {
-      return false;
-    }
-  };
   for (;;) {
-    if (await ready()) {
-      // 3. one discarded fetch of the app entry so vite has compiled the graph
-      //    before the reload the test actually measures.
-      await fetch(`${base}/dock/home`).catch(() => undefined);
-      return;
+    try {
+      const r = await fetch(base, { method: 'GET' });
+      if (r.ok) return;
+    } catch {
+      /* not listening yet */
     }
     if (Date.now() > deadline) throw new Error(`frontend ${base} did not come back after restarting '${instance.name}'`);
     await new Promise((r) => setTimeout(r, 250));
