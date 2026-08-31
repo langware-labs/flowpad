@@ -4,6 +4,7 @@ export * from './agent_hooks/index';
 export * from './process/index';
 export * from './alert';
 export * from './APIEntity';
+export { PERF_T0_KEY, markPerfT0, perfLog, perfTime } from './utils/perf';
 export * from './ApiResponse';
 export * from './apiStats';
 export * from './apps/index';
