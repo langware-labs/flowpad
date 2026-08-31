@@ -9,6 +9,8 @@ touching a real ``claude`` / ``copilot`` / ``codex`` binary.
 from __future__ import annotations
 
 import json
+import os
+
 from flow_sdk.schema.data_spec import DataSpec
 
 
@@ -56,10 +58,43 @@ def seed_harness_capability(monkeypatch, worker_type: str, bin_dir) -> None:
 
 
 def clear_harness_capability(monkeypatch, worker_type: str) -> None:
-    """Remove any discovered ``harness.<worker>.cli`` value (CLI not installed)."""
+    """Make this CLI *not installed* — no discovered value AND not on PATH.
+
+    Dropping the discovery entry is no longer enough on its own. Resolution falls
+    back to ``shutil.which`` when a kind was never swept, so on a developer's own
+    machine — where the real CLI usually IS installed — deleting the key alone
+    would resolve anyway and a test asserting absence would quietly stop
+    asserting it. Suppressing the executable by name keeps this helper's promise
+    true whatever the host has, and keeps the suppression narrow: every other
+    lookup still goes to the real ``which``.
+    """
+    import shutil
+
     from flow_sdk.core.capabilities import discovery
 
     monkeypatch.delitem(discovery._VALUES, f"harness.{worker_type}.cli", raising=False)
+
+    inner = shutil.which
+
+    def _which(cmd, mode=os.F_OK | os.X_OK, path=None):
+        if cmd == worker_type:
+            return None
+        return inner(cmd, mode, path)
+
+    monkeypatch.setattr(shutil, "which", _which)
+
+
+def write_fake_cli_stub(bin_dir, name: str):
+    """Write ``<bin_dir>/<name>`` as an executable stub; returns its path.
+
+    The one place a fake CLI is minted, so "what an installed CLI looks like"
+    (shebang, mode) has a single definition. Takes the directory rather than
+    naming one, because resolution tests need several (on PATH vs. discovered).
+    """
+    exe = bin_dir / name
+    exe.write_text("#!/bin/sh\n", encoding="utf-8")
+    exe.chmod(0o755)
+    return exe
 
 
 def make_fake_cli_bin(tmp_path, name: str):
@@ -68,7 +103,4 @@ def make_fake_cli_bin(tmp_path, name: str):
     that lives outside the backend's service PATH (e.g. under nvm)."""
     bin_dir = tmp_path / "nvm-bin"
     bin_dir.mkdir(exist_ok=True)
-    exe = bin_dir / name
-    exe.write_text("#!/bin/sh\n", encoding="utf-8")
-    exe.chmod(0o755)
-    return bin_dir, exe
+    return bin_dir, write_fake_cli_stub(bin_dir, name)

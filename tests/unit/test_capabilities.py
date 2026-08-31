@@ -637,10 +637,23 @@ def test_worker_path_env_prepends_discovered_folder(monkeypatch):
     assert env == {"PATH": "/discovered/bin:/usr/bin:/bin"}
 
 
-def test_worker_path_env_none_when_capability_absent():
+def test_worker_path_env_none_when_capability_absent(monkeypatch):
+    """Absent means absent everywhere — no discovered value AND not on PATH.
+
+    ``clear_harness_capability`` supplies both halves. An empty discovery dict is
+    no longer sufficient on its own: resolution falls back to ``shutil.which``,
+    so on a machine that has codex installed this would otherwise resolve and the
+    assertion would quietly stop asserting anything.
+    """
+    from tests.utils.fake_cli import clear_harness_capability
+
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_path_env
 
+    clear_harness_capability(monkeypatch, "codex")
     assert worker_path_env("codex") is None
+
+    # A SWEPT negative also wins over the PATH fallback — a sweep looked with the
+    # login-shell PATH and found nothing, which outranks what this process sees.
     set_capability_value(CapabilityValue(kind=CapabilityKind.CODEX_CLI.value, value=None, spec=DataSpec.parse("fs_ref")))
     assert worker_path_env("codex") is None
 

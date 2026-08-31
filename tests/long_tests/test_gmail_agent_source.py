@@ -133,9 +133,6 @@ async def assistant(live_backend, tmp_path):
     and two writers racing for the `compute_node:local` singleton hit
     ``UNIQUE constraint failed: entities.type_uname``. The instance owns them.
     """
-    from flow_sdk.core.capabilities.discovery import ensure_discovered
-
-    await ensure_discovered()
     process = await AgenticProcess(
         worker_type=WorkerType.CLAUDE_CODE,
         workdir=str(tmp_path),

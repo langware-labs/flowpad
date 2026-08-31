@@ -1087,16 +1087,24 @@ def worker_capability_kind(worker_type: str) -> str:
 
 
 def worker_bin_folder(worker_type: str) -> str | None:
-    """The discovered bin FOLDER of this worker's CLI, or ``None`` ⇔ not installed.
+    """This worker's CLI bin FOLDER, or ``None`` ⇔ not installed.
 
     The harness capability's value (RecordType.FOLDER, an FSRef dict) is the
     CLI's bin directory as a standard terminal would resolve it — recorded by
     capability discovery even when the backend's own service PATH (e.g. a
     desktop launchd/named-instance environment) does not contain it.
-    """
-    from flow_sdk.core.capabilities.discovery import get_capability_value
 
-    discovered = get_capability_value(worker_capability_kind(worker_type))
+    THE one place the whole agentic-process tree reads that value:
+    ``worker_path_env``, ``build_worker_spawn_env``,
+    ``resolve_worker_probe_context`` and ``AgenticProcess.is_installed`` all
+    come through here. It RESOLVES rather than merely reads
+    (``resolve_capability_value``), so a plain Python spawn works without a
+    discovery sweep having run in this process — which is why spawning needs
+    neither a live backend nor an ``ensure_discovered()`` handshake.
+    """
+    from flow_sdk.core.capabilities.discovery import resolve_capability_value
+
+    discovered = resolve_capability_value(worker_capability_kind(worker_type))
     if discovered is None or not isinstance(discovered.value, dict):
         return None
     folder = discovered.value.get("path")
@@ -1184,6 +1192,35 @@ async def run_worker_auth_probe(worker_type: str) -> WorkerAuthResult:
     return await asyncio.to_thread(probe_worker_auth, worker_type, path, env, Path.home(), copilot_home)
 
 
+def no_worker_message(worker_type: str) -> str:
+    """Why this spawn cannot happen, distinguishing the two cases that matter.
+
+    "codex is not installed" and "nothing is installed" call for different
+    actions, and the caller cannot tell us which it is: ``get_driver(None)``
+    resolves the DEFAULT vendor from ``FLOWPAD_DEFAULT_WORKER`` — a name, never
+    an availability — so a defaulted worker is indistinguishable from a chosen
+    one by the time we get here. Answer it from what actually resolves instead.
+    """
+    from flow_sdk.flowpad_types.vendors import VENDORS
+
+    # One `which` per vendor, and only ever here — the failure path. A hit is
+    # already memoized; a miss deliberately is not (see
+    # ``resolve_capability_value``), so a caller retrying a broken install
+    # re-probes each time. That is the price of letting an install done outside
+    # Flowpad be noticed without a restart.
+    installed = [v.key for v in VENDORS if worker_bin_folder(v.key) is not None]
+    if not installed:
+        known = ", ".join(v.key for v in VENDORS)
+        return (
+            f"no harness is installed — none of {known} was found on PATH or "
+            f"recorded by capability discovery. Install one, then retry."
+        )
+    return (
+        f"{worker_type} CLI not found — no {worker_capability_kind(worker_type)} "
+        f"installation discovered (installed: {', '.join(installed)})"
+    )
+
+
 def build_worker_spawn_env(
     worker_type: str,
     env_from_opts: dict[str, str],
@@ -1206,7 +1243,7 @@ def build_worker_spawn_env(
     if folder is None:
         raise WorkerSpawnError(
             worker_type,
-            f"{worker_type} CLI not found — no {worker_capability_kind(worker_type)} installation discovered",
+            no_worker_message(worker_type),
         )
     env = dict(os.environ if base_env is None else base_env)
     env.update(env_from_opts)
