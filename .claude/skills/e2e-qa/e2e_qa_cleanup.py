@@ -14,9 +14,11 @@ SAFETY (non-negotiable):
 - Only ever operates on the retired directory literally named
   ``flowpad_test_home`` under the OS temp dir. Any other target is refused.
 - NEVER globs or deletes the live per-process ``pytest-*`` roots.
-- Outside that legacy HOME, only directories whose names begin with the
-  reserved ``e2etest-`` prefix are removed from skill roots; all other real
-  user and launched-instance data is untouched.
+- Outside that legacy HOME, only assets whose names match a RESERVED TEST
+  PATTERN (``e2etest-`` prefix, or one of the retired generator families in
+  ``_LEGACY_JUNK``) are removed, and only from the four asset roots below
+  (skills/agents/workflows/whiteboards); all other real user and
+  launched-instance data is untouched.
 - NEVER kills processes. It is filesystem-only and safe to run any time no
   pytest process is mid-run.
 
@@ -29,6 +31,7 @@ Exit code 0 always (cleanup is best-effort and must never block the cycle).
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -97,42 +100,86 @@ def cleanup(dry_run: bool = False) -> int:
     return 0
 
 
-def _purge_e2etest_skills(dry_run: bool = False) -> int:
-    """Delete leftover ``e2etest-skill-*`` skill folders from real skill dirs.
+# Retired test-generator families. These predate the reserved ``e2etest-`` marker,
+# so no prefix sweep matches them and the tests that minted them are gone from the
+# tree — nothing would ever reap them again. Each pattern is anchored and paired
+# with a digit/index tail so it cannot match a hand-named user asset.
+#
+# TEMPORARY — do not extend. This is a finite backstop for junk that ALREADY exists
+# on developer machines; it cannot catch the next leak, and adding to it would be
+# treating the symptom. Every new live-entity test names its entities through
+# ``testEntityName`` (ui/tests/_cleanup.ts), which carries the ``e2etest-`` marker
+# the prefix sweep above already handles. Once these families are gone from every
+# machine that matters, delete this list — a name-pattern guess is strictly weaker
+# than the marker, and weaker still than asking the backend which rows have no
+# asset behind them.
+#
+# Sources, where still identifiable:
+#   scan_skill_* / index_skill_* / full_cycle_skill_* / byte_stats_skill
+#       -> ui/tests/api/fs_records_scan_search.test.ts (pre-``testEntityName``)
+#   fast-scan-* / fast-index-* / per-type-i-* / monotonic-scan-*
+#       -> tests/long_tests/test_progress_report_fast.py
+#   p<N>-<digits> / probe2-<digits>  -> ad-hoc probe runs
+_LEGACY_JUNK = (
+    r"(?:scan|index|full_cycle)_skill_\d+",
+    r"byte_stats_skill",
+    r"(?:fast-scan|fast-index|per-type-i|monotonic-scan)-\d+(?:-\d+)?",
+    r"p\d+-\d+(?:-\d+)?",
+    r"probe2-\d+",
+)
+_LEGACY_JUNK_RE = re.compile(r"^(?:" + "|".join(_LEGACY_JUNK) + r")$")
 
-    The api-tier leak tripwire (tests/_cleanup.ts) sweeps the ``skill`` type and
-    FAILS if any ``e2etest-*`` skill survives teardown. Prior runs that died
-    mid-test leave these folders behind in the REAL ``~/.claude/skills`` (and per
-    instance homes), where every backend re-indexes them on bootstrap — so the
-    tripwire keeps failing on artifacts this run never created. They are
-    unambiguous test artifacts (the ``e2etest-`` name prefix), safe to remove.
+# Asset roots a leaked live test can materialise into. ``skills`` holds folders;
+# ``agents`` holds ``<name>.md`` files; ``workflows`` holds ``<name>.js`` files;
+# ``whiteboards`` holds folders.
+_ASSET_ROOTS = ("skills", "agents", "workflows", "whiteboards")
 
-    Scoped HARD to dirs whose basename starts with ``e2etest-`` — never touches
-    a real user skill.
+
+def _is_test_artifact(name: str) -> bool:
+    """True iff ``name`` is unambiguously test-generated (never a user asset)."""
+    stem = Path(name).stem
+    return stem.startswith("e2etest-") or bool(_LEGACY_JUNK_RE.match(stem))
+
+
+def _purge_test_assets(dry_run: bool = False) -> int:
+    """Delete leftover test assets from the REAL asset roots.
+
+    The api/headless/hub tiers create entities through the production SDK against
+    a LIVE backend running under the real HOME, so a run that dies mid-test (or
+    predates its tier's ``installCleanup``) strands the on-disk asset. Every
+    backend then re-indexes it on bootstrap, which both reds the leak tripwire on
+    artifacts this run never created and pollutes the user's asset pickers and
+    the Claude Code skill listing.
+
+    Scoped HARD to names ``_is_test_artifact`` accepts — never a real user asset.
     """
-    roots = [Path.home() / ".claude" / "skills"]
+    homes = [Path.home()]
     inst = Path.home() / ".flow" / "instances"
     if inst.is_dir():
-        roots += [p / "home" / ".claude" / "skills" for p in inst.glob("*") if p.is_dir()]
+        homes += [p / "home" for p in inst.glob("*") if p.is_dir()]
+
+    roots = [h / ".claude" / sub for h in homes for sub in _ASSET_ROOTS]
 
     removed = 0
     for root in roots:
         if not root.is_dir():
             continue
-        for d in root.glob("e2etest-*"):
-            if not d.name.startswith("e2etest-"):  # belt-and-suspenders
+        for entry in sorted(root.iterdir()):
+            if not _is_test_artifact(entry.name):
                 continue
             if dry_run:
-                print(f"[e2e-qa-cleanup] would remove skill artifact {d}")
+                print(f"[e2e-qa-cleanup] would remove {entry}")
+            elif entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
             else:
-                shutil.rmtree(d, ignore_errors=True) if d.is_dir() else d.unlink(missing_ok=True)
+                entry.unlink(missing_ok=True)
             removed += 1
-    print(f"[e2e-qa-cleanup] {'would remove' if dry_run else 'removed'} {removed} e2etest-* skill artifact(s)")
+    print(f"[e2e-qa-cleanup] {'would remove' if dry_run else 'removed'} {removed} test asset(s)")
     return removed
 
 
 if __name__ == "__main__":
     dry = "--dry-run" in sys.argv
     rc = cleanup(dry_run=dry)
-    _purge_e2etest_skills(dry_run=dry)
+    _purge_test_assets(dry_run=dry)
     sys.exit(rc)

@@ -49,7 +49,7 @@
  *   const skill = trackForCleanup(await sdk.Skill.create(testEntityName('skill')));
  */
 
-import { afterAll, afterEach } from 'vitest';
+import { afterAll, afterEach, beforeEach } from 'vitest';
 import { disposeAllOwnedSdkRealms } from './_sdk_realm';
 
 /**
@@ -173,15 +173,39 @@ async function purgeOne(sdk: SdkLike, type: string, id: string): Promise<void> {
   }
 }
 
-/** Purge everything currently tracked. Clears the registry. */
-export async function purgeTracked(): Promise<void> {
-  if (_registry.length === 0) return;
+/**
+ * Where the CURRENT test's creates begin in `_registry`. Everything before it was
+ * tracked at FILE scope (a `beforeAll` fixture) and is shared by every test in the
+ * file, so `afterEach` must not touch it — draining the whole registry after test
+ * #1 deletes the fixture out from under tests #2..n, which then fail with 404s
+ * that look like product bugs. (That is exactly what happened to
+ * `api/compute_node_command_service.test.ts`, whose `beforeAll` tracks the
+ * ComputeNode all 11 tests share.) `afterAll` still does the full drain.
+ *
+ * ONE mark, not a stack: this protects fixtures created at FILE scope, which is
+ * every shape in the tree today. A fixture created in a NESTED `describe`'s own
+ * `beforeAll` is tracked after the outer mark is set, so the next `afterEach`
+ * would purge it — the same bug one level down. Make this a stack keyed to
+ * describe depth if such a file ever appears; a single number is enough until
+ * then, and the tiers run `singleThread` so there is no interleaving to reason
+ * about.
+ */
+let _testMark = 0;
+
+/** Purge entries tracked at or after `mark`. Removes them from the registry. */
+async function purgeTrackedFrom(mark: number): Promise<void> {
+  if (_registry.length <= mark) return;
   const sdk = await loadSdk();
-  const items = _registry.splice(0, _registry.length);
+  const items = _registry.splice(mark);
   if (!sdk) return; // no realm reachable (e.g. soft-skipped run) — nothing to purge
   for (const { type, id } of items) {
     await purgeOne(sdk, type, id);
   }
+}
+
+/** Purge everything currently tracked. Clears the registry. */
+export async function purgeTracked(): Promise<void> {
+  await purgeTrackedFrom(0);
 }
 
 type Row = { name?: string; title?: string; nodeName?: string; id?: string };
@@ -311,10 +335,15 @@ export async function assertNoLeaks(extraTypes: string[] = []): Promise<void> {
   const sdk = await loadSdk();
   if (!sdk) return;
   const leaked: string[] = [];
-  for (const type of sweepTypeSet(extraTypes)) {
-    for (const r of await listType(sdk, type)) {
+  // Listing is read-only and independent per type — fan out, same as
+  // `purgeRunScopedWith`. Serial awaits here cost one round trip per type in
+  // EVERY file's afterAll, which adds up across a 55-file tier.
+  const types = [...sweepTypeSet(extraTypes)];
+  const listings = await Promise.all(types.map((type) => listType(sdk, type)));
+  for (const [i, rows] of listings.entries()) {
+    for (const r of rows) {
       if (isOurRunEntity(labelOf(r))) {
-        leaked.push(`${type}:${labelOf(r)} (${r.id ?? '?'})`);
+        leaked.push(`${types[i]}:${labelOf(r)} (${r.id ?? '?'})`);
       }
     }
   }
@@ -334,8 +363,9 @@ let _tripwireInstalled = false;
  * Wire cleanup into the current test FILE (idempotent — hooks register once,
  * but every call's `sweepTypes` still accumulate, so a second install never
  * silently drops types). Call once from the tier's `_setup.ts`.
- *  - afterEach: purge everything tracked during that test (runs even if the
- *    test threw — guaranteed teardown on pass/fail).
+ *  - afterEach: purge what THAT test tracked (runs even if the test threw —
+ *    guaranteed teardown on pass/fail). File-scope `beforeAll` fixtures are left
+ *    alone until afterAll; see `_testMark`.
  *  - afterAll: run the leak sweep and FAIL the file if any marked entity
  *    survived (catches creates that bypassed the registry).
  */
@@ -344,8 +374,14 @@ export function installCleanup(opts: { sweepTypes?: string[] } = {}): void {
   if (_cleanupInstalled) return;
   _cleanupInstalled = true;
 
+  // Mark where this test's creates start, so `afterEach` purges only what the
+  // test itself made and leaves `beforeAll` fixtures alive for the whole file.
+  beforeEach(() => {
+    _testMark = _registry.length;
+  });
+
   afterEach(async () => {
-    await purgeTracked();
+    await purgeTrackedFrom(_testMark);
   });
 
   afterAll(async () => {
