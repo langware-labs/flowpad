@@ -51,6 +51,7 @@ class AssetKind:
 
     name: str
     layout: str  # "file" | "folder" — mirrors TypeInfo.main_layout
+    record_type: str  # the type it is INDEXED as — a skill folder is a skill
 
     def create(self, root: Path) -> Path:
         return write_doc(root) if self.layout == "file" else write_skill(root)
@@ -80,6 +81,6 @@ class AssetKind:
         return "renamed/SKILL.md" if renamed else "alpha/SKILL.md"
 
 
-DOC = AssetKind(name="doc", layout="file")
-SKILL = AssetKind(name="skill", layout="folder")
+DOC = AssetKind(name="doc", layout="file", record_type="markdown")
+SKILL = AssetKind(name="skill", layout="folder", record_type="skill")
 ASSET_KINDS = [DOC, SKILL]
