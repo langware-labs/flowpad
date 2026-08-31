@@ -16,7 +16,7 @@ import {
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
 import { EVENTS_VIEW_TYPES } from '@src/types/ViewType';
-import { getViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { getViewMode, rememberedSessionViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { CAPABILITY_PARAM, DockPointer, JOURNEY_PARAM, JOURNEY_STEP_PARAM } from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { getHistoryPosition } from './history-position-store';
@@ -343,9 +343,7 @@ export class NavigationActions {
     // `page=hub` (a desk factory would revert the page and land on the desk
     // home); the desk home is the app root. Both are pointers, so the branch is
     // a choice of destination rather than a choice of mechanism.
-    this.openDock(
-      this.here.page === PageId.HUB ? DockPointer.forHome().withPage(PageId.HUB) : DockPointer.root(),
-    );
+    this.openDock(this.here.page === PageId.HUB ? DockPointer.forHome().withPage(PageId.HUB) : DockPointer.root());
   }
 
   /** The journey shown where we are (or are going), or null. */
@@ -479,8 +477,20 @@ export class NavigationActions {
     // pointer, so stamping one now would both change the canonical home URL
     // (`/?viewMode=…`) and let the home out-rank the persisted preference —
     // which is what actually decides the mode there.
+    //
+    // A SESSION dock is the exception, and takes its own remembered mode
+    // instead: a session opens in the mode it was last seen in, so switching to
+    // Terminal in one chat no longer repaints every other chat you click into.
+    // Inheritance is still the fallback for a session with no memory yet (a new
+    // one, or one that predates the field) — it adopts the ambient mode and
+    // records it on load. Cache-only: a cold deep link has no entity to read
+    // here, and the loader's `applyProcessViewMode` covers that path.
     if (dock.viewMode === null && !dock.isRoot) {
-      const liveViewMode = NavigationActions.currentBrowserViewMode() ?? this.currentDock?.viewMode ?? null;
+      const liveViewMode =
+        rememberedSessionViewMode(dock) ??
+        NavigationActions.currentBrowserViewMode() ??
+        this.currentDock?.viewMode ??
+        null;
       if (liveViewMode) dock = dock.withViewMode(liveViewMode);
     }
 
@@ -524,7 +534,6 @@ export class NavigationActions {
 
     this.commitBrowserNavigation(targetDock, fullUrl, url);
   }
-
 
   /**
    * Build the absolute deep-link URL for a dock pointer without navigating.
