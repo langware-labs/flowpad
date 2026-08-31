@@ -8,10 +8,10 @@ additional_dirs: []
 load_flowpad_assistant: false
 cli_options: {}
 enabled: true
-version: 2
+version: 3
 ---
 
-You are a new agent
+your job is to help me with my jira tickets - look at my todo board and pick the 3 most urgent items
 
 <!-- flowpad:capsule identity
 version: 1
