@@ -45,6 +45,7 @@ import os
 import time
 from typing import AsyncIterator
 
+from flow_sdk import toplog
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.credential import (
     ensure_fresh_before_turn,
@@ -393,7 +394,9 @@ class ClaudeCLIStreamWorker(AgenticWorker):
             # when the CLI's own ``~/.claude/debug/`` copy had already been
             # pruned by its ``.last-cleanup`` pass. The cost is a small file
             # per turn; stderr stays empty (measured), so nothing extra is
-            # logged on the normal path.
+            # logged on the normal path. Per-turn vs per-session naming is the
+            # ``claude_debug_session_log`` toplog switch — see
+            # ``_turn_debug_file``.
             debug=True,
             debug_file=_turn_debug_file(opts_session_id),
             # verbose=True is auto-enabled by ClaudeAgentOptions when
@@ -557,6 +560,14 @@ DEBUG_LOG_RETENTION_SECONDS = 7 * 86400
 _DEBUG_PRUNE_INTERVAL_SECONDS = 3600.0
 _last_debug_prune = 0.0
 
+# Toplog switch for the debug-file granularity. OFF (the default) is one file
+# per TURN; turning the tag on reverts to one file per SESSION, the shape the
+# CLI itself uses. A toplog tag rather than a setting because this is a
+# debugging knob with the same lifecycle as a trace stream: flip it for the
+# session you're chasing, flip it back. It reads through ``toplog.is_on``, so
+# the master switch gates it too — with toplog disabled you always get per-turn.
+SESSION_DEBUG_LOG_TAG = "claude_debug_session_log"
+
 
 def _debug_dir():
     return get_instance_settings().logs_dir / "claude-cli-debug"
@@ -611,9 +622,18 @@ def _maybe_prune_debug_logs() -> None:
 def _turn_debug_file(session_id: str | None) -> str | None:
     """Path for this turn's ``--debug-file``, under the instance logs dir.
 
-    One file per TURN, not per session: the failure worth capturing is the
-    first turn after an idle gap, and the recovery turn follows ~30s later —
-    a session-keyed name would let that second turn clobber the evidence.
+    Default is one file per TURN, not per session: the failure worth capturing
+    is the first turn after an idle gap, and the recovery turn follows ~30s
+    later — a session-keyed name lets that second turn clobber the evidence.
+    That is why the slow-token-refresh investigation moved off session naming,
+    and why per-turn stays the default.
+
+    Turning the ``claude_debug_session_log`` toplog tag on restores the
+    session-keyed name (one file per session, every turn writing the same
+    path) for when you'd rather read one continuous stream than stitch a
+    directory of files together. It is read per turn, so flipping the tag —
+    from Python, the frontend, ``POST /api/v1/toplog/on``, or by editing
+    ``toplog.json`` — takes effect on the next turn without a restart.
 
     Returns ``None`` if the logs dir can't be resolved, in which case the CLI
     falls back to its own ``~/.claude/debug/`` (still better than nothing).
@@ -626,8 +646,11 @@ def _turn_debug_file(session_id: str | None) -> str | None:
     except Exception:
         logger.warning("could not resolve claude debug dir", exc_info=True)
         return None
+    name = session_id or "nosession"
+    if toplog.is_on(SESSION_DEBUG_LOG_TAG):
+        return str(logs_dir / f"{name}.txt")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")[:-3]
-    return str(logs_dir / f"{session_id or 'nosession'}-{stamp}.txt")
+    return str(logs_dir / f"{name}-{stamp}.txt")
 
 
 def _error(message: str) -> FlowData:
