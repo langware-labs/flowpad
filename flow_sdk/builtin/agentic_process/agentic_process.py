@@ -1276,36 +1276,26 @@ class AgenticProcess(Entity):
             raise ProcessError(status=result.status, session_id=result.session_id)
         return result
 
-    @staticmethod
-    async def _await_capability_discovery() -> None:
-        """Wait for the startup capability sweep when it's still in flight; a
-        failed sweep degrades to "not discovered" rather than raising."""
-        from flow_sdk.core.capabilities.discovery import ensure_discovered  # noqa: PLC0415
-
-        try:
-            await ensure_discovered()
-        except Exception:
-            logger.debug("capability discovery failed", exc_info=True)
-
     @classmethod
     async def is_installed(cls, worker_type: "WorkerType | str | None" = None) -> bool:
-        """Whether this worker's CLI was found by capability discovery.
+        """Whether this worker's CLI resolves — the same answer a spawn gets.
 
-        Reads the discovery dict (the same SSOT actual spawns use) — never a
-        second ``which``.
+        Goes through ``worker_bin_folder``, the one resolver every spawn path
+        uses, so this can never disagree with whether a spawn would succeed. It
+        no longer waits on a discovery sweep: resolution falls back to PATH on
+        its own, which is why this is immediate.
         """
         from flow_sdk.builtin.agentic_process.cli_drivers import worker_bin_folder  # noqa: PLC0415
 
-        await cls._await_capability_discovery()
         return worker_bin_folder(get_driver(worker_type).name) is not None
 
     @classmethod
     async def is_logged_in(cls, worker_type: "WorkerType | str | None" = None) -> "WorkerAuthResult":
         """Login state of this worker's CLI (NOT_INSTALLED / LOGGED_IN /
         LOGGED_OUT / UNKNOWN). The driver's ``auth_probe`` owns the install
-        gate; this facade only adds the discovery wait. Never raises;
-        "couldn't check" is UNKNOWN, not LOGGED_OUT."""
-        await cls._await_capability_discovery()
+        gate, and resolves the binary through the same lazy resolver, so there
+        is no discovery wait to add. Never raises; "couldn't check" is UNKNOWN,
+        not LOGGED_OUT."""
         return await get_driver(worker_type).auth_probe()
 
     @classmethod
@@ -1802,27 +1792,22 @@ class AgenticProcess(Entity):
                 # Spawn with the discovered harness capability: its value is
                 # the CLI's bin FOLDER (terminal-PATH resolution), prepended
                 # to PATH so argv[0] and `#!/usr/bin/env node` both resolve
-                # regardless of how this backend was launched. On a miss,
-                # re-discover once (covers the boot race and retry-after-
-                # install), then fail fast into the start_failure latch.
+                # regardless of how this backend was launched. Resolution is
+                # lazy and shared (``worker_bin_folder``), so there is nothing
+                # to re-discover here: a miss means the CLI is neither swept nor
+                # on PATH. Fail fast into the start_failure latch, with the same
+                # error type every other spawn path raises.
                 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+                    WorkerSpawnError,
+                    no_worker_message,
                     prepend_path_dir,
                     worker_bin_folder,
-                    worker_capability_kind,
                     worker_path_env,
                 )
 
-                capability_kind = worker_capability_kind(self.driver.name)
                 path_env = worker_path_env(self.driver.name)
                 if path_env is None:
-                    from flow_sdk.core.capabilities.discovery import run_discovery
-
-                    await run_discovery([capability_kind])
-                    path_env = worker_path_env(self.driver.name)
-                if path_env is None:
-                    raise RuntimeError(
-                        f"Command not found: '{spawn_argv[0]}' — no {capability_kind} installation discovered"
-                    )
+                    raise WorkerSpawnError(self.driver.name, no_worker_message(self.driver.name))
                 spawn_env = {**path_env, **spawn_env}  # explicit worker env wins
                 # …except the discovered bin folder stays first on PATH: the
                 # worker env's own PATH (apply_worker_env's venv pin) is built
@@ -3814,13 +3799,6 @@ class AgenticProcess(Entity):
             # instructions are materialized into process instruction assets.
             composed_prompt = self.driver.compose_prompt(message, self.get_agents_json())
             handler = StreamingResponseHandler()
-            # Block on the startup capability sweep if it's still in flight: the
-            # headless spawn env (build_worker_spawn_env) consumes the discovered
-            # harness bin folder and raises "CLI not found" on a miss WITHOUT the
-            # re-discover fallback the PTY-direct path has. A prompt arriving
-            # within the sweep window (env-probe's `zsh -ilc` can take seconds)
-            # would otherwise fail spuriously on a fresh backend.
-            await self._await_capability_discovery()
             worker = self.driver.stream_worker(self)
             register_prompt_worker(self.id, worker)
         except BaseException:

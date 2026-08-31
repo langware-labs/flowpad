@@ -72,22 +72,27 @@ class CliCapabilityRunner(CapabilityRunner):
         # worker_type) rather than parsed back out of the kind string.
         self.worker_type = worker_type
 
-    async def discover(self, probe: dict) -> CapabilityValue:
-        """Value = the CLI's bin FOLDER (FSRef dict), resolved by the sweep's
-        env probe against the terminal PATH (PATH order = tie-break). The
-        folder — not the binary — is the value: prepended to a spawn PATH it
-        resolves both argv[0] and the ``#!/usr/bin/env node`` shebang."""
+    def value_from_executable_path(self, resolved: str | None, *, source: str = "the terminal PATH") -> CapabilityValue:
+        """This capability's typed value for an already-resolved executable path.
+
+        Split out of :meth:`discover` and deliberately SYNC: the work is a
+        dirname and an ``FSRef``, and the spawn path needs to build the same
+        value without a sweep and without an event loop (see
+        ``discovery.resolve_capability_value``). One construction, so a lazily
+        resolved value and a swept one are the same shape by definition.
+
+        ``source`` only names where the path came from, for the message.
+        """
         import os
 
         from flow_sdk.fs_store.fs_ref import FSRef
 
-        resolved = (probe.get("executables") or {}).get(self.executable)
         if not resolved:
             return CapabilityValue(
                 kind=self.spec.kind,
                 value=None,
                 spec=self.spec.value_spec,
-                message=f"{self.executable} CLI was not found on the terminal PATH.",
+                message=f"{self.executable} CLI was not found on {source}.",
             )
         folder = os.path.dirname(resolved)
         return CapabilityValue(
@@ -96,6 +101,13 @@ class CliCapabilityRunner(CapabilityRunner):
             spec=self.spec.value_spec,
             message=f"{self.executable} CLI found in {folder}.",
         )
+
+    async def discover(self, probe: dict) -> CapabilityValue:
+        """Value = the CLI's bin FOLDER (FSRef dict), resolved by the sweep's
+        env probe against the terminal PATH (PATH order = tie-break). The
+        folder — not the binary — is the value: prepended to a spawn PATH it
+        resolves both argv[0] and the ``#!/usr/bin/env node`` shebang."""
+        return self.value_from_executable_path((probe.get("executables") or {}).get(self.executable))
 
     def _discovered_folder(self) -> str | None:
         """The discovered bin folder from the capability value (None = absent)."""

@@ -219,6 +219,31 @@ def pytest_collection_modifyitems(items):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_capability_discovery():
+    """Keep the process-global capability dict from leaking between tests.
+
+    ``discovery._VALUES`` is module state for the whole process, and resolution
+    now MEMOIZES what it finds (a CLI resolved from PATH is recorded so it is
+    probed once). That is right in production and wrong across tests: a test
+    that resolves ``claude`` would leave it discovered for every test after it,
+    so a later test asserting "not installed" would pass or fail on ordering.
+    ``monkeypatch`` cannot cover it — the writes go through
+    ``set_capability_value``, not through a patched attribute.
+
+    Snapshot and restore; a dict copy per test is far cheaper than an
+    order-dependent flake.
+    """
+    from flow_sdk.core.capabilities import discovery as _discovery
+
+    before = dict(_discovery._VALUES)
+    try:
+        yield
+    finally:
+        _discovery._VALUES.clear()
+        _discovery._VALUES.update(before)
+
+
+@pytest.fixture(autouse=True)
 def _restore_main_thread_event_loop():
     """Keep the main thread's event-loop slot usable across the whole run.
 
