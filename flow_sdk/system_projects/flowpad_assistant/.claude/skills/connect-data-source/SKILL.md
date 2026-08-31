@@ -59,7 +59,7 @@ connect request.
 `status`, `health` and `last_synced_at`. Do not verify, poll or change anything.
 If one looks unhealthy, offer `debug` — do not start it.
 
-## The five gates
+## The six gates
 
 Every mode ends by making these true, in order, and **stops at the first that
 fails** with what the user must do:
@@ -70,6 +70,7 @@ fails** with what the user must do:
 | **connect** | The row exists, a read-back confirms every field applied, and `verify` is `ready` (or names what a human must do) |
 | **test** | **Records actually landed** — `observe` returns `items`, or `empty_but_healthy` with the window explained |
 | **use** | The content is findable — `flow record search`, or the reflected file opens |
+| **declare** | The run's output is registered — `flow artifact entity data_source-<id>` exits `0`. After the test gate, never before |
 | **view** | `flow show view data-sources` and the card is in the listing |
 
 ## Reference
@@ -77,6 +78,7 @@ fails** with what the user must do:
 | When you need to… | Load |
 | --- | --- |
 | turn a person's words into a provider + config | `references/mapping.md` |
+| a mail/agent source whose fetch is a worker — its budgets, and why its sync reports nothing | `references/process-sdk.md` |
 | run any mechanic — specs, create, verify, poll, observe, snapshot | `scripts/source_ctl.py` |
 | sample items, create a dataset, promote, annotate, snapshot counts | `scripts/dataset_ctl.py` |
 | the gate-safe transport both scripts share (never call it directly) | `scripts/_ctl_common.py` |

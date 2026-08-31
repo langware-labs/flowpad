@@ -1,7 +1,14 @@
 ---
 id: 63709c7b-005d-475f-b395-2460b0759587
 name: decker
-description: Build slide-deck templates and generate full presentation decks from
+description: >-
+  Builds reusable slide-deck templates and generates full presentation decks from
+  them. Use whenever the user asks for slides, a deck, a presentation, a slideshow,
+  a pitch deck or a keynote — including "make me a presentation about X" — or to
+  restyle, repair or extend an existing deck template. Produces one self-contained
+  HTML deck, presented with `flow show file`. NOT for a standalone HTML page, report
+  or chart (html-builder), or an app needing a dev server or database
+  (web-app-builder).
 tags: ''
 allowed-tools: ''
 version: 2

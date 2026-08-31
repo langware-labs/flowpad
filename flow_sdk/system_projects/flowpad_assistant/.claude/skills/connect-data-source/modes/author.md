@@ -23,8 +23,11 @@ folder asset, not SDK code — nothing is edited in `flow_sdk`.
 ```
 
 The runtime is derived from the folder, never declared: `fetch.py` ⇒ script,
-`FETCH.md` ⇒ agent, **both ⇒ a load error**, neither ⇒ a builtin resolved by
-`name`. Read `docs/data-management/data-source-asset.md` for the manifest
+neither ⇒ a builtin resolved by `name`. `FETCH.md` is **reserved and refused at
+load** — a folder carrying one indexes as a valid spec and then fails every poll,
+so write `fetch.py`. A source that should fetch through a worker is not authored
+at all: it is the shipped `agent` transport, configured per
+`references/mapping.md`. Read `docs/data-management/data-source-asset.md` for the manifest
 rules before writing one; the ones that bite:
 
 - `name` must not collide with an installed source — a collision is refused and

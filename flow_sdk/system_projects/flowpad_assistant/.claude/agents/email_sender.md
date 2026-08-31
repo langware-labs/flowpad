@@ -88,23 +88,25 @@ run, **using the absolute CLI path given in your run details**:
 Run it. Do not check first whether the command exists — it does, and `--help`
 listings and greps have given false negatives here.
 
-The object must be exactly:
+The object must be exactly this — the names are the row's own, and the write
+route validates against `SourceItemSpec`, which forbids unknown keys. The
+pre-rename names `source_id`, `stream_key` and `title` are rejected outright:
 
 | field | value |
 | --- | --- |
-| `source_id` | the data-source id given below, verbatim |
+| `data_source_id` | the data-source id given below, verbatim |
 | `provider` | the provider given below, verbatim |
 | `kind` | `content.message.email` |
-| `stream_key` | `SENT` |
+| `segment_key` | `SENT` |
 | `external_id` | **the provider's own id for the message you just sent**, copied exactly |
-| `title` | the subject you sent under |
+| `name` | the subject you sent under |
 | `body` | the message body, verbatim — the same text you sent |
 | `author_display` | the account you sent from |
 | `author_external_id` | the email address you sent from |
 | `occurred_at` | the send time as ISO-8601 |
 | `thread_key` | the thread id the message landed in |
 
-`stream_key` is `SENT`, not the mailbox you read. That is what keeps this record
+`segment_key` is `SENT`, not the mailbox you read. That is what keeps this record
 from ever colliding with a later fetch of the inbox.
 
 `external_id` must be the id of the message **you created**, not the one you
