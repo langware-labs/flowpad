@@ -19,6 +19,7 @@ import { appendUploadedFileRefs } from '@src/utils/upload-to-input-dir';
 import { useLingui } from '@lingui/react/macro';
 import { useCallback } from 'react';
 import { systemSubagentRef, systemVibeKindSubagentRefs } from './vibe-personas';
+import { chatTargetForProject } from '@src/lib/chat-target';
 import { VIBE_MODEL_DEFAULT, type VibeModelTier } from './vibe-model-select';
 import type { WorkerType } from '@src/components/workers/worker-types';
 
@@ -43,18 +44,6 @@ import type { WorkerType } from '@src/components/workers/worker-types';
 // it materialized as a nameless "you are the 'agent' agent".
 /** Minimal navigation surface the launcher needs (from useDockNavigation). */
 type OpenShell = { openShellProcess: (procId: string, opts?: { viewMode?: ViewMode }) => void };
-
-/**
- * The `target_typeid_str` every project-scoped vibe chat session is keyed to.
- *
- * The project's id-based TypeId — NOT `project.typeId`, which is the uname form
- * `project-@local`. Every producer AND consumer of a vibe chat target must go
- * through here: the string has to match exactly, or two surfaces that mean the
- * same session key it differently and each sees an empty history.
- */
-export function vibeChatTargetForProject(projectId: string): string {
-  return new TypeId(Project.type, projectId).toString();
-}
 
 /**
  * Ride the SDK-shipped `vibe` persona on a process so the driver's directive
@@ -128,7 +117,7 @@ export async function createVibeProcessForProject(opts: {
   workerType?: WorkerType;
 }): Promise<AgenticProcess> {
   const { projectId, workdir, targetVfsPath, navigation, open = true, model = VIBE_MODEL_DEFAULT, workerType } = opts;
-  const target = targetVfsPath ?? vibeChatTargetForProject(projectId);
+  const target = targetVfsPath ?? chatTargetForProject(projectId);
 
   const computeNode = await ComputeNode.getById('@local');
   if (!computeNode) throw new Error('No local compute node');

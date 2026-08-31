@@ -37,7 +37,7 @@ import {
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
 import { buildShellRedirectUrl, detectLayout, DockPointer } from '@src/navigation';
-import { ViewMode } from '@src/contexts/view-mode-context';
+import { applyProcessViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { activeDisplayDock } from '@src/navigation/open-active-display';
 
 /**
@@ -364,7 +364,13 @@ async function routeProcessPointer(
   await reconcileProcessScope(processId, requestPath, carry);
 
   try {
-    await loadProcess(processId);
+    const { process } = await loadProcess(processId);
+    // Per-session mode memory, applied AFTER loadProcess wrote
+    // CurrentProcessTypeId — same ordering rule as `applyProjectViewMode`, so
+    // the session being stamped is the one just loaded and not its predecessor.
+    // A no-op when the URL names a mode: that one already outranks every
+    // projection, and `useDockViewModeOverrideSync` records it on mount.
+    applyProcessViewMode(process, carry?.viewMode ?? null);
     // Successful load — clear any prior runtime-error banner.
     dataContext.setTerminalRuntimeError(null);
     // Restore AFTER the load: the process is in cache, and the scope has already
