@@ -63,7 +63,11 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
   // launching into THAT would open the session in the vendor's repo.
   const { project: activeProject } = useProject();
   const { launch, busyId } = useAgentLauncher();
-  const using = busyId === agent?.id;
+  // Covers the pre-launch write flush too, so the button stays busy for the
+  // WHOLE operation — `busyId` alone leaves it clickable during the flush,
+  // and every click mints a fresh session.
+  const [flushing, setFlushing] = useState(false);
+  const using = flushing || busyId === agent?.id;
 
   useEffect(() => {
     setTitle(agent?.title ?? '');
@@ -130,6 +134,24 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
     },
     [save],
   );
+
+  /** Launch only once the pending field write has landed.
+   *
+   * Clicking Use blurs the focused field first, so `commit` has already
+   * queued the system-prompt save — but it queues it fire-and-forget, and
+   * `use` reads the agent ROW on the backend. Without this await the launch
+   * races the write and can open the session on the pre-edit persona.
+   * `writeQueueRef` is the same tail `save` chains onto, so awaiting it
+   * drains every queued field, not just the prompt. */
+  const handleUse = useCallback(async () => {
+    setFlushing(true);
+    try {
+      await writeQueueRef.current;
+      await launch(agent, activeProject?.id ?? null);
+    } finally {
+      setFlushing(false);
+    }
+  }, [agent, activeProject?.id, launch]);
 
   const identityKey = agent.name || agent.id;
   const ringColor = colorForIdentityKey(identityKey);
@@ -219,7 +241,7 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
           <Button
             size="sm"
             disabled={!agent.enabled || using}
-            onClick={() => void launch(agent, activeProject?.id ?? null)}
+            onClick={() => void handleUse()}
             data-testid="agent-use"
           >
             {using ? (
