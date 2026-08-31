@@ -8,7 +8,7 @@ The pipeline is the same for every record type:
 2. **Materialize** the record on disk at the location the schema's `creation.location` points to.
 3. **Index** that path with `flow record index <path>` so the indexer parses + persists it.
 4. (Optional) **Open** the new record: in standard assistant mode use
-   [`navigate.md`](navigate.md); in Vibe mode use `flow show entity <typeid>`
+   the `flowpad-navigation` skill — `flow show entity <typeid>` is the default in every mode
    so the result appears in the active display pane.
 
 Never call backend APIs directly, never edit the SQLite DB, never write outside the documented `creation.location` — the indexer is the single chokepoint.
@@ -53,7 +53,7 @@ Returns:
       "location": "<project_cwd>/tasks/<safe-title>/manifest.json",
       "manifest_fields": { "task_id": "...", "name": "...", "status": "..." },
       "example": { "task_id": "...", "name": "...", "status": "to_do" },
-      "after_index": "Resulting TypeId is `task-<task_id>` — pass it to `flow navigate entity`."
+      "after_index": "Resulting TypeId is `task-<task_id>` — pass it to `flow show entity`."
     }
   }
 }
@@ -68,7 +68,7 @@ Read `creation.location` literally. Tokens like `<project_cwd>`, `<safe-title>` 
 - `<project_cwd>` — the user's **current project** directory. Resolve it from `flow context list` → `CurrentProjectPath`, and write the record there. Do NOT assume your shell's `pwd` is the right place: as the Flowpad Assistant you run from the system assistant project, not the project the user is looking at, so `pwd` would put the record in the wrong project. Only fall back to `pwd` when `CurrentProjectPath` is absent (no active project). The indexer associates the record with whichever project's directory the file lives under, so writing under `CurrentProjectPath` is what puts it in the right project — no extra index flag needed.
 - `<safe-title>` — slugify the user's title (lowercase, hyphens, ascii-only).
 
-For any UUID-shaped field (`task_id`, `id`, …) generate a fresh v4 UUID yourself and remember it — that becomes the entity id, and you'll use it to navigate. Use `python3 -c "import uuid; print(uuid.uuid4())"` if you do not have one mentally.
+For any UUID-shaped field (`task_id`, `id`, …) generate a fresh v4 UUID yourself and remember it — that becomes the entity id, and you'll use it to open the record. Use `python3 -c "import uuid; print(uuid.uuid4())"` if you do not have one mentally.
 
 Use the `Write` tool to create the manifest. Match the example shape from `creation.example`. Required fields come from `manifest_fields`.
 
@@ -90,9 +90,9 @@ Always pass `--types` when you know the type — it scopes parsing/upsert to you
 
 ## Step 4 — open the result (optional)
 
-The new TypeId is `<type>-<uid_field_value>` — for tasks that's `task-<task_id>`, for skills it's `skill-<skill_id>`, etc. The `after_index` hint in `flow schema info` tells you the exact form. Pass it to `flow navigate entity <typeid>` per [`navigate.md`](navigate.md).
+The new TypeId is `<type>-<uid_field_value>` — for tasks that's `task-<task_id>`, for skills it's `skill-<skill_id>`, etc. The `after_index` hint in `flow schema info` tells you the exact form. Pass it to `flow show entity <typeid>` per the `flowpad-navigation` skill.
 
-When you are running as the Vibe sub-agent, do not use `flow navigate`; use
+`flow show` is the default in every mode; use
 `flow show entity <typeid>` instead so the entity opens in the display pane.
 
 ## Worked example — create a task and open it
@@ -117,9 +117,9 @@ JSON
 # 3. Index. Scope to the type.
 flow record index "$(pwd)/tasks/release-notes-0.2.9/manifest.json" --types task
 
-# 4. Open it — Vibe/Display session uses `flow show`; standard mode uses `flow navigate`.
+# 4. Open it — `flow show` in every mode (pins the display pane, else opens a tab).
 flow show entity "task-$TASK_ID"        # vibe/creator: into the active display pane
-# flow navigate entity "task-$TASK_ID"  # standard assistant: moves the user's browser tab
+# flow navigate entity "task-$TASK_ID"  # ONLY on an explicit "take me there"
 ```
 
 Do not write a long-form summary at the end — a one-line confirmation ("Created task `task-…` and opened it") is enough.
@@ -192,7 +192,7 @@ Fixed rules — do not deviate:
 - **Never pass your own `id`.** Leave `id=None`; `save()` mints a policy-valid UUID. It is **deterministic (v5)** when derivable from the fields, so re-running with identical values upserts the **same** record (same TypeId) rather than creating a new one — change a field if you want a distinct record.
 - **Set only fields the model declares.** Unknown kwargs are silently dropped, never persisted — so a typo'd or wrong-type-for-this-type field won't error, it just won't save.
 - **`save()` writes the file; `await sync_to_db()` writes the DB.** Run both so the app's lists/search see it; run only `save()` if you just need `metadata.json`.
-- **Done = the Step-2 assert printed `OK created+verified …`.** The TypeId is `<TYPE>-<rec.id>`; open it only if the user asked — into a Vibe/Display session use `flow show entity <typeid>`, in standard mode use `flow navigate entity <typeid>` per [`navigate.md`](navigate.md).
+- **Done = the Step-2 assert printed `OK created+verified …`.** The TypeId is `<TYPE>-<rec.id>`; open it only if the user asked — `flow show entity <typeid>` per the `flowpad-navigation` skill.
 - **Ignore the benign `VIRTUAL_ENV … does not match … will be ignored` uv warning** — `uv run` uses the project's `.venv` regardless; it is not an error.
 
 ### Step 3 — link the record to the current process (optional)
