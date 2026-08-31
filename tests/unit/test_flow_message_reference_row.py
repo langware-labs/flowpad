@@ -34,11 +34,14 @@ def _fm(**kw) -> FlowMessage:
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_save_blanks_text_on_a_reference_row():
-    # The referenced item deliberately does not exist: hydration (when it
-    # lands) stitches nothing for a missing item, so this pin stays valid.
+    # The referenced item deliberately does not exist: hydration stitches
+    # nothing for a missing item, so the stored-blank assertion stays valid.
     fm = _fm(source_item_id=str(uuid.uuid4()))
     await fm.save(notify=False)
-    assert fm.text == "", "save() must blank text on a reference row"
+    # Blank-AROUND, not blank-forever: the write persists "" but the live
+    # instance keeps what it held — that is what lets materialize emit the
+    # read shape without re-hydrating.
+    assert fm.text == "a body that must not be persisted"
 
     stored = await FlowMessage.get_one({"id": fm.id})
     assert stored is not None

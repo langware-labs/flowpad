@@ -2349,21 +2349,32 @@ async def inbox_search() -> ApiResponse:
             return ApiSuccessResponse(data={"conversation_ids": []})
         like = f"%{needle}%"
 
+        import asyncio  # noqa: PLC0415
+
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
-        items = await SourceItem.get_all(
-            QueryFilter(
-                match=ExpressionNode(
-                    op=QueryOp.OR,
-                    operands=[
-                        ExpressionNode(op=QueryOp.LIKE, operands=["body", like]),
-                        ExpressionNode(op=QueryOp.LIKE, operands=["name", like]),
-                    ],
+        # The two lanes are independent — run them together.
+        items, native = await asyncio.gather(
+            SourceItem.get_all(
+                QueryFilter(
+                    match=ExpressionNode(
+                        op=QueryOp.OR,
+                        operands=[
+                            ExpressionNode(op=QueryOp.LIKE, operands=["body", like]),
+                            ExpressionNode(op=QueryOp.LIKE, operands=["name", like]),
+                        ],
+                    )
                 )
-            )
+            ),
+            FlowMessage.get_all(
+                QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=["text", like])),
+                hydrate=False,
+            ),
         )
-        conversation_ids: set[str] = set()
+        conversation_ids: set[str] = {
+            str(m.conversation_id) for m in native if m.conversation_id
+        }
         if items:
             refs = await FlowMessage.get_all(
                 QueryFilter(
@@ -2375,12 +2386,6 @@ async def inbox_search() -> ApiResponse:
                 hydrate=False,
             )
             conversation_ids |= {str(m.conversation_id) for m in refs if m.conversation_id}
-
-        native = await FlowMessage.get_all(
-            QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=["text", like])),
-            hydrate=False,
-        )
-        conversation_ids |= {str(m.conversation_id) for m in native if m.conversation_id}
         return ApiSuccessResponse(data={"conversation_ids": sorted(conversation_ids)})
     except Exception as e:
         logger.error("[flow_message_action] inbox-search error: %s", e, exc_info=True)

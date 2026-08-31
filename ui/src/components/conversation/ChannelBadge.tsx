@@ -1,8 +1,6 @@
 import { isAddressable, type ICloudOrigin } from '@sdk';
 import { useChannelAttribution } from './channel-attribution';
 
-export { channelLabel } from './channel-attribution';
-
 /**
  * The channel mark on a message that CACHES a cloud record.
  *
@@ -17,6 +15,7 @@ export { channelLabel } from './channel-attribution';
 export function ChannelBadge({ origin }: { origin: ICloudOrigin | null | undefined }) {
   const { attributionFor } = useChannelAttribution();
   // Internal messages get no icon — the whole point of `origin` being nullable.
+  if (!origin?.kind) return null;
   const attribution = attributionFor(origin);
   if (!attribution) return null;
 
@@ -43,7 +42,7 @@ export function ChannelBadge({ origin }: { origin: ICloudOrigin | null | undefin
   }
   return (
     <a
-      href={origin!.url}
+      href={origin.url}
       target="_blank"
       rel="noreferrer noopener"
       data-testid="channel-badge"
