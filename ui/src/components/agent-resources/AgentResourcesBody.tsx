@@ -10,6 +10,7 @@ import { useAgentSkillsWiring } from './useAgentSkillsWiring';
 import type { AgentDocument } from './useAgentDocument';
 import { useProjectDocs } from './useProjectDocs';
 import { useWirableSkills } from './useWirableSkills';
+import { useMcpCapabilities } from './useMcpCapabilities';
 
 /** Muted one-liner for a section with nothing in it. */
 function Empty({ children }: { children: ReactNode }) {
@@ -60,6 +61,46 @@ function ResourceRow({
 }
 
 /**
+ * An MCP server row.
+ *
+ * Read-only, unlike the other sections: `Agent.mcp_servers` is typed
+ * `list[TypeId]` on the backend, and a capability's id identifies the
+ * CAPABILITY, not the server. Writing it would put a `capability-<uuid>` where
+ * an `mcp_server-<uuid>` belongs, and the `mcp_server` type has no entity class
+ * to mint one from. Listing is honest today; the checkbox lands when the id
+ * question is settled.
+ */
+function McpRow({
+  icon: Icon,
+  label,
+  workerType,
+  hint,
+  testId,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  workerType: string;
+  hint?: string;
+  testId: string;
+}) {
+  return (
+    <div
+      className="flex items-center gap-2 px-2 py-1.5 text-sm text-muted-foreground"
+      title={hint ? `${hint} — ${workerType}` : label}
+      data-testid={testId}
+    >
+      {/* Aligns the label with the checkbox rows above it. */}
+      <span className="h-3.5 w-3.5 flex-shrink-0" aria-hidden />
+      <Icon className="h-3.5 w-3.5 flex-shrink-0" />
+      <span className="truncate">{label}</span>
+      {workerType && (
+        <span className="ms-auto flex-shrink-0 truncate text-[10px] text-muted-foreground/70">{workerType}</span>
+      )}
+    </div>
+  );
+}
+
+/**
  * The four-section body of the agent-resources navigator.
  *
  * Only Skills persists (into `agent.skills`). Data sources and Docs keep their
@@ -73,6 +114,7 @@ export function AgentResourcesBody({ doc }: { doc: AgentDocument }) {
 
   const { specs, isLoading: specsLoading } = useSourceSpecs();
   const { skills, isLoading: skillsLoading } = useWirableSkills();
+  const { servers: mcpServers, isLoading: mcpLoading } = useMcpCapabilities();
   const { docs, isLoading: docsLoading } = useProjectDocs();
   const { declared, pendingId, toggle } = useAgentSkillsWiring(doc);
 
@@ -89,6 +131,8 @@ export function AgentResourcesBody({ doc }: { doc: AgentDocument }) {
 
   const skillIcon = iconForType(Skill.type);
   const docIcon = iconForType(Markdown.type);
+  // Generic fallback glyph for a capability row that carries none of its own.
+  const mcpIcon = lucideByName('Plug');
 
   // One row per source NAME, not per spec row. `DataSourceSpec` has derived
   // (path-based) identity, so every checkout of the repo on this machine mints
@@ -153,13 +197,29 @@ export function AgentResourcesBody({ doc }: { doc: AgentDocument }) {
       <NavigatorSection
         id="mcp-servers"
         label={t`MCP servers`}
-        itemCount={0}
+        isLoading={mcpLoading}
+        itemCount={mcpServers.length}
         emptyState={
           <Empty>
             <Trans>No MCP servers found</Trans>
           </Empty>
         }
-      />
+      >
+        {mcpServers.map(({ capability, service, workerType }) => (
+          <McpRow
+            key={capability.kind}
+            // The capability's own glyph when the backend gave it one, else the
+            // type glyph — never a hardcoded per-server icon.
+            icon={capability.icon ? lucideByName(capability.icon) : mcpIcon}
+            label={service}
+            // The config OWNER, which is not necessarily a runtime Flowpad can
+            // spawn — worth showing, because two rows can differ only by this.
+            workerType={workerType}
+            hint={capability.name}
+            testId={`agent-resource-mcp-${capability.kind}`}
+          />
+        ))}
+      </NavigatorSection>
 
       <NavigatorSection
         id="skills"
