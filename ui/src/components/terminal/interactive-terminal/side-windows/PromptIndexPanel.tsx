@@ -35,10 +35,16 @@ interface PromptIndexPanelProps {
 
 /**
  * "System / Claude-machinery" prompts are XML-tag wrapper entries injected by the
- * harness rather than typed by the user — e.g. <task-notification>, <command-message>,
- * <command-name>, <command-args>, <system-reminder>, <local-command-stdout>. They are
- * noise in the human prompt history, so the standard list hides them. The advanced-only
- * "Show all" toggle reveals them, where they're marked with a SYS badge.
+ * harness rather than typed by the user — e.g. <task-notification>, <system-reminder>,
+ * <local-command-stdout>. They are noise in the human prompt history, so the standard
+ * list hides them. The advanced-only "Show all" toggle reveals them, where they're
+ * marked with a SYS badge.
+ *
+ * A typed slash command is NOT one of these. `promptDisplay.ts` has already rendered
+ * Claude's <command-…> envelope back to `/rca <args>` — and skipped the is_meta row
+ * holding the expanded SKILL.md — before entries reach this panel, so the command
+ * lands here as ordinary human text. That is display only; the transcript still
+ * stores both rows verbatim.
  */
 const SYSTEM_PROMPT_RE = /^\s*<([a-zA-Z][\w-]*)\b[^>]*>/;
 export function isSystemPrompt(text: string): boolean {
@@ -76,7 +82,7 @@ const PromptItem: React.FC<{
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(entry.text).then(() => {
+    void navigator.clipboard.writeText(entry.text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });
@@ -223,12 +229,14 @@ export const PromptIndexPanel: React.FC<PromptIndexPanelProps> = ({
       <div className="flex items-center justify-between gap-1.5 border-b px-3 py-2">
         <span className="flex items-center gap-1.5">
           <MessageSquare className="h-3.5 w-3.5 text-lime-400" />
-          <span className="text-sm font-medium"><Trans>Prompts ({visiblePrompts.length})</Trans></span>
+          <span className="text-sm font-medium">
+            <Trans>Prompts ({visiblePrompts.length})</Trans>
+          </span>
         </span>
         <div className="flex items-center gap-2">
           {isAdvanced && (
             <label
-              className="flex cursor-pointer items-center gap-1 text-[10px] text-muted-foreground select-none"
+              className="flex cursor-pointer select-none items-center gap-1 text-[10px] text-muted-foreground"
               title={t`Show harness-generated entries (SYS) hidden from the standard list`}
             >
               <Checkbox
@@ -237,21 +245,24 @@ export const PromptIndexPanel: React.FC<PromptIndexPanelProps> = ({
                 onCheckedChange={(v) => setShowAll(v === true)}
                 data-testid="prompt-index-show-all"
               />
-              <span><Trans>Show all</Trans>{hiddenCount > 0 ? ` (${hiddenCount})` : ''}</span>
+              <span>
+                <Trans>Show all</Trans>
+                {hiddenCount > 0 ? ` (${hiddenCount})` : ''}
+              </span>
             </label>
           )}
           <button
             type="button"
-          title={
-            sortDir === 'desc'
-              ? t`Sort by time: newest first (click for oldest first)`
-              : t`Sort by time: oldest first (click for newest first)`
-          }
-          className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-          onClick={() => setSortDir(sortDir === 'desc' ? 'asc' : 'desc')}
-          data-testid="prompt-index-sort-time"
-          aria-label={t`Sort prompts by time`}
-        >
+            title={
+              sortDir === 'desc'
+                ? t`Sort by time: newest first (click for oldest first)`
+                : t`Sort by time: oldest first (click for newest first)`
+            }
+            className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={() => setSortDir(sortDir === 'desc' ? 'asc' : 'desc')}
+            data-testid="prompt-index-sort-time"
+            aria-label={t`Sort prompts by time`}
+          >
             {sortDir === 'desc' ? <ArrowDown className="h-3.5 w-3.5" /> : <ArrowUp className="h-3.5 w-3.5" />}
           </button>
         </div>
@@ -259,7 +270,9 @@ export const PromptIndexPanel: React.FC<PromptIndexPanelProps> = ({
 
       <div className="flex-1 overflow-y-auto p-1">
         {prompts.length === 0 ? (
-          <p className="mt-4 px-2 text-center text-xs text-muted-foreground"><Trans>No prompts yet</Trans></p>
+          <p className="mt-4 px-2 text-center text-xs text-muted-foreground">
+            <Trans>No prompts yet</Trans>
+          </p>
         ) : visiblePrompts.length === 0 ? (
           <p className="mt-4 px-2 text-center text-xs text-muted-foreground">
             {isAdvanced ? (

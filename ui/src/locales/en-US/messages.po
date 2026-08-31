@@ -776,6 +776,10 @@ msgstr "A fresh shell needs to be allocated. (Backend action coming — for now 
 msgid "A live session is already running in this conversation"
 msgstr "A live session is already running in this conversation"
 
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "A new project folder — everything you create is scoped to it"
+msgstr "A new project folder — everything you create is scoped to it"
+
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "A project with that name exists"
 msgstr "A project with that name exists"
@@ -3008,6 +3012,10 @@ msgstr "Clone @ {branch}"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Clone & Open"
 msgstr "Clone & Open"
+
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "Clone a git repo (or reuse a local clone) as a new project"
+msgstr "Clone a git repo (or reuse a local clone) as a new project"
 
 #: src/components/assets/context-folder-sources.tsx
 msgid "Clone a git repo (or reuse a local clone) as context"
@@ -7096,9 +7104,9 @@ msgstr "From {senderName}"
 msgid "from first"
 msgstr "from first"
 
-#: src/components/quick-create/QuickCreateMenu.tsx
-#~ msgid "From git"
-#~ msgstr "From git"
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "From git"
+msgstr "From git"
 
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "from the keychain"
@@ -7642,6 +7650,7 @@ msgstr "Hide from Recent — still visible in Inbox; reappears when a new messag
 msgid "Hide from Recent conversations"
 msgstr "Hide from Recent conversations"
 
+#: src/components/code-editor/CodeEditor.tsx
 #: src/components/code-editor/CodeEditor.tsx
 #~ msgid "Hide hidden files"
 #~ msgstr "Hide hidden files"
@@ -9923,6 +9932,7 @@ msgstr "New option"
 #: src/components/open-project-component/project-actions-row.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "New project"
 msgstr "New project"
 
@@ -10212,10 +10222,6 @@ msgstr "No Document Selected"
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "no edges"
 msgstr "no edges"
-
-#: src/components/assets/editor/app/AssetAppHost.tsx
-#~ msgid "No editor app named on this dock."
-#~ msgstr "No editor app named on this dock."
 
 #: src/components/conversation/EmojiPicker.tsx
 msgid "No emoji found"
@@ -11188,10 +11194,6 @@ msgstr "Open .env.local at this line"
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
 msgid "Open {0}"
 msgstr "Open {0}"
-
-#: src/components/data-sources/SourceMenu.tsx
-#~ msgid "Open {app}"
-#~ msgstr "Open {app}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Open {label}"
@@ -12375,6 +12377,7 @@ msgstr "Progress"
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
@@ -16501,10 +16504,6 @@ msgstr "This app is no longer available."
 msgid "This asset can't be shared with Git. Turn Git sharing off to send a copy."
 msgstr "This asset can't be shared with Git. Turn Git sharing off to send a copy."
 
-#: src/components/assets/editor/app/AssetAppHost.tsx
-#~ msgid "This asset has no editor \"{app}\"."
-#~ msgstr "This asset has no editor \"{app}\"."
-
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This asset has no file path."
 msgstr "This asset has no file path."
@@ -16512,10 +16511,6 @@ msgstr "This asset has no file path."
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This can take up to a minute if it was asleep."
 msgstr "This can take up to a minute if it was asleep."
-
-#: src/components/code-editor/CodeEditor.tsx
-#~ msgid "This cannot be undone."
-#~ msgstr "This cannot be undone."
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "This chat has no resumable session."

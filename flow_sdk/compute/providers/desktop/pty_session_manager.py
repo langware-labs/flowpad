@@ -61,6 +61,14 @@ class PtyState(BaseModel):
     # readiness scans only frames after this boundary so a pre-restart banner
     # or trust screen cannot authorize input into the new process.
     generation_start_seq: int = 0
+    # Seq at which this generation's composer was first confirmed ready.
+    # Readiness is a property of the GENERATION ("this TUI booted past its
+    # interstitials"), so it is latched once rather than re-derived from a
+    # trailing slice of screen traffic on every turn — the vendor repaints its
+    # ready-marker only on a full composer redraw, which a working session can
+    # easily leave megabytes behind. Stale by construction after a respawn:
+    # ``generation_start_seq`` advances past it, and the comparison fails.
+    composer_ready_seq: Optional[int] = None
     compute_node_id: Optional[str] = None
     cols: int = 80
     rows: int = 24
