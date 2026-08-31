@@ -23,7 +23,12 @@ from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest.drivers.agent import accepted_fields
 
 _AGENTS = Path(__file__).parents[2] / "flow_sdk/system_projects/flowpad_assistant/.claude/agents"
-CONTRACTS = (_AGENTS / "email_analyzer.md", _AGENTS / "email_sender.md")
+CONTRACTS = (
+    _AGENTS / "email_analyzer.md",
+    _AGENTS / "email_sender.md",
+    _AGENTS / "slack_analyzer.md",
+    _AGENTS / "slack_sender.md",
+)
 
 #: Pre-rename names. A contract asking for one of these is refused by the route.
 RETIRED = ("source_id", "stream_key", "title")

@@ -22,6 +22,7 @@ MANIFEST = (
 
 
 def _source(**config):
+    config.setdefault("connector", "gmail")
     return SimpleNamespace(config=config)
 
 
@@ -61,3 +62,24 @@ async def test_rows_written_before_the_names_converged_keep_their_cursors(legacy
 async def test_segments_wins_over_the_legacy_spelling():
     got = await AgentDriver().segments(_source(segments=["INBOX"], streams=["ARCHIVE"]))
     assert [s.key for s in got] == ["INBOX"]
+
+
+@pytest.mark.asyncio
+async def test_a_channel_connector_has_no_default_segment():
+    from flow_sdk.ingest.health import SourceError
+
+    # Mail can assume INBOX; slack cannot guess a channel id.
+    got = await AgentDriver().segments(_source(connector="slack", segments=["C0123ABCD"]))
+    assert [s.key for s in got] == ["C0123ABCD"]
+    with pytest.raises(SourceError):
+        await AgentDriver().segments(_source(connector="slack"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("config", [{}, {"connector": ""}, {"connector": "jira"}])
+async def test_a_missing_or_unknown_connector_is_a_config_error(config):
+    from flow_sdk.ingest.health import SourceError
+
+    src = SimpleNamespace(config=config)
+    with pytest.raises(SourceError):
+        await AgentDriver().segments(src)
