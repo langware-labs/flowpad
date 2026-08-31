@@ -6,30 +6,16 @@ name: web-app-builder
 # fails to parse the loader falls back to the H1 title — the skill then appears
 # in the agent's list with NO description and is never routed to.
 description: >-
-  Build and develop web applications from tested, copy-as-is templates.
-  TWO templates ship with this skill and the FIRST step is choosing between them.
-  (1) `template-flowpad/` — a static app on the Flowpad TS SDK, for apps that work
-  with Flowpad's OWN data — tasks, docs, projects, agents, conversations. Anything
-  the user would expect to show up inside Flowpad ("a task manager", "a kanban of
-  my tasks", "a dashboard of my projects", "browse my docs") uses THIS one, so the
-  app reads and writes the same entities Flowpad does instead of a private copy.
-  (2) `template/` — Next.js 16 + TypeScript + Tailwind v4 + shadcn/ui + FastAPI +
-  Supabase Postgres + Drizzle, deployable to Vercel, for apps that own their data
-  and need their own database/auth/signups. Use this skill whenever the user wants
-  to create, scaffold, bootstrap, or prototype a web app, website, SaaS, dashboard,
-  CRUD app, admin panel, or anything with a UI — even if they don't literally say
-  "web app", and even (especially) when they phrase it as "build me a website
-  using flowpad assistant" — website building belongs to THIS skill, not to the
-  flowpad-assistance skill. Slide decks / presentations / pitch decks are NOT
-  web apps — those belong to the `decker` skill, not this one. A single static
-  page with no build step — an `.html` deliverable, a chart, a report, an editor
-  shipped inside an asset — is NOT handled here either: that is the
-  `html-builder` skill. Come here when the app needs a dev server, a build, a
-  database or auth. Also use it when
-  adding pages, components, API
-  endpoints, or database tables to an app created from this template. Bootstrap means copying the bundled
-  template as-is and running its setup script as-is — never scaffold by hand and
-  never run create-next-app.
+  Builds and extends web applications from two tested, copy-as-is templates: a
+  Flowpad-SDK static app for anything working with Flowpad's own entities (tasks,
+  docs, projects, agents, conversations), and a Next.js + FastAPI + Supabase stack
+  for apps that own their data. Use whenever the user wants to create, scaffold,
+  bootstrap or prototype a web app, website, SaaS, dashboard, CRUD app or admin
+  panel — even when phrased as "build me a website using flowpad assistant" — or to
+  add pages, components, API endpoints or database tables to an app already built
+  from a template. Come here when the app needs a dev server, a build, a database
+  or auth. NOT for a single static page with no build step (html-builder), slide
+  decks (decker), or creating records (flowpad-assistance).
 tags:
 - webapp
 - nextjs

@@ -2,23 +2,18 @@
 id: aa478f19-3dad-4794-a34a-9e6863d50860
 name: connect-data-source
 description: >-
-  Connect a data source to Flowpad, end to end. Turns a natural request —
-  "connect my Notion", "pull my RSS feeds in", "sync these Slack channels",
-  "watch this git repo for commits", "index my Google Drive", "add a data
-  source", "start ingesting my mail" — into a configured source that actually
-  produces records, then opens the Data Sources screen so the user sees it.
-  Also diagnoses a source that is failing, empty, stuck in setup, or parked —
-  triggers on "my feed stopped updating", "no items from my Slack source",
-  "the source says it needs setup", "nothing is syncing", "this data source is
-  broken". Use `connect-data-source author <system>` to write a NEW source type
-  when nothing installed fits, `connect-data-source debug <name>` to diagnose,
-  `connect-data-source define <source>` to give a connected source's items an
-  output shape, a dataset and gold labels — "what do I want out of each item",
-  "label these", "annotate", "make a training set from this feed" — and
-  `connect-data-source list` to show what is connected. NOT for connecting
-  this machine to the hub as a compute node, NOT for authorising an OAuth
-  connection on its own, NOT for Flowpad itself being broken or not starting,
-  and NOT for creating tasks, docs, skills or other records.
+  Connects a data source to Flowpad end to end — "connect my Notion", "pull my RSS
+  feeds in", "sync these Slack channels", "watch this git repo", "index my Google
+  Drive", "start ingesting my mail" — turning the request into a source that
+  actually produces records, then showing the Data Sources screen. Also diagnoses a
+  source that is failing, empty, stuck in setup or parked ("my feed stopped
+  updating", "nothing is syncing", "the source says it needs setup"). Subcommands:
+  `author <system>` writes a new source type when nothing installed fits, `debug
+  <name>` diagnoses one, `define <source>` gives a connected source's items an
+  output shape, dataset and gold labels ("label these", "make a training set from
+  this feed"), and `list` shows what is connected. NOT for enrolling this machine
+  as a compute node, an OAuth authorisation on its own, Flowpad itself being broken
+  (flow-diagnose), or creating records (flowpad-assistance).
 tags: ''
 version: 1
 ---
