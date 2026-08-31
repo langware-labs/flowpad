@@ -138,7 +138,9 @@ export class Agent extends APIEntity<Agent> {
   get doc(): FrontMatterFsRef | null {
     const typeId = dataContext.computeNodeTypeId;
     if (!typeId || !this.asset_ref) return null;
-    return new FrontMatterFsRef(this.asset_ref, typeId);
+    // `asset_ref` is stored natively (backslashes on Windows) but `FSRef.parent`
+    // splits on `/` only — same normalization `bundleDirectory` already applies.
+    return new FrontMatterFsRef(this.asset_ref.replace(/\\/g, '/'), typeId);
   }
 
   /** Directory containing the portable Agent bundle. */
