@@ -345,3 +345,9 @@ async def test_channel_is_stamped_at_create_not_first_poll():
 
     src = await _source(provider="agent", config={"connector": "slack", "segments": ["C1"]})
     assert src.channel == "slack", "channel must be present before any poll"
+
+    # A driver whose channel IS its provider name must not be mistaken for the
+    # provider fallback — the first stamp implementation made exactly that
+    # error and left agentmail sources channel-less at create.
+    src = await _source(provider="agentmail", config={"inbox": "x@agentmail.to", "api_key": "k"})
+    assert src.channel == "agentmail"
