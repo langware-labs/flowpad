@@ -247,14 +247,19 @@ class Agent(Entity):
 
         existing = {asset.name: asset for asset in await self.mcp_assets()}
         current = existing.get(spec.name)
-        if current is not None and current.to_spec() == spec:
+        patch = spec.model_dump()
+        # Compare the AUTHORED fields, not ``to_spec()``: that is the LAUNCH
+        # payload, and for a bundled server it carries a resolved absolute path
+        # in ``args`` that no incoming spec has — so the round-trip could never
+        # be equal and every add re-saved.
+        if current is not None and all(getattr(current, key, None) == value for key, value in patch.items()):
             return False
 
         # Mechanical: ``Mcp``'s field names ARE ``McpSpec``'s (enforced at
         # registration by ``SchemaRegistry.check_asset_spec``), so a field added
         # to the spec cannot silently stop being persisted here.
         row = current or Mcp(parent_type_id=str(self.typeid))
-        for field, value in spec.model_dump().items():
+        for field, value in patch.items():
             setattr(row, field, value)
         await row.save(notify=False)
         return True

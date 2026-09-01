@@ -1,6 +1,24 @@
 import { APIEntity, registerEntity } from '../APIEntity';
 import { DockPointerData } from '../models/DockPointer';
 
+/**
+ * Where an MCP server's implementation comes from — the thing a user actually
+ * chooses when creating one. DERIVED, never stored: a second type-ish field
+ * beside `transport` would be one more thing to keep in agreement.
+ */
+export type McpShape = 'bundled' | 'command' | 'remote';
+
+/** The default file a bundled server's code is scaffolded into (backend mirror). */
+export const MCP_DEFAULT_ENTRYPOINT = 'server.py';
+
+/** What each shape sets. `command` sets nothing — the class defaults already
+ *  describe "stdio, and you fill in the command". */
+const SHAPE_FIELDS: Record<McpShape, Partial<Mcp>> = {
+  bundled: { transport: 'stdio', command: 'fastmcp', args: ['run'], entrypoint: MCP_DEFAULT_ENTRYPOINT },
+  command: {},
+  remote: { transport: 'http' },
+};
+
 /** Remote transports, mirroring `mcp_spec.REMOTE_TRANSPORTS`. */
 const REMOTE_TRANSPORTS = ['http', 'sse'];
 
@@ -38,6 +56,7 @@ export class Mcp extends APIEntity<Mcp> {
   args: string[] = [];
   env: Record<string, string> = {};
   url: string = '';
+  entrypoint: string = '';
   asset_ref?: string;
 
   constructor(entity: Partial<Mcp> = {}) {
@@ -47,11 +66,20 @@ export class Mcp extends APIEntity<Mcp> {
     this.args = entity.args ?? [];
     this.env = entity.env ?? {};
     this.url = entity.url ?? '';
+    this.entrypoint = entity.entrypoint ?? '';
     this.asset_ref = entity.asset_ref;
   }
 
   get isRemote(): boolean {
     return isRemoteTransport(this.transport, this.url, this.command);
+  }
+
+  /**
+   * Connect to this server and list its tools.
+   * `ok: false` is a normal answer — a broken command is reported, not thrown.
+   */
+  async test(): Promise<{ ok: boolean; tools: string[]; detail: string }> {
+    return this.post('test');
   }
 
   /**
@@ -62,9 +90,13 @@ export class Mcp extends APIEntity<Mcp> {
   static async createInProject(
     project: { typeId?: import('../models/TypeId').TypeId } | null,
     name: string,
+    shape: McpShape = 'bundled',
   ): Promise<Mcp> {
     const scopeIds = project?.typeId ? [project.typeId] : [];
-    return new Mcp({ name: name.trim() }).save(scopeIds);
+    // `bundled` is the default because the name-only create paths (the assets
+    // list `+`, the CLI) cannot ask — and of the three, it is the only one that
+    // produces something that runs without further typing.
+    return new Mcp({ name: name.trim(), ...SHAPE_FIELDS[shape] }).save(scopeIds);
   }
 
   override get dockPointer(): DockPointerData {

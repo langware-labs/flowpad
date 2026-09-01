@@ -13,6 +13,7 @@ import {
   Whiteboard,
 } from '@sdk';
 import { t, msg } from '@lingui/core/macro';
+import { McpCreateDialog } from './McpCreateDialog';
 import type { MessageDescriptor } from '@lingui/core';
 import { PromptEditDialog } from '@src/components/prompt-library/PromptEditDialog';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -264,6 +265,9 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     label: msg`MCP Server`,
     wikiword: 'MCP servers',
     fallbackSubFolder: 'agentic-assets/mcp',
+    Dialog: McpCreateDialog,
+    // The assets-list `+` never opens a Dialog, so it needs a default that
+    // still produces something runnable — hence `bundled` (the SDK default).
     create: async ({ project, name }) => {
       const saved = await Mcp.createInProject(project, name);
       return {

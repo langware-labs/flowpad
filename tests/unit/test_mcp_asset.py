@@ -195,6 +195,98 @@ async def test_a_process_may_add_its_own_on_top(home, agent_name):
     assert [s.name for s in process.resolved_mcp_servers()] == ["dummy", "extra"]
 
 
+# ── the bundled shape: code that ships inside the asset ──────────────────────
+
+
+async def test_a_bundled_server_is_scaffolded_once_and_runs(home, agent_name):
+    """"Write it here" must produce something that works before anything is typed."""
+    from flow_sdk.builtin.mcp import MCP_DEFAULT_ENTRYPOINT
+
+    row = await Mcp(
+        name="probe", command="fastmcp", args=["run"], entrypoint=MCP_DEFAULT_ENTRYPOINT
+    ).save(notify=False)
+
+    server = row.folder / MCP_DEFAULT_ENTRYPOINT
+    assert server.is_file(), "the bundled shape must scaffold its code file"
+
+    # A later save must never clobber code the user has since written.
+    server.write_text("# mine\n", encoding="utf-8")
+    await row.save(notify=False)
+    assert server.read_text() == "# mine\n"
+
+
+async def test_the_entrypoint_resolves_against_the_asset_folder(home, agent_name):
+    """The FILE keeps a relative path so it survives being shared; the LAUNCH
+    payload gets the absolute one. Only the row knows ``asset_ref``."""
+    from flow_sdk.builtin.mcp import MCP_DEFAULT_ENTRYPOINT
+
+    row = await Mcp(
+        name="resolved", command="fastmcp", args=["run"], entrypoint=MCP_DEFAULT_ENTRYPOINT
+    ).save(notify=False)
+
+    on_disk = json.loads((row.folder / "mcp.json").read_text())
+    assert on_disk["entrypoint"] == MCP_DEFAULT_ENTRYPOINT, "the file must stay portable"
+    assert on_disk.get("args") == ["run"], "the resolved path must not be persisted"
+
+    # The serializer writes with exclude_defaults=True, so a server sitting on
+    # its defaults has NO transport/env/url key at all. Pinned because every
+    # READER has to tolerate it: the editor crashed on `Object.keys(undefined)`
+    # for exactly this file until it filled the defaults back in on load.
+    assert "env" not in on_disk and "url" not in on_disk and "transport" not in on_disk
+
+    spec = row.to_spec()
+    assert spec.is_bundled
+    assert spec.args == ["run", str(row.folder / MCP_DEFAULT_ENTRYPOINT)]
+
+
+async def test_a_command_shaped_server_scaffolds_nothing(home, agent_name):
+    row = await Mcp(name="external", command="npx", args=["-y", "@some/mcp"]).save(notify=False)
+    assert not (row.folder / "server.py").exists()
+    assert row.to_spec().is_bundled is False
+
+
+# ── the Test probe ───────────────────────────────────────────────────────────
+
+
+async def test_probe_connects_and_lists_the_scaffolded_tool(home, agent_name, capsys):
+    """The probe runs the SAME projection a worker launches, so a pass here is
+    evidence about the real thing rather than about a second code path.
+
+    ``capsys.disabled()`` is required, not cosmetic: spawning a stdio server
+    needs a real ``fileno()`` on the inherited streams, and the suite's
+    ``--capture=tee-sys`` swaps in an object that has none.
+    """
+    from flow_sdk.builtin.mcp import MCP_DEFAULT_ENTRYPOINT
+
+    row = await Mcp(
+        name="probe", command="fastmcp", args=["run"], entrypoint=MCP_DEFAULT_ENTRYPOINT
+    ).save(notify=False)
+
+    with capsys.disabled():
+        result = (await row.test_action()).data
+    assert result["ok"] is True, result["detail"]
+    assert result["tools"] == ["hello"]
+
+
+async def test_probe_reports_a_broken_command_instead_of_raising(home, agent_name):
+    """A driver must not 500 the button — failure is a returned value."""
+    row = await Mcp(name="broken", command="definitely-not-a-binary-xyz").save(notify=False)
+
+    result = (await row.test_action()).data
+    assert result["ok"] is False
+    assert result["tools"] == []
+    assert result["detail"], "a failure must say why"
+
+
+async def test_probe_names_a_missing_entrypoint(home, agent_name):
+    row = await Mcp(name="gone", command="fastmcp", args=["run"], entrypoint="nope.py").save(notify=False)
+    (row.folder / "nope.py").unlink(missing_ok=True)
+
+    result = (await row.test_action()).data
+    assert result["ok"] is False
+    assert "nope.py" in result["detail"]
+
+
 # ── authoring ────────────────────────────────────────────────────────────────
 
 
@@ -212,6 +304,25 @@ async def test_add_mcp_writes_an_asset_and_is_idempotent(home, agent_name):
 
     assert await agent.remove_mcp("dummy") is True
     assert await agent.remove_mcp("dummy") is False
+
+
+async def test_add_mcp_is_idempotent_for_a_bundled_server(home, agent_name):
+    """The command-shaped case above cannot catch this: a bundled row's
+    ``to_spec()`` carries a resolved absolute path the incoming spec never has,
+    so comparing launch payloads made every add look like a change."""
+    from flow_sdk.builtin.mcp import MCP_DEFAULT_ENTRYPOINT
+
+    agent_dir = home / "agentic-assets" / "agent" / agent_name
+    agent_dir.mkdir(parents=True)
+    (agent_dir / "agent.md").write_text(f"---\nname: {agent_name}\nworker_type: claude\n---\n")
+    await _index(home)
+    agent = await Agent.get_one({"name": agent_name})
+
+    bundled = McpSpec(
+        name="inhouse", command="fastmcp", args=["run"], entrypoint=MCP_DEFAULT_ENTRYPOINT
+    )
+    assert await agent.add_mcp(bundled) is True
+    assert await agent.add_mcp(bundled) is False, "re-adding an identical bundled spec must be a no-op"
 
 
 async def test_a_codex_agent_refuses_a_name_codex_cannot_address(home, agent_name):
