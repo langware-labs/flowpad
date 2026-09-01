@@ -6400,6 +6400,10 @@ msgstr "לכל שורה {scopeType} יש קובץ מקור בדיסק."
 msgid "Every indexed row has a source file on disk."
 msgstr "לכל שורה בעלת אינדקס יש קובץ מקור בדיסק."
 
+#: src/components/assets/editor/agent-profile/AgentMcpField.tsx
+msgid "Every MCP server in this project is attached to this agent. Each one is resolved and attached when a session starts."
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Every project is selected"
 msgstr "כל הפרויקטים נבחרים"
@@ -9411,6 +9415,10 @@ msgstr "טוען את הסשן החי…"
 msgid "Loading logs..."
 msgstr "טוען יומנים..."
 
+#: src/components/assets/editor/agent-profile/AgentMcpField.tsx
+msgid "Loading MCP servers…"
+msgstr ""
+
 #: src/components/show-view/ShowView.tsx
 msgid "Loading MCP UI component..."
 msgstr "טוען רכיב MCP UI..."
@@ -9862,6 +9870,7 @@ msgid "MCP server created"
 msgstr ""
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
+#: src/components/assets/editor/agent-profile/AgentMcpField.tsx
 msgid "MCP servers"
 msgstr "שרתי MCP"
 
@@ -10393,6 +10402,7 @@ msgstr "שם תיקייה חדשה"
 msgid "New group"
 msgstr "קבוצה חדשה"
 
+#: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "New MCP server"
 msgstr ""
@@ -10919,6 +10929,10 @@ msgstr "אין סשנים תואמים"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "No MCP servers found"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentMcpField.tsx
+msgid "No MCP servers in this project yet"
 msgstr ""
 
 #: src/components/token-plan/MembersTable.tsx
