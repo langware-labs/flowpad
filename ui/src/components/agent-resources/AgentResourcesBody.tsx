@@ -3,9 +3,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { Plus } from 'lucide-react';
 import { Markdown, Skill, type AssetDescriptor } from '@sdk';
 import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
-import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
-import { lucideByName } from '@src/lib/lucide-by-name';
-import { assetScope, basename, descriptorKey, displayLabelForDescriptor } from '@src/components/asset-manager';
+import { AssetRow, assetScope, basename, descriptorKey, displayLabelForDescriptor } from '@src/components/asset-manager';
 import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
 import { useStagedAssets } from './useStagedAssets';
 import { useWirableMcpServers } from './useWirableMcpServers';
@@ -20,83 +18,46 @@ function labelForAsset(d: AssetDescriptor): string {
   return label === d.typeid && d.posix_path ? basename(d.posix_path) : label;
 }
 
+/** MCP servers are declared in the worker's own config, so they apply to every
+ *  run the way a user-level skill does — `user_dir`, not `inline`, which reads
+ *  as "this agent". Module-scope: a fresh object per render would churn. */
+const MCP_SCOPE = assetScope({ typeid: '', source: 'user_dir', posix_path: null });
+
+/** A capability rendered as an asset row. The typeid is its real entity id; the
+ *  null path is the honest answer — a server has no file of its own. */
+function mcpDescriptor(server: { typeid: string }): AssetDescriptor {
+  return { typeid: server.typeid, source: 'user_dir', posix_path: null };
+}
+
 /** Muted one-liner for a section with nothing in it. */
 function Empty({ children }: { children: ReactNode }) {
   return <div className="px-3 py-2 text-xs italic text-muted-foreground">{children}</div>;
 }
 
-/** Small icon affordance — a header `+` or a row `-`. Sized not to grow the
- *  line it sits on; the label and caret set that height. */
+/** A section header's `+`. Sized not to grow the line it sits on; the label and
+ *  caret set that height. */
 function IconButton({
   icon: Icon,
   label,
   onClick,
-  disabled,
   testId,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   onClick: () => void;
-  disabled?: boolean;
   testId: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={disabled}
-      className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+      className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
       title={label}
       aria-label={label}
       data-testid={testId}
     >
       <Icon className="h-3.5 w-3.5" />
     </button>
-  );
-}
-
-/** Where a skill comes from. Not the shared `AssetScopeChip` — that is
- *  `display: contents` and spans two cells of the popover's grid, so it cannot
- *  live in a flex row. `ms-auto` is logical, so it flips under RTL. */
-function ScopeChip({ label, tooltip }: { label: string; tooltip?: string }) {
-  return (
-    <span
-      className="ms-auto flex-shrink-0 rounded border border-border px-1 text-[10px] leading-4 text-muted-foreground"
-      title={tooltip}
-    >
-      {label}
-    </span>
-  );
-}
-
-/** One listed resource. `action` is the trailing slot: absent for a row that
- *  cannot be removed (an MCP server, a user skill), a `-` otherwise. */
-function ResourceRow({
-  icon: Icon,
-  label,
-  hint,
-  chip,
-  action,
-  testId,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  hint?: string;
-  chip?: ReactNode;
-  action?: ReactNode;
-  testId: string;
-}) {
-  return (
-    <div
-      className="flex items-center gap-2 px-2 py-1.5 text-sm text-muted-foreground"
-      title={hint ? `${label} — ${hint}` : label}
-      data-testid={testId}
-    >
-      <Icon className="h-3.5 w-3.5 flex-shrink-0" />
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {chip}
-      {action}
-    </div>
   );
 }
 
@@ -111,9 +72,8 @@ export function AgentResourcesBody() {
   const skillAssets = useStagedAssets(Skill.type);
   const { descriptors: skillDescriptors, isLoading: skillsLoading } = skillAssets;
   const docAssets = useStagedAssets(Markdown.type);
-  // Both lists are scoped to the worker the agent is set to; the editor's
-  // worker field commits to `agent.md`, which is what this observes. The same
-  // document is the write surface for the declared skills.
+  // The MCP list is scoped to the worker the agent is set to; the editor's
+  // worker field commits to `agent.md`, which is what this observes.
   const { workerType, isLoading: workerLoading } = useEditedAgentWorker();
   const { servers: mcpServers, isLoading: mcpLoading } = useWirableMcpServers(workerType);
 
@@ -122,21 +82,15 @@ export function AgentResourcesBody() {
   // form. `dialogs` MUST be rendered or the trigger silently does nothing.
   const { panelProps, dialogs } = useQuickCreatePick();
 
-  const docIcon = iconForType(Markdown.type);
-  const skillIcon = iconForType(Skill.type);
-  // MCP servers have no per-type registry glyph of their own.
-  const mcpIcon = lucideByName('Plug');
-
   // Every discoverable skill, one row per (typeid, source) — the chip is what
   // tells those apart, so collapsing by typeid would hide the distinction.
   const skillRows = useMemo(
-    () => skillDescriptors.map((d) => ({ key: descriptorKey(d), label: labelForAsset(d), scope: assetScope(d) })),
+    () => skillDescriptors.map((d) => ({ d, key: descriptorKey(d), label: labelForAsset(d), scope: assetScope(d) })),
     [skillDescriptors],
   );
 
-
   const docRows = useMemo(
-    () => docAssets.descriptors.map((d) => ({ key: descriptorKey(d), label: labelForAsset(d), scope: assetScope(d) })),
+    () => docAssets.descriptors.map((d) => ({ d, key: descriptorKey(d), label: labelForAsset(d), scope: assetScope(d) })),
     [docAssets.descriptors],
   );
 
@@ -197,12 +151,19 @@ export function AgentResourcesBody() {
         }
       >
         {mcpServers.map((server) => (
-          <ResourceRow
+          <AssetRow
             key={server.id}
-            icon={mcpIcon}
+            descriptor={mcpDescriptor(server)}
+            scope={MCP_SCOPE}
             label={server.name}
-            hint={server.workerType}
-            testId={`agent-resource-mcp-${server.name}`}
+            selected={false}
+            improvable={false}
+            busy={false}
+            // The capability id resolves, so the derived answer is "openable" —
+            // but no editor is registered for `capability`, and a live control
+            // that dead-ends is worse than a greyed one.
+            canOpen={false}
+            cannotOpenReason={t`Configured by worker`}
           />
         ))}
       </NavigatorSection>
@@ -227,12 +188,14 @@ export function AgentResourcesBody() {
         }
       >
         {skillRows.map((row) => (
-          <ResourceRow
+          <AssetRow
             key={row.key}
-            icon={skillIcon}
+            descriptor={row.d}
+            scope={row.scope}
             label={row.label}
-            chip={<ScopeChip label={row.scope.label} tooltip={row.scope.tooltip} />}
-            testId={`agent-resource-skill-${row.label}`}
+            selected={false}
+            improvable={false}
+            busy={false}
           />
         ))}
       </NavigatorSection>
@@ -257,12 +220,14 @@ export function AgentResourcesBody() {
         }
       >
         {docRows.map((row) => (
-          <ResourceRow
+          <AssetRow
             key={row.key}
-            icon={docIcon}
+            descriptor={row.d}
+            scope={row.scope}
             label={row.label}
-            chip={<ScopeChip label={row.scope.label} tooltip={row.scope.tooltip} />}
-            testId={`agent-resource-doc-${row.label}`}
+            selected={false}
+            improvable={false}
+            busy={false}
           />
         ))}
       </NavigatorSection>

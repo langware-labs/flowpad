@@ -15,9 +15,13 @@ interface CapabilityRow {
   name?: string;
 }
 
-export interface McpServerRow {
+interface McpServerRow {
   /** Capability kind — unique per (service, worker), so it keys the row. */
   id: string;
+  /** The capability's own entity id, as a serialized TypeId. Real identity, so
+   *  a row can carry it; there is no capability EDITOR, which is a separate
+   *  fact the caller states with `canOpen={false}`. */
+  typeid: string;
   name: string;
   /** The worker this server is configured for (`claude_code`, `codex`, …). */
   workerType: string;
@@ -69,6 +73,7 @@ export function useWirableMcpServers(workerType: string): { servers: McpServerRo
       const worker = parts[2];
       rows.push({
         id: row.kind ?? '',
+        typeid: row.id ? `capability-${row.id}` : (row.kind ?? ''),
         // The capability's display name is "<server> (MCP / <worker>)"; the
         // suffix is the row's own context here, so it is stripped rather than
         // repeated on every line.
