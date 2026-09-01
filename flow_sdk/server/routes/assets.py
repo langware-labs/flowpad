@@ -161,6 +161,9 @@ async def list_entities_by_path(
             "id": e.id,
             "type": e.type or e.get_type(),
             "name": getattr(e, "name", "") or getattr(e, "uname", "") or "",
+            # Carried so a caller can render a row (label + hint) straight off
+            # this response instead of following up with a full per-type list.
+            "description": getattr(e, "description", "") or "",
             "asset_ref": getattr(e, "asset_ref", "") or "",
             "scope": getattr(e, "scope", "") or "",
             "remote": bool(getattr(e, "remote", False)),
