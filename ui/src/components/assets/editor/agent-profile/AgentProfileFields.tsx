@@ -107,7 +107,7 @@ export function AgentSelectField({
 /**
  * Comma-separated editor for a DECLARED-ONLY field. `tools`,
  * `disallowed_tools` and `subagents` round-trip through `agent.md` but reach no
- * worker yet; `skills`/`mcp_servers` moved to the agent-resources pane.
+ * worker yet; `mcp_servers` is listed by the agent-resources pane instead.
  */
 export function AgentListField({
   label,

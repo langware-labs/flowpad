@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '@src/lib/utils';
 
-export interface NavigatorSectionProps {
+interface NavigatorSectionProps {
   /** Stable id — `data-testid="navigator-section-<id>"`. Deliberately NOT a
    *  persistence key: open/closed is derived per mount from the data (below),
    *  so a remembered state would fight the default-open rule. */

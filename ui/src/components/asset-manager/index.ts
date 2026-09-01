@@ -2,6 +2,7 @@ export { AssetManagerButton } from './AssetManagerButton';
 export { AssetManagerPopover } from './AssetManagerPopover';
 export { useProcessAssets, type UseProcessAssetsResult } from './useProcessAssets';
 
+export { AssetRow } from './AssetManagerPopover';
 export { assetScope } from './asset-scope';
 
 // Label helpers for surfaces that list descriptors outside the popover.

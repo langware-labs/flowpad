@@ -12,8 +12,6 @@ import { ViewType } from '@src/types/ViewType';
 /** Module-scope: `useEntityOps` keys its effect on the array's IDENTITY. */
 const WATCHED_TYPES = ['agent'];
 
-
-
 /** The `worker_type:` scalar, without pulling a YAML parser in for one key. */
 function readWorkerType(source: string): string {
   const fence = source.indexOf('\n---', 4);
