@@ -198,7 +198,23 @@ const TerminalPanel: React.FC<{
   // spinner mid-switch.
   useEffect(() => {
     const activeProcess = processRef.current;
-    if (!isProcess || !isMounted || !isActive || !activeProcess) {
+    // NOT gated on `isActive`, which is also deliberately absent from the deps
+    // below. An off-screen panel is still RUNNING: "you are not looking at me"
+    // is a DISPLAY fact, not a lifecycle one. Conflating the two reset an
+    // already-ready panel to 'idle' on every tab switch, and the render gate
+    // below turns 'idle' into the startup spinner *instead of*
+    // InteractiveTerminal — so React unmounted a live xterm, and the return trip
+    // paid a fresh attach plus a full `replayPtyStream` + `term.reset()`. That
+    // is the whole "every tab I jump to redraws" report (FLOWPAD-2054); it
+    // arrived in 2435a1f71 / v0.2.114 when this side effect moved out of the
+    // route loader, where it had run once per LOAD rather than per activation.
+    // `isMounted` is the gate that was actually wanted — it flips true on first
+    // activation and never goes back, so the runtime starts once per panel.
+    // The headless->PTY refresh is unaffected: it is owned by
+    // useProcessSurface.switchMode() and reaches the terminal through a new
+    // `shell_id` -> `transportShellId` -> `sessionId`, never through this effect
+    // (see the `pty_mode` note above).
+    if (!isProcess || !isMounted || !activeProcess) {
       setRuntimeStatus('idle');
       return;
     }
@@ -231,7 +247,7 @@ const TerminalPanel: React.FC<{
     return () => {
       stale = true;
     };
-  }, [isActive, isMounted, isProcess, processReady, targetId]);
+  }, [isMounted, isProcess, processReady, targetId]);
 
   const handleTitleChange = (title: string): void => {
     if (tab.is_disabled) return;
