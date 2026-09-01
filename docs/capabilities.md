@@ -61,8 +61,11 @@ rather than `get_default_capability_specs`. Reconcile registers a runner +
 upserts a system `Capability` row per kind, and prunes kinds whose backing
 config disappeared. It runs at server start, after every MCP index (indexing
 refreshes the capability list), and on a manual `check` of an MCP kind. For
-these capabilities `check` = configured (a record exists), `test` validates,
-and `install` is a no-op (MCP servers are configured, not installed).
+these capabilities `check` = configured (a record exists) and `install` is a no-op (MCP
+servers are configured, not installed). `test` reports the same "is it configured" answer as
+`check` — it does not dial the server. The probe that actually connects and lists tools is
+`probe_mcp` (`flow_sdk/builtin/mcp.py`), which takes an `McpSpec` rather than an entity so a
+scanned `MCP_SERVER` row can reach it through `McpSpec.from_record`.
 
 ## Backend Contract
 
