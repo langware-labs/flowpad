@@ -333,9 +333,23 @@ class DataSource(Entity):
         if self.next_poll_at is not None:
             self.next_poll_at = None
             await self.save()
+        # A driver that tolerates it gets the sub-tick FAST LANE while watched:
+        # each request renews a short lease and the poller's attention loop
+        # polls at the driver's cadence (telegram: 5s). Drivers that declare
+        # nothing stay tick-bound — due on the next minute, no faster.
+        driver = self._driver()
+        cadence = getattr(driver, "attention_poll_seconds", None) if driver else None
+        if cadence:
+            from flow_sdk.ingest.poller import note_attention  # noqa: PLC0415
+
+            note_attention(str(self.id), cadence)
         return ApiSuccessResponse(data={
             "status": "due", "health": self.health, "source_status": self.status,
-            "detail": "queued for the next heartbeat tick (≤60s)",
+            "attention_seconds": cadence,
+            "detail": (
+                f"fast lane armed — polling every {cadence}s while watched"
+                if cadence else "queued for the next heartbeat tick (≤60s)"
+            ),
         })
 
     @core_action.post(action_name="reset_cursors")
