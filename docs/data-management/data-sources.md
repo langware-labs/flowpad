@@ -51,7 +51,21 @@ DataSource ──(one per segment)──> DataSourceCursor
 orphan; a heartbeat has nothing to orphan. The tick must do no I/O — it selects
 what is due, hands each source to its own task, and returns in milliseconds.
 `_inflight` is the entire concurrency control: one poll per source, no locks and
-no backoff.
+no backoff. `schedule_next` stamps `next_poll_at` on the minute grid the
+heartbeat ticks on — a raw `now + interval` carries the dispatcher's
+millisecond jitter, and a tick firing a few ms before the stamp would silently
+skip the source for a whole minute, turning a one-tick interval into a
+60/120s coin flip.
+
+**Attention.** While someone is actually looking at a source's output (a
+conversation view has it selected), the UI fires the `request_poll` action on
+an interval; each request makes the source due on the next tick, so a watched
+source polls every minute regardless of its standing `poll_interval_seconds`.
+The request stream itself is the liveness signal — nothing is stored, so when
+the viewer goes away the requests stop and the standing cadence resumes by
+itself. Unlike `poll_now`, `request_poll` never un-latches `config_error` and
+never wakes a `disabled` source: an auto-firing viewer must not resurrect what
+a human or a broken credential stopped.
 
 **Three properties `sync_source` exists to guarantee.** A segment that fails
 leaves its cursor *unadvanced* and its siblings running — re-delivery is a
@@ -95,9 +109,10 @@ on the `IngestDriver` base, so the engine reads them directly — no `getattr` p
 | `origin_for()` | — | The source's tree as a typed `FSOrigin`, stamped on `DataSource.origin` at save; reflection reads it so relative structure survives |
 | `verify()` | — | Is the setup finished? Distinct from health, which is about the last run |
 | `send()` | — | Can this driver push a message back to its channel? |
+| `identity_config_key` | `inbox` | The config field naming WHICH remote account a source serves — the natural key a caller (e.g. `blocks.Inbox`) matches on to reuse a source instead of minting a twin. Telegram declares `bot_token` |
 
 Shipped drivers: `rss`, `hackernews`, `slack`, `agent`, `agentmail`,
-`cloud_email`, `folder`, `git`, `gdrive`.
+`telegram`, `cloud_email`, `folder`, `git`, `gdrive`.
 
 **What a driver is, and what it is not.** The driver is Python and ships with the
 SDK. Everything a *person* sees about a source — its title, its glyph, the fields
