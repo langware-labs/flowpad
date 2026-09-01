@@ -67,7 +67,6 @@ export class Agent extends APIEntity<Agent> {
   // harness allows, an empty list revokes it. Never normalize one to the other.
   tools?: string[] | null;
   disallowed_tools?: string[] | null;
-  skills: string[];
   mcp_servers: string[];
   /** SubAgent NAMES this agent may delegate to. */
   subagents: string[];
@@ -99,7 +98,6 @@ export class Agent extends APIEntity<Agent> {
     // Preserve the tri-state: absent stays absent, [] stays [].
     this.tools = entity.tools;
     this.disallowed_tools = entity.disallowed_tools;
-    this.skills = entity.skills || [];
     this.mcp_servers = entity.mcp_servers || [];
     this.subagents = entity.subagents || [];
     this.additional_dirs = entity.additional_dirs || [];

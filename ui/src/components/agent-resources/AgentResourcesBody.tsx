@@ -1,17 +1,16 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Plus } from 'lucide-react';
-import { Markdown, type AssetDescriptor } from '@sdk';
+import { Markdown, Skill, type AssetDescriptor } from '@sdk';
 import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { lucideByName } from '@src/lib/lucide-by-name';
-import { AssetRow, assetScope, basename, descriptorKey, displayLabelForDescriptor } from '@src/components/asset-manager';
+import { assetScope, basename, descriptorKey, displayLabelForDescriptor } from '@src/components/asset-manager';
 import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
-import { useProjectDocs } from './useProjectDocs';
-import { useWirableSkills } from './useWirableSkills';
+import { useStagedAssets } from './useStagedAssets';
 import { useWirableMcpServers } from './useWirableMcpServers';
-import { useAgentDocument } from './useAgentDocument';
-import { useAgentListWiring } from './useAgentListWiring';
+import { useEditedAgentWorker } from './useEditedAgentWorker';
+import { useQuickCreatePick } from '@src/components/quick-create';
 
 /** Row label. `displayLabelForDescriptor` gives up at the raw typeid here (this
  *  pane never caches Skill entities); a skill's identity IS its folder, so the
@@ -21,52 +20,70 @@ function labelForAsset(d: AssetDescriptor): string {
   return label === d.typeid && d.posix_path ? basename(d.posix_path) : label;
 }
 
-/** A `user_dir` skill is already discovered by the vendor CLI every session, so
- *  copying it in only duplicates it. Project and context-folder skills reach a
- *  worker only if something puts them where it looks. */
-function isSelectableSkill(d: AssetDescriptor): boolean {
-  return d.source !== 'user_dir';
-}
-
 /** Muted one-liner for a section with nothing in it. */
 function Empty({ children }: { children: ReactNode }) {
   return <div className="px-3 py-2 text-xs italic text-muted-foreground">{children}</div>;
 }
 
-/** Muted one-liner under a section header, explaining where its rows come from. */
-function Note({ children }: { children: ReactNode }) {
-  return <p className="px-2 pb-1 text-[11px] text-muted-foreground">{children}</p>;
-}
-
-/** The `+` in a section header. Sized to sit on the header's own line without
- *  growing it — the label and the caret set that height. */
-function SectionAddButton({ label, onClick, testId }: { label: string; onClick: () => void; testId: string }) {
+/** Small icon affordance — a header `+` or a row `-`. Sized not to grow the
+ *  line it sits on; the label and caret set that height. */
+function IconButton({
+  icon: Icon,
+  label,
+  onClick,
+  disabled,
+  testId,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  testId: string;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+      disabled={disabled}
+      className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
       title={label}
       aria-label={label}
       data-testid={testId}
     >
-      <Plus className="h-3.5 w-3.5" />
+      <Icon className="h-3.5 w-3.5" />
     </button>
   );
 }
 
-/** Read-only row, MCP only: what a worker reaches is decided by the vendor's
- *  config files, so a control would be a box you cannot uncheck. Skills ARE
- *  per-agent intent and use `AssetRow`, whose control writes `agent.skills`. */
+/** Where a skill comes from. Not the shared `AssetScopeChip` — that is
+ *  `display: contents` and spans two cells of the popover's grid, so it cannot
+ *  live in a flex row. `ms-auto` is logical, so it flips under RTL. */
+function ScopeChip({ label, tooltip }: { label: string; tooltip?: string }) {
+  return (
+    <span
+      className="ms-auto flex-shrink-0 rounded border border-border px-1 text-[10px] leading-4 text-muted-foreground"
+      title={tooltip}
+    >
+      {label}
+    </span>
+  );
+}
+
+/** One listed resource. `action` is the trailing slot: absent for a row that
+ *  cannot be removed (an MCP server, a user skill), a `-` otherwise. */
 function ResourceRow({
   icon: Icon,
   label,
   hint,
+  chip,
+  action,
   testId,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   hint?: string;
+  chip?: ReactNode;
+  action?: ReactNode;
   testId: string;
 }) {
   return (
@@ -76,50 +93,51 @@ function ResourceRow({
       data-testid={testId}
     >
       <Icon className="h-3.5 w-3.5 flex-shrink-0" />
-      <span className="truncate">{label}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {chip}
+      {action}
     </div>
   );
 }
 
 /**
- * The four-section body of the agent-resources navigator. An inventory with one
- * editable axis: Skills rows select into `agent.skills`, which
- * `Deployment.build` copies into every session. The rest are read-only.
+ * The four-section body of the agent-resources navigator. A read-only inventory
+ * of what an agent run in this project can draw on; each `+` creates a new
+ * asset of that kind rather than attaching anything to the agent.
  */
 export function AgentResourcesBody() {
   const { t } = useLingui();
 
-  const { descriptors: skillDescriptors, isLoading: skillsLoading } = useWirableSkills();
+  const skillAssets = useStagedAssets(Skill.type);
+  const { descriptors: skillDescriptors, isLoading: skillsLoading } = skillAssets;
+  const docAssets = useStagedAssets(Markdown.type);
   // Both lists are scoped to the worker the agent is set to; the editor's
   // worker field commits to `agent.md`, which is what this observes. The same
   // document is the write surface for the declared skills.
-  const doc = useAgentDocument();
-  const workerType = doc.workerType;
-  const workerLoading = doc.isLoading;
-  const { declared: declaredSkills, pendingId: pendingSkillId, toggle: toggleSkill } = useAgentListWiring(doc, 'skills');
+  const { workerType, isLoading: workerLoading } = useEditedAgentWorker();
   const { servers: mcpServers, isLoading: mcpLoading } = useWirableMcpServers(workerType);
-  const { docs, isLoading: docsLoading } = useProjectDocs();
 
   const [addSourceOpen, setAddSourceOpen] = useState(false);
+  // Project home's own creation seam: `onPick(type)` opens the same name/scope
+  // form. `dialogs` MUST be rendered or the trigger silently does nothing.
+  const { panelProps, dialogs } = useQuickCreatePick();
 
   const docIcon = iconForType(Markdown.type);
+  const skillIcon = iconForType(Skill.type);
   // MCP servers have no per-type registry glyph of their own.
   const mcpIcon = lucideByName('Plug');
 
-  // Resolved once here, not per render — the same split `AssetManagerPopover`'s
-  // list memo makes. NOT deduped by name: one row per (typeid, source) is the
-  // point, and collapsing would hide the distinction the scope chip shows.
+  // Every discoverable skill, one row per (typeid, source) — the chip is what
+  // tells those apart, so collapsing by typeid would hide the distinction.
   const skillRows = useMemo(
-    () =>
-      skillDescriptors.map((d) => ({
-        descriptor: d,
-        key: descriptorKey(d),
-        scope: assetScope(d),
-        label: labelForAsset(d),
-        selected: declaredSkills.has(d.typeid),
-        selectable: isSelectableSkill(d),
-      })),
-    [skillDescriptors, declaredSkills],
+    () => skillDescriptors.map((d) => ({ key: descriptorKey(d), label: labelForAsset(d), scope: assetScope(d) })),
+    [skillDescriptors],
+  );
+
+
+  const docRows = useMemo(
+    () => docAssets.descriptors.map((d) => ({ key: descriptorKey(d), label: labelForAsset(d), scope: assetScope(d) })),
+    [docAssets.descriptors],
   );
 
   return (
@@ -138,7 +156,8 @@ export function AgentResourcesBody() {
         label={t`Data sources`}
         itemCount={0}
         action={
-          <SectionAddButton
+          <IconButton
+            icon={Plus}
             label={t`Add data source`}
             onClick={() => setAddSourceOpen(true)}
             testId="agent-resource-add-data-source"
@@ -177,9 +196,6 @@ export function AgentResourcesBody() {
           )
         }
       >
-        <Note>
-          <Trans>Configured for the {workerType} worker — not selected per agent.</Trans>
-        </Note>
         {mcpServers.map((server) => (
           <ResourceRow
             key={server.id}
@@ -196,38 +212,27 @@ export function AgentResourcesBody() {
         label={t`Skills`}
         isLoading={skillsLoading}
         itemCount={skillRows.length}
+        action={
+          <IconButton
+            icon={Plus}
+            label={t`New skill`}
+            onClick={() => panelProps.onPick(Skill.type)}
+            testId="agent-resource-new-skill"
+          />
+        }
         emptyState={
           <Empty>
             <Trans>No skills found</Trans>
           </Empty>
         }
       >
-        <Note>
-          <Trans>Selected skills are copied into each session this agent starts. Your global skills are always available and need no selection.</Trans>
-        </Note>
-        {/* Both callbacks supplied = the select control FLIPS: `+` to import,
-            `X` to drop it again. `AssetRow` deliberately does not gate that
-            control on the source being read-only — "read-only describes whether
-            the asset FILE can be edited, not whether the user's own selection
-            can be undone" — which is load-bearing here, since every row is a
-            read-only global or context-folder source. */}
         {skillRows.map((row) => (
-          <AssetRow
+          <ResourceRow
             key={row.key}
-            descriptor={row.descriptor}
-            scope={row.scope}
+            icon={skillIcon}
             label={row.label}
-            selected={row.selected}
-            improvable={false}
-            busy={pendingSkillId === row.descriptor.typeid}
-            // Offered only where selecting DOES something. A row that is
-            // already selected keeps its un-select control regardless, so a
-            // stale entry can always be cleared — withholding it there would
-            // strand the value with no way to remove it.
-            onPick={row.selectable ? (d) => void toggleSkill(d.typeid, true) : undefined}
-            onUnpick={
-              row.selectable || row.selected ? (d) => void toggleSkill(d.typeid, false) : undefined
-            }
+            chip={<ScopeChip label={row.scope.label} tooltip={row.scope.tooltip} />}
+            testId={`agent-resource-skill-${row.label}`}
           />
         ))}
       </NavigatorSection>
@@ -235,23 +240,36 @@ export function AgentResourcesBody() {
       <NavigatorSection
         id="docs"
         label={t`Docs`}
-        isLoading={docsLoading}
-        itemCount={docs.length}
+        isLoading={docAssets.isLoading}
+        itemCount={docRows.length}
+        action={
+          <IconButton
+            icon={Plus}
+            label={t`New doc`}
+            onClick={() => panelProps.onPick(Markdown.type)}
+            testId="agent-resource-new-doc"
+          />
+        }
         emptyState={
           <Empty>
             <Trans>No docs found</Trans>
           </Empty>
         }
       >
-        {docs.map((doc) => (
+        {docRows.map((row) => (
           <ResourceRow
-            key={doc.id}
+            key={row.key}
             icon={docIcon}
-            label={doc.title || doc.name || ''}
-            testId={`agent-resource-doc-${doc.id}`}
+            label={row.label}
+            chip={<ScopeChip label={row.scope.label} tooltip={row.scope.tooltip} />}
+            testId={`agent-resource-doc-${row.label}`}
           />
         ))}
       </NavigatorSection>
+
+      {/* At the pane root, outside every section: a section can be collapsed
+          while its dialog is open, and that unmount would close it mid-edit. */}
+      {dialogs}
     </div>
   );
 }
