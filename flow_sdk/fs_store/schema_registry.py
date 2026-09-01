@@ -971,6 +971,11 @@ class SchemaRegistry:
                 existing.identity_carrier = info.identity_carrier
             if info.id_stable_key_fn is not None:
                 existing.id_stable_key_fn = info.id_stable_key_fn
+            # Both key spellings must survive a re-registration. Dropping this
+            # one silently reverts the type to the `uuid5(resolved path)`
+            # fallback — an id that moves with the install (FLOWPAD-2070).
+            if info.identity_key_fn is not None:
+                existing.identity_key_fn = info.identity_key_fn
             if info.id_namespace != uuid.NAMESPACE_URL:
                 existing.id_namespace = info.id_namespace
             if info.asset_hash_fn is not None:
