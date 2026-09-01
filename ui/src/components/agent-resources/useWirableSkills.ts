@@ -1,52 +1,47 @@
-import { useCallback } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, dataManager, Skill } from '@sdk';
-import { useEntityOps } from '@sdk/react/hooks';
+import { useMemo } from 'react';
+import { dataContext, Skill, type AssetDescriptor } from '@sdk';
+import { useProcessAssets } from '@src/components/asset-manager';
 
-const QUERY_KEY = ['agent-resources', 'skills'] as const;
-
-/** Module-scope: `useEntityOps` keys its effect on the array's IDENTITY, so an
- *  inline literal would unsubscribe and resubscribe on every single render. */
-const WATCHED_TYPES = [Skill.type];
+/** Stable identity — an inline literal would rebuild the hook's fetch each render. */
+const SKILL_TYPES = [Skill.type] as const;
 
 /**
- * Every skill that can be wired into an agent, hydrated as real `Skill`
- * entities so a row has `typeId`, `name` and `description` without a second
- * lookup.
+ * The skills an agent launched in this project would actually see.
  *
- * Deliberately the raw graph route with `include_system=true`, not
- * `useEntitiesQuery` and not `/search`:
+ * Delegates to `useProcessAssets(null, …)` — the asset-manager's staging read,
+ * which asks `project/{id}/get-assets` for "what a NEW process started in this
+ * project would discover, before any process exists". That is exactly this
+ * pane's situation: an agent is a template, so there is no process to inspect.
+ * Descriptors come back already attributed to a `source` (`user_dir`,
+ * `project_dir`, `context_dir`, …), which is what the scope chip renders.
  *
- *  - `useEntitiesQuery` omits the flag, so it silently drops every SDK-shipped
- *    system skill (this is why `SkillsAgentsPanel` reaches for the same route).
- *  - `/search` + `projectScope` drops them too, for a different reason: the
- *    backend applies the scope filter BEFORE the system filter, and system
- *    skills carry the system project's id — so scoping to your project excludes
- *    them however `include_system` is set.
+ * Deliberately NOT a type listing. This hook used to call
+ * `/graph/skill?include_system=true`, which has no location filter and returned
+ * every skill indexed anywhere on the machine — 77 rows here, only 10 of them
+ * genuinely global; the rest came from ten unrelated checkouts and from
+ * flowpad-hub's test fixtures, because `default_roots()` walks the whole user
+ * home. `useProcessAssets` carries the same warning for the same reason:
  *
- * A skill the user cannot see is a skill they cannot attach, so both misses are
- * disqualifying here.
+ *   > NEVER list whole type corpora here: the previous implementation fetched
+ *   > ALL agents + skills + specs + markdown docs (~3.3MB / 3-5s at ~3k docs).
+ *
+ * Filtering by `Skill.scope` is not an alternative either: `classify_path` only
+ * distinguishes system/user/project from path-vs-home, so a skill in another
+ * checkout's `.claude/skills` under the home directory is labelled `user`,
+ * indistinguishable from a real global one.
  */
-export function useWirableSkills(): { skills: Skill[]; isLoading: boolean } {
-  const queryClient = useQueryClient();
+export function useWirableSkills(): { descriptors: AssetDescriptor[]; isLoading: boolean } {
+  // The pane rides the active project; `useProcessAssets` falls back to
+  // `@local` on its own when there is none, so this stays undefined rather
+  // than guessing an id here.
+  const projectId = dataContext.project?.typeId?.id;
 
-  const { data = [], isLoading } = useQuery<Skill[]>({
-    queryKey: QUERY_KEY,
-    queryFn: async () => {
-      const rows: Partial<Skill>[] = (await apiClient.get<Partial<Skill>[]>('/graph/skill?include_system=true')) ?? [];
-      return rows
-        .map((row: Partial<Skill>) => dataManager.updateEntityFromJson<Skill>({ ...row, type: Skill.type }))
-        .sort((a: Skill, b: Skill) => (a.name ?? '').localeCompare(b.name ?? ''));
-    },
-    staleTime: 30_000,
-  });
+  const options = useMemo(
+    () => ({ projectId, types: SKILL_TYPES as readonly string[] }),
+    [projectId],
+  );
 
-  // A skill authored while this pane is open must appear in it. Invalidate on
-  // skill ops rather than polling — no interval, no refetch budget.
-  const onSkillOp = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
-  }, [queryClient]);
-  useEntityOps(WATCHED_TYPES, onSkillOp as never);
+  const { descriptors, isLoading } = useProcessAssets(null, options);
 
-  return { skills: data, isLoading };
+  return { descriptors, isLoading };
 }

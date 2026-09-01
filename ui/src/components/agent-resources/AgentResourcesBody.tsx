@@ -1,199 +1,235 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Markdown, Skill, type DataSourceSpec } from '@sdk';
+import { Plus } from 'lucide-react';
+import { Markdown, Skill, type AssetDescriptor } from '@sdk';
 import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { lucideByName } from '@src/lib/lucide-by-name';
-import { cn } from '@src/lib/utils';
-import { useSourceSpecs } from '@src/components/data-sources/use-source-specs';
-import { useAgentListWiring } from './useAgentListWiring';
-import type { AgentDocument } from './useAgentDocument';
+import { AssetRow, assetScope, basename, descriptorKey, displayLabelForDescriptor } from '@src/components/asset-manager';
+import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
+import { useQuickCreatePick } from '@src/components/quick-create';
 import { useProjectDocs } from './useProjectDocs';
 import { useWirableSkills } from './useWirableSkills';
 import { useWirableMcpServers } from './useWirableMcpServers';
+import { useAgentDocument } from './useAgentDocument';
+import { useAgentListWiring } from './useAgentListWiring';
+
+/**
+ * Row label, with a path fallback the shared helper cannot provide.
+ *
+ * `displayLabelForDescriptor` resolves a cached entity, then the descriptor's
+ * own `name`, then gives up and returns the raw typeid. Both of the first two
+ * miss here: `get-assets` sends `name` ONLY for an on-disk asset with no entity
+ * row, and this pane never loads Skill entities into the dataManager cache (it
+ * lists by location precisely so it does not have to). Every indexed skill
+ * therefore rendered as a bare `skill-<uuid>`.
+ *
+ * The folder basename is the right answer, not a guess: a skill's on-disk
+ * identity IS its folder — `resolve_skill_name` uses it unless SKILL.md
+ * declares a `name`. Applied only on the give-up path, so a real cached
+ * displayName (which a rename updates) always wins.
+ */
+function labelForAsset(d: AssetDescriptor): string {
+  const label = displayLabelForDescriptor(d);
+  return label === d.typeid && d.posix_path ? basename(d.posix_path) : label;
+}
+
+/**
+ * Whether selecting this skill would change anything.
+ *
+ * A `user_dir` skill lives in `~/.claude/skills`, which the vendor CLI
+ * discovers on its own for every session — copying it into the process assets
+ * dir produces a second copy of a skill the worker already had. So the control
+ * is withheld there rather than offering a toggle whose only effect is a
+ * redundant `copytree`.
+ *
+ * Project and context-folder skills are the real cases: they reach a worker
+ * only if something puts them where that worker looks.
+ */
+function isSelectableSkill(d: AssetDescriptor): boolean {
+  return d.source !== 'user_dir';
+}
 
 /** Muted one-liner for a section with nothing in it. */
 function Empty({ children }: { children: ReactNode }) {
   return <div className="px-3 py-2 text-xs italic text-muted-foreground">{children}</div>;
 }
 
+/** Muted one-liner under a section header, explaining where its rows come from. */
+function Note({ children }: { children: ReactNode }) {
+  return <p className="px-2 pb-1 text-[11px] text-muted-foreground">{children}</p>;
+}
+
+/** The `+` in a section header. Sized to sit on the header's own line without
+ *  growing it — the label and the caret set that height. */
+function SectionAddButton({ label, onClick, testId }: { label: string; onClick: () => void; testId: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+      title={label}
+      aria-label={label}
+      data-testid={testId}
+    >
+      <Plus className="h-3.5 w-3.5" />
+    </button>
+  );
+}
+
 /**
- * One selectable resource row. The checkbox is the affordance; the label is not
- * a navigation target — this pane wires resources, it does not browse them.
+ * A read-only resource row — used for MCP servers only.
+ *
+ * MCP carries no selection affordance because there is nothing to select: what
+ * a worker can reach is decided by the vendor's own config files, so a control
+ * here would be a checked box you cannot uncheck. Skills are the opposite —
+ * they ARE per-agent intent — and render the shared `AssetRow`, whose select
+ * control writes `agent.skills`.
  */
 function ResourceRow({
   icon: Icon,
   label,
   hint,
-  checked,
-  disabled,
-  onToggle,
   testId,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   hint?: string;
-  checked: boolean;
-  disabled?: boolean;
-  onToggle: (next: boolean) => void;
   testId: string;
 }) {
   return (
-    <label
-      className={cn(
-        'flex items-center gap-2 px-2 py-1.5 text-sm',
-        disabled ? 'cursor-default text-muted-foreground/60' : 'cursor-pointer text-muted-foreground hover:bg-muted',
-      )}
+    <div
+      className="flex items-center gap-2 px-2 py-1.5 text-sm text-muted-foreground"
       title={hint ? `${label} — ${hint}` : label}
       data-testid={testId}
     >
-      <input
-        type="checkbox"
-        className="h-3.5 w-3.5 flex-shrink-0 accent-primary"
-        checked={checked}
-        disabled={disabled}
-        onChange={(e) => onToggle(e.target.checked)}
-      />
       <Icon className="h-3.5 w-3.5 flex-shrink-0" />
       <span className="truncate">{label}</span>
-    </label>
+    </div>
   );
 }
 
 /**
  * The four-section body of the agent-resources navigator.
  *
- * Only Skills persists (into `agent.skills`). Data sources and Docs keep their
- * selection in local state on purpose: the `Agent` entity has no field for
- * either, and inventing one is explicitly out of scope for this change. The
- * rows are built so that giving them a real home later is a swap of the
- * checked/onToggle pair, not a rewrite.
+ * Mostly an inventory — it answers "what can this agent draw on?" for the four
+ * resource families — with exactly one editable axis: the Skills rows select
+ * into `agent.skills`, which `Deployment.build` then copies into every session
+ * the agent starts. Data sources, MCP servers and Docs stay read-only, each for
+ * its own reason (no Agent field; vendor-config-owned; project-scoped listing).
  */
-export function AgentResourcesBody({ doc }: { doc: AgentDocument }) {
+export function AgentResourcesBody() {
   const { t } = useLingui();
 
-  const { specs, isLoading: specsLoading } = useSourceSpecs();
-  const { skills, isLoading: skillsLoading } = useWirableSkills();
-  const { servers: mcpServers, isLoading: mcpLoading } = useWirableMcpServers();
+  const { descriptors: skillDescriptors, isLoading: skillsLoading } = useWirableSkills();
+  // Both lists are scoped to the worker the agent is set to; the editor's
+  // worker field commits to `agent.md`, which is what this observes. The same
+  // document is the write surface for the declared skills.
+  const doc = useAgentDocument();
+  const workerType = doc.workerType;
+  const workerLoading = doc.isLoading;
+  const { declared: declaredSkills, pendingId: pendingSkillId, toggle: toggleSkill } = useAgentListWiring(doc, 'skills');
+  const { servers: mcpServers, isLoading: mcpLoading } = useWirableMcpServers(workerType);
   const { docs, isLoading: docsLoading } = useProjectDocs();
-  const { declared, pendingId, toggle } = useAgentListWiring(doc, 'skills');
-  const mcp = useAgentListWiring(doc, 'mcp_servers');
 
-  // Unpersisted, deliberately (see the component docstring).
-  const [pickedSources, setPickedSources] = useState<Set<string>>(new Set());
-  const [pickedDocs, setPickedDocs] = useState<Set<string>>(new Set());
+  const [addSourceOpen, setAddSourceOpen] = useState(false);
+  // The project home's own creation seam, reused whole: `onPick(type)` opens
+  // the same name/scope/path form (or the type's bespoke dialog, for types
+  // whose location TypeInfo already fixes). `dialogs` MUST be rendered — the
+  // hook's docstring calls out that hosting the trigger without it makes the
+  // control silently do nothing.
+  const { panelProps, dialogs } = useQuickCreatePick();
 
-  const togglePick = (set: Set<string>, apply: (s: Set<string>) => void) => (key: string, next: boolean) => {
-    const copy = new Set(set);
-    if (next) copy.add(key);
-    else copy.delete(key);
-    apply(copy);
-  };
-
-  const skillIcon = iconForType(Skill.type);
   const docIcon = iconForType(Markdown.type);
   // MCP servers have no per-type registry glyph of their own.
   const mcpIcon = lucideByName('Plug');
 
-  // One row per source NAME, not per spec row. `DataSourceSpec` has derived
-  // (path-based) identity, so every checkout of the repo on this machine mints
-  // its own row for the same nine shipped sources — a raw render shows "Slack"
-  // three times. `name` is the registry key, which is why the hook's own lookup
-  // map is keyed on it; this is the list form of that same collapse.
-  const uniqueSpecs = useMemo(() => {
-    const byName = new Map<string, DataSourceSpec>();
-    for (const spec of specs) if (spec.name && !byName.has(spec.name)) byName.set(spec.name, spec);
-    return [...byName.values()].sort((a, b) => (a.title || a.name || '').localeCompare(b.title || b.name || ''));
-  }, [specs]);
-
-  // One row per skill NAME, for the same multi-checkout reason as the sources.
-  // Which ROW wins matters here though, because the checkbox stores a TypeId:
-  // when the agent already declares one of a name's rows, that row must be the
-  // one rendered, or its own selection would read back as unchecked.
-  const uniqueSkills = useMemo(() => {
-    const byName = new Map<string, Skill>();
-    for (const skill of skills) {
-      const name = skill.name ?? '';
-      const existing = byName.get(name);
-      if (!existing || declared.has(skill.typeId?.toString() ?? '')) byName.set(name, skill);
-    }
-    return [...byName.values()];
-  }, [skills, declared]);
-
-  // Values on the agent that match no listed skill. Without a row they would be
-  // invisible AND silently preserved in agent.md — and the Advanced tab's
-  // free-text box, which used to be the way to see them, is gone.
-  const listedIds = new Set(skills.map((s) => s.typeId?.toString()).filter(Boolean));
-  const orphanIds = [...declared].filter((id) => !listedIds.has(id));
-
-  // Same for MCP: an id on the agent that matches no known server. The old
-  // Advanced-tab text box committed whatever was typed, so a hand-entered
-  // value that is not a real TypeId shows up here rather than vanishing.
-  const listedMcpIds = new Set(mcpServers.map((s) => s.id));
-  const mcpOrphanIds = [...mcp.declared].filter((id) => !listedMcpIds.has(id));
+  // Resolved once here rather than per render inside each row — `assetScope`
+  // and the label are cache lookups and allocations, which is the same split
+  // `AssetManagerPopover`'s list memo makes.
+  //
+  // Deliberately NOT deduped by name: the descriptor model returns one row per
+  // (typeid, source) on purpose and keys selection by typeid, so collapsing on
+  // name would hide the very distinction — user-global vs project vs context
+  // folder — that the scope chip exists to show.
+  const skillRows = useMemo(
+    () =>
+      skillDescriptors.map((d) => ({
+        descriptor: d,
+        key: descriptorKey(d),
+        scope: assetScope(d),
+        label: labelForAsset(d),
+        selected: declaredSkills.has(d.typeid),
+        selectable: isSelectableSkill(d),
+      })),
+    [skillDescriptors, declaredSkills],
+  );
 
   return (
     <div className="flex flex-col py-1">
+      {/* Deliberately listless. What this section used to render was the
+          installed `DataSourceSpec` CATALOG — the nine provider types the
+          machine can connect, not anything this agent has or could be given.
+          They were neither viewable (no row opened anything) nor selectable
+          (the Agent has no data-sources field, and adding one is out of
+          scope), so every row was decoration. The one real affordance is
+          connecting a source, which is what `+` does.
+          `itemCount={0}` also means the section settles collapsed — the `+`
+          stays reachable in the header regardless. */}
       <NavigatorSection
         id="data-sources"
         label={t`Data sources`}
-        isLoading={specsLoading}
-        itemCount={uniqueSpecs.length}
+        itemCount={0}
+        action={
+          <SectionAddButton
+            label={t`Add data source`}
+            onClick={() => setAddSourceOpen(true)}
+            testId="agent-resource-add-data-source"
+          />
+        }
         emptyState={
           <Empty>
-            <Trans>No data sources found</Trans>
+            <Trans>Connect a data source to make it available here</Trans>
           </Empty>
         }
-      >
-        {uniqueSpecs.map((spec) => (
-          <ResourceRow
-            key={spec.name}
-            // Per-provider glyph comes from the spec's `icon_name`. Never
-            // `spec.icon` — that is a getter with no setter, and assigning it
-            // throws during hydration and blanks the whole spec query.
-            icon={lucideByName(spec.icon_name)}
-            label={spec.title || spec.name || ''}
-            hint={spec.description}
-            checked={pickedSources.has(spec.name ?? '')}
-            onToggle={(next) => togglePick(pickedSources, setPickedSources)(spec.name ?? '', next)}
-            testId={`agent-resource-source-${spec.name}`}
-          />
-        ))}
-      </NavigatorSection>
+      />
+
+      {/* The project's own add-source form, reused verbatim — `editing` unset
+          is its create mode. Mounted here rather than behind a navigation so
+          the pane never loses the agent being edited. */}
+      <DataSourceDialog open={addSourceOpen} onOpenChange={setAddSourceOpen} />
 
       <NavigatorSection
         id="mcp-servers"
         label={t`MCP servers`}
-        isLoading={mcpLoading}
-        itemCount={mcpServers.length + mcpOrphanIds.length}
+        isLoading={mcpLoading || workerLoading}
+        itemCount={mcpServers.length}
         emptyState={
-          <Empty>
-            <Trans>No MCP servers found</Trans>
-          </Empty>
+          // Two different empty states, because they mean different things and
+          // the fix for each differs: with no worker resolved the list is
+          // unanswerable, whereas with one resolved it is a real answer — that
+          // worker genuinely has none configured.
+          workerType ? (
+            <Empty>
+              <Trans>No MCP servers found</Trans>
+            </Empty>
+          ) : (
+            <Empty>
+              <Trans>Select a worker to see the MCP servers available to it</Trans>
+            </Empty>
+          )
         }
       >
+        <Note>
+          <Trans>Configured for the {workerType} worker — not selected per agent.</Trans>
+        </Note>
         {mcpServers.map((server) => (
           <ResourceRow
             key={server.id}
             icon={mcpIcon}
             label={server.name}
-            hint={server.scope}
-            checked={mcp.declared.has(server.id)}
-            disabled={!doc.ready || mcp.pendingId === server.id}
-            onToggle={(next) => void mcp.toggle(server.id, next)}
+            hint={server.workerType}
             testId={`agent-resource-mcp-${server.name}`}
-          />
-        ))}
-        {mcpOrphanIds.map((id) => (
-          <ResourceRow
-            key={id}
-            icon={mcpIcon}
-            label={id}
-            hint={t`Declared on this agent but no matching MCP server was found`}
-            checked
-            disabled
-            onToggle={() => {}}
-            testId={`agent-resource-mcp-unresolved-${id}`}
           />
         ))}
       </NavigatorSection>
@@ -202,41 +238,46 @@ export function AgentResourcesBody({ doc }: { doc: AgentDocument }) {
         id="skills"
         label={t`Skills`}
         isLoading={skillsLoading}
-        itemCount={uniqueSkills.length + orphanIds.length}
+        itemCount={skillRows.length}
+        action={
+          <SectionAddButton
+            label={t`New skill`}
+            onClick={() => panelProps.onPick(Skill.type)}
+            testId="agent-resource-new-skill"
+          />
+        }
         emptyState={
           <Empty>
             <Trans>No skills found</Trans>
           </Empty>
         }
       >
-        <p className="px-2 pb-1 text-[11px] text-muted-foreground">
-          <Trans>Declared on the agent's card. Not yet applied to the worker.</Trans>
-        </p>
-        {uniqueSkills.map((skill) => {
-          const id = skill.typeId?.toString() ?? '';
-          return (
-            <ResourceRow
-              key={id || skill.name}
-              icon={skillIcon}
-              label={skill.name ?? id}
-              hint={skill.description}
-              checked={declared.has(id)}
-              disabled={!doc.ready || pendingId === id}
-              onToggle={(next) => void toggle(id, next)}
-              testId={`agent-resource-skill-${skill.name}`}
-            />
-          );
-        })}
-        {orphanIds.map((id) => (
-          <ResourceRow
-            key={id}
-            icon={skillIcon}
-            label={id}
-            hint={t`Declared on this agent but no matching skill was found`}
-            checked
-            disabled
-            onToggle={() => {}}
-            testId={`agent-resource-skill-unresolved-${id}`}
+        <Note>
+          <Trans>Selected skills are copied into each session this agent starts. Your global skills are always available and need no selection.</Trans>
+        </Note>
+        {/* Both callbacks supplied = the select control FLIPS: `+` to import,
+            `X` to drop it again. `AssetRow` deliberately does not gate that
+            control on the source being read-only — "read-only describes whether
+            the asset FILE can be edited, not whether the user's own selection
+            can be undone" — which is load-bearing here, since every row is a
+            read-only global or context-folder source. */}
+        {skillRows.map((row) => (
+          <AssetRow
+            key={row.key}
+            descriptor={row.descriptor}
+            scope={row.scope}
+            label={row.label}
+            selected={row.selected}
+            improvable={false}
+            busy={pendingSkillId === row.descriptor.typeid}
+            // Offered only where selecting DOES something. A row that is
+            // already selected keeps its un-select control regardless, so a
+            // stale entry can always be cleared — withholding it there would
+            // strand the value with no way to remove it.
+            onPick={row.selectable ? (d) => void toggleSkill(d.typeid, true) : undefined}
+            onUnpick={
+              row.selectable || row.selected ? (d) => void toggleSkill(d.typeid, false) : undefined
+            }
           />
         ))}
       </NavigatorSection>
@@ -257,12 +298,15 @@ export function AgentResourcesBody({ doc }: { doc: AgentDocument }) {
             key={doc.id}
             icon={docIcon}
             label={doc.title || doc.name || ''}
-            checked={pickedDocs.has(doc.id ?? '')}
-            onToggle={(next) => togglePick(pickedDocs, setPickedDocs)(doc.id ?? '', next)}
             testId={`agent-resource-doc-${doc.id}`}
           />
         ))}
       </NavigatorSection>
+
+      {/* Rendered at the pane root, outside every section: a section can be
+          collapsed while its dialog is open, and a dialog unmounted by that
+          collapse would close itself mid-edit. */}
+      {dialogs}
     </div>
   );
 }

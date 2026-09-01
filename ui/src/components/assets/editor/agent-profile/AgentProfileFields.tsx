@@ -1,6 +1,72 @@
 import { useEffect, useState } from 'react';
+import { useLingui } from '@lingui/react/macro';
 
 import { Input } from '@src/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
+
+/** Sentinel for "no value": Radix reserves `''` for the placeholder state, so
+ *  an empty-string `SelectItem` throws rather than rendering a clear option. */
+const UNSET = '__unset__';
+
+/**
+ * A CLOSED choice field — a real dropdown, not a suggestion list.
+ *
+ * The sibling `AgentSelectField` is free-text-with-datalist because most of
+ * these fields are advisory (`model` takes a tier *or* a concrete model id, so
+ * a closed list would make valid values unrepresentable). `worker_type` is the
+ * exception: the drivers are a fixed set of four, and anything outside it has
+ * no factory key to resolve to, so free text there only ever produces a broken
+ * agent.
+ *
+ * An `extraValue` outside `options` is still rendered as its own item rather
+ * than dropped. A document may legitimately carry the OTHER vocabulary
+ * (`claude_code` rather than `claude` — `worker_type_value()`/`driver_key()`
+ * accept both), and a control that silently could not represent the value on
+ * disk would rewrite it on the next unrelated edit.
+ */
+export function AgentChoiceField({
+  label,
+  value,
+  options,
+  onCommit,
+}: {
+  label: string;
+  value?: string | null;
+  options: readonly string[];
+  onCommit: (value: string | undefined) => void;
+}) {
+  const { t } = useLingui();
+  const current = value ?? '';
+  const items = current && !options.includes(current) ? [...options, current] : options;
+  return (
+    <label className="block space-y-1.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <Select
+        value={current || UNSET}
+        onValueChange={(next) => onCommit(next === UNSET ? undefined : next)}
+      >
+        <SelectTrigger aria-label={label}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {/* Clearing must stay reachable: the field is optional, and the
+              backend falls back to its own default when it is absent. Named
+              for the STATE, not for whichever value the backend would pick —
+              showing the default's name here reads as though it were selected,
+              which is a different thing from the key being absent. */}
+          <SelectItem value={UNSET}>
+            <span className="text-muted-foreground">{t`Unset`}</span>
+          </SelectItem>
+          {items.map((o) => (
+            <SelectItem key={o} value={o}>
+              {o}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </label>
+  );
+}
 
 /**
  * A suggestion-backed text field: the vocabulary is advisory, so the control

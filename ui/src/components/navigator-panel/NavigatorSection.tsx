@@ -16,6 +16,13 @@ export interface NavigatorSectionProps {
   itemCount: number;
   /** Rendered in place of `children` when settled and empty. */
   emptyState?: ReactNode;
+  /** Trailing control in the header — an "add" affordance, typically.
+   *  Rendered as a SIBLING of the collapse button, never inside it: nesting an
+   *  interactive element in a `<button>` is invalid, and clicking it would
+   *  toggle the section as well as fire its own handler.
+   *  Stays visible while the section is collapsed, so the action a section
+   *  offers does not require expanding an empty one to find. */
+  action?: ReactNode;
   children?: ReactNode;
 }
 
@@ -34,7 +41,15 @@ export interface NavigatorSectionProps {
  * section-shaped navigator bodies (Triggers' per-type groups, the context
  * panels' `SectionHeader`s) are candidates to adopt it.
  */
-export function NavigatorSection({ id, label, isLoading, itemCount, emptyState, children }: NavigatorSectionProps) {
+export function NavigatorSection({
+  id,
+  label,
+  isLoading,
+  itemCount,
+  emptyState,
+  action,
+  children,
+}: NavigatorSectionProps) {
   const [open, setOpen] = useState(false);
   const settled = useRef(false);
 
@@ -49,18 +64,21 @@ export function NavigatorSection({ id, label, isLoading, itemCount, emptyState, 
 
   return (
     <div className="flex flex-col">
-      <button
-        type="button"
-        className="flex w-full items-center gap-1.5 px-2 py-1.5 text-start hover:bg-muted/60"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        data-testid={`navigator-section-${id}`}
-      >
-        {/* Only the COLLAPSED caret points along the reading direction, so only
-            it mirrors in RTL; the open one points down. */}
-        <Chevron className={cn('h-3.5 w-3.5 flex-shrink-0 text-muted-foreground', !open && 'rtl:-scale-x-100')} />
-        <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">{label}</span>
-      </button>
+      <div className="group flex w-full items-center hover:bg-muted/60">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-start"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          data-testid={`navigator-section-${id}`}
+        >
+          {/* Only the COLLAPSED caret points along the reading direction, so only
+              it mirrors in RTL; the open one points down. */}
+          <Chevron className={cn('h-3.5 w-3.5 flex-shrink-0 text-muted-foreground', !open && 'rtl:-scale-x-100')} />
+          <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">{label}</span>
+        </button>
+        {action && <div className="flex flex-shrink-0 items-center pe-1">{action}</div>}
+      </div>
       {open && <div className="pb-1">{isEmpty ? emptyState : children}</div>}
     </div>
   );
