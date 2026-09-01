@@ -1,7 +1,7 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
-import { ICloudOrigin } from '../models/CloudOrigin';
+import { ICloudOrigin, ICloudOriginLocal } from '../models/CloudOrigin';
 import { Callable } from '../types';
 import { ConnectionManager, DataOp } from '../websocket';
 
@@ -146,6 +146,11 @@ export interface IFlowMessage extends IEntity {
   delivery_status?: DeliveryStatus;
   delivered_at?: string | null;
   received_at?: string | null;
+  /** EVENT time — when the human sent this on its original channel. Written
+   *  only by the backend inbox projection (from SourceItem.occurred_at);
+   *  None for authored and hub-synced messages, whose event time is their
+   *  own created/updated clock. Read through `eventTime`, never directly. */
+  sent_at?: string | null;
   // NOTE: ``context`` (string[]) was renamed and consolidated into the
   // unified ``context_entities`` on IEntity. Read via
   // ``msg.contextEntities`` / ``msg.firstContextOfType('task')``.
@@ -186,12 +191,16 @@ export interface IFlowMessage extends IEntity {
    *  message, a Slack post). Null/absent means the message is ours — which is
    *  exactly the badge rule: no origin, no channel mark. */
   origin?: ICloudOrigin | null;
+  origin_local?: ICloudOriginLocal | null;
   /** The MessageThread this belongs to. Null = ungrouped, i.e. flat rendering
    *  (every message that predates threading). */
   thread_id?: string | null;
   /** Local id of the message this replies to — provenance for quoting, NOT how
    *  threading is decided. */
   reply_to_id?: string | null;
+  /** Set on a REFERENCE row: the SourceItem whose body this message renders.
+   *  The stored row's `text` is always empty; reads arrive hydrated. */
+  source_item_id?: string | null;
 }
 
 // `implements IFlowMessage` only checks the class; it contributes no members, so every
@@ -216,6 +225,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   delivery_status?: DeliveryStatus;
   delivered_at?: string | null;
   received_at?: string | null;
+  sent_at?: string | null;
   is_draft?: boolean;
   kind?: FlowMessageKind;
   body_status?: BodyStatus;
@@ -225,8 +235,10 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   cloned_from_sender_id?: string | null;
   remote_worker_session_id?: string | null;
   origin?: ICloudOrigin | null;
+  origin_local?: ICloudOriginLocal | null;
   thread_id?: string | null;
   reply_to_id?: string | null;
+  source_item_id?: string | null;
   static type: string = 'flow_message';
 
   constructor(entity: Partial<IFlowMessage> = {}) {
@@ -245,6 +257,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.delivery_status = entity.delivery_status ?? 'created';
     this.delivered_at = entity.delivered_at ?? null;
     this.received_at = entity.received_at ?? null;
+    this.sent_at = entity.sent_at ?? null;
     this.is_draft = entity.is_draft ?? false;
     this.kind = entity.kind ?? FlowMessageKind.USER;
     this.body_status = entity.body_status ?? BodyStatus.NA;
@@ -254,8 +267,23 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.cloned_from_sender_id = entity.cloned_from_sender_id ?? null;
     this.remote_worker_session_id = entity.remote_worker_session_id ?? null;
     this.origin = entity.origin ?? null;
+    this.origin_local = entity.origin_local ?? null;
     this.thread_id = entity.thread_id ?? null;
     this.reply_to_id = entity.reply_to_id ?? null;
+    this.source_item_id = entity.source_item_id ?? null;
+  }
+
+  /**
+   * Store merge hook (see `DataManager.castAndDeepAssign`). A reference row
+   * (`source_item_id` set) stores no body server-side: reads arrive hydrated,
+   * but write-path UPDATE broadcasts (an `is_read` toggle re-emitting the
+   * stored row) carry `text: ""`. Dropping the empty field before the merge
+   * keeps the body we already hold instead of blanking the open conversation.
+   */
+  onEntityUpdate(source: Partial<IFlowMessage>): void {
+    if (source.source_item_id && !source.text && this.text) {
+      delete source.text;
+    }
   }
 
   /** Promote a draft message to a real reply: flips is_draft=false, appends to conversation.jsonl, pushes to hub. */
@@ -282,6 +310,17 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
 
   /** True iff at least one attachment requires a packed body bundle.
    *  Mirrors flow_sdk.builtin.flow_message.FlowMessage.has_body exactly. */
+  /** THE one read rule for a message's time — mirrors
+   *  FlowMessage.event_time on the backend: `sent_at` pins a
+   *  channel-projected message to when the human sent it; everything else
+   *  falls through to the clocks it already trusts. Render THIS, never
+   *  created_date/updated_date directly. */
+  get eventTime(): string | null {
+    const pick = this.sent_at ?? this.updated_date ?? this.created_date ?? null;
+    // Base-entity clocks are string|Date on the wire type; normalize to ISO.
+    return pick instanceof Date ? pick.toISOString() : pick;
+  }
+
   hasBody(): boolean {
     for (const att of this.attachment ?? []) {
       if (att.attachment_type === AttachmentType.FILE) return true;

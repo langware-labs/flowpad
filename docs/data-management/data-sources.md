@@ -51,7 +51,25 @@ DataSource ──(one per segment)──> DataSourceCursor
 orphan; a heartbeat has nothing to orphan. The tick must do no I/O — it selects
 what is due, hands each source to its own task, and returns in milliseconds.
 `_inflight` is the entire concurrency control: one poll per source, no locks and
-no backoff.
+no backoff. `schedule_next` stamps `next_poll_at` on the minute grid the
+heartbeat ticks on — a raw `now + interval` carries the dispatcher's
+millisecond jitter, and a tick firing a few ms before the stamp would silently
+skip the source for a whole minute, turning a one-tick interval into a
+60/120s coin flip.
+
+**Attention.** While someone is actually looking at a source's output (a
+conversation view has it selected), the UI fires the `request_poll` action on
+an interval; each request makes the source due on the next tick, and — for a
+driver that declares `attention_poll_seconds` (telegram: 5) — renews a short
+lease on the poller's **fast lane**, a loop that polls the watched source at
+that sub-tick cadence. `_inflight` stays the one concurrency control, so the
+tick lane and the fast lane never poll a source concurrently. The request
+stream itself is the liveness signal — nothing is stored, so when the viewer
+goes away the requests stop, the lease lapses within seconds, and the standing
+`poll_interval_seconds` cadence resumes by itself. Unlike `poll_now`,
+`request_poll` never un-latches `config_error` and never wakes a `disabled`
+source: an auto-firing viewer must not resurrect what a human or a broken
+credential stopped.
 
 **Three properties `sync_source` exists to guarantee.** A segment that fails
 leaves its cursor *unadvanced* and its siblings running — re-delivery is a
@@ -88,16 +106,17 @@ on the `IngestDriver` base, so the engine reads them directly — no `getattr` p
 | Trait | Default | Meaning |
 |---|---|---|
 | `provider` | — | Registry key. Distinct from `channel`, the user-facing name |
-| `record_kind` | — | Ontology kind stamped on each item; decides inbox membership — the projection admits `content.message.*` and nothing else. Carried by record-emitting drivers only, not the `IngestDriver` base; an authored source declares `emits` instead (see [the data-source asset](data-source-asset.md#resolved-and-what-is-left)) |
+| `record_kind` | — | Ontology kind stamped on each item; decides inbox membership — the projection admits `content.message.*` and nothing else (see [the inbox projection](inbox-projection.md)). Carried by record-emitting drivers only, not the `IngestDriver` base; an authored source declares `emits` instead (see [the data-source asset](data-source-asset.md#resolved-and-what-is-left)) |
 | `segment_budget` | 5 | Segments per run. Slack declares 1 — one history call a minute |
 | `stamps_identity` | `True` | Whether this source's bytes are ours to write to |
 | `origin_id_for()` | path | The source's own name for an asset |
 | `origin_for()` | — | The source's tree as a typed `FSOrigin`, stamped on `DataSource.origin` at save; reflection reads it so relative structure survives |
 | `verify()` | — | Is the setup finished? Distinct from health, which is about the last run |
 | `send()` | — | Can this driver push a message back to its channel? |
+| `identity_config_key` | `inbox` | The config field naming WHICH remote account a source serves — the natural key a caller (e.g. `blocks.Inbox`) matches on to reuse a source instead of minting a twin. Telegram declares `bot_token` |
 
 Shipped drivers: `rss`, `hackernews`, `slack`, `agent`, `agentmail`,
-`cloud_email`, `folder`, `git`, `gdrive`.
+`telegram`, `cloud_email`, `folder`, `git`, `gdrive`.
 
 **What a driver is, and what it is not.** The driver is Python and ships with the
 SDK. Everything a *person* sees about a source — its title, its glyph, the fields

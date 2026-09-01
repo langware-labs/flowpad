@@ -171,6 +171,7 @@ async def test_pty_session_creation(local_provider):
     await local_provider.shutdown(node_id)
 
 
+@pytest.mark.long  # 1.14s
 @pytest.mark.asyncio
 async def test_pty_input(local_provider):
     """Test sending input to PTY session."""

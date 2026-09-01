@@ -218,15 +218,16 @@ def test_config_path_is_none_without_a_process_id(tmp_path):
 
 
 def _assets(tmp_path, process_id):
-    import types
-
+    # The real dataclass, not a stand-in: it is plain data, and a duck-type here
+    # would keep passing while the seam's actual contract drifted.
+    from flow_sdk.builtin.agentic_process.agentic_process import SystemInstructionAssets
     from flow_sdk.builtin.agentic_process.cli_drivers.opencode.config_gen import SKILLS_SUBDIR
 
     assets = tmp_path / "assets"
     (assets / SKILLS_SUBDIR).mkdir(parents=True)
     (assets / "AGENTS.md").write_text("process instructions", encoding="utf-8")
     (assets / "CLAUDE.md").write_text("process instructions", encoding="utf-8")
-    return types.SimpleNamespace(
+    return SystemInstructionAssets(
         assets_dir=assets,
         instructions="process instructions",
         claude_file=assets / "CLAUDE.md",

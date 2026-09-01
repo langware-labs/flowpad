@@ -72,7 +72,9 @@
     "records",
     "entity",
     "credentials",
-    "app"
+    "app",
+    "llm-endpoints",
+    "token-plan"
   ],
   "subview_vocabularies": {
     "credentials": [
@@ -94,6 +96,11 @@
     "ai-config": [
       "llm-apis",
       "clis"
+    ],
+    "token-plan": [
+      "me",
+      "team",
+      "org"
     ]
   },
   "retired_views": {
@@ -544,6 +551,20 @@
       "folds_pointer": false,
       "scope_keyed": false,
       "chrome": "workspace"
+    },
+    "llm-endpoints": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": true,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "token-plan": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": true,
+      "scope_keyed": false,
+      "chrome": "workspace"
     }
   },
   "tab_identity_cases": [
@@ -619,6 +640,20 @@
       "view_type": "app",
       "pointer": "artifact-6ba7b810-9dad-41d1-80b4-00c04fd430c8",
       "tab_hash": "app|artifact-6ba7b810-9dad-41d1-80b4-00c04fd430c8"
+    },
+    {
+      "name": "llm-endpoints folds endpoint + tab into one chip",
+      "view_type": "llm-endpoints",
+      "page": "hub",
+      "pointer": "550e8400-e29b-41d4-a716-446655440000/usage",
+      "tab_hash": "hub|llm-endpoints|"
+    },
+    {
+      "name": "token-plan folds its scope into one chip",
+      "view_type": "token-plan",
+      "page": "hub",
+      "pointer": "team/550e8400-e29b-41d4-a716-446655440000",
+      "tab_hash": "hub|token-plan|"
     }
   ],
   "url_cases": [
@@ -901,6 +936,32 @@
         "runtime": "served"
       },
       "url": "/dock/app/artifact-6ba7b810-9dad-41d1-80b4-00c04fd430c8?runtime=served"
+    },
+    {
+      "name": "hub llm endpoints list",
+      "view_type": "llm-endpoints",
+      "page": "hub",
+      "url": "/dock/hub/llm-endpoints"
+    },
+    {
+      "name": "hub llm endpoint usage tab",
+      "view_type": "llm-endpoints",
+      "page": "hub",
+      "pointer": "550e8400-e29b-41d4-a716-446655440000/usage",
+      "url": "/dock/hub/llm-endpoints/550e8400-e29b-41d4-a716-446655440000/usage"
+    },
+    {
+      "name": "hub token plan (me)",
+      "view_type": "token-plan",
+      "page": "hub",
+      "url": "/dock/hub/token-plan"
+    },
+    {
+      "name": "hub token plan team scope",
+      "view_type": "token-plan",
+      "page": "hub",
+      "pointer": "team/550e8400-e29b-41d4-a716-446655440000",
+      "url": "/dock/hub/token-plan/team/550e8400-e29b-41d4-a716-446655440000"
     }
   ]
 }

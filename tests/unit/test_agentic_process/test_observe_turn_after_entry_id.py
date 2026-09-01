@@ -165,6 +165,7 @@ async def _observe(ap: AgenticProcess, path: Path, session_id: str, **kwargs) ->
     return "".join(chunks)
 
 
+@pytest.mark.long  # 6.01s
 @pytest.mark.asyncio
 async def test_without_an_entry_id_the_stream_still_watermarks_at_open(
     initialize_test_db,
@@ -179,6 +180,7 @@ async def test_without_an_entry_id_the_stream_still_watermarks_at_open(
     assert "TAIL-OUTPUT" in body, "only what the turn appends after open is sent"
 
 
+@pytest.mark.long  # 6.01s
 @pytest.mark.asyncio
 async def test_an_entry_id_resumes_the_stream_after_that_entry(
     initialize_test_db,
@@ -195,6 +197,7 @@ async def test_an_entry_id_resumes_the_stream_after_that_entry(
     assert "TAIL-OUTPUT" in body
 
 
+@pytest.mark.long  # 6.02s
 @pytest.mark.asyncio
 async def test_an_unknown_entry_id_degrades_to_the_open_watermark(
     initialize_test_db,
@@ -272,6 +275,7 @@ async def test_nothing_running_and_nothing_unseen_is_an_empty_closed_stream(
 #     breadcrumb.test.live_frame_identity.rules: FAILING? the wire lost transcript-entry-id
 #       - read this tag's rules before touching entry_to_flowdata or to_xml
 # flowpad:endcapsule tag
+@pytest.mark.long  # 6.01s
 @pytest.mark.asyncio
 async def test_the_stream_names_the_entry_each_frame_came_from(
     initialize_test_db,

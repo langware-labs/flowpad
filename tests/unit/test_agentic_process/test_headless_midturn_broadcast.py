@@ -93,6 +93,7 @@ async def test_headless_turn_in_flight_reads_raw_tail_not_initializing(
     assert ap.fetch_worker_status() == WorkerStatus.THINKING
 
 
+@pytest.mark.long  # 2.02s
 @pytest.mark.asyncio
 async def test_headless_midturn_transition_broadcasts(initialize_test_db, monkeypatch, tmp_path) -> None:
     """A headless mid-turn move (thinking → tool_call) broadcasts, even though the
@@ -135,6 +136,7 @@ async def test_headless_midturn_transition_broadcasts(initialize_test_db, monkey
     assert ap._last_broadcast_key == ("running", True, "tool_call")
 
 
+@pytest.mark.long  # 2.03s
 @pytest.mark.asyncio
 async def test_headless_turn_end_flips_wire_to_ready(initialize_test_db, monkeypatch, tmp_path) -> None:
     """At turn end the worker writes end_turn (COMPLETE); the turn is no longer in

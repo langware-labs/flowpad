@@ -217,6 +217,7 @@ async def test_stop_kills_pty_and_sets_idle():
     assert shell.status == "idle"
 
 
+@pytest.mark.long  # 1.05s
 @pytest.mark.asyncio
 async def test_restart_respawns_pty():
     """restart() stops then starts — shell is alive again afterwards."""
@@ -260,6 +261,7 @@ async def test_read_returns_empty_bytes_when_no_record():
     assert result == b""
 
 
+@pytest.mark.long  # 5.50s
 @pytest.mark.asyncio
 async def test_write_echo_visible_in_read():
     """write('echo X') → X appears in read() output."""
@@ -275,6 +277,7 @@ async def test_write_echo_visible_in_read():
             await pty.kill()
 
 
+@pytest.mark.long  # 5.62s
 @pytest.mark.asyncio
 async def test_write_bracketed_paste_in_output():
     """write() uses bracketed paste — the text appears in PTY output intact."""
@@ -295,6 +298,7 @@ async def test_write_bracketed_paste_in_output():
 # output() — live stream
 # ---------------------------------------------------------------------------
 
+@pytest.mark.long  # 5.72s
 @pytest.mark.asyncio
 async def test_output_yields_bytes():
     """output() yields bytes produced by the PTY."""

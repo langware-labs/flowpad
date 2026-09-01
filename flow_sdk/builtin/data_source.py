@@ -217,16 +217,40 @@ class DataSource(Entity):
         """
         return self.status == SourceStatus.ACTIVE.value
 
+    def may_poll(self) -> bool:
+        """The ONE copy of the "is polling this source allowed at all" gate.
+
+        ``is_due``, ``request_poll`` and the poller's attention fast lane all
+        ask the same question; hand-copies drift the moment a new status or
+        health state lands. NEW and SETUP have not finished being configured
+        and DISABLED is a person's decision — none of them touch health.
+        ``config_error`` needs a human; polling it every minute would burn
+        quota to re-learn something we already know.
+        """
+        return (
+            self.status == SourceStatus.ACTIVE.value
+            and self.health != SourceHealth.CONFIG_ERROR.value
+        )
+
+    @classmethod
+    async def find_for_account(cls, provider: str, key: str, value: str) -> "Optional[DataSource]":
+        """The source of ``provider`` whose ``config[key]`` names ``value``.
+
+        The canonical natural-key lookup (same shape as
+        ``SourceItem.find_existing``): callers wanting connect-or-reuse
+        semantics ask HERE instead of re-scanning ``get_all`` and filtering by
+        hand — the id policy's whole point is that identity is a lookup.
+        ``key`` is normally the driver's ``identity_config_key``.
+        """
+        value = str(value or "").strip()
+        for row in await cls.get_all({"provider": provider}):
+            if str((row.config or {}).get(key) or "").strip() == value:
+                return row
+        return None
+
     def is_due(self, now: Optional[datetime] = None) -> bool:
         now = now or datetime.now(timezone.utc)
-        if self.status != SourceStatus.ACTIVE.value:
-            # NEW and SETUP have not finished being configured; DISABLED is a
-            # person's decision. None of them are failures, so none of them
-            # touch health.
-            return False
-        if self.health == SourceHealth.CONFIG_ERROR.value:
-            # Needs a human. Polling it every minute would burn quota to
-            # re-learn something we already know.
+        if not self.may_poll():
             return False
         if self.next_poll_at is None:
             return True
@@ -242,9 +266,23 @@ class DataSource(Entity):
     def schedule_next(self, now: Optional[datetime] = None) -> datetime:
         """Advance ``next_poll_at`` by one interval. THE cadence arithmetic —
         the poller sets it before I/O as a crash guard and the sync loop sets it
-        after; both call here so the two can never disagree."""
+        after; both call here so the two can never disagree.
+
+        The stamp is QUANTIZED to the minute grid the heartbeat ticks on.
+        ``now + interval`` carries this dispatch's millisecond jitter, and the
+        next tick's own jitter is independent — so whenever the tick fired a
+        few ms earlier than the stamp, the poll silently waited a whole extra
+        minute (RCA-proven both directions by moving ``next_poll_at`` across a
+        tick boundary: due :00−30s → the boundary tick polled; due :00+0.5s →
+        it skipped and polled a minute late). Flooring to the minute makes an
+        interval of one tick period mean "every tick", never a coin flip.
+        """
         now = now or datetime.now(timezone.utc)
-        self.next_poll_at = now + timedelta(seconds=self.poll_interval_seconds)
+        due = now + timedelta(seconds=self.poll_interval_seconds)
+        # The grid is the heartbeat tick — the same once-a-minute cadence
+        # MIN_POLL_INTERVAL_SECONDS documents. If the tick period ever
+        # changes, this floor must change with it.
+        self.next_poll_at = due.replace(second=0, microsecond=0)
         return self.next_poll_at
 
     async def capabilities_ready(self) -> bool:
@@ -294,6 +332,51 @@ class DataSource(Entity):
         return ApiSuccessResponse(data={
             "status": "due", "health": self.health, "source_status": self.status,
             "detail": "queued for the next heartbeat tick (≤60s)",
+        })
+
+    @core_action.post(action_name="request_poll")
+    async def request_poll_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/request_poll — attention.
+
+        A viewer is looking at this source's output RIGHT NOW; poll on the
+        next heartbeat tick. The UI fires this on an interval while a
+        conversation backed by the source is selected — the request stream IS
+        the liveness signal, so there is no active/idle state to store,
+        round-trip, or decay: when the viewer goes away the requests stop and
+        the standing ``poll_interval_seconds`` cadence resumes by itself.
+
+        Deliberately NOT ``poll_now``: that verb is the one un-latch for
+        ``config_error``, and an auto-firing viewer must never resurrect a
+        parked source (burning quota to re-learn a broken credential) or wake
+        a DISABLED one — a human decision outranks a mounted view. Ignored,
+        loudly in the payload, for anything that is not a healthy ACTIVE
+        source. Idempotent: an already-due source is left due.
+        """
+        if not self.may_poll():
+            return ApiSuccessResponse(data={
+                "status": "ignored", "health": self.health, "source_status": self.status,
+                "detail": "attention never wakes a parked or non-active source",
+            })
+        if self.next_poll_at is not None:
+            self.next_poll_at = None
+            await self.save()
+        # A driver that tolerates it gets the sub-tick FAST LANE while watched:
+        # each request renews a short lease and the poller's attention loop
+        # polls at the driver's cadence (telegram: 5s). Drivers that declare
+        # nothing stay tick-bound — due on the next minute, no faster.
+        driver = self._driver()
+        cadence = getattr(driver, "attention_poll_seconds", None) if driver else None
+        if cadence:
+            from flow_sdk.ingest.poller import note_attention  # noqa: PLC0415
+
+            note_attention(str(self.id), cadence)
+        return ApiSuccessResponse(data={
+            "status": "due", "health": self.health, "source_status": self.status,
+            "attention_seconds": cadence,
+            "detail": (
+                f"fast lane armed — polling every {cadence}s while watched"
+                if cadence else "queued for the next heartbeat tick (≤60s)"
+            ),
         })
 
     @core_action.post(action_name="reset_cursors")
@@ -440,6 +523,14 @@ class DataSource(Entity):
             )
         for item in doomed:
             await item.destroy()
+        if doomed:
+            # The inbox side of the purge. Under the reference model the
+            # projected FlowMessages hold no body of their own — leaving them
+            # behind would fill the inbox with blank rows, so the cascade is
+            # mandatory, not hygiene.
+            from flow_sdk.inbox.projection import remove_projection_for_items  # noqa: PLC0415
+
+            await remove_projection_for_items([i.id for i in doomed])
         return len(doomed)
 
     @classmethod
@@ -489,6 +580,23 @@ class DataSource(Entity):
                 # config_error the card can actually explain.
                 self.status = SourceStatus.ACTIVE.value
         await self._coerce_config()
+        if not (self.channel or "").strip():
+            # Stamp the channel at CREATE, not first poll: the credential probe
+            # keys on it (Verify on a fresh source probed nothing) and the UI
+            # badges by it. `sync_source` keeps re-stamping every poll, so this
+            # is the first answer, not a fork of the rule. The driver is asked
+            # DIRECTLY — not through `channel_of_driver`, whose provider
+            # fallback is indistinguishable from a driver whose channel simply
+            # IS its provider name (agentmail). A driver that answers empty
+            # (agent transport with no connector yet) stamps nothing.
+            driver = self._driver()
+            if driver is not None:
+                try:
+                    stamped = str(driver.channel_for(self) or "").strip()
+                except Exception:  # noqa: BLE001 — a probe must never fail a save
+                    stamped = ""
+                if stamped:
+                    self.channel = stamped
         self._stamp_origin()
         return await super().save(*args, **kwargs)
 

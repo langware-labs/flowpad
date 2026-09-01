@@ -533,6 +533,32 @@ class SQLiteDBDriver(DBDriver):
             )
         )
 
+        # A reference FlowMessage keys on the SourceItem it renders. The
+        # projection resolves "is this item already placed" by this field on
+        # every projected item, the purge cascade IN-queries it, and read-time
+        # hydration joins through it — all against a JSON field, so without
+        # this each becomes a full scan of every message. Type-partial only:
+        # a value-partial predicate is silently declined (see origin_id above).
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_entities_fm_source_item "
+                "ON entities(json_extract(data, '$.source_item_id')) "
+                "WHERE type = 'flow_message'"
+            )
+        )
+
+        # A MessageThread's natural key. The projection resolves every ingested
+        # message's thread by (channel, thread_key) — a lookup, not a derived
+        # id — and does it once per projected item.
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_entities_message_thread_natural_key "
+                "ON entities(json_extract(data, '$.channel'), "
+                "json_extract(data, '$.thread_key')) "
+                "WHERE type = 'message_thread'"
+            )
+        )
+
         # "Who owns this path" — `Entity.get_by_asset_ref`, and now every
         # identity resolution that recovers a wiped carrier instead of minting a
         # fork. It ran as a full scan PER owner type, and the watcher path calls

@@ -9,6 +9,8 @@ answer with the pre-merge id and silently split the session in half.
 """
 from __future__ import annotations
 
+import uuid
+
 import pytest
 
 from flow_sdk.builtin.data_source import DataSource
@@ -46,9 +48,9 @@ def _item(source_id: str, thread_key: str) -> SourceItem:
 
 async def _thread_for(source, item, *, conversation_id: str) -> MessageThread:
     thread = MessageThread(
-        id=MessageThread.allocate_deterministic_id(
-            channel_of(source), thread_key_for(item, item.name or "")
-        ),
+        # An ordinary uuid4: identity is the (channel, thread_key) lookup now,
+        # which is exactly what `_conversation_id_for` resolves by.
+        id=str(uuid.uuid4()),
         channel=channel_of(source),
         thread_key=thread_key_for(item, item.name or ""),
         conversation_id=conversation_id,

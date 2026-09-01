@@ -3,15 +3,19 @@
   "name": "agent",
   "title": "Agent transport",
   "icon_name": "Bot",
-  "description": "Reaches a channel through a local agent harness \u2014 how Gmail is read today.",
+  "channel_icon_names": {
+    "gmail": "Mail",
+    "slack": "Slack"
+  },
+  "description": "Reaches a channel through a local agent harness — how Gmail and Slack are read today.",
   "config": {
     "connector": {
       "type": "text",
       "required": true,
       "label": "Connector",
-      "placeholder": "gmail",
+      "placeholder": "gmail | slack",
       "account_key": true,
-      "hint": "This is the CHANNEL, and half of every thread key. Leaving it empty forks every thread in the mailbox \u2014 permanently."
+      "hint": "This is the CHANNEL, and half of every thread key. Required — an empty or unknown connector parks the source on config_error."
     },
     "harness": {
       "type": "text",
@@ -23,7 +27,8 @@
     "segments": {
       "type": "csv",
       "label": "Segments",
-      "placeholder": "INBOX"
+      "placeholder": "INBOX — or channel IDs (C…) for slack",
+      "hint": "What to walk, one cursor each: mailboxes/labels for gmail (defaults to INBOX), channel IDs for slack (required — a channel id cannot be guessed)."
     },
     "agent": {
       "type": "text",

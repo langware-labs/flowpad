@@ -134,7 +134,10 @@ class TestMapping:
         # lets two agents collapse onto one thread.
         assert item.thread_key == f"{AGENT_ID}:t-1"
         assert item.name == "Round trip"
-        assert item.occurred_at == "2026-08-04T08:28:47.206Z"
+        # The spec canonicalizes every provider dialect to aware-UTC +00:00
+        # at the edge (see SourceItemSpec._canonical_event_time) — the Z-form
+        # the hub hands us lands normalized.
+        assert item.occurred_at == "2026-08-04T08:28:47.206000+00:00"
         assert item.kind == "content.message.email"
         assert item.segment_key == AGENT_ID
         assert item.reply_to_external_id is None

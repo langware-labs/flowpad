@@ -13,7 +13,7 @@ import pytest
 from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchHealth
 from flow_sdk.ingest.driver import SendOutcome, SendStatus
 from flow_sdk.ingest.drivers.agent import (
-    DEFAULT_SEND_AGENT,
+    CONNECTOR_PROFILES,
     SEND_RECEIPT_FILENAME,
     AgentDriver,
     _send_slots,
@@ -80,6 +80,7 @@ class TestTimeoutIsNotRetryable:
     """THE test. `fetch` classes a timeout transient — "the next attempt may
     succeed" — which for a send means mailing the recipient twice."""
 
+    @pytest.mark.long  # 1.00s
     @pytest.mark.asyncio
     async def test_a_timed_out_send_refuses_a_retry(self, monkeypatch):
         driver = AgentDriver()
@@ -134,7 +135,7 @@ class TestInstruction:
     def test_the_body_is_fenced_verbatim(self):
         text = "please  DON'T   fix my spacing\nor my grammer"
         out = AgentDriver._send_instruction(
-            _source(), {}, "/tmp/sent.json",
+            _source(), {"connector": "gmail"}, "/tmp/sent.json",
             thread_key="t-1", to="a@b.c", text=text, subject="Re: x",
         )
         # Fenced so the model can see exactly where the user's words begin and
@@ -144,7 +145,7 @@ class TestInstruction:
 
     def test_it_carries_the_absolute_cli_path(self):
         out = AgentDriver._send_instruction(
-            _source(), {}, "/tmp/sent.json",
+            _source(), {"connector": "gmail"}, "/tmp/sent.json",
             thread_key="t", to="a@b.c", text="hi", subject="",
         )
         # A bare `flow` on PATH resolved to a pyenv shim of an older build.
@@ -153,7 +154,7 @@ class TestInstruction:
 
     def test_a_threadless_send_says_so_rather_than_sending_blank(self):
         out = AgentDriver._send_instruction(
-            _source(), {}, "/tmp/sent.json",
+            _source(), {"connector": "gmail"}, "/tmp/sent.json",
             thread_key="", to="a@b.c", text="hi", subject="Hello",
         )
         assert "start a new thread" in out
@@ -164,8 +165,10 @@ class TestDriverContract:
         assert AgentDriver.sends is True
 
     def test_replying_uses_its_own_agent_not_the_summarizer(self):
-        # `email-summarizer`'s persona says "You do not open the mailbox".
-        assert DEFAULT_SEND_AGENT == "emailer"
+        # Each connector's send persona is distinct from its fetch persona —
+        # `email-summarizer`'s prose says "You do not open the mailbox".
+        for profile in CONNECTOR_PROFILES.values():
+            assert profile.send_agent != profile.agent
 
     def test_the_two_verbs_never_read_each_others_receipt(self):
         from flow_sdk.ingest.drivers.agent import RECEIPT_FILENAME

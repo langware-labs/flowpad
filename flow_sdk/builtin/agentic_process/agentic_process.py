@@ -45,7 +45,11 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     latch_spawn_failure,
     resolve_worker_language,
 )
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import ProcessHookRuntime
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    ProcessHookRuntime,
+    ProcessMcpRuntime,
+)
+from flow_sdk.schema.data_spec.mcp_spec import McpSpec
 from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks
 from flow_sdk.builtin.agentic_process.status_predicates import (
     WorkerMode,
@@ -347,9 +351,27 @@ async def hydrate_asset_descriptor_remote(
 
 @dataclass
 class SystemInstructionAssets:
+    """This process's asset MOUNT, plus the instruction text when there is any.
+
+    The mount is the load-bearing half: it is how a worker discovers embedded
+    skills and sub-agents. Instruction TEXT is a separate, optional concern — a
+    process can have skills and nothing to say — so ``instructions`` may be ``""``
+    and ``claude_file`` ``None``. Gating the whole object on the text is what
+    silently starved opencode's generated config and copilot's custom-instruction
+    dirs of the assets dir whenever a process had skills but no persona.
+    """
+
     assets_dir: Path
-    instructions: str
-    claude_file: Path
+    instructions: str = ""
+    claude_file: Path | None = None
+
+    @property
+    def system_prompt_file(self) -> str | None:
+        """The system-prompt file path, or None when there is no text.
+
+        The one place the "no text ⇒ no file to point at" coercion is stated.
+        """
+        return str(self.claude_file) if self.claude_file else None
     # The owning process. Every vendor but opencode reaches these assets through
     # a directory flag and needs nothing else; opencode reaches them ONLY through
     # a generated per-process config, which is keyed on this id.
@@ -362,12 +384,15 @@ class PreparedProcessAssets:
 
     instruction_assets: SystemInstructionAssets | None = None
     hook_runtime: ProcessHookRuntime = field(default_factory=ProcessHookRuntime)
+    mcp_runtime: ProcessMcpRuntime = field(default_factory=ProcessMcpRuntime)
 
 
 # Types treated as executable agent inputs by the asset-management UI.
 # Markdown / spec / plan / claude_rules etc. are intentionally excluded —
 # they're documentation, not things the agent runs.
-EXECUTABLE_ASSET_TYPES: list[str] = ["skill", "subagent"]
+# "Executable" is a slight misnomer since ``mcp`` joined: an MCP is a capability
+# the worker is given, not something it runs. Renaming is a separate change.
+EXECUTABLE_ASSET_TYPES: list[str] = ["skill", "subagent", "mcp"]
 
 
 def add_source_dir(
@@ -916,7 +941,6 @@ def _union_display_stacks(a: list, b: list) -> list[dict]:
 
 class AgenticProcess(Entity):
     _api_visible = True
-    _icon: ClassVar[str | None] = "Workflow"
     type: str = APIField(default="agentic_process")
 
     instruction_content: str | None = APIField(default=None)
@@ -1103,6 +1127,19 @@ class AgenticProcess(Entity):
         description=(
             "TypeIds of entities whose files have been materialized into the "
             "process's <record_dir>/assets folder. Claude discovers them via --add-dir."
+        ),
+    )
+    mcp_servers: list[McpSpec] = APIField(
+        default_factory=list,
+        description=(
+            "MCP servers attached to THIS process. Specs, not refs: a spec is "
+            "self-contained, so it survives being copied to another machine, "
+            "whereas a TypeId points at a config file that only exists here. "
+            "Resolved at launch and rendered into whichever channel this "
+            "harness accepts (--mcp-config / -c mcp_servers.* / "
+            "--additional-mcp-config / the opencode config). Enters the restart "
+            "snapshot: MCP is resolved once at worker boot, so attaching to a "
+            "live process must flip ``restart_required``."
         ),
     )
     process_hook_events: list[str] = APIField(
@@ -1684,7 +1721,7 @@ class AgenticProcess(Entity):
 
             process_assets = await self.prepare_process_assets()
             cmd = self._finalized_restart_cli_options()
-            self._apply_process_assets(cmd, process_assets)
+            self._apply_process_assets(cmd, process_assets, str(self.id))
 
             # Fork & CLAUDE_PROJECT_DIR resume-cwd pinning are Claude-only —
             # Codex/Copilot mint their own session and use ``-C <cwd>``, not
@@ -5154,9 +5191,7 @@ class AgenticProcess(Entity):
         )
         self._normalize_process_asset_mount()
         ref = self._agent_entity_ref(abs_path)
-        refs = list(self.embedded_asset_refs or [])
-        if ref not in refs:
-            self.embedded_asset_refs = refs + [ref]
+        self._record_embedded_ref(ref)
         self._drop_legacy_agent_name(name)
         await self.save()
         return ApiSuccessResponse(data={"ok": True, "name": name, "ref": str(ref)})
@@ -5189,10 +5224,21 @@ class AgenticProcess(Entity):
 
         Skills are directory-discovered by the worker at startup, not a CLI
         input. We symlink the live source folder into the worker's skills root
-        (``_skills_root``) — ``<assets_dir>/.claude/skills/<name>/`` for
-        Claude/Copilot, ``$CODEX_HOME/skills/<name>/`` for Codex — so edits to
-        the original SKILL.md flow through to the next chat without
-        re-materialization. Backs the TS ``AgenticProcess.loadEmbeddedSkill``.
+        (``_skills_root``) — ``<assets_dir>/.claude/skills/<name>/`` for Claude,
+        ``<assets_dir>/.github/skills/<name>/`` for Copilot,
+        ``<assets_dir>/.opencode/skills/<name>/`` for OpenCode and
+        ``$CODEX_HOME/skills/<name>/`` for Codex — so edits to the original
+        SKILL.md flow through to the next chat without re-materialization.
+        Backs the TS ``AgenticProcess.loadEmbeddedSkill``.
+
+        Laying the files down is only half the job: the ref is ALSO recorded in
+        ``embedded_asset_refs``, exactly as ``attach_embedded_asset`` does. That
+        list is the persisted answer to "does this process have assets?", and
+        both delivery predicates read it from a FRESH entity instance on the
+        next request — ``resolved_add_dirs`` (via ``process_assets_active``) and
+        ``_prepare_system_instruction_assets`` (via ``has_existing_assets``).
+        Without the record the symlink is real and the worker never sees it: the
+        assets dir is simply never mounted.
         """
         import shutil
 
@@ -5217,11 +5263,87 @@ class AgenticProcess(Entity):
                 shutil.rmtree(link)
             link.symlink_to(skill_dir, target_is_directory=True)
             self._normalize_process_asset_mount()
+            ref = self._skill_folder_ref(skill_dir)
+            self._record_embedded_ref(ref)
             await self.save()
-            return ApiSuccessResponse(data={"ok": True, "name": skill_dir.name, "link": str(link)})
+            return ApiSuccessResponse(
+                data={"ok": True, "name": skill_dir.name, "link": str(link), "ref": str(ref) if ref else None}
+            )
         except Exception as exc:
             logger.exception("load_embedded_skill failed for %s", asset_ref)
             return ApiFailResponse(message=str(exc))
+
+    def _embedded_skill_path(self, ref: "TypeId", assets_dir: "Path") -> "Path | None":
+        """Where this process's copy/link of skill ``ref`` lives, or None.
+
+        ``get_skill`` answers only for a skill that has a shadow record, which a
+        folder handed straight to ``load_embedded_skill_action`` need not have.
+        So fall back to scanning the vendor's skills root and matching entries
+        by resolved id — the same identity gate that minted the ref.
+        """
+        from flow_sdk.fs_store.operations.skill import get_skill  # noqa: PLC0415
+
+        root = self._skills_root(assets_dir)
+        rec = get_skill(ref.id)
+        if rec is not None and rec.name:
+            candidate = root / rec.name
+            if candidate.is_symlink() or candidate.exists():
+                return candidate
+        try:
+            entries = sorted(root.iterdir())
+        except OSError:
+            return None
+        for entry in entries:
+            if self._skill_folder_ref(entry) == ref:
+                return entry
+        return None
+
+    def _record_embedded_ref(self, ref: "TypeId | None") -> None:
+        """Record ``ref`` in ``embedded_asset_refs``, idempotently.
+
+        The bookkeeping half of embedding, shared by all three placement paths
+        (sub-agent, skill symlink, entity copy). It is what makes the process
+        say "I have assets" on the NEXT request's fresh entity — the predicate
+        both ``resolved_add_dirs`` and ``_prepare_system_instruction_assets``
+        read to decide whether to mount the assets dir. A placement path that
+        skips it lays real files down that no worker can see.
+
+        Callers still ``save()`` themselves: they have other fields to flush in
+        the same write.
+        """
+        if ref is None:
+            return
+        refs = list(self.embedded_asset_refs or [])
+        if not any(r.type == ref.type and r.id == ref.id for r in refs):
+            self.embedded_asset_refs = refs + [ref]
+
+    @staticmethod
+    def _skill_folder_ref(skill_dir: "Path") -> "TypeId | None":
+        """The ``skill-<id>`` TypeId for a skill folder on disk, or None.
+
+        Through ``skill_id`` — the read-only peek seam ``disk_asset_descriptors``
+        already builds this exact string with. It ADOPTS the folder's ``.flow/id``
+        capsule or frontmatter id rather than minting one, so pointing a process
+        at someone's skill folder never writes to it, and two loads of the same
+        folder converge (a fresh id per call would grow the ref list and never
+        match ``detach``).
+
+        Best-effort by contract: a folder that yields no id must not fail the
+        load, it just doesn't get a ref.
+        """
+        try:
+            from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+            from flow_sdk.fs_store.indexer.functions.skill import (  # noqa: PLC0415
+                parse_skill_yaml_from_dir,
+                skill_id,
+            )
+
+            ref = FSRef(skill_dir)
+            resolved = skill_id(ref, parse_skill_yaml_from_dir(skill_dir))
+            return TypeId(f"skill-{resolved}") if resolved else None
+        except Exception:
+            logger.debug("could not resolve a skill ref for %s", skill_dir, exc_info=True)
+            return None
 
     @staticmethod
     def _skill_source_folder(skill: "Any") -> str | None:
@@ -5459,19 +5581,20 @@ class AgenticProcess(Entity):
         instructions = "\n\n".join(p for p in (explicit, agent_block) if p).strip()
 
         self._normalize_process_asset_mount()
-        if not instructions:
-            return None
 
-        claude_file = asset_dir.load_asset("CLAUDE.md", content=instructions + "\n")
-        # AGENTS.md / .agents / copilot-instructions must exist on disk (agents discover
-        # them via --add-dir), but their paths aren't consumed — write without capturing.
-        asset_dir.load_asset("AGENTS.md", content=instructions + "\n")
-        asset_dir.load_asset(".agents", content=instructions + "\n")
-        copilot_body = f'---\napplyTo: "**"\ndescription: Flowpad process system instructions\n---\n\n{instructions}\n'
-        asset_dir.load_asset(
-            ".github/instructions/flowpad.instructions.md",
-            content=copilot_body,
-        )
+        # No text is NOT "no assets" — see ``SystemInstructionAssets``.
+        claude_file = None
+        if instructions:
+            claude_file = asset_dir.load_asset("CLAUDE.md", content=instructions + "\n")
+            # AGENTS.md / .agents / copilot-instructions must exist on disk (agents discover
+            # them via --add-dir), but their paths aren't consumed — write without capturing.
+            asset_dir.load_asset("AGENTS.md", content=instructions + "\n")
+            asset_dir.load_asset(".agents", content=instructions + "\n")
+            copilot_body = f'---\napplyTo: "**"\ndescription: Flowpad process system instructions\n---\n\n{instructions}\n'
+            asset_dir.load_asset(
+                ".github/instructions/flowpad.instructions.md",
+                content=copilot_body,
+            )
         return SystemInstructionAssets(
             assets_dir=asset_dir.os_path,
             instructions=instructions,
@@ -5500,7 +5623,15 @@ class AgenticProcess(Entity):
                 str(self.id),
                 tuple(self.process_hook_events),
             )
-        return PreparedProcessAssets(instruction_assets=instructions, hook_runtime=hook_runtime)
+        mcp_runtime = ProcessMcpRuntime()
+        prepare_mcp = getattr(self.driver, "prepare_process_mcp", None)
+        if prepare_mcp is not None:
+            mcp_runtime = prepare_mcp(self.resolved_mcp_servers())
+        return PreparedProcessAssets(
+            instruction_assets=instructions,
+            hook_runtime=hook_runtime,
+            mcp_runtime=mcp_runtime,
+        )
 
     async def prepare_system_instruction_assets(self) -> SystemInstructionAssets | None:
         """Compatibility instruction-only preparation entry point."""
@@ -5517,6 +5648,59 @@ class AgenticProcess(Entity):
         from flow_sdk.builtin.hooks.process_manager import ProcessHooksManager
 
         return ProcessHooksManager(self)
+
+    def resolved_mcp_servers(self) -> tuple["McpSpec", ...]:
+        """The MCP servers this process launches with, deduped by name.
+
+        An agent's servers are COPIED onto ``mcp_servers`` when the process is
+        created (``Deployment.create_process``), not unioned in here — so a
+        process keeps the set its agent had at creation, and editing the agent
+        afterwards does not silently re-arm a running process. A process may add
+        its own on top; first wins on a name clash, so the agent's survives.
+        """
+        from flow_sdk.builtin.agentic_process.cli_drivers.mcp_projection import (  # noqa: PLC0415
+            dedupe_by_name,
+        )
+
+        return tuple(dedupe_by_name(self.mcp_servers or []))
+
+    def _require_mcp_support(self) -> None:
+        driver = self.driver
+        if not bool(getattr(driver, "supports_process_mcp", False)):
+            raise NotImplementedError(
+                f"{getattr(driver, 'name', self.worker_type)} does not support "
+                "per-process MCP servers"
+            )
+
+    async def add_mcp(self, spec: "McpSpec") -> bool:
+        """Attach one MCP server to this process; return whether it changed.
+
+        Does NOT restart. MCP is resolved once at worker boot, so a running
+        worker keeps the tool set it launched with — the caller sees
+        ``restart_required`` flip and decides when to bounce. On the headless
+        vendors the next turn is a fresh exec, so it costs nothing there.
+        """
+        self._require_mcp_support()
+        # Render once here so a spec this harness cannot express (e.g. a dotted
+        # name under codex) is refused at attach time rather than at spawn.
+        self.driver.prepare_process_mcp([spec])
+        current = list(self.mcp_servers or [])
+        if any(existing == spec for existing in current):
+            return False
+        self.mcp_servers = [s for s in current if s.name != spec.name] + [spec]
+        await self.save()
+        return True
+
+    async def remove_mcp(self, name: str) -> bool:
+        """Detach one MCP server by name; return whether it changed."""
+        self._require_mcp_support()
+        current = list(self.mcp_servers or [])
+        remaining = [s for s in current if s.name != name]
+        if len(remaining) == len(current):
+            return False
+        self.mcp_servers = remaining
+        await self.save()
+        return True
 
     async def set_hook(self, event: HookEventType | str) -> bool:
         """Persist one process-local hook intent; return whether it changed."""
@@ -5610,7 +5794,13 @@ class AgenticProcess(Entity):
         cmd.apply_instruction_assets(assets)
 
     @classmethod
-    def _apply_process_assets(cls, cmd: AgentOptions, prepared: PreparedProcessAssets) -> None:
+    def _apply_process_assets(
+        cls, cmd: AgentOptions, prepared: PreparedProcessAssets, process_id: str = ""
+    ) -> None:
+        # Order is no longer load-bearing: opencode's generated config is written
+        # lazily at spawn (``_sync_config_env``), so every contribution is on
+        # ``cmd`` by the time anything is rendered.
+        cmd.apply_process_mcp(prepared.mcp_runtime, process_id)
         cls._apply_system_instruction_assets(cmd, prepared.instruction_assets)
         runtime = prepared.hook_runtime
         if runtime.plugin_dirs:
@@ -5634,7 +5824,7 @@ class AgenticProcess(Entity):
             return {}
         return {
             "instructions": None,
-            "system_prompt_file": str(assets.claude_file),
+            "system_prompt_file": assets.system_prompt_file,
             "developer_instructions": assets.instructions,
             "custom_instruction_dirs": [str(assets.assets_dir)],
         }
@@ -5644,8 +5834,13 @@ class AgenticProcess(Entity):
         return {
             **cls._instruction_context_kwargs(prepared.instruction_assets),
             "plugin_dirs": list(prepared.hook_runtime.plugin_dirs),
-            "extra_config_overrides": list(prepared.hook_runtime.config_overrides),
+            "extra_config_overrides": [
+                *prepared.hook_runtime.config_overrides,
+                *prepared.mcp_runtime.config_overrides,
+            ],
             "bypass_hook_trust": prepared.hook_runtime.bypass_hook_trust,
+            "mcp_config_json": prepared.mcp_runtime.mcp_config_json,
+            "mcp_config_fragment": dict(prepared.mcp_runtime.config_fragment),
         }
 
     async def _materialize_entity(self, ref: TypeId, assets_dir: "Path") -> str | None:
@@ -5657,6 +5852,24 @@ class AgenticProcess(Entity):
         from flow_sdk.fs_store.operations.skill import copy_skill_to, get_skill
         from flow_sdk.fs_store.operations.subagent import get_subagent  # noqa: PLC0415
         from flow_sdk.fs_store.operations.subagent import load_subagent as _load_subagent
+
+        if ref.type == "mcp":
+            # Unlike a skill or sub-agent, materializing an MCP is NOT how the
+            # worker finds it — MCP reaches the worker through argv/config
+            # rendering (``prepare_process_mcp``). The copy exists so the asset
+            # row has a file to reveal and edit, and so an attached server is
+            # editable without touching the shared original.
+            from flow_sdk.builtin.mcp import MCP_MAIN_FILE, Mcp  # noqa: PLC0415
+
+            row = await Mcp.get_by_id(ref.id)
+            if row is None:
+                raise FileNotFoundError(f"MCP not found: {ref.id}")
+            spec = row.to_spec()
+            AssetDir(assets_dir).load_asset(
+                Path("mcp") / spec.name / MCP_MAIN_FILE,
+                content=spec.model_dump_json(indent=2) + "\n",
+            )
+            return spec.name
 
         if ref.type == "subagent":
             # Resolve by id (uuid5-derived from the .md path) first, then fall back
@@ -5689,7 +5902,6 @@ class AgenticProcess(Entity):
         """Best-effort removal of the files laid down by _materialize_entity."""
         import shutil
 
-        from flow_sdk.fs_store.operations.skill import get_skill
         from flow_sdk.fs_store.operations.subagent import get_subagent  # noqa: PLC0415
         from flow_sdk.fs_store.operations.subagent import load_subagent as _load_subagent
 
@@ -5700,10 +5912,16 @@ class AgenticProcess(Entity):
             if target.exists():
                 target.unlink()
         elif ref.type == "skill":
-            skill = get_skill(ref.id)
-            name = skill.name if skill else ref.id
-            target = self._skills_root(assets_dir) / name
-            if target.exists():
+            target = self._embedded_skill_path(ref, assets_dir)
+            # ``load_embedded_skill_action`` SYMLINKS the source folder while
+            # ``_materialize_entity`` COPIES it. rmtree raises on a symlink, so
+            # check the link before the directory — and never recurse into the
+            # user's real skill folder.
+            if target is None:
+                return
+            if target.is_symlink():
+                target.unlink()
+            elif target.exists():
                 shutil.rmtree(target)
 
     @action.post(action_name="attach-embedded-asset")
@@ -5722,10 +5940,7 @@ class AgenticProcess(Entity):
             if name is None:
                 return ApiFailResponse(message=f"Unsupported entity type for embed: {entity_ref}")
             self._normalize_process_asset_mount()
-            refs = list(self.embedded_asset_refs or [])
-            if not any(r.type == ref.type and r.id == ref.id for r in refs):
-                refs.append(ref)
-                self.embedded_asset_refs = refs
+            self._record_embedded_ref(ref)
             await self.save()
             return ApiSuccessResponse(data={"ok": True, "name": name, "ref": entity_ref})
         except Exception as exc:
@@ -6165,13 +6380,24 @@ class AgenticProcess(Entity):
 
         Mirrors the layout written by ``_materialize_entity``:
           - ``agent`` → ``<assets_dir>/.claude/agents/<name>.md``
-          - ``skill`` → ``<assets_dir>/.claude/skills/<name>``
+          - ``skill`` → ``<skills_root>/<name>`` — the vendor's own root (see
+            ``WorkerDriver.skills_root``), NOT always ``.claude/skills``
+          - ``mcp``   → ``<assets_dir>/mcp/<name>/mcp.json`` (NOT under a harness
+            dot-dir: no harness reads MCP from disk, so this copy is for the UI
+            and for editing, not for discovery)
 
         TODO: when ``Record.materialize_into`` (tier 1 alignment) lands, swap
         this for ``record.materialize_into(assets_dir).path`` so the layout is
         owned by the record subclass instead of duplicated here.
         """
         try:
+            if ref.type == "mcp":
+                from flow_sdk.builtin.mcp import MCP_MAIN_FILE, Mcp  # noqa: PLC0415
+
+                row = await Mcp.get_by_id(ref.id)
+                if row is None:
+                    return None
+                return assets_dir / "mcp" / (row.name or ref.id) / MCP_MAIN_FILE
             if ref.type == "subagent":
                 from flow_sdk.fs_store.operations.subagent import get_subagent  # noqa: PLC0415
                 from flow_sdk.fs_store.operations.subagent import load_subagent as _load_subagent
@@ -6182,13 +6408,7 @@ class AgenticProcess(Entity):
                 name = rec.name or ref.id
                 return assets_dir / ".claude" / "agents" / f"{name}.md"
             if ref.type == "skill":
-                from flow_sdk.fs_store.operations.skill import get_skill
-
-                rec = get_skill(ref.id)
-                if rec is None:
-                    return None
-                name = rec.name or ref.id
-                return self._skills_root(assets_dir) / name
+                return self._embedded_skill_path(ref, assets_dir)
         except Exception:
             return None
         return None
@@ -6427,11 +6647,19 @@ class AgenticProcess(Entity):
     def _generic_restart_snapshot_payload(self, driver: WorkerDriver | None) -> dict[str, Any]:
         worker_type: Any = driver.name if driver is not None else self.worker_type
         hook_events = tuple(sorted(set(self.process_hook_events or [])))
+        from flow_sdk.builtin.agentic_process.cli_drivers.mcp_projection import (  # noqa: PLC0415
+            mcp_snapshot as _mcp_snapshot,
+        )
+
         hook_snapshot = {}
+        # Vendor-neutral by construction, so no driver seam: attaching or
+        # detaching must move the hash on every harness identically.
+        mcp_snapshot = _mcp_snapshot(self.resolved_mcp_servers())
         if driver is not None:
             snapshot = getattr(driver, "process_hook_snapshot", None)
             if snapshot is not None:
                 hook_snapshot = snapshot(hook_events)
+
         return {
             "worker_type": worker_type,
             "shell_mode": self.shell_mode,
@@ -6442,6 +6670,7 @@ class AgenticProcess(Entity):
             "embedded_subagent_ids": sorted(self.embedded_subagent_ids or []),
             "process_hook_events": list(hook_events),
             "process_hooks": hook_snapshot,
+            "mcp_servers": mcp_snapshot,
         }
 
     def _restart_snapshot_payload(self) -> dict[str, Any]:

@@ -2329,6 +2329,69 @@ async def handle_inbox_update(fm_id: str, patch: dict, someone_typeid: str) -> A
     return ApiSuccessResponse(data={"id": fm_id, "is_read": fm.is_read, "is_archived": fm.is_archived})
 
 
+@action.post(action_name="inbox-search", types=None)
+async def inbox_search() -> ApiResponse:
+    """Full-inbox body search → conversation ids. Body: ``{"q": "<substring>"}``.
+
+    Two lanes because bodies live in two places under the reference model:
+    a channel message's text is on its SourceItem (the FlowMessage row is a
+    blank reference), a hub-native message's is on the row. Reference rows
+    can't false-match the second query — their stored ``text`` is ``""``.
+    Substring (`$LIKE`) on both lanes, matching the search this replaces.
+    """
+    try:
+        request_info = get_current_request_info()
+        if not request_info:
+            return ApiFailResponse(message="No request info")
+        body = await request_info.get_post_data() or {}
+        needle = str(body.get("q") or "").strip()
+        if not needle:
+            return ApiSuccessResponse(data={"conversation_ids": []})
+        like = f"%{needle}%"
+
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        # The two lanes are independent — run them together.
+        items, native = await asyncio.gather(
+            SourceItem.get_all(
+                QueryFilter(
+                    match=ExpressionNode(
+                        op=QueryOp.OR,
+                        operands=[
+                            ExpressionNode(op=QueryOp.LIKE, operands=["body", like]),
+                            ExpressionNode(op=QueryOp.LIKE, operands=["name", like]),
+                        ],
+                    )
+                )
+            ),
+            FlowMessage.get_all(
+                QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=["text", like])),
+                hydrate=False,
+            ),
+        )
+        conversation_ids: set[str] = {
+            str(m.conversation_id) for m in native if m.conversation_id
+        }
+        if items:
+            refs = await FlowMessage.get_all(
+                QueryFilter(
+                    match=ExpressionNode(
+                        op=QueryOp.IN,
+                        operands=["source_item_id", [str(i.id) for i in items]],
+                    )
+                ),
+                hydrate=False,
+            )
+            conversation_ids |= {str(m.conversation_id) for m in refs if m.conversation_id}
+        return ApiSuccessResponse(data={"conversation_ids": sorted(conversation_ids)})
+    except Exception as e:
+        logger.error("[flow_message_action] inbox-search error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Search failed: {str(e)}")
+
+
 @action.post(action_name="inbox-update", types=[BuiltinEntityType.FLOW_MESSAGE.value])
 async def inbox_update() -> ApiResponse:
     """Update is_read / is_archived on a single FlowMessage."""

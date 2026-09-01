@@ -1,6 +1,15 @@
 import { useCallback, useMemo } from 'react';
-import { DataSourceSpec, QueryRequest } from '@sdk';
+import { DataSource, DataSourceSpec, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+
+/** The configured sources — ONE named query, shared by DataSourcesView and the
+ *  inbox's channel attribution, so the cached result and any future shape
+ *  change stay in step between them. Global for the reason stated below. */
+export const sourcesQuery = new QueryRequest({
+  type: DataSource.type,
+  scope: [],
+  name: 'data-sources:list',
+});
 
 /**
  * The installed source definitions, and a lookup by name.

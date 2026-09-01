@@ -4,15 +4,22 @@
 is rendered in a conversation. This module is the one-way projection between
 them, and nothing else in the system knows both halves.
 
-**Everything is derived, so everything is idempotent.**
+**Identity is looked up, so everything is idempotent.**
 
-    thread id       = uuid5(f"message_thread:{channel}:{thread_key}")
-    conversation id = uuid5(f"conversation:{thread id}")
-    message id      = uuid5(f"flow_message:source_item:{source item id}")
+    thread        resolved by (channel, thread_key)   — MessageThread.find_existing
+    conversation  thread.conversation_id              — authoritative once born
+    message       resolved by source_item_id          — the reference column
 
-No lookup tables and no delivery ledger: re-projecting the whole corpus is a
-no-op, which is what lets the reconcile sweep below be a blunt instrument.
-``materialize_flow_message`` already upserts on a pre-populated id.
+Ids are ordinary uuid4s, minted only on first sight; re-projecting the whole
+corpus converges on the same rows by lookup, which is what lets the reconcile
+sweep below be a blunt instrument. ``materialize_flow_message`` already upserts
+on a pre-populated id.
+
+**A projected FlowMessage is a REFERENCE row, not a copy.** It carries
+membership (thread, conversation), attribution (sender, origin) and the
+person's state (``is_read``); its ``text`` stays empty on disk and is hydrated
+at read time from the SourceItem it references — so an item edit changes
+nothing here, and there is no snapshot-refresh machinery to keep in step.
 
 **Two lanes, and both are load-bearing.** The per-item lane is the steady
 state. The reconcile lane exists because ``ingest_items`` emits item tags ONLY
@@ -30,9 +37,19 @@ import logging
 import re
 from typing import Any, Optional
 
-from pydantic import BaseModel
+from flow_sdk.inbox._locks import loop_lock, new_registry
 
 logger = logging.getLogger(__name__)
+
+# Serializes thread CREATION (the resolve is double-checked outside it). The
+# old derived id made concurrent item events converge on one row for free; a
+# lookup-then-create races, and two events on a new thread would fork it.
+_thread_locks = new_registry()
+
+
+def _thread_lock():
+    return loop_lock(_thread_locks)
+
 
 #: How many un-projected items one reconcile pass will catch up. A first Gmail
 #: sync is a few hundred; this bounds the work per `sync.completed` without a
@@ -99,6 +116,20 @@ def is_message(item) -> bool:
     return tag_is_within(item.kind or "", MESSAGE_KIND_ROOT)
 
 
+def _thread_title(item) -> str:
+    """A chat thread's display title: the root message's opening line.
+
+    First line only, bounded, ellipsized on a word where possible. Empty when
+    the item has no body — the caller then falls back to the thread key.
+    """
+    opening = (getattr(item, "body", "") or "").strip().splitlines()[0:1]
+    text = opening[0].strip() if opening else ""
+    if len(text) <= 60:
+        return text
+    cut = text[:60].rsplit(" ", 1)[0] or text[:60]
+    return f"{cut}…"
+
+
 def channel_of(source) -> str:
     """The user-facing channel for a DataSource.
 
@@ -111,13 +142,21 @@ def channel_of(source) -> str:
 
 
 async def project_source_item(
-    item, *, source=None, notify: bool = True, recount: bool = True, announce: bool = True
-) -> Optional[str]:
-    """Project one SourceItem into its conversation. Returns the FlowMessage id.
+    item,
+    *,
+    source=None,
+    notify: bool = True,
+    recount: bool = True,
+    announce: bool = True,
+    known_unplaced: bool = False,
+) -> Optional[tuple[str, str]]:
+    """Project one SourceItem into its conversation.
 
-    Idempotent: the ids are derived, so a second call upserts the same rows.
-    Returns None when the item cannot be placed (no source, no body) rather
-    than raising — one bad record must not stall a sync.
+    Returns ``(flow_message_id, thread_id)``, or None when the item cannot be
+    placed (no source, not a message) rather than raising — one bad record
+    must not stall a sync. Idempotent: identity is resolved by lookup (thread
+    by natural key, message by ``source_item_id``), so a second call converges
+    on the same rows.
 
     ``recount=False`` defers the thread recount to the caller. A sweep sets it:
     recounting per item is quadratic in thread depth, because each recount
@@ -141,6 +180,7 @@ async def project_source_item(
     )
     from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
     from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
     from flow_sdk.ingest.drivers.channel_links import permalink_for  # noqa: PLC0415
@@ -156,22 +196,35 @@ async def project_source_item(
     channel = channel_of(source)
     subject = item.name or ""
     key = thread_key_for(item, subject)
-    thread_id = MessageThread.allocate_deterministic_id(channel, key)
 
-    thread = await MessageThread.get_one({"id": thread_id})
+    # Resolve-or-create, double-checked: the derived id used to absorb this
+    # race for free, a lookup does not — two concurrent events on a brand-new
+    # thread would each miss and fork it. The lock is taken only on a miss, so
+    # the ~100% common already-exists case never serializes on it.
+    thread = await MessageThread.find_existing(channel, key)
     if thread is None:
-        # The minted id is a BIRTH default only — once the thread exists, its
-        # `conversation_id` is authoritative, because a merge repoints it and
-        # that repoint is the whole reason the id is not derived from the key.
-        thread = MessageThread(
-            id=thread_id,
-            channel=channel,
-            thread_key=key,
-            conversation_id=mint_uuid(f"conversation:{thread_id}"),
-            title=subject or key,
-            name=subject or key,
-        )
-        await thread.save(notify=False)
+        async with _thread_lock():
+            thread = await MessageThread.find_existing(channel, key)
+            if thread is None:
+                # Both ids are ordinary uuid4s, minted here at birth and looked
+                # up ever after. `conversation_id` is authoritative from this
+                # moment: a merge repoints it, which is the whole reason
+                # nothing re-derives it from the key.
+                # A mail thread titles by subject. A chat message has none, and
+                # falling back to the KEY put raw Slack ts digits in the inbox;
+                # the root message's opening is what Slack itself titles a
+                # thread by. Stamped at birth only, so it never churns.
+                display = subject or _thread_title(item) or key
+                thread = MessageThread(
+                    id=mint_uuid(),
+                    channel=channel,
+                    thread_key=key,
+                    conversation_id=mint_uuid(),
+                    title=display,
+                    name=display,
+                )
+                await thread.save(notify=False)
+    thread_id = str(thread.id)
     conversation_id = thread.conversation_id
 
     # Defensive reads end here: `item` and `source` are typed entities.
@@ -184,10 +237,83 @@ async def project_source_item(
     )
 
     sender_id, sender_name = await _sender_for(item, source, channel)
-    fm_id = mint_uuid(f"flow_message:source_item:{item.id}")
+    # The message row is resolved by its reference column. FIRST placement
+    # runs under the shared lock: two lanes (sync ingest + the projected-tag
+    # handler) can otherwise both prove "no row" before either inserts — that
+    # TOCTOU produced a duplicated message live (one item, two FlowMessages,
+    # 0.4s apart). The already-placed path re-projects without the lock, so
+    # the steady-state re-poll never serializes; `known_unplaced` (the
+    # reconcile sweep's bulk proof) skips only the unlocked pre-check —
+    # inside the lock the row is always re-asked, because any proof taken
+    # before the lock is stale by definition.
+    existing_fm = None if known_unplaced else await FlowMessage.get_one(
+        {"source_item_id": str(item.id)}
+    )
+    if existing_fm is None:
+        async with _thread_lock():
+            existing_fm = await FlowMessage.get_one({"source_item_id": str(item.id)})
+            if existing_fm is None:
+                # First placement stays UNDER the lock — the birth is the race.
+                return await _place_message(
+                    item, source, channel, subject, key, thread, thread_id,
+                    conversation_id, sender_id, sender_name, None,
+                    notify=notify, recount=recount, announce=announce,
+                )
+    # Already placed: idempotent re-projection, no lock needed.
+    return await _place_message(
+        item, source, channel, subject, key, thread, thread_id,
+        conversation_id, sender_id, sender_name, existing_fm,
+        notify=notify, recount=recount, announce=announce,
+    )
+
+
+async def _place_message(
+    item, source, channel, subject, key, thread, thread_id,
+    conversation_id, sender_id, sender_name, existing_fm,
+    *, notify, recount, announce,
+):
+    """Write the message row + pointers for one resolved message.
+
+    Split from ``project_source_item`` so first placement can run under the
+    dedupe lock, and THE convergence point for ``sent_at``: an existing row
+    whose stamp differs from the item's ``occurred_at`` is corrected here,
+    because ``materialize_flow_message`` deliberately no-op-upserts an
+    existing local row and the payload alone would never reach it. The
+    projection is the one writer of ``sent_at``; nothing else may touch it.
+    """
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.utils.serialization import iso_to_utc  # noqa: PLC0415
+
+    if existing_fm is not None:
+        fm_id = str(existing_fm.id)
+        want = iso_to_utc(item.occurred_at) if item.occurred_at else None
+        have = iso_to_utc(existing_fm.sent_at) if existing_fm.sent_at else None
+        if want is not None and have != want:
+            existing_fm.sent_at = want
+            try:
+                await existing_fm.save(notify=False)
+            except Exception:  # noqa: BLE001 — healing must not break placement
+                logger.exception("[inbox] sent_at heal failed for %s", fm_id)
+    else:
+        fm_id = mint_uuid()
+    from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+    from flow_sdk.ingest.drivers.channel_links import permalink_for  # noqa: PLC0415
+
     payload: dict[str, Any] = {
         "id": fm_id,
+        # The HYDRATED body: the in-memory row (and therefore every live emit
+        # made from it) carries what a reader sees, while `FlowMessage.save()`
+        # blanks `text` around persistence — the STORED row stays a reference.
         "text": item.body or subject,
+        "source_item_id": str(item.id),
+        # EVENT time — the projection is the one writer of this field. Present
+        # on every (re)projection, so a legacy row heals the moment anything
+        # re-projects its item (a sync's reconcile sweep, an .updated tag, a
+        # replay): reindex fixes the data "as is", by design.
+        "sent_at": item.occurred_at or None,
         "sender_id": sender_id,
         "sender_name": sender_name,
         "thread_id": thread_id,
@@ -209,82 +335,36 @@ async def project_source_item(
         ).model_dump(),
     }
     if item.reply_to_external_id:
-        # The parent is resolved by its natural key, not derived: SourceItem ids
-        # are uuid4. A parent that has not arrived yet simply yields no
-        # `reply_to_id` — the same outcome the derived form produced for a
-        # message id that pointed at nothing.
+        # Two lookups, no derivation: the parent item by its natural key, then
+        # its message row by the reference column. A parent that has not
+        # arrived — or arrived but is not yet projected — yields no
+        # `reply_to_id`. Accepted loss vs the derived form: a child projected
+        # before its parent keeps a null `reply_to_id` (nothing heals it
+        # later); both lanes project oldest-first, which covers the normal case.
         parent = await SourceItem.find_existing(
             item.data_source_id, item.segment_key, item.reply_to_external_id
         )
         if parent is not None:
-            payload["reply_to_id"] = mint_uuid(f"flow_message:source_item:{parent.id}")
+            parent_fm = await FlowMessage.get_one({"source_item_id": str(parent.id)})
+            if parent_fm is not None:
+                payload["reply_to_id"] = str(parent_fm.id)
 
     # `bundle_ts` becomes the conversation pointer's timestamp, which is what
     # orders the feed — so a backfill lands in message time, not arrival order.
-    fm = await materialize_flow_message(
+    await materialize_flow_message(
         payload,
         conversation_id,
         someone_typeid=None,
         bundle_ts=(item.occurred_at or None),
         notify=notify,
     )
-    await _refresh_projected_fields(fm, payload, notify=notify)
     if recount:
         await recompute_thread_projection(thread_id, thread=thread, notify=notify)
     if announce:
         from flow_sdk.inbox.inbox_on_tag import emit_projected_tag  # noqa: PLC0415
 
         emit_projected_tag(item)
-    return fm_id
-
-
-#: The FlowMessage fields this projection OWNS. Everything else on the row —
-#: `is_read`, `is_archived`, drafts, delivery state — is the user's and must
-#: survive a refresh untouched.
-_PROJECTED_MESSAGE_FIELDS = (
-    "text",
-    "sender_id",
-    "sender_name",
-    "thread_id",
-    "reply_to_id",
-    "origin",
-    "origin_local",
-)
-
-
-async def _refresh_projected_fields(fm, payload: dict, *, notify: bool) -> None:
-    """Re-apply the source snapshot to an already-materialized message.
-
-    ``materialize_flow_message`` is deliberately create-only for local-origin
-    payloads — "a local-origin re-materialize keeps the row untouched
-    (idempotent upsert)" — which is right for a message we authored and wrong
-    for one that CACHES a mutable cloud record. Without this, a subject edited
-    in Gmail, a corrected sender, or a link the connector only started
-    supplying would never reach the row: the SourceItem would move and the
-    conversation would keep showing the first snapshot forever.
-
-    Writes only the fields above, and only when one actually differs, so the
-    common no-op poll costs nothing.
-    """
-    if fm is None:
-        return
-    changed = False
-    for field in _PROJECTED_MESSAGE_FIELDS:
-        if field not in payload:
-            continue
-        wanted = payload[field]
-        current = getattr(fm, field, None)
-        # A model-valued field round-trips as its dump; compare on the wire
-        # shape so a pydantic instance and its dump don't read as different
-        # every poll. Keyed on what the value IS, not on which names happen to
-        # be model-valued today — a third one must not have to be listed here.
-        if isinstance(current, BaseModel):
-            current = current.model_dump()
-        if current != wanted:
-            setattr(fm, field, wanted)
-            changed = True
-    if changed:
-        await fm.save(notify=notify)
+    return fm_id, thread_id
 
 
 def self_addresses(source) -> set[str]:
@@ -442,14 +522,12 @@ async def recompute_thread_projection(thread_id: str, *, thread=None, notify: bo
 async def reconcile_source(data_source_id: str, *, limit: int = RECONCILE_BATCH) -> int:
     """Project every SourceItem of one source that has no message yet.
 
-    The catch-up lane. Cheap because the FlowMessage id is DERIVED from the
-    SourceItem id: "has this been projected?" is one bulk id query, not a join
-    or a per-item probe.
+    The catch-up lane. Cheap because a projected message carries its
+    ``source_item_id``: "has this been projected?" is one bulk IN query over
+    the indexed reference column, not a join or a per-item probe.
     """
-    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
-    from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
     from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
@@ -474,12 +552,27 @@ async def reconcile_source(data_source_id: str, *, limit: int = RECONCILE_BATCH)
     )
     if not items:
         return 0
-    wanted = {mint_uuid(f"flow_message:source_item:{i.id}"): i for i in items}
     existing = await FlowMessage.get_all(
-        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", list(wanted)]))
+        QueryFilter(
+            match=ExpressionNode(
+                op=QueryOp.IN, operands=["source_item_id", [str(i.id) for i in items]]
+            )
+        ),
+        hydrate=False,  # placement check reads ids only
     )
-    missing = [wanted[k] for k in wanted.keys() - {str(m.id) for m in existing}]
-    if not missing:
+    placed = {str(m.source_item_id) for m in existing}
+    # Placed but missing EVENT time — legacy rows from before ``sent_at``
+    # existed (or a drifted stamp cleared by hand). Re-projecting them runs
+    # the convergent heal, which is what makes a plain reindex fix mis-dated
+    # data "as is" — no bespoke migration, this sweep runs after every sync.
+    unstamped = {
+        str(m.source_item_id)
+        for m in existing
+        if getattr(m, "sent_at", None) is None and str(m.source_item_id or "")
+    }
+    missing = [i for i in items if str(i.id) not in placed]
+    heal = [i for i in items if str(i.id) in unstamped and i.occurred_at]
+    if not missing and not heal:
         return 0
     # Oldest first, so conversation pointers land in message order even though
     # a provider hands them back newest-first.
@@ -504,21 +597,121 @@ async def reconcile_source(data_source_id: str, *, limit: int = RECONCILE_BATCH)
 
     projected = 0
     touched: set[str] = set()
-    for item in missing:
+    # One loop, two legs. `missing` items are first placements
+    # (`known_unplaced=True`, announced per the storm decision above);
+    # `heal` items already have a row — re-resolving runs the sent_at heal
+    # through the same idempotent upsert, and is never announced because
+    # nothing "arrived", a stamp converged. Recounts are deferred either way:
+    # per-item recounting reloads the whole thread each time, quadratic in
+    # thread depth over a backfill.
+    for item, unplaced, announce_it in (
+        *((i, True, announce) for i in missing),
+        *((i, False, False) for i in heal),
+    ):
         try:
-            # Defer the recount: doing it per item reloads the whole thread each
-            # time, which is quadratic in thread depth over a backfill.
-            if await project_source_item(item, source=source, recount=False, announce=announce):
-                projected += 1
-                touched.add(
-                    MessageThread.allocate_deterministic_id(channel_of(source), thread_key_for(item, item.name or ""))
-                )
+            result = await project_source_item(
+                item, source=source, recount=False,
+                announce=announce_it, known_unplaced=unplaced,
+            )
+            if result:
+                projected += unplaced
+                touched.add(result[1])
         except Exception:  # noqa: BLE001 — one bad record must not stall the sweep
             logger.exception("[inbox] reconcile failed for source_item %s", item.id)
     for thread_id in touched:
         await recompute_thread_projection(thread_id)
     logger.info("[inbox] reconciled %d/%d items for source %s", projected, len(missing), data_source_id)
     return projected
+
+
+async def remove_projection_for_items(item_ids, *, notify: bool = True) -> int:
+    """Delete the reference rows for purged SourceItems and heal their containers.
+
+    Mandatory under the reference model, where it was merely hygiene under the
+    copy: an orphaned reference renders BLANK, not stale-but-readable, so a
+    purge that left the messages behind would fill the inbox with empty rows.
+
+    Per doomed message: destroy the row, prune its conversation pointer. Then
+    per touched thread: recount, or delete it when nothing remains; a
+    conversation with no messages and no threads left goes with it. Hub-native
+    messages never carry ``source_item_id``, so a mixed conversation only ever
+    loses its channel half.
+    """
+    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+    from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+    from flow_sdk.fs_store.operations.conversation import prune_message_pointer  # noqa: PLC0415
+    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+    ids = [str(i) for i in item_ids if i]
+    if not ids:
+        return 0
+    doomed = await FlowMessage.get_all(
+        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["source_item_id", ids])),
+        hydrate=False,
+    )
+    if not doomed:
+        return 0
+
+    touched_threads = {str(fm.thread_id) for fm in doomed if fm.thread_id}
+    touched_convs = {str(fm.conversation_id) for fm in doomed if fm.conversation_id}
+    for fm in doomed:
+        conv_id = str(fm.conversation_id or "")
+        try:
+            await fm.destroy()
+        except Exception:  # noqa: BLE001 — one stuck row must not stall the purge
+            logger.exception("[inbox] purge: destroy failed for flow_message %s", fm.id)
+            continue
+        if conv_id:
+            try:
+                rec = FSRecord(type=RecordType.CONVERSATION, id=conv_id)
+                await prune_message_pointer(rec, str(fm.id), notify=notify)
+            except Exception:  # noqa: BLE001
+                logger.exception("[inbox] purge: pointer prune failed fm=%s conv=%s", fm.id, conv_id)
+
+    # Grouped, not per-row: a whole-source purge touches hundreds of threads,
+    # and 2-3 point queries each turns one purge into a query storm. One IN
+    # query answers "which touched threads still hold messages" for all of
+    # them; same shape for conversations below.
+    thread_rows = await MessageThread.get_all(
+        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", sorted(touched_threads)]))
+    )
+    survivors = await FlowMessage.get_all(
+        QueryFilter(
+            match=ExpressionNode(op=QueryOp.IN, operands=["thread_id", sorted(touched_threads)])
+        ),
+        hydrate=False,
+    )
+    live_threads = {str(m.thread_id) for m in survivors if m.thread_id}
+    for thread in thread_rows:
+        if str(thread.id) in live_threads:
+            await recompute_thread_projection(str(thread.id), thread=thread, notify=notify)
+        else:
+            await thread.destroy()
+
+    # After the thread destroys, so a reaped thread cannot keep its
+    # conversation alive.
+    conv_ids = sorted(touched_convs)
+    conv_msgs = await FlowMessage.get_all(
+        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["conversation_id", conv_ids])),
+        hydrate=False,
+    )
+    threads_left = await MessageThread.get_all(
+        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["conversation_id", conv_ids]))
+    )
+    alive = {str(m.conversation_id) for m in conv_msgs if m.conversation_id}
+    alive |= {str(t.conversation_id) for t in threads_left if t.conversation_id}
+    for conv_id in conv_ids:
+        if conv_id in alive:
+            continue
+        conv = await Conversation.get_one({"id": conv_id})
+        if conv is not None:
+            await conv.destroy()
+
+    _touch()
+    return len(doomed)
 
 
 # ── bus wiring ───────────────────────────────────────────────────────────────

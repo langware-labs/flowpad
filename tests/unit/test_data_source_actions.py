@@ -332,3 +332,22 @@ async def test_destroy_takes_the_cursors_and_records_with_it():
 
     assert len(await SourceItem.get_all({"data_source_id": other.id})) == 1, "delete crossed sources"
     assert len(await DataSourceCursor.get_all({"data_source_id": other.id})) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_channel_is_stamped_at_create_not_first_poll():
+    """The projection races the first fetch: items recorded by the worker
+    mid-fetch project BEFORE sync's post-fetch save lands, and a source whose
+    channel is still empty bakes origin.kind="agent" into every message
+    (observed live, inbox-7 2026-09-01). Stamping at create closes the race."""
+    import flow_sdk.ingest.drivers  # noqa: F401,PLC0415 — registers the drivers
+
+    src = await _source(provider="agent", config={"connector": "slack", "segments": ["C1"]})
+    assert src.channel == "slack", "channel must be present before any poll"
+
+    # A driver whose channel IS its provider name must not be mistaken for the
+    # provider fallback — the first stamp implementation made exactly that
+    # error and left agentmail sources channel-less at create.
+    src = await _source(provider="agentmail", config={"inbox": "x@agentmail.to", "api_key": "k"})
+    assert src.channel == "agentmail"

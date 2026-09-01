@@ -124,6 +124,8 @@ export enum ViewType {
   // can never become the identity of an app. Mirrors `ViewType.APP` in
   // flow_sdk/core/dock_address.py — same value, same position.
   APP = 'app',
+  LLM_ENDPOINTS = 'llm-endpoints', // Hub LLM endpoints (roots + chains) - /dock/hub/llm-endpoints[/<id>[/overview|usage|models]]
+  TOKEN_PLAN = 'token-plan', // Hub token plan (me / team / org budgets) - /dock/hub/token-plan[/me|team[/<id>]|org]
 }
 
 /**
@@ -150,6 +152,18 @@ export enum WebappSubview {
  * MachineSubview enum for machine overview sub-navigation
  * Used as pointer in dock/machine/:pointer URLs
  */
+/**
+ * TokenPlanKind enum for the hub token-plan scopes.
+ * Used as the leading pointer segment in dock/hub/token-plan/:pointer URLs,
+ * optionally followed by a team id: `token-plan/team/<teamId>`.
+ * Mirrors `TokenPlanKind` in flow_sdk/core/dock_address.py.
+ */
+export enum TokenPlanKind {
+  ME = 'me',
+  TEAM = 'team',
+  ORG = 'org',
+}
+
 export enum MachineSubview {
   PROCESSES = 'processes',
   NETWORK = 'network',

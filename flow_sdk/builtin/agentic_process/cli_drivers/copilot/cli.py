@@ -70,6 +70,11 @@ class CopilotAgentOptions(AgentOptions):
             tail.extend(["--add-dir", directory])
         for directory in self.plugin_dirs:
             tail.extend(["--plugin-dir", directory])
+        if self.mcp_config_json:
+            # AUGMENTS ~/.copilot/mcp-config.json for this session — there is no
+            # strict counterpart to set. Undocumented on docs.github.com; see
+            # ``copilot --help`` on 1.0.81.
+            tail.extend(["--additional-mcp-config", self.mcp_config_json])
         if self.resume and self.session_id:
             tail.append(f"--resume={self.session_id}")
         elif self.session_id:

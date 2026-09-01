@@ -30,9 +30,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import weakref
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
+
+from flow_sdk.inbox._locks import loop_lock, new_registry
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.fs_store.type_id import TypeId
@@ -43,24 +44,13 @@ logger = logging.getLogger(__name__)
 
 # Serializes compute→compare→save so two concurrent recomputes can't interleave
 # a stale save over a fresher one. Process-local is enough: the backend is the
-# single writer of the projection. Keyed per running event loop rather than one
-# module-global Lock: an asyncio.Lock is loop-scoped, and a single module Lock
-# breaks under per-test event loops — a loop torn down while a fire-and-forget
-# recompute holds the lock leaves it locked+bound to a dead loop forever, and
-# every later acquire from a new loop raises "bound to a different event loop".
-# In the backend's single long-lived loop this is identical to one Lock.
-_recompute_locks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]" = (
-    weakref.WeakKeyDictionary()
-)
+# single writer of the projection. Per running event loop — see ``_locks`` for
+# why a module-global Lock breaks under per-test loops.
+_recompute_locks = new_registry()
 
 
 def _recompute_lock() -> asyncio.Lock:
-    loop = asyncio.get_running_loop()
-    lock = _recompute_locks.get(loop)
-    if lock is None:
-        lock = asyncio.Lock()
-        _recompute_locks[loop] = lock
-    return lock
+    return loop_lock(_recompute_locks)
 
 
 def viewer_email() -> Optional[str]:
@@ -181,7 +171,12 @@ async def _load_and_count() -> int:
     )
     return count_unread(
         conversations=await Conversation.get_all(QueryFilter(type=EntityType.CONVERSATION.value)),
-        fm_by_id={m.id: m for m in await FlowMessage.get_all(QueryFilter(type=EntityType.FLOW_MESSAGE.value))},
+        # hydrate=False: the formula reads is_read/sender/is_draft, never text —
+        # joining every reference row's SourceItem here would put a whole-mailbox
+        # join on every mutation's recompute.
+        fm_by_id={m.id: m for m in await FlowMessage.get_all(
+            QueryFilter(type=EntityType.FLOW_MESSAGE.value), hydrate=False
+        )},
         invitations=invitations,
         self_ids=await User.self_ids(),
         viewer_email=email,

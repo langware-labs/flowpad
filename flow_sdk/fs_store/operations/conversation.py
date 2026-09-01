@@ -159,13 +159,17 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
     below backfills first and re-reads; a converged conversation pays one set
     comparison and writes nothing.
 
-    Recency is the last *real* message change — ``max(message.updated_date)``,
-    NOT ``created_date`` (which never reflects an edit). ``FlowMessage.is_stale``
-    keeps ``updated_date`` from advancing on a bare touch, so this ``max``
-    excludes touches by construction: a body re-download bumps no message clock
-    and therefore no inbox recency. ``updated_date`` stays the single field used
-    for inbox order. With NO messages there is no max to take — see the
-    empty-case comment below.
+    TWO CLOCKS, one read rule. A message has an EVENT time (when the human
+    sent it) and PROCESSING times (when our row was written/edited); rendering
+    the second as the first is how a year-old Slack backfill once read "11h
+    ago". Every timestamp derived here — the pointer ``ts`` and the recency —
+    therefore reads ``FlowMessage.event_time`` (``sent_at or updated_date or
+    created_date``), never a bookkeeping clock directly: a channel-projected
+    message is pinned to its ``sent_at``; an authored message keeps behaving
+    as before (an edit bumps recency via ``updated_date``, and
+    ``FlowMessage.is_stale`` keeps bare touches from advancing that clock); a
+    hub-synced copy uses its adopted hub ``created_date``. With NO messages
+    there is no max to take — see the empty-case comment below.
     """
     from datetime import datetime
 
@@ -184,7 +188,21 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
         kids = await conv.get_children(
             child_filter=QueryFilter(type=FlowMessage.get_type(), order_by={"created_date": "asc"})
         )
-        return [c.value for c in kids if getattr(c, "value", None) is not None]
+        out = [c.value for c in kids if getattr(c, "value", None) is not None]
+
+        # Conversation order is EVENT time (the DB can only order by the
+        # bookkeeping clock): a backfilled year-old message belongs before
+        # today's replies, wherever ingestion happened to place its row.
+        # Stable sort + the created_date pre-order keeps ties deterministic;
+        # dateless rows sort last.
+        _min = datetime.min.replace(tzinfo=UTC)
+
+        def _event_key(m: FlowMessage):
+            ts = Conversation._as_datetime(m.event_time)
+            return (ts is None, ts or _min)
+
+        out.sort(key=_event_key)
+        return out
 
     messages = await _ordered_children()
     # Legacy data (or a lost edge) — heal from the pointer index / conversation_id
@@ -200,7 +218,7 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
             [
                 Pointer(
                     TypeId(type=Pointer.DEFAULT_MESSAGE_TYPE, id=m.id),
-                    (m.created_date.isoformat() if m.created_date is not None else ""),
+                    (m.event_time.isoformat() if m.event_time is not None else ""),
                 ).to_dict()
                 for m in messages
             ]
@@ -211,7 +229,7 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
 
     new_updated = None
     for m in messages:
-        ts = Conversation._as_datetime(m.updated_date or m.created_date)
+        ts = Conversation._as_datetime(m.event_time)
         if ts is not None and (new_updated is None or ts > new_updated):
             new_updated = ts
     if new_updated is None:

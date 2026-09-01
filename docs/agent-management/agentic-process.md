@@ -526,7 +526,8 @@ process's assets directory:
   .agents
   .github/instructions/flowpad.instructions.md
   .claude/agents/<name>.md
-  .claude/skills/<name>/...
+  .claude/skills/<name>/...        # claude; copilot reads .github/skills,
+                                   # opencode .opencode/skills (WorkerDriver.skills_root)
 ```
 
 `AgenticProcess.embedded_assets` is `None` until needed. `ensure_embedded_assets()`

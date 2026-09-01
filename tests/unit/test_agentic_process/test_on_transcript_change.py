@@ -74,6 +74,7 @@ async def test_buffer_extends_and_arms_debounce(initialize_test_db, monkeypatch)
         pass
 
 
+@pytest.mark.long  # 1.02s
 @pytest.mark.asyncio
 async def test_flush_broadcasts_on_status_transition(initialize_test_db, monkeypatch) -> None:
     """A change from (running, busy, thinking) → (running, ¬busy, complete)
@@ -97,6 +98,7 @@ async def test_flush_broadcasts_on_status_transition(initialize_test_db, monkeyp
     assert ap._last_broadcast_key == ("running", False, "complete")
 
 
+@pytest.mark.long  # 1.03s
 @pytest.mark.asyncio
 async def test_flush_broadcasts_on_wire_flip_same_worker(initialize_test_db, monkeypatch) -> None:
     """A busy→¬busy flip with an UNCHANGED worker status still broadcasts — the
@@ -121,6 +123,7 @@ async def test_flush_broadcasts_on_wire_flip_same_worker(initialize_test_db, mon
     assert ap._last_broadcast_key == ("running", False, "complete")
 
 
+@pytest.mark.long  # 1.02s
 @pytest.mark.asyncio
 async def test_flush_skips_broadcast_when_status_unchanged(initialize_test_db, monkeypatch) -> None:
     """No transition in the (status, busy, worker) triple → no notify_updated."""
@@ -141,6 +144,7 @@ async def test_flush_skips_broadcast_when_status_unchanged(initialize_test_db, m
     assert notify_calls == []
 
 
+@pytest.mark.long  # 2.06s
 @pytest.mark.asyncio
 async def test_a_rehydrated_flush_dedups_against_the_previous_one(
     initialize_test_db, monkeypatch
@@ -179,6 +183,7 @@ async def test_a_rehydrated_flush_dedups_against_the_previous_one(
     assert notify_calls == [None], "nothing changed — the rehydrated flush must not re-broadcast"
 
 
+@pytest.mark.long  # 4.23s
 @pytest.mark.asyncio
 async def test_on_timeout_fires_once_per_transition_not_once_per_flush(
     initialize_test_db, monkeypatch
@@ -213,6 +218,7 @@ async def test_on_timeout_fires_once_per_transition_not_once_per_flush(
     assert timeout_calls == [None], "the stall is unchanged — the handler must not re-fire"
 
 
+@pytest.mark.long  # 1.02s
 @pytest.mark.asyncio
 async def test_flush_short_circuits_when_not_running(initialize_test_db, monkeypatch) -> None:
     """Lifecycle flipped to STOPPED during the debounce window → no broadcast."""
@@ -233,6 +239,7 @@ async def test_flush_short_circuits_when_not_running(initialize_test_db, monkeyp
     assert notify_calls == []
 
 
+@pytest.mark.long  # 1.02s
 @pytest.mark.asyncio
 async def test_stale_pty_flush_cannot_overwrite_durable_cli_switch(initialize_test_db, monkeypatch) -> None:
     """A PTY callback armed before a CLI switch never republishes its stale row."""
@@ -263,6 +270,7 @@ async def test_stale_pty_flush_cannot_overwrite_durable_cli_switch(initialize_te
     assert persisted.pty_mode is False
 
 
+@pytest.mark.long  # 1.02s
 @pytest.mark.asyncio
 async def test_flush_invokes_on_timeout_for_api_timeout(initialize_test_db, monkeypatch) -> None:
     """API_TIMEOUT triggers _on_timeout — migrated responsibility from

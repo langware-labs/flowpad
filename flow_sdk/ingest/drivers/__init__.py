@@ -15,6 +15,7 @@ from flow_sdk.ingest.drivers.git import GitDriver
 from flow_sdk.ingest.drivers.hackernews import HackerNewsDriver
 from flow_sdk.ingest.drivers.rss import RssDriver
 from flow_sdk.ingest.drivers.slack import SlackDriver
+from flow_sdk.ingest.drivers.telegram import TelegramDriver
 
 register_driver(RssDriver())
 register_driver(HackerNewsDriver())
@@ -25,6 +26,7 @@ register_driver(FolderDriver())
 register_driver(GoogleDriveDriver())
 register_driver(GitDriver())
 register_driver(SlackDriver())
+register_driver(TelegramDriver())
 
 __all__ = [
     "AgentDriver",
@@ -36,4 +38,5 @@ __all__ = [
     "HackerNewsDriver",
     "RssDriver",
     "SlackDriver",
+    "TelegramDriver",
 ]

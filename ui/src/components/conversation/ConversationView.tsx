@@ -4,6 +4,7 @@ import { useLingui } from '@lingui/react/macro';
 import { LifeBuoy, Radio, RefreshCw } from 'lucide-react';
 import {
   Conversation,
+  DataSource,
   fetchConversations,
   FlowMessage,
   MessageThread,
@@ -19,7 +20,9 @@ import { useAuth, useEntitiesQuery, useEntity, useProject } from '@sdk/react/hoo
 import type { ITask } from '@sdk/entities/task';
 import { isHelpdeskKind } from '@sdk/entities/conversation';
 import { ThreadStack } from './ThreadStack';
-import { channelLabel } from './ChannelBadge';
+import { channelLabel, sourceForOrigin } from './channel-attribution';
+import { sourcesQuery } from '@src/components/data-sources/use-source-specs';
+import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
 import { syncConversationMessages, updateMessage } from '@src/components/inbox-view/inbox-api';
 import { FlowMessageKind, markFlowMessagesReceived } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
@@ -295,6 +298,19 @@ export function ConversationView({
     }
     return null;
   }, [messagesById]);
+
+  // Attention-driven polling: while this source-backed conversation is the
+  // SELECTED dock, keep its DataSource due (request_poll on an interval) so
+  // new messages land fast; deselect and the requests stop on their own.
+  // Source resolution is the SAME rule the attribution chip uses.
+  const { data: attentionSources = [] } = useEntitiesQuery<DataSource>(sourcesQuery);
+  const attentionSourceId = useMemo(() => {
+    const withPointer = [...messagesById.values()].find((fm) => fm.origin_local?.data_source_id);
+    return sourceForOrigin(
+      attentionSources, channelOrigin, withPointer?.origin_local ?? null,
+    )?.id;
+  }, [channelOrigin, messagesById, attentionSources]);
+  useAttentionPolling(attentionSourceId, conversationId);
 
   // What is in flight. Local state, because the line must appear the instant
   // the user hits Send — the worker's process does not exist yet. Cleared when
