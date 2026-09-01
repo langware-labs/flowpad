@@ -139,6 +139,17 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   }
 
   /**
+   * Attention: someone is LOOKING at this source's output — poll on the next
+   * heartbeat tick. Fired on an interval by a selected view; the request
+   * stream itself is the liveness signal, so nothing is stored and nothing
+   * needs undoing when the viewer goes away. Unlike `pollNow` it never
+   * un-latches `config_error` and never wakes a disabled source.
+   */
+  async requestPoll(): Promise<{ status: string; health: SourceHealth; detail: string }> {
+    return this.post('request_poll');
+  }
+
+  /**
    * Forget sync position (high-water + provider-opaque state) so the next poll
    * re-reads the whole window. On its own this changes nothing visible: ids are
    * deterministic and the content digest still matches, so pair it with

@@ -302,6 +302,24 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     // precedent).
     foldsPointer: true,
   },
+  // Hub LLM endpoints (page=hub). Pointer = `<id>[/<overview|usage|models>]`:
+  // in-view selection + tab, so it folds into one chip (CREDENTIALS precedent).
+  [ViewType.LLM_ENDPOINTS]: {
+    title: msg`LLM Endpoints`,
+    iconName: 'Waypoints',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    foldsPointer: true,
+  },
+  // Hub token plan (page=hub). Pointer = the scope (`me` | `team[/<id>]` | `org`):
+  // an in-view selection, so it folds into one chip (LLM_ENDPOINTS precedent).
+  [ViewType.TOKEN_PLAN]: {
+    title: msg`Token plan`,
+    iconName: 'Gauge',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    foldsPointer: true,
+  },
   [ViewType.SUBGRAPH]: {
     title: msg`Subgraph`,
     iconName: 'Workflow',

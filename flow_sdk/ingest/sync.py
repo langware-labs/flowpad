@@ -71,7 +71,10 @@ async def sync_source(
     if driver.kind and source.kind != driver.kind:
         source.kind = driver.kind
     # The channel too — the badge and the thread key read it off the row, and a
-    # row written before the field existed self-heals on its next poll.
+    # row written before the field existed self-heals on its next poll. Second
+    # invocation of ONE rule, not a fork: `DataSource.save` stamps the same
+    # `channel_of_driver` answer at CREATE (empty-only), because the first
+    # poll's projection races this post-fetch save.
     channel = channel_of_driver(driver, source)
     if channel and source.channel != channel:
         source.channel = channel

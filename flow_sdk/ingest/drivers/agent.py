@@ -31,6 +31,7 @@ import asyncio
 import json
 import logging
 import sys
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -85,21 +86,75 @@ _send_slots = asyncio.Semaphore(MAX_CONCURRENT_SENDS)
 #: mailbox, a send writes one message.
 DEFAULT_SEND_DEADLINE_SECONDS = 120
 
-#: The Agent that owns replying. NOT `email-summarizer` — that persona's own
-#: prose says "You do not open the mailbox".
-DEFAULT_SEND_AGENT = "emailer"
+@dataclass(frozen=True)
+class ConnectorProfile:
+    """Everything about this transport that varies BY CONNECTOR, in one row.
 
-#: Its task contract for this verb.
-DEFAULT_SEND_SUBAGENT = "email_sender"
+    The driver machinery (launch, receipts, budgets, cursors) is connector-
+    agnostic; what a Gmail source and a Slack source disagree on is exactly
+    this: the ontology kind their items carry, the personas that fetch and
+    send (an Agent, not a raw prompt — worker, model and subagents stay
+    user-editable under the assistant project; the fetch/send split exists
+    because the send persona's prose forbids reading), what a segment is
+    called to a human, and whether one can be assumed. A per-source config
+    may still override any persona (`agent`/`subagent`/`send_agent`/
+    `send_subagent`).
+    """
 
-#: The shipped Agent a source uses unless its config names another. An Agent —
-#: not a raw prompt — so the worker, model and subagents are the ones a user can
-#: see and edit under the assistant project.
-DEFAULT_AGENT = "email-summarizer"
+    kind: str
+    segment_noun: str
+    #: Assumed when config names no segments. Empty = segments are REQUIRED
+    #: (a Slack source cannot guess a channel id the way mail can assume INBOX).
+    default_segments: tuple[str, ...]
+    agent: str
+    subagent: str
+    send_agent: str
+    send_subagent: str
 
-#: The extraction contract the run actually follows (the Agent's persona sets
-#: who is working; this sets what this turn must do).
-DEFAULT_SUBAGENT = "email_analyzer"
+
+CONNECTOR_PROFILES: dict[str, ConnectorProfile] = {
+    "gmail": ConnectorProfile(
+        kind="content.message.email",
+        segment_noun="mailbox",
+        default_segments=("INBOX",),
+        agent="email-summarizer",
+        subagent="email_analyzer",
+        send_agent="emailer",
+        send_subagent="email_sender",
+    ),
+    "slack": ConnectorProfile(
+        kind="content.message.chat",
+        segment_noun="channel",
+        default_segments=(),
+        agent="slack-summarizer",
+        subagent="slack_analyzer",
+        send_agent="slack-poster",
+        send_subagent="slack_sender",
+    ),
+}
+
+
+def profile_of(config: dict) -> ConnectorProfile:
+    """The connector's profile, or a config error a human has to fix.
+
+    ``connector`` is REQUIRED. The old fallback ("assume gmail", and let an
+    empty connector stamp ``channel="agent"``) forked every thread in the
+    source permanently — the manifest hint even documented it. Refusing here
+    parks the source in config health with the actual fix in the message.
+    """
+    connector = str((config or {}).get("connector") or "").strip().lower()
+    if not connector:
+        raise SourceError.config(
+            "no_connector", "config.connector is required (gmail | slack)"
+        )
+    profile = CONNECTOR_PROFILES.get(connector)
+    if profile is None:
+        supported = " | ".join(sorted(CONNECTOR_PROFILES))
+        raise SourceError.config(
+            "unsupported_connector",
+            f"connector {connector!r} has no profile; supported: {supported}",
+        )
+    return profile
 
 
 def accepted_fields() -> str:
@@ -119,10 +174,15 @@ def accepted_fields() -> str:
 
 
 def _run_contract_prefix(source, config: dict) -> list[str]:
-    """'## This run' lines both prompts open with — one owner, no drift."""
+    """'## This run' lines both prompts open with — one owner, no drift.
+
+    ``profile_of`` validates the connector (raising the config error) before
+    any prompt is built, so reading it here cannot print an empty value.
+    """
+    profile_of(config)  # every prompt path re-asserts the invariant it prints
     return [
         f"- data-source id (`data_source_id`): `{source.id}`",
-        f"- provider: `{config.get('connector') or 'gmail'}`",
+        f"- provider: `{config.get('connector')}`",
     ]
 
 
@@ -149,7 +209,9 @@ class AgentDriver(IngestDriver):
 
     provider = "agent"
     kind = "datasource.agent"
-    record_kind = "content.message.email"
+    #: No class-level ``record_kind``: the kind is the CONNECTOR's
+    #: (``ConnectorProfile.kind``), stamped by the worker per the contract —
+    #: the old constant was Gmail's and nothing read it.
     #: This transport can push a message back to its channel — see `send`.
     sends = True
 
@@ -173,8 +235,20 @@ class AgentDriver(IngestDriver):
         look healthy while syncing one.
         """
         config = getattr(source, "config", None) or {}
-        keys = config.get("segments") or config.get("streams") or [config.get("stream") or "INBOX"]
-        return [SegmentRef(key=str(k), label=str(k)) for k in keys if str(k).strip()]
+        profile = profile_of(config)
+        keys = (
+            config.get("segments")
+            or config.get("streams")
+            or ([config.get("stream")] if config.get("stream") else list(profile.default_segments))
+        )
+        refs = [SegmentRef(key=str(k), label=str(k)) for k in keys if str(k or "").strip()]
+        if not refs:
+            # Mail can assume INBOX; a channel connector cannot guess an id.
+            raise SourceError.config(
+                "no_segments",
+                f"config.segments is required: name at least one {profile.segment_noun}",
+            )
+        return refs
 
     async def fetch(self, source, cursor: SegmentCursorView) -> FetchResult:
         config = getattr(source, "config", None) or {}
@@ -326,12 +400,12 @@ class AgentDriver(IngestDriver):
         conversation_id: str = "",
     ) -> dict:
         """One agent turn that sends and records. Same build/save/prompt/wait
-        shape as ``_run_agent`` — ``build`` (not ``launch``) because the receipt
+        shape as ``_run_agent`` — ``create_process`` (not ``launch``) because the receipt
         path must be known before the run starts."""
         from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
         from flow_sdk.graph_workflow_manager.manager import execution_base  # noqa: PLC0415
 
-        agent_name = str(config.get("send_agent") or DEFAULT_SEND_AGENT)
+        agent_name = str(config.get("send_agent") or profile_of(config).send_agent)
         try:
             deployment = await get_agent_local_deployment(agent_name)
         except LookupError as exc:
@@ -358,7 +432,7 @@ class AgentDriver(IngestDriver):
         }
         if harness:
             options["worker_type"] = harness
-        proc = await deployment.build("", **options)
+        proc = await deployment.create_process("", **options)
 
         base = execution_base(proc)
         (base / "output").mkdir(parents=True, exist_ok=True)
@@ -406,7 +480,7 @@ class AgentDriver(IngestDriver):
 
         body = ""
         try:
-            agent = load_subagent(str(config.get("send_subagent") or DEFAULT_SEND_SUBAGENT))
+            agent = load_subagent(str(config.get("send_subagent") or profile_of(config).send_subagent))
             data = getattr(agent, "data", None) or {}
             body = str(data.get("prompt") or data.get("prompt_text") or "")
         except Exception:  # noqa: BLE001 — the addendum alone is still runnable
@@ -447,7 +521,7 @@ class AgentDriver(IngestDriver):
         from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
         from flow_sdk.graph_workflow_manager.manager import execution_base  # noqa: PLC0415
 
-        agent_name = str(config.get("agent") or DEFAULT_AGENT)
+        agent_name = str(config.get("agent") or profile_of(config).agent)
         try:
             deployment = await get_agent_local_deployment(agent_name)
         except LookupError as exc:
@@ -455,10 +529,10 @@ class AgentDriver(IngestDriver):
             # retry — same verdict the harness-missing case gets.
             raise SourceError.config("unknown_agent", str(exc)) from exc
 
-        # `build` mints the process id, so the record dir is known before the
+        # `create_process` mints the process id, so the record dir is known before the
         # run — the same pre-save convention the flow engine's agent node uses
         # to tell an agent where to write.
-        proc = await deployment.build("", **self._launch_options(source, cursor, harness))
+        proc = await deployment.create_process("", **self._launch_options(source, cursor, harness))
         base = execution_base(proc)
         (base / "output").mkdir(parents=True, exist_ok=True)
         receipt_path = base / "output" / RECEIPT_FILENAME
@@ -500,7 +574,7 @@ class AgentDriver(IngestDriver):
 
         body = ""
         try:
-            agent = load_subagent(str(config.get("subagent") or DEFAULT_SUBAGENT))
+            agent = load_subagent(str(config.get("subagent") or profile_of(config).subagent))
             data = (getattr(agent, "data", None) or {}) if agent else {}
             body = str(data.get("prompt") or data.get("prompt_text") or "")
         except Exception:  # noqa: BLE001 — the addendum alone is still runnable
@@ -516,7 +590,7 @@ class AgentDriver(IngestDriver):
         seen = (cursor.state or {}).get("high_water")
         run_lines = [
             *_run_contract_prefix(source, config),
-            f"- mailbox (`segment_key`): `{cursor.segment_key}`",
+            f"- {profile_of(config).segment_noun} (`segment_key`): `{cursor.segment_key}`",
             f"- fetch messages newer than: `{seen or window}`",
             f"- record at most {int(config.get('max_items') or 25)} messages, newest first",
             *_run_contract_suffix(receipt_path, flow_cli),

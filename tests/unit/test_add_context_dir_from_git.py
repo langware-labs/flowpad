@@ -363,6 +363,7 @@ async def test_existing_checkout_for_another_branch_fails_before_materializing(
     assert project.include_dirs == []
 
 
+@pytest.mark.long  # 1.29s
 @pytest.mark.asyncio
 async def test_reattaching_in_another_scope_moves_one_link(
     tmp_path: Path, vendor_repo: str

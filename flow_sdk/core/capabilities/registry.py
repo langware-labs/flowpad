@@ -695,11 +695,11 @@ async def run_capability_install_process(spec: CapabilitySpec) -> CapabilityResu
     # Identity (permissions, model, system prompt) comes from the named
     # `capability-installer` Agent; only the WORKER is decided here, because it
     # follows whichever harness the `harness` capability resolved — which the
-    # agent cannot know in advance. build() keeps the two-step shape below:
+    # agent cannot know in advance. create_process() keeps the two-step shape below:
     # save with notify, then prompt, so the caller can report either failure
     # separately and hand back process_id even when the start fails.
     deployment = await get_agent_local_deployment("capability-installer")
-    process = await deployment.build(
+    process = await deployment.create_process(
         prompt,
         worker_type=worker_type,
         name=f"Install {spec.name}",
@@ -775,7 +775,7 @@ async def run_chrome_authenticated_probe() -> CapabilityResult:
     # to exercise. Built here but run through AgenticProcess.run below, which is
     # what returns the reply text the nonce check needs.
     deployment = await get_agent_local_deployment("chrome-auth")
-    process = await deployment.build(
+    process = await deployment.create_process(
         prompt,
         name="Chrome authenticated browsing capability probe",
         workdir=str(probe_dir),

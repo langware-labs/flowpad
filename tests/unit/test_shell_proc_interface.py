@@ -116,6 +116,7 @@ async def test_proc_send_raises_when_no_shell():
 # Shell.write + read
 # ---------------------------------------------------------------------------
 
+@pytest.mark.long  # 5.52s
 @pytest.mark.asyncio
 async def test_shell_write_and_read():
     """start → write → read returns the echoed output."""
@@ -133,6 +134,7 @@ async def test_shell_write_and_read():
             await pty.kill()
 
 
+@pytest.mark.long  # 6.25s
 @pytest.mark.asyncio
 async def test_shell_survives_kill_and_reopen():
     """kill() evicts in-memory state; start() spawns a fresh PTY on the same stream file."""
@@ -167,6 +169,7 @@ async def test_shell_survives_kill_and_reopen():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.long  # 1.28s
 @pytest.mark.asyncio
 async def test_concurrent_start_pty_on_dead_shell_creates_exactly_one_pty():
     """Two concurrent start_pty() on a shell whose PTY is dead must create EXACTLY

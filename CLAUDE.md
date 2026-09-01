@@ -142,6 +142,31 @@ If a test fails on time, the production code is too slow or stalls — that's th
 
 **This is not limited to tests, and "it's not technically a test timeout" is not an out.** The rule is about the INTENT: never raise — or newly add — ANY wait/timeout/retry/backoff/poll budget anywhere (test OR production/runtime code) in order to make an error, flake, hang, or contention symptom go away. This explicitly includes, without limitation: SQLite/DB `busy_timeout`, SQLAlchemy/driver `connect_args={"timeout": …}` or `pool_timeout`, HTTP/client `timeout=…`, `asyncio.wait_for(…)`, lock-acquire timeouts, retry counts / `max_attempts`, `sleep`/backoff durations, and debounce/throttle intervals. A symptom like `database is locked`, a 5xx, a race, or "it's slow" means there is real contention or a real slow/stalling path — **fix that root cause** (remove the contention, isolate the writer, make the call fast, fix the stall). Widening a wait to ride past the symptom is the same banned move as bumping a test timeout. If you think a longer wait is genuinely the correct fix (not a mask), STOP and get explicit user approval first, every time — do not decide unilaterally on "spirit."
 
+
+## The `long` tier — 1s is the unit ceiling
+
+**A unit test that takes more than 1 second is not a unit test.** The fast tier exists to answer "did I break something" in a couple of minutes; a handful of wall-clock-bound tests otherwise dominate it (before this rule, 55 of 6764 tests held half the runtime).
+
+Two forms, one tier:
+
+* **A whole file that is wall-clock-bound lives in `tests/long_tests/`.** That is the default when every test in the module is slow.
+* **A single slow test that shares fixtures with fast siblings gets `@pytest.mark.long`** and stays where it is. Splitting one test out of a module just to fork its fixtures buys nothing.
+
+The two forms are selected differently, and `-m long` does NOT find the files — the directory is their only signal:
+
+```bash
+pytest tests/unit                 # fast tier only (long-marked tests deselected)
+pytest tests/unit --long          # fast tier + its marked outliers
+pytest tests/unit -m long         # ONLY the marked outliers, not tests/long_tests/
+pytest tests/long_tests           # the slow FILES (no marker involved)
+```
+
+Marked tests are **deselected**, not skipped — a skip still reports as a test and buries the fast tier's signal. The deselection is repo-wide and applies to the DEFAULT run only: **CI and `scripts/deploy_to_github.sh` both pass `--long`**, so the marker never takes a test out of the gate, only out of the inner loop. If you mark a test, you have changed how long CI takes, not what CI covers — anything that genuinely should not run in CI belongs in the excluded-tier list in `.github/workflows/test.yml`.
+
+Annotate the marker with the measured cost — `@pytest.mark.long  # 6.01s` — so the next reader can tell a test that legitimately does 6s of work from one that is quietly waiting.
+
+**The marker classifies; it does not excuse.** It is not a licence to raise a timeout, and it is not where a test goes to hide a slow production path. Before marking, ask why the test is slow: if the answer is "it waits for a fixed budget" or "it spawns a real PTY", classify it. If the answer is "the code under test stalls", that is a bug — fix it. A `RUN_SCRIPT` timeout test sat at 10.2s because the handler killed only the script and not its process group, so a 1s timeout bounded nothing; the fix took it to 0.31s and it never needed the marker.
+
 ## Entity id policy (non-negotiable)
 
 **UUID v4 is the entity id. The one exception is a READ-ONLY asset, whose id may be v5 derived from its file path.** An id is a name, not a fact about the thing — it does not encode which account a source serves or which record a row mirrors. Anything that needs *that* is a **lookup on the natural key**, not id arithmetic.
@@ -171,6 +196,23 @@ If a backend route can't be called through `apiClient` because it doesn't return
 ## Type icons (non-negotiable)
 
 **Every per-type icon in the UI comes from the backend type registry (`TypeInfo.icon`) — never hardcode a glyph for an entity type at a call site.** Resolve it at render time via `iconForType(type)` (`ui/src/components/graph-view/icons/iconRegistry.ts`), which reads the bootstrap-loaded SchemaRegistry and falls back to a generic document glyph for unknown/icon-less types. If a type's icon is wrong or missing, fix its `TypeInfo` (`flow_sdk/schema/type_info/<type>_*info.py`) so every surface picks it up — don't patch the one component.
+
+## Data shapes — every value is a `DataSpec` (non-negotiable)
+
+**A shape that travels — a launch payload, an ingestion envelope, a file header, an agent's `input`/`output` — is a `DataSpec` subclass (`flow_sdk/schema/data_spec/spec.py`). Never a bare `BaseModel`, a dataclass, a `TypedDict`, or a hand-rolled dict.** One type system, not two: validation, JSON Schema and error reporting are Pydantic's own, and the shape is nameable in the same tag ontology as everything else.
+
+Two flavors, one base:
+
+* **`FrontMatter(DataSpec)`** — the shape IS a file's header, and the class IS the field list (`SubAgentSpec`, `AgentSpec`). What it declares is what is read and written, and nothing else.
+* **plain `DataSpec`** — a value that travels between tiers (`SourceItemSpec`, `FileRef`, `FolderSpec`). Add `frozen=True`; a value is a value.
+
+* **`extra="forbid"` is inherited, and it is the point.** A caller who misspells a key gets an error, not a row with an empty field. So a constructor that reads a FOREIGN dict (a vendor config entry, a provider payload) must **project field by field — never `**body`**. That makes the hop deliberately lossy: a vendor key we don't model is dropped, and that is the contract, not a bug.
+
+* **Register a `spec_kind` when the shape should be nameable** (`"ingest.source_item"`, `"folder"`) — a dot-path tag resolved through the ONE `SchemaRegistry`. Reserved primitives are `string` / `int` / `float` / `bool`; anything else is a registered kind or anonymous.
+
+* **Registration is import-time, and forgetting it fails SILENTLY.** `__pydantic_init_subclass__` only fires once the module is imported; an unreachable kind resolves to `Any` — *"legal, opaque, never minted"* — so you get an untyped field and no error anywhere. Make it reachable from `register_builtin_kinds()` (`data_spec/_kinds.py`), the way `dataset_spec` is.
+
+* **The authoring form has no map type.** `"string"` / `{field: shape}` / `[shape]` are the only three forms an annotation can take. A `dict[...]` field is therefore expressible ONLY on a class carrying a `spec_kind`, because `to_authoring_form` short-circuits on it before it would fail. `FolderSpec.files` is the precedent; the same field on an unregistered class raises `no authoring form for ...`.
 
 ## Naming — check the glossary before inventing a noun
 

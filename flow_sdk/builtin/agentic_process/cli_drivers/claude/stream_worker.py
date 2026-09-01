@@ -373,7 +373,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         # embedded-agent/persona content. Codex's equivalent forces
         # ``ephemeral=False`` so resume works. Do not "unify" these two
         # construction points — you'd regress model latency and resume behavior.
-        return ClaudeAgentOptions(
+        options = ClaudeAgentOptions(
             workdir=context.workdir,
             env_vars=dict(context.env_vars) if context.env_vars else None,
             model=context.model,
@@ -406,6 +406,10 @@ class ClaudeCLIStreamWorker(AgenticWorker):
             # verbose=True is auto-enabled by ClaudeAgentOptions when
             # output_format == "stream-json".
         )
+        # Launch-only, so they are stamped rather than passed: the headless
+        # path must carry the same per-process MCP the PTY path does.
+        options.mcp_config_json = context.mcp_config_json
+        return options
 
     def _build_spawn(
         self,

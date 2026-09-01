@@ -7,8 +7,10 @@
 Every other driver reaches its provider over HTTP with a credential. This one
 spawns a harness worker and lets it use the connectors the person has **already
 authorised** — which is what makes a source possible for a system we have no
-first-class integration with. Gmail is read this way today; Slack, Calendar and
-Drive are the same shape with a different prompt.
+first-class integration with. Gmail and Slack are read this way today — the
+same driver, selected by `config.connector`, each with its own contract pair
+(`email_analyzer`/`email_sender`, `slack_analyzer`/`slack_sender`); Calendar
+and Drive are the same shape with a different prompt.
 
 `modes/connect.md` still drives the gates, and `scripts/source_ctl.py` still
 creates the row. Load this file for what is true here and nowhere else.
@@ -78,4 +80,11 @@ produced = await Artifact.get_all({"generated_by": str(process.typeid)})
 source = await Entity.get_by_typeid(TypeId(produced[0].target_type_id))
 ```
 
-`tests/long_tests/test_gmail_agent_source.py` is the worked example.
+`tests/long_tests/test_gmail_agent_source.py` is the worked example;
+`tests/long_tests/test_slack_agent_source.py` is its Slack twin.
+
+<!-- flowpad:capsule identity
+version: 1
+data:
+  id: f924b41d-1212-4832-b88e-ac38c8c278fd
+flowpad:endcapsule identity -->

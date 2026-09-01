@@ -254,6 +254,9 @@ async def materialize_flow_message(
         from flow_sdk.api.api_types.messages import DataOpMessage, OperationType  # noqa: PLC0415
         from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
 
+        # A reference row's in-memory text survives its save (`FlowMessage.save`
+        # blanks around persistence only), so this display event already
+        # carries the read shape — no re-hydration here.
         await handle_entity_op(DataOpMessage(data=fm, op=OperationType.CREATE, to_entity=fm.typeid))
 
     # Resolve parent (Task preferred, else Project) for the record's parent_ref.

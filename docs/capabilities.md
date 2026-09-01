@@ -35,6 +35,10 @@ The current built-in leaf capabilities are:
 
 ## MCP-server capabilities (dynamic)
 
+This is about `MCP_SERVER` — the read-only scan of servers already configured in
+a vendor's own files — not the `MCP` asset an Agent attaches (see
+`docs/glossary.md`). Discovery produces capabilities; attaching does not.
+
 Every indexed MCP server is also exposed as a capability under the kind
 `<service>.mcp.<worker_type>`, for example `gmail.mcp.claude_code`. The kind is
 **service-first** so the same prefix matching resolves a query at any level:
@@ -57,8 +61,11 @@ rather than `get_default_capability_specs`. Reconcile registers a runner +
 upserts a system `Capability` row per kind, and prunes kinds whose backing
 config disappeared. It runs at server start, after every MCP index (indexing
 refreshes the capability list), and on a manual `check` of an MCP kind. For
-these capabilities `check` = configured (a record exists), `test` validates,
-and `install` is a no-op (MCP servers are configured, not installed).
+these capabilities `check` = configured (a record exists) and `install` is a no-op (MCP
+servers are configured, not installed). `test` reports the same "is it configured" answer as
+`check` — it does not dial the server. The probe that actually connects and lists tools is
+`probe_mcp` (`flow_sdk/builtin/mcp.py`), which takes an `McpSpec` rather than an entity so a
+scanned `MCP_SERVER` row can reach it through `McpSpec.from_record`.
 
 ## Backend Contract
 

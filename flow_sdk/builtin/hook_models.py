@@ -8,6 +8,7 @@ import asyncio
 import inspect
 import logging
 import os
+import signal
 import stat
 import time
 from abc import ABC, abstractmethod
@@ -25,6 +26,38 @@ _log = logging.getLogger(__name__)
 _DEFAULT_SCRIPT_TIMEOUT_S = 30.0
 # Bytes captured from stdout/stderr — bounded so TriggerLogRecord stays small.
 _SCRIPT_OUTPUT_CAP = 8192
+
+# POSIX-only: Windows has no process groups in this sense, so there the script
+# is spawned and killed as a lone child (a Windows script that forks a detached
+# grandchild can still outlive its timeout — a known gap, not a regression).
+#
+# Deliberately NOT cli_drivers' psutil-based `terminate_asyncio_process_tree`,
+# which solves the same failure mode for CLI workers: that one is keyed on a
+# per-launch run_id marker and knows about npm wrapper processes, neither of
+# which a one-shot trigger script has, and it sits a layer above this module.
+_CAN_KILLPG = hasattr(os, "killpg")
+
+
+def _kill_script_tree(proc) -> None:
+    """SIGKILL the timed-out script AND everything it forked.
+
+    ``proc.kill()`` alone reaps the script's own process only. Its children
+    inherit the stdout/stderr pipes, so they keep the write end open and the
+    follow-up ``communicate()`` blocks for as long as they run — a 1s timeout
+    on a script that forks a 10s ``sleep`` returned after 10s. Killing the
+    whole group is what makes ``timeout_seconds`` a real bound.
+    """
+    if _CAN_KILLPG:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            return
+        except OSError:
+            # Group already gone, or we never got one — fall through.
+            pass
+    try:
+        proc.kill()
+    except ProcessLookupError:
+        pass
 
 
 @dataclass
@@ -251,13 +284,16 @@ async def _exec_script(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(Path(script_path).parent),
+            # Own process GROUP so a timeout can kill the whole tree — see
+            # _kill_script_tree() for why the child alone is not enough.
+            start_new_session=_CAN_KILLPG,
         )
         t0 = time.monotonic()
         timed_out = False
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
         except asyncio.TimeoutError:
-            proc.kill()
+            _kill_script_tree(proc)
             timed_out = True
             try:
                 stdout, stderr = await proc.communicate()

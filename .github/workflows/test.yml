@@ -17,6 +17,11 @@ name: Tests
 #   - pytest tests/long_tests, tests/hub_tests, tests/migration_e2e,
 #     tests/pty_fuzz — deep/slow tiers needing real worker CLIs or a hub
 #   - vitest long / hub / hub-paired — need real workers or two backends + hub
+#
+# NOT excluded, despite being deselected by default: tests marked `long` (>1s)
+# inside tests/unit. They are skipped only to keep the LOCAL inner loop fast,
+# so the unit job passes --long and runs them. Any new exclusion belongs in the
+# list above, not in a default-off marker.
 
 on:
   pull_request:

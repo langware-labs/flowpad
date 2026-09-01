@@ -376,6 +376,17 @@ class FlowMessage(Entity):
         sharing=Sharing.PRIVATE,
         description="Local row pointers behind `origin`; never leaves this machine",
     )
+    # The queryable twin of ``origin_local.source_item_id``. ``origin_local``
+    # is a nested JSON value the SQLite driver cannot index or IN-query, so the
+    # projection, the purge cascade and read-time hydration all key on this
+    # top-level copy instead. Set only on reference rows (messages projected
+    # from an ingested SourceItem); None = Flowpad-native. PRIVATE for the same
+    # reason as ``origin_local``: it is a row id in OUR database.
+    source_item_id: Optional[str] = APIField(
+        None,
+        sharing=Sharing.PRIVATE,
+        description="SourceItem this row references; None = Flowpad-native",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -426,6 +437,14 @@ class FlowMessage(Entity):
     delivery_status: str = APIField(default=DeliveryStatus.CREATED.value)
     delivered_at: Optional[datetime] = APIField(default=None)
     received_at: Optional[datetime] = APIField(default=None, sharing=Sharing.HUB_WRITE)
+    #: EVENT time — when the human sent this, on its original channel. Stamped
+    #: (and convergently re-stamped) ONLY by the inbox projection, from
+    #: ``SourceItem.occurred_at``; every other lane leaves it None and falls
+    #: through ``event_time`` to the clocks it already trusts. PRIVATE like
+    #: ``source_item_id``: hub sync's LWW refresh rebuilds the row from the
+    #: hub's schema, which does not carry this field — a SHARED classification
+    #: would blank it on every pass (the ``parent_type_id`` trap below).
+    sent_at: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
     # NOTE: ``context`` (list[TypeId]) was renamed and consolidated into the
     # unified ``context_entities`` on the base ``Entity``. Read via
     # ``msg.context_entities`` / ``msg.first_context_of_type('task')``.
@@ -670,6 +689,17 @@ class FlowMessage(Entity):
                 return True
         return False
 
+    @property
+    def event_time(self) -> Optional[datetime]:
+        """THE one read rule for a message's time — every derivation (the
+        conversation pointer rebuild, recency, and therefore inbox order and
+        bubble times) reads this, never ``created_date``/``updated_date``
+        directly. ``sent_at`` pins a channel-projected message to when the
+        human actually sent it; for everything else ``updated_date`` keeps
+        today's behavior (an authored message's edit bumps recency) with
+        ``created_date`` as the final fallback."""
+        return self.sent_at or self.updated_date or self.created_date
+
     def attachments(self) -> list[Attachment]:
         """Return the underlying attachment list (not a copy).
 
@@ -867,6 +897,87 @@ class FlowMessage(Entity):
             },
             action="set_body_status",
         )
+
+    async def save(self, owner=None, notify: bool = True):
+        """A reference row never PERSISTS a body — but keeps holding one.
+
+        ``text`` on a row carrying ``source_item_id`` is hydrated at read time
+        from the SourceItem it references. Any consumer that loads a hydrated
+        row and saves it back — an ``is_read`` toggle, an archive — would
+        otherwise persist the hydrated body and quietly resurrect the copy
+        model this field exists to end. Blanking here, at the one write
+        chokepoint, is what makes hydration safe everywhere else.
+
+        Blank-around, not blank-forever: the in-memory instance gets its text
+        back after the write, so a caller that goes on to render or emit the
+        row (materialize's live CREATE, a child-edge announce) is holding the
+        read shape, not the stored one. The base save's own notify still fires
+        while the field is blank — the TS-side ``onEntityUpdate`` guard exists
+        for exactly that broadcast.
+        """
+        if not self.source_item_id:
+            return await super().save(owner, notify=notify)
+        hydrated = self.text
+        self.text = ""
+        try:
+            return await super().save(owner, notify=notify)
+        finally:
+            self.text = hydrated
+
+    # ── read-time hydration — the other half of the reference model ────────
+    #
+    # `body_status` already made this entity one whose body may live elsewhere
+    # (the hub bundle). A reference row is the third residence: its `text`
+    # lives on the SourceItem, joined in batch at read time. Rows with no
+    # `source_item_id` (hub-native) pass through untouched.
+
+    @classmethod
+    async def _hydrate(cls, rows) -> None:
+        """Stitch each reference row's body from its SourceItem, one IN query.
+
+        A dangling reference (item purged, or a row that arrived via share and
+        points at a foreign database) hydrates to nothing — the row renders
+        with an empty body rather than a stale copy, which is the honest
+        answer.
+        """
+        wanted = sorted({str(fm.source_item_id) for fm in rows if getattr(fm, "source_item_id", None)})
+        if not wanted:
+            return
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        items = await SourceItem.get_all(
+            QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", wanted]))
+        )
+        by_id = {str(i.id): i for i in items}
+        for fm in rows:
+            item = by_id.get(str(fm.source_item_id or ""))
+            if item is not None:
+                fm.text = item.body or item.name or ""
+
+    @classmethod
+    async def get_all(cls, entities_filter=None, source_entity=None, *, hydrate: bool = True):
+        """Every list read hydrates (``Entity.get_one`` funnels through here).
+
+        ``hydrate=False`` is for hot paths that read only membership/state —
+        the unread recompute loads EVERY message and never looks at ``text``;
+        joining a whole mailbox of items under the projection lock would put
+        the join on every mutation's critical path.
+        """
+        rows = await super().get_all(entities_filter=entities_filter, source_entity=source_entity)
+        if hydrate and rows:
+            await cls._hydrate(rows)
+        return rows
+
+    @classmethod
+    async def get_by_id(cls, eid: str):
+        """The single-entity path does NOT go through ``get_all`` — the request
+        middleware preloads the auth target via ``get_by_typeid`` → here — so
+        it hydrates on its own or the message-preview pane reads blank."""
+        row = await super().get_by_id(eid)
+        if row is not None and getattr(row, "source_item_id", None):
+            await cls._hydrate([row])
+        return row
 
     async def download_body(
         self,

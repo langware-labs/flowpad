@@ -54,18 +54,17 @@ async def _workdir_for(agent) -> str:
 async def _conversation_id_for(item, source) -> Optional[str]:
     """The conversation this message landed in.
 
-    READ from the thread rather than re-derived. The projection mints the id as
-    a birth default only: once a thread exists its `conversation_id` is
-    authoritative, because merging two threads repoints it — and a second
+    READ from the thread rather than re-derived. The thread is resolved by its
+    natural key (`find_existing`), and once it exists its `conversation_id` is
+    authoritative, because merging two threads repoints it — a second
     derivation here would answer with the pre-merge id and split the session.
     """
     from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
     from flow_sdk.inbox.projection import channel_of, thread_key_for  # noqa: PLC0415
 
-    thread_id = MessageThread.allocate_deterministic_id(
+    thread = await MessageThread.find_existing(
         channel_of(source), thread_key_for(item, item.name or "")
     )
-    thread = await MessageThread.get_one({"id": thread_id})
     return str(getattr(thread, "conversation_id", "") or "") or None
 
 

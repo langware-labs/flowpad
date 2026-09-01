@@ -153,6 +153,12 @@ class ManifestSpec(DataSpec):
     #: glyph, which every spec shares; a field by that name shadows the getter
     #: and throws on hydration.
     icon_name: str = ""
+    #: Per-CHANNEL glyph names, for a spec that serves several channels through
+    #: one transport (the agent spec reaches gmail AND slack). The inbox chip
+    #: resolves `origin.kind` → the channel-named spec's `icon_name` first, then
+    #: this map on the transport's spec — so a channel's icon stays an asset
+    #: fact, never a frontend map.
+    channel_icon_names: dict[str, str] = Field(default_factory=dict)
     #: Wiki page explaining the setup step a provider cannot do for you. Only
     #: meaningful for a source whose driver has `verify`.
     setup_wiki: str = ""
@@ -263,6 +269,7 @@ class DataSourceSpec(Entity):
     title: str = APIField(default="")
     description: str = APIField(default="")
     icon_name: str = APIField(default="")
+    channel_icon_names: dict[str, str] = APIField(default_factory=dict)
     setup_wiki: str = APIField(default="")
     manifest_schema: int = APIField(default=CURRENT_SCHEMA)
     requires: dict[str, str] = APIField(default_factory=dict)

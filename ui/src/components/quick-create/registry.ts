@@ -5,6 +5,7 @@ import {
   DynamicWorkflow,
   Layout,
   Markdown,
+  Mcp,
   Project,
   Prompt,
   Skill,
@@ -12,6 +13,7 @@ import {
   Whiteboard,
 } from '@sdk';
 import { t, msg } from '@lingui/core/macro';
+import { McpCreateDialog } from './McpCreateDialog';
 import type { MessageDescriptor } from '@lingui/core';
 import { PromptEditDialog } from '@src/components/prompt-library/PromptEditDialog';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -255,6 +257,22 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
       return {
         pointer: saved.asset_ref ? DockPointer.forAssetEditor('whiteboard', saved.asset_ref) : undefined,
         toastTitle: msg`Whiteboard created`,
+      };
+    },
+  },
+  {
+    type: 'mcp',
+    label: msg`MCP Server`,
+    wikiword: 'MCP servers',
+    fallbackSubFolder: 'agentic-assets/mcp',
+    Dialog: McpCreateDialog,
+    // The assets-list `+` never opens a Dialog, so it needs a default that
+    // still produces something runnable — hence `bundled` (the SDK default).
+    create: async ({ project, name }) => {
+      const saved = await Mcp.createInProject(project, name);
+      return {
+        pointer: saved.asset_ref ? DockPointer.forAssetEditor('mcp', saved.asset_ref) : undefined,
+        toastTitle: msg`MCP server created`,
       };
     },
   },
