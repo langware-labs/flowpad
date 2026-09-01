@@ -3632,8 +3632,8 @@ msgid "Configure your account, app preferences, and notifications"
 msgstr "הגדר את החשבון שלך, העדפות היישום והודעות"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
-msgid "Configured by worker"
-msgstr ""
+#~ msgid "Configured by worker"
+#~ msgstr ""
 
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -15120,8 +15120,8 @@ msgid "Select a version to install:"
 msgstr "בחר גרסה להתקנה:"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
-msgid "Select a worker to see the MCP servers available to it"
-msgstr ""
+#~ msgid "Select a worker to see the MCP servers available to it"
+#~ msgstr ""
 
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
