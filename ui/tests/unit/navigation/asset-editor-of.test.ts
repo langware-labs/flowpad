@@ -9,9 +9,8 @@ const V4 = 'd864c29b-69fc-4b8d-b748-1526a83f598a';
 
 /**
  * `assetEditorOf` / `DockPointer.assetEditor` answer WHICH EDITOR a route opens
- * without resolving the entity. Zone B swaps its navigator on that answer, so
- * the agent/subagent distinction and the project-rebased form are the cases
- * that actually matter.
+ * without resolving the entity. Zone B swaps on that, so agent-vs-subagent and
+ * the project-rebased form are the cases that matter.
  */
 describe('assetEditorOf', () => {
   it('reads the editor off a vfs pointer', () => {

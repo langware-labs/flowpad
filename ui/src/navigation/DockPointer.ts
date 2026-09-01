@@ -2353,17 +2353,9 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * The asset EDITOR this route opens, or null when it isn't an `editor/…` dock.
-   *
-   * The fourth member of the addressing family beside `targetTypeId`,
-   * `resourceVfsPath` and `wikiRef` — and the only one that answers WHICH
-   * EDITOR rather than WHAT SUBJECT. That distinction is the point: the editor
-   * segment is in the URL for both routing methods, so a caller learns the
-   * route opens an agent (vs a subagent, vs a skill) with no entity resolution
-   * and no async gap. Zone B uses it to pick its navigator on first render.
-   *
-   * Covers the project-rebased form through the same `assetSubPointer`
-   * un-rebase `resourceVfsPath` and `wikiRef` use.
+   * The asset EDITOR this route opens, or null. Answers WHICH EDITOR, not what
+   * subject: the segment is in the URL for both routing methods, so a caller
+   * learns it with no entity resolution and no async gap.
    */
   get assetEditor(): AssetEditor | null {
     return assetEditorOf(this.viewType === ViewType.ASSETS ? this.pointer : this.assetSubPointer);

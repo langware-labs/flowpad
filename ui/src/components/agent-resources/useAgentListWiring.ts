@@ -14,22 +14,9 @@ export interface ListWiring {
 }
 
 /**
- * Read/write of one declared list on `agent.md` — `skills`, `mcp_servers`, …
- *
- * **The stored value is always a serialized TypeId (`<type>-<uuid>`), never a
- * display name.** That is the form on disk, and the Python model types these
- * fields as `list[TypeId]`, whose constructor splits on the first `-` and then
- * validates the remainder as an identifier. A bare name raises inside
- * validation and breaks indexing of the whole record — so the caller passes an
- * id, not a label.
- *
- * (The Advanced tab's old comma-separated text box enforced none of this: it
- * committed whatever was typed. Anything hand-entered there that isn't a TypeId
- * is exactly what the pane surfaces as an unresolved row.)
- *
- * State is document-derived, not optimistic: a row reflects what the file says
- * and only the in-flight row is disabled. A local mirror is how a failed write
- * becomes a lie on screen.
+ * Read/write of one declared list on `agent.md`. The stored value is always a
+ * serialized TypeId, never a name: the model types these `list[TypeId]`, and a
+ * bare name breaks indexing. Document-derived, not optimistic.
  */
 export function useAgentListWiring(doc: AgentDocument, key: AgentDocumentListKey): ListWiring {
   const { t } = useLingui();

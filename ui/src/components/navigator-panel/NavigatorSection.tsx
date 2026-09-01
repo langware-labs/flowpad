@@ -16,30 +16,17 @@ export interface NavigatorSectionProps {
   itemCount: number;
   /** Rendered in place of `children` when settled and empty. */
   emptyState?: ReactNode;
-  /** Trailing control in the header — an "add" affordance, typically.
-   *  Rendered as a SIBLING of the collapse button, never inside it: nesting an
-   *  interactive element in a `<button>` is invalid, and clicking it would
-   *  toggle the section as well as fire its own handler.
-   *  Stays visible while the section is collapsed, so the action a section
-   *  offers does not require expanding an empty one to find. */
+  /** Trailing header control. A SIBLING of the collapse button, never inside
+   *  it: nesting an interactive element in a `<button>` is invalid and the click
+   *  would also toggle. Stays visible while collapsed. */
   action?: ReactNode;
   children?: ReactNode;
 }
 
 /**
- * One independently collapsible section of a navigator (Zone B) body.
- *
- * Default state is **expanded iff non-empty**, decided ONCE when the data first
- * settles — not on first render. That distinction is the whole rule: on a cold
- * cache every section reports `itemCount === 0` for a frame, so deciding early
- * would collapse all of them permanently and the pane would look empty even
- * once its rows arrived. After that first decision the section belongs to the
- * user: a later emptying never re-collapses it, and a manual toggle is never
- * overridden by arriving data.
- *
- * Generic Zone-B chrome rather than an agent-specific control — the other
- * section-shaped navigator bodies (Triggers' per-type groups, the context
- * panels' `SectionHeader`s) are candidates to adopt it.
+ * One collapsible section of a navigator body. Expanded iff non-empty, decided
+ * ONCE when data settles — not on first render, where a cold cache reports 0 for
+ * every section and would collapse them all permanently. Then it is the user's.
  */
 export function NavigatorSection({
   id,

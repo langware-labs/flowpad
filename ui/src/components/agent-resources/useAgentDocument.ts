@@ -39,30 +39,9 @@ function readWorkerType(source: string): string {
 }
 
 /**
- * `agent.md` as the pane's read/write surface.
- *
- * The pane edits the DOCUMENT, not the entity — the same path the profile
- * editor's own field commits take (`read → patchAgentDocument → write`), for
- * three reasons that are all load-bearing:
- *
- *  - **Lossless.** The YAML document model keeps comments and unknown keys.
- *    An entity `save()` re-renders the file from the known spec fields and
- *    silently drops everything else.
- *  - **No entity round-trip.** On a `vfs` route the file ref falls straight out
- *    of the URL. Resolving an entity just to obtain an id to PUT to was what
- *    made the pane mount a second by-path resolver and melt into a discover
- *    loop.
- *  - **Works unindexed.** An agent whose row was never indexed still has its
- *    file, so it stays editable instead of rendering dead controls.
- *
- * The `typeid` route still resolves the entity, because that is the only way to
- * learn where its main file lives — mirroring `AssetEditorRouter`, which reads
- * `mainRef` off the entity's record for exactly the same reason.
- *
- * Reactive through `useEntityOps('agent')`: the profile editor writes the same
- * file (its worker field commits `save({ worker_type })`), the indexer resyncs
- * the row and broadcasts an agent op, and this refetches on it. No interval, no
- * refetch budget.
+ * `agent.md` as the pane's read/write surface — the file is the record, so edits
+ * stay lossless and work unindexed. The `typeid` route still resolves the entity
+ * (only its record says where the main file lives). Refetches on agent ops.
  */
 export function useAgentDocument(): AgentDocument {
   const { currentDock } = useDockNavigation();

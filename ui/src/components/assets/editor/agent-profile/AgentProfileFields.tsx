@@ -9,20 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 const UNSET = '__unset__';
 
 /**
- * A CLOSED choice field — a real dropdown, not a suggestion list.
- *
- * The sibling `AgentSelectField` is free-text-with-datalist because most of
- * these fields are advisory (`model` takes a tier *or* a concrete model id, so
- * a closed list would make valid values unrepresentable). `worker_type` is the
- * exception: the drivers are a fixed set of four, and anything outside it has
- * no factory key to resolve to, so free text there only ever produces a broken
- * agent.
- *
- * An `extraValue` outside `options` is still rendered as its own item rather
- * than dropped. A document may legitimately carry the OTHER vocabulary
- * (`claude_code` rather than `claude` — `worker_type_value()`/`driver_key()`
- * accept both), and a control that silently could not represent the value on
- * disk would rewrite it on the next unrelated edit.
+ * A CLOSED choice field. `worker_type` is the exception to `AgentSelectField`:
+ * the drivers are a fixed four, so free text only produces a broken agent. A
+ * value outside `options` still renders as its own item rather than be dropped.
  */
 export function AgentChoiceField({
   label,
@@ -116,18 +105,9 @@ export function AgentSelectField({
 }
 
 /**
- * Comma-separated list editor for a DECLARED-ONLY field.
- *
- * `tools`, `disallowed_tools` and `subagents` round-trip through `agent.md` and
- * show on the agent's card, but nothing projects them into the worker yet — no
- * `AgentOptions` subclass has a field to carry them. An earlier version of this
- * control offered "inherited / revoke all", which claimed a gate the system
- * does not apply. It says what is true instead, and the affordance returns with
- * enforcement.
- *
- * `skills` and `mcp_servers` are no longer edited here — the agent-resources
- * navigator (Zone B) wires them against the real installed lists. They carry
- * the same not-yet-enforced caveat there.
+ * Comma-separated editor for a DECLARED-ONLY field. `tools`,
+ * `disallowed_tools` and `subagents` round-trip through `agent.md` but reach no
+ * worker yet; `skills`/`mcp_servers` moved to the agent-resources pane.
  */
 export function AgentListField({
   label,

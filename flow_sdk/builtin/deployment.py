@@ -554,29 +554,11 @@ class Deployment(Entity):
 async def _materialize_declared_skills(agent: "Agent", process: "AgenticProcess") -> None:
     """Copy the agent's declared ``skills`` into the process it is launching.
 
-    This is the link that makes ``agent.skills`` mean something. The field is
-    INTENT — an agent is a template, and a skill only ever reaches a worker
-    through a *process*: ``_materialize_entity`` copies the folder into
-    ``WorkerDriver.skills_root`` for this process's vendor (``.claude/skills``
-    under the mounted assets dir for Claude/Copilot, the global
-    ``$CODEX_HOME/skills`` for Codex). So the resolution happens here, at build,
-    not when the checkbox is ticked.
-
-    Recording each ref in ``embedded_asset_refs`` is not bookkeeping — it is
-    what makes the copy VISIBLE. ``AgenticProcess.resolved_add_dirs`` gates
-    ``--add-dir`` of the process assets dir on that list (plus sub-agents /
-    instructions / hook assets), so an agent whose only embedded asset is a
-    skill would otherwise get the folder written and never mounted. It also
-    makes the skill detachable through the existing ``detach-embedded-asset``.
-
-    Deliberately NOT routed through ``cli_config``: ``last_started_hash`` is an
-    md5 over ``to_agent_options().to_json()``, so a new key there would flip
-    ``restart_required`` on every already-running process. Same reason
-    ``system_prompt`` travels via ``context_data.instructions``.
-
-    A skill that cannot be resolved is logged and skipped rather than raised: a
-    stale id in frontmatter must not make the agent unlaunchable, and the
-    remaining skills are still worth copying.
+    ``agent.skills`` is INTENT; a skill reaches a worker only through a process,
+    so resolution happens here. Recording each ref in ``embedded_asset_refs`` is
+    what makes the copy visible — ``resolved_add_dirs`` gates ``--add-dir`` of
+    the assets dir on it. Not via ``cli_config``: that would flip
+    ``restart_required`` on every running process.
     """
     declared = list(getattr(agent, "skills", None) or [])
     if not declared:

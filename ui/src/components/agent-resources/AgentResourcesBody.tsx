@@ -1,51 +1,29 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Plus } from 'lucide-react';
-import { Markdown, Skill, type AssetDescriptor } from '@sdk';
+import { Markdown, type AssetDescriptor } from '@sdk';
 import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { AssetRow, assetScope, basename, descriptorKey, displayLabelForDescriptor } from '@src/components/asset-manager';
 import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
-import { useQuickCreatePick } from '@src/components/quick-create';
 import { useProjectDocs } from './useProjectDocs';
 import { useWirableSkills } from './useWirableSkills';
 import { useWirableMcpServers } from './useWirableMcpServers';
 import { useAgentDocument } from './useAgentDocument';
 import { useAgentListWiring } from './useAgentListWiring';
 
-/**
- * Row label, with a path fallback the shared helper cannot provide.
- *
- * `displayLabelForDescriptor` resolves a cached entity, then the descriptor's
- * own `name`, then gives up and returns the raw typeid. Both of the first two
- * miss here: `get-assets` sends `name` ONLY for an on-disk asset with no entity
- * row, and this pane never loads Skill entities into the dataManager cache (it
- * lists by location precisely so it does not have to). Every indexed skill
- * therefore rendered as a bare `skill-<uuid>`.
- *
- * The folder basename is the right answer, not a guess: a skill's on-disk
- * identity IS its folder — `resolve_skill_name` uses it unless SKILL.md
- * declares a `name`. Applied only on the give-up path, so a real cached
- * displayName (which a rename updates) always wins.
- */
+/** Row label. `displayLabelForDescriptor` gives up at the raw typeid here (this
+ *  pane never caches Skill entities); a skill's identity IS its folder, so the
+ *  basename is the answer — applied only on that give-up path. */
 function labelForAsset(d: AssetDescriptor): string {
   const label = displayLabelForDescriptor(d);
   return label === d.typeid && d.posix_path ? basename(d.posix_path) : label;
 }
 
-/**
- * Whether selecting this skill would change anything.
- *
- * A `user_dir` skill lives in `~/.claude/skills`, which the vendor CLI
- * discovers on its own for every session — copying it into the process assets
- * dir produces a second copy of a skill the worker already had. So the control
- * is withheld there rather than offering a toggle whose only effect is a
- * redundant `copytree`.
- *
- * Project and context-folder skills are the real cases: they reach a worker
- * only if something puts them where that worker looks.
- */
+/** A `user_dir` skill is already discovered by the vendor CLI every session, so
+ *  copying it in only duplicates it. Project and context-folder skills reach a
+ *  worker only if something puts them where it looks. */
 function isSelectableSkill(d: AssetDescriptor): boolean {
   return d.source !== 'user_dir';
 }
@@ -77,15 +55,9 @@ function SectionAddButton({ label, onClick, testId }: { label: string; onClick: 
   );
 }
 
-/**
- * A read-only resource row — used for MCP servers only.
- *
- * MCP carries no selection affordance because there is nothing to select: what
- * a worker can reach is decided by the vendor's own config files, so a control
- * here would be a checked box you cannot uncheck. Skills are the opposite —
- * they ARE per-agent intent — and render the shared `AssetRow`, whose select
- * control writes `agent.skills`.
- */
+/** Read-only row, MCP only: what a worker reaches is decided by the vendor's
+ *  config files, so a control would be a box you cannot uncheck. Skills ARE
+ *  per-agent intent and use `AssetRow`, whose control writes `agent.skills`. */
 function ResourceRow({
   icon: Icon,
   label,
@@ -110,13 +82,9 @@ function ResourceRow({
 }
 
 /**
- * The four-section body of the agent-resources navigator.
- *
- * Mostly an inventory — it answers "what can this agent draw on?" for the four
- * resource families — with exactly one editable axis: the Skills rows select
- * into `agent.skills`, which `Deployment.build` then copies into every session
- * the agent starts. Data sources, MCP servers and Docs stay read-only, each for
- * its own reason (no Agent field; vendor-config-owned; project-scoped listing).
+ * The four-section body of the agent-resources navigator. An inventory with one
+ * editable axis: Skills rows select into `agent.skills`, which
+ * `Deployment.build` copies into every session. The rest are read-only.
  */
 export function AgentResourcesBody() {
   const { t } = useLingui();
@@ -133,25 +101,14 @@ export function AgentResourcesBody() {
   const { docs, isLoading: docsLoading } = useProjectDocs();
 
   const [addSourceOpen, setAddSourceOpen] = useState(false);
-  // The project home's own creation seam, reused whole: `onPick(type)` opens
-  // the same name/scope/path form (or the type's bespoke dialog, for types
-  // whose location TypeInfo already fixes). `dialogs` MUST be rendered — the
-  // hook's docstring calls out that hosting the trigger without it makes the
-  // control silently do nothing.
-  const { panelProps, dialogs } = useQuickCreatePick();
 
   const docIcon = iconForType(Markdown.type);
   // MCP servers have no per-type registry glyph of their own.
   const mcpIcon = lucideByName('Plug');
 
-  // Resolved once here rather than per render inside each row — `assetScope`
-  // and the label are cache lookups and allocations, which is the same split
-  // `AssetManagerPopover`'s list memo makes.
-  //
-  // Deliberately NOT deduped by name: the descriptor model returns one row per
-  // (typeid, source) on purpose and keys selection by typeid, so collapsing on
-  // name would hide the very distinction — user-global vs project vs context
-  // folder — that the scope chip exists to show.
+  // Resolved once here, not per render — the same split `AssetManagerPopover`'s
+  // list memo makes. NOT deduped by name: one row per (typeid, source) is the
+  // point, and collapsing would hide the distinction the scope chip shows.
   const skillRows = useMemo(
     () =>
       skillDescriptors.map((d) => ({
@@ -239,13 +196,6 @@ export function AgentResourcesBody() {
         label={t`Skills`}
         isLoading={skillsLoading}
         itemCount={skillRows.length}
-        action={
-          <SectionAddButton
-            label={t`New skill`}
-            onClick={() => panelProps.onPick(Skill.type)}
-            testId="agent-resource-new-skill"
-          />
-        }
         emptyState={
           <Empty>
             <Trans>No skills found</Trans>
@@ -302,11 +252,6 @@ export function AgentResourcesBody() {
           />
         ))}
       </NavigatorSection>
-
-      {/* Rendered at the pane root, outside every section: a section can be
-          collapsed while its dialog is open, and a dialog unmounted by that
-          collapse would close itself mid-edit. */}
-      {dialogs}
     </div>
   );
 }

@@ -26,12 +26,9 @@ import subprocess
 #   "<name>: <launch> - ✔ Connected"   /   "<name>: <launch> - �’ Failed to connect"
 # Capture the name and the launch line; tolerate the trailing " - <status>".
 #
-# The name is GREEDY to the last colon *followed by whitespace*. Both halves
-# are load-bearing: plugin-provided servers are named "plugin:<plugin>:<server>"
-# (e.g. "plugin:slack:slack"), so a first-colon split truncates every one of
-# them to the literal "plugin" and collapses them into a single row; and
-# requiring \s+ after the colon keeps "https://" and "127.0.0.1:64655" in the
-# launch line from being mistaken for the delimiter.
+# The name is GREEDY to the last colon *followed by whitespace*: plugin servers
+# are named "plugin:<plugin>:<server>", which a first-colon split truncates to
+# "plugin"; requiring \s+ keeps "https://" and "127.0.0.1:64655" out of it.
 _CLI_ROW = re.compile(r"^(?P<name>.+):\s+(?P<launch>.*?)(?:\s+-\s+[^-]*)?$")
 
 # Hard cap on the CLI probe (user-approved, mirrors the capability env-probe).

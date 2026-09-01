@@ -8,7 +8,7 @@ export { useProcessAssets } from './useProcessAssets';
 // Exported through the barrel rather than deep-imported so the module keeps one
 // public face.
 export { AssetRow } from './AssetManagerPopover';
-export { assetScope, AssetScopeChip, type AssetScope, type AssetScopeKind } from './asset-scope';
+export { assetScope } from './asset-scope';
 // `displayLabelForDescriptor`, not the typeid form: it threads the descriptor's
 // on-disk `name` fallback, without which a not-yet-indexed asset renders as a
 // raw `skill-<uuid>`.

@@ -78,13 +78,9 @@ export function assetEditorValue(
 }
 
 /**
- * The `<editor>` segment of an `editor/…` asset pointer, or null for any other
- * mode / a malformed pointer.
- *
- * Pure: no entity resolution. The editor segment is in the URL for BOTH routing
- * methods (`editor/<editor>/vfs/<path>` and `editor/<editor>/typeid/<type>-<id>`),
- * so a caller can tell WHICH EDITOR a route opens without waiting on a lookup —
- * which is what lets a navigator swap itself synchronously on first render.
+ * The `<editor>` segment of an `editor/…` pointer, else null. Pure — no entity
+ * resolution: the segment is in the URL for BOTH routing methods, which is what
+ * lets a navigator swap itself synchronously on first render.
  */
 export function assetEditorOf(pointer: string | null | undefined): AssetEditor | null {
   if (!pointer) return null;
