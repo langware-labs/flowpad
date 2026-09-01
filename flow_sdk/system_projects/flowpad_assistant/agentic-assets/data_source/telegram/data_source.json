@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "name": "telegram",
+  "title": "Telegram",
+  "icon_name": "Send",
+  "description": "A Telegram bot account over the Bot API — the bot's chats become conversations, and it really sends.",
+  "config": {
+    "bot_token": {
+      "type": "text",
+      "required": true,
+      "label": "Bot token",
+      "placeholder": "123456:ABC-...",
+      "hint": "From @BotFather (/newbot). The token is the bot's credential; the visible identity (@username) is stamped from getMe on first sync — deliberately NOT account_key, which would display the secret."
+    },
+    "base_url": {
+      "type": "text",
+      "advanced": true,
+      "label": "API base URL"
+    }
+  }
+}
