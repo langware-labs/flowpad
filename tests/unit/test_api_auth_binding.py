@@ -42,7 +42,7 @@ async def _reset_harness_auth_mode():
     )
     from flow_sdk.builtin.capability import Capability
 
-    for worker in ("claude", "codex", "copilot"):
+    for worker in ("claude", "codex", "copilot", "opencode"):
         cap = await Capability.get_by_kind(worker_capability_kind(worker))
         if cap is not None and getattr(cap, "auth_mode", "device") != "device":
             cap.auth_mode = "device"
@@ -313,3 +313,160 @@ async def test_hub_endpoint_without_login_raises(env, monkeypatch) -> None:
     await _set_harness_api("claude", provider="flowpad")
     with pytest.raises(WorkerSpawnError):
         await resolve_worker_api_auth(_fake_process("claude"))
+
+
+# ── a process may spend a different budget than its box ──────────────────────
+
+#: A real typeid: the override is validated as one, so a non-uuid id is not an endpoint.
+EP2 = "llm_endpoint-22222222-2222-4333-8444-555555555555"
+OTHER_INVOKE = "https://hub.test/api/v1/graph/llm_endpoint/22222222-2222-4333-8444-555555555555/invoke"
+
+
+def _process_on(worker_type: str, typeid: str | None, *, model: str | None = "sm"):
+    """``_fake_process`` plus the per-process endpoint override."""
+    process = _fake_process(worker_type, model=model)
+    process.llm_endpoint_typeid = typeid
+    return process
+
+
+async def test_a_process_endpoint_overrides_the_box_binding(env, monkeypatch) -> None:
+    """The box binding is a default, not a ceiling: a process that names an endpoint spends that one.
+
+    Which is the whole point -- one box may hold several usable budgets (its own allocation plus
+    anything shared with the user), and two processes on it may legitimately spend different ones.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+
+    _bind_hub(monkeypatch)
+    await _set_harness_api("claude", provider="flowpad")
+
+    auth = await resolve_worker_api_auth(_process_on("claude", EP2))
+    assert auth is not None
+    assert auth.env["ANTHROPIC_BASE_URL"] == OTHER_INVOKE
+    # Still the hub LOGIN key: the endpoint changes WHICH budget is spent, never how the box signs.
+    assert auth.env["ANTHROPIC_AUTH_TOKEN"] == "fp-hub-key"
+
+
+async def test_a_process_without_an_endpoint_uses_the_box_binding(env, monkeypatch) -> None:
+    """Unset must mean exactly today's behaviour -- agent deploys have no UI to choose with."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+
+    _bind_hub(monkeypatch)
+    await _set_harness_api("claude", provider="flowpad")
+
+    auth = await resolve_worker_api_auth(_process_on("claude", None))
+    assert auth is not None and auth.env["ANTHROPIC_BASE_URL"] == HUB_INVOKE
+
+
+async def test_a_process_endpoint_resolves_with_no_box_binding(env, monkeypatch) -> None:
+    """Logged in but never bound: the process names the budget, so there is one to point at.
+
+    The FlowPad "key" is the hub login, and what made it usable used to be the pushed binding alone.
+    A process override is the other way to have an endpoint, and it has to count.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.cli.auth.hub_login import set_api_key
+    from flow_sdk.config import default_service_config
+    from flow_sdk.instance_settings import llm_endpoint
+
+    monkeypatch.setattr(default_service_config, "flowpad_hub_url", "https://hub.test")
+    set_api_key("fp-hub-key")
+    assert llm_endpoint.get_hub_llm_endpoint() is None, "this test is about the UNBOUND box"
+    await _set_harness_api("claude", provider="flowpad")
+
+    auth = await resolve_worker_api_auth(_process_on("claude", EP2))
+    assert auth is not None and auth.env["ANTHROPIC_BASE_URL"] == OTHER_INVOKE
+
+
+@pytest.mark.parametrize(
+    "bad", ["not-a-typeid", "", "llm_endpoint-ep2", "project-11111111-2222-4333-8444-555555555555"]
+)
+async def test_an_unusable_process_endpoint_falls_back_to_the_binding(env, monkeypatch, bad) -> None:
+    """Garbage, a non-uuid id, and a well-formed typeid of the WRONG type all fall back rather than
+    building a plausible-looking invoke URL for something that is not a budget."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+
+    _bind_hub(monkeypatch)
+    await _set_harness_api("claude", provider="flowpad")
+
+    auth = await resolve_worker_api_auth(_process_on("claude", bad))
+    assert auth is not None and auth.env["ANTHROPIC_BASE_URL"] == HUB_INVOKE
+
+
+async def test_a_named_endpoint_is_enough_on_a_device_mode_harness(env, monkeypatch) -> None:
+    """``set_llm_endpoint`` has to be a whole interface, not half of one.
+
+    A harness left on its vendor device login is the ordinary case. If naming an endpoint only took
+    effect once someone also flipped the Capability into api mode, the setter would appear to work
+    and then be silently ignored — and flipping the Capability to compensate would change which
+    budget every OTHER process on this box spends. Per-process is the point.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.capability import Capability
+
+    _bind_hub(monkeypatch)
+    cap = await Capability.get_by_kind(worker_capability_kind("claude"))
+    assert cap is not None and getattr(cap, "auth_mode", "device") == "device", "start from device login"
+
+    auth = await resolve_worker_api_auth(_process_on("claude", EP2))
+    assert auth is not None, "a process that names a budget must spend it"
+    assert auth.env["ANTHROPIC_BASE_URL"] == OTHER_INVOKE
+    assert auth.env["ANTHROPIC_AUTH_TOKEN"] == "fp-hub-key"
+
+
+async def test_a_bound_box_funds_an_unproven_device_harness_from_its_endpoint(env, monkeypatch) -> None:
+    """A bound box, a harness nobody has signed in: the endpoint funds the spawn.
+
+    This used to answer ``None`` (device login), and could only be reached artificially:
+    binding ALSO rewrote every harness to ``(api, flowpad)``, so "bound box + device mode"
+    did not occur in the wild. Binding no longer writes to ``Capability``, which makes this
+    exact state the ordinary one for a fresh sandbox -- claude installed, never logged in,
+    an endpoint pushed after login. Answering "device login" there would hand the turn to a
+    vendor sign-in picker and hang it.
+
+    ``login_state`` is ``Persist.FALSE``, so "nobody has asked" is the common state, not an
+    edge case; the box binding is the deliberate act that breaks the tie. See
+    ``test_an_unbound_box_still_prefers_the_device_login`` for the other half -- the desktop
+    default is unchanged.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+
+    _bind_hub(monkeypatch)
+    auth = await resolve_worker_api_auth(_process_on("claude", None))
+    assert auth is not None
+    assert auth.env["ANTHROPIC_BASE_URL"] == HUB_INVOKE
+    assert auth.env["ANTHROPIC_AUTH_TOKEN"] == "fp-hub-key"
+
+
+async def test_an_unbound_box_still_prefers_the_device_login(env) -> None:
+    """No binding, no keys, nobody probed: device login, exactly as before.
+
+    The state most desktop installs are in. ``resolve_llm_source`` falls through to its
+    second pass (*first eligible*, not *first eligible AND auto*) precisely so an unproven
+    device login stays usable when nothing else is configured.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+
+    assert await resolve_worker_api_auth(_process_on("claude", None)) is None
+
+
+async def test_opencode_reaches_the_endpoint_through_its_config_not_its_env(env, monkeypatch) -> None:
+    """opencode is the one harness that cannot be redirected with environment variables.
+
+    Its OpenRouter provider is built in and honours no base-URL variable -- verified against 1.18.25,
+    where ``OPENROUTER_BASE_URL`` is ignored and the CLI still calls openrouter.ai. So its binding
+    carries a ``provider`` fragment for the generated ``opencode.json`` instead, and the key keeps
+    riding the environment exactly as it did.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+
+    _bind_hub(monkeypatch)
+    auth = await resolve_worker_api_auth(_process_on("opencode", EP2))
+
+    assert auth is not None, "opencode must be able to spend a named endpoint like every other harness"
+    assert auth.env["OPENROUTER_API_KEY"] == "fp-hub-key"
+    assert auth.provider_options == {"openrouter": {"options": {"baseURL": f"{OTHER_INVOKE}/v1"}}}
+    assert not any("BASE_URL" in name for name in auth.env), (
+        "opencode reads no base-URL variable; putting one in env would look like it worked"
+    )

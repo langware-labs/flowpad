@@ -54,10 +54,11 @@ const HARNESS_SUPPORTED_PROVIDERS: Record<Worker, LMApiProvider[]> = {
   claude: [LMApiProvider.OpenRouter, LMApiProvider.FlowPad],
   codex: [LMApiProvider.OpenRouter, LMApiProvider.FlowPad],
   copilot: [LMApiProvider.OpenRouter, LMApiProvider.FlowPad],
-  // OpenCode resolves OpenRouter from a bare OPENROUTER_API_KEY — no config
-  // file, no provider block — and OPENCODE_API_AUTH_SPEC lists OpenRouter
-  // alone, so the hub passthrough is deliberately absent here too.
-  opencode: [LMApiProvider.OpenRouter],
+  // OpenCode reaches the hub endpoint differently from the others: its OpenRouter
+  // provider is built in and honours no base-URL env var, so the redirect rides
+  // its generated opencode.json provider block instead. The key still comes from
+  // a bare OPENROUTER_API_KEY either way, and to a user it is the same choice.
+  opencode: [LMApiProvider.OpenRouter, LMApiProvider.FlowPad],
 };
 
 const PROVIDER_LABEL: Record<string, string> = {
