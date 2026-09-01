@@ -106,7 +106,7 @@ on the `IngestDriver` base, so the engine reads them directly — no `getattr` p
 | Trait | Default | Meaning |
 |---|---|---|
 | `provider` | — | Registry key. Distinct from `channel`, the user-facing name |
-| `record_kind` | — | Ontology kind stamped on each item; decides inbox membership — the projection admits `content.message.*` and nothing else. Carried by record-emitting drivers only, not the `IngestDriver` base; an authored source declares `emits` instead (see [the data-source asset](data-source-asset.md#resolved-and-what-is-left)) |
+| `record_kind` | — | Ontology kind stamped on each item; decides inbox membership — the projection admits `content.message.*` and nothing else (see [the inbox projection](inbox-projection.md)). Carried by record-emitting drivers only, not the `IngestDriver` base; an authored source declares `emits` instead (see [the data-source asset](data-source-asset.md#resolved-and-what-is-left)) |
 | `segment_budget` | 5 | Segments per run. Slack declares 1 — one history call a minute |
 | `stamps_identity` | `True` | Whether this source's bytes are ours to write to |
 | `origin_id_for()` | path | The source's own name for an asset |

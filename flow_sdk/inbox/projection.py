@@ -250,6 +250,7 @@ async def project_source_item(
     if not known_unplaced:
         existing_fm = await FlowMessage.get_one({"source_item_id": str(item.id)})
         if existing_fm is not None:
+            await _heal_sent_at(existing_fm, item)
             return await _place_message(
                 item, source, channel, subject, key, thread, thread_id,
                 conversation_id, sender_id, sender_name, str(existing_fm.id),
@@ -257,12 +258,35 @@ async def project_source_item(
             )
     async with _thread_lock():
         existing_fm = await FlowMessage.get_one({"source_item_id": str(item.id)})
+        if existing_fm is not None:
+            await _heal_sent_at(existing_fm, item)
         fm_id = str(existing_fm.id) if existing_fm is not None else mint_uuid()
         return await _place_message(
             item, source, channel, subject, key, thread, thread_id,
             conversation_id, sender_id, sender_name, fm_id,
             notify=notify, recount=recount, announce=announce,
         )
+
+
+async def _heal_sent_at(existing_fm, item) -> None:
+    """Convergently re-stamp EVENT time on an already-placed message.
+
+    ``materialize_flow_message`` deliberately no-op-upserts an existing local
+    row, so the payload's ``sent_at`` never reaches it — this explicit write
+    is what makes any re-projection (reconcile sweep, ``.updated`` tag,
+    replay) heal a legacy or drifted stamp. The projection is the one writer
+    of ``sent_at``; nothing else may touch it.
+    """
+    from flow_sdk.utils.serialization import iso_to_utc  # noqa: PLC0415
+
+    want = iso_to_utc(item.occurred_at) if item.occurred_at else None
+    have = iso_to_utc(existing_fm.sent_at) if existing_fm.sent_at else None
+    if want is not None and have != want:
+        existing_fm.sent_at = want
+        try:
+            await existing_fm.save(notify=False)
+        except Exception:  # noqa: BLE001 — healing must not break placement
+            logger.exception("[inbox] sent_at heal failed for %s", existing_fm.id)
 
 
 async def _place_message(
@@ -273,7 +297,10 @@ async def _place_message(
     """Write the message row + pointers for one resolved ``fm_id``.
 
     Split from ``project_source_item`` so the placement can run under the
-    dedupe lock without re-indenting the world; behavior is byte-identical.
+    dedupe lock; also the convergence point for ``sent_at``: an EXISTING row
+    whose stamp differs from the item's ``occurred_at`` is corrected here,
+    because ``materialize_flow_message`` deliberately no-op-upserts an
+    existing local row and the payload alone would never reach it.
     """
     from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message  # noqa: PLC0415
     from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal  # noqa: PLC0415
@@ -288,6 +315,11 @@ async def _place_message(
         # blanks `text` around persistence — the STORED row stays a reference.
         "text": item.body or subject,
         "source_item_id": str(item.id),
+        # EVENT time — the projection is the one writer of this field. Present
+        # on every (re)projection, so a legacy row heals the moment anything
+        # re-projects its item (a sync's reconcile sweep, an .updated tag, a
+        # replay): reindex fixes the data "as is", by design.
+        "sent_at": item.occurred_at or None,
         "sender_id": sender_id,
         "sender_name": sender_name,
         "thread_id": thread_id,
@@ -535,8 +567,18 @@ async def reconcile_source(data_source_id: str, *, limit: int = RECONCILE_BATCH)
         hydrate=False,  # placement check reads ids only
     )
     placed = {str(m.source_item_id) for m in existing}
+    # Placed but missing EVENT time — legacy rows from before ``sent_at``
+    # existed (or a drifted stamp cleared by hand). Re-projecting them runs
+    # the convergent heal, which is what makes a plain reindex fix mis-dated
+    # data "as is" — no bespoke migration, this sweep runs after every sync.
+    unstamped = {
+        str(m.source_item_id)
+        for m in existing
+        if getattr(m, "sent_at", None) is None and str(m.source_item_id or "")
+    }
     missing = [i for i in items if str(i.id) not in placed]
-    if not missing:
+    heal = [i for i in items if str(i.id) in unstamped and i.occurred_at]
+    if not missing and not heal:
         return 0
     # Oldest first, so conversation pointers land in message order even though
     # a provider hands them back newest-first.
@@ -573,6 +615,18 @@ async def reconcile_source(data_source_id: str, *, limit: int = RECONCILE_BATCH)
                 touched.add(result[1])
         except Exception:  # noqa: BLE001 — one bad record must not stall the sweep
             logger.exception("[inbox] reconcile failed for source_item %s", item.id)
+    for item in heal:
+        try:
+            # known_unplaced=False on purpose: the row exists; re-resolving it
+            # runs the sent_at heal and the idempotent upsert. Never announced —
+            # nothing "arrived", a stamp converged.
+            result = await project_source_item(
+                item, source=source, recount=False, announce=False, known_unplaced=False
+            )
+            if result:
+                touched.add(result[1])
+        except Exception:  # noqa: BLE001
+            logger.exception("[inbox] sent_at reconcile failed for source_item %s", item.id)
     for thread_id in touched:
         await recompute_thread_projection(thread_id)
     logger.info("[inbox] reconciled %d/%d items for source %s", projected, len(missing), data_source_id)
