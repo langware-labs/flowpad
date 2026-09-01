@@ -137,7 +137,30 @@ class OpenCodeAgentOptions(AgentOptions):
         config = config_for_assets_dir(
             getattr(assets, "process_id", "") or "",
             getattr(assets, "assets_dir", None),
+            self.mcp_config_fragment,
         )
+        if config is not None:
+            self.config_path = str(config)
+
+    def apply_process_mcp(self, runtime: "Any", process_id: str = "") -> None:
+        """Fold the rendered MCP into the generated config.
+
+        Called by ``AgenticProcess._apply_process_assets`` BEFORE the
+        instruction assets, so ``apply_instruction_assets`` regenerates the file
+        with both in it. This override also covers the case that ordering alone
+        cannot: a process with attached servers and NO instruction assets, where
+        ``apply_instruction_assets`` never runs and nothing would set
+        ``config_path``.
+        """
+        super().apply_process_mcp(runtime, process_id)
+        if not self.mcp_config_fragment or self.config_path or not process_id:
+            return
+        # Attached servers but NO instruction assets: ``apply_instruction_assets``
+        # never runs, so nothing else would point OPENCODE_CONFIG anywhere.
+        # Through the same generator, so the file keeps one owner.
+        from .config_gen import config_for_assets_dir
+
+        config = config_for_assets_dir(process_id, None, self.mcp_config_fragment)
         if config is not None:
             self.config_path = str(config)
 

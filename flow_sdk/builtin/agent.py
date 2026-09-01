@@ -31,7 +31,11 @@ from flow_sdk.schema.data_spec import Body, FrontMatter, SpecType
 from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:  # pragma: no cover
+    from pathlib import Path
+
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
+    from flow_sdk.builtin.mcp import Mcp
+    from flow_sdk.schema.data_spec.mcp_spec import McpSpec
 
 #: The two vocabularies for "which CLI": an agent.md declares the DRIVER
 #: short-id (``VENDORS[...].key``), ``AgenticProcess.worker_type`` carries the
@@ -74,7 +78,6 @@ class AgentSpec(FrontMatter):
     tools: Optional[list[str]] = None
     disallowed_tools: Optional[list[str]] = None
     skills: Optional[list[str]] = None
-    mcp_servers: Optional[list[str]] = None
     subagents: Optional[list[str]] = None
     additional_dirs: Optional[list[str]] = None
     load_flowpad_assistant: Optional[bool] = None
@@ -118,7 +121,10 @@ class Agent(Entity):
     tools: Optional[list[str]] = APIField(default=None)
     disallowed_tools: Optional[list[str]] = APIField(default=None)
     skills: list[TypeId] = APIField(default_factory=list)
-    mcp_servers: list[TypeId] = APIField(default_factory=list)
+    # NOTE: no ``mcp_servers`` list. An agent's MCP servers are ASSETS in its own
+    # folder (``agentic-assets/mcp/<name>/``), reached via ``mcp_assets()`` — so
+    # the 1:1 is structural rather than a second list to keep in sync, and a
+    # RECEIVED agent carries its servers with it instead of dangling TypeIds.
     subagents: list[str] = APIField(
         default_factory=list,
         description="SubAgent NAMES this agent may delegate to. Names, not TypeIds, because a "
@@ -197,6 +203,112 @@ class Agent(Entity):
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
 
     _api_visible: ClassVar[bool] = True
+
+    # ── MCP servers ───────────────────────────────────────────────────────
+
+    async def mcp_assets(self) -> list["Mcp"]:
+        """The MCP assets owned by this agent — its folder IS the list.
+
+        Nested repo assets are parented by the indexer (``repo_assets_fn``
+        descends into a folder asset and stamps ``parent_type_id``), so this is
+        a scoped lookup rather than a walk.
+        """
+        from flow_sdk.builtin.mcp import Mcp  # noqa: PLC0415
+
+        return await Mcp.get_all({"match": {"parent_type_id": str(self.typeid)}})
+
+    async def resolved_mcp_specs(self) -> list["McpSpec"]:
+        """This agent's servers as launch payloads, deduped by name."""
+        from flow_sdk.builtin.agentic_process.cli_drivers.mcp_projection import (  # noqa: PLC0415
+            dedupe_by_name,
+        )
+
+        return dedupe_by_name(asset.to_spec() for asset in await self.mcp_assets())
+
+    async def add_mcp(self, spec: "McpSpec") -> bool:
+        """Attach an MCP server to this agent; return whether it changed.
+
+        Writes an ASSET, not a list entry — that is what makes the server
+        indexed, visible in the asset list with a scope, and carried along when
+        the agent is shared. Saving the row is the whole mechanism: placement
+        materializes ``agentic-assets/mcp/<name>/mcp.json`` NESTED under this
+        agent's folder (because ``parent_type_id`` names it) and mints the v4
+        into the folder's identity capsule. Hand-writing the file instead would
+        need a root-scoped reindex to get parented — ``reindex_paths`` is
+        resolution-only and would leave the asset orphaned.
+        """
+        from flow_sdk.builtin.mcp import Mcp  # noqa: PLC0415
+
+        # Rendering is the validation: refuse a spec this agent's harness cannot
+        # express (a dotted name under codex) at author time, not at spawn.
+        from flow_sdk.builtin.agentic_process.cli_drivers import get_driver  # noqa: PLC0415
+
+        get_driver(driver_key(self.worker_type)).prepare_process_mcp([spec])
+
+        existing = {asset.name: asset for asset in await self.mcp_assets()}
+        current = existing.get(spec.name)
+        if current is not None and current.to_spec() == spec:
+            return False
+
+        # Mechanical: ``Mcp``'s field names ARE ``McpSpec``'s (enforced at
+        # registration by ``SchemaRegistry.check_asset_spec``), so a field added
+        # to the spec cannot silently stop being persisted here.
+        row = current or Mcp(parent_type_id=str(self.typeid))
+        for field, value in spec.model_dump().items():
+            setattr(row, field, value)
+        await row.save(notify=False)
+        return True
+
+    async def remove_mcp(self, name: str) -> bool:
+        """Detach one MCP server by name; return whether it changed."""
+        for asset in await self.mcp_assets():
+            if asset.name == name:
+                await asset.delete()
+                return True
+        return False
+
+    # ── running this agent ────────────────────────────────────────────────
+    # The Python surface. ``run_action`` / ``use_action`` are thin HTTP wrappers
+    # over these; before, the only Python path from an agent to a process was
+    # ``await (await agent.local_deployment()).create_process(...)``.
+    #
+    # ``deployment`` defaults to the LOCAL placement. It is a parameter rather
+    # than always-resolved so a caller that already holds the deployment (the
+    # HTTP actions, which put its id in their response) resolves it once.
+
+    async def create_process(
+        self, prompt: str = "", *, deployment: "Deployment | None" = None, **options
+    ) -> "AgenticProcess":
+        """This agent as a process. NOT saved, NOT started.
+
+        The primitive — every field the agent declares (worker, model,
+        permissions, system prompt, dirs, MCP servers) comes from the Agent;
+        only per-run concerns are passed through.
+        """
+        target = deployment or await self.local_deployment()
+        return await target.create_process(prompt, **options)
+
+    async def launch(
+        self, prompt: str, *, deployment: "Deployment | None" = None, wait: bool = False, **options
+    ) -> "AgenticProcess":
+        """``create_process`` + save + run the first turn.
+
+        Goes through ``dispatch_agent_run`` rather than ``Deployment.launch``
+        directly: that function owns the run lifecycle events and the refusal to
+        silently run a remotely-placed agent here. Routing them through this verb
+        means a Python caller gets both, not just the HTTP one.
+        """
+        from flow_sdk.builtin.agent_run import dispatch_agent_run  # noqa: PLC0415
+
+        target = deployment or await self.local_deployment()
+        return await dispatch_agent_run(target, prompt, wait=wait, **options)
+
+    async def use(
+        self, project_id: str | None = None, *, deployment: "Deployment | None" = None
+    ) -> "AgenticProcess":
+        """Open a session AS this agent — saved, visible, no first turn."""
+        target = deployment or await self.local_deployment()
+        return await target.use(project_id=project_id)
 
     # ── deployment ────────────────────────────────────────────────────────
 
@@ -430,7 +542,6 @@ class Agent(Entity):
         alongside — see ``agent_run.dispatch_agent_run``, which owns the
         local/remote routing.
         """
-        from flow_sdk.builtin.agent_run import dispatch_agent_run  # noqa: PLC0415
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
@@ -442,9 +553,11 @@ class Agent(Entity):
         if not self.enabled:
             return ApiFailResponse(message=f"agent {self.name!r} is disabled")
 
+        # Resolved here and passed in: the response payload names it, so letting
+        # ``launch`` resolve its own would be a second get-or-create round trip.
         deployment = await self.local_deployment()
         try:
-            process = await dispatch_agent_run(deployment, prompt)
+            process = await self.launch(prompt, deployment=deployment)
         except NotImplementedError as exc:
             return ApiFailResponse(message=str(exc))
         except Exception as exc:
@@ -481,10 +594,10 @@ class Agent(Entity):
 
         deployment = await self.local_deployment()
         try:
-            process = await deployment.use(project_id=project_id)
+            process = await self.use(project_id=project_id, deployment=deployment)
         except NotImplementedError as exc:
             return ApiFailResponse(message=str(exc))
-        except Exception as exc:  # noqa: BLE001 — incl. the disabled-agent refusal from build()
+        except Exception as exc:  # noqa: BLE001 — incl. the disabled-agent refusal from create_process()
             return ApiFailResponse(message=f"use failed: {exc}")
         return ApiSuccessResponse(
             data={

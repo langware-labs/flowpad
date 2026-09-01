@@ -11,16 +11,20 @@ from typing import TYPE_CHECKING
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    AgentOptions,
     AgenticContext,
     AgenticProcessContextKey,
-    AgentOptions,
     DeviceLoginSpec,
     ProcessHookRuntime,
+    ProcessMcpRuntime,
     WorkerAuthResult,
     apply_worker_env,
     apply_worker_secret_env,
     restart_payload_from_cli_options,
     run_worker_auth_probe,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.mcp_projection import (
+    to_opencode_mcp,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.headless_turn import run_headless_turn
 from flow_sdk.builtin.agentic_process.cli_drivers.opencode.cli import OpenCodeAgentOptions
@@ -73,6 +77,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
     from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
     from flow_sdk.responses.response import ApiResponse
+    from flow_sdk.schema.data_spec.mcp_spec import McpSpec
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +198,20 @@ class OpenCodeDriver:
         assets.remove(PLUGIN_SUBDIR)
         assets.load_asset(str(plugin_path(Path("."))), content=source)
         return ProcessHookRuntime()
+
+    # ── Per-process MCP ──────────────────────────────────────────────────
+    supports_process_mcp = True
+
+    def prepare_process_mcp(self, specs: "Sequence[McpSpec]") -> ProcessMcpRuntime:
+        """The ``mcp`` key of the generated per-process config.
+
+        The only vendor with a genuinely different shape — ``command`` is an
+        array, the env key is ``environment``, and the discriminator is
+        ``local``/``remote``.
+        """
+        if not specs:
+            return ProcessMcpRuntime()
+        return ProcessMcpRuntime(config_fragment=to_opencode_mcp(specs))
 
     def normalize_process_hook_data(
         self,
@@ -353,10 +372,14 @@ class OpenCodeDriver:
     # ------------------------------------------------------------------
 
     def _write_config(self, process: "AgenticProcess", instruction_assets) -> Path | None:
-        """Generate the per-process ``opencode.json`` (instructions + skills)."""
+        """Generate the per-process ``opencode.json`` (instructions + skills + MCP)."""
+        mcp = dict(self.prepare_process_mcp(process.resolved_mcp_servers()).config_fragment)
         if instruction_assets is None:
-            return None
-        return config_for_assets_dir(process.id, getattr(instruction_assets, "assets_dir", None))
+            # Attached servers alone still warrant a config.
+            return config_for_assets_dir(process.id, None, mcp) if mcp else None
+        return config_for_assets_dir(
+            process.id, getattr(instruction_assets, "assets_dir", None), mcp
+        )
 
     def _process_local_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         path = opencode_transcript_path_for_process(process.id)

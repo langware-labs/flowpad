@@ -42,7 +42,7 @@ absorbing their provider-owned format.
 
 **The verbs, pinned.** **load/embed a SubAgent** = write its persona into
 `cli_config.agents_json` (Claude Code `--agents`) — prompt text only; **use/run an Agent** =
-`Deployment.build/launch` — the whole launch bundle (worker, model, permissions, system
+`Deployment.create_process/launch` — the whole launch bundle (worker, model, permissions, system
 prompt via `context_data.instructions`, dirs, `deployment_id`). "Load an agent" means the
 Agent entity; the persona embed is always "sub-agent".
 

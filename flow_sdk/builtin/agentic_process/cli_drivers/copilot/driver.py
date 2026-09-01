@@ -14,16 +14,20 @@ from flow_sdk.builtin.agent_hook import HookEventType
 from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import render_shell_command
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    AgentOptions,
     AgenticContext,
     AgenticProcessContextKey,
-    AgentOptions,
     DeviceLoginSpec,
     ProcessHookRuntime,
+    ProcessMcpRuntime,
     WorkerAuthResult,
     apply_worker_env,
     apply_worker_secret_env,
     restart_payload_from_cli_options,
     run_worker_auth_probe,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.mcp_projection import (
+    to_mcp_config_json,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
@@ -72,6 +76,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
     from flow_sdk.responses.response import ApiResponse
+    from flow_sdk.schema.data_spec.mcp_spec import McpSpec
 
 logger = logging.getLogger(__name__)
 
@@ -212,6 +217,21 @@ class CopilotDriver:
             content=json.dumps(hooks, indent=2, sort_keys=True) + "\n",
         )
         return ProcessHookRuntime(plugin_dirs=(str(plugin.os_path),))
+
+    # ── Per-process MCP ──────────────────────────────────────────────────
+    supports_process_mcp = True
+
+    def prepare_process_mcp(self, specs: "Sequence[McpSpec]") -> ProcessMcpRuntime:
+        """``--additional-mcp-config <json>`` — same body claude takes.
+
+        The flag is absent from GitHub's published docs but present in
+        ``copilot --help`` (1.0.81): *"JSON string or file path (prefix with @)
+        ... augments config from ~/.copilot/mcp-config.json for this session"*.
+        Because it AUGMENTS, there is no strict counterpart to set.
+        """
+        if not specs:
+            return ProcessMcpRuntime()
+        return ProcessMcpRuntime(mcp_config_json=to_mcp_config_json(specs))
 
     def normalize_process_hook_data(
         self,

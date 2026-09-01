@@ -171,8 +171,22 @@ def _config_path_from_context(context: AgenticContext, process_id: str | None = 
     config from it here — through the SAME generator the driver uses, so the
     two prompt paths can never disagree about what goes in the file.
     """
+    from flow_sdk.builtin.agentic_process.cli_drivers.opencode.config_gen import (
+        config_for_assets_dir,
+    )
+
+    # This path has a process_id and a context, never the process itself, so the
+    # attached MCP servers arrive already rendered on the context. Reading them
+    # from anywhere else here is how opencode ends up with MCP on the PTY path
+    # and silently without it on the headless one.
+    mcp = dict(context.mcp_config_fragment or {})
+
     dirs = list(context.custom_instruction_dirs or [])
     if not dirs:
+        # No instruction assets, but attached servers still need a config.
+        if mcp and process_id:
+            generated = config_for_assets_dir(process_id, None, mcp)
+            return str(generated) if generated else None
         return None
     candidate = Path(dirs[0])
     if candidate.is_file():
@@ -180,9 +194,5 @@ def _config_path_from_context(context: AgenticContext, process_id: str | None = 
     if not candidate.is_dir() or not process_id:
         return None
 
-    from flow_sdk.builtin.agentic_process.cli_drivers.opencode.config_gen import (
-        config_for_assets_dir,
-    )
-
-    generated = config_for_assets_dir(process_id, candidate)
+    generated = config_for_assets_dir(process_id, candidate, mcp)
     return str(generated) if generated else None

@@ -1729,7 +1729,7 @@ class Entity(DBEntity):
             # assigned after. The first turn is scheduled
             # separately so this returns a DisplayTarget immediately.
             deployment = await get_agent_local_deployment("artifact-setup")
-            ap = await deployment.build(
+            ap = await deployment.create_process(
                 prompt,
                 workdir=workdir,
                 project_id=project_id,
