@@ -24,24 +24,9 @@ export interface McpServerRow {
 }
 
 /**
- * The MCP servers available to a given worker.
- *
- * Read from the CAPABILITY rows, not from `mcp_server` records, and the worker
- * is why: a capability's kind is `<service>.mcp.<worker_type>`
- * (`pycharm.mcp.claude_code`, `noderepl.mcp.codex`), so the third segment says
- * which vendor the server is configured for. `mcp_server` records carry no
- * worker dimension at all — only a config `scope` of user/local/project — so a
- * list built on them cannot answer "available for THIS worker".
- *
- * That trade was worth making only once the rows became read-only. While the
- * pane still wrote `agent.mcp_servers` it had to read `mcp_server` records,
- * because a capability's id names the CAPABILITY, not the server, and the row
- * carries no pointer back (its `value` is null for MCP kinds) — so capabilities
- * could list servers but never say which id to store. Nothing is stored now, so
- * the identity objection is gone and the worker dimension decides.
- *
- * `include_system=true` is required: every capability row is system-scoped, and
- * without the flag the route returns an empty list.
+ * MCP servers available to a worker. Read from CAPABILITY rows, whose kind is
+ * `<service>.mcp.<worker_type>` — the only source carrying a worker dimension.
+ * `include_system=true` is required: every capability row is system-scoped.
  */
 export function useWirableMcpServers(workerType: string): { servers: McpServerRow[]; isLoading: boolean } {
   const queryClient = useQueryClient();

@@ -705,20 +705,11 @@ class Entity(DBEntity):
         is None, every registered type is queried. Results are union'd,
         sorted by ``asset_ref``, then paged.
 
-        **A range is emitted per separator form, and they are OR'd.** This is a
-        lexical comparison against the stored bytes, so the range only matches
-        rows written in the SAME path form. Both forms are in the data on
-        Windows: the indexer writes ``asset_ref`` through ``FSRef``/``pathlib``
-        (``C:\\Users\\…``), while other producers store
-        ``canonical_posix_path`` output (``C:/Users/…``). Building the range in
-        POSIX alone put every pathlib-written row OUTSIDE it — ``\\`` is
-        ``0x5C``, above the ``0x30`` upper bound, at the very first separator —
-        so this route returned an empty list for every folder on Windows,
-        silently. Keying on ``os.sep`` alone just inverts which half is missed.
-
-        On POSIX both forms are identical and collapse back to a single range,
-        so this is a no-op there. ``Path`` normalizes the caller's separators
-        either way, so either argument form works on either platform.
+        **A range is emitted per separator form, and they are OR'd.** The
+        comparison is lexical, so it only matches rows written in the same
+        form, and both are in the data on Windows: the indexer writes
+        ``asset_ref`` through pathlib (backslashes) while other producers
+        write ``canonical_posix_path``. POSIX-only matched nothing here.
         """
         import os  # noqa: PLC0415
 

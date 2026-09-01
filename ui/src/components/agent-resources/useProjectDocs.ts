@@ -9,12 +9,9 @@ import { useProject } from '@src/hooks/useProject';
 const DOC_LIMIT = 500;
 
 /**
- * The current project's docs (`markdown`).
- *
- * Unlike `skill`, `markdown` reliably carries `project_id`, so the live entity
- * query is correct here — the same shape `useProjectTasks` uses. `order_by` and
- * `limit` go INSIDE the `QueryFilter`: a top-level key would be folded into
- * `match` and become a field predicate matching nothing.
+ * The project's docs. Unlike `skill`, `markdown` carries `project_id`, so the
+ * live query is correct. `order_by`/`limit` go INSIDE `QueryFilter` — a
+ * top-level key folds into `match` and becomes a predicate matching nothing.
  */
 export function useProjectDocs(): { docs: Markdown[]; isLoading: boolean } {
   const { project } = useProject();

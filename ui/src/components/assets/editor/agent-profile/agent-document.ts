@@ -55,16 +55,9 @@ function splitFrontmatter(source: string): FrontmatterDocument {
 export type AgentDocumentListKey = 'skills' | 'mcp_servers' | 'subagents' | 'additional_dirs';
 
 /**
- * Read one list field straight out of `agent.md`'s frontmatter.
- *
- * The read half of `patchAgentDocument`, and the reason a caller can edit these
- * lists without resolving the Agent ENTITY at all: the file is the record. That
- * matters for an agent whose row isn't indexed â€” the document is still there
- * and still authoritative, so it stays editable.
- *
- * Returns `[]` for a missing key, a non-list value, or unparseable frontmatter:
- * this feeds a checkbox list, where "can't tell" and "nothing selected" render
- * the same and must not throw.
+ * Read one list field out of `agent.md`'s frontmatter — the read half of
+ * `patchAgentDocument`, so an unindexed agent stays editable. Returns `[]` for a
+ * missing key, non-list value, or bad frontmatter: it feeds a list, not a throw.
  */
 export function readAgentDocumentList(source: string, key: AgentDocumentListKey): string[] {
   let yaml: string;
