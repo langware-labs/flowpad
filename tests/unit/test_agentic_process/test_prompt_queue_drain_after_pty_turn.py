@@ -139,6 +139,7 @@ async def _settle(before: set[asyncio.Task]) -> None:
 #     breadcrumb.test.pty_queue_drain.rules: FAILING? the prompt queue did not drain
 #       in PTY mode - read this tag's rules before touching the turn-end edge or _last_broadcast_key
 # flowpad:endcapsule tag
+@pytest.mark.long  # 2.10s
 @pytest.mark.asyncio
 async def test_prompt_queued_during_a_pty_turn_drains_when_the_turn_ends(
     initialize_test_db,

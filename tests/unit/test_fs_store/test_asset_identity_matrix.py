@@ -29,7 +29,7 @@ INDEXED_TYPES = {
     "claude_session", "codex_session", "command", "copilot_session",
     "data_source_spec",
     "dataset", "deck_template", "deck", "dynamic_workflow",
-    "helpdesk", "journey", "markdown_index", "markdown", "mcp_server", "micro_app", "plan", "plugin",
+    "helpdesk", "journey", "markdown_index", "markdown", "mcp", "mcp_server", "micro_app", "plan", "plugin",
     "project", "prompt", "secret_origin", "skill", "spec", "spreadsheet",
     "task", "todo_file", "usage_report", "whiteboard", "workflow_run",
 }
@@ -41,6 +41,13 @@ FOLDER_PORTABLE = (
     "graph_workflow", "dataset", "deck", "deck_template", "journey", "skill", "task",
     "whiteboard",
 )
+#: Folder-capsule types with NO legacy reader. A legacy reader migrates ids
+#: minted before the capsule scheme existed; a type introduced after it has no
+#: such history, so declaring one would be dead by construction. They still
+#: mint + persist + adopt like the rest — only the ``.flow/id`` fallback is
+#: absent — so they join the capsule partition but skip the legacy cases.
+FOLDER_NO_LEGACY = ("mcp",)
+FOLDER_CAPSULE = FOLDER_PORTABLE + FOLDER_NO_LEGACY
 JSON_STABLE = ("agent_trace", "asset_cleanup_report", "usage_report")
 
 
@@ -77,12 +84,15 @@ def test_every_registered_extractor_has_one_identity_backend() -> None:
 
 
 def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
-    capsule_types = set(FRONTMATTER_ALL) | set(FOLDER_PORTABLE)
+    capsule_types = set(FRONTMATTER_ALL) | set(FOLDER_CAPSULE)
     native_types = set(JSON_STABLE)
     derived_types = INDEXED_TYPES - capsule_types - native_types
-    # 18 capsule: base's 17 + `agent`. 16 derived: + `micro_app`, whose webapp.json
-    # carries no id so a shipped app has the same id on every machine.
-    assert (len(capsule_types), len(native_types), len(derived_types)) == (18, 3, 16)
+    # 19 capsule: base's 17 + `agent` + `mcp` (an MCP we AUTHOR carries its own
+    # v4; the sibling `mcp_server` SCAN is derived, because its source is a
+    # vendor config file we cannot write an id into). 16 derived: + `micro_app`,
+    # whose webapp.json carries no id so a shipped app has the same id on every
+    # machine.
+    assert (len(capsule_types), len(native_types), len(derived_types)) == (19, 3, 16)
 
     for name in sorted(INDEXED_TYPES):
         info = _info(name)
@@ -177,7 +187,7 @@ def test_folder_capsule_adopted_unchanged_without_write(
     assert capsule.read_bytes() == before
 
 
-@pytest.mark.parametrize("type_name", FOLDER_PORTABLE)
+@pytest.mark.parametrize("type_name", FOLDER_CAPSULE)
 def test_missing_folder_id_mints_persists_and_is_idempotent(
     tmp_path: Path, type_name: str,
 ) -> None:

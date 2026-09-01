@@ -52,13 +52,6 @@ async def test_re_observing_the_same_origin_keeps_one_entity(
     assert await id_at(landed) == first, f"{mode}: re-observation forked the entity"
 
 
-@pytest.mark.xfail(
-    reason="changing reflect mode leaves the previous placement on disk; the "
-           "stale copy is then read as a duplicate occurrence and the re-parse "
-           "is discarded. Retiring it would mean deleting a file outside the "
-           "currently-configured target, which reflection deliberately refuses.",
-    strict=True,
-)
 async def test_switching_reflect_mode_keeps_one_entity(
     folder_db, watched, project, make_source
 ):

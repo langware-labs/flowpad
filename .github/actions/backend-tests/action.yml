@@ -37,9 +37,14 @@ runs:
       shell: bash
 
     # pytest.ini enforces --timeout=30 per test; never raise it.
+    #
+    # --long is REQUIRED here. `long`-marked tests (>1s) are deselected by
+    # default so the local inner loop stays fast; that is an ergonomic choice,
+    # not a coverage one, and CI is not the inner loop. Without the flag those
+    # tests run nowhere — tests/long_tests is an excluded tier (see test.yml).
     - name: pytest tests/unit
       if: ${{ inputs.tier == 'unit' }}
-      run: uv run pytest tests/unit -q
+      run: uv run pytest tests/unit -q --long
       shell: bash
 
     # tests/api includes files that spawn or probe a real Claude CLI (worker

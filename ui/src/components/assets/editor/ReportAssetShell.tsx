@@ -15,12 +15,16 @@ interface ReportAssetShellProps {
 }
 
 /**
- * Chrome shared by the JSON-report asset editors (usage report, asset-cleanup
- * report): the header derived from the FSRef path, the scrolling body, and the
- * loading / load-error states. Each editor supplies only its own body.
+ * Chrome shared by the JSON-document asset editors (usage report, asset-cleanup
+ * report, MCP server): the header derived from the FSRef path, the scrolling
+ * body, and the loading / load-error states. Each editor supplies only its own
+ * body.
+ *
+ * The strings are document-neutral on purpose — an MCP server is not a report,
+ * and this shell is named for the two editors that happened to need it first.
  */
 export function ReportAssetShell({ fsRef, name, testId, loading, error, children }: ReportAssetShellProps) {
-  const fileName = fsRef.path.split('/').pop() ?? 'report.json';
+  const fileName = fsRef.path.split('/').pop() ?? '';
   const dirPath = fsRef.path.slice(0, -fileName.length - 1);
 
   return (
@@ -30,12 +34,12 @@ export function ReportAssetShell({ fsRef, name, testId, loading, error, children
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         {loading && (
           <p className="text-sm text-muted-foreground">
-            <Trans>Loading report…</Trans>
+            <Trans>Loading…</Trans>
           </p>
         )}
         {error && (
           <p className="text-sm text-destructive">
-            <Trans>Failed to load report: {error}</Trans>
+            <Trans>Failed to load: {error}</Trans>
           </p>
         )}
         {children}

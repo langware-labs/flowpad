@@ -1,7 +1,9 @@
 """The generated per-process ``opencode.json``.
 
 OpenCode has no ``--add-dir``, so this file is how a process's generated
-instruction assets and materialized skills reach the worker. It is written into
+instruction assets and materialized skills reach the worker — AND how the extra
+roots every other vendor gets as ``--add-dir`` (the Flowpad Assistant mount, a
+project's context folders, ``additional_dirs``) get there. It is written into
 the process shadow dir (machine-generated launch config, not user-visible
 content) and pointed at with ``OPENCODE_CONFIG``, which opencode merges between
 the global and project configs.
@@ -16,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -44,6 +47,7 @@ def build_config(
     instruction_files: list[str] | None = None,
     skill_paths: list[str] | None = None,
     plugin_files: list[str] | None = None,
+    mcp: dict | None = None,
 ) -> dict:
     """The config body — pure, so it can be asserted on without touching disk."""
     config: dict = {"$schema": CONFIG_SCHEMA_URL}
@@ -58,7 +62,77 @@ def build_config(
     plugins = [Path(p).as_uri() for p in (plugin_files or []) if p]
     if plugins:
         config["plugin"] = plugins
+    # The process's attached MCP servers. opencode's own shape (``type``
+    # local/remote, ``command`` as an ARRAY, ``environment``) is built by
+    # ``mcp_projection.to_opencode_mcp`` — never the ``mcpServers`` shape the
+    # other vendors take.
+    if mcp:
+        config["mcp"] = dict(mcp)
     return config
+
+
+def add_dir_contributions(add_dirs: "Sequence[str | Path] | None") -> tuple[list[str], list[str]]:
+    """``(instruction_files, skill_paths)`` contributed by mounted roots.
+
+    Every other vendor receives these roots as ``--add-dir``; opencode has no
+    such flag, so without this they are carried to the argv builder and dropped
+    — which is why ``load_flowpad_assistant`` and a project's context folders
+    never reached an opencode worker.
+
+    What goes on ``skills.paths`` is each CONTAINER of skill folders, never the
+    root — measured against opencode 1.18.25: a config listing a root whose
+    skills live in ``<root>/.claude/skills/<name>/`` finds NOTHING, while
+    listing ``<root>/.claude/skills`` finds all of them. Its recursive scan does
+    not descend into dot-directories, which is exactly where every harness keeps
+    its skills. A root that holds skill folders directly is listed as-is.
+
+    ``AGENTS.md`` at a root is added when it exists — opencode reads
+    ``instructions`` entries eagerly and a missing file aborts the whole turn
+    with ``BadResource`` before any model call.
+
+    Results are de-duplicated in order: callers pass the process assets dir
+    alongside ``resolved_add_dirs``, which already contains it.
+    """
+    from flow_sdk.fs_store.indexer.functions.skill import folder_is_skill  # noqa: PLC0415
+    from flow_sdk.fs_store.placement import WORKER_PREFIX  # noqa: PLC0415
+
+    # Where a harness keeps skills inside a mounted root. Derived from the ONE
+    # harness->dot-dir map so a fifth vendor (or a moved prefix) is picked up
+    # here automatically; one mount may serve several vendors.
+    containers = [
+        SKILLS_SUBDIR,
+        *(Path(prefix) / "skills" for prefix in sorted(set(WORKER_PREFIX.values()))),
+        Path("skills"),
+    ]
+    instructions: list[str] = []
+    skills: list[str] = []
+    for raw in add_dirs or []:
+        if not raw:  # same falsy-skip the rest of this module applies
+            continue
+        directory = Path(raw)
+        try:
+            if not directory.is_dir():
+                continue
+            found_container = False
+            for relative in containers:
+                container = directory / relative
+                if container.is_dir():
+                    skills.append(str(container))
+                    found_container = True
+            # A root that IS a skills container rather than one that holds a
+            # harness dot-dir. Checked only when no container matched: a root
+            # with ``.claude/skills`` practically never also holds bare skills,
+            # and this scan is the expensive one.
+            if not found_container and any(
+                folder_is_skill(child) for child in directory.iterdir() if child.is_dir()
+            ):
+                skills.append(str(directory))
+            agents_md = directory / "AGENTS.md"
+            if agents_md.is_file():
+                instructions.append(str(agents_md))
+        except OSError:
+            continue
+    return list(dict.fromkeys(instructions)), list(dict.fromkeys(skills))
 
 
 def write_process_config(
@@ -67,27 +141,39 @@ def write_process_config(
     instruction_files: list[str] | None = None,
     skill_paths: list[str] | None = None,
     plugin_files: list[str] | None = None,
+    mcp: dict | None = None,
 ) -> Path | None:
     """Write the generated config; return its path, or None when there is
-    nothing to say (no instructions and no skills — then the CLI's own config
-    resolution is left completely alone)."""
+    nothing to say (no instructions, no skills and no MCP — then the CLI's own
+    config resolution is left completely alone)."""
     config = build_config(
         instruction_files=instruction_files,
         skill_paths=skill_paths,
         plugin_files=plugin_files,
+        mcp=mcp,
     )
     if len(config) == 1:  # only the $schema key
         return None
     path = opencode_config_path_for_process(process_id)
+    body = json.dumps(config, indent=2) + "\n"
     try:
-        path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+        # The shared prompt path regenerates this on every turn; rewriting
+        # identical bytes only churns the mtime.
+        if path.is_file() and path.read_text(encoding="utf-8") == body:
+            return path
+        path.write_text(body, encoding="utf-8")
     except OSError:
         logger.debug("opencode: failed writing generated config at %s", path, exc_info=True)
         return None
     return path
 
 
-def config_for_assets_dir(process_id: str, assets_dir: "Path | str | None") -> Path | None:
+def config_for_assets_dir(
+    process_id: str,
+    assets_dir: "Path | str | None",
+    mcp: dict | None = None,
+    add_dirs: "Sequence[str | Path] | None" = None,
+) -> Path | None:
     """Generate this process's config from a FlowPad instruction-assets dir.
 
     The ONE generator. Both spawn paths (the driver's headless turn and the
@@ -98,20 +184,22 @@ def config_for_assets_dir(process_id: str, assets_dir: "Path | str | None") -> P
     is not there aborts the whole turn with ``BadResource: FileSystem.readFile``
     before any model call — hence the existence checks rather than blind listing.
     """
-    directory = Path(assets_dir) if assets_dir else None
-    if directory is None or not str(directory):
-        return None
     from flow_sdk.builtin.agentic_process.cli_drivers.opencode.hook_plugin import plugin_path
 
-    agents_md = directory / "AGENTS.md"
-    skills_dir = directory / SKILLS_SUBDIR
-    hook_plugin = plugin_path(directory)
+    directory = Path(assets_dir) if assets_dir and str(assets_dir) else None
+    # The assets dir is just another mounted root to scan — and ``add_dirs``
+    # (``resolved_add_dirs``) already contains it, hence the de-dup inside.
+    roots: list[str | Path] = [directory] if directory is not None else []
+    roots.extend(add_dirs or [])
+    instructions, skills = add_dir_contributions(roots)
+    hook_plugin = plugin_path(directory) if directory is not None else None
     try:
         return write_process_config(
             process_id,
-            instruction_files=[str(agents_md)] if agents_md.is_file() else [],
-            skill_paths=[str(skills_dir)] if skills_dir.is_dir() else [],
-            plugin_files=[str(hook_plugin)] if hook_plugin.is_file() else [],
+            instruction_files=instructions,
+            skill_paths=skills,
+            plugin_files=[str(hook_plugin)] if hook_plugin and hook_plugin.is_file() else [],
+            mcp=mcp,
         )
     except Exception:
         logger.debug("opencode: config generation failed for %s", process_id, exc_info=True)

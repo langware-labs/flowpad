@@ -2779,7 +2779,20 @@ async def discover_record_by_path(
                         _decision.primary_path,
                         ",".join(_decision.duplicate_paths),
                     )
-                if _decision is not None and canonical_posix_path(expanded) != _decision.primary_path:
+                # The primary-path rule breaks ties between occurrences that
+                # nothing else can order. It must NOT overrule a caller that
+                # already resolved the row and said so: ``proposed_id`` is the
+                # authority (reflect passes the origin's own row; reindex passes
+                # the entity it just looked up), and this path comparison is a
+                # heuristic about which copy is canonical. Letting the heuristic
+                # win discards the re-parse — the edit never reaches the index,
+                # and a placement change looks like a fork.
+                _authoritative = bool(proposed_id) and str(proposed_id) == str(resolved_id)
+                if (
+                    _decision is not None
+                    and not _authoritative
+                    and canonical_posix_path(expanded) != _decision.primary_path
+                ):
                     await _reflect_collision()
                     return None
 

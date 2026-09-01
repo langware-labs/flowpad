@@ -34,7 +34,11 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
 from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
 from tests.unit.conftest import make_shell, py_command, tmp_records_root  # noqa: F401
 
-FIXTURES = Path(__file__).parent / "fixtures"
+# The recorded-PTY corpus lives with the unit tier (tests/unit/fixtures) and is
+# shared with test_codex_pty_composer_gate.py, which stayed there. This module
+# moved to the long tier for its runtime, not its data — point at the one copy
+# rather than forking the blob.
+FIXTURES = Path(__file__).parent.parent / "unit" / "fixtures"
 COMPOSER_FRAME = base64.b64decode((FIXTURES / "claude_pty_resume_composer_2_1_220.b64").read_text("ascii"))
 PATTERN = ClaudeDriver.pty_composer_ready_pattern
 

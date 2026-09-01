@@ -16,6 +16,7 @@
     "usage_report",
     "asset_cleanup_report",
     "journey",
+    "mcp",
     "html",
     "mcp_app",
     "image",
@@ -73,6 +74,9 @@
     "journey": [
       "journey"
     ],
+    "mcp": [
+      "mcp"
+    ],
     "html": [],
     "mcp_app": [],
     "image": [],
@@ -100,7 +104,8 @@
     "dynamic_workflow": "dynamic_workflow",
     "usage_report": "usage_report",
     "asset_cleanup_report": "asset_cleanup_report",
-    "journey": "journey"
+    "journey": "journey",
+    "mcp": "mcp"
   },
   "url_cases": [
     {

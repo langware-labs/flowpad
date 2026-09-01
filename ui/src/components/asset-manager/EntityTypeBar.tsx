@@ -3,7 +3,7 @@ import { X, type LucideIcon } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { cn } from '@src/lib/utils';
 
-export type EntityTypeFilter = 'all' | 'agent' | 'skill' | 'markdown' | 'spec' | 'whiteboard';
+export type EntityTypeFilter = 'all' | 'agent' | 'skill' | 'mcp' | 'markdown' | 'spec' | 'whiteboard';
 
 interface EntityTypeBarProps {
   /** The shown set of types. Empty = all types shown (every toggle lit). */
@@ -47,6 +47,7 @@ export function EntityTypeBar({
   const LABELS: Record<string, string> = {
     agent: t`SubAgent`,
     skill: t`Skill`,
+    mcp: t`MCP`,
     markdown: t`Document`,
     spec: t`Spec`,
     whiteboard: t`Whiteboard`,

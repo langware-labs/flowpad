@@ -16,6 +16,6 @@ from flow_sdk.schema.types import EntityType
 
 AGENTIC_PROCESS = TypeMetadata(
     type=EntityType.AGENTIC_PROCESS,
-    icon="Workflow",
+    icon="MessageCircle",
     api_visible=True,
 )

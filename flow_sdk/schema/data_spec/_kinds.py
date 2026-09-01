@@ -41,3 +41,4 @@ def register_builtin_kinds() -> None:
 
     SchemaRegistry.register_kind("fs_ref", FSRef)
     import flow_sdk.schema.data_spec.dataset_spec  # noqa: F401  — self-registering leaves
+    import flow_sdk.schema.data_spec.mcp_spec  # noqa: F401  — registers ``mcp.server``

@@ -49,6 +49,7 @@ class AssetEditor(StrEnum):
     USAGE_REPORT = "usage_report"
     ASSET_CLEANUP_REPORT = "asset_cleanup_report"
     JOURNEY = "journey"
+    MCP = "mcp"  # an MCP server asset (agentic-assets/mcp/<name>/mcp.json)
     # File-only display viewers — no backing record type, routed by extension
     # on the TS side (like CODE, they never appear in TYPE_TO_EDITOR).
     HTML = "html"
@@ -86,6 +87,7 @@ EDITOR_TYPES: dict[AssetEditor, list[str]] = {
     AssetEditor.USAGE_REPORT: [EntityType.USAGE_REPORT],
     AssetEditor.ASSET_CLEANUP_REPORT: [EntityType.ASSET_CLEANUP_REPORT],
     AssetEditor.JOURNEY: [EntityType.JOURNEY],
+    AssetEditor.MCP: [EntityType.MCP],
     AssetEditor.HTML: [],
     AssetEditor.MCP_APP: [],
     AssetEditor.IMAGE: [],

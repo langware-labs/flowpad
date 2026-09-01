@@ -258,6 +258,7 @@ async def test_shutdown_request_stops_the_worker(tmp_path):
         await hub.stop()
 
 
+@pytest.mark.long  # 1.04s
 async def test_worker_reconnects_after_the_hub_drops_it(tmp_path):
     hub, worker, task = await _connected_worker(tmp_path)
     try:

@@ -151,16 +151,25 @@ _SUPPLEMENTAL_CONSTRUCTOR_KWARGS: dict[str, dict] = {
     },
 }
 
+#: Derived launch state that lives on the instance but is NOT a constructor
+#: parameter and NOT serialized — so it can never churn ``to_json()`` and, with
+#: it, ``last_started_hash``. Both ``mcp_*`` fields are on the base
+#: ``AgentOptions`` (every vendor is stamped through ``apply_process_mcp``), so
+#: they appear for all three vendors here.
+_MCP_LAUNCH_ONLY = {"mcp_config_json", "mcp_config_fragment"}
+
 _LAUNCH_ONLY_FIELDS: dict[str, set[str]] = {
-    "claude": {"system_prompt_append", "system_prompt_file"},
+    "claude": {"system_prompt_append", "system_prompt_file"} | _MCP_LAUNCH_ONLY,
     "codex": {
         "fork_session_id",
         "system_prompt_append",
         "system_prompt_file",
         "developer_instructions",
         "extra_config_overrides",
-    },
-    "copilot": {"fork_session_id", "system_prompt_append", "system_prompt_file"},
+    }
+    | _MCP_LAUNCH_ONLY,
+    "copilot": {"fork_session_id", "system_prompt_append", "system_prompt_file"}
+    | _MCP_LAUNCH_ONLY,
 }
 
 
