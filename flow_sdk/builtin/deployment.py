@@ -30,6 +30,7 @@ converges through :meth:`find_existing`, never through a key baked into the id.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -434,6 +435,7 @@ class Deployment(Entity):
             **options,
         )
         _prepare_output_folder(process)
+        await _materialize_declared_skills(agent, process)
         return process
 
     async def launch(self, prompt: str, *, wait: bool = False, **options) -> "AgenticProcess":
@@ -547,6 +549,53 @@ class Deployment(Entity):
             if observation and (observation.window_start is None or observation.window_end is None):
                 raise ValueError(f"{kind.value} observation requires a declared window")
         return value
+
+
+async def _materialize_declared_skills(agent: "Agent", process: "AgenticProcess") -> None:
+    """Copy the agent's declared ``skills`` into the process it is launching.
+
+    This is the link that makes ``agent.skills`` mean something. The field is
+    INTENT — an agent is a template, and a skill only ever reaches a worker
+    through a *process*: ``_materialize_entity`` copies the folder into
+    ``WorkerDriver.skills_root`` for this process's vendor (``.claude/skills``
+    under the mounted assets dir for Claude/Copilot, the global
+    ``$CODEX_HOME/skills`` for Codex). So the resolution happens here, at build,
+    not when the checkbox is ticked.
+
+    Recording each ref in ``embedded_asset_refs`` is not bookkeeping — it is
+    what makes the copy VISIBLE. ``AgenticProcess.resolved_add_dirs`` gates
+    ``--add-dir`` of the process assets dir on that list (plus sub-agents /
+    instructions / hook assets), so an agent whose only embedded asset is a
+    skill would otherwise get the folder written and never mounted. It also
+    makes the skill detachable through the existing ``detach-embedded-asset``.
+
+    Deliberately NOT routed through ``cli_config``: ``last_started_hash`` is an
+    md5 over ``to_agent_options().to_json()``, so a new key there would flip
+    ``restart_required`` on every already-running process. Same reason
+    ``system_prompt`` travels via ``context_data.instructions``.
+
+    A skill that cannot be resolved is logged and skipped rather than raised: a
+    stale id in frontmatter must not make the agent unlaunchable, and the
+    remaining skills are still worth copying.
+    """
+    declared = list(getattr(agent, "skills", None) or [])
+    if not declared:
+        return
+
+    assets_dir = await process._assets_dir_path()
+    refs = list(process.embedded_asset_refs or [])
+    for ref in declared:
+        try:
+            name = await process._materialize_entity(ref, assets_dir)
+        except Exception as exc:  # noqa: BLE001 — one bad ref must not fail the launch
+            logging.warning("[deployment] agent %r declares unresolvable skill %s — skipped (%s)", agent.name, ref, exc)
+            continue
+        if name is None:
+            logging.warning("[deployment] agent %r declares %s, which is not an embeddable type — skipped", agent.name, ref)
+            continue
+        if not any(r.type == ref.type and r.id == ref.id for r in refs):
+            refs.append(ref)
+    process.embedded_asset_refs = refs
 
 
 def _prepare_output_folder(process: "AgenticProcess") -> None:
