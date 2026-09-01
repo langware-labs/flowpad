@@ -1339,7 +1339,7 @@ generic icon, Sonnet pricing) rather than loudly.
 
 ### Generated instruction assets (the four dialects)
 - **Need:** One instruction body, written in every vendor's discovery format, under the process's own asset dir — never inlined into the user prompt.
-- **Flowpad mechanism:** `AgenticProcess.prepare_system_instruction_assets()` writes `CLAUDE.md`, `AGENTS.md`, `.agents`, and `.github/instructions/flowpad.instructions.md` (frontmatter `applyTo: "**"`, `description: Flowpad process system instructions`) into the process asset dir, then appends that dir to `add_dirs`.
+- **Flowpad mechanism:** `AgenticProcess.prepare_system_instruction_assets()` writes `CLAUDE.md`, `AGENTS.md`, `.agents`, and `.github/instructions/flowpad.instructions.md` (frontmatter `applyTo: "**"`, `description: Flowpad process system instructions`) into the process asset dir, then appends that dir to `add_dirs`. The four files are written only when there IS instruction text; the asset dir is mounted whenever the process has assets at all, because that mount is also how embedded skills reach the worker. `SystemInstructionAssets.claude_file` is therefore optional, and `--append-system-prompt-file` is emitted only when it exists.
 - **Claude:** consumes `CLAUDE.md` via `--append-system-prompt-file`; **Codex:** `-c developer_instructions=<text>`; **Copilot:** `COPILOT_CUSTOM_INSTRUCTIONS_DIRS=<assets dir>` → the `.github/instructions/` file.
 - **Required:** Yes
 - **Vendor must expose:** one dependable instruction sink — an existing file convention, a config override, or a custom-instruction directory. A fifth file written next to these four is acceptable; prompt inlining is not.
@@ -1349,7 +1349,7 @@ generic icon, Sonnet pricing) rather than loudly.
 
 ### Skills root
 - **Need:** Materialized skill folders must land where this worker discovers them, without the orchestrator branching on vendor.
-- **Claude / Copilot:** `assets_dir/.claude/skills` (mounted via `--add-dir`); **Codex:** `$CODEX_HOME/skills` — global, not per-process, so codex skills are not isolated between processes.
+- **Claude:** `assets_dir/.claude/skills`; **Copilot:** `assets_dir/.github/skills` (both mounted via `--add-dir` — copilot loads a mounted dir's `.github/skills`, not claude's dot-dir); **OpenCode:** `assets_dir/.opencode/skills`, registered in the generated `opencode.json` because it has no `--add-dir`; **Codex:** `$CODEX_HOME/skills` — global, not per-process, so codex skills are not isolated between processes.
 - Routed through `WorkerDriver.skills_root(process, assets_dir)`.
 - **Required:** Yes
 - **Vendor must expose:** a documented skill/extension discovery directory, ideally one that honours mounted dirs.

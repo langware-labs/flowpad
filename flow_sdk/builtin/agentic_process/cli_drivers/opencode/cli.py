@@ -135,9 +135,7 @@ class OpenCodeAgentOptions(AgentOptions):
             return
         from .config_gen import config_for_assets_dir
 
-        config = config_for_assets_dir(
-            process_id, assets_dir, self.mcp_config_fragment, self.add_dirs
-        )
+        config = config_for_assets_dir(process_id, assets_dir, self.mcp_config_fragment, self.add_dirs)
         if config is not None:
             self.config_path = str(config)
 

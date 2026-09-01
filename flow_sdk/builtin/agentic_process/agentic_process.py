@@ -364,6 +364,14 @@ class SystemInstructionAssets:
     assets_dir: Path
     instructions: str = ""
     claude_file: Path | None = None
+
+    @property
+    def system_prompt_file(self) -> str | None:
+        """The system-prompt file path, or None when there is no text.
+
+        The one place the "no text ⇒ no file to point at" coercion is stated.
+        """
+        return str(self.claude_file) if self.claude_file else None
     # The owning process. Every vendor but opencode reaches these assets through
     # a directory flag and needs nothing else; opencode reaches them ONLY through
     # a generated per-process config, which is keyed on this id.
@@ -5183,9 +5191,7 @@ class AgenticProcess(Entity):
         )
         self._normalize_process_asset_mount()
         ref = self._agent_entity_ref(abs_path)
-        refs = list(self.embedded_asset_refs or [])
-        if ref not in refs:
-            self.embedded_asset_refs = refs + [ref]
+        self._record_embedded_ref(ref)
         self._drop_legacy_agent_name(name)
         await self.save()
         return ApiSuccessResponse(data={"ok": True, "name": name, "ref": str(ref)})
@@ -5258,11 +5264,7 @@ class AgenticProcess(Entity):
             link.symlink_to(skill_dir, target_is_directory=True)
             self._normalize_process_asset_mount()
             ref = self._skill_folder_ref(skill_dir)
-            if ref is not None:
-                refs = list(self.embedded_asset_refs or [])
-                if not any(r.type == ref.type and r.id == ref.id for r in refs):
-                    refs.append(ref)
-                    self.embedded_asset_refs = refs
+            self._record_embedded_ref(ref)
             await self.save()
             return ApiSuccessResponse(
                 data={"ok": True, "name": skill_dir.name, "link": str(link), "ref": str(ref) if ref else None}
@@ -5295,6 +5297,25 @@ class AgenticProcess(Entity):
             if self._skill_folder_ref(entry) == ref:
                 return entry
         return None
+
+    def _record_embedded_ref(self, ref: "TypeId | None") -> None:
+        """Record ``ref`` in ``embedded_asset_refs``, idempotently.
+
+        The bookkeeping half of embedding, shared by all three placement paths
+        (sub-agent, skill symlink, entity copy). It is what makes the process
+        say "I have assets" on the NEXT request's fresh entity — the predicate
+        both ``resolved_add_dirs`` and ``_prepare_system_instruction_assets``
+        read to decide whether to mount the assets dir. A placement path that
+        skips it lays real files down that no worker can see.
+
+        Callers still ``save()`` themselves: they have other fields to flush in
+        the same write.
+        """
+        if ref is None:
+            return
+        refs = list(self.embedded_asset_refs or [])
+        if not any(r.type == ref.type and r.id == ref.id for r in refs):
+            self.embedded_asset_refs = refs + [ref]
 
     @staticmethod
     def _skill_folder_ref(skill_dir: "Path") -> "TypeId | None":
@@ -5561,11 +5582,7 @@ class AgenticProcess(Entity):
 
         self._normalize_process_asset_mount()
 
-        # No text is NOT "no assets". The instruction files are written only
-        # when there is something to write, but the mount is returned either
-        # way — a process with an embedded skill and no persona still has to
-        # reach its worker, and for opencode/copilot this object is the ONLY
-        # thing that carries the assets dir there.
+        # No text is NOT "no assets" — see ``SystemInstructionAssets``.
         claude_file = None
         if instructions:
             claude_file = asset_dir.load_asset("CLAUDE.md", content=instructions + "\n")
@@ -5780,10 +5797,9 @@ class AgenticProcess(Entity):
     def _apply_process_assets(
         cls, cmd: AgentOptions, prepared: PreparedProcessAssets, process_id: str = ""
     ) -> None:
-        # MCP goes on FIRST, deliberately. OpenCode's instruction channel is a
-        # generated config file rewritten inside ``apply_instruction_assets``;
-        # if the MCP fragment is not already stamped on ``cmd`` by then, that
-        # rewrite drops it and opencode launches with no servers.
+        # Order is no longer load-bearing: opencode's generated config is written
+        # lazily at spawn (``_sync_config_env``), so every contribution is on
+        # ``cmd`` by the time anything is rendered.
         cmd.apply_process_mcp(prepared.mcp_runtime, process_id)
         cls._apply_system_instruction_assets(cmd, prepared.instruction_assets)
         runtime = prepared.hook_runtime
@@ -5808,10 +5824,7 @@ class AgenticProcess(Entity):
             return {}
         return {
             "instructions": None,
-            # None when the process has assets but no instruction text — a
-            # worker must not be pointed at a system-prompt file that was
-            # never written.
-            "system_prompt_file": str(assets.claude_file) if assets.claude_file else None,
+            "system_prompt_file": assets.system_prompt_file,
             "developer_instructions": assets.instructions,
             "custom_instruction_dirs": [str(assets.assets_dir)],
         }
@@ -5927,10 +5940,7 @@ class AgenticProcess(Entity):
             if name is None:
                 return ApiFailResponse(message=f"Unsupported entity type for embed: {entity_ref}")
             self._normalize_process_asset_mount()
-            refs = list(self.embedded_asset_refs or [])
-            if not any(r.type == ref.type and r.id == ref.id for r in refs):
-                refs.append(ref)
-                self.embedded_asset_refs = refs
+            self._record_embedded_ref(ref)
             await self.save()
             return ApiSuccessResponse(data={"ok": True, "name": name, "ref": entity_ref})
         except Exception as exc:
