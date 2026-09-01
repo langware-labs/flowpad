@@ -44,6 +44,8 @@ export enum RecordType {
   PLUGIN = 'plugin',
   MARKETPLACE = 'marketplace',
   HOOK = 'hook',
+  /** FlowPad's own authored MCP asset — see the `Mcp` entity for the MCP_SERVER distinction. */
+  MCP = 'mcp',
   MCP_SERVER = 'mcp_server',
   SUBAGENT = 'subagent',
   /** The launchable agent (agentic-assets/agent/<name>/agent.md).
