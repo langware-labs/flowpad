@@ -161,3 +161,78 @@ async def unbind_hub_llm_endpoint() -> dict:
     was_bound = clear_hub_llm_endpoint()
     status = await _status(bool(resolve_hub_api_key()))
     return {**status, "was_bound": was_bound}
+
+
+async def select_llm_source(payload: dict) -> dict:
+    """Choose which ``LLMSource`` funds one harness, and return the refreshed status.
+
+    This is the ONE write behind the picker, and it writes a PREFERENCE -- the same
+    ``Capability.auth_mode`` / ``api_provider`` pair the resolver reads on rung 3. The mapping
+    from a source kind to those two fields lives here rather than in a component, so a screen
+    never has to know that "the hub endpoint" is spelled ``(api, flowpad)``.
+
+    Choosing an endpoint OTHER than the bound one also moves the box binding, because that
+    binding is what "which budget this box spends by default" means. It is an offer, not an
+    order, so the box may change it -- but the hub re-pushes its own answer on the next
+    workspace-ready, which is the honest contract: the hub decides what this box is entitled
+    to, the box decides whether to spend it.
+
+    Deliberately a sub-action rather than the bare ``POST``: that one means "the hub is binding
+    this box" and answers 409 without a hub login key, so a user picking their own OpenRouter
+    key would be told the box is not logged in to the hub.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.capability import Capability
+    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key
+    from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
+    from flow_sdk.schema.data_spec.llm_source_spec import LLMSourceKind
+
+    harness = str(payload.get("harness") or "").strip()
+    if not harness:
+        raise HubEndpointBindError("harness is required", 400)
+    # Accept either spelling -- a worker type ("claude") or the capability kind it maps to.
+    kind_key = harness if harness.startswith("harness.") else worker_capability_kind(harness)
+    cap = await Capability.get_by_kind(kind_key)
+    if cap is None:
+        raise HubEndpointBindError(f"unknown harness {harness!r}", 404)
+
+    try:
+        source_kind = LLMSourceKind(str(payload.get("kind") or ""))
+    except ValueError as exc:
+        raise HubEndpointBindError(f"unknown source kind {payload.get('kind')!r}", 400) from exc
+
+    if source_kind is LLMSourceKind.DEVICE:
+        cap.auth_mode, cap.api_provider = "device", None
+    elif source_kind is LLMSourceKind.API_KEY:
+        provider = str(payload.get("provider") or "")
+        try:
+            LMApiProvider(provider)
+        except ValueError as exc:
+            raise HubEndpointBindError(f"unknown provider {provider!r}", 400) from exc
+        cap.auth_mode, cap.api_provider = "api", provider
+    else:
+        if not resolve_hub_api_key():
+            raise HubEndpointBindError("this box is not logged in to the hub", 409)
+        typeid = str(payload.get("endpoint_typeid") or "")
+        bound = get_hub_llm_endpoint()
+        if typeid and (bound is None or bound.endpoint_typeid != typeid):
+            from flow_sdk.builtin.llm_endpoint import hub_invoke_path  # noqa: PLC0415
+            from flow_sdk.db.drivers.db_base_record import TypeId  # noqa: PLC0415
+
+            try:
+                parsed = TypeId(typeid)
+            except (TypeError, ValueError) as exc:
+                raise HubEndpointBindError(f"{typeid!r} is not an endpoint id", 400) from exc
+            set_hub_llm_endpoint(
+                typeid,
+                hub_invoke_path(parsed),
+                provider=str(payload.get("provider") or ""),
+                name=str(payload.get("name") or ""),
+            )
+        elif bound is None:
+            raise HubEndpointBindError("no hub endpoint is available to this box", 400)
+        cap.auth_mode, cap.api_provider = "api", LMApiProvider.FLOWPAD.value
+
+    await cap.save(notify=True)
+    logger.info(f"[llm-endpoint] {kind_key}: user chose {source_kind.value}")
+    return await _status(bool(resolve_hub_api_key()))
