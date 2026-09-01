@@ -95,7 +95,7 @@ def test_rendered_frontmatter_is_plain_yaml_not_a_pickle():
     Agent — absolute paths, pydantic internals — into the frontmatter. A live
     UI edit produced exactly that.
     """
-    from flow_sdk.fs_store.indexer.functions.agent import agent_default_body
+    from tests.unit.agent._parse import agent_default_body
 
     agent = Agent(
         name="probe",
@@ -115,7 +115,7 @@ def test_rendered_frontmatter_is_plain_yaml_not_a_pickle():
 
 def test_rendered_frontmatter_round_trips_through_the_parser():
     """Whatever we render must parse back to the same values."""
-    from flow_sdk.fs_store.indexer.functions.agent import agent_default_body, parse_agent_markdown
+    from tests.unit.agent._parse import agent_default_body, parse_agent_markdown
 
     agent = Agent(
         name="probe",
@@ -134,7 +134,7 @@ def test_rendered_frontmatter_round_trips_through_the_parser():
 
 def test_q_identity_round_trips_as_a_portable_bundle():
     """Name, display title, and sibling image ref survive a clean parse."""
-    from flow_sdk.fs_store.indexer.functions.agent import agent_default_body, parse_agent_markdown
+    from tests.unit.agent._parse import agent_default_body, parse_agent_markdown
 
     rendered = agent_default_body(
         Agent(name="Q", title="QA manager", avatar="./avatar.png")

@@ -1,6 +1,5 @@
-import { capabilityManager, isWorkerTerminal, ProcessStatus, TypeId } from '@sdk';
+import { AgenticProcess, capabilityManager, isWorkerTerminal, ProcessStatus, TypeId } from '@sdk';
 import type {
-  AgenticProcess,
   CapabilitiesSummary,
   CapabilityAccess,
   CapabilityDependency,

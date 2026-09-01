@@ -93,9 +93,17 @@ export class ExpansionRequest {
 
 export type OrderByType = Record<string, 'asc' | 'desc'>;
 
+/**
+ * A plain field→value map — the `ExpressionNode` constructor's second, and by
+ * far most common, input form: one key becomes an `$EQ` leaf, several become an
+ * `$AND` of `$EQ` leaves. Not an `ExpressionNode` shape at all, which is why
+ * `QueryFilter.match` has to admit it separately.
+ */
+export type MatchMap = Record<string, string | number | boolean | null>;
+
 export class QueryFilter extends ExpansionRequest {
   type?: string;
-  match?: ExpressionNode | Partial<ExpressionNode>;
+  match?: ExpressionNode | Partial<ExpressionNode> | MatchMap;
   limit?: number;
   offset?: number;
   order_by?: OrderByType | OrderByType[];

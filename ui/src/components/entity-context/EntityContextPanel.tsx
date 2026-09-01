@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { ExternalLink, Eye, FileText, Lock, Plus, Sparkles, Users, type LucideIcon } from 'lucide-react';
 import { notify } from '@src/notifications';
-import type { APIEntity } from '@sdk';
+import type { APIEntity, AnyEntity } from '@sdk';
 import { Skill, Spec, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -26,7 +26,7 @@ interface EntityContextPanelProps {
   /** Entity whose buckets we render. AgenticProcess in the current call
    *  site (interactive terminal); the prop is typed broadly so the panel
    *  is reusable for any entity. */
-  entity: APIEntity<any>;
+  entity: AnyEntity;
 }
 
 type CreateKind = 'spec' | 'skill';

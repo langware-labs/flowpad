@@ -13,6 +13,7 @@
     "preview": "vite preview",
     "type-check": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "type-check:names": "node scripts/check-undefined-names.js",
+    "type-check:ceiling": "node scripts/check-typecheck-ceiling.js",
     "lint": "eslint .",
     "test": "npm run test:vitest:unit && npm run test:vitest:api && npm run test:vitest:react",
     "test:vitest": "npm run test:vitest:unit && npm run test:vitest:api && npm run test:vitest:react",

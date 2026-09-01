@@ -21,8 +21,8 @@ from uuid import uuid4
 import pytest
 
 from flow_sdk.builtin.folder import Folder
-from flow_sdk.builtin.git_origin import GitOrigin
-from flow_sdk.builtin.local_origin import LocalOrigin
+from flow_sdk.fs_store.origin.git_origin import GitOrigin
+from flow_sdk.fs_store.origin.local_origin import LocalOrigin
 from flow_sdk.builtin.project import Project
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.path_utils import canonical_posix_path
@@ -185,7 +185,7 @@ async def test_context_paths_never_on_the_wire(tmp_path, stub_git_detect):
     shared_dir = _ctx_dir(tmp_path, "shared-repo")
     # Private add: force a LOCAL origin (bypass the stub) so it stays private-only.
     import flow_sdk.builtin.folder as folder_mod
-    from flow_sdk.builtin.local_origin import LocalOrigin
+    from flow_sdk.fs_store.origin.local_origin import LocalOrigin
 
     orig_detect = folder_mod.Folder.detect_origin
     folder_mod.Folder.detect_origin = staticmethod(lambda p: _as_coro(LocalOrigin(base=canonical_posix_path(p))))

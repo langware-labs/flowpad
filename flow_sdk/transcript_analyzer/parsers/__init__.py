@@ -19,27 +19,27 @@ _REGISTRY: dict[str, type[Parser]] = {
 }
 
 
+# A format-specific parser, when the format names one (a format belongs to one
+# vendor by construction); a bare worker_type resolves through ``_REGISTRY``.
+_BY_FORMAT: dict[TranscriptFormat, type[Parser]] = {
+    TranscriptFormat.CODEX_ROLLOUT: CodexRolloutParser,
+    TranscriptFormat.CODEX_STREAM: CodexStreamParser,
+    TranscriptFormat.COPILOT_EVENTS: CopilotEventsParser,
+    TranscriptFormat.COPILOT_STREAM: CopilotStreamParser,
+    TranscriptFormat.OPENCODE_SESSION: OpenCodeSessionParser,
+    TranscriptFormat.OPENCODE_STREAM: OpenCodeStreamParser,
+}
+
+
 def get_parser_class(
     worker_type: str,
     transcript_format: TranscriptFormat | str | None = None,
 ) -> type[Parser]:
     """Return the ``Parser`` subclass registered for ``worker_type``."""
-    fmt = TranscriptFormat(transcript_format) if transcript_format else None
-    if worker_type == "codex":
-        if fmt is TranscriptFormat.CODEX_ROLLOUT:
-            return CodexRolloutParser
-        if fmt is TranscriptFormat.CODEX_STREAM:
-            return CodexStreamParser
-    if worker_type == "copilot":
-        if fmt is TranscriptFormat.COPILOT_EVENTS:
-            return CopilotEventsParser
-        if fmt is TranscriptFormat.COPILOT_STREAM:
-            return CopilotStreamParser
-    if worker_type == "opencode":
-        if fmt is TranscriptFormat.OPENCODE_SESSION:
-            return OpenCodeSessionParser
-        if fmt is TranscriptFormat.OPENCODE_STREAM:
-            return OpenCodeStreamParser
+    if transcript_format:
+        parser = _BY_FORMAT.get(TranscriptFormat(transcript_format))
+        if parser is not None:
+            return parser
     try:
         return _REGISTRY[worker_type]
     except KeyError as exc:

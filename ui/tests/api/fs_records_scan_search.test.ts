@@ -19,6 +19,7 @@
 import { apiClient, ComputeNode, GRAPH_API_PREFIX } from '@sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
+import { testEntityName, trackTypeId } from '../_cleanup';
 
 const signupInfo = getTestSignupInfo();
 
@@ -55,13 +56,23 @@ function unwrapData(response: unknown): Record<string, unknown> {
   return r as Record<string, unknown>;
 }
 
-/** Create a skill record via POST /fs-records/skill and return its id. */
-async function createSkill(name: string, description: string): Promise<string> {
+/**
+ * Create a skill record via POST /fs-records/skill and return its id.
+ *
+ * This lands a REAL `<user_home>/.claude/skills/<name>/` folder on the live
+ * backend, so every create MUST be registered for teardown — an unregistered
+ * one survives the run forever and is re-indexed by every later bootstrap.
+ * The name comes from `testEntityName` so it also carries the `e2etest-` marker
+ * the leak sweep and the on-disk `e2e_qa_cleanup.py` reaper both key off; a
+ * run that dies mid-test (crash, Ctrl-C) is then still reapable after the fact.
+ */
+async function createSkill(description: string): Promise<string> {
   const response = await apiClient.post<unknown>(
     `${CN_FS_BASE}/skill`,
-    { name, description },
+    { name: testEntityName('skill'), description },
   );
   const data = unwrapData(response);
+  trackTypeId('skill', data.id as string);
   return data.id as string;
 }
 
@@ -98,7 +109,7 @@ describe('fs-records scan', () => {
   it('GET /fs-records/scan?type=skill discovers skills', async () => {
     // Seed the user scope through the public API rather than depending on
     // whatever skills happen to exist on the developer's machine.
-    await createSkill(`Scan Skill ${Date.now()}`, 'scoped scan test');
+    await createSkill('scoped scan test');
     const response = await apiClient.get<unknown>(scopedFsRecordsUrl('scan', { type: 'skill' }));
     const data = unwrapData(response);
 
@@ -114,7 +125,7 @@ describe('fs-records scan', () => {
   });
 
   it('GET /fs-records/scan?type=skill includes byte stats', async () => {
-    await createSkill('Byte Stats Skill', 'byte stats test');
+    await createSkill('byte stats test');
     const response = await apiClient.get<unknown>(scopedFsRecordsUrl('scan', { type: 'skill' }));
     const data = unwrapData(response);
     expect(data).toHaveProperty('min_bytes');
@@ -161,7 +172,7 @@ describe('fs-records index', () => {
   });
 
   it('POST /fs-records/index?type=skill processes discovered skills', async () => {
-    await createSkill(`Index Skill ${Date.now()}`, 'scoped index test');
+    await createSkill('scoped index test');
     // Some skills may fail sync_to_db, so we check indexed + errors >= discovered count.
     const response = await apiClient.post<unknown>(
       scopedFsRecordsUrl('index', { type: 'skill' }),
@@ -243,7 +254,7 @@ describe('fs-records full cycle: scan → index → search', () => {
    * and search finds them via FTS.
    */
   it('scan discovers skills → index → search finds indexed skills', async () => {
-    await createSkill(`Full Cycle Skill ${Date.now()}`, 'scoped full-cycle test');
+    await createSkill('scoped full-cycle test');
 
     // 1. Scan: skills should be discoverable from .claude/skills dirs
     const scanResp = await apiClient.get<unknown>(

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
@@ -73,7 +73,7 @@ def _skill_id_from_path(script_path: str) -> str | None:
         return None
     try:
         ref = FSRef(skill_dir, record_type=RecordType.SKILL)
-        return info.mint_entity_id(ref, derive=True, overwrite=True)
+        return info.mint_entity_id(ref)
     except Exception:
         return None
 

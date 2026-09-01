@@ -1,3 +1,7 @@
+---
+id: f2a0bbff-0654-4416-b5c6-be1415a08f4d
+---
+
 # Data source assets
 
 A data source is a **folder asset**. `data_source.json` is the manifest; everything
@@ -123,10 +127,10 @@ Neither shape ever contains a value.
 ### `reflect`
 
 Supported modes, head first as the default. A list rather than a single value
-because the picker must not offer a mode that silently fails: `materialize`
-against a non-repo no-ops every ref, and a symlinked folder-layout asset is
-invisible to a walk that never descends symlinked directories. Folder supports
-three modes and git three, so the list is not a list-of-one dressed up.
+because the picker must not offer a mode that silently fails: a symlinked
+folder-layout asset is invisible to a walk that never descends symlinked
+directories. Folder supports three modes and git two, so the list is not a
+list-of-one dressed up.
 
 **`record` may not appear in a multi-element list.** A source lands its payload in
 the graph as a record or on disk as an asset; asking for both gets neither.
@@ -153,13 +157,14 @@ with the endpoint that serves the choices.
 
 ### Traits — non-builtin sources only
 
-A builtin omits this block; its driver class holds the same four as class
-attributes. Declaring them in both places is a load error.
+A builtin omits this block; its driver declares the same three facts under its own
+names — `record_kind` for `emits`, `channel_for()` for `channel`, and
+`stamps_identity` for `owns_bytes` (inverted sense). Declaring them in both places
+is a load error.
 
 ```yaml
 emits: content.message.email      # ontology kind stamped on every item
 channel: email                    # the user-facing medium
-external_id_unique_within: segment # segment | source
 owns_bytes: false                 # false ⇒ never stamp identity into these bytes
 ```
 
@@ -171,20 +176,6 @@ its JSON.
 **`channel`** is the medium; `name` is the transport. Threading keys on the
 channel, so a harness Gmail source and an API one resolve to one thread instead of
 forking every conversation. It is also what binds a source to its DataEmitter.
-
-**`external_id_unique_within`** decides whether `segment_key` participates in the
-natural key. Phrased as a falsifiable claim about the provider, because that is
-what an author has to answer.
-
-> **Default is `segment`, and the asymmetry is the reason the key exists.** A wrong
-> `source` **merges two distinct records** — a Slack `ts` repeats across channels,
-> and the merge is unrecoverable. A wrong `segment` only duplicates, and an
-> enumerate-diff sweep reaps duplicates. The default is the lossy-but-recoverable
-> side on purpose.
-
-Say `source` when the provider id is stable across the whole source and the segment
-is a **mutable grouping** — a Confluence page moves between spaces, a Drive file
-between folders, and keying on the segment mints a row nothing reaps.
 
 **`owns_bytes: false`** says the bytes belong to someone else, so indexing must not
 stamp an identity capsule into them: in a git working tree that dirties the repo,
@@ -239,7 +230,7 @@ The three items this section opened with have been answered:
 
 Still open, and named where it bites:
 
-* **The backend does not validate `config` against `config_schema`.** `required`
+* **The backend does not validate a source's `config` values against the spec's `config` fields.** `required`
   and `pattern` are enforced only by the create form, so a source made by the
   `flow` CLI, by curl, or by an agent following the authoring skill bypasses every
   rule the manifest declares. That is the one gap where a machine, not a person,
@@ -252,8 +243,3 @@ Still open, and named where it bites:
   one is refused at load with that message, rather than indexing and then failing
   every poll.
 
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: f2a0bbff-0654-4416-b5c6-be1415a08f4d
-flowpad:endcapsule identity -->

@@ -10,6 +10,7 @@ import pytest
 
 from flow_sdk.capsules import AssetCapsule
 from flow_sdk.capsules.data import CapsuleData
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 pytestmark = pytest.mark.asyncio
 
@@ -46,9 +47,8 @@ async def test_context_modes_and_descendants(client, tag_root, tmp_path):
     # Index the doc through the markdown extractor (single-file path).
     from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
     from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown  # noqa: PLC0415
 
-    records = extract_markdown(FSRef(doc_path), FSRecord.resolve_id_for_path(doc_path)
+    records = SchemaRegistry.get("markdown").from_disk_fn(FSRef(doc_path), FSRecord.resolve_id_for_path(doc_path)
                                if hasattr(FSRecord, "resolve_id_for_path") else "")
     assert records, "doc should index"
     rec = records[0]

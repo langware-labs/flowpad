@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from starlette.exceptions import HTTPException
 
-from flow_sdk.api.identifier import (
+from flow_sdk.api.api_types.identifier import (
     is_valid_identifier,
     is_valid_key,
     is_valid_named_id,
@@ -12,8 +12,8 @@ from flow_sdk.api.identifier import (
     parse_named_id,
     parse_prop_id,
 )
-from flow_sdk.fs_store.identifier import is_valid_uuid
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.api.api_types.identifier import is_valid_uuid
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 

@@ -58,10 +58,10 @@ export function useTranscriptSession(
       // nothing and we stay on the transcript page" is the shared symptom of
       // all of them, so the console line is the only way to tell them apart.
       const LOG = '[useTranscriptSession]';
-      if (!sessionId || !target || starting) {
+      if (!sessionId || !sessionType || !target || starting) {
         console.warn(
           `${LOG} launch click did NOT open a session — ` +
-            `sessionId=${sessionId ?? 'null'} target=${target ?? 'null'} starting=${starting}` +
+            `sessionId=${sessionId ?? 'null'} sessionType=${sessionType ?? 'null'} target=${target ?? 'null'} starting=${starting}` +
             (starting ? ' (a previous launch is still in flight and never settled)' : ''),
         );
         return;

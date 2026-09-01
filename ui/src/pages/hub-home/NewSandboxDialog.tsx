@@ -48,7 +48,7 @@ interface OpenPanel {
 }
 
 function sourceFromProject(project: Project): Source {
-  return { name: project.displayName, gitOrigin: project.git_origin ?? null, projectId: project.id };
+  return { name: project.displayName, gitOrigin: project.origin ?? null, projectId: project.id };
 }
 
 interface NewSandboxDialogProps {
@@ -199,7 +199,7 @@ export function NewSandboxDialog({
 
   // An asset has to be cloned, so a project with no repository behind it can't
   // be one — it would attach an empty folder with nothing to index.
-  const assetCandidates = useMemo(() => (projects ?? []).filter((p) => !!p.git_origin), [projects]);
+  const assetCandidates = useMemo(() => (projects ?? []).filter((p) => !!p.origin), [projects]);
 
   const connectGithub = useCallback(() => {
     setConnecting(true);

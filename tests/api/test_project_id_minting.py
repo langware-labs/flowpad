@@ -54,8 +54,9 @@ def _make_db_with_project(db_path, *, project_id: str, mount_path: str) -> None:
 
 def _point_db_path(monkeypatch, db_path) -> None:
     """Make ``get_instance_settings().db_path`` return ``db_path``."""
-    import flow_sdk.instance_settings as instance_settings
     from types import SimpleNamespace
+
+    import flow_sdk.instance_settings as instance_settings
 
     settings = SimpleNamespace(db_path=str(db_path))
     monkeypatch.setattr(instance_settings, "get_instance_settings", lambda: settings)

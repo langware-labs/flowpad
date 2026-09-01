@@ -6,7 +6,7 @@ registered next to their definitions in ``fs_store/indexer/functions/<type>``.
 These replaced the old per-entity ``from_disk``/``gen_id``/``asset_hash``
 classmethod shims (and the dead ``parser_fn`` slot).
 """
-from flow_sdk.fs_store.identity_backend import DerivedIdentityBackend
+from flow_sdk.fs_store.identity_carrier import DerivedCarrier
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
 from flow_sdk.schema.view_mode import ViewMode
 
@@ -18,7 +18,7 @@ def test_slots_excluded_from_schema_hash():
     with_slots = TypeInfo(
         **base,
         from_disk_fn=lambda ref, resolved_id: [],
-        identity_backend=DerivedIdentityBackend(),
+        identity_carrier=DerivedCarrier(),
         id_stable_key_fn=lambda ref: "key",
         asset_hash_fn=lambda ref: 1.0,
     )
@@ -29,13 +29,13 @@ def test_register_merge_fills_but_never_clobbers():
     """Re-register fills an unset slot but never overwrites a set one with None."""
     t = "_slot_merge_probe"
     fn_a = lambda ref: ["a"]  # noqa: E731
-    backend = DerivedIdentityBackend()
+    backend = DerivedCarrier()
 
     # First registration sets from_disk_fn only.
     SchemaRegistry.register(TypeInfo(type_name=t, from_disk_fn=fn_a))
     info = SchemaRegistry.get(t)
     assert info.from_disk_fn is fn_a
-    assert info.identity_backend is None
+    assert info.identity_carrier is None
 
     # Second registration (e.g. entity __init_subclass__) passes no slots —
     # must NOT clobber the existing from_disk_fn with None.
@@ -45,10 +45,10 @@ def test_register_merge_fills_but_never_clobbers():
     assert info.icon == "Probe"
 
     # Third registration fills the previously-unset identity reader.
-    SchemaRegistry.register(TypeInfo(type_name=t, identity_backend=backend))
+    SchemaRegistry.register(TypeInfo(type_name=t, identity_carrier=backend))
     info = SchemaRegistry.get(t)
     assert info.from_disk_fn is fn_a
-    assert info.identity_backend is backend
+    assert info.identity_carrier is backend
 
 
 def test_builtin_types_have_dispatch_slots_wired():
@@ -63,7 +63,7 @@ def test_builtin_types_have_dispatch_slots_wired():
         info = SchemaRegistry.get(t)
         assert info is not None, f"{t}: no TypeInfo registered"
         assert info.from_disk_fn is not None, f"{t}: from_disk_fn missing"
-        assert info.identity_backend is not None, f"{t}: identity backend missing"
+        assert info.identity_carrier is not None, f"{t}: identity backend missing"
 
 
 def test_asset_hash_fn_only_for_folder_inner_file_types():

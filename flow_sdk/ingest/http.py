@@ -26,6 +26,56 @@ def client() -> httpx.AsyncClient:
     return httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS, follow_redirects=True)
 
 
+async def request(
+    http: Optional[httpx.AsyncClient],
+    method: str,
+    url: str,
+    *,
+    headers: Optional[dict] = None,
+    params: Optional[dict] = None,
+    json: Optional[dict] = None,
+    ok_statuses: tuple[int, ...] = (),
+    hint: str = "",
+) -> httpx.Response:
+    """One request, raising a classified ``SourceError`` on any failure.
+
+    ``ok_statuses`` names non-2xx codes the caller handles itself — a 304 for a
+    conditional request, or a 401 a driver maps to its own code — so they come
+    back as a response rather than an error. Pass ``http=None`` to open (and
+    close) a house client for this one call.
+    """
+    if http is None:
+        async with client() as owned:
+            return await request(
+                owned, method, url, headers=headers, params=params, json=json,
+                ok_statuses=ok_statuses, hint=hint,
+            )
+    try:
+        response = await http.request(method, url, headers=headers or None, params=params, json=json)
+    except httpx.HTTPError as exc:
+        raise SourceError.transient("network_error", str(exc)) from exc
+
+    if response.status_code in ok_statuses or response.status_code < 400:
+        return response
+    raise SourceError.for_status(response.status_code, hint)
+
+
+async def request_json(
+    http: Optional[httpx.AsyncClient],
+    method: str,
+    url: str,
+    **kwargs,
+):
+    """:func:`request`, decoded. An undecodable body is ``bad_json`` transient —
+    a provider that answers HTML on a JSON route is having a bad minute, not a
+    misconfiguration."""
+    response = await request(http, method, url, **kwargs)
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise SourceError.transient("bad_json", f"{method} {url}: {exc}") from exc
+
+
 async def get(
     http: httpx.AsyncClient,
     url: str,
@@ -34,17 +84,5 @@ async def get(
     ok_statuses: tuple[int, ...] = (),
     hint: str = "",
 ) -> httpx.Response:
-    """GET ``url``, raising a classified ``SourceError`` on any failure.
-
-    ``ok_statuses`` names non-2xx codes the caller handles itself — a 304 for a
-    conditional request, say — so they come back as a response rather than an
-    error.
-    """
-    try:
-        response = await http.get(url, headers=headers or None)
-    except httpx.HTTPError as exc:
-        raise SourceError.transient("network_error", str(exc)) from exc
-
-    if response.status_code in ok_statuses or response.status_code < 400:
-        return response
-    raise SourceError.for_status(response.status_code, hint)
+    """GET ``url`` — :func:`request` with the method filled in."""
+    return await request(http, "GET", url, headers=headers, ok_statuses=ok_statuses, hint=hint)

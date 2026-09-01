@@ -1,4 +1,4 @@
-import { PageId, QueryRequest, ViewType, WorldViewProjection } from '@sdk';
+import { Organization, PageId, QueryRequest, ViewType, WorldViewProjection } from '@sdk';
 import { Building2, ChevronDown, ChevronRight, GitGraph, Loader2, Users } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -31,8 +31,8 @@ export function OrganizationPage() {
   // Memoized: ``useEntitiesQuery`` re-subscribes when the request identity changes
   // and its subscribe callback re-renders immediately, so a request built inline
   // renders -> resubscribes -> renders forever ("Maximum update depth exceeded").
-  const orgQuery = useMemo(() => new QueryRequest({ type: 'organization', query: {} }), []);
-  const { data: orgs, isLoading } = useEntitiesQuery(orgQuery);
+  const orgQuery = useMemo(() => new QueryRequest({ type: Organization.type, query: {} }), []);
+  const { data: orgs, isLoading } = useEntitiesQuery<Organization>(orgQuery);
   const [selected, setSelected] = useState<{ type: string; id: string; label: string } | null>(null);
 
   const organizations = useMemo(() => (Array.isArray(orgs) ? orgs : []), [orgs]);
@@ -87,7 +87,7 @@ export function OrganizationPage() {
             <Trans>Structure</Trans>
           </div>
           <ul role="tree" className="flex flex-col gap-0.5">
-            {organizations.map((org: { id: string; name?: string }) => (
+            {organizations.map((org) => (
               <TreeNode
                 key={org.id}
                 node={{ type: 'organization', id: org.id, label: org.name || t`Organization` }}

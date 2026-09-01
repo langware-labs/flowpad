@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "typeid": "markdown_index-db29ea2c-c8aa-53ca-afbd-2721465a5366",
+  "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
+  "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
+  "folder_rel_path": "primitives",
+  "folder_name": "primitives",
+  "inputs_hash": "4ae2860641cd33430553960c15a7fd48deb517fa58408c7dd4bc3aab42544c5b",
+  "template_version": 1,
+  "prompt_version": 1,
+  "self_summary": "The two cross-cutting identifier and reference primitives: FSRef, the declarative no-I/O path manifest with its VFSPath translation and backend dispatch; and TypeId, the universal type-id address with its four identifier formats and resolution priority.",
+  "files": [
+    {
+      "name": "fs-ref.md",
+      "rel_path": "fs-ref.md",
+      "title": "FSRef Rules",
+      "summary": "FSRef doctrine: path-only declarative refs, VFSPath translation, computeNode.fsAction dispatch, JSON serialization, and the record-refs endpoint.",
+      "content_hash": "b84791dacb8917e52c8f56e06449c4e861582df3c808dd291069c9a549ae39c0",
+      "size_bytes": 6033
+    },
+    {
+      "name": "typeid.md",
+      "rel_path": "typeid.md",
+      "title": "TypeId Specification",
+      "summary": "TypeId spec: type-id first-dash split, four identifier formats (UUID, @uname, namespace key, prop.value), resolution priority, and the Python and TypeScript classes.",
+      "content_hash": "dcf6444b1db0326f78cf4c02dca853d08eafaaab8ef39a1af3817bbbe259058d",
+      "size_bytes": 15891
+    }
+  ],
+  "subfolders": [],
+  "generated_at": "2026-08-23T22:11:28.823621+00:00",
+  "latest_process_ref": ""
+}

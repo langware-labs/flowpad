@@ -71,7 +71,7 @@ type RowDeleteAction =
 
 // ── Time formatter (Gmail-style) ────────────────────────────────────────────
 // today → "12:34 PM"  ·  this year → "Apr 28"  ·  older → locale date
-function formatGmailTime(iso?: string | null): string {
+function formatGmailTime(iso?: string | Date | null): string {
   if (!iso) return '';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';

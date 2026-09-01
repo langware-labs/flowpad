@@ -5,7 +5,7 @@ from typing import Any, ClassVar, Optional, Union
 from starlette.requests import Request
 
 from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.hook_models import (
     ErrorMessage,
     RelationshipSubAction,

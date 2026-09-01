@@ -13,8 +13,6 @@ Tests proper error responses for:
 import logging
 import uuid
 
-import pytest
-
 from flow_sdk.responses.response import ApiResponse, ApiResponseStatus
 
 

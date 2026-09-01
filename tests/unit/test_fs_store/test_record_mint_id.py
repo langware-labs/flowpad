@@ -17,11 +17,8 @@ import re
 import uuid as _uuid
 from pathlib import Path
 
-from flow_sdk.capsules import AssetCapsule, strip_capsule_blocks
-from flow_sdk.fs_store.indexer._frontmatter import _extract_body, _extract_frontmatter, _yaml_load
-from flow_sdk.fs_store.indexer.functions.markdown import (
-    extract_markdown as _extract_markdown,
-)
+from flow_sdk.capsules import strip_capsule_blocks
+from flow_sdk.fs_store.indexer._frontmatter import _extract_body, _extract_frontmatter, _yaml_load, read_frontmatter_id
 from flow_sdk.fs_store.indexer.functions.markdown import (
     markdown_id as _markdown_id,
 )
@@ -35,13 +32,13 @@ class _MarkdownRecordAdapter:
         return _markdown_id(ref)
     @staticmethod
     def genId(ref):
-        return SchemaRegistry.get("markdown").mint_entity_id(ref, derive=True, overwrite=True)
+        return SchemaRegistry.get("markdown").mint_entity_id(ref)
     @staticmethod
     def from_file(path):
         from flow_sdk.fs_store.fs_ref import FSRef
         ref = FSRef(path)
-        resolved_id = SchemaRegistry.get("markdown").mint_entity_id(ref, derive=True, overwrite=True)
-        return _extract_markdown(ref, resolved_id)[0]
+        resolved_id = SchemaRegistry.get("markdown").mint_entity_id(ref)
+        return SchemaRegistry.get("markdown").from_disk_fn(ref, resolved_id)[0]
 
 MarkdownRecord = _MarkdownRecordAdapter
 from flow_sdk.fs_store.fs_ref import FSRef
@@ -103,8 +100,8 @@ def test_genId_mints_v4_capsule_when_no_frontmatter(tmp_path: Path) -> None:
     assert _uuid.UUID(minted).version == 4, "miss must mint a random v4"
     assert minted != path_uuid5, "genId must NOT derive uuid5(path) anymore"
     text = p.read_text(encoding="utf-8")
-    assert _extract_frontmatter(text) is None
-    assert AssetCapsule.from_path(p).read("identity").data["id"] == minted
+    assert text.startswith(f"---\nid: {minted}\n---"), "a frontmatter block is created for the id"
+    assert read_frontmatter_id(p) == minted
     # Body survives
     assert "# body only" in _extract_body(text)
     assert "nothing else" in _extract_body(text)
@@ -123,8 +120,7 @@ def test_genId_mints_when_frontmatter_has_no_id(tmp_path: Path) -> None:
     text = p.read_text(encoding="utf-8")
     fm = _extract_frontmatter(text)
     fields = _yaml_load(fm) or {}
-    assert fields.get("id") is None
-    assert AssetCapsule.from_path(p).read("identity").data["id"] == minted
+    assert fields.get("id") == minted and list(fields)[0] == "id"
     # Existing fields preserved
     assert fields.get("title") == "Greeting"
     assert fields.get("tags") == ["a", "b"]
@@ -197,9 +193,7 @@ def test_genId_on_empty_file_still_returns_id(tmp_path: Path) -> None:
     p.write_text("", encoding="utf-8")
     minted = MarkdownRecord.genId(FSRef(p))
     assert _UUID_RE.match(minted)
-    text = p.read_text(encoding="utf-8")
-    assert _extract_frontmatter(text) is None
-    assert AssetCapsule.from_path(p).read("identity").data["id"] == minted
+    assert read_frontmatter_id(p) == minted
 
 
 def test_claude_plan_genId_also_mints(tmp_path: Path) -> None:
@@ -208,7 +202,7 @@ def test_claude_plan_genId_also_mints(tmp_path: Path) -> None:
     Mirrors the markdown contract: idempotent, migration-safe (writes the
     derived path-uuid5 so any existing DB row by that id stays valid).
     """
-    ClaudePlanRecord = type('CP', (), {'genId': staticmethod(lambda ref: SchemaRegistry.get("plan").mint_entity_id(ref, derive=True, overwrite=True))})
+    ClaudePlanRecord = type('CP', (), {'genId': staticmethod(lambda ref: SchemaRegistry.get("plan").mint_entity_id(ref))})
 
     p = tmp_path / "plan.md"
     p.write_text("some plan body", encoding="utf-8")
@@ -217,11 +211,9 @@ def test_claude_plan_genId_also_mints(tmp_path: Path) -> None:
 
     result = ClaudePlanRecord.genId(ref)
     assert result == expected_derived
-    # File was rewritten with a named capsule, not frontmatter identity.
+    # File was rewritten with the id as its frontmatter.
     text = p.read_text(encoding="utf-8")
-    fm = _extract_frontmatter(text)
-    assert fm is None
-    assert AssetCapsule.from_path(p).read("identity").data["id"] == result
+    assert read_frontmatter_id(p) == result
     # Body preserved
     assert "some plan body" in _extract_body(text)
 

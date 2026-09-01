@@ -6,26 +6,26 @@ Contracts under test:
     dedup break for every already-shared asset).
   * the driver registry dispatches by kind, folds git-hosting-provider aliases
     onto git, and raises on an unknown kind;
-  * the FSOriginField discriminated union is tolerant: a legacy dict with no
+  * the OriginField discriminated union is tolerant: a legacy dict with no
     `kind` deserializes to GitOrigin (kind=git); a `{kind:"local"}` dict to
     LocalOrigin;
   * the LocalOriginDriver materializes with NO fetch and guards rel_path;
   * the serialized dict is a WIRE FORMAT — exact key set and key ORDER are
     pinned per kind, and all three dump paths (model_dump python/json,
-    FS_ORIGIN_ADAPTER.dump_python) agree byte-for-byte;
+    ORIGIN_ADAPTER.dump_python) agree byte-for-byte;
   * validate->dump is NOT identity for a legacy kind-less dict, so raw
     pass-through paths must stay raw.
 """
 import pytest
 from pydantic import TypeAdapter
 
-from flow_sdk.builtin.fs_origin import FSOrigin, is_safe_rel_path
-from flow_sdk.builtin.fs_origin_driver import get_origin_driver, get_origin_registry
-from flow_sdk.builtin.fs_origin_field import FSOriginField
-from flow_sdk.builtin.git_origin import GitOrigin
-from flow_sdk.builtin.local_origin import LocalOrigin
+from flow_sdk.builtin.fs_origin_driver import ORIGIN_DRIVERS, get_origin_driver
+from flow_sdk.fs_store.origin.field import OriginField
+from flow_sdk.fs_store.origin.fs_origin import FSOrigin, is_safe_rel_path
+from flow_sdk.fs_store.origin.git_origin import GitOrigin
+from flow_sdk.fs_store.origin.local_origin import LocalOrigin
 
-_ORIGIN_ADAPTER = TypeAdapter(FSOriginField)
+_ORIGIN_ADAPTER = TypeAdapter(OriginField)
 
 
 def test_git_key_is_byte_stable():
@@ -43,7 +43,7 @@ def test_git_key_is_byte_stable():
 
 
 def test_registry_dispatch_and_aliases():
-    reg = get_origin_registry()
+    reg = ORIGIN_DRIVERS
     assert set(reg.kinds()) == {"git", "local"}
     assert get_origin_driver("git").kind == "git"
     assert get_origin_driver("local").kind == "local"
@@ -120,22 +120,9 @@ def test_is_safe_rel_path():
     assert not is_safe_rel_path("C:/win")
 
 
-def test_legacy_visible_origin_predicate():
-    """Which origins an old (pre-``kind``) receiver may see: git-kind or legacy
-    kind-less, never anything else. A kind capability, so it lives with the
-    model — a new kind must answer this rather than inherit exclusion."""
-    from flow_sdk.builtin.fs_origin import is_legacy_visible_origin
-
-    assert is_legacy_visible_origin({"provider": "github", "owner": "a"})  # legacy, no kind
-    assert is_legacy_visible_origin({"kind": "git", "owner": "a"})
-    assert not is_legacy_visible_origin({"kind": "local", "base": "/mnt"})
-    assert not is_legacy_visible_origin(None)
-    assert not is_legacy_visible_origin("not-a-dict")
-
-
 # ── wire-shape guardrails ────────────────────────────────────────────────────
 #
-# `Entity.git_origin` is Sharing.SHARED and reaches the HUB, which pins a
+# `Entity.origin` is Sharing.SHARED and reaches the HUB (as ``git_origin``), which pins a
 # RELEASED flow_sdk. The serialized dict is therefore a wire format: its exact
 # key set AND key order are load-bearing, and nothing in `tests/` asserted them
 # before these. A stray `exclude_none=True`, a `by_alias`, or moving a field
@@ -143,9 +130,8 @@ def test_legacy_visible_origin_predicate():
 
 #: The wire key order, per kind. Field order for the redeclared ``kind`` comes
 #: from the BASE class, so moving ``kind`` inside a subclass is a byte change.
-_GIT_WIRE_KEYS = ["kind", "rel_path", "project_id", "provider", "owner", "name",
-                  "branch", "head_commit"]
-_LOCAL_WIRE_KEYS = ["kind", "rel_path", "project_id", "base"]
+_GIT_WIRE_KEYS = ["kind", "rel_path", "provider", "owner", "name", "branch", "head_commit"]
+_LOCAL_WIRE_KEYS = ["kind", "rel_path", "base"]
 
 
 @pytest.mark.parametrize(
@@ -185,7 +171,7 @@ def test_head_commit_null_is_emitted():
 def test_legacy_dict_roundtrip_is_not_identity():
     """validate → dump does NOT round-trip a legacy (kind-less) dict unchanged.
 
-    It ADDS ``kind``/``project_id``/``head_commit`` and reorders. That is
+    It ADDS ``kind``/``head_commit`` and reorders. That is
     correct — but it means any path that passes a raw origin dict through to the
     wire must keep passing it through. Normalizing such a path "for consistency"
     silently rewrites bytes a released receiver is already reading.
@@ -197,42 +183,50 @@ def test_legacy_dict_roundtrip_is_not_identity():
     normalized = _ORIGIN_ADAPTER.validate_python(legacy).model_dump(mode="python")
 
     assert normalized != legacy
-    assert set(normalized) - set(legacy) == {"kind", "project_id", "head_commit"}
+    assert set(normalized) - set(legacy) == {"kind", "head_commit"}
     assert normalized["kind"] == "git"
     # Re-dumping the NORMALIZED form is stable — only the first pass moves it.
     again = _ORIGIN_ADAPTER.validate_python(normalized).model_dump(mode="python")
     assert again == normalized
 
 
-# ── Entity.fs_origin: the typed read seam over the wire dict ─────────────────
+# ── Entity.origin: the ONE origin field, typed on adoption ────────────────────
 
 
-def test_entity_fs_origin_reads_typed_without_touching_the_dict():
-    """``Entity.git_origin`` stays a dict (it is the hub wire format); callers
-    that want behaviour go through ``fs_origin()`` rather than hand-rolling a
-    validate and getting a different tolerance for legacy shapes."""
+def test_entity_origin_is_typed_on_adoption():
+    """``Entity.origin`` adopts a dict (row, bundle map, hub ``git_origin``) as
+    the typed FSOrigin; the hub serializer projects it back under ``git_origin``."""
     from flow_sdk.core.entity.entity_model import Entity
 
-    ent = Entity(type="task")
-    assert ent.fs_origin() is None, "absent origin reads as None, not an error"
-
-    dumped = GitOrigin(provider="github", owner="a", name="b",
-                       rel_path="x").model_dump(mode="python")
-    ent.git_origin = dumped
-    origin = ent.fs_origin()
-    assert isinstance(origin, GitOrigin) and origin.clone_url() == "https://github.com/a/b.git"
-    # The raw dict is untouched — it is what goes back on the wire.
-    assert ent.git_origin == dumped
+    assert Entity(type="task").origin is None, "absent origin reads as None, not an error"
+    dumped = GitOrigin(provider="github", owner="a", name="b", rel_path="x").model_dump(mode="python")
+    ent = Entity(type="task", origin=dumped)
+    assert isinstance(ent.origin, GitOrigin) and ent.origin.clone_url() == "https://github.com/a/b.git"
+    body = ent._hub_body()
+    assert "origin" not in body and body["git_origin"]["owner"] == "a" and "project_id" not in body["git_origin"]
 
 
-def test_entity_fs_origin_tolerates_legacy_and_fails_soft():
-    """A pre-``kind`` dict still resolves to git; a malformed one reads as
-    absent rather than breaking the entity that merely carries the stamp."""
+def test_entity_origin_tolerates_legacy_and_fails_soft():
+    """A pre-``kind`` dict under the hub-wire name still resolves to git; a
+    malformed one reads as absent rather than breaking the entity carrying it."""
     from flow_sdk.core.entity.entity_model import Entity
 
-    ent = Entity(type="task")
-    ent.git_origin = {"provider": "github", "owner": "a", "name": "b", "rel_path": "x"}
-    assert isinstance(ent.fs_origin(), GitOrigin)
+    ent = Entity(type="task", origin={"provider": "github", "owner": "a", "name": "b", "rel_path": "x"})
+    assert isinstance(ent.origin, GitOrigin)
+    assert Entity(type="task", origin={"kind": "git", "rel_path": ["not", "a", "path"]}).origin is None
+    cloud = Entity(type="task", origin={"kind": "gmail", "provider": "agent", "url": "https://x"}).origin
+    assert type(cloud).__name__ == "CloudOrigin" and cloud.kind == "gmail"
+    # The hub's wire name comes back through the hub seam, not the model.
+    from flow_sdk.fs_store.serializer.hub import HubSerializer
 
-    ent.git_origin = {"kind": "nonsense"}
-    assert ent.fs_origin() is None
+    lifted = Entity.model_validate(HubSerializer.unwire(Entity, {"type": "task", "git_origin": {"owner": "a", "name": "b", "rel_path": "x"}}))
+    assert isinstance(lifted.origin, GitOrigin)
+
+
+def test_every_driver_serves_a_kind_the_union_knows():
+    """Drivers ⊂ models: the model table is the one home for origin kinds."""
+    from flow_sdk.builtin.fs_origin_driver import ORIGIN_DRIVERS
+    from flow_sdk.fs_store.origin.fs_origin import ORIGIN_MODELS
+
+    assert set(ORIGIN_DRIVERS.kinds()) <= set(ORIGIN_MODELS.kinds())
+    assert ORIGIN_DRIVERS.normalize("GitHub") == ORIGIN_MODELS.normalize("GitHub") == "git"

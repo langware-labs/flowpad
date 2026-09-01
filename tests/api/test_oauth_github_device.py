@@ -7,16 +7,13 @@ full happy/sad paths through the public oauth-action surface to keep the dispatc
 from unittest.mock import AsyncMock, patch
 
 import pytest
-import pytest_asyncio
 from cryptography.fernet import Fernet
 
 from flow_sdk.app.actions import desktop_oauth as do
-from flow_sdk.builtin.user import User
 from flow_sdk.config import ServiceConfig, SodProvider
 from flow_sdk.request_context.methods import (
     get_user_credentials,
     set_default_test_sod_driver,
-    set_user_credentials,
 )
 from flow_sdk.sod.file_sod import FileSodStorage
 

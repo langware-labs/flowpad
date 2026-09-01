@@ -16,7 +16,7 @@ from datetime import datetime
 import pytest
 from pydantic import BaseModel
 
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.core.entity.entity_model import Entity
 
 

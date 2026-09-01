@@ -1,4 +1,4 @@
-import { SubAgent, apiClient, dataManager, Skill } from '@sdk';
+import { SubAgent, apiClient, dataManager, Skill, type APIEntity } from '@sdk';
 import { isAgentSpawn, isSkillCall } from '@sdk/utils/agent-transcript';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -9,8 +9,9 @@ import { Bot, Sparkles } from 'lucide-react';
 import { useMemo } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
-/** Entity shape this panel resolves names against — both Skill and SubAgent fit. */
-type NamedAsset = { name?: string; asset_ref?: string };
+/** Entity shape this panel resolves names against — both Skill and SubAgent fit.
+ *  `name` is nullable on APIEntity, so it is nullable here too. */
+type NamedAsset = { name?: string | null; asset_ref?: string };
 
 /**
  * Fetch a `<type>` entity list (with system entries) and index it by name, so a
@@ -18,7 +19,7 @@ type NamedAsset = { name?: string; asset_ref?: string };
  * the raw graph route with include_system=true — useEntitiesQuery omits that
  * flag, dropping SDK-shipped system skills/agents (mirrors SkillsCategory).
  */
-function useAssetsByName<T extends NamedAsset>(type: 'skill' | 'subagent'): Map<string, T> | undefined {
+function useAssetsByName<T extends APIEntity<T> & NamedAsset>(type: 'skill' | 'subagent'): Map<string, T> | undefined {
   return useQuery<Map<string, T>>({
     queryKey: ['skills-agents-panel', type],
     queryFn: async () => {

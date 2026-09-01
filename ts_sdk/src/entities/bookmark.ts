@@ -1,6 +1,6 @@
 import { ActionInfo } from '../models';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 
 export enum BookmarkType {
   NOTE = 'note',
@@ -46,6 +46,12 @@ export interface IBookmark extends IEntity {
    *  the bookmarks slider filters favorites by this against the scope filter. */
   project_id?: string | null;
 }
+
+// `implements IBookmark` only checks the class; it contributes no members, so every
+// field declared solely on IBookmark read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Bookmark extends EntityMerge<IBookmark> {}
 
 @registerEntity
 export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
@@ -96,7 +102,7 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
    *
    *  Callers `void` it (a click path must never block navigation on a usage
    *  stamp); the save promise is returned so tests can await the write. */
-  async markOpened(): Promise<void> {
+  async markOpened(): Promise<Bookmark> {
     this.counter = (this.counter ?? 0) + 1;
     dataManager.notifyEntityChanged(this);
     return this.save([]);
@@ -108,7 +114,7 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
    *  hover never claims an open that didn't happen. Idempotent: a favorite
    *  already seen (or already opened) writes nothing, so sweeping the same
    *  menu twice is free. Reactivity contract as {@link markOpened}. */
-  async markSeen(): Promise<void> {
+  async markSeen(): Promise<Bookmark | undefined> {
     if (this.seen || (this.counter ?? 0) > 0) return;
     this.seen = true;
     dataManager.notifyEntityChanged(this);

@@ -14,6 +14,7 @@ import { FilterMaskIndicator } from '@src/components/hooks/FilterMaskIndicator';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
+import { useCopied } from '@src/components/ui/copy-button';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { usePreference } from '@src/hooks/use-preference';
@@ -167,23 +168,15 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
     return null;
   }, [displayEvents]);
 
-  const [copied, setCopied] = useState(false);
-  const [copiedPath, setCopiedPath] = useState(false);
+  const { copied, copy: copyJson } = useCopied(2000);
+  const { copied: copiedPath, copy: copyPath } = useCopied();
   const [copiedEventId, setCopiedEventId] = useState<string | null>(null);
-  const handleCopyJson = useCallback(() => {
-    void navigator.clipboard.writeText(jsonTrace).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }, [jsonTrace]);
+  const handleCopyJson = useCallback(() => void copyJson(jsonTrace), [copyJson, jsonTrace]);
 
   const handleCopyPath = useCallback(() => {
     if (!transcriptPath) return;
-    void navigator.clipboard.writeText(transcriptPath).then(() => {
-      setCopiedPath(true);
-      setTimeout(() => setCopiedPath(false), 1500);
-    });
-  }, [transcriptPath]);
+    void copyPath(transcriptPath);
+  }, [copyPath, transcriptPath]);
 
   const handleCopyEvent = useCallback((e: React.MouseEvent, event: SnifferEvent) => {
     e.stopPropagation();

@@ -60,9 +60,10 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, TypeId
 from flow_sdk.db.drivers.db_driver import RelationshipDirection
 from flow_sdk.db.drivers.query import ExpressionNode, OrderType, QueryFilter, QueryOp
 from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
-from flow_sdk.fs_store.identifier import adopt_entity_id, is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.asset_occurrences import AssetOccurrence, asset_occurrence_dicts
 from flow_sdk.fs_store.exceptions import AssetRefLookupError
+from flow_sdk.api.api_types.identifier import adopt_entity_id, is_valid_entity_id, mint_uuid
+from flow_sdk.fs_store.origin.field import OriginField
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 from .blob_index_entity_model import BLOB_INDEX_VFS_PATH, BlobIndexEntity
@@ -130,6 +131,48 @@ class PathQueryOptions:
 # plausible epoch range so it can never poison ``updated_date`` with a garbage
 # far-future timestamp; the caller falls back to the folder mtime.
 _MAX_ASSET_EPOCH = 7_258_118_400.0
+
+
+# The private/shared context buckets and their per-entry sidecars. These hold a
+# LOCAL link projection maintained at runtime by ``cross_link_entities`` — they
+# are never authored on an asset's carrier, so a filesystem re-parse must not be
+# allowed to narrow them (see ``Entity.from_record``).
+_CONTEXT_BUCKET_FIELDS = frozenset(
+    {
+        "private_context_entities_",
+        "shared_context_entities",
+        "private_context_entity_data",
+        "shared_context_entity_data",
+    }
+)
+
+
+def _union_context_bucket(current, incoming):
+    """Merge a carrier's context bucket INTO the stored one, never over it.
+
+    Lists of TypeId dedup by ``str(typeid)``, stored entries first so their
+    order is stable; dict sidecars keep the stored entry when both sides carry
+    the same key. Returns ``current`` unchanged when ``incoming`` adds nothing,
+    so an unrelated re-index is a no-op rather than a rewrite.
+    """
+    if current is None:
+        return incoming
+    if isinstance(current, dict) or isinstance(incoming, dict):
+        if not isinstance(incoming, dict):
+            return current
+        if not isinstance(current, dict):
+            return incoming
+        return {**incoming, **current}
+    if not isinstance(incoming, (list, tuple)):
+        return current
+    merged = list(current or [])
+    seen = {str(item) for item in merged}
+    for item in incoming:
+        key = str(item)
+        if key not in seen:
+            seen.add(key)
+            merged.append(item)
+    return merged
 
 
 def _asset_updated_epoch(record_type: str, src_path: str) -> float | None:
@@ -257,11 +300,14 @@ class Entity(DBEntity):
         persist=Persist.TRUE,
         description="Source-supplied identity this row was consolidated on.",
     )
-    git_origin: dict | None = APIField(
+    #: Where this entity's bytes live — git / local / cloud. The hub reads the
+    #: git kind under its wire name ``git_origin`` (``hub_name``).
+    origin: OriginField = APIField(
         sharing=Sharing.SHARED,
         default=None,
         persist=Persist.TRUE,
-        description="Secret-free Git provenance and repo-relative asset placement.",
+        hub_name="git_origin",
+        description="Where the bytes live — git / local / cloud (OriginField).",
     )
     asset_occurrences: list[dict] = APIField(
         sharing=Sharing.PRIVATE,
@@ -749,9 +795,11 @@ class Entity(DBEntity):
         caller that WRITES on a miss (minting, deleting) — see ``fs_store/reindex.py``.
         Read-only callers can keep the lenient default.
         """
-        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.fs_store.path_utils import asset_ref_spellings  # noqa: PLC0415
 
         path_str = str(path)
+        spellings = asset_ref_spellings(path_str)
         # Only types that OWN their path may answer "who owns this path". A type
         # that merely *references* an asset (``owns_asset_ref = False``, e.g.
         # Artifact) carries the same ``asset_ref`` as the entity it points at, so
@@ -760,7 +808,7 @@ class Entity(DBEntity):
         # type registered before it and silently wrong for one registered after.
         candidates = cls.asset_owner_classes()
         hit = await cls.first_across_asset_owners(
-            "asset_ref", path_str, strict=strict, candidates=candidates
+            "asset_ref", spellings, strict=strict, candidates=candidates
         )
         if hit is not None:
             return hit
@@ -773,12 +821,13 @@ class Entity(DBEntity):
     async def first_across_asset_owners(
         cls,
         field: str,
-        value: str,
+        value: "str | list[str]",
         *,
         strict: bool = False,
         candidates: "list[type[Entity]] | None" = None,
     ) -> "Entity | None":
-        """First row across every asset-owning type whose ``field`` equals ``value``.
+        """First row across every asset-owning type whose ``field`` equals ``value``
+        (or any of them, when a list of spellings is given — one query per type).
 
         The fan-out itself, held once: a base-class query does not reach
         concrete-type rows, so any "which entity does this handle name" question
@@ -797,8 +846,12 @@ class Entity(DBEntity):
         # `return_exceptions` keeps the per-candidate resilience — one broken type
         # must not sink the fan-out — while still telling a failed probe apart
         # from one that genuinely found nothing.
+        def _filter(c: type) -> QueryFilter:
+            op, operand = (QueryOp.EQ, value) if isinstance(value, str) else (QueryOp.IN, list(value))
+            return QueryFilter(type=c.get_type(), match=ExpressionNode(op=op, operands=[field, operand]))
+
         results = await asyncio.gather(
-            *[c.get_one({field: value}) for c in candidates], return_exceptions=True
+            *[c.get_one(_filter(c)) for c in candidates], return_exceptions=True
         )
         failed = sum(1 for r in results if isinstance(r, BaseException))
         for result in results:
@@ -909,7 +962,7 @@ class Entity(DBEntity):
         # is left in ``data`` so that dict field still populates.
         _nested = data.get("metadata")
         if isinstance(_nested, dict):
-            _mm = getattr(SchemaRegistry.get(record_type), "meta_model", None)
+            _mm = getattr(SchemaRegistry.get(record_type), "effective_meta_model", None)
             for _k in getattr(_mm, "model_fields", None) or {}:
                 if _k in _nested and _k not in data:
                     data[_k] = _nested[_k]
@@ -1014,6 +1067,19 @@ class Entity(DBEntity):
                 # properties leaked in by stale metadata don't crash setattr.
                 if k in ("id",) or k not in entity.__class__.model_fields:
                     continue
+                # Context buckets are a LOCAL, DB-owned link projection written
+                # by cross_link_entities — never authored on the carrier. A
+                # re-parse of the file (reindex_paths → discover_record_by_path
+                # → sync_to_db) hands us the carrier's copy, which for a file
+                # the agent just wrote is EMPTY; setting it here blanks a link
+                # that was committed moments earlier. That is how the file-op
+                # cross-link lost its Docs→AP direction ~2 runs in 3: the
+                # reindex scheduled by the same transcript flush raced the
+                # cross-link save and won. So a carrier may ADD entries here,
+                # never remove them — union, don't replace. Fresh rows still
+                # seed from disk (the create branch above assigns directly).
+                if k in _CONTEXT_BUCKET_FIELDS:
+                    v = _union_context_bucket(getattr(entity, k, None), v)
                 field = entity.__class__.model_fields.get(k)
                 if field is not None:
                     v = TypeAdapter(field.annotation).validate_python(v)
@@ -1071,12 +1137,12 @@ class Entity(DBEntity):
         dispatches to the registered ``from_disk_fn`` — the SAME cold-path parser the indexer runs
         (e.g. ``extract_dataset``) — and builds the entity generically from the
         returned ``FSRecord``. Only that parser (and, for datasets, the
-        ``iter_examples`` it reaches via ``Dataset.examples()``) is type-specific;
+        ``iter_examples`` it reaches via ``Dataset.examples``) is type-specific;
         everything here is generic and registry-driven.
 
         Distinct from the async ``from_record``: no ``await``, no ``save()``, no
         DB row. A missing asset id may be minted and persisted. Use it to load a folder-backed entity and call its on-disk
-        accessors (``Dataset.examples()`` etc.). Returns ``None`` when ``ref`` is
+        accessors (``Dataset.examples`` etc.). Returns ``None`` when ``ref`` is
         not a record of the resolved type (the parser yields nothing).
         """
         from flow_sdk.schema.type_info import register_all  # noqa: PLC0415
@@ -1090,16 +1156,10 @@ class Entity(DBEntity):
         if rt is None:
             return None
         info = SchemaRegistry.get(rt)
-        if info is None or info.from_disk_fn is None:
-            return None
-
         # DB-FREE by contract, so no owner lookup: with no owning row to consult
         # this degrades to the historic carrier-or-mint.
-        resolved_id = info.mint_entity_id(ref, derive=True, overwrite=True)
-        records = info.from_disk_fn(ref, resolved_id)
-        if not records:
-            return None
-        return Entity._build_from_fs_record(records[0], fallback_cls=cls)
+        record = info.record_for(ref) if info is not None else None
+        return Entity._build_from_fs_record(record, fallback_cls=cls) if record is not None else None
 
     @classmethod
     def _resolve_fs_ref_type(cls, ref: "FSRef", record_type) -> "str | None":
@@ -1153,52 +1213,20 @@ class Entity(DBEntity):
             object.__setattr__(entity, "asset_ref", data["asset_ref"])
         return entity
 
-    async def _fts_upsert(self, type_name: str, record) -> None:
-        """Upsert this entity into the FTS5 table from its ``FSRecord``.
-
-        The column list lives in ``FtsEntry.from_record`` — see there for why a
-        writer must never assemble one by hand.
-        """
+    async def _fts_write(self, entry) -> None:
+        """The one FTS5 write. The column list lives in ``FtsEntry`` — a writer
+        never assembles one by hand: ``from_record`` for an asset's record,
+        ``from_entity`` for a row-only type."""
         from flow_sdk.db import get_db_driver
-        from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry
 
         driver = get_db_driver()
         if hasattr(driver, "fts_upsert"):
-            await driver.fts_upsert(
-                FtsEntry.from_record(self.id, type_name, getattr(self, "name", None), record)
-            )
+            await driver.fts_upsert(entry)
 
-    def fs_origin(self) -> "FSOriginField | None":
-        """The typed view of ``git_origin`` — THE read seam for the base field.
+    async def _fts_upsert(self, type_name: str, record) -> None:
+        from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry
 
-        ``git_origin`` stays a ``dict`` because it is a WIRE FORMAT: the field is
-        ``Sharing.SHARED`` and reaches a hub pinned to a released ``flow_sdk``,
-        so its exact key set and key order are load-bearing (see
-        ``docs/data-management/items_origins.md``). Callers that want behaviour —
-        ``clone_url()``, ``matches_checkout()``, a ``kind`` test — come through
-        here instead of hand-rolling ``GitOrigin.model_validate`` and getting a
-        subtly different tolerance for legacy shapes.
-
-        Returns ``None`` for an absent or unparseable origin rather than raising:
-        a malformed provenance stamp must not break the entity carrying it.
-
-        Use the raw ``git_origin`` dict when passing the value through to the
-        wire UNCHANGED — validating and re-dumping a legacy kind-less dict adds
-        ``kind``/``project_id``/``head_commit`` and rewrites bytes a released
-        receiver is already reading.
-        """
-        raw = self.git_origin
-        if not raw:
-            return None
-        from flow_sdk.builtin.fs_origin_field import FS_ORIGIN_ADAPTER  # noqa: PLC0415
-
-        try:
-            return FS_ORIGIN_ADAPTER.validate_python(raw)
-        except Exception:
-            logging.getLogger(__name__).warning(
-                "unparseable git_origin on %s; treating as absent", self.id, exc_info=True
-            )
-            return None
+        await self._fts_write(FtsEntry.from_record(self.id, type_name, getattr(self, "name", None), record))
 
     async def get_record(self) -> "FSRecord | None":
         """Return the fs-record associated with this entity, or None if none exists."""
@@ -1241,6 +1269,14 @@ class Entity(DBEntity):
         if hasattr(driver, "fts_delete"):
             await driver.fts_delete(self.id)
 
+    @classmethod
+    def serializer(cls, origin: "Any" = None) -> "Any":
+        """This type's ``DataSerializer`` (``TypeInfo.serializer``) — the one hop
+        from a class to HOW/WHERE its rows persist."""
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        return SchemaRegistry.get(cls.get_type()).serializer(origin)
+
     def metadata_payload(self) -> dict:
         """Resolve which entity fields are mirrored into metadata.json.
 
@@ -1252,16 +1288,21 @@ class Entity(DBEntity):
                       ``BaseMeta`` when a type registers none.
         ``None`` values are omitted so a stale field never clobbers a fresh
         on-disk one under partial-merge.
+
+        Values are dumped THROUGH Pydantic (``model_dump(mode="json")`` on the
+        persisted subset), so a field's own serializer runs — a shape CLASS
+        held by a ``SpecType`` field lands as its authoring form, a model as
+        its JSON. The record writer never has to know what a field holds.
         """
         from flow_sdk.api.api_types.api_field import Persist, persist_policy
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
         from flow_sdk.schema.type_info.base_meta import BaseMeta
 
         info = SchemaRegistry.get(self.get_type())
-        meta_model = (getattr(info, "meta_model", None) if info else None) or BaseMeta
+        meta_model = (getattr(info, "effective_meta_model", None) if info else None) or BaseMeta
         model_field_names = set(getattr(meta_model, "model_fields", {}) or {})
 
-        out: dict = {}
+        persisted: set[str] = set()
         for name, field in self.__class__.model_fields.items():
             if name in ("id", "type") or name.startswith("_"):
                 continue
@@ -1270,11 +1311,8 @@ class Entity(DBEntity):
                 continue
             if policy == Persist.DEFAULT and name not in model_field_names:
                 continue
-            v = getattr(self, name, None)
-            if v is None:
-                continue
-            out[name] = v
-        return out
+            persisted.add(name)
+        return self.model_dump(mode="json", include=persisted, exclude_none=True)
 
     async def store(self) -> "Record | None":
         """Sync entity metadata DOWN to its record on disk.
@@ -1328,10 +1366,17 @@ class Entity(DBEntity):
         # stamping a RecordError) on every save of a vendor-supplied asset.
         borrowed = await _asset_ref_is_borrowed(record)
         try:
-            # upsert_main_ref writes default_body iff main_ref doesn't exist
-            # — write goes through the FSRef contract, never raw Path.write_text.
-            if not borrowed:
-                await asyncio.to_thread(record.upsert_main_ref, entity)
+            # The ASSET write is the serializer's (HOW/WHERE); the shadow
+            # metadata.json below is the index and stays FSRecord's. The
+            # carrier is authoritative: the record adopts the committed id.
+            origin = entity._storage_origin(record)
+            if origin is not None and not borrowed:
+                from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+                info = SchemaRegistry.get(type_name)
+                committed = await asyncio.to_thread(info.serializer(origin).store, entity, origin, type_name=type_name)
+                if committed.id:
+                    record.__dict__["id"] = committed.id
             await asyncio.to_thread(record.save_metadata, payload)
         except Exception as exc:
             from flow_sdk.fs_store.operations.record_error import from_exception  # lazy (circular-safe)
@@ -1342,6 +1387,22 @@ class Entity(DBEntity):
         if record.search_content is not None:
             await entity._fts_upsert(type_name, record)
         return record
+
+    def _storage_origin(self, record) -> "Any":
+        """The ``LocalOrigin`` this entity's asset is stored at — its asset ROOT
+        (the folder for a folder type, even when ``asset_ref`` names the inner
+        main file). None when the entity has no asset on disk."""
+        from flow_sdk.fs_store.origin.local_origin import local_origin_for_path  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        ar = getattr(record, "_asset_ref", None)
+        path = getattr(ar, "_path", None) if ar is not None else None
+        if path is None:
+            return None
+        if ar.read_only:
+            raise IOError(f"FSRef at {ar.path!r} is read-only")
+        info = SchemaRegistry.get(self.get_type())
+        return local_origin_for_path(info.storage_root_for(path) if info else path)
 
     async def _resolve_scope_project(self) -> "Entity | None":
         """Return the project entity when the request is project-scoped
@@ -1382,6 +1443,22 @@ class Entity(DBEntity):
             return root_for_scope(Scope.PROJECT, project_mount=mount)
         return root_for_scope(Scope.USER)
 
+    def is_file_backed(self) -> bool:
+        """Does THIS ROW live in a file on disk?
+
+        A per-row question, which is why it is a method and not a ClassVar like
+        ``owns_asset_ref`` (that one says a TYPE never owns a path). Most types
+        answer for every row alike; a type whose rows can be either — a webapp
+        that is an asset on disk vs. one that just delivers a build output from
+        somewhere in the user's checkout — overrides it.
+
+        Returning False means "do not place this row anywhere": no ``asset_ref``
+        is computed and no folder is materialized for it. The indexer's orphan
+        sweep reads the same fact off the stored row (a row with no
+        ``asset_ref`` is not file-backed, so it is never an orphan candidate).
+        """
+        return True
+
     async def _resolve_repo_parent_container(self, info) -> "Path | None":
         """Container for a REPO child = its parent REPO asset's folder, so the
         child nests at ``<parent-folder>/agentic-assets/<type>/<name>`` (the
@@ -1404,7 +1481,7 @@ class Entity(DBEntity):
         if not par_ref or pinfo.main_layout != "folder":
             return None  # a repo child can only nest inside a folder-backed parent
         # The parent's asset FOLDER owns where the child's agentic-assets/ goes.
-        return pinfo.folder_for(Path(par_ref))
+        return pinfo.storage_root_for(Path(par_ref))
 
     async def check_and_refresh_record(self) -> bool:
         """If the source asset changed since the last index, re-sync. Returns
@@ -1907,19 +1984,6 @@ class Entity(DBEntity):
         await blob_index_entity.save(self.embedded_storage)
         # logging.info(f"Saved blob index for {self.typeid} with fields: {blob_index_entity._blob_index.fields.keys()} on \n {self.storage.vfs_root_path}")
 
-    def cloud_watch(self) -> "CloudWatch":
-        """Async-context stream of hub events scoped to this entity.
-
-        See ``flow_sdk.cloud_client.events.CloudWatch`` for the full API.
-        Matches events whose ``entity_id`` *or* ``parent_id`` equals
-        ``self.id`` — i.e., "events about me" + "events about my children".
-        """
-        from flow_sdk.cloud_client.events import CloudWatch  # noqa: PLC0415
-
-        if not self.id:
-            raise RuntimeError("cloud_watch requires entity.id; save first")
-        return CloudWatch(self.id)
-
     async def share(self: EntityType, *, recursive: bool = False) -> EntityType:
         """Create this entity on the hub (POST /api/v1/graph/<type>).
 
@@ -2075,11 +2139,9 @@ class Entity(DBEntity):
         reaching the hub — they were stripped from share bundles but pushed here,
         which is why the receiver had to defend with ``sanitized.pop("asset_ref")``.
         """
-        return self.model_dump(
-            mode="json",
-            exclude_none=True,
-            exclude=set(self.__class__.fields_not_sent_to_hub()),
-        )
+        from flow_sdk.fs_store.serializer import get_serializer  # noqa: PLC0415
+
+        return get_serializer("hub").body(self)
 
     async def create_child(self: EntityType, child: "Entity") -> "Entity":
         """Create ``child`` on the hub as an ``is_child`` of this (remote) entity.
@@ -2391,8 +2453,13 @@ class Entity(DBEntity):
             await self._save_blobs()
             if type_info is not None and type_info.db_only:
                 # A DB-only type has no filesystem shadow and therefore no
-                # opposite disk→DB sync to serialize against.
+                # opposite disk→DB sync to serialize against. A searchable one
+                # feeds FTS straight from the row.
                 await DBEntity.save(self, user_id, notify=notify)
+                if type_info.fts_content:
+                    from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry  # noqa: PLC0415
+
+                    await self._fts_write(FtsEntry.from_entity(self, info=type_info))
                 return
 
             from flow_sdk.fs_store.fs_record import record_sync_guard
@@ -2531,6 +2598,11 @@ class Entity(DBEntity):
             return fresh_owned_create_target(FSRef(existing_asset_ref))
         if info is None or info._resolved_layout[0] is None:
             return
+        # Whether this ROW is file-backed at all — asked before either scope-root
+        # path, because both of them end in "materialize a folder for it". The
+        # type having a layout only says its rows CAN be assets.
+        if not self.is_file_backed():
+            return
         # REPO assets nest inside their parent: a repo child lands at
         # ``<parent-folder>/agentic-assets/<type>/<name>``, recursively. When this
         # entity is a repo child, its container IS the parent asset's folder, not
@@ -2554,9 +2626,9 @@ class Entity(DBEntity):
         if ar is None or getattr(ar, "_path", None) is None:
             return
         create_target = fresh_owned_create_target(ar)
-        from flow_sdk.fs_store.path_utils import canonical_posix_path
-
-        path_str = canonical_posix_path(ar.path)
+        # ``ar.path`` is FSRef's pathlib-resolved native string — the ONE stored
+        # ``asset_ref`` form; a POSIX render here made it unfindable on Windows.
+        path_str = ar.path
         if hasattr(self, "asset_ref"):
             self.asset_ref = path_str
         # parent_path lets DocsCategory / PlansCategory filter the markdown
@@ -3187,23 +3259,20 @@ class Entity(DBEntity):
         else:
             self.env_vars.append(env_var)
 
-    def update_env_var_visible_value(self, var_name: str, new_value: str) -> bool:
-        if not self.env_vars:
-            return False
-        existing_var = self.env_vars.get_var(var_name)
-        if existing_var:
-            existing_var.visible_value = new_value
-            return True
-        return False
+    def update_env_var(self, var_name: str, **fields) -> bool:
+        """Patch named fields on one existing env var. False when it is absent.
 
-    def update_env_var_description(self, var_name: str, new_desc: str) -> bool:
+        Replaces the per-field update_env_var_* twins; the caller names what it
+        is changing (``update_env_var("KEY", description="x")``).
+        """
         if not self.env_vars:
             return False
         existing_var = self.env_vars.get_var(var_name)
-        if existing_var:
-            existing_var.description = new_desc
-            return True
-        return False
+        if existing_var is None:
+            return False
+        for name, value in fields.items():
+            setattr(existing_var, name, value)
+        return True
 
     def remove_env_var(self, var_name: str) -> bool:
         if not self.env_vars:

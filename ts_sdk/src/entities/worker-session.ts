@@ -28,7 +28,7 @@ export interface IWorkerSession extends IEntity {
  * call site can hardcode a single worker (which is exactly how claude ended up
  * on a different open path from codex/copilot).
  */
-export function workerFromSessionType(type: string): string {
+export function workerFromSessionType(type: string | undefined): string {
   return String(type ?? '').replace(/_session$/, '');
 }
 

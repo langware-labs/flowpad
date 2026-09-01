@@ -1,3 +1,7 @@
+---
+id: bfba1aab-22b7-46fa-a295-8fa95ab6237f
+---
+
 # ComputeNode action surface — pre-refactor STATUS
 
 **Checkouts.** Every `compute_node.py` line below is **HUB** = `/Users/shlom/Documents/dev/test_flowpad/FlowPad/flowpad/hub/builtin/faas/compute_node.py` (2340 lines) unless the row says OSS. **OSS** = `/Users/shlom/Documents/dev/flowpad-oss`, whose `flow_sdk/builtin/faas/compute_node.py:76` is a *different, near-parallel class* — note it spells the provider field `node_provider_type` (OSS `flow_sdk/builtin/faas/compute_node.py:81`) where HUB spells it `node_provider` (HUB `compute_node.py:164`). Nothing in this document merges them.
@@ -324,8 +328,3 @@ coverage beyond `test_pentest_identity_auth.py:159`, whether OSS
 `flow_sdk/builtin/faas/compute_node.py` should move in the same shape, and the ~17
 provider-leak claims that never went through refutation.
 
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: bfba1aab-22b7-46fa-a295-8fa95ab6237f
-flowpad:endcapsule identity -->

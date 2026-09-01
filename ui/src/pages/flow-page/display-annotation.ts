@@ -1,3 +1,4 @@
+import type { ShowTarget } from '@sdk';
 import { t } from '@lingui/core/macro';
 import { ViewType } from '@sdk';
 import { isMarkdownDocumentPath } from '@src/lib/markdown-path';
@@ -20,20 +21,6 @@ export interface DisplayAnnotationContext {
   viewType?: string;
 }
 
-export interface DisplayShowTarget {
-  /** Mirrors python `DisplayTargetKind`: entity | vfs | webapp | app | shell. */
-  kind?: string;
-  typeid?: string;
-  type?: string;
-  id?: string;
-  path?: string;
-  port?: number | string;
-  /** kind: 'app' — the Artifact is the address; runtime is derived, not pinned. */
-  artifact_id?: string;
-  runtime?: 'dev' | 'served' | 'unbuilt';
-  micro_app_id?: string;
-  name?: string;
-}
 
 function slug(value: string): string {
   return value
@@ -75,7 +62,7 @@ export function displayAnnotationContextForPath(path: string): DisplayAnnotation
 }
 
 export function displayAnnotationContextForShown(
-  shown: DisplayShowTarget,
+  shown: ShowTarget,
   host?: string | null,
   port?: string | number | null,
 ): DisplayAnnotationContext {

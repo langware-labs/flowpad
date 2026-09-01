@@ -220,7 +220,7 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
       <div
         ref={containerRef}
         role="dialog"
-        aria-label={journey.name}
+        aria-label={journey.name ?? undefined}
         data-testid="journey-tray"
         className={cn(topmost, 'w-80 max-w-[calc(100vw-5rem)]', !pos && 'bottom-4 left-16')}
         style={pos ? { left: pos.x, top: pos.y } : undefined}

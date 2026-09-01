@@ -3,7 +3,6 @@ import logging
 import os
 import shutil
 import sys
-from contextlib import asynccontextmanager
 from io import BytesIO
 from typing import Any, AsyncIterator, BinaryIO, List
 
@@ -16,7 +15,7 @@ try:
 except ImportError:
     FSEntry = None  # Will be used for type hints only
 
-from flow_sdk.storage.storage_driver import StorageDriver, StorageError, StoragePermissionError, StreamUploader, VFSPath
+from flow_sdk.storage.storage_driver import StorageDriver, StorageError, StoragePermissionError, VFSPath
 
 logger = logging.getLogger(__name__)
 
@@ -51,29 +50,6 @@ def compare_paths(path1, path2):
 
     # Compare normalized paths
     return norm1 == norm2
-
-
-class LocalStreamUploader(StreamUploader):
-    def __init__(self, local_file_storage_path: str, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.local_file_path = local_file_storage_path
-        self.local_file_handler = None
-
-    @asynccontextmanager
-    async def create_resumable_upload_session(self):
-        self.local_file_handler = await anyio.open_file(self.local_file_path, "wb")
-        yield
-
-    async def upload_next_chunk(self) -> int | None:
-        if not self.local_file_handler:
-            raise Exception("No local file handler found")
-        chunk = await run_in_threadpool(self.io_stream.read, self.chunk_size)
-        if not chunk:
-            await self.local_file_handler.aclose()
-            return 0
-        written = await self.local_file_handler.write(chunk)
-        self.uploaded_size += written
-        return written
 
 
 async def delete_folder_content(folder_path: str, skip_list: List | None = None, ignore_not_found: bool = False):
@@ -170,14 +146,6 @@ class LocalStorageDriver(StorageDriver):
         except Exception as e:
             raise StorageError(f"Failed to check existence: {e}")
 
-    async def stream_upload(self, upload_stream: BinaryIO, vfs_path: str = "/") -> StreamUploader:
-        storage_local_path = self._local_full_path(vfs_path)
-        local_storage_file_folder = anyio.Path(storage_local_path).parent  # Get the directory part of the path
-        await anyio.Path(local_storage_file_folder).mkdir(parents=True, exist_ok=True)
-        uploader = LocalStreamUploader(local_file_storage_path=storage_local_path, io_stream=upload_stream)
-        logger.debug(f"LocalStreamUploader created for {storage_local_path}")
-        return uploader
-
     async def upload(self, local_file_or_io: str | BytesIO, vfs_path: str = "/") -> None:
         """Upload a file to the storage device (copy locally)."""
         try:
@@ -220,10 +188,6 @@ class LocalStorageDriver(StorageDriver):
             raise e
         except Exception as e:
             raise StorageError(f"Failed to download file: {e}")
-
-    async def stream_zip(self, vfs_path: str):
-        """Asynchronously stream a zip file from the storage device."""
-        raise NotImplementedError("stream_zip is not implemented for local storage")
 
     async def upload_zip(self, zip_file: BinaryIO, vfs_path: str):
         """Upload a zip file to the storage device."""

@@ -16,12 +16,11 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.db import get_db_driver
-from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.fs_record import FSRecord
+from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
 from flow_sdk.fs_store.indexer.functions.markdown import markdown_flat_fn
 from flow_sdk.fs_store.record_types import RecordType
-
 
 # ── FSRecord index-state block ───────────────────────────────────────────
 
@@ -248,3 +247,43 @@ def test_legacy_sentinel_reconciles_only_moved_records(tmp_path: Path) -> None:
     assert FSRecord(type="markdown", id=rid, asset_ref=FSRef(file_a)).index_required is False
     # Moved to B (content token identical) → persisted A != B → re-anchor required.
     assert FSRecord(type="markdown", id=rid, asset_ref=FSRef(file_b)).index_required is True
+
+
+@pytest.mark.asyncio
+async def test_claude_md_skips_fresh_on_second_run(tmp_path: Path) -> None:
+    """A CLAUDE.md unchanged since the last run must be skipped, like markdown.
+
+    Regression: on a live backend `?type=claude_md` reported
+    `indexed=6 new=6 skipped=0` on EVERY run, forever — the 6 files were
+    re-parsed on every index. The instrumented probe showed the sentinel side
+    was healthy (`index_required=False`) and freshness was denied by the DB-row
+    gate instead (`row_present=False`), because `existing_db_ids["claude_md"]`
+    is empty: `claude_md` never appears among the enumerable entity types.
+    """
+    from flow_sdk.fs_store.indexer.functions.claude_md import (
+        claude_md_in_project_root_fn,
+    )
+
+    root = tmp_path / "proj"
+    root.mkdir(parents=True)
+    (root / "CLAUDE.md").write_text("# guidance\n", encoding="utf-8")
+
+    driver = get_db_driver()
+    idx = FSIndexer()
+    idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER))
+    idx.add_function(RecordType.USER_HOME_FOLDER, claude_md_in_project_root_fn)
+    await driver.delete_entities_by_type(str(RecordType.CLAUDE_MD))
+
+    r1 = await idx.index(IndexerOptions(verbose=False, types=[RecordType.CLAUDE_MD]))
+    per1 = r1.per_type.get(RecordType.CLAUDE_MD)
+    assert per1 is not None, f"no CLAUDE_MD in result: {r1.per_type.keys()}"
+    assert per1.indexed == 1
+    assert per1.skipped == 0
+
+    # Second run: file untouched → must skip, exactly as MARKDOWN does above.
+    r2 = await idx.index(IndexerOptions(verbose=False, types=[RecordType.CLAUDE_MD]))
+    per2 = r2.per_type[RecordType.CLAUDE_MD]
+    assert per2.skipped == 1, (
+        f"unchanged CLAUDE.md was re-parsed: indexed={per2.indexed} skipped={per2.skipped}"
+    )
+    assert per2.indexed == 0

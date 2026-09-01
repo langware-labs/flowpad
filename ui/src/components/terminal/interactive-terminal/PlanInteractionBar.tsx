@@ -69,7 +69,11 @@ function findPending(items: FlowData[]): Pending {
   let lastUserIdx = -1;
   let hit: { idx: number; name: string; fd: FlowData } | null = null;
   const resolved = new Set<string>();
-  items.forEach((it, i) => {
+  // A plain loop, not `forEach`: assigning `hit` inside a callback puts it out
+  // of reach of control-flow narrowing, and every read below `if (!hit)` then
+  // narrows to `never`.
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
     const et = it.elementType;
     if (et === FlowElementTypes.USER_MESSAGE) lastUserIdx = i;
     if (et === FlowElementTypes.TOOL_RESULT) {
@@ -80,7 +84,7 @@ function findPending(items: FlowData[]): Pending {
       const name = it.attributes['tool-name'];
       if (name === 'AskUserQuestion' || name === 'ExitPlanMode') hit = { idx: i, name, fd: it };
     }
-  });
+  }
   if (!hit) return null;
   if (lastUserIdx > hit.idx) return null; // answered by a follow-up turn / moved on
   const hitId = getToolUseId(hit.fd);

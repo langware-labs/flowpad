@@ -11,6 +11,8 @@ Every refusal arrives as HTTP 200 with a distinct `error_code` — see
 
 import pytest
 
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
 pytestmark = pytest.mark.asyncio
 
 
@@ -60,11 +62,10 @@ async def test_an_asset_with_no_owning_project_is_refused(client, tmp_path):
     """`markdown` IS git-publishable, so this gets past G1 and stops at G2."""
     from flow_sdk.core.entity.entity_model import Entity
     from flow_sdk.fs_store.fs_ref import FSRef
-    from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown
 
     doc = tmp_path / "orphan.md"
     doc.write_text("---\ntitle: Orphan\n---\n# Orphan\n")
-    entity = await Entity.from_record(extract_markdown(FSRef(doc), "")[0])
+    entity = await Entity.from_record(SchemaRegistry.get("markdown").from_disk_fn(FSRef(doc), "")[0])
     assert entity is not None
 
     payload = await _share(client, typeid=f"markdown-{entity.id}")

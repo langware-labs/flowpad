@@ -1,155 +1,906 @@
 {
   "comment": "Cross-language dock-address contract. Asserted by tests/unit/test_dock_address_contract.py (Python: flow_sdk/core/dock_address.py) and ui/tests/unit/dock-address-contract.test.ts (TypeScript: ts_sdk/src/utils/ui/view-types.ts, ts_sdk/src/utils/ui/retired-views.ts, ui/src/types/ViewType.ts, ui/src/navigation/DockPointer.ts, ui/src/navigation/url-builder.ts). NEITHER SIDE GENERATES THIS FILE: it is an independent third statement, so an edit to one language fails the OTHER language's suite. Editing only this file fails both, which is the signal that a paired change is needed. OUT OF SCOPE, deliberately: (1) tab-identity STRINGS -- DockPointer.tabHash is the single canonicalizer and the backend stores its output as an opaque uuid5 key, so only its NULL-NESS is pinned here (tab_identity_cases.tab_hash null vs non-null); the string column is asserted by the TypeScript side alone. (2) Viewer chrome (title / iconName / tabLocation / canAddAsTab), which no backend caller reads. Every `options` value below is restricted to [A-Za-z0-9._-] so the two languages' query-string encoders cannot diverge on a character no caller uses. url_cases defaults when a key is omitted: layout='dock', page='desk', options={}, base='', pointer=null.",
-
-  "layouts": ["dock", "dev", "win"],
-  "pages": ["desk", "hub"],
+  "layouts": [
+    "dock",
+    "dev",
+    "win"
+  ],
+  "pages": [
+    "desk",
+    "hub"
+  ],
   "default_page": "desk",
-
   "view_types": [
-    "home", "system_profile", "analysis", "chat", "shell", "editor", "web-app",
-    "environment", "connections", "artifacts", "reasoning", "diff", "unsupported",
-    "markdown", "docs", "assistance", "survey", "api-keys", "hooks", "machine",
-    "explorer", "skills", "ai-config", "show", "apps", "graph", "worldview",
-    "organization", "tag",
-    "subgraph", "k-browser", "lens", "session", "tasks", "settings", "preferences",
-    "agentic_process", "search", "events", "triggers", "capabilities",
-    "graph-workflows", "signals", "data-sources", "process-runs", "plan", "cron",
-    "assets", "project", "inbox", "conversation", "spec", "graph_context",
-    "diagnosis", "desktop", "live_session", "helpdesk", "atlas", "records",
-    "entity", "credentials"
+    "home",
+    "system_profile",
+    "analysis",
+    "chat",
+    "shell",
+    "editor",
+    "web-app",
+    "environment",
+    "connections",
+    "artifacts",
+    "reasoning",
+    "diff",
+    "unsupported",
+    "markdown",
+    "docs",
+    "assistance",
+    "survey",
+    "api-keys",
+    "hooks",
+    "machine",
+    "explorer",
+    "skills",
+    "ai-config",
+    "show",
+    "apps",
+    "graph",
+    "worldview",
+    "organization",
+    "tag",
+    "subgraph",
+    "k-browser",
+    "lens",
+    "session",
+    "tasks",
+    "settings",
+    "preferences",
+    "agentic_process",
+    "search",
+    "events",
+    "triggers",
+    "capabilities",
+    "graph-workflows",
+    "signals",
+    "data-sources",
+    "process-runs",
+    "plan",
+    "cron",
+    "assets",
+    "project",
+    "inbox",
+    "conversation",
+    "spec",
+    "graph_context",
+    "diagnosis",
+    "desktop",
+    "live_session",
+    "helpdesk",
+    "atlas",
+    "records",
+    "entity",
+    "credentials",
+    "app"
   ],
-
   "subview_vocabularies": {
-    "credentials": ["environment", "connections", "api-keys"],
-    "web-app": ["webapp-shell", "webapp-artifacts"],
-    "machine": ["processes", "network", "metrics", "logs", "secrets"],
-    "ai-config": ["llm-apis", "clis"]
+    "credentials": [
+      "environment",
+      "connections",
+      "api-keys"
+    ],
+    "web-app": [
+      "webapp-shell",
+      "webapp-artifacts"
+    ],
+    "machine": [
+      "processes",
+      "network",
+      "metrics",
+      "logs",
+      "secrets"
+    ],
+    "ai-config": [
+      "llm-apis",
+      "clis"
+    ]
   },
-
   "retired_views": {
-    "environment": { "view_type": "credentials", "pointer": "environment" },
-    "connections": { "view_type": "credentials", "pointer": "connections" },
-    "api-keys": { "view_type": "credentials", "pointer": "api-keys" }
+    "environment": {
+      "view_type": "credentials",
+      "pointer": "environment"
+    },
+    "connections": {
+      "view_type": "credentials",
+      "pointer": "connections"
+    },
+    "api-keys": {
+      "view_type": "credentials",
+      "pointer": "api-keys"
+    }
   },
-
   "view_meta": {
-    "home":            { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "fullbleed" },
-    "system_profile":  { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "analysis":        { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "chat":            { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "shell":           { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "editor":          { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "web-app":         { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "environment":     { "addressable": false, "pointer": "none",     "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "connections":     { "addressable": false, "pointer": "none",     "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "artifacts":       { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "reasoning":       { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "diff":            { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "unsupported":     { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "markdown":        { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "docs":            { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "assistance":      { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "survey":          { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "api-keys":        { "addressable": false, "pointer": "none",     "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "hooks":           { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "machine":         { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "explorer":        { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": true,  "chrome": "workspace" },
-    "skills":          { "addressable": false, "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "ai-config":       { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "show":            { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "apps":            { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "graph":           { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "worldview":       { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "organization":    { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "tag":             { "addressable": true,  "pointer": "required", "folds_pointer": true,  "scope_keyed": false, "chrome": "workspace" },
-    "subgraph":        { "addressable": true,  "pointer": "required", "folds_pointer": true,  "scope_keyed": false, "chrome": "workspace" },
-    "k-browser":       { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "lens":            { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "session":         { "addressable": false, "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "tasks":           { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "settings":        { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "preferences":     { "addressable": true,  "pointer": "optional", "folds_pointer": true,  "scope_keyed": false, "chrome": "workspace" },
-    "agentic_process": { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "search":          { "addressable": true,  "pointer": "none",     "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "events":          { "addressable": true,  "pointer": "none",     "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "triggers":        { "addressable": true,  "pointer": "none",     "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "capabilities":    { "addressable": true,  "pointer": "none",     "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "graph-workflows": { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "signals":         { "addressable": true,  "pointer": "none",     "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "data-sources":    { "addressable": true,  "pointer": "none",     "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "process-runs":    { "addressable": true,  "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "plan":            { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "cron":            { "addressable": true,  "pointer": "none",     "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "assets":          { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": true,  "chrome": "workspace" },
-    "project":         { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "inbox":           { "addressable": true,  "pointer": "none",     "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "conversation":    { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "spec":            { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "graph_context":   { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "diagnosis":       { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "desktop":         { "addressable": true,  "pointer": "none",     "folds_pointer": false, "scope_keyed": true,  "chrome": "workspace" },
-    "live_session":    { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "helpdesk":        { "addressable": true,  "pointer": "required", "folds_pointer": true,  "scope_keyed": false, "chrome": "workspace" },
-    "atlas":           { "addressable": false, "pointer": "optional", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "records":         { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "entity":          { "addressable": true,  "pointer": "required", "folds_pointer": false, "scope_keyed": false, "chrome": "workspace" },
-    "credentials":     { "addressable": true,  "pointer": "optional", "folds_pointer": true,  "scope_keyed": false, "chrome": "workspace" }
+    "home": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "fullbleed"
+    },
+    "system_profile": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "analysis": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "chat": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "shell": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "editor": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "web-app": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "environment": {
+      "addressable": false,
+      "pointer": "none",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "connections": {
+      "addressable": false,
+      "pointer": "none",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "artifacts": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "reasoning": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "diff": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "unsupported": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "markdown": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "docs": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "assistance": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "survey": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "api-keys": {
+      "addressable": false,
+      "pointer": "none",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "hooks": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "machine": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "explorer": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": true,
+      "chrome": "workspace"
+    },
+    "skills": {
+      "addressable": false,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "ai-config": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "show": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "apps": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "graph": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "worldview": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "organization": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "tag": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": true,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "subgraph": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": true,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "k-browser": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "lens": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "session": {
+      "addressable": false,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "tasks": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "settings": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "preferences": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": true,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "agentic_process": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "search": {
+      "addressable": true,
+      "pointer": "none",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "events": {
+      "addressable": true,
+      "pointer": "none",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "triggers": {
+      "addressable": true,
+      "pointer": "none",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "capabilities": {
+      "addressable": true,
+      "pointer": "none",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "graph-workflows": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "signals": {
+      "addressable": true,
+      "pointer": "none",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "data-sources": {
+      "addressable": true,
+      "pointer": "none",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "process-runs": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "plan": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "cron": {
+      "addressable": true,
+      "pointer": "none",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "assets": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": true,
+      "chrome": "workspace"
+    },
+    "project": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "inbox": {
+      "addressable": true,
+      "pointer": "none",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "conversation": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "spec": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "graph_context": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "diagnosis": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "desktop": {
+      "addressable": true,
+      "pointer": "none",
+      "folds_pointer": false,
+      "scope_keyed": true,
+      "chrome": "workspace"
+    },
+    "live_session": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "helpdesk": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": true,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "atlas": {
+      "addressable": false,
+      "pointer": "optional",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "records": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "entity": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "credentials": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": true,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "app": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    }
   },
-
   "tab_identity_cases": [
-    { "name": "fullbleed home takes the panel, so no chip", "view_type": "home", "pointer": "summary", "tab_hash": null },
-    { "name": "a bare shell is the terminal host, not a tab", "view_type": "shell", "pointer": null, "tab_hash": null },
-    { "name": "a session shell IS a tab", "view_type": "shell", "pointer": "agentic_process-550e8400-e29b-41d4-a716-446655440000", "tab_hash": "shell|agentic_process-550e8400-e29b-41d4-a716-446655440000" },
-    { "name": "plain entity view keys on its pointer", "view_type": "conversation", "pointer": "6ba7b810-9dad-41d1-80b4-00c04fd430c8", "tab_hash": "conversation|6ba7b810-9dad-41d1-80b4-00c04fd430c8" },
-    { "name": "pointerless singleton keys on the empty pointer", "view_type": "events", "pointer": null, "tab_hash": "events|" },
-    { "name": "preferences folds every category into one tab", "view_type": "preferences", "pointer": "appearance", "tab_hash": "preferences|" },
-    { "name": "helpdesk folds its article path", "view_type": "helpdesk", "pointer": "550e8400-e29b-41d4-a716-446655440000/article/docs/Welcome.md", "tab_hash": "helpdesk|" },
-    { "name": "tag folds its taxonomy pointer", "view_type": "tag", "pointer": "graph/eng.backend.db", "tab_hash": "tag|" },
-    { "name": "unscoped assets keys on the scope, not the sub-pointer", "view_type": "assets", "pointer": "list/skill", "tab_hash": "assets|all" },
-    { "name": "unscoped explorer likewise", "view_type": "explorer", "pointer": "src/components", "tab_hash": "explorer|all" },
-    { "name": "a non-desk page namespaces tab identity", "view_type": "worldview", "page": "hub", "pointer": "organization", "tab_hash": "hub|worldview|organization" }
+    {
+      "name": "fullbleed home takes the panel, so no chip",
+      "view_type": "home",
+      "pointer": "summary",
+      "tab_hash": null
+    },
+    {
+      "name": "a bare shell is the terminal host, not a tab",
+      "view_type": "shell",
+      "pointer": null,
+      "tab_hash": null
+    },
+    {
+      "name": "a session shell IS a tab",
+      "view_type": "shell",
+      "pointer": "agentic_process-550e8400-e29b-41d4-a716-446655440000",
+      "tab_hash": "shell|agentic_process-550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "name": "plain entity view keys on its pointer",
+      "view_type": "conversation",
+      "pointer": "6ba7b810-9dad-41d1-80b4-00c04fd430c8",
+      "tab_hash": "conversation|6ba7b810-9dad-41d1-80b4-00c04fd430c8"
+    },
+    {
+      "name": "pointerless singleton keys on the empty pointer",
+      "view_type": "events",
+      "pointer": null,
+      "tab_hash": "events|"
+    },
+    {
+      "name": "preferences folds every category into one tab",
+      "view_type": "preferences",
+      "pointer": "appearance",
+      "tab_hash": "preferences|"
+    },
+    {
+      "name": "helpdesk folds its article path",
+      "view_type": "helpdesk",
+      "pointer": "550e8400-e29b-41d4-a716-446655440000/article/docs/Welcome.md",
+      "tab_hash": "helpdesk|"
+    },
+    {
+      "name": "tag folds its taxonomy pointer",
+      "view_type": "tag",
+      "pointer": "graph/eng.backend.db",
+      "tab_hash": "tag|"
+    },
+    {
+      "name": "unscoped assets keys on the scope, not the sub-pointer",
+      "view_type": "assets",
+      "pointer": "list/skill",
+      "tab_hash": "assets|all"
+    },
+    {
+      "name": "unscoped explorer likewise",
+      "view_type": "explorer",
+      "pointer": "src/components",
+      "tab_hash": "explorer|all"
+    },
+    {
+      "name": "a non-desk page namespaces tab identity",
+      "view_type": "worldview",
+      "page": "hub",
+      "pointer": "organization",
+      "tab_hash": "hub|worldview|organization"
+    },
+    {
+      "name": "an app keys on its artifact, so a runtime switch stays one tab",
+      "view_type": "app",
+      "pointer": "artifact-6ba7b810-9dad-41d1-80b4-00c04fd430c8",
+      "tab_hash": "app|artifact-6ba7b810-9dad-41d1-80b4-00c04fd430c8"
+    }
   ],
-
   "url_cases": [
-    { "name": "pointerless singleton", "view_type": "desktop", "url": "/dock/desktop" },
-    { "name": "singleton carrying its address in options", "view_type": "inbox", "options": { "conversation": "6ba7b810-9dad-41d1-80b4-00c04fd430c8" }, "url": "/dock/inbox?conversation=6ba7b810-9dad-41d1-80b4-00c04fd430c8" },
-    { "name": "events with a rule selected", "view_type": "events", "options": { "trigger": "550e8400-e29b-41d4-a716-446655440000" }, "url": "/dock/events?trigger=550e8400-e29b-41d4-a716-446655440000" },
-    { "name": "entity pointer", "view_type": "conversation", "pointer": "6ba7b810-9dad-41d1-80b4-00c04fd430c8", "url": "/dock/conversation/6ba7b810-9dad-41d1-80b4-00c04fd430c8" },
-    { "name": "entity pointer with a sub-segment", "view_type": "conversation", "pointer": "6ba7b810-9dad-41d1-80b4-00c04fd430c8/message/7c9e6679-7425-40de-944b-e07fc1f90ae7", "url": "/dock/conversation/6ba7b810-9dad-41d1-80b4-00c04fd430c8/message/7c9e6679-7425-40de-944b-e07fc1f90ae7" },
-    { "name": "agentic process", "view_type": "agentic_process", "pointer": "agentic_process-550e8400-e29b-41d4-a716-446655440000", "url": "/dock/agentic_process/agentic_process-550e8400-e29b-41d4-a716-446655440000" },
-    { "name": "assets editor by typeid", "view_type": "assets", "pointer": "editor/markdown/typeid/markdown-550e8400-e29b-41d4-a716-446655440000", "url": "/dock/assets/editor/markdown/typeid/markdown-550e8400-e29b-41d4-a716-446655440000" },
-    { "name": "assets editor by vfs (@ is escaped)", "view_type": "assets", "pointer": "editor/skill/vfs/compute_node-@local/skills/demo/SKILL.md", "url": "/dock/assets/editor/skill/vfs/compute_node-%40local/skills/demo/SKILL.md" },
-    { "name": "assets list", "view_type": "assets", "pointer": "list/skill", "url": "/dock/assets/list/skill" },
-    { "name": "assets folder", "view_type": "assets", "pointer": "folder/markdown/project-550e8400-e29b-41d4-a716-446655440000/docs/sub", "url": "/dock/assets/folder/markdown/project-550e8400-e29b-41d4-a716-446655440000/docs/sub" },
-    { "name": "assets fs", "view_type": "assets", "pointer": "fs/vfs/compute_node-@local/src", "url": "/dock/assets/fs/vfs/compute_node-%40local/src" },
-    { "name": "assets wiki - the encoding case (space, parens, apostrophe)", "view_type": "assets", "pointer": "wiki/@local/Bob's Design Notes (draft)", "url": "/dock/assets/wiki/%40local/Bob's%20Design%20Notes%20(draft)" },
-    { "name": "assets project-home", "view_type": "assets", "pointer": "project-home", "url": "/dock/assets/project-home" },
-    { "name": "lens transcript", "view_type": "lens", "pointer": "claude/transcript/6ba7b810-9dad-41d1-80b4-00c04fd430c8", "url": "/dock/lens/claude/transcript/6ba7b810-9dad-41d1-80b4-00c04fd430c8" },
-    { "name": "k-browser by vfs", "view_type": "k-browser", "pointer": "vfs/Users/demo/docs", "url": "/dock/k-browser/vfs/Users/demo/docs" },
-    { "name": "k-browser by typeid", "view_type": "k-browser", "pointer": "typeid/markdown-550e8400-e29b-41d4-a716-446655440000", "url": "/dock/k-browser/typeid/markdown-550e8400-e29b-41d4-a716-446655440000" },
-    { "name": "graph with depth", "view_type": "graph", "pointer": "subagent/550e8400-e29b-41d4-a716-446655440000", "options": { "depth": "2" }, "url": "/dock/graph/subagent/550e8400-e29b-41d4-a716-446655440000?depth=2" },
-    { "name": "worldview on desk", "view_type": "worldview", "pointer": "deployment", "url": "/dock/worldview/deployment" },
-    { "name": "worldview on the hub page", "view_type": "worldview", "page": "hub", "pointer": "organization", "options": { "focus": "project-550e8400-e29b-41d4-a716-446655440000" }, "url": "/dock/hub/worldview/organization?focus=project-550e8400-e29b-41d4-a716-446655440000" },
-    { "name": "hub records list", "view_type": "records", "page": "hub", "pointer": "markdown", "url": "/dock/hub/records/markdown" },
-    { "name": "hub single entity", "view_type": "entity", "page": "hub", "pointer": "markdown/550e8400-e29b-41d4-a716-446655440000", "url": "/dock/hub/entity/markdown/550e8400-e29b-41d4-a716-446655440000" },
-    { "name": "credentials subview with a project", "view_type": "credentials", "pointer": "environment/550e8400-e29b-41d4-a716-446655440000", "url": "/dock/credentials/environment/550e8400-e29b-41d4-a716-446655440000" },
-    { "name": "project collaboration room tab", "view_type": "project", "pointer": "550e8400-e29b-41d4-a716-446655440000/collaboration_room/6ba7b810-9dad-41d1-80b4-00c04fd430c8/tab/agentic_process-7c9e6679-7425-40de-944b-e07fc1f90ae7", "url": "/dock/project/550e8400-e29b-41d4-a716-446655440000/collaboration_room/6ba7b810-9dad-41d1-80b4-00c04fd430c8/tab/agentic_process-7c9e6679-7425-40de-944b-e07fc1f90ae7" },
-    { "name": "assets sub-pointer rebased onto a project", "view_type": "project", "pointer": "550e8400-e29b-41d4-a716-446655440000/editor/markdown/typeid/markdown-6ba7b810-9dad-41d1-80b4-00c04fd430c8", "url": "/dock/project/550e8400-e29b-41d4-a716-446655440000/editor/markdown/typeid/markdown-6ba7b810-9dad-41d1-80b4-00c04fd430c8" },
-    { "name": "plan by typeid", "view_type": "plan", "pointer": "typeid/plan-550e8400-e29b-41d4-a716-446655440000", "url": "/dock/plan/typeid/plan-550e8400-e29b-41d4-a716-446655440000" },
-    { "name": "plan by vfs path", "view_type": "plan", "pointer": "vfs/compute_node-@local/plans/rollout.md", "url": "/dock/plan/vfs/compute_node-%40local/plans/rollout.md" },
-    { "name": "apps with a router path", "view_type": "apps", "pointer": "my-app/settings/general", "url": "/dock/apps/my-app/settings/general" },
-    { "name": "tag graph in tree mode", "view_type": "tag", "pointer": "graph/eng.backend.db", "options": { "view": "tree" }, "url": "/dock/tag/graph/eng.backend.db?view=tree" },
-    { "name": "subgraph with a focus key", "view_type": "subgraph", "pointer": "deployment/subagent-550e8400-e29b-41d4-a716-446655440000", "url": "/dock/subgraph/deployment/subagent-550e8400-e29b-41d4-a716-446655440000" },
-    { "name": "helpdesk article - a space inside a path segment", "view_type": "helpdesk", "pointer": "550e8400-e29b-41d4-a716-446655440000/article/docs/Getting Started/Welcome.md", "url": "/dock/helpdesk/550e8400-e29b-41d4-a716-446655440000/article/docs/Getting%20Started/Welcome.md" },
-    { "name": "machine subview", "view_type": "machine", "pointer": "processes", "url": "/dock/machine/processes" },
-    { "name": "ai-config subview", "view_type": "ai-config", "pointer": "llm-apis", "url": "/dock/ai-config/llm-apis" },
-    { "name": "preferences category", "view_type": "preferences", "pointer": "appearance", "url": "/dock/preferences/appearance" },
-    { "name": "explorer path", "view_type": "explorer", "pointer": "src/components", "url": "/dock/explorer/src/components" },
-    { "name": "process runs scoped to a project", "view_type": "process-runs", "options": { "project_id": "550e8400-e29b-41d4-a716-446655440000" }, "url": "/dock/process-runs?project_id=550e8400-e29b-41d4-a716-446655440000" },
-    { "name": "search carries its query in options", "view_type": "search", "options": { "q": "dock-address", "record_type": "markdown" }, "url": "/dock/search?q=dock-address&record_type=markdown" },
-    { "name": "win layout - the chrome-less twin", "layout": "win", "view_type": "shell", "pointer": "agentic_process-550e8400-e29b-41d4-a716-446655440000", "url": "/win/shell/agentic_process-550e8400-e29b-41d4-a716-446655440000" },
-    { "name": "dev layout", "layout": "dev", "view_type": "graph-workflows", "url": "/dev/graph-workflows" },
-    { "name": "view mode rides as an option, never a URL family", "view_type": "shell", "pointer": "agentic_process-550e8400-e29b-41d4-a716-446655440000", "options": { "viewMode": "vibe" }, "url": "/dock/shell/agentic_process-550e8400-e29b-41d4-a716-446655440000?viewMode=vibe" },
-    { "name": "legacy base path carries agent + process", "base": "/agent/550e8400-e29b-41d4-a716-446655440000/flow/6ba7b810-9dad-41d1-80b4-00c04fd430c8", "view_type": "editor", "pointer": "src/main.ts", "url": "/agent/550e8400-e29b-41d4-a716-446655440000/flow/6ba7b810-9dad-41d1-80b4-00c04fd430c8/dock/editor/src/main.ts" }
+    {
+      "name": "pointerless singleton",
+      "view_type": "desktop",
+      "url": "/dock/desktop"
+    },
+    {
+      "name": "singleton carrying its address in options",
+      "view_type": "inbox",
+      "options": {
+        "conversation": "6ba7b810-9dad-41d1-80b4-00c04fd430c8"
+      },
+      "url": "/dock/inbox?conversation=6ba7b810-9dad-41d1-80b4-00c04fd430c8"
+    },
+    {
+      "name": "events with a rule selected",
+      "view_type": "events",
+      "options": {
+        "trigger": "550e8400-e29b-41d4-a716-446655440000"
+      },
+      "url": "/dock/events?trigger=550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "name": "entity pointer",
+      "view_type": "conversation",
+      "pointer": "6ba7b810-9dad-41d1-80b4-00c04fd430c8",
+      "url": "/dock/conversation/6ba7b810-9dad-41d1-80b4-00c04fd430c8"
+    },
+    {
+      "name": "entity pointer with a sub-segment",
+      "view_type": "conversation",
+      "pointer": "6ba7b810-9dad-41d1-80b4-00c04fd430c8/message/7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "url": "/dock/conversation/6ba7b810-9dad-41d1-80b4-00c04fd430c8/message/7c9e6679-7425-40de-944b-e07fc1f90ae7"
+    },
+    {
+      "name": "agentic process",
+      "view_type": "agentic_process",
+      "pointer": "agentic_process-550e8400-e29b-41d4-a716-446655440000",
+      "url": "/dock/agentic_process/agentic_process-550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "name": "assets editor by typeid",
+      "view_type": "assets",
+      "pointer": "editor/markdown/typeid/markdown-550e8400-e29b-41d4-a716-446655440000",
+      "url": "/dock/assets/editor/markdown/typeid/markdown-550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "name": "assets editor by vfs (@ is escaped)",
+      "view_type": "assets",
+      "pointer": "editor/skill/vfs/compute_node-@local/skills/demo/SKILL.md",
+      "url": "/dock/assets/editor/skill/vfs/compute_node-%40local/skills/demo/SKILL.md"
+    },
+    {
+      "name": "assets list",
+      "view_type": "assets",
+      "pointer": "list/skill",
+      "url": "/dock/assets/list/skill"
+    },
+    {
+      "name": "assets folder",
+      "view_type": "assets",
+      "pointer": "folder/markdown/project-550e8400-e29b-41d4-a716-446655440000/docs/sub",
+      "url": "/dock/assets/folder/markdown/project-550e8400-e29b-41d4-a716-446655440000/docs/sub"
+    },
+    {
+      "name": "assets fs",
+      "view_type": "assets",
+      "pointer": "fs/vfs/compute_node-@local/src",
+      "url": "/dock/assets/fs/vfs/compute_node-%40local/src"
+    },
+    {
+      "name": "assets wiki - the encoding case (space, parens, apostrophe)",
+      "view_type": "assets",
+      "pointer": "wiki/@local/Bob's Design Notes (draft)",
+      "url": "/dock/assets/wiki/%40local/Bob's%20Design%20Notes%20(draft)"
+    },
+    {
+      "name": "assets project-home",
+      "view_type": "assets",
+      "pointer": "project-home",
+      "url": "/dock/assets/project-home"
+    },
+    {
+      "name": "lens transcript",
+      "view_type": "lens",
+      "pointer": "claude/transcript/6ba7b810-9dad-41d1-80b4-00c04fd430c8",
+      "url": "/dock/lens/claude/transcript/6ba7b810-9dad-41d1-80b4-00c04fd430c8"
+    },
+    {
+      "name": "k-browser by vfs",
+      "view_type": "k-browser",
+      "pointer": "vfs/Users/demo/docs",
+      "url": "/dock/k-browser/vfs/Users/demo/docs"
+    },
+    {
+      "name": "k-browser by typeid",
+      "view_type": "k-browser",
+      "pointer": "typeid/markdown-550e8400-e29b-41d4-a716-446655440000",
+      "url": "/dock/k-browser/typeid/markdown-550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "name": "graph with depth",
+      "view_type": "graph",
+      "pointer": "subagent/550e8400-e29b-41d4-a716-446655440000",
+      "options": {
+        "depth": "2"
+      },
+      "url": "/dock/graph/subagent/550e8400-e29b-41d4-a716-446655440000?depth=2"
+    },
+    {
+      "name": "worldview on desk",
+      "view_type": "worldview",
+      "pointer": "deployment",
+      "url": "/dock/worldview/deployment"
+    },
+    {
+      "name": "worldview on the hub page",
+      "view_type": "worldview",
+      "page": "hub",
+      "pointer": "organization",
+      "options": {
+        "focus": "project-550e8400-e29b-41d4-a716-446655440000"
+      },
+      "url": "/dock/hub/worldview/organization?focus=project-550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "name": "hub records list",
+      "view_type": "records",
+      "page": "hub",
+      "pointer": "markdown",
+      "url": "/dock/hub/records/markdown"
+    },
+    {
+      "name": "hub single entity",
+      "view_type": "entity",
+      "page": "hub",
+      "pointer": "markdown/550e8400-e29b-41d4-a716-446655440000",
+      "url": "/dock/hub/entity/markdown/550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "name": "credentials subview with a project",
+      "view_type": "credentials",
+      "pointer": "environment/550e8400-e29b-41d4-a716-446655440000",
+      "url": "/dock/credentials/environment/550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "name": "project collaboration room tab",
+      "view_type": "project",
+      "pointer": "550e8400-e29b-41d4-a716-446655440000/collaboration_room/6ba7b810-9dad-41d1-80b4-00c04fd430c8/tab/agentic_process-7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "url": "/dock/project/550e8400-e29b-41d4-a716-446655440000/collaboration_room/6ba7b810-9dad-41d1-80b4-00c04fd430c8/tab/agentic_process-7c9e6679-7425-40de-944b-e07fc1f90ae7"
+    },
+    {
+      "name": "assets sub-pointer rebased onto a project",
+      "view_type": "project",
+      "pointer": "550e8400-e29b-41d4-a716-446655440000/editor/markdown/typeid/markdown-6ba7b810-9dad-41d1-80b4-00c04fd430c8",
+      "url": "/dock/project/550e8400-e29b-41d4-a716-446655440000/editor/markdown/typeid/markdown-6ba7b810-9dad-41d1-80b4-00c04fd430c8"
+    },
+    {
+      "name": "plan by typeid",
+      "view_type": "plan",
+      "pointer": "typeid/plan-550e8400-e29b-41d4-a716-446655440000",
+      "url": "/dock/plan/typeid/plan-550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "name": "plan by vfs path",
+      "view_type": "plan",
+      "pointer": "vfs/compute_node-@local/plans/rollout.md",
+      "url": "/dock/plan/vfs/compute_node-%40local/plans/rollout.md"
+    },
+    {
+      "name": "apps with a router path",
+      "view_type": "apps",
+      "pointer": "my-app/settings/general",
+      "url": "/dock/apps/my-app/settings/general"
+    },
+    {
+      "name": "tag graph in tree mode",
+      "view_type": "tag",
+      "pointer": "graph/eng.backend.db",
+      "options": {
+        "view": "tree"
+      },
+      "url": "/dock/tag/graph/eng.backend.db?view=tree"
+    },
+    {
+      "name": "subgraph with a focus key",
+      "view_type": "subgraph",
+      "pointer": "deployment/subagent-550e8400-e29b-41d4-a716-446655440000",
+      "url": "/dock/subgraph/deployment/subagent-550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "name": "helpdesk article - a space inside a path segment",
+      "view_type": "helpdesk",
+      "pointer": "550e8400-e29b-41d4-a716-446655440000/article/docs/Getting Started/Welcome.md",
+      "url": "/dock/helpdesk/550e8400-e29b-41d4-a716-446655440000/article/docs/Getting%20Started/Welcome.md"
+    },
+    {
+      "name": "machine subview",
+      "view_type": "machine",
+      "pointer": "processes",
+      "url": "/dock/machine/processes"
+    },
+    {
+      "name": "ai-config subview",
+      "view_type": "ai-config",
+      "pointer": "llm-apis",
+      "url": "/dock/ai-config/llm-apis"
+    },
+    {
+      "name": "preferences category",
+      "view_type": "preferences",
+      "pointer": "appearance",
+      "url": "/dock/preferences/appearance"
+    },
+    {
+      "name": "explorer path",
+      "view_type": "explorer",
+      "pointer": "src/components",
+      "url": "/dock/explorer/src/components"
+    },
+    {
+      "name": "process runs scoped to a project",
+      "view_type": "process-runs",
+      "options": {
+        "project_id": "550e8400-e29b-41d4-a716-446655440000"
+      },
+      "url": "/dock/process-runs?project_id=550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "name": "search carries its query in options",
+      "view_type": "search",
+      "options": {
+        "q": "dock-address",
+        "record_type": "markdown"
+      },
+      "url": "/dock/search?q=dock-address&record_type=markdown"
+    },
+    {
+      "name": "win layout - the chrome-less twin",
+      "layout": "win",
+      "view_type": "shell",
+      "pointer": "agentic_process-550e8400-e29b-41d4-a716-446655440000",
+      "url": "/win/shell/agentic_process-550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "name": "dev layout",
+      "layout": "dev",
+      "view_type": "graph-workflows",
+      "url": "/dev/graph-workflows"
+    },
+    {
+      "name": "view mode rides as an option, never a URL family",
+      "view_type": "shell",
+      "pointer": "agentic_process-550e8400-e29b-41d4-a716-446655440000",
+      "options": {
+        "viewMode": "vibe"
+      },
+      "url": "/dock/shell/agentic_process-550e8400-e29b-41d4-a716-446655440000?viewMode=vibe"
+    },
+    {
+      "name": "legacy base path carries agent + process",
+      "base": "/agent/550e8400-e29b-41d4-a716-446655440000/flow/6ba7b810-9dad-41d1-80b4-00c04fd430c8",
+      "view_type": "editor",
+      "pointer": "src/main.ts",
+      "url": "/agent/550e8400-e29b-41d4-a716-446655440000/flow/6ba7b810-9dad-41d1-80b4-00c04fd430c8/dock/editor/src/main.ts"
+    },
+    {
+      "name": "artifact-backed app; runtime is derived, not addressed",
+      "view_type": "app",
+      "pointer": "artifact-6ba7b810-9dad-41d1-80b4-00c04fd430c8",
+      "url": "/dock/app/artifact-6ba7b810-9dad-41d1-80b4-00c04fd430c8"
+    },
+    {
+      "name": "app pinned to a runtime the user chose",
+      "view_type": "app",
+      "pointer": "artifact-6ba7b810-9dad-41d1-80b4-00c04fd430c8",
+      "options": {
+        "runtime": "served"
+      },
+      "url": "/dock/app/artifact-6ba7b810-9dad-41d1-80b4-00c04fd430c8?runtime=served"
+    }
   ]
 }

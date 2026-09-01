@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Literal
 
 from ..entry import EntryKind, TranscriptEntry
+from ..pricing import pricing_for
 
 if TYPE_CHECKING:
     from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
@@ -73,6 +74,11 @@ class UsageEntry(TranscriptEntry):
         return []
 
     def to_dict(self) -> dict:
+        # ``cost_usd`` is priced here, at the one place that owns the price
+        # tables, so every client reads a cost instead of re-implementing the
+        # rules. ``CodexUsageEntry`` carries ``count=0`` by construction, so a
+        # cumulative carrier prices to 0.0 and never double-counts its per-dim
+        # siblings.
         return {
             **super().to_dict(),
             "count": self.count,
@@ -82,6 +88,7 @@ class UsageEntry(TranscriptEntry):
             "cache_tier": self.cache_tier,
             "reasoning": self.reasoning,
             "tool": self.tool,
+            "cost_usd": round(pricing_for(self.model, self.worker).cost_of(self), 10),
         }
 
     def _body_lines(self) -> list[str]:

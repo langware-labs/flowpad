@@ -17,8 +17,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 _HTML = (
     "<!doctype html><html><body>"
@@ -33,7 +33,7 @@ def test_html_file_does_not_extract_as_markdown(tmp_path: Path) -> None:
     html = tmp_path / "open-me.html"
     html.write_text(_HTML, encoding="utf-8")
 
-    recs = extract_markdown(
+    recs = SchemaRegistry.get("markdown").from_disk_fn(
         FSRef(str(html), record_type=RecordType.MARKDOWN),
         "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
     )
@@ -46,7 +46,7 @@ def test_real_markdown_still_extracts(tmp_path: Path) -> None:
     md = tmp_path / "note.md"
     md.write_text("# Title\n\nbody\n", encoding="utf-8")
 
-    recs = extract_markdown(
+    recs = SchemaRegistry.get("markdown").from_disk_fn(
         FSRef(str(md), record_type=RecordType.MARKDOWN),
         "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
     )

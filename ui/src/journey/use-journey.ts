@@ -1,6 +1,17 @@
-import { dataContext, getMemoryJourney, isHubOnly, Journey, JourneyGraph, JourneyJournal, QueryRequest, type JourneyStep } from '@sdk';
+import {
+  dataContext,
+  getMemoryJourney,
+  isHubOnly,
+  Journey,
+  JourneyGraph,
+  JourneyJournal,
+  memoryJourneysVersion,
+  QueryRequest,
+  subscribeMemoryJourneys,
+  type JourneyStep,
+} from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 import { useActiveJourneyId, useActiveJourneyStep } from './use-active-journey-id';
 
 /**
@@ -158,6 +169,10 @@ export function useJourneySteps(journey: Journey | null): { graph: JourneyGraph;
  */
 export function useShownJourney(): UseJourneyResult {
   const shownId = useActiveJourneyId();
+  // Probe journeys register from a dynamic import that can land AFTER this
+  // first render; subscribing makes that registration a re-render instead of
+  // a journey that stays null until something unrelated repaints.
+  useSyncExternalStore(subscribeMemoryJourneys, memoryJourneysVersion, memoryJourneysVersion);
   // A code-defined journey resolves from the registry, so it stands up NO
   // queries at all — the `enabled` flags below are what make that true rather
   // than merely unused.

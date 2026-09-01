@@ -1,3 +1,7 @@
+---
+id: c3e9416c-2a1c-45d7-9e29-f0e813f29159
+---
+
 # Tags — the unified event bus
 
 > **Delivery status lives in [flow-events.md](flow-events.md)** — the phased
@@ -199,8 +203,3 @@ it safe to exist. Not built now.
 5. Compute-node liveness unification
 6. Recorder interface stub
 
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: c3e9416c-2a1c-45d7-9e29-f0e813f29159
-flowpad:endcapsule identity -->

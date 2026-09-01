@@ -1,47 +1,27 @@
-"""Extractor + id mint for ASSET_CLEANUP_REPORT records.
+"""Extractor for ASSET_CLEANUP_REPORT records.
 
 Cleanup reports live at ``<scope>/agentic-assets/asset_cleanup_report/<name>/report.json``
-— one folder per generated scan. ``report.json`` carries the full payload
-(per-finding verdicts + rendered ``markdown``); the extractor reads only the
-small headline counts into the record (the payload is deliberately excluded
-from FTS). Shares the walk/load/mint plumbing with ``usage_report`` via
-``_report_common``.
+— one folder per generated scan. The serializer reads the headline keys
+(``AssetCleanupReportSpec``); the five counts are derived from the payload's
+findings here (``derive_cleanup``); the payload itself is deliberately excluded
+from FTS and from the record.
 """
 from __future__ import annotations
 
-from flow_sdk.fs_store.fs_record import FSRecord
-from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.functions._report_common import (
-    load_report,
-)
-from flow_sdk.fs_store.record_types import RecordType
+from pathlib import Path
 
 
-def extract_asset_cleanup_report(ref: FSRef, resolved_id: str) -> list[FSRecord]:
-    """Parse a report.json into a Record — headline fields only."""
-    path = ref._path
-    doc = load_report(path)
+def derive_cleanup(data: dict, root: Path, header_raw: dict) -> None:
+    """The counts the document implies — facts about the findings, never authored."""
+    doc = data.get("report") or {}
     findings = doc.get("findings") if isinstance(doc.get("findings"), list) else []
     counts = {"garbage": 0, "keep": 0, "unsure": 0}
     for f in findings:
         verdict = f.get("verdict") if isinstance(f, dict) else None
         if verdict in counts:
             counts[verdict] += 1
-    name = str(doc.get("name") or path.parent.name)
-
-    rec = FSRecord(
-        type=RecordType.ASSET_CLEANUP_REPORT,
-        id=resolved_id,
-        name=name,
-        generated_at=doc.get("generated_at"),
-        root_count=len(doc.get("roots") or []),
-        finding_count=len(findings),
-        garbage_count=counts["garbage"],
-        keep_count=counts["keep"],
-        unsure_count=counts["unsure"],
-        session_id=doc.get("session_id"),
-        content=name,
-    )
-    rec.source_file = str(path)
-    object.__setattr__(rec, "_asset_ref", FSRef(path))
-    return [rec]
+    data["root_count"] = len(doc.get("roots") or [])
+    data["finding_count"] = len(findings)
+    data["garbage_count"] = counts["garbage"]
+    data["keep_count"] = counts["keep"]
+    data["unsure_count"] = counts["unsure"]

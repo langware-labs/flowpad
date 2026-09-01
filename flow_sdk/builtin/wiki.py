@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
 

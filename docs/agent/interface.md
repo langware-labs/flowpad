@@ -1,3 +1,7 @@
+---
+id: 6f04c78e-637e-4d6a-9c2a-a546bd32cea2
+---
+
 # AgenticProcess interface — rendered demo
 
 This page is a visual contract tour of the current `AgenticProcess` implementation.
@@ -791,8 +795,3 @@ The architectural narrative remains in
 [`docs/interface/agentic-process.md`](../interface/agentic-process.md); this page
 is intentionally the visual, source-grounded demo.
 
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 6f04c78e-637e-4d6a-9c2a-a546bd32cea2
-flowpad:endcapsule identity -->

@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Callable
 from flow_sdk.builtin.agentic_process.model_tiers import resolve_model_tier
 from flow_sdk.cli.auth.lm_api_keys import get_lm_api
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
+from flow_sdk.flowpad_types.vendors import vendor_or_none
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
@@ -232,8 +233,9 @@ _SPECS: dict[str, ApiAuthSpec] = {
 
 
 def driver_api_auth_spec(worker_type: str) -> ApiAuthSpec | None:
-    """The ApiAuthSpec for a driver name (claude/codex/copilot), or None."""
-    return _SPECS.get(worker_type)
+    """The ApiAuthSpec for any vendor spelling ``VENDORS`` knows, or None."""
+    vendor = vendor_or_none(worker_type)
+    return _SPECS.get(vendor.key) if vendor else None
 
 
 async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | None:
@@ -315,3 +317,19 @@ async def apply_api_model_to_options(cmd, process: "AgenticProcess") -> None:
             *list(getattr(cmd, "extra_config_overrides", []) or []),
             *auth.config_overrides,
         ]
+
+
+async def stamp_api_model(context, process: "AgenticProcess") -> None:
+    """Best-effort :func:`apply_api_model_to_options` for a headless turn.
+
+    The API-key path must reach the model too: without this the provider token is
+    injected but the model stays the vendor default, which the provider (e.g.
+    OpenRouter) would not recognise. Failures are logged and swallowed — a broken
+    override must not take down a turn that device-login auth would have run.
+    """
+    import logging  # noqa: PLC0415
+
+    try:
+        await apply_api_model_to_options(context, process)
+    except Exception:
+        logging.getLogger(__name__).debug("stamp_api_model: api model override failed", exc_info=True)

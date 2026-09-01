@@ -7,7 +7,31 @@ import { IResource } from './IResource';
  * Extends IResource with entity-specific fields like uname, schema_version, and expand.
  * Also maintains Date versions of timestamps for backwards compatibility.
  */
-export interface IEntity extends Partial<IResource> {
+// `name` and `created_at` are omitted from the base and redeclared below: an
+// entity row can carry either as null, which `IResource` (the shape local
+// file-backed resources implement) does not allow.
+/**
+ * The declaration-merge shape every entity class uses.
+ *
+ * `class X ... implements IX` contributes NO members in TypeScript, so each
+ * entity pairs its class with `export interface X extends EntityMerge<IX> {}`
+ * to make the wire fields part of the class type. What is omitted are the
+ * members `APIEntity` already declares concretely — merging them again would
+ * conflict.
+ *
+ * An alias rather than the key list written out 62 times: the list had already
+ * drifted into two orderings, and the next member `APIEntity` declares would
+ * otherwise be a 62-file edit whose failure mode is an opaque merge error.
+ *
+ * `icon` is in the list unconditionally even though only five interfaces
+ * declare it — `Omit` of an absent key is a no-op, and `APIEntity` owns `icon`
+ * as an accessor pair for EVERY entity, exactly like `id` and `members`.
+ */
+export type EntityMerge<I> = Omit<I, 'expand' | 'icon' | 'id' | 'is_private' | 'members'>;
+
+export interface IEntity extends Omit<Partial<IResource>, 'name' | 'created_at'> {
+  /** Creation timestamp (ISO string); null on a row the backend never stamped. */
+  created_at?: string | null;
   /** Hub role roster cache — one row per member with their hub-set role.
    *  Generic to any remote entity; hub-authoritative, local is a read cache.
    *  ``EntityMember``-shaped; kept as ``unknown[]`` here to avoid an import cycle. */
@@ -15,9 +39,10 @@ export interface IEntity extends Partial<IResource> {
   /** Unique name (URL-safe identifier) */
   uname?: string;
   /** Display name */
-  name?: string;
-  /** Entity status */
-  status?: string;
+  name?: string | null;
+  /** Entity status. Nullable: `Tab.status` and other runtime-computed statuses
+   *  are explicitly null when there is no backing state. */
+  status?: string | null;
   /** Schema version for migrations */
   schema_version?: string;
   /** Entity expansion configuration */

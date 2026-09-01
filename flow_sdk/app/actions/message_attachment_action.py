@@ -42,6 +42,12 @@ logger = logging.getLogger(__name__)
 _STAGED_READ_CAP = 512 * 1024
 
 
+
+def _origin_map(entry_key: str, ma) -> dict:
+    """The staged attachment's origin as the bundle-shaped ``{key: dump}`` map."""
+    return {entry_key: ma.origin.model_dump(mode="python")} if ma.origin else {}
+
+
 async def _local_owner_typeid():
     local_user = await User.get_local()
     return local_user.typeid if local_user else None
@@ -354,7 +360,7 @@ async def _install_artifact_reference(
             unpacked_root,
             entry_key,
             ma.git_transfer,
-            {entry_key: ma.git_origin} if ma.git_origin else {},
+            _origin_map(entry_key, ma),
             overwrite=overwrite,
             owner_typeid=someone_typeid,
         )
@@ -592,7 +598,7 @@ async def handle_attachment_install(
                 unpacked_root,
                 entry_key,
                 ma.git_transfer,
-                {entry_key: ma.git_origin} if ma.git_origin else {},
+                _origin_map(entry_key, ma),
                 preferred_project_root=root,
                 preferred_project_id=project_id,
                 overwrite=overwrite,
@@ -618,7 +624,7 @@ async def handle_attachment_install(
                         asset_id=ma.asset_id,
                         entry_key=entry_key,
                         record_type=record_type,
-                        git_origin=ma.git_origin,
+                        origin=ma.origin.model_dump(mode="python") if ma.origin else None,
                     )
                 ],
                 project_id=project_id,
@@ -688,7 +694,7 @@ async def handle_attachment_uninstall(attachment_id: str, *, someone_typeid=None
     checkout and is never deleted here.
     """
     from flow_sdk.api.api_types.messages import DataOpMessage, OperationType  # noqa: PLC0415
-    from flow_sdk.builtin.git_origin import is_safe_rel_path  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.git_origin import is_safe_rel_path  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     ma = await _load_ma(attachment_id)
@@ -800,7 +806,7 @@ async def handle_staged_files(attachment_id: str) -> ApiResponse:
 
 
 async def handle_staged_file_content(attachment_id: str, rel_path: str) -> ApiResponse:
-    from flow_sdk.builtin.git_origin import is_safe_rel_path  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.git_origin import is_safe_rel_path  # noqa: PLC0415
 
     ma = await _load_ma(attachment_id)
     if ma is None:

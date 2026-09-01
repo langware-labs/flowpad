@@ -717,7 +717,7 @@ server restarts.
 ### 10.1 Storage
 
 ```
-~/.flow/instances/<name>/records_data/shell/shell-@<uid>/<pty_pid>.pty
+~/.flow/instances/<name>/records_data/shell/<id>/<pty_pid>.pty
 ```
 
 ### 10.2 Format — framed JSONL

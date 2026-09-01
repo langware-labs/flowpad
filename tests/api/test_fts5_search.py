@@ -6,16 +6,14 @@ Tests:
 - Search endpoint integration
 """
 
-import os
-import tempfile
 
 import pytest
 import pytest_asyncio
 
-from flow_sdk.core.entity.entity_model import Entity
-from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver
-from flow_sdk.db.drivers.db_driver import DBConfig
 import flow_sdk.db.drivers.db_driver as db_driver_mod
+from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.db.drivers.db_driver import DBConfig
+from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver
 
 
 @pytest_asyncio.fixture

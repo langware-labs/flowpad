@@ -137,7 +137,7 @@ export function buildProcessCleanup(e: ProcessLoadError): CleanupRecord {
   }
 }
 
-async function buildShellCleanup(e: ShellLoadError): Promise<CleanupRecord> {
+export async function buildShellCleanup(e: ShellLoadError): Promise<CleanupRecord> {
   switch (e.kind) {
     case 'not_found':
       return {

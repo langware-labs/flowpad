@@ -670,26 +670,13 @@ async def _save_token_response(user_id: str, provider_name: str, token_response:
     return await _save_token_for_session_user(user_id, provider_name, value)
 
 
-async def get_anthropic_token_for_current_user() -> tuple[dict | None, str | None]:
-    """Return ``(credentials, error)`` for the current request user."""
-    try:
-        from flow_sdk.builtin.user import User
-        from flow_sdk.request_context.methods import get_current_request_info, get_user_credentials
+async def get_anthropic_token_for_current_user() -> dict | None:
+    """The current request user's Anthropic OAuth credential dict. Desktop-local
+    by construction (written only to local SOD), so no hub tier."""
+    from flow_sdk.core.oauth.provider_registry import credential_for  # noqa: PLC0415
 
-        request_info = get_current_request_info()
-        if not request_info or not getattr(request_info, "user", None):
-            return None, None
-        user = await User.get_by_typeid(request_info.user)
-        if not user:
-            return None, None
-        try:
-            credentials = await get_user_credentials(user, ANTHROPIC_CREDENTIALS_NAME, user.id)
-            return credentials if isinstance(credentials, dict) else None, None
-        except KeyError:
-            return None, None
-    except Exception as e:
-        logger.warning(f"Anthropic token lookup failed: {e}")
-        return None, str(e)
+    credentials = await credential_for(ANTHROPIC, hub=False)
+    return credentials if isinstance(credentials, dict) else None
 
 
 async def delete_anthropic_token_for_current_user() -> ApiResponse:

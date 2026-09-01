@@ -10,6 +10,7 @@ The browser-mode login callback lives at ``/auth/login_callback`` — see
 ``flow_sdk/server/routes/auth.py``.
 """
 
+import functools
 from pathlib import Path
 
 from fastapi import APIRouter, Query
@@ -211,97 +212,104 @@ def _cloud_ws_error(message: str, status_code: int = 400):
     )
 
 
+def cloud_route(fn):
+    """Map the hub WebSocket error family onto the standard failure envelope.
+
+    Every /cloud/ws/* route shared the same four-clause tail: login-required and
+    auth errors are 401, a verification mismatch is 409, anything else is 500.
+    Bodies keep their own pre-flight guards and any error-specific side effect
+    (see connect_ws, which stops the manager before re-raising).
+    """
+
+    @functools.wraps(fn)
+    async def _wrapped(*args, **kwargs):
+        from flow_sdk.cloud_client.ws_client import (  # noqa: PLC0415
+            HubWebSocketAuthError,
+            HubWebSocketLoginRequiredError,
+            HubWebSocketVerificationError,
+        )
+
+        try:
+            return await fn(*args, **kwargs)
+        except (HubWebSocketLoginRequiredError, HubWebSocketAuthError) as e:
+            return _cloud_ws_error(str(e), 401)
+        except HubWebSocketVerificationError as e:
+            return _cloud_ws_error(str(e), 409)
+        except Exception as e:  # noqa: BLE001
+            return _cloud_ws_error(str(e), 500)
+
+    return _wrapped
+
+
 @router.post("/ws/connect")
+@cloud_route
 async def connect_ws():
     """Verify hub WS auth and start the background hub WebSocket listener."""
     blocked = _local_mode_login_block()
     if blocked is not None:
         return blocked
+    from flow_sdk.cli.auth.hub_login import is_logged_in
+    from flow_sdk.cloud_client.ws_client import (
+        HubWebSocketVerificationError,
+        hub_ws_manager,
+    )
+
+    if not is_logged_in():
+        return _cloud_ws_error("Cloud login required before connecting hub WebSocket.", 401)
+
+    status_payload = await hub_ws_manager.restart(wait_connected=True)
+    if not status_payload.get("hub_ws_connected"):
+        return _cloud_ws_error(status_payload.get("hub_ws_error") or "Hub WebSocket did not connect.", 502)
+
     try:
-        from flow_sdk.cli.auth.hub_login import is_logged_in
-        from flow_sdk.cloud_client.ws_client import (
-            HubWebSocketAuthError,
-            HubWebSocketLoginRequiredError,
-            HubWebSocketVerificationError,
-            hub_ws_manager,
-        )
-
-        if not is_logged_in():
-            return _cloud_ws_error("Cloud login required before connecting hub WebSocket.", 401)
-
-        status_payload = await hub_ws_manager.restart(wait_connected=True)
-        if not status_payload.get("hub_ws_connected"):
-            return _cloud_ws_error(status_payload.get("hub_ws_error") or "Hub WebSocket did not connect.", 502)
-
         verification = await hub_ws_manager.verify_current_user()
-        return ApiSuccessResponse(data={
-            "connection": hub_ws_manager.connection_payload(),
-            **hub_ws_manager.status_payload(),
-            "verification": verification,
-        })
-    except HubWebSocketLoginRequiredError as e:
-        return _cloud_ws_error(str(e), 401)
-    except HubWebSocketAuthError as e:
-        return _cloud_ws_error(str(e), 401)
-    except HubWebSocketVerificationError as e:
+    except HubWebSocketVerificationError:
+        # A credential mismatch must not leave a live listener behind; the 409
+        # itself is mapped by @cloud_route.
         try:
-            from flow_sdk.cloud_client.ws_client import hub_ws_manager
-
             await hub_ws_manager.stop()
         except Exception:
             pass
-        return _cloud_ws_error(str(e), 409)
-    except Exception as e:
-        return _cloud_ws_error(str(e), 500)
+        raise
+    return ApiSuccessResponse(data={
+        "connection": hub_ws_manager.connection_payload(),
+        **hub_ws_manager.status_payload(),
+        "verification": verification,
+    })
 
 
 @router.post("/ws/disconnect")
+@cloud_route
 async def disconnect_ws():
     """Stop the hub WebSocket listener without logging out."""
-    try:
-        from flow_sdk.cloud_client.ws_client import hub_ws_manager
+    from flow_sdk.cloud_client.ws_client import hub_ws_manager
 
-        legacy = await hub_ws_manager.stop()
-        return ApiSuccessResponse(data={
-            "connection": hub_ws_manager.connection_payload(),
-            **legacy,
-        })
-    except Exception as e:
-        return _cloud_ws_error(str(e), 500)
+    legacy = await hub_ws_manager.stop()
+    return ApiSuccessResponse(data={
+        "connection": hub_ws_manager.connection_payload(),
+        **legacy,
+    })
 
 
 @router.post("/ws/verify")
+@cloud_route
 async def verify_ws():
     """Verify the current hub WebSocket credentials against the local cloud profile."""
     blocked = _local_mode_login_block()
     if blocked is not None:
         return blocked
-    try:
-        from flow_sdk.cli.auth.hub_login import is_logged_in
-        from flow_sdk.cloud_client.ws_client import (
-            HubWebSocketAuthError,
-            HubWebSocketLoginRequiredError,
-            HubWebSocketVerificationError,
-            hub_ws_manager,
-        )
+    from flow_sdk.cli.auth.hub_login import is_logged_in
+    from flow_sdk.cloud_client.ws_client import hub_ws_manager
 
-        if not is_logged_in():
-            return _cloud_ws_error("Cloud login required before verifying hub WebSocket.", 401)
+    if not is_logged_in():
+        return _cloud_ws_error("Cloud login required before verifying hub WebSocket.", 401)
 
-        verification = await hub_ws_manager.verify_current_user()
-        return ApiSuccessResponse(data={
-            "connection": hub_ws_manager.connection_payload(),
-            **hub_ws_manager.status_payload(),
-            "verification": verification,
-        })
-    except HubWebSocketLoginRequiredError as e:
-        return _cloud_ws_error(str(e), 401)
-    except HubWebSocketAuthError as e:
-        return _cloud_ws_error(str(e), 401)
-    except HubWebSocketVerificationError as e:
-        return _cloud_ws_error(str(e), 409)
-    except Exception as e:
-        return _cloud_ws_error(str(e), 500)
+    verification = await hub_ws_manager.verify_current_user()
+    return ApiSuccessResponse(data={
+        "connection": hub_ws_manager.connection_payload(),
+        **hub_ws_manager.status_payload(),
+        "verification": verification,
+    })
 
 
 @router.post("/login")

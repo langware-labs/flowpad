@@ -9,11 +9,11 @@ Hierarchy:
     └── ClaudeMd      — CLAUDE.md files (type="claude_md")
 """
 
-from typing import ClassVar, List, Optional, Type
+from typing import Any, ClassVar, List, Optional, Type
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
-from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.context_data_schemas import (
     ClaudeMdContextData,
@@ -21,6 +21,7 @@ from flow_sdk.core.entity.context_data_schemas import (
     PlanContextData,
 )
 from flow_sdk.fs_store.fs_ref.base import FSRef
+from flow_sdk.schema.data_spec import Body, FrontMatter
 
 
 class Translation(BaseModel):
@@ -46,6 +47,34 @@ class Translation(BaseModel):
     process_id: Optional[str] = None
 
 
+class MarkdownSpec(FrontMatter):
+    """A ``.md`` document under ``docs/``: the frontmatter keys a doc may
+    carry and its markdown ``Body``. ``asset_type``/``title``/``links`` fall
+    back to the path and the body (``derive_markdown``)."""
+
+    title: Optional[str] = None
+    asset_type: Optional[str] = None
+    tags: Optional[List[str]] = None
+    links: Optional[List[str]] = None
+    scope: Optional[str] = None
+    body: Body = ""
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _tags_list(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return [t.strip() for t in value.split(",") if t.strip()]
+        return value
+
+
+class ClaudeMdSpec(FrontMatter):
+    """A ``CLAUDE.md``: frontmatter is rare; the document is its ``Body``."""
+
+    asset_type: Optional[str] = None
+    scope: Optional[str] = None
+    body: Body = ""
+
+
 class Markdown(Entity):
     """Base entity for all markdown-file-backed record types.
 
@@ -60,13 +89,17 @@ class Markdown(Entity):
     # Folder-containment fields (populated at index time by MarkdownRecord.from_markdown).
     # parent_path is the immediate containing directory; vault_root is the scan root.
     # These power the Obsidian-style Wiki folder tree in the UI.
-    parent_path: str = APIField(default="")
-    vault_root: str = APIField(default="")
+    # Sender-local placement: never rides a bundle or the hub.
+    parent_path: str = APIField(default="", persist=Persist.TRUE, sharing=Sharing.PRIVATE)
+    vault_root: str = APIField(default="", persist=Persist.TRUE, sharing=Sharing.PRIVATE)
+    # The document text — the serializer's ``Body``. Never a DB column: the
+    # file is the source of truth and viewers stream it via FSRef.
+    body: str = NoDBAPIField(default="")
     # Translated copies of this doc's primary body. Each entry points at a
     # ``translations/<lang>.md`` file under the record-data folder; the UI lists
     # them in the Translations side panel and swaps the editor body inline via
     # the ``?lang=`` dock prop. Appended by the ``add_translation`` action.
-    translations: List[Translation] = APIField(default_factory=list)
+    translations: List[Translation] = APIField(default_factory=list, sharing=Sharing.PRIVATE)  # local sidecars
     _api_visible: ClassVar[bool] = True
     # Sidecar shape when another entity puts a `markdown-<id>` /
     # `claude_memory-<id>` / `claude_rules-<id>` / `docs-<id>` reference in
@@ -81,8 +114,6 @@ class Docs(Markdown):
     # Hub storage is entity-scoped and canonical, independent of the sender's
     # local asset path. Share-time byte transport publishes this record's main
     # ref under the stable Hub name.
-    _hub_asset_layout: ClassVar[str] = "file"
-    _hub_main_file: ClassVar[str] = "document.md"
     # OKF-compatible metadata. Values are preserved as authored for
     # storage/search; the tag binding readers independently select and
     # normalize the grammar-valid dot paths used by the taxonomy.

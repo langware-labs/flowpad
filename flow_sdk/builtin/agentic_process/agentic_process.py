@@ -28,7 +28,7 @@ from pydantic import SerializationInfo, model_serializer, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
-from flow_sdk.api.api_types.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.agent_hook import HookEventType
 from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
 from flow_sdk.builtin.agentic_process.cli_drivers import (
@@ -258,6 +258,11 @@ class AssetDescriptor:
     project_id: str | None = None  # owning project (path-discovered / spec rows); None for EMBEDDED/INLINE
     usage: list[AssetUsage] = field(default_factory=list)
     remote: bool | None = None  # None until a reference-only descriptor is hydrated
+    # Display name, carried ONLY for a descriptor with no entity row yet (an
+    # on-disk asset the indexer has not reached). Every other row resolves its
+    # label from the entity cache by typeid; a disk row has nothing to resolve,
+    # so without this the picker renders the raw ``skill-<uuid>``.
+    name: str | None = None
 
     def to_row(self) -> dict:
         """Single owner of the get-assets wire row — used by BOTH the process
@@ -269,6 +274,7 @@ class AssetDescriptor:
             "source_dir": self.source_dir,
             "project_id": self.project_id,
             "remote": bool(self.remote),
+            "name": self.name,
             "usage": [
                 {
                     "kind": u.kind.value,
@@ -410,6 +416,109 @@ def collect_base_source_dirs(project) -> tuple[list[tuple[str, AssetSource]], se
     return pairs, seen
 
 
+def disk_asset_descriptors(
+    ranked: list[tuple[str, AssetSource]],
+    types: set[str],
+    seen_paths: set[str],
+) -> list[AssetDescriptor]:
+    """On-disk skills/subagents that have no entity row yet.
+
+    The picker's question is "what can this process use", and that is a
+    filesystem fact — not a DB one. Relying on ``Entity.assets_by_path`` alone
+    made the answer "what has been indexed", so a project added but never
+    indexed listed nothing at all despite having real ``.claude/skills``
+    folders on disk.
+
+    Discovery is DELEGATED to the indexer's own walkers (``skill_fn`` /
+    ``subagent_fn``) rather than re-deriving where assets live, so this pass
+    cannot drift from the indexer: a new harness dot-dir in ``WORKER_PREFIX``
+    or a new skill marker file is picked up here for free. Both walkers ignore
+    their options argument, so one throwaway ``IndexerOptions`` serves all of
+    them, and they key off ``node.path`` alone.
+
+    Strictly read-only. Ids come from the peek seams (``skill_id`` /
+    ``subagent_peek_entity_id``), which ADOPT an existing ``.flow/id`` capsule
+    or frontmatter id rather than minting one, so a later index converges on
+    the same id instead of creating a second row for the same file.
+
+    ``seen_paths`` carries the paths the DB pass already considered; a path is
+    checked against it BEFORE the folder's yaml is parsed, so an indexed
+    corpus never pays for id or name resolution.
+
+    Serves ``skill`` and ``subagent`` only. ``Project.get_assets_action`` may
+    also ask for ``markdown``/``spec``; those still answer from the DB alone,
+    so an unindexed markdown doc stays invisible. Widening that means giving
+    those types the same walker + read-only-peek pair, not a new mechanism.
+    """
+    from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.functions.skill import (  # noqa: PLC0415
+        parse_skill_yaml_from_dir,
+        resolve_skill_name,
+        skill_fn,
+        skill_id,
+    )
+    from flow_sdk.fs_store.indexer.functions.subagent import subagent_fn  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.index_function import IndexerOptions  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+    opts = IndexerOptions()
+    out: list[AssetDescriptor] = []
+
+    def claim(path: Path) -> str | None:
+        """Canonical path, or None when an earlier source or the DB pass owns it."""
+        try:
+            key = canonical_posix_path(path)
+        except (OSError, ValueError):
+            return None
+        if not key or key in seen_paths:
+            return None
+        seen_paths.add(key)
+        return key
+
+    for src_dir, source in ranked:
+        # The walkers read ``node.path`` and nothing else; the record type only
+        # has to be one they are registered under.
+        nodes = [FSRef(src_dir, record_type=RecordType.REAL_PROJECT_CWD)]
+        if "skill" in types:
+            for ref in skill_fn(nodes, opts):
+                key = claim(ref._path)
+                if key is None:
+                    continue
+                # Parsed once and threaded into ``skill_id`` — its fallback
+                # would otherwise re-read and re-parse the same SKILL.md.
+                fields = parse_skill_yaml_from_dir(ref._path)
+                out.append(
+                    AssetDescriptor(
+                        typeid=f"skill-{skill_id(ref, fields)}",
+                        source=source,
+                        posix_path=key,
+                        source_dir=src_dir,
+                        name=resolve_skill_name(fields, ref._path.name),
+                    )
+                )
+        if "subagent" in types:
+            for ref in subagent_fn(nodes, opts):
+                key = claim(ref._path)
+                if key is None:
+                    continue
+                out.append(
+                    AssetDescriptor(
+                        typeid=str(AgenticProcess._agent_entity_ref(ref)),
+                        source=source,
+                        posix_path=key,
+                        source_dir=src_dir,
+                        # The filename stem is the harness's own agent name and
+                        # the peek seam's own fallback. Reading the frontmatter
+                        # for a nicer label would parse the file a second time
+                        # to win a name the entity cache supplies the moment
+                        # this asset is indexed.
+                        name=ref._path.stem,
+                    )
+                )
+    return out
+
+
 async def scan_path_asset_descriptors(
     sources: list[tuple[str, AssetSource]],
     own_project_id: str,
@@ -443,11 +552,18 @@ async def scan_path_asset_descriptors(
     )
     ranked = sorted(sources, key=lambda s: -len(s[0]))
     descriptors: list[AssetDescriptor] = []
+    # Every path the DB pass CONSIDERED — not just the ones it emitted. A row
+    # it deliberately dropped (SYSTEM, or a foreign project's asset under the
+    # home catchall) is an exclusion, not an absence, and the filesystem pass
+    # below must not resurrect it: entities are materialized to disk, so the
+    # dropped row's folder is sitting right there with a real SKILL.md.
+    db_paths: set[str] = set()
     for ent in entities:
         ar_raw = getattr(ent, "asset_ref", None) or ""
         if not ar_raw:
             continue
         ar = canonical_posix_path(ar_raw)
+        db_paths.add(ar)
         match = AgenticProcess._source_match_for_asset(ar, ranked, ent, own_project_id)
         if match is None:
             continue
@@ -472,6 +588,17 @@ async def scan_path_asset_descriptors(
                 remote=bool(getattr(ent, "remote", False)),
             )
         )
+
+    # Filesystem pass — the assets that exist on disk but have no row yet.
+    # Ranked (longest prefix first) so a nested project dir claims a path
+    # before the home catchall reaches it. Threaded: the reads are sync and
+    # the loop must not park on them.
+    # Skipped entirely once the DB pass has filled ``limit`` — the walk's
+    # output would be sliced to nothing anyway.
+    if limit and len(descriptors) >= limit:
+        return descriptors
+    disk = await asyncio.to_thread(disk_asset_descriptors, ranked, set(types), db_paths)
+    descriptors.extend(disk[: limit - len(descriptors)] if limit else disk)
     return descriptors
 
 
@@ -586,15 +713,12 @@ TERMINAL_SHELL_KEY = "terminal_shell_id"
 
 
 async def _read_json_body() -> dict | ApiFailResponse:
-    """JSON object body of the current request, or an ``ApiFailResponse``
-    the action can return as-is."""
-    request_info = get_current_request_info()
-    if not request_info:
-        return ApiFailResponse(message="No request info")
-    body = await request_info.get_post_data()
-    if not isinstance(body, dict):
-        return ApiFailResponse(message="Expected JSON object body")
-    return body
+    """The request body through THIS module's ``get_current_request_info`` (the
+    seam its tests patch); the reading itself is the shared one."""
+    from flow_sdk.request_context.json_body import read_json_body  # noqa: PLC0415
+
+    return await read_json_body(get_current_request_info())
+
 
 
 def _write_plan_frontmatter(file_path: str, fields: dict) -> None:
@@ -1151,36 +1275,26 @@ class AgenticProcess(Entity):
             raise ProcessError(status=result.status, session_id=result.session_id)
         return result
 
-    @staticmethod
-    async def _await_capability_discovery() -> None:
-        """Wait for the startup capability sweep when it's still in flight; a
-        failed sweep degrades to "not discovered" rather than raising."""
-        from flow_sdk.core.capabilities.discovery import ensure_discovered  # noqa: PLC0415
-
-        try:
-            await ensure_discovered()
-        except Exception:
-            logger.debug("capability discovery failed", exc_info=True)
-
     @classmethod
     async def is_installed(cls, worker_type: "WorkerType | str | None" = None) -> bool:
-        """Whether this worker's CLI was found by capability discovery.
+        """Whether this worker's CLI resolves — the same answer a spawn gets.
 
-        Reads the discovery dict (the same SSOT actual spawns use) — never a
-        second ``which``.
+        Goes through ``worker_bin_folder``, the one resolver every spawn path
+        uses, so this can never disagree with whether a spawn would succeed. It
+        no longer waits on a discovery sweep: resolution falls back to PATH on
+        its own, which is why this is immediate.
         """
         from flow_sdk.builtin.agentic_process.cli_drivers import worker_bin_folder  # noqa: PLC0415
 
-        await cls._await_capability_discovery()
         return worker_bin_folder(get_driver(worker_type).name) is not None
 
     @classmethod
     async def is_logged_in(cls, worker_type: "WorkerType | str | None" = None) -> "WorkerAuthResult":
         """Login state of this worker's CLI (NOT_INSTALLED / LOGGED_IN /
         LOGGED_OUT / UNKNOWN). The driver's ``auth_probe`` owns the install
-        gate; this facade only adds the discovery wait. Never raises;
-        "couldn't check" is UNKNOWN, not LOGGED_OUT."""
-        await cls._await_capability_discovery()
+        gate, and resolves the binary through the same lazy resolver, so there
+        is no discovery wait to add. Never raises; "couldn't check" is UNKNOWN,
+        not LOGGED_OUT."""
         return await get_driver(worker_type).auth_probe()
 
     @classmethod
@@ -1677,27 +1791,22 @@ class AgenticProcess(Entity):
                 # Spawn with the discovered harness capability: its value is
                 # the CLI's bin FOLDER (terminal-PATH resolution), prepended
                 # to PATH so argv[0] and `#!/usr/bin/env node` both resolve
-                # regardless of how this backend was launched. On a miss,
-                # re-discover once (covers the boot race and retry-after-
-                # install), then fail fast into the start_failure latch.
+                # regardless of how this backend was launched. Resolution is
+                # lazy and shared (``worker_bin_folder``), so there is nothing
+                # to re-discover here: a miss means the CLI is neither swept nor
+                # on PATH. Fail fast into the start_failure latch, with the same
+                # error type every other spawn path raises.
                 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+                    WorkerSpawnError,
+                    no_worker_message,
                     prepend_path_dir,
                     worker_bin_folder,
-                    worker_capability_kind,
                     worker_path_env,
                 )
 
-                capability_kind = worker_capability_kind(self.driver.name)
                 path_env = worker_path_env(self.driver.name)
                 if path_env is None:
-                    from flow_sdk.core.capabilities.discovery import run_discovery
-
-                    await run_discovery([capability_kind])
-                    path_env = worker_path_env(self.driver.name)
-                if path_env is None:
-                    raise RuntimeError(
-                        f"Command not found: '{spawn_argv[0]}' — no {capability_kind} installation discovered"
-                    )
+                    raise WorkerSpawnError(self.driver.name, no_worker_message(self.driver.name))
                 spawn_env = {**path_env, **spawn_env}  # explicit worker env wins
                 # …except the discovered bin folder stays first on PATH: the
                 # worker env's own PATH (apply_worker_env's venv pin) is built
@@ -2531,7 +2640,7 @@ class AgenticProcess(Entity):
         re-deriving that from a path — which it does not have — is impossible.
         Returned rather than fetched separately so the entity is loaded once.
         """
-        from flow_sdk.api.api_types.type_id import TypeId  # noqa: PLC0415
+        from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
         from flow_sdk.core import Entity  # noqa: PLC0415
         from flow_sdk.core.display_target import DisplayTargetKind  # noqa: PLC0415
 
@@ -2683,8 +2792,8 @@ class AgenticProcess(Entity):
 
         from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
         from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
-        from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
-        from flow_sdk.builtin.local_origin import LocalOrigin  # noqa: PLC0415
+        from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
+        from flow_sdk.fs_store.origin.local_origin import LocalOrigin  # noqa: PLC0415
         from flow_sdk.core.display_target import InvalidDisplayTarget, resolve_display_target  # noqa: PLC0415
         from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
 
@@ -2904,7 +3013,6 @@ class AgenticProcess(Entity):
         app is a complete, valid app, so absence is the normal early state and
         not an error.
         """
-        from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
         from flow_sdk.builtin.faas.micro_app import AppLocationType, MicroApp  # noqa: PLC0415
 
         app_root = Path(artifact_path)
@@ -2923,10 +3031,10 @@ class AgenticProcess(Entity):
         if dist_path is None:
             return None
 
-        # Deterministic, mirroring the Deployment id above: re-registering the
-        # same artifact must update its delivery row, never fork a second one.
-        micro_app_id = mint_uuid(f"micro_app:artifact:{artifact.id}")
-        micro_app = await MicroApp.get_by_id(micro_app_id)
+        # LOOKUP, not an id derived from the artifact's: the row's natural key is
+        # the artifact it delivers. Same idempotency on re-registration, and it
+        # also finds rows minted before the convention existed.
+        micro_app = await MicroApp.get_by_artifact_id(artifact.id)
         payload = {
             "name": name,
             "location_type": AppLocationType.Artifact,
@@ -2936,7 +3044,7 @@ class AgenticProcess(Entity):
             "parent_type_id": str(project.typeid) if project is not None else None,
         }
         if micro_app is None:
-            micro_app = MicroApp(id=micro_app_id, **payload)
+            micro_app = MicroApp(**payload)
         else:
             micro_app.apply_field_updates(payload)
         await micro_app.save()
@@ -3013,12 +3121,24 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="show")
     async def _http_show(self) -> ApiSuccessResponse | ApiFailResponse:
-        """Resolve a show target — ``{typeid}`` | ``{path}`` | ``{port}`` | ``{view}`` — and emit it.
+        """Resolve a show target and emit it.
+
+        Body takes exactly one of ``{typeid}`` | ``{path}`` | ``{port}`` |
+        ``{artifact_id}`` | ``{view}``.
 
         Resolution is the shared ``resolve_display_target`` policy (same as
         ``flow navigate file``): indexed asset → its entity; unknown path →
-        raw vfs pointer; port → webapp preview; view → a dock address (a SCREEN,
-        the one form that reaches a view with no entity behind it).
+        raw vfs pointer; port → webapp preview; artifact_id → an app with its
+        runtime derived from its Deployment/MicroApp companions; view → a dock
+        address (a SCREEN, the one form that reaches a view with no entity
+        behind it).
+
+        ``artifact_id`` closes a real gap rather than adding a synonym for
+        ``port``. The resolver has always accepted it, but the only caller was
+        artifact REGISTRATION — so an agent that registered an app in one turn had
+        no way to show it again in a later one except by its port, which is exactly
+        the stale-port-as-identity failure ``_app_payload`` derives the runtime to
+        avoid.
         """
         from flow_sdk.core.display_target import (  # noqa: PLC0415
             DisplayTargetNotFound,
@@ -3035,6 +3155,7 @@ class AgenticProcess(Entity):
                 typeid=str(body.get("typeid") or "").strip() or None,
                 path=str(body.get("path") or "").strip() or None,
                 port=body.get("port"),
+                artifact_id=str(body.get("artifact_id") or "").strip() or None,
                 dock=str(body.get("view") or "").strip() or None,
                 discover=True,  # a display verb — see `flow show file`
             )
@@ -3677,13 +3798,6 @@ class AgenticProcess(Entity):
             # instructions are materialized into process instruction assets.
             composed_prompt = self.driver.compose_prompt(message, self.get_agents_json())
             handler = StreamingResponseHandler()
-            # Block on the startup capability sweep if it's still in flight: the
-            # headless spawn env (build_worker_spawn_env) consumes the discovered
-            # harness bin folder and raises "CLI not found" on a miss WITHOUT the
-            # re-discover fallback the PTY-direct path has. A prompt arriving
-            # within the sweep window (env-probe's `zsh -ilc` can take seconds)
-            # would otherwise fail spuriously on a fresh backend.
-            await self._await_capability_discovery()
             worker = self.driver.stream_worker(self)
             register_prompt_worker(self.id, worker)
         except BaseException:
@@ -4905,18 +5019,16 @@ class AgenticProcess(Entity):
 
         try:
             from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
-            from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown, markdown_id
+            from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
             # extract_markdown requires a resolved id (capsule refactor 4f94fb92
             # made it a positional arg). Resolve it READ-ONLY via markdown_id
             # (adopted frontmatter id, else the stable uuid5(path)) — the plan
             # file is a transient Claude transcript artifact we must not mutate
             # with an identity-capsule write.
-            _ref = _FSRef(Path(plan_file_path))
-            records = extract_markdown(_ref, markdown_id(_ref))
-            if not records:
+            rec = SchemaRegistry.get("markdown").record_for(_FSRef(Path(plan_file_path), read_only=True))
+            if rec is None:
                 return ApiFailResponse(message=f"could not parse {plan_file_path}")
-            rec = records[0]
             await rec.sync_to_db()
             return ApiSuccessResponse(data={"markdown": rec.meta_dict(), "plan_path": plan_file_path})
         except Exception as e:
@@ -5050,17 +5162,21 @@ class AgenticProcess(Entity):
         return ApiSuccessResponse(data={"ok": True, "name": name, "ref": str(ref)})
 
     @staticmethod
-    def _agent_entity_ref(path: "Path") -> TypeId:
+    def _agent_entity_ref(path: "Path | FSRef") -> TypeId:
         """Entity ref for an agent .md path — the single ``agent path → TypeId``
-        seam (read-only; same uuid the indexer mints for the file)."""
+        seam (read-only; same uuid the indexer mints for the file).
+
+        Accepts an ``FSRef`` as well as a path because ``FSRef.__init__``
+        resolves, and the disk walker already holds the ref the walk yielded —
+        re-wrapping its path there would buy a realpath syscall per agent file
+        inside the very walk this function's caller tries to skip.
+        """
         from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
         from flow_sdk.fs_store.indexer.functions.subagent import subagent_peek_entity_id  # noqa: PLC0415
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
-        return TypeId(
-            type=RecordType.SUBAGENT.value,
-            id=subagent_peek_entity_id(FSRef(path, record_type=RecordType.SUBAGENT)),
-        )
+        ref = path if isinstance(path, FSRef) else FSRef(path, record_type=RecordType.SUBAGENT)
+        return TypeId(type=RecordType.SUBAGENT.value, id=subagent_peek_entity_id(ref))
 
     def _drop_legacy_agent_name(self, name: str | None) -> None:
         """Migrate-on-touch: strip a legacy ``embedded_subagent_ids`` name entry."""

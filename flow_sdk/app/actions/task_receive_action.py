@@ -13,7 +13,7 @@ import logging
 from typing import Any
 
 from flow_sdk.actions.action_registry import action
-from flow_sdk.builtin.git_origin import GitOrigin
+from flow_sdk.fs_store.origin.git_origin import GitOrigin, as_git
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import User
 from flow_sdk.request_context.methods import get_current_request_info
@@ -27,19 +27,12 @@ async def _get_task(task_id: str) -> Task | None:
 
 
 def _git_origin_from_payload(value: Any) -> GitOrigin | None:
-    if isinstance(value, GitOrigin):
-        return value
-    if isinstance(value, dict):
-        try:
-            origin = GitOrigin.model_validate(value)
-            return origin if origin.owner and origin.name else None
-        except Exception:
-            return None
-    return None
+    origin = as_git(value)
+    return origin if origin is not None and origin.owner and origin.name else None
 
 
 def _task_git_origin(task: Task | None, body: dict) -> GitOrigin | None:
-    return (task.git_origin if task else None) or _git_origin_from_payload(body.get("git_origin"))
+    return (as_git(task.origin) if task else None) or _git_origin_from_payload(body.get("git_origin"))
 
 
 @action.post(action_name="find-project", types=["task"])

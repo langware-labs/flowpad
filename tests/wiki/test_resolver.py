@@ -6,14 +6,14 @@ the resolver's matching/precedence logic.
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete as sa_delete, insert as sa_insert
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import insert as sa_insert
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.db import session
 from flow_sdk.db.drivers.sqlite.connection import EntitySchema, LinksSchema
 from flow_sdk.wiki.resolver import _record_name_from_raw, resolve_link
 from flow_sdk.wiki.types import WikiLink
-
 
 pytestmark = pytest.mark.asyncio
 

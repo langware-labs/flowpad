@@ -121,13 +121,7 @@ async def _project_nodes(
             continue
         try:
             canon = canonical_posix_path(str(n._path))
-            rid = info.mint_entity_id(
-                n,
-                owner_id=owners.owner_for(et, str(n._path), canon),
-                live_ids=live_ids,
-                derive=True,
-                overwrite=True,
-            )
+            rid = info.mint_entity_id(n, owner_id=owners.owner_for(et, str(n._path), canon), live_ids=live_ids)
             resolved.append((n, rid, canon))
         except Exception:
             continue
@@ -142,7 +136,7 @@ async def _project_nodes(
                 return et, rid, path
             try:
                 ref = FSRef(candidate, record_type=RecordType(et))
-                rid = info.mint_entity_id(ref)
+                rid = info.read_id(ref)
             except Exception:
                 return None
             if not rid:

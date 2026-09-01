@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import (
@@ -14,42 +14,18 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
 from flow_sdk.transcript_analyzer import TranscriptFormat
 
 from .event_to_flowdata import _element_type_for_kind, flowpad_terminal_event_frames
+from flow_sdk.builtin.agentic_process.cli_drivers.session_paths import (
+    LAUNCH_LOOKBACK,
+    normalize_path,
+    parse_iso_datetime,
+    transcript_path_for_process,
+)
 
 logger = logging.getLogger(__name__)
 
-_LAUNCH_LOOKBACK = timedelta(seconds=30)
-
-
-def _parse_iso_datetime(value: object) -> datetime | None:
-    if not value:
-        return None
-    if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-    if not isinstance(value, str):
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-
-
-def _normalize_path(value: object) -> str | None:
-    if not value:
-        return None
-    try:
-        return str(Path(str(value)).expanduser().resolve())
-    except OSError:
-        return str(Path(str(value)).expanduser())
-
-
 def copilot_transcript_path_for_process(process_id: str) -> Path:
-    """Return the process-local JSONL tee path for Copilot stdout events."""
-    from flow_sdk.fs_store.record_paths import shadow_dir_for
-
-    directory = shadow_dir_for("agentic_process", process_id)
-    directory.mkdir(parents=True, exist_ok=True)
-    return directory / "copilot_transcript.jsonl"
+    """Process-local JSONL tee path for copilot's stdout events."""
+    return transcript_path_for_process("copilot", process_id)
 
 
 def copilot_session_state_root() -> Path:
@@ -78,27 +54,27 @@ def find_latest_copilot_session_jsonl(
     cwd: str | None,
     started_at: str | datetime | None = None,
 ) -> Path | None:
-    normalized_cwd = _normalize_path(cwd)
+    normalized_cwd = normalize_path(cwd)
     if not normalized_cwd:
         return None
     root = copilot_session_state_root()
     if not root.is_dir():
         return None
 
-    launch_dt = _parse_iso_datetime(started_at)
+    launch_dt = parse_iso_datetime(started_at)
     matches: list[tuple[datetime, Path]] = []
     for workspace in root.glob("*/workspace.yaml"):
         session_dir = workspace.parent
         events = session_dir / "events.jsonl"
         if not events.exists():
             continue
-        if _normalize_path(_read_workspace_cwd(workspace)) != normalized_cwd:
+        if normalize_path(_read_workspace_cwd(workspace)) != normalized_cwd:
             continue
         try:
             raw_dt = datetime.fromtimestamp(events.stat().st_mtime, tz=timezone.utc)
         except OSError:
             continue
-        if launch_dt is not None and raw_dt < launch_dt - _LAUNCH_LOOKBACK:
+        if launch_dt is not None and raw_dt < launch_dt - LAUNCH_LOOKBACK:
             continue
         matches.append((raw_dt, events))
     if not matches:
@@ -198,3 +174,30 @@ def _read_workspace_cwd(path: Path) -> str | None:
             value = value[1:-1]
         return value or None
     return None
+
+
+def user_turn_count(path: Path) -> int:
+    """How many real user turns a Copilot JSONL holds.
+
+    Used to decide which of the two candidate transcripts is authoritative
+    (see ``CopilotDriver.transcript_descriptor``). Both the stdout tee and the
+    session record speak the same event vocabulary, so ``user.message`` counts
+    comparably in either. A file that cannot be read counts as empty, which
+    makes the other candidate win rather than raising on a read path.
+    """
+    count = 0
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line or '"user.message"' not in line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(event, dict) and event.get("type") == "user.message":
+                    count += 1
+    except OSError:
+        return 0
+    return count

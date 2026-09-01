@@ -1,6 +1,6 @@
 import { parseAnsi } from './AnsiParser.js';
 import { charWidth } from './CharWidth.js';
-import { parseTag } from '../generator/TestPacketGenerator.js';
+import { parseTag } from './parse-tag.js';
 import type {
   EnvSetup,
   OutputChunk,

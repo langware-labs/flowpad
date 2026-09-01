@@ -158,6 +158,15 @@ class ViewType(StrEnum):
     HUB_RECORDS = "records"  # Hub entity list by type (page=hub)
     HUB_ENTITY = "entity"  # Hub single-entity viewer (page=hub)
     CREDENTIALS = "credentials"  # Env vars + OAuth connections + API keys
+    # An Artifact-backed web app - /dock/app/artifact-<uuid>[?runtime=dev|served].
+    # The ADDRESS is the artifact (the source plane); the runtime it is served from
+    # is DERIVED at resolve time from its Deployment/MicroApp companions, so a dev
+    # server that dies or a build that lands never changes the app's identity.
+    # Named `app`, not `artifact`: `artifact` is a real EntityType, and a ViewType
+    # whose string shadows one mints entity targets from a bare-id pointer
+    # (`DockPointer.targetTypeId`) — the pinned shadow set in the contract suite
+    # exists to keep that deliberate.
+    APP = "app"
 
 
 # ── pointer vocabularies for the views whose pointer is a closed set ───────
@@ -349,6 +358,10 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.HUB_RECORDS: _m(_REQ),
     ViewType.HUB_ENTITY: _m(_REQ),
     ViewType.CREDENTIALS: _m(_OPT, folds_pointer=True),
+    # Pointer REQUIRED: an app with no artifact is not an address. Runtime rides in
+    # options, so it is excluded from tab identity and switching dev/served
+    # re-points the SAME tab instead of forking one per runtime.
+    ViewType.APP: _m(_REQ),
 }
 
 

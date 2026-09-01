@@ -12,15 +12,14 @@ import { History } from 'lucide-react';
 import { DockPointer, HIGHLIGHT_PARAM } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
-import { FSRef, PageId, TypeId, PrefKey, copyToClipboard, dataManager, looksBinaryText } from '@sdk';
+import { FSRef, PageId, TypeId, PrefKey, dataManager, looksBinaryText } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
+import { CopyButton } from '@src/components/ui/copy-button';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import {
-  Check,
   ChevronDown,
   ChevronRight,
-  Copy,
   Download,
   Eye,
   ExternalLink,
@@ -312,9 +311,10 @@ function MarkdownEditorContent({
   const setViewMode = useCallback(
     (mode: ViewMode) => {
       if (!currentDock) return; // outside dock context — shouldn't happen for MarkdownEditor
+      if (mode === viewMode) return; // active chips are idempotent; preserve child editor state
       navigation.openDock(currentDock.withOption(EDITOR_MODE_PARAM, mode));
     },
-    [currentDock, navigation],
+    [currentDock, navigation, viewMode],
   );
 
   // Restore from a stale 'learning' selection when the chip is hidden for this doc.
@@ -687,7 +687,9 @@ function MarkdownEditorContent({
   // Body renderer — the single Milkdown invocation both paths share, so a
   // body-mount change (a new prop, plugin, direction/fragment tweak) can't drift
   // between the plain doc and the full editor.
-  const milkdownBody = (mode: ViewMode) => (
+  // 'markdown' renders through Monaco, never Milkdown — excluded so `editorMode`
+  // below stays within MilkdownEditorMode without a cast.
+  const milkdownBody = (mode: Exclude<ViewMode, 'markdown'>) => (
     <MilkdownEditor
       content={body}
       onChange={handleBodyChange}
@@ -763,7 +765,9 @@ function MarkdownEditorContent({
 
           {propsExpanded && (
             <div className="flex flex-col gap-2 px-3 pb-3">
-              {Object.entries(fields).map(([key, value]) => (
+              {Object.entries(fields)
+                .filter(([key]) => key !== 'id') // identity is the carrier, not a user property
+                .map(([key, value]) => (
                 <div key={key} className="flex flex-col gap-1">
                   <label className="text-xs capitalize text-muted-foreground">{key}</label>
                   <input
@@ -820,24 +824,16 @@ function PlainDocumentHeader({ children }: { children?: React.ReactNode }) {
 // Read-only document action rendered inside the view/edit mode group.
 function CopyContentButton({ body }: { body: string }) {
   const { t } = useLingui();
-  const [copied, setCopied] = useState(false);
-  const handleCopy = useCallback(async () => {
-    await copyToClipboard(body);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }, [body]);
 
   return (
-    <button
-      type="button"
-      className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-      onClick={() => void handleCopy()}
+    <CopyButton
+      value={body}
       title={t`Copy content to clipboard`}
-      data-testid="markdown-editor-copy-content"
-    >
-      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-      {copied ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
-    </button>
+      testId="markdown-editor-copy-content"
+      label={<Trans>Copy</Trans>}
+      copiedLabel={<Trans>Copied</Trans>}
+      className="rounded px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+    />
   );
 }
 

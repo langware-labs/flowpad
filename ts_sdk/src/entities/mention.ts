@@ -1,4 +1,4 @@
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
 
 export interface IMention extends IEntity {
@@ -9,6 +9,12 @@ export interface IMention extends IEntity {
   target_url_path?: string;
   sent?: boolean;
 }
+
+// `implements IMention` only checks the class; it contributes no members, so every
+// field declared solely on IMention read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Mention extends EntityMerge<IMention> {}
 
 @registerEntity
 export class Mention extends APIEntity<Mention> implements IMention {

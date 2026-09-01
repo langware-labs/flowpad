@@ -13,7 +13,7 @@ import pytest
 
 from flow_sdk.builtin.spreadsheet import Spreadsheet
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identifier import is_valid_entity_id
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.fs_store.indexer.functions.spreadsheet import (
     extract_spreadsheet,
 )
@@ -62,11 +62,11 @@ def test_non_tabular_file_returns_none(tmp_path: Path) -> None:
 def test_csv_indexer_compatible_all_fields(tmp_path: Path) -> None:
     ref = _ref(_seed_csv(tmp_path))
     loaded = Spreadsheet.from_fs_ref(ref)
-    resolved_id = SchemaRegistry.get("spreadsheet").mint_entity_id(ref, derive=True, overwrite=True)
+    resolved_id = SchemaRegistry.get("spreadsheet").mint_entity_id(ref)
     rec = extract_spreadsheet(ref, resolved_id)[0]
 
     assert loaded.type == "spreadsheet"
-    assert loaded.id == rec.id == SchemaRegistry.get("spreadsheet").mint_entity_id(ref, derive=True, overwrite=True)
+    assert loaded.id == rec.id == SchemaRegistry.get("spreadsheet").mint_entity_id(ref)
     assert is_valid_entity_id(loaded.id)
     assert loaded.format == "csv"
     assert loaded.num_rows == 3

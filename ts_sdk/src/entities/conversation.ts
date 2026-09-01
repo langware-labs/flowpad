@@ -1,8 +1,7 @@
 import { APIEntity, dataManager, registerEntity, type EntityMember } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
-import { TypeId } from '../models/TypeId';
 import { ConnectionManager, DataOp } from '../websocket';
 import { Callable } from '../types';
 import { ViewType } from '../utils/ui/view-types';
@@ -64,6 +63,10 @@ export interface ConversationParticipant {
   email?: string | null;
   name?: string | null;
   role?: string | null;
+  /** Open like `EntityMember`, which this must stay assignable to: extra hub
+   *  keys (`status`, `invitation_id`, …) pass through untouched. Without it
+   *  Conversation fails its own `APIEntity<Conversation>` constraint. */
+  [key: string]: unknown;
 }
 
 /** Mirrors ``flow_sdk.builtin.conversation.ConversationKind`` exactly.
@@ -117,6 +120,15 @@ export interface IConversation extends IEntity {
    *  arrives. Per-message ``FlowMessage.is_read`` remains independent. */
   archived_at?: string | Date | null;
 }
+
+/**
+ * Declaration merge: `implements IConversation` only CHECKS the class, it adds no
+ * members — so every field declared solely on IConversation read as "does not exist
+ * on type Conversation", even though `deepAssign` populates them from the wire.
+ * This interface makes them part of the class type.
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Conversation extends EntityMerge<IConversation> {}
 
 @registerEntity
 export class Conversation extends APIEntity<Conversation> implements IConversation {
@@ -385,7 +397,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   }
 }
 
-export interface CreateProjectConversationParams {
+export type CreateProjectConversationParams = {
   project_id: string;
   participants: ConversationParticipant[];
   /** Optional display name. Backend falls back to a participants summary when absent. */
@@ -538,7 +550,7 @@ export async function syncFromHub(): Promise<SyncFromHubResult> {
   };
 }
 
-export interface AcceptInvitationParams {
+export type AcceptInvitationParams = {
   invitation_id: string;
 }
 
@@ -552,7 +564,7 @@ export interface AcceptInvitationResult {
   bundle_unpacked: boolean;
 }
 
-export interface DismissConversationParams {
+export type DismissConversationParams = {
   conversation_id: string;
 }
 
@@ -573,7 +585,7 @@ export async function dismissConversation(
   return res!;
 }
 
-export interface ArchiveConversationParams {
+export type ArchiveConversationParams = {
   conversation_id: string;
 }
 
@@ -645,7 +657,7 @@ export async function deleteArchivedConversations(): Promise<DeleteArchivedConve
 
 export type DeleteConversationMode = 'delete_for_all' | 'leave' | 'local';
 
-export interface DeleteConversationParams {
+export type DeleteConversationParams = {
   conversation_id: string;
   /** Caller picks the mode based on the user's relationship to the conv:
    *    - ``delete_for_all``: owner cascade-delete (rule 1)

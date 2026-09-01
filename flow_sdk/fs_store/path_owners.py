@@ -16,9 +16,9 @@ from __future__ import annotations
 import functools
 import logging
 import unicodedata
+from collections.abc import Iterable, Mapping
 
 from flow_sdk.fs_store.exceptions import AssetRefLookupError
-from collections.abc import Iterable, Mapping
 
 
 def _posix_key(raw: str) -> str | None:
@@ -151,33 +151,27 @@ async def owner_id_for(type_name: str, path: str, *, strict: bool = False) -> st
     owner", and the mint then rewrites the file's on-disk identity capsule with a
     fresh id, permanently orphaning the existing row.
     """
-    from pathlib import Path  # noqa: PLC0415
-
-    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import asset_ref_spellings  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     cls = SchemaRegistry.get_entity_cls(str(type_name))
     if cls is None or not getattr(cls, "owns_asset_ref", True):
         return None
 
-    # ``asset_ref`` is stored as ``FSRef``'s resolved path; the canonical form
-    # additionally NFC-normalizes. Try both spellings so an NFD filename on
-    # macOS still finds its row.
-    spellings: list[str] = []
-    for candidate in (str(Path(path).resolve()), canonical_posix_path(path)):
-        if candidate not in spellings:
-            spellings.append(candidate)
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
     failed = False
-    for spelling in spellings:
-        try:
-            entity = await cls.get_one({"asset_ref": spelling})
-        except Exception:
-            failed = True
-            continue
-        entity_id = getattr(entity, "id", None) if entity is not None else None
-        if entity_id:
-            return str(entity_id)
+    spellings = asset_ref_spellings(path)
+    try:
+        entity = await cls.get_one(
+            QueryFilter(type=cls.get_type(), match=ExpressionNode(op=QueryOp.IN, operands=["asset_ref", spellings]))
+        )
+    except Exception:
+        failed = True
+        entity = None
+    entity_id = getattr(entity, "id", None) if entity is not None else None
+    if entity_id:
+        return str(entity_id)
 
     if failed:
         logging.getLogger(__name__).warning("owner lookup failed for %s at %s", type_name, path)

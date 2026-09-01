@@ -130,7 +130,7 @@ async def test_git_folder_share_round_trips_through_live_hub(
     assert ma is not None, "download did not stage the folder"
     # The ORIGIN travelled; the repository bytes did not.
     assert ma.transfer_mode == "git", ma.transfer_mode
-    assert (ma.git_origin or {}).get("provider") == "file", ma.git_origin
+    assert ma.origin is not None and ma.origin.provider == "file", ma.origin
 
     res = await handle_attachment_install(ma_id, "user", None, someone_typeid=None)
     assert isinstance(res, ApiSuccessResponse), getattr(res, "message", res)

@@ -1,4 +1,5 @@
 import { LAYER_COLORS } from '@src/hooks/sniffer-layers';
+import type { EventLayer } from '@src/hooks/use-hooks-sniffer';
 import type { TraceEvent } from '@src/types/trace-event';
 import { FlowDataSource } from '@sdk';
 import { cn } from '@src/lib/utils';
@@ -32,11 +33,37 @@ import {
   Wrench,
   Zap,
 } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCopied } from '@src/components/ui/copy-button';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
+
+/**
+ * The renderer-facing contract these helpers actually consume. TWO producers
+ * feed them: `TraceEvent` (the per-process FlowData stream, InteractiveTerminal
+ * gutter) and `SnifferEvent` (`use-hooks-sniffer`, the hook panels/chip). Both
+ * satisfy this shape; a field only one of them carries is optional here.
+ */
+export type RenderableEvent = {
+  id: string;
+  timestamp: string;
+  event_type: string;
+  session_id?: string;
+  source?: FlowDataSource;
+  element_type?: string;
+  summary?: string;
+  tool_name?: string;
+  tool_input?: Record<string, any>;
+  raw?: Record<string, any>;
+  attributes?: Record<string, string>;
+  webhook_type?: string;
+  hook_data?: Record<string, any>;
+  layer?: EventLayer;
+  warning?: string;
+  error?: string;
+  transcriptDockPointer: { ref: string; options: Record<string, string> } | null;
+};
 
 export const EVENT_ICONS: Record<string, LucideIcon> = {
   SessionStart: Play,
@@ -68,7 +95,7 @@ export const HOOK_OP_ICONS: Record<string, LucideIcon> = {
   rules_executed: Microscope,
 };
 
-export function getEventIcon(eventType: string, event?: TraceEvent): LucideIcon {
+export function getEventIcon(eventType: string, event?: RenderableEvent): LucideIcon {
   if (event?.error || event?.element_type === 'error') return CircleX;
   if (event?.warning) return AlertTriangle;
   if (event?.webhook_type === 'hook_op') {
@@ -133,7 +160,7 @@ export function getWebhookColor(webhookType?: string): string {
   return WEBHOOK_TYPE_COLORS[webhookType ?? ''] ?? 'text-primary';
 }
 
-export function getEventColor(event: TraceEvent): string {
+export function getEventColor(event: RenderableEvent): string {
   if (event.error || event.element_type === 'error') return 'text-red-500';
   if (event.warning) return 'text-yellow-500';
   if (event.event_type.startsWith('SkillUsed:')) return 'text-purple-600';
@@ -156,7 +183,7 @@ export function getEventColor(event: TraceEvent): string {
 // isPlanWrite – detect tool writes into plans/*.md (cross-platform)
 // ---------------------------------------------------------------------------
 
-export function isPlanWrite(event: TraceEvent): boolean {
+export function isPlanWrite(event: RenderableEvent): boolean {
   const toolName = event.hook_data?.tool_name;
   if (toolName !== 'Write') return false;
   const filePath: string = event.hook_data?.tool_input?.file_path || '';
@@ -176,7 +203,7 @@ export function cropText(text: string, maxWords = 5): string {
   return words.slice(0, maxWords).join(' ') + '...';
 }
 
-export function getOneLiner(event: TraceEvent): string {
+export function getOneLiner(event: RenderableEvent): string {
   // 1. Top-level tool name (set by mapFlowDataToTraceEvent for tool-call /
   //    tool-result events, by the legacy mapTranscriptToTraceEvents for
   //    transcript-source events).
@@ -293,16 +320,9 @@ export function navigateToTranscript(
 // EventTooltipContent – shared tooltip body for trace events
 // ---------------------------------------------------------------------------
 
-export function EventTooltipContent({ event }: { event: TraceEvent }) {
+export function EventTooltipContent({ event }: { event: RenderableEvent }) {
   const Icon = getEventIcon(event.event_type, event);
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = useCallback(() => {
-    void navigator.clipboard.writeText(JSON.stringify(event.raw, null, 2)).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  }, [event.raw]);
+  const { copied, copy } = useCopied();
 
   // Read sniffer-only details from canonical FlowData attributes; fall back
   // to the legacy hook_data path for events that haven't been dispatched
@@ -329,7 +349,7 @@ export function EventTooltipContent({ event }: { event: TraceEvent }) {
       {event.session_id && <div className="truncate text-xs text-popover-foreground/60">Session: {event.session_id}</div>}
       <div className="relative mt-1">
         <button
-          onClick={handleCopy}
+          onClick={() => void copy(JSON.stringify(event.raw, null, 2))}
           className="absolute right-1 top-1 rounded bg-popover-foreground/10 px-1.5 py-0.5 text-[9px] text-popover-foreground/60 opacity-0 transition-opacity hover:text-popover-foreground [div:hover>&]:opacity-100"
         >
           {copied ? 'Copied' : 'Copy'}

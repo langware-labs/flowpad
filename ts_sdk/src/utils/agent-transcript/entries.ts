@@ -9,7 +9,27 @@
  * a `switch (entry.kind)` block to narrow types.
  */
 
-import type { TranscriptFormat, TranscriptSource } from '../../transcript-analyzer';
+/**
+ * The transcript file format the backend parsed, and where it came from.
+ * Mirrors `TranscriptFormat` / `TranscriptSource` in
+ * `flow_sdk/transcript_analyzer/transcript.py`.
+ */
+export enum TranscriptFormat {
+  CLAUDE_JSONL = 'claude_jsonl',
+  CODEX_STREAM = 'codex_stream',
+  CODEX_ROLLOUT = 'codex_rollout',
+  COPILOT_STREAM = 'copilot_stream',
+  COPILOT_EVENTS = 'copilot_events',
+  // FlowPad owns both opencode formats: the headless stdout tee, and the
+  // projection assembled from opencode's SQLite store for PTY sessions.
+  OPENCODE_STREAM = 'opencode_stream',
+  OPENCODE_SESSION = 'opencode_session',
+}
+
+export enum TranscriptSource {
+  PROCESS_LOCAL = 'process_local',
+  WORKER_SESSION = 'worker_session',
+}
 
 export type EntryKind =
   | 'user_message'
@@ -76,6 +96,14 @@ export interface UserMessageEntry extends BaseEntry {
   kind: 'user_message';
   text: string;
   role: string; // "user" by default; non-user roles route to SystemEntry upstream
+  /**
+   * Framework-injected user line — a skill body, a slash-command expansion, a
+   * Flowpad agent wrapper. The server has always sent this (`UserMessage.to_dict`
+   * in flow_sdk/transcript_analyzer); mirroring it lets surfaces tell "what the
+   * human sent" from "what the harness fed the model" without re-sniffing text.
+   * Consumed by `promptDisplayText`, which collapses the expanded SKILL.md row.
+   */
+  is_meta?: boolean;
 }
 
 export interface AssistantMessageEntry extends BaseEntry {
@@ -129,6 +157,8 @@ export interface MetaEntry extends BaseEntry {
 
 export interface TokenUsageEntry extends BaseEntry {
   kind: 'token_usage';
+  /** USD cost of this stream, priced by the backend's tables. */
+  cost_usd?: number;
   // New per-dim shape (post pricing-refactor). One entry per chargeable stream.
   count?: number;
   io?: 'input' | 'output';

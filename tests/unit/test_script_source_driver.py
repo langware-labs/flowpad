@@ -25,7 +25,7 @@ import pytest
 
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.ingest.driver import SegmentCursorView
-from flow_sdk.ingest.drivers.script import ScriptSource, ScriptSourceWithSetup, driver_for_spec
+from flow_sdk.ingest.drivers.script import ScriptSource, driver_for_spec
 from flow_sdk.ingest.health import SourceError
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
@@ -108,7 +108,7 @@ async def test_items_get_their_header_stamped_by_the_host(tmp_path):
     result = await driver.fetch(_Source(), _view(segment="mine"))
 
     item = result.items[0]
-    assert (item.source_id, item.provider, item.kind, item.segment_key) == (
+    assert (item.data_source_id, item.provider, item.kind, item.segment_key) == (
         "src-1", "acme", "content.doc", "mine",
     )
 
@@ -199,7 +199,7 @@ async def test_verify_exists_only_when_the_spec_declares_a_setup_step(tmp_path):
     assert not callable(getattr(plain, "verify", None))
 
     with_setup = driver_for_spec(_Spec(tmp_path, setup_wiki="Acme setup"))
-    assert isinstance(with_setup, ScriptSourceWithSetup)
+    assert with_setup.verify is not None
     verdict = await with_setup.verify(_Source())
     assert (verdict.ready, verdict.detail, verdict.pending) == (False, "Invite the bot.", ("#eng",))
 

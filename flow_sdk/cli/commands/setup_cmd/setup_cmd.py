@@ -4,7 +4,6 @@ from enum import Enum
 
 import requests
 
-from flow_sdk.cli.cli_command import CLICommand
 from flow_sdk.cli.commands._common import local_get as _local_get
 from flow_sdk.cli.commands.setup_cmd.claude_code_setup.setup_claude import setup_claude_code
 from flow_sdk.cli.config_manager import get_config_value, setup_defaults
@@ -88,13 +87,13 @@ def healthcheck_api_server():
         return None, False
 
 
-def run_setup(agent_name, cmd: CLICommand):
+def run_setup(agent_name, context):
     """
     Run the setup command for the specified coding agent.
 
     Args:
         agent_name: The name of the coding agent (e.g., 'claude-code', 'github-copilot', 'cursor')
-        cmd: CLICommand with context and command details
+        context: CLIContext for the command execution
 
     Returns:
         str: Setup instructions or result message
@@ -112,7 +111,7 @@ def run_setup(agent_name, cmd: CLICommand):
     # Call agent-specific setup based on the normalized type
     if agent_type == AgentType.CLAUDE_CODE:
         print(f"\nRecognized as: {agent_type.value}")
-        setup_claude_code(cmd)
+        setup_claude_code(context)
     elif agent_type == AgentType.GITHUB_COPILOT:
         print(f"\nRecognized as: {agent_type.value}")
         print("GitHub Copilot setup not yet implemented")

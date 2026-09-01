@@ -123,7 +123,7 @@ export function TurnGroupsList({
         // — visible when the chat re-renders on a mode switch.
         const key =
           g.kind === 'message'
-            ? `msg-${i}-${g.flowData.id ?? g.flowData.timestamp ?? ''}`
+            ? `msg-${i}-${g.flowData.timestamp ?? ''}`
             : g.kind === 'worker-unavailable'
               ? `worker-unavailable-${i}-${g.flowData.timestamp ?? ''}`
               : `dense-${i}`;

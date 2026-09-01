@@ -2,7 +2,6 @@ import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../API
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
-import { TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
 import type { ProjectMember } from './project';
 import { Project, getOrCreateLocalMemberId } from './project';
@@ -149,7 +148,9 @@ export class CollaborationRoom
    * record.
    */
   public static async create(options: {
-    projectId: string;
+    /** Validated below rather than by the type: callers pass a process's
+     *  `project_id`, which is nullable, and the guard is what rejects it. */
+    projectId: string | null | undefined;
     hostName: string;
     hostMemberId?: string;
     name?: string | null;

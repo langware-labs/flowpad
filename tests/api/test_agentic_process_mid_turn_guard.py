@@ -12,9 +12,9 @@ per-process prompt lock to simulate an in-flight turn — no mocks.
 """
 
 import pytest
-from flow_sdk.responses.response import ApiResponse
 
 from flow_sdk.builtin.agentic_process.agentic_process import _PROMPT_LOCKS
+from flow_sdk.responses.response import ApiResponse
 
 
 async def _create_process(client) -> str:

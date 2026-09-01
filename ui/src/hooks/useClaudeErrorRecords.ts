@@ -28,7 +28,7 @@ export type ErrorCategory = (typeof ErrorCategory)[keyof typeof ErrorCategory];
 
 export type ErrorTimeSpan = '1m' | '1h' | '24h' | '1w' | 'all';
 
-export const ERROR_TIME_SPANS: { value: ErrorTimeSpan; ms: number; label: string; tooltip: string }[] = [
+export const ERROR_TIME_SPANS: { value: ErrorTimeSpan; ms: number; label: MessageDescriptor; tooltip: string }[] = [
   { value: '1m', ms: 60_000, label: msg`1m`, tooltip: 'Last 1 minute' },
   { value: '1h', ms: 3_600_000, label: msg`1h`, tooltip: 'Last 1 hour' },
   { value: '24h', ms: 86_400_000, label: msg`24h`, tooltip: 'Last 24 hours' },
@@ -288,12 +288,10 @@ export function useClaudeErrorRecords() {
           task_type: 'task',
           priority: 'high',
           tags: ['error', error.error_category],
-          metadata: {
-            errorFingerprint: error.fingerprint,
-            errorCategory: error.error_category,
-            hook: error.hook,
-            event: error.event,
-          },
+          // First-class field, not the retired `metadata` blob: `metadata` is no
+          // longer part of Task, so this fingerprint was being dropped on save
+          // and `LearningCard`'s `task.error_fingerprint` never saw it.
+          error_fingerprint: error.fingerprint,
         });
         await task.save([projectTypeId]);
         const taskId = task.id;

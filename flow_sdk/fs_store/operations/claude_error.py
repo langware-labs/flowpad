@@ -15,7 +15,7 @@ from flow_sdk._compat import StrEnum
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 
 # CRUD-only type (no walker): lets GET /fs-records/claude_error return an empty
 # list instead of 400. Records are upserted on demand from debug logs.

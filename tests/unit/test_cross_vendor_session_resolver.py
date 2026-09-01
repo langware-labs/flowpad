@@ -34,18 +34,21 @@ def test_the_route_does_not_lowercase_the_session_id():
     assert 'raw_sub_path.lower().startswith(prefix)' in source
 
 
-@pytest.mark.parametrize("hint", ["claude", "codex", "copilot", "opencode"])
-def test_every_vendor_is_an_accepted_hint(hint):
-    """A rejected hint is a 400, not a fallback — so an omission is fatal."""
+def test_every_vendor_is_an_accepted_hint():
+    """A rejected hint is a 400, not a fallback — so the allowlist must be the
+    ONE vendor table, never a hand-written tuple that can omit a vendor."""
+    from flow_sdk.flowpad_types.vendors import VENDOR_KEYS
+
     source = inspect.getsource(scan_actions.ScanActionsMixin._scan_get_by_worker_id)
-    assert f'"{hint}"' in source
+    assert "VENDOR_KEYS" in source
+    assert VENDOR_KEYS == {"claude", "codex", "copilot", "opencode"}
 
 
 def test_the_resolver_probes_opencode():
     source = inspect.getsource(scan_actions._resolve_session_record)
-    assert "opencode" in source
+    assert 'hint in (None, "opencode")' in source
     # And it must not reject the hint before it gets there.
-    assert '"opencode"' in source.split("if hint not in")[1].split(")")[0]
+    assert "VENDOR_KEYS" in source.split("if hint is not None and hint not in")[1].split(":")[0]
 
 
 def test_unknown_hints_are_still_rejected():
@@ -55,13 +58,15 @@ def test_unknown_hints_are_still_rejected():
 
 def test_worker_type_comes_from_a_table_not_a_claude_defaulting_ladder():
     """The mis-attribution bug: 'unknown vendor' must not resolve to claude."""
+    from flow_sdk.flowpad_types.vendors import VENDORS, vendor_for, vendor_or_none
+
+    resolve = lambda raw: (vendor_or_none(raw) or vendor_for("claude")).worker_type  # noqa: E731 — the impl's rule
+    for v in VENDORS:
+        assert resolve(v.key) == v.worker_type
+    assert resolve("claude_code") == "claude_code"
+    assert resolve("nonsense") == "claude_code"  # the documented default, by lookup not by else-branch
     source = inspect.getsource(scan_actions.ScanActionsMixin._upsert_session_process_impl)
-    assert "_VENDORS" in source, "the vendor ternary chain is back"
-    for vendor in ("codex", "copilot", "opencode"):
-        assert f'"{vendor}"' in source
-    # Claude remains the documented default for an unlisted vendor, but it is
-    # now an explicit `.get(..., default)` rather than an implicit else-branch.
-    assert 'WorkerType.CLAUDE_CODE' in source
+    assert "vendor_or_none(worker_type_raw)" in source
 
 
 def test_resume_passes_the_cli_session_id_for_every_non_claude_vendor():

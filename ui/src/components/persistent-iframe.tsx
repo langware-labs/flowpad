@@ -36,6 +36,30 @@ class IframeRegistry {
     return IframeRegistry.instance;
   }
 
+  /**
+   * A `testId` names the frame that is CURRENTLY on screen, so exactly one
+   * iframe may carry it.
+   *
+   * The registry is keyed by `src` and deliberately never destroys an entry —
+   * it parks dead frames so an app that recovers does not re-reveal Chrome's
+   * error page. The consequence is that every distinct `src` for the same slot
+   * (a reload nonce, a re-show that rebuilds the URL) leaves another parked
+   * iframe behind, and each was stamped with the same `data-testid`. The
+   * parked ones stay in the body portal forever, so the testid accumulates
+   * duplicates: `[data-testid="vibe-app-frame"]` resolved to two elements, one
+   * of them a retired frame nobody can see.
+   *
+   * Stripping the id from the losers keeps parking intact (the frame, its load
+   * state and its guest document are untouched) while making the id mean what
+   * it says. A parked frame that becomes current again is re-stamped by
+   * `getOrCreateIframe`, which claims it back.
+   */
+  private claimTestId(testId: string, owner: HTMLIFrameElement): void {
+    for (const frame of this.iframes.values()) {
+      if (frame !== owner && frame.dataset.testid === testId) delete frame.dataset.testid;
+    }
+  }
+
   private createPortalContainer(): HTMLDivElement {
     const container = document.createElement('div');
     container.className = 'fixed top-0 left-0 pointer-events-none';
@@ -106,8 +130,11 @@ class IframeRegistry {
 
       this.iframes.set(key, iframe);
       this.containers.set(key, iframeWrapper);
+      if (config.testId) this.claimTestId(config.testId, iframe);
     } else if (config.testId) {
-      this.iframes.get(key)!.dataset.testid = config.testId;
+      const iframe = this.iframes.get(key)!;
+      iframe.dataset.testid = config.testId;
+      this.claimTestId(config.testId, iframe);
     }
 
     return {

@@ -7,7 +7,7 @@ import { FieldType, type DataSourceSpec, type SpecConfigField } from '@sdk';
  * This file used to be `provider-catalog.ts` and hardcoded every provider's
  * fields as literal strings, because the driver registry had no list accessor
  * and no route. It does now: a source is a `data_source_spec` asset, so the
- * form reads `config_schema` and a new source lights the dialog up with no
+ * form reads the spec's `config` and a new source lights the dialog up with no
  * frontend release.
  *
  * **Pure — no React, no SDK calls.** Specs arrive as arguments rather than a
@@ -38,7 +38,7 @@ export interface SourceDraft {
 
 /** `[key, field]` pairs in declaration order — the order the form renders. */
 export function specFields(spec?: DataSourceSpec): [string, SpecConfigField][] {
-  return Object.entries(spec?.config_schema ?? {});
+  return Object.entries(spec?.config ?? {});
 }
 
 export function emptyDraft(provider: string): SourceDraft {

@@ -16,7 +16,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from flow_sdk._compat import StrEnum
@@ -822,9 +822,21 @@ class ServiceConfig(BaseSettings):
     local_user_allowed: str = "true"
     db_driver: str = DBDriver.SQLITE.value
     load_plugins: bool = False
+    # Opt-IN, but forgivingly: unset leaves the expensive suites skipped, while any
+    # value that is not an explicit denial turns them on. A strict bool parse made
+    # DEEP_TESTING=Enabled (or a typo of it) a hard validation error rather than the
+    # obvious yes it reads as, and a plain `bool` would have silently taken it as
+    # false — both punish the person trying to switch the suites ON.
     deep_testing: bool = False
     manual_testing: bool = False
     load_flowpad_assistant: bool = True
+
+    @field_validator("deep_testing", "manual_testing", mode="before")
+    @classmethod
+    def _enabled_unless_denied(cls, value: object) -> bool:
+        """Missing → off. An explicit denial → off. Anything else → on."""
+        text = str(value).strip().lower()
+        return bool(text) and text not in {"false", "disabled", "disable", "0", "no", "off", "none"}
 
     # Paths
     public_static_paths: list[str] = [

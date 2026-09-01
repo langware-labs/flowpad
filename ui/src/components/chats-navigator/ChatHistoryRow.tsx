@@ -3,11 +3,8 @@ import { useMemo } from 'react';
 import { cn, RAIL_DIM_WHEN_CLOSED } from '@src/lib/utils';
 import { List, Loader2, MessageSquare, Star, Trash2 } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
-import {
-  WorkerIcon,
-  pickHistoryTitle,
-  timeAgo,
-} from '@src/components/entity-execution-panel/history-row';
+import { WorkerIcon, pickHistoryTitle } from '@src/components/entity-execution-panel/history-row';
+import { formatTimeAgoShort } from '@src/utils/format-time-ago';
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { useIsBurning } from '@src/store/pending-actions-store';
@@ -94,7 +91,7 @@ export function ChatHistoryRow({ entry, selected, hasOpenTab, onSelect, onToggle
         {/* Default: favorite marker + time-ago; swapped for the actions on hover. */}
         <span className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground group-hover:hidden">
           {fav && <Star className="h-3 w-3 fill-amber-400 text-amber-400" />}
-          {timeAgo(entry.last_active_time)}
+          {formatTimeAgoShort(entry.last_active_time)}
         </span>
         <div className="hidden shrink-0 items-center gap-1 group-hover:flex">
           <button

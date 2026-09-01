@@ -1,6 +1,6 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { QueryRequest } from '../FlowSync/query';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { HttpMethod } from '../models/ApiUrl';
 
@@ -14,6 +14,12 @@ export interface ICronEvent extends IEntity {
   last_run?: Date;
   next_run?: Date;
 }
+
+// `implements ICronEvent` only checks the class; it contributes no members, so every
+// field declared solely on ICronEvent read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface CronEvent extends EntityMerge<ICronEvent> {}
 
 /**
  * Scheduled job entity backed by APScheduler

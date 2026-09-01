@@ -1,7 +1,7 @@
 """Reproduces the leaked bracketed paste markers bug.
 
 shell.write() injects \x1b[200~{cmd}\x1b[201~\r immediately after
-shell.start() spawns the PTY subprocess. zsh hasn't initialised readline
+shell.start_pty() spawns the PTY subprocess. zsh hasn't initialised readline
 yet, so the PTY kernel echoes the raw bytes back — '200~' and '201~'
 appear literally in the output stream.
 

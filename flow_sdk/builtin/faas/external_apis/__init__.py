@@ -1,1 +1,0 @@
-"""Stub external APIs module."""

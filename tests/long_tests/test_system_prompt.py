@@ -45,13 +45,6 @@ _ANALYZER_NAME = {
 }
 
 
-@pytest.fixture(scope="module")
-async def _workers_discovered():
-    from flow_sdk.core.capabilities.discovery import ensure_discovered
-
-    await ensure_discovered()
-
-
 def _small_cli_config(worker_type: WorkerType) -> dict:
     # Persist the portable small tier for every worker. Native Copilot resolves
     # it to vendor auto and omits --model. The test asserts only on the echoed
@@ -65,7 +58,7 @@ def _small_cli_config(worker_type: WorkerType) -> dict:
 
 @pytest.mark.parametrize("worker_type, cli_name", _WORKERS)
 @pytest.mark.timeout(150)
-async def test_system_prompt(worker_type, cli_name, tmp_path: Path, _workers_discovered):
+async def test_system_prompt(worker_type, cli_name, tmp_path: Path):
     if shutil.which(cli_name) is None:
         pytest.skip(f"{cli_name} CLI not installed")
 

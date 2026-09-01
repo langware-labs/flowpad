@@ -6,7 +6,7 @@ it isolates the three layers that actually need proving — Address, Index and
 Presence — from the one that does not (credentialed remote access).
 
 **It returns refs, not items.** The bytes are already on disk. Reading them into
-an ``IngestItem`` so the ingestor can write them back out is pure waste, and a
+an ``SourceItemSpec`` so the ingestor can write them back out is pure waste, and a
 driver that fills ``refs`` is announcing that its destination is ``reflect``
 rather than ``ingest_items``. The ``SourceItem`` chokepoint is untouched by this
 driver — it never produces one.
@@ -34,7 +34,7 @@ import os
 from pathlib import Path
 from typing import Iterator
 
-from flow_sdk.ingest.driver import FetchResult, SetupVerdict, SegmentCursorView, SegmentRef
+from flow_sdk.ingest.driver import IngestDriver, FetchResult, SegmentCursorView, SegmentRef, SetupVerdict
 from flow_sdk.ingest.health import SourceError
 
 #: The single scope key. A constant rather than the root path: the root is
@@ -74,14 +74,16 @@ def _manifest(root: Path) -> dict:
     return out
 
 
-class FolderDriver:
+class FolderDriver(IngestDriver):
     provider = "folder"
     kind = "datasource.fs.folder"
 
-    def source_root(self, source):
-        """The watched directory — the base every ref is relative to."""
+    def origin_for(self, source):
+        """The watched directory, as the origin every ref is relative to."""
+        from flow_sdk.fs_store.origin.local_origin import local_origin_for_path  # noqa: PLC0415
+
         raw = (source.config or {}).get("root") or ""
-        return Path(raw).expanduser().resolve() if raw else None
+        return local_origin_for_path(Path(raw).expanduser().resolve()) if raw else None
 
     def origin_id_for(self, source, ref: str) -> str:
         """The filesystem's own handle for this file: its inode.

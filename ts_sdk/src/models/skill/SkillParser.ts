@@ -1,4 +1,5 @@
 import { SkillMetadata, createDefaultSkillMetadata } from './SkillMetadata';
+import { parseFrontmatterDoc } from '../../fs/frontmatter-parse';
 
 /**
  * Result of parsing a SKILL.md file
@@ -22,20 +23,18 @@ export class SkillParseError extends Error {
  * Parser for SKILL.md files with YAML frontmatter
  */
 export class SkillParser {
-  private static readonly FRONTMATTER_REGEX = /^---\s*\n([\s\S]*?)\n---\s*\n([\s\S]*)$/;
-
   /**
    * Parse SKILL.md content into metadata and body
    */
   static parse(rawContent: string): SkillParseResult {
-    const match = rawContent.match(this.FRONTMATTER_REGEX);
+    const doc = parseFrontmatterDoc(rawContent);
 
-    if (!match) {
+    if (!doc.has) {
       throw new SkillParseError('Invalid SKILL.md format: missing or malformed frontmatter');
     }
 
-    const frontmatterYaml = match[1];
-    const content = match[2].trim();
+    const frontmatterYaml = doc.yaml;
+    const content = doc.body.trim();
 
     const metadata = this.parseFrontmatter(frontmatterYaml);
 

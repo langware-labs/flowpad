@@ -308,7 +308,6 @@ async def _run_diagnose(
 
     from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.config import flowpad_assistant_project_root
-    from flow_sdk.core.capabilities.discovery import ensure_discovered
     from flow_sdk.core.entity.cross_link import cross_link_entities
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
     from flow_sdk.migrations.runner import _bootstrap_local
@@ -325,16 +324,6 @@ async def _run_diagnose(
     # Bootstrap @local + a compute node so the headless worker can run (also
     # guarantees @local exists for the skill's reporting step).
     await _bootstrap_local()
-
-    # Run capability discovery so the headless worker can resolve the `claude`
-    # CLI. `flow diagnose` is a short-lived standalone process — it never starts
-    # the server, so the background discovery sweep never runs on its own. Without
-    # this, `worker_path_env("claude")` returns None, the worker fails with
-    # "claude binary not found in PATH" BEFORE writing any transcript, and the
-    # stream below polls to its full deadline and dies with an opaque
-    # "transcript file did not appear within timeout". ensure_discovered() is
-    # idempotent and caps its env-probe child at 5s.
-    await ensure_discovered()
 
     prompt_text = (
         f"Read the flow-diagnose skill at {skill_dir}/SKILL.md and follow it to "

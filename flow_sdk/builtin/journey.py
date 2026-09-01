@@ -276,7 +276,7 @@ class Journey(Entity):
     async def launch(self, user_id: str) -> Optional["JourneyJournal"]:
         """Idempotent: return the active journal, else start a fresh one at the entry."""
         from flow_sdk.builtin.journey_journal import JourneyJournal, JourneyStatus
-        from flow_sdk.fs_store.identifier import mint_uuid
+        from flow_sdk.api.api_types.identifier import mint_uuid
 
         active = await self._active(user_id)
         if active is not None:

@@ -31,8 +31,8 @@ logger = logging.getLogger(__name__)
 # consumer; grow this list per-pattern, never wildcard-everything.
 #
 # `ingest.*.sync.*` and NOT `ingest.*` is deliberate. The per-item lane is
-# bounded at STORM_CAP_PER_MINUTE (30) per stream and DEFAULT_STREAM_BUDGET (5)
-# streams per source, i.e. up to 152 frames per source per cycle, with every due
+# bounded only by ``STORM_CAP_PER_MINUTE`` (``ingest/models.py``) per stream —
+# a source can emit dozens of frames per cycle, with every due
 # source firing on the same heartbeat tick — and broadcast() awaits one
 # send_text per connected client, serially. That is the storm phase 3 refused
 # for `entity.*`. The sync lane is exactly 2 frames per source per cycle

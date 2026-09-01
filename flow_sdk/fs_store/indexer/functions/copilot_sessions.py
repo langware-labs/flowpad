@@ -16,12 +16,11 @@ Public helpers:
 
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
@@ -71,10 +70,6 @@ def copilot_session_identity_key(ref: FSRef | Path) -> str:
 def copilot_session_id_from_file(ref: FSRef | Path) -> str | None:
     key = copilot_session_identity_key(ref)
     return key if is_valid_entity_id(key) else None
-
-
-def copilot_session_stable_key(ref: FSRef | Path) -> str:
-    return f"{RecordType.COPILOT_SESSION}:{copilot_session_identity_key(ref)}"
 
 
 def extract_copilot_session(ref: FSRef, resolved_id: str) -> list[FSRecord]:

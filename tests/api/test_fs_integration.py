@@ -3,14 +3,12 @@
 Tests complete workflows: browse → upload → download → delete
 """
 
-import os
 import tempfile
 from io import BytesIO
 
 import pytest
 
-from flow_sdk.api.type_id import TypeId
-from flow_sdk.models import FSEntry
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.storage import LocalStorageDriver
 
 

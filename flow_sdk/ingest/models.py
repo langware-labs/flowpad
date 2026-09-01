@@ -1,16 +1,12 @@
-"""The ingestion envelope — header + body, in the network-message sense.
+"""Ingestion run vocabulary — the mode decision, an outcome, a report.
 
-``IngestItem`` is what a driver hands the ingestor: a routing **header** the
-subsystem reads (which source, which stream, which record, when) plus a
-normalized **body** it stores. ``raw`` rides along uninterpreted so a mapping
-bug can be re-derived later without re-fetching from the provider.
-
-Drivers construct these; nothing else does.
+The envelope a driver emits is ``SourceItemSpec`` (``flow_sdk/builtin/source_item.py``),
+the ``header`` of the row it becomes.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal, Optional
+from typing import Literal
 
 from flow_sdk._compat import StrEnum
 
@@ -51,27 +47,6 @@ class IngestMode(StrEnum):
             return cls.BACKFILL
         return cls.INCREMENTAL
 
-
-@dataclass(frozen=True)
-class IngestItem:
-    # ── header ──
-    source_id: str
-    provider: str
-    kind: str
-    segment_key: str
-    external_id: str
-
-    # ── body ──
-    title: str = ""
-    body: str = ""
-    occurred_at: Optional[str] = None
-    author_external_id: Optional[str] = None
-    author_display: Optional[str] = None
-    permalink: Optional[str] = None
-    thread_key: Optional[str] = None
-    reply_to_external_id: Optional[str] = None
-    segment_label: str = ""
-    raw: Optional[dict] = None
 
 
 @dataclass(frozen=True)

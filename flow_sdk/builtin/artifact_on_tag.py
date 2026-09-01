@@ -40,7 +40,7 @@ def emit_artifact_tag(artifact: "Artifact", action: str) -> None:
     Best-effort — an artifact write must never fail because the bus did.
     """
     try:
-        from flow_sdk.api.api_types.type_id import TypeId
+        from flow_sdk.fs_store.type_id import TypeId
         from flow_sdk.tags import emit_tag
         from flow_sdk.tags.envelope import target_of
 

@@ -1,8 +1,8 @@
 import React from 'react';
 import { registerColumns } from './columnRegistry';
-import type { SearchResult } from '@src/hooks/use-asset-search';
+import type { SearchRow } from '@src/hooks/search-row';
 
-function subAgentLocationCell(r: SearchResult): React.ReactNode {
+function subAgentLocationCell(r: SearchRow): React.ReactNode {
   const path = r.asset_ref || '';
   const claudeIdx = path.indexOf('/.claude/agents/');
   if (claudeIdx <= 0) return '—';
@@ -16,14 +16,14 @@ function subAgentLocationCell(r: SearchResult): React.ReactNode {
 // path a SubAgent lives at. The launchable `agent` type is a different asset
 // (agentic-assets/agent/<name>/agent.md) and gets its own columns below.
 registerColumns('subagent', [
-  { key: 'location', header: 'Location', render: (r: SearchResult) => subAgentLocationCell(r) },
+  { key: 'location', header: 'Location', render: (r: SearchRow) => subAgentLocationCell(r) },
 ]);
 
 registerColumns('agent', [
-  { key: 'model', header: 'Model', render: (r: SearchResult) => (r as { model?: string }).model || '—' },
+  { key: 'model', header: 'Model', render: (r: SearchRow) => (r as { model?: string }).model || '—' },
   {
     key: 'worker_type',
     header: 'Worker',
-    render: (r: SearchResult) => (r as { worker_type?: string }).worker_type || '—',
+    render: (r: SearchRow) => (r as { worker_type?: string }).worker_type || '—',
   },
 ]);

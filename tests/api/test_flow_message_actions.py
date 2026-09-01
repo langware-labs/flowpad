@@ -17,7 +17,6 @@ import pytest
 # default_body_fn) are loaded so pack_bundle's SchemaRegistry lookups resolve
 # even when run in isolation. Mirrors the unit-suite sibling tests.
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401
-
 from flow_sdk.builtin.message_attachment import MessageAttachment
 from flow_sdk.fs_store.operations import flow_message as fm_data_ops
 
@@ -226,8 +225,8 @@ async def test_unpack_conversation_bundle_relinks_existing_top_flow_message(
     """Invitation accept repairs the conversation pointer when inbox sync already saved the FM."""
     from flow_sdk.builtin.conversation import Conversation
     from flow_sdk.builtin.flow_message import FlowMessage
-    from flow_sdk.builtin.user import User
     from flow_sdk.builtin.flow_message_bundle import unpack_bundle
+    from flow_sdk.builtin.user import User
 
     local_user = await User.get_one({"uname": "local"})
     owner_typeid = local_user.typeid if local_user else None
@@ -343,9 +342,10 @@ def _spec_blob_storage(tmp_path):
     the production ``get_embedded_storage`` falls back to (real on-disk
     LocalStorageDriver — not a mock). Mirrors the unit-suite spec fixture."""
     import shutil
-    from flow_sdk.storage.local_fs_driver import LocalStorageDriver
-    from flow_sdk.request_context import methods as _ctx
+
     from flow_sdk.config import default_service_config
+    from flow_sdk.request_context import methods as _ctx
+    from flow_sdk.storage.local_fs_driver import LocalStorageDriver
 
     blob_root = tmp_path / "spec_blobs"
     blob_root.mkdir(parents=True, exist_ok=True)
@@ -365,9 +365,9 @@ async def _setup_mapped_conversation(tmp_path: Path, subdir: str = "proj"):
 
     Returns ``(conv_id, project_id, project_root)``. ``project_root`` is read
     back from the saved Project so it matches entity canonicalization."""
-    from flow_sdk.builtin.user import User
-    from flow_sdk.builtin.project import Project
     from flow_sdk.builtin.conversation import Conversation
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.builtin.user import User
 
     local_user = await User.get_one({"uname": "local"})
     owner_typeid = local_user.typeid if local_user else None
@@ -399,6 +399,7 @@ async def _build_spec_bundle(
     side only — the established roundtrip-test convention); the bytes produced
     are a real .flowmsg the unpack path then processes fully unmocked."""
     from unittest.mock import AsyncMock, patch
+
     from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
     from flow_sdk.builtin.flow_message_bundle import pack_bundle
     from flow_sdk.builtin.spec import Spec

@@ -29,7 +29,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
-from flow_sdk.api.api_types.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.api.oauth_api import OAuthErrorCode
 from flow_sdk.core.entity.entity_env.env_types import EnvVar, EnvVarType
 from flow_sdk.core.entity.entity_env.env_utils import build_shared_var_name

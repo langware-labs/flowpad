@@ -54,8 +54,9 @@ open at `/dock/data-sources`. Confirm the provider grid shows all eight — if `
 
 ## agentmail
 
-1. Add → **AgentMail**, paste an API key. The key field must render as a password input —
-   if the characters are visible, the manifest's field `kind` is wrong.
+1. Add → **AgentMail**. The API key does NOT appear in the form — the `inbox` field is
+   `account_key: true` and the secret belongs to the connection (same contract as slack).
+   A plaintext key field reappearing here is the regression to catch.
 2. Save, Verify, poll. Messages land as records.
 3. Reopen the source for editing. The key must NOT be echoed back into the form.
 
