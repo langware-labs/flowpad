@@ -697,32 +697,55 @@ class Entity(DBEntity):
         folder in ``opts.search_dirs``.
 
         Pushdown: each search dir becomes a half-open lex range
-        ``asset_ref >= "<dir>/" AND asset_ref < "<dir>0"`` against
-        ``json_extract(data, '$.asset_ref')`` (`/` is `0x2F`, next codepoint
-        is `0`). Multiple dirs are OR'd. The query is dispatched per type
-        because the SQL driver mandates a type filter — when ``opts.types``
+        ``asset_ref >= "<dir><sep>" AND asset_ref < "<dir><sep+1>"`` against
+        ``json_extract(data, '$.asset_ref')`` — the character after the
+        separator bounds the range (POSIX `/` is `0x2F`, so `0`; Windows `\\` is
+        `0x5C`, so `]`). Multiple dirs are OR'd. The query is dispatched per
+        type because the SQL driver mandates a type filter — when ``opts.types``
         is None, every registered type is queried. Results are union'd,
         sorted by ``asset_ref``, then paged.
+
+        **A range is emitted per separator form, and they are OR'd.** The
+        comparison is lexical, so it only matches rows written in the same
+        form, and both are in the data on Windows: the indexer writes
+        ``asset_ref`` through pathlib (backslashes) while other producers
+        write ``canonical_posix_path``. POSIX-only matched nothing here.
         """
-        from flow_sdk.fs_store.path_utils import canonical_posix_path
+        import os  # noqa: PLC0415
+
+        from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
 
         if not opts.search_dirs:
             return []
 
+        def _range(folder: str, sep: str) -> ExpressionNode | None:
+            if folder.endswith(sep):
+                folder = folder[: -len(sep)]
+            # A bare drive root ("C:\") strips to "C:", which would match the
+            # whole drive rather than nothing — but that IS the whole drive, so
+            # the range stays correct; an empty folder is the only bad input.
+            if not folder:
+                return None
+            return ExpressionNode(
+                op=QueryOp.AND,
+                operands=[
+                    ExpressionNode(op=QueryOp.GE, operands=["asset_ref", folder + sep]),
+                    # The codepoint after the separator closes the half-open
+                    # range: "/" (0x2F) -> "0", "\" (0x5C) -> "]".
+                    ExpressionNode(op=QueryOp.LT, operands=["asset_ref", folder + chr(ord(sep) + 1)]),
+                ],
+            )
+
         folder_terms: list[ExpressionNode] = []
         for d in opts.search_dirs:
-            f = canonical_posix_path(d).rstrip("/")
-            if not f:
-                continue
-            folder_terms.append(
-                ExpressionNode(
-                    op=QueryOp.AND,
-                    operands=[
-                        ExpressionNode(op=QueryOp.GE, operands=["asset_ref", f + "/"]),
-                        ExpressionNode(op=QueryOp.LT, operands=["asset_ref", f + "0"]),
-                    ],
-                )
-            )
+            seen: set[tuple[str, str]] = set()
+            for folder, sep in ((str(Path(d)), os.sep), (canonical_posix_path(d), "/")):
+                if (folder, sep) in seen:
+                    continue
+                seen.add((folder, sep))
+                term = _range(folder, sep)
+                if term is not None:
+                    folder_terms.append(term)
         if not folder_terms:
             return []
 
