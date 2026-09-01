@@ -35,6 +35,10 @@ The current built-in leaf capabilities are:
 
 ## MCP-server capabilities (dynamic)
 
+This is about `MCP_SERVER` — the read-only scan of servers already configured in
+a vendor's own files — not the `MCP` asset an Agent attaches (see
+`docs/glossary.md`). Discovery produces capabilities; attaching does not.
+
 Every indexed MCP server is also exposed as a capability under the kind
 `<service>.mcp.<worker_type>`, for example `gmail.mcp.claude_code`. The kind is
 **service-first** so the same prefix matching resolves a query at any level:
