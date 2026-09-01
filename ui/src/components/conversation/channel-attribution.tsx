@@ -40,6 +40,28 @@ export function channelLabel(kind: string | undefined | null): string {
   return key ? humanizeType(key) : '';
 }
 
+/**
+ * THE resolution rule from a message's origin to its DataSource — the exact
+ * pointer (`origin_local.data_source_id`) first, else the source whose
+ * `channel` matches `origin.kind`. One copy, shared by the attribution chip
+ * and the attention-polling hook: two hand-rolled versions of "which source
+ * does this conversation belong to" would drift, and the badge could
+ * attribute one source while attention polls a different one.
+ */
+export function sourceForOrigin(
+  sources: DataSource[],
+  origin: ICloudOrigin | null | undefined,
+  originLocal?: ICloudOriginLocal | null,
+): DataSource | undefined {
+  if (!origin?.kind) return undefined;
+  const kind = origin.kind.trim().toLowerCase();
+  return (
+    (originLocal?.data_source_id
+      ? sources.find((s) => s.id === originLocal.data_source_id)
+      : undefined) ?? sources.find((s) => (s.channel || '').trim().toLowerCase() === kind)
+  );
+}
+
 export function useChannelAttribution() {
   const { specFor } = useSourceSpecs();
   const { data: sources = [] } = useEntitiesQuery<DataSource>(sourcesQuery);
@@ -53,9 +75,7 @@ export function useChannelAttribution() {
       const kind = origin.kind.trim().toLowerCase();
       const label = channelLabel(kind);
 
-      const source =
-        (originLocal?.data_source_id && sources.find((s) => s.id === originLocal.data_source_id)) ||
-        sources.find((s) => (s.channel || '').trim().toLowerCase() === kind);
+      const source = sourceForOrigin(sources, origin, originLocal);
       const iconName = (spec: { icon_name?: string; channel_icon_names?: Record<string, string> } | undefined) =>
         spec?.channel_icon_names?.[kind] || spec?.icon_name || '';
 

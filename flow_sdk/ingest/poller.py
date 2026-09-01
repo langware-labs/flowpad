@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
@@ -58,12 +59,10 @@ _attention_tasks: "dict[object, asyncio.Task]" = {}
 def note_attention(source_id: str, cadence_seconds: int) -> None:
     """Arm or renew the fast lane for one source; start the loop on first use.
 
-    Called by ``request_poll`` after its own gates (ACTIVE, not parked), so
-    the lane never needs to re-litigate whether the source may poll at all —
+    Called by ``request_poll`` after its own gates (``may_poll``), so the
+    lane never needs to re-litigate whether the source may poll at all —
     it still re-checks each round, because a source can park mid-lease.
     """
-    import time  # noqa: PLC0415
-
     now = time.monotonic()
     entry = _attention.get(source_id)
     _attention[source_id] = {
@@ -80,10 +79,6 @@ def note_attention(source_id: str, cadence_seconds: int) -> None:
 
 async def _attention_loop() -> None:
     """Poll every leased source at its cadence until all leases lapse."""
-    import time  # noqa: PLC0415
-
-    from flow_sdk.ingest.health import SourceHealth  # noqa: PLC0415
-
     while _attention:
         now = time.monotonic()
         for source_id, lease in list(_attention.items()):
@@ -94,16 +89,18 @@ async def _attention_loop() -> None:
                 continue
             lease["next"] = now + lease["cadence"]
             source = await DataSource.get_by_id(source_id)
-            if (
-                source is None
-                or source.status != SourceStatus.ACTIVE.value
-                or source.health == SourceHealth.CONFIG_ERROR.value
-            ):
+            if source is None or not source.may_poll():
                 _attention.pop(source_id, None)  # parked mid-lease — lane off
                 continue
             _inflight.add(source_id)
             asyncio.ensure_future(_run_poll(source, datetime.now(timezone.utc)))
-        await asyncio.sleep(1.0)
+        # Sleep to the nearest upcoming edge (a due round or a lease expiry)
+        # instead of a fixed 1s spin — most wakeups were dead time under a 5s
+        # cadence. Clamped so a renewal arming a fresh "due now" round never
+        # waits long, and an inflight-skipped source retries promptly.
+        edges = [min(l["next"], l["expiry"]) for l in _attention.values()]
+        if edges:
+            await asyncio.sleep(min(max(min(edges) - time.monotonic(), 0.25), 5.0))
 
 
 async def dispatch_due_sources(

@@ -237,71 +237,65 @@ async def project_source_item(
     )
 
     sender_id, sender_name = await _sender_for(item, source, channel)
-    # The message row is resolved by its reference column — reuse the existing
-    # row's id, mint an ordinary uuid4 only on first placement. Resolve AND
-    # materialize under the shared lock: two lanes (sync ingest + the
-    # projected-tag handler) can otherwise both prove "no row" before either
-    # inserts — that TOCTOU produced a duplicated message live (one item, two
-    # FlowMessages, 0.4s apart). `known_unplaced` (the reconcile sweep's bulk
-    # proof) skips only the unlocked pre-check; inside the lock the row is
-    # always re-asked, because any proof taken before the lock is stale by
-    # definition. The already-placed fast path exits before the lock, so the
-    # steady-state re-poll never serializes on it.
-    if not known_unplaced:
-        existing_fm = await FlowMessage.get_one({"source_item_id": str(item.id)})
-        if existing_fm is not None:
-            await _heal_sent_at(existing_fm, item)
-            return await _place_message(
-                item, source, channel, subject, key, thread, thread_id,
-                conversation_id, sender_id, sender_name, str(existing_fm.id),
-                notify=notify, recount=recount, announce=announce,
-            )
-    async with _thread_lock():
-        existing_fm = await FlowMessage.get_one({"source_item_id": str(item.id)})
-        if existing_fm is not None:
-            await _heal_sent_at(existing_fm, item)
-        fm_id = str(existing_fm.id) if existing_fm is not None else mint_uuid()
-        return await _place_message(
-            item, source, channel, subject, key, thread, thread_id,
-            conversation_id, sender_id, sender_name, fm_id,
-            notify=notify, recount=recount, announce=announce,
-        )
-
-
-async def _heal_sent_at(existing_fm, item) -> None:
-    """Convergently re-stamp EVENT time on an already-placed message.
-
-    ``materialize_flow_message`` deliberately no-op-upserts an existing local
-    row, so the payload's ``sent_at`` never reaches it — this explicit write
-    is what makes any re-projection (reconcile sweep, ``.updated`` tag,
-    replay) heal a legacy or drifted stamp. The projection is the one writer
-    of ``sent_at``; nothing else may touch it.
-    """
-    from flow_sdk.utils.serialization import iso_to_utc  # noqa: PLC0415
-
-    want = iso_to_utc(item.occurred_at) if item.occurred_at else None
-    have = iso_to_utc(existing_fm.sent_at) if existing_fm.sent_at else None
-    if want is not None and have != want:
-        existing_fm.sent_at = want
-        try:
-            await existing_fm.save(notify=False)
-        except Exception:  # noqa: BLE001 — healing must not break placement
-            logger.exception("[inbox] sent_at heal failed for %s", existing_fm.id)
+    # The message row is resolved by its reference column. FIRST placement
+    # runs under the shared lock: two lanes (sync ingest + the projected-tag
+    # handler) can otherwise both prove "no row" before either inserts — that
+    # TOCTOU produced a duplicated message live (one item, two FlowMessages,
+    # 0.4s apart). The already-placed path re-projects without the lock, so
+    # the steady-state re-poll never serializes; `known_unplaced` (the
+    # reconcile sweep's bulk proof) skips only the unlocked pre-check —
+    # inside the lock the row is always re-asked, because any proof taken
+    # before the lock is stale by definition.
+    existing_fm = None if known_unplaced else await FlowMessage.get_one(
+        {"source_item_id": str(item.id)}
+    )
+    if existing_fm is None:
+        async with _thread_lock():
+            existing_fm = await FlowMessage.get_one({"source_item_id": str(item.id)})
+            if existing_fm is None:
+                # First placement stays UNDER the lock — the birth is the race.
+                return await _place_message(
+                    item, source, channel, subject, key, thread, thread_id,
+                    conversation_id, sender_id, sender_name, None,
+                    notify=notify, recount=recount, announce=announce,
+                )
+    # Already placed: idempotent re-projection, no lock needed.
+    return await _place_message(
+        item, source, channel, subject, key, thread, thread_id,
+        conversation_id, sender_id, sender_name, existing_fm,
+        notify=notify, recount=recount, announce=announce,
+    )
 
 
 async def _place_message(
     item, source, channel, subject, key, thread, thread_id,
-    conversation_id, sender_id, sender_name, fm_id,
+    conversation_id, sender_id, sender_name, existing_fm,
     *, notify, recount, announce,
 ):
-    """Write the message row + pointers for one resolved ``fm_id``.
+    """Write the message row + pointers for one resolved message.
 
-    Split from ``project_source_item`` so the placement can run under the
-    dedupe lock; also the convergence point for ``sent_at``: an EXISTING row
+    Split from ``project_source_item`` so first placement can run under the
+    dedupe lock, and THE convergence point for ``sent_at``: an existing row
     whose stamp differs from the item's ``occurred_at`` is corrected here,
     because ``materialize_flow_message`` deliberately no-op-upserts an
-    existing local row and the payload alone would never reach it.
+    existing local row and the payload alone would never reach it. The
+    projection is the one writer of ``sent_at``; nothing else may touch it.
     """
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.utils.serialization import iso_to_utc  # noqa: PLC0415
+
+    if existing_fm is not None:
+        fm_id = str(existing_fm.id)
+        want = iso_to_utc(item.occurred_at) if item.occurred_at else None
+        have = iso_to_utc(existing_fm.sent_at) if existing_fm.sent_at else None
+        if want is not None and have != want:
+            existing_fm.sent_at = want
+            try:
+                await existing_fm.save(notify=False)
+            except Exception:  # noqa: BLE001 — healing must not break placement
+                logger.exception("[inbox] sent_at heal failed for %s", fm_id)
+    else:
+        fm_id = mint_uuid()
     from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message  # noqa: PLC0415
     from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
@@ -603,30 +597,27 @@ async def reconcile_source(data_source_id: str, *, limit: int = RECONCILE_BATCH)
 
     projected = 0
     touched: set[str] = set()
-    for item in missing:
+    # One loop, two legs. `missing` items are first placements
+    # (`known_unplaced=True`, announced per the storm decision above);
+    # `heal` items already have a row — re-resolving runs the sent_at heal
+    # through the same idempotent upsert, and is never announced because
+    # nothing "arrived", a stamp converged. Recounts are deferred either way:
+    # per-item recounting reloads the whole thread each time, quadratic in
+    # thread depth over a backfill.
+    for item, unplaced, announce_it in (
+        *((i, True, announce) for i in missing),
+        *((i, False, False) for i in heal),
+    ):
         try:
-            # Defer the recount: doing it per item reloads the whole thread each
-            # time, which is quadratic in thread depth over a backfill.
             result = await project_source_item(
-                item, source=source, recount=False, announce=announce, known_unplaced=True
+                item, source=source, recount=False,
+                announce=announce_it, known_unplaced=unplaced,
             )
             if result:
-                projected += 1
+                projected += unplaced
                 touched.add(result[1])
         except Exception:  # noqa: BLE001 — one bad record must not stall the sweep
             logger.exception("[inbox] reconcile failed for source_item %s", item.id)
-    for item in heal:
-        try:
-            # known_unplaced=False on purpose: the row exists; re-resolving it
-            # runs the sent_at heal and the idempotent upsert. Never announced —
-            # nothing "arrived", a stamp converged.
-            result = await project_source_item(
-                item, source=source, recount=False, announce=False, known_unplaced=False
-            )
-            if result:
-                touched.add(result[1])
-        except Exception:  # noqa: BLE001
-            logger.exception("[inbox] sent_at reconcile failed for source_item %s", item.id)
     for thread_id in touched:
         await recompute_thread_projection(thread_id)
     logger.info("[inbox] reconciled %d/%d items for source %s", projected, len(missing), data_source_id)

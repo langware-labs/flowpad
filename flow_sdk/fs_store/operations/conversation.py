@@ -189,12 +189,19 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
             child_filter=QueryFilter(type=FlowMessage.get_type(), order_by={"created_date": "asc"})
         )
         out = [c.value for c in kids if getattr(c, "value", None) is not None]
+
         # Conversation order is EVENT time (the DB can only order by the
         # bookkeeping clock): a backfilled year-old message belongs before
         # today's replies, wherever ingestion happened to place its row.
-        # Stable sort + the created_date pre-order keeps ties deterministic.
-        out.sort(key=lambda m: (Conversation._as_datetime(m.event_time) is None,
-                                Conversation._as_datetime(m.event_time) or datetime.min.replace(tzinfo=UTC)))
+        # Stable sort + the created_date pre-order keeps ties deterministic;
+        # dateless rows sort last.
+        _min = datetime.min.replace(tzinfo=UTC)
+
+        def _event_key(m: FlowMessage):
+            ts = Conversation._as_datetime(m.event_time)
+            return (ts is None, ts or _min)
+
+        out.sort(key=_event_key)
         return out
 
     messages = await _ordered_children()

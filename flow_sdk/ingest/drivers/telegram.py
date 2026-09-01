@@ -153,7 +153,9 @@ class TelegramDriver(IngestDriver):
             thread_key = f"{chat_id}/{topic_id}"
         occurred = None
         if msg.get("date"):
-            occurred = datetime.fromtimestamp(int(msg["date"]), tz=timezone.utc).isoformat()
+            from flow_sdk.utils.serialization import epoch_to_iso_utc  # noqa: PLC0415
+
+            occurred = epoch_to_iso_utc(int(msg["date"]))
         return SourceItemSpec(
             data_source_id=source.id,
             provider=self.provider,

@@ -217,16 +217,40 @@ class DataSource(Entity):
         """
         return self.status == SourceStatus.ACTIVE.value
 
+    def may_poll(self) -> bool:
+        """The ONE copy of the "is polling this source allowed at all" gate.
+
+        ``is_due``, ``request_poll`` and the poller's attention fast lane all
+        ask the same question; hand-copies drift the moment a new status or
+        health state lands. NEW and SETUP have not finished being configured
+        and DISABLED is a person's decision — none of them touch health.
+        ``config_error`` needs a human; polling it every minute would burn
+        quota to re-learn something we already know.
+        """
+        return (
+            self.status == SourceStatus.ACTIVE.value
+            and self.health != SourceHealth.CONFIG_ERROR.value
+        )
+
+    @classmethod
+    async def find_for_account(cls, provider: str, key: str, value: str) -> "Optional[DataSource]":
+        """The source of ``provider`` whose ``config[key]`` names ``value``.
+
+        The canonical natural-key lookup (same shape as
+        ``SourceItem.find_existing``): callers wanting connect-or-reuse
+        semantics ask HERE instead of re-scanning ``get_all`` and filtering by
+        hand — the id policy's whole point is that identity is a lookup.
+        ``key`` is normally the driver's ``identity_config_key``.
+        """
+        value = str(value or "").strip()
+        for row in await cls.get_all({"provider": provider}):
+            if str((row.config or {}).get(key) or "").strip() == value:
+                return row
+        return None
+
     def is_due(self, now: Optional[datetime] = None) -> bool:
         now = now or datetime.now(timezone.utc)
-        if self.status != SourceStatus.ACTIVE.value:
-            # NEW and SETUP have not finished being configured; DISABLED is a
-            # person's decision. None of them are failures, so none of them
-            # touch health.
-            return False
-        if self.health == SourceHealth.CONFIG_ERROR.value:
-            # Needs a human. Polling it every minute would burn quota to
-            # re-learn something we already know.
+        if not self.may_poll():
             return False
         if self.next_poll_at is None:
             return True
@@ -255,6 +279,9 @@ class DataSource(Entity):
         """
         now = now or datetime.now(timezone.utc)
         due = now + timedelta(seconds=self.poll_interval_seconds)
+        # The grid is the heartbeat tick — the same once-a-minute cadence
+        # MIN_POLL_INTERVAL_SECONDS documents. If the tick period ever
+        # changes, this floor must change with it.
         self.next_poll_at = due.replace(second=0, microsecond=0)
         return self.next_poll_at
 
@@ -325,7 +352,7 @@ class DataSource(Entity):
         loudly in the payload, for anything that is not a healthy ACTIVE
         source. Idempotent: an already-due source is left due.
         """
-        if self.status != SourceStatus.ACTIVE.value or self.health == SourceHealth.CONFIG_ERROR.value:
+        if not self.may_poll():
             return ApiSuccessResponse(data={
                 "status": "ignored", "health": self.health, "source_status": self.status,
                 "detail": "attention never wakes a parked or non-active source",
