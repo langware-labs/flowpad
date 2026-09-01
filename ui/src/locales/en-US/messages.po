@@ -6400,6 +6400,10 @@ msgstr "Every {scopeType} row has a source file on disk."
 msgid "Every indexed row has a source file on disk."
 msgstr "Every indexed row has a source file on disk."
 
+#: src/components/assets/editor/agent-profile/AgentMcpField.tsx
+msgid "Every MCP server in this project is attached to this agent. Each one is resolved and attached when a session starts."
+msgstr "Every MCP server in this project is attached to this agent. Each one is resolved and attached when a session starts."
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Every project is selected"
 msgstr "Every project is selected"
@@ -9411,6 +9415,10 @@ msgstr "Loading live session…"
 msgid "Loading logs..."
 msgstr "Loading logs..."
 
+#: src/components/assets/editor/agent-profile/AgentMcpField.tsx
+msgid "Loading MCP servers…"
+msgstr "Loading MCP servers…"
+
 #: src/components/show-view/ShowView.tsx
 msgid "Loading MCP UI component..."
 msgstr "Loading MCP UI component..."
@@ -9862,6 +9870,7 @@ msgid "MCP server created"
 msgstr "MCP server created"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
+#: src/components/assets/editor/agent-profile/AgentMcpField.tsx
 msgid "MCP servers"
 msgstr "MCP servers"
 
@@ -10393,6 +10402,7 @@ msgstr "New folder name"
 msgid "New group"
 msgstr "New group"
 
+#: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "New MCP server"
 msgstr "New MCP server"
@@ -10920,6 +10930,10 @@ msgstr "No matching sessions"
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "No MCP servers found"
 msgstr "No MCP servers found"
+
+#: src/components/assets/editor/agent-profile/AgentMcpField.tsx
+msgid "No MCP servers in this project yet"
+msgstr "No MCP servers in this project yet"
 
 #: src/components/token-plan/MembersTable.tsx
 msgid "No member usage yet."

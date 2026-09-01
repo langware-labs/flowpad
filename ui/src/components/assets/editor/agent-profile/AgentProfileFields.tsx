@@ -107,7 +107,8 @@ export function AgentSelectField({
 /**
  * Comma-separated editor for a DECLARED-ONLY field. `tools`,
  * `disallowed_tools` and `subagents` round-trip through `agent.md` but reach no
- * worker yet; `mcp_servers` is listed by the agent-resources pane instead.
+ * worker yet. `mcp_servers` is NOT one of these — it is derived rather than
+ * typed, and it does reach the worker; see `AgentMcpField`.
  */
 export function AgentListField({
   label,
