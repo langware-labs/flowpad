@@ -25,15 +25,6 @@ export type SourceHealth = 'never_synced' | 'ok' | 'transient_error' | 'config_e
  */
 export type SourceStatus = 'new' | 'setup' | 'active' | 'disabled';
 
-/**
- * Mirror of flow_sdk/builtin/data_source.py PollRate — attention-driven
- * cadence, a third axis beside status and health. The conversation view sets
- * `active` on mount and `idle` on unmount; the backend polls faster while
- * active and decays a stale `active` on its own, so a crashed tab can never
- * pin a source fast forever.
- */
-export type PollRate = 'idle' | 'active';
-
 export interface IDataSource extends IEntity {
   name: string;
   kind?: string;
@@ -47,8 +38,6 @@ export interface IDataSource extends IEntity {
   setup_detail?: string;
   verified_at?: string | null;
   poll_interval_seconds?: number;
-  poll_rate?: PollRate;
-  active_poll_interval_seconds?: number;
   window_days?: number;
   segment_count?: number;
   next_poll_at?: string | null;
@@ -88,12 +77,6 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   setup_detail: string = '';
   verified_at: string | null = null;
   poll_interval_seconds: number = 300;
-  poll_rate: PollRate = 'idle';
-  active_poll_interval_seconds: number = 60;
-  // `poll_rate_set_at` is DELIBERATELY not mirrored: it is the backend's
-  // transition sentinel/decay clock, and a client that round-trips its stale
-  // copy would resurrect an old stamp on re-activation — suppressing the
-  // fresh stamp AND the immediate poll (observed live before this comment).
   window_days: number = 7;
   /** Streams this source has, rolled up by the poller. Read from here rather
    *  than counting cursor rows: cursors churn on every poll, so watching them
@@ -119,9 +102,6 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     this.setup_detail = entity.setup_detail ?? this.setup_detail;
     this.verified_at = entity.verified_at ?? this.verified_at;
     this.poll_interval_seconds = entity.poll_interval_seconds ?? this.poll_interval_seconds;
-    this.poll_rate = entity.poll_rate ?? this.poll_rate;
-    this.active_poll_interval_seconds =
-      entity.active_poll_interval_seconds ?? this.active_poll_interval_seconds;
     this.window_days = entity.window_days ?? this.window_days;
     this.segment_count = entity.segment_count ?? this.segment_count;
     this.next_poll_at = entity.next_poll_at ?? this.next_poll_at;
@@ -156,6 +136,17 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
    */
   async pollNow(): Promise<{ status: string; health: SourceHealth; detail: string }> {
     return this.post('poll_now');
+  }
+
+  /**
+   * Attention: someone is LOOKING at this source's output — poll on the next
+   * heartbeat tick. Fired on an interval by a selected view; the request
+   * stream itself is the liveness signal, so nothing is stored and nothing
+   * needs undoing when the viewer goes away. Unlike `pollNow` it never
+   * un-latches `config_error` and never wakes a disabled source.
+   */
+  async requestPoll(): Promise<{ status: string; health: SourceHealth; detail: string }> {
+    return this.post('request_poll');
   }
 
   /**
