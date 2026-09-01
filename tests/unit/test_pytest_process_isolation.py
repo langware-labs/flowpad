@@ -91,6 +91,7 @@ def _probe_payload(output: str) -> dict[str, str]:
     return json.loads(marked[0][len(_PROBE_MARKER) :])
 
 
+@pytest.mark.long  # 1.27s
 def test_two_pytest_processes_have_disjoint_homes_and_state(tmp_path: Path):
     """Two concurrent real pytest sessions never share an owned state path."""
     repo = Path(__file__).resolve().parents[2]

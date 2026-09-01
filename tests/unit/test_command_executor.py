@@ -91,6 +91,7 @@ async def test_missing_binary_returns_a_result_not_an_exception():
     assert result.ok is False
 
 
+@pytest.mark.long  # 1.01s
 async def test_timeout_returns_a_result_not_an_exception():
     result = await _LocalCommandExecutor().run([sys.executable, "-c", "import time; time.sleep(10)"], timeout=1)
     assert result.returncode == 124

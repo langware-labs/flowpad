@@ -142,6 +142,31 @@ If a test fails on time, the production code is too slow or stalls — that's th
 
 **This is not limited to tests, and "it's not technically a test timeout" is not an out.** The rule is about the INTENT: never raise — or newly add — ANY wait/timeout/retry/backoff/poll budget anywhere (test OR production/runtime code) in order to make an error, flake, hang, or contention symptom go away. This explicitly includes, without limitation: SQLite/DB `busy_timeout`, SQLAlchemy/driver `connect_args={"timeout": …}` or `pool_timeout`, HTTP/client `timeout=…`, `asyncio.wait_for(…)`, lock-acquire timeouts, retry counts / `max_attempts`, `sleep`/backoff durations, and debounce/throttle intervals. A symptom like `database is locked`, a 5xx, a race, or "it's slow" means there is real contention or a real slow/stalling path — **fix that root cause** (remove the contention, isolate the writer, make the call fast, fix the stall). Widening a wait to ride past the symptom is the same banned move as bumping a test timeout. If you think a longer wait is genuinely the correct fix (not a mask), STOP and get explicit user approval first, every time — do not decide unilaterally on "spirit."
 
+
+## The `long` tier — 1s is the unit ceiling
+
+**A unit test that takes more than 1 second is not a unit test.** The fast tier exists to answer "did I break something" in a couple of minutes; a handful of wall-clock-bound tests otherwise dominate it (before this rule, 55 of 6764 tests held half the runtime).
+
+Two forms, one tier:
+
+* **A whole file that is wall-clock-bound lives in `tests/long_tests/`.** That is the default when every test in the module is slow.
+* **A single slow test that shares fixtures with fast siblings gets `@pytest.mark.long`** and stays where it is. Splitting one test out of a module just to fork its fixtures buys nothing.
+
+The two forms are selected differently, and `-m long` does NOT find the files — the directory is their only signal:
+
+```bash
+pytest tests/unit                 # fast tier only (long-marked tests deselected)
+pytest tests/unit --long          # fast tier + its marked outliers
+pytest tests/unit -m long         # ONLY the marked outliers, not tests/long_tests/
+pytest tests/long_tests           # the slow FILES (no marker involved)
+```
+
+Marked tests are **deselected**, not skipped — a skip still reports as a test and buries the fast tier's signal. The deselection is repo-wide and applies to the DEFAULT run only: **CI and `scripts/deploy_to_github.sh` both pass `--long`**, so the marker never takes a test out of the gate, only out of the inner loop. If you mark a test, you have changed how long CI takes, not what CI covers — anything that genuinely should not run in CI belongs in the excluded-tier list in `.github/workflows/test.yml`.
+
+Annotate the marker with the measured cost — `@pytest.mark.long  # 6.01s` — so the next reader can tell a test that legitimately does 6s of work from one that is quietly waiting.
+
+**The marker classifies; it does not excuse.** It is not a licence to raise a timeout, and it is not where a test goes to hide a slow production path. Before marking, ask why the test is slow: if the answer is "it waits for a fixed budget" or "it spawns a real PTY", classify it. If the answer is "the code under test stalls", that is a bug — fix it. A `RUN_SCRIPT` timeout test sat at 10.2s because the handler killed only the script and not its process group, so a 1s timeout bounded nothing; the fix took it to 0.31s and it never needed the marker.
+
 ## Entity id policy (non-negotiable)
 
 **UUID v4 is the entity id. The one exception is a READ-ONLY asset, whose id may be v5 derived from its file path.** An id is a name, not a fact about the thing — it does not encode which account a source serves or which record a row mirrors. Anything that needs *that* is a **lookup on the natural key**, not id arithmetic.

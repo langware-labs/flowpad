@@ -1,6 +1,8 @@
 """Phase 4 — TAG triggers: Trigger entities as unified-bus subscriptions."""
 import asyncio
 
+import pytest
+
 from flow_sdk.builtin import tag_triggers
 from flow_sdk.builtin.hook_models import ActionType, TriggerAction
 from flow_sdk.builtin.tag_triggers import (
@@ -165,6 +167,7 @@ async def test_entity_created_fires_tag_trigger_end_to_end(tmp_path):
         unregister_tag_trigger(trigger.id)
 
 
+@pytest.mark.long  # 1.16s
 @async_context
 async def test_tag_trigger_preserves_envelope_identity_on_flow_entry(tmp_path):
     """Phase 7 post-review: the TAG-trigger door preserves the triggering
