@@ -83,6 +83,7 @@ const TYPE_LABELS: Record<string, MessageDescriptor> = {
   knowledge_base: msg`Knowledge Base`,
   markdown: msg`Documents`,
   markdown_index: msg`Markdown Index`,
+  mcp: msg`MCP`,
   mcp_server: msg`Mcp Server`,
   message_attachment: msg`Message Attachment`,
   message_suggest: msg`Message Suggest`,

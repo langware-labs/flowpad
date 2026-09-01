@@ -50,6 +50,9 @@ class EntityType(StrEnum):
     CLAUDE_MEMORY = "claude_memory"
     CLAUDE_RULES = "claude_rules"
     COMMAND = "command"
+    # FlowPad's OWN MCP asset (authored, v4, attachable). Distinct from
+    # MCP_SERVER below, which is the read-only scan of a vendor's config files.
+    MCP = "mcp"
     MCP_SERVER = "mcp_server"
     # Scaffold type — .mcp.json / mcp.json files that contain server definitions.
     MCP_SERVER_SOURCE = "mcp_server_source"

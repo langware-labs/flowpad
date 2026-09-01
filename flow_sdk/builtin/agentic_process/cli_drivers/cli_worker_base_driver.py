@@ -70,6 +70,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.worker_status import WorkerStatus
     from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
     from flow_sdk.responses.response import ApiResponse
+    from flow_sdk.schema.data_spec.mcp_spec import McpSpec
 
 
 # Per-line StreamReader limit shared by every JSONL CLI transport. Asyncio's
@@ -637,6 +638,31 @@ class ProcessHookRuntime(BaseModel):
     bypass_hook_trust: bool = False
 
 
+class ProcessMcpRuntime(BaseModel):
+    """Immutable, launch-only artifacts prepared from persisted MCP intent.
+
+    Sibling of ``ProcessHookRuntime``. Every field here is a RENDERED form
+    (a serialized JSON string, ``-c`` pairs, a config fragment) and therefore
+    launch-only: none of it reaches ``AgentOptions.to_json()``, so a change of
+    rendering can never churn ``last_started_hash``. The *intent* that does move
+    the restart hash is the spec list itself, via ``mcp_projection.mcp_snapshot``.
+
+    The union-of-vendors shape mirrors ``ProcessHookRuntime`` (whose
+    ``plugin_dirs`` serve claude/copilot while ``config_overrides`` serve codex):
+    each driver fills only the fields its own channel reads.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    #: claude ``--mcp-config`` / copilot ``--additional-mcp-config`` — both take
+    #: a JSON STRING, so no file is written for either.
+    mcp_config_json: str = ""
+    #: codex ``-c`` pairs; appended to the hook overrides on the same option.
+    config_overrides: tuple[tuple[str, Any], ...] = ()
+    #: opencode's ``mcp`` config key.
+    config_fragment: dict[str, Any] = Field(default_factory=dict)
+
+
 class AgenticContext(BaseModel):
     """Execution context for a single worker turn."""
 
@@ -697,6 +723,13 @@ class AgenticContext(BaseModel):
     # CodexAgentOptions.extra_config_overrides so apply_api_model_to_options can
     # stamp either object.
     extra_config_overrides: list[tuple[str, Any]] = Field(default_factory=list)
+    # Rendered per-process MCP config for this launch. Vendor-neutral carrier:
+    # claude/copilot read ``mcp_config_json``, codex takes its servers through
+    # ``extra_config_overrides`` above, and opencode reads
+    # ``mcp_config_fragment`` into its generated config. Re-derived on every
+    # spawn, so — like plugin_dirs — never persisted or hashed.
+    mcp_config_json: str = ""
+    mcp_config_fragment: dict[str, Any] = Field(default_factory=dict)
     # One-launch acknowledgement for CLIs that gate dynamically supplied hooks
     # behind an explicit trust flag (currently Codex). Never persisted.
     bypass_hook_trust: bool = False
@@ -718,6 +751,8 @@ class AgenticContext(BaseModel):
                 "extra_config_overrides",
                 "bypass_hook_trust",
                 "language",
+                "mcp_config_json",
+                "mcp_config_fragment",
             }
         )
         if self.compute_node is not None:
@@ -840,6 +875,11 @@ class AgentOptions:
         # so restart hashing is unaffected.
         self.system_prompt_append: str | None = None
         self.system_prompt_file: str | None = None
+        # Rendered per-process MCP for this launch — see ``ProcessMcpRuntime``
+        # for why it is launch-only. On the base so every vendor can be stamped
+        # without a hasattr dance, though each reads only its own channel's field.
+        self.mcp_config_json: str = ""
+        self.mcp_config_fragment: dict[str, Any] = {}
 
     @property
     def model(self) -> str | None:
@@ -884,6 +924,22 @@ class AgentOptions:
             self.custom_instruction_dirs = [str(assets.assets_dir)]
             if hasattr(self, "no_custom_instructions"):
                 self.no_custom_instructions = False
+
+    def apply_process_mcp(self, runtime: "ProcessMcpRuntime", process_id: str = "") -> None:
+        """Route a rendered ``ProcessMcpRuntime`` into this argv.
+
+        The MCP counterpart of ``apply_instruction_assets`` — one seam, owned by
+        the argv class. The default stamps every field and appends codex's
+        ``-c`` pairs to whatever the hook projection already put there; opencode
+        overrides it because its channel is a generated file, not argv.
+        """
+        self.mcp_config_json = runtime.mcp_config_json
+        self.mcp_config_fragment = dict(runtime.config_fragment)
+        if runtime.config_overrides:
+            self.extra_config_overrides = [
+                *(getattr(self, "extra_config_overrides", None) or []),
+                *runtime.config_overrides,
+            ]
 
     def _system_prompt(self, override: str | None) -> str | None:
         """Explicit per-call value wins; else the launch-derived field."""
@@ -1415,6 +1471,11 @@ class WorkerDriver(Protocol):
 
     name: str  # wire id: "claude" | "codex" | "copilot"
     supports_process_hooks: bool
+    # True iff this harness accepts MCP servers scoped to ONE launch. All four
+    # do, each through a different channel (see ``mcp_projection``); the flag
+    # exists so a fifth vendor starts off unsupported by construction, exactly
+    # like ``supports_process_hooks``.
+    supports_process_mcp: bool
     process_hooks_use_assets: bool
     preassign_interactive_session_id: bool
     # The byte sequence that INTERRUPTS an in-flight turn in this vendor's
@@ -1483,6 +1544,15 @@ class WorkerDriver(Protocol):
         events: Sequence["HookEventType"],
     ) -> ProcessHookRuntime:
         """Materialize launch artifacts once and return their runtime inputs."""
+        ...
+
+    def prepare_process_mcp(self, specs: Sequence["McpSpec"]) -> ProcessMcpRuntime:
+        """Render this harness's per-launch MCP inputs from the attached specs.
+
+        No ``AssetDir``: three of the four vendors take an inline string, and
+        opencode's file is written by its existing config generator. An empty
+        ``specs`` returns an empty runtime — never a half-written artifact.
+        """
         ...
 
     def normalize_process_hook_data(

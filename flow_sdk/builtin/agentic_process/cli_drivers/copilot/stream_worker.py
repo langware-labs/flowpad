@@ -89,6 +89,9 @@ class CopilotCLIStreamWorker(JsonlTeeStreamWorker):
             custom_instruction_dirs=list(context.custom_instruction_dirs or []),
             plugin_dirs=list(context.plugin_dirs or []),
         )
+        # Launch-only, so stamped rather than passed — the headless path must
+        # carry the same per-process MCP the PTY path does.
+        opts.mcp_config_json = context.mcp_config_json
         # Asset-backed system instructions ride COPILOT_CUSTOM_INSTRUCTIONS_DIRS;
         # the legacy system_prompt_append path remains unused for new launches.
         argv, env_from_opts, stdin = opts.to_spawn(instruction=prompt, system_prompt_append=context.instructions)

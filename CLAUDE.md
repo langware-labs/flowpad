@@ -172,6 +172,23 @@ If a backend route can't be called through `apiClient` because it doesn't return
 
 **Every per-type icon in the UI comes from the backend type registry (`TypeInfo.icon`) — never hardcode a glyph for an entity type at a call site.** Resolve it at render time via `iconForType(type)` (`ui/src/components/graph-view/icons/iconRegistry.ts`), which reads the bootstrap-loaded SchemaRegistry and falls back to a generic document glyph for unknown/icon-less types. If a type's icon is wrong or missing, fix its `TypeInfo` (`flow_sdk/schema/type_info/<type>_*info.py`) so every surface picks it up — don't patch the one component.
 
+## Data shapes — every value is a `DataSpec` (non-negotiable)
+
+**A shape that travels — a launch payload, an ingestion envelope, a file header, an agent's `input`/`output` — is a `DataSpec` subclass (`flow_sdk/schema/data_spec/spec.py`). Never a bare `BaseModel`, a dataclass, a `TypedDict`, or a hand-rolled dict.** One type system, not two: validation, JSON Schema and error reporting are Pydantic's own, and the shape is nameable in the same tag ontology as everything else.
+
+Two flavors, one base:
+
+* **`FrontMatter(DataSpec)`** — the shape IS a file's header, and the class IS the field list (`SubAgentSpec`, `AgentSpec`). What it declares is what is read and written, and nothing else.
+* **plain `DataSpec`** — a value that travels between tiers (`SourceItemSpec`, `FileRef`, `FolderSpec`). Add `frozen=True`; a value is a value.
+
+* **`extra="forbid"` is inherited, and it is the point.** A caller who misspells a key gets an error, not a row with an empty field. So a constructor that reads a FOREIGN dict (a vendor config entry, a provider payload) must **project field by field — never `**body`**. That makes the hop deliberately lossy: a vendor key we don't model is dropped, and that is the contract, not a bug.
+
+* **Register a `spec_kind` when the shape should be nameable** (`"ingest.source_item"`, `"folder"`) — a dot-path tag resolved through the ONE `SchemaRegistry`. Reserved primitives are `string` / `int` / `float` / `bool`; anything else is a registered kind or anonymous.
+
+* **Registration is import-time, and forgetting it fails SILENTLY.** `__pydantic_init_subclass__` only fires once the module is imported; an unreachable kind resolves to `Any` — *"legal, opaque, never minted"* — so you get an untyped field and no error anywhere. Make it reachable from `register_builtin_kinds()` (`data_spec/_kinds.py`), the way `dataset_spec` is.
+
+* **The authoring form has no map type.** `"string"` / `{field: shape}` / `[shape]` are the only three forms an annotation can take. A `dict[...]` field is therefore expressible ONLY on a class carrying a `spec_kind`, because `to_authoring_form` short-circuits on it before it would fail. `FolderSpec.files` is the precedent; the same field on an unregistered class raises `no authoring form for ...`.
+
 ## Naming — check the glossary before inventing a noun
 
 **[`docs/glossary.md`](docs/glossary.md) is the cross-walk between our vocabulary, Claude Code's, and OpenClaw's.** Read it before naming a new entity, and keep two rules:

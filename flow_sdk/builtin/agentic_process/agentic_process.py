@@ -45,7 +45,11 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     latch_spawn_failure,
     resolve_worker_language,
 )
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import ProcessHookRuntime
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    ProcessHookRuntime,
+    ProcessMcpRuntime,
+)
+from flow_sdk.schema.data_spec.mcp_spec import McpSpec
 from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks
 from flow_sdk.builtin.agentic_process.status_predicates import (
     WorkerMode,
@@ -362,12 +366,15 @@ class PreparedProcessAssets:
 
     instruction_assets: SystemInstructionAssets | None = None
     hook_runtime: ProcessHookRuntime = field(default_factory=ProcessHookRuntime)
+    mcp_runtime: ProcessMcpRuntime = field(default_factory=ProcessMcpRuntime)
 
 
 # Types treated as executable agent inputs by the asset-management UI.
 # Markdown / spec / plan / claude_rules etc. are intentionally excluded —
 # they're documentation, not things the agent runs.
-EXECUTABLE_ASSET_TYPES: list[str] = ["skill", "subagent"]
+# "Executable" is a slight misnomer since ``mcp`` joined: an MCP is a capability
+# the worker is given, not something it runs. Renaming is a separate change.
+EXECUTABLE_ASSET_TYPES: list[str] = ["skill", "subagent", "mcp"]
 
 
 def add_source_dir(
@@ -1104,6 +1111,19 @@ class AgenticProcess(Entity):
             "process's <record_dir>/assets folder. Claude discovers them via --add-dir."
         ),
     )
+    mcp_servers: list[McpSpec] = APIField(
+        default_factory=list,
+        description=(
+            "MCP servers attached to THIS process. Specs, not refs: a spec is "
+            "self-contained, so it survives being copied to another machine, "
+            "whereas a TypeId points at a config file that only exists here. "
+            "Resolved at launch and rendered into whichever channel this "
+            "harness accepts (--mcp-config / -c mcp_servers.* / "
+            "--additional-mcp-config / the opencode config). Enters the restart "
+            "snapshot: MCP is resolved once at worker boot, so attaching to a "
+            "live process must flip ``restart_required``."
+        ),
+    )
     process_hook_events: list[str] = APIField(
         default_factory=list,
         description="Process-local worker hook events enabled for this process.",
@@ -1683,7 +1703,7 @@ class AgenticProcess(Entity):
 
             process_assets = await self.prepare_process_assets()
             cmd = self._finalized_restart_cli_options()
-            self._apply_process_assets(cmd, process_assets)
+            self._apply_process_assets(cmd, process_assets, str(self.id))
 
             # Fork & CLAUDE_PROJECT_DIR resume-cwd pinning are Claude-only —
             # Codex/Copilot mint their own session and use ``-C <cwd>``, not
@@ -5499,7 +5519,15 @@ class AgenticProcess(Entity):
                 str(self.id),
                 tuple(self.process_hook_events),
             )
-        return PreparedProcessAssets(instruction_assets=instructions, hook_runtime=hook_runtime)
+        mcp_runtime = ProcessMcpRuntime()
+        prepare_mcp = getattr(self.driver, "prepare_process_mcp", None)
+        if prepare_mcp is not None:
+            mcp_runtime = prepare_mcp(self.resolved_mcp_servers())
+        return PreparedProcessAssets(
+            instruction_assets=instructions,
+            hook_runtime=hook_runtime,
+            mcp_runtime=mcp_runtime,
+        )
 
     async def prepare_system_instruction_assets(self) -> SystemInstructionAssets | None:
         """Compatibility instruction-only preparation entry point."""
@@ -5516,6 +5544,59 @@ class AgenticProcess(Entity):
         from flow_sdk.builtin.hooks.process_manager import ProcessHooksManager
 
         return ProcessHooksManager(self)
+
+    def resolved_mcp_servers(self) -> tuple["McpSpec", ...]:
+        """The MCP servers this process launches with, deduped by name.
+
+        An agent's servers are COPIED onto ``mcp_servers`` when the process is
+        created (``Deployment.create_process``), not unioned in here — so a
+        process keeps the set its agent had at creation, and editing the agent
+        afterwards does not silently re-arm a running process. A process may add
+        its own on top; first wins on a name clash, so the agent's survives.
+        """
+        from flow_sdk.builtin.agentic_process.cli_drivers.mcp_projection import (  # noqa: PLC0415
+            dedupe_by_name,
+        )
+
+        return tuple(dedupe_by_name(self.mcp_servers or []))
+
+    def _require_mcp_support(self) -> None:
+        driver = self.driver
+        if not bool(getattr(driver, "supports_process_mcp", False)):
+            raise NotImplementedError(
+                f"{getattr(driver, 'name', self.worker_type)} does not support "
+                "per-process MCP servers"
+            )
+
+    async def add_mcp(self, spec: "McpSpec") -> bool:
+        """Attach one MCP server to this process; return whether it changed.
+
+        Does NOT restart. MCP is resolved once at worker boot, so a running
+        worker keeps the tool set it launched with — the caller sees
+        ``restart_required`` flip and decides when to bounce. On the headless
+        vendors the next turn is a fresh exec, so it costs nothing there.
+        """
+        self._require_mcp_support()
+        # Render once here so a spec this harness cannot express (e.g. a dotted
+        # name under codex) is refused at attach time rather than at spawn.
+        self.driver.prepare_process_mcp([spec])
+        current = list(self.mcp_servers or [])
+        if any(existing == spec for existing in current):
+            return False
+        self.mcp_servers = [s for s in current if s.name != spec.name] + [spec]
+        await self.save()
+        return True
+
+    async def remove_mcp(self, name: str) -> bool:
+        """Detach one MCP server by name; return whether it changed."""
+        self._require_mcp_support()
+        current = list(self.mcp_servers or [])
+        remaining = [s for s in current if s.name != name]
+        if len(remaining) == len(current):
+            return False
+        self.mcp_servers = remaining
+        await self.save()
+        return True
 
     async def set_hook(self, event: HookEventType | str) -> bool:
         """Persist one process-local hook intent; return whether it changed."""
@@ -5609,7 +5690,14 @@ class AgenticProcess(Entity):
         cmd.apply_instruction_assets(assets)
 
     @classmethod
-    def _apply_process_assets(cls, cmd: AgentOptions, prepared: PreparedProcessAssets) -> None:
+    def _apply_process_assets(
+        cls, cmd: AgentOptions, prepared: PreparedProcessAssets, process_id: str = ""
+    ) -> None:
+        # MCP goes on FIRST, deliberately. OpenCode's instruction channel is a
+        # generated config file rewritten inside ``apply_instruction_assets``;
+        # if the MCP fragment is not already stamped on ``cmd`` by then, that
+        # rewrite drops it and opencode launches with no servers.
+        cmd.apply_process_mcp(prepared.mcp_runtime, process_id)
         cls._apply_system_instruction_assets(cmd, prepared.instruction_assets)
         runtime = prepared.hook_runtime
         if runtime.plugin_dirs:
@@ -5643,8 +5731,13 @@ class AgenticProcess(Entity):
         return {
             **cls._instruction_context_kwargs(prepared.instruction_assets),
             "plugin_dirs": list(prepared.hook_runtime.plugin_dirs),
-            "extra_config_overrides": list(prepared.hook_runtime.config_overrides),
+            "extra_config_overrides": [
+                *prepared.hook_runtime.config_overrides,
+                *prepared.mcp_runtime.config_overrides,
+            ],
             "bypass_hook_trust": prepared.hook_runtime.bypass_hook_trust,
+            "mcp_config_json": prepared.mcp_runtime.mcp_config_json,
+            "mcp_config_fragment": dict(prepared.mcp_runtime.config_fragment),
         }
 
     async def _materialize_entity(self, ref: TypeId, assets_dir: "Path") -> str | None:
@@ -5656,6 +5749,24 @@ class AgenticProcess(Entity):
         from flow_sdk.fs_store.operations.skill import copy_skill_to, get_skill
         from flow_sdk.fs_store.operations.subagent import get_subagent  # noqa: PLC0415
         from flow_sdk.fs_store.operations.subagent import load_subagent as _load_subagent
+
+        if ref.type == "mcp":
+            # Unlike a skill or sub-agent, materializing an MCP is NOT how the
+            # worker finds it — MCP reaches the worker through argv/config
+            # rendering (``prepare_process_mcp``). The copy exists so the asset
+            # row has a file to reveal and edit, and so an attached server is
+            # editable without touching the shared original.
+            from flow_sdk.builtin.mcp import MCP_MAIN_FILE, Mcp  # noqa: PLC0415
+
+            row = await Mcp.get_by_id(ref.id)
+            if row is None:
+                raise FileNotFoundError(f"MCP not found: {ref.id}")
+            spec = row.to_spec()
+            AssetDir(assets_dir).load_asset(
+                Path("mcp") / spec.name / MCP_MAIN_FILE,
+                content=spec.model_dump_json(indent=2) + "\n",
+            )
+            return spec.name
 
         if ref.type == "subagent":
             # Resolve by id (uuid5-derived from the .md path) first, then fall back
@@ -6165,12 +6276,22 @@ class AgenticProcess(Entity):
         Mirrors the layout written by ``_materialize_entity``:
           - ``agent`` → ``<assets_dir>/.claude/agents/<name>.md``
           - ``skill`` → ``<assets_dir>/.claude/skills/<name>``
+          - ``mcp``   → ``<assets_dir>/mcp/<name>/mcp.json`` (NOT under a harness
+            dot-dir: no harness reads MCP from disk, so this copy is for the UI
+            and for editing, not for discovery)
 
         TODO: when ``Record.materialize_into`` (tier 1 alignment) lands, swap
         this for ``record.materialize_into(assets_dir).path`` so the layout is
         owned by the record subclass instead of duplicated here.
         """
         try:
+            if ref.type == "mcp":
+                from flow_sdk.builtin.mcp import MCP_MAIN_FILE, Mcp  # noqa: PLC0415
+
+                row = await Mcp.get_by_id(ref.id)
+                if row is None:
+                    return None
+                return assets_dir / "mcp" / (row.name or ref.id) / MCP_MAIN_FILE
             if ref.type == "subagent":
                 from flow_sdk.fs_store.operations.subagent import get_subagent  # noqa: PLC0415
                 from flow_sdk.fs_store.operations.subagent import load_subagent as _load_subagent
@@ -6426,11 +6547,19 @@ class AgenticProcess(Entity):
     def _generic_restart_snapshot_payload(self, driver: WorkerDriver | None) -> dict[str, Any]:
         worker_type: Any = driver.name if driver is not None else self.worker_type
         hook_events = tuple(sorted(set(self.process_hook_events or [])))
+        from flow_sdk.builtin.agentic_process.cli_drivers.mcp_projection import (  # noqa: PLC0415
+            mcp_snapshot as _mcp_snapshot,
+        )
+
         hook_snapshot = {}
+        # Vendor-neutral by construction, so no driver seam: attaching or
+        # detaching must move the hash on every harness identically.
+        mcp_snapshot = _mcp_snapshot(self.resolved_mcp_servers())
         if driver is not None:
             snapshot = getattr(driver, "process_hook_snapshot", None)
             if snapshot is not None:
                 hook_snapshot = snapshot(hook_events)
+
         return {
             "worker_type": worker_type,
             "shell_mode": self.shell_mode,
@@ -6441,6 +6570,7 @@ class AgenticProcess(Entity):
             "embedded_subagent_ids": sorted(self.embedded_subagent_ids or []),
             "process_hook_events": list(hook_events),
             "process_hooks": hook_snapshot,
+            "mcp_servers": mcp_snapshot,
         }
 
     def _restart_snapshot_payload(self) -> dict[str, Any]:

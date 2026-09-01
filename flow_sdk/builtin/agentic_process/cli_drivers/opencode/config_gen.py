@@ -44,6 +44,7 @@ def build_config(
     instruction_files: list[str] | None = None,
     skill_paths: list[str] | None = None,
     plugin_files: list[str] | None = None,
+    mcp: dict | None = None,
 ) -> dict:
     """The config body — pure, so it can be asserted on without touching disk."""
     config: dict = {"$schema": CONFIG_SCHEMA_URL}
@@ -58,6 +59,12 @@ def build_config(
     plugins = [Path(p).as_uri() for p in (plugin_files or []) if p]
     if plugins:
         config["plugin"] = plugins
+    # The process's attached MCP servers. opencode's own shape (``type``
+    # local/remote, ``command`` as an ARRAY, ``environment``) is built by
+    # ``mcp_projection.to_opencode_mcp`` — never the ``mcpServers`` shape the
+    # other vendors take.
+    if mcp:
+        config["mcp"] = dict(mcp)
     return config
 
 
@@ -67,14 +74,16 @@ def write_process_config(
     instruction_files: list[str] | None = None,
     skill_paths: list[str] | None = None,
     plugin_files: list[str] | None = None,
+    mcp: dict | None = None,
 ) -> Path | None:
     """Write the generated config; return its path, or None when there is
-    nothing to say (no instructions and no skills — then the CLI's own config
-    resolution is left completely alone)."""
+    nothing to say (no instructions, no skills and no MCP — then the CLI's own
+    config resolution is left completely alone)."""
     config = build_config(
         instruction_files=instruction_files,
         skill_paths=skill_paths,
         plugin_files=plugin_files,
+        mcp=mcp,
     )
     if len(config) == 1:  # only the $schema key
         return None
@@ -87,7 +96,11 @@ def write_process_config(
     return path
 
 
-def config_for_assets_dir(process_id: str, assets_dir: "Path | str | None") -> Path | None:
+def config_for_assets_dir(
+    process_id: str,
+    assets_dir: "Path | str | None",
+    mcp: dict | None = None,
+) -> Path | None:
     """Generate this process's config from a FlowPad instruction-assets dir.
 
     The ONE generator. Both spawn paths (the driver's headless turn and the
@@ -100,7 +113,9 @@ def config_for_assets_dir(process_id: str, assets_dir: "Path | str | None") -> P
     """
     directory = Path(assets_dir) if assets_dir else None
     if directory is None or not str(directory):
-        return None
+        # MCP servers alone still warrant a config — a process can have
+        # attached servers and no instruction assets at all.
+        return write_process_config(process_id, mcp=mcp) if mcp else None
     from flow_sdk.builtin.agentic_process.cli_drivers.opencode.hook_plugin import plugin_path
 
     agents_md = directory / "AGENTS.md"
@@ -112,6 +127,7 @@ def config_for_assets_dir(process_id: str, assets_dir: "Path | str | None") -> P
             instruction_files=[str(agents_md)] if agents_md.is_file() else [],
             skill_paths=[str(skills_dir)] if skills_dir.is_dir() else [],
             plugin_files=[str(hook_plugin)] if hook_plugin.is_file() else [],
+            mcp=mcp,
         )
     except Exception:
         logger.debug("opencode: config generation failed for %s", process_id, exc_info=True)
