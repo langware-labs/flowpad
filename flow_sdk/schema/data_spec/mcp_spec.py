@@ -49,6 +49,17 @@ class McpSpec(DataSpec):
     args: list[str] = []
     env: dict[str, str] = {}
     url: str = ""
+    #: A server whose CODE ships inside this asset — a path RELATIVE to the asset
+    #: folder (``server.py``). Relative is the whole point: the folder travels
+    #: with its agent over git, so an absolute path would be wrong on arrival.
+    #: ``Mcp.to_spec`` is what resolves it, because only the row knows
+    #: ``asset_ref``. Empty ⇒ this server is a command or a url, not bundled.
+    entrypoint: str = ""
+
+    @property
+    def is_bundled(self) -> bool:
+        """True when the server's code lives in the asset folder."""
+        return bool(self.entrypoint)
 
     @property
     def is_remote(self) -> bool:
