@@ -73,6 +73,7 @@ class AgentSpec(FrontMatter):
     max_turns: Optional[int] = None
     tools: Optional[list[str]] = None
     disallowed_tools: Optional[list[str]] = None
+    skills: Optional[list[str]] = None
     mcp_servers: Optional[list[str]] = None
     subagents: Optional[list[str]] = None
     additional_dirs: Optional[list[str]] = None
@@ -116,6 +117,7 @@ class Agent(Entity):
     max_turns: Optional[int] = APIField(default=None)
     tools: Optional[list[str]] = APIField(default=None)
     disallowed_tools: Optional[list[str]] = APIField(default=None)
+    skills: list[TypeId] = APIField(default_factory=list)
     mcp_servers: list[TypeId] = APIField(default_factory=list)
     subagents: list[str] = APIField(
         default_factory=list,
