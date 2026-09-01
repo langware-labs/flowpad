@@ -117,3 +117,11 @@ describe('buildHubRailItems', () => {
     expect(RAIL_ITEMS.map((i) => i.id as string)).not.toContain('token-plan');
   });
 });
+
+it('does not put LLM sources on the hub rail', () => {
+  // Every fact that page renders is a box fact (a device token, a stored key, the endpoint
+  // binding) and its box action 404s on the hub, so a hub entry would open an empty shell —
+  // the failure `buildHubRailItems` documents for InboxView.
+  const ids = buildHubRailItems(((s: TemplateStringsArray) => s[0]) as never).map((i) => i.id);
+  expect(ids).not.toContain('llm-sources');
+});

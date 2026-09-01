@@ -98,3 +98,35 @@ async def test_bind_malformed_is_400(bootstrapped_client, hub_login):
     body = r.json()
     assert body["status"] == "FAIL"
     assert body.get("status_code") == 400 or r.status_code == 400
+
+
+async def test_select_lets_a_user_choose_a_source_without_a_hub(bootstrapped_client) -> None:
+    """The picker's one write. It must work on a box that has never talked to a hub -- which is
+    why it is a sub-action and not the bare POST, whose 409 would otherwise tell someone picking
+    their own OpenRouter key that the box is not logged in."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.capability import Capability
+
+    path = "/api/v1/graph/compute_node/@local/llm-endpoint/select"
+
+    body = (await bootstrapped_client.post(path, json={"harness": "claude", "kind": "api_key", "provider": "openrouter"})).json()
+    assert body["status"] == "SUCCESS", body
+    cap = await Capability.get_by_kind(worker_capability_kind("claude"))
+    assert (cap.auth_mode, cap.api_provider) == ("api", "openrouter")
+
+    body = (await bootstrapped_client.post(path, json={"harness": "claude", "kind": "device"})).json()
+    assert body["status"] == "SUCCESS", body
+    cap = await Capability.get_by_kind(worker_capability_kind("claude"))
+    assert (cap.auth_mode, cap.api_provider) == ("device", None)
+
+
+async def test_select_rejects_what_it_cannot_honour(bootstrapped_client) -> None:
+    path = "/api/v1/graph/compute_node/@local/llm-endpoint/select"
+    for payload in (
+        {"kind": "device"},  # no harness
+        {"harness": "claude", "kind": "nonsense"},
+        {"harness": "claude", "kind": "api_key", "provider": "nonsense"},
+        {"harness": "claude", "kind": "endpoint"},  # logged out, nothing bound
+    ):
+        body = (await bootstrapped_client.post(path, json=payload)).json()
+        assert body["status"] != "SUCCESS", f"{payload} should have been refused: {body}"

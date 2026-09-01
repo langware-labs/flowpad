@@ -320,6 +320,16 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     canAddAsTab: false,
     foldsPointer: true,
   },
+  // What funds this machine's harnesses (page=desk, NOT hub: a device token, a stored key
+  // and the endpoint binding are all box facts, and the producing box action 404s on the
+  // hub). Pointer = `<section>[/<key>]`, an in-view selection, so it folds into one chip.
+  [ViewType.LLM_SOURCES]: {
+    title: msg`LLM sources`,
+    iconName: 'KeyRound',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+    foldsPointer: true,
+  },
   [ViewType.SUBGRAPH]: {
     title: msg`Subgraph`,
     iconName: 'Workflow',

@@ -31,6 +31,7 @@ export type RailItemId =
   /** Rules and the events they fire on — replaced `triggers` + `signals`. */
   | 'events'
   | 'hooks'
+  | 'llm-sources'
   | 'capabilities'
   | 'graph-workflows'
   | 'data-sources'
@@ -116,6 +117,10 @@ export const RAIL_ITEMS: readonly RailSpec[] = [
   // spawning entity to browse to.
   { id: 'process-runs', from: ViewMode.Advanced, placement: 'top' },
   { id: 'hooks', from: ViewMode.Advanced, placement: 'overflow' },
+  // Advanced, beside `hooks`: Standard is Vibe plus nothing (an invariant with a test), and
+  // this is a settings destination. A Vibe or Standard user still reaches it from the
+  // harness-status button and the no-harness warning, which do not depend on the rail.
+  { id: 'llm-sources', from: ViewMode.Advanced, placement: 'overflow' },
   { id: 'capabilities', from: ViewMode.Dev, placement: 'overflow' },
 ];
 

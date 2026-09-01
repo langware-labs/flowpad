@@ -20,6 +20,7 @@ from flow_sdk.core.dock_address import (
     VIEW_META,
     AIConfigSubview,
     CredentialsSubview,
+    LlmSourcesSection,
     Layout,
     MachineSubview,
     PageId,
@@ -74,12 +75,13 @@ def test_view_type_vocabulary_matches_the_contract():
     "enum_cls, key",
     [
         (CredentialsSubview, "credentials"),
+        (LlmSourcesSection, "llm-sources"),
         (WebappSubview, "web-app"),
         (MachineSubview, "machine"),
         (AIConfigSubview, "ai-config"),
         (TokenPlanKind, "token-plan"),
     ],
-    ids=["credentials", "web-app", "machine", "ai-config", "token-plan"],
+    ids=["credentials", "llm-sources", "web-app", "machine", "ai-config", "token-plan"],
 )
 def test_subview_vocabularies_match_the_contract(enum_cls, key):
     assert [member.value for member in enum_cls] == CONTRACT["subview_vocabularies"][key]

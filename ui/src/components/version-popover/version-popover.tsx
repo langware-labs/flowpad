@@ -26,7 +26,8 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
+import { openLlmSources } from '@src/components/llm-sources/llm-sources-pointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 interface PypiRelease {
   version: string;
@@ -267,6 +268,7 @@ interface VersionPopoverProps {
 }
 
 export function VersionPopover({ currentVersion }: VersionPopoverProps) {
+  const { navigation } = useDockNavigation();
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
   // Closing the popover genie-minimizes it into the version button.
@@ -774,7 +776,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               className="flex-1"
               onClick={() => {
                 setOpen(false);
-                openHarnessLoginModal();
+                openLlmSources(navigation);
               }}
               title={t`Harness sign-in & status`}
               data-testid="version-harness-status"
