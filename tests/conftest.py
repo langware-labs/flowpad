@@ -211,11 +211,43 @@ def pytest_configure(config):
 from pytest_asyncio import is_async_test
 
 
-def pytest_collection_modifyitems(items):
+def pytest_addoption(parser):
+    parser.addoption(
+        "--long",
+        action="store_true",
+        default=False,
+        help="Also run tests marked `long` (>1s), which the unit tier deselects by default.",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
     pytest_asyncio_tests = (item for item in items if is_async_test(item))
     session_scope_marker = pytest.mark.asyncio(loop_scope="session")
     for async_test in pytest_asyncio_tests:
         async_test.add_marker(session_scope_marker, append=False)
+
+    # The `long` tier is a runtime classification, and it has two forms: a whole
+    # FILE under tests/long_tests/, or a single test marked `long` that lives
+    # next to fast siblings it shares fixtures with. Carving those few tests into
+    # their own modules would fork the fixtures for no gain, so the marker is the
+    # seam instead — same tier, no file surgery.
+    #
+    # Deselect (not skip): a skip still reports as a test and buries the fast
+    # tier's signal in noise. `--long` opts back in; an explicit `-m` means the
+    # caller already stated a selection, so leave it alone.
+    #
+    # Repo-wide on purpose, not by accident of this file's location: the ceiling
+    # is a property of the fast tier, and tests/api has the same one. Only the
+    # DEFAULT run is trimmed — CI and the release gate both pass --long, so a
+    # marker never removes a test from the gate, only from the inner loop.
+    if config.getoption("--long") or config.getoption("-m"):
+        return
+    kept, deselected = [], []
+    for item in items:
+        (deselected if item.get_closest_marker("long") else kept).append(item)
+    if deselected:
+        config.hook.pytest_deselected(items=deselected)
+        items[:] = kept
 
 
 @pytest.fixture(autouse=True)

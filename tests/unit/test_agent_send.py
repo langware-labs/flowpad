@@ -80,6 +80,7 @@ class TestTimeoutIsNotRetryable:
     """THE test. `fetch` classes a timeout transient — "the next attempt may
     succeed" — which for a send means mailing the recipient twice."""
 
+    @pytest.mark.long  # 1.00s
     @pytest.mark.asyncio
     async def test_a_timed_out_send_refuses_a_retry(self, monkeypatch):
         driver = AgentDriver()

@@ -177,6 +177,7 @@ def test_manifest_ignores_malformed_content_projects(tmp_path: Path, entry) -> N
 # ── the flow ────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.long  # 1.14s
 @pytest.mark.asyncio
 async def test_template_files_become_the_customers_with_no_vendor_history(
     bootstrap_repo: str,
@@ -201,6 +202,7 @@ async def test_template_files_become_the_customers_with_no_vendor_history(
     )
 
 
+@pytest.mark.long  # 1.12s
 @pytest.mark.asyncio
 async def test_declared_helpdesk_is_attached_as_a_link_not_a_copy(
     bootstrap_repo: str, helpdesk_repo: str
@@ -273,6 +275,7 @@ async def test_a_template_with_no_manifest_is_an_ordinary_template(tmp_path: Pat
     assert response.data["autolaunch_journey"] is None
 
 
+@pytest.mark.long  # 1.58s
 @pytest.mark.asyncio
 async def test_reconcile_bootstrap_attaches_content_project_once(
     tmp_path: Path, helpdesk_repo: str
@@ -475,6 +478,7 @@ async def test_reconcile_does_not_link_content_when_indexing_fails(
     assert project.include_dirs == []
 
 
+@pytest.mark.long  # 1.25s
 @pytest.mark.asyncio
 async def test_the_checkout_is_named_after_the_engagement_not_the_template(
     bootstrap_repo: str,
@@ -523,6 +527,7 @@ def test_an_empty_reservation_is_not_a_collision(tmp_path: Path, monkeypatch) ->
     assert fresh_clone_slot("acme").name == "acme-2"
 
 
+@pytest.mark.long  # 2.56s
 @pytest.mark.asyncio
 async def test_two_engagements_from_one_template_are_independent(bootstrap_repo: str) -> None:
     """Two customers, two working copies. Reusing a checkout is right for
