@@ -167,6 +167,8 @@ class ViewType(StrEnum):
     # (`DockPointer.targetTypeId`) — the pinned shadow set in the contract suite
     # exists to keep that deliberate.
     APP = "app"
+    LLM_ENDPOINTS = "llm-endpoints"  # Hub LLM endpoints (roots + chains) - /dock/hub/llm-endpoints[/<id>[/<tab>]]
+    TOKEN_PLAN = "token-plan"  # Hub token plan (me / team / org budgets) - /dock/hub/token-plan[/<scope>]
 
 
 # ── pointer vocabularies for the views whose pointer is a closed set ───────
@@ -362,6 +364,8 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     # options, so it is excluded from tab identity and switching dev/served
     # re-points the SAME tab instead of forking one per runtime.
     ViewType.APP: _m(_REQ),
+    ViewType.LLM_ENDPOINTS: _m(_OPT, folds_pointer=True),
+    ViewType.TOKEN_PLAN: _m(_OPT, folds_pointer=True),
 }
 
 

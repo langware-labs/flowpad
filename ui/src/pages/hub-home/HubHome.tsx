@@ -21,6 +21,7 @@ import { NewSandboxDialog } from './NewSandboxDialog';
 import { LaunchSandboxDialog } from './LaunchSandboxDialog';
 import { ShareSandboxDialog } from './ShareSandboxDialog';
 import { AddMachineDialog } from '@src/components/hub/AddMachineDialog';
+import { TokenPlanCard } from '@src/components/token-plan/TokenPlanCard';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { MembershipInvitations } from '@src/components/inbox-view/MembershipInvitations';
 import {
@@ -354,8 +355,8 @@ export function HubHome() {
           </p>
         </div>
 
-        {/* Primary cards — WorldView projections */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {/* Primary cards — WorldView projections + the token plan glance */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <button
             type="button"
             onClick={() => openWorldView(WorldViewProjection.WORLD)}
@@ -385,6 +386,8 @@ export function HubHome() {
               <Trans>Teams and people across your org.</Trans>
             </span>
           </button>
+
+          <TokenPlanCard />
         </div>
 
         {/* Projects — real hub data (graph/project). Always rendered, zero
