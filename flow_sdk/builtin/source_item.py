@@ -28,6 +28,7 @@ from pydantic import ConfigDict, StringConstraints, model_validator
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.legacy_fields import adopt_renamed
+from flow_sdk.schema.data_spec.dataset_spec import FileRef
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.schema.types import EntityType
 
@@ -73,6 +74,52 @@ class SourceItemSpec(DataSpec):
     segment_label: str = ""
     raw: Optional[dict] = None
 
+
+class EmailMessageSpec(DataSpec):
+    """An OUTBOUND email, as a value — what a script hands ``Inbox.send``.
+
+    The first slice of the message-spec hierarchy: outbound only, deliberately.
+    Inbound mail keeps arriving as ``SourceItemSpec`` until the full
+    ``MessageSpec(SourceItemSpec)`` family lands; this class exists so the
+    outbound half of a conversation is a spec too — send shape and receive
+    shape stay one family, and threading is visible data rather than verb
+    arguments.
+
+    Identity fields (``external_id`` and friends) are deliberately absent: a
+    message's identity is born at the provider — ``send()`` returns it — and
+    the sent copy re-ingests as a full ``SourceItemSpec`` on the next poll.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    to: list[str]
+    body: str
+    subject: str = ""
+    thread_key: str = ""
+    reply_to_external_id: str = ""
+    #: Pointers, never bytes — resolved at the send edge. Unsupported channels
+    #: refuse loudly rather than dropping them.
+    attachments: list["FileRef"] = []
+
+    @classmethod
+    def reply_to(cls, m, *, body: str, attachments=()) -> "EmailMessageSpec":
+        """A reply to inbound message ``m`` — a pure constructor, no I/O.
+
+        Threads the way the drivers do: the provider's thread handle rides
+        ``thread_key`` and the replied-to message's own id rides
+        ``reply_to_external_id`` (what e.g. AgentMail's reply endpoint keys on).
+        """
+        subject = str(getattr(m, "name", "") or "")
+        if subject and not subject.lower().startswith("re:"):
+            subject = f"Re: {subject}"
+        return cls(
+            to=[str(getattr(m, "author_external_id", "") or "")],
+            body=body,
+            subject=subject,
+            thread_key=str(getattr(m, "thread_key", "") or ""),
+            reply_to_external_id=str(getattr(m, "external_id", "") or ""),
+            attachments=list(attachments),
+        )
 
 
 class SourceItem(Entity):
