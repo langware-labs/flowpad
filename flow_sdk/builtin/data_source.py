@@ -67,28 +67,6 @@ class SourceStatus(StrEnum):
     DISABLED = "disabled"
 
 
-class PollRate(StrEnum):
-    """How often to poll — a THIRD axis, orthogonal to status and health.
-
-    Attention-driven cadence: ``ACTIVE`` means someone is currently looking at
-    this source's output (a conversation view is mounted on it), so it polls at
-    ``active_poll_interval_seconds``; ``IDLE`` is the standing cadence. The UI
-    sets ACTIVE on view mount and IDLE on unmount; the backend decays a stale
-    ACTIVE on its own (see ``schedule_next``), so a crashed tab can never leave
-    a source polling fast forever.
-    """
-
-    IDLE = "idle"
-    ACTIVE = "active"
-
-
-#: How long an ACTIVE poll_rate survives without a fresh activation stamp
-#: before ``schedule_next`` decays it back to IDLE. A safety net for a viewer
-#: that vanished without saying goodbye (crashed tab, closed laptop) — NOT a
-#: cadence knob, and not to be raised to paper over anything.
-ACTIVE_DECAY_SECONDS = 600
-
-
 def parse_since(raw: str) -> "tuple[Optional[datetime], Optional[str]]":
     """``(datetime, None)`` or ``(None, problem)`` for a replay's ``since``.
 
@@ -186,16 +164,6 @@ class DataSource(Entity):
 
     # ── sync policy ──
     poll_interval_seconds: int = APIField(default=300, ge=MIN_POLL_INTERVAL_SECONDS)
-    #: idle | active — attention-driven cadence (see ``PollRate``).
-    poll_rate: str = APIField(default=PollRate.IDLE.value)
-    #: The cadence while someone is watching. Floor = the heartbeat tick.
-    active_poll_interval_seconds: int = APIField(
-        default=MIN_POLL_INTERVAL_SECONDS, ge=MIN_POLL_INTERVAL_SECONDS
-    )
-    #: When ACTIVE was last granted. Doubles as the transition sentinel in
-    #: ``save`` (this file has no pre-image to diff against) and as the decay
-    #: clock in ``schedule_next``.
-    poll_rate_set_at: Optional[datetime] = APIField(default=None)
     window_days: int = APIField(default=7, ge=1, description="The 'since last pull' floor")
     next_poll_at: Optional[datetime] = APIField(default=None)
     last_synced_at: Optional[datetime] = APIField(default=None)
@@ -276,23 +244,18 @@ class DataSource(Entity):
         the poller sets it before I/O as a crash guard and the sync loop sets it
         after; both call here so the two can never disagree.
 
-        Rate-aware: an ACTIVE ``poll_rate`` schedules at
-        ``active_poll_interval_seconds`` — unless its activation stamp has gone
-        stale, in which case the rate decays back to IDLE right here (every
-        caller saves after calling, so the decay persists). The decay is what
-        makes the UI's plain field-write protocol safe: the viewer that never
-        said goodbye costs at most ``ACTIVE_DECAY_SECONDS`` of fast polling.
+        The stamp is QUANTIZED to the minute grid the heartbeat ticks on.
+        ``now + interval`` carries this dispatch's millisecond jitter, and the
+        next tick's own jitter is independent — so whenever the tick fired a
+        few ms earlier than the stamp, the poll silently waited a whole extra
+        minute (RCA-proven both directions by moving ``next_poll_at`` across a
+        tick boundary: due :00−30s → the boundary tick polled; due :00+0.5s →
+        it skipped and polled a minute late). Flooring to the minute makes an
+        interval of one tick period mean "every tick", never a coin flip.
         """
         now = now or datetime.now(timezone.utc)
-        interval = self.poll_interval_seconds
-        if self.poll_rate == PollRate.ACTIVE.value:
-            stamp = iso_to_utc(self.poll_rate_set_at) if self.poll_rate_set_at else None
-            if stamp is None or (now - stamp).total_seconds() > ACTIVE_DECAY_SECONDS:
-                self.poll_rate = PollRate.IDLE.value
-                self.poll_rate_set_at = None
-            else:
-                interval = self.active_poll_interval_seconds
-        self.next_poll_at = now + timedelta(seconds=interval)
+        due = now + timedelta(seconds=self.poll_interval_seconds)
+        self.next_poll_at = due.replace(second=0, microsecond=0)
         return self.next_poll_at
 
     async def capabilities_ready(self) -> bool:
@@ -339,6 +302,37 @@ class DataSource(Entity):
         """
         self._make_due()
         await self.save()
+        return ApiSuccessResponse(data={
+            "status": "due", "health": self.health, "source_status": self.status,
+            "detail": "queued for the next heartbeat tick (≤60s)",
+        })
+
+    @core_action.post(action_name="request_poll")
+    async def request_poll_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/request_poll — attention.
+
+        A viewer is looking at this source's output RIGHT NOW; poll on the
+        next heartbeat tick. The UI fires this on an interval while a
+        conversation backed by the source is selected — the request stream IS
+        the liveness signal, so there is no active/idle state to store,
+        round-trip, or decay: when the viewer goes away the requests stop and
+        the standing ``poll_interval_seconds`` cadence resumes by itself.
+
+        Deliberately NOT ``poll_now``: that verb is the one un-latch for
+        ``config_error``, and an auto-firing viewer must never resurrect a
+        parked source (burning quota to re-learn a broken credential) or wake
+        a DISABLED one — a human decision outranks a mounted view. Ignored,
+        loudly in the payload, for anything that is not a healthy ACTIVE
+        source. Idempotent: an already-due source is left due.
+        """
+        if self.status != SourceStatus.ACTIVE.value or self.health == SourceHealth.CONFIG_ERROR.value:
+            return ApiSuccessResponse(data={
+                "status": "ignored", "health": self.health, "source_status": self.status,
+                "detail": "attention never wakes a parked or non-active source",
+            })
+        if self.next_poll_at is not None:
+            self.next_poll_at = None
+            await self.save()
         return ApiSuccessResponse(data={
             "status": "due", "health": self.health, "source_status": self.status,
             "detail": "queued for the next heartbeat tick (≤60s)",
@@ -563,28 +557,6 @@ class DataSource(Entity):
                 if stamped:
                     self.channel = stamped
         self._stamp_origin()
-        # ── poll_rate transition ────────────────────────────────────────────
-        # A REAL pre-image diff, and the stamp is SERVER-owned. The client
-        # PUTs the whole entity (`deepAssign` copies every wire field back),
-        # so any client-visible sentinel would round-trip stale and suppress
-        # the transition — observed live: a re-activation carried the old
-        # stamp and neither re-stamped nor made the source due. One PK read
-        # per save is nothing next to that; sources save about once a minute.
-        prev = await DataSource.get_by_id(self.id) if self.exist_in_db else None
-        was_active = prev is not None and prev.poll_rate == PollRate.ACTIVE.value
-        now_active = self.poll_rate == PollRate.ACTIVE.value
-        # Whatever the payload said, the stamp is the server's.
-        self.poll_rate_set_at = prev.poll_rate_set_at if prev is not None else None
-        if now_active and not was_active:
-            # THE activation moment: someone just started watching. Stamp it
-            # and make the source due so the next heartbeat tick (≤60s) polls,
-            # instead of waiting out a schedule set minutes ago.
-            self.poll_rate_set_at = datetime.now(timezone.utc)
-            # next_poll_at directly, NOT _make_due(): _make_due also un-latches
-            # config_error, and attention must never resurrect a parked source.
-            self.next_poll_at = None
-        elif not now_active:
-            self.poll_rate_set_at = None
         return await super().save(*args, **kwargs)
 
     async def _coerce_config(self) -> None:

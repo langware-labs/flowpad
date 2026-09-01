@@ -22,7 +22,7 @@ import { isHelpdeskKind } from '@sdk/entities/conversation';
 import { ThreadStack } from './ThreadStack';
 import { channelLabel } from './channel-attribution';
 import { sourcesQuery } from '@src/components/data-sources/use-source-specs';
-import { useAttentionPollRate } from '@src/components/data-sources/useAttentionPollRate';
+import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
 import { syncConversationMessages, updateMessage } from '@src/components/inbox-view/inbox-api';
 import { FlowMessageKind, markFlowMessagesReceived } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
@@ -301,12 +301,9 @@ export function ConversationView({
   }, [messagesById]);
 
   // Attention-driven polling: while this source-backed conversation is the
-  // SELECTED dock, its DataSource runs at the active cadence (and polls
-  // immediately on selection); back to idle when deselected or closed.
-  // Selection is derived from the URL (currentDock) — NOT from mount:
-  // hidden dock tabs stay mounted (Radix keeps them, ConversationRoute.tsx
-  // documents it) and the live queries keep their last data, so neither
-  // unmount nor data-emptiness ever fires for a backgrounded tab. Source
+  // SELECTED dock, keep its DataSource due (request_poll on an interval) so
+  // new messages land within one heartbeat tick; when deselected the
+  // requests stop and the standing cadence resumes on its own. Source
   // resolution mirrors channel-attribution: the precise origin_local pointer
   // first, then the channel match against the cached sources list.
   const { data: attentionSources = [] } = useEntitiesQuery<DataSource>(sourcesQuery);
@@ -334,7 +331,7 @@ export function ConversationView({
       return false;
     }
   }, [conversationId]);
-  useAttentionPollRate(attentionSourceId, isSelectedDock);
+  useAttentionPolling(attentionSourceId, isSelectedDock);
 
   // What is in flight. Local state, because the line must appear the instant
   // the user hits Send — the worker's process does not exist yet. Cleared when

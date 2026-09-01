@@ -24,8 +24,6 @@ class DataSourceMeta(BaseMeta):
     config: Optional[dict] = None
     status: Optional[str] = None
     poll_interval_seconds: Optional[int] = None
-    poll_rate: Optional[str] = None
-    active_poll_interval_seconds: Optional[int] = None
     window_days: Optional[int] = None
     segment_count: Optional[int] = None
     required_capabilities: Optional[list] = None
