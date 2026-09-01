@@ -5,8 +5,10 @@
  * is flagged. Rows navigate to the hop's own detail.
  */
 import type { LLMChain } from '@sdk';
+import type { MessageDescriptor } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { AlertTriangle, CircleSlash, KeyRound, Pin, Zap } from 'lucide-react';
+import { AlertTriangle, CircleSlash, KeyRound, Pin, Zap, type LucideIcon } from 'lucide-react';
 import { useMemo } from 'react';
 
 import { Badge } from '@src/components/ui/badge';
@@ -22,39 +24,26 @@ const HEALTH_TONE: Record<HopHealth, string> = {
   missing: 'text-destructive',
 };
 
+/** One row per health, in the same shape as `HEALTH_TONE` above; `ok` earns no badge. */
+const HEALTH_BADGE: Record<HopHealth, { icon: LucideIcon; tone: string; label: MessageDescriptor } | null> = {
+  ok: null,
+  disabled: { icon: CircleSlash, tone: 'text-muted-foreground', label: msg`disabled` },
+  no_credential: { icon: KeyRound, tone: TONE.amber, label: msg`no key` },
+  breaker_open: { icon: Zap, tone: TONE.destructive, label: msg`breaker open` },
+  missing: { icon: AlertTriangle, tone: TONE.destructive, label: msg`not visible` },
+};
+
 function HealthBadge({ node }: { node: ChainTreeNode }) {
-  switch (node.health) {
-    case 'disabled':
-      return (
-        <Badge variant="outline" className="gap-1 text-muted-foreground">
-          <CircleSlash className="h-3 w-3" />
-          <Trans>disabled</Trans>
-        </Badge>
-      );
-    case 'no_credential':
-      return (
-        <Badge variant="outline" className={`gap-1 ${TONE.amber}`}>
-          <KeyRound className="h-3 w-3" />
-          <Trans>no key</Trans>
-        </Badge>
-      );
-    case 'breaker_open':
-      return (
-        <Badge variant="outline" className={`gap-1 ${TONE.destructive}`}>
-          <Zap className="h-3 w-3" />
-          <Trans>breaker open</Trans>
-        </Badge>
-      );
-    case 'missing':
-      return (
-        <Badge variant="outline" className={`gap-1 ${TONE.destructive}`}>
-          <AlertTriangle className="h-3 w-3" />
-          <Trans>not visible</Trans>
-        </Badge>
-      );
-    default:
-      return null;
-  }
+  const { t } = useLingui();
+  const badge = HEALTH_BADGE[node.health];
+  if (!badge) return null;
+  const Icon = badge.icon;
+  return (
+    <Badge variant="outline" className={`gap-1 ${badge.tone}`}>
+      <Icon className="h-3 w-3" />
+      {t(badge.label)}
+    </Badge>
+  );
 }
 
 export interface ChainTreeProps {

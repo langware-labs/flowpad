@@ -45,7 +45,6 @@ export function hopHealth(hop: LLMChainHop | null | undefined): HopHealth {
 interface Trie {
   id: string;
   children: Map<string, Trie>;
-  childOrder: string[];
   pathIndexes: number[];
 }
 
@@ -56,16 +55,15 @@ export function buildChainTree(chain: LLMChain | null | undefined): ChainTreeNod
 
   // Merge the paths into a trie keyed by ancestor path, keeping first-seen child
   // order (= fallback order, because the hub lists paths in that order).
-  const root: Trie = { id: chain.entry.id, children: new Map(), childOrder: [], pathIndexes: [] };
+  const root: Trie = { id: chain.entry.id, children: new Map(), pathIndexes: [] };
   paths.forEach((path, pathIndex) => {
     let node = root;
     node.pathIndexes.push(pathIndex);
     for (const id of path.slice(1)) {
       let child = node.children.get(id);
       if (!child) {
-        child = { id, children: new Map(), childOrder: [], pathIndexes: [] };
+        child = { id, children: new Map(), pathIndexes: [] };
         node.children.set(id, child);
-        node.childOrder.push(id);
       }
       child.pathIndexes.push(pathIndex);
       node = child;
@@ -89,7 +87,9 @@ export function buildChainTree(chain: LLMChain | null | undefined): ChainTreeNod
       order,
       key,
     });
-    node.childOrder.forEach((childId, i) => walk(node.children.get(childId) as Trie, depth + 1, i, key));
+    // A Map iterates in insertion order, which is exactly the order children
+    // were first seen — no parallel array needed to preserve it.
+    [...node.children.values()].forEach((child, i) => walk(child, depth + 1, i, key));
   };
   walk(root, 0, 0, '');
 

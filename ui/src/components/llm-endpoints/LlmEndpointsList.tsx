@@ -101,7 +101,7 @@ export function useTodayUsage(ids: readonly string[]) {
   // remount within the minute (list ↔ detail) lands on the same cache entry.
   const range = useMemo(() => cohortRange('today'), []);
   const results = useQueries({
-    queries: ids.map((id) => usageQueryOptions(id, { from: range.from, to: range.to, granularity: range.granularity })),
+    queries: ids.map((id) => usageQueryOptions(id, range)),
   });
   const byId = new Map<string, LLMUsageReport | undefined>();
   ids.forEach((id, i) => byId.set(id, results[i]?.data));

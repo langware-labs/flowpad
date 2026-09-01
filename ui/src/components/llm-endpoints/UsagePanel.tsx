@@ -82,7 +82,7 @@ export function UsagePanel({ endpointId, endpoint, all }: UsagePanelProps) {
 
   const range = useMemo(() => cohortRange(cohort), [cohort]);
   const query = useMemo(
-    () => ({ from: range.from, to: range.to, granularity: range.granularity, ...(isAdmin ? { by } : {}) }),
+    () => ({ ...range, ...(isAdmin ? { by } : {}) }),
     [range, isAdmin, by],
   );
   const { data, isLoading, error } = useLlmEndpointUsage(endpointId, query);

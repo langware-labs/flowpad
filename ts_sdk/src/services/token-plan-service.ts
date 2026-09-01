@@ -13,10 +13,12 @@ import { dataManager } from '../APIEntity';
 import type { ActionInfo } from '../models/ActionInfo';
 import type { HttpMethod } from '../models/ApiUrl';
 import { hubAction, type LLMUsageCounters } from './llm-endpoints-service';
+import { TokenPlanKind } from '../utils/ui/view-types';
 
 const TYPE = 'token_plan';
 
-export type TokenPlanScopeKind = 'me' | 'team' | 'org';
+/** The pinned vocabulary, not a re-spelling of it — see `TokenPlanKind`. */
+export type TokenPlanScopeKind = `${TokenPlanKind}`;
 /** What a hop on a path is, exactly as the hub's `HopKind` literal emits it:
  *  the caller's own default, a team pool, an org pool, the seeded global root,
  *  some other root, or an ordinary chain endpoint in between. */

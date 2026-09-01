@@ -31,8 +31,6 @@ import { AssetsPage } from '@src/components/assets/AssetsPage';
 import { HubAssetsPage } from '@src/components/assets/HubAssetsPage';
 import { CollaborationPage, LiveSessionView } from '@src/components/collaboration';
 import { CredentialsView } from '@src/components/credentials-view/CredentialsView';
-import { LlmEndpointsView } from '@src/components/llm-endpoints';
-import { TokenPlanView } from '@src/components/token-plan';
 import { CapabilitiesView } from '@src/components/capabilities-view';
 import { ConversationRoute } from '@src/components/conversation';
 import { InboxView } from '@src/components/inbox-view/InboxView';
@@ -77,6 +75,14 @@ const GraphView = lazy(() =>
 // renderer, which no user who never opens a help desk should pay for.
 const HelpdeskPortalPage = lazy(() =>
   import('@src/components/helpdesk/HelpdeskPortalPage').then((m) => ({ default: m.HelpdeskPortalPage })),
+);
+// Lazy like its neighbours: both hub token screens pull recharts, which no
+// user who never opens them should pay for in this chunk.
+const LlmEndpointsView = lazy(() =>
+  import('@src/components/llm-endpoints/LlmEndpointsView').then((m) => ({ default: m.LlmEndpointsView })),
+);
+const TokenPlanView = lazy(() =>
+  import('@src/components/token-plan/TokenPlanView').then((m) => ({ default: m.TokenPlanView })),
 );
 const WorldView = lazy(() =>
   isWebglAvailable()
@@ -255,9 +261,17 @@ export function ContentPanel({
       case ViewType.CREDENTIALS:
         return <CredentialsView />;
       case ViewType.LLM_ENDPOINTS:
-        return <LlmEndpointsView pointer={currentDock?.pointer} />;
+        return (
+          <Suspense fallback={null}>
+            <LlmEndpointsView pointer={currentDock?.pointer} />
+          </Suspense>
+        );
       case ViewType.TOKEN_PLAN:
-        return <TokenPlanView pointer={currentDock?.pointer} />;
+        return (
+          <Suspense fallback={null}>
+            <TokenPlanView pointer={currentDock?.pointer} />
+          </Suspense>
+        );
       case ViewType.HOME:
       default:
         return <HubHome />;

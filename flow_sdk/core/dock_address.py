@@ -206,6 +206,19 @@ class AIConfigSubview(StrEnum):
     CLIS = "clis"
 
 
+class TokenPlanKind(StrEnum):
+    """``/dock/hub/token-plan/<scope>[/<teamId>]``.
+
+    A closed leading segment like ``CredentialsSubview``, so it is pinned in the
+    contract rather than respelled per language: the frontend parser and the
+    hub service each had their own copy of this list before.
+    """
+
+    ME = "me"
+    TEAM = "team"
+    ORG = "org"
+
+
 # ──────────────────────────────────────────────────────────────────────────
 # Retirement — a view can be deleted from the UI but not from history
 # ──────────────────────────────────────────────────────────────────────────

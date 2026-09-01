@@ -9,7 +9,7 @@
 // Tests under "TypeScript-exclusive" are checks only this side can make —
 // chiefly the tabHash STRINGS, which Python deliberately never mirrors (it
 // pins their null-ness only; see the dock_address.py docstring).
-import { AIConfigSubview, CredentialsSubview, Layout, MachineSubview, PageId, ViewType, WebappSubview, isValidPage } from '@sdk';
+import { AIConfigSubview, CredentialsSubview, Layout, MachineSubview, PageId, TokenPlanKind, ViewType, WebappSubview, isValidPage } from '@sdk';
 import { RETIRED_DOCK_VIEWS, normalizeRetiredDockPointer } from '@sdk/utils/ui/retired-views';
 import { describe, expect, it } from 'vitest';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -66,6 +66,7 @@ describe('dock-address contract (shared fixture)', () => {
     ['web-app', WebappSubview],
     ['machine', MachineSubview],
     ['ai-config', AIConfigSubview],
+    ['token-plan', TokenPlanKind],
   ] as const)('exposes the same %s subview vocabulary', (key, enumObj) => {
     expect(Object.values(enumObj)).toEqual(
       (contract.subview_vocabularies as Record<string, string[]>)[key],
