@@ -400,7 +400,7 @@ class AgentDriver(IngestDriver):
         conversation_id: str = "",
     ) -> dict:
         """One agent turn that sends and records. Same build/save/prompt/wait
-        shape as ``_run_agent`` — ``build`` (not ``launch``) because the receipt
+        shape as ``_run_agent`` — ``create_process`` (not ``launch``) because the receipt
         path must be known before the run starts."""
         from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
         from flow_sdk.graph_workflow_manager.manager import execution_base  # noqa: PLC0415
@@ -432,7 +432,7 @@ class AgentDriver(IngestDriver):
         }
         if harness:
             options["worker_type"] = harness
-        proc = await deployment.build("", **options)
+        proc = await deployment.create_process("", **options)
 
         base = execution_base(proc)
         (base / "output").mkdir(parents=True, exist_ok=True)
@@ -529,10 +529,10 @@ class AgentDriver(IngestDriver):
             # retry — same verdict the harness-missing case gets.
             raise SourceError.config("unknown_agent", str(exc)) from exc
 
-        # `build` mints the process id, so the record dir is known before the
+        # `create_process` mints the process id, so the record dir is known before the
         # run — the same pre-save convention the flow engine's agent node uses
         # to tell an agent where to write.
-        proc = await deployment.build("", **self._launch_options(source, cursor, harness))
+        proc = await deployment.create_process("", **self._launch_options(source, cursor, harness))
         base = execution_base(proc)
         (base / "output").mkdir(parents=True, exist_ok=True)
         receipt_path = base / "output" / RECEIPT_FILENAME

@@ -186,7 +186,8 @@ if [[ "$SKIP_TESTS" == false ]]; then
     # would test tee's exit, which is always 0).
     TEST_LOG="${TMPDIR:-/tmp}/deploy-tests-$(date +%Y%m%d-%H%M%S).log"
     echo -e "${YELLOW}Running tests... (live log: tail -f ${TEST_LOG})${NC}"
-    PYTHONUNBUFFERED=1 python3 -m pytest tests/ -v --tb=short --durations=20 2>&1 | tee "$TEST_LOG"
+    # --long: never ship on a run that silently skipped the slow tests.
+    PYTHONUNBUFFERED=1 python3 -m pytest tests/ -v --tb=short --durations=20 --long 2>&1 | tee "$TEST_LOG"
     if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
         echo -e "${GREEN}Tests passed!${NC}"
     else

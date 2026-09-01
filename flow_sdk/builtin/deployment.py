@@ -369,7 +369,7 @@ class Deployment(Entity):
             raise RuntimeError(f"agent {agent.name!r} is disabled")
         return agent
 
-    async def build(self, prompt: str = "", **options) -> "AgenticProcess":
+    async def create_process(self, prompt: str = "", **options) -> "AgenticProcess":
         """Project the deployed agent onto an AgenticProcess. Not saved, not started.
 
         The primitive. Every field the agent declares (worker, model,
@@ -427,6 +427,11 @@ class Deployment(Entity):
             project_id=options.pop("project_id", None) or agent.project_id,
             load_flowpad_assistant=agent.load_flowpad_assistant,
             additional_dirs=list(agent.additional_dirs or []),
+            # The agent's MCP assets, resolved from its folder. Set on the
+            # constructor rather than via ``process.add_mcp`` because this verb
+            # is documented "not saved" and ``add_mcp`` saves. A process may
+            # still add its own on top; ``resolved_mcp_servers`` dedupes by name.
+            mcp_servers=await agent.resolved_mcp_specs(),
             cli_config=opts.to_json(),
             instruction_content=prompt,
             context_data=context_data,
@@ -437,13 +442,13 @@ class Deployment(Entity):
         return process
 
     async def launch(self, prompt: str, *, wait: bool = False, **options) -> "AgenticProcess":
-        """``build`` + save + run the first turn. The convenience shape.
+        """``create_process`` + save + run the first turn. The convenience shape.
 
         ``wait=True`` polls to a terminal state.
         """
         from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
 
-        proc = await self.build(prompt, **options)
+        proc = await self.create_process(prompt, **options)
         await proc.save()
         resp = await proc.prompt(prompt)
         if isinstance(resp, ApiFailResponse):
@@ -474,8 +479,8 @@ class Deployment(Entity):
                 f"this agent is deployed on compute node {self.compute_node_id}, "
                 "which cannot be reached from here yet."
             )
-        agent = await self._require_agent()  # ``build`` re-reads it from the memoized ``_element``
-        # Peeked, not popped — ``build`` stays the one owner of the
+        agent = await self._require_agent()  # ``create_process`` re-reads it from the memoized ``_element``
+        # Peeked, not popped — ``create_process`` stays the one owner of the
         # caller-else-agent fallback. It is read here because the acting project
         # has to drive the WORKDIR too: resolving cwd from ``agent.project_id``
         # would open a help-desk agent's session inside the vendor's checkout
@@ -485,7 +490,7 @@ class Deployment(Entity):
         if not workdir and project_id:
             project = await Project.get_by_id(project_id)
             workdir = getattr(project, "fs_storage_mount_path", None) if project else None
-        proc = await self.build(
+        proc = await self.create_process(
             "",
             name=options.pop("name", None) or agent.display_name,
             process_type=ProcessKind.CHAT.value,

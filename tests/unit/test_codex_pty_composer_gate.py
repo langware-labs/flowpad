@@ -583,6 +583,7 @@ class _NeverReadyDriver:
         return proc._transcript_path
 
 
+@pytest.mark.long  # 1.51s
 @pytest.mark.timeout(5)
 async def test_blind_last_resort_when_composer_marker_never_matches(tmp_path):
     """The cold-PTY dead-end fix: when the composer marker never matches, the

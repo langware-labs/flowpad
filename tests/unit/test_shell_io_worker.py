@@ -78,6 +78,7 @@ class _FakeCLIOptions(AgentOptions):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.long  # 1.13s
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_write_then_submit_sends_two_distinct_ordered_writes(monkeypatch):
@@ -116,6 +117,7 @@ async def test_write_then_submit_sends_two_distinct_ordered_writes(monkeypatch):
         await kill_pty(shell)
 
 
+@pytest.mark.long  # 1.67s
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_write_then_submit_actually_submits_to_shell():
@@ -155,6 +157,7 @@ async def test_wait_for_input_ready_returns_when_prompt_idle():
             pty_registry.states.pop(key, None)
 
 
+@pytest.mark.long  # 1.07s
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_wait_for_input_ready_times_out_when_never_ready():
