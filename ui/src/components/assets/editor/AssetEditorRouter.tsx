@@ -1,4 +1,4 @@
-import { Agent, SubAgent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, Deck, DeckTemplate, DynamicWorkflow, FSRef, Journey, Skill, Spreadsheet, Task, TypeId, UsageReport, VFSPath, Whiteboard, type AnyEntity } from '@sdk';
+import { Agent, SubAgent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, Deck, DeckTemplate, DynamicWorkflow, FSRef, Journey, Mcp, Skill, Spreadsheet, Task, TypeId, UsageReport, VFSPath, Whiteboard, type AnyEntity } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { lazy, Suspense, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -29,6 +29,7 @@ import { DynamicWorkflowAssetEditor } from './dynamic-workflow/DynamicWorkflowAs
 import { UsageReportAssetEditor } from './usage-report/UsageReportAssetEditor';
 import { AssetCleanupReportAssetEditor } from './asset-cleanup/AssetCleanupReportAssetEditor';
 import { JourneyViewer } from '@src/journey/JourneyViewer';
+import { McpViewer } from '@src/components/assets/editor/mcp/McpViewer';
 import { WhiteboardAssetEditor } from './whiteboard/WhiteboardAssetEditor';
 import { DeckTemplateViewer } from './deck-template/DeckTemplateViewer';
 import { DeckViewer } from './deck/DeckViewer';
@@ -329,6 +330,16 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
           typeLabel="journey"
           resolvedEntity={typeIdEntity as Journey | undefined}
           render={(journey) => <JourneyViewer journey={journey} />}
+        />
+      );
+    case AssetEditor.MCP:
+      return (
+        <EntityResolutionGate<Mcp>
+          type={Mcp.type}
+          fsRef={fsRef}
+          typeLabel="MCP server"
+          resolvedEntity={typeIdEntity as Mcp | undefined}
+          render={(mcp) => <McpViewer fsRef={fsRef} mcp={mcp} />}
         />
       );
     case AssetEditor.SPREADSHEET:

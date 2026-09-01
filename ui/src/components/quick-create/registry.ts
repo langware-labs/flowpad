@@ -5,6 +5,7 @@ import {
   DynamicWorkflow,
   Layout,
   Markdown,
+  Mcp,
   Project,
   Prompt,
   Skill,
@@ -255,6 +256,19 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
       return {
         pointer: saved.asset_ref ? DockPointer.forAssetEditor('whiteboard', saved.asset_ref) : undefined,
         toastTitle: msg`Whiteboard created`,
+      };
+    },
+  },
+  {
+    type: 'mcp',
+    label: msg`MCP Server`,
+    wikiword: 'MCP servers',
+    fallbackSubFolder: 'agentic-assets/mcp',
+    create: async ({ project, name }) => {
+      const saved = await Mcp.createInProject(project, name);
+      return {
+        pointer: saved.asset_ref ? DockPointer.forAssetEditor('mcp', saved.asset_ref) : undefined,
+        toastTitle: msg`MCP server created`,
       };
     },
   },

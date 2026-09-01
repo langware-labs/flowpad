@@ -67,6 +67,7 @@ export * from './web-domain';
 export * from './skill';
 export * from './whiteboard';
 export * from './deck-template';
+export * from './mcp';
 export * from './deck';
 export * from './spreadsheet';
 export * from './agent-trace';
