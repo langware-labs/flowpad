@@ -94,7 +94,7 @@ of (1), pinned to it by a shared fixture rather than by hand (see [§9](#9-deep-
    — record type → AssetEditor. Editors: code, markdown (markdown, claude_md,
    claude_memory, claude_rules, command, plan, prompt), agent, skill, task,
    workflow, whiteboard, agent_trace, dynamic_workflow, usage_report,
-   asset_cleanup_report. Rendered by `AssetEditorRouter.tsx:153`.
+   asset_cleanup_report, mcp. Rendered by `AssetEditorRouter`.
 2. **Per-entity `dockPointer` getters** (SDK) — `APIEntity.dockPointer`
    default is `ViewType.HOME` (`APIEntity.ts:481`); asset types override via
    `assetEditorPointer` (`:503`); process/shell/conversation/etc. have bespoke
