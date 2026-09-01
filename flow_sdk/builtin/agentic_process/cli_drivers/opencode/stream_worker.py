@@ -180,9 +180,6 @@ def _config_path_from_context(context: AgenticContext, process_id: str | None = 
     # from anywhere else here is how opencode ends up with MCP on the PTY path
     # and silently without it on the headless one.
     mcp = dict(context.mcp_config_fragment or {})
-    # Extra mounted roots (the Flowpad Assistant, a project's context folders,
-    # ``additional_dirs``) are ``--add-dir`` for every other vendor and have NO
-    # argv spelling here, so this file is their only route to the worker too.
     add_dirs = list(context.add_dirs or [])
 
     if not process_id:
@@ -196,8 +193,6 @@ def _config_path_from_context(context: AgenticContext, process_id: str | None = 
         return str(generated) if generated else None
     candidate = Path(dirs[0])
     if candidate.is_file():
-        # Already a generated config (``headless_prompt`` built it, add_dirs
-        # included).
         return str(candidate)
     if not candidate.is_dir():
         return None
