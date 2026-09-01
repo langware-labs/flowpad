@@ -1978,6 +1978,20 @@ class FsRecordsActionsMixin:
         expanded = str(Path(raw_path).expanduser())
         if not Path(expanded).is_absolute():
             expanded = "/" + expanded
+            # On Windows that rooted path is STILL not absolute — it carries no
+            # drive — and a drive-less path normalizes to ``Users\…`` while every
+            # stored ``asset_ref`` is ``C:/Users/…``, so the lookup's normalized
+            # comparison can never match and the route 404s on every VFS-form
+            # path. ``resolve()`` anchors it to the current drive.
+            #
+            # The miss is invisible from the disk check: the drive-less path
+            # ``exists()`` whenever the backend's CWD is on that same drive, so
+            # the fast path enters, parses the file, and still finds no row.
+            #
+            # Inert on POSIX — there the ``/`` prefix already made it absolute,
+            # so this branch never runs and no symlink is resolved.
+            if not Path(expanded).is_absolute():
+                expanded = str(Path(expanded).resolve())
 
         # Pass 1 + fast recovery (targeted single-file parse + sync) live in
         # the shared ``discover_record_by_path`` helper — also used by
