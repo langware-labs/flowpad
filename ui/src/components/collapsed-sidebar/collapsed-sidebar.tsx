@@ -17,7 +17,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@src/components/ui/sidebar';
-import { DataSource, PageId } from '@sdk';
+import { AgenticProcess, DataSource, PageId } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useHasConversations } from '@src/hooks/use-has-conversations';
 import { useLastVibeChat } from '@src/pages/flow-page/vibe-process-resolver';
@@ -38,7 +38,6 @@ import {
   Compass,
   Mail,
   History,
-  MessageCircle,
   RadioTower,
   Workflow,
   Webhook,
@@ -92,7 +91,9 @@ export function CollapsedSidebar() {
 
   /** Title/icon/target per id. A LOOKUP, not an order — see RAIL_ITEMS. */
   const navMeta: Partial<Record<RailItemId, NavItem>> = {
-    chats: { title: t`Chats`, icon: MessageCircle, viewType: ViewType.SHELL },
+    // Glyph from the type registry (same rule as `data-sources` below): the rail
+    // slot and an AgenticProcess entity are one thing to a user, so one TypeInfo.
+    chats: { title: t`Chats`, icon: iconForType(AgenticProcess.type), viewType: ViewType.SHELL },
     inbox: { title: t`Inbox`, icon: Mail, viewType: ViewType.INBOX },
     discover: { title: t`Discover`, icon: Compass, viewType: null },
     events: { title: t`Events`, icon: RadioTower, viewType: ViewType.EVENTS },

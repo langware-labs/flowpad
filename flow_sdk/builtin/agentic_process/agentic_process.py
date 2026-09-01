@@ -916,7 +916,6 @@ def _union_display_stacks(a: list, b: list) -> list[dict]:
 
 class AgenticProcess(Entity):
     _api_visible = True
-    _icon: ClassVar[str | None] = "Workflow"
     type: str = APIField(default="agentic_process")
 
     instruction_content: str | None = APIField(default=None)
