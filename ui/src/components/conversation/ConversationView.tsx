@@ -4,6 +4,7 @@ import { useLingui } from '@lingui/react/macro';
 import { LifeBuoy, Radio, RefreshCw } from 'lucide-react';
 import {
   Conversation,
+  DataSource,
   fetchConversations,
   FlowMessage,
   MessageThread,
@@ -20,6 +21,8 @@ import type { ITask } from '@sdk/entities/task';
 import { isHelpdeskKind } from '@sdk/entities/conversation';
 import { ThreadStack } from './ThreadStack';
 import { channelLabel } from './channel-attribution';
+import { sourcesQuery } from '@src/components/data-sources/use-source-specs';
+import { useAttentionPollRate } from '@src/components/data-sources/useAttentionPollRate';
 import { syncConversationMessages, updateMessage } from '@src/components/inbox-view/inbox-api';
 import { FlowMessageKind, markFlowMessagesReceived } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
@@ -43,6 +46,7 @@ import { resolveAttachmentProjectId } from './conversation-context-aggregation';
 import { useConversationMessageAttachments } from './useMessageAttachments';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { ViewType } from '@src/types/ViewType';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
 import { mostRecentProcess } from '@src/utils/process-recency';
 import { useRemoteWorkerSessionForConversation } from '@src/hooks/useRemoteWorkerSessionForConversation';
@@ -295,6 +299,42 @@ export function ConversationView({
     }
     return null;
   }, [messagesById]);
+
+  // Attention-driven polling: while this source-backed conversation is the
+  // SELECTED dock, its DataSource runs at the active cadence (and polls
+  // immediately on selection); back to idle when deselected or closed.
+  // Selection is derived from the URL (currentDock) — NOT from mount:
+  // hidden dock tabs stay mounted (Radix keeps them, ConversationRoute.tsx
+  // documents it) and the live queries keep their last data, so neither
+  // unmount nor data-emptiness ever fires for a backgrounded tab. Source
+  // resolution mirrors channel-attribution: the precise origin_local pointer
+  // first, then the channel match against the cached sources list.
+  const { data: attentionSources = [] } = useEntitiesQuery<DataSource>(sourcesQuery);
+  const attentionSourceId = useMemo(() => {
+    if (!channelOrigin) return undefined;
+    for (const fm of messagesById.values()) {
+      const id = fm.origin_local?.data_source_id;
+      if (id) return id;
+    }
+    const kind = (channelOrigin.kind || '').trim().toLowerCase();
+    return attentionSources.find((s) => (s.channel || '').trim().toLowerCase() === kind)?.id;
+  }, [channelOrigin, messagesById, attentionSources]);
+  // Imperative, render-free selection check: hidden dock tabs stay mounted
+  // and (measured) do not re-render on URL changes, so the hook polls this
+  // on a timer instead of trusting reactivity. The URL is the authority.
+  const isSelectedDock = useCallback(() => {
+    if (!conversationId) return false;
+    try {
+      const dock = DockPointer.fromUrl(`${window.location.pathname}${window.location.search}`);
+      return (
+        dock?.viewType === ViewType.CONVERSATION &&
+        DockPointer.parseConversationPointer(dock?.pointer).conversationId === conversationId
+      );
+    } catch {
+      return false;
+    }
+  }, [conversationId]);
+  useAttentionPollRate(attentionSourceId, isSelectedDock);
 
   // What is in flight. Local state, because the line must appear the instant
   // the user hits Send — the worker's process does not exist yet. Cleared when
