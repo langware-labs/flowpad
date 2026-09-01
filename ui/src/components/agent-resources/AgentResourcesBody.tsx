@@ -1,13 +1,11 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Plus } from 'lucide-react';
-import { Markdown, Skill, type AssetDescriptor } from '@sdk';
+import { Markdown, Mcp, Skill, type AssetDescriptor } from '@sdk';
 import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
 import { AssetRow, assetScope, basename, descriptorKey, displayLabelForDescriptor } from '@src/components/asset-manager';
 import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
 import { useStagedAssets } from './useStagedAssets';
-import { useWirableMcpServers } from './useWirableMcpServers';
-import { useEditedAgentWorker } from './useEditedAgentWorker';
 import { useQuickCreatePick } from '@src/components/quick-create';
 
 /** Row label. `displayLabelForDescriptor` gives up at the raw typeid here (this
@@ -16,17 +14,6 @@ import { useQuickCreatePick } from '@src/components/quick-create';
 function labelForAsset(d: AssetDescriptor): string {
   const label = displayLabelForDescriptor(d);
   return label === d.typeid && d.posix_path ? basename(d.posix_path) : label;
-}
-
-/** MCP servers are declared in the worker's own config, so they apply to every
- *  run the way a user-level skill does — `user_dir`, not `inline`, which reads
- *  as "this agent". Module-scope: a fresh object per render would churn. */
-const MCP_SCOPE = assetScope({ typeid: '', source: 'user_dir', posix_path: null });
-
-/** A capability rendered as an asset row. The typeid is its real entity id; the
- *  null path is the honest answer — a server has no file of its own. */
-function mcpDescriptor(server: { typeid: string }): AssetDescriptor {
-  return { typeid: server.typeid, source: 'user_dir', posix_path: null };
 }
 
 /** Muted one-liner for a section with nothing in it. */
@@ -72,10 +59,11 @@ export function AgentResourcesBody() {
   const skillAssets = useStagedAssets(Skill.type);
   const { descriptors: skillDescriptors, isLoading: skillsLoading } = skillAssets;
   const docAssets = useStagedAssets(Markdown.type);
-  // The MCP list is scoped to the worker the agent is set to; the editor's
-  // worker field commits to `agent.md`, which is what this observes.
-  const { workerType, isLoading: workerLoading } = useEditedAgentWorker();
-  const { servers: mcpServers, isLoading: mcpLoading } = useWirableMcpServers(workerType);
+  // FlowPad's OWN MCP assets (`agentic-assets/mcp/<name>/mcp.json`), and the
+  // only population here. Listed regardless of worker: an `mcp` is an
+  // EXECUTABLE_ASSET_TYPE the process renders into every harness's config at
+  // launch, so it carries no worker dimension to filter on.
+  const mcpAssets = useStagedAssets(Mcp.type);
 
   const [addSourceOpen, setAddSourceOpen] = useState(false);
   // Project home's own creation seam: `onPick(type)` opens the same name/scope
@@ -92,6 +80,11 @@ export function AgentResourcesBody() {
   const docRows = useMemo(
     () => docAssets.descriptors.map((d) => ({ d, key: descriptorKey(d), label: labelForAsset(d), scope: assetScope(d) })),
     [docAssets.descriptors],
+  );
+
+  const mcpAssetRows = useMemo(
+    () => mcpAssets.descriptors.map((d) => ({ d, key: descriptorKey(d), label: labelForAsset(d), scope: assetScope(d) })),
+    [mcpAssets.descriptors],
   );
 
   return (
@@ -129,41 +122,40 @@ export function AgentResourcesBody() {
           the pane never loses the agent being edited. */}
       <DataSourceDialog open={addSourceOpen} onOpenChange={setAddSourceOpen} />
 
+      {/* The project's OWN `mcp` assets, and nothing else. This used to also
+          list the servers configured in the selected worker's vendor files
+          (`capability` rows, read-only). They are gone: the agent's MCP slot
+          attaches project assets by id, so a vendor row sitting in the same
+          list looked attachable and never was — it describes a definition site
+          we do not own and cannot hand a worker. One list, one meaning. */}
       <NavigatorSection
         id="mcp-servers"
         label={t`MCP servers`}
-        isLoading={mcpLoading || workerLoading}
-        itemCount={mcpServers.length}
+        isLoading={mcpAssets.isLoading}
+        itemCount={mcpAssetRows.length}
+        action={
+          <IconButton
+            icon={Plus}
+            label={t`New MCP server`}
+            onClick={() => panelProps.onPick(Mcp.type)}
+            testId="agent-resource-new-mcp"
+          />
+        }
         emptyState={
-          // Two different empty states, because they mean different things and
-          // the fix for each differs: with no worker resolved the list is
-          // unanswerable, whereas with one resolved it is a real answer — that
-          // worker genuinely has none configured.
-          workerType ? (
-            <Empty>
-              <Trans>No MCP servers found</Trans>
-            </Empty>
-          ) : (
-            <Empty>
-              <Trans>Select a worker to see the MCP servers available to it</Trans>
-            </Empty>
-          )
+          <Empty>
+            <Trans>No MCP servers found</Trans>
+          </Empty>
         }
       >
-        {mcpServers.map((server) => (
+        {mcpAssetRows.map((row) => (
           <AssetRow
-            key={server.id}
-            descriptor={mcpDescriptor(server)}
-            scope={MCP_SCOPE}
-            label={server.name}
+            key={row.key}
+            descriptor={row.d}
+            scope={row.scope}
+            label={row.label}
             selected={false}
             improvable={false}
             busy={false}
-            // The capability id resolves, so the derived answer is "openable" —
-            // but no editor is registered for `capability`, and a live control
-            // that dead-ends is worse than a greyed one.
-            canOpen={false}
-            cannotOpenReason={t`Configured by worker`}
           />
         ))}
       </NavigatorSection>
