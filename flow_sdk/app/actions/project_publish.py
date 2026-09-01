@@ -75,7 +75,7 @@ async def assert_project_publishable(project, actor) -> "object":
     "should I suggest linking?" question be answered without side effects.
     """
     from flow_sdk.app.actions.git_share_preflight_action import git_share_preflight  # noqa: PLC0415
-    from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
     from flow_sdk.core.oauth.github_credentials import get_github_token  # noqa: PLC0415

@@ -10,8 +10,8 @@ from unittest.mock import patch
 
 import pytest
 
-from flow_sdk.builtin.git_origin import GitOrigin
 from flow_sdk.config import AGENT_MOUNT_FOLDER
+from flow_sdk.fs_store.origin.git_origin import GitOrigin
 
 
 def _cn_id(bootstrap_payload: dict) -> str:
@@ -61,7 +61,11 @@ async def test_create_project_from_git_happy_path(bootstrapped_client):
     project = payload["data"]["project"]
     assert project["fs_storage_mount_path"].endswith("/Hello-World")
     assert target.exists()
-    assert (target / "README.md").read_text().startswith("cloned from ")
+    # The index stamps the markdown's identity as frontmatter ``id:`` (it used
+    # to append a capsule); the cloned body itself is untouched.
+    readme = (target / "README.md").read_text()
+    assert "cloned from https://github.com/octocat/Hello-World.git" in readme
+    assert readme.startswith("---\nid: ")
 
 
 # do not increase timeout without approval
@@ -124,7 +128,7 @@ async def test_create_project_from_git_clones_with_user_token(bootstrapped_clien
         shutil.rmtree(target)
 
     async def _fake_token():
-        return "ghs_test_token", None
+        return "ghs_test_token"
 
     # Patched on the defining module — the action imports the helper lazily
     # inside the function body, so it resolves the patched version at call time.

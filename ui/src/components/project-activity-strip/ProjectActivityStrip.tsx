@@ -1,3 +1,4 @@
+import { RESOURCE_META } from '@src/components/project-resource-list/resource-meta';
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
@@ -40,23 +41,6 @@ import { SessionStatusDot } from '@src/components/ui/session-status-dot';
 import { uploadFlowMessage, type UploadConflict } from '@sdk/entities/flow-message';
 import './ProjectActivityStrip.css';
 
-interface ResourceMeta {
-  label: string;
-  icon: LucideIcon;
-}
-
-const RESOURCE_META: Record<ProjectResourceType, ResourceMeta> = {
-  skill: { label: msg`Skill`, icon: Sparkles },
-  mcp_server: { label: msg`MCP Server`, icon: Plug },
-  plugin: { label: msg`Plugin`, icon: Settings },
-  hook: { label: msg`Hook`, icon: Terminal },
-  command: { label: msg`Command`, icon: Command },
-  agent: { label: msg`SubAgent`, icon: Bot },
-  session: { label: msg`Session`, icon: FolderOpen },
-  collaboration_room: { label: msg`Collaboration Room`, icon: FolderOpen },
-  todo: { label: msg`Todo`, icon: CheckSquare },
-  claude_md: { label: msg`CLAUDE.md`, icon: FileText },
-};
 
 // ---------------------------------------------------------------------------
 // renderEventIndicator — shared rendering for the event indicator line
@@ -72,7 +56,7 @@ function renderEventIndicator(
   if (event) {
     const EvtIcon = getEventIcon(event.event_type, event);
     const evtColor = getEventColor(event);
-    const oneLiner = getOneLiner(event.hook_data);
+    const oneLiner = getOneLiner(event);
     return (
       <button
         type="button"

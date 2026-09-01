@@ -16,7 +16,7 @@ from flow_sdk.assets.git_publish import (
 from flow_sdk.assets.projection import PortableAssetLayout, PortableAssetProjection
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.project import Project
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.type_id import TypeId
 
 
@@ -126,7 +126,7 @@ async def test_publish_sends_project_id_only_and_updates_only_asset_cache(tmp_pa
     assert set(posted["payload"]) == {"contract_version", "project", "asset", "git_origin"}
     assert project.model_dump(mode="json") == project_before
     assert agent.remote is True
-    assert agent.git_origin == origin.model_dump(mode="json")
+    assert agent.origin.model_dump(mode="json") == origin.model_dump(mode="json")
     save.assert_awaited_once_with(actor, notify=False)
     assert result.project == {"id": project.id}
 

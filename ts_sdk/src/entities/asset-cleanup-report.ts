@@ -37,16 +37,13 @@ export class AssetCleanupReport extends APIEntity<AssetCleanupReport> {
   }
 
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('asset_cleanup_report') ?? super.dockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {
-    return this.assetEditorPointer('asset_cleanup_report') ?? super.editorDockPointer;
+    return this.assetEditorPointer() ?? super.editorDockPointer;
   }
 
-  override get searchDockPointer(): DockPointerData {
-    return this.assetEditorPointer('asset_cleanup_report') ?? this.dockPointer;
-  }
 
   /** FsRef for report.json. Resolves compute node from dataContext. */
   get doc(): FSRef | null {

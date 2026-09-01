@@ -132,7 +132,7 @@ async def browse(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
     Raises:
         FileNotFoundError: If directory doesn't exist
     """
-    if not request_info.is_get:
+    if request_info.method != "get":
         return ApiFailResponse(message="Browse action requires GET method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Browse action requires typeid")
@@ -189,8 +189,8 @@ async def push_entity_files_to_hub(entity) -> int:
     ``_hub_reflect._reflect_fs_to_hub``; that only fires once the entity is
     ALREADY remote, which is exactly the window this closes.
 
-    File-backed types own their Hub layout through ``_hub_asset_layout`` and
-    ``_hub_main_file`` class metadata:
+    A type opts into the record-aware transport by naming its canonical Hub
+    file in ``TypeInfo.hub_main_file``; ``TypeInfo.main_layout`` then says how:
 
     * ``file`` publishes the record's main ref under its canonical Hub name;
     * ``folder`` recursively publishes the record's asset folder, preserving
@@ -214,9 +214,13 @@ async def push_entity_files_to_hub(entity) -> int:
         logger.debug(f"share: unsupported file push for {entity.typeid}: {e}")
         return 0
 
-    layout = getattr(type(entity), "_hub_asset_layout", None)
-    canonical_main = getattr(type(entity), "_hub_main_file", None)
-    if layout in {"file", "folder"}:
+    # Layout is TypeInfo's — ``hub_main_file`` is the opt-in, ``main_layout`` the how.
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    _info = SchemaRegistry.get(entity.get_type())
+    canonical_main = _info.hub_main_file if _info is not None else None
+    if canonical_main:
+        layout = _info.main_layout
         try:
             record = await entity.get_record()
         except Exception as e:  # noqa: BLE001
@@ -378,7 +382,7 @@ async def serve(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> Response
     missing, not as some other page) and no caching (a file being iterated on is
     not a release).
     """
-    if not request_info.is_get:
+    if request_info.method != "get":
         return ApiFailResponse(message="Serve action requires GET method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Serve action requires typeid")
@@ -425,7 +429,7 @@ async def download(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> Strea
     Returns:
         StreamingResponse with file contents or error response
     """
-    if not request_info.is_get:
+    if request_info.method != "get":
         return ApiFailResponse(message="Download action requires GET method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Download action requires typeid")
@@ -486,7 +490,7 @@ async def upload(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
     Returns:
         ApiResponse with list of uploaded FSEntry objects
     """
-    if not request_info.is_post:
+    if request_info.method != "post":
         return ApiFailResponse(message="Upload action requires POST method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Upload action requires typeid")
@@ -565,7 +569,7 @@ async def delete(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
     Returns:
         ApiResponse with success/error status
     """
-    if not request_info.is_delete:
+    if request_info.method != "delete":
         return ApiFailResponse(message="Delete action requires DELETE method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Delete action requires typeid")
@@ -599,7 +603,7 @@ async def mkdir(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
     Returns:
         ApiResponse with FSEntry for new directory
     """
-    if not request_info.is_post:
+    if request_info.method != "post":
         return ApiFailResponse(message="Mkdir action requires POST method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Mkdir action requires typeid")
@@ -640,7 +644,7 @@ async def write(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
     Returns:
         ApiResponse with FSEntry for written file
     """
-    if not request_info.is_post:
+    if request_info.method != "post":
         return ApiFailResponse(message="Write action requires POST method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Write action requires typeid")
@@ -737,7 +741,7 @@ async def rename(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
     Returns:
         ApiResponse with FSEntry for renamed item
     """
-    if not request_info.is_post:
+    if request_info.method != "post":
         return ApiFailResponse(message="Rename action requires POST method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Rename action requires typeid")
@@ -793,7 +797,7 @@ async def copy(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespon
     Returns:
         ApiResponse with FSEntry for copied item
     """
-    if not request_info.is_post:
+    if request_info.method != "post":
         return ApiFailResponse(message="Copy action requires POST method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Copy action requires typeid")
@@ -844,7 +848,7 @@ async def move(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespon
     Returns:
         ApiResponse with FSEntry for moved item
     """
-    if not request_info.is_post:
+    if request_info.method != "post":
         return ApiFailResponse(message="Move action requires POST method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Move action requires typeid")

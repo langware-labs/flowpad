@@ -7,7 +7,7 @@ from typing import List, Optional
 import numpy as np
 from pydantic import BaseModel, Field, PrivateAttr, model_serializer, model_validator
 
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.knowledge_base.knowledge_entries import KnowledgeEntry
 from flow_sdk.builtin.knowledge_base.Knowledge_types import KnowledgeEntryType
 from .knowledge_engine.ontology import Ontology

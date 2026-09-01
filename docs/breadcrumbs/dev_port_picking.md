@@ -1,8 +1,11 @@
 ---
+id: 7a3d2916-5d25-46e9-94da-8ce07c087c77
 title: Dev port picking for agent-started servers
 tags:
 - breadcrumb.test.dev_port_picking.rules
-description: An agent that types a port collides with a sibling build — and on Windows the second http.server binds silently; the picker's probe sees only listeners and takes no lease.
+description: An agent that types a port collides with a sibling build — and on Windows
+  the second http.server binds silently; the picker's probe sees only listeners and
+  takes no lease.
 ---
 
 # Dev port picking for agent-started servers
@@ -78,9 +81,3 @@ step.
 Also invisible to the probe: a socket that is **bound but never listening**.
 `_port_open` returned `False` for such a port and the picker handed it straight
 out.
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 7a3d2916-5d25-46e9-94da-8ce07c087c77
-flowpad:endcapsule identity -->

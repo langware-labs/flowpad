@@ -37,10 +37,10 @@ repos:
       # because its SDK is nested at flowpad/ui/sdk; ours isn't.)
       - id: tsc-sdk
         name: TypeScript Check SDK
-        entry: scripts/node-hook.sh bash -c 'cd ui && npx tsc --noEmit'
+        entry: scripts/node-hook.sh bash -c 'cd ui && npm run type-check:ceiling'
         language: system
         types_or: [ts, tsx]
-        files: '^ts_sdk/'
+        files: '^(ts_sdk|ui/src)/'
         pass_filenames: false
 
       # ---------- i18n catalogs (ui/src/locales) ----------

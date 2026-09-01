@@ -41,6 +41,7 @@ import httpx
 import pytest
 
 from flow_sdk.builtin.agent import Agent
+from flow_sdk.schema.data_spec import DataSpec
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver
 from flow_sdk.ingest.sync import sync_source
@@ -87,9 +88,12 @@ async def mailboxes(hub_base_url, hub_login_payload):
     agent_id = await _hub_agent(hub_base_url, token, f"mail-agent-{uuid.uuid4().hex[:8]}")
     outsider_id = await _hub_agent(hub_base_url, token, f"mail-outsider-{uuid.uuid4().hex[:8]}")
 
-    agent_box = await driver.create_inbox(agent_id)
-    outsider_box = await driver.create_inbox(outsider_id)
+    allocated: list[str] = []
     try:
+        agent_box = await driver.create_inbox(agent_id)
+        allocated.append(agent_id)
+        outsider_box = await driver.create_inbox(outsider_id)
+        allocated.append(outsider_id)
         yield {
             "agent_id": agent_id,
             "agent_address": str(agent_box.get("address") or ""),
@@ -100,7 +104,7 @@ async def mailboxes(hub_base_url, hub_login_payload):
         # Addresses FIRST — they are the billable, permanent half. Then the hub
         # rows, asserted, because the tier reclaimer only sweeps what it knows
         # about and a stranded agent row is a leak nobody sees.
-        for released in (agent_id, outsider_id):
+        for released in allocated:
             try:
                 await driver.delete_inbox(released)
             except Exception:  # noqa: BLE001 — a second DELETE answers 404
@@ -166,7 +170,7 @@ def _inject_claude_harness() -> None:
         CapabilityValue(
             kind=kind,
             value={"path": str(Path(binary).resolve().parent), "ref_type": "folder"},
-            value_type="folder",
+            value_spec=DataSpec.parse("fs_ref"),
         )
     )
 

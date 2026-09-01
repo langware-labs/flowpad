@@ -53,7 +53,9 @@ export function HelpdeskArticle({
   });
 
   useEffect(() => {
-    if (!projectTypeId) return;
+    // `useFS` returns null without a typeid — same condition, but the compiler
+    // needs it stated on `fs` itself.
+    if (!projectTypeId || !fs) return;
     let cancelled = false;
     setBody(null);
     setError(null);

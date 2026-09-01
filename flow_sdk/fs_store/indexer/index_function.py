@@ -52,6 +52,49 @@ _PROGRESS_HIDDEN_TYPES: set[RecordType] = {
 
 _PROGRESS_THROTTLE_S = 0.2
 
+class _ProgressEmitter:
+    """Throttled progress fan-out for one indexer job.
+
+    ``index()`` and ``scan()`` build different tables (locked-in totals vs a
+    growing count), but the bookkeeping around them is identical: hold the
+    record type currently being walked, rebuild a table on demand, and drop
+    emits that arrive inside ``_PROGRESS_THROTTLE_S`` of the previous one
+    unless forced. ``rows_fn`` supplies the job's rows (already sorted) and
+    ``total_fn`` the table-level total for them.
+    """
+
+    def __init__(self, on_progress, *, job_name: str, rows_fn, total_fn) -> None:
+        self._on_progress = on_progress
+        self._job_name = job_name
+        self._rows_fn = rows_fn
+        self._total_fn = total_fn
+        self._last_emit_at = 0.0
+        self.current: "RecordType | None" = None
+
+    def table(self, text: str | None = None) -> IndexProgressTable:
+        rows = self._rows_fn()
+        current = self.current
+        return IndexProgressTable(
+            job_name=self._job_name,
+            rows=tuple(rows),
+            current=(str(current) if current is not None and current not in _PROGRESS_HIDDEN_TYPES else None),
+            done=sum(r.done for r in rows),
+            total=self._total_fn(rows),
+            text=text,
+            ts=datetime.now(timezone.utc).isoformat(),
+        )
+
+    async def emit(self, text: str | None = None, force: bool = False) -> None:
+        if self._on_progress is None:
+            return
+        now = time.perf_counter()
+        if not force and now - self._last_emit_at < _PROGRESS_THROTTLE_S:
+            return
+        self._last_emit_at = now
+        await self._on_progress(self.table(text=text))
+
+
+
 # Per chunk node budget for FSIndexer.scan(): amortizes asyncio.to_thread
 # dispatch cost across many node visits while still yielding the event loop
 # frequently enough that progress emits + other requests stay responsive.
@@ -211,8 +254,6 @@ def ref_typeid(ref, owners: "PathOwnerIndex | None" = None) -> str | None:
         rid = info.mint_entity_id(
             ref,
             owner_id=owners.owner_for(rtype, str(ref._path)) if owners is not None else None,
-            derive=True,
-            overwrite=True,
         )
     except Exception:
         return None
@@ -576,52 +617,34 @@ class FSIndexer:
         # gone. Populated before the skip/index decision so a fresh-skip counts.
         seen_ids: dict[RecordType, set[str]] = {}
         fts_batch: list = []
-        current_rt: RecordType | None = None
-        last_emit_at = 0.0
-
-        def make_table(text: str | None = None) -> IndexProgressTable:
+        def index_rows() -> list[TypeProgressRow]:
             rows: list[TypeProgressRow] = []
             for rt, total in per_type_totals.items():
                 if rt in _PROGRESS_HIDDEN_TYPES:
                     continue
                 acc = per_type_counts[rt]
-                done = int(acc["indexed"]) + int(acc["skipped"])
                 rows.append(
                     TypeProgressRow(
                         type_name=str(rt),
-                        done=done,
+                        done=int(acc["indexed"]) + int(acc["skipped"]),
                         total=total,
                         errors=int(acc["errors"]),
                         skipped=int(acc["skipped"]),
                     )
                 )
             rows.sort(key=lambda r: -r.total)
-            current_name = (
-                str(current_rt) if current_rt is not None and current_rt not in _PROGRESS_HIDDEN_TYPES else None
-            )
-            return IndexProgressTable(
-                job_name="index",
-                rows=tuple(rows),
-                current=current_name,
-                done=sum(r.done for r in rows),
-                total=sum(r.total for r in rows),
-                text=text,
-                ts=datetime.now(timezone.utc).isoformat(),
-            )
+            return rows
 
-        async def emit(text: str | None = None, force: bool = False) -> None:
-            nonlocal last_emit_at
-            if on_progress is None:
-                return
-            now = time.perf_counter()
-            if not force and now - last_emit_at < _PROGRESS_THROTTLE_S:
-                return
-            last_emit_at = now
-            await on_progress(make_table(text=text))
+        progress = _ProgressEmitter(
+            on_progress,
+            job_name="index",
+            rows_fn=index_rows,
+            total_fn=lambda rows: sum(r.total for r in rows),
+        )
 
         # Initial snapshot — totals known, all done=0. Lets the UI render the
         # full table immediately instead of waiting for the first record.
-        await emit(force=True)
+        await progress.emit(force=True)
 
         # Hoist a single DB session over the entire per-record loop + FTS
         # flush. The driver's `_session_ctx` contextvar handshake makes
@@ -775,8 +798,6 @@ class FSIndexer:
                         ref,
                         owner_id=path_owners.owner_for(str(ref.record_type), str(ref._path), canon_path),
                         live_ids=existing_db_ids.get(str(ref.record_type)),
-                        derive=True,
-                        overwrite=True,
                     )
                     probe = FSRecord(type=str(ref.record_type), id=ref_id, asset_ref=ref)
                     # Skip-fresh: on-disk ``.hash`` equality AND a live DB row.
@@ -809,12 +830,43 @@ class FSIndexer:
             chunk = dispatchable[chunk_start : chunk_start + _PROBE_CHUNK_REFS]
             all_probed.extend(await asyncio.to_thread(_probe_chunk, chunk))
 
+        # The resolver re-validates every stored occurrence it is handed by
+        # re-reading the file's identity carrier, so handing a SCOPED run the
+        # whole corpus prices a one-file project index at one frontmatter read
+        # per record on the machine — and the auto-index fires one such run per
+        # project selection. A scoped run can only change the groups it walked:
+        # keep a key when this run holds a live candidate for it, or when a
+        # stored path lies under a walked root (so a deletion inside the scope
+        # is still pruned). Everything else belongs to some other root's run.
+        # An unscoped run keeps the full view: it is the sweep that prunes what
+        # no root reaches any more.
+        resolver_occurrences = stored_occurrences
+        if opts.roots is not None or opts.scope_filter is not None:
+            walk_roots = list(opts.roots) if opts.roots is not None else self._roots
+            walk_prefixes = tuple(
+                canonical_posix_path(str(root._path)).rstrip("/") + "/" for root in walk_roots
+            )
+            walked_keys = {
+                (str(ref.record_type), ref_id) for ref, _info, ref_id, _probe, _fresh, _canon in all_probed if ref_id
+            }
+
+            def _under_walk(path: str) -> bool:
+                return any(path == prefix[:-1] or path.startswith(prefix) for prefix in walk_prefixes)
+
+            resolver_occurrences = StoredOccurrenceMap()
+            for key, occurrences in stored_occurrences.items():
+                if key in walked_keys or any(_under_walk(occurrence.path) for occurrence in occurrences):
+                    resolver_occurrences[key] = occurrences
+            resolver_occurrences.synthetic_keys.update(
+                key for key in stored_occurrences.synthetic_keys if key in resolver_occurrences
+            )
+
         def _resolve_occurrences():
             from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
             from flow_sdk.utils.git import git_asset_introduction  # noqa: PLC0415
 
             stored_identities: dict[str, tuple[str, str, str]] = {}
-            for (type_name, entity_id), occurrences in stored_occurrences.items():
+            for (type_name, entity_id), occurrences in resolver_occurrences.items():
                 info = SchemaRegistry.get(type_name)
                 if info is None:
                     continue
@@ -823,7 +875,7 @@ class FSIndexer:
                         path = occurrence.path
                         if not Path(path).exists():
                             continue
-                        rid = info.mint_entity_id(FSRef(path, record_type=RecordType(type_name)))
+                        rid = info.read_id(FSRef(path, record_type=RecordType(type_name)))
                         if rid == entity_id:
                             stored_identities[path] = (type_name, entity_id, path)
                     except Exception:
@@ -839,7 +891,7 @@ class FSIndexer:
 
             return resolve_asset_collisions(
                 all_probed,
-                stored_occurrences,
+                resolver_occurrences,
                 identity,
                 git_asset_introduction,
                 datetime.now(timezone.utc),
@@ -874,8 +926,16 @@ class FSIndexer:
 
         async with _db_session() as _idx_session:
             for ref, info, ref_id, probe, fresh, canon_path in all_probed:
-                current_rt = ref.record_type
+                progress.current = ref.record_type
                 acc = per_type_counts[ref.record_type]
+                # Start the per-type clock at the TOP of the ref, not after the
+                # skip branches. `t_start` used to be set only on the parse
+                # path, so a type whose refs were all fresh-skipped reported
+                # duration_ms=0.0 even though enumerating and hash-checking
+                # them cost real time — measured on a live backend: 25 of 30
+                # type rows at 0.0, and the 5 non-zero rows summed to 11.4s of
+                # a 19.6s request. Every exit below accumulates.
+                t_ref = time.perf_counter()
 
                 # Per-type cap: once we've processed `limit_per_type` records of
                 # this type (parsed or skip-fresh), skip further refs of the same
@@ -888,7 +948,8 @@ class FSIndexer:
 
                 if ref_id is None or probe is None:
                     acc["errors"] += 1
-                    await emit()
+                    acc["duration_ms"] += (time.perf_counter() - t_ref) * 1000
+                    await progress.emit()
                     continue
 
                 # Track this id as "seen" before any skip/index decision so the
@@ -899,17 +960,19 @@ class FSIndexer:
 
                 if (str(ref.record_type), ref_id, canon_path) in duplicate_paths:
                     acc["skipped"] += 1
-                    await emit()
+                    acc["duration_ms"] += (time.perf_counter() - t_ref) * 1000
+                    await progress.emit()
                     continue
 
                 if fresh and (str(ref.record_type), ref_id, canon_path) not in primary_swaps:
                     acc["skipped"] += 1
+                    acc["duration_ms"] += (time.perf_counter() - t_ref) * 1000
                     # seen_ids already holds ref_id (added above), so a fresh
                     # skip is not misclassified as orphan.
-                    await emit()
+                    await progress.emit()
                     continue
 
-                t_start = time.perf_counter()
+                t_start = t_ref
                 try:
                     # Loop is gated by _has_dispatch → from_disk_fn is set.
                     from_disk = info.from_disk_fn
@@ -990,7 +1053,7 @@ class FSIndexer:
                     )
                 acc["duration_ms"] += (time.perf_counter() - t_start) * 1000
 
-                await emit()
+                await progress.emit()
 
                 # Bounded-batch commit: flush this batch's FTS then commit the
                 # session, releasing the writer lock so concurrent requests
@@ -1005,18 +1068,32 @@ class FSIndexer:
             # before; _commit_batch makes it explicit so the trailing batch's
             # sentinels are stamped under the same write-ahead ordering.
             await _commit_batch()
+            _since_commit = 0
 
             # Reflect the complete collision view only after all primaries have
             # been parsed/skipped, so a newly-created row is available too.
+            # Reflections are writes, so they carry the SAME bounded-batch
+            # discipline as the record loop — on the same counter, because it is
+            # the same question: how many records have been written since the
+            # writer lock was last released. Without it every reflection landed in
+            # ONE transaction released only when the session closed, holding the
+            # lock for the whole pass (measured: a 7.7s hold starting 1.3s before
+            # the record loop ended and running 6.4s past it) and starving
+            # concurrent writes past busy_timeout into "database is locked". The
+            # record loop's batching never reached here, which is why tuning
+            # _INDEX_COMMIT_BATCH did nothing to it.
             for (type_name, entity_id), decision in collision_by_key.items():
                 if not decision.changed:
                     continue
                 entity = await driver.get_by_id(entity_id, type_name)
-                if entity is not None and hasattr(entity, "reflect_asset_occurrences"):
-                    await entity.reflect_asset_occurrences(
-                        decision.occurrences,
-                        notify=True,
-                    )
+                if entity is None or not hasattr(entity, "reflect_asset_occurrences"):
+                    continue
+                await entity.reflect_asset_occurrences(decision.occurrences, notify=True)
+                _since_commit += 1
+                if _since_commit >= _INDEX_COMMIT_BATCH:
+                    await _commit_batch()
+                    _since_commit = 0
+            await _commit_batch()
 
         # The writer session ends above, before the potentially long orphan
         # discovery below. Discovery is read-only and may walk every record
@@ -1030,7 +1107,7 @@ class FSIndexer:
         # and refresh-time activity-status replay see for the whole sweep —
         # a stalled-looking 100% bar. Any non-complete text works; the
         # activity stays alive until the terminal emit below.
-        await emit(text="sweeping", force=True)
+        await progress.emit(text="sweeping", force=True)
 
         # ----- Same-path duplicate sweep -----
         # Positive-evidence cleanup, independent of ``orphan_action``: each
@@ -1153,7 +1230,7 @@ class FSIndexer:
 
             orphan_records[rt] = missing
             if db_rows_known:
-                orphan_sources[rt] = {eid: {"in_db": eid in db_rows, "on_disk": eid in disk_ids} for eid in missing}
+                orphan_sources[rt] = {eid: {"on_disk": eid in disk_ids} for eid in missing}
 
         for rt, ids in orphan_records.items():
             acc = per_type_counts.setdefault(
@@ -1212,9 +1289,9 @@ class FSIndexer:
         # Terminal snapshot — current=None, text=PROGRESS_TEXT_COMPLETE. The
         # authoritative (and only) completion signal; consumers clear UI state
         # and InProcessActivity.is_complete latches on it.
-        current_rt = None
+        progress.current = None
         if on_progress is not None:
-            await on_progress(make_table(text=PROGRESS_TEXT_COMPLETE))
+            await on_progress(progress.table(text=PROGRESS_TEXT_COMPLETE))
 
         return IndexResult(
             per_type=per_type,
@@ -1320,19 +1397,15 @@ class FSIndexer:
         - DELETE: remove DB row + FTS entry if present, AND rmtree the records
           dir at ``records_root/<type>/<stem>/`` if present.
 
-        Cleanup chain for a DB-side orphan goes through ``Entity.delete()`` so
-        the orphan removal benefits from the same downstream invalidation a
-        normal API delete would: entity cache, auth cache, uname cache, wiki
-        edges. Without this, ~1000 orphan ids would leave their wiki backlinks
-        and cache references in place until the next natural eviction.
+        Row removal (DB row + FTS + wiki edges) is ``remove_orphan_row`` —
+        the same type-scoped delete the push path uses, deliberately NOT
+        ``Entity.delete()`` (see ``fs_store/orphan_removal.py`` for why).
+        It runs for every orphan, DB row or not, because wiki edges can
+        outlive a row that was deleted previously without proper cleanup.
 
-        For records-dir-only orphans (no DB row), we still issue a best-effort
-        ``wiki.delete_for_id`` because wiki edges can outlive an entity row
-        that was deleted previously without proper cleanup.
-
-        ``id_sources`` (optional) maps each id to ``{"in_db": bool, "on_disk":
-        bool}``. When omitted we attempt every removal — driver returns False
-        harmlessly for missing rows.
+        ``id_sources`` (optional) maps each id to ``{"on_disk": bool}`` — whether
+        a records dir exists to rmtree. The row removal is attempted for every
+        id regardless; the driver returns False harmlessly for a missing row.
 
         Failures are tolerated per-id so a single bad row doesn't abort the sweep.
         """
@@ -1340,51 +1413,23 @@ class FSIndexer:
             return 0, 0
 
         # Lazy imports keep this module a leaf in import topology.
-        from flow_sdk.db import get_db_driver  # noqa: PLC0415
+        from flow_sdk.fs_store.orphan_removal import remove_orphan_row  # noqa: PLC0415
         from flow_sdk.fs_store.record_paths import shadow_dir_for  # noqa: PLC0415
 
-        driver = get_db_driver()
         type_name = str(rt)
         db_removed = 0
         disk_removed = 0
 
         for eid in ids:
-            sources = (id_sources or {}).get(eid, {"in_db": True, "on_disk": True})
-            in_db = sources.get("in_db", True)
-            on_disk = sources.get("on_disk", True)
+            on_disk = (id_sources or {}).get(eid, {}).get("on_disk", True)
 
-            # Best-effort wiki edge cleanup — idempotent, runs for every orphan
-            # regardless of whether the DB row currently exists. Stale edges
-            # pointing at a previously-deleted id would otherwise persist.
             try:
-                from flow_sdk import wiki  # noqa: PLC0415
+                if await remove_orphan_row(eid, type_name):
+                    db_removed += 1
+            except Exception as e:
+                import logging  # noqa: PLC0415
 
-                await wiki.delete_for_id(type_name, eid)
-            except Exception:
-                pass
-
-            if in_db:
-                # Type-scoped driver delete only. We deliberately do NOT go
-                # through ``Entity.get_one(...).delete()`` here because that
-                # path triggers relationship-cascade cleanup that can
-                # unintentionally affect bootstrap-required rows (e.g.
-                # deleting a "project" orphan via the typed-entity path can
-                # ripple through membership relationships and unbind the
-                # ``@local`` compute_node). Orphan sweeps want minimal,
-                # type-scoped row removal — anything beyond FTS belongs in
-                # the regular API delete path.
-                try:
-                    if hasattr(driver, "fts_delete"):
-                        try:
-                            await driver.fts_delete(eid)
-                        except Exception:
-                            pass
-                    if await driver.delete_by_id(eid, type_name):
-                        db_removed += 1
-                except Exception as e:
-                    import logging  # noqa: PLC0415
-
-                    logging.debug(f"[FSIndexer] driver.delete_by_id for {type_name}:{eid}: {e}")
+                logging.debug(f"[FSIndexer] remove_orphan_row for {type_name}:{eid}: {e}")
 
             if action == OrphanAction.DELETE and on_disk:
                 try:
@@ -1417,10 +1462,7 @@ class FSIndexer:
         visited: list[FSRef] = []
         seen: set[tuple[str, RecordType | None, str | None]] = set()
         per_type_counts: dict[RecordType, int] = {}
-        current_rt: RecordType | None = None
-        last_emit_at = 0.0
-
-        def make_table(text: str | None = None) -> IndexProgressTable:
+        def scan_rows() -> list[TypeProgressRow]:
             rows = [
                 # total=0: during discovery the per-type total is unknown — the
                 # running count IS the total-so-far — so the UI shows a growing
@@ -1432,30 +1474,16 @@ class FSIndexer:
                 if rt not in _PROGRESS_HIDDEN_TYPES
             ]
             rows.sort(key=lambda r: -r.done)
-            current_name = (
-                str(current_rt) if current_rt is not None and current_rt not in _PROGRESS_HIDDEN_TYPES else None
-            )
-            return IndexProgressTable(
-                job_name="scan",
-                rows=tuple(rows),
-                current=current_name,
-                done=sum(r.done for r in rows),
-                total=0,  # 0 = unknown for scan; UI hides percentage
-                text=text,
-                ts=datetime.now(timezone.utc).isoformat(),
-            )
+            return rows
 
-        async def emit(text: str | None = None, force: bool = False) -> None:
-            nonlocal last_emit_at
-            if on_progress is None:
-                return
-            now = time.perf_counter()
-            if not force and now - last_emit_at < _PROGRESS_THROTTLE_S:
-                return
-            last_emit_at = now
-            await on_progress(make_table(text=text))
+        progress = _ProgressEmitter(
+            on_progress,
+            job_name="scan",
+            rows_fn=scan_rows,
+            total_fn=lambda _rows: 0,  # 0 = unknown for scan; UI hides percentage
+        )
 
-        await emit(force=True)
+        await progress.emit(force=True)
 
         # Chunked DFS: process up to _SCAN_CHUNK_NODES sync-walker visits per
         # thread-pool roundtrip so per-call to_thread overhead doesn't pile up
@@ -1486,7 +1514,6 @@ class FSIndexer:
             hit_limit) — the caller awaits each pending async walker on the
             main loop, then extends the stack from its children.
             """
-            nonlocal current_rt
             pending: list[tuple[FSRef, Any]] = []
             processed = 0
             hit_limit = False
@@ -1505,7 +1532,7 @@ class FSIndexer:
                     logging.debug("[indexer] visit type=%s path=%s", node.record_type, node.path)
                 if node.record_type is not None:
                     per_type_counts[node.record_type] = per_type_counts.get(node.record_type, 0) + 1
-                    current_rt = node.record_type
+                    progress.current = node.record_type
                 fns = functions.get(node.record_type, []) if node.record_type is not None else []
                 for fn, output_types in fns:
                     if (
@@ -1534,13 +1561,13 @@ class FSIndexer:
             for node, fn in pending:
                 children = await fn([node], opts)
                 stack.extend(reversed(children))
-            await emit()
+            await progress.emit()
             if hit_limit:
                 break
 
-        current_rt = None
+        progress.current = None
         if on_progress is not None:
-            await on_progress(make_table(text=PROGRESS_TEXT_COMPLETE))
+            await on_progress(progress.table(text=PROGRESS_TEXT_COMPLETE))
 
         return visited
 

@@ -192,6 +192,27 @@ export class MemoryJourney extends Journey {
 
 const registry = new Map<string, MemoryJourney>();
 
+// Registration is observable. Probe journeys arrive through a DYNAMIC import
+// (`JourneyController`: `if (import.meta.env.DEV) void import('./probes')`),
+// so a consumer that already rendered — and read `getMemoryJourney()` as null —
+// would otherwise only notice on some unrelated re-render. Standard mode tends
+// to get one; Vibe does not, and the tray never mounted there.
+let version = 0;
+const listeners = new Set<() => void>();
+
+/** Subscribe to registrations; returns the unsubscribe. `useSyncExternalStore` shape. */
+export function subscribeMemoryJourneys(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+/** Monotonic; bumps on every registration. The snapshot for `useSyncExternalStore`. */
+export function memoryJourneysVersion(): number {
+  return version;
+}
+
 /**
  * Register (or replace) a memory journey. Safe to call at module load.
  *
@@ -206,6 +227,8 @@ export function registerMemoryJourney(spec: { name: string; title?: string; grap
   if (problems.length) console.error(`[Journey] "${spec.name}" has authoring problems:\n${problems.join('\n')}`);
   const journey = new MemoryJourney(spec);
   registry.set(journey.identifier, journey);
+  version += 1;
+  for (const listener of listeners) listener();
   return journey;
 }
 

@@ -2,19 +2,33 @@ import { dataManager, isTypeId, isValidUUIDv4, TypeId } from '@sdk';
 
 /**
  * Resolve a descriptor's typeid string to the cached entity's `displayName`.
- * Falls back to the raw typeid when the entity isn't in cache or the typeid
- * isn't well-formed.
+ *
+ * `fallbackName` is the descriptor's own `name` — sent by the backend only for
+ * an on-disk asset with no entity row yet. Such a row can never resolve from
+ * cache, so without it the picker would render a raw `skill-<uuid>`. It is
+ * preferred over the typeid but never over a real cached entity, so an indexed
+ * asset keeps showing its live `displayName` (which a rename updates).
  */
-export function displayLabelForTypeid(typeid: string): string {
+export function displayLabelForTypeid(typeid: string, fallbackName?: string | null): string {
+  const fallback = fallbackName?.trim() || typeid;
   // Name-form pseudo-typeids (entity-less inline personas, `subagent-<name>`)
   // aren't cache-resolvable — show the bare name, not the raw pair.
-  if (!isTypeId(typeid)) return parseTypeid(typeid).id || typeid;
+  if (!isTypeId(typeid)) return parseTypeid(typeid).id || fallback;
   try {
     const entity = dataManager.getByTypeIdFromCache(new TypeId(typeid));
-    return entity?.displayName ?? typeid;
+    return entity?.displayName ?? fallback;
   } catch {
-    return typeid;
+    return fallback;
   }
+}
+
+/**
+ * Descriptor-level label. Every surface already holds the whole descriptor, so
+ * take it whole — a call site cannot forget to thread the on-disk `name`
+ * fallback (forgetting it silently regresses to a raw `skill-<uuid>`).
+ */
+export function displayLabelForDescriptor(d: { typeid: string; name?: string | null }): string {
+  return displayLabelForTypeid(d.typeid, d.name);
 }
 
 export function parseTypeid(typeid: string): { type: string; id: string } {

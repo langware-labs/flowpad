@@ -52,7 +52,7 @@ async def test_create(folder_db, watched, project, make_source, mode, kind):
     await poll(source)
 
     assert await entity_at(_landed(mode, watched, project, kind)) is not None
-    assert await searchable(FIRST_TOKEN), "body did not reach the index"
+    assert await searchable(FIRST_TOKEN, kind.record_type), "body did not reach the index"
 
 
 @matrix
@@ -73,8 +73,8 @@ async def test_update(folder_db, watched, project, make_source, mode, kind):
     await poll(source)
 
     assert await id_at(_landed(mode, watched, project, kind)) == before, "update forked the entity"
-    assert await searchable(SECOND_TOKEN), "new content is not searchable"
-    assert not await searchable(FIRST_TOKEN), "stale content still searchable"
+    assert await searchable(SECOND_TOKEN, kind.record_type), "new content is not searchable"
+    assert not await searchable(FIRST_TOKEN, kind.record_type), "stale content still searchable"
 
 
 @matrix
@@ -111,4 +111,4 @@ async def test_delete(folder_db, watched, project, make_source, mode, kind):
     await poll(source)
 
     assert await entity_at(_landed(mode, watched, project, kind)) is None
-    assert not await searchable(FIRST_TOKEN), "deleted content still searchable"
+    assert not await searchable(FIRST_TOKEN, kind.record_type), "deleted content still searchable"

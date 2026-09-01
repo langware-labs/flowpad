@@ -24,10 +24,11 @@ from typing import ClassVar, Optional
 from pydantic import model_validator
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.core import action as core_action
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
+from flow_sdk.fs_store.origin.field import OriginField
 from flow_sdk.ingest.health import SourceHealth
 from flow_sdk.ingest.reflect import ReflectMode
 from flow_sdk.request_context.methods import get_current_request_info
@@ -122,7 +123,17 @@ class DataSource(Entity):
     # ── driver config — provider-opaque, the subsystem never reads inside ──
     config: dict = APIField(default_factory=dict)
 
-    # ── reflection — WHERE this source's payload becomes locally present ──
+    # ── origin — WHERE this source's bytes come from ──
+    #
+    # A typed `FSOrigin` (a `LocalOrigin` at the watched folder / the checkout /
+    # the download cache; a `GitOrigin` for a repository that has to be cloned),
+    # stamped by the driver's `origin_for` on every save. Reflection reads it —
+    # never a provider-specific config key — so the engine holds one fact about
+    # where a tree begins, and a `GitOrigin` materializes through the same
+    # `FSOriginDriver` bundles and projects use. PRIVATE: a path on this machine.
+    origin: OriginField = APIField(default=None, sharing=Sharing.PRIVATE)
+
+    # ── reflection — HOW the payload becomes locally present ──
     #
     # Deliberately NOT inside `config`: `config` is provider-opaque and the
     # subsystem never reads inside it, but this is read by `sync_source` to pick
@@ -135,11 +146,12 @@ class DataSource(Entity):
         default=ReflectMode.RECORD.value,
         description="record | none | copy | symlink",
     )
-    #: The project directory reflected assets land under. Empty for `record`
-    #: and `none`. An absolute path, set explicitly by whoever configures the
-    #: source — NOT resolved from request context, because the heartbeat tick
-    #: that polls this row has none (the same trap this module's docstring flags
-    #: for project scoping).
+    #: The directory reflected assets land under — the `copy`/`symlink` target,
+    #: and the clone target for a `GitOrigin`. Empty for `record` and `none`.
+    #: An absolute path, set explicitly by whoever configures the source — NOT
+    #: resolved from request context, because the heartbeat tick that polls
+    #: this row has none (the same trap this module's docstring flags for
+    #: project scoping).
     reflect_into: str = APIField(default="")
 
     # ── lifecycle ──
@@ -314,7 +326,6 @@ class DataSource(Entity):
         dangling reference. It also discards local state (``read`` / ``starred``),
         which is the cost operators actually feel.
         """
-        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
 
         removed = await self.purge_records_of(self.id)
         return ApiSuccessResponse(data={"status": "purged", "removed": removed})
@@ -437,8 +448,7 @@ class DataSource(Entity):
         from flow_sdk.builtin.data_source_cursor import DataSourceCursor  # noqa: PLC0415
 
         await cls.purge_records_of(source_id)
-        for cursor in await DataSourceCursor.get_all({"data_source_id": source_id}):
-            await cursor.destroy()
+        await DataSourceCursor.delete_for(source_id)
 
     @classmethod
     async def delete_by_id(cls, eid: str):
@@ -459,16 +469,16 @@ class DataSource(Entity):
             # An AUTHORED source's driver comes from a row, not an import, so it
             # may not be registered yet on a cold process. Resolving NEW without
             # it would send a source that HAS a setup step straight to ACTIVE.
-            from flow_sdk.ingest.driver import _REGISTRY  # noqa: PLC0415
+            from flow_sdk.ingest.driver import DRIVERS  # noqa: PLC0415
             from flow_sdk.ingest.spec_registry import refresh_spec_drivers  # noqa: PLC0415
 
             # Only when the answer isn't already in hand: a shipped provider is
             # registered at import, and warming the spec table for it is a DB
             # round trip on a request a person is waiting on.
-            if self.provider not in _REGISTRY:
+            if self.provider not in DRIVERS:
                 await refresh_spec_drivers(self.provider)
             driver = self._driver()
-            if driver is not None and callable(getattr(driver, "verify", None)):
+            if driver is not None and driver.verify is not None:
                 self.status = SourceStatus.SETUP.value
                 if not self.setup_detail:
                     self.setup_detail = "Finish setup, then press Verify."
@@ -478,7 +488,44 @@ class DataSource(Entity):
                 # `sync_source`, which reports `unknown_provider` as a
                 # config_error the card can actually explain.
                 self.status = SourceStatus.ACTIVE.value
+        await self._coerce_config()
+        self._stamp_origin()
         return await super().save(*args, **kwargs)
+
+    async def _coerce_config(self) -> None:
+        """Shape ``config`` by the definition's field types on save — a URL sent
+        as a string where ``lines`` is declared must not produce a source that
+        looks configured and fails on its first sync (the rss driver iterating
+        the characters of a URL). The rule is the spec's
+        (``ConfigFieldSpec.coerce``); this is only where a row applies it, and
+        ``save`` is the one gate the dialog, the API and an agent all pass.
+
+        Only a string can need shaping, so a config whose values are already
+        typed (the poller re-saves one on every tick) costs one pass over a
+        handful of values and never a spec lookup.
+        """
+        if not isinstance(self.config, dict) or not any(isinstance(v, str) for v in self.config.values()):
+            return
+        from flow_sdk.builtin.data_source_spec import DataSourceSpec  # noqa: PLC0415
+
+        try:
+            spec = await DataSourceSpec.get_one({"name": self.provider})
+        except Exception:  # noqa: BLE001 — an unresolvable spec changes nothing
+            return
+        if spec is not None:
+            self.config = spec.coerce_config(self.config)
+
+    def _stamp_origin(self) -> None:
+        """``origin`` follows ``config`` on every save — the driver derives it
+        (`origin_for`), pure path arithmetic; a driver with no tree leaves it
+        unset, and an unknown provider changes nothing."""
+        driver = self._driver()
+        if driver is None or driver.origin_for is None:
+            return
+        try:
+            self.origin = driver.origin_for(self)
+        except Exception:  # noqa: BLE001 — a bad root is the driver's verify verdict, not a save failure
+            logger.debug("[data_source] origin_for failed for %s", self.id, exc_info=True)
 
     @core_action.post(action_name="verify")
     async def verify_action(self) -> ApiResponse:
@@ -545,7 +592,7 @@ class DataSource(Entity):
         """
         if not self.channel:
             return None  # nothing to probe against yet
-        from flow_sdk.core.oauth.provider_probe import get_probe, run_probe  # noqa: PLC0415
+        from flow_sdk.core.oauth.provider_probe import get_probe  # noqa: PLC0415
 
         if get_probe(self.channel) is None:
             return None  # no probe defined — not a failure, just unverifiable
@@ -560,8 +607,8 @@ class DataSource(Entity):
     async def _verify_setup(self, driver) -> "SetupVerdict":
         from flow_sdk.ingest.driver import SetupVerdict  # noqa: PLC0415
 
-        check = getattr(driver, "verify", None)
-        if not callable(check):
+        check = driver.verify
+        if check is None:
             # A driver with no setup step is ready as soon as it is configured.
             return SetupVerdict.ok()
         try:
@@ -598,16 +645,7 @@ class DataSource(Entity):
         self.error_detail = None
 
     async def _reset_cursors(self) -> int:
-        """Clear every cursor's position, keeping the rows. Returns the count."""
+        """Forget every segment's position; the cursor rows stay (see ``DataSourceCursor.reset_for``)."""
         from flow_sdk.builtin.data_source_cursor import DataSourceCursor  # noqa: PLC0415
 
-        cursors = await DataSourceCursor.get_all({"data_source_id": self.id})
-        for cursor in cursors:
-            cursor.high_water = None
-            cursor.state = {}
-            cursor.error_code = None
-            cursor.error_detail = None
-            cursor.consecutive_failures = 0
-            cursor.health = SourceHealth.OK.value
-            await cursor.save()
-        return len(cursors)
+        return await DataSourceCursor.reset_for(self.id)

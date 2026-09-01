@@ -32,11 +32,9 @@ async def test_message_id_echoed_from_context(tmp_path, monkeypatch, resolve_liv
     from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
     from flow_sdk.builtin.flow_message import FlowMessage
     from flow_sdk.builtin.graph_context import GraphContext
-    from flow_sdk.core.capabilities.discovery import ensure_discovered
     from flow_sdk.migrations.runner import _bootstrap_local
 
     await _bootstrap_local()
-    await ensure_discovered()
 
     msg = await FlowMessage(id=MSG_ID, text="hello there").save()
     gc = await GraphContext(context_typeids=[str(msg.typeid)]).save()

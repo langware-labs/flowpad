@@ -13,7 +13,8 @@ ProgressCallback = Callable[[int, int], Awaitable[None]]
 from pydantic import BaseModel, SerializerFunctionWrapHandler, model_serializer, model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
-from flow_sdk.builtin.cloud_origin import CloudOrigin, CloudOriginLocal
+from flow_sdk.tags.envelope import parse_target
+from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.type_id import TypeId
 
@@ -253,9 +254,9 @@ def _type_id_attachment_present(fm_id: "str | None", data: str) -> bool:
     ``asset_ref`` source file to exist on the record-folder path — a
     metadata-only stub does not count, so a body-less spec re-pulls its bundle
     instead of being stranded blank."""
-    if "-" not in data:
+    etype, eid = parse_target(data)
+    if not etype or not eid:
         return True
-    etype, eid = data.split("-", 1)
     if etype in _NON_MATERIALIZING_TYPE_IDS:
         return True
     try:

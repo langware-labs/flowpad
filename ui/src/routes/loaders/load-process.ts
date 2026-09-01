@@ -171,7 +171,7 @@ export async function loadProcess(processId: string): Promise<{ process: Agentic
     // No stored project_id. A workdir inside a project's mount adopts the process
     // into that project; otherwise this is a genuinely global target and
     // resolveProjectContext clears the active project to null (the Global scope).
-    await systemTools.resolveProjectContext(process.workdir, process);
+    await systemTools.resolveProjectContext(process.workdir ?? undefined, process);
   }
 
   // ── Linked-Shell identity phase ────────────────────────────────────────

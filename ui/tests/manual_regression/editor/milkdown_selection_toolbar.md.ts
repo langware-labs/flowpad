@@ -1,13 +1,25 @@
 import { expect, test, type Page } from '@playwright/test';
-import { ensureProjectMarkdown } from './_seed';
+import { writeFileSync } from 'node:fs';
+import { createProjectMarkdown } from './_seed';
 
+// Real body text for the selection tests to select from. `ensureProjectMarkdown`
+// mints a doc with an empty body (frontmatter + identity capsule only, no
+// paragraph) — fine for tests that only need a doc to exist, but these tests
+// select the first 6 characters of the first paragraph/heading, so the doc
+// needs actual text. Mirrors breadcrumb_fence.md.ts's seed pattern: create via
+// the API, then overwrite the file on disk with real content.
+const BODY_TEXT = 'Selection toolbar QA fixture paragraph for the milkdown editor tests.';
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-// Create a markdown asset and open its canonical URL directly. These scenarios
-// exercise Milkdown, not asset-tree expansion or row-label presentation.
+// Create a markdown asset with real body text and open its canonical URL
+// directly. These scenarios exercise Milkdown, not asset-tree expansion or
+// row-label presentation.
 async function openFirstMarkdownDoc(page: Page) {
-  const markdownId = await ensureProjectMarkdown(page.request);
+  const doc = await createProjectMarkdown(page.request);
+  if (!doc.assetRef) throw new Error('seed markdown returned no asset_ref');
+  writeFileSync(doc.assetRef, `# QA selection toolbar fixture\n\n${BODY_TEXT}\n`, 'utf8');
+  const markdownId = doc.id;
   await page.goto(`/dock/assets/editor/markdown/typeid/markdown-${markdownId}`);
   // "Doc opened" = the MarkdownEditor header mounted. Do NOT wait on `.ProseMirror`
   // here: the chosen editor mode is persisted across docs (PrefKey.EDITOR_MODE), so a

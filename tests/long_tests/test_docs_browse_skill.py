@@ -53,14 +53,6 @@ pytestmark = [
 ]
 
 
-@pytest.fixture(scope="module")
-async def _workers_discovered():
-    """One capability-discovery sweep so the driver can resolve the CLI binary."""
-    from flow_sdk.core.capabilities.discovery import ensure_discovered
-
-    await ensure_discovered()
-
-
 # ── corpus seeding ────────────────────────────────────────────────────────────
 
 
@@ -133,7 +125,7 @@ class BrowseSetup(NamedTuple):
 
 @pytest.fixture
 async def browse_setup(
-    tmp_path, _workers_discovered, local_project, local_compute_node
+    tmp_path, local_project, local_compute_node
 ):
     """Seeded vault + indexed chain + a saved STANDARD process, torn down after.
 

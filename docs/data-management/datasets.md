@@ -9,7 +9,7 @@ it. This is the user-facing contract — the folders and files *you* create. The
 parser lives in `flow_sdk/fs_store/indexer/functions/dataset.py`; the entity and
 row models in `flow_sdk/builtin/dataset.py`.
 
-A dataset is a **folder** under `assets/datasets/<slug>/`, marked by a
+A dataset is a **folder** under `agentic-assets/dataset/<slug>/`, marked by a
 `dataset.json` manifest at its root. Without that manifest the folder is **not**
 discovered as a dataset. It holds many **examples** (rows) in one of two physical
 layouts, chosen by `data_layout` in the manifest:
@@ -19,8 +19,8 @@ layouts, chosen by `data_layout` in the manifest:
 | `csv` | one `data.csv`; each row is an example | flat, tabular, text-only data |
 | `io_folder` | an `examples/` tree; one sub-folder per example | files, binaries, multiple outputs, multi-annotation gold |
 
-Every example normalizes to the same `Example` shape regardless of layout, so
-downstream code calls `dataset.examples()` / `dataset.examples(ExampleKind.EVAL)`
+Every example normalizes to the same `ExampleSpec` shape regardless of layout, so
+downstream code reads `dataset.examples` / `dataset.of_kind(ExampleKind.EVAL)`
 without caring which layout produced it.
 
 ---
@@ -38,7 +38,7 @@ sidecars — is a two-section document:
 ```
 
 - **`metadata`** holds flowpad-recognized keys (`data_layout`, `field_spec`, `kind`,
-  `layout`, `schema`, …). The set grows over time; unknown keys here are preserved
+  `layout`, `spec`, …). The set grows over time; unknown keys here are preserved
   but not interpreted.
 - **`data`** is an opaque object flowpad never reads — it round-trips verbatim onto
   the corresponding model's `.data`.
@@ -68,7 +68,9 @@ configuration + metadata, in the two-section form:
     "data_layout": "io_folder",                    // "csv" | "io_folder" (default "csv")
     "field_spec": { "input": "question" },          // CSV column remap only (§2)
     "delimiter": ",",                               // CSV only
-    "schema": { "input": { "scan": { /* json-schema */ } } } // forward-looking, opaque today
+    "spec": {                                       // a compact DataSpec (§ Spec)
+      "fields": { "category": "string" }
+    }
   },
   "data": {
     "owner": "you@example.com"                      // free — surfaced under record metadata.data
@@ -79,6 +81,34 @@ configuration + metadata, in the two-section form:
 Computed fields you **do not** write — the indexer fills them in:
 `num_examples`, `kind_counts`, `num_annotated`, `num_multi_output`,
 `num_binary_inputs`.
+
+### The `spec`
+
+`spec` is a [`DatasetSpec`](data-spec.md) authoring form — the shape every row
+has, written as ONE example shape:
+
+```jsonc
+"spec": { "examples": [ { "input":  { "subject": "string", "body": "string" },
+                          "output": { "category": "string" },
+                          "context": { "history": ["string"] } } ] }
+```
+
+`input` is required; `output` / `ground_truth` share one shape (either name
+declares it); `context` is optional. Each slot is a `DataSpec` authoring form —
+a bare kind (`"file_ref"`, `"text"`, a registered class), an object, or a
+one-element list. It compiles to `DatasetSpec[ExampleSpec[I, O, C]]`, a real
+Pydantic parametrization, and is stored back in exactly this form with kinds
+normalized.
+
+Omitting `spec` is legal: rows validate against `DEFAULT_DATASET_SPEC`, whose
+slots accept any artifact (`FileRef | FolderSpec | TextSpec`). A malformed spec
+is logged and ignored, never fatal — the rows beside it parse fine and must not
+be lost over a bad metadata key.
+
+The index pass reads rows as ARTIFACTS regardless of `spec`: a file is a
+`FileRef`, not its contents. Validating contents against the declared shape
+means opening the files — `dataset.example_type.model_validate(...)` — and is
+the consumer's call.
 
 ### Portability
 
@@ -100,7 +130,7 @@ a read-only compatibility source, but new identity is never written there.
 ## 2. `csv` layout
 
 ```
-assets/datasets/<slug>/
+agentic-assets/dataset/<slug>/
   dataset.json        # { "metadata": { "data_layout": "csv" }, "data": {} }
   data.csv            # one row per example
 ```
@@ -130,7 +160,7 @@ by the `io_folder` layout.
 ## 3. `io_folder` layout
 
 ```
-assets/datasets/<slug>/
+agentic-assets/dataset/<slug>/
   dataset.json        # { "metadata": { "data_layout": "io_folder" }, "data": {} }
   examples/
     0001/             # one folder per example (the folder name is the example key)
@@ -215,7 +245,7 @@ accepted as a back-compat alias; `example.json` wins per section on conflict).
 ### 3.5 Canonical example
 
 ```
-assets/datasets/grader-e2e/
+agentic-assets/dataset/grader-e2e/
   .flow/capsules/identity.json     # { "version": 1, "data": { "id": "<uuid-v4-or-v5>" } }
   dataset.json                     # { "metadata": { "data_layout": "io_folder", "title": "Grader E2E" }, "data": {} }
   examples/0001/
@@ -233,39 +263,66 @@ assets/datasets/grader-e2e/
 
 ## 4. What the parser produces
 
-Each example becomes an `Example` (`flow_sdk/builtin/dataset.py`):
+Each example becomes an `ExampleSpec` (`flow_sdk/schema/data_spec/dataset_spec.py`)
+— a VALUE model (the `Spec` suffix), never an entity. `Dataset.examples` is the
+list, populated eagerly by `DiskSerializer.load` (a Dataset is written by `save()` — the serializer writes `dataset.json` and the rows through `DatasetLayout`):
 
 ```python
-class Example:
-    id: str                 # deterministic uuid5(dataset_id : key)
-    kind: ExampleKind       # train | eval | test  (from example.json metadata)
-    input: str              # back-compat scalar: input.txt/.md text, else ""
-    expected: str | None    # back-compat scalar: ground_truth primary text, else None
-    metadata: dict          # example.json `metadata` section (+ CSV leftover columns)
-    data: dict              # example.json `data` section (free, use-case-owned)
-    # structured slots (io_folder):
-    input_slot: ExampleSlot | None
-    output_slot: ExampleSlot | None         # candidate — never the gold
-    ground_truth_slot: ExampleSlot | None   # gold; >1 artifact ⇒ consensus
-    layout: str | None      # example.json metadata["layout"]
+class ExampleSpec(DataSpec, Generic[I, O, C]):
+    id: str                          # deterministic uuid5(dataset_id : key) — the row index (csv) or folder name (io_folder)
+    kind: ExampleKind                # train | eval | test  (from example.json metadata; a FIELD, not the spec_kind hook)
+    input: I
+    output: O | list[O] | None       # one occurrence → O; numbered output-1, output-2… → list[O], canonical order
+    ground_truth: O | list[O] | None # the gold answer — same shape as output
+    context: C | None
+    metadata: dict                   # example.json `metadata` (+ CSV leftover columns) ∪ sidecars by filename
+    data: dict                       # example.json `data` section (free, use-case-owned)
 ```
 
-A slot holds one or more **artifacts**, each with `kind` (`file`/`folder`),
-`path` (relative), `files` (folder contents), `text` (decoded for `.txt`/`.md`
-only), `index` (the `N` in `output-2`), and **both** `metadata` and `data` (the
-two sections of its `<slot>.json` sidecar). `ExampleSlot` and the dataset record
-likewise carry `metadata` + `data`. Read the structured slots for binary/folder/
-multi data; use `input`/`expected` for the simple single-text case.
+The slots hold the three leaves. **The type IS the file/folder distinction:**
 
----
+| On disk | In the row |
+|---|---|
+| a file (`input.pdf`) | `FileRef(path="input.pdf")` — its example-relative POSIX path, never read |
+| a folder (`ground_truth/`) | `FolderSpec(path="ground_truth", files={...})` — members by filename, recursively |
+| a CSV cell | `TextSpec(text="…")` |
+| numbered occurrences (`output-1.txt`, `output-2.txt`) | `output = [FileRef, FileRef]` — bare first, then numeric ascending |
+| a sidecar (`ground_truth-2.json`) | `metadata["ground_truth-2.json"] = {"metadata": …, "data": …}` — legal as an orphan with no data key |
+
+```python
+# examples/0001/ from §3.5
+ExampleSpec(
+    input=FileRef(path="input.pdf"),
+    output=[FileRef(path="output-1.txt"), FileRef(path="output-2.txt")],
+    ground_truth=[FolderSpec(path="ground_truth", files={"grade.json": FileRef(path="ground_truth/grade.json")}),
+                  FolderSpec(path="ground_truth-2", files={"grade.json": FileRef(path="ground_truth-2/grade.json")})],
+    metadata={"input.json": {"metadata": {"pages": 3}, "data": {}},
+              "ground_truth.json": {"metadata": {"rater": "A"}, "data": {}}},
+)
+```
+
+The on-disk grammar is unchanged; what changed is that it is now read and
+written by ONE object — [`DatasetLayout`](data-spec.md) (`CsvLayout` /
+`FolderLayout`). `ExampleSpec` never learns which layout it came from. A
+`FileRef` becomes an absolute path only in `FolderLayout.resolve`.
+
+An example directory with no `input` DATA (a lone `input.json` sidecar is not
+data) is skipped entirely and not counted. An `expected*` file is the legacy
+alias for `ground_truth`, honoured only when no native gold data exists.
+
+The graph-workflow capture seam (`prepare_execution_io`, `_stamp_example`)
+writes through the same `FolderLayout`, so an execution directory IS an
+`io_folder` example directory by construction.
 
 ## 5. Authoring checklist
 
 - [ ] Every `*.json` is two-section — known keys under `metadata`, free under `data`
       (a flat JSON is ignored).
-- [ ] Folder is at `assets/datasets/<slug>/` with a `dataset.json` at its root.
+- [ ] Folder is at `agentic-assets/dataset/<slug>/` with a `dataset.json` at its root.
 - [ ] `dataset.json` `metadata` sets `data_layout` (`csv` or `io_folder`); preserve
       `.flow/capsules/identity.json` when copying or moving the dataset.
+- [ ] If the dataset declares a shape, put its compact `DataSpec` under
+      `dataset.json` `metadata.spec`.
 - [ ] **csv**: `data.csv` present; non-standard headers remapped via `field_spec`.
 - [ ] **io_folder**: every `examples/<name>/` has an `input` artifact (file/folder).
 - [ ] Gold goes under `ground_truth` (structured gold → folder form, e.g.
@@ -277,3 +334,29 @@ multi data; use `input`/`expected` for the simple single-text case.
 See also: [Asset capsules](asset-capsules.md) (portable identity), [Folder
 Layout](folder-layout.md) (internal records-root layout), and [Schema
 Registry](schema-registry.md) (how the `dataset` type is registered).
+
+
+## Curating a source into a dataset
+
+A dataset can be **bound to a DataSource** (`Dataset.source_id`, authored in
+`dataset.json`). Its row shape is then `input: "ingest.source_item"` — the item
+envelope — plus the output shape the person chose, in the keyword form:
+
+```json
+{"examples": [{"input": "ingest.source_item", "output": {"topic": "string", "sentiment": "string"}}]}
+```
+
+Two actions move data along that seam (`flow_sdk/builtin/dataset.py`), both
+`io_folder` only:
+
+| Action | Body | Writes |
+| --- | --- | --- |
+| `POST /graph/dataset/<id>/promote` | `{"source_item_ids": [...]}` | `examples/NNNN/input/item.json` (the envelope) + `example.json` with `metadata.source` provenance |
+| `POST /graph/dataset/<id>/annotate` | `{"example_id", "ground_truth"}` | `examples/NNNN/ground_truth/label.json`, validated against the output shape; `metadata.annotations += {by, at}` |
+| `GET /graph/dataset/<id>/examples` | — | `[{example_id, item_id, kind, annotated}]` read from the folder |
+
+Both are per-example writes (`FolderLayout.append` / `annotate`) — the other
+rows are never rewritten — and both re-derive the counts through the indexer's
+discovery, so `num_examples` / `num_annotated` on the row follow the disk. The
+builtin `spec` editor of every source definition carries the pane that drives
+them; the `connect-data-source` skill's `define` mode drives them for an agent.

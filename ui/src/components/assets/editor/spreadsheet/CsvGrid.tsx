@@ -17,7 +17,7 @@ interface CsvGridProps {
   /** FSRef to the .csv file (read/write string content). */
   fsRef: FSRef;
   /** Entity `updated_date`-derived token — re-reads on out-of-band change. */
-  reloadKey: string | number;
+  reloadKey: string | number | undefined;
   /** Reports dirty state up to the header. */
   onDirtyChange?: (dirty: boolean) => void;
   /** Records a real grid edit on the resolved Spreadsheet entity. */

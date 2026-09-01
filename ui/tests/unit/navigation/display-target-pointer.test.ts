@@ -41,8 +41,32 @@ describe('dockForDisplayTarget', () => {
     expect(dock?.options?.port).toBe('3000');
   });
 
-  it('maps a running app to its derived dev-server port', () => {
-    const dock = dockForDisplayTarget({ kind: 'app', artifact_id: UUID, runtime: 'dev', port: 5173 });
+  it('addresses an app by its ARTIFACT, keeping the runtime derived', () => {
+    // The port is deliberately absent from the address even when one is live: it
+    // is a companion of `runtime=dev`, re-resolved from the Deployment on load.
+    // Baking it in is what would let a dead dev server become the app's identity.
+    const dock = dockForDisplayTarget({ kind: 'app', artifact_id: UUID, typeid: `artifact-${UUID}`, runtime: 'dev', port: 5173 });
+    expect(dock?.viewType).toBe(ViewType.APP);
+    expect(dock?.pointer).toBe(`artifact-${UUID}`);
+    expect(dock?.options?.port).toBeUndefined();
+    // The runtime rides in options, so it stays out of tab identity: flipping
+    // dev⇄served re-points the same tab instead of forking one per runtime.
+    expect(dock?.options?.runtime).toBe('dev');
+    expect(dock?.tabHash).toBe(`app|artifact-${UUID}`);
+  });
+
+  it('addresses a served or unbuilt app too — the case that used to have no URL', () => {
+    for (const runtime of ['served', 'unbuilt'] as const) {
+      const dock = dockForDisplayTarget({ kind: 'app', artifact_id: UUID, typeid: `artifact-${UUID}`, runtime });
+      expect(dock?.viewType).toBe(ViewType.APP);
+      expect(dock?.pointer).toBe(`artifact-${UUID}`);
+    }
+    // `unbuilt` is not a runtime the viewer can select, so it is not pinned.
+    expect(dockForDisplayTarget({ kind: 'app', artifact_id: UUID, runtime: 'unbuilt' })?.options?.runtime).toBeUndefined();
+  });
+
+  it('falls back to the bare port for an app with no artifact behind it', () => {
+    const dock = dockForDisplayTarget({ kind: 'app', runtime: 'dev', port: 5173 });
     expect(dock?.viewType).toBe(ViewType.WEB_APP);
     expect(dock?.options?.port).toBe('5173');
   });
@@ -60,9 +84,8 @@ describe('dockForDisplayTarget', () => {
       expect(dockForDisplayTarget({ kind: 'entity', type: 'dataset', id: UUID })).toBeNull();
     });
 
-    it('for an app with no dev server (served / unbuilt carry no port)', () => {
-      expect(dockForDisplayTarget({ kind: 'app', artifact_id: UUID, runtime: 'served' })).toBeNull();
-      expect(dockForDisplayTarget({ kind: 'app', artifact_id: UUID, runtime: 'unbuilt' })).toBeNull();
+    it('for an app with neither an artifact nor a port', () => {
+      expect(dockForDisplayTarget({ kind: 'app', runtime: 'unbuilt' })).toBeNull();
     });
 
     it('for a webapp whose port is missing or blank', () => {

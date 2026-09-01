@@ -147,7 +147,7 @@ async def resolve_reply_target(conversation_id: str) -> ReplyTarget:
         raise ChannelSendUnavailable("the record this arrived through is gone")
 
     driver = get_driver(source.provider)
-    if driver is None or not getattr(driver, "sends", False):
+    if driver is None or not driver.sends:
         raise ChannelSendUnavailable(f"the {origin.kind} transport cannot send")
 
     to = (item.author_external_id or "").strip()

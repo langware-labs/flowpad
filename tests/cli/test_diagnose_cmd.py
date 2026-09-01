@@ -319,10 +319,6 @@ async def test_run_diagnose_exits_when_recorded_even_if_stream_never_ends():
     with (
         patch("flow_sdk.builtin.agentic_process.AgenticProcess", _FakeAP),
         patch(
-            "flow_sdk.core.capabilities.discovery.ensure_discovered",
-            new=AsyncMock(return_value=None),
-        ),
-        patch(
             "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
             _diagnosis_type_only(None),
         ),
@@ -402,10 +398,6 @@ async def test_run_diagnose_posts_loaded_diagnosis_summary_when_cross_link_fails
     with (
         patch("flow_sdk.builtin.agentic_process.AgenticProcess", _FakeAP),
         patch(
-            "flow_sdk.core.capabilities.discovery.ensure_discovered",
-            new=AsyncMock(return_value=None),
-        ),
-        patch(
             "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
             _diagnosis_type_only(_FakeDiagnosis),
         ),
@@ -464,10 +456,6 @@ async def test_run_diagnose_fails_fast_when_worker_dies_without_transcript():
     events: list[dict] = []
     with (
         patch("flow_sdk.builtin.agentic_process.AgenticProcess", _FakeAP),
-        patch(
-            "flow_sdk.core.capabilities.discovery.ensure_discovered",
-            new=AsyncMock(return_value=None),
-        ),
         patch(
             "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
             _diagnosis_type_only(None),
@@ -543,10 +531,6 @@ async def test_run_diagnose_waits_for_slow_but_alive_worker():
     try:
         with (
             patch("flow_sdk.builtin.agentic_process.AgenticProcess", _FakeAP),
-            patch(
-                "flow_sdk.core.capabilities.discovery.ensure_discovered",
-                new=AsyncMock(return_value=None),
-            ),
             patch(
                 "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
                 _diagnosis_type_only(None),
@@ -763,10 +747,6 @@ async def test_feed_card_always_appears(label, has_issue, expect_conversation):
     events: list[dict] = []
     with (
         patch("flow_sdk.builtin.agentic_process.AgenticProcess", _FakeAP),
-        patch(
-            "flow_sdk.core.capabilities.discovery.ensure_discovered",
-            new=AsyncMock(return_value=None),
-        ),
         patch(
             "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
             _diagnosis_type_only(None),

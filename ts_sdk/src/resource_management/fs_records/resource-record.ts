@@ -18,8 +18,20 @@ export enum ResourceStatus {
  * All field names use snake_case to match Python `to_dict()` output.
  */
 export interface ResourceRecord extends IResource {
-  /** Lifecycle status */
-  status?: ResourceStatus;
+  /**
+   * Whatever `status` this record's own indexer wrote — the WIRE shape of the
+   * field, so per record type.
+   *
+   * Not `ResourceStatus`: that union is the archived/deleted lifecycle, and the
+   * indexer writes other vocabularies into this key (e.g.
+   * `fs_store/indexer/functions/claude_sessions.py:406` writes `"complete"`, a
+   * run state). `FsRecord` types it the same way and subclasses narrow to their
+   * own union — this shape is `FsRecord`'s CONSTRUCTOR parameter, so leaving it
+   * as the enum made `new ClaudeSessionRecord({ status: 'complete' })` an error
+   * even after the class allowed it. `ResourceStatus` remains the vocabulary a
+   * lifecycle-owning record narrows to.
+   */
+  status?: string;
 
   /** Storage scope */
   scope: Scope | string;

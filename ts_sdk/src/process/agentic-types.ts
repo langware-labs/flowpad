@@ -199,8 +199,10 @@ export interface StatusBearingProcess {
   status?: ProcessStatus | string;
   /** Turn-in-flight — the orthogonal boolean the input/toggle gates read. */
   busy?: boolean;
-  workerStatus?: WorkerStatus | string;
-  worker_status?: WorkerStatus | string;
+  // Nullable: the wire sends `worker_status: null` for a process that has never
+  // had a worker, and `AgenticProcess` declares it that way.
+  workerStatus?: WorkerStatus | string | null;
+  worker_status?: WorkerStatus | string | null;
   /** The CLI's own sentence behind a bare ERROR ("Not logged in · Please run /login"). */
   workerStatusDetail?: string | null;
   worker_status_detail?: string | null;

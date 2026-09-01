@@ -16,6 +16,7 @@ from flow_sdk.builtin.skill import Skill
 from flow_sdk.builtin.tag import Tag
 from flow_sdk.capsules import AssetCapsule
 from flow_sdk.capsules.data import CapsuleData
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.type_info import register_all
 from flow_sdk.subgraph import validate_payload
 from flow_sdk.tags.graph import build_tag_graph
@@ -59,11 +60,10 @@ async def test_hierarchy_with_implied_intermediate_ghosts():
 async def test_bound_doc_included_and_root_scoped(tmp_path):
     from flow_sdk.core.entity.entity_model import Entity
     from flow_sdk.fs_store.fs_ref import FSRef
-    from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown
 
     doc = tmp_path / "graph-rules.md"
     doc.write_text("---\ntitle: Graph rules\ntags: [--tg--.beta.rules]\n---\n# Graph rules\n")
-    records = extract_markdown(FSRef(doc), "")
+    records = SchemaRegistry.get("markdown").from_disk_fn(FSRef(doc), "")
     assert records
     await Entity.from_record(records[0])
 
@@ -100,13 +100,12 @@ async def test_code_capsule_ghost_and_tree_only(tmp_path):
 async def test_free_form_tags_are_preserved_but_only_valid_dot_paths_bind(tmp_path):
     from flow_sdk.core.entity.entity_model import Entity
     from flow_sdk.fs_store.fs_ref import FSRef
-    from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown
 
     doc = tmp_path / "mixed-tags.md"
     doc.write_text(
         '---\ntitle: Mixed tags\ntags: [" Product Area ", " --TG--.Mixed.Doc "]\n---\n'
     )
-    records = extract_markdown(FSRef(doc), "")
+    records = SchemaRegistry.get("markdown").from_disk_fn(FSRef(doc), "")
     assert records[0].tags == [" Product Area ", " --TG--.Mixed.Doc "]
     await Entity.from_record(records[0])
 

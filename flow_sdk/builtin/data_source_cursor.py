@@ -95,3 +95,44 @@ class DataSourceCursor(Entity):
         )
         await row.save()
         return row
+
+    # ── lifecycle, keyed on the source ────────────────────────────────────
+
+    @classmethod
+    async def for_source(cls, source, segments) -> list["DataSourceCursor"]:
+        """The source's ENABLED cursors, one per declared segment — one query,
+        creating only what is missing. Per-segment ``ensure_for`` would be a
+        read per feed per tick even though the budget only fetches a few."""
+        existing = {c.segment_key: c for c in await cls.get_all({"data_source_id": source.id})}
+        out: list[DataSourceCursor] = []
+        for ref in segments:
+            cursor = existing.get(ref.key)
+            if cursor is None:
+                cursor = await cls.ensure_for(source.id, ref.key, segment_label=ref.label)
+            out.append(cursor)
+        return [c for c in out if c.enabled]
+
+    def mark_ok(self) -> None:
+        """The healthy transition — ONE copy, so a new health field cannot be
+        cleared on the sync path and forgotten on the reset path."""
+        self.health = SourceHealth.OK.value
+        self.error_code = None
+        self.error_detail = None
+        self.consecutive_failures = 0
+
+    @classmethod
+    async def reset_for(cls, source_id: str) -> int:
+        """Forget every segment's position, keeping the rows — a re-poll from
+        the window floor. Returns how many were reset."""
+        cursors = await cls.get_all({"data_source_id": source_id})
+        for cursor in cursors:
+            cursor.high_water = None
+            cursor.state = {}
+            cursor.mark_ok()
+            await cursor.save()
+        return len(cursors)
+
+    @classmethod
+    async def delete_for(cls, source_id: str) -> None:
+        for cursor in await cls.get_all({"data_source_id": source_id}):
+            await cursor.destroy()

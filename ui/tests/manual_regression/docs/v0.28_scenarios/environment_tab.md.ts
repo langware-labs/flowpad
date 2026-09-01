@@ -2,33 +2,12 @@
  * Environment variables and FlowPad API-key lifecycle.
  * Source: environment_tab.md
  */
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 declare global {
   interface Window {
     __flowpadCopiedText?: string;
   }
-}
-
-async function addVariable(
-  page: Page,
-  name: string,
-  value: string,
-  type: 'Non Confidential' | 'API Key',
-): Promise<Locator> {
-  await page.getByRole('button', { name: 'Add Variable' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Add Environment Variable' });
-  await dialog.locator('input[placeholder="VAR_NAME"]').fill(name);
-  if (type === 'API Key') {
-    await dialog.getByRole('combobox').click();
-    await page.getByRole('option', { name: type }).click();
-  }
-  await dialog.locator('textarea[placeholder="Enter the variable value"]').fill(value);
-  await dialog.getByRole('button', { name: 'Save' }).click();
-
-  const row = page.getByRole('row').filter({ hasText: name });
-  await expect(row).toBeVisible();
-  return row;
 }
 
 test.describe('Credentials tabs', () => {
@@ -48,7 +27,7 @@ test.describe('Credentials tabs', () => {
     });
   });
 
-  test('API key plus confidential and non-confidential variables round-trip', async ({ page }) => {
+  test('API key and project environment lifecycle round-trip', async ({ page }) => {
     await page.goto('/dock/credentials/api-keys');
     await expect(page).toHaveURL(/\/dock\/credentials\/api-keys(?:[/?]|$)/);
     await expect(page.getByRole('heading', { name: 'Credentials' })).toBeVisible();
@@ -73,24 +52,30 @@ test.describe('Credentials tabs', () => {
     await page.goto('/dock/credentials/environment');
     await expect(page).toHaveURL(/\/dock\/credentials\/environment(?:[/?]|$)/);
     await expect(page.getByRole('heading', { name: 'Credentials' })).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Environment' })).toHaveAttribute('data-state', 'active');
-    await expect(page.getByTestId('env-vars-manager')).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Project Environment' })).toHaveAttribute('data-state', 'active');
+    await expect(page.getByTestId('project-environment-tab')).toBeVisible();
 
-    let row = await addVariable(page, 'TEST2', '53', 'Non Confidential');
-    await expect(row).toContainText('53');
-    await row.getByRole('button').first().click();
-    const editDialog = page.getByRole('dialog', { name: 'Edit Environment Variable' });
-    await editDialog.locator('textarea[placeholder^="Leave empty"]').fill('98');
-    await editDialog.getByRole('button', { name: 'Save' }).click();
-    row = page.getByRole('row').filter({ hasText: 'TEST2' });
-    await expect(row).toContainText('98');
-    await row.getByRole('button').last().click();
-    await expect(row).toHaveCount(0);
+    await page.getByTestId('env-declare-open').click();
+    await page.getByTestId('declare-env-var').fill('TEST2');
+    await page.getByTestId('declare-description').fill('QA lifecycle variable');
+    await page.getByTestId('declare-value').fill('53');
+    await page.getByTestId('declare-submit').click();
 
-    row = await addVariable(page, 'TEST2', '123QWE', 'API Key');
-    await expect(row).not.toContainText('123QWE');
-    await expect(row).toContainText('****');
-    await row.getByRole('button').last().click();
+    const row = page.getByTestId('env-row-TEST2');
+    await expect(row).toBeVisible();
+    await expect(page.getByTestId('env-met-TEST2')).toContainText('Met');
+    await expect(row).not.toContainText('53');
+    await expect(row).toContainText('••••');
+
+    await page.getByTestId('env-provide-open-TEST2').click();
+    await page.getByTestId('env-value-input-TEST2').fill('98');
+    await page.getByTestId('env-value-save-TEST2').click();
+    await expect(page.getByTestId('env-met-TEST2')).toContainText('Met');
+    await expect(row).not.toContainText('98');
+
+    await page.getByTestId('env-remove-TEST2').click();
+    const unlinkDialog = page.getByRole('alertdialog', { name: 'Stop declaring TEST2?' });
+    await unlinkDialog.getByRole('button', { name: 'Stop declaring' }).click();
     await expect(row).toHaveCount(0);
   });
 });

@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.instance_settings import get_instance_settings
 
 

@@ -6,10 +6,8 @@
  * that is the origin enum on a trace's FlowData (stream | history | …) and has
  * nothing to do with ingestion. See docs/glossary.md.
  */
-import { APIEntity, dataManager, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
-import { ActionInfo } from '../models/ActionInfo';
-import { HttpMethod } from '../models/ApiUrl';
+import { APIEntity, registerEntity } from '../APIEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 
 /** Mirror of flow_sdk/ingest/health.py SourceHealth. */
 export type SourceHealth = 'never_synced' | 'ok' | 'transient_error' | 'config_error';
@@ -48,6 +46,12 @@ export interface IDataSource extends IEntity {
   error_code?: string | null;
   error_detail?: string | null;
 }
+
+// `implements IDataSource` only checks the class; it contributes no members, so every
+// field declared solely on IDataSource read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface DataSource extends EntityMerge<IDataSource> {}
 
 @registerEntity
 export class DataSource extends APIEntity<DataSource> implements IDataSource {
@@ -123,12 +127,6 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     if (this.health === 'config_error') return false;
     if (!this.next_poll_at) return true;
     return new Date(this.next_poll_at).getTime() <= Date.now();
-  }
-
-  private post<R>(action: string, body?: Record<string, unknown>): Promise<R> {
-    const info = new ActionInfo(action, DataSource.type, this.id, 'POST' as HttpMethod);
-    if (body) info.bodyParameters = body;
-    return dataManager.callAction<undefined, R>(info);
   }
 
   /**

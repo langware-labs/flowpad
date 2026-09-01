@@ -15,8 +15,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from flow_sdk.builtin.fs_origin import FSOrigin, is_safe_rel_path
-from flow_sdk.builtin.local_origin import local_origin_key
+from flow_sdk.fs_store.origin.fs_origin import FSOrigin, is_safe_rel_path
+from flow_sdk.fs_store.origin.local_origin import local_origin_key
 
 
 class LocalOriginDriver:
@@ -32,6 +32,7 @@ class LocalOriginDriver:
         *,
         preferred_root: Optional[Path] = None,
         preferred_project_id: Optional[str] = None,
+        token: Optional[str] = None,
     ) -> tuple[Path, Optional[str]]:
         base = getattr(origin, "base", "") or ""
         if not base:

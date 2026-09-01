@@ -1,6 +1,6 @@
 import { t } from '@lingui/core/macro';
 import { useMemo, type ReactNode } from 'react';
-import { FSRef, type APIEntity } from '@sdk';
+import { FSRef, type APIEntity, type AnyEntity } from '@sdk';
 import { Languages } from 'lucide-react';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { useTranslationTargets } from '@src/hooks/use-translation-targets';
@@ -10,7 +10,7 @@ import { DocLanguageSwitcher } from './DocLanguageSwitcher';
 
 interface UseDocTranslationsArgs {
   /** The resolved backing entity (a Markdown-family asset), or null. */
-  entity: APIEntity<APIEntity<unknown>> | null;
+  entity: AnyEntity | null;
   /** VFS path the translator process is keyed to (the asset TypeId string). */
   chatTarget: string | null;
   /** On-disk path of the source (original) doc — used in the translator prompt. */

@@ -20,6 +20,20 @@ import { Terminal as HeadlessTerminal } from '@xterm/headless';
 import { apiClient } from '@sdk';
 import { base64ToBytes } from '@sdk/services/shell/ptyConnection.js';
 
+// `@xterm/addon-serialize` types `activate()` against `@xterm/xterm`'s Terminal,
+// so loading it into an `@xterm/headless` one does not type-check — even though
+// it is exactly what this module does and what the addon supports. Verified
+// against the shipped addon: the only terminal members it touches are `buffer`,
+// `options` and `rows`, all of which `@xterm/headless` implements.
+//
+// So the upstream signature is too NARROW, not wrong about us. Widening it here
+// states that, where a cast at the call site would only have hidden it.
+declare module '@xterm/addon-serialize' {
+  interface SerializeAddon {
+    activate(terminal: import('@xterm/headless').Terminal): void;
+  }
+}
+
 /** Framed stream as served by GET /api/v1/shell/{shell_id}/pty-stream. */
 export interface FramedPtyStream {
   v: number;

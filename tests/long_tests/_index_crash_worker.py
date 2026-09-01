@@ -21,11 +21,11 @@ import sys
 
 
 async def _run(db_path: str, root: str, role: str) -> None:
-    from flow_sdk.db.drivers.sqlite import SQLiteDBDriver
-    from flow_sdk.db.drivers.db_driver import DBConfig, _driver_instances
+    import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — register_all()
     from flow_sdk.db.db_entity import DBEntity
     from flow_sdk.db.db_relationship import DBRelationship
-    import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — register_all()
+    from flow_sdk.db.drivers.db_driver import DBConfig, _driver_instances
+    from flow_sdk.db.drivers.sqlite import SQLiteDBDriver
     from flow_sdk.fs_store.fs_ref import FSRef
     from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
     from flow_sdk.fs_store.indexer.functions.markdown import markdown_flat_fn

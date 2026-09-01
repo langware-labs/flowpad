@@ -216,7 +216,7 @@ async def tag_mentions(tag_id: str) -> list[Any]:
     """Wiki backlinks pointing at a blessed tag. Best-effort: mentions are
     garnish, never load-bearing, so an indexing hiccup returns nothing rather
     than failing the caller."""
-    from flow_sdk.wiki.indexer import backlinks  # noqa: PLC0415
+    from flow_sdk.wiki import backlinks  # noqa: PLC0415
 
     try:
         return await backlinks("tag", tag_id)

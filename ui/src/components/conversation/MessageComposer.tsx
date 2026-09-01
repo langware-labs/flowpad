@@ -312,12 +312,18 @@ export function MessageComposer({
     setError(null);
 
     try {
+      // Both sends are conversation-scoped; `sendReply` itself throws on a
+      // missing id, so this hoists that same failure ahead of the branch and
+      // lets both calls take a real string.
+      if (!effectiveConversationId) {
+        throw new Error('sendReply requires a conversationId');
+      }
       if (channel) {
         // A channel reply never touches the hub, so it must not drag the user
         // through a Flowpad-Cloud login to send an email. Branch on the CALL
         // only — an early return here would have to restate the cleanup below,
         // and the first version of it restated one quarter of it.
-        await sendToChannel(effectiveConversationId!, messageBody);
+        await sendToChannel(effectiveConversationId, messageBody);
         onChannelSent?.(messageBody);
       } else {
         // Cloud reply needs an authenticated hub token; otherwise the hub POST

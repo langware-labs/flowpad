@@ -31,9 +31,14 @@ def _frontmatter_id(md: Path):
     return (_yaml_load(fm) or {}).get("id") if fm else None
 
 
-def _capsule_id(ref: FSRef):
-    data = AssetCapsule.from_path(ref._path).read("identity")
-    return data.data.get("id") if data else None
+def _stored_id(type_name: str):
+    """What the type's carrier holds on disk (frontmatter of the main document
+    for a markdown-carried type, the folder json otherwise) — a pure read."""
+
+    def read(ref: FSRef):
+        return SchemaRegistry.get(type_name).read_id(ref)
+
+    return read
 
 
 # ── per-type harness ─────────────────────────────────────────────────────────
@@ -80,14 +85,14 @@ def _dataset(d: Path, cap_id: str | None):
 def _mint(type_name: str, ref: FSRef) -> str:
     info = SchemaRegistry.get(type_name)
     assert info is not None
-    return info.mint_entity_id(ref, derive=True, overwrite=True)
+    return info.mint_entity_id(ref)
 
 
 SPECS = {
-    "subagent": (_agent, lambda r: _mint("subagent", r), _capsule_id, None),
-    "whiteboard": (_whiteboard, lambda r: _mint("whiteboard", r), _capsule_id, None),
-    "task": (_task, lambda r: _mint("task", r), _capsule_id, None),
-    "dataset": (_dataset, lambda r: _mint("dataset", r), _capsule_id, None),
+    "subagent": (_agent, lambda r: _mint("subagent", r), _stored_id("subagent"), None),
+    "whiteboard": (_whiteboard, lambda r: _mint("whiteboard", r), _stored_id("whiteboard"), None),
+    "task": (_task, lambda r: _mint("task", r), _stored_id("task"), None),
+    "dataset": (_dataset, lambda r: _mint("dataset", r), _stored_id("dataset"), None),
 }
 TYPES = list(SPECS)
 
@@ -124,9 +129,9 @@ def test_no_id_mints_v4_persists_and_idempotent(tmp_path: Path, t: str) -> None:
 def test_agent_writes_uuid_not_name_into_capsule(tmp_path: Path) -> None:
     ref = _agent(tmp_path, None)
     got = _mint("subagent", ref)
-    stored_id = _capsule_id(ref)
+    stored_id = _frontmatter_id(ref._path)
     assert stored_id == got and _ver(stored_id) == 4
-    assert _frontmatter_id(ref._path) is None
+    assert AssetCapsule.from_path(ref._path).read("identity") is None, "no capsule: identity is frontmatter"
     assert stored_id not in ("My Agent", "a")
     # self-heals: second index adopts the written UUID, no rewrite
     mtime = ref._path.stat().st_mtime

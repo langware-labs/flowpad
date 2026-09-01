@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, ClassVar, FrozenSet, List, NamedTuple, Optiona
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.tags.envelope import parse_target
 from flow_sdk.builtin.user import normalize_email
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL, ProjectedFields
@@ -159,7 +160,13 @@ class Conversation(ProjectedFields, Entity):
     remote_project_id: Optional[str] = APIField(None)
     remote_project_name: Optional[str] = APIField(None)
     message_count: int = APIField(0, sharing=Sharing.PRIVATE)
-    message_ids: Optional[str] = APIField(None)  # JSON-encoded [{"typeid": ..., "ts": ...}]
+    # The roster's hub WIRE key is ``participants`` (hub contract); the local
+    # read cache is the generic ``members``. Declared once here so every
+    # ingest/merge seam reads the alias from ``hub_names(Conversation)``.
+    members: List[dict] = APIField(default_factory=list, sharing=Sharing.PRIVATE, hub_name="participants")
+    # JSON-encoded [{"typeid": ..., "ts": ...}] — a projection of the pointer
+    # log, like ``message_count``: rebuilt locally, never accepted from the hub.
+    message_ids: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     # Roster cache lives on the Entity base as ``members`` (generic hub capability).
     # The hub sends/receives the conversation roster on the WIRE as ``participants``
     # (its field + fanout key); that key is adapted to ``members`` at ingest
@@ -600,10 +607,8 @@ class Conversation(ProjectedFields, Entity):
         refs: list[MessageRef] = []
         for entry in entries:
             typeid = str(entry.get("typeid") or "") if isinstance(entry, dict) else ""
-            if "-" not in typeid:
-                continue
-            ptype, pid = typeid.split("-", 1)
-            pid = pid.lstrip("@")
+            ptype, pid = parse_target(typeid)
+            pid = (pid or "").lstrip("@")
             if ptype != "flow_message" or not pid:
                 continue
             ts_raw = entry.get("ts")

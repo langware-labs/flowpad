@@ -74,6 +74,7 @@ export type {
   SessionItem,
   SkillItem,
   SystemProfile,
+  SystemProfileEntry,
   SystemProfileItem,
   SystemProfileSummary,
   TodoEntry,

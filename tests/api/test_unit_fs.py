@@ -3,7 +3,6 @@
 Tests VFSPath, storage drivers, and filesystem operations.
 """
 
-import asyncio
 import os
 import tempfile
 import uuid
@@ -13,7 +12,7 @@ import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.api.fs.fs_api import VFSPath
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.storage import LocalStorageDriver, StoragePermissionError
 
 vpath_file_name = "/uploaded_file.txt"

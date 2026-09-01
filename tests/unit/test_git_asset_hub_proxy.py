@@ -53,11 +53,11 @@ def _request(
 
 def test_only_git_backed_remote_fs_uses_replacement_proxy(monkeypatch):
     monkeypatch.setattr("flow_sdk.server.routes._hub_reflect.is_local_mode", lambda: False)
-    git_remote = SimpleNamespace(type="skill", remote=True, git_origin={"provider": "github"})
+    git_remote = SimpleNamespace(type="skill", remote=True, origin={"provider": "github"})
 
     assert is_git_backed_remote_fs(git_remote, "fs")
-    assert not is_git_backed_remote_fs(SimpleNamespace(type="skill", remote=True, git_origin=None), "fs")
-    assert not is_git_backed_remote_fs(SimpleNamespace(type="skill", remote=False, git_origin={}), "fs")
+    assert not is_git_backed_remote_fs(SimpleNamespace(type="skill", remote=True, origin=None), "fs")
+    assert not is_git_backed_remote_fs(SimpleNamespace(type="skill", remote=False, origin={}), "fs")
     assert not is_git_backed_remote_fs(git_remote, "record")
 
 
@@ -73,7 +73,7 @@ def test_project_git_origin_is_read_locally_not_proxied(monkeypatch):
     cloned_project = SimpleNamespace(
         type="project",
         remote=True,
-        git_origin={"kind": "git", "provider": "github", "owner": "o", "name": "r", "branch": "main"},
+        origin={"kind": "git", "provider": "github", "owner": "o", "name": "r", "branch": "main"},
     )
 
     assert not is_git_backed_remote_fs(cloned_project, "fs")

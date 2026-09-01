@@ -771,6 +771,19 @@ function isDefaultValue(value: unknown, fieldType: FieldType): boolean {
 
 // ── Extracting values from record lists ─────────────────
 
+/**
+ * Read a dynamic wire key off a record.
+ *
+ * These records are classes populated field-by-field from JSON, so a key the
+ * class does not declare still exists at runtime — but a class type has no
+ * index signature, so `record[key]` will not type-check. `Reflect.get` is the
+ * cast-free way to say it; the previous `as Record<string, unknown>` did not
+ * even compile, since a class with methods does not overlap that type.
+ */
+function readWireKey(record: object, key: string): unknown {
+  return Reflect.get(record, key);
+}
+
 function getRecordValue(recordList: ClaudeSettingsJsonRecordList | null, def: FieldDef): unknown {
   if (!recordList) return undefined;
 
@@ -779,14 +792,14 @@ function getRecordValue(recordList: ClaudeSettingsJsonRecordList | null, def: Fi
     const envVarName = def.recordKey.substring(4);
     const root = recordList.root;
     if (!root) return undefined;
-    const envDict = (root as Record<string, unknown>).env as Record<string, string> | undefined;
+    const envDict = readWireKey(root, 'env') as Record<string, string> | undefined;
     if (!envDict || typeof envDict !== 'object') return undefined;
     return envDict[envVarName] ?? undefined;
   }
 
   const sub = recordList[def.record as keyof ClaudeSettingsJsonRecordList];
   if (!sub || typeof sub !== 'object') return undefined;
-  const val = (sub as Record<string, unknown>)[def.recordKey];
+  const val = readWireKey(sub, def.recordKey);
   return val;
 }
 

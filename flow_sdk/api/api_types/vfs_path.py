@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import TypedDict
 
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 
 
 class ParsedVFSURI(TypedDict):

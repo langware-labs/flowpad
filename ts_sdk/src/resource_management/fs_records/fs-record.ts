@@ -4,17 +4,14 @@
  *
  * Design notes:
  * - FsRecord is NOT an APIEntity (it doesn't extend the DB-backed class).
- * - All I/O goes through ActionInfo → backend compute node.
+ * - Reads go through SourceFileRecordList → the backend compute node.
  * - Field names are snake_case for Pydantic interop.
  */
-import { ActionInfo } from '../../models/ActionInfo';
-import { dataManager } from '../../APIEntity';
 import type { IResource } from '../../IResource';
 import type { ResourceRecord } from './resource-record';
 import { Scope } from './scope';
 import { StorageLayout } from './storage-layout';
 import type { FsRecordRef } from './fs-record-ref';
-import { ResourceStatus } from './resource-record';
 import { recordStem } from './resource-record';
 
 /** Plain-object shape that travels over the wire (JSON serializable). */
@@ -45,7 +42,18 @@ export class FsRecord implements IResource {
   updated_by?: string;
 
   // ── ResourceRecord extensions ────────────────────────────────
-  status?: ResourceStatus;
+  /**
+   * Whatever `status` this record's own indexer wrote, so it is per record TYPE.
+   *
+   * NOT `ResourceStatus`. That union is the archived/deleted LIFECYCLE, and no
+   * code anywhere reads this field as one — while the indexer does write a
+   * different vocabulary here for at least one record type
+   * (`fs_store/indexer/functions/claude_sessions.py:406` writes
+   * `result["status"] = "complete"`, a run state). Subclasses narrow it to
+   * their own union with `declare`; `ResourceStatus` stays where it
+   * describes the lifecycle, on `ResourceRecord`.
+   */
+  status?: string;
   scope: Scope | string = Scope.USER;
   source_file?: string;
   path?: string;
@@ -119,58 +127,8 @@ export class FsRecord implements IResource {
     return new this(data as Partial<FsRecordData>);
   }
 
-  // ── CRUD via ActionInfo → backend ────────────────────────────
-
-  /** Persist this record to disk (create or update). */
-  async save(): Promise<this> {
-    if (this.readOnly) throw new Error(`${this.type} records are read-only`);
-    const action = new ActionInfo('fs-records', 'compute_node', this.computeNodeId, 'POST');
-    action.subpath = 'save';
-    action.bodyParameters = this.toDict();
-    const res = await dataManager.callAction<unknown, { data?: Record<string, unknown> }>(action);
-    const saved = (res?.data ?? res) as Record<string, unknown>;
-    if (saved) Object.assign(this, saved);
-    return this;
-  }
-
-  /** Delete this record from disk. */
-  async delete(): Promise<boolean> {
-    if (this.readOnly) throw new Error(`${this.type} records are read-only`);
-    const action = new ActionInfo('fs-records', 'compute_node', this.computeNodeId, 'POST');
-    action.subpath = 'delete';
-    action.bodyParameters = { type: this.type, id: this.id, scope: this.scope };
-    const res = await dataManager.callAction<unknown, { data?: { deleted: boolean } }>(action);
-    return (res?.data ?? (res as unknown as { deleted: boolean })).deleted ?? false;
-  }
-
-  /** Fetch a single record by ID. */
-  static async getById<T extends FsRecord>(
-    this: (new (data?: Partial<FsRecordData>) => T) & typeof FsRecord,
-    computeNodeId: string,
-    id: string,
-    scope?: Scope | string,
-  ): Promise<T | null> {
-    const action = new ActionInfo('fs-records', 'compute_node', computeNodeId, 'POST');
-    action.subpath = 'get_by_id';
-    action.bodyParameters = { type: this._recordType, id, scope };
-    const res = await dataManager.callAction<unknown, { data?: Record<string, unknown> | null }>(action);
-    const d = (res?.data ?? res) as Record<string, unknown> | null;
-    if (!d) return null;
-    return new this(d as Partial<FsRecordData>);
-  }
-
-  /** Fetch all records of this type. */
-  static async getAll<T extends FsRecord>(
-    this: (new (data?: Partial<FsRecordData>) => T) & typeof FsRecord,
-    computeNodeId: string,
-    opts?: { scope?: Scope | string; limit?: number; offset?: number; filters?: Record<string, unknown> },
-  ): Promise<T[]> {
-    const action = new ActionInfo('fs-records', 'compute_node', computeNodeId, 'POST');
-    action.subpath = 'get_all';
-    action.bodyParameters = { type: this._recordType, ...opts };
-    const res = await dataManager.callAction<unknown, { data?: Record<string, unknown>[] }>(action);
-    const items = (res?.data ?? res) as Record<string, unknown>[];
-    if (!Array.isArray(items)) return [];
-    return items.map((d) => new this(d as Partial<FsRecordData>));
-  }
+  // No CRUD helpers here. The backend routes /fs-records/<segment> by RECORD
+  // TYPE, so the save/delete/get_by_id/get_all subpaths these used to POST were
+  // answered with 400 "Unknown record type 'save'". Records are read through
+  // SourceFileRecordList and written through its updateRecord().
 }

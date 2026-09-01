@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.app.actions.membership_sync import materialize_project_secret_origins
 from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.cli_drivers import apply_worker_env, apply_worker_secret_env

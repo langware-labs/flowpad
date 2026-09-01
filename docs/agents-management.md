@@ -14,7 +14,7 @@ Flowpad separates the persistent agent from each execution:
 - An `Agent` is a named, launchable identity and authoring bundle. Project
   members create one with **New → Agent**, or create a personal Agent by
   choosing the User scope.
-- An `AgentDeployment` records where an Agent is placed.
+- A `Deployment` of kind `runtime.agent` records where an Agent is placed.
 - An `AgenticProcess` records one run. It stores the workdir,
   instruction/context, CLI configuration, `session_id`, lifecycle `status`,
   visibility, and linked `shell_id` when a terminal is open.

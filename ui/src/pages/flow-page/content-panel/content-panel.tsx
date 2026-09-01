@@ -12,7 +12,6 @@ import { HooksManager } from '@src/components/hooks-manager';
 import { LensViewer } from '@src/components/lens-viewer';
 import { MachineOverview } from '@src/components/machine-overview/machine-overview';
 import { MarkdownViewer } from '@src/components/markdown-viewer';
-import { ProcessTerminal } from '@src/components/process-terminal';
 import { SettingsView } from '@src/components/settings-view/SettingsView';
 import { PreferencesView } from '@src/components/preferences-view/PreferencesView';
 import { DesktopPage } from '@src/pages/desktop/DesktopPage';
@@ -36,12 +35,14 @@ import { CapabilitiesView } from '@src/components/capabilities-view';
 import { ConversationRoute } from '@src/components/conversation';
 import { InboxView } from '@src/components/inbox-view/InboxView';
 import { TabbedTerminal } from '@src/components/terminal';
+import { AppDisplayViewer } from '../app-display-viewer';
 import { WebappViewer } from '@src/components/webapp-viewer';
 import { useActiveViewer } from '@src/hooks/flow-hooks';
 import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
 import { Tab, tabForDockKey } from '@sdk';
 import { useTerminalTabs, useTabLifecycle } from '@src/tabs/use-tab-manager';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { appDockAddress } from '@src/navigation/app-dock';
 import { NavigatorSlot } from '@src/navigation/NavigatorSlot';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SpecRoute } from '@src/pages/spec/SpecRoute';
@@ -114,6 +115,7 @@ const VIBE_CREATOR_SURFACES: ReadonlySet<ViewType> = new Set([
   ViewType.SHELL,
   ViewType.AGENTIC_PROCESS,
   ViewType.WEB_APP,
+  ViewType.APP,
   ViewType.EDITOR,
   ViewType.DIFF,
   ViewType.MARKDOWN,
@@ -127,7 +129,10 @@ const VIBE_CREATOR_SURFACES: ReadonlySet<ViewType> = new Set([
  *  inside a host layout that owns its own chrome (the vibe workspace mounts it as
  *  the display for a child tab). Generalizes the vibe-creator-surface suppression
  *  to any embedded host (future: the win/ layout). */
-export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolean } = {}) {
+export function ContentPanel({
+  minimalChrome = false,
+  contentEpoch,
+}: { minimalChrome?: boolean; contentEpoch?: number } = {}) {
   // Get navigation instance for URL-first architecture
   const { navigation, currentDock, isDockUrl, windowMode } = useDockNavigation();
   const activeLifecycle = useTabLifecycle(currentDock?.tabHash);
@@ -291,6 +296,13 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return <CodeEditor activePath={editorActivePath} />;
       case ViewType.WEB_APP:
         return <WebappViewer />;
+      case ViewType.APP: {
+        // An artifact-addressed app. Distinct from WEB_APP (a bare port): the
+        // artifact is stable identity and its runtime is derived, which is what
+        // makes a shown app bookmarkable and restorable at all.
+        const app = appDockAddress(currentDock);
+        return app ? <AppDisplayViewer {...app} /> : null;
+      }
       case ViewType.DIFF:
         if (currentDock?.pointer?.startsWith('asset-compare/')) {
           return <AssetCompareView pointer={currentDock.pointer} />;
@@ -430,7 +442,7 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return <SearchView />;
       case ViewType.AGENTIC_PROCESS:
         return currentDock?.pointer ? (
-          <ProcessTerminal key={currentDock.pointer} processId={currentDock.pointer} />
+          <TabbedTerminal className="h-full" key={currentDock.pointer} processId={currentDock.pointer} />
         ) : (
           <div className="flex h-full items-center justify-center text-muted-foreground">
             <Trans>No process ID specified</Trans>
@@ -501,7 +513,17 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
               so xterm fits on first paint — a flex-col parent broke its initial sizing.
               No entrance animation: a tab switch must be visually instant (a fade
               reads as page navigation, not a tab switch). */}
-          <div className="absolute inset-0 mt-0 h-full flex-1 overflow-auto">{renderBody(bodyViewType)}</div>
+          {/* `contentEpoch` re-keys the body to force a remount. It exists because
+              the vibe display is now an ADDRESS, and two of its refresh signals are
+              not addresses: a re-`flow show` of the same target (same URL — a no-op
+              navigation, yet the file behind it may have been rebuilt) and the
+              agent's turn-end (the CLI stream carries no per-file write items, so
+              the turn edge is the only "something changed" signal there is).
+              Undefined for every other host, which keeps the default a plain
+              uncontrolled body. */}
+          <div key={contentEpoch} className="absolute inset-0 mt-0 h-full flex-1 overflow-auto">
+            {renderBody(bodyViewType)}
+          </div>
         </div>
       </div>
     </div>

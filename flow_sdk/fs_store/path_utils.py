@@ -57,6 +57,23 @@ def canonical_posix_path(p: Path | str) -> str:
     return unicodedata.normalize("NFC", Path(p).resolve().as_posix())
 
 
+def asset_ref_spellings(p: Path | str) -> list[str]:
+    """Every spelling a stored ``asset_ref`` may have for ``p``, deduped.
+
+    The spelling given (a row saved by hand keeps it verbatim — ``/tmp/x``
+    stays ``/tmp/x`` even where ``/tmp`` is a symlink), the RESOLVED path
+    ``FSRef`` stores, and the canonical form that additionally NFC-normalizes.
+    A lookup that probes only one of them reads a real row as "unowned" — which
+    lets a writer mint a fresh id for a row that exists.
+    """
+    raw = str(p)
+    out = [raw]
+    for candidate in (str(Path(raw).resolve()), canonical_posix_path(raw)):
+        if candidate not in out:
+            out.append(candidate)
+    return out
+
+
 def _path_policy_key(path: Path | str) -> tuple[str, str, str] | None:
     """Return ``(flavour, canonical, root)`` without mangling Windows paths.
 
@@ -173,7 +190,13 @@ def is_protected_path(path: Path | str | None) -> bool:
 
     internal_roots: list[Path | str] = []
     if settings is not None:
-        for attr in ("records_root", "records_data_dir"):
+        # ``flow_home`` first: it CONTAINS records_root/records_data_dir, and the
+        # two of them alone covered only the CURRENT instance's records — not the
+        # instance dir around them (the DBs), and not other instances' dirs. That
+        # gap let `<flow_home>/instances/<name>` be minted as a project cwd and
+        # then walked: 21 such rows contributed 155,914 of 166,310 walked folders
+        # on one machine. Nothing under flow_home is user content.
+        for attr in ("flow_home", "records_root", "records_data_dir"):
             value = getattr(settings, attr, None)
             if value:
                 internal_roots.append(value)

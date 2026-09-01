@@ -42,7 +42,7 @@ cross-referenced, never duplicated.
 ```
 
 Each layer is independently usable and has no knowledge of the layer above it.
-(Refreshed from the historical root `AgentApi.md` framing.)
+(Refreshed from the historical [`AgentApi.md`](../historical/AgentApi.md) framing.)
 
 ## Rules & invariants
 
@@ -112,4 +112,4 @@ violations are flagged inline as debt.
 - Recovery: [docs/pty-sync.md](../pty-sync.md) Part 3.5
 - Rendering: [docs/pty-terminal-spec.md](../pty-terminal-spec.md) §14
 - Shell vs agentic PTY: [docs/shell-claude-session-api.md](../shell-claude-session-api.md)
-- Historical: root `AgentApi.md` (three-layer design spec, pre two-axis model)
+- Historical: [`AgentApi.md`](../historical/AgentApi.md) (three-layer design spec, pre two-axis model)

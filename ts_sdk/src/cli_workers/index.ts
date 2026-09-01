@@ -1,4 +1,4 @@
-export { WorkerCliOptions, shellQuote } from './base'
+export { WorkerCliOptions } from './base'
 export { ClaudeAgentOptions } from './claude-cli'
 export type { ClaudeAgentOptionsOptions } from './claude-cli'
 export { CodexAgentOptions } from './codex-cli'

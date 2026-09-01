@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.local_origin import LocalOrigin
+from flow_sdk.fs_store.origin.local_origin import LocalOrigin
 from flow_sdk.fs_store.placement import (
     LAYOUT_REGISTRY,
     WORKER_PREFIX,
@@ -389,7 +389,7 @@ def test_owned_create_target_adopts_a_carrier_that_is_this_entitys_own(tmp_path)
     bundle.mkdir(parents=True)
     (bundle / "agent.md").write_text("# Q\n")
     info = SchemaRegistry.get("agent")
-    info.mint_entity_id(FSRef(bundle / "agent.md"), proposed_id=mine, derive=True, overwrite=True)
+    info.mint_entity_id(FSRef(bundle / "agent.md"), proposed_id=mine)
     assert info.mint_entity_id(FSRef(bundle / "agent.md")) == mine
 
     # Same entity → adopted, no raise.

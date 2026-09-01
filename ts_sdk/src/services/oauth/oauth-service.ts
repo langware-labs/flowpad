@@ -483,19 +483,19 @@ export class OAuthService {
         }
         if (status !== 'polling') {
           console.warn(`[OAuthService] hub wait-callback for ${provider} answered ${status || 'nothing'}`);
-          finish(OAuthStatus.FAILED);
+          finish(OAuthStatus.ERROR);
           return;
         }
         if (!flow.isClosed) {
           // The popup is gone and the hub still has nothing: the user closed it
           // or gave up. Say so rather than leaving the caller waiting.
-          finish(OAuthStatus.FAILED);
+          finish(OAuthStatus.ERROR);
           return;
         }
       }
     } catch (err) {
       console.warn(`[OAuthService] hub wait-callback failed for ${provider}:`, err);
-      finish(OAuthStatus.FAILED);
+      finish(OAuthStatus.ERROR);
     }
   }
 

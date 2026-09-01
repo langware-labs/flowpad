@@ -51,15 +51,6 @@ pytestmark = [
 ]
 
 
-@pytest.fixture(scope="module")
-async def _workers_discovered():
-    """Run one capability discovery sweep so the drivers can resolve their CLI
-    binaries (the server does this at boot; tests must trigger it explicitly)."""
-    from flow_sdk.core.capabilities.discovery import ensure_discovered
-
-    await ensure_discovered()
-
-
 # ── workers under test ───────────────────────────────────────────────────────
 # Each entry is (worker_type, cli_executable). The cli is used both to skip when
 # it isn't installed and — for codex — to locate its global skills dir.
@@ -141,7 +132,6 @@ async def test_skill_usage_visible_in_transcript(
     cli_name,
     temp_skill,
     tmp_path,
-    _workers_discovered,
     local_project,
     local_compute_node,
 ):

@@ -1,10 +1,10 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { execFileSync } from 'child_process';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { apiBase } from '../_shared/api';
+import { waitForIndexerIdle, apiBase } from '../_shared/api';
 
 const API = apiBase();
 const createdRoots = new Set<string>();
@@ -59,6 +59,10 @@ async function indexType(
   projectId: string,
   type: 'subagent' | 'skill',
 ): Promise<void> {
+  // Single-flight index: creating the fixture asset kicks an auto-index, and a
+  // second POST while it runs is refused with 409. Wait on the node's own idle
+  // signal; budget 0 = bounded only by the test cap.
+  expect(await waitForIndexerIdle(request, 0), 'index activity idle').toBe(true);
   const response = await request.post(
     `${API}/api/v1/graph/compute_node/@local/fs-records/index` +
       `?type=${type}&projects=${projectId}&user=false&force=true`,
@@ -88,6 +92,15 @@ async function openAsset(page: Page, type: 'subagent' | 'skill', id: string): Pr
   await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
   await page.goto(`/dock/assets/editor/${type}/typeid/${type}-${id}`);
   await expect(page.locator('[data-testid="asset-collision-warning"]')).toBeVisible();
+}
+
+/**
+ * The panel hoists the common prefix into a "Common path" line and prints only
+ * the per-row suffix, so the visible text never holds the whole path — the
+ * full path lives on the row's `title`.
+ */
+function rowPath(row: Locator): Locator {
+  return row.locator('.font-mono[title]').first();
 }
 
 test.afterEach(async ({ request }) => {
@@ -131,7 +144,7 @@ test('File collision state, URL panel, and removal lifecycle', async ({ page, re
   await expect.poll(() => decodeURIComponent(new URL(page.url()).search)).toContain('asset-duplicates:subagent-');
   const panel = page.locator('[data-testid="asset-collision-panel"]');
   await expect(panel).toBeVisible();
-  await expect(panel.locator('[data-testid="asset-collision-row-primary"]')).toContainText(source);
+  await expect(rowPath(panel.locator('[data-testid="asset-collision-row-primary"]'))).toHaveAttribute('title', source);
   await expect(panel.locator('[data-testid="asset-collision-row-duplicate"]')).toHaveCount(2);
 
   await page.goBack();
@@ -182,6 +195,6 @@ test('Git precedence and folder-backed collision parity', async ({ page, request
 
   const panel = page.locator('[data-testid="asset-collision-panel"]');
   await expect(panel).toBeVisible();
-  await expect(panel.locator('[data-testid="asset-collision-row-primary"]')).toContainText(original);
-  await expect(panel.locator('[data-testid="asset-collision-row-duplicate"]')).toContainText(copy);
+  await expect(rowPath(panel.locator('[data-testid="asset-collision-row-primary"]'))).toHaveAttribute('title', original);
+  await expect(rowPath(panel.locator('[data-testid="asset-collision-row-duplicate"]'))).toHaveAttribute('title', copy);
 });

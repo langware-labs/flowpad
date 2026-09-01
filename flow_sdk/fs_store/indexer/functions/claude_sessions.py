@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import json
 import time
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
@@ -41,7 +40,7 @@ from typing import Iterator
 from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.fs_store.indexer.functions._claude_session_stats import (
     _get_session_batch_stats,
 )
@@ -145,9 +144,6 @@ def claude_session_id_from_file(ref: FSRef | Path) -> str | None:
     key = claude_session_identity_key(ref)
     return key if is_valid_entity_id(key) else None
 
-
-def claude_session_stable_key(ref: FSRef | Path) -> str:
-    return f"{RecordType.CLAUDE_SESSION}:{claude_session_identity_key(ref)}"
 
 # ── Extractor (head + tail read, no stat parse) ──────────────────────────────
 

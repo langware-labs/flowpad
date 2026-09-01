@@ -21,6 +21,60 @@ os.environ["TESTING"] = "true"
 
 
 # -----------------------------------------------------------------------------
+# .env.local, minus anything that decides WHICH instance the tests touch.
+#
+# Only the server entrypoint (flow_sdk/server/run.py) loads the dotenv, so a flag
+# put in .env.local — DEEP_TESTING being the one people reach for — silently did
+# nothing under pytest: ServiceConfig declares no env_file and reads the process
+# environment only. Loading it here is what makes that file mean the same thing
+# to a test run as it does to the server.
+#
+# The exclusions are the whole point, not a caveat. .env.local pins
+# FLOW_INSTANCE and LOCAL_SERVER_PORT to a REAL dev instance (oss on 9008), and
+# this conftest has just pinned SQLITE_DATABASE_PATH / FS_RECORD_PATH into a
+# throwaway run root. Letting those through would hand the suite the developer's
+# live database instead of its sandbox — tests would pass while writing into real
+# data. A flag is worth importing; a target is not.
+#
+# `override=False`: an explicitly exported value always wins over the file, so
+# `DEEP_TESTING=0 pytest ...` still disables regardless of what .env.local says.
+# -----------------------------------------------------------------------------
+_ENV_LOCAL_EXCLUDED = frozenset(
+    {
+        # Which instance / database / server this process talks to.
+        "FLOW_INSTANCE",
+        "FLOW_HOME",
+        "FLOWPAD_TEMP_DIR",
+        "SQLITE_DATABASE_PATH",
+        "FS_RECORD_PATH",
+        "LOCAL_SERVER_PORT",
+        "ENV",
+        "HOME",
+    }
+)
+
+
+def _load_env_local() -> None:
+    """Merge .env.local into os.environ, minus the instance/DB selectors."""
+    if os.environ.get("FLOWPAD_SKIP_DOTENV", "").lower() == "true":
+        return
+    try:
+        from dotenv import dotenv_values, find_dotenv
+    except ImportError:  # dotenv is a server dependency, not a test one
+        return
+    path = find_dotenv(os.environ.get("ENV", ".env.local"), usecwd=True)
+    if not path:
+        return
+    for key, value in dotenv_values(path).items():
+        if value is None or key in _ENV_LOCAL_EXCLUDED or key.startswith("VITE_"):
+            continue
+        os.environ.setdefault(key, value)
+
+
+_load_env_local()
+
+
+# -----------------------------------------------------------------------------
 # CRITICAL: sandbox HOME before any flow_sdk import.
 #
 # Several flow_sdk modules still hard-code `Path.home() / ".claude"` (e.g.
@@ -162,6 +216,31 @@ def pytest_collection_modifyitems(items):
     session_scope_marker = pytest.mark.asyncio(loop_scope="session")
     for async_test in pytest_asyncio_tests:
         async_test.add_marker(session_scope_marker, append=False)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_capability_discovery():
+    """Keep the process-global capability dict from leaking between tests.
+
+    ``discovery._VALUES`` is module state for the whole process, and resolution
+    now MEMOIZES what it finds (a CLI resolved from PATH is recorded so it is
+    probed once). That is right in production and wrong across tests: a test
+    that resolves ``claude`` would leave it discovered for every test after it,
+    so a later test asserting "not installed" would pass or fail on ordering.
+    ``monkeypatch`` cannot cover it — the writes go through
+    ``set_capability_value``, not through a patched attribute.
+
+    Snapshot and restore; a dict copy per test is far cheaper than an
+    order-dependent flake.
+    """
+    from flow_sdk.core.capabilities import discovery as _discovery
+
+    before = dict(_discovery._VALUES)
+    try:
+        yield
+    finally:
+        _discovery._VALUES.clear()
+        _discovery._VALUES.update(before)
 
 
 @pytest.fixture(autouse=True)

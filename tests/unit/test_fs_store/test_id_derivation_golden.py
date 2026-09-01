@@ -142,7 +142,7 @@ def test_golden_fsrecord_content_fingerprint_is_not_an_entity_id(tmp_path: Path)
     assert rec.content_fingerprint == str(
         uuid.uuid5(uuid.NAMESPACE_URL, f"markdown:{FSRef(path).path}")
     )
-    seam = _info("markdown").mint_entity_id(FSRef(path), derive=True, overwrite=True)
+    seam = _info("markdown").mint_entity_id(FSRef(path))
     assert rec.content_fingerprint != seam, "a content hash is not an entity id"
 
 
@@ -198,7 +198,7 @@ def test_golden_subagent_peek_miss_path_diverges_from_the_seam(tmp_path: Path) -
 
     peek = subagent_peek_entity_id(ref)
     assert peek == str(uuid.uuid5(uuid.NAMESPACE_DNS, "subagent:helper"))
-    assert peek != _info("subagent").mint_entity_id(ref, derive=True, overwrite=False)
+    assert peek != _info("subagent").mint_entity_id(FSRef(ref._path, read_only=True))
     assert path.read_bytes() == b"# Helper\n\nbody\n", "the peek never writes"
 
 

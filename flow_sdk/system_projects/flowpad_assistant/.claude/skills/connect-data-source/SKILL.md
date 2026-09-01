@@ -2,20 +2,18 @@
 id: aa478f19-3dad-4794-a34a-9e6863d50860
 name: connect-data-source
 description: >-
-  Connect a data source to Flowpad, end to end. Turns a natural request —
-  "connect my Notion", "pull my RSS feeds in", "sync these Slack channels",
-  "watch this git repo for commits", "index my Google Drive", "add a data
-  source", "start ingesting my mail" — into a configured source that actually
-  produces records, then opens the Data Sources screen so the user sees it.
-  Also diagnoses a source that is failing, empty, stuck in setup, or parked —
-  triggers on "my feed stopped updating", "no items from my Slack source",
-  "the source says it needs setup", "nothing is syncing", "this data source is
-  broken". Use `connect-data-source author <system>` to write a NEW source type
-  when nothing installed fits, `connect-data-source debug <name>` to diagnose,
-  and `connect-data-source list` to show what is connected. NOT for connecting
-  this machine to the hub as a compute node, NOT for authorising an OAuth
-  connection on its own, NOT for Flowpad itself being broken or not starting,
-  and NOT for creating tasks, docs, skills or other records.
+  Connects a data source to Flowpad end to end — "connect my gmail", "pull my RSS
+  feeds in", "sync these Slack channels", "watch this git repo", "index my Google
+  Drive", "start ingesting my mail" — turning the request into a source that
+  actually produces records, then showing the Data Sources screen. Also diagnoses a
+  source that is failing, empty, stuck in setup or parked ("my feed stopped
+  updating", "nothing is syncing", "the source says it needs setup"). Subcommands:
+  `author <system>` writes a new source type when nothing installed fits, `debug
+  <name>` diagnoses one, `define <source>` gives a connected source's items an
+  output shape, dataset and gold labels ("label these", "make a training set from
+  this feed"), and `list` shows what is connected. NOT for enrolling this machine
+  as a compute node, an OAuth authorisation on its own, Flowpad itself being broken
+  (flow-diagnose), or creating records (flowpad-assistance).
 tags: ''
 version: 1
 ---
@@ -41,8 +39,8 @@ into a source that demonstrably works, and shows it to the user.
 
 ## Modes (from the skill arg)
 
-The FIRST whitespace-separated token, if it is exactly `author`, `debug` or
-`list`, selects that mode. **Anything else is a natural request** — so
+The FIRST whitespace-separated token, if it is exactly `author`, `debug`,
+`define` or `list`, selects that mode. **Anything else is a natural request** — so
 "debug my rss feed" is debug mode, while "connect my debug server's logs" is a
 connect request.
 
@@ -51,6 +49,7 @@ connect request.
 | *(none)*, or a natural request — **the default** | `modes/connect.md` | Map the request onto a source, configure it, prove each gate, show it |
 | `author <system>` | `modes/author.md` | Write a NEW source type (`data_source.json` + `fetch.py`), index it, then connect it |
 | `debug [<source>]` | `modes/debug.md` | Ordered diagnosis of a source that is failing, empty or stuck |
+| `define <source>` | `modes/define.md` | Sample the items, agree an output shape, create the dataset bound to the source, label an example |
 | `list` | *(inline, below)* | Read-only — what is connected and how healthy it is |
 
 ### `list` — the read-only answer
@@ -60,7 +59,7 @@ connect request.
 `status`, `health` and `last_synced_at`. Do not verify, poll or change anything.
 If one looks unhealthy, offer `debug` — do not start it.
 
-## The five gates
+## The six gates
 
 Every mode ends by making these true, in order, and **stops at the first that
 fails** with what the user must do:
@@ -71,6 +70,7 @@ fails** with what the user must do:
 | **connect** | The row exists, a read-back confirms every field applied, and `verify` is `ready` (or names what a human must do) |
 | **test** | **Records actually landed** — `observe` returns `items`, or `empty_but_healthy` with the window explained |
 | **use** | The content is findable — `flow record search`, or the reflected file opens |
+| **declare** | The run's output is registered — `flow artifact entity data_source-<id>` exits `0`. After the test gate, never before |
 | **view** | `flow show view data-sources` and the card is in the listing |
 
 ## Reference
@@ -78,7 +78,10 @@ fails** with what the user must do:
 | When you need to… | Load |
 | --- | --- |
 | turn a person's words into a provider + config | `references/mapping.md` |
+| a mail/agent source whose fetch is a worker — its budgets, and why its sync reports nothing | `references/process-sdk.md` |
 | run any mechanic — specs, create, verify, poll, observe, snapshot | `scripts/source_ctl.py` |
+| sample items, create a dataset, promote, annotate, snapshot counts | `scripts/dataset_ctl.py` |
+| the gate-safe transport both scripts share (never call it directly) | `scripts/_ctl_common.py` |
 | know what a manifest may declare | `docs/data-management/data-source-asset.md` (repo) |
 | know how the sync loop, health and reflect behave | `docs/data-management/data-sources.md` (repo) |
 | present something to the user, or take them somewhere | the `flowpad-navigation` skill |

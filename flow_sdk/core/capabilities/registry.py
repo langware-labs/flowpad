@@ -16,6 +16,9 @@ from flow_sdk.core.capabilities.models import (
     CapabilityValue,
     capability_kind_matches,
 )
+from flow_sdk.flowpad_types.vendors import VENDORS, vendor_by
+from flow_sdk.schema.data_spec import DataSpec
+from flow_sdk.utils.kind_registry import KindRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +36,7 @@ class CapabilityRunner(ABC):
         return CapabilityValue(
             kind=self.spec.kind,
             value=None,
-            value_type=self.spec.value_type,
+            spec=self.spec.value_spec,
             message="No discoverable value for this capability.",
         )
 
@@ -69,30 +72,42 @@ class CliCapabilityRunner(CapabilityRunner):
         # worker_type) rather than parsed back out of the kind string.
         self.worker_type = worker_type
 
-    async def discover(self, probe: dict) -> CapabilityValue:
-        """Value = the CLI's bin FOLDER (FSRef dict), resolved by the sweep's
-        env probe against the terminal PATH (PATH order = tie-break). The
-        folder — not the binary — is the value: prepended to a spawn PATH it
-        resolves both argv[0] and the ``#!/usr/bin/env node`` shebang."""
+    def value_from_executable_path(self, resolved: str | None, *, source: str = "the terminal PATH") -> CapabilityValue:
+        """This capability's typed value for an already-resolved executable path.
+
+        Split out of :meth:`discover` and deliberately SYNC: the work is a
+        dirname and an ``FSRef``, and the spawn path needs to build the same
+        value without a sweep and without an event loop (see
+        ``discovery.resolve_capability_value``). One construction, so a lazily
+        resolved value and a swept one are the same shape by definition.
+
+        ``source`` only names where the path came from, for the message.
+        """
         import os
 
         from flow_sdk.fs_store.fs_ref import FSRef
 
-        resolved = (probe.get("executables") or {}).get(self.executable)
         if not resolved:
             return CapabilityValue(
                 kind=self.spec.kind,
                 value=None,
-                value_type=self.spec.value_type,
-                message=f"{self.executable} CLI was not found on the terminal PATH.",
+                spec=self.spec.value_spec,
+                message=f"{self.executable} CLI was not found on {source}.",
             )
         folder = os.path.dirname(resolved)
         return CapabilityValue(
             kind=self.spec.kind,
             value=FSRef(folder).to_dict(),
-            value_type=self.spec.value_type,
+            spec=self.spec.value_spec,
             message=f"{self.executable} CLI found in {folder}.",
         )
+
+    async def discover(self, probe: dict) -> CapabilityValue:
+        """Value = the CLI's bin FOLDER (FSRef dict), resolved by the sweep's
+        env probe against the terminal PATH (PATH order = tie-break). The
+        folder — not the binary — is the value: prepended to a spawn PATH it
+        resolves both argv[0] and the ``#!/usr/bin/env node`` shebang."""
+        return self.value_from_executable_path((probe.get("executables") or {}).get(self.executable))
 
     def _discovered_folder(self) -> str | None:
         """The discovered bin folder from the capability value (None = absent)."""
@@ -223,7 +238,7 @@ class CapabilityReferenceRunner(CapabilityRunner):
             return CapabilityValue(
                 kind=self.spec.kind,
                 value=None,
-                value_type=self.spec.value_type,
+                spec=self.spec.value_spec,
                 message=failure.message,
             )
         target = get_capability_value(reference)
@@ -231,13 +246,13 @@ class CapabilityReferenceRunner(CapabilityRunner):
             return CapabilityValue(
                 kind=self.spec.kind,
                 value=None,
-                value_type=self.spec.value_type,
+                spec=self.spec.value_spec,
                 message=f"Referenced capability {reference!r} has no discovered value.",
             )
         return CapabilityValue(
             kind=self.spec.kind,
             value=target.value,
-            value_type=target.value_type or self.spec.value_type,
+            spec=target.spec or self.spec.value_spec,
             message=f"Mirrors {reference}: {target.message}",
         )
 
@@ -427,32 +442,15 @@ class GithubAccountRunner(CapabilityRunner):
         self.spec = spec
 
     async def _oauth_token(self) -> str | None:
-        # Request-user first; background contexts (discovery sweep, the OAuth
-        # poll task) have no request user — fall back to the local user's SOD
-        # entry so the check doesn't go blind off-request. Never raises.
-        try:
-            from flow_sdk.app.actions.oauth_action import _get_github_token_for_current_user
+        # request user → local user → hub; background contexts (discovery
+        # sweep, the OAuth poll task) have no request user. Never raises.
+        from flow_sdk.core.oauth.provider_registry import GITHUB, token_for  # noqa: PLC0415
 
-            token, error = await _get_github_token_for_current_user()
-            if token:
-                return token
-        except Exception:
-            pass
-        try:
-            from flow_sdk.builtin.user import User
-            from flow_sdk.request_context.methods import get_user_credentials
-
-            user = await User.get_local()
-            if user is None:
-                return None
-            # Same FK convention as record_credential's write side.
-            return await get_user_credentials(user, "github_credentials", user.id)
-        except Exception:
-            return None
+        return await token_for(GITHUB)
 
     async def test(self, scope=None) -> CapabilityResult:
         if scope is not None and getattr(scope, "scope_type", None) == "project":
-            from flow_sdk.builtin.git_origin import GitOrigin
+            from flow_sdk.fs_store.origin.git_origin import GitOrigin
             from flow_sdk.builtin.project import Project
             from flow_sdk.utils.git import git_remote_access
 
@@ -595,18 +593,10 @@ def install_worker_type(harness_kind: str) -> str:
     Agent — this used to also build a whole vendor options object whose only
     content was ``permission_mode``, which the Agent now declares.
     """
-    from flow_sdk.flowpad_types.enums import WorkerType  # noqa: PLC0415
-
-    by_kind = {
-        CapabilityKind.CLAUDE_CLI.value: WorkerType.CLAUDE_CODE.value,
-        CapabilityKind.CODEX_CLI.value: WorkerType.CODEX.value,
-        CapabilityKind.COPILOT_CLI.value: WorkerType.COPILOT.value,
-        CapabilityKind.OPENCODE_CLI.value: WorkerType.OPENCODE.value,
-    }
-    worker = by_kind.get(harness_kind)
-    if worker is None:
+    vendor = vendor_by("capability_kind", harness_kind)
+    if vendor is None:
         raise RuntimeError(f"Unsupported install harness kind: {harness_kind}")
-    return worker
+    return vendor.worker_type
 
 
 def _schedule_install_monitor(process_id: str, kind: str) -> None:
@@ -837,14 +827,14 @@ async def run_chrome_authenticated_probe() -> CapabilityResult:
 def get_default_capability_specs() -> list[CapabilitySpec]:
     # Harness CLI values are typed as FOLDER (RecordType.FOLDER): the value is
     # the discovered bin directory (FSRef dict) workers prepend to spawn PATH.
-    _FOLDER = "folder"
+    _FOLDER = DataSpec.parse("fs_ref")   # the value is an FSRef dict
     return [
         CapabilitySpec(
             name="Default harness",
             kind=CapabilityKind.HARNESS.value,
             description="The harness used by default. References a concrete harness capability.",
             icon="Link",
-            value_type=_FOLDER,
+            value_spec=_FOLDER,
             reference_kind=CapabilityKind.CLAUDE_CLI.value,
         ),
         CapabilitySpec(
@@ -852,7 +842,7 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
             kind=CapabilityKind.CLAUDE_CLI.value,
             description="Claude Code command-line harness.",
             icon="Bot",
-            value_type=_FOLDER,
+            value_spec=_FOLDER,
             homepage_url="https://docs.anthropic.com/en/docs/claude-code/getting-started",
         ),
         CapabilitySpec(
@@ -860,7 +850,7 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
             kind=CapabilityKind.CODEX_CLI.value,
             description="Codex command-line harness.",
             icon="Terminal",
-            value_type=_FOLDER,
+            value_spec=_FOLDER,
             homepage_url="https://openai.com/codex/",
         ),
         CapabilitySpec(
@@ -868,7 +858,7 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
             kind=CapabilityKind.COPILOT_CLI.value,
             description="GitHub Copilot command-line harness.",
             icon="Terminal",
-            value_type=_FOLDER,
+            value_spec=_FOLDER,
             homepage_url="https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli",
         ),
         CapabilitySpec(
@@ -876,7 +866,7 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
             kind=CapabilityKind.OPENCODE_CLI.value,
             description="OpenCode open-source command-line harness.",
             icon="Terminal",
-            value_type=_FOLDER,
+            value_spec=_FOLDER,
             homepage_url="https://opencode.ai/docs/",
         ),
         CapabilitySpec(
@@ -898,47 +888,43 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
             kind=CapabilityKind.GITHUB_GH.value,
             description="The GitHub CLI, installed and authenticated.",
             icon="Terminal",
-            value_type=_FOLDER,
+            value_spec=_FOLDER,
             homepage_url="https://cli.github.com",
             install_prompt=GH_INSTALL_PROMPT,
         ),
     ]
 
 
-class CapabilityRegistry:
+class CapabilityRegistry(KindRegistry[CapabilityRunner]):
+    """Runners keyed by ``spec.kind`` (every kind is already lowercase — the
+    static enum and ``mcp_capability_kind`` both guarantee it — so the shared
+    normalize is a no-op here)."""
+
     def __init__(self) -> None:
-        self._runners: dict[str, CapabilityRunner] = {}
+        super().__init__("capability")
 
-    def register(self, runner: CapabilityRunner) -> None:
-        self._runners[runner.spec.kind] = runner
-
-    def unregister(self, kind: str) -> None:
-        """Drop a runner (no-op if absent). Used to prune stale dynamic kinds."""
-        self._runners.pop(kind, None)
+    def register(self, runner: CapabilityRunner) -> CapabilityRunner:  # type: ignore[override]
+        return super().register(runner, runner.spec.kind)
 
     def kinds(self) -> list[str]:
-        return list(self._runners.keys())
+        """Registration order, not sorted: the summary/UI list follows it
+        (harness first, then the CLIs, then connectors, then dynamic MCP)."""
+        return list(self._items)
 
     def worker_type_for_kind(self, kind: str) -> str | None:
         """The worker whose driver serves this kind (None ⇔ not a harness
         CLI). Reads the runner's registration-time worker_type — never parses
         the kind string."""
-        return getattr(self._runners.get(kind), "worker_type", None)
-
-    def get(self, kind: str) -> CapabilityRunner:
-        try:
-            return self._runners[kind]
-        except KeyError as exc:
-            raise KeyError(f"Unknown capability kind: {kind}") from exc
+        return getattr(self.get_or_none(kind), "worker_type", None)
 
     def runners(self) -> list[CapabilityRunner]:
-        return list(self._runners.values())
+        return list(self._items.values())
 
     def specs(self) -> list[CapabilitySpec]:
-        return [runner.spec for runner in self._runners.values()]
+        return [runner.spec for runner in self.runners()]
 
     def matching_specs(self, query_kind: str) -> list[CapabilitySpec]:
-        return [runner.spec for runner in self._runners.values() if runner.spec.matches(query_kind)]
+        return [spec for spec in self.specs() if spec.matches(query_kind)]
 
     async def test(self, kind: str, *, include_dependencies: bool = True, scope=None) -> CapabilityCheck:
         runner = self.get(kind)
@@ -988,34 +974,14 @@ def _build_default_registry() -> CapabilityRegistry:
             allowed_query=CapabilityKind.HARNESS.value,
         )
     )
-    registry.register(
-        CliCapabilityRunner(
-            spec=specs[CapabilityKind.CLAUDE_CLI.value],
-            executable="claude",
-            worker_type="claude_code",
+    for vendor in VENDORS:
+        registry.register(
+            CliCapabilityRunner(
+                spec=specs[vendor.capability_kind],
+                executable=vendor.key,
+                worker_type=vendor.worker_type,
+            )
         )
-    )
-    registry.register(
-        CliCapabilityRunner(
-            spec=specs[CapabilityKind.CODEX_CLI.value],
-            executable="codex",
-            worker_type="codex",
-        )
-    )
-    registry.register(
-        CliCapabilityRunner(
-            spec=specs[CapabilityKind.COPILOT_CLI.value],
-            executable="copilot",
-            worker_type="copilot",
-        )
-    )
-    registry.register(
-        CliCapabilityRunner(
-            spec=specs[CapabilityKind.OPENCODE_CLI.value],
-            executable="opencode",
-            worker_type="opencode",
-        )
-    )
     registry.register(ChromeAuthenticatedBrowsingRunner(specs[CapabilityKind.CHROME_AUTHENTICATED.value]))
     registry.register(GithubAccountRunner(specs[CapabilityKind.GITHUB.value]))
     registry.register(

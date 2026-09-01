@@ -13,7 +13,8 @@ export type WarningIconName =
   | 'Wifi'
   | 'WifiOff'
   | 'Settings'
-  | 'Key';
+  | 'Key'
+  | 'KeyRound';
 
 /**
  * Color variants for warnings

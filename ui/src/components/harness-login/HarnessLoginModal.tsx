@@ -515,6 +515,7 @@ function LlmKeysSection({ keys, refreshKeys }: { keys: LmApiKeySummary[]; refres
         open={confirmDelete !== null}
         onOpenChange={(o) => !o && setConfirmDelete(null)}
         title={t`Delete this key?`}
+        description={t`The stored API key for this provider is removed from this machine. You can add it again later.`}
         onConfirm={() => {
           if (confirmDelete) void onDelete(confirmDelete);
           setConfirmDelete(null);

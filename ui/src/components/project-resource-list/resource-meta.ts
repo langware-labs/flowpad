@@ -5,18 +5,26 @@ import { Bot, CheckSquare, Command, FileText, FolderOpen, Plug, Settings, Sparkl
 import type { ProjectResourceType } from './ProjectResourceList';
 
 export interface ResourceMeta {
-  label: string;
+  /** Lazy lingui descriptor — render with `i18n._(...)`. */
+  label: MessageDescriptor;
+  /**
+   * Abbreviated label for width-constrained surfaces, where one exists.
+   * The only reason this field is here: `ProjectResourceList` kept its own copy
+   * of this whole table solely to say `MCP` where the others say `MCP Server`.
+   * One differing cell is not a reason for a third table.
+   */
+  shortLabel?: MessageDescriptor;
   icon: LucideIcon;
 }
 
 export const RESOURCE_META: Record<ProjectResourceType, ResourceMeta> = {
-  session: { label: msg`Session`, icon: FolderOpen },
+  claude_session: { label: msg`Session`, icon: FolderOpen },
   skill: { label: msg`Skill`, icon: Sparkles },
-  mcp_server: { label: msg`MCP Server`, icon: Plug },
+  mcp_server: { label: msg`MCP Server`, shortLabel: msg`MCP`, icon: Plug },
   plugin: { label: msg`Plugin`, icon: Settings },
   hook: { label: msg`Hook`, icon: Terminal },
   command: { label: msg`Command`, icon: Command },
-  agent: { label: msg`SubAgent`, icon: Bot },
+  subagent: { label: msg`SubAgent`, icon: Bot },
   claude_md: { label: msg`CLAUDE.md`, icon: FileText },
   todo: { label: msg`Todo`, icon: CheckSquare },
 };
@@ -28,7 +36,7 @@ export const RESOURCE_TYPE_ORDER: ProjectResourceType[] = [
   'mcp_server',
   'hook',
   'command',
-  'agent',
+  'subagent',
   'claude_md',
   'todo',
   'plugin',

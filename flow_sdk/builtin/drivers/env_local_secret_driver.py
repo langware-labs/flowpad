@@ -5,10 +5,9 @@ from typing import Any, Optional
 
 from pydantic import SecretStr
 
-from flow_sdk.builtin.env_local_secret_ref import EnvLocalSecretRef
 from flow_sdk.builtin.env_local_store import read_env_local, write_env_local
 from flow_sdk.builtin.secret_origin_driver import make_setup_hint
-from flow_sdk.builtin.secret_origin_locator import SecretOriginLocator
+from flow_sdk.builtin.secret_origin_refs import EnvLocalSecretRef, SecretOriginLocator
 
 
 class EnvLocalSecretDriver:

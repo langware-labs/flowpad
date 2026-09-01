@@ -19,6 +19,11 @@ the mint policy are shared by all three rather than re-derived per mode.
 already carries: a FOLDER for folder-layout types (a skill, whose ``main_file``
 is ``SKILL.md``), a FILE for file-layout ones (a doc). Reusing that notion is
 what keeps ``copy`` from having to special-case every type.
+
+**WHERE the bytes come from is the source's ``origin``** — a typed ``FSOrigin``
+the driver stamps on save. A ``LocalOrigin`` is already a tree; anything else
+is materialized once per page through the ``FSOriginDriver`` registry, the same
+seam bundles and projects use. Obtaining bytes is not a reflect mode.
 """
 from __future__ import annotations
 
@@ -30,6 +35,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Protocol
 
 from flow_sdk._compat import StrEnum
+from flow_sdk.builtin.drivers.local_driver import _resolve_local_path
+from flow_sdk.fs_store.origin.fs_origin import safe_join
+from flow_sdk.utils.kind_registry import KindRegistry
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.data_source import DataSource
@@ -60,23 +68,6 @@ class ReflectMode(StrEnum):
     #: folder-layout asset — only for a file-layout one.
     SYMLINK = "symlink"
 
-    # ── git-native delivery ──────────────────────────────────────────────
-    #
-    # Named for what git actually does rather than reusing the folder names.
-    # The receiving project and the asset repository are not necessarily the
-    # same repo, and that distinction lives HERE rather than in a separate
-    # axis: `IN_PLACE` means one repo, the other two mean two.
-
-    #: The asset repository IS the project. Index the checkout where it sits.
-    IN_PLACE = "in-place"
-    #: Clone/refresh the asset repo into a local cache the project references.
-    #: The true mount case — bytes arrive, but into our space, not the user's.
-    MATERIALIZE = "materialize"
-    #: Copy changed files into the RECEIVING repo's tracked tree. They become
-    #: content under its version control, which is a real commitment: they will
-    #: be committed and pushed like anything else the user wrote.
-    VENDOR = "vendor"
-
 
 @dataclass
 class ReflectReport:
@@ -90,37 +81,39 @@ class ReflectReport:
 class Reflector(Protocol):
     """One placement policy. Holds no state and reaches no subsystem."""
 
-    def place(self, source: "DataSource", ref: str) -> Optional[str]:
+    def place(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
         """The local path the indexer should be told about, or None to skip."""
         ...
 
-    def unplace(self, source: "DataSource", ref: str) -> Optional[str]:
+    def unplace(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
         """The local path that should now be treated as gone, or None."""
         ...
 
 
-def source_root(source: "DataSource") -> Optional[Path]:
-    """Where the source's own tree begins — the DRIVER decides.
+async def _materialize(source: "DataSource") -> Optional[Path]:
+    """The source's tree as a local root, obtained once per page.
 
-    Reflection needs it to preserve relative structure: a folder-layout asset
-    copied without its parent directories is no longer that asset, just its
-    inner files scattered flat.
-
-    Delegated rather than read from a config key, because the key differs per
-    provider (`root` for a folder, `repo` for a repository) and a branch on
-    config keys here is exactly the provider knowledge the driver registry
-    exists to keep out of this module.
+    A ``LocalOrigin`` is its own tree. Anything else goes through the origin
+    driver — ``materialize(origin, preferred_root=reflect_into)`` — so a
+    repository lands where the source says (or where bundles put clones) and is
+    refreshed the way every other clone is. None when there is nothing to walk.
     """
-    from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+    origin = getattr(source, "origin", None)
+    if origin is None:
+        return None
+    if origin.kind == "local":
+        root = _resolve_local_path(origin)   # THE base/rel join, traversal-guarded
+        return root if root.exists() else None
+    from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
 
-    resolver = getattr(get_driver(source.provider), "source_root", None)
-    if not callable(resolver):
-        return None
     try:
-        return resolver(source)
+        local_root, _project_id = await get_origin_driver(origin.kind).materialize(
+            origin, preferred_root=_target_root(source)
+        )
     except Exception:  # noqa: BLE001
-        logger.debug("[reflect] source_root failed for %s", source.id, exc_info=True)
+        logger.warning("[reflect] could not materialize %s for %s", origin.kind, source.id, exc_info=True)
         return None
+    return safe_join(local_root, origin.rel_path or ".")   # the guarded join; None when the rel escapes
 
 
 def _remove(path: Path) -> None:
@@ -150,13 +143,12 @@ def _target_root(source: "DataSource") -> Optional[Path]:
 
 
 class InPlaceReflector:
-    """``none`` — the source's own tree IS the indexed tree."""
+    """``none`` — the source's own tree (its materialized origin) IS the indexed tree."""
 
-
-    def place(self, source: "DataSource", ref: str) -> Optional[str]:
+    def place(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
         return ref
 
-    def unplace(self, source: "DataSource", ref: str) -> Optional[str]:
+    def unplace(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
         return ref
 
 
@@ -168,13 +160,11 @@ class _ProjectionReflector:
     the replace-existing rule live here once.
     """
 
-
-    def _dest(self, source: "DataSource", ref: str) -> Optional[Path]:
+    def _dest(self, source: "DataSource", ref: str, base: Optional[Path]) -> Optional[Path]:
         root = _target_root(source)
         if root is None:
             return None
         src = Path(ref)
-        base = source_root(source)
         try:
             rel = src.relative_to(base) if base else Path(src.name)
         except (ValueError, TypeError):
@@ -201,9 +191,9 @@ class _ProjectionReflector:
     def _emplace(self, src: Path, dest: Path) -> None:  # pragma: no cover - overridden
         raise NotImplementedError
 
-    def place(self, source: "DataSource", ref: str) -> Optional[str]:
+    def place(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
         src = Path(ref)
-        dest = self._dest(source, ref)
+        dest = self._dest(source, ref, root)
         if dest is None or not src.exists():
             return None
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -213,8 +203,8 @@ class _ProjectionReflector:
         self._emplace(src, dest)
         return str(dest)
 
-    def unplace(self, source: "DataSource", ref: str) -> Optional[str]:
-        dest = self._dest(source, ref)
+    def unplace(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
+        dest = self._dest(source, ref, root)
         if dest is None:
             return None
         _remove(dest)
@@ -223,7 +213,6 @@ class _ProjectionReflector:
 
 class CopyReflector(_ProjectionReflector):
     """``copy`` — duplicate the asset root into the project."""
-
 
     def _emplace(self, src: Path, dest: Path) -> None:
         if src.is_dir():
@@ -258,111 +247,32 @@ class SymlinkReflector(_ProjectionReflector):
     # open — and an ADDRESSING no-op. Saying that here, once, is cheaper than
     # every caller rediscovering it.
 
-    def place(self, source: "DataSource", ref: str) -> Optional[str]:
-        return ref if super().place(source, ref) else None
+    def place(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
+        return ref if super().place(source, ref, root) else None
 
-    def unplace(self, source: "DataSource", ref: str) -> Optional[str]:
-        return ref if super().unplace(source, ref) else None
-
-
-class MaterializeReflector:
-    """``materialize`` — mirror the asset repo into a local cache.
-
-    Unlike copy/vendor this does not place files one at a time: it keeps a
-    CLONE, so the cache is a real repository with history rather than a pile of
-    copied bytes. That is what lets a later pull be incremental and lets the
-    cache answer questions (blame, previous revisions) that a copy cannot.
-
-    Placement is then pure arithmetic — the same repo-relative path inside the
-    clone — which is why this reflector does no per-file IO at all.
-    """
+    def unplace(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
+        return ref if super().unplace(source, ref, root) else None
 
 
-    def _sync_clone(self, source: "DataSource") -> Optional[Path]:
-        # `_run_git` rather than a bare `subprocess.run`: it carries the house
-        # timeout (an unbounded git call can hang a poll forever) and it is what
-        # the git driver beside this already uses, so the package has one way to
-        # run git rather than two.
-        from flow_sdk.utils.git import _git_err, _run_git  # noqa: PLC0415
-
-        root = _target_root(source)
-        origin = source_root(source)
-        if root is None or origin is None or not origin.exists():
-            return None
-        if not (root / ".git").exists():
-            root.parent.mkdir(parents=True, exist_ok=True)
-            result = _run_git(["git", "clone", "-q", str(origin), str(root)], str(root.parent))
-        else:
-            result = _run_git(["git", "pull", "-q", "--ff-only"], str(root))
-        if result.returncode != 0:
-            logger.warning("[reflect] %s", _git_err(result, "refresh clone"))
-            return None
-        return root
-
-    def _mapped(self, source: "DataSource", ref: str) -> Optional[str]:
-        root = _target_root(source)
-        origin = source_root(source)
-        if root is None or origin is None:
-            return None
-        try:
-            rel = Path(ref).resolve().relative_to(origin.resolve())
-        except (ValueError, OSError):
-            return None
-        return str(root / rel)
-
-    def prepare(self, source: "DataSource") -> bool:
-        """Refresh the clone ONCE for the whole page.
-
-        The mirror is a property of the source, not of any single ref, so
-        pulling per file would spend one git subprocess per changed path — 50
-        pulls for a 50-file commit, 49 of them no-ops. `reflect_refs` calls this
-        once before placing anything.
-        """
-        return self._sync_clone(source) is not None
-
-    def place(self, source: "DataSource", ref: str) -> Optional[str]:
-        mapped = self._mapped(source, ref)
-        return mapped if mapped and Path(mapped).exists() else None
-
-    def unplace(self, source: "DataSource", ref: str) -> Optional[str]:
-        # The pull in `prepare` already removed it — report the mapped path so
-        # the row goes with it.
-        return self._mapped(source, ref)
-
-
-#: Mode-keyed registry. Same shape as the other kind-keyed registries in the
-#: tree (`fs_origin_driver`, `secret_origin_driver`, `email_inbox_driver`) —
-#: register by key, look up by key, no branching at call sites.
-_REGISTRY: dict[str, Reflector] = {}
-
-
-def register_reflector(mode: str, reflector: Reflector) -> Reflector:
-    _REGISTRY[mode] = reflector
-    return reflector
+# Mode-keyed registry — the one `KindRegistry`.
+#
+# `record` is deliberately never registered: it is the OTHER destination
+# (`ingest_items`), and a lookup that silently returned an in-place reflector
+# for it would route message payloads onto the filesystem — so a miss answers
+# None rather than raising.
+REFLECTORS: "KindRegistry[Reflector]" = KindRegistry("reflect mode")
 
 
 def get_reflector(mode: str) -> Optional[Reflector]:
-    return _REGISTRY.get(mode or ReflectMode.RECORD.value)
+    return REFLECTORS.get_or_none(mode or ReflectMode.RECORD.value)
 
 
-# Two names per behaviour where the vocabulary differs but the mechanism does
-# not: `in-place` is `none` said in git, `vendor` is `copy` said in git. Stating
-# the aliasing in one table is what makes it visible — as subclasses it had to
-# be inferred from two declarations that changed nothing but a string.
-#
-# `record` is deliberately absent: it is the OTHER destination (`ingest_items`),
-# and a lookup that silently returned an in-place reflector for it would route
-# message payloads onto the filesystem.
-_IN_PLACE, _COPY = InPlaceReflector(), CopyReflector()
-for _mode in (ReflectMode.NONE, ReflectMode.IN_PLACE):
-    register_reflector(_mode.value, _IN_PLACE)
-for _mode in (ReflectMode.COPY, ReflectMode.VENDOR):
-    register_reflector(_mode.value, _COPY)
-register_reflector(ReflectMode.SYMLINK.value, SymlinkReflector())
-register_reflector(ReflectMode.MATERIALIZE.value, MaterializeReflector())
+REFLECTORS.register(InPlaceReflector(), kind=ReflectMode.NONE.value)
+REFLECTORS.register(CopyReflector(), kind=ReflectMode.COPY.value)
+REFLECTORS.register(SymlinkReflector(), kind=ReflectMode.SYMLINK.value)
 
 
-def origin_id_for(source: "DataSource", ref: str) -> str:
+def origin_id_for(source: "DataSource", ref: str, root: Optional[Path]) -> str:
     """The source's own name for this asset — what identity is resolved ON.
 
     Delegates to the DRIVER, because only it knows what its source can promise.
@@ -377,10 +287,9 @@ def origin_id_for(source: "DataSource", ref: str) -> str:
     from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
 
     driver = get_driver(source.provider)
-    resolver = getattr(driver, "origin_id_for", None)
-    if callable(resolver):
+    if driver is not None and driver.origin_id_for is not None:
         try:
-            resolved = (resolver(source, ref) or "").strip()
+            resolved = (driver.origin_id_for(source, ref) or "").strip()
             if resolved:
                 return resolved
         except Exception:
@@ -388,41 +297,22 @@ def origin_id_for(source: "DataSource", ref: str) -> str:
             # either. A silently wrong origin forks every asset it touches, and
             # keeps forking, which is far worse than a loud miss.
             logger.exception("[reflect] origin_id_for failed for %s", ref)
-    return default_origin_id(source, ref)
+    return default_origin_id(source, ref, root)
 
 
-def default_origin_id(source: "DataSource", ref: str) -> str:
+def default_origin_id(source: "DataSource", ref: str, root: Optional[Path]) -> str:
     """Source-relative path. The weakest handle that is still always correct.
 
-    The root comes from `source_root`, not from a config key: `root` is the
-    folder driver's spelling and `repo` is git's, so reading either directly
-    makes the fallback silently wrong for the other — `relative_to` raises and
-    "always correct" quietly degrades to a bare filename that collides across
-    directories.
+    ``root`` is the page's materialized root — never a config key: `root` is the folder driver's spelling and `repo` is
+    git's, so reading either directly makes the fallback silently wrong for the
+    other — `relative_to` raises and "always correct" quietly degrades to a bare
+    filename that collides across directories.
     """
-    root = source_root(source)
     try:
         rel = Path(ref).relative_to(root).as_posix() if root else Path(ref).name
     except ValueError:
         rel = Path(ref).name
     return f"{source.provider}:{source.id}:path:{rel}"
-
-
-async def _find_by_origin(origin_id: str):
-    """The row this origin already names, across every file-backed type.
-
-    ``Entity.first_across_asset_owners`` is the fan-out — the same candidate set
-    and the same reason as ``get_by_asset_ref``: a base-class query does not
-    reach concrete-type rows, and only a type that OWNS its asset may answer who
-    owns an origin. Sharing it means a newly registered type is searchable here
-    the moment it is registered, and a fan-out that failed on a contended DB
-    says so in the log instead of reading as "this origin is new".
-    """
-    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
-
-    if not origin_id:
-        return None
-    return await Entity.first_across_asset_owners("origin_id", origin_id)
 
 
 def _retire_stale_placement(source: "DataSource", known, placed: str) -> None:
@@ -465,15 +355,20 @@ async def _retire_row(path: str) -> None:
     Uses the same `remove_orphan_row` helper as the sweep, so the narrower
     type-scoped delete (no relationship cascade) applies here too.
     """
-    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
     from flow_sdk.fs_store.orphan_removal import remove_orphan_row  # noqa: PLC0415
+    from flow_sdk.fs_store.reindex import owning_asset_for_removed_path  # noqa: PLC0415
 
     try:
-        entity = await Entity.get_by_asset_ref(path, resolve_containing=False)
+        entity, root_gone = await owning_asset_for_removed_path(path)
     except Exception:  # noqa: BLE001
         logger.debug("[reflect] could not resolve %s for removal", path, exc_info=True)
         return
     if entity is None:
+        return
+    if not root_gone:
+        # An inner file of a folder asset went away but the asset root is still
+        # there — that is an edit, not a deletion. Reaping here would destroy a
+        # skill because one of its files was removed.
         return
     await remove_orphan_row(str(entity.id), entity.get_type())
 
@@ -482,27 +377,8 @@ def _stamps_identity(source: "DataSource") -> bool:
     """May we write into this source's bytes? The driver decides."""
     from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
 
-    return bool(getattr(get_driver(source.provider), "stamps_identity", True))
-
-
-async def _reload(entity):
-    """Re-read a row after an out-of-band write, so the stamp is not lost."""
-    try:
-        return await type(entity).get_by_id(str(entity.id))
-    except Exception:  # noqa: BLE001
-        return entity
-
-
-async def _stamp_origin(entity, source: "DataSource", ref: str) -> None:
-    """Record the origin as it stands AFTER indexing.
-
-    Always re-read, never trust the pre-index value: the index pass may have
-    rewritten the file (capsule stamp) and moved the handle underneath us.
-    """
-    current = origin_id_for(source, ref)
-    if entity is not None and entity.origin_id != current:
-        entity.origin_id = current
-        await entity.save()
+    driver = get_driver(source.provider)
+    return driver is None or driver.stamps_identity
 
 
 async def reflect_refs(
@@ -536,36 +412,37 @@ async def reflect_refs(
     # writes suppressed. Scoped to the page rather than to each call because the
     # write happens deep inside `Entity.save`, and a narrower guard would leave
     # the re-stamp at the end of the loop free to dirty the file after all.
-    from flow_sdk.fs_store.fs_record import carrier_writes_suppressed  # noqa: PLC0415
-
     from flow_sdk.builtin.faas.fs_records_actions import discover_record_by_path  # noqa: PLC0415
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+    from flow_sdk.fs_store import origin_identity  # noqa: PLC0415
+    from flow_sdk.fs_store.fs_record import carrier_writes_suppressed  # noqa: PLC0415
     from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
 
     guard = carrier_writes_suppressed() if not _stamps_identity(source) else nullcontext()
     with guard:
-
-        # A reflector that needs per-page setup (a clone refresh) gets it once,
-        # here — never inside the per-ref loop.
-        prepare = getattr(reflector, "prepare", None)
-        if callable(prepare) and not prepare(source):
+        # The tree is obtained once, here — never inside the per-ref loop. A
+        # source whose origin cannot be reached this page places nothing.
+        root = await _materialize(source)
+        if root is None and refs:
             report.skipped.extend(refs)
             return report
 
         fresh: list[tuple[str, str]] = []
+        renames = renames or {}
         for ref in refs:
-            placed = reflector.place(source, ref)
+            placed = reflector.place(source, ref, root)
             if not placed:
                 report.skipped.append(ref)
                 continue
-            origin_id = origin_id_for(source, ref)
-            known = await _find_by_origin(origin_id)
-            if known is None and (renames or {}).get(ref):
+            origin_id = origin_id_for(source, ref, root)
+            known = await origin_identity.resolve(origin_id)
+            previous_ref = renames.get(ref)
+            if known is None and previous_ref:
                 # The source says this path IS the old one, moved. Its identity
                 # lives under the ORIGIN IT HAD — for git that is computable even
                 # though the old path no longer exists, because the handle is
                 # repo-relative rather than a property of the file on disk.
-                known = await _find_by_origin(origin_id_for(source, renames[ref]))
+                known = await origin_identity.resolve(origin_id_for(source, previous_ref, root))
             if known is None:
                 fresh.append((placed, ref))
                 continue
@@ -579,14 +456,23 @@ async def reflect_refs(
             # ORIGINAL as primary — so the re-parse is discarded and the row stays
             # pointing at a file we are about to remove. One origin owns one
             # placement; retiring the old one is what makes that true.
-            _retire_stale_placement(source, known, placed)
+            # Compare and re-parse at the TYPE's asset root, not the touched
+            # file. A folder-layout asset is named by its DIRECTORY, so the raw
+            # leaf path is the wrong unit twice over: `_retire_stale_placement`
+            # would read the asset's own root as a stale placement and delete
+            # it, and `discover_record_by_path` given the inner main_file
+            # resolves nothing and silently drops the re-parse.
+            from flow_sdk.fs_store.reindex import asset_target_for  # noqa: PLC0415
+
+            target = asset_target_for(known.type, placed)
+            _retire_stale_placement(source, known, target)
             await discover_record_by_path(
                 known.type,
-                placed,
+                target,
                 notify=True,
                 proposed_id=str(known.id),
             )
-            await _stamp_origin(await _reload(known), source, ref)
+            await origin_identity.stamp(known, origin_id)
             report.placed.append(placed)
 
         if fresh:
@@ -599,11 +485,14 @@ async def reflect_refs(
                 if entity is None:
                     report.skipped.append(path)
                     continue
-                await _stamp_origin(entity, source, ref)
+                # Just resolved after the reindex — already current, no re-read.
+                # The origin id is derived AGAIN here on purpose: a folder source
+                # keys it on the inode, and the reindex may have rewritten the file.
+                await origin_identity.stamp(entity, origin_id_for(source, ref, root), reload=False)
                 report.placed.append(path)
 
         for ref in tombstones or []:
-            removed = reflector.unplace(source, ref)
+            removed = reflector.unplace(source, ref, root)
             if removed:
                 report.removed.append(removed)
         for path in report.removed:

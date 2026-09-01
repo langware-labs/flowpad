@@ -18,7 +18,7 @@
  *   - Git tab × close button: button[aria-label="Close Git"]
  *   - Git panel header has exactly 1 button (Refresh); NO X in the panel header
  *   - File rows: .overflow-y-auto .flex.items-center.gap-2.rounded (hover:bg-muted/50)
- *   - Ribbon .ms-auto button order: 0=Context, 1=Git, 2=Prompts, 3=Files, 4=Dir
+ *   - Ribbon button order: 0=Context, 1=Git, 2=Prompts, 3=Files, 4=Dir
  *   - The ribbon only renders when an AgenticProcess is linked to the shell (process prop truthy)
  *   - Panel polls the git-status action every 5 seconds while open
  *
@@ -32,7 +32,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect } from '@playwright/test';
-import {
+import { RIBBON_TABS,
   activePanel,
   dismissSetupModal,
   ensureAdvancedView,
@@ -69,8 +69,8 @@ async function createProjectForWorkdir(workdir: string): Promise<string> {
     body: JSON.stringify({
       name: `git-panel-${Date.now()}`,
       fs_storage_mount_path: workdir,
-    }),
-  });
+  }),
+});
   expect(response.status).toBe(200);
   const projectId = (await response.json())?.data?.id as string | undefined;
   expect(projectId).toBeTruthy();
@@ -84,7 +84,7 @@ async function gotoProjectAgenticProcess(page: import('@playwright/test').Page, 
   await launcher.getByRole('button', { name: 'Claude Code' }).click();
   await expect(page).toHaveURL(/\/dock\/shell\/agentic_process-(?!new)/);
   await ensureAdvancedView(page);
-  await expect(activePanel(page).locator('.border-t .ms-auto')).toBeVisible();
+  await expect(activePanel(page).locator(RIBBON_TABS)).toBeVisible();
   return page.url().match(/agentic_process-([0-9a-f-]+)/)?.[1] ?? '';
 }
 
@@ -102,7 +102,7 @@ let cachedAgenticUrl: string | null = null;
  */
 async function gotoAgenticProcess(page: import('@playwright/test').Page) {
   const panel = activePanel(page);
-  const ribbon = panel.locator('.border-t .ms-auto');
+  const ribbon = panel.locator(RIBBON_TABS);
 
   // Fast path: reuse the URL from the first successful navigation in this run.
   if (cachedAgenticUrl) {
@@ -112,7 +112,7 @@ async function gotoAgenticProcess(page: import('@playwright/test').Page) {
     const visible = await ribbon.isVisible({ timeout: 10_000 }).catch(() => false);
     if (visible) return;
     // Cached process is gone — fall through to full navigation.
-  }
+}
 
   await page.goto('/dock/shell/new_terminal');
 
@@ -126,7 +126,7 @@ async function gotoAgenticProcess(page: import('@playwright/test').Page) {
       await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 60_000 });
       await startClaudeSession(page);
       await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 60_000 });
-    }
+  }
 
     // The ribbon + side-window panels only exist in Advanced view; the backend
     // pref now wins over the localStorage seed, so flip to Advanced at runtime.
@@ -134,11 +134,11 @@ async function gotoAgenticProcess(page: import('@playwright/test').Page) {
 
     // Wait for the ribbon to be visible (can take >8s on a fresh process).
     await expect(ribbon).toBeVisible({ timeout: 60_000 });
-  } catch (e) {
+} catch (e) {
     // Host out of PTY devices → no live process/ribbon. Sanctioned live-env skip.
     await skipIfPtyExhausted(page);
     throw e;
-  }
+}
 
   // The ribbon/toolbar re-renders continuously while the worker initializes
   // (status updates via useSyncExternalStore) — a click issued mid-churn keeps
@@ -158,15 +158,15 @@ async function getComputeNodeId(): Promise<string | null> {
     const res = await fetch(`${API_URL}/api/v1/graph/compute_node`);
     const json = (await res.json()) as { data?: Array<{ id?: string }> };
     return json.data?.[0]?.id ?? null;
-  } catch {
+} catch {
     return null;
-  }
+}
 }
 
 test.describe('Git Status Panel', () => {
   test.beforeEach(async ({ page }) => {
     await dismissSetupModal(page);
-  });
+});
 
   // ---------------------------------------------------------------------------
   // test 1: Git button appears in agentic process terminal ribbon
@@ -176,21 +176,20 @@ test.describe('Git Status Panel', () => {
 
     await gotoAgenticProcess(page);
 
-    // Ribbon should be visible — check the ms-auto button container
     // (text=/running|idle/i is unreliable: may match a visibility:hidden tooltip element)
     const panel = activePanel(page);
-    const mlAuto = panel.locator('.border-t .ms-auto');
-    await expect(mlAuto).toBeVisible({ timeout: 15_000 });
+    const ribbonLoc = panel.locator(RIBBON_TABS);
+    await expect(ribbonLoc).toBeVisible({ timeout: 15_000 });
 
     // Right section: Context(0), Git(1), Prompts(2), Files(3), Dir(4), Queue(5)
     // + Prompt Library, … — the ribbon keeps gaining buttons (Queue+Library
     // 55a71046; more since). Assert the Git button (the subject of this test) is
     // present and the ribbon carries at least the documented core set — robust to
     // additions, still catches a regression that DROPS buttons.
-    await expect(mlAuto.locator('button').nth(1)).toBeVisible({ timeout: 5_000 });
-    const ribbonButtons = await mlAuto.locator('button').count();
+    await expect(ribbonLoc.locator('button').nth(1)).toBeVisible({ timeout: 5_000 });
+    const ribbonButtons = await ribbonLoc.locator('button').count();
     expect(ribbonButtons).toBeGreaterThanOrEqual(7);
-  });
+});
 
   // ---------------------------------------------------------------------------
   // test 2: Git panel opens as a tab in the side window
@@ -220,7 +219,7 @@ test.describe('Git Status Panel', () => {
     // Inner header should have exactly 1 button (Refresh — no X in panel header)
     const headerButtons = panelHeader.locator('button');
     await expect(headerButtons).toHaveCount(1);
-  });
+});
 
   // ---------------------------------------------------------------------------
   // test 3: Git panel header shows branch name and ahead/behind indicators
@@ -249,8 +248,8 @@ test.describe('Git Status Panel', () => {
     if (isGitRepo) {
       const branchName = headerText!.replace(/[↑↓\d]/g, '').trim();
       expect(branchName.length).toBeGreaterThan(0);
-    }
-  });
+  }
+});
 
   // ---------------------------------------------------------------------------
   // test 4: Git panel shows changed files with status badges and line counts
@@ -274,15 +273,15 @@ test.describe('Git Status Panel', () => {
       const readmeRow = body.locator('.group.rounded').filter({ hasText: 'README.md' });
       await expect(readmeRow).toHaveCount(1);
       await expect(readmeRow.locator('span').first()).toHaveText('M');
-    } finally {
+  } finally {
       await page.goto('/');
       if (processId) {
         await fetch(`${API_URL}/api/v1/graph/agentic_process/${processId}`, { method: 'DELETE' });
-      }
+    }
       await fetch(`${API_URL}/api/v1/graph/project/${projectId}`, { method: 'DELETE' });
       rmSync(repo, { recursive: true, force: true });
-    }
-  });
+  }
+});
 
   // ---------------------------------------------------------------------------
   // test 5: Git tab closes via × in the tab strip
@@ -302,7 +301,7 @@ test.describe('Git Status Panel', () => {
 
     // Side window should disappear (no tabs left)
     await expect(sideWindow).not.toBeVisible({ timeout: 5_000 });
-  });
+});
 
   // ---------------------------------------------------------------------------
   // test 6: Multiple tabs coexist in the same side window
@@ -313,7 +312,7 @@ test.describe('Git Status Panel', () => {
     await gotoAgenticProcess(page);
 
     const panel = activePanel(page);
-    const mlAuto = panel.locator('.border-t .ms-auto');
+    const ribbonLoc = panel.locator(RIBBON_TABS);
 
     // Open Git (index 1)
     await ensureSideTabOpen(page, 1, 'Git');
@@ -345,7 +344,7 @@ test.describe('Git Status Panel', () => {
     // Close Git tab — side window should disappear
     await activePanel(page).locator('button[aria-label="Close Git"]').click();
     await expect(sideWindow).not.toBeVisible({ timeout: 5_000 });
-  });
+});
 
   // ---------------------------------------------------------------------------
   // test 8: Git button is absent for plain shell terminals (no agentic process)
@@ -359,7 +358,7 @@ test.describe('Git Status Panel', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ project_id: projectId }),
-    }).then((response) => response.json());
+  }).then((response) => response.json());
     const shellId = created?.data?.id as string | undefined;
     expect(shellId, 'Phase 11 plain-shell fixture creation failed').toBeTruthy();
 
@@ -368,16 +367,16 @@ test.describe('Git Status Panel', () => {
       await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
       await page.waitForTimeout(2_000);
 
-      // On plain shell: ribbon (.border-t .ms-auto) is NOT present.
+      // On plain shell: ribbon ([data-testid="terminal-ribbon-tabs"]) is NOT present.
       const panel = activePanel(page);
-      const mlAuto = panel.locator('.border-t .ms-auto');
-      await expect(mlAuto).not.toBeVisible({ timeout: 3_000 });
+      const ribbonLoc = panel.locator(RIBBON_TABS);
+      await expect(ribbonLoc).not.toBeVisible({ timeout: 3_000 });
       await expect(page).toHaveURL(new RegExp(`/dock/shell/shell-${shellId}`));
-    } finally {
+  } finally {
       await page.goto('/');
       await fetch(`${API_URL}/api/v1/graph/shell/${shellId}/close`, { method: 'POST' });
-    }
-  });
+  }
+});
 
   // ---------------------------------------------------------------------------
   // test 10: git-status API endpoint returns correct structure
@@ -405,8 +404,8 @@ test.describe('Git Status Panel', () => {
         behind?: number;
         files?: Array<{ status: string; path: string; insertions: number | null; deletions: number | null }>;
         error?: string | null;
-      };
     };
+  };
     expect(gitJson.status).toBe('SUCCESS');
     const gitData = gitJson.data!;
     expect(gitData.error).toBeNull();
@@ -422,7 +421,7 @@ test.describe('Git Status Panel', () => {
       expect(f.path.length).toBeGreaterThan(0);
       expect(f.insertions === null || typeof f.insertions === 'number').toBe(true);
       expect(f.deletions === null || typeof f.deletions === 'number').toBe(true);
-    }
+  }
 
     // --- non-git dir case ---
     const nonGitRes = await fetch(`${API_URL}/api/v1/graph/compute_node/${computeNodeId}/git-ops/status?workdir=/tmp`);
@@ -430,11 +429,11 @@ test.describe('Git Status Panel', () => {
     const nonGitJson = (await nonGitRes.json()) as {
       status: string;
       data?: { error?: string | null; files?: unknown[] };
-    };
+  };
     expect(nonGitJson.status).toBe('SUCCESS');
     const nonGitData = nonGitJson.data!;
     expect(nonGitData.error).toBeTruthy();
     expect(Array.isArray(nonGitData.files)).toBe(true);
     expect(nonGitData.files?.length).toBe(0);
-  });
+});
 });

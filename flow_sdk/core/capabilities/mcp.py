@@ -27,13 +27,13 @@ import re
 
 from flow_sdk.core.capabilities.models import (
     MCP_CAPABILITY_INFIX,
-    CapabilityKind,
     CapabilityResult,
     CapabilitySpec,
     CapabilityValue,
     is_mcp_capability_kind,
 )
 from flow_sdk.core.capabilities.registry import CapabilityRunner, get_capability_registry
+from flow_sdk.flowpad_types.vendors import vendor_or_none
 
 # Vendor/source prefixes stripped from a server name to get the service token.
 _VENDOR_PREFIXES = ("claude.ai ", "claude_ai_", "claude ")
@@ -41,28 +41,13 @@ _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 
 _RECONCILE_LOCK = asyncio.Lock()
 
-# An MCP server only matters if the harness that loads it can run. The
-# worker_type segment of the kind names that harness; executor worker types map
-# to their harness capability, while config-owning-only agents FlowPad never
-# spawns (cursor/windsurf/vscode/claude_desktop) map to None — those MCP
-# capabilities get no dependency and are flagged non-runnable (see _spec_for).
-_WORKER_TYPE_TO_HARNESS: dict[str, str] = {
-    "claude_code": CapabilityKind.CLAUDE_CLI.value,
-    "claude_code_cli": CapabilityKind.CLAUDE_CLI.value,
-    "unsecured_claude": CapabilityKind.CLAUDE_CLI.value,
-    "codex": CapabilityKind.CODEX_CLI.value,
-    "copilot": CapabilityKind.COPILOT_CLI.value,
-    "opencode": CapabilityKind.OPENCODE_CLI.value,
-}
-
-
 def harness_kind_for_worker_type(worker_type: str) -> str | None:
-    """The harness capability an MCP server's worker_type depends on.
-
-    None for config-owning agents FlowPad doesn't spawn (cursor/windsurf/
-    vscode/claude_desktop) — there is no FlowPad harness that can run them.
-    """
-    return _WORKER_TYPE_TO_HARNESS.get((worker_type or "").strip().lower())
+    """The harness capability an MCP server's worker_type depends on — from
+    ``VENDORS``. None for config-owning agents FlowPad doesn't spawn (cursor/
+    windsurf/vscode/claude_desktop): no FlowPad harness can run them, so those
+    MCP capabilities get no dependency and are flagged non-runnable."""
+    vendor = vendor_or_none(worker_type)
+    return vendor.capability_kind if vendor else None
 
 
 def normalize_service(name: str) -> str:
@@ -113,7 +98,7 @@ class McpServerCapabilityRunner(CapabilityRunner):
         return CapabilityValue(
             kind=self.spec.kind,
             value=None,
-            value_type=self.spec.value_type,
+            spec=self.spec.value_spec,
             message=f"{self.service} MCP configured for {self.worker_type}.",
         )
 

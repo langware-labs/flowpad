@@ -16,6 +16,7 @@ from typing import Any
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_body,
     _extract_frontmatter,
@@ -25,14 +26,13 @@ from flow_sdk.fs_store.indexer.functions._folder_capsule import (
     read_folder_capsule_id,
 )
 from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.fs_store.identifier import mint_uuid
 
 WHITE_BOARD_MD = "WHITE_BOARD.md"
 BOARD_JSON = "board.json"
 
 def _read_frontmatter_id_from_yaml(yaml_fields: dict) -> str | None:
     """Pick ``id`` (or legacy ``asset_id``) from a parsed frontmatter dict."""
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
     for candidate in (yaml_fields.get("id"), yaml_fields.get("asset_id")):
         adopted = adopt_entity_id(candidate)
         if adopted:

@@ -85,7 +85,7 @@ async def sync_source(
     # "this is a bug" catch, where it left the source stuck on `never_synced`
     # with no error to show.
     try:
-        cursors = await _cursors_for(source, driver)
+        cursors = await DataSourceCursor.for_source(source, await driver.segments(source))
     except Exception as exc:  # noqa: BLE001 — classified below, never re-raised
         health, code, detail = classify(exc)
         await _fail_source(source, code, detail, health=health)
@@ -93,7 +93,7 @@ async def sync_source(
         return combined
     # The driver's ceiling is a limit, not a preference — `min`, so a caller
     # asking for more streams cannot spend a budget the provider does not have.
-    due = _round_robin(cursors, min(budget, getattr(driver, "segment_budget", budget)))
+    due = _round_robin(cursors, min(budget, driver.segment_budget or budget))
 
     for cursor in due:
         combined.outcomes.extend((await _sync_stream(source, driver, cursor, now)).outcomes)
@@ -152,9 +152,7 @@ async def _sync_stream(source, driver, cursor: DataSourceCursor, now: datetime) 
             mode=IngestMode.for_run(first_run=view.first_run, item_count=len(result.items)),
         )
     if not result.unchanged and (result.refs or result.tombstones):
-        await reflect_refs(
-            source, list(result.refs), list(result.tombstones), dict(result.renames)
-        )
+        await reflect_refs(source, result.refs, result.tombstones, result.renames)
 
     # ── records are committed; only now does the cursor move ──
     was_clean = (
@@ -174,10 +172,7 @@ async def _sync_stream(source, driver, cursor: DataSourceCursor, now: datetime) 
     if result.high_water:
         cursor.high_water = result.high_water
     cursor.last_synced_at = now
-    cursor.health = SourceHealth.OK.value
-    cursor.error_code = None
-    cursor.error_detail = None
-    cursor.consecutive_failures = 0
+    cursor.mark_ok()
 
     # A stream that was already healthy and returned nothing new has no state
     # worth persisting — writing it anyway would put one SQLite writer-lock
@@ -188,28 +183,6 @@ async def _sync_stream(source, driver, cursor: DataSourceCursor, now: datetime) 
     if not (result.unchanged and was_clean):
         await cursor.save()
     return report
-
-
-async def _cursors_for(source: DataSource, driver) -> list[DataSourceCursor]:
-    """One query for the source's cursors, creating only what is missing.
-
-    Per-stream ``ensure_for`` would be a read per feed per tick even though the
-    budget only fetches a few of them.
-    """
-    existing = {
-        c.segment_key: c
-        for c in await DataSourceCursor.get_all({"data_source_id": source.id})
-    }
-    out: list[DataSourceCursor] = []
-    for ref in await driver.segments(source):
-        cursor = existing.get(ref.key)
-        if cursor is None:
-            cursor = await DataSourceCursor.ensure_for(
-                source.id, ref.key, segment_label=ref.label
-            )
-        out.append(cursor)
-    return [c for c in out if c.enabled]
-
 
 def _round_robin(cursors: list[DataSourceCursor], budget: int) -> list[DataSourceCursor]:
     """The ``budget`` streams that have waited longest.

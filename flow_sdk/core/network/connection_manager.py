@@ -6,7 +6,7 @@ import logging
 from typing import Callable, Optional
 
 from flow_sdk.core.network.connection import ConnectionHandler
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 
 _active_connection_handlers: list[ConnectionHandler] = []
 

@@ -35,7 +35,6 @@ pytestmark = [
 from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input
 from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
 
-
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
 

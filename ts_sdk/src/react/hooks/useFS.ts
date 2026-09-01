@@ -42,6 +42,7 @@ export function useFS(typeid?: TypeId) {
   });
   const existsCache = useFSStore((state) => state.existsCache);
   const browseCache = useFSStore((state) => state.browseCache);
+  const pathRevisions = useFSStore((state) => state.pathRevisions);
 
   if (!typeid) {
     return null;
@@ -69,6 +70,13 @@ export function useFS(typeid?: TypeId) {
       return textResult || blobResult || null;
     },
 
+    /** Monotonic change token for this exact path. Folder paths also advance
+     * when a descendant changes, as owned by FSStore.invalidate(). */
+    revision: (path: string): number => {
+      const normalizedPath = path.replace(/\/+/g, '/').replace(/\/$/, '').replace(/^\/+/, '') || '/';
+      return pathRevisions.get(`${typeid.toString()}:${normalizedPath}`) ?? 0;
+    },
+
     /**
      * Get URL for a file
      * @param path - File path
@@ -79,7 +87,9 @@ export function useFS(typeid?: TypeId) {
     },
 
     /**
-     * Get the URL a browser can RENDER this file from (inline, not a download)
+     * Get the URL a browser can RENDER this file from — inline, rather than as
+     * a download. Its tail is the file's own path, so a page loaded from it
+     * resolves its relative links and assets against its own folder.
      * @param path - File path
      * @returns URL for the file
      */
@@ -224,6 +234,21 @@ export function useFS(typeid?: TypeId) {
      */
     invalidate: (path: string, cacheType?: 'content' | 'exists' | 'browse' | 'all') => {
       fsStore.getState().invalidate(typeid, path, cacheType);
+    },
+
+    /**
+     * Re-read a file's content from the server, discarding the cached copy.
+     *
+     * Reports whether the discarded cache held unsaved edits rather than
+     * warning about it here — telling the user is a UI concern, and the SDK
+     * has no toast (or i18n catalog) to reach for.
+     */
+    refetch: async (path: string, asBlob = false) => {
+      const store = fsStore.getState();
+      const discardedDirty = store.getContentFromCache(typeid, path)?.isDirty === true;
+      store.invalidate(typeid, path, 'content');
+      const content = await store.downloadFile(typeid, path, asBlob);
+      return { content, discardedDirty };
     },
 
     /**

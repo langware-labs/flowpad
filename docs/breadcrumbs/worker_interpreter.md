@@ -1,4 +1,5 @@
 ---
+id: 1b47dbc5-c2f8-4f10-ae07-02cb38197bc3
 title: Worker interpreter resolution
 tags:
 - breadcrumb.test.worker_interpreter.rules
@@ -135,9 +136,3 @@ embedded quotes for native commands: without the replace the block arrives as 5
 arguments with the quotes stripped and argparse rejects it
 (`unrecognized arguments: is up and running,data:true}`); with it, 1 argument
 intact. Bash needs neither.
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 1b47dbc5-c2f8-4f10-ae07-02cb38197bc3
-flowpad:endcapsule identity -->

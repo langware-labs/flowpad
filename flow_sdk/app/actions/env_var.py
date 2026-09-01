@@ -13,7 +13,7 @@ from pydantic import BaseModel, ValidationError, field_validator, model_validato
 from starlette.requests import Request
 
 from flow_sdk.actions import action
-from flow_sdk.api.api_types.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.core.entity.entity_env.env_types import EntityEnvVars, EnvVar, EnvVarType
 from flow_sdk.core.entity.entity_env.env_utils import is_confidential, mask_confidential_value
 from flow_sdk.core.entity.entity_model import Entity

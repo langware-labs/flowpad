@@ -11,7 +11,7 @@ import pytest
 
 from flow_sdk.fs_store import FSRecord, RecordType
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identity_backend import DerivedIdentityBackend
+from flow_sdk.fs_store.identity_carrier import DerivedCarrier
 from flow_sdk.fs_store.indexer.functions import claude_projects
 from flow_sdk.fs_store.indexer.functions.claude_projects import (
     claude_project_identity_key,
@@ -55,8 +55,8 @@ async def test_missing_project_record_mints_and_persists_dns_v5() -> None:
     info = PROJECT.to_type_info()
     expected = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project-fsref:{Path(cwd).resolve().as_posix()}"))
 
-    assert info.mint_entity_id(ref) is None
-    assert info.mint_entity_id(ref, derive=True, overwrite=True) == expected
+    assert info.read_id(ref) is None
+    assert info.mint_entity_id(ref) == expected
     parsed = await extract_claude_project(ref, expected)
     assert parsed[0].id == expected
     assert FSRecord.discover(RecordType.PROJECT)[0].id == expected
@@ -73,6 +73,6 @@ def test_project_parser_and_identity_registration_contract() -> None:
     assert "uuid4" not in source
     assert "mint_uuid" not in source
     assert claude_project_identity_key(FSRef("/repo")) == "project-fsref:/repo"
-    backend = PROJECT.identity_backend
-    assert isinstance(backend, DerivedIdentityBackend)
+    backend = PROJECT.identity_carrier
+    assert isinstance(backend, DerivedCarrier)
     assert backend.reader is existing_project_record_id

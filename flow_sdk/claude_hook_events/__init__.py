@@ -8,20 +8,6 @@ from flow_sdk.claude_hook_events.field_extractors import (
     get_tool_name,
 )
 from flow_sdk.claude_hook_events.hook_event_data import HookEventData
-from flow_sdk.claude_hook_events.tool_schemas import (
-    AskUserQuestionToolInput,
-    BashToolInput,
-    EditToolInput,
-    GlobToolInput,
-    GrepToolInput,
-    LSPToolInput,
-    ReadToolInput,
-    TaskToolInput,
-    ToolInput,
-    WebFetchToolInput,
-    WebSearchToolInput,
-    WriteToolInput,
-)
 from flow_sdk.claude_hook_events.type_guards import (
     is_notification,
     is_post_tool_use,
@@ -54,17 +40,4 @@ __all__ = [
     "is_subagent_stop",
     "is_session_start",
     "is_session_end",
-    # Tool schemas
-    "BashToolInput",
-    "GlobToolInput",
-    "GrepToolInput",
-    "ReadToolInput",
-    "WriteToolInput",
-    "EditToolInput",
-    "TaskToolInput",
-    "WebFetchToolInput",
-    "WebSearchToolInput",
-    "LSPToolInput",
-    "AskUserQuestionToolInput",
-    "ToolInput",
 ]

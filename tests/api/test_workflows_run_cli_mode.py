@@ -20,11 +20,11 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess, ProcessStatus
-from flow_sdk.builtin.agentic_process.status_predicates import (
-    get_worker_mode,
-    WorkerMode,
-)
 from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions
+from flow_sdk.builtin.agentic_process.status_predicates import (
+    WorkerMode,
+    get_worker_mode,
+)
 
 
 @pytest.mark.asyncio

@@ -258,26 +258,38 @@ def send_resource_sync(
 # Typed convenience senders
 # ---------------------------------------------------------------------------
 
-def send_log_event(event_type: str, context: dict | str = None) -> bool:
-    """Send a log event to FlowPad (fire-and-forget).
+def send_event(
+    event_name: str,
+    event_data: dict | str | None = None,
+    *,
+    record_type: RecordType = RecordType.LOG,
+    log_context: str = "",
+    wait: bool = False,
+) -> bool:
+    """Send one EVENT-shaped notification to FlowPad.
 
-    Args:
-        event_type: Type of event (e.g., "skill_matched", "hook_triggered").
-        context: Optional additional context.
+    Every typed event sender below is this call with a different record type
+    and log label: a fresh id, ``SyncOperation.EVENT``, and a
+    ``{event_name, event_data}`` payload.
 
-    Returns:
-        True if notification was queued, False if Flowpad not running.
+    Returns True if the notification was queued, False if FlowPad is not running.
     """
     return send_resource_sync(
-        type=RecordType.LOG,
+        type=record_type,
         id=str(uuid.uuid4()),
         operation=SyncOperation.EVENT,
         data={
-            "event_name": event_type,
-            "event_data": context or {},
+            "event_name": event_name,
+            "event_data": event_data or {},
         },
-        log_context=f"log={event_type}",
+        log_context=log_context or f"event={event_name}",
+        wait=wait,
     )
+
+
+def send_log_event(event_type: str, context: dict | str = None) -> bool:
+    """Send a log event to FlowPad (fire-and-forget)."""
+    return send_event(event_type, context, log_context=f"log={event_type}")
 
 
 def send_entity_sync(
@@ -313,51 +325,20 @@ def send_entity_sync(
 
 
 def send_mcp_event(tool_name: str, session_id: str, params: dict, result: str) -> bool:
-    """Send an MCP tool call event to FlowPad (fire-and-forget).
-
-    Args:
-        tool_name: Name of the MCP tool called (e.g. "flow_ping").
-        session_id: The claude_session_id (empty string if not applicable).
-        params: Dict of tool input parameters.
-        result: The result string returned by the tool.
-
-    Returns:
-        True if notification was queued, False if Flowpad not running.
-    """
-    return send_resource_sync(
-        type=RecordType.LOG,
-        id=str(uuid.uuid4()),
-        operation=SyncOperation.EVENT,
-        data={
-            "event_name": "mcp_tool_call",
-            "event_data": {
-                "tool": tool_name,
-                "session_id": session_id,
-                "params": params,
-                "result": result,
-            },
-        },
+    """Send an MCP tool call event to FlowPad. Ordered (``wait=True``)."""
+    return send_event(
+        "mcp_tool_call",
+        {"tool": tool_name, "session_id": session_id, "params": params, "result": result},
         log_context=f"mcp={tool_name}",
         wait=True,
     )
 
 
 def send_flow_tag(flow_data: dict) -> bool:
-    """Send a flow tag event to FlowPad.
-
-    Args:
-        flow_data: Parsed flow tag dict (from xml_str_to_flow_data_dict).
-
-    Returns:
-        True if notification was queued, False if Flowpad not running.
-    """
-    return send_resource_sync(
-        type=RecordType.SKILL,
-        id=str(uuid.uuid4()),
-        operation=SyncOperation.EVENT,
-        data={
-            "event_name": "flow_tag",
-            "event_data": flow_data,
-        },
+    """Send a flow tag event to FlowPad."""
+    return send_event(
+        "flow_tag",
+        flow_data,
+        record_type=RecordType.SKILL,
         log_context=f"flow_tag={flow_data.get('element_type', 'unknown')}",
     )

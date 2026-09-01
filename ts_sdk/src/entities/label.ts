@@ -1,4 +1,5 @@
-import { APIEntity } from '../APIEntity';
+import type { EntityMerge } from '../IEntity';
+import { APIEntity, type AnyEntity } from '../APIEntity';
 import { LabelInfo } from '../models/LabelInfo';
 
 export interface ILabel extends LabelInfo {
@@ -6,6 +7,12 @@ export interface ILabel extends LabelInfo {
   created_at?: string;
   updated_at?: string;
 }
+
+// `implements ILabel` only checks the class; it contributes no members, so every
+// field declared solely on ILabel read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Label extends EntityMerge<ILabel> {}
 
 export class Label extends APIEntity<Label> implements ILabel {
   public label!: string;
@@ -37,7 +44,7 @@ export class Label extends APIEntity<Label> implements ILabel {
     return 'label';
   }
 
-  static isType<U extends APIEntity<U>>(this: { new (): U; type: string }, entity: APIEntity<any> | null): entity is U {
+  static isType<U extends APIEntity<U>>(this: { new (): U; type: string }, entity: AnyEntity | null): entity is U {
     return entity !== null && entity.constructor === this;
   }
 

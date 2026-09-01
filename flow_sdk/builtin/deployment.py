@@ -38,7 +38,7 @@ from pydantic import PrivateAttr, field_validator
 from flow_sdk._compat import UTC
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
-from flow_sdk.builtin.cloud_origin import CloudOrigin
+from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin
 from flow_sdk.core import Entity, action
 from flow_sdk.schema.types import EntityType
 from flow_sdk.worldview.models import (
@@ -48,7 +48,7 @@ from flow_sdk.worldview.models import (
     DeploymentStatus,
     DeploymentTarget,
 )
-from flow_sdk.worldview.ontology import normalize_kind
+from flow_sdk.worldview.ontology import KindStr, normalize_kind
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.agent import Agent
@@ -72,7 +72,7 @@ class Deployment(Entity):
 
     type: str = APIField(default=EntityType.DEPLOYMENT.value)
     name: str = APIField(description="Display name")
-    kind: str = APIField(description="Open dot-path ontology kind — WHAT is placed")
+    kind: KindStr = APIField(description="Open dot-path ontology kind — WHAT is placed")
     artifact_id: str | None = APIField(default=None, description="Referenced Artifact (not the parent)")
     artifact_link_source: ArtifactLinkSource | None = APIField(default=None)
     target: DeploymentTarget = APIField(description="Provider placement target — WHERE it runs")
@@ -272,7 +272,7 @@ class Deployment(Entity):
         new deployable element needs no change here. ``TypeId`` has no
         ``.parse`` — the constructor does the parsing.
         """
-        from flow_sdk.api.type_id import TypeId  # noqa: PLC0415
+        from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         if self._element is not None:
@@ -516,11 +516,6 @@ class Deployment(Entity):
         })
 
     # ── validators ────────────────────────────────────────────────────────
-
-    @field_validator("kind", mode="before")
-    @classmethod
-    def _valid_kind(cls, value: Any) -> str:
-        return normalize_kind(value)
 
     @field_validator("artifact_id", mode="before")
     @classmethod

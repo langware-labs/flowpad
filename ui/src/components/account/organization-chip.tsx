@@ -1,4 +1,4 @@
-import { APIEntity, TypeId } from '@sdk';
+import { APIEntity, TypeId, type AnyEntity } from '@sdk';
 import { useMemo } from 'react';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -17,7 +17,7 @@ interface OrganizationChipProps {
  */
 export function OrganizationChip({ orgId, role }: OrganizationChipProps) {
   const typeId = useMemo(() => new TypeId('organization', orgId), [orgId]);
-  const { data: org } = useEntity<APIEntity<any>>(typeId);
+  const { data: org } = useEntity<AnyEntity>(typeId);
   const Icon = iconForType('organization');
   const name = (org as any)?.name || 'Organization';
 

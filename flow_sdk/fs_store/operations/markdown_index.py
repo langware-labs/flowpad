@@ -6,7 +6,6 @@ These replace the instance/class methods that used to live on
   * Per-entity data-dir helpers
     (``entity_data_dir``, ``file_summaries_dir``, ``file_summary_path``)
   * ``from_markdown`` — parse a markdown string into a Record
-  * ``write_frontmatter_fields`` — rewrite on-disk frontmatter merging updates
   * ``default_body`` — stub index.md for a newly created entity
   * ``read_inputs_hash`` — convenience accessor for frontmatter inputs_hash
 
@@ -26,7 +25,6 @@ from flow_sdk.fs_store.record_paths import get_default_records_data_root
 from flow_sdk.fs_store.record_types import RecordType
 
 from flow_sdk.fs_store.indexer._frontmatter import (
-    _extract_body,
     _extract_frontmatter,
     _render_frontmatter,
     _yaml_load,
@@ -105,7 +103,7 @@ def from_markdown(text: str, path: Path | None = None) -> FSRecord:
     """
     from flow_sdk.fs_store.indexer.functions.markdown import parse_markdown_text  # noqa: PLC0415
 
-    from flow_sdk.fs_store.identifier import adopt_entity_id, mint_uuid  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import adopt_entity_id, mint_uuid  # noqa: PLC0415
 
     data = parse_markdown_text(text, path=path)
     data["asset_type"] = "markdown_index"
@@ -161,29 +159,3 @@ def read_inputs_hash(rec: FSRecord) -> str:
     return str(getattr(rec, "inputs_hash", "") or "")
 
 
-def write_frontmatter_fields(rec: FSRecord, updates: dict[str, Any]) -> None:
-    """Rewrite the on-disk ``index.md`` frontmatter merging ``updates``.
-
-    Body is preserved verbatim. Caller is responsible for sync_to_db after.
-    """
-    ar = rec._asset_ref if hasattr(rec, "_asset_ref") else None
-    if ar is None or not ar.exists():
-        return
-    text = Path(ar._path).read_text(encoding="utf-8")
-    fm = _extract_frontmatter(text)
-    body = _extract_body(text)
-    parsed: dict[str, Any] = {}
-    if fm:
-        loaded = _yaml_load(fm)
-        if isinstance(loaded, dict):
-            parsed.update(loaded)
-    parsed.update(updates)
-    Path(ar._path).write_text(
-        _render_frontmatter(parsed)
-        + "\n\n"
-        + body
-        + ("\n" if body and not body.endswith("\n") else ""),
-        encoding="utf-8",
-    )
-    for key, value in updates.items():
-        setattr(rec, key, value)

@@ -21,20 +21,16 @@ would have to stay byte-identical by convention, with nothing enforcing it.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any
 
-from flow_sdk.llm_index.core import sha256_bytes
-from flow_sdk.semantic_lock.targets import canonical_entity_bytes
-
-if TYPE_CHECKING:  # pragma: no cover
-    from flow_sdk.ingest.models import IngestItem
+from flow_sdk.fs_store.serializer.db import digest_over
 
 #: The fields that define a record's identity-as-content. Adding one changes
 #: every digest and re-writes the corpus once; that is a deliberate act, which
 #: is why the list is explicit and lives here rather than being derived.
 DIGESTED_FIELDS: tuple[str, ...] = (
     "kind",
-    "title",
+    "name",
     "body",
     "occurred_at",
     "author_external_id",
@@ -44,7 +40,6 @@ DIGESTED_FIELDS: tuple[str, ...] = (
 )
 
 
-def content_digest(item: "IngestItem") -> str:
-    """Stable sha256 over the normalized fields of ``item``."""
-    payload = {name: getattr(item, name, None) for name in DIGESTED_FIELDS}
-    return sha256_bytes(canonical_entity_bytes(payload))
+def content_digest(item: Any) -> str:
+    """Stable sha256 over the normalized fields of an item."""
+    return digest_over(item, DIGESTED_FIELDS)

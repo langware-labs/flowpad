@@ -29,10 +29,11 @@ from flow_sdk.api.api_types.api_field import APIField, EntityField, NoDbBField, 
 from flow_sdk.api.api_request import APIRequest
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.builtin.faas.codebase import AppCodebase
-from flow_sdk.builtin.faas.serve_static import AppNotBuilt, serve_app_bytes
+from flow_sdk.builtin.faas.serve_static import ASSET_CACHE_CONTROL, AppNotBuilt, serve_app_bytes
 from flow_sdk.core import Entity, action
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.request_context.methods import get_current_request_info
+from flow_sdk.worldview.ontology import KindStr
 from flow_sdk.utils import ROOT_FOLDER
 
 
@@ -45,6 +46,10 @@ class AppLocationType(StrEnum):
     # synchronous path join — resolving a GitOrigin per request would put a
     # checkout lookup in front of every asset fetch.
     Artifact = "Artifact"
+    # A webapp REPO ASSET on disk: ``asset_ref`` is the app folder, ``build``
+    # names the served subdir inside it. We start the app folder, we serve the
+    # build — so the row needs both, and neither is ``location_root``.
+    Asset = "Asset"
 
 
 def get_micro_apps_root() -> Path:
@@ -72,6 +77,13 @@ class MicroApp(Entity):
         description="Artifact this delivers (the source plane); None for standalone folder/builtin apps",
     )
     project_id: Optional[str] = APIField(default=None, description="Owning project, mirroring the Artifact's", sharing=Sharing.PRIVATE)
+    #: The app FOLDER on disk for an asset-backed app, stamped by the indexer.
+    #: A plain string, not an FSRef — same shape as ``Dataset.asset_ref``. Empty
+    #: for the imperative ``flow app serve`` rows, which have no asset of their own.
+    asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
+    description: Optional[str] = APIField(default=None, description="What the app is, for the asset browser")
+    kind: KindStr = APIField(default="application.web", description="Dot-path ontology kind")
+    build: str = APIField(default=".", description="Served subdir inside the app folder")
 
     name: str = EntityField(sharing=Sharing.SHARED)
     # NOT unique. It was, from when a micro-app name WAS its hostname and the
@@ -130,8 +142,19 @@ class MicroApp(Entity):
 
         Folder/Builtin keep their historical ``public/`` convention. An
         Artifact-backed app serves straight out of its build output — a `dist/`
-        produced by a normal frontend toolchain has no `public/` inside it.
+        produced by a normal frontend toolchain has no `public/` inside it. An
+        Asset-backed app is the same idea addressed from the asset instead of a
+        resolved-once absolute path: ``<app folder>/<build>``.
         """
+        if self.location_type == AppLocationType.Asset:
+            if not self.asset_ref:
+                raise AppNotBuilt("<unset>")
+            # No existence check here: ``serve_app_bytes`` already answers a
+            # missing directory with the same ``AppNotBuilt`` ("run the build"),
+            # exactly as it does for the Artifact branch below. Checking here too
+            # would stat the tree again on every single served file.
+            return Path(self.asset_ref) / (self.build or ".")
+
         if self.location_type == AppLocationType.Artifact:
             if not self.location_root:
                 raise AppNotBuilt("<unset>")
@@ -146,6 +169,28 @@ class MicroApp(Entity):
         if self.location_type == AppLocationType.Builtin:
             root = root / (env_segment or "graph") / "ui"
         return root / "public"
+
+    @property
+    def cache_control(self) -> str:
+        """The Cache-Control every serve route on this row answers with.
+
+        An asset-backed app is a folder under edit, not a released bundle with
+        content-hashed filenames: its `app.js` keeps one name across every edit,
+        so a heuristically-cached copy is the previous version.
+        """
+        return "no-cache" if self.location_type == AppLocationType.Asset else ASSET_CACHE_CONTROL
+
+    def is_file_backed(self) -> bool:
+        """Only an ``Asset``-backed app is a folder asset; the rest are DB-only.
+
+        ``micro_app`` is a repo type because a webapp CAN be an asset on disk.
+        A row registered by ``flow app serve`` is not one: it delivers the build
+        output of a folder somewhere in the user's checkout and has no asset of
+        its own. Without this, saving such a row would compute an ``asset_ref``
+        under ``agentic-assets/webapp/`` and materialize an empty folder there
+        for an app whose files live somewhere else entirely.
+        """
+        return self.location_type == AppLocationType.Asset
 
     @classmethod
     async def get_by_name(cls, name: str) -> Optional["MicroApp"]:
@@ -166,6 +211,7 @@ class MicroApp(Entity):
             api_request.sub_path,
             request,
             api_url_scheme=default_service_config.service_urls_config.api_url_scheme,
+            cache_control=self.cache_control,
         )
 
     async def view_external_domain(self, request: Request) -> Response:
@@ -186,4 +232,5 @@ class MicroApp(Entity):
             # console path relative asset URLs need <base> to resolve.
             inject_base=not request_info.is_micro_app_request(),
             api_url_scheme=default_service_config.service_urls_config.api_url_scheme,
+            cache_control=self.cache_control,
         )

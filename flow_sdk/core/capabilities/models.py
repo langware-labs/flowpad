@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from flow_sdk._compat import StrEnum
+from flow_sdk.schema.data_spec import SpecType, to_authoring_form
 from flow_sdk.tags.grammar import tag_is_within
 
 
@@ -83,16 +84,29 @@ def is_mcp_capability_kind(kind: str) -> bool:
     return len(parts) >= 3 and parts[1] == MCP_CAPABILITY_INFIX
 
 
+def _spec_kind(spec: SpecType | None) -> str | None:
+    """The registered kind of a named value spec; object forms have no kind."""
+    form = to_authoring_form(spec) if spec is not None else None
+    return form if isinstance(form, str) else None
+
+
 class CapabilitySpec(BaseModel):
     name: str
     kind: str
     description: str = ""
     icon: str = "BadgeCheck"
     homepage_url: str | None = None
-    # Static type of this capability's discovered ``value`` — a RecordType
-    # value (e.g. "folder" for CLI harnesses, whose value is the bin dir
-    # serialized as an FSRef dict). None → no typed value (pure status).
-    value_type: str | None = None
+    # The shape of this capability's discovered ``value`` — a ``DataSpec``
+    # (``DataSpec.parse("fs_ref")`` for CLI harnesses, whose value is the bin
+    # dir as an FSRef dict). None → no typed value (pure status).
+    value_spec: SpecType | None = None
+
+    @property
+    def value_type(self) -> str | None:
+        """The spec's kind — what the persisted row and the UI call ``value_type``.
+        A shape with no name (an object form) has no type string."""
+        return _spec_kind(self.value_spec)
+
     dependent_capability_kinds: list[str] = Field(default_factory=list)
     # Whether FlowPad can actually USE this capability once available. True for
     # everything FlowPad runs (harness CLIs, browsing, MCP for executor worker
@@ -142,15 +156,21 @@ class CapabilityCheck(BaseModel):
 class CapabilityValue(BaseModel):
     """A capability's discovered, typed value.
 
-    ``value is None`` ⇔ the capability is absent. ``value_type`` is the
-    spec's static RecordType (e.g. "folder" → ``value`` is an FSRef dict of
-    the CLI's bin directory). Produced by ``discover()`` sweeps, held in the
-    discovery module's global dict, and mirrored onto the Capability entity
-    row so the capabilities window shows exactly what workers consume.
+    ``value is None`` ⇔ the capability is absent. ``spec`` describes the
+    value's shape (``fs_ref`` → ``value`` is an FSRef dict of the CLI's bin
+    directory); ``value_type`` is its kind, kept as the name the persisted row
+    and the UI read. Produced by ``discover()`` sweeps, held in the discovery
+    module's global dict, and mirrored onto the Capability entity row so the
+    capabilities window shows exactly what workers consume.
     """
 
     kind: str
     value: Any | None = None
-    value_type: str | None = None
+    spec: SpecType | None = None
+
+    @property
+    def value_type(self) -> str | None:
+        return _spec_kind(self.spec)
+
     message: str = ""
     discovered_at: str = Field(default_factory=now_iso)

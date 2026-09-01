@@ -6,7 +6,7 @@ import uuid
 from typing import Any
 
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.wiki import Wiki, WikiEntry
 from flow_sdk.core.entity.entity_model import Entity

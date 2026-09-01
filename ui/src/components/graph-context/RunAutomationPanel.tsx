@@ -2,7 +2,7 @@ import { forwardRef, useCallback, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { AgenticProcess, GraphContext, ProcessKind, TypeId, isTypeId, type AssetDescriptor } from '@sdk';
 import { AssetManagerPopover, RUNNABLE_ASSETS } from '@src/components/asset-manager/AssetManagerPopover';
-import { displayLabelForTypeid, parseTypeid } from '@src/components/asset-manager/asset-row-helpers';
+import { displayLabelForDescriptor, parseTypeid } from '@src/components/asset-manager/asset-row-helpers';
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { SideDrawer } from '@src/components/ui/side-drawer';
 import { CollapsedSideRail } from '@src/components/ui/collapsed-side-rail';
@@ -43,7 +43,7 @@ export function RunAutomationPanel({ ctx }: { ctx: GraphContext }) {
   const handlePick = useCallback((d: AssetDescriptor) => {
     pendingRef.current = d;
     const { type } = parseTypeid(d.typeid);
-    const name = displayLabelForTypeid(d.typeid);
+    const name = displayLabelForDescriptor(d);
     setInstruction(
       type === 'subagent'
         ? t`Act as the "${name}" agent and work on the current context.`

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.functions.agent import parse_agent_markdown
+from tests.unit.agent._parse import parse_agent_markdown
 from flow_sdk.schema.type_info.agent_type_info import AGENT
 
 Q_ROOT = Path(__file__).parents[3] / "agentic-assets" / "agent" / "q"

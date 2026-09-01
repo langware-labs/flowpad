@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Editor } from '@milkdown/core';
 import { editorViewCtx } from '@milkdown/core';
 import { linkSchema } from '@milkdown/preset-commonmark';
-import { APIEntity, dataManager, TypeId } from '@sdk';
+import { APIEntity, dataManager, TypeId, type AnyEntity } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -119,7 +119,7 @@ export function WikiLinkInsertDialog({
     if (!sourceTypeId) return; // unindexed doc — sync_to_db will pick it up later
     try {
       const sourceTid = new TypeId(sourceTypeId);
-      const sourceEntity = await dataManager.getByTypeId<APIEntity<APIEntity<unknown>>>(sourceTid);
+      const sourceEntity = await dataManager.getByTypeId<AnyEntity>(sourceTid);
       if (sourceEntity && typeof sourceEntity.reindex === 'function') {
         await sourceEntity.reindex();
       }
@@ -160,7 +160,7 @@ export function WikiLinkInsertDialog({
     const name = pendingName.trim();
     if (!name) return;
     try {
-      const entity = await dataManager.getByTypeId<APIEntity<APIEntity<unknown>>>(stage.targetTypeId);
+      const entity = await dataManager.getByTypeId<AnyEntity>(stage.targetTypeId);
       if (entity) {
         (entity as { name?: string }).name = name;
         await entity.save();

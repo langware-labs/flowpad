@@ -7,7 +7,7 @@
 ## The decision, as one falsifiable question
 
 > **Is there an installed spec whose `name` resolves to a driver AND whose
-> `config_schema` can express the thing the user named, as a segment?**
+> `config` can express the thing the user named, as a segment?**
 
 Yes → reuse it. No → `modes/author.md`. "Close enough" is not reuse.
 
@@ -18,15 +18,44 @@ Yes → reuse it. No → `modes/author.md`. "Close enough" is not reuse.
 | blog, newsletter, podcast, feed, any URL ending `feed`/`rss`/`atom`/`.xml` | `rss` |
 | repo, this project's commits, a branch | `git` |
 | a folder, this directory, files on my disk | `folder` |
-| my email, mailbox, gmail | three transports differing only in credential — **ask which account**, do not guess |
+| my email, mailbox, gmail, my inbox | `agent` — see below. Only ask when no harness can run |
 | a Slack channel (`C…`) | `slack` |
 
 A local git checkout is `git` if they care about commits and `folder` if they
 care about files. Ask only when the answer changes the config.
 
+## Mail: pick the transport, do not put it to the user
+
+Three sources can read a mailbox, and they differ by **who holds the credential**
+— which is a fact you can check, not a preference to poll the user about.
+
+`agent` is the answer whenever a harness can run. Its fetch is a worker, so it
+reads the mailbox through a connector the person **already authorised** in their
+harness: nothing to paste, nothing to configure, no OAuth round trip. Confirm the
+harness rather than assume it — `ensure_launchable(<harness>)` is the same cheap
+pre-flight the driver itself runs, and a missing or logged-out harness is exactly
+the case where the three-way question becomes real.
+
+```json
+{"provider": "agent", "config": {"connector": "gmail", "harness": "claude",
+                                 "segments": ["INBOX"]}}
+```
+
+* **`connector` is the channel AND half of every thread key.** Leaving it empty
+  forks every thread in the mailbox, permanently — there is no repair pass.
+* **`harness`** is the worker CLI that runs the fetch. Without a launchable one
+  the source parks on `config_error`, which reads like a broken mailbox and is
+  not one.
+* `segments` defaults to `INBOX`; `max_items` (advanced) caps a single run.
+
+Reach for `cloud_email` or `agentmail` only when the person names a mailbox the
+hub allocates, or when no harness is available. `references/process-sdk.md` has
+what else is true of a source whose fetch is a process — in particular why its
+sync result reports zero created rows on success.
+
 ## Filling `config` without interrogating the user
 
-Walk `config_schema` in declaration order — that is the form order.
+Walk `config` in declaration order — that is the form order.
 
 - **Ask only** for fields that are `required: true` **and** not derivable from
   what the user already said. Never ask about `advanced: true` fields.
@@ -52,3 +81,9 @@ Walk `config_schema` in declaration order — that is the form order.
 Derive a human name from the request ("Hacker News — top stories") and confirm it
 in the same breath as the one field you genuinely need. A separate turn to ask
 for a display name is a turn wasted.
+
+<!-- flowpad:capsule identity
+version: 1
+data:
+  id: ab90dccb-3576-434c-8e47-3b8004724abc
+flowpad:endcapsule identity -->

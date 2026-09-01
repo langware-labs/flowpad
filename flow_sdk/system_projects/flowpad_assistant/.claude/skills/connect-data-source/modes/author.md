@@ -23,8 +23,11 @@ folder asset, not SDK code — nothing is edited in `flow_sdk`.
 ```
 
 The runtime is derived from the folder, never declared: `fetch.py` ⇒ script,
-`FETCH.md` ⇒ agent, **both ⇒ a load error**, neither ⇒ a builtin resolved by
-`name`. Read `docs/data-management/data-source-asset.md` for the manifest
+neither ⇒ a builtin resolved by `name`. `FETCH.md` is **reserved and refused at
+load** — a folder carrying one indexes as a valid spec and then fails every poll,
+so write `fetch.py`. A source that should fetch through a worker is not authored
+at all: it is the shipped `agent` transport, configured per
+`references/mapping.md`. Read `docs/data-management/data-source-asset.md` for the manifest
 rules before writing one; the ones that bite:
 
 - `name` must not collide with an installed source — a collision is refused and
@@ -71,6 +74,30 @@ Responses:
 
 Use the standard library only unless the user accepts a dependency; the module
 runs as a plain subprocess with no package management.
+
+## Shipping an editor with the source
+
+A definition's editor is a **webapp asset nested inside the definition** —
+nothing more. Put it at `<spec folder>/agentic-assets/webapp/editor/`:
+
+```
+<spec folder>/data_source.json
+<spec folder>/agentic-assets/webapp/editor/webapp.json   {"name":"editor","kind":"application.web.editor","build":"."}
+<spec folder>/agentic-assets/webapp/editor/index.html
+<spec folder>/agentic-assets/webapp/editor/app.js        import { mountSourceEditor } from '/sdk/flowpad-sdk.js'; mountSourceEditor();
+```
+
+Nothing registers it: a nested asset is a child of the asset it sits in, so
+re-indexing makes it the definition's app. `kind: application.web.editor` is
+what makes the Data Sources menu offer "Open editor"; the app is served and
+addressed like any other webapp (`/dock/app/micro_app-<id>`), and its address
+bar reads `Project / <definition> / editor`.
+
+`mountSourceEditor()` is the shipped editor (config form + items + dataset
+pane) — the nine bundled definitions each carry those three lines. To write a
+different one, copy `web-app-builder/template-flowpad` into that folder instead
+and call `sdk.resolveAppHost()`; its `subject` is the definition you are editing.
+A definition with no such folder simply has no editor.
 
 ## After writing
 

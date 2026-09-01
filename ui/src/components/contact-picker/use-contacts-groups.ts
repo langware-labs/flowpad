@@ -35,7 +35,7 @@ export function filterGroups(groups: ContactsGroup[], query: string): ContactsGr
 export function mergeGroupMembers(
   current: ConversationParticipant[],
   members: ConversationParticipant[],
-  excludeUserId?: string,
+  excludeUserId?: string | null,
 ): ConversationParticipant[] {
   const seen = new Set(current.map(participantKey).filter(Boolean));
   const next = [...current];

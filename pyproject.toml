@@ -98,6 +98,8 @@ include = ["flow_sdk*"]
     "system_projects/**/*",
     "system_projects/**/.claude/**/*",
     "server/static/**/*",
+    # Builtin asset editors (SDK apps declared through TypeMetadata.editors).
+    "assets/editors/**/*",
     # Type icons addressed by path from TypeInfo.icon — see server/icons/README.
     "server/icons/**/*",
     # Separately-signed standalone flow-rs binaries (macOS universal2 +

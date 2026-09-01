@@ -2,8 +2,8 @@
 
 from flow_sdk.api import messages as current_messages
 from flow_sdk.api.api_types import messages as compatibility_messages
-from flow_sdk.api.api_types.type_id import TypeId as CompatibilityTypeId
-from flow_sdk.api.type_id import TypeId as CurrentTypeId
+from flow_sdk.fs_store.type_id import TypeId as CompatibilityTypeId
+from flow_sdk.fs_store.type_id import TypeId as CurrentTypeId
 from flow_sdk.core.network import resource_tracker
 
 ENTITY_ID = "10000000-0000-4000-8000-000000000001"

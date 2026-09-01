@@ -28,16 +28,16 @@ import { ViewType } from '@src/types/ViewType';
 import { Bookmark as BookmarkIcon, Copy, FolderOpen, Save, Send, ShieldOff, StickyNote, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { notify } from '@src/notifications';
 import './milkdown.css';
 import { planNotePlugins } from './plan-note-plugin';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { fileShareSource, genericEntityShareSource } from '@src/hooks/share-sources';
+import { parseFrontmatterDoc } from '@sdk/fs/frontmatter-parse';
 
 function parseFrontmatter(raw: string): { executed: boolean; body: string } {
-  const m = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-  if (!m) return { executed: false, body: raw };
-  const executed = /^executed:\s*true$/m.test(m[1]);
-  return { executed, body: m[2] };
+  const doc = parseFrontmatterDoc(raw);
+  return { executed: doc.fields.executed === 'true', body: doc.body };
 }
 
 export const SpecEditor: React.FC = () => {
@@ -161,13 +161,21 @@ const PlanFileEditor: React.FC = () => {
   // re-discard dirty edits.
   const fsRef = useRef(fs);
   fsRef.current = fs;
+  // Held in a ref for the same reason as `fs`: a locale change must not
+  // re-run the refetch effect and discard the user's edits a second time.
+  const tRef = useRef(t);
+  tRef.current = t;
   const computeNodeId = computeNodeTypeId?.id ?? null;
   useEffect(() => {
     if (!filePath || !computeNodeId || !fsRef.current) return;
     setFetchState('loading');
     void fsRef.current
       .refetch(filePath)
-      .then(() => setFetchState('loaded'))
+      .then(({ discardedDirty }) => {
+        // The SDK reports the discarded edits; telling the user is ours.
+        if (discardedDirty) notify.warning({ title: tRef.current`Discarded unsaved edits`, message: filePath });
+        setFetchState('loaded');
+      })
       .catch((error) => {
         console.error('[SpecEditor] Error refetching plan:', filePath, error);
         setFetchState('error');

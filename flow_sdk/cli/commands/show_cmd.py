@@ -158,3 +158,35 @@ def show_webapp(
     if port <= 0 or port > 65535:
         _fail(EXIT_INVALID_ARG, "INVALID_PORT", f"Invalid port: {port}")
     _post_show(process, {"port": port})
+
+
+@show_app.command(
+    "app",
+    help="Show an app by its artifact id (runtime is derived: dev server, or built output).",
+)
+def show_app_cmd(
+    artifact_id: Annotated[
+        str,
+        typer.Argument(help="Artifact id of the app (bare uuid, or the artifact-<uuid> typeid)."),
+    ],
+    process: Annotated[Optional[str], typer.Option("--process", "-p", help=_PROCESS_HELP)] = None,
+) -> None:
+    """Show an app the agent already built or registered.
+
+    Distinct from ``show webapp --port`` on purpose: the ARTIFACT is the address,
+    and which runtime serves it — a live dev server, or built output we host — is
+    resolved server-side at show time. So this keeps working across a rebuild, a
+    restart, or a switch from dev to a built deployment, where a pinned port does
+    not.
+
+    A bare uuid or the full ``artifact-<uuid>`` typeid are both accepted; the
+    backend's own validation decides whether it names a real artifact (404 if not).
+    """
+    value = (artifact_id or "").strip()
+    if not value:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARTIFACT_ID", "Empty artifact id")
+    # Accept the typeid spelling as a convenience — it is what `flow show`'s own
+    # output and the dock URL both use, so round-tripping one must not need an edit.
+    if value.startswith("artifact-"):
+        value = value[len("artifact-") :]
+    _post_show(process, {"artifact_id": value})

@@ -116,7 +116,7 @@ def _kill_instance_processes(name: str, *, backend_only: bool) -> list[int]:
     for key in port_keys:
         raw = env.get(key, "")
         if raw.isdigit():
-            extra = procs.kill_port_if_owned(int(raw), name, table)
+            extra = procs.kill_port_if_owned(int(raw), name, table, roles=roles)
             result.killed.extend(extra.killed)
             result.survivors.extend(extra.survivors)
 

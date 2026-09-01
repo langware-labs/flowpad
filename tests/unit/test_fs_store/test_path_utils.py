@@ -134,3 +134,26 @@ def test_deepest_mount_owns_a_file_inside_a_nested_system_project(tmp_path: Path
     mounts = tuple(sorted(mounts, key=lambda m: len(m[0]), reverse=True))
 
     assert deepest_project_id_for_path(canonical_posix_path(str(doc)), mounts) == "assistant-project"
+
+
+def test_temp_root_itself_is_never_a_valid_project_cwd():
+    """The system temp ROOT is a temp path, not just its descendants.
+
+    Regression: `_TEMP_PREFIXES` only carried trailing-slash forms ("/tmp/"),
+    so `is_temp_path("/tmp")` was False and `/private/tmp` passed
+    `is_valid_project_cwd`. A project rooted at the temp root makes the
+    indexer recursively walk every other process's scratch files — on one
+    machine that pulled 1782 throwaway SKILL.md files into the skill corpus
+    and pushed a per-type index from ~3s to 25s.
+    """
+    from flow_sdk.fs_store.path_utils import is_valid_project_cwd
+    from flow_sdk.utils.file_system import is_temp_path
+
+    for root in ("/tmp", "/private/tmp", "/var/folders", "/private/var/folders"):
+        assert is_temp_path(root) is True, root
+        assert is_valid_project_cwd(root) is False, root
+
+    # Descendants stay caught, and ordinary paths stay valid.
+    assert is_temp_path("/private/tmp/anything") is True
+    assert is_valid_project_cwd("/private/tmp/anything") is False
+    assert is_temp_path("/Users/someone/code/project") is False

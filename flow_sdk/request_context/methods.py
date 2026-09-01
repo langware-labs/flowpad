@@ -16,7 +16,7 @@ from flow_sdk.request_context.execution_context import get_execution_context
 
 # Note: These are flow-cli paths, not FlowPad
 from flow_sdk.config import default_service_config
-from flow_sdk.api.api_types.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -120,38 +120,15 @@ def get_entity_embedded_storage(typeid: TypeId, parent_storage: StorageDriver | 
 
 
 def get_entity_storage(typeid: TypeId, parent_storage: StorageDriver | None = None, entity: Any = None):
-    """
-    Get the FS storage driver for an entity.
+    """The storage service's resolution, with the REQUEST-scoped embedded store
+    as the fallback instead of the service's temp folder."""
+    from flow_sdk.storage.entity_storage_service import (  # noqa: PLC0415
+        get_entity_storage as service_entity_storage,
+    )
 
-    Resolution order:
-    1. Entity fs_storage_provider field (if set)
-    2. Embedded storage (default fallback)
-
-    Args:
-        typeid: The entity's TypeId
-        parent_storage: Optional parent storage driver
-        entity: Optional entity instance for property-based storage resolution
-    """
-    from flow_sdk.core.fs.drivers.storage_mount import StorageMount
-    from flow_sdk.core.fs.flow_fs import get_storage_driver
-
-    # Check entity for storage provider field
-    if entity is not None:
-        storage_provider = getattr(entity, "fs_storage_provider", None)
-        if storage_provider is not None:
-            config = get_current_service_config()
-            mount_path = getattr(entity, "fs_storage_mount_path", None) or config.sandbox_storage_mount_path
-            mount = StorageMount(
-                name=f"{typeid.type}_storage",
-                provider=storage_provider,
-                storage_path=mount_path,
-            )
-            driver = get_storage_driver(mount)
-            driver.root_entity_typeid = typeid
-            return driver
-
-    # Fall back to embedded storage
-    return get_entity_embedded_storage(typeid, parent_storage)
+    return service_entity_storage(
+        typeid, entity=entity, fallback=lambda tid: get_entity_embedded_storage(tid, parent_storage)
+    )
 
 
 test_sod_override = None

@@ -15,14 +15,14 @@ import pytest
 
 from flow_sdk.capsules import AssetCapsule, CapsuleSpec
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identity_backend import CapsuleIdentityBackend
+from flow_sdk.fs_store.indexer._frontmatter import read_frontmatter_id
+from flow_sdk.fs_store.identity_carrier import FolderJsonCarrier
 from flow_sdk.fs_store.indexer.functions._asset_identity import folder_capsule_id
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
     read_folder_capsule_id,
     write_folder_capsule_id,
 )
 from flow_sdk.fs_store.indexer.functions.skill import (
-    extract_skill,
     skill_id_from_name,
 )
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
@@ -33,16 +33,16 @@ V7 = "018f0000-0000-7000-8000-000000000000"
 _CAPSULE_INFO = TypeInfo(
     type_name="capsule_probe", main_layout="folder",
     capsules=(CapsuleSpec("identity", 1),),
-    identity_backend=CapsuleIdentityBackend(legacy_readers=(folder_capsule_id,)),
+    identity_carrier=FolderJsonCarrier(legacy=(folder_capsule_id,)),
 )
 
 
 def _folder_mint(path: Path) -> str:
-    return _CAPSULE_INFO.mint_entity_id(path, derive=True, overwrite=True)
+    return _CAPSULE_INFO.mint_entity_id(path)
 
 
 def _skill_mint(path: Path) -> str:
-    return SchemaRegistry.get("skill").mint_entity_id(FSRef(path), derive=True, overwrite=True)
+    return SchemaRegistry.get("skill").mint_entity_id(FSRef(path))
 
 
 def _ver(u: str) -> int:
@@ -120,7 +120,8 @@ def test_skill_roundtrips_via_capsule_not_name(tmp_path: Path) -> None:
     sid = _skill_mint(sk)
     assert _ver(sid) == 4
     assert sid != skill_id_from_name("deploy"), "must NOT be uuid5(skill:name)"
-    assert AssetCapsule.from_path(sk).read("identity").data["id"] == sid
+    assert read_frontmatter_id(sk / "SKILL.md") == sid, "SKILL.md is the skill's identity carrier"
+    assert AssetCapsule.from_path(sk).read("identity") is None
     # rename the skill folder → id survives (pre-refactor would re-derive uuid5(new-name))
     sk2 = tmp_path / "skills" / "renamed"
     sk.rename(sk2)
@@ -150,7 +151,7 @@ def test_indexing_skill_md_file_paths_dont_collide(tmp_path: Path) -> None:
         md.parent.mkdir(parents=True)
         md.write_text(f"---\nname: {nm}\n---\n\nbody {nm}", encoding="utf-8")
         resolved_id = _skill_mint(md)
-        ids.add(extract_skill(FSRef(md), resolved_id)[0].id)  # FILE path, as the CLI passes
+        ids.add(SchemaRegistry.get("skill").from_disk_fn(FSRef(md), resolved_id)[0].id)  # FILE path, as the CLI passes
     assert len(ids) == 2, f"distinct skill folders collided on one id: {ids}"
 
 
@@ -162,5 +163,5 @@ def test_yaml_only_skill_persists_capsule_id(tmp_path: Path) -> None:
     (sk / "skill.yaml").write_text("name: y\n", encoding="utf-8")
     sid = _skill_mint(sk)
     assert _ver(sid) == 4
-    assert AssetCapsule.from_path(sk).read("identity").data["id"] == sid
+    assert AssetCapsule.from_path(sk).read("identity").data["id"] == sid, "no SKILL.md: the folder json carries"
     assert _skill_mint(sk) == sid, "idempotent for yaml skills too"

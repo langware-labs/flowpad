@@ -1,5 +1,9 @@
 """Type metadata for JOURNEY — folder-backed guided-onboarding document."""
-from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, folder_capsule_id
+from flow_sdk.fs_store.indexer.functions._asset_identity import (
+    IDENTITY_CAPSULE,
+    folder_capsule_id,
+    folder_json_identity,
+)
 from flow_sdk.fs_store.indexer.functions.journey import (
     extract_journey,
     journey_asset_hash,
@@ -24,6 +28,6 @@ JOURNEY = TypeMetadata(
     main_file="graph.json",
     from_disk_fn=extract_journey,
     capsules=(IDENTITY_CAPSULE,),
-    identity_backend=capsule_identity(folder_capsule_id, journey_id_from_folder),
+    identity_carrier=folder_json_identity(folder_capsule_id, journey_id_from_folder),
     asset_hash_fn=journey_asset_hash,
 )

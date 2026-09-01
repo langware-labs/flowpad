@@ -9,10 +9,10 @@ Importing that module here once per session reproduces the same init, so
 ``SchemaRegistry.get("markdown")`` etc. resolve — without it the indexer walk
 finds no registered type and skips every record.
 """
-import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — side-effect: register_all()
+import pytest_asyncio
 
 import flow_sdk.db.drivers.db_driver as db_driver_mod
-import pytest_asyncio
+import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — side-effect: register_all()
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_driver import DBConfig
 from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver

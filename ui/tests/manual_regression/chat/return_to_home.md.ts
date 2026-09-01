@@ -27,7 +27,10 @@ test.describe('Return to Home', () => {
     // Use CSS selector instead of getByRole — a Radix AlertDialog sets aria-hidden on
     // the page behind it, causing getByRole('heading') to fail while one is open.
     await expect(page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first()).toBeVisible();
-    expect(page.url()).toMatch(/\/dock\/home/);
+    // `/dock/home` is the dock spelling of the app root; the loader redirects it
+    // to the canonical `/` (load-dock-pointer.ts), so the root path is the
+    // address the home landing settles on.
+    expect(new URL(page.url()).pathname).toBe('/');
 
     // Validate the home session input is visible.
     // Home renders <SessionInput> inline as a textarea with

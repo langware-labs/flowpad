@@ -1,5 +1,5 @@
 import { APIEntity, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { DockPointerData } from '../models/DockPointer';
 
 export interface IClaudeMemory extends IEntity {
@@ -11,6 +11,12 @@ export interface IClaudeMemory extends IEntity {
   project_path?: string;
   project_encoded?: string;
 }
+
+// `implements IClaudeMemory` only checks the class; it contributes no members, so every
+// field declared solely on IClaudeMemory read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface ClaudeMemory extends EntityMerge<IClaudeMemory> {}
 
 /** Memory markdown file under `~/.claude/projects/<encoded>/memory/*.md`. */
 @registerEntity
@@ -38,6 +44,6 @@ export class ClaudeMemory extends APIEntity<ClaudeMemory> implements IClaudeMemo
 
   /** Default open target: the asset editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('claude_memory') ?? super.dockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 }

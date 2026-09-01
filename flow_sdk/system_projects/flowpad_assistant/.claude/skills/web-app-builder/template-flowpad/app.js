@@ -37,17 +37,23 @@ let projectTypeIdPromise = null;
  * of its own URL rather than being told, and rather than assuming the SDK's
  * default project (which is the backend's default, not this app's).
  */
+/**
+ * The project this app belongs to — and, when it is nested inside another asset,
+ * what that asset is.
+ *
+ * Both come from `sdk.resolveAppHost()`, which reads the app's own delivery row
+ * out of the page's path: `app` is this webapp, `subject` is the asset that
+ * CONTAINS it (null at top level). An editor nested in an asset uses `subject`
+ * to know what it edits — see the README.
+ */
 async function resolveProjectTypeId() {
-  const match = location.pathname.match(/micro_app\/([0-9a-f-]{36})/i);
-  if (match) {
-    try {
-      const app = await sdk.dataManager.getByTypeId(new sdk.TypeId('micro_app', match[1]));
-      if (app?.project_id) return new sdk.TypeId('project', app.project_id);
-    } catch (error) {
-      console.warn('[app] could not resolve owning project, falling back', error);
-    }
+  try {
+    const { app } = await sdk.resolveAppHost();
+    if (app?.project_id) return new sdk.TypeId('project', app.project_id);
+  } catch (error) {
+    // Served some other way (a dev server has no micro_app in its path).
+    console.warn('[app] could not resolve owning project, falling back', error);
   }
-  // Dev server (no micro_app in the URL): the SDK's current project.
   return sdk.dataContext.projectTypeId ?? null;
 }
 
@@ -89,6 +95,10 @@ formEl.addEventListener('submit', async (event) => {
 });
 
 async function main() {
+  // Adopt the host's light/dark theme from ?theme= before anything paints — a
+  // cross-origin page cannot read the class Flowpad sets on its own <html>, so
+  // without this a dark window shows a white app.
+  sdk.applyHostTheme();
   // Loads the type registry + current project/compute node. Entity calls
   // before this resolves will fail.
   await sdk.initSdk();

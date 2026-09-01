@@ -1,15 +1,7 @@
-import { create } from 'zustand';
+import { createOverlayStore } from './create-overlay-store';
 
-interface SpotlightStore {
-  open: boolean;
-  openSpotlight: () => void;
-  closeSpotlight: () => void;
-  toggleSpotlight: () => void;
-}
-
-export const useSpotlightStore = create<SpotlightStore>((set) => ({
-  open: false,
-  openSpotlight: () => set({ open: true }),
-  closeSpotlight: () => set({ open: false }),
-  toggleSpotlight: () => set((s) => ({ open: !s.open })),
-}));
+const store = createOverlayStore();
+export const useSpotlightStore = store.useStore;
+export const openSpotlight = store.open;
+export const closeSpotlight = store.close;
+export const toggleSpotlight = store.toggle;

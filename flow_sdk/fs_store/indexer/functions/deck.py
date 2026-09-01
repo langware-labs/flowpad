@@ -27,7 +27,7 @@ from typing import Any
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
     read_folder_capsule_id,
 )
@@ -62,7 +62,7 @@ def deck_id_from_folder(ref: FSRef | Path) -> object | None:
     cap = read_folder_capsule_id(path)
     if cap:
         return cap
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
 
     return adopt_entity_id(_load_manifest(path).get("id"))
 
@@ -106,7 +106,7 @@ def _resolve_template_ref(deck_dir: Path, manifest: dict[str, Any]) -> str | Non
     if info is None:
         return None
     try:
-        return info.mint_entity_id(FSRef(tpl_dir, record_type=RecordType.DECK_TEMPLATE))
+        return info.read_id(FSRef(tpl_dir, record_type=RecordType.DECK_TEMPLATE))
     except Exception:
         return None
 

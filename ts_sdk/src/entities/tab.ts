@@ -1,5 +1,5 @@
-import { APIEntity, dataManager, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { APIEntity, dataManager, registerEntity, type AnyEntity } from '../APIEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models';
 import { IDockPointer } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
@@ -197,6 +197,12 @@ export interface TabRow extends ITab {
   target_remote?: boolean;
 }
 
+// `implements ITab` only checks the class; it contributes no members, so every
+// field declared solely on ITab read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Tab extends EntityMerge<ITab> {}
+
 @registerEntity
 export class Tab extends APIEntity<Tab> implements ITab {
   static type: string = 'tab';
@@ -290,7 +296,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
   static async resolveDockTarget(dock: IDockPointer): Promise<{
     targetTypeId: TypeId | null;
     target:
-      | (APIEntity<any> &
+      | (AnyEntity &
           TerminalTargetFields & { project_id?: string | null; cwd?: string | null; workdir?: string | null })
       | null;
     projectId: string | null;
@@ -300,12 +306,12 @@ export class Tab extends APIEntity<Tab> implements ITab {
     let targetTypeId = dock.targetTypeId ?? null;
     const target = (
       targetTypeId
-        ? await dataManager.getByTypeId<APIEntity<any>>(targetTypeId).catch(() => null)
+        ? await dataManager.getByTypeId<AnyEntity>(targetTypeId).catch(() => null)
         : dock.vfsPath
-          ? await dataManager.getEntityByPath<APIEntity<any>>(dock.vfsPath.machinePath)
+          ? await dataManager.getEntityByPath<AnyEntity>(dock.vfsPath.machinePath)
           : null
     ) as
-      | (APIEntity<any> &
+      | (AnyEntity &
           TerminalTargetFields & { project_id?: string | null; cwd?: string | null; workdir?: string | null })
       | null;
     if (!targetTypeId && target) targetTypeId = target.typeId;

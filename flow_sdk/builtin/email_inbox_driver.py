@@ -20,6 +20,9 @@ from __future__ import annotations
 
 from typing import Any, Optional, Protocol, runtime_checkable
 
+from flow_sdk.builtin.secret_origin_driver import HUB_KIND_ALIASES
+from flow_sdk.utils.kind_registry import KindRegistry
+
 
 class EmailInboxError(Exception):
     """A mailbox backend refused or could not be reached.
@@ -36,14 +39,6 @@ class EmailInboxError(Exception):
         self.status_code = status_code
         self.reason = reason
         super().__init__(f"email inbox error {status_code}: {reason}")
-
-#: Spellings that mean the hub. Mirrors ``secret_origin_driver._KIND_ALIASES``,
-#: including the bare ``hub`` — the two families should not disagree about what
-#: "the hub" is called.
-_KIND_ALIASES = {
-    "hub": "flowpad-hub",
-    "flowpad_hub": "flowpad-hub",
-}
 
 
 @runtime_checkable
@@ -85,45 +80,18 @@ class EmailInboxDriver(Protocol):
         ...
 
 
-class EmailInboxDriverRegistry:
-    def __init__(self) -> None:
-        self._drivers: dict[str, EmailInboxDriver] = {}
-
-    def register(self, driver: EmailInboxDriver) -> None:
-        self._drivers[driver.kind] = driver
-
-    def kinds(self) -> list[str]:
-        return sorted(self._drivers)
-
-    def get(self, kind: str) -> EmailInboxDriver:
-        name = normalize_email_inbox_kind(kind)
-        try:
-            return self._drivers[name]
-        except KeyError as exc:
-            raise KeyError(f"Unknown email inbox kind: {kind!r}") from exc
-
-
-def normalize_email_inbox_kind(kind: Any) -> str:
-    key = str(kind or "").strip().lower()
-    return _KIND_ALIASES.get(key, key)
-
-
-def _build_default_registry() -> EmailInboxDriverRegistry:
+def _build_default_registry(registry: "KindRegistry[EmailInboxDriver]") -> None:
     from flow_sdk.builtin.drivers.hub_email_inbox_driver import HubEmailInboxDriver
 
-    registry = EmailInboxDriverRegistry()
     registry.register(HubEmailInboxDriver())  # the hub — it holds the credential
-    return registry
 
 
-_DEFAULT_REGISTRY: Optional[EmailInboxDriverRegistry] = None
+#: The hub's spellings are ``secret_origin_driver``'s — one table, two families.
+EMAIL_INBOX_DRIVERS: "KindRegistry[EmailInboxDriver]" = KindRegistry(
+    "email inbox", aliases=HUB_KIND_ALIASES, builder=_build_default_registry
+)
 
 
-def get_email_inbox_registry() -> EmailInboxDriverRegistry:
-    global _DEFAULT_REGISTRY
-    if _DEFAULT_REGISTRY is None:
-        _DEFAULT_REGISTRY = _build_default_registry()
-    return _DEFAULT_REGISTRY
 
 
 def get_email_inbox_driver(kind: Optional[str] = None) -> EmailInboxDriver:
@@ -138,4 +106,4 @@ def get_email_inbox_driver(kind: Optional[str] = None) -> EmailInboxDriver:
         from flow_sdk.config import default_service_config  # noqa: PLC0415
 
         kind = default_service_config.email_inbox_provider
-    return get_email_inbox_registry().get(kind)
+    return EMAIL_INBOX_DRIVERS.get(kind)

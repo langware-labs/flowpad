@@ -164,33 +164,15 @@ describe('AssetVibeWorkspace', () => {
     const opened = openDock.mock.calls[0][0] as DockPointer;
     expect(opened.pointer).toContain('next.ts');
     expect(opened.viewMode).toBe(ViewMode.Vibe);
+    // Flagged as the workspace's REPLACEABLE display: the agent's next show
+    // re-points this one row instead of minting a chip per show.
+    expect(opened.isActiveDisplay).toBe(true);
   });
 
-  it('URL-focuses the durable last_shown process update', async () => {
-    render(<AssetVibeWorkspace isVibe session={session} />);
-
-    act(() => {
-      ConnectionManager.getInstance().emit(
-        'on_data_op',
-        `agentic_process-${process.id}`,
-        'update',
-        {
-          context_data: {
-            last_shown: {
-              kind: 'entity',
-              type: 'markdown',
-              typeid: 'markdown-6e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-            },
-          },
-        },
-      );
-    });
-
-    await waitFor(() => expect(openDock).toHaveBeenCalledTimes(1));
-    const opened = openDock.mock.calls[0][0] as DockPointer;
-    expect(opened.pointer).toContain('markdown-6e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
-    expect(opened.viewMode).toBe(ViewMode.Vibe);
-  });
+  // The second delivery channel (`dataManager.on('on_entity_event')`, which closes
+  // the late-WS-attach race) is deliberately NOT covered here: this tier installs no
+  // SDK manager, which is the very condition the component guards on, so a test of it
+  // would assert the guard rather than the behavior. It is exercised in the api tier.
 
   it('keeps an explicit history URL instead of replaying older last_shown state', () => {
     process.context_data = {
@@ -209,27 +191,29 @@ describe('AssetVibeWorkspace', () => {
     expect(openDock).not.toHaveBeenCalled();
   });
 
-  it('replays last_shown written after mount when the transient event was missed', async () => {
+  it('does not navigate on a durable last_shown update — restore is the loader\'s job', async () => {
+    // The inverse of what this file used to assert, and deliberately so. The
+    // workspace once replayed `context_data.last_shown` on any process update, with
+    // a mount-time baseline to stop it re-firing. That baseline existed because a
+    // durable pin has no memory of whether the user already dealt with it.
+    //
+    // The URL is that memory now: a cold landing is restored once, in
+    // `restoreDisplayRedirect`, guarded by the workspace's own active-display row.
+    // If this test ever fails, a replay channel has been reintroduced and closed
+    // displays will start coming back on reload.
     const { rerender } = render(<AssetVibeWorkspace isVibe session={session} />);
     const target = { kind: 'vfs', path: '/workspace/src/late-show.ts' };
 
     act(() => {
       process.context_data = {
         last_shown: target,
-        display_stack: [
-          {
-            ...target,
-            shown_at: new Date(Date.now() + 1_000).toISOString(),
-          },
-        ],
+        display_stack: [{ ...target, shown_at: new Date(Date.now() + 1_000).toISOString() }],
       };
       rerender(<AssetVibeWorkspace isVibe session={session} />);
     });
 
-    await waitFor(() => expect(openDock).toHaveBeenCalledTimes(1));
-    const opened = openDock.mock.calls[0][0] as DockPointer;
-    expect(opened.pointer).toContain('late-show.ts');
-    expect(opened.viewMode).toBe(ViewMode.Vibe);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(openDock).not.toHaveBeenCalled();
   });
 
   it('invalidates a live parent-process file write through FSStore', () => {

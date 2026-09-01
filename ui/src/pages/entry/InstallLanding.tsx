@@ -16,7 +16,7 @@ import { StepList } from '@src/components/ui/step-list';
 import { useSandboxes } from '@src/hooks/use-sandboxes';
 import { useAuth } from '@src/hooks/useAuth';
 import { contentInstallSpec, parseInstallIntent } from '@src/lib/content-install';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Trans } from '@lingui/react/macro';
 import { ExternalLink, GitBranch, Lock, PackagePlus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
@@ -53,7 +53,9 @@ export default function InstallLanding() {
   };
   const createdRepo = (created: RepoSummary) => {
     setRepo(created);
-    setBranch({ name: created.default_branch, protected: false });
+    // `updated_at: ''` is the documented "no date" value on BranchSummary — a repo
+    // created seconds ago has no commit date to report.
+    setBranch({ name: created.default_branch, protected: false, updated_at: '' });
     setView('confirm');
   };
   const selectBranch = (selected: BranchSummary) => {

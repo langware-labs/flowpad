@@ -30,11 +30,11 @@ FLOW_SDK = Path(__file__).resolve().parents[3] / "flow_sdk"
 #: Module-level ``*_id`` helpers allowed to reach ``mint_uuid`` directly.
 #: Each entry needs a REASON — "it was already there" is how the last 20 got in.
 _PER_TYPE_MINTER_ALLOWLIST = {
-    # Child rows of a dataset. An example/slot has no FSRef and no TypeInfo of
-    # its own, so there is no seam to route through — the id is derived from
-    # the owning dataset's id plus a within-file key.
+    # A dataset's example rows. An example has no FSRef and no TypeInfo of its
+    # own, so there is no seam to route through — the id is derived from the
+    # owning dataset's id plus a within-file key. (Slot artifacts used to need a
+    # second entry here; a row is plain JSON now, and a value has no id.)
     ("dataset.py", "_example_id"),
-    ("dataset.py", "_slot_id"),
     # The task type's folder-name fallback, the last leg of
     # ``_task_id_from_fields``' reader precedence (capsule → frontmatter →
     # folder name). Mirrors the TypeInfo reader order rather than competing
@@ -83,19 +83,19 @@ def test_the_legacy_seam_methods_no_longer_exist() -> None:
     are gone — so the real guarantee is that they cannot come back. If someone
     re-adds `mint_id`, this fails before the pattern lint has to.
     """
-    for gone in ("mint_id", "extract_id", "resolve_id", "_mint_from"):
+    for gone in ("mint_id", "extract_id", "resolve_id", "_mint_from", "_observe", "_derive", "capsule_target_for"):
         assert not hasattr(TypeInfo, gone), (
             f"TypeInfo.{gone} is back. Identity resolution has exactly one seam, "
             "`mint_entity_id`; a second entry point is how this bug survived its "
             "first fix."
         )
-    assert hasattr(TypeInfo, "mint_entity_id")
+    assert hasattr(TypeInfo, "mint_entity_id") and hasattr(TypeInfo, "read_id")
 
 
 def _carrier_or_mint_sites(root: Path) -> list[str]:
     """Any ``<x>.<read>(...) or <y>.<mint>(...)`` identity shape under ``root``."""
-    reads = ("extract_id", "peek_entity_id", "mint_entity_id")
-    mints = ("mint_id", "mint_entity_id", "_derive")
+    reads = ("extract_id", "peek_entity_id", "read_id", "mint_entity_id")
+    mints = ("mint_id", "mint_entity_id")
     hits: list[str] = []
     for path, tree in _trees(root):
         for node in ast.walk(tree):
@@ -198,7 +198,7 @@ def test_no_raw_uuid_in_the_identity_tree() -> None:
 @pytest.mark.parametrize(
     "source, detector",
     [
-        ("rid = info.mint_entity_id(ref) or info.mint_entity_id(ref, derive=True)\n", _carrier_or_mint_sites),
+        ("rid = info.read_id(ref) or info.mint_entity_id(ref)\n", _carrier_or_mint_sites),
         ("def thing_id(ref):\n    return mint_uuid(str(ref))\n", _per_type_minters),
         ("import uuid\nx = uuid.uuid4()\n", _raw_uuid_sites),
     ],

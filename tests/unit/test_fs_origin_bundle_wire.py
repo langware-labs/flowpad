@@ -24,13 +24,12 @@ import json
 import pytest
 
 from flow_sdk.builtin.flow_message_bundle import (
-    _LEGACY_ORIGINS_FILE,
     _FS_ORIGINS_FILE,
     _read_origin_map,
     _write_origin_files,
 )
-from flow_sdk.builtin.git_origin import GitOrigin
-from flow_sdk.builtin.local_origin import LocalOrigin
+from flow_sdk.fs_store.origin.git_origin import GitOrigin
+from flow_sdk.fs_store.origin.local_origin import LocalOrigin
 
 # Dumped from the real models, exactly as the packer emits them — a literal
 # would silently drift the day a field is added, leaving these tests passing
@@ -49,27 +48,18 @@ def _read(root, name):
 
 
 @pytest.mark.parametrize(
-    "origins,canonical,legacy",
-    [
-        ({"folder-@1": _GIT}, {"folder-@1"}, {"folder-@1"}),
-        ({"a": _GIT, "b": _LOCAL, "c": _LEGACY_GIT}, {"a", "b", "c"}, {"a", "c"}),
-        ({"b": _LOCAL}, {"b"}, None),
-        ({}, None, None),
-    ],
-    ids=["git", "mixed", "local-only", "empty"],
+    "origins,expected",
+    [({"folder-@1": _GIT}, {"folder-@1"}), ({"a": _GIT, "b": _LOCAL, "c": _LEGACY_GIT}, {"a", "b", "c"}), ({}, None)],
+    ids=["git", "mixed", "empty"],
 )
-def test_write_splits_canonical_and_legacy(tmp_path, origins, canonical, legacy):
-    """Canonical carries every kind; legacy carries only what an old receiver
-    can materialize. ``None`` means the file must not exist at all — an empty
-    map must not leave a stray ``{}`` behind, which would itself be a wire
-    change."""
+def test_write_carries_every_kind(tmp_path, origins, expected):
+    """One file, every kind. ``None`` means the file must not exist at all — an
+    empty map must not leave a stray ``{}`` behind."""
     _write_origin_files(tmp_path, origins)
-
-    for name, expected in ((_FS_ORIGINS_FILE, canonical), (_LEGACY_ORIGINS_FILE, legacy)):
-        if expected is None:
-            assert not (tmp_path / name).exists(), f"{name} should not exist"
-        else:
-            assert set(_read(tmp_path, name)) == expected
+    if expected is None:
+        assert not (tmp_path / _FS_ORIGINS_FILE).exists()
+    else:
+        assert set(_read(tmp_path, _FS_ORIGINS_FILE)) == expected
 
 
 def test_values_pass_through_unchanged(tmp_path):
@@ -83,25 +73,14 @@ def test_values_pass_through_unchanged(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "canonical_text,legacy_text,expected",
-    [
-        (json.dumps({"a": _GIT}), json.dumps({"stale": _LEGACY_GIT}), {"a": _GIT}),
-        (None, json.dumps({"c": _LEGACY_GIT}), {"c": _LEGACY_GIT}),
-        ("{not json", json.dumps({"c": _LEGACY_GIT}), {"c": _LEGACY_GIT}),
-        ("null", json.dumps({"stale": _LEGACY_GIT}), {}),
-        (None, None, {}),
-    ],
-    ids=["prefers-canonical", "old-bundle-legacy-only", "corrupt-canonical",
-         "canonical-null-still-counts", "neither-present"],
+    "text,expected",
+    [(json.dumps({"a": _GIT}), {"a": _GIT}), ("{not json", {}), ("null", {}), (None, {})],
+    ids=["present", "corrupt", "null", "absent"],
 )
-def test_read_precedence(tmp_path, canonical_text, legacy_text, expected):
-    """First READABLE file wins. A corrupt canonical file falls through to the
-    legacy one rather than failing the unpack — but a file that merely parses to
-    ``null`` HAS been read, and must not fall through."""
-    for name, text in ((_FS_ORIGINS_FILE, canonical_text), (_LEGACY_ORIGINS_FILE, legacy_text)):
-        if text is not None:
-            (tmp_path / name).write_text(text, encoding="utf-8")
-
+def test_read_is_tolerant(tmp_path, text, expected):
+    """A corrupt or absent map is ``{}`` — never a failed unpack."""
+    if text is not None:
+        (tmp_path / _FS_ORIGINS_FILE).write_text(text, encoding="utf-8")
     assert _read_origin_map(tmp_path) == expected
 
 

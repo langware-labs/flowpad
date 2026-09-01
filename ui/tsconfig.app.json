@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "ES2020",
     "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "bundler",
@@ -25,5 +25,5 @@
       "@sdk/*": ["../ts_sdk/src/*"]
     }
   },
-  "include": ["src", "tests", "../ts_sdk/src"]
+  "include": ["src", "../ts_sdk/src"]
 }

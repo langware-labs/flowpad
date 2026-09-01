@@ -7,9 +7,8 @@ event emission, and scan_log writes.
 
 from __future__ import annotations
 
-from typing import Any
-
 import time
+from typing import Any
 
 import pytest
 
@@ -107,6 +106,20 @@ async def test_scan_handler_aggregate_shape(captured_progress):
         assert "count" in t
         assert "total_bytes" in t
         assert "avg_bytes" in t
+
+    # Per-type `scan_ms` must be MEASURED, not a placeholder. The field was
+    # assigned the literal 0.0 at both bucket-construction sites
+    # (fs_records_actions.py `bucket["scan_ms"] = 0.0`), so every row reported
+    # 0.0 while the aggregate reported the real number — measured on a live
+    # backend: aggregate scan_ms=3442.3 with 35/35 rows at 0.0. Presence-only
+    # assertions (`"scan_ms" in data`) cannot catch a dead field, which is why
+    # this went unnoticed.
+    scanned = [t for t in data["types"] if t["count"] > 0]
+    if scanned and data["scan_ms"] > 0:
+        assert sum(t["scan_ms"] for t in scanned) > 0.0, (
+            f"all {len(scanned)} scanned type rows report scan_ms=0.0 while the "
+            f"aggregate reports {data['scan_ms']}ms — per-type timing is a placeholder"
+        )
 
 
 # do not increase timeout without approval

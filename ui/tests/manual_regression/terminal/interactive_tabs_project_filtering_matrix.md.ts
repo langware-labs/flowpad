@@ -29,7 +29,12 @@ import { dismissSetupModal, openTabViaMenu, skipIfPtyExhausted } from './helpers
  * overlay intercepts clicks. Not an app bug — passes when PTYs are free.
  */
 async function dismissCleanedSessionsOrSkip(page: Page) {
-  const ok = page.getByRole('button', { name: 'OK' });
+  // `exact` is required: role-name matching is a case-insensitive substring
+  // match by default, and the Chats navigator's history rows are role=button
+  // too — a row whose title contains "ok" would be clicked instead, resuming an
+  // on-disk Claude session into a brand-new process that leaks into every
+  // later scenario.
+  const ok = page.getByRole('button', { name: 'OK', exact: true });
   if (await ok.isVisible({ timeout: 500 }).catch(() => false)) await ok.click().catch(() => {});
   await skipIfPtyExhausted(page);
 }
@@ -40,6 +45,8 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 
 interface OwnedInstance {
   name: string;
+  /** Backend port from `.env.<name>.local`, already validated against launcher.json. */
+  backendPort: number;
 }
 
 /**
@@ -102,14 +109,46 @@ function ownedInstance(): OwnedInstance {
       `Phase 11 restart preflight failed: '${name}' is not the matching live launcher-owned backend.`,
     );
   }
-  return { name };
+  return { name, backendPort };
 }
 
-function restartOwnedInstance(instance: OwnedInstance): void {
+async function restartOwnedInstance(instance: OwnedInstance): Promise<void> {
+  // `launch` scans UPWARD for a free port, so a port the dying backend still
+  // holds moves the instance — and this suite pins `API` at import, turning one
+  // restart into `ECONNREFUSED` for every test after it. Preventing that needs a
+  // fast backend-only restart that PRESERVES the DB (kill-then-wait blows the
+  // 60s test budget; `reset --backend-only` wipes the DB this test is proving
+  // survives), so until one exists we detect the drift rather than avoid it.
   execFileSync(path.join(REPO_ROOT, 'scripts', 'instance_ctl.sh'), ['launch', instance.name], {
     cwd: REPO_ROOT,
     stdio: 'pipe',
   });
+  // Re-run the same ownership preflight the suite opened with: it re-reads the
+  // env file and launcher.json and re-checks identity, PID liveness and port
+  // agreement. Only the comparison against the port we were PINNED to is new.
+  const relaunched = ownedInstance();
+  if (relaunched.backendPort !== instance.backendPort) {
+    throw new Error(
+      `'${instance.name}' came back on backend port ${relaunched.backendPort}, but this run is pinned to ${instance.backendPort}`,
+    );
+  }
+  // `launch` waits for the BACKEND only, but it restarts vite too. Reloading
+  // the moment it returns hit a dev server that was not listening yet, so
+  // `terminal-panels` never appeared and every later test talked to a backend
+  // the page had never reconnected to. Gate on the frontend answering — a
+  // readiness probe, not a budget: it returns the instant the server responds.
+  const base = `http://localhost:${process.env.VITE_PORT ?? '4097'}`;
+  const deadline = Date.now() + 90_000;
+  for (;;) {
+    try {
+      const r = await fetch(base, { method: 'GET' });
+      if (r.ok) return;
+    } catch {
+      /* not listening yet */
+    }
+    if (Date.now() > deadline) throw new Error(`frontend ${base} did not come back after restarting '${instance.name}'`);
+    await new Promise((r) => setTimeout(r, 250));
+  }
 }
 
 function disposableProjectRoot(label: string): string {
@@ -294,9 +333,14 @@ async function expectStripTabs(page: Page, ids: string[]) {
     .toBe(ids.length);
 }
 
-/** Click a left-rail icon button (Home or the Chats/shell view). */
+/**
+ * Click Home or the Chats/shell view. Home is a TOP-BAR control, not a rail
+ * slot (`RailItemId` has no 'home' member — see rail-visibility.ts), so it is
+ * addressed by its own testid; only `chats` is a rail item.
+ */
 async function clickRail(page: Page, target: 'home' | 'chats') {
-  await page.locator(`[data-rail-item="${target}"]`).click();
+  const sel = target === 'home' ? '[data-testid="top-nav-home"]' : '[data-rail-item="chats"]';
+  await page.locator(sel).click();
 }
 
 /**
@@ -717,7 +761,15 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const before = await tabIds(page);
     const secondTab = page.locator(`[data-testid="${before[1]}"]`);
     await secondTab.click();
-    await page.waitForTimeout(300);
+    // The click NAVIGATES (URL-first), and the strip re-renders on that
+    // navigation. Hovering into that re-render leaves Playwright waiting for an
+    // element to become stable that keeps being replaced — every failure of this
+    // test was `locator.hover: Test timeout of 60000ms exceeded`, never the
+    // close itself. A fixed 300 ms sleep only made that likely, not certain.
+    // Wait for the click to have LANDED instead: the address naming the tab we
+    // clicked. Not a bigger budget — a correct precondition, and one fewer sleep.
+    const secondPointer = before[1].replace('tab-shell|', '');
+    await expect.poll(() => page.url(), { timeout: 15_000 }).toContain(secondPointer);
     await secondTab.hover();
     await secondTab.locator('button[aria-label="Close tab"]').click();
     await expect(secondTab).toHaveCount(0, { timeout: 15_000 });
@@ -1050,7 +1102,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await page.goto(withViewMode(`/dock/shell/shell-${shellA[0]}`, 'advanced'));
     await expectStripTabs(page, shellA);
 
-    restartOwnedInstance(instance);
+    await restartOwnedInstance(instance);
     await page.reload();
     await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible();
     await dismissCleanedSessionsOrSkip(page);
@@ -1073,7 +1125,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const processTab = page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`);
     await expect(processTab).toBeVisible();
 
-    restartOwnedInstance(instance);
+    await restartOwnedInstance(instance);
     await page.reload();
     await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible();
     await dismissCleanedSessionsOrSkip(page);
@@ -1128,13 +1180,19 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const ids = [await createShell(rq, projectId), await createShell(rq, projectId), await createShell(rq, projectId)];
     await gotoDockShell(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(3);
-    // Close a non-active (last) shell externally — the backend hides its Tab
+    // Close a NON-active shell externally — the backend hides its Tab
     // (visible=false); the strip reflects it on the next load-time refetch.
-    await closeShell(rq, ids[2]);
+    // Bare /dock/shell picks its default among the seeded tabs without a
+    // creation-order guarantee, so read the active one off the URL instead of
+    // assuming the last-created shell is never it.
+    await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: 15_000 });
+    const activeId = page.url().match(/shell-([0-9a-f-]+)/)![1];
+    const victim = ids.find((id) => id !== activeId)!;
+    await closeShell(rq, victim);
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
-    await expect.poll(async () => (await tabIds(page)).join(','), { timeout: 10_000 }).not.toContain(ids[2]);
+    await expect.poll(async () => (await tabIds(page)).join(','), { timeout: 10_000 }).not.toContain(victim);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 10_000 }).toBe(2);
     await rq.dispose();
   });

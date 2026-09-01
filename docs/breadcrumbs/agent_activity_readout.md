@@ -1,11 +1,9 @@
 ---
+id: 9445799d-e807-4cdf-80a5-3bfab86b335f
 title: Agent activity readout rules
-tags:
-- breadcrumb.test.agent_activity_readout.rules
+tags: ''
 description: The chat activity line sources its own frames from the process, may only
-  report the CURRENT turn's newest operation, must hold each one 500ms, and must let an
-  operation refine itself — every rule here is a shipped bug.
-version: 3
+version: 4
 ---
 
 # Agent activity readout rules
@@ -64,7 +62,7 @@ handle, and no need to sniff tool names or regex payloads.
 directly, because the chat grouper is a RENDERING concern and drops frames the
 chat represents elsewhere. A skill call is exactly that: `MetaMessageChip`
 already renders "Using skill: <name>", so `groupTurnEvents.consume` drops the
-`Skill` TOOL_CALL/TOOL_RESULT pair (keeping it inline rendered duplicate chips).
+`Skill` TOOL\_CALL/TOOL\_RESULT pair (keeping it inline rendered duplicate chips).
 While the line was fed `splitLiveGroup(useTurnGroups(items))` the frame was gone
 before the readout saw it, and `gerundFor`'s `skill_call` branch was unreachable
 dead code — proven by feeding a real Skill frame through `groupTurnEvents` and
@@ -160,18 +158,18 @@ of the longest-lived bug (see below).
 
 Each was observed, and each maps to the invariant that prevents it.
 
-| Symptom                                                                         | Cause                                                                                                                                                                  | Invariant |
-| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| `Complete` rendered under a live pulse after resuming                           | the entity's `workerStatus` survives the turn boundary; a resumed session hydrates with the previous turn's final status                                               | 10        |
-| Previous turn's operation reported as live forever                              | replayed entries have their tool result **folded in**, so they carry no `TOOL_RESULT` and look permanently unanswered                                                  | 1, 3      |
-| Every frame of a finished turn reported as current                              | `findIndex` returned `-1`, collapsed into the "start at 0" branch                                                                                                      | 2         |
-| `Editing` shown with **no filename**, until an unrelated operation displaced it | the display latch compared only `key`, so the refinement carrying the path was discarded. Measured: label→detail gap 890 ms or never; after the fix 20–30 ms           | 7         |
-| Fast `Edit`/`Read` never visible at all                                         | an in-flight-only rule; they complete in tens of ms                                                                                                                    | 3, 5      |
-| `Reading` stuck on screen for a long time                                       | the turn went back to thinking without emitting a thinking block, so no `REASONING` frame arrived and the newest frame stayed the finished tool call                    | 4         |
-| Long path pushed the clock and event chip out of the pane                       | no flex-shrink discipline; a flex item defaults to `min-width:auto` and refuses to shrink. A fixed `max-w` does **not** fix this — it only clips earlier on wide panes | 11        |
-| An operation present at mount replaced instantly                                | `shownAt` seeded to `0`, so a pane remounting mid-turn recorded no start time                                                                                          | 5         |
-| `Using skill · <name>` never appeared, for any skill                            | the grouper drops the `Skill` tool pair (MetaMessageChip already shows it) and the line read the grouper's output, so `gerundFor`'s `skill_call` branch was dead code   | 13        |
-| A finished operation held on screen through the whole written reply             | the backwards walk did not stop at a `CHAT` / `TEXT` frame; `splitLiveGroup` used to supply this for free                                                              | 12        |
+| Symptom                                                                           | Cause                                                                                                                                                                  | Invariant |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| `Complete` rendered under a live pulse after resuming                             | the entity's `workerStatus` survives the turn boundary; a resumed session hydrates with the previous turn's final status                                               | 10        |
+| Previous turn's operation reported as live forever                                | replayed entries have their tool result **folded in**, so they carry no `TOOL_RESULT` and look permanently unanswered                                                  | 1, 3      |
+| Every frame of a finished turn reported as current                                | `findIndex` returned `-1`, collapsed into the "start at 0" branch                                                                                                      | 2         |
+| `Editing` shown with **no filename**, until an unrelated operation displaced it   | the display latch compared only `key`, so the refinement carrying the path was discarded. Measured: label→detail gap 890 ms or never; after the fix 20–30 ms           | 7         |
+| Fast `Edit`/`Read` never visible at all                                           | an in-flight-only rule; they complete in tens of ms                                                                                                                    | 3, 5      |
+| `Reading` stuck on screen for a long time                                         | the turn went back to thinking without emitting a thinking block, so no `REASONING` frame arrived and the newest frame stayed the finished tool call                   | 4         |
+| Long path pushed the clock and event chip out of the pane                         | no flex-shrink discipline; a flex item defaults to `min-width:auto` and refuses to shrink. A fixed `max-w` does **not** fix this — it only clips earlier on wide panes | 11        |
+| An operation present at mount replaced instantly                                  | `shownAt` seeded to `0`, so a pane remounting mid-turn recorded no start time                                                                                          | 5         |
+| `Using skill · <name>` never appeared, for any skill                              | the grouper drops the `Skill` tool pair (MetaMessageChip already shows it) and the line read the grouper's output, so `gerundFor`'s `skill_call` branch was dead code  | 13        |
+| A finished operation held on screen through the whole written reply               | the backwards walk did not stop at a `CHAT` / `TEXT` frame; `splitLiveGroup` used to supply this for free                                                              | 12        |
 | `Thinking` never appeared; the line read `Working` / `Using tool` while reasoning | both thinking signals returned `null`, deferring to a phase label that reads a `worker_status` the transcript tail almost never resolves to `THINKING`                 | 4         |
 
 ## Notes for whoever lands here next
@@ -185,7 +183,7 @@ Each was observed, and each maps to the invariant that prevents it.
   live turn, not a poller. A 120 ms sampler steps straight over these
   transitions and will tell you an operation "never renders" when it does.
 
-* **Never call the lingui `` t`…` `` macro at module scope in this file.** A
+* **Never call the lingui** **`` t`…` ``** **macro at module scope in this file.** A
   `const` readout built at import time throws *Attempted to call a translation
   function without setting a locale* — the module is imported before
   `i18n.activate()` runs. Build the object in a function, as `gerundFor` and
@@ -198,9 +196,3 @@ Each was observed, and each maps to the invariant that prevents it.
   from `context.agenticProcess.flowDataStream.items`. Note those hydrated frames
   are stamped `observation-kind: replay`, so invariant 1 discards them — restamp
   as `live` before asserting on the result.
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 9445799d-e807-4cdf-80a5-3bfab86b335f
-flowpad:endcapsule identity -->

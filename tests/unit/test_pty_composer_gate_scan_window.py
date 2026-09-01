@@ -75,7 +75,7 @@ async def test_composer_ready_survives_a_chatty_generation():
     emit_filler = py_command(f"import sys;sys.stdout.buffer.write(b'x'*{FILLER});sys.stdout.buffer.flush()")
     shell = make_shell()
     try:
-        await shell.start()
+        await shell.start_pty()
         # A real terminal: the composer frame is painted once, then the session
         # stays busy and pushes it far behind the trailing scan window.
         await shell.write(emit_marker)
@@ -119,7 +119,7 @@ async def test_confirmed_readiness_latches_for_this_generation():
     )
     shell = make_shell()
     try:
-        await shell.start()
+        await shell.start_pty()
         session = _session(shell)
         assert session.composer_ready_seq is None, "nothing confirmed before the composer paints"
 
@@ -164,7 +164,7 @@ async def test_readiness_is_never_inherited_across_a_respawn():
     )
     shell = make_shell()
     try:
-        await shell.start()
+        await shell.start_pty()
         await shell.write(emit_marker)
         for _ in range(200):
             if PATTERN.search(strip_pty_controls(_generation_snapshot(shell))):
@@ -176,7 +176,7 @@ async def test_readiness_is_never_inherited_across_a_respawn():
         pty = shell.compute_node.get_pty(shell.id)
         await pty.kill()
         assert shell.is_alive is False
-        await shell.start()
+        await shell.start_pty()
         assert shell.is_alive is True
 
         # The new generation never painted the marker, so the gate must block

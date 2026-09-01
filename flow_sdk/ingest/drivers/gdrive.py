@@ -9,7 +9,7 @@ first that must go and GET the bytes before anything local exists to index.
 changed into `~/.flow/.../gdrive/<source-id>/` laid out along Drive's own folder
 names, and returns those paths as `refs`. From there it is the folder driver's
 story exactly: reflection places asset roots and `reindex_paths` types them. A
-`materialize` mode that re-copied the cache into the project would duplicate
+copying the cache into the project would duplicate
 every byte for nothing — with `reflect: none` the cache is walked where it sits.
 
 **Nothing is stamped into those files.** `stamps_identity = False`, for the same
@@ -41,7 +41,7 @@ import httpx
 
 from flow_sdk.capsules.atomic import atomic_write
 from flow_sdk.ingest import http
-from flow_sdk.ingest.driver import FetchResult, SegmentCursorView, SegmentRef, SetupVerdict
+from flow_sdk.ingest.driver import IngestDriver, FetchResult, SegmentCursorView, SegmentRef, SetupVerdict
 from flow_sdk.ingest.health import SourceError
 
 logger = logging.getLogger(__name__)
@@ -93,7 +93,7 @@ def _safe_name(name: str) -> str:
     return cleaned
 
 
-class GoogleDriveDriver:
+class GoogleDriveDriver(IngestDriver):
     provider = "gdrive"
     kind = "datasource.fs.gdrive"
 
@@ -123,8 +123,11 @@ class GoogleDriveDriver:
 
         return (get_instance_settings().instance_dir / "gdrive" / str(source.id)).resolve()
 
-    #: Reflection asks the driver where its tree begins — see `reflect.source_root`.
-    source_root = cache_root
+    def origin_for(self, source):
+        """The cache, as the origin — a local tree whose bytes we refresh."""
+        from flow_sdk.fs_store.origin.local_origin import local_origin_for_path  # noqa: PLC0415
+
+        return local_origin_for_path(self.cache_root(source))
 
     def index_path(self, source) -> Path:
         """The cache's `rel_path -> fileId` sidecar.
@@ -418,11 +421,11 @@ class GoogleDriveDriver:
         return response.content
 
     async def _call(self, client, source, token: str, path: str, params: dict) -> dict[str, Any]:
-        raw = await self._get(client, source, token, path, params)
-        try:
-            return json.loads(raw)
-        except ValueError as exc:
-            raise SourceError.transient("bad_json", str(exc)) from exc
+        """The same GET as ``_get``, decoded by the house transport."""
+        url = httpx.URL(f"{self._base(source)}{path}").copy_merge_params(params)
+        return await http.request_json(
+            client, "GET", str(url), headers={"Authorization": f"Bearer {token}"}
+        )
 
     async def _token(self, source) -> Optional[str]:
         """This machine's Google token. The precedence lives in one place."""

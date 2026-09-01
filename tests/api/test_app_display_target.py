@@ -43,8 +43,9 @@ async def _deployment(artifact: Artifact, port: str) -> Deployment:
 
 
 async def _micro_app(artifact: Artifact, tmp_path) -> MicroApp:
+    # No id is supplied: a delivery row is found by the artifact it delivers
+    # (`get_by_artifact_id`), never by an id derived from that artifact.
     app = MicroApp(
-        id=mint_uuid(f"micro_app:artifact:{artifact.id}"),
         name=artifact.name,
         location_type=AppLocationType.Artifact,
         location_root=str(tmp_path / "dist"),

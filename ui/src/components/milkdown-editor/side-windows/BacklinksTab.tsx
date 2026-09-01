@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { APIEntity, TypeId } from '@sdk';
+import { APIEntity, TypeId, type AnyEntity } from '@sdk';
 import type { WikiLink } from '@sdk/types/wiki';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { cn } from '@src/lib/utils';
@@ -22,7 +22,7 @@ export function BacklinksTab({ target }: BacklinksTabProps) {
     }
   }, [target]);
 
-  const { data: entity } = useEntity<APIEntity<APIEntity<unknown>>>(typeId);
+  const { data: entity } = useEntity<AnyEntity>(typeId);
   const [links, setLinks] = useState<WikiLink[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

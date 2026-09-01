@@ -7,7 +7,6 @@ from typing import Any
 
 import httpx
 
-from flow_sdk.cli.auth.credentials import load_credentials
 from flow_sdk.cloud_client.auth_state import invalidate_hub_login
 from flow_sdk.cloud_client.constants import EXPIRY_LEEWAY_SECONDS
 from flow_sdk.cloud_client.error_reporter import hub_error_reporter
@@ -98,6 +97,8 @@ async def _on_request(request: httpx.Request) -> None:
     if api_key:
         request.headers["Authorization"] = f"Bearer {api_key}"
         return
+
+    from flow_sdk.cli.auth.credentials import load_credentials  # lazy: cli imports cloud_client
 
     creds = load_credentials()
     if not creds:
