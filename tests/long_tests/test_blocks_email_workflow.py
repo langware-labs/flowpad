@@ -4,7 +4,7 @@ The conversation's canonical program, run for real:
 
     async with workflow("blocks-e2e"):
         inbox  = Inbox(watched, api_key=KEY)
-        runner = AgentRunner(Agent("email-summarizer"))
+        runner = AgentRunner("email-summarizer")
         async for m in inbox.listen():
             out   = await runner.run(m)
             reply = EmailMessageSpec.reply_to(m, body=out.text)
@@ -35,7 +35,7 @@ import uuid
 import pytest
 
 import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped drivers
-from flow_sdk.blocks import Agent, AgentRunner, EmailMessageSpec, Inbox, workflow
+from flow_sdk.blocks import AgentRunner, EmailMessageSpec, Inbox, workflow
 from tests.test_settings import test_service_config
 
 KEY = os.environ.get("AGENTMAIL_API_KEY", "")
@@ -87,7 +87,7 @@ async def test_blocks_snippet_receives_and_replies(local_project):
     assert watched, f"inbox create returned no address: {sorted(created)}"
     mark("inbox created")
 
-    runner = AgentRunner(Agent("email-summarizer"))
+    runner = AgentRunner("email-summarizer")
     try:
         # ── seed: the outside correspondent writes in ────────────────────────
         _api("POST", f"/inboxes/{urllib.parse.quote(PROBE)}/messages/send", {

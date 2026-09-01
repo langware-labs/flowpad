@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from flow_sdk.blocks import Agent, AgentRunner, EmailMessageSpec, Inbox, RunOutput
+from flow_sdk.blocks import AgentRunner, EmailMessageSpec, Inbox, RunOutput
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -65,7 +65,7 @@ class _StubProcess:
 class TestAgentRunnerSessions:
     @pytest.fixture
     def runner(self, monkeypatch):
-        r = AgentRunner(Agent("stub"), max_processes=2)
+        r = AgentRunner("stub", max_processes=2)
 
         async def _spawn(m):
             key = str(r.session_key(m))
@@ -103,7 +103,7 @@ class TestAgentRunnerSessions:
             await runner.process_for(_inbound(thread_key="t3"))
 
     def test_default_session_key_is_the_thread(self):
-        r = AgentRunner(Agent("stub"))
+        r = AgentRunner("stub")
         assert r.session_key(_inbound(thread_key="t9")) == "t9"
         # a threadless message keys on its own id — per-message session
         assert r.session_key(_inbound(thread_key="", external_id="<x>")) == "<x>"
