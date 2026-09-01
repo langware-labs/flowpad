@@ -24,6 +24,25 @@ import { WORKER_TYPES } from '@src/hooks/useWorkerHistory';
  */
 export const AGENT_WORKER_TYPES = WORKER_TYPES;
 
+/**
+ * Fold either worker vocabulary onto the DRIVER short-id, so two spellings of
+ * the same vendor compare equal.
+ *
+ * `claude` is the only vendor whose two names differ (`worker_type` is
+ * `claude_code`); the other three spell both the same. Anything that compares a
+ * value from `agent.md` against a value from a capability kind, an
+ * `AgenticProcess` row, or a `--worker` flag has to fold first — comparing them
+ * raw silently matches nothing for Claude, which is the failure the note above
+ * calls "a bug that has already shipped once".
+ *
+ * Mirrors `VENDORS` in `flow_sdk/flowpad_types/vendors.py` (`key` vs
+ * `worker_type`) and the same normalization in `ts_sdk` `cli_workers/factory`.
+ */
+export function toDriverKey(worker: string | null | undefined): string {
+  const value = (worker ?? '').trim();
+  return value === 'claude_code' ? 'claude' : value;
+}
+
 /** Size tiers. `Agent.model` also accepts a concrete model id, so this is a
  *  suggestion list, not a constraint. */
 export const AGENT_MODEL_TIERS = Object.values(WorkerModelTier);

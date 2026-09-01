@@ -25,11 +25,17 @@ const STAGING_ASSET_LIMIT = 1000;
 export function useProcessAssets(
   process: AgenticProcess | null,
   /** `projectId` is for projectless callers: it names the project to ask
-   *  instead of the active one (e.g. a drill-down into `@flowpad_assistant`). */
-  options?: { enabled?: boolean; projectId?: string },
+   *  instead of the active one (e.g. a drill-down into `@flowpad_assistant`).
+   *  `types` narrows the staging scan to those entity types (server-side);
+   *  omit it for the default set. */
+  options?: { enabled?: boolean; projectId?: string; types?: readonly string[] },
 ): UseProcessAssetsResult {
   const enabled = options?.enabled !== false;
   const explicitProjectId = options?.projectId;
+  // Depend on the CONTENT, not the array identity: a caller passing an inline
+  // `['skill']` would otherwise rebuild `refresh` every render, and the layout
+  // effect below would re-fetch on each one.
+  const typesKey = options?.types?.join(',') ?? '';
 
   const [descriptors, setDescriptors] = useState<AssetDescriptor[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(enabled);
@@ -48,7 +54,10 @@ export function useProcessAssets(
         // Staging: the active project's discoverable assets, computed
         // server-side; projectless surfaces fall back to the local project.
         const projectId = explicitProjectId ?? dataContext.project?.typeId?.id ?? '@local';
-        const result = await Project.getAssetsById(projectId, { limit: STAGING_ASSET_LIMIT });
+        const result = await Project.getAssetsById(projectId, {
+          limit: STAGING_ASSET_LIMIT,
+          ...(typesKey ? { types: typesKey.split(',') } : {}),
+        });
         if (tickRef.current === tick) setDescriptors(result);
       }
     } catch (err) {
@@ -57,7 +66,7 @@ export function useProcessAssets(
     } finally {
       if (tickRef.current === tick) setIsLoading(false);
     }
-  }, [process, enabled, explicitProjectId]);
+  }, [process, enabled, explicitProjectId, typesKey]);
 
   // Re-fetch when the process identity changes (or the hook becomes enabled).
   // Layout effect, not a passive one: `refresh` sets isLoading synchronously

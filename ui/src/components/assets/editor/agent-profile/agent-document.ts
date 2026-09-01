@@ -59,7 +59,7 @@ export type AgentDocumentListKey = 'skills' | 'mcp_servers' | 'subagents' | 'add
  *
  * The read half of `patchAgentDocument`, and the reason a caller can edit these
  * lists without resolving the Agent ENTITY at all: the file is the record. That
- * matters for an agent whose row isn't indexed — the document is still there
+ * matters for an agent whose row isn't indexed â€” the document is still there
  * and still authoritative, so it stays editable.
  *
  * Returns `[]` for a missing key, a non-list value, or unparseable frontmatter:
