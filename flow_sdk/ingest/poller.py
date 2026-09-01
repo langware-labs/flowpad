@@ -35,6 +35,76 @@ logger = logging.getLogger(__name__)
 #: interval is skipped rather than stacked.
 _inflight: set[str] = set()
 
+# ── the attention fast lane ──────────────────────────────────────────────────
+# Sub-tick polling for a source someone is WATCHING. `request_poll` renews a
+# short lease; while any lease is live, one loop task polls each leased source
+# at its driver's `attention_poll_seconds`. The lease expires shortly after
+# the UI's request stream stops (the stream is the liveness signal — same
+# principle as `request_poll` itself), so a vanished viewer costs at most one
+# lease of fast polling and the loop task exits when the table empties.
+# `_inflight` stays the single concurrency control, so the tick lane and the
+# fast lane can never poll one source concurrently.
+
+#: How long one `request_poll` keeps the fast lane armed. The UI requests
+#: every ~25s while a view is selected, so a live viewer renews well inside
+#: this; it is a liveness window, not a cadence knob.
+ATTENTION_LEASE_SECONDS = 35.0
+
+#: source id → {"expiry": monotonic, "cadence": seconds, "next": monotonic}
+_attention: dict[str, dict] = {}
+_attention_tasks: "dict[object, asyncio.Task]" = {}
+
+
+def note_attention(source_id: str, cadence_seconds: int) -> None:
+    """Arm or renew the fast lane for one source; start the loop on first use.
+
+    Called by ``request_poll`` after its own gates (ACTIVE, not parked), so
+    the lane never needs to re-litigate whether the source may poll at all —
+    it still re-checks each round, because a source can park mid-lease.
+    """
+    import time  # noqa: PLC0415
+
+    now = time.monotonic()
+    entry = _attention.get(source_id)
+    _attention[source_id] = {
+        "expiry": now + ATTENTION_LEASE_SECONDS,
+        "cadence": max(1, int(cadence_seconds)),
+        # A renewal must not delay the round already scheduled.
+        "next": entry["next"] if entry else now,
+    }
+    loop = asyncio.get_running_loop()
+    task = _attention_tasks.get(loop)
+    if task is None or task.done():
+        _attention_tasks[loop] = asyncio.ensure_future(_attention_loop())
+
+
+async def _attention_loop() -> None:
+    """Poll every leased source at its cadence until all leases lapse."""
+    import time  # noqa: PLC0415
+
+    from flow_sdk.ingest.health import SourceHealth  # noqa: PLC0415
+
+    while _attention:
+        now = time.monotonic()
+        for source_id, lease in list(_attention.items()):
+            if lease["expiry"] <= now:
+                _attention.pop(source_id, None)
+                continue
+            if lease["next"] > now or source_id in _inflight:
+                continue
+            lease["next"] = now + lease["cadence"]
+            source = await DataSource.get_by_id(source_id)
+            if (
+                source is None
+                or source.status != SourceStatus.ACTIVE.value
+                or source.health == SourceHealth.CONFIG_ERROR.value
+            ):
+                _attention.pop(source_id, None)  # parked mid-lease — lane off
+                continue
+            _inflight.add(source_id)
+            asyncio.ensure_future(_run_poll(source, datetime.now(timezone.utc)))
+        await asyncio.sleep(1.0)
+
 
 async def dispatch_due_sources(
     *,

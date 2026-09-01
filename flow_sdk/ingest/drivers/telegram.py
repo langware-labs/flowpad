@@ -79,6 +79,9 @@ class TelegramDriver(IngestDriver):
     #: The config field that names WHICH account this source serves — what
     #: ``blocks.Inbox`` matches on when reusing a source.
     identity_config_key = "bot_token"
+    #: Chat-grade while watched: the Bot API is comfortable at one
+    #: getUpdates every few seconds (long-poll clients do one per second).
+    attention_poll_seconds = 5
 
     def channel_for(self, source) -> str:
         return "telegram"

@@ -201,6 +201,13 @@ class IngestDriver:
     #: this provider serves — the natural key a caller (e.g. ``blocks.Inbox``)
     #: matches on to reuse an existing source instead of minting a twin.
     identity_config_key: str = "inbox"
+    #: OPTIONAL sub-tick cadence while someone is WATCHING a source of this
+    #: provider (a `request_poll` stream is arriving): the attention fast lane
+    #: polls every this-many seconds instead of waiting for the heartbeat
+    #: tick. None — the default — means the provider does not tolerate it and
+    #: attention only makes the source due for the next tick. A chat channel
+    #: declares a small number (telegram: 5); a rate-limited mailbox does not.
+    attention_poll_seconds: Optional[int] = None
     #: Ceiling on segments synced per pass; None means the caller's budget.
     segment_budget: Optional[int] = None
     #: OPTIONAL identity resolver ``(source, ref) -> origin_id`` for unstamped sources.
