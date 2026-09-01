@@ -241,7 +241,7 @@ and a `cli_worker.py`/`code_agentic_worker.py` PTY pair; codex adds `session_det
 | Login probe (`auth_probe`) | `claude auth status` → JSON `loggedIn` (exit code is 0 either way, so never read it); `verified` | `codex login status` → exit 0 = logged in; `verified` | no status subcommand — heuristic on `COPILOT_GITHUB_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN` then a past-login marker in `~/.copilot/config.json`; never `verified` |
 | Login flow (`device_login_spec`) | auth-code + PKCE — the browser shows a code the user pastes back into the CLI | RFC-8628 device flow (URL + one-time code, CLI polls) | RFC-8628 device flow |
 | Config dir | `claude_home` (`FLOWPAD_CLAUDE_HOME`/`CLAUDE_CONFIG_DIR`, default `~/.claude`) with `projects/`, `skills/`, `agents/`, `settings.json`, … | `codex_home` + `codex_sessions_dir`/`codex_config_path` (`CODEX_HOME`) | `copilot_home` + `copilot_session_state_dir`/`copilot_config_path` (`FLOWPAD_COPILOT_HOME` — copilot ships no home env var of its own) |
-| Skills root | `assets_dir/.claude/skills` (mounted via `--add-dir`) | `$CODEX_HOME/skills` (global, not per-process) | `assets_dir/.claude/skills` (mounted via `--add-dir`) |
+| Skills root | `assets_dir/.claude/skills` (mounted via `--add-dir`) | `$CODEX_HOME/skills` (global, not per-process) | `assets_dir/.github/skills` (mounted via `--add-dir` — copilot reads `.github/skills`, not claude's dot-dir) |
 | Embedded sub-agents | materialized under `assets/.claude/agents/`; legacy `--agents <json>` still emitted when `cli_config.agents_json` exists | materialized into process instruction assets; names surfaced as `skill_names` for command visibility | materialized into process instruction assets; names surfaced as `skill_names` for command visibility |
 | Transcript location | `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl` | rollout `~/.codex/sessions/…rollout-*.jsonl`, else process-local stdout tee | session `~/.copilot/session-state/<id>/events.jsonl`, else process-local stdout tee |
 | Transcript format | `CLAUDE_JSONL` | `CODEX_ROLLOUT` (canonical) / `CODEX_STREAM` (tee) | `COPILOT_EVENTS` (canonical) / `COPILOT_STREAM` (tee) |
@@ -279,9 +279,17 @@ falling back to the device-login picker.
   assumptions the other three share (measured against 1.18.16):
   - **No `--add-dir`.** Instruction assets and skills reach the worker only through a
     generated per-process `opencode.json` (`config_gen.py`) pointed at by `OPENCODE_CONFIG`,
-    carrying `instructions: [<assets>/AGENTS.md]` and `skills: {paths: […]}`. Because
+    carrying `instructions: [<root>/AGENTS.md]` and `skills: {paths: […]}`. Because
     `prepare_system_instruction_assets()` already writes `AGENTS.md`, no new asset content
-    was needed — only the config that registers it.
+    was needed — only the config that registers it. The same file is also how the roots every
+    other vendor receives as `--add-dir` get in: `add_dir_contributions()` folds the process
+    assets dir *and* `resolved_add_dirs` (the Flowpad Assistant mount, a project's context
+    folders, `additional_dirs`) into the two lists. It lists each root's skills CONTAINER —
+    `<root>/.claude/skills`, not `<root>` — because opencode's recursive `**/SKILL.md` scan
+    does not descend into dot-directories, which is where every harness keeps its skills.
+    `OpenCodeAgentOptions._regenerate_config` is the single writer; `apply_process_mcp` only
+    remembers the process id so `_sync_config_env` can write the fallback at spawn for a
+    process that has mounted roots or servers but no instruction assets.
   - **No file-per-session store.** Sessions live in a SQLite database
     (`<data>/opencode.db`), so there is nothing tail-readable to point `tail_status` at.
     FlowPad therefore owns the canonical JSONL in *both* modes: the headless stdout tee
@@ -388,9 +396,16 @@ Two directory trees matter beyond the vendor's own config dir:
   `OPENCODE_CONFIG`. Skipping the override is not a degraded experience but a silent one:
   an interactive session simply receives no instructions and no skills.
 - **Skills** — `skills_root(process, assets_dir)` decides where a skill folder is laid
-  down: under the mounted assets dir (`assets_dir/.claude/skills` — claude, copilot) or in
-  a global vendor location (`$CODEX_HOME/skills` — codex). The orchestrator routes all
+  down: under the mounted assets dir, in the vendor's OWN dot-dir
+  (`.claude/skills` — claude, `.github/skills` — copilot, `.opencode/skills` — opencode), or
+  in a global vendor location (`$CODEX_HOME/skills` — codex). The orchestrator routes all
   skill materialization through this seam.
+
+  Laying the files down is only half of it. `load-embedded-skill` and
+  `attach-embedded-asset` both record the ref in `embedded_asset_refs`, and that record —
+  not the files — is what makes `resolved_add_dirs` mount the assets dir and
+  `_prepare_system_instruction_assets` return it. A skill materialized without the record is
+  invisible to every vendor whose channel is the mount.
 
 ---
 

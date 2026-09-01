@@ -143,7 +143,7 @@ params:
   AssetUsage: "{kind, path?, entry_id?, timestamp?, label?}"
   AssetDescriptor: "{typeid, source, posix_path, source_dir?, project_id?, usage[]}"
   TranscriptSubpath: "plan | prompt | prompts | full"
-  SystemInstructionAssets: "{assets_dir, instructions, claude_file}"
+  SystemInstructionAssets: "{assets_dir, instructions?, claude_file?} — the MOUNT; text is optional"
   PromptQueue: "{enabled, entries} file-backed FIFO"
   AgenticProcessEventName: "first_prompt"
   WorkerMode: "interactive | cli"
