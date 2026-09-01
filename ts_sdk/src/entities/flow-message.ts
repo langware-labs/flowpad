@@ -1,7 +1,7 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
-import { ICloudOrigin } from '../models/CloudOrigin';
+import { ICloudOrigin, ICloudOriginLocal } from '../models/CloudOrigin';
 import { Callable } from '../types';
 import { ConnectionManager, DataOp } from '../websocket';
 
@@ -186,6 +186,7 @@ export interface IFlowMessage extends IEntity {
    *  message, a Slack post). Null/absent means the message is ours — which is
    *  exactly the badge rule: no origin, no channel mark. */
   origin?: ICloudOrigin | null;
+  origin_local?: ICloudOriginLocal | null;
   /** The MessageThread this belongs to. Null = ungrouped, i.e. flat rendering
    *  (every message that predates threading). */
   thread_id?: string | null;
@@ -228,6 +229,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   cloned_from_sender_id?: string | null;
   remote_worker_session_id?: string | null;
   origin?: ICloudOrigin | null;
+  origin_local?: ICloudOriginLocal | null;
   thread_id?: string | null;
   reply_to_id?: string | null;
   source_item_id?: string | null;
@@ -258,6 +260,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.cloned_from_sender_id = entity.cloned_from_sender_id ?? null;
     this.remote_worker_session_id = entity.remote_worker_session_id ?? null;
     this.origin = entity.origin ?? null;
+    this.origin_local = entity.origin_local ?? null;
     this.thread_id = entity.thread_id ?? null;
     this.reply_to_id = entity.reply_to_id ?? null;
     this.source_item_id = entity.source_item_id ?? null;
