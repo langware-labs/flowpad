@@ -206,3 +206,25 @@ async def test_restart_required_flips_on_config_change_and_clears_on_revert():
     p.workdir = "/repo/original"
     await p.save()
     assert p.restart_required is False
+
+
+def test_llm_endpoint_moves_the_restart_hash():
+    """Changing which budget a process spends must bounce a live PTY worker.
+
+    The endpoint is baked into the worker's spawn env, so a running worker keeps spending the one it
+    started with no matter what the field says — exactly the contract ``mcp_servers`` documents. The
+    headless path needs no restart (each turn re-spawns and re-resolves auth), but the hash is the
+    same one both paths consult, and flagging a restart nobody needs is the safe direction.
+    """
+    ENDPOINT = "llm_endpoint-11111111-2222-4333-8444-555555555555"
+    unset = AgenticProcess(worker_type="claude_code")
+    bound = AgenticProcess(worker_type="claude_code", llm_endpoint_typeid=ENDPOINT)
+    assert unset._restart_snapshot() != bound._restart_snapshot()
+
+    same = AgenticProcess(worker_type="claude_code", llm_endpoint_typeid=ENDPOINT)
+    assert bound._restart_snapshot() == same._restart_snapshot(), "the same endpoint must not churn the hash"
+
+    other = AgenticProcess(
+        worker_type="claude_code", llm_endpoint_typeid="llm_endpoint-22222222-2222-4333-8444-555555555555"
+    )
+    assert bound._restart_snapshot() != other._restart_snapshot()

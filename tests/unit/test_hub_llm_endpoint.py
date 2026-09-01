@@ -12,6 +12,8 @@ from pathlib import Path
 import pytest
 from cryptography.fernet import Fernet
 
+from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import HUB_ENDPOINT_HARNESSES
+
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 INVOKE_PATH = "/api/v1/graph/llm_endpoint/ep1/invoke"
@@ -199,7 +201,16 @@ async def _harness_states() -> dict[str, tuple[str, str | None]]:
     return out
 
 
-async def test_bind_flips_harnesses_and_spawns_through_the_hub(env) -> None:
+async def test_bind_offers_the_endpoint_without_rewriting_the_users_choice(env) -> None:
+    """Binding makes the endpoint available and the resolver takes it -- WITHOUT touching
+    ``auth_mode``/``api_provider``.
+
+    Binding used to force every hub-capable harness to ``(api, flowpad)`` on every workspace
+    open, discarding whatever the user had chosen and keeping no record of it -- while
+    ``Capability`` itself documents that seeding must never clobber those fields. It was a
+    workaround for a resolver gate that no longer exists. The endpoint still wins here; it
+    just wins by being resolved rather than by overwriting a preference.
+    """
     from types import SimpleNamespace
 
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
@@ -215,9 +226,11 @@ async def test_bind_flips_harnesses_and_spawns_through_the_hub(env) -> None:
     assert status["endpoint_typeid"] == "llm_endpoint:ep1"
     assert status["invoke_url"] == "https://hub.test" + INVOKE_PATH
     assert status["hub_logged_in"] is True
-    assert len(status["active_for"]) == 3
+    assert len(status["active_for"]) == len(HUB_ENDPOINT_HARNESSES)
 
-    assert all(state == ("api", "flowpad") for state in (await _harness_states()).values())
+    assert all(state == ("device", None) for state in (await _harness_states()).values()), (
+        "binding must not rewrite the user's stored choice"
+    )
     assert await hub_llm_endpoint_status() == status
 
     process = SimpleNamespace(driver=SimpleNamespace(name="claude"), cli_config={"model": "sm"})
@@ -270,7 +283,12 @@ async def test_bind_rejects_malformed_payload(env) -> None:
         assert exc.value.status_code == 400
 
 
-async def test_unbind_reverts_to_device(env) -> None:
+async def test_unbind_withdraws_the_offer(env) -> None:
+    """Unbinding removes the endpoint and the resolver falls back down the ladder on its own.
+
+    There is no ``reverted`` list any more because there is nothing to revert: binding stopped
+    writing to ``Capability``, so unbinding has nothing of the user's to put back.
+    """
     from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import (
         bind_hub_llm_endpoint,
         unbind_hub_llm_endpoint,
@@ -282,7 +300,7 @@ async def test_unbind_reverts_to_device(env) -> None:
     await bind_hub_llm_endpoint({"endpoint_typeid": "llm_endpoint:ep1", "invoke_path": INVOKE_PATH})
     result = await unbind_hub_llm_endpoint()
     assert result["was_bound"] is True
-    assert len(result["reverted"]) == 3
+    assert "reverted" not in result, "nothing is reverted: binding never wrote to Capability"
     assert result["endpoint_typeid"] is None and result["active_for"] == []
     assert llm_endpoint.get_hub_llm_endpoint() is None
     assert get_lm_api(LMApiProvider.FLOWPAD) is None
@@ -301,5 +319,180 @@ async def test_unbind_leaves_other_api_providers_alone(env) -> None:
     await cap.save(notify=False)
 
     result = await unbind_hub_llm_endpoint()
-    assert result["was_bound"] is False and result["reverted"] == []
+    assert result["was_bound"] is False
     assert (await _harness_states())["codex"] == ("api", "openrouter")
+
+
+# ── the entity, and the list of what this user may spend ────────────────────
+
+
+def test_the_entity_mirrors_a_hub_payload_and_ignores_what_it_does_not_model() -> None:
+    """The hub serializes more than this projection declares (attribution, expansions). Taking only
+    the mirrored fields is what lets the hub grow a field without breaking the picker."""
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+
+    fields = set(LLMEndpoint.model_fields)
+    row = {
+        "id": "11111111-2222-4333-8444-555555555555",
+        "type": "llm_endpoint",
+        "name": "bob's dollar",
+        "provider": "openrouter",
+        "enabled": True,
+        "limits": {"cost_usd_total": 1.0},
+        "filters": {"models_allow": ["openai/*"]},
+        "credential_hint": "",
+        "system_default": False,
+        # things the hub sends that this projection deliberately does not model
+        "created_by": "user-99999999-2222-4333-8444-555555555555",
+        "expand": {"roles": ["reader"]},
+    }
+    endpoint = LLMEndpoint(**{k: v for k, v in row.items() if k in fields})
+
+    assert endpoint.name == "bob's dollar"
+    assert endpoint.limits.cost_usd_total == 1.0
+    assert endpoint.filters.models_allow == ["openai/*"]
+    assert endpoint.invoke_path() == "/api/v1/graph/llm_endpoint/11111111-2222-4333-8444-555555555555/invoke"
+    assert not endpoint.is_root, "no credential hint means it draws on something else"
+    assert "sources" not in LLMEndpoint.model_fields, (
+        "sources is a hub-side relationship since allocation moved to `allocate`; "
+        "mirroring one here would be inventing state the box cannot know"
+    )
+
+
+async def test_fetch_is_empty_when_logged_out(env) -> None:
+    """A signed-out box has nothing to offer, and says so instead of raising."""
+    from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints
+
+    assert await fetch_hub_llm_endpoints() == []
+
+
+async def test_status_carries_what_the_user_may_spend(env) -> None:
+    """The list rides the status the harness modal already polls, beside the pushed binding."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import hub_llm_endpoint_status
+
+    status = await hub_llm_endpoint_status()
+    assert status["available"] == [], "logged out: nothing to choose from, and no error"
+    assert status["endpoint_typeid"] is None and status["hub_logged_in"] is False
+
+
+async def test_the_hub_initiated_paths_answer_from_the_memo(env, monkeypatch) -> None:
+    """bind/unbind are called BY the hub. Reaching back into it mid-request would make the hub's own
+    call wait on a second hub call, so those paths answer from the memo and never open a client.
+
+    (A refreshing read that fails falls back to the memo too — deliberately, so a hub blip does not
+    empty the picker — which is why this counts client construction rather than comparing results.)
+    """
+    import flow_sdk.cloud_client.transport.hub_http as hub_http
+    import flow_sdk.instance_settings.llm_endpoint as settings
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+    from flow_sdk.instance_settings import get_instance_settings
+
+    _login()
+    settings._list_cache[get_instance_settings().instance_name] = (
+        0.0,  # fetched at the epoch: any TTL has long expired
+        [LLMEndpoint(id="11111111-2222-4333-8444-555555555555", name="memo")],
+    )
+    opened: list[int] = []
+
+    async def _no_network(*args, **kwargs):
+        # ``hub_get`` swallows its own transport errors and answers ``None``; a stub that
+        # raised would be testing a failure mode the real chokepoint cannot produce.
+        opened.append(1)
+        return None
+
+    # ``hub_get`` is the chokepoint the fetch actually goes through; patching a hand-built
+    # client would silently stop counting anything.
+    monkeypatch.setattr(hub_http, "hub_get", _no_network)
+
+    assert [e.name for e in await settings.fetch_hub_llm_endpoints(cached_only=True)] == ["memo"]
+    assert opened == [], "cached_only must not call out"
+
+    assert [e.name for e in await settings.fetch_hub_llm_endpoints()] == ["memo"], (
+        "a failed refresh keeps the last good list rather than emptying the picker"
+    )
+    assert opened == [1], "a refreshing read really does reach for the hub"
+
+
+async def test_the_listing_unions_the_catalog_so_the_global_root_is_offered(env, monkeypatch) -> None:
+    """The seeded global root holds no role edge for anybody -- it is stamped
+    ``authenticated_role: reader`` -- so the ACCESS-SCOPED type listing never returns it and only
+    the un-scoped ``catalog`` action does. Reading one listing silently drops the single endpoint
+    every signed-in user can always spend.
+    """
+    import flow_sdk.cloud_client.transport.hub_http as hub_http
+    from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints
+
+    _login()
+    mine = {"id": "11111111-2222-4333-8444-555555555555", "type": "llm_endpoint", "name": "my allocation"}
+    globalroot = {"id": "7f1c9d2e-0000-4a00-8000-11e0e0e0e0e0", "type": "llm_endpoint", "name": "global"}
+    asked: list[str | None] = []
+
+    async def _hub_get(entity_type, entity_id=None, action=None, **kwargs):
+        # THE SHAPES ARE NOT THE SAME, and that is the point of this test. Verified against a
+        # live hub: the type listing answers an envelope dict, the ``catalog`` ACTION answers a
+        # BARE LIST. A stub that returned dicts for both passed while the real union silently
+        # dropped every catalog row.
+        asked.append(action)
+        if action is None:
+            return {"data": [mine]}
+        return [globalroot, mine]  # the catalog repeats rows the caller has a role on
+
+    monkeypatch.setattr(hub_http, "hub_get", _hub_get)
+    names = [e.name for e in await fetch_hub_llm_endpoints()]
+
+    assert asked == [None, "catalog"], "both listings must be read"
+    assert names == ["my allocation", "global"], f"expected the union, de-duplicated; got {names}"
+
+
+async def test_a_failed_catalog_read_still_offers_the_scoped_rows(env, monkeypatch) -> None:
+    """Losing the fallback is not a reason to answer with nothing."""
+    import flow_sdk.cloud_client.transport.hub_http as hub_http
+    from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints
+
+    _login()
+
+    async def _hub_get(entity_type, entity_id=None, action=None, **kwargs):
+        return None if action == "catalog" else {"data": [{"id": "1" * 8 + "-2222-4333-8444-" + "5" * 12, "name": "mine"}]}
+
+    monkeypatch.setattr(hub_http, "hub_get", _hub_get)
+    assert [e.name for e in await fetch_hub_llm_endpoints()] == ["mine"]
+
+
+async def test_an_empty_scoped_listing_still_reads_the_catalog(env, monkeypatch) -> None:
+    """A hub with nothing allocated to this user answers the type listing with ``{}`` -- no
+    ``data`` key at all -- which is SUCCESS with zero rows, not a failure. Reading that as a
+    failure returned early and never reached the catalog, so the one endpoint every signed-in
+    user can spend went missing precisely when it was the only one they had. Observed on a
+    live hub, which is why this shape is pinned.
+    """
+    import flow_sdk.cloud_client.transport.hub_http as hub_http
+    from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints
+
+    _login()
+    globalroot = {"id": "7f1c9d2e-0000-4a00-8000-11e0e0e0e0e0", "type": "llm_endpoint", "name": "global"}
+
+    async def _hub_get(entity_type, entity_id=None, action=None, **kwargs):
+        return {} if action is None else [globalroot]
+
+    monkeypatch.setattr(hub_http, "hub_get", _hub_get)
+    assert [e.name for e in await fetch_hub_llm_endpoints()] == ["global"]
+
+
+async def test_a_failed_scoped_listing_keeps_the_last_good_list(env, monkeypatch) -> None:
+    """``hub_get`` answers ``None`` on failure -- the ONE shape that means "do not trust this"."""
+    import flow_sdk.cloud_client.transport.hub_http as hub_http
+    import flow_sdk.instance_settings.llm_endpoint as settings
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+    from flow_sdk.instance_settings import get_instance_settings
+
+    _login()
+    settings._list_cache[get_instance_settings().instance_name] = (
+        0.0,
+        [LLMEndpoint(id="11111111-2222-4333-8444-555555555555", name="memo")],
+    )
+
+    async def _hub_get(entity_type, entity_id=None, action=None, **kwargs):
+        return None
+
+    monkeypatch.setattr(hub_http, "hub_get", _hub_get)
+    assert [e.name for e in await settings.fetch_hub_llm_endpoints()] == ["memo"]

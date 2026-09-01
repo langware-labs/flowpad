@@ -458,44 +458,49 @@ class Capability(Entity):
         from flow_sdk.builtin.agentic_process.cli_drivers import get_driver
         from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec
         from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import WorkerAuthResult
+        from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import (
+            LLMSourceKind,
+            resolve_box_llm_source,
+        )
 
         spec = driver_api_auth_spec(worker_type)
-        if self.auth_mode == "api" and spec is not None:
-            # API-key auth: the harness runs on a stored LLM-provider key, not the
-            # vendor device login. "logged_in" ⇔ a key is stored (present but not
-            # vendor-validated, so never `verified`). Surface the harness's
-            # supported providers so the UI can offer only possible outcomes.
-            from flow_sdk.cli.auth.lm_api_keys import get_lm_api
+        # Report what actually FUNDS this harness, not what a field says it prefers.
+        # ``auth_mode`` is a preference now -- honoured while available -- so reading it here
+        # would claim "using openrouter" for a harness whose key was deleted, and would miss a
+        # hub endpoint the box was offered. ``resolve_box_llm_source`` is the same resolver a
+        # spawn uses, so this answer and that one cannot disagree.
+        source = await resolve_box_llm_source(worker_type) if spec is not None else None
 
-            provider = self.api_provider or spec.default_provider.value
-            has_key = bool(get_lm_api(provider))
-            details: dict = {"provider": provider}
-            if provider == "flowpad":
-                # The hub's LLMEndpoint: "key" = hub login, presence = bound + logged in.
-                from flow_sdk.instance_settings.llm_endpoint import get_hub_llm_endpoint
+        # ALWAYS probe the vendor, whatever funds the harness today. This action is the only
+        # producer of ``login_state``, which is ``Persist.FALSE`` and therefore ``None`` after
+        # every restart -- and the resolver reads exactly that field to decide whether a device
+        # login is proven. Probing only when device already won closes a loop with no exit: on a
+        # box the hub has bound, the endpoint wins because device is unproven, so the probe never
+        # runs, so device stays unproven forever -- and the user's "Test sign-in" button stops
+        # asking precisely for the harnesses where the answer matters most.
+        probe = await get_driver(worker_type).auth_probe()
+        await self._mirror_probe_to_login_state(probe)
 
-                bound = get_hub_llm_endpoint()
-                details["hub_endpoint"] = bound.endpoint_typeid if bound else None
-                message = (
-                    "Using FlowPad hub endpoint"
-                    if has_key
-                    else (
-                        "FlowPad hub endpoint bound but box is not logged in"
-                        if bound
-                        else "No FlowPad hub endpoint bound"
-                    )
-                )
-            else:
-                message = f"Using {provider} API key" if has_key else f"No {provider} API key configured"
+        if source is not None and source.kind is not LLMSourceKind.DEVICE:
+            # Funded by a key or a hub endpoint: the vendor's own login state is real news about
+            # the device rung, but it is not this harness's status. ``verified`` stays False --
+            # the credential is present, not proven.
             result = WorkerAuthResult(
-                status=WorkerAuthStatus.LOGGED_IN if has_key else WorkerAuthStatus.LOGGED_OUT,
+                status=WorkerAuthStatus.LOGGED_IN if source.eligible else WorkerAuthStatus.LOGGED_OUT,
                 verified=False,
                 auth_mode="api",
-                message=message,
-                details=details,
+                message=source.reason or f"Using {source.name}",
+                details={
+                    "provider": source.provider,
+                    "hub_endpoint": source.endpoint_typeid or None,
+                    "llm_source": source.model_dump(mode="json"),
+                    "device_login": probe.status.value,
+                },
             )
         else:
-            result = await get_driver(worker_type).auth_probe()
+            result = probe
+            if source is not None:
+                result.details = {**result.details, "llm_source": source.model_dump(mode="json")}
         # Surface the harness's supported API providers regardless of mode, so the
         # modal can offer the key section / provider select for any harness.
         if spec is not None:

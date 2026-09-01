@@ -9,9 +9,15 @@ content) and pointed at with ``OPENCODE_CONFIG``, which opencode merges between
 the global and project configs.
 
 Deliberately minimal: opencode resolves OpenRouter from a bare
-``OPENROUTER_API_KEY`` in the spawn environment, so **no provider block and no
-credential ever goes in this file**. It also rejects unknown top-level keys with
-``ConfigInvalidError``, so only documented keys appear here.
+``OPENROUTER_API_KEY`` in the spawn environment, so **no credential ever goes in
+this file**. It also rejects unknown top-level keys with ``ConfigInvalidError``,
+so only documented keys appear here.
+
+The one exception is ``provider``, and only to move a base URL: routing opencode
+through the hub's ``LLMEndpoint`` cannot be done with environment variables --
+its OpenRouter provider is built in and honours no base-URL variable (verified
+against 1.18.25: ``OPENROUTER_BASE_URL`` is ignored and the CLI still calls
+openrouter.ai). The key still rides the environment; only the endpoint moves.
 """
 
 from __future__ import annotations
@@ -48,6 +54,7 @@ def build_config(
     skill_paths: list[str] | None = None,
     plugin_files: list[str] | None = None,
     mcp: dict | None = None,
+    provider: dict | None = None,
 ) -> dict:
     """The config body — pure, so it can be asserted on without touching disk."""
     config: dict = {"$schema": CONFIG_SCHEMA_URL}
@@ -68,6 +75,9 @@ def build_config(
     # other vendors take.
     if mcp:
         config["mcp"] = dict(mcp)
+    # Base-URL redirect only (see the module docstring). Never a credential.
+    if provider:
+        config["provider"] = dict(provider)
     return config
 
 
@@ -142,6 +152,7 @@ def write_process_config(
     skill_paths: list[str] | None = None,
     plugin_files: list[str] | None = None,
     mcp: dict | None = None,
+    provider: dict | None = None,
 ) -> Path | None:
     """Write the generated config; return its path, or None when there is
     nothing to say (no instructions, no skills and no MCP — then the CLI's own
@@ -151,6 +162,7 @@ def write_process_config(
         skill_paths=skill_paths,
         plugin_files=plugin_files,
         mcp=mcp,
+        provider=provider,
     )
     if len(config) == 1:  # only the $schema key
         return None
@@ -173,6 +185,7 @@ def config_for_assets_dir(
     assets_dir: "Path | str | None",
     mcp: dict | None = None,
     add_dirs: "Sequence[str | Path] | None" = None,
+    provider: dict | None = None,
 ) -> Path | None:
     """Generate this process's config from a FlowPad instruction-assets dir.
 
@@ -200,6 +213,7 @@ def config_for_assets_dir(
             skill_paths=skills,
             plugin_files=[str(hook_plugin)] if hook_plugin and hook_plugin.is_file() else [],
             mcp=mcp,
+            provider=provider,
         )
     except Exception:
         logger.debug("opencode: config generation failed for %s", process_id, exc_info=True)

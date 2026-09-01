@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import pytest
 
+from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import HUB_ENDPOINT_HARNESSES
+
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 PATH = "/api/v1/graph/compute_node/@local/llm-endpoint"
@@ -56,7 +58,7 @@ async def test_bind_then_get_then_unbind(bootstrapped_client, hub_login):
     assert data["invoke_path"] == INVOKE_PATH
     assert data["invoke_url"].endswith(INVOKE_PATH)
     assert data["hub_logged_in"] is True
-    assert len(data["active_for"]) == 3
+    assert len(data["active_for"]) == len(HUB_ENDPOINT_HARNESSES)
 
     r = await bootstrapped_client.get(PATH)
     assert r.json()["data"]["endpoint_typeid"] == "llm_endpoint:ep1"
@@ -71,7 +73,7 @@ async def test_bind_then_get_then_unbind(bootstrapped_client, hub_login):
     assert r.status_code == 200, r.text
     data = r.json()["data"]
     assert data["was_bound"] is True
-    assert len(data["reverted"]) == 3
+    assert "reverted" not in data, "binding no longer writes to Capability, so nothing is reverted"
     assert data["endpoint_typeid"] is None
 
     r = await bootstrapped_client.get("/api/v1/graph/compute_node/@local/lm_keys")
