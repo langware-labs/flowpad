@@ -1021,6 +1021,7 @@ msgstr "Add comment..."
 msgid "Add context folder"
 msgstr "Add context folder"
 
+#: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "Add data source"
 msgstr "Add data source"
@@ -1175,6 +1176,10 @@ msgstr "Agent Hook"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Agent name"
 msgstr "Agent name"
+
+#: src/components/agent-resources/AgentResourcesNavigator.tsx
+msgid "Agent resources"
+msgstr "Agent resources"
 
 #: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
 #~ msgid "Agent started"
@@ -2723,8 +2728,8 @@ msgid "classification.json"
 msgstr "classification.json"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "claude"
-msgstr "claude"
+#~ msgid "claude"
+#~ msgstr "claude"
 
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/terminal/interactive-terminal/PaneSelectorBar.tsx
@@ -3458,6 +3463,10 @@ msgstr "Configure Claude Code hooks to automate workflows with custom scripts an
 msgid "Configure your account, app preferences, and notifications"
 msgstr "Configure your account, app preferences, and notifications"
 
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "Configured by worker"
+msgstr "Configured by worker"
+
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -3473,6 +3482,10 @@ msgstr "Connect"
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "Connect a data source for me and help me define what I want out of each item."
 msgstr "Connect a data source for me and help me define what I want out of each item."
+
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "Connect a data source to make it available here"
+msgstr "Connect a data source to make it available here"
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 #: src/pages/entry/OpenSandboxLanding.tsx
@@ -4543,6 +4556,7 @@ msgstr "Data privacy mode"
 msgid "Data Source Cursor"
 msgstr "Data Source Cursor"
 
+#: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/i18n/type-labels.ts
@@ -5446,6 +5460,7 @@ msgstr "Displays the mobile sidebar."
 msgid "Distance"
 msgstr "Distance"
 
+#: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 #: src/types/ViewType.ts
 msgid "Docs"
@@ -9433,7 +9448,7 @@ msgstr "Mcp Server"
 msgid "MCP Server"
 msgstr "MCP Server"
 
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "MCP servers"
 msgstr "MCP servers"
 
@@ -9877,6 +9892,10 @@ msgstr "New Claude Session"
 msgid "New contacts group"
 msgstr "New contacts group"
 
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "New doc"
+msgstr "New doc"
+
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New file"
@@ -9972,6 +9991,10 @@ msgstr "New Schedule Trigger"
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "New session"
 msgstr "New session"
+
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "New skill"
+msgstr "New skill"
 
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/organization/org-node-management.tsx
@@ -10215,6 +10238,10 @@ msgstr "No diagnoses recorded."
 msgid "No differences from the current version."
 msgstr "No differences from the current version."
 
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "No docs found"
+msgstr "No docs found"
+
 #: src/components/docs-viewer/DocsViewer.tsx
 msgid "No Document Selected"
 msgstr "No Document Selected"
@@ -10390,6 +10417,10 @@ msgstr "No matching conversations"
 #: src/components/terminal/HistoryModal.tsx
 msgid "No matching sessions"
 msgstr "No matching sessions"
+
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "No MCP servers found"
+msgstr "No MCP servers found"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "No members"
@@ -10692,6 +10723,10 @@ msgstr "No shell is linked to this process."
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "No skill-attributed findings to improve."
 msgstr "No skill-attributed findings to improve."
+
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "No skills found"
+msgstr "No skills found"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No skills installed"
@@ -14402,6 +14437,10 @@ msgstr "Select a type to browse"
 msgid "Select a version to install:"
 msgstr "Select a version to install:"
 
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "Select a worker to see the MCP servers available to it"
+msgstr "Select a worker to see the MCP servers available to it"
+
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -15296,7 +15335,7 @@ msgstr "SKILL.md"
 msgid "skills"
 msgstr "skills"
 
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
@@ -17310,6 +17349,10 @@ msgstr "Unread"
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Unsaved changes"
 msgstr "Unsaved changes"
+
+#: src/components/assets/editor/agent-profile/AgentProfileFields.tsx
+msgid "Unset"
+msgstr "Unset"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Unstage"
