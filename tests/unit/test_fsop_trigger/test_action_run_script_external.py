@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import stat
+import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -145,14 +146,21 @@ async def test_external_path_short_timeout_killed(tmp_path):
     handler = RunScriptActionHandler()
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=str(script))
     # Use a short timeout via handler override for the test (not the default 30s)
+    started = time.monotonic()
     result = await handler.execute(
         _make_fake_trigger(),
         action=action,
         changes=_changes("/x", "modified"),
-        timeout_seconds=1.0,
+        timeout_seconds=0.3,
     )
+    elapsed = time.monotonic() - started
     assert result.timed_out is True
     assert result.returncode != 0  # killed → negative or non-zero
+    # The bound must be real. `sleep` is a CHILD of the script's bash, and it
+    # inherits the stdout/stderr pipes: if the timeout kills only bash and not
+    # the process group, the follow-up communicate() blocks on that pipe until
+    # `sleep 10` ends on its own and this returns after ~10s, not ~0.3s.
+    assert elapsed < 3, f"timeout did not bound the script tree: returned after {elapsed:.2f}s"
 
 
 async def test_external_path_duration_recorded(tmp_path):

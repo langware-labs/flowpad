@@ -142,7 +142,15 @@ def test_list_lm_api_shows_managed_row_only_when_bound(env) -> None:
     llm_endpoint.set_hub_llm_endpoint("llm_endpoint:ep1", INVOKE_PATH)
     rows = [r for r in list_lm_api() if r["provider"] == "flowpad"]
     assert rows == [
-        {"provider": "flowpad", "configured": True, "created_at": None, "managed": True, "detail": "llm_endpoint:ep1"}
+        {
+            "provider": "flowpad",
+            "configured": True,
+            "created_at": None,
+            "managed": True,
+            "detail": "llm_endpoint:ep1",
+            # Unnamed binding: the row still carries the key, empty.
+            "name": "",
+        }
     ]
 
     # Bound but logged out: listed, not configured.

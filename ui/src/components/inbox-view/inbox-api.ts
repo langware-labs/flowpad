@@ -87,3 +87,18 @@ export async function bulkUpdateMessages(
   const result = await dataManager.callAction<typeof patch, BulkUpdateResult>(action);
   return result ?? { updated: 0 };
 }
+
+/**
+ * Full-inbox body search → conversation ids, server-side (`inbox-search`).
+ *
+ * Not a `$LIKE` entity query: under the reference model a channel message's
+ * body lives on its SourceItem — the FlowMessage row stores `text: ""` — so a
+ * client-side match over FlowMessage.text would go blind to every ingested
+ * message. The action searches both residences and returns the union.
+ */
+export async function searchInbox(q: string): Promise<Set<string>> {
+  const action = new ActionInfo('inbox-search', null, null, 'POST');
+  action.bodyParameters = { q };
+  const result = await dataManager.callAction<{ q: string }, { conversation_ids?: string[] }>(action);
+  return new Set(result?.conversation_ids ?? []);
+}

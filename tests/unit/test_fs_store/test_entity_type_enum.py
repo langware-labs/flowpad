@@ -40,6 +40,7 @@ EXPECTED = {
     "CLAUDE_MEMORY": "claude_memory",
     "CLAUDE_RULES": "claude_rules",
     "COMMAND": "command",
+    "MCP": "mcp",
     "MCP_SERVER": "mcp_server",
     "MCP_SERVER_SOURCE": "mcp_server_source",
     "PLUGIN": "plugin",

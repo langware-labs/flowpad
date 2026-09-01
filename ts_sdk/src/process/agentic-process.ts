@@ -339,7 +339,8 @@ export interface IAgenticProcess extends IEntity {
   /** Extra directories passed to Claude via --add-dir */
   additional_dirs?: string[];
   /** Per-process override for mounting the Flowpad Assistant project
-   *  (--add-dir → its .claude/skills + agents become discoverable). When
+   *  (its skills + agents become discoverable — via `--add-dir` for claude,
+   *  codex and copilot, via the generated config for opencode). When
    *  null/undefined it inherits the global ServiceConfig.load_flowpad_assistant.
    *  Set via {@link enableAssistant}. */
   load_flowpad_assistant?: boolean | null;
@@ -1151,8 +1152,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     this.cliOptions = cmd;
   }
 
-  /** Enable the Flowpad Assistant mount for this process — its
-   *  `.claude/skills` + agents become discoverable via `--add-dir`.
+  /** Enable the Flowpad Assistant mount for this process — its skills +
+   *  agents become discoverable (`--add-dir` for claude, codex and copilot;
+   *  the generated `opencode.json` for opencode, which has no such flag).
    *
    *  Sets the per-process `load_flowpad_assistant` flag, notifies local
    *  subscribers via an entity event, then persists. The backend driver reads

@@ -108,6 +108,7 @@ def _carrier_or_mint_sites(root: Path) -> list[str]:
     return sorted(hits)
 
 
+@pytest.mark.long  # 1.89s
 def test_no_carrier_or_mint_pairs_remain() -> None:
     sites = _carrier_or_mint_sites(FLOW_SDK)
     assert sites == [], (

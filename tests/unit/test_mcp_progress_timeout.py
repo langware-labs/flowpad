@@ -42,6 +42,7 @@ async def test_progress_aware_timeout_after_waiting_more_than_timeout():
     assert timeout_handler.is_timed_out(), "Should be timed out after 0.7s with 0.5s timeout"
 
 
+@pytest.mark.long  # 1.80s
 @pytest.mark.asyncio
 async def test_progress_aware_timeout_reset_extends_timeout():
     """
@@ -72,6 +73,7 @@ async def test_progress_aware_timeout_reset_extends_timeout():
     assert timeout_handler.is_timed_out(), "Should be timed out 1.2s after reset (with 1s timeout)"
 
 
+@pytest.mark.long  # 2.21s
 @pytest.mark.asyncio
 async def test_progress_aware_timeout_multiple_resets():
     """Test that multiple resets keep extending the timeout."""
@@ -88,6 +90,7 @@ async def test_progress_aware_timeout_multiple_resets():
     assert timeout_handler.is_timed_out(), "Should timeout when not reset"
 
 
+@pytest.mark.long  # 1.50s
 @pytest.mark.asyncio
 async def test_progress_aware_timeout_time_remaining():
     """Test the time_remaining method."""
@@ -202,6 +205,7 @@ def create_mock_server_with_client(mock_client):
     return server
 
 
+@pytest.mark.long  # 1.81s
 @pytest.mark.asyncio
 async def test_call_tool_with_progress_timeout_succeeds_with_progress():
     """
@@ -239,6 +243,7 @@ async def test_call_tool_with_progress_timeout_succeeds_with_progress():
     assert len(progress_received) >= 5, f"Expected at least 5 progress updates, got {len(progress_received)}"
 
 
+@pytest.mark.long  # 1.00s
 @pytest.mark.asyncio
 async def test_call_tool_with_progress_timeout_times_out_without_progress():
     """

@@ -172,6 +172,12 @@ class ClaudeAgentOptions(AgentOptions):
             flags.extend(["--agents", serialize_json_cli_value(self.agents_json)])
         if self.settings_json:
             flags.extend(["--settings", serialize_json_cli_value(self.settings_json)])
+        if self.mcp_config_json:
+            # Takes a JSON STRING as well as a file path, so nothing is written
+            # to disk for a process's attached servers. ``--strict`` always rides
+            # with it: without it the process gets this set PLUS ~/.claude.json,
+            # and "which servers does this process have" has no answer.
+            flags.extend(["--mcp-config", self.mcp_config_json, "--strict-mcp-config"])
         for directory in self.plugin_dirs:
             flags.extend(["--plugin-dir", directory])
         if self.print_mode:

@@ -1673,7 +1673,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 # Identity from the named `cloud-error-fixer` Agent; the run
                 # itself still goes through .open(), which is what attaches the
                 # Shell the caller reports back as shell_id.
-                agentic_process = await deployment.build(
+                agentic_process = await deployment.create_process(
                     fix_instruction,
                     name=f"Fix: {rec_label}" if rec_label else "Cloud fix",
                 )

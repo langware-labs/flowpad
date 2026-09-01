@@ -263,7 +263,7 @@ async def _drive_migration(
     # The `migration-runner` Agent owns the bundle (bypassPermissions, model);
     # only the compute node and workdir are per-run.
     deployment = await get_agent_local_deployment("migration-runner")
-    ap = await deployment.build(
+    ap = await deployment.create_process(
         prompt_text,
         compute_node_id=f"compute_node-{cn.id}",
         workdir=str(Path.cwd()),

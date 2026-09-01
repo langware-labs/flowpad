@@ -76,6 +76,14 @@ const GraphView = lazy(() =>
 const HelpdeskPortalPage = lazy(() =>
   import('@src/components/helpdesk/HelpdeskPortalPage').then((m) => ({ default: m.HelpdeskPortalPage })),
 );
+// Lazy like its neighbours: both hub token screens pull recharts, which no
+// user who never opens them should pay for in this chunk.
+const LlmEndpointsView = lazy(() =>
+  import('@src/components/llm-endpoints/LlmEndpointsView').then((m) => ({ default: m.LlmEndpointsView })),
+);
+const TokenPlanView = lazy(() =>
+  import('@src/components/token-plan/TokenPlanView').then((m) => ({ default: m.TokenPlanView })),
+);
 const WorldView = lazy(() =>
   isWebglAvailable()
     ? import('@src/components/graph-view/GraphView').then((m) => ({ default: m.WorldView }))
@@ -252,6 +260,18 @@ export function ContentPanel({
         return <HubProjectPage />;
       case ViewType.CREDENTIALS:
         return <CredentialsView />;
+      case ViewType.LLM_ENDPOINTS:
+        return (
+          <Suspense fallback={null}>
+            <LlmEndpointsView pointer={currentDock?.pointer} />
+          </Suspense>
+        );
+      case ViewType.TOKEN_PLAN:
+        return (
+          <Suspense fallback={null}>
+            <TokenPlanView pointer={currentDock?.pointer} />
+          </Suspense>
+        );
       case ViewType.HOME:
       default:
         return <HubHome />;

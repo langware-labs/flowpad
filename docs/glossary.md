@@ -19,7 +19,7 @@ Names should make that obvious.
 | `AgenticProcess` (one run) | session | session |
 | `ClaudeSession` / `CodexSession` / `CopilotSession` | transcript | — |
 | `Skill` (`SKILL.md`) | skill | skill |
-| `MCPServer` + `Command` | **tool** | **tool** |
+| `Mcp` + `McpServer` + `Command` | **tool** | **tool** |
 | `DynamicWorkflow` + `WorkflowRun` | workflow (script) | — |
 | `GraphWorkflow` + `GraphWorkflowRun` | — | — (ours) |
 | backend instance | — | gateway |
@@ -42,7 +42,7 @@ absorbing their provider-owned format.
 
 **The verbs, pinned.** **load/embed a SubAgent** = write its persona into
 `cli_config.agents_json` (Claude Code `--agents`) — prompt text only; **use/run an Agent** =
-`Deployment.build/launch` — the whole launch bundle (worker, model, permissions, system
+`Deployment.create_process/launch` — the whole launch bundle (worker, model, permissions, system
 prompt via `context_data.instructions`, dirs, `deployment_id`). "Load an agent" means the
 Agent entity; the persona embed is always "sub-agent".
 
@@ -52,7 +52,17 @@ Agent entity; the persona embed is always "sub-agent".
 directory `agents`: that disagreement is deliberate, and the code says so at both ends.
 
 **We have no `Tool` noun.** `EntityType` has no `TOOL` member — the concept is split across
-`MCP_SERVER` and `COMMAND`. Both Claude Code and OpenClaw make `tool` first-class.
+`MCP`, `MCP_SERVER` and `COMMAND`. Both Claude Code and OpenClaw make `tool` first-class.
+
+**`MCP` is ours; `MCP_SERVER` is theirs.** Two types, one word apart, and the difference is who
+owns the file. `MCP` is a flowpad-native REPO asset at `agentic-assets/mcp/<name>/mcp.json` (an
+`McpSpec`) that we author, index with a v4 id in its own identity capsule, attach to an Agent, and
+render onto a worker's command line. It may also OWN the server's code: an `entrypoint` (default
+`server.py`) names a file inside the asset folder that `fastmcp run` executes, kept relative
+because the folder travels with its agent. `MCP_SERVER` is the READ-ONLY inventory of servers already
+configured in a vendor's own files (`~/.claude.json`, `.codex/config.toml`, `~/.copilot/mcp-config.json`,
+…); it records a *definition site* we cannot write, which is why its id stays path-derived. Discovery
+reads `MCP_SERVER`; attaching writes `MCP`.
 
 **We have nine `*SESSION` types** where the ecosystem has one: `claude_session`,
 `codex_session`, `copilot_session`, `skillit_session`, `remote_worker_session`,
@@ -109,12 +119,21 @@ a `AssetClass.REPO` folder under `agentic-assets/<family>/`.
 `Agent` is the persistent, named binding of identity, system prompt, worker/model choices,
 and launch configuration. A `Deployment` (kind `runtime.agent`) places it; `AgenticProcess` records one run.
 Some capability fields are currently declaration-only: `max_turns`, tool allow/deny lists,
-skills, MCP servers, and SubAgent references round-trip through `agent.md` but are not yet
-projected into the worker. They must not be presented as enforced controls until that
-projection exists.
+skills, and SubAgent references round-trip through `agent.md` but are not yet projected into the
+worker. They must not be presented as enforced controls until that projection exists.
+
+MCP servers are **not** in that set. They are not a frontmatter list at all: an agent's servers are
+`MCP` assets nested in its own folder (`agentic-assets/mcp/<name>/`), so the folder IS the list and
+a shared agent carries them with it. `Agent.resolved_mcp_specs()` reads them, `Deployment.create_process`
+copies them onto the process, and each harness renders them onto its own launch channel
+(`cli_drivers/mcp_projection.py`) — claude `--mcp-config`, codex `-c mcp_servers.*`, copilot
+`--additional-mcp-config`, opencode the `mcp` key of its generated config. They are resolved once at
+worker boot, so attaching to a running process flips `restart_required` rather than taking effect.
 
 
 * **`SourceItemSpec`** — ours. The ingestion envelope a data-source driver emits and the `asset_spec` of `SourceItem` (the row): the fields the DB medium persists. Not an entity; a `DataSpec`.
+* **`sent_at` / event time** — ours. A message's EVENT time (when the human sent it on its channel) as opposed to the PROCESSING clocks (`created_date`/`updated_date` — when our row was written). Projection-owned on `FlowMessage`; read everywhere through the one rule `event_time = sent_at or updated_date or created_date`; never render a message's processing clocks directly. See `docs/data-management/inbox-projection.md`.
+* **`MessageSpec`** — ours. The channel-generic OUTBOUND message value (`flow_sdk/builtin/source_item.py`): what a script hands `blocks.Inbox.send`. Subclasses add what their channel needs and own their `reply_to` constructor, because channels disagree on who a reply targets — `EmailMessageSpec` adds `subject` and replies to the AUTHOR's address; `TelegramMessageSpec` replies to the CHAT. Inbound stays `SourceItemSpec`.
 * **`ManifestSpec`** — ours. The shape of a data source's `data_source.json` and the `asset_spec` of the `DataSourceSpec` folder asset; every authoring rule is a validator on it.
 * **`KindRegistry`** — ours. The one register-by-kind table (`flow_sdk/utils/kind_registry.py`) behind the FSOrigin, SecretOrigin, email-inbox, serializer, ingest-provider and reflect-mode registries.
 

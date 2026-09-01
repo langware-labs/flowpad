@@ -21,13 +21,15 @@ field map.
 """
 from __future__ import annotations
 
+import re
 from typing import Annotated, ClassVar, Optional
 
-from pydantic import ConfigDict, StringConstraints, model_validator
+from pydantic import ConfigDict, StringConstraints, field_validator, model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.legacy_fields import adopt_renamed
+from flow_sdk.schema.data_spec.dataset_spec import FileRef
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.schema.types import EntityType
 
@@ -35,6 +37,12 @@ from flow_sdk.schema.types import EntityType
 #: external_id)`` and a blank component collapses every item of a segment onto
 #: one row — so blankness is refused by the type, not by a route.
 NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+#: Slack's ``ts`` shape and nothing else in the fleet: ten epoch digits, a dot,
+#: a fraction. Ten digits pins the range to 2001–2286, and the mandatory
+#: fraction excludes every plain numeric id (HackerNews items, Telegram update
+#: ids) from ever matching.
+_EPOCH_ID = re.compile(r"1\d{9}\.\d+")
 
 
 class SourceItemSpec(DataSpec):
@@ -65,6 +73,50 @@ class SourceItemSpec(DataSpec):
     name: str = ""
     body: str = ""
     occurred_at: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _epoch_id_is_the_clock(cls, data):
+        """When the provider's own id IS a timestamp, it outranks the caller.
+
+        Slack's ``ts`` (``1768957346.733449`` — ten epoch digits, a dot, a
+        fraction) doubles as the message id AND its event time. The agent
+        transport's worker derives ``occurred_at`` from it BY HAND, and an
+        LLM doing timezone arithmetic produced stamps wrong by arbitrary
+        half-hours, differently on each refetch (observed live). The epoch is
+        deterministic — so it wins, unconditionally: convergent for a correct
+        caller (same instant), corrective for a sloppy one, and because
+        ``occurred_at`` is digested, a corrected stamp re-ingests as an
+        update and re-projects, healing the inbox on the next sync.
+        """
+        if isinstance(data, dict):
+            ext = str(data.get("external_id") or "")
+            if _EPOCH_ID.fullmatch(ext):
+                from flow_sdk.utils.serialization import epoch_to_iso_utc  # noqa: PLC0415
+
+                data = dict(data)
+                data["occurred_at"] = epoch_to_iso_utc(float(ext))
+        return data
+
+    @field_validator("occurred_at", mode="before")
+    @classmethod
+    def _canonical_event_time(cls, v):
+        """EVENT time normalized ONCE, at the edge, to one canonical form —
+        aware-UTC ISO (``+00:00``). Drivers hand us every dialect (``Z``
+        suffix, naive, datetime objects) and everything downstream compares
+        these as strings (cursor high-water marks, ordering keys), so a mixed
+        corpus is a lexicographic landmine. ``occurred_at`` is a DIGESTED
+        field: rows stored in another dialect re-digest as *updated* on their
+        next sync — a deliberate one-time convergence that also re-projects
+        them (healing ``sent_at``). Unparseable input degrades to None, the
+        same forgiving contract as ``iso_to_utc``.
+        """
+        if v is None or v == "":
+            return None
+        from flow_sdk.utils.serialization import iso_to_utc  # noqa: PLC0415
+
+        parsed = iso_to_utc(v)
+        return parsed.isoformat() if parsed is not None else None
     author_external_id: Optional[str] = None
     author_display: Optional[str] = None
     permalink: Optional[str] = None
@@ -73,6 +125,91 @@ class SourceItemSpec(DataSpec):
     segment_label: str = ""
     raw: Optional[dict] = None
 
+
+class MessageSpec(DataSpec):
+    """An OUTBOUND message, as a value — what a script hands ``Inbox.send``.
+
+    The channel-generic base of the outbound hierarchy — outbound only,
+    deliberately. Inbound messages keep arriving as ``SourceItemSpec`` until
+    the full inbound family lands; this class exists so the outbound half of a
+    conversation is a spec too — send shape and receive shape stay one family,
+    and threading is visible data rather than verb arguments.
+
+    Subclasses add what their channel genuinely needs (email a ``subject``)
+    and own their ``reply_to`` constructor, because channels disagree on WHO a
+    reply targets: email replies to the author's address, a chat channel
+    replies to the chat itself.
+
+    Identity fields (``external_id`` and friends) are deliberately absent: a
+    message's identity is born at the provider — ``send()`` returns it.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    to: list[str]
+    body: str
+    thread_key: str = ""
+    reply_to_external_id: str = ""
+    #: Pointers, never bytes — resolved at the send edge. Unsupported channels
+    #: refuse loudly rather than dropping them.
+    attachments: list["FileRef"] = []
+
+
+class EmailMessageSpec(MessageSpec):
+    """Outbound email: the generic shape plus a subject line.
+
+    The sent copy re-ingests as a full ``SourceItemSpec`` on the next poll —
+    the mailbox is the record.
+    """
+
+    subject: str = ""
+
+    @classmethod
+    def reply_to(cls, m, *, body: str, attachments=()) -> "EmailMessageSpec":
+        """A reply to inbound message ``m`` — a pure constructor, no I/O.
+
+        Email replies target the AUTHOR's address. The provider's thread
+        handle rides ``thread_key`` and the replied-to message's own id rides
+        ``reply_to_external_id`` (what e.g. AgentMail's reply endpoint keys on).
+        """
+        subject = str(getattr(m, "name", "") or "")
+        if subject and not subject.lower().startswith("re:"):
+            subject = f"Re: {subject}"
+        return cls(
+            to=[str(getattr(m, "author_external_id", "") or "")],
+            body=body,
+            subject=subject,
+            thread_key=str(getattr(m, "thread_key", "") or ""),
+            reply_to_external_id=str(getattr(m, "external_id", "") or ""),
+            attachments=list(attachments),
+        )
+
+
+class TelegramMessageSpec(MessageSpec):
+    """Outbound Telegram message: the generic shape, chat-targeted replies.
+
+    No extra fields — Telegram has no subject; parse modes and media are
+    explicit non-goals for now (the driver sends plain text).
+    """
+
+    @classmethod
+    def reply_to(cls, m, *, body: str, attachments=()) -> "TelegramMessageSpec":
+        """A reply to inbound message ``m`` — a pure constructor, no I/O.
+
+        Telegram replies target the CHAT, not the author: ``to`` carries the
+        chat id (the leading component of ``thread_key``), and the replied-to
+        message's ``external_id`` (``"<chat_id>/<message_id>"``) rides
+        ``reply_to_external_id`` for the driver's ``reply_to_message_id``.
+        """
+        thread_key = str(getattr(m, "thread_key", "") or "")
+        chat_id = thread_key.split("/", 1)[0]
+        return cls(
+            to=[chat_id],
+            body=body,
+            thread_key=thread_key,
+            reply_to_external_id=str(getattr(m, "external_id", "") or ""),
+            attachments=list(attachments),
+        )
 
 
 class SourceItem(Entity):

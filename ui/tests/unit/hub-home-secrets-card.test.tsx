@@ -67,6 +67,8 @@ vi.mock('@src/hooks/use-sandboxes', () => ({
 }));
 vi.mock('@src/pages/hub-home/NewSandboxDialog', () => ({ NewSandboxDialog: () => null }));
 vi.mock('@src/pages/hub-home/LaunchSandboxDialog', () => ({ LaunchSandboxDialog: () => null }));
+// The token plan card runs a react-query hook; out of scope here.
+vi.mock('@src/components/token-plan/TokenPlanCard', () => ({ TokenPlanCard: () => null }));
 
 import { PageId, ViewType } from '@sdk';
 
