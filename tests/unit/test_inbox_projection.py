@@ -101,6 +101,52 @@ class TestKindGate:
         ) is None
 
 
+class TestConcurrentPlacement:
+    """Two lanes CAN project the same item at once — sync ingest and the
+    projected-tag handler race in production, and the lookup-then-create
+    without a lock minted the same message twice (observed live: one item,
+    two FlowMessages, 0.4s apart). Placement is double-checked under the
+    shared lock, so the pair must converge on ONE row."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # do not increase timeout without approval
+    async def test_two_concurrent_projections_place_one_message(self):
+        import asyncio
+        import uuid
+
+        from flow_sdk.builtin.data_source import DataSource
+        from flow_sdk.builtin.flow_message import FlowMessage
+        from flow_sdk.builtin.source_item import SourceItem
+        from flow_sdk.inbox.projection import project_source_item
+
+        source = DataSource(
+            name="race", provider="telegram", channel="telegram",
+            account_key=f"@bot-{uuid.uuid4().hex[:8]}",
+        )
+        await source.save()
+        item = SourceItem(
+            kind="content.message.chat", provider="telegram",
+            data_source_id=str(source.id), segment_key="updates",
+            external_id=f"1/{uuid.uuid4().hex[:8]}", thread_key="1",
+            name="race", body="hello race",
+            author_external_id="7", author_display="Someone",
+        )
+        await item.save()
+
+        # `known_unplaced=True` on both mimics the worst case: each lane has
+        # already "proved" there is no row before either inserted.
+        results = await asyncio.gather(
+            project_source_item(item, source=source, known_unplaced=True,
+                                notify=False, recount=False, announce=False),
+            project_source_item(item, source=source, known_unplaced=True,
+                                notify=False, recount=False, announce=False),
+        )
+        assert all(r is not None for r in results)
+        rows = await FlowMessage.get_all({"source_item_id": str(item.id)})
+        assert len(rows) == 1, f"one item must place one message, got {len(rows)}"
+        assert {r[0] for r in results} == {str(rows[0].id)}, "both lanes must converge on the same id"
+
+
 class TestSenderMapping:
     """`_sender_for` decides whether a message counts as unread.
 

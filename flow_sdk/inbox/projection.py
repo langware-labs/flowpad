@@ -238,13 +238,49 @@ async def project_source_item(
 
     sender_id, sender_name = await _sender_for(item, source, channel)
     # The message row is resolved by its reference column — reuse the existing
-    # row's id, mint an ordinary uuid4 only on first placement. The reconcile
-    # sweep already proved its items have no row (that is what `missing`
-    # means), so it opts out of re-asking per item.
-    existing_fm = None if known_unplaced else await FlowMessage.get_one(
-        {"source_item_id": str(item.id)}
-    )
-    fm_id = str(existing_fm.id) if existing_fm is not None else mint_uuid()
+    # row's id, mint an ordinary uuid4 only on first placement. Resolve AND
+    # materialize under the shared lock: two lanes (sync ingest + the
+    # projected-tag handler) can otherwise both prove "no row" before either
+    # inserts — that TOCTOU produced a duplicated message live (one item, two
+    # FlowMessages, 0.4s apart). `known_unplaced` (the reconcile sweep's bulk
+    # proof) skips only the unlocked pre-check; inside the lock the row is
+    # always re-asked, because any proof taken before the lock is stale by
+    # definition. The already-placed fast path exits before the lock, so the
+    # steady-state re-poll never serializes on it.
+    if not known_unplaced:
+        existing_fm = await FlowMessage.get_one({"source_item_id": str(item.id)})
+        if existing_fm is not None:
+            return await _place_message(
+                item, source, channel, subject, key, thread, thread_id,
+                conversation_id, sender_id, sender_name, str(existing_fm.id),
+                notify=notify, recount=recount, announce=announce,
+            )
+    async with _thread_lock():
+        existing_fm = await FlowMessage.get_one({"source_item_id": str(item.id)})
+        fm_id = str(existing_fm.id) if existing_fm is not None else mint_uuid()
+        return await _place_message(
+            item, source, channel, subject, key, thread, thread_id,
+            conversation_id, sender_id, sender_name, fm_id,
+            notify=notify, recount=recount, announce=announce,
+        )
+
+
+async def _place_message(
+    item, source, channel, subject, key, thread, thread_id,
+    conversation_id, sender_id, sender_name, fm_id,
+    *, notify, recount, announce,
+):
+    """Write the message row + pointers for one resolved ``fm_id``.
+
+    Split from ``project_source_item`` so the placement can run under the
+    dedupe lock without re-indenting the world; behavior is byte-identical.
+    """
+    from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+    from flow_sdk.ingest.drivers.channel_links import permalink_for  # noqa: PLC0415
+
     payload: dict[str, Any] = {
         "id": fm_id,
         # The HYDRATED body: the in-memory row (and therefore every live emit
