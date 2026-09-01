@@ -23,6 +23,7 @@ import { buildDockUrl, isRootAddress, parseDockUrl, parseQueryParams, rootDockAd
 import { isValidView } from './validators';
 import { AssetEditor, AssetMode, AssetRoutingMethod, editorForType, LOCAL_COMPUTE_NODE } from './asset-doc-types';
 import {
+  assetEditorOf,
   assetEditorValue,
   assetWikiValue,
   normalizeAssetVfsPath,
@@ -2349,6 +2350,15 @@ export class DockPointer implements IDockPointer {
    */
   get wikiRef(): AssetWikiRef | null {
     return parseAssetWikiRef(this.viewType === ViewType.ASSETS ? this.pointer : this.assetSubPointer);
+  }
+
+  /**
+   * The asset EDITOR this route opens, or null. Answers WHICH EDITOR, not what
+   * subject: the segment is in the URL for both routing methods, so a caller
+   * learns it with no entity resolution and no async gap.
+   */
+  get assetEditor(): AssetEditor | null {
+    return assetEditorOf(this.viewType === ViewType.ASSETS ? this.pointer : this.assetSubPointer);
   }
 
   /**

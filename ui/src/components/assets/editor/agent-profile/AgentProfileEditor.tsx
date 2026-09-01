@@ -18,7 +18,7 @@ import { Button } from '@src/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 
 import { AgentDeploymentsSection } from './AgentDeploymentsSection';
-import { AgentListField, AgentSelectField } from './AgentProfileFields';
+import { AgentChoiceField, AgentListField, AgentSelectField } from './AgentProfileFields';
 import { useProject } from '@sdk/react/hooks';
 import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
 import { AGENT_EFFORTS, AGENT_MODEL_TIERS, AGENT_PERMISSION_MODES, AGENT_WORKER_TYPES } from './agent-vocabularies';
@@ -293,11 +293,10 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
 
             <TabsContent value="runtime" className="mt-4">
               <div className="grid grid-cols-2 gap-3">
-                <AgentSelectField
+                <AgentChoiceField
                   label={t`Worker`}
                   value={agent.worker_type}
                   options={AGENT_WORKER_TYPES}
-                  placeholder={t`claude`}
                   onCommit={(v) => void save({ worker_type: v })}
                 />
                 <AgentSelectField
@@ -363,16 +362,10 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
                     value={agent.subagents}
                     onCommit={(v) => void save({ subagents: v ?? [] })}
                   />
-                  <AgentListField
-                    label={t`Skills`}
-                    value={agent.skills}
-                    onCommit={(v) => void save({ skills: v ?? [] })}
-                  />
-                  <AgentListField
-                    label={t`MCP servers`}
-                    value={agent.mcp_servers}
-                    onCommit={(v) => void save({ mcp_servers: v ?? [] })}
-                  />
+                  {/* Skills and MCP servers are wired in the agent-resources
+                      pane (Zone B), which lists what actually exists instead of
+                      asking for typed ids. They are deliberately not duplicated
+                      here — two editors for one field is how they drift. */}
                   <AgentListField
                     label={t`Additional directories`}
                     value={agent.additional_dirs}
