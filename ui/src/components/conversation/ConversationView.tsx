@@ -20,7 +20,7 @@ import { useAuth, useEntitiesQuery, useEntity, useProject } from '@sdk/react/hoo
 import type { ITask } from '@sdk/entities/task';
 import { isHelpdeskKind } from '@sdk/entities/conversation';
 import { ThreadStack } from './ThreadStack';
-import { channelLabel } from './channel-attribution';
+import { channelLabel, sourceForOrigin } from './channel-attribution';
 import { sourcesQuery } from '@src/components/data-sources/use-source-specs';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
 import { syncConversationMessages, updateMessage } from '@src/components/inbox-view/inbox-api';
@@ -46,7 +46,6 @@ import { resolveAttachmentProjectId } from './conversation-context-aggregation';
 import { useConversationMessageAttachments } from './useMessageAttachments';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { ViewType } from '@src/types/ViewType';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
 import { mostRecentProcess } from '@src/utils/process-recency';
 import { useRemoteWorkerSessionForConversation } from '@src/hooks/useRemoteWorkerSessionForConversation';
@@ -302,36 +301,16 @@ export function ConversationView({
 
   // Attention-driven polling: while this source-backed conversation is the
   // SELECTED dock, keep its DataSource due (request_poll on an interval) so
-  // new messages land within one heartbeat tick; when deselected the
-  // requests stop and the standing cadence resumes on its own. Source
-  // resolution mirrors channel-attribution: the precise origin_local pointer
-  // first, then the channel match against the cached sources list.
+  // new messages land fast; deselect and the requests stop on their own.
+  // Source resolution is the SAME rule the attribution chip uses.
   const { data: attentionSources = [] } = useEntitiesQuery<DataSource>(sourcesQuery);
   const attentionSourceId = useMemo(() => {
-    if (!channelOrigin) return undefined;
-    for (const fm of messagesById.values()) {
-      const id = fm.origin_local?.data_source_id;
-      if (id) return id;
-    }
-    const kind = (channelOrigin.kind || '').trim().toLowerCase();
-    return attentionSources.find((s) => (s.channel || '').trim().toLowerCase() === kind)?.id;
+    const withPointer = [...messagesById.values()].find((fm) => fm.origin_local?.data_source_id);
+    return sourceForOrigin(
+      attentionSources, channelOrigin, withPointer?.origin_local ?? null,
+    )?.id;
   }, [channelOrigin, messagesById, attentionSources]);
-  // Imperative, render-free selection check: hidden dock tabs stay mounted
-  // and (measured) do not re-render on URL changes, so the hook polls this
-  // on a timer instead of trusting reactivity. The URL is the authority.
-  const isSelectedDock = useCallback(() => {
-    if (!conversationId) return false;
-    try {
-      const dock = DockPointer.fromUrl(`${window.location.pathname}${window.location.search}`);
-      return (
-        dock?.viewType === ViewType.CONVERSATION &&
-        DockPointer.parseConversationPointer(dock?.pointer).conversationId === conversationId
-      );
-    } catch {
-      return false;
-    }
-  }, [conversationId]);
-  useAttentionPolling(attentionSourceId, isSelectedDock);
+  useAttentionPolling(attentionSourceId, conversationId);
 
   // What is in flight. Local state, because the line must appear the instant
   // the user hits Send — the worker's process does not exist yet. Cleared when

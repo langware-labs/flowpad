@@ -115,7 +115,7 @@ class AgentRunner:
         ),
         max_processes: int = 4,
     ):
-        if not (agent if not isinstance(agent, str) else agent.strip()):
+        if not agent or (isinstance(agent, str) and not agent.strip()):
             raise ValueError("AgentRunner needs an agent (entity, name, or id)")
         self.agent = agent
         self.session_key = session_key
@@ -153,23 +153,15 @@ class AgentRunner:
     async def run(self, m: SourceItemSpec) -> RunOutput:
         """One turn: route by session, prompt with the message body, return
         the assistant's reply as a value."""
-        import time  # noqa: PLC0415
-
         from flow_sdk.app.actions.execute_prompt import _capture_assistant_reply  # noqa: PLC0415
 
-        t = time.perf_counter()
         ap = await self.process_for(m)
-        logger.debug("blocks.run: process ready in %.2fs", time.perf_counter() - t)
-        t = time.perf_counter()
         outcome = await ap.prompt(m.body or m.name or "")
         # prompt() reports failure in its envelope, not by raising — a FAIL
         # left unchecked turns into an infinite transcript wait downstream.
         if getattr(outcome, "status", "SUCCESS") == "FAIL":
             raise RuntimeError(f"prompt failed: {getattr(outcome, 'message', outcome)}")
-        logger.debug("blocks.run: prompt dispatched in %.2fs", time.perf_counter() - t)
-        t = time.perf_counter()
         text = await _capture_assistant_reply(ap)
-        logger.debug("blocks.run: reply captured in %.2fs", time.perf_counter() - t)
         return RunOutput(text=text or "", files=[])
 
     async def close(self) -> None:
@@ -228,10 +220,10 @@ class Inbox:
         from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
 
         key, value = self._identity()
-        for row in await DataSource.get_all({"provider": self.provider}):
-            if str((row.config or {}).get(key) or "").strip() == value:
-                self._source = row
-                return row
+        existing = await DataSource.find_for_account(self.provider, key, value)
+        if existing is not None:
+            self._source = existing
+            return existing
         source = DataSource(
             name=f"Inbox {self.address}",
             provider=self.provider,
@@ -307,7 +299,7 @@ class Inbox:
             thread_key=spec.thread_key,
             to=spec.to[0],
             text=spec.body,
-            subject=getattr(spec, "subject", ""),  # email-only; chat channels have none
+            subject=spec.subject if isinstance(spec, EmailMessageSpec) else "",
             in_reply_to=spec.reply_to_external_id,
         )
         return str(outcome.external_id or "")

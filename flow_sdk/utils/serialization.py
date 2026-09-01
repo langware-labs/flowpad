@@ -23,6 +23,16 @@ def iso_to_datetime(iso: datetime | str) -> datetime:
     return datetime.fromisoformat(iso)
 
 
+def epoch_to_iso_utc(epoch: float | int) -> str:
+    """A Unix epoch as the canonical aware-UTC ISO string (``+00:00`` form).
+
+    The one epoch→ISO conversion — drivers kept re-writing this inline
+    (slack's private ``_iso``, hackernews, telegram) and the whole point of a
+    canonical time form is that nobody formats it independently.
+    """
+    return datetime.fromtimestamp(float(epoch), tz=timezone.utc).isoformat()
+
+
 def iso_to_utc(iso: datetime | str | None) -> datetime | None:
     """``iso`` as an aware UTC datetime, or None when it is absent/unparseable.
 

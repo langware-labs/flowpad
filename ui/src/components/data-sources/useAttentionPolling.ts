@@ -1,12 +1,15 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { DataSource } from '@sdk';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { ViewType } from '@src/types/ViewType';
 
 /**
- * Attention-driven polling, request-based: while a view showing this source's
- * output is SELECTED (the URL says so), fire `request_poll` on an interval —
- * each request makes the source due on the next heartbeat tick (≤60s). The
- * request stream IS the liveness signal: nothing is stored on the entity, so
- * there is no active/idle state to desync, round-trip stale, or decay. When
+ * Attention-driven polling, request-based: while the conversation showing
+ * this source's output is the SELECTED dock (the URL says so), fire
+ * `request_poll` on an interval — each request makes the source due on the
+ * next heartbeat tick, and for a driver that declares a sub-tick attention
+ * cadence (telegram: 5s) it renews the poller's fast-lane lease. The request
+ * stream IS the liveness signal: nothing is stored on the entity, so when
  * the viewer goes away — deselect, tab close, crashed page — the requests
  * simply stop and the standing cadence resumes by itself.
  *
@@ -22,9 +25,21 @@ import { DataSource } from '@sdk';
  */
 
 //: How often a selected view re-requests. Anything under the 60s heartbeat
-//: keeps the source continuously due while watched; 25s also bounds the lag
+//: keeps the source continuously due while watched; it also bounds the lag
 //: between selecting and the first request when the view was already mounted.
 const REQUEST_EVERY_MS = 25_000;
+
+function isSelectedConversation(conversationId: string): boolean {
+  try {
+    const dock = DockPointer.fromUrl(`${window.location.pathname}${window.location.search}`);
+    return (
+      dock?.viewType === ViewType.CONVERSATION &&
+      DockPointer.parseConversationPointer(dock?.pointer).conversationId === conversationId
+    );
+  } catch {
+    return false;
+  }
+}
 
 async function requestPoll(sourceId: string): Promise<void> {
   const ds =
@@ -35,15 +50,12 @@ async function requestPoll(sourceId: string): Promise<void> {
 
 export function useAttentionPolling(
   sourceId: string | undefined,
-  isWatching: () => boolean,
+  conversationId: string | undefined,
 ): void {
-  const watchingRef = useRef(isWatching);
-  watchingRef.current = isWatching;
-
   useEffect(() => {
-    if (!sourceId) return;
+    if (!sourceId || !conversationId) return;
     const tick = () => {
-      if (!watchingRef.current()) return;
+      if (!isSelectedConversation(conversationId)) return;
       void requestPoll(sourceId).catch(() => {
         // Best effort: a failed request just means the standing cadence.
       });
@@ -51,5 +63,5 @@ export function useAttentionPolling(
     tick();
     const timer = setInterval(tick, REQUEST_EVERY_MS);
     return () => clearInterval(timer);
-  }, [sourceId]);
+  }, [sourceId, conversationId]);
 }

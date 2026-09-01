@@ -92,12 +92,10 @@ class SourceItemSpec(DataSpec):
         if isinstance(data, dict):
             ext = str(data.get("external_id") or "")
             if _EPOCH_ID.fullmatch(ext):
-                from datetime import datetime, timezone  # noqa: PLC0415
+                from flow_sdk.utils.serialization import epoch_to_iso_utc  # noqa: PLC0415
 
                 data = dict(data)
-                data["occurred_at"] = datetime.fromtimestamp(
-                    float(ext), tz=timezone.utc
-                ).isoformat()
+                data["occurred_at"] = epoch_to_iso_utc(float(ext))
         return data
 
     @field_validator("occurred_at", mode="before")
