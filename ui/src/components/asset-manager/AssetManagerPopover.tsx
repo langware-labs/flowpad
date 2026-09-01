@@ -870,6 +870,8 @@ export function AssetRow({
   selected,
   improvable,
   busy,
+  canOpen,
+  cannotOpenReason,
   onPick,
   onUnpick,
   onImprove,
@@ -882,6 +884,15 @@ export function AssetRow({
   selected: boolean;
   improvable: boolean;
   busy: boolean;
+  /** Host veto on the open affordance. Openability is otherwise derived from the
+   *  typeid alone, which answers "is this a resolvable entity" — not "does an
+   *  editor exist for it". A capability has a real `capability-<uuid>` and no
+   *  editor, so the derived answer is yes and the click dead-ends. Defaults to
+   *  the derived value; `false` disables the control. */
+  canOpen?: boolean;
+  /** Why the row cannot be opened, for the disabled tooltip. Without it the
+   *  vetoed row claims to be an inline persona, which is a different thing. */
+  cannotOpenReason?: string;
   onPick?: (descriptor: AssetDescriptor) => void | Promise<void>;
   onUnpick?: (descriptor: AssetDescriptor) => void | Promise<void>;
   onImprove?: (descriptor: AssetDescriptor) => void;
@@ -890,7 +901,7 @@ export function AssetRow({
   const { navigation } = useDockNavigation();
   const { type, id } = _parseTypeid(descriptor.typeid);
   const readOnly = isReadOnlySource(descriptor.source);
-  const openable = _isOpenableTypeid(descriptor.typeid);
+  const openable = (canOpen ?? true) && _isOpenableTypeid(descriptor.typeid);
   const locationText = useEntityLocationLabel(descriptor.remote);
   // The name chip OPENS the asset in its editor — clicking the thing you are
   // looking at should show you the thing. Selecting is a separate, explicit
@@ -899,7 +910,7 @@ export function AssetRow({
   const togglesOff = selected && !!onUnpick;
   const pickLabel = togglesOff ? t`Remove ${label}` : t`Select ${label}`;
   const openActionLabel = !openable
-    ? t`Inline persona — no backing entity`
+    ? (cannotOpenReason ?? t`Inline persona — no backing entity`)
     : readOnly
       ? t`View ${label} (read-only)`
       : t`Open ${label}`;
@@ -908,7 +919,9 @@ export function AssetRow({
   // Explorer targets the FILE, so an asset with no path (inline persona) has
   // nowhere to go — same "no backing file" story as a non-openable row.
   const explorerPath = descriptor.posix_path ?? null;
-  const explorerLabel = explorerPath ? t`Show ${label} in Files` : t`Inline persona — no file on disk`;
+  const explorerLabel = explorerPath
+    ? t`Show ${label} in Files`
+    : (cannotOpenReason ?? t`Inline persona — no file on disk`);
 
   const onOpenExplorerClick = useCallback(() => {
     if (!explorerPath) return;

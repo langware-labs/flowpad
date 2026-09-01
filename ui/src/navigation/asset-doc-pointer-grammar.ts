@@ -77,6 +77,21 @@ export function assetEditorValue(
   }
 }
 
+/**
+ * The `<editor>` segment of an `editor/…` pointer, else null. Pure — no entity
+ * resolution: the segment is in the URL for BOTH routing methods, which is what
+ * lets a navigator swap itself synchronously on first render.
+ */
+export function assetEditorOf(pointer: string | null | undefined): AssetEditor | null {
+  if (!pointer) return null;
+  try {
+    const parsed = parseAssetDocPointer(pointer);
+    return parsed.mode === AssetMode.EDITOR ? (parsed.editor ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function assetWikiValue(name: string, space: string = DEFAULT_WIKI_SPACE): string {
   return `${space}/${name}`;
 }

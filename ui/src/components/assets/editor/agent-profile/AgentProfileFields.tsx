@@ -1,6 +1,61 @@
 import { useEffect, useState } from 'react';
+import { useLingui } from '@lingui/react/macro';
 
 import { Input } from '@src/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
+
+/** Sentinel for "no value": Radix reserves `''` for the placeholder state, so
+ *  an empty-string `SelectItem` throws rather than rendering a clear option. */
+const UNSET = '__unset__';
+
+/**
+ * A CLOSED choice field. `worker_type` is the exception to `AgentSelectField`:
+ * the drivers are a fixed four, so free text only produces a broken agent. A
+ * value outside `options` still renders as its own item rather than be dropped.
+ */
+export function AgentChoiceField({
+  label,
+  value,
+  options,
+  onCommit,
+}: {
+  label: string;
+  value?: string | null;
+  options: readonly string[];
+  onCommit: (value: string | undefined) => void;
+}) {
+  const { t } = useLingui();
+  const current = value ?? '';
+  const items = current && !options.includes(current) ? [...options, current] : options;
+  return (
+    <label className="block space-y-1.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <Select
+        value={current || UNSET}
+        onValueChange={(next) => onCommit(next === UNSET ? undefined : next)}
+      >
+        <SelectTrigger aria-label={label}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {/* Clearing must stay reachable: the field is optional, and the
+              backend falls back to its own default when it is absent. Named
+              for the STATE, not for whichever value the backend would pick —
+              showing the default's name here reads as though it were selected,
+              which is a different thing from the key being absent. */}
+          <SelectItem value={UNSET}>
+            <span className="text-muted-foreground">{t`Unset`}</span>
+          </SelectItem>
+          {items.map((o) => (
+            <SelectItem key={o} value={o}>
+              {o}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </label>
+  );
+}
 
 /**
  * A suggestion-backed text field: the vocabulary is advisory, so the control
@@ -50,14 +105,9 @@ export function AgentSelectField({
 }
 
 /**
- * Comma-separated list editor for a DECLARED-ONLY field.
- *
- * `tools`, `disallowed_tools`, `skills`, `mcp_servers` and `subagents`
- * round-trip through `agent.md` and show on the agent's card, but nothing
- * projects them into the worker yet — no `AgentOptions` subclass has a field
- * to carry them. An earlier version of this control offered
- * "inherited / revoke all", which claimed a gate the system does not apply.
- * It says what is true instead, and the affordance returns with enforcement.
+ * Comma-separated editor for a DECLARED-ONLY field. `tools`,
+ * `disallowed_tools` and `subagents` round-trip through `agent.md` but reach no
+ * worker yet; `mcp_servers` is listed by the agent-resources pane instead.
  */
 export function AgentListField({
   label,

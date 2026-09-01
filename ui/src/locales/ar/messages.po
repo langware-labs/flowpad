@@ -1025,6 +1025,7 @@ msgstr "إضافة تعليق..."
 msgid "Add context folder"
 msgstr "إضافة مجلد السياق"
 
+#: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "Add data source"
 msgstr "إضافة مصدر بيانات"
@@ -1179,6 +1180,10 @@ msgstr "خطاف الوكيل"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Agent name"
 msgstr "اسم الوكيل"
+
+#: src/components/agent-resources/AgentResourcesNavigator.tsx
+msgid "Agent resources"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
 #~ msgid "Agent started"
@@ -2727,8 +2732,8 @@ msgid "classification.json"
 msgstr "classification.json"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "claude"
-msgstr "Claude"
+#~ msgid "claude"
+#~ msgstr "Claude"
 
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/terminal/interactive-terminal/PaneSelectorBar.tsx
@@ -3462,6 +3467,10 @@ msgstr "تكوين خطافات Claude Code لأتمتة سير العمل با�
 msgid "Configure your account, app preferences, and notifications"
 msgstr "إعداد حسابك وتفضيلات التطبيق والإشعارات"
 
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "Configured by worker"
+msgstr ""
+
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -3476,6 +3485,10 @@ msgstr "اتصال"
 
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "Connect a data source for me and help me define what I want out of each item."
+msgstr ""
+
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "Connect a data source to make it available here"
 msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
@@ -4547,6 +4560,7 @@ msgstr "وضع خصوصية البيانات"
 msgid "Data Source Cursor"
 msgstr "مؤشر مصدر البيانات"
 
+#: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/i18n/type-labels.ts
@@ -5450,6 +5464,7 @@ msgstr "يعرض الشريط الجانبي على الأجهزة المحمو�
 msgid "Distance"
 msgstr "المسافة"
 
+#: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 #: src/types/ViewType.ts
 msgid "Docs"
@@ -7108,7 +7123,6 @@ msgstr "من {senderName}"
 msgid "from first"
 msgstr "من الأول"
 
-#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "From git"
 msgstr "من Git"
@@ -9438,7 +9452,7 @@ msgstr "خادم MCP"
 msgid "MCP Server"
 msgstr "خادم MCP"
 
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "MCP servers"
 msgstr "خوادم MCP"
 
@@ -9882,6 +9896,10 @@ msgstr "جلسة Claude جديدة"
 msgid "New contacts group"
 msgstr "مجموعة متصلين جديدة"
 
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "New doc"
+msgstr ""
+
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New file"
@@ -9938,7 +9956,6 @@ msgstr "إضافة خيار"
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
-#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "New project"
 msgstr "مشروع جديد"
 
@@ -9978,6 +9995,10 @@ msgstr "مشغّل جدولة جديد"
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "New session"
 msgstr "جلسة جديدة"
+
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "New skill"
+msgstr ""
 
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/organization/org-node-management.tsx
@@ -10221,6 +10242,10 @@ msgstr "لا توجد تشخيصات مسجلة."
 msgid "No differences from the current version."
 msgstr "لا توجد فروقات عن النسخة الحالية."
 
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "No docs found"
+msgstr ""
+
 #: src/components/docs-viewer/DocsViewer.tsx
 msgid "No Document Selected"
 msgstr "لم يتم تحديد مستند"
@@ -10396,6 +10421,10 @@ msgstr "لا توجد محادثات مطابقة"
 #: src/components/terminal/HistoryModal.tsx
 msgid "No matching sessions"
 msgstr "لا توجد جلسات مطابقة"
+
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "No MCP servers found"
+msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "No members"
@@ -10698,6 +10727,10 @@ msgstr "لا توجد قشرة مرتبطة بهذه العملية."
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "No skill-attributed findings to improve."
 msgstr "لا توجد نتائج مسندة للمهارة يمكن تحسينها."
+
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "No skills found"
+msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No skills installed"
@@ -14408,6 +14441,10 @@ msgstr "اختيار نوع للتصفح"
 msgid "Select a version to install:"
 msgstr "يُرجى اختيار الإصدار المراد تثبيته:"
 
+#: src/components/agent-resources/AgentResourcesBody.tsx
+msgid "Select a worker to see the MCP servers available to it"
+msgstr ""
+
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -15306,7 +15343,7 @@ msgstr "SKILL.md"
 msgid "skills"
 msgstr "المهارات"
 
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
@@ -17320,6 +17357,10 @@ msgstr "غير مقروءة"
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Unsaved changes"
 msgstr "تغييرات غير محفوظة"
+
+#: src/components/assets/editor/agent-profile/AgentProfileFields.tsx
+msgid "Unset"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Unstage"

@@ -16,7 +16,6 @@ export type AgentDocumentPatch = Partial<
     | 'max_turns'
     | 'tools'
     | 'disallowed_tools'
-    | 'skills'
     | 'mcp_servers'
     | 'subagents'
     | 'additional_dirs'
