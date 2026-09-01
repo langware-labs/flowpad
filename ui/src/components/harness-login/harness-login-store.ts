@@ -32,5 +32,11 @@ export const useHarnessLoginStore = store.useStore;
 export function openHarnessLoginModal(signedOut?: HarnessSignedOut): void {
   // Desktop-only overlay — never surfaced in hub mode.
   if (isHubOnly()) return;
-  store.open(signedOut);
+  // The startup gate and the footer/version openers carry no denial, and a
+  // payload-typed overlay's `open` requires one (widening `T` to a union is
+  // not an option: the conditional in `OverlayStore['open']` distributes and
+  // intersects the parameters down to `never`). Open with an empty payload the
+  // same way a void overlay does.
+  if (signedOut) store.open(signedOut);
+  else store.useStore.setState({ open: true, payload: null });
 }
