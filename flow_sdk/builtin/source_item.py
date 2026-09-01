@@ -75,38 +75,50 @@ class SourceItemSpec(DataSpec):
     raw: Optional[dict] = None
 
 
-class EmailMessageSpec(DataSpec):
-    """An OUTBOUND email, as a value — what a script hands ``Inbox.send``.
+class MessageSpec(DataSpec):
+    """An OUTBOUND message, as a value — what a script hands ``Inbox.send``.
 
-    The first slice of the message-spec hierarchy: outbound only, deliberately.
-    Inbound mail keeps arriving as ``SourceItemSpec`` until the full
-    ``MessageSpec(SourceItemSpec)`` family lands; this class exists so the
-    outbound half of a conversation is a spec too — send shape and receive
-    shape stay one family, and threading is visible data rather than verb
-    arguments.
+    The channel-generic base of the outbound hierarchy — outbound only,
+    deliberately. Inbound messages keep arriving as ``SourceItemSpec`` until
+    the full inbound family lands; this class exists so the outbound half of a
+    conversation is a spec too — send shape and receive shape stay one family,
+    and threading is visible data rather than verb arguments.
+
+    Subclasses add what their channel genuinely needs (email a ``subject``)
+    and own their ``reply_to`` constructor, because channels disagree on WHO a
+    reply targets: email replies to the author's address, a chat channel
+    replies to the chat itself.
 
     Identity fields (``external_id`` and friends) are deliberately absent: a
-    message's identity is born at the provider — ``send()`` returns it — and
-    the sent copy re-ingests as a full ``SourceItemSpec`` on the next poll.
+    message's identity is born at the provider — ``send()`` returns it.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     to: list[str]
     body: str
-    subject: str = ""
     thread_key: str = ""
     reply_to_external_id: str = ""
     #: Pointers, never bytes — resolved at the send edge. Unsupported channels
     #: refuse loudly rather than dropping them.
     attachments: list["FileRef"] = []
 
+
+class EmailMessageSpec(MessageSpec):
+    """Outbound email: the generic shape plus a subject line.
+
+    The sent copy re-ingests as a full ``SourceItemSpec`` on the next poll —
+    the mailbox is the record.
+    """
+
+    subject: str = ""
+
     @classmethod
     def reply_to(cls, m, *, body: str, attachments=()) -> "EmailMessageSpec":
         """A reply to inbound message ``m`` — a pure constructor, no I/O.
 
-        Threads the way the drivers do: the provider's thread handle rides
-        ``thread_key`` and the replied-to message's own id rides
+        Email replies target the AUTHOR's address. The provider's thread
+        handle rides ``thread_key`` and the replied-to message's own id rides
         ``reply_to_external_id`` (what e.g. AgentMail's reply endpoint keys on).
         """
         subject = str(getattr(m, "name", "") or "")
@@ -117,6 +129,33 @@ class EmailMessageSpec(DataSpec):
             body=body,
             subject=subject,
             thread_key=str(getattr(m, "thread_key", "") or ""),
+            reply_to_external_id=str(getattr(m, "external_id", "") or ""),
+            attachments=list(attachments),
+        )
+
+
+class TelegramMessageSpec(MessageSpec):
+    """Outbound Telegram message: the generic shape, chat-targeted replies.
+
+    No extra fields — Telegram has no subject; parse modes and media are
+    explicit non-goals for now (the driver sends plain text).
+    """
+
+    @classmethod
+    def reply_to(cls, m, *, body: str, attachments=()) -> "TelegramMessageSpec":
+        """A reply to inbound message ``m`` — a pure constructor, no I/O.
+
+        Telegram replies target the CHAT, not the author: ``to`` carries the
+        chat id (the leading component of ``thread_key``), and the replied-to
+        message's ``external_id`` (``"<chat_id>/<message_id>"``) rides
+        ``reply_to_external_id`` for the driver's ``reply_to_message_id``.
+        """
+        thread_key = str(getattr(m, "thread_key", "") or "")
+        chat_id = thread_key.split("/", 1)[0]
+        return cls(
+            to=[chat_id],
+            body=body,
+            thread_key=thread_key,
             reply_to_external_id=str(getattr(m, "external_id", "") or ""),
             attachments=list(attachments),
         )

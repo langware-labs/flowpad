@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, AsyncIterator, Callable, Sequence
 
 from pydantic import ConfigDict
 
-from flow_sdk.builtin.source_item import EmailMessageSpec, SourceItemSpec
+from flow_sdk.builtin.source_item import EmailMessageSpec, MessageSpec, SourceItemSpec
 from flow_sdk.schema.data_spec.dataset_spec import FileRef
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -44,6 +44,7 @@ __all__ = [
     "AgentRunner",
     "EmailMessageSpec",
     "FileRef",
+    "MessageSpec",
     "Inbox",
     "RunOutput",
     "workflow",
@@ -193,29 +194,48 @@ class Inbox:
         self,
         address: str,
         *,
-        api_key: str,
+        api_key: str = "",
         provider: str = "agentmail",
         senders: Sequence[str] = (),
+        **config,
     ):
+        """``address`` is the mailbox/handle the block is ABOUT (an email
+        address, a bot's @username); the provider decides what identifies the
+        source (the driver's ``identity_config_key``). Provider-specific
+        credentials pass as keyword config (``api_key=...``,
+        ``bot_token=...``) and land on the DataSource verbatim."""
         self.address = str(address).strip()
         self.provider = provider
         self.senders = {s.strip().lower() for s in senders if s.strip()}
-        self._api_key = api_key
+        self._config = {k: v for k, v in config.items() if v is not None}
+        if api_key:
+            self._config["api_key"] = api_key
         self._source = None
+
+    def _identity(self) -> tuple[str, str]:
+        """(config key, value) that names WHICH account this block watches —
+        the driver owns the key; the value is the address unless the config
+        already carries that key (a telegram bot's identity is its token)."""
+        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+
+        driver = get_driver(self.provider)
+        key = getattr(driver, "identity_config_key", "inbox") if driver else "inbox"
+        return key, str(self._config.get(key) or self.address).strip()
 
     async def _ensure_source(self):
         if self._source is not None:
             return self._source
         from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
 
+        key, value = self._identity()
         for row in await DataSource.get_all({"provider": self.provider}):
-            if str((row.config or {}).get("inbox") or "").strip() == self.address:
+            if str((row.config or {}).get(key) or "").strip() == value:
                 self._source = row
                 return row
         source = DataSource(
             name=f"Inbox {self.address}",
             provider=self.provider,
-            config={"inbox": self.address, "api_key": self._api_key},
+            config={key: value, **self._config},
         )
         await source.save()
         self._source = source
@@ -262,7 +282,7 @@ class Inbox:
                 )
             await asyncio.sleep(poll_every)
 
-    async def send(self, spec: EmailMessageSpec) -> str:
+    async def send(self, spec: MessageSpec) -> str:
         """Deliver an outbound spec through the source's driver.
 
         Returns the provider's id for the created message — identity is born
@@ -287,7 +307,7 @@ class Inbox:
             thread_key=spec.thread_key,
             to=spec.to[0],
             text=spec.body,
-            subject=spec.subject,
+            subject=getattr(spec, "subject", ""),  # email-only; chat channels have none
             in_reply_to=spec.reply_to_external_id,
         )
         return str(outcome.external_id or "")

@@ -197,6 +197,10 @@ class IngestDriver:
     #: the same way ``channel_for`` is — a driver that cannot send simply omits
     #: ``send`` and leaves this False, and stays a three-line class.
     sends: bool = False
+    #: The config field that names WHICH remote account/feed-set a source of
+    #: this provider serves — the natural key a caller (e.g. ``blocks.Inbox``)
+    #: matches on to reuse an existing source instead of minting a twin.
+    identity_config_key: str = "inbox"
     #: Ceiling on segments synced per pass; None means the caller's budget.
     segment_budget: Optional[int] = None
     #: OPTIONAL identity resolver ``(source, ref) -> origin_id`` for unstamped sources.
