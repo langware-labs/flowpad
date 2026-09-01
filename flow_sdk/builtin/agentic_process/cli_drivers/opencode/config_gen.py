@@ -107,7 +107,7 @@ def add_dir_contributions(add_dirs: "Sequence[str | Path] | None") -> tuple[list
     instructions: list[str] = []
     skills: list[str] = []
     for raw in add_dirs or []:
-        if not raw:  # same falsy-skip the rest of this module applies
+        if not raw:
             continue
         directory = Path(raw)
         try:

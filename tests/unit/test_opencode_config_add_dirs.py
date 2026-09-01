@@ -9,6 +9,7 @@ carried to the argv builder and dropped, which is why a worker launched with
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from flow_sdk.builtin.agentic_process.cli_drivers.opencode.config_gen import (
@@ -87,8 +88,6 @@ def test_config_carries_add_dirs_alongside_the_process_assets(tmp_path):
     path = config_for_assets_dir("proc-1", assets, None, [root])
 
     assert path is not None
-    import json
-
     config = json.loads(path.read_text())
     assert str(assets / ".opencode" / "skills") in config["skills"]["paths"]
     assert str(root / ".claude" / "skills") in config["skills"]["paths"]
@@ -101,8 +100,6 @@ def test_add_dirs_alone_still_warrant_a_config(tmp_path):
     root = _root(tmp_path, "assistant")
     path = config_for_assets_dir("proc-2", None, None, [root])
     assert path is not None
-    import json
-
     assert json.loads(path.read_text())["skills"]["paths"] == [str(root / ".claude" / "skills")]
 
 
@@ -122,8 +119,6 @@ def test_the_assets_dir_is_not_listed_twice(tmp_path):
     (assets / "AGENTS.md").write_text("process instructions\n")
 
     path = config_for_assets_dir("proc-dup", assets, None, [assets, _root(tmp_path, "extra")])
-
-    import json
 
     config = json.loads(path.read_text())
     paths = config["skills"]["paths"]
