@@ -15,9 +15,8 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 import { headlineFor } from './token-plan-math';
 import { useTokenPlan } from './use-token-plan';
+import { HUB_HOME_CARD } from '@src/pages/hub-home/card-style';
 
-const CARD =
-  'group flex flex-col items-start gap-2 rounded-xl border border-border bg-card p-5 text-start transition-colors hover:bg-accent';
 
 export function TokenPlanCard() {
   const { i18n } = useLingui();
@@ -26,7 +25,7 @@ export function TokenPlanCard() {
   if (error) return null;
   if (isLoading || !data) {
     return (
-      <div className={CARD} data-testid="hub-home-token-plan-loading">
+      <div className={HUB_HOME_CARD} data-testid="hub-home-token-plan-loading">
         <Gauge className="h-6 w-6 text-muted-foreground" />
         <Skeleton className="h-5 w-40" />
         <Skeleton className="h-4 w-56" />
@@ -43,7 +42,7 @@ export function TokenPlanCard() {
       type="button"
       onClick={() => navigation.openPage(PageId.HUB, ViewType.TOKEN_PLAN)}
       data-testid="hub-home-token-plan"
-      className={CARD}
+      className={HUB_HOME_CARD}
     >
       <div className="flex w-full items-center justify-between">
         <Gauge className="h-6 w-6 text-muted-foreground group-hover:text-foreground" />

@@ -16,7 +16,9 @@ export function useTokenPlan(options: { enabled?: boolean } = {}) {
     staleTime: 15_000,
     // Budget data, not a live counter: one read costs the hub ~30 queries and
     // three observers (screen, home card, harness chip) share this one query.
-    refetchInterval: 300_000,
+    // No poll — every mutation path invalidates through `useInvalidateTokenPlan`,
+    // and a focus refetch covers "I came back after spending". A background
+    // interval would re-run that ~30-query read forever on any open hub tab.
     refetchOnWindowFocus: true,
     retry: false,
     enabled: options.enabled ?? true,

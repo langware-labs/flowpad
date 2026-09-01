@@ -22,6 +22,7 @@ import { LaunchSandboxDialog } from './LaunchSandboxDialog';
 import { ShareSandboxDialog } from './ShareSandboxDialog';
 import { AddMachineDialog } from '@src/components/hub/AddMachineDialog';
 import { TokenPlanCard } from '@src/components/token-plan/TokenPlanCard';
+import { HUB_HOME_CARD } from './card-style';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { MembershipInvitations } from '@src/components/inbox-view/MembershipInvitations';
 import {
@@ -361,7 +362,7 @@ export function HubHome() {
             type="button"
             onClick={() => openWorldView(WorldViewProjection.WORLD)}
             data-testid="hub-home-world"
-            className="group flex flex-col items-start gap-2 rounded-xl border border-border bg-card p-5 text-start transition-colors hover:bg-accent"
+            className={HUB_HOME_CARD}
           >
             <Globe className="h-6 w-6 text-muted-foreground group-hover:text-foreground" />
             <span className="text-base font-semibold">
@@ -376,7 +377,7 @@ export function HubHome() {
             type="button"
             onClick={() => openOrganization()}
             data-testid="hub-home-organization"
-            className="group flex flex-col items-start gap-2 rounded-xl border border-border bg-card p-5 text-start transition-colors hover:bg-accent"
+            className={HUB_HOME_CARD}
           >
             <Building2 className="h-6 w-6 text-muted-foreground group-hover:text-foreground" />
             <span className="text-base font-semibold">

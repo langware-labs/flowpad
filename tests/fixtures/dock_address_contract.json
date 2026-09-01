@@ -96,6 +96,11 @@
     "ai-config": [
       "llm-apis",
       "clis"
+    ],
+    "token-plan": [
+      "me",
+      "team",
+      "org"
     ]
   },
   "retired_views": {

@@ -4,9 +4,11 @@
  * reload lands on the same scope and switching is a navigation; `foldsPointer`
  * keeps every scope in one tab chip.
  *
- * Pure — no React, no SDK — so tests and the harness modal can import it.
+ * Pure — no React, and nothing from the SDK but types and the pinned scope
+ * vocabulary — so tests and the harness modal can import it.
  */
 import type { TokenPlanScope, TokenPlanScopeKind } from '@sdk';
+import { TokenPlanKind } from '@sdk';
 
 export interface TokenPlanPointer {
   kind: TokenPlanScopeKind;
@@ -14,7 +16,8 @@ export interface TokenPlanPointer {
   id?: string;
 }
 
-const KINDS = new Set<string>(['me', 'team', 'org']);
+/** Derived from the pinned vocabulary, not a third copy of it. */
+const KINDS = new Set<string>(Object.values(TokenPlanKind));
 
 export function parseTokenPlanPointer(pointer?: string | null): TokenPlanPointer {
   const [rawKind, id] = (pointer ?? '').split('/').filter(Boolean);

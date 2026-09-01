@@ -31,7 +31,12 @@ export function UsageByChildTable({ by, breakdown, names, all }: UsageByChildTab
     const byId = new Map(all.map((e) => [e.id, e.name]));
     return (id: string) => byId.get(id);
   }, [all]);
-  const rows = Object.entries(breakdown).sort((a, b) => b[1].cost_usd - a[1].cost_usd);
+  // Memoized like `lookup` above: the parent re-renders on every tile click and
+  // cohort toggle, and a fresh array identity re-renders every row.
+  const rows = useMemo(
+    () => Object.entries(breakdown).sort((a, b) => b[1].cost_usd - a[1].cost_usd),
+    [breakdown],
+  );
 
   return (
     <div className="rounded-md border" data-testid="usage-breakdown">
