@@ -11,7 +11,7 @@ The canonical program::
 
     async with workflow("mail-concierge"):
         inbox  = Inbox("me@agentmail.to", api_key=KEY)
-        runner = AgentRunner(Agent("email-summarizer"))
+        runner = AgentRunner("email-summarizer")
 
         async for m in inbox.listen():                    # m: SourceItemSpec
             out   = await runner.run(m)                   # out: RunOutput
@@ -29,7 +29,7 @@ import contextlib
 import contextvars
 import logging
 from datetime import datetime, timezone
-from typing import AsyncIterator, Callable, Sequence
+from typing import TYPE_CHECKING, AsyncIterator, Callable, Sequence
 
 from pydantic import ConfigDict
 
@@ -37,8 +37,10 @@ from flow_sdk.builtin.source_item import EmailMessageSpec, SourceItemSpec
 from flow_sdk.schema.data_spec.dataset_spec import FileRef
 from flow_sdk.schema.data_spec.spec import DataSpec
 
+if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.builtin.agent_registry import AgentRef
+
 __all__ = [
-    "Agent",
     "AgentRunner",
     "EmailMessageSpec",
     "FileRef",
@@ -85,27 +87,18 @@ class RunOutput(DataSpec):
     files: list[FileRef] = []
 
 
-class Agent:
-    """A reference to a persona asset (``agentic-assets/agent/<name>/agent.md``).
-
-    Resolution is lazy: the name is checked when the first process spawns
-    (``get_agent_local_deployment`` raises ``LookupError`` loudly for an
-    unknown agent) — a constructor cannot await, and failing at first use
-    keeps the failure exactly as loud.
-    """
-
-    def __init__(self, name: str):
-        self.name = str(name or "").strip()
-        if not self.name:
-            raise ValueError("Agent needs a name")
-
-
 class AgentRunner:
-    """Runs a persona, one ``AgenticProcess`` per session.
+    """Runs an ``Agent``, one ``AgenticProcess`` per session.
+
+    ``agent`` is the REAL ``Agent`` entity (``flow_sdk/builtin/agent.py``) or
+    anything the registry resolves to one — a name or a TypeId. No SDK-side
+    wrapper: the entity that answers *who* already exists, and resolution is
+    lazy (``get_agent_local_deployment`` raises ``LookupError`` loudly for an
+    unknown agent at first spawn — a constructor cannot await).
 
     ``session_key`` maps an inbound spec to a session identity: the SAME key
     routes to the SAME process (the conversation continues with its context),
-    a new key spawns a fresh one from the persona. The default keys by
+    a new key spawns a fresh one from the agent. The default keys by
     provider thread — "each email thread is its own session".
 
     Plain class, no persistence: ``processes`` is an ordinary dict you can
@@ -115,12 +108,14 @@ class AgentRunner:
 
     def __init__(
         self,
-        agent: Agent,
+        agent: "AgentRef",
         session_key: Callable[[SourceItemSpec], str] = lambda m: str(
             m.thread_key or m.external_id
         ),
         max_processes: int = 4,
     ):
+        if not (agent if not isinstance(agent, str) else agent.strip()):
+            raise ValueError("AgentRunner needs an agent (entity, name, or id)")
         self.agent = agent
         self.session_key = session_key
         self.max_processes = int(max_processes)
@@ -144,7 +139,7 @@ class AgentRunner:
             )
         from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
 
-        deployment = await get_agent_local_deployment(self.agent.name)
+        deployment = await get_agent_local_deployment(self.agent)
         options: dict = {"visible": False}
         wf = current_workflow.get()
         if wf:
