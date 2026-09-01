@@ -270,7 +270,9 @@ def test_the_two_egress_seams_now_agree():
             # cached cloud record. PRIVATE, while its sibling `origin` (channel +
             # permalink) stays SHARED so a received message keeps its badge.
             # `source_item_id` is its queryable twin — same row-id reasoning.
-            ["origin_local", "source_item_id"],
+            # `sent_at` is the projection-owned EVENT time: locally re-derived
+            # from the item, and a hub LWW refresh must never blank it.
+            ["origin_local", "source_item_id", "sent_at"],
             # Per-device inbox state: travels outward, but a hub refresh must not reset it.
             [
                 "asset_occurrences",

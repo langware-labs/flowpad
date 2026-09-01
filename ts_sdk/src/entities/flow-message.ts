@@ -146,6 +146,11 @@ export interface IFlowMessage extends IEntity {
   delivery_status?: DeliveryStatus;
   delivered_at?: string | null;
   received_at?: string | null;
+  /** EVENT time — when the human sent this on its original channel. Written
+   *  only by the backend inbox projection (from SourceItem.occurred_at);
+   *  None for authored and hub-synced messages, whose event time is their
+   *  own created/updated clock. Read through `eventTime`, never directly. */
+  sent_at?: string | null;
   // NOTE: ``context`` (string[]) was renamed and consolidated into the
   // unified ``context_entities`` on IEntity. Read via
   // ``msg.contextEntities`` / ``msg.firstContextOfType('task')``.
@@ -220,6 +225,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   delivery_status?: DeliveryStatus;
   delivered_at?: string | null;
   received_at?: string | null;
+  sent_at?: string | null;
   is_draft?: boolean;
   kind?: FlowMessageKind;
   body_status?: BodyStatus;
@@ -251,6 +257,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.delivery_status = entity.delivery_status ?? 'created';
     this.delivered_at = entity.delivered_at ?? null;
     this.received_at = entity.received_at ?? null;
+    this.sent_at = entity.sent_at ?? null;
     this.is_draft = entity.is_draft ?? false;
     this.kind = entity.kind ?? FlowMessageKind.USER;
     this.body_status = entity.body_status ?? BodyStatus.NA;
@@ -303,6 +310,17 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
 
   /** True iff at least one attachment requires a packed body bundle.
    *  Mirrors flow_sdk.builtin.flow_message.FlowMessage.has_body exactly. */
+  /** THE one read rule for a message's time — mirrors
+   *  FlowMessage.event_time on the backend: `sent_at` pins a
+   *  channel-projected message to when the human sent it; everything else
+   *  falls through to the clocks it already trusts. Render THIS, never
+   *  created_date/updated_date directly. */
+  get eventTime(): string | null {
+    const pick = this.sent_at ?? this.updated_date ?? this.created_date ?? null;
+    // Base-entity clocks are string|Date on the wire type; normalize to ISO.
+    return pick instanceof Date ? pick.toISOString() : pick;
+  }
+
   hasBody(): boolean {
     for (const att of this.attachment ?? []) {
       if (att.attachment_type === AttachmentType.FILE) return true;

@@ -437,6 +437,14 @@ class FlowMessage(Entity):
     delivery_status: str = APIField(default=DeliveryStatus.CREATED.value)
     delivered_at: Optional[datetime] = APIField(default=None)
     received_at: Optional[datetime] = APIField(default=None, sharing=Sharing.HUB_WRITE)
+    #: EVENT time — when the human sent this, on its original channel. Stamped
+    #: (and convergently re-stamped) ONLY by the inbox projection, from
+    #: ``SourceItem.occurred_at``; every other lane leaves it None and falls
+    #: through ``event_time`` to the clocks it already trusts. PRIVATE like
+    #: ``source_item_id``: hub sync's LWW refresh rebuilds the row from the
+    #: hub's schema, which does not carry this field — a SHARED classification
+    #: would blank it on every pass (the ``parent_type_id`` trap below).
+    sent_at: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
     # NOTE: ``context`` (list[TypeId]) was renamed and consolidated into the
     # unified ``context_entities`` on the base ``Entity``. Read via
     # ``msg.context_entities`` / ``msg.first_context_of_type('task')``.
@@ -680,6 +688,17 @@ class FlowMessage(Entity):
             if t == AttachmentType.PROMPT and (att.data or "").startswith(PROMPT_FILE_VFS_PREFIX):
                 return True
         return False
+
+    @property
+    def event_time(self) -> Optional[datetime]:
+        """THE one read rule for a message's time — every derivation (the
+        conversation pointer rebuild, recency, and therefore inbox order and
+        bubble times) reads this, never ``created_date``/``updated_date``
+        directly. ``sent_at`` pins a channel-projected message to when the
+        human actually sent it; for everything else ``updated_date`` keeps
+        today's behavior (an authored message's edit bumps recency) with
+        ``created_date`` as the final fallback."""
+        return self.sent_at or self.updated_date or self.created_date
 
     def attachments(self) -> list[Attachment]:
         """Return the underlying attachment list (not a copy).
