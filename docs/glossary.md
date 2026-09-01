@@ -57,7 +57,9 @@ directory `agents`: that disagreement is deliberate, and the code says so at bot
 **`MCP` is ours; `MCP_SERVER` is theirs.** Two types, one word apart, and the difference is who
 owns the file. `MCP` is a flowpad-native REPO asset at `agentic-assets/mcp/<name>/mcp.json` (an
 `McpSpec`) that we author, index with a v4 id in its own identity capsule, attach to an Agent, and
-render onto a worker's command line. `MCP_SERVER` is the READ-ONLY inventory of servers already
+render onto a worker's command line. It may also OWN the server's code: an `entrypoint` (default
+`server.py`) names a file inside the asset folder that `fastmcp run` executes, kept relative
+because the folder travels with its agent. `MCP_SERVER` is the READ-ONLY inventory of servers already
 configured in a vendor's own files (`~/.claude.json`, `.codex/config.toml`, `~/.copilot/mcp-config.json`,
 …); it records a *definition site* we cannot write, which is why its id stays path-derived. Discovery
 reads `MCP_SERVER`; attaching writes `MCP`.
