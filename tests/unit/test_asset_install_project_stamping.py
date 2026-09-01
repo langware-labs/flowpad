@@ -36,7 +36,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase t
 TASK_ID = "6fcd0025-84e9-4c0b-a13d-8f3a4f295dd6"
 INSTALLED_TASK_ID = "c41f77a2-9b0e-4d63-8a51-6e2c9d4f7b38"
 
-_TASK_MD = "---\nid: {tid}\ntitle: ex7a\nstatus: to_do\ntask_type: Task\nkind: standard\n---\n\n# ex7a\n"
+_TASK_MD = "---\nid: {tid}\ntitle: ex7a\nstatus: to_do\ntask_type: Task\nkind: standard\n---\n"
 
 
 async def _make_project(root: Path, name: str) -> Project:

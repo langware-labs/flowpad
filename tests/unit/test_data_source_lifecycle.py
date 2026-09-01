@@ -12,13 +12,13 @@ import uuid
 import pytest
 
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
-from flow_sdk.ingest.driver import SetupVerdict, register_driver
+from flow_sdk.ingest.driver import IngestDriver, SetupVerdict, register_driver
 from flow_sdk.ingest.health import SourceHealth
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 
-class _NeedsSetupDriver:
+class _NeedsSetupDriver(IngestDriver):
     provider = "needs-setup-test"
     kind = "datasource.test.setup"
     record_kind = "content.message.chat"
@@ -34,7 +34,7 @@ class _NeedsSetupDriver:
         return self.verdict
 
 
-class _NoSetupDriver:
+class _NoSetupDriver(IngestDriver):
     provider = "no-setup-test"
     kind = "datasource.test.plain"
     record_kind = "content.feed.item"

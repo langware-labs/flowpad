@@ -44,7 +44,7 @@ def test_body_is_in_the_metadata_payload():
     payload = item.metadata_payload()
 
     assert payload.get("body") == "the searchable prose", (
-        "body dropped out of metadata_payload — it is missing from SourceItemMeta, "
+        "body dropped out of metadata_payload — it is missing from SourceItemSpec (the header), "
         "so the FTS row will be written with an empty content column"
     )
     # raw is Persist.FALSE: a DB column only, never on disk, never in FTS.

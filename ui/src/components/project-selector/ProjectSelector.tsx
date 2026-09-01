@@ -8,8 +8,9 @@ export interface ProjectSelectorItem {
   name: string;
   /** Full filesystem path, shown as the row's sub-line. */
   path?: string;
-  /** ISO timestamp used for the "ago" label. */
-  modifiedAt?: string | null;
+  /** Timestamp used for the "ago" label — ISO string, or the `Date` an
+   *  entity date field carries. */
+  modifiedAt?: string | Date | null;
   /** Epoch-ms sort key, precomputed at the mapping boundary via
    *  `projectRecencyMs` (UI-open recency wins, `modifiedAt` falls back). */
   recencyMs?: number | null;
@@ -32,7 +33,7 @@ export interface ProjectSelectorProps {
   excludeIds?: ReadonlyArray<string>;
 }
 
-function timeAgo(iso?: string | null): string | null {
+function timeAgo(iso?: string | Date | null): string | null {
   if (!iso) return null;
   const diff = Date.now() - new Date(iso).getTime();
   if (Number.isNaN(diff)) return null;

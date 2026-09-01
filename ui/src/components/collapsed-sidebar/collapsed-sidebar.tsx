@@ -1,7 +1,7 @@
+import { markPerfT0, perfLog } from '@src/routes/loaders/_perf';
 import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
 import { FlowpadAssistantButton } from '@src/components/floating-chat';
-import { useDevMode } from '@src/contexts/dev-mode-context';
-import { useViewMode, ViewMode } from '@src/components/view-mode';
+import { useIsDev, useViewMode, ViewMode } from '@src/components/view-mode';
 import { buildHubRailItems, type HubItem, type RailIcon } from './hub-rail';
 import { resolveRail, type RailGate, type RailItemId, type RailSpec } from './rail-visibility';
 import { Button } from '@src/components/ui/button';
@@ -20,7 +20,7 @@ import {
 import { DataSource, PageId } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useHasConversations } from '@src/hooks/use-has-conversations';
-import { useLastVibeChat } from '@src/pages/flow-page/use-last-vibe-chat';
+import { useLastVibeChat } from '@src/pages/flow-page/vibe-process-resolver';
 import { JourneyBadge } from '@src/journey/JourneyBadge';
 import { NavBadge } from '@src/components/ui/nav-badge';
 import { useLingui } from '@lingui/react/macro';
@@ -80,7 +80,7 @@ export function CollapsedSidebar() {
   const location = useLocation();
   const onDiscover = location.pathname === '/discover';
   const [secondaryExpanded, setSecondaryExpanded] = useState(false);
-  const devMode = useDevMode();
+  const devMode = useIsDev();
   const { unread: unreadCount } = useInboxManager();
   const viewMode = useViewMode();
   // Derived, not a second useIsVibe() subscription — that hook IS this comparison.
@@ -141,20 +141,19 @@ export function CollapsedSidebar() {
       // Hub page: keep every rail click under page=hub (desk factories would
       // revert the page). Home → /dock/hub/home; WorldView → /dock/hub/worldview/<projection>.
       if (hubMode) {
-        navigation.openPage(PageId.HUB, viewType, pointer);
+        navigation.openPage(PageId.HUB, viewType ?? ViewType.HOME, pointer);
         return;
       }
       if (viewType === null) {
-        if (import.meta.env.DEV) (window as Record<string, unknown>).__homeNavT0 = performance.now();
         // The home is an ordinary destination now, so this goes through the one
         // navigation path like every other rail click. It used to read the live
         // browser URL directly and call `navigate('/')`, guarding against a
         // lagging `currentView` — `openDock` dedupes on the pointer itself.
         navigation.goHome();
       } else {
-        if (import.meta.env.DEV && viewType === ViewType.SHELL) {
-          (window as Record<string, unknown>).__shellNavT0 = performance.now();
-          console.log('[PERF] +0ms shell icon clicked');
+        if (viewType === ViewType.SHELL) {
+          markPerfT0();
+          perfLog('shell icon clicked');
         }
         // Assets is scope-aware: open the scope-keyed assets tab — the current
         // project's scope when a project is active (tab "<project>'s Assets"),

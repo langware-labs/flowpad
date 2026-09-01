@@ -3,7 +3,6 @@
 import os
 import subprocess
 from pathlib import Path
-from flow_sdk.cli.cli_command import CLICommand
 
 
 def self_run_cli(command: str):
@@ -16,8 +15,9 @@ def self_run_cli(command: str):
     Returns:
         subprocess.CompletedProcess result
     """
-    # Parse the command using CLICommand
-    cli_cmd = CLICommand(command, use_python=True)
+    # Run through flow_cli.py directly (not the installed `flow` console script)
+    flow_cli_path = Path(__file__).parent.parent.parent / "flow_sdk" / "cli" / "flow_cli.py"
+    argv = ["python3", str(flow_cli_path), *command.split()]
 
     # Set up environment with PYTHONPATH
     project_root = Path(__file__).parent.parent.parent.parent.parent
@@ -26,7 +26,7 @@ def self_run_cli(command: str):
 
     # Run the CLI using the parsed executable args
     result = subprocess.run(
-        cli_cmd.executable_args,
+        argv,
         capture_output=True,
         text=True,
         env=env,

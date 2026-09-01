@@ -1,5 +1,5 @@
 {
-  "comment": "What cloud sharing puts on the wire. Parsed by tests/unit/test_cloud_share_contract.py, which checks it against BOTH the code and docs/collab/cloud-sharing.md. Neither is generated from the other: the code assertions catch a field that changed, and the doc assertion stops the fixture being updated without the page. Change this only with the doc in hand. Python-only by design \u2014 this payload is built entirely in flow_sdk, so there is deliberately no TypeScript counterpart.",
+  "comment": "What cloud sharing puts on the wire. Parsed by tests/unit/test_cloud_share_contract.py, which checks it against BOTH the code and docs/collab/cloud-sharing.md. Neither is generated from the other: the code assertions catch a field that changed, and the doc assertion stops the fixture being updated without the page. Change this only with the doc in hand. Python-only by design — this payload is built entirely in flow_sdk, so there is deliberately no TypeScript counterpart.",
   "project_field_buckets": {
     "hub_always": [
       "artifacts",
@@ -29,7 +29,6 @@
       "fetched_at",
       "fs_storage_mount_path",
       "fs_storage_provider",
-      "git_origin",
       "members",
       "origin_id",
       "private_context_entities_",
@@ -56,6 +55,7 @@
       "last_edited_at",
       "locale",
       "namespace",
+      "origin",
       "parent_type_id",
       "root_vfs_path",
       "schema_version",
@@ -70,7 +70,6 @@
     "secret_origins"
   ],
   "readded_by_share": [
-    "git_origin",
     "shared_context_origins",
     "shared_secret_origins"
   ],
@@ -107,7 +106,6 @@
     "fs_storage_mount_path",
     "fs_storage_path",
     "fs_storage_provider",
-    "git_origin",
     "group_id",
     "id",
     "installed_root",
@@ -117,6 +115,7 @@
     "members",
     "metadata",
     "namespace",
+    "origin",
     "parent_path",
     "parent_type_id",
     "path",

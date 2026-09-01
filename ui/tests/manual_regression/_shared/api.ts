@@ -58,3 +58,25 @@ export function apiBase(): string {
 export function apiContext(): Promise<APIRequestContext> {
   return pwRequest.newContext({ baseURL: apiOrigin() });
 }
+
+/**
+ * Wait until the compute node's single-flight scan/index activity is idle
+ * (`activity-status` serves data: null). Creating an asset kicks an auto-index,
+ * and a second index/scan POST while it runs is refused with 409 — wait on the
+ * node's own signal instead of racing it. `budgetMs <= 0` means "no deadline of
+ * its own": the caller's test timeout stays the bound.
+ */
+export async function waitForIndexerIdle(request: APIRequestContext, budgetMs = 45_000): Promise<boolean> {
+  const deadline = budgetMs > 0 ? Date.now() + budgetMs : Infinity;
+  while (Date.now() < deadline) {
+    const res = await request
+      .get(`${apiOrigin()}/api/v1/graph/compute_node/@local/fs-records/activity-status`)
+      .catch(() => null);
+    if (res && res.ok()) {
+      const body = (await res.json().catch(() => ({}))) as { data?: unknown };
+      if (body?.data == null) return true;
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return false;
+}

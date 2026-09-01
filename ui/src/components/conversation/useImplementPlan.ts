@@ -1,13 +1,12 @@
 import { t } from '@lingui/core/macro';
 import { useCallback, useMemo, useState } from 'react';
-import { AgenticProcess, FlowMessage, QueryRequest, Task, TypeId } from '@sdk';
+import { AgenticProcess, type DockPointerData, FlowMessage, QueryRequest, Task, TypeId } from '@sdk';
 import { ClaudeAgentOptions } from '@sdk/cli_workers/claude-cli';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessagePointer } from '@sdk/entities/conversation';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import type { DockPointer } from '@src/navigation/DockPointer';
 import { resolveWorkdir } from './apply-project-choice';
 import { buildReceiverContextPrompt } from './useMyProcess';
 
@@ -68,7 +67,7 @@ export function useImplementPlan({
   // the watched query notices the new entity. The watched-query result
   // (`planSessionByMessageId`) takes over once it catches up — pending stays
   // in the map but loses to live in `conversationPlanSession` below.
-  const [pendingPlanPointers, setPendingPlanPointers] = useState<Map<string, DockPointer>>(() => new Map());
+  const [pendingPlanPointers, setPendingPlanPointers] = useState<Map<string, DockPointerData>>(() => new Map());
 
   const runImplementPlan = useCallback(
     (messageId: string) => {
@@ -149,8 +148,8 @@ export function useImplementPlan({
   // One session per conversation: as soon as ANY thread message has a session
   // (live or pending), every spec-bearing bubble flips to point at it. Live
   // wins over pending; among live picks, most-recent wins.
-  const conversationPlanSession = useMemo<DockPointer | null>(() => {
-    let bestPointer: DockPointer | null = null;
+  const conversationPlanSession = useMemo<DockPointerData | null>(() => {
+    let bestPointer: DockPointerData | null = null;
     let bestTs = -1;
     for (const ptr of pointers) {
       const live = planSessionByMessageId.get(ptr.id);

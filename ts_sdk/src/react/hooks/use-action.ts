@@ -30,6 +30,7 @@ export function useAction<T>(actionInfo: ActionInfo | null, options: UseActionOp
   const inFlightControllerRef = useRef<AbortController | null>(null);
   const fetchSeqRef = useRef<number>(0);
   const mountedRef = useRef<boolean>(false);
+  const lastFetchedUrlRef = useRef<string | null>(null);
 
   const doFetch = useCallback(async () => {
     if (!actionRef.current) return;
@@ -59,8 +60,8 @@ export function useAction<T>(actionInfo: ActionInfo | null, options: UseActionOp
         }
       }
     } catch (e: unknown) {
-      console.log('use action error', e);
       if (!controller.signal.aborted && mountedRef.current && currentSeq === fetchSeqRef.current) {
+        console.log('use action error', e);
         const err = e instanceof Error ? e : new Error(String(e));
         setError(err);
       }
@@ -73,6 +74,7 @@ export function useAction<T>(actionInfo: ActionInfo | null, options: UseActionOp
 
   const refetch = useCallback(async () => {
     if (!enabled) return;
+    lastFetchedUrlRef.current = null; // Allow re-fetch of same URL
     await doFetch();
   }, [doFetch, enabled]);
 
@@ -80,6 +82,11 @@ export function useAction<T>(actionInfo: ActionInfo | null, options: UseActionOp
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      // React Strict Mode intentionally runs effect setup → cleanup → setup on
+      // first mount. Cleanup aborts the first request, so its URL must become
+      // fetchable again; otherwise the replacement setup mistakes the aborted
+      // request for a completed one and leaves the hook permanently empty.
+      lastFetchedUrlRef.current = null;
       if (inFlightControllerRef.current) {
         try {
           inFlightControllerRef.current.abort();
@@ -95,6 +102,10 @@ export function useAction<T>(actionInfo: ActionInfo | null, options: UseActionOp
       setLoading(false);
       return;
     }
+    const url = actionInfo?.actionUrl ?? null;
+    // Skip if we already fetched (or are fetching) this exact URL
+    if (url && url === lastFetchedUrlRef.current) return;
+    lastFetchedUrlRef.current = url;
     setData(null);
     setError(null);
     setLoading(true);

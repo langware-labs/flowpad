@@ -1,6 +1,7 @@
 import {
   FlowMessage,
   FlowMessageKind,
+  PermissionAction,
   QueryFilter,
   QueryRequest,
   RemoteWorkerSession,
@@ -94,7 +95,7 @@ function PermissionToggle({
 }: {
   contact: ContactKey;
   projectId: string | null;
-  action: 'execute_prompt' | 'auto_reply';
+  action: PermissionAction;
   label: ReactNode;
 }) {
   const { permissions, refetch } = useContactPermissions(contact);
@@ -270,7 +271,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
               <PermissionToggle
                 contact={guestContact}
                 projectId={session.project_id ?? null}
-                action="execute_prompt"
+                action={PermissionAction.EXECUTE_PROMPT}
                 label={<Trans>Always auto-run {guestName}'s sessions here</Trans>}
               />
             </div>

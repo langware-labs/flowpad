@@ -11,6 +11,8 @@ Two things prose cannot enforce and a manual check would never notice:
 
 import pytest
 
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
 pytestmark = pytest.mark.asyncio
 
 
@@ -29,13 +31,12 @@ async def test_indexed_markdown_resolves_to_its_editor_url(client, tmp_path):
     """The tagit case: a doc that has been indexed gets a clickable link."""
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
     from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown  # noqa: PLC0415
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
     doc = tmp_path / "catchup-login.md"
     doc.write_text("---\ntitle: Catchup login\ntags: [breadcrumb.test.catchup_login.rules]\n---\n# Catchup login\n")
 
-    records = extract_markdown(FSRef(doc), "")
+    records = SchemaRegistry.get("markdown").from_disk_fn(FSRef(doc), "")
     assert records, "doc should parse"
     entity = await Entity.from_record(records[0])
     assert entity is not None
@@ -57,11 +58,10 @@ async def test_indexed_markdown_resolves_to_its_editor_url(client, tmp_path):
 async def test_the_same_record_resolves_by_typeid(client, tmp_path):
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
     from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown  # noqa: PLC0415
 
     doc = tmp_path / "by-typeid.md"
     doc.write_text("---\ntitle: By typeid\n---\n# By typeid\n")
-    entity = await Entity.from_record(extract_markdown(FSRef(doc), "")[0])
+    entity = await Entity.from_record(SchemaRegistry.get("markdown").from_disk_fn(FSRef(doc), "")[0])
 
     data = (await _post(client, {"typeid": f"markdown-{entity.id}"}))["data"]
     assert data["url"].endswith(f"/dock/assets/editor/markdown/typeid/markdown-{entity.id}")

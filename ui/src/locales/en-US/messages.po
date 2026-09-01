@@ -492,10 +492,6 @@ msgstr "{name} avatar"
 msgid "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
 msgstr "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
 
-#: src/components/harness-login/HarnessLoginModal.tsx
-msgid "{name} said: {statusReason}"
-msgstr "{name} said: {statusReason}"
-
 #: src/components/conversation/LiveSessionGroup.tsx
 msgid "{promptCount} prompts · {replyCount} replies"
 msgstr "{promptCount} prompts · {replyCount} replies"
@@ -778,10 +774,6 @@ msgstr "A fresh shell needs to be allocated. (Backend action coming — for now 
 #: src/components/conversation/ConversationView.tsx
 msgid "A live session is already running in this conversation"
 msgstr "A live session is already running in this conversation"
-
-#: src/components/quick-create/QuickCreatePanel.tsx
-msgid "A new project folder — everything you create is scoped to it"
-msgstr "A new project folder — everything you create is scoped to it"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "A project with that name exists"
@@ -3008,10 +3000,6 @@ msgstr "Clone @ {branch}"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Clone & Open"
 msgstr "Clone & Open"
-
-#: src/components/quick-create/QuickCreatePanel.tsx
-msgid "Clone a git repo (or reuse a local clone) as a new project"
-msgstr "Clone a git repo (or reuse a local clone) as a new project"
 
 #: src/components/assets/context-folder-sources.tsx
 msgid "Clone a git repo (or reuse a local clone) as context"
@@ -7096,7 +7084,6 @@ msgid "from first"
 msgstr "from first"
 
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "From git"
 msgstr "From git"
 
@@ -9934,7 +9921,6 @@ msgstr "New option"
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "New project"
 msgstr "New project"
 
@@ -12385,7 +12371,6 @@ msgstr "Progress"
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
-#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
@@ -15214,10 +15199,6 @@ msgstr "Sign this sandbox out"
 msgid "Sign-in"
 msgstr "Sign-in"
 
-#: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Sign-in not confirmed"
-msgstr "Sign-in not confirmed"
-
 #: src/components/account/user-info.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
@@ -17877,10 +17858,6 @@ msgstr "Watch"
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "Watchers register patterns via <0>Shell.addTrigger</0>; matched lines appear here."
 msgstr "Watchers register patterns via <0>Shell.addTrigger</0>; matched lines appear here."
-
-#: src/components/harness-login/HarnessLoginModal.tsx
-msgid "We couldn't confirm this sign-in: {statusReason}"
-msgstr "We couldn't confirm this sign-in: {statusReason}"
 
 #: src/notifications/ingest.ts
 msgid "We couldn't find what you were looking for on the cloud."

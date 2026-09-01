@@ -5,11 +5,9 @@ import shutil
 from pathlib import Path
 
 from flow_sdk.fs_store.fs_record import FSRecord
-from flow_sdk.fs_store.indexer.functions.skill import extract_skill, parse_skill_yaml_from_dir
-from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.indexer.functions.skill import parse_skill_yaml_from_dir
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
-
 
 _META_JSON = "metadata.json"
 
@@ -79,13 +77,4 @@ def get_skill(uid: str) -> FSRecord | None:
 
 def load_skill_record(path: str | Path) -> FSRecord:
     """Load a skill record from a live skill folder or a shadow records folder."""
-    p = Path(path)
-    if not p.is_dir():
-        return FSRecord.load_record(path)
-    if (p / _META_JSON).exists() or (p / "data.json").exists():
-        return FSRecord.load_record(path)
-    # Live skill dir — use extractor.
-    records = extract_skill(FSRef(p.resolve()))
-    if not records:
-        return FSRecord(type=RecordType.SKILL, status="active")
-    return records[0]
+    return FSRecord.load_record(path)

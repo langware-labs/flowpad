@@ -36,7 +36,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 /** The Vibe-only Chats target. Captured, not exercised — its own resolution is
  *  unit-tested against the query it builds. */
 const lastVibeChat = vi.hoisted(() => vi.fn());
-vi.mock('@src/pages/flow-page/use-last-vibe-chat', () => ({ useLastVibeChat: () => lastVibeChat }));
+vi.mock('@src/pages/flow-page/vibe-process-resolver', () => ({ useLastVibeChat: () => lastVibeChat }));
 
 // Content gates, driven per test.
 const gates = vi.hoisted(() => ({ conversations: false }));
@@ -46,7 +46,6 @@ vi.mock('@src/hooks/use-has-conversations', () => ({ useHasConversations: () => 
 vi.mock('@src/components/theme-toggle/theme-toggle', () => ({ ThemeToggle: () => null }));
 vi.mock('@src/components/floating-chat', () => ({ FlowpadAssistantButton: () => null }));
 vi.mock('@src/pages/flow-page/content-panel/user-dropdown/user-dropdown', () => ({ UserDropdown: () => null }));
-vi.mock('@src/contexts/dev-mode-context', () => ({ useDevMode: () => false }));
 vi.mock('@src/store/use-inbox-store', () => ({ useInboxStore: () => ({ unreadCount: 0 }) }));
 vi.mock('@src/store/use-spotlight-store', () => ({
   useSpotlightStore: { getState: () => ({ openSpotlight: vi.fn() }) },

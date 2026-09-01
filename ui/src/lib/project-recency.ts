@@ -10,13 +10,13 @@
  */
 export function projectRecencyMs(item: {
   last_active_at?: number | string | null;
-  modified_at?: string | null;
+  modified_at?: string | Date | null;
 }): number | null {
   return toMs(item.last_active_at) ?? toMs(item.modified_at);
 }
 
-/** Epoch-ms number passes through; ISO string parses; invalid/absent → null. */
-function toMs(value: number | string | null | undefined): number | null {
+/** Epoch-ms number passes through; ISO string or `Date` parses; invalid/absent → null. */
+function toMs(value: number | string | Date | null | undefined): number | null {
   if (typeof value === 'number') return Number.isNaN(value) ? null : value;
   if (value) {
     const ms = new Date(value).getTime();

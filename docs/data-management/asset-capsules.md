@@ -50,14 +50,15 @@ FTS remove capsule blocks before treating the remaining text as document body.
 
 A capsule name is a flat slug (`[a-z][a-z0-9_-]{0,63}`) and one file carries at
 most one block per name — dotted vocabularies therefore live in the payload, not
-the name. `identity` is the canonical kind; `tag` binds a source file to the
-subjects it implements (see `docs/tags.md`).
+the name. `identity` is the folder-json identity carrier (markdown identity lives in
+frontmatter now — see below); `tag` binds a source file to the subjects it
+implements (see `docs/tags.md`).
 
 `tag` is the one **repeatable** name (`_REPEATABLE_NAMES` in `line_comment.py`),
 because it annotates a *position* rather than the file: a test module carries one
 block per breadcrumbed test, each directly above it. The relaxation is per-name
 and never global — duplicate `identity` still fails closed, which is what
-`CapsuleIdentityBackend` relies on. Repeatable names get a positional API on the
+`FolderJsonCarrier` relies on. Repeatable names get a positional API on the
 line-comment carrier; `read`/`write`/`write_if_absent` keep acting on the first
 block, so single-capsule callers are unchanged:
 
@@ -70,62 +71,63 @@ block, so single-capsule callers are unchanged:
 
 ## Identity integration
 
-Types declare `CapsuleSpec("identity", 1)` and an identity backend in
-`TypeInfo`. The capsule package only transports `{"id": ...}`; TypeInfo owns
-v4/v5 validation, stable-key choice, and `mint_uuid` calls:
+Identity is not a capsule concern any more for markdown: **a markdown main
+document carries its id as its first frontmatter key `id:`**. The type declares
+WHERE its id lives through `TypeInfo.identity_carrier`
+(`flow_sdk/fs_store/identity_carrier.py`):
+
+| carrier | types | stores |
+|---|---|---|
+| `FrontmatterCarrier` / `FolderMdCarrier` | every type whose main document is markdown — markdown, claude_md, claude_memory, claude_rules, subagent, command, plan, prompt, agent, spec, and skill/task/whiteboard (`SKILL.md`, `task.md`, `WHITE_BOARD.md`) | `id:` first in the YAML frontmatter of that document |
+| `FolderJsonCarrier` | folder types whose main is JSON — dataset, deck, deck_template, graph_workflow, journey | `<folder>/.flow/capsules/identity.json` |
+| `NativeJsonCarrier` | reports | the `"id"` key of the report's own JSON root |
+| `DerivedCarrier` | sessions, project, mcp_server, plugin, … | nothing — the id is a pure function of the source |
+
+The seam is `TypeInfo.mint_entity_id(ref, *, proposed_id=None, owner_id=None, live_ids=None)`
+— read the carrier; a live id is the answer; else the owning row; else mint and
+write — and `TypeInfo.read_id(ref)`, the pure read the collision ranking and
+create guards use. The carrier only reads and writes; TypeInfo owns v4/v5
+validation, stable-key choice and `mint_uuid`.
 
 ```text
-mint_entity_id(ref, *, owner_id=None, live_ids=None,
-               proposed_id=None, derive=False, overwrite=False)
-
-  observe the carrier ONCE
-    → canonical identity capsule
-    → ordered read-only legacy/native readers
-    → adopt only UUID v4/v5   (a foreign id reads as "no carrier")
-
   1. the carrier   IF no row owns this path
                    OR the carrier IS that row
                    OR the carrier is a live id of this type
-  2. else owner_id — the row that already owns ref's path
-  3. else derive   — stable key / path-v5 / fresh v4   [derive=True]
-                     committed via atomic store_if_absent [overwrite=True]
+  2. else owner_id — the row that already owns ref's path (stamped back if absent)
+  3. else mint     — proposed id / stable key / fresh v4, written through write_if_absent
 ```
 
 The ordering axis is carrier **liveness**, not "file vs database". `live_ids` is
 the oracle: `None` means "cannot prove dead", so a valid carrier always wins —
 only the index walk, which holds the complete per-type id set, may conclude that
-a carrier names no entity.
+a carrier names no entity. A read-then-mint pair (`read_id(ref) or
+mint_entity_id(ref)`) skips step 2 and forks the entity after a rewrite wiped
+the carrier; an AST lint fails the build on that shape.
 
-There is no separate extract/mint pair. A read-then-mint pair (`extract_id(ref)
-or mint_id(ref)`) skips step 2, so a full-content rewrite that wiped the carrier
-invents a new id for a path a row already owns — forking the entity and leaving
-every bookmark and display pin dangling. An AST lint fails the build on that
-shape and on the old method names.
+Writes happen only when the carrier is writable, the ref is not `read_only`,
+and carrier writes are not suppressed — the seam checks all three, for every
+caller. A present-but-invalid carrier (a hand-written v7) keeps its bytes and
+resolves to a stable path-derived v5; a corrupt carrier raises.
 
-`derive=False` (the default) is the read-only probe: it answers only from
-evidence and returns `None` when there is none. Collision-identity ranking,
-create guards and publication assertions all depend on that `None` — a derived
-value would make two unstamped copies look identical. An INVALID carrier keeps
-its bytes even under `overwrite`; only an ABSENT one is stamped.
+**Legacy markdown capsules.** The HTML-comment `identity` block markdown used
+to carry is still read (and stripped from bodies), and is **converted in place
+on the next index**: the id moves into the frontmatter, the block is removed,
+the id is unchanged. A folder's `.flow/capsules/identity.json` under a markdown
+main document is copied into that document's header the same way (the json is
+left). `asset_id:` and `.flow/id` stay read-only fallbacks. A file that may not
+be written (read-only root, suppressed carrier writes) keeps its capsule and is
+read from it indefinitely.
 
-A source may also declare that its bytes are not ours to write at all. A driver
+A source may declare that its bytes are not ours to write at all. A driver
 with `stamps_identity = False` — git, whose files are tracked — runs its
 reflection inside `carrier_writes_suppressed()` (`fs_store/fs_record.py`), and
-`upsert_main_ref` then returns the id it was given without consulting or
-committing to the carrier. Identity for such a source is resolved by an
-`Entity.origin_id` lookup instead, so the ladder above is not merely skipped, it
-is unnecessary. The flag is a ContextVar because the write happens four layers
-below the decision; a parameter would put "may I write" on methods with no
-business asking. Suppression is the reason a git working tree is clean after an
-index pass — a stamped capsule would be committed and pushed to everyone who
-pulls.
+the seam then answers from the carrier or a stable path-derived id without
+writing. Identity for such a source converges through an `Entity.origin_id`
+lookup instead. The flag is a ContextVar because the write happens four layers
+below the decision. Suppression is the reason a git working tree is clean after
+an index pass.
 
-Legacy Markdown `id`/`asset_id`, folder `.flow/id`, and manifest identities
-remain readable without cleanup, backfill, or dual-write. Types whose native
-format owns its root JSON identity continue using that carrier intentionally.
-An invalid canonical id is preserved; a valid compatibility identity can still
-be adopted, otherwise resolution uses a stable v5. Corrupt, duplicate, or
-future-version capsule data fails closed. The indexer passes the resolved id to
+Types whose native format owns its root JSON identity use that carrier. The indexer passes the resolved id to
 `from_disk_fn(ref, resolved_id)`. If the same valid capsule identity occurs at
 multiple live paths, the collision resolver selects one primary by earliest Git
 introduction, trusted filesystem birth time, persisted `first_seen_at`, then

@@ -11,7 +11,10 @@ worker-specific symbol.
 """
 
 import os
+import subprocess
 import sys
+import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Awaitable, Callable
@@ -168,6 +171,7 @@ def resolve_live_e2e_instance() -> Callable[[str], LiveE2EInstance]:
 _REAL_HOME_TEST_MODULES = frozenset(
     {
         "test_agentic_process",
+        "test_gmail_agent_source",
         "test_agentic_process_prompt_streaming",
         "test_agentic_cli_shell_mix",
         "test_claude_cli",
@@ -328,6 +332,90 @@ def allocate_ports(unused_tcp_port_factory):
         return tuple(unused_tcp_port_factory() for _ in range(n))
 
     return _allocate
+
+
+@pytest.fixture()
+def live_backend(initialize_test_db, allocate_ports, tmp_path, monkeypatch):
+    """A real backend subprocess on THIS pytest session's DB. Yields its port.
+
+    For tests whose subject is CLI-shaped: ``flow record create``, ``flow
+    artifact``, a skill's ``source_ctl.py``. Those reach the instance over
+    loopback and have no in-process path, so exercising them needs a running
+    server — but the test itself can stay HTTP-free, because pointing the
+    backend at the session's own SQLite file lets it read back with the entity
+    SDK whatever a worker wrote through the route. (WAL plus the driver's
+    existing busy_timeout is what makes the two processes safe on one file.)
+
+    ``FLOW_INSTANCE``/``FLOW_HOME`` are pinned for the duration, so every
+    subprocess the test spawns — including workers a driver spawns underneath
+    it — resolves to this instance and not to the developer's own.
+
+    Booting from an empty ``FLOW_HOME`` is deliberate: the backend seeds system
+    projects (Agents, data-source specs) on the way up, which is what lets a
+    test start from nothing.
+
+    Function-scoped on purpose. The boot is ~3s, and an instance outliving its
+    test would go on polling sources the next one does not expect.
+    """
+    from flow_sdk.db.drivers.db_driver import _driver_instances
+
+    driver = _driver_instances.get("sqlite")
+    assert driver is not None, "the session DB driver is not initialized"
+
+    (port,) = allocate_ports()
+    name = f"live-e2e-{uuid.uuid4().hex[:8]}"
+    flow_home = tmp_path / "flow-home"
+
+    env = {
+        **os.environ,
+        "FLOW_INSTANCE": name,
+        "FLOW_HOME": str(flow_home),
+        "SQLITE_DATABASE_PATH": str(driver.config.database),
+        "LOCAL_SERVER_PORT": str(port),
+        "MINIHUB_HOST": "127.0.0.1",
+        "MINIHUB_RELOAD": "False",
+        "FLOWPAD_SKIP_DOTENV": "true",
+    }
+    log = tmp_path / "backend.log"
+    with log.open("wb") as sink:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "flow_sdk.server.run"], env=env, stdout=sink, stderr=sink
+        )
+
+    monkeypatch.setenv("FLOW_INSTANCE", name)
+    monkeypatch.setenv("FLOW_HOME", str(flow_home))
+
+    try:
+        _await_backend_health(proc, port, log)
+        yield port
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=3)
+
+
+def _await_backend_health(proc: subprocess.Popen, port: int, log: Path) -> None:
+    """Block until the instance answers, and fail with its log if it never does.
+
+    Fixed 60s ceiling: a backend that has not bound a port by then is broken,
+    not slow, and the log says why — which is worth more than a longer wait.
+    """
+    import requests
+
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            pytest.fail(f"backend exited {proc.returncode}\n{log.read_text(errors='replace')[-3000:]}")
+        try:
+            if requests.get(f"http://127.0.0.1:{port}/health/status", timeout=2).status_code == 200:
+                return
+        except requests.RequestException:
+            pass
+        time.sleep(0.5)
+    pytest.fail(f"backend never became healthy\n{log.read_text(errors='replace')[-3000:]}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -26,6 +26,13 @@ interface TabbedTerminalProps {
   /** Pin spawned shells/processes to this project (CollaborationSpace / dev view);
    *  otherwise the active project. */
   spawnProjectId?: string | null;
+  /**
+   * Process this pane is mounted for — a bare id or a full
+   * `agentic_process-<id>` pointer. When given and that process carries no
+   * shell, the pane renders "Disconnected" instead of the terminal body.
+   * Omitted by the plain /dock/shell host, which is not process-scoped.
+   */
+  processId?: string;
 }
 
 /**
@@ -314,10 +321,26 @@ const TerminalPanel: React.FC<{
  * panel hydrates its own entity on mount. With no tabs it renders `ProjectHome`
  * (the shared project landing, which owns the spawn openers + their modals).
  */
-const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', scope = 'project', spawnProjectId }) => {
+const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
+  className = '',
+  scope = 'project',
+  spawnProjectId,
+  processId,
+}) => {
   const { flow } = useAgentContext();
   const { currentDock } = useDockNavigation();
   const tabs = useTerminalTabs(scope, spawnProjectId);
+
+  // Process-scoped host: a process that loaded but carries no shell has nothing
+  // to attach to. Hook order is fixed — the entity is subscribed unconditionally
+  // and the guard is applied below.
+  const hostProcessId = processId
+    ? (DockPointer.isAgenticProcessPointer(processId) ? DockPointer.extractAgenticProcessId(processId) : processId)
+    : null;
+  const { data: hostProcess } = useEntity<AgenticProcess>(
+    hostProcessId ? new TypeId(AgenticProcess.type, hostProcessId) : null,
+  );
+  const hostDisconnected = !!hostProcess && !hostProcess.shell_id;
 
   // Active panel = the URL (every tab is keyed by its dockPointer.tabHash).
   // A non-terminal dock's tabHash never matches a terminal tab, so no special-case.
@@ -355,6 +378,14 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', scope =
       return next;
     });
   }, [activeKey]);
+
+  if (hostDisconnected) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
+        <span className="text-sm">Disconnected</span>
+      </div>
+    );
+  }
 
   return (
     <div className={`flex h-full ${className}`}>

@@ -1,7 +1,6 @@
 from pydantic import BaseModel, ConfigDict
 
-# `parse_custom_uri` is unused HERE and re-exported on purpose — `api/fs_api.py`
-# names it in `__all__`, `api_types/fs_api.py` re-exports it again, and
+# `parse_custom_uri` is unused HERE and re-exported on purpose —
 # `tests/api/test_storage.py` imports it from this module. The noqa is load-bearing:
 # ruff's unused-import autofix removed it once, which broke collection of two test
 # modules with `cannot import name 'parse_custom_uri'`.

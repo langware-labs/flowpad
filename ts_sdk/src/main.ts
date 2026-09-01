@@ -22,6 +22,9 @@ import { ConnectionManager } from './websocket';
 declare global {
   interface Window {
     appReady: boolean;
+    /** Introspection hooks for manual_regression specs; see initSdk. */
+    context?: typeof dataContext;
+    sniffer?: typeof snifferManager.entity;
   }
 }
 
@@ -175,8 +178,8 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       // attached entity, exposing its flowDataStream for event-count
       // assertions.
       try {
-        (window as Record<string, unknown>).context = dataContext;
-        (window as Record<string, unknown>).sniffer = snifferManager.entity;
+        window.context = dataContext;
+        window.sniffer = snifferManager.entity;
       } catch {
         // ignore — non-browser env
       }

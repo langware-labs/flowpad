@@ -44,7 +44,7 @@ SECRET_ORIGIN = TypeMetadata(
     main_layout="file",
     main_ext=".json",
     from_disk_fn=extract_secret_origin,
-    identity_backend=derived_identity(secret_origin_id_from_file),
+    identity_carrier=derived_identity(secret_origin_id_from_file),
     id_stable_key_fn=secret_origin_identity_key,
     meta_model=SecretOriginMeta,
 )

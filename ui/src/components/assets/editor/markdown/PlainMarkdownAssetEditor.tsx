@@ -12,7 +12,7 @@ import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { dataContext, FrontMatterFsRef, ProcessKind } from '@sdk';
+import { dataContext, FrontMatterFsRef, ProcessKind, type AnyEntity } from '@sdk';
 import type { APIEntity, FSRef, TypeId } from '@sdk';
 import { useEntityOps } from '@sdk/react/hooks';
 import { useDocTranslations } from '@src/components/assets/editor/translations/useDocTranslations';
@@ -25,7 +25,7 @@ interface PlainMarkdownAssetEditorProps {
   /** Entity type string (e.g. `"plan"`, `"claude_md"`, `"markdown"`). */
   assetType: string;
   /** Entity already resolved by a TypeId route; skips local path discovery. */
-  resolvedEntity?: APIEntity<APIEntity<any>>;
+  resolvedEntity?: APIEntity<AnyEntity>;
   /** Optional wiki heading slug. */
   fragment?: string;
   /** Wiki page/namespace to retain for links when this asset is Wiki-rendered. */
@@ -50,7 +50,7 @@ export function PlainMarkdownAssetEditor({
   fragment,
   wikiLinkTarget,
 }: PlainMarkdownAssetEditorProps) {
-  const { entity: pathEntity } = useEntityByPath<APIEntity<APIEntity<any>>>(
+  const { entity: pathEntity } = useEntityByPath<APIEntity<AnyEntity>>(
     resolvedEntity ? null : assetType,
     resolvedEntity ? null : fsRef,
   );

@@ -99,7 +99,7 @@ async def share_entity() -> ApiResponse:
             )
         # Carry the exact origin that passed the authoritative preflight into
         # the share operation and, below, into the durable local row.
-        entity.git_origin = project_git_origin
+        entity.origin = project_git_origin
 
     type_info = SchemaRegistry.get(target.type)
     if type_info is not None and type_info.git_publishable:
@@ -165,7 +165,7 @@ async def share_entity() -> ApiResponse:
     # save is deliberately unconditional (checking remote first was the bug:
     # remote was already true and the write was skipped).
     if isinstance(entity, Project):
-        entity.git_origin = project_git_origin
+        entity.origin = project_git_origin
         try:
             await entity.save(request_info.someone_typeid)
         except Exception:  # noqa: BLE001 — hub succeeded, local contract did not

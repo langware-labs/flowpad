@@ -1,5 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import type { SecretOriginLocator, SecretPointerScope } from '@sdk';
+import type { SecretOriginLocator, SecretPointerScope, SodStore } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
@@ -20,7 +20,7 @@ export interface DeclareSubmit {
   envVar: string;
   description: string;
   locator: SecretOriginLocator;
-  sodStore: string;
+  sodStore: SodStore;
   scope: SecretPointerScope;
   /** Empty when none was given, or when the chosen kind cannot take one. */
   value: string;

@@ -89,6 +89,15 @@ test.describe('Vibe Workspace confirmed-bug regressions', () => {
         data: { asset_ref: firstFile },
       });
       expect(patch.status()).toBe(200);
+      // Don't open the editor until the PATCHed asset_ref is what the server
+      // serves — under load the read-back can lag the 200, and the editor
+      // would load the OLD ref and never show the marker.
+      await expect
+        .poll(async () => {
+          const r = await request.get(`${API}/api/v1/graph/skill/${first.id}`);
+          return ((await r.json()) as { data?: { asset_ref?: string } }).data?.asset_ref;
+        }, { message: 'patched asset_ref visible' })
+        .toBe(firstFile);
 
       await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
       await page.goto(`/dock/assets/editor/skill/typeid/skill-${first.id}`);

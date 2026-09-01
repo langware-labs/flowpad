@@ -3,21 +3,17 @@
 The nine shipped drivers are Python classes in this package. A source authored
 as an ASSET has no class — it has `data_source.json` plus a `fetch.py`, and this
 module is what makes that runnable: one adapter that satisfies the
-``IngestDriver`` Protocol structurally and answers every verb by calling the
+``IngestDriver`` base and answers every verb by calling the
 module over ``utils/module_rpc``.
 
 **Why the manifest may declare traits and a builtin may not.** A builtin has a
 class to hold `kind`, `record_kind` and `stamps_identity`; an authored source has
 only its manifest, so the `traits` block IS its class body. That asymmetry is
-enforced at parse time (`ingest/manifest.py`) and consumed here.
+enforced at load time (`ManifestSpec`) and consumed here.
 
-**Two classes, not one, and the difference is `verify`.** `DataSource.save()`
-resolves NEW by asking `callable(getattr(driver, "verify", None))` — so a single
-adapter carrying a `verify` method would make every authored source demand a
-Verify click it has no use for, which is the exact outcome that method's
-docstring says it exists to prevent. A spec declares "I have a human setup step"
-by carrying a non-empty ``setup_wiki``; only then does it get the subclass that
-has the verb. Setting ``verify = None`` instead would read as a bug.
+**`verify` is per instance.** `DataSource.save()` parks a NEW source in SETUP
+when `driver.verify is not None`; a spec declares a human setup step by carrying
+a non-empty ``setup_wiki``, and only then does the adapter get the verb.
 
 **The module never writes its own header.** ``source_id``, ``provider``, ``kind``
 and ``segment_key`` are stamped here from the source and the spec, exactly as
@@ -33,10 +29,10 @@ import os
 import sys
 from typing import Any, Optional
 
-from flow_sdk.ingest.driver import FetchResult, SegmentCursorView, SegmentRef, SetupVerdict
+from flow_sdk.builtin.data_source_spec import AuthSpec, DataSourceSpec, Runtime, TraitsSpec
+from flow_sdk.builtin.source_item import SourceItemSpec
+from flow_sdk.ingest.driver import IngestDriver, FetchResult, SegmentCursorView, SegmentRef, SetupVerdict
 from flow_sdk.ingest.health import SourceError
-from flow_sdk.ingest.manifest import SCRIPT_FILE, Runtime, Traits
-from flow_sdk.ingest.models import IngestItem
 from flow_sdk.utils.module_rpc import ModuleFailure, call_module
 
 logger = logging.getLogger(__name__)
@@ -57,15 +53,18 @@ _slots = asyncio.Semaphore(MAX_CONCURRENT_MODULES)
 DEADLINES = {"segments": 30, "fetch": 120, "verify": 30}
 
 
-class ScriptSource:
+class ScriptSource(IngestDriver):
     """One authored source. Constructed per spec, registered like any driver."""
 
     #: Authored sources do not send. `inbox/outbound.py` then reports "cannot
     #: send" rather than spawning something that does not exist.
     sends = False
 
-    def __init__(self, *, name: str, folder: str, traits: Optional["Traits"] = None, env=()):
-        traits = traits or Traits()
+    def __init__(self, *, name: str, folder: str, traits: Optional[TraitsSpec] = None, env=(), setup: bool = False):
+        traits = traits or TraitsSpec()
+        #: A spec with a human setup step (`setup_wiki`) gets the verb; the
+        #: engine reads `driver.verify is None` to decide whether to park in SETUP.
+        self.verify = self._verify if setup else None
         self.provider = name
         self.folder = folder
         #: The ontology kind for the SOURCE row. Derived, not declared: it is a
@@ -139,8 +138,8 @@ class ScriptSource:
             unchanged=bool(data.get("unchanged")),
         )
 
-    def _item(self, source, cursor: SegmentCursorView, raw: Any) -> IngestItem:
-        """One module dict → an IngestItem, with the header stamped HERE.
+    def _item(self, source, cursor: SegmentCursorView, raw: Any) -> SourceItemSpec:
+        """One module dict → an SourceItemSpec, with the header stamped HERE.
 
         An empty `external_id` is a config failure rather than a skip: the
         natural key is (source_id, segment_key, external_id), so a blank one
@@ -151,13 +150,13 @@ class ScriptSource:
         external_id = str(raw.get("external_id") or "")
         if not external_id:
             raise SourceError.config("bad_response", "every item needs an external_id")
-        return IngestItem(
-            source_id=str(source.id),
+        return SourceItemSpec(
+            data_source_id=str(source.id),
             provider=self.provider,
             kind=self.record_kind,
             segment_key=cursor.segment_key,
             external_id=external_id,
-            title=str(raw.get("title") or ""),
+            name=str(raw.get("title") or ""),
             body=str(raw.get("body") or ""),
             occurred_at=raw.get("occurred_at"),
             author_external_id=raw.get("author_external_id"),
@@ -175,7 +174,7 @@ class ScriptSource:
     # ── transport ─────────────────────────────────────────────────────────
 
     async def _call(self, source, verb: str, extra: dict) -> Any:
-        script = os.path.join(self.folder, SCRIPT_FILE)
+        script = os.path.join(self.folder, DataSourceSpec.SCRIPT_FILE)
         executor = await self._executor()
 
         env = self._env(source)
@@ -215,7 +214,7 @@ class ScriptSource:
             # successful call.
             if not await executor.exists(script):
                 raise SourceError.config(
-                    "missing_module", f"{SCRIPT_FILE} is missing from {self.folder}"
+                    "missing_module", f"{DataSourceSpec.SCRIPT_FILE} is missing from {self.folder}"
                 ) from exc
             detail = f"{exc}{f' — {exc.logs[-500:]}' if exc.logs else ''}"
             if exc.kind == "config":
@@ -252,6 +251,14 @@ class ScriptSource:
         leaf = hashlib.sha1(segment.encode("utf-8")).hexdigest()[:12]
         return str(get_instance_settings().instance_dir / "ingest" / str(source.id) / leaf)
 
+    async def _verify(self, source) -> SetupVerdict:
+        data = await self._call(source, "verify", {})
+        if not isinstance(data, dict):
+            return SetupVerdict.waiting("the module's verify did not answer")
+        pending = tuple(str(p) for p in (data.get("pending") or []))
+        detail = str(data.get("detail") or "")
+        return SetupVerdict.ok(detail) if data.get("ready") else SetupVerdict.waiting(detail, pending)
+
     @staticmethod
     async def _executor():
         from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
@@ -260,32 +267,15 @@ class ScriptSource:
         return node.get_command_executor()
 
 
-class ScriptSourceWithSetup(ScriptSource):
-    """A script source whose spec declares a human setup step (`setup_wiki`).
-
-    Exists only to carry `verify`. `DataSource.save()` reads the PRESENCE of the
-    method, so this cannot be a flag on the base class.
-    """
-
-    async def verify(self, source) -> SetupVerdict:
-        data = await self._call(source, "verify", {})
-        if not isinstance(data, dict):
-            return SetupVerdict.waiting("the module's verify did not answer")
-        pending = tuple(str(p) for p in (data.get("pending") or []))
-        detail = str(data.get("detail") or "")
-        return SetupVerdict.ok(detail) if data.get("ready") else SetupVerdict.waiting(detail, pending)
+def _auth_env(spec) -> tuple[str, ...]:
+    """The env names the spec's auth declares (``AuthSpec`` or its dict)."""
+    raw = getattr(spec, "auth", None)
+    return tuple(AuthSpec.model_validate(raw).env) if raw else ()
 
 
-def _traits_of(spec) -> "Traits":
-    """The spec's `traits` dict back as the dataclass the manifest validated.
-
-    `id_unique_within` is carried but consumed by nobody: the natural key is
-    always `(source_id, segment_key, external_id)`. Reconstructing it anyway
-    keeps one definition of what a trait is.
-    """
-    raw = dict(getattr(spec, "traits", None) or {})
-    known = {f for f in Traits.__dataclass_fields__}
-    return Traits(**{k: v for k, v in raw.items() if k in known})
+def _traits_of(spec) -> "TraitsSpec":
+    """The spec's traits as the header validated them (``TraitsSpec`` or its dict)."""
+    return TraitsSpec.model_validate(getattr(spec, "traits", None) or {})
 
 
 def driver_for_spec(spec) -> Optional[ScriptSource]:
@@ -304,8 +294,7 @@ def driver_for_spec(spec) -> Optional[ScriptSource]:
     folder = str(getattr(ref, "path", ref) or "")
     if not folder:
         return None
-    cls = ScriptSourceWithSetup if str(getattr(spec, "setup_wiki", "") or "") else ScriptSource
-    return cls(
+    return ScriptSource(
         name=str(spec.name),
         folder=folder,
         # Reconstructed through the manifest's own dataclass rather than read by
@@ -314,5 +303,6 @@ def driver_for_spec(spec) -> Optional[ScriptSource]:
         # `record_kind`, and records land outside the inbox projection with
         # nothing raising.
         traits=_traits_of(spec),
-        env=(getattr(spec, "auth", None) or {}).get("env") or (),
+        env=_auth_env(spec),
+        setup=bool(str(getattr(spec, "setup_wiki", "") or "")),
     )

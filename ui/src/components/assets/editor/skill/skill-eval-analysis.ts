@@ -1,5 +1,14 @@
 import { t } from '@lingui/core/macro';
-import { AgentTrace, AgenticProcess, ComputeNode, ProcessKind, QueryFilter, QueryRequest, Skill } from '@sdk';
+import {
+  AgentTrace,
+  AgenticProcess,
+  ComputeNode,
+  ExpressionNode,
+  ProcessKind,
+  QueryFilter,
+  QueryRequest,
+  Skill,
+} from '@sdk';
 import { notify } from '@src/notifications';
 import { basename } from '@src/components/asset-manager/asset-row-helpers';
 import type { AgentTraceDoc, TraceFinding } from '../agent-trace/trace-types';
@@ -230,7 +239,7 @@ async function findAssetAnalysisResult(
       type: AgentTrace.type,
       scope: [],
       name: `agentTracesForAssetImprove:${sessionId}`,
-      query: new QueryFilter({ match: { session_id: sessionId } }),
+      query: new QueryFilter({ match: new ExpressionNode({ session_id: sessionId }) }),
     }),
   );
   const ordered = [...traces].sort((a, b) => traceCreatedMs(b) - traceCreatedMs(a));

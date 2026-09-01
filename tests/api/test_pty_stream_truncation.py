@@ -30,7 +30,6 @@ from flow_sdk.builtin.shell import Shell
 from flow_sdk.compute.providers.desktop import pty_stream_file as psf_module
 from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
 from flow_sdk.compute.providers.desktop.pty_stream_file import PtyStreamFile
-
 from tests.api.conftest import default_compute_node_id
 
 # Small cap so a short burst overflows it and front-truncation runs.
@@ -77,7 +76,7 @@ async def test_pty_stream_front_truncates_but_replays_tail(
     await shell.save()
 
     try:
-        await shell.start()
+        await shell.start_pty()
 
         # The stream file the real on_pty_output path writes to (the replay
         # artifact). Grab it from the registered session state.

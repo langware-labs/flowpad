@@ -1,5 +1,5 @@
 import { APIEntity, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { DockPointerData } from '../models/DockPointer';
 import type { FSRefJson } from '../fs/FSRef';
 
@@ -32,6 +32,12 @@ export interface IMarkdown extends IEntity {
   scope?: string;
   project_id?: string;
 }
+
+// `implements IMarkdown` only checks the class; it contributes no members, so every
+// field declared solely on IMarkdown read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Markdown extends EntityMerge<IMarkdown> {}
 
 /**
  * Markdown (Docs) entity — wiki/markdown files under `docs/*.md` (AssetClass.DOCS).
@@ -79,7 +85,7 @@ export class Markdown extends APIEntity<Markdown> implements IMarkdown {
    * base `APIEntity.dockPointer` (HOME) would send the doc to the home view.
    */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('markdown') ?? super.dockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 
   /**

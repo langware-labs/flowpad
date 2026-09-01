@@ -23,11 +23,11 @@ import os
 
 import pytest
 import pytest_asyncio
-
 from httpx import ASGITransport, AsyncClient
-from flow_sdk.server.app import app
+
 from flow_sdk.builtin.user import User
 from flow_sdk.responses.response import ApiResponse
+from flow_sdk.server.app import app
 
 
 def _invalidate_caches():
@@ -165,6 +165,7 @@ def clean_db():
     # an asyncio.run() with a fresh loop is acceptable: there is nothing on
     # the old loop that needs to outlive this call.
     import asyncio
+
     import flow_sdk.db.drivers.db_driver as db_driver_mod
     driver = db_driver_mod._driver_instances.get("sqlite")
     if driver is not None:

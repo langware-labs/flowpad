@@ -68,7 +68,10 @@ export function fitLabelToWidth(value: string, measure: (candidate: string) => n
 
 function textColor(data: LabelDrawArgs[1], settings: LabelDrawArgs[2], fallback: string): string {
   const attribute = settings.labelColor.attribute;
-  if (!attribute) return settings.labelColor.color;
+  // `color` is optional on sigma's attribute-driven variant, and an undefined
+  // fillStyle silently keeps the previous colour — same `|| fallback` the
+  // attribute branch below already applies.
+  if (!attribute) return settings.labelColor.color || fallback;
   const value = (data as Record<string, unknown>)[attribute];
   return typeof value === 'string' ? value : settings.labelColor.color || fallback;
 }

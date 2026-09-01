@@ -12,8 +12,8 @@
  * previously offered `proc ⬈` threw you into a raw terminal for one process
  * with no way back to its siblings.
  */
-import { create } from 'zustand';
 import type { ProcessRunScope } from '@src/navigation/DockPointer';
+import { createOverlayStore } from '@src/store/create-overlay-store';
 
 export interface RunPreviewTarget {
   /** Narrows the list. Never empty — see the module doc. */
@@ -24,21 +24,8 @@ export interface RunPreviewTarget {
   title: string;
 }
 
-interface RunPreviewStore {
-  open: boolean;
-  target: RunPreviewTarget | null;
-  show: (target: RunPreviewTarget) => void;
-  setOpen: (open: boolean) => void;
-}
-
-export const useRunPreviewStore = create<RunPreviewStore>((set) => ({
-  open: false,
-  target: null,
-  show: (target) => set({ open: true, target }),
-  setOpen: (open) => set({ open }),
-}));
+const store = createOverlayStore<RunPreviewTarget>();
+export const useRunPreviewStore = store.useStore;
 
 /** Open the run-preview overlay. The imperative entry point for call sites. */
-export function openRunPreview(target: RunPreviewTarget): void {
-  useRunPreviewStore.getState().show(target);
-}
+export const openRunPreview = store.open;

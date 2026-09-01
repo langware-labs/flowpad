@@ -95,7 +95,7 @@ function HelpdeskItemRow({ conv, onOpen }: { conv: Conversation; onOpen: () => v
               Without it these rows read "Untitled" while the same conversation
               is titled everywhere else in the app. */}
           <span className="block truncate text-sm">{deriveConversationTitle(conv)}</span>
-          {latest?.message && <span className="block truncate text-xs text-muted-foreground">{latest.message}</span>}
+          {latest?.text && <span className="block truncate text-xs text-muted-foreground">{latest.text}</span>}
         </span>
         {facets.isUnread && (
           <span className="shrink-0 rounded-full border border-[hsl(var(--brand))]/40 bg-[hsl(var(--brand))]/10 px-2 py-0.5 text-[10px] font-medium text-[hsl(var(--brand))]">

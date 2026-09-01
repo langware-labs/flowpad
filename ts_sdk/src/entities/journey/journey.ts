@@ -3,7 +3,7 @@ import apiClient from '../../client';
 import { dataContext } from '../../FlowSync/context';
 import { FSRef } from '../../fs/FSRef';
 import { DockPointerData } from '../../models/DockPointer';
-import { IEntity } from '../../IEntity';
+import { IEntity, EntityMerge } from '../../IEntity';
 import { JourneyGraph } from './journey-graph';
 import { IJourneyJournal, JourneyJournal } from './journey-journal';
 
@@ -17,6 +17,12 @@ const GRAPH_FILE = 'graph.json';
 
 /** `<root>/agentic-assets/journey/<name>` → `<root>`. */
 const JOURNEY_ASSET_REF = /^(.*)\/agentic-assets\/journey\/[^/]+\/?$/;
+
+// `implements IJourney` only checks the class; it contributes no members, so every
+// field declared solely on IJourney read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Journey extends EntityMerge<IJourney> {}
 
 /**
  * A guided User Journey — a folder-backed onboarding document. Exposes the
@@ -149,14 +155,11 @@ export class Journey extends APIEntity<Journey> implements IJourney {
 
   /** Default open target: the journey overview viewer (not the markdown editor). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('journey') ?? super.dockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {
-    return this.assetEditorPointer('journey') ?? super.editorDockPointer;
+    return this.assetEditorPointer() ?? super.editorDockPointer;
   }
 
-  override get searchDockPointer(): DockPointerData {
-    return this.assetEditorPointer('journey') ?? this.dockPointer;
-  }
 }

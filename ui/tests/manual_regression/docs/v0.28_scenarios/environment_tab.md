@@ -13,33 +13,12 @@ test 1: FlowPad API Key
 - in FlowPad API Key box click "Delete API key"
 - validate FlowPad API Key box dissapeared
 
-test 2: nonconf Variable
+test 2: project environment variable lifecycle
 - navigate to {APP_URL}/dock/credentials/environment
-- validate the Credentials view is visible with the Environment tab active
-- click "Add Variable"
-- fill variable form:
-    Name=TEST2
-    Type=Non Confidential
-    Value=53
-- click save
-- validate variable TEST2 is visible in Environment Variable table with value=53 visible
-- in table, TEST2 row, click "edit"
-- fill variable edit form:
-    New Value=98
-- click save
-- validate variable TEST2 is visible in Environment Variable table with value=98 visible
-- in table, TEST2 row, click "delete"
-- validate TEST2 not in Variables table
-
-test 3: conf Variable
-- navigate to {APP_URL}/dock/credentials/environment
-- validate the Credentials view is visible with the Environment tab active
-- click "Add Variable"
-- fill variable form:
-    Name=TEST2
-    Type=API Key
-    Value=123QWE
-- click save
-- validate variable TEST2 is visible in Environment Variable table with value=123QWE blocked out and invisible
-- in table, TEST2 row, click "delete"
-- validate TEST2 not in Variables table
+- validate the Credentials view is visible with the Project Environment tab active
+- click "Declare"
+- declare TEST2 with a description and initial value=53
+- validate TEST2 is Met and its stored value is masked rather than present in the DOM
+- click "Replace", provide value=98, and validate TEST2 remains Met with the replacement masked
+- remove the declaration and confirm "Stop declaring"
+- validate TEST2 is no longer declared in the project table; the global encrypted value is preserved for reuse

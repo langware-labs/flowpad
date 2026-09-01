@@ -1,6 +1,8 @@
 ---
+id: a5a16156-13ce-4f32-bc6e-3b496075c942
 title: Cloud sharing — what leaves your machine
 ---
+
 # Cloud sharing — what leaves your machine
 
 **Cloud sharing uploads metadata and coordinates. It never uploads document
@@ -36,7 +38,7 @@ not Flowpad's. If they cannot clone the repo, they see an error, not your code.
 if you have given them one:
 
 <!-- pinned:when-set -->
-`created_through`, `env_vars`, `group_id`, `helpdesk`, `hub_published_at`, `key`, `labels`, `last_active_at`, `last_edited_at`, `locale`, `namespace`, `parent_type_id`, `root_vfs_path`, `schema_version`, `title`, `uname`, `updated_through`
+`created_through`, `env_vars`, `group_id`, `helpdesk`, `hub_published_at`, `key`, `labels`, `last_active_at`, `last_edited_at`, `locale`, `namespace`, `origin`, `parent_type_id`, `root_vfs_path`, `schema_version`, `title`, `uname`, `updated_through`
 <!-- pinned:/when-set -->
 
 **Never sent.** Two different mechanisms, which fail differently — a
@@ -44,7 +46,7 @@ declaration-withheld field stays hidden even if `_hub_body()` is rewritten,
 while a popped one is hidden only for as long as that line survives:
 
 <!-- pinned:withheld -->
-`asset_occurrences`, `created_by`, `created_date`, `fetched_at`, `fs_storage_mount_path`, `fs_storage_provider`, `git_origin`, `host_member_id`, `last_mode`, `last_session_at`, `members`, `origin_id`, `presence`, `private_context_entities_`, `private_context_entity_data`, `project_id`, `remote`, `scope`, `session_code`, `session_count`, `shared_context_entity_data`, `shared_context_origins`, `shared_secret_origins`, `system`, `tags`, `updated_by`, `updated_date`, `visitor_role`
+`asset_occurrences`, `created_by`, `created_date`, `fetched_at`, `fs_storage_mount_path`, `fs_storage_provider`, `host_member_id`, `last_mode`, `last_session_at`, `members`, `origin_id`, `presence`, `private_context_entities_`, `private_context_entity_data`, `project_id`, `remote`, `scope`, `session_code`, `session_count`, `shared_context_entity_data`, `shared_context_origins`, `shared_secret_origins`, `system`, `tags`, `updated_by`, `updated_date`, `visitor_role`
 <!-- pinned:/withheld -->
 
 Note what is in that list: `fs_storage_mount_path` and `fs_storage_provider` —
@@ -56,11 +58,11 @@ Note what is in that list: `fs_storage_mount_path` and `fs_storage_provider` —
 `_hub_body()` strips three fields and then `Project.share()` **puts them back**:
 
 <!-- pinned:readded -->
-`git_origin`, `shared_context_origins`, `shared_secret_origins`
+`shared_context_origins`, `shared_secret_origins`
 <!-- pinned:/readded -->
 
-Reading `_hub_body()` alone gives the wrong answer. `git_origin` is the whole
-point — it is the repo coordinate a member clones from. The other two are
+Reading `_hub_body()` alone gives the wrong answer. (The project's `origin` is SHARED and
+rides in the body itself, under its hub-wire name `git_origin`.) The two are
 covered below.
 
 (Three names in that strip list — `include_dirs`, `context_dir_infos`,
@@ -148,9 +150,3 @@ rather than trusting the port.
 Everything it creates is namespaced by a run id and torn down: the branch
 `tagit-e2e/<runId>` is deleted (never `main`), local and hub rows are deleted,
 and stale branches older than a day are swept on the next run.
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: a5a16156-13ce-4f32-bc6e-3b496075c942
-flowpad:endcapsule identity -->

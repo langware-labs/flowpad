@@ -473,6 +473,13 @@ async def test_no_claude_binary_yields_error_flowdata_then_raises(tmp_path: Path
     # frame for the chat stream, then WorkerSpawnError for the turn runner's
     # FAILED + start_failure latch.
     clear_harness_capability(monkeypatch, "claude")
+    # `no_worker_message` answers two different questions: "claude is missing"
+    # vs "nothing is installed at all". Which one it picks depends on whether
+    # ANY vendor resolves — so without pinning that, this assertion passed on a
+    # dev machine (codex/copilot on PATH) and failed on CI (bare image), which
+    # is exactly how it broke. Seed one other vendor to make the branch the
+    # test is asserting the one that actually runs, on any host.
+    seed_harness_capability(monkeypatch, "codex", make_fake_cli_bin(tmp_path, "codex"))
     ctx = AgenticContext(workdir=str(tmp_path))
 
     out = []

@@ -1,11 +1,13 @@
-import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
-import type { IEntity } from '../IEntity';
-import { ActionInfo } from '../models';
+import { APIEntity, isNonEmptyString, registerEntity } from '../APIEntity';
+import type { IEntity, EntityMerge } from '../IEntity';
 import { DockPointerData } from '../models/DockPointer';
 import { normalizeKind } from '../models/Kind';
 import { isTypeId, TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
 import { WorldViewProjection } from '../worldview/projection';
+
+/** Provider label carrying a local dev server's port. Pairs with `runtimePort`. */
+const RUNTIME_PORT_LABEL = 'flowpad.runtime.port';
 
 export type ArtifactLinkSource = 'manual' | 'gcp_label';
 export type DeploymentSyncState = 'current' | 'stale' | 'partial' | 'error';
@@ -79,6 +81,12 @@ export interface IDeployment extends Omit<IEntity, 'status'> {
   project_id?: string | null;
 }
 
+// `implements IDeployment` only checks the class; it contributes no members, so every
+// field declared solely on IDeployment read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Deployment extends EntityMerge<IDeployment> {}
+
 /**
  * Deployment is THE placement record: this thing runs on that machine.
  *
@@ -145,6 +153,21 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   }
 
   /** The Agent this places, or null when the deployed element is something else. */
+  /**
+   * The local dev-server port this placement runs on, if any.
+   *
+   * Mirrors `Deployment.runtime_port` (flow_sdk/builtin/deployment.py), and exists
+   * for the same reason: the port is a provider LABEL, and callers kept re-deriving
+   * it — parse, swallow the failure, sometimes range-check, sometimes not. Owned in
+   * one place per side, a junk label reads as "no port" everywhere rather than only
+   * where someone remembered to guard.
+   */
+  get runtimePort(): number | null {
+    const raw = this.provider_labels?.[RUNTIME_PORT_LABEL];
+    const port = Number.parseInt(String(raw), 10);
+    return Number.isFinite(port) && port > 0 && port <= 65535 ? port : null;
+  }
+
   get agentTypeId(): TypeId | null {
     const parent = this.parent_type_id;
     if (!parent || !isTypeId(parent)) return null;
@@ -167,8 +190,7 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
    * that path warns and this one does not.
    */
   async pause(): Promise<Deployment> {
-    const action = new ActionInfo('pause', Deployment.type, this.id, 'POST');
-    return new Deployment((await dataManager.callAction(action)) as IDeployment);
+    return new Deployment((await this.post('pause')) as IDeployment);
   }
 
   private validateStructure(): void {

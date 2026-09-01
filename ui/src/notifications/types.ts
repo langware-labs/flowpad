@@ -49,4 +49,11 @@ export interface NotificationData {
 }
 
 /** The emit shape — the caller never sets `timestamp`. */
-export type NotificationInput = Omit<NotificationData, 'timestamp'>;
+/**
+ * What a caller passes to `notify`. `id` is optional here even though it is
+ * required on `NotificationData`: the dispatcher derives it when omitted
+ * (`input.id ?? \`${level}:${djb2(title)}\``), which is what makes dedupe by
+ * title work. Omitting only `timestamp` made `id` mandatory on every call site
+ * and put 402 errors on the board.
+ */
+export type NotificationInput = Omit<NotificationData, 'timestamp' | 'id'> & { id?: string };

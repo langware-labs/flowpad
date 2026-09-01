@@ -24,7 +24,7 @@ import { useRunPreviewStore } from './run-preview';
 export function RunPreviewRoot() {
   const open = useRunPreviewStore((s) => s.open);
   const setOpen = useRunPreviewStore((s) => s.setOpen);
-  const target = useRunPreviewStore((s) => s.target);
+  const target = useRunPreviewStore((s) => s.payload);
   const { navigation } = useDockNavigation();
   // Selection is local to the overlay: a preview must not rewrite the URL of
   // the page behind it (that page is usually the flow canvas you came from).

@@ -8,15 +8,6 @@ export interface OpenTerminalOptions {
   terminalType?: TerminalType;
 }
 
-export function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
-function withCwd(command: string, cwd?: string): string {
-  if (!cwd) return command;
-  return `cd ${shellQuote(cwd)} && ${command}`;
-}
-
 /**
  * Hook that opens a terminal session. Always opens an in-app shell tab so flowpad
  * owns the PTY (winsize, resize, capture, replay all coherent). When the user

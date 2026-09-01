@@ -1,16 +1,17 @@
 ---
+id: 59653d13-f0f9-4fab-b544-24cc9ed4717a
 name: deploy-pypi-e2b-hub
-description: Ship a Flowpad change all the way to users — release the app to PyPI, roll
-  the e2b sandbox template onto it, move the hub's pins, and deploy the hub to staging
-  and prod. Use when a fix must reach a deployed environment and not just a branch, when
-  a change touches BOTH the app and the sandbox image, or when someone asks to "release
-  and deploy everything". For a PyPI release alone use deploy-pypi; for a template alone
-  use e2b-builder; for a hot patch onto one VM use deploy-to-gcp-env.
+description: Ship a Flowpad change all the way to users — release the app to PyPI,
+  roll the e2b sandbox template onto it, move the hub's pins, and deploy the hub to
+  staging and prod. Use when a fix must reach a deployed environment and not just
+  a branch, when a change touches BOTH the app and the sandbox image, or when someone
+  asks to "release and deploy everything". For a PyPI release alone use deploy-pypi;
+  for a template alone use e2b-builder; for a hot patch onto one VM use deploy-to-gcp-env.
 tags:
-  - release
-  - deploy
-  - e2b
-  - hub
+- release
+- deploy
+- e2b
+- hub
 ---
 
 # Ship a Flowpad release end to end
@@ -130,9 +131,3 @@ State which of the four values moved, the template ids minted, whether `validate
 and its result, which environments were deployed, and what remains. A partial roll that
 reads as complete is the failure this skill exists to prevent — and every step of it is
 individually silent.
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 59653d13-f0f9-4fab-b544-24cc9ed4717a
-flowpad:endcapsule identity -->

@@ -2,7 +2,7 @@ import React from 'react';
 import { FilePlus, Search } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useAssetSearch } from '@src/hooks/use-asset-search';
-import type { SearchResult } from '@src/hooks/use-asset-search';
+import type { SearchRow } from '@src/hooks/search-row';
 import { AssetDataTable } from './AssetDataTable';
 import { QuickFilterBar } from './QuickFilterBar';
 import { TagFilterBar } from './TagFilterBar';
@@ -13,7 +13,7 @@ interface Props {
   recordType: string;
   onNew?: () => void;
   refreshKey?: number;
-  onRowClick?: (result: SearchResult) => void;
+  onRowClick?: (result: SearchRow) => void;
   filter: AssetFilter;
   onFilterChange: (f: AssetFilter) => void;
   onProjectFilter?: (label: string) => void;

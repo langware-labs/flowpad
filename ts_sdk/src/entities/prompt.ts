@@ -1,5 +1,5 @@
 import { APIEntity, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import type { AgenticProcess } from '../process/agentic-process';
 
 /**
@@ -25,22 +25,21 @@ export interface IPrompt extends IEntity {
   last_used_at?: string | null;
 }
 
+// `implements IPrompt` only checks the class; it contributes no members, so every
+// field declared solely on IPrompt read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// `icon` is omitted: `APIEntity` owns it as an accessor pair, and an
+// optional `icon?:` here is not identical to that required accessor, which
+// the merged interface cannot inherit from both sides.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Prompt extends EntityMerge<IPrompt> {}
+
 @registerEntity
 export class Prompt extends APIEntity<Prompt> implements IPrompt {
   static type: string = 'prompt';
 
   name: string = '';
   text?: string | null;
-  private _icon: string | null = null;
-
-  /** Accessor-pair override + own enumerable mirror — see `Group.icon`. */
-  get icon(): string | null {
-    return this._icon;
-  }
-
-  set icon(v: string | null) {
-    this._icon = v ?? null;
-  }
   color?: string | null;
   project_id?: string | null;
   use_count: number = 0;
@@ -50,14 +49,6 @@ export class Prompt extends APIEntity<Prompt> implements IPrompt {
     super(entity);
     this.name = entity.name ?? '';
     this.text = entity.text ?? null;
-    Object.defineProperty(this, 'icon', {
-      enumerable: true,
-      configurable: true,
-      get: () => this._icon,
-      set: (v: string | null | undefined) => {
-        this._icon = v ?? null;
-      },
-    });
     this.icon = entity.icon ?? null;
     this.color = entity.color ?? null;
     this.project_id = entity.project_id ?? null;

@@ -355,10 +355,15 @@ The work set is every `.md` with no `<name>.md.ts` sibling. Derive it directly f
 # Robust under bash and zsh (no glob-expansion errors on empty dirs).
 for d in ${scenarios-dir}/*/; do
   comm -23 \
-    <(find "$d" -maxdepth 1 -name '*.md'    -not -name '*.md.ts' | sed 's|.*/||; s/\.md$//'    | sort) \
+    <(find "$d" -maxdepth 1 -name '*.md' -not -name '*.md.ts' \
+        | xargs grep -L '^manual: true' 2>/dev/null | sed 's|.*/||; s/\.md$//' | sort) \
     <(find "$d" -maxdepth 1 -name '*.md.ts'                      | sed 's|.*/||; s/\.md\.ts$//' | sort) \
   | sed "s|^|$(basename "$d")/|"
 done
+# A spec whose frontmatter declares `manual: true` states in its own text that it
+# is not automatable in this harness (real E2B minutes, two browser profiles,
+# secrets a test cannot mint). It is excluded here and reported as manual, never
+# authored as a hollow test.skip stub.
 ```
 That list IS Phase 12's complete scope. (A `.md.ts` with no `.md` is fine — Phase 11 already runs it. A failing `.md.ts` is **not** in scope here; it was resolved in Phase 11.)
 

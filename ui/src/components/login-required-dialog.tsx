@@ -1,6 +1,5 @@
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
-import type { MessageDescriptor } from '@lingui/core';
 import { cloudManager } from '@sdk';
 import {
   AlertDialog,
@@ -64,7 +63,7 @@ const VARIANT_CONFIG = {
     eventSource: 'require_login',
   },
   visitor_limit: {
-    title: "You're doing great!",
+    title: msg`You're doing great!`,
     description: msg`Create a free account to continue your conversation and save your progress.`,
     icon: PartyPopper,
     eventSource: 'visitor_limit',

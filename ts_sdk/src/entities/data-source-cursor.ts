@@ -7,7 +7,7 @@
  * pointer). Render it, don't interpret it.
  */
 import { APIEntity, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import type { SourceHealth } from './data-source';
 
 export interface IDataSourceCursor extends IEntity {
@@ -24,6 +24,12 @@ export interface IDataSourceCursor extends IEntity {
   error_detail?: string | null;
   consecutive_failures?: number;
 }
+
+// `implements IDataSourceCursor` only checks the class; it contributes no members, so every
+// field declared solely on IDataSourceCursor read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface DataSourceCursor extends EntityMerge<IDataSourceCursor> {}
 
 @registerEntity
 export class DataSourceCursor extends APIEntity<DataSourceCursor> implements IDataSourceCursor {

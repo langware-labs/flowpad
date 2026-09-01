@@ -419,9 +419,6 @@ listen_action() → route by webhook_type
 | `flow_sdk/app/actions/hooks_sniffer.py` | Sniffer enable/disable/status action |
 | `flow_sdk/builtin/agent_hook.py` | AgentHook entity, `is_sniffer` property, `handle_webhook()` |
 | `flow_sdk/builtin/claude_settings_sync.py` | `generate_hook_command()`, sync hooks to settings.json |
-| `flow_sdk/hooks/hook_file.py` | HookFile manager for reading/writing hook entries |
-| `flow_sdk/hooks/models.py` | HookEntry, AgentHookMetadata data models |
-| `flow_sdk/hooks/providers/claude_code.py` | ClaudeCodeHookFile provider for settings.json format |
 | `flow_sdk/core/flow/models/flow_data.py` | Python FlowData model |
 | `flow_sdk/core/flow/models/webhook_flow_data.py` | Webhook payload models |
 | `flow_sdk/core/flow/models/hook_op.py` | HookOp payload models |

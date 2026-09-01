@@ -37,7 +37,7 @@ from flow_sdk.builtin.tab_order import (
 )
 from flow_sdk.core import Entity
 from flow_sdk.core.dock_address import VIEW_META, PageId, ViewType, parse_view_type
-from flow_sdk.fs_store.identifier import is_valid_uuid, mint_uuid
+from flow_sdk.api.api_types.identifier import is_valid_uuid, mint_uuid
 from flow_sdk.schema.types import EntityType
 
 logger = logging.getLogger(__name__)
@@ -83,6 +83,28 @@ def _is_page_id(segment: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _pointer_target(pointer: str | None) -> tuple[str, str]:
+    """The (viewType, inner pointer) a stored pointer addresses — what it SHOWS, as
+    opposed to ``_pointer_to_hash``, which answers which tab it IS.
+
+    The two diverge only for rows whose identity is deliberately coarser than their
+    target: a scope-keyed Assets tab, and the vibe workspace's active display. That
+    gap is exactly what makes "did this row re-point?" a question worth asking, and
+    answering it structurally keeps the backend from having to recognise particular
+    identity namespaces by name.
+    """
+    if not pointer:
+        return ('', '')
+    if pointer.startswith('{'):
+        try:
+            data = _json.loads(pointer)
+        except (ValueError, TypeError):
+            return (pointer, '')
+        return (str(data.get('viewType') or ''), str(data.get('pointer') or ''))
+    vt, _, sub = pointer.partition('|')
+    return (vt, sub)
 
 
 def _pointer_view_type(pointer: str | None) -> str | None:
@@ -756,14 +778,26 @@ async def _reparent_children(mapping: "dict[str, str | None]") -> bool:
 
 async def _persist_global_order(new_order: list[str], by_id: dict[str, Tab]) -> bool:
     """Assign ``tab_order = contiguous index`` over ``new_order``; save only rows
-    whose index changed (no-op order ⇒ no write). Returns whether anything wrote."""
+    whose index changed (no-op order ⇒ no write). Returns whether anything wrote.
+
+    ``by_id`` is a snapshot taken before the status/reap pass of
+    ``_visible_tabs_sorted``, so a ``close_many`` can commit ``visible=False``
+    between that read and this write. Saving the snapshot row would write its
+    stale ``visible=True`` back and resurrect the closed tab — so the order is
+    applied to the LIVE row, and a row hidden or gone meanwhile is skipped."""
     wrote = False
     for idx, tid in enumerate(new_order):
         tab = by_id.get(tid)
-        if tab is not None and getattr(tab, "tab_order", 0) != idx:
-            tab.tab_order = idx
-            await tab.save()
-            wrote = True
+        if tab is None or getattr(tab, "tab_order", 0) == idx:
+            continue
+        # Field-scoped stamp: the earlier live-read-then-save() still lost a
+        # `close_many` that committed between the read and the save (the whole
+        # row went back, visible=True included). The driver stamp hydrates the
+        # authoritative row INSIDE the writer transaction, no-ops on a hidden
+        # row, and json_sets only tab_order. Callers broadcast tabs_changed.
+        tab.tab_order = idx
+        _, stamped = await Tab._db.stamp_tab_order(tid, idx)
+        wrote = wrote or stamped
     return wrote
 
 
@@ -887,6 +921,11 @@ async def ensure_tab(
         existing = await Tab.get_one({"id": tid})
     if existing is not None:
         dirty = False
+        # A row whose IDENTITY is stable while its TARGET moves — the vibe
+        # workspace's active display, and the scope-keyed Assets variant. Record
+        # whether the target actually changed; the label refresh below needs it,
+        # and after this assignment the fact is no longer readable.
+        repointed_target = _pointer_target(existing.pointer) != _pointer_target(pointer)
         if existing.pointer != pointer and _pointer_to_hash(existing.pointer) == _pointer_to_hash(pointer):
             existing.pointer = pointer
             dirty = True
@@ -919,10 +958,21 @@ async def ensure_tab(
         # was never a user rename, and a null icon_key/worktree predates the
         # field, so filling heals legacy rows on next open without clobbering a
         # user-chosen name.
-        if not existing.name and name:
+        #
+        # A row that RE-POINTED is the documented exception. The vibe workspace's
+        # active display keeps one identity (the hosting workspace) while the agent
+        # moves its target on every ``flow show``; under the backfill-only rule its
+        # chip would keep the FIRST target's label and icon forever, which reads as a
+        # stuck display. Keyed on the target having actually changed rather than on
+        # who the row belongs to: a user cannot have renamed a chip whose content
+        # they do not choose, and the scope-keyed Assets variant re-points only its
+        # presentation metadata (same viewType, same inner pointer) so it keeps the
+        # never-clobber rule.
+        refresh_label = repointed_target
+        if name and (refresh_label or not existing.name) and existing.name != name:
             existing.name = name
             dirty = True
-        if not existing.icon_key and icon_key:
+        if icon_key and (refresh_label or not existing.icon_key) and existing.icon_key != icon_key:
             existing.icon_key = icon_key
             dirty = True
         if not existing.worktree and worktree:

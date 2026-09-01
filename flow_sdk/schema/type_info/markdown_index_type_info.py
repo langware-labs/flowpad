@@ -10,7 +10,7 @@ from flow_sdk.schema.types import EntityType
 MARKDOWN_INDEX = TypeMetadata(
     type=EntityType.MARKDOWN_INDEX,
     from_disk_fn=extract_markdown_index,
-    identity_backend=derived_identity(),
+    identity_carrier=derived_identity(),
     id_stable_key_fn=markdown_index_identity_key,
     indexed_by_default=False,
     creatable=True,

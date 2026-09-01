@@ -10,7 +10,7 @@ This document describes the `FSRecord` class and the surrounding infrastructure 
 
 ## Overview
 
-`FSRecord` is a single concrete class. Construct as `FSRecord(type, id, **fields)`. The on-disk shadow lives at `<records_root>/<type>/<type>-@<id>/metadata.json`. Meta fields are stored as **direct instance attributes** on the object's `__dict__` (not a `_data` dict). The record holds an `asset_ref` (`FSRef` to the user-facing source file) and a free-form bag of meta fields. Per-type typed metadata is opt-in via `TypeInfo.meta_model` (a Pydantic model).
+`FSRecord` is a single concrete class. Construct as `FSRecord(type, id, **fields)`. The on-disk shadow lives at `<records_root>/<type>/<id>/metadata.json`. Meta fields are stored as **direct instance attributes** on the object's `__dict__` (not a `_data` dict). The record holds an `asset_ref` (`FSRef` to the user-facing source file) and a free-form bag of meta fields. Per-type typed metadata is `TypeInfo.effective_meta_model`: a hand-written `meta_model` when a type declares one, else — for a type with an `asset_spec` — derived as `BaseMeta ∪ spec fields ∪ Persist.TRUE fields − Persist.FALSE fields`.
 
 The class deliberately omits, by design (see the module docstring at `flow_sdk/fs_store/fs_record.py:13`):
 
@@ -47,7 +47,7 @@ Source files:
 _SYSTEM_ATTRS: frozenset[str] = frozenset({"type", "id", "_asset_ref"})
 ```
 
-The `meta` property (`fs_record.py:111`) returns a read-only dict view of the meta fields — every attribute that is not in `_SYSTEM_ATTRS` and does not start with `_`. If `TypeInfo.meta_model` is registered for the record's type, `meta` returns an instance of that Pydantic model instead of a dict (falling back to the raw dict on validation error).
+The `meta` property (`fs_record.py:111`) returns a read-only dict view of the meta fields — every attribute that is not in `_SYSTEM_ATTRS` and does not start with `_`. If the record's type has an `effective_meta_model`, `meta` returns an instance of that Pydantic model instead of a dict (falling back to the raw dict on validation error).
 
 `meta_dict()` (`fs_record.py:130`) is the flat dict used for serialization and for building the Entity DB row: it includes `type`, `id`, the `asset_ref` path string, and every non-system, non-`None`, non-`_`-prefixed attribute. `to_dict()` and the `data` property are backward-compat aliases that both delegate to `meta_dict()`.
 
@@ -72,7 +72,7 @@ There is no `name`/`status`/`uid` property on the base class — `name`, `status
 
 ### Stem / folder naming
 
-The folder name is `<type>-@<uid>` (separator constant `_NAME_SEP = "-@"`). `record_stem(type, uid)` builds it; `parse_record_stem(stem)` splits it back (both in `fs_record.py`, also re-exported from `record_paths.py`).
+The shadow folder is named by the **bare id** under a `<type>/` parent — no stem, no separator. `record_stem(type, id)` / `parse_record_stem(stem)` (defined in `record_paths.py`, re-exported from `fs_record.py`) build the separate **portable** token `<type>-<id>` (`_NAME_SEP = "-"`) used in flat namespaces such as bundle arcs. The retired `<type>-@<uid>` spelling is still parsed for back-compat and never written.
 
 ---
 
@@ -81,7 +81,7 @@ The folder name is `<type>-@<uid>` (separator constant `_NAME_SEP = "-@"`). `rec
 An `FSRecord` is **always** a folder. There is no FILE or LIST_ITEM layout for `FSRecord` (the `StorageLayout` enum still exists in `storage_layout.py` but is legacy and unused by `FSRecord`).
 
 ```
-<records_root>/<type>/<type>-@<uid>/
+<records_root>/<type>/<id>/
   metadata.json                 # the only file FSRecord writes: identity + meta fields
   <int_epoch>_<hexdigest>.hash  # index freshness sentinel (asset-backed records only)
 ```
@@ -104,7 +104,7 @@ An `FSRecord` is **always** a folder. There is no FILE or LIST_ITEM layout for `
 | `save_metadata(patch)` | `(dict) -> Path` | The single DB→disk writer. Reads existing `metadata.json`, overlays `patch` (skipping `None` and system/`_` keys), re-anchors `type`/`id`, writes once. Updates in-memory attrs too. |
 | `save_metadata_field(key, val)` | `(str, Any) -> Path` | Convenience single-field partial merge. |
 | `current_meta_keys()` | `() -> set[str]` | Keys present in the on-disk `metadata.json` (empty set if none). |
-| `load(type, id)` | `classmethod -> FSRecord` | Reads `<root>/<type>/<type>-@<id>/metadata.json`. Raises `FileNotFoundError` if absent. |
+| `load(type, id)` | `classmethod -> FSRecord` | Reads `<root>/<type>/<id>/metadata.json`. Raises `FileNotFoundError` if absent. |
 | `load_or_none(type, id)` | `classmethod -> FSRecord \| None` | Like `load` but returns `None` on a missing shadow. |
 | `load_record(path)` | `classmethod -> FSRecord` | Loads from a shadow folder OR a direct `metadata.json` path. |
 | `discover(type)` | `classmethod -> list[FSRecord]` | Walks `<root>/<type>/`, loading each child shadow via `load_record`; skips malformed entries. |
@@ -124,11 +124,11 @@ There is **no** `discover_one`, `init_record`, `init`, `clone`, `move`, `read_re
 | `metadata_ref` | `FSRef` | `<shadow_dir>/metadata.json`. |
 | `asset_ref` | `FSRef \| None` | The primary user-facing content file/folder. Backed by `_asset_ref`; the setter coerces a `str` into an `FSRef`. Only the path string is persisted (in `metadata.json`). |
 | `main_ref` | `FSRef \| None` | Alias for `asset_ref`. |
-| `shadow_dir` | `Path` | `records_root/<type>/<type>-@<id>/`. Raises if `type`/`id` unset. |
+| `shadow_dir` | `Path` | `records_root/<type>/<id>/`. Raises if `type`/`id` unset. |
 
 `ensure_asset_ref()` binds `asset_ref` from a `fs_storage_mount_path` / `cwd` meta attr when it is not already set, so index-state properties resolve for records loaded from disk.
 
-`compute_asset_ref(scope_root, entity)` resolves the user-facing asset location under `scope_root` using the registered `TypeInfo.main_subdir` / `main_layout` (`"file"` → `<safe_name>.md`, `"folder"` → `<safe_name>/`). `upsert_main_ref(entity)` writes `TypeInfo.default_body_fn(entity)` into `asset_ref` iff that file does not yet exist, then commits the entity id to the asset's identity carrier — unless carrier writes are suppressed for this operation (see [asset capsules](asset-capsules.md)), in which case it returns the proposed id untouched and the source file is never rewritten.
+`compute_asset_ref(scope_root, entity)` resolves the user-facing asset location under `scope_root` using the registered `TypeInfo.main_subdir` / `main_layout` (`"file"` → `<safe_name>.md`, `"folder"` → `<safe_name>/`). The asset itself is written by the type's **serializer** (`TypeInfo.serializer(origin).store(entity, origin)`, `flow_sdk/fs_store/serializer/`): `DiskSerializer` renders the `asset_spec`-declared main doc plus every `FileRef` / `FolderSpec` / sub-asset / rows field, writing the main doc iff it does not yet exist (or on every save for `owns_main_ref` types), then commits the entity id to the asset's identity carrier (for a markdown main document the header itself — the id is rendered first) and returns the origin with `id` set. A type with no `asset_spec` renders through `TypeInfo.default_body_fn` under the same exists/owns rule. There is no other writer. When carrier writes are suppressed for the operation (see [asset capsules](asset-capsules.md)) the proposed id is returned untouched and the source file is never rewritten.
 
 ---
 
@@ -209,13 +209,14 @@ There are no `FSRecord` subclasses and no `__init_subclass__` auto-registration.
 |---|---|
 | `entity_cls` | Paired `Entity` subclass for the type (DB index). |
 | `icon` / `browseable` / `creatable` / `api_visible` | Catalog/UI metadata. |
-| `meta_model` | Optional Pydantic model for the `meta` view. |
+| `meta_model` | Optional hand-written Pydantic model for the `meta` view; read via `effective_meta_model`, which derives one from the type's `asset_spec` when absent. |
+| `default_origin_kind` / `serializer(origin)` | Which `DataSerializer` stores/loads the type (`"local"` disk, `"db"`, `"hub"`); `name_from_folder`, `rows_layout_field`, `hub_main_file` are its layout facts. |
 | `from_disk_fn` | Cold-path parser: `(FSRef, resolved_id) -> list[FSRecord]`. |
-| `capsules` / `identity_backend` | Named capsule declarations and the canonical-plus-legacy/native identity carrier. |
+| `capsules` / `identity_carrier` | Named capsule declarations and WHERE the id lives (frontmatter for a markdown main document, folder json, native json, or derived). |
 | `id_stable_key_fn` / `id_namespace` | Optional deterministic key and UUID namespace used by `TypeInfo.mint_entity_id()` for provider/natural/path-v5 identities. |
 | `asset_hash_fn` | Cheap freshness token: `(FSRef) -> ...`. |
 | `post_sync_fn` | Async hook run after `sync_to_db`. |
-| `default_body_fn` | Per-type default body for `upsert_main_ref`. |
+| `default_body_fn` | Default body for a type with no `asset_spec` (`dynamic_workflow`); spec-bearing types render through `DiskSerializer.render`. |
 | `main_subdir` / `main_layout` | Asset placement under the user's scope root. |
 
 Per-type `TypeInfo` definitions live in `flow_sdk/schema/type_info/<type>_info.py` and are registered via `SchemaRegistry.register(info)` (merging into any existing entry). `SchemaRegistry` is the single source of truth for types — `get(type)`, `get_all_types()`, `get_entity_cls(type)`, `get_icon(type)`, etc.
@@ -250,7 +251,7 @@ class RecordRef:
     key_value: str | None = None
 ```
 
-`RecordRef.content_hash` is a deterministic 12-char md5 of the addressing fields. `RecordRef.from_dict` returns a `RecordDataRef` subclass when a `format` key is present; `RecordDataRef` adds a `format` field plus `resolve_data_dir()` / `resolve_data_file()` helpers that target the records-data root (`~/.flow/records_data/<type>/<type>-@<id>/`).
+`RecordRef.content_hash` is a deterministic 12-char md5 of the addressing fields. `RecordRef.from_dict` returns a `RecordDataRef` subclass when a `format` key is present; `RecordDataRef` adds a `format` field plus `resolve_data_dir()` / `resolve_data_file()` helpers that target the records-data root (`~/.flow/records_data/<type>/<id>/`).
 
 ---
 

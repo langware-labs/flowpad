@@ -1,15 +1,6 @@
-import { create } from 'zustand';
+import { createOverlayStore } from './create-overlay-store';
 
-interface ActivityModalStore {
-  open: boolean;
-  setOpen: (v: boolean) => void;
-  show: () => void;
-  hide: () => void;
-}
-
-export const useActivityModalStore = create<ActivityModalStore>((set) => ({
-  open: false,
-  setOpen: (v) => set({ open: v }),
-  show: () => set({ open: true }),
-  hide: () => set({ open: false }),
-}));
+/** The indexer's activity-progress modal — opened from the footer indicator. */
+const store = createOverlayStore();
+export const useActivityModalStore = store.useStore;
+export const showActivityModal = store.open;

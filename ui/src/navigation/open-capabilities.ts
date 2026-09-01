@@ -1,24 +1,19 @@
-import { CapabilityKinds, ViewType } from '@sdk';
-import type { WorkerType } from '@src/components/workers/worker-types';
+import { ViewType } from '@sdk';
+import { HARNESS_CAPABILITY_BY_WORKER, type WorkerType } from '@src/components/workers/worker-types';
 import type { NavigationActions } from './NavigationActions';
 
 /**
  * The capability kind that provides a worker's CLI — the frontend mirror of the
  * backend's `worker_capability_kind` (`cli_worker_base_driver.py`).
  *
- * A map rather than interpolation, because the two tokens don't coincide:
- * `claude_code` registers against `harness.claude.cli`. It was previously an
- * inline ternary in the terminal strip that simply had no `copilot` branch, so
- * a failed Copilot spawn landed on an unscoped Capabilities view.
+ * Read from the ONE vendor table (`HARNESS_CAPABILITY_BY_WORKER`) rather than a
+ * second copy here: the tokens don't coincide (`claude_code` registers against
+ * `harness.claude.cli`), and the local copy had gone stale exactly the way the
+ * ternary it replaced did — it was missing `opencode`, so a failed OpenCode
+ * spawn landed on an unscoped Capabilities view.
  */
-const HARNESS_KIND: Record<WorkerType, string> = {
-  claude_code: CapabilityKinds.ClaudeCode,
-  codex: CapabilityKinds.Codex,
-  copilot: CapabilityKinds.Copilot,
-};
-
 export function harnessCapabilityKind(workerType?: WorkerType | null): string | undefined {
-  return workerType ? HARNESS_KIND[workerType] : undefined;
+  return workerType ? HARNESS_CAPABILITY_BY_WORKER[workerType] : undefined;
 }
 
 /**

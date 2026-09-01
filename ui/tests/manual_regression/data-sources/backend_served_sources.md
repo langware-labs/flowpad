@@ -30,7 +30,7 @@ test 2: Every installed spec is offered as a provider
 - this is the phase-2 contract: the dialog renders what is INSTALLED
 
 test 3: The RSS form is the RSS manifest
-- [api] read the `rss` spec's `config_schema`
+- [api] read the `rss` spec's `config`
 - [browser] open the Add dialog and choose the rss provider
 - [browser] validate each config key renders an input with id "ds-<key>"
 - [browser] validate its label text and placeholder match the manifest verbatim

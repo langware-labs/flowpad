@@ -2,10 +2,9 @@
 
 import pytest
 
-from flow_sdk.fs_store import set_default_records_root, get_default_records_root
-
-from flow_sdk.fs_store.indexer.functions.task import extract_task
+from flow_sdk.fs_store import get_default_records_root, set_default_records_root
 from flow_sdk.fs_store.fs_record import FSRecord
+
 TaskResource = FSRecord  # noqa: F401
 
 

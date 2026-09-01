@@ -10,7 +10,6 @@ Adapted for flow-cli:
 - Validates the WebSocket endpoint at /api/v1/connect/ws/{connection_id}
 """
 
-import json
 import uuid
 
 import pytest
@@ -71,8 +70,9 @@ async def test_websocket_echo_message():
     Validates:
     - Sending an echo message returns the same content back
     """
-    from flow_sdk.server.app import app
     from starlette.testclient import TestClient
+
+    from flow_sdk.server.app import app
 
     connection_id = str(uuid.uuid4())
 
@@ -103,8 +103,9 @@ async def test_websocket_ping_pong():
     Validates:
     - Sending a ping returns a pong response
     """
-    from flow_sdk.server.app import app
     from starlette.testclient import TestClient
+
+    from flow_sdk.server.app import app
 
     connection_id = str(uuid.uuid4())
 
@@ -138,8 +139,9 @@ async def test_websocket_binary_message_accepted():
 
     Original FlowPad test used msgpack-encoded [stream_id, data] format.
     """
-    from flow_sdk.server.app import app
     from starlette.testclient import TestClient
+
+    from flow_sdk.server.app import app
 
     connection_id = str(uuid.uuid4())
 
@@ -169,8 +171,9 @@ async def test_websocket_invalid_json():
     - Invalid JSON doesn't crash the connection
     - Error response is sent back
     """
-    from flow_sdk.server.app import app
     from starlette.testclient import TestClient
+
+    from flow_sdk.server.app import app
 
     connection_id = str(uuid.uuid4())
 
@@ -198,8 +201,9 @@ async def test_websocket_unknown_message_type():
     - Unknown message_type returns error response
     - Connection stays alive
     """
-    from flow_sdk.server.app import app
     from starlette.testclient import TestClient
+
+    from flow_sdk.server.app import app
 
     connection_id = str(uuid.uuid4())
 
@@ -231,8 +235,9 @@ async def test_websocket_hangup():
     """
     Test: WebSocket hangup message closes connection.
     """
-    from flow_sdk.server.app import app
     from starlette.testclient import TestClient
+
+    from flow_sdk.server.app import app
 
     connection_id = str(uuid.uuid4())
 

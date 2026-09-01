@@ -6,10 +6,10 @@ and receive data_op_msg notifications when watched entities change via WebSocket
 
 import asyncio
 import json
-import pytest
-import websockets
 from uuid import uuid4
 
+import pytest
+import websockets
 
 pytestmark = pytest.mark.skip(reason="requires flowpad monorepo minihub server")
 

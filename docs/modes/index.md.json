@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "typeid": "markdown_index-816a84f6-dd60-5ab1-9afc-dd620668e009",
+  "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
+  "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
+  "folder_rel_path": "modes",
+  "folder_name": "modes",
+  "inputs_hash": "ffe5a2fea923f0c0604c9dad2f01f13175e041b9bd4b5286da8df61decda1e15",
+  "template_version": 1,
+  "prompt_version": 1,
+  "self_summary": "Per-mode guides for the View-mode skin system: what each mode changes about the same underlying app, and which primitives it reuses rather than forks. Currently covers Vibe, the creator-first workspace.",
+  "files": [
+    {
+      "name": "vibe_mode.md",
+      "rel_path": "vibe_mode.md",
+      "title": "Vibe Mode \u2014 the creator-first workspace mode",
+      "summary": "Vibe creator-mode workspace: entry paths, build flow, side chat beside a live display preview, MCP UI plumbing, hub theme, and reused primitives.",
+      "content_hash": "7f4779eaad3a25ce698bc7177e94f6e5c5a9d84f23fd1d112e80a48685596f9f",
+      "size_bytes": 16223
+    }
+  ],
+  "subfolders": [],
+  "generated_at": "2026-08-23T22:11:28.823621+00:00",
+  "latest_process_ref": ""
+}

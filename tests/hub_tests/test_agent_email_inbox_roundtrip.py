@@ -62,15 +62,16 @@ async def published_agent(hub_base_url, hub_login_payload):
         hub_id = (created.json().get("data") or {}).get("id") or agent_id
 
         # Local twin at the SAME id — local and hub rows share one id, which is
-        # what `remote` already asserts. `git_origin` makes `ensure_on_hub`
+        # what `remote` already asserts. An `origin` makes `ensure_on_hub`
         # short-circuit at its own guard rather than trying to publish.
         agent = Agent(id=hub_id, name=f"inbox-test-{hub_id[:8]}")
         agent.remote = True
-        # A STUB, shaped only to satisfy `ensure_on_hub`'s `remote and
-        # git_origin` guard — not a valid GitOrigin. A real one carries
+        # A STUB, shaped only to satisfy `ensure_on_hub`'s `remote and origin`
+        # guard — not a meaningful GitOrigin. A real one carries
         # provider/owner/name/branch and its `key()` is the cross-machine dedup
         # handle, so do not copy this into a fixture where that key matters.
-        agent.git_origin = {"rel_path": "agentic-assets/agent/inbox-test"}
+        # (The field is `origin`; `git_origin` is only its hub WIRE name.)
+        agent.origin = {"rel_path": "agentic-assets/agent/inbox-test"}
         await agent.save()
 
         try:

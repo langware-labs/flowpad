@@ -2,27 +2,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tool
 import { cn } from '@src/lib/utils';
 import { AlertTriangle } from 'lucide-react';
 
-import type { AnchoredItem, AnchoredTrack } from '../types';
-
 export type IssueSeverity = 'info' | 'warn' | 'error';
 
 export interface IssueMark {
   kind: string;
   note: string;
   severity: IssueSeverity;
-}
-
-export const ISSUE_TRACK_WIDTH = 96;
-
-/** @deprecated Use buildMarkerTrack from '../tracks/MarkerTrack' with kind: 'issue' items. */
-export function buildIssueTrack(items: AnchoredItem<IssueMark>[]): AnchoredTrack<IssueMark> {
-  return {
-    id: 'issues',
-    side: 'right',
-    width: ISSUE_TRACK_WIDTH,
-    items,
-    renderItem: (item) => <IssueChip issue={item.data} />,
-  };
 }
 
 export function IssueChip({ issue }: { issue: IssueMark }) {

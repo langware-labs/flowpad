@@ -133,7 +133,7 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
   // ``login_state`` and better than a probe that timed out — so it wins over
   // both. ``useHarnessLoginOnAuthError`` also reports it to the backend; this
   // keeps the row honest even when that write fails.
-  const deniedBy = useHarnessLoginStore((s) => (s.signedOut?.kind === kind ? s.signedOut.message : null));
+  const deniedBy = useHarnessLoginStore((s) => (s.payload?.kind === kind ? s.payload.message : null));
 
   const [busy, setBusy] = useState(false);
   // Separate from `busy` so re-testing auth doesn't compute status to 'busy'.
@@ -563,6 +563,7 @@ function LlmKeysSection({ keys, refreshKeys }: { keys: LmApiKeySummary[]; refres
         open={confirmDelete !== null}
         onOpenChange={(o) => !o && setConfirmDelete(null)}
         title={t`Delete this key?`}
+        description={t`The stored API key for this provider is removed from this machine. You can add it again later.`}
         onConfirm={() => {
           if (confirmDelete) void onDelete(confirmDelete);
           setConfirmDelete(null);

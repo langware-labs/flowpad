@@ -23,15 +23,17 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
+from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest.driver import (
+    IngestDriver,
     FetchResult,
-    SendOutcome,
-    SendStatus,
     SegmentCursorView,
     SegmentRef,
+    SendOutcome,
+    SendStatus,
 )
+from flow_sdk.ingest import http
 from flow_sdk.ingest.health import SourceError
-from flow_sdk.ingest.models import IngestItem
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +48,7 @@ PAGE_LIMIT = 25
 REQUEST_TIMEOUT_SECONDS = 30
 
 
-class AgentMailDriver:
+class AgentMailDriver(IngestDriver):
     provider = "agentmail"
     kind = "datasource.api.agentmail"
     record_kind = "content.message.email"
@@ -71,7 +73,7 @@ class AgentMailDriver:
         messages = payload.get("messages") or []
 
         floor = str((cursor.state or {}).get("high_water") or "")
-        items: list[IngestItem] = []
+        items: list[SourceItemSpec] = []
         high_water = floor
         for msg in messages:
             stamp = str(msg.get("timestamp") or "")
@@ -88,7 +90,7 @@ class AgentMailDriver:
             state["high_water"] = high_water
         return FetchResult(items=items, next_state=state, high_water=high_water or None, unchanged=not items)
 
-    def _to_item(self, source, msg: dict) -> IngestItem:
+    def _to_item(self, source, msg: dict) -> SourceItemSpec:
         """One AgentMail message → the shared envelope.
 
         `message_id` is the RFC 5322 id and is what the provider itself uses as
@@ -96,13 +98,13 @@ class AgentMailDriver:
         re-fetches and across this driver and any other that sees the same mail.
         """
         sender = str(msg.get("from") or "")
-        return IngestItem(
-            source_id=source.id,
+        return SourceItemSpec(
+            data_source_id=source.id,
             provider=self.provider,
             kind=self.record_kind,
             segment_key=self._inbox(source),
             external_id=str(msg.get("message_id") or ""),
-            title=str(msg.get("subject") or ""),
+            name=str(msg.get("subject") or ""),
             body=str(msg.get("preview") or ""),
             occurred_at=str(msg.get("timestamp") or "") or None,
             author_display=sender,
@@ -185,28 +187,27 @@ class AgentMailDriver:
     async def _request(
         self, source, method: str, path: str, *, params: Optional[dict] = None, json_body: Optional[dict] = None
     ) -> dict:
+        url = f"{self._base(source)}{path}"
+        # 401/403 come back as a response, not the house `unauthorized`: a bad
+        # AgentMail key is reported as `auth_failed` (a human has to fix it),
+        # and retrying forever would park the source in a loop nobody sees.
         import httpx  # noqa: PLC0415
 
-        url = f"{self._base(source)}{path}"
-        try:
-            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
-                response = await client.request(
-                    method,
-                    url,
-                    headers=self._auth(source),
-                    params=params,
-                    json=json_body,
-                )
-        except httpx.HTTPError as exc:
-            # The network, not the config — the next cycle may well succeed.
-            raise SourceError.transient("network", f"{method} {path}: {exc}") from exc
-
+        # Own client: AgentMail keeps its own REQUEST_TIMEOUT_SECONDS ceiling,
+        # which is not the house one.
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
+            response = await http.request(
+                client,
+                method,
+                url,
+                headers=self._auth(source),
+                params=params,
+                json=json_body,
+                ok_statuses=(401, 403),
+                hint=f"{method} {path}",
+            )
         if response.status_code in (401, 403):
-            # A bad key needs a human; retrying forever would just park the
-            # source in a loop nobody sees.
             raise SourceError.config("auth_failed", f"{method} {path}: {response.status_code}")
-        if response.status_code >= 400:
-            raise SourceError.transient("http_error", f"{method} {path}: {response.status_code} {response.text[:200]}")
         try:
             return response.json() or {}
         except ValueError as exc:

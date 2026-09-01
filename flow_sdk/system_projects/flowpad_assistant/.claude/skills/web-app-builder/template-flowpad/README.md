@@ -37,6 +37,16 @@ registry and the current project/compute node. Entity calls before it will fail.
 a real Task. Hand-rolled `fetch('/api/...')` bypasses the entity model and its
 live updates.
 
+**4. Style with Flowpad's tokens, not your own palette.** `index.html` links
+`/sdk/flowpad.css`, which carries the product's real colours, radii, font stack
+and dark theme; `styles.css` then owns layout only. Call `sdk.applyHostTheme()`
+before anything paints — a served page is cross-origin and cannot read the theme
+class Flowpad sets on its own `<html>`, so it arrives via `?theme=` instead.
+
+For anything beyond layout tweaks, load the **html-builder** skill (modern CSS
+with no build step) and **frontend-design** (the aesthetic direction). An app
+that lives inside Flowpad should look like it belongs there.
+
 ## Always save WITH the project scope
 
 `save()` with no argument places the entity outside any project
@@ -51,6 +61,32 @@ necessarily the one this app belongs to.
 
 ```js
 await new sdk.Task({ title }).save(projectTypeId);
+```
+
+## Ship it inside an asset
+
+The same folder can live INSIDE another asset, at
+`<asset folder>/agentic-assets/webapp/<name>/` (a data-source definition, a
+skill, a task — any folder asset). Nothing to register: a nested asset is a
+child of the asset it sits in, so re-indexing makes it that asset's app, served
+at `/api/v1/graph/micro_app/<id>/view/` and opened at `/dock/app/micro_app-<id>`
+like any other webapp — with `Project / <parent> / <name>` in the address bar.
+
+Mark what it is to its parent with `kind` in `webapp.json`:
+`application.web.editor` is what makes the parent offer it as its editor. The
+rules above still hold; the one addition is that the app can ask who contains
+it, which is how an editor knows what it edits:
+
+```js
+const { subject } = await sdk.resolveAppHost();   // the PARENT asset
+```
+
+Anything else the dock passes arrives as the query string (the Data Sources
+menu passes `?source=<data_source id>`). To move the host somewhere, post a
+dock URL to it — never navigate the frame itself:
+
+```js
+window.parent.postMessage({ kind: 'open-link', url: '/dock/assets/editor/task/typeid/task-…' }, location.origin);
 ```
 
 ## Live updates come free — do not poll

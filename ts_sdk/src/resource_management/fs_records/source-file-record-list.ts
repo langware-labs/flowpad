@@ -14,7 +14,6 @@ import { fsRecordTypeRegistry } from './record-type-registry';
 
 export class SourceFileRecordList {
   /** Override in subclasses to identify the list type sent to the backend. */
-  static _listType = '';
 
   protected _records: FsRecord[] = [];
   protected _loaded = false;
@@ -38,39 +37,22 @@ export class SourceFileRecordList {
     return this._sourcePath;
   }
 
-  /** Load records from the backend. */
+  /**
+   * Load records from the backend.
+   *
+   * A `source_file_load` POST branch used to sit here as "backward compat";
+   * the backend has no such route (it reads segment 0 as a record type), so it
+   * could only ever 400. The path-based GET is the only way records are read.
+   */
   async load(): Promise<FsRecord[]> {
-    // Path-based API: use GET /fs-records/file?path=... when sourcePath is set
-    if (this._sourcePath) {
-      const action = new ActionInfo('fs-records', 'compute_node', this._computeNodeId, 'GET');
-      action.subpath = `file?path=${encodeURIComponent(this._sourcePath)}`;
-      const res = await dataManager.callAction<unknown, { data?: Record<string, unknown>[] }>(
-        action,
-      );
-      const items = (res?.data ?? res) as Record<string, unknown>[];
-      if (!Array.isArray(items)) {
-        this._records = [];
-        this._loaded = true;
-        return this._records;
-      }
-      this._records = items.map((d) => this._deserializeRecord(d));
-      this._loaded = true;
-      return this._records;
+    if (!this._sourcePath) {
+      throw new Error('SourceFileRecordList.load requires a sourcePath');
     }
-
-    // Legacy: POST source_file_load (kept for backward compat)
-    const listType = (this.constructor as typeof SourceFileRecordList)._listType;
-    const action = new ActionInfo('fs-records', 'compute_node', this._computeNodeId, 'POST');
-    action.subpath = 'source_file_load';
-    action.bodyParameters = { list_type: listType };
+    const action = new ActionInfo('fs-records', 'compute_node', this._computeNodeId, 'GET');
+    action.subpath = `file?path=${encodeURIComponent(this._sourcePath)}`;
     const res = await dataManager.callAction<unknown, { data?: Record<string, unknown>[] }>(action);
     const items = (res?.data ?? res) as Record<string, unknown>[];
-    if (!Array.isArray(items)) {
-      this._records = [];
-      this._loaded = true;
-      return this._records;
-    }
-    this._records = items.map((d) => this._deserializeRecord(d));
+    this._records = Array.isArray(items) ? items.map((d) => this._deserializeRecord(d)) : [];
     this._loaded = true;
     return this._records;
   }

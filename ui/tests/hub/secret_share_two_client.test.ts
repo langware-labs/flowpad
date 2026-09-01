@@ -77,6 +77,28 @@ beforeAll(async () => {
   }
   alice = await getInstance(INST_1);
   bob = await getInstance(INST_2);
+
+  // Sharing a Project routes through `assert_project_publishable`, which requires
+  // a connected GitHub account BEFORE it looks at the origin at all
+  // (`project_publish.py`; `tests/api/test_project_publish.py` pins that ordering
+  // with `preflight.assert_not_awaited()`, so it is deliberate policy, not a bug).
+  // That connection can only be established by a human completing GitHub's OAuth
+  // flow — a test cannot mint it. Without it every run dies on
+  // `github_not_connected` long before the secret-pointer behaviour under test is
+  // exercised, which is noise, not signal. So state the precondition here, the
+  // same way this file already states "hub up" and "both instances launched", and
+  // the same way the other OAuth-gated suites (e.g. the Slack ones in
+  // tests/hub_tests) declare theirs. Nothing about the assertions changes.
+  try {
+    const status = await get(alice.apiUrl, '/graph/oauth/github/status');
+    if (!status?.data?.has_token) {
+      skipReason =
+        `${INST_1} has no connected GitHub account, and sharing a Project is gated on one ` +
+        `(github_not_connected). Connect GitHub once for ${INST_1}, then re-run.`;
+    }
+  } catch {
+    skipReason = `could not read GitHub connection status from ${INST_1}`;
+  }
 }, 30_000);
 
 beforeEach((context: any) => {

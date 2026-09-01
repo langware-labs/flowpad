@@ -18,6 +18,7 @@
  * Failure UI: 1 cleanup → toast; 2+ cleanups → modal counter.
  */
 
+import type { ShowTarget } from '@sdk';
 import { t } from '@lingui/core/macro';
 import {
   AgenticProcess,
@@ -36,7 +37,8 @@ import {
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
 import { buildShellRedirectUrl, detectLayout, DockPointer } from '@src/navigation';
-import { applyProcessViewMode, type ViewMode } from '@src/contexts/view-mode-context';
+import { applyProcessViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { activeDisplayDock } from '@src/navigation/open-active-display';
 
 /**
  * The URL-derived values that must survive the scope-align redirect in
@@ -53,9 +55,15 @@ import { ViewType } from '@sdk';
 import { projectScope, scopeFilterEqual, type ScopeFilter } from '@src/lib/scope-filter';
 import { replace } from 'react-router';
 import { perfLog, perfTime } from './_perf';
-import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
+import { loadProcess, ProcessLoadError } from './load-process';
 import { loadProject } from './load-project';
-import { buildProcessCleanup, loadNextProcess, type CleanupRecord, type LoadedNext } from './load-next-process';
+import {
+  buildProcessCleanup,
+  buildShellCleanup,
+  loadNextProcess,
+  type CleanupRecord,
+  type LoadedNext,
+} from './load-next-process';
 
 // ── typed error (for plain-Shell loads) ─────────────────────────────────────
 
@@ -269,6 +277,79 @@ async function reconcileProcessScope(processId: string, requestPath: string, car
   throw replace(url);
 }
 
+/**
+ * Processes whose display has already been restored in THIS browser session.
+ *
+ * Restore is a RELOAD behavior, not a navigation behavior, and that distinction is
+ * the whole reason this set exists rather than a URL opt-out. Landing cold on a
+ * process URL — a bookmark, a reload, a fresh link — should put the user back on
+ * the deliverable the agent left them. But the Display home chip navigates to that
+ * very URL on purpose, and so does closing a child; bouncing those straight back
+ * out would make the bare process unreachable.
+ *
+ * A module-level set answers both: it is empty on a hard reload (exactly when
+ * restore is wanted) and populated for the rest of the session (exactly when the
+ * user is steering). No second display-state param has to exist in the URL, and
+ * nothing has to sniff a referrer.
+ */
+const restoredDisplays = new Set<string>();
+
+/** Test seam — a fresh module in a new browser session starts empty. */
+export function resetDisplayRestoreForTests(): void {
+  restoredDisplays.clear();
+}
+
+/**
+ * Redirect a cold landing on a vibe process URL to the display it left off on.
+ *
+ * The pin lives on the process (`context_data.last_shown`), which `loadProcess`
+ * has just put in cache, so this costs no fetch and the loader stays fast.
+ *
+ * Guards, each earning its place:
+ *  - **explicit `?viewMode=vibe` only.** The effective mode is not settled at
+ *    loader time — a project's own `last_mode` is applied later by
+ *    `applyProjectViewMode` — so an ambient read would be wrong for exactly the
+ *    projects that default to vibe. Same reasoning as `canonicalWorkspaceDisplayPath`.
+ *    It fails toward "stay on the process", which is the safe direction.
+ *  - **once per process per session** (see `restoredDisplays`), which is also what
+ *    keeps a durable `last_shown` from re-firing forever — the hazard `isFreshShow`
+ *    guards on the non-vibe side.
+ *  - **`replace`, never push** — a pushed entry would sit in history redirecting
+ *    forward again on every Back.
+ *
+ * An earlier version also required the workspace's active-display Tab row to be
+ * visible, reasoning that the row records whether the user still HAS a display.
+ * It does not: the row is minted when a live client navigates, so on the cold
+ * landing this function exists for — a reload, a bookmark, a shared link, or a
+ * `flow show` that arrived while nothing was watching — there is no row yet and
+ * the redirect never fired. The check could not tell "the user closed it" from
+ * "no browser has ever shown it", and silently chose wrong on the common case.
+ * Once-per-session carries the guard instead, and it is no weaker than the
+ * behavior this replaced: the pane restored `last_shown` on EVERY mount.
+ */
+export function restoreDisplayRedirect(processId: string, requestPath: string, carry?: ProcessRouteCarry): string | null {
+  if (carry?.viewMode !== ViewMode.Vibe) return null;
+  if (restoredDisplays.has(processId)) return null;
+  restoredDisplays.add(processId);
+
+  const process = AgenticProcess.getByIdFromCache<AgenticProcess>(processId);
+  const lastShown = (process?.context_data as { last_shown?: ShowTarget } | undefined)?.last_shown;
+
+  // ONE definition of what the active display can address, shared with the live
+  // show path. Restore must refuse exactly what `openActiveDisplay` refuses — a
+  // terminal (hosted as its own child tab), a bare port (following it walks the
+  // user out of the workspace to a chrome-less web-app dock), and anything with no
+  // dock at all — and sharing the builder is what makes that true by construction
+  // rather than by a comment asking the next person to keep two lists in step.
+  const placed = activeDisplayDock(lastShown, {
+    host: `${AgenticProcess.type}-${processId}`,
+    projectId: process?.project_id ?? null,
+  });
+  if (!placed) return null;
+
+  return placed.toUrl(requestPath);
+}
+
 async function routeProcessPointer(
   processId: string,
   shellUrl: ShellUrlBuilder,
@@ -292,6 +373,14 @@ async function routeProcessPointer(
     applyProcessViewMode(process, carry?.viewMode ?? null);
     // Successful load — clear any prior runtime-error banner.
     dataContext.setTerminalRuntimeError(null);
+    // Restore AFTER the load: the process is in cache, and the scope has already
+    // been aligned above, so this only ever fires from a URL `reconcileProcessScope`
+    // has declared canonical — the two redirects can never ping-pong.
+    const displayUrl = restoreDisplayRedirect(processId, requestPath, carry);
+    if (displayUrl) {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      throw replace(displayUrl);
+    }
     return;
   } catch (e) {
     if (!(e instanceof ProcessLoadError)) throw e;
@@ -386,7 +475,7 @@ async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder
     }
 
     // See routeProcessPointer for rationale on `replace`.
-    const directCleanup = await buildShellCleanupForRoute(e);
+    const directCleanup = await buildShellCleanup(e);
     const next = await loadNextProcess({
       excludeIds: new Set([shellId]),
       projectId: dataContext.project?.id ?? null,
@@ -403,32 +492,6 @@ async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder
     });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw replace(shellUrl(fallbackPointer));
-  }
-}
-
-// buildProcessCleanup (the direct-link process mapper) is imported from
-// load-next-process — single source of truth shared with the in-loader path.
-async function buildShellCleanupForRoute(e: ShellLoadError): Promise<CleanupRecord> {
-  switch (e.kind) {
-    case 'not_found':
-      return {
-        kind: 'shell_not_found',
-        shellId: e.shellId,
-        title: t`Shell not found`,
-        description: t`This terminal no longer exists.`,
-      };
-    case 'error_status':
-      return {
-        kind: 'shell_error_status',
-        shellId: e.shellId,
-        title: t`Shell unavailable`,
-        description: e.errorMessage ?? 'Shell error',
-      };
-    case 'start_failed': {
-      await tabManager.closeTarget(new TypeId(Shell.type, e.shellId)).catch(() => {});
-      const desc = describeProcessStartError(e.cause ?? e);
-      return { kind: 'shell_start_failed', shellId: e.shellId, title: desc.title, description: desc.description };
-    }
   }
 }
 

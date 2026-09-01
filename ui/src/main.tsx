@@ -7,7 +7,6 @@ import { ThemeProvider } from 'next-themes';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { RouterProvider } from 'react-router';
-import '@src/contexts/dev-mode-context';
 import '@src/contexts/view-mode-context';
 import { initLocale } from '@src/contexts/locale-context';
 import { getHistoryPosition } from '@src/navigation/history-position-store';
@@ -99,7 +98,7 @@ async function init() {
         <LocaleProviders>
           <RouterProvider
             router={router}
-            unstable_onError={(error) => {
+            onError={(error) => {
               console.error('Error loading session:', error);
             }}
           />

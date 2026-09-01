@@ -14,7 +14,6 @@ Public helpers used outside the indexer:
   - ``parse_subagent_markdown(text, name)`` — pure frontmatter+body parse
   - ``extract_subagent(ref, resolved_id)`` — parser_fn entry
   - ``agent_id(ref)`` — compatibility read helper
-  - ``AGENTS_SPEC_FIELDS`` / ``KEY_TO_JSON`` / ``JSON_TO_KEY`` — spec mapping
 """
 
 from __future__ import annotations
@@ -23,9 +22,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_body,
     _extract_frontmatter,
@@ -34,24 +32,6 @@ from flow_sdk.fs_store.indexer._frontmatter import (
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
-# Fields stored in _data that map to the Claude Code --agents JSON spec
-AGENTS_SPEC_FIELDS = (
-    "description",
-    "kind",
-    "tools",
-    "disallowed_tools",
-    "model",
-    "color",
-    "permission_mode",
-    "max_turns",
-    "skills",
-    "mcp_servers",
-    "hooks",
-    "memory",
-    "background",
-    "isolation",
-)
-
 # Mapping from snake_case _data keys to camelCase --agents JSON keys
 KEY_TO_JSON = {
     "disallowed_tools": "disallowedTools",
@@ -59,7 +39,6 @@ KEY_TO_JSON = {
     "max_turns": "maxTurns",
     "mcp_servers": "mcpServers",
 }
-JSON_TO_KEY = {v: k for k, v in KEY_TO_JSON.items()}
 
 
 # ── Walker ───────────────────────────────────────────────────────────────────
@@ -113,7 +92,7 @@ def _read_frontmatter_id(path: Path) -> str | None:
         return None
     fields = _yaml_load(fm) or {}
     raw = fields.get("id") or fields.get("asset_id")
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
 
     return adopt_entity_id(raw)  # validate-on-adopt (v4/v5) → else caller derives
 
@@ -162,7 +141,7 @@ def subagent_peek_entity_id(ref: FSRef) -> str:
 
     info = SchemaRegistry.get(str(RecordType.SUBAGENT))
     if info is not None:
-        existing = info.mint_entity_id(ref)
+        existing = info.read_id(ref)
         if existing is not None:
             return existing
     try:
@@ -172,7 +151,7 @@ def subagent_peek_entity_id(ref: FSRef) -> str:
     else:
         fm = _extract_frontmatter(text)
         fields = (_yaml_load(fm) if fm else None) or {}
-        from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+        from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
 
         adopted = adopt_entity_id(fields.get("id") or fields.get("asset_id"))
         if adopted:
@@ -187,10 +166,10 @@ def subagent_peek_entity_id(ref: FSRef) -> str:
 
 
 def parse_subagent_markdown(text: str, name: str | None = None) -> dict[str, Any]:
-    """Parse YAML frontmatter + markdown body into a fields dict.
+    """Parse frontmatter + body into a fields dict: id/name/spec fields + ``prompt``.
 
-    Returns id/name/spec fields + 'prompt' (the body). Used by both the
-    indexer extractor and ``operations/agent.py`` helpers.
+    The field set is ``SubAgentSpec`` — the parser no longer keeps its own
+    list. Used by the indexer extractor and every record-shaped caller.
     """
     from flow_sdk.capsules import strip_capsule_blocks  # noqa: PLC0415
 
@@ -199,55 +178,15 @@ def parse_subagent_markdown(text: str, name: str | None = None) -> dict[str, Any
     fields = _yaml_load(fm_text) if fm_text else {}
     body = _extract_body(text)
 
-    agent_name = name or fields.pop("name", None) or "unnamed"
     raw_id = fields.pop("id", None) or fields.pop("asset_id", None)
+    from flow_sdk.builtin.subagent import SubAgentSpec  # noqa: PLC0415
+
+    header = SubAgentSpec.model_validate(fields)
+    agent_name = name or header.name or "unnamed"
     rec_id = raw_id.strip() if isinstance(raw_id, str) and raw_id.strip() else agent_name
 
     data: dict[str, Any] = {"id": rec_id, "name": agent_name}
-    for key in AGENTS_SPEC_FIELDS:
-        if key in fields:
-            data[key] = fields[key]
+    data.update(header.model_dump(exclude_none=True, exclude={"name"}))
     if body:
         data["prompt"] = body
     return data
-
-
-def extract_subagent(ref: FSRef, resolved_id: str) -> list[FSRecord]:
-    """Parse an agent .md into a Record. Replaces ``AgentRecord._from_fsref_sync``.
-
-    Eagerly populates: id, name, description, prompt, content (for FTS body =
-    name + description + prompt), spec fields. Sets _asset_ref to a
-    FrontMatterFsRef on the source .md so callers that need the FM API can
-    read/write it.
-    """
-    path = ref._path
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return []
-    data = parse_subagent_markdown(text, name=path.stem)
-    data["id"] = resolved_id
-    data["type"] = RecordType.SUBAGENT
-    data["status"] = "active"
-    # prompt is stored under 'prompt_text' on the shim subclass; for parser_fn-
-    # built generic Records, we store it under both 'prompt' and 'prompt_text'
-    # so search_content + AGENT-aware callers both see it.
-    prompt = data.pop("prompt", None)
-    if prompt:
-        data["prompt_text"] = prompt
-    # Composite FTS body: name + description + prompt body.
-    parts: list[str] = []
-    if data.get("name"):
-        parts.append(str(data["name"]))
-    desc = data.get("description")
-    if desc:
-        parts.append(str(desc))
-    if prompt:
-        parts.append(prompt)
-    data["content"] = "\n".join(parts) if parts else ""
-    data["body"] = prompt or ""
-
-    rec = FSRecord(**data)
-    from flow_sdk.fs_store.fs_ref import FrontMatterFsRef  # noqa: PLC0415
-    object.__setattr__(rec, "_asset_ref", FrontMatterFsRef(path))
-    return [rec]

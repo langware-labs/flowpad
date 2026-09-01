@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { APIEntity, GraphContext, QueryRequest, TypeId, isTypeId } from '@sdk';
+import { APIEntity, GraphContext, QueryRequest, TypeId, isTypeId, type AnyEntity } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -376,7 +376,7 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
 /** One frozen typeid resolved to its entity (type icon + name), with the slot it came from. */
 function ContextRow({ typeIdStr, slot }: { typeIdStr: string; slot?: string }) {
   const typeId = useMemo(() => (isTypeId(typeIdStr) ? new TypeId(typeIdStr) : null), [typeIdStr]);
-  const { data: entity } = useEntity<APIEntity<any>>(typeId, { enabled: !!typeId });
+  const { data: entity } = useEntity<AnyEntity>(typeId, { enabled: !!typeId });
 
   const Icon = useMemo(() => iconForType(typeId?.type ?? ''), [typeId?.type]);
   const label = entity?.displayName || typeIdStr;

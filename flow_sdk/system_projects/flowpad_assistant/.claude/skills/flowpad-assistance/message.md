@@ -1,3 +1,7 @@
+---
+id: 848f6599-1d14-4999-9fff-4b40359eb22b
+---
+
 # Action: message
 
 Send a message — optionally with file attachments, entity references, or a runnable prompt —
@@ -137,8 +141,3 @@ do not mark the send verified.
 | connection refused on `$BASE` | backend down | tell the user; do not start servers yourself |
 | `message, prompt, files, or asset_references required` | empty send | provide at least one of `message`/`text`, `files`, `asset_references`, `prompt_text` |
 
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 848f6599-1d14-4999-9fff-4b40359eb22b
-flowpad:endcapsule identity -->

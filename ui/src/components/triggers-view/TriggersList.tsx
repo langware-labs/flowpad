@@ -3,7 +3,7 @@ import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { type ScopeFilter } from '@src/lib/scope-filter';
 import { ruleInScope } from '@src/components/events/feed-model';
-import { ActionInfo, dataManager, type ITrigger } from '@sdk';
+import { ActionInfo, dataManager, Trigger } from '@sdk';
 import { HelpCircle, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -11,10 +11,10 @@ import { TriggerListItem } from './TriggerListItem';
 import { SCOPE_LABELS } from './scope-colors';
 
 interface Props {
-  triggers: ITrigger[];
-  selectedTrigger: ITrigger | null;
-  onSelect: (trigger: ITrigger) => void;
-  onOpenLog: (trigger: ITrigger) => void;
+  triggers: Trigger[];
+  selectedTrigger: Trigger | null;
+  onSelect: (trigger: Trigger) => void;
+  onOpenLog: (trigger: Trigger) => void;
   onNewSchedule: () => void;
   isCreatingSchedule: boolean;
   /** URL-first scope filter (read from the dock options by the host). The scope
@@ -27,8 +27,8 @@ interface Props {
 
 const SCOPE_ORDER = ['system', 'user', 'project'] as const;
 
-function groupByScope(triggers: ITrigger[]): Record<string, ITrigger[]> {
-  const grouped: Record<string, ITrigger[]> = {};
+function groupByScope(triggers: Trigger[]): Record<string, Trigger[]> {
+  const grouped: Record<string, Trigger[]> = {};
   for (const trigger of triggers) {
     const scope = trigger.scope || 'user';
     if (!grouped[scope]) grouped[scope] = [];
@@ -227,9 +227,9 @@ function FsopHelpPopover() {
 
 interface TypeSectionProps {
   title: string;
-  grouped: Record<string, ITrigger[]>;
+  grouped: Record<string, Trigger[]>;
   count: number;
-  renderItem: (trigger: ITrigger) => React.ReactNode;
+  renderItem: (trigger: Trigger) => React.ReactNode;
   trailing?: React.ReactNode;
   emptyState?: React.ReactNode;
 }

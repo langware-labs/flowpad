@@ -68,7 +68,7 @@ async def publish_git_asset_impl(entity, actor: TypeId) -> AssetPublishResult:
         raise AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "Owning Project has no local mount")
 
     asset_ref = Path(entity.asset_ref)
-    asset_root = info.folder_for(asset_ref) if info.main_layout == "folder" else asset_ref
+    asset_root = info.storage_root_for(asset_ref)
     try:
         real_asset = asset_root.resolve(strict=True)
         real_mount = Path(mount_value).resolve(strict=True)
@@ -122,8 +122,10 @@ async def publish_git_asset_impl(entity, actor: TypeId) -> AssetPublishResult:
             },
         ) from exc
 
+    from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
+
     entity.remote = True
-    entity.git_origin = receipt.origin.model_dump(mode="json")
+    entity.origin = GitOrigin.model_validate(receipt.origin.model_dump(mode="json"))
     warning = None
     token = _SUPPRESS_STORE.set(True)
     try:

@@ -1,5 +1,5 @@
 import { APIEntity, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { DockPointerData } from '../models/DockPointer';
 
 export interface ICommand extends IEntity {
@@ -10,6 +10,12 @@ export interface ICommand extends IEntity {
   parent_path?: string;
   vault_root?: string;
 }
+
+// `implements ICommand` only checks the class; it contributes no members, so every
+// field declared solely on ICommand read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Command extends EntityMerge<ICommand> {}
 
 /** Slash-command markdown file under `.claude/commands/*.md`. */
 @registerEntity
@@ -35,6 +41,6 @@ export class Command extends APIEntity<Command> implements ICommand {
 
   /** Default open target: the asset editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('command') ?? super.dockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 }

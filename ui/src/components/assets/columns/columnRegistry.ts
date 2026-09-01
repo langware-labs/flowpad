@@ -1,27 +1,5 @@
 import { ReactNode } from 'react';
-
-export interface SearchResult {
-  record_id: string;
-  record_type: string;
-  name: string;
-  snippet: string | null;
-  status: string;
-  scope: string;
-  asset_ref: string;
-  created_at: string;
-  modified_at: string;
-  uname?: string;
-  title?: string;
-  description?: string;
-  file_path?: string;
-  filename?: string;
-  work_dir?: string;
-  project_id?: string;
-  project_name?: string;
-  asset_type?: string;
-  /** Group-task member pointer — member tasks are hidden from asset lists. */
-  parent_id?: string;
-}
+import type { SearchRow } from '@src/hooks/search-row';
 
 export interface ColumnActions {
   filterByProject?: (label: string) => void;
@@ -30,7 +8,7 @@ export interface ColumnActions {
 export interface ColumnDef {
   key: string;
   header: string;
-  render: (row: SearchResult, actions?: ColumnActions) => ReactNode;
+  render: (row: SearchRow, actions?: ColumnActions) => ReactNode;
   width?: number;
 }
 

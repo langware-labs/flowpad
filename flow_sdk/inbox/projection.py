@@ -139,7 +139,7 @@ async def project_source_item(
         ensure_conversation_entity,
         materialize_flow_message,
     )
-    from flow_sdk.builtin.cloud_origin import CloudOrigin, CloudOriginLocal  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415

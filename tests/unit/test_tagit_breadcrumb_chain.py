@@ -19,6 +19,7 @@ import pytest
 
 from flow_sdk.capsules.data import CapsuleData
 from flow_sdk.capsules.line_comment import LineCommentCapsule
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.tags.bindings import scan_code_capsules
 
 TAG = "breadcrumb.test.catchup_login.rules"
@@ -116,9 +117,8 @@ def test_breadcrumb_chain_is_actionable(tmp_path, breadcrumbed):
 
     # 5. the doc is bound to the same tag through the production parser
     from flow_sdk.fs_store.fs_ref import FSRef
-    from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown
 
-    records = extract_markdown(FSRef(doc_path), "")
+    records = SchemaRegistry.get("markdown").from_disk_fn(FSRef(doc_path), "")
     assert records, "the rules doc should parse into a record"
     assert records[0].tags == [TAG]
 

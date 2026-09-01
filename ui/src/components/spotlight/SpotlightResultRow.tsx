@@ -3,7 +3,7 @@ import { TYPE_COLORS } from '@src/components/record-search-bar/RecordSearchBar';
 import { cn } from '@src/lib/utils';
 import { FileText, Loader2 } from 'lucide-react';
 import { providerMetaFor } from '@src/tabs/provider-meta';
-import { timeAgo } from './adapters';
+import { formatTimeAgoShort } from '@src/utils/format-time-ago';
 import type { SpotlightRow } from './types';
 
 /**
@@ -71,7 +71,9 @@ export function SpotlightResultRowContent({ row, opening }: { row: SpotlightRow;
       {opening ? (
         <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
       ) : (
-        row.timestamp && <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(row.timestamp)}</span>
+        row.timestamp && (
+          <span className="shrink-0 text-xs text-muted-foreground">{formatTimeAgoShort(row.timestamp)}</span>
+        )
       )}
     </>
   );

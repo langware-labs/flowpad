@@ -459,7 +459,6 @@ async def test_each_worker_launch_entry_prepares_once_with_runtime_parity(
     monkeypatch.setattr(AgenticProcess, "notify_updated", no_op)
     monkeypatch.setattr(AgenticProcess, "end_headless_turn", end_turn)
     monkeypatch.setattr(AgenticProcess, "reap_if_orphaned", no_op)
-    monkeypatch.setattr(AgenticProcess, "_await_capability_discovery", no_op)
 
     async def no_auth(_options, _process):
         return None

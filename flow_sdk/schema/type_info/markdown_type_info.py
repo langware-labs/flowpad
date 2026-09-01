@@ -1,28 +1,14 @@
 """Type metadata for MARKDOWN."""
-from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, frontmatter_id
-from flow_sdk.fs_store.indexer.functions.markdown import (
-    extract_markdown,
-)
+from flow_sdk.builtin.claude_memory_entities import MarkdownSpec
+from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, frontmatter_identity
+from flow_sdk.fs_store.indexer.functions.markdown import derive_markdown
 from flow_sdk.fs_store.operations.markdown import reconcile_folder_doc_edges
-from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
+from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
-
-def _markdown_default_body(entity) -> str:
-    """Markdown written to docs/<name>.md on create.
-
-    Mirrors Skill/Agent/Workflow: without a default-body writer, create persists
-    the entity + asset_ref but never materializes the .md, so opening the brand-new
-    doc hits a missing file. ``owns_main_ref`` is False, so this only writes when
-    the file is absent (``upsert_main_ref``) — it never clobbers hand edits. Title
-    is carried by the filename stem, so a bare heading round-trips cleanly.
-    """
-    name = (getattr(entity, "title", None) or getattr(entity, "name", None) or "Untitled").strip()
-    return render_entity_frontmatter(entity, {}) + f"\n\n# {name}\n"
-
-
 MARKDOWN = TypeMetadata(
+    hub_main_file="document.md",
     type=EntityType.MARKDOWN,
     icon="FileText",
     displayName="Documents",
@@ -34,11 +20,15 @@ MARKDOWN = TypeMetadata(
     index_fields=["title", "tags", "links"],
     asset_class="docs",
     family="docs",
-    from_disk_fn=extract_markdown,
+    fts_content=("body", "links"),
     capsules=(IDENTITY_CAPSULE,),
-    identity_backend=capsule_identity(frontmatter_id),
+    identity_carrier=frontmatter_identity(),
     post_sync_fn=reconcile_folder_doc_edges,
-    default_body_fn=_markdown_default_body,
+    # ``owns_main_ref`` stays False: a create materializes the .md when absent
+    # and never clobbers hand edits. Identity lives in the capsule, not the
+    # frontmatter; a fresh doc renders an empty header.
+    asset_spec=MarkdownSpec,
+    derive_fields_fn=derive_markdown,
     # On receive, a note has no setup agent — it just opens (setup_skill=None).
     reception_verb="Open",
 )

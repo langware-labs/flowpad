@@ -95,9 +95,12 @@ export function useExplorerComputeNode(): ExplorerComputeNode {
   }, [computeNode, bootstrapComputeNode, bootstrapComputeNodeTypeId, project]);
 
   const projectFsTypeId = useMemo(() => {
-    if (!project?.id || !project.type) return null;
-    return new TypeId(project.type, project.id);
-  }, [project?.id, project?.type]);
+    // `getType()` is the instance-safe accessor — the class declares `type` as a
+    // STATIC, so reading `project.type` is not visible to the type system even
+    // though the wire payload assigns it.
+    if (!project?.id) return null;
+    return new TypeId(project.getType(), project.id);
+  }, [project]);
 
   const typeId = useMemo(
     () => resolvedComputeNodeTypeId ?? projectFsTypeId ?? null,
