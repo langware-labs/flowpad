@@ -1,6 +1,6 @@
 import { t } from '@lingui/core/macro';
 import { ViewType, WorldViewProjection } from '@sdk';
-import { Building2, Globe, KeyRound, Mail } from 'lucide-react';
+import { Building2, Gauge, Globe, KeyRound, Mail, Waypoints } from 'lucide-react';
 import type React from 'react';
 
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -82,6 +82,12 @@ export function buildHubRailItems(t: (s: TemplateStringsArray) => string): reado
     // Deliberately POINTER-LESS. `hubActive` matches pointer-carrying items on
     // viewType AND pointer, so a pointer here would unlight the icon the moment
     // the user switched tab or project.
+    // Pointer-less for the same reason: the pointer is the selected scope
+    // (me / team / org), and the icon must stay lit while the user switches.
+    { id: 'token-plan', title: t`Token plan`, icon: Gauge, viewType: ViewType.TOKEN_PLAN },
+    // Pointer-less for the same reason: the pointer is the selected endpoint +
+    // tab, and the icon must stay lit while the user drills into one.
+    { id: 'llm-endpoints', title: t`LLM Endpoints`, icon: Waypoints, viewType: ViewType.LLM_ENDPOINTS },
     { id: 'credentials', title: t`Credentials`, icon: KeyRound, viewType: ViewType.CREDENTIALS },
   ];
 }

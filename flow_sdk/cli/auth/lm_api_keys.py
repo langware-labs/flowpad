@@ -86,7 +86,7 @@ def list_lm_api() -> list[dict]:
     Returns ``[{provider, configured, created_at}]`` for each stored LM key,
     plus -- only when the hub has bound an endpoint -- a ``managed: True`` row for
     ``flowpad`` whose ``configured`` is "bound AND logged in" and whose ``detail``
-    is the endpoint typeid. A desktop install without a binding lists nothing new.
+    is the endpoint typeid and ``name`` its display name. A desktop install without a binding lists nothing new.
     """
     from flow_sdk.instance_settings.llm_endpoint import get_hub_llm_endpoint  # noqa: PLC0415
 
@@ -113,6 +113,7 @@ def list_lm_api() -> list[dict]:
                 "created_at": None,
                 "managed": True,
                 "detail": bound.endpoint_typeid,
+                "name": bound.name,
             }
         )
     return out

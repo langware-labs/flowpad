@@ -13,6 +13,8 @@ export interface LmApiKeySummary {
   managed?: boolean;
   /** Human-readable detail for a managed row (the endpoint typeid). */
   detail?: string | null;
+  /** The bound endpoint's display name (managed rows only). */
+  name?: string | null;
 }
 
 export interface LmApiKeyValidation {

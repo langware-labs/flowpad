@@ -81,6 +81,7 @@ const TYPE_LABELS: Record<string, MessageDescriptor> = {
   journey: msg`Journeys`,
   journey_journal: msg`Journey Journal`,
   knowledge_base: msg`Knowledge Base`,
+  llm_endpoint: msg`LLM Endpoint`,
   markdown: msg`Documents`,
   markdown_index: msg`Markdown Index`,
   mcp: msg`MCP`,

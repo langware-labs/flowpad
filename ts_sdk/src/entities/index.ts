@@ -28,6 +28,7 @@ export * from './data-source-cursor';
 export * from './data-source-spec';
 export * from './source-item';
 export * from './dataset';
+export * from './llm-endpoint';
 export * from './message-thread';
 export * from './mention';
 export * from './page';

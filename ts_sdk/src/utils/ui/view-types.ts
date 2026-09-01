@@ -124,6 +124,8 @@ export enum ViewType {
   // can never become the identity of an app. Mirrors `ViewType.APP` in
   // flow_sdk/core/dock_address.py — same value, same position.
   APP = 'app',
+  LLM_ENDPOINTS = 'llm-endpoints', // Hub LLM endpoints (roots + chains) - /dock/hub/llm-endpoints[/<id>[/overview|usage|models]]
+  TOKEN_PLAN = 'token-plan', // Hub token plan (me / team / org budgets) - /dock/hub/token-plan[/me|team[/<id>]|org]
 }
 
 /**
