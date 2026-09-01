@@ -375,9 +375,16 @@ class CopilotDriver:
         return descriptor.path if descriptor else None
 
     def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
-        """Copilot discovers skills from ``.claude/skills`` under the mounted
-        assets dir (passed via ``--add-dir``)."""
-        return assets_dir / ".claude" / "skills"
+        """Copilot discovers skills from ``.github/skills`` under a mounted dir.
+
+        NOT ``.claude/skills`` — that was copied from the claude driver and
+        meant every embedded skill landed somewhere copilot never looks. From
+        ``copilot --help`` (1.0.x): ``--add-dir <directory>`` "Allow file access
+        to a directory and load its **.github/skills** and .github/agents as
+        trusted configuration". The mount itself rides ``resolved_add_dirs``, so
+        this is the whole of copilot's skill channel.
+        """
+        return assets_dir / ".github" / "skills"
 
     def _process_local_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         path = copilot_transcript_path_for_process(process.id)

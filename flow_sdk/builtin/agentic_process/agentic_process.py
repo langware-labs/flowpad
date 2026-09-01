@@ -351,9 +351,19 @@ async def hydrate_asset_descriptor_remote(
 
 @dataclass
 class SystemInstructionAssets:
+    """This process's asset MOUNT, plus the instruction text when there is any.
+
+    The mount is the load-bearing half: it is how a worker discovers embedded
+    skills and sub-agents. Instruction TEXT is a separate, optional concern — a
+    process can have skills and nothing to say — so ``instructions`` may be ``""``
+    and ``claude_file`` ``None``. Gating the whole object on the text is what
+    silently starved opencode's generated config and copilot's custom-instruction
+    dirs of the assets dir whenever a process had skills but no persona.
+    """
+
     assets_dir: Path
-    instructions: str
-    claude_file: Path
+    instructions: str = ""
+    claude_file: Path | None = None
     # The owning process. Every vendor but opencode reaches these assets through
     # a directory flag and needs nothing else; opencode reaches them ONLY through
     # a generated per-process config, which is keyed on this id.
@@ -5208,10 +5218,21 @@ class AgenticProcess(Entity):
 
         Skills are directory-discovered by the worker at startup, not a CLI
         input. We symlink the live source folder into the worker's skills root
-        (``_skills_root``) — ``<assets_dir>/.claude/skills/<name>/`` for
-        Claude/Copilot, ``$CODEX_HOME/skills/<name>/`` for Codex — so edits to
-        the original SKILL.md flow through to the next chat without
-        re-materialization. Backs the TS ``AgenticProcess.loadEmbeddedSkill``.
+        (``_skills_root``) — ``<assets_dir>/.claude/skills/<name>/`` for Claude,
+        ``<assets_dir>/.github/skills/<name>/`` for Copilot,
+        ``<assets_dir>/.opencode/skills/<name>/`` for OpenCode and
+        ``$CODEX_HOME/skills/<name>/`` for Codex — so edits to the original
+        SKILL.md flow through to the next chat without re-materialization.
+        Backs the TS ``AgenticProcess.loadEmbeddedSkill``.
+
+        Laying the files down is only half the job: the ref is ALSO recorded in
+        ``embedded_asset_refs``, exactly as ``attach_embedded_asset`` does. That
+        list is the persisted answer to "does this process have assets?", and
+        both delivery predicates read it from a FRESH entity instance on the
+        next request — ``resolved_add_dirs`` (via ``process_assets_active``) and
+        ``_prepare_system_instruction_assets`` (via ``has_existing_assets``).
+        Without the record the symlink is real and the worker never sees it: the
+        assets dir is simply never mounted.
         """
         import shutil
 
@@ -5236,11 +5257,72 @@ class AgenticProcess(Entity):
                 shutil.rmtree(link)
             link.symlink_to(skill_dir, target_is_directory=True)
             self._normalize_process_asset_mount()
+            ref = self._skill_folder_ref(skill_dir)
+            if ref is not None:
+                refs = list(self.embedded_asset_refs or [])
+                if not any(r.type == ref.type and r.id == ref.id for r in refs):
+                    refs.append(ref)
+                    self.embedded_asset_refs = refs
             await self.save()
-            return ApiSuccessResponse(data={"ok": True, "name": skill_dir.name, "link": str(link)})
+            return ApiSuccessResponse(
+                data={"ok": True, "name": skill_dir.name, "link": str(link), "ref": str(ref) if ref else None}
+            )
         except Exception as exc:
             logger.exception("load_embedded_skill failed for %s", asset_ref)
             return ApiFailResponse(message=str(exc))
+
+    def _embedded_skill_path(self, ref: "TypeId", assets_dir: "Path") -> "Path | None":
+        """Where this process's copy/link of skill ``ref`` lives, or None.
+
+        ``get_skill`` answers only for a skill that has a shadow record, which a
+        folder handed straight to ``load_embedded_skill_action`` need not have.
+        So fall back to scanning the vendor's skills root and matching entries
+        by resolved id — the same identity gate that minted the ref.
+        """
+        from flow_sdk.fs_store.operations.skill import get_skill  # noqa: PLC0415
+
+        root = self._skills_root(assets_dir)
+        rec = get_skill(ref.id)
+        if rec is not None and rec.name:
+            candidate = root / rec.name
+            if candidate.is_symlink() or candidate.exists():
+                return candidate
+        try:
+            entries = sorted(root.iterdir())
+        except OSError:
+            return None
+        for entry in entries:
+            if self._skill_folder_ref(entry) == ref:
+                return entry
+        return None
+
+    @staticmethod
+    def _skill_folder_ref(skill_dir: "Path") -> "TypeId | None":
+        """The ``skill-<id>`` TypeId for a skill folder on disk, or None.
+
+        Through ``skill_id`` — the read-only peek seam ``disk_asset_descriptors``
+        already builds this exact string with. It ADOPTS the folder's ``.flow/id``
+        capsule or frontmatter id rather than minting one, so pointing a process
+        at someone's skill folder never writes to it, and two loads of the same
+        folder converge (a fresh id per call would grow the ref list and never
+        match ``detach``).
+
+        Best-effort by contract: a folder that yields no id must not fail the
+        load, it just doesn't get a ref.
+        """
+        try:
+            from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+            from flow_sdk.fs_store.indexer.functions.skill import (  # noqa: PLC0415
+                parse_skill_yaml_from_dir,
+                skill_id,
+            )
+
+            ref = FSRef(skill_dir)
+            resolved = skill_id(ref, parse_skill_yaml_from_dir(skill_dir))
+            return TypeId(f"skill-{resolved}") if resolved else None
+        except Exception:
+            logger.debug("could not resolve a skill ref for %s", skill_dir, exc_info=True)
+            return None
 
     @staticmethod
     def _skill_source_folder(skill: "Any") -> str | None:
@@ -5478,19 +5560,24 @@ class AgenticProcess(Entity):
         instructions = "\n\n".join(p for p in (explicit, agent_block) if p).strip()
 
         self._normalize_process_asset_mount()
-        if not instructions:
-            return None
 
-        claude_file = asset_dir.load_asset("CLAUDE.md", content=instructions + "\n")
-        # AGENTS.md / .agents / copilot-instructions must exist on disk (agents discover
-        # them via --add-dir), but their paths aren't consumed — write without capturing.
-        asset_dir.load_asset("AGENTS.md", content=instructions + "\n")
-        asset_dir.load_asset(".agents", content=instructions + "\n")
-        copilot_body = f'---\napplyTo: "**"\ndescription: Flowpad process system instructions\n---\n\n{instructions}\n'
-        asset_dir.load_asset(
-            ".github/instructions/flowpad.instructions.md",
-            content=copilot_body,
-        )
+        # No text is NOT "no assets". The instruction files are written only
+        # when there is something to write, but the mount is returned either
+        # way — a process with an embedded skill and no persona still has to
+        # reach its worker, and for opencode/copilot this object is the ONLY
+        # thing that carries the assets dir there.
+        claude_file = None
+        if instructions:
+            claude_file = asset_dir.load_asset("CLAUDE.md", content=instructions + "\n")
+            # AGENTS.md / .agents / copilot-instructions must exist on disk (agents discover
+            # them via --add-dir), but their paths aren't consumed — write without capturing.
+            asset_dir.load_asset("AGENTS.md", content=instructions + "\n")
+            asset_dir.load_asset(".agents", content=instructions + "\n")
+            copilot_body = f'---\napplyTo: "**"\ndescription: Flowpad process system instructions\n---\n\n{instructions}\n'
+            asset_dir.load_asset(
+                ".github/instructions/flowpad.instructions.md",
+                content=copilot_body,
+            )
         return SystemInstructionAssets(
             assets_dir=asset_dir.os_path,
             instructions=instructions,
@@ -5721,7 +5808,10 @@ class AgenticProcess(Entity):
             return {}
         return {
             "instructions": None,
-            "system_prompt_file": str(assets.claude_file),
+            # None when the process has assets but no instruction text — a
+            # worker must not be pointed at a system-prompt file that was
+            # never written.
+            "system_prompt_file": str(assets.claude_file) if assets.claude_file else None,
             "developer_instructions": assets.instructions,
             "custom_instruction_dirs": [str(assets.assets_dir)],
         }
@@ -5799,7 +5889,6 @@ class AgenticProcess(Entity):
         """Best-effort removal of the files laid down by _materialize_entity."""
         import shutil
 
-        from flow_sdk.fs_store.operations.skill import get_skill
         from flow_sdk.fs_store.operations.subagent import get_subagent  # noqa: PLC0415
         from flow_sdk.fs_store.operations.subagent import load_subagent as _load_subagent
 
@@ -5810,10 +5899,16 @@ class AgenticProcess(Entity):
             if target.exists():
                 target.unlink()
         elif ref.type == "skill":
-            skill = get_skill(ref.id)
-            name = skill.name if skill else ref.id
-            target = self._skills_root(assets_dir) / name
-            if target.exists():
+            target = self._embedded_skill_path(ref, assets_dir)
+            # ``load_embedded_skill_action`` SYMLINKS the source folder while
+            # ``_materialize_entity`` COPIES it. rmtree raises on a symlink, so
+            # check the link before the directory — and never recurse into the
+            # user's real skill folder.
+            if target is None:
+                return
+            if target.is_symlink():
+                target.unlink()
+            elif target.exists():
                 shutil.rmtree(target)
 
     @action.post(action_name="attach-embedded-asset")
@@ -6275,7 +6370,8 @@ class AgenticProcess(Entity):
 
         Mirrors the layout written by ``_materialize_entity``:
           - ``agent`` → ``<assets_dir>/.claude/agents/<name>.md``
-          - ``skill`` → ``<assets_dir>/.claude/skills/<name>``
+          - ``skill`` → ``<skills_root>/<name>`` — the vendor's own root (see
+            ``WorkerDriver.skills_root``), NOT always ``.claude/skills``
           - ``mcp``   → ``<assets_dir>/mcp/<name>/mcp.json`` (NOT under a harness
             dot-dir: no harness reads MCP from disk, so this copy is for the UI
             and for editing, not for discovery)
@@ -6302,13 +6398,7 @@ class AgenticProcess(Entity):
                 name = rec.name or ref.id
                 return assets_dir / ".claude" / "agents" / f"{name}.md"
             if ref.type == "skill":
-                from flow_sdk.fs_store.operations.skill import get_skill
-
-                rec = get_skill(ref.id)
-                if rec is None:
-                    return None
-                name = rec.name or ref.id
-                return self._skills_root(assets_dir) / name
+                return self._embedded_skill_path(ref, assets_dir)
         except Exception:
             return None
         return None

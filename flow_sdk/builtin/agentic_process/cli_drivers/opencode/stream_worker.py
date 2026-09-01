@@ -180,19 +180,27 @@ def _config_path_from_context(context: AgenticContext, process_id: str | None = 
     # from anywhere else here is how opencode ends up with MCP on the PTY path
     # and silently without it on the headless one.
     mcp = dict(context.mcp_config_fragment or {})
+    # Extra mounted roots (the Flowpad Assistant, a project's context folders,
+    # ``additional_dirs``) are ``--add-dir`` for every other vendor and have NO
+    # argv spelling here, so this file is their only route to the worker too.
+    add_dirs = list(context.add_dirs or [])
 
+    if not process_id:
+        return None
     dirs = list(context.custom_instruction_dirs or [])
     if not dirs:
-        # No instruction assets, but attached servers still need a config.
-        if mcp and process_id:
-            generated = config_for_assets_dir(process_id, None, mcp)
-            return str(generated) if generated else None
-        return None
+        # No instruction assets, but attached servers and extra mounted roots
+        # still need a config. Whether there is anything worth writing is the
+        # generator's call, not ours.
+        generated = config_for_assets_dir(process_id, None, mcp, add_dirs)
+        return str(generated) if generated else None
     candidate = Path(dirs[0])
     if candidate.is_file():
+        # Already a generated config (``headless_prompt`` built it, add_dirs
+        # included).
         return str(candidate)
-    if not candidate.is_dir() or not process_id:
+    if not candidate.is_dir():
         return None
 
-    generated = config_for_assets_dir(process_id, candidate, mcp)
+    generated = config_for_assets_dir(process_id, candidate, mcp, add_dirs)
     return str(generated) if generated else None

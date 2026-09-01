@@ -372,13 +372,17 @@ class OpenCodeDriver:
     # ------------------------------------------------------------------
 
     def _write_config(self, process: "AgenticProcess", instruction_assets) -> Path | None:
-        """Generate the per-process ``opencode.json`` (instructions + skills + MCP)."""
-        mcp = dict(self.prepare_process_mcp(process.resolved_mcp_servers()).config_fragment)
-        if instruction_assets is None:
-            # Attached servers alone still warrant a config.
-            return config_for_assets_dir(process.id, None, mcp) if mcp else None
+        """Generate the per-process ``opencode.json`` (instructions + skills + MCP).
+
+        ``instruction_assets`` may be None — a process with only mounted roots
+        or attached servers still needs a config, and the generator returns None
+        when there is genuinely nothing to say.
+        """
         return config_for_assets_dir(
-            process.id, getattr(instruction_assets, "assets_dir", None), mcp
+            process.id,
+            getattr(instruction_assets, "assets_dir", None),
+            dict(self.prepare_process_mcp(process.resolved_mcp_servers()).config_fragment),
+            list(process.resolved_add_dirs or []),
         )
 
     def _process_local_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:

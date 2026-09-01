@@ -72,6 +72,9 @@ class OpenCodeAgentOptions(AgentOptions):
         self.add_dirs: list[str] = list(add_dirs or [])
         self.json_stream = json_stream
         self.config_path = config_path
+        # Remembered by ``apply_process_mcp`` for the deferred fallback write in
+        # ``_sync_config_env``. Launch-time only — never serialized.
+        self._config_process_id = ""
 
     # ------------------------------------------------------------------
     # AgentOptions contract
@@ -122,6 +125,22 @@ class OpenCodeAgentOptions(AgentOptions):
         dir_flag = ["--dir", self.workdir] if self.workdir else []
         return ["run", "--format", "json", *auto, *dir_flag, *self._common_tail()]
 
+    def _regenerate_config(self, process_id: str, assets_dir: Any = None) -> None:
+        """Write this process's ``opencode.json`` and point ``config_path`` at it.
+
+        The single owner of that write. ``mcp_config_fragment`` and ``add_dirs``
+        are read off ``self``, so every caller only supplies what it knows.
+        """
+        if not process_id:
+            return
+        from .config_gen import config_for_assets_dir
+
+        config = config_for_assets_dir(
+            process_id, assets_dir, self.mcp_config_fragment, self.add_dirs
+        )
+        if config is not None:
+            self.config_path = str(config)
+
     def apply_instruction_assets(self, assets: Any) -> None:
         """OpenCode's instruction channel is the generated config, not argv.
 
@@ -131,38 +150,27 @@ class OpenCodeAgentOptions(AgentOptions):
         ``OPENCODE_CONFIG``. Without this override an interactive (PTY) session
         received neither instructions nor skills: nothing else on any spawn path
         sets ``config_path``, so ``_sync_config_env`` was a silent no-op.
-        """
-        from .config_gen import config_for_assets_dir
 
-        config = config_for_assets_dir(
-            getattr(assets, "process_id", "") or "",
-            getattr(assets, "assets_dir", None),
-            self.mcp_config_fragment,
+        ``self.add_dirs`` rides along for the same reason: it is set by the
+        driver from ``resolved_add_dirs`` and has no other way out of this class.
+        """
+        self._regenerate_config(
+            getattr(assets, "process_id", "") or "", getattr(assets, "assets_dir", None)
         )
-        if config is not None:
-            self.config_path = str(config)
 
     def apply_process_mcp(self, runtime: "Any", process_id: str = "") -> None:
         """Fold the rendered MCP into the generated config.
 
-        Called by ``AgenticProcess._apply_process_assets`` BEFORE the
-        instruction assets, so ``apply_instruction_assets`` regenerates the file
-        with both in it. This override also covers the case that ordering alone
-        cannot: a process with attached servers and NO instruction assets, where
-        ``apply_instruction_assets`` never runs and nothing would set
-        ``config_path``.
+        Called by ``AgenticProcess._apply_process_assets`` BEFORE the instruction
+        assets, so it only REMEMBERS the process id — writing here too would
+        emit a config that ``apply_instruction_assets`` immediately overwrites
+        with the superset. A process with servers or mounted roots and no
+        instruction assets never reaches that override, so ``_sync_config_env``
+        writes the fallback at spawn instead. Either way: one write, one owner.
         """
         super().apply_process_mcp(runtime, process_id)
-        if not self.mcp_config_fragment or self.config_path or not process_id:
-            return
-        # Attached servers but NO instruction assets: ``apply_instruction_assets``
-        # never runs, so nothing else would point OPENCODE_CONFIG anywhere.
-        # Through the same generator, so the file keeps one owner.
-        from .config_gen import config_for_assets_dir
-
-        config = config_for_assets_dir(process_id, None, self.mcp_config_fragment)
-        if config is not None:
-            self.config_path = str(config)
+        if process_id:
+            self._config_process_id = process_id
 
     def _sync_config_env(self) -> None:
         """Point opencode at the generated per-process config.
@@ -171,6 +179,10 @@ class OpenCodeAgentOptions(AgentOptions):
         same reason: the value is runtime-resolved, so it must be applied on
         every spawn path rather than baked into the persisted options.
         """
+        if not self.config_path:
+            # Servers and/or mounted roots but no instruction assets — the
+            # fallback ``apply_process_mcp`` deferred to here.
+            self._regenerate_config(self._config_process_id)
         if self.config_path:
             self.env_vars["OPENCODE_CONFIG"] = self.config_path
 

@@ -917,7 +917,10 @@ class AgentOptions:
                 add_dirs.append(assets_path)
                 self.add_dirs = add_dirs
         self.system_prompt_append = None
-        self.system_prompt_file = str(assets.claude_file)
+        # ``claude_file`` is None when the process has assets but no instruction
+        # text. The MOUNT above still applies — that is how the worker finds an
+        # embedded skill — but there is no file to point --system-prompt-file at.
+        self.system_prompt_file = str(assets.claude_file) if assets.claude_file else None
         if hasattr(self, "developer_instructions"):
             self.developer_instructions = assets.instructions
         if hasattr(self, "custom_instruction_dirs"):
