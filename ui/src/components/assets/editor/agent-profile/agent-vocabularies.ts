@@ -24,6 +24,16 @@ import { WORKER_TYPES } from '@src/hooks/useWorkerHistory';
  */
 export const AGENT_WORKER_TYPES = WORKER_TYPES;
 
+/**
+ * Fold either worker vocabulary onto the DRIVER short-id so both spellings
+ * compare equal. `claude` alone differs (`worker_type` is `claude_code`), and
+ * comparing raw silently matches nothing for it. Mirrors `VENDORS` (vendors.py).
+ */
+export function toDriverKey(worker: string | null | undefined): string {
+  const value = (worker ?? '').trim();
+  return value === 'claude_code' ? 'claude' : value;
+}
+
 /** Size tiers. `Agent.model` also accepts a concrete model id, so this is a
  *  suggestion list, not a constraint. */
 export const AGENT_MODEL_TIERS = Object.values(WorkerModelTier);
