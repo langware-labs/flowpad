@@ -16,7 +16,6 @@ export type AgentDocumentPatch = Partial<
     | 'max_turns'
     | 'tools'
     | 'disallowed_tools'
-    | 'skills'
     | 'mcp_servers'
     | 'subagents'
     | 'additional_dirs'
@@ -49,33 +48,6 @@ function splitFrontmatter(source: string): FrontmatterDocument {
     yaml: normalized.slice(4, close),
     body: normalized.slice(bodyStart),
   };
-}
-
-/** Frontmatter keys whose value is a plain list of strings. */
-export type AgentDocumentListKey = 'skills' | 'mcp_servers' | 'subagents' | 'additional_dirs';
-
-/**
- * Read one list field out of `agent.md`'s frontmatter — the read half of
- * `patchAgentDocument`, so an unindexed agent stays editable. Returns `[]` for a
- * missing key, non-list value, or bad frontmatter: it feeds a list, not a throw.
- */
-export function readAgentDocumentList(source: string, key: AgentDocumentListKey): string[] {
-  let yaml: string;
-  try {
-    ({ yaml } = splitFrontmatter(source));
-  } catch {
-    return [];
-  }
-  if (!yaml) return [];
-  try {
-    const document = parseDocument(yaml);
-    if (document.errors.length > 0 || !isMap(document.contents)) return [];
-    const node = document.get(key, true) as { toJSON?: () => unknown } | undefined;
-    const value = typeof node?.toJSON === 'function' ? node.toJSON() : document.get(key);
-    return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
-  } catch {
-    return [];
-  }
 }
 
 /**

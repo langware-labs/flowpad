@@ -30,7 +30,6 @@ converges through :meth:`find_existing`, never through a key baked into the id.
 
 from __future__ import annotations
 
-import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -435,7 +434,6 @@ class Deployment(Entity):
             **options,
         )
         _prepare_output_folder(process)
-        await _materialize_declared_skills(agent, process)
         return process
 
     async def launch(self, prompt: str, *, wait: bool = False, **options) -> "AgenticProcess":
@@ -549,35 +547,6 @@ class Deployment(Entity):
             if observation and (observation.window_start is None or observation.window_end is None):
                 raise ValueError(f"{kind.value} observation requires a declared window")
         return value
-
-
-async def _materialize_declared_skills(agent: "Agent", process: "AgenticProcess") -> None:
-    """Copy the agent's declared ``skills`` into the process it is launching.
-
-    ``agent.skills`` is INTENT; a skill reaches a worker only through a process,
-    so resolution happens here. Recording each ref in ``embedded_asset_refs`` is
-    what makes the copy visible — ``resolved_add_dirs`` gates ``--add-dir`` of
-    the assets dir on it. Not via ``cli_config``: that would flip
-    ``restart_required`` on every running process.
-    """
-    declared = list(getattr(agent, "skills", None) or [])
-    if not declared:
-        return
-
-    assets_dir = await process._assets_dir_path()
-    refs = list(process.embedded_asset_refs or [])
-    for ref in declared:
-        try:
-            name = await process._materialize_entity(ref, assets_dir)
-        except Exception as exc:  # noqa: BLE001 — one bad ref must not fail the launch
-            logging.warning("[deployment] agent %r declares unresolvable skill %s — skipped (%s)", agent.name, ref, exc)
-            continue
-        if name is None:
-            logging.warning("[deployment] agent %r declares %s, which is not an embeddable type — skipped", agent.name, ref)
-            continue
-        if not any(r.type == ref.type and r.id == ref.id for r in refs):
-            refs.append(ref)
-    process.embedded_asset_refs = refs
 
 
 def _prepare_output_folder(process: "AgenticProcess") -> None:

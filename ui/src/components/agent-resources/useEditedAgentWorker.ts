@@ -1,13 +1,7 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Agent, FSRef, TypeId, VFSPath } from '@sdk';
 import { useEntityOps } from '@sdk/react/hooks';
-import {
-  patchAgentDocument,
-  readAgentDocumentList,
-  type AgentDocumentListKey,
-  type AgentDocumentPatch,
-} from '@src/components/assets/editor/agent-profile/agent-document';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetRoutingMethod } from '@src/navigation/asset-doc-types';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -18,17 +12,7 @@ import { ViewType } from '@src/types/ViewType';
 /** Module-scope: `useEntityOps` keys its effect on the array's IDENTITY. */
 const WATCHED_TYPES = ['agent'];
 
-export interface AgentDocument {
-  /** True once the document is readable, i.e. edits can be committed. */
-  ready: boolean;
-  isLoading: boolean;
-  /** `worker_type:` — drives which MCP servers and skills apply. */
-  workerType: string;
-  /** Read one frontmatter list (e.g. the declared `skills`). */
-  list: (key: AgentDocumentListKey) => string[];
-  /** Losslessly commit a frontmatter patch. Serialized against itself. */
-  commit: (patch: AgentDocumentPatch) => Promise<void>;
-}
+
 
 /** The `worker_type:` scalar, without pulling a YAML parser in for one key. */
 function readWorkerType(source: string): string {
@@ -39,11 +23,12 @@ function readWorkerType(source: string): string {
 }
 
 /**
- * `agent.md` as the pane's read/write surface — the file is the record, so edits
- * stay lossless and work unindexed. The `typeid` route still resolves the entity
- * (only its record says where the main file lives). Refetches on agent ops.
+ * The worker the edited agent is set to, read straight off `agent.md`. Resolved
+ * from the URL because the navigator is a SIBLING of the profile editor, so no
+ * React context reaches it. Refetches on agent ops, which is how a worker change
+ * in the editor reaches this pane.
  */
-export function useAgentDocument(): AgentDocument {
+export function useEditedAgentWorker(): { workerType: string; isLoading: boolean } {
   const { currentDock } = useDockNavigation();
   const queryClient = useQueryClient();
 
@@ -98,41 +83,5 @@ export function useAgentDocument(): AgentDocument {
   }, [queryClient]);
   useEntityOps(WATCHED_TYPES, onAgentOp as never);
 
-  const list = useCallback(
-    (key: AgentDocumentListKey) => (source ? readAgentDocumentList(source, key) : []),
-    [source],
-  );
-
-  // Chained, not concurrent: two toggles in quick succession must not both
-  // read the same source and have the second write clobber the first.
-  const queueRef = useRef<Promise<unknown>>(Promise.resolve());
-  const commit = useCallback(
-    (patch: AgentDocumentPatch): Promise<void> => {
-      if (!mainRef) return Promise.resolve();
-      const operation = queueRef.current
-        .catch(() => undefined)
-        .then(async () => {
-          const current = await mainRef.read();
-          const next = patchAgentDocument(current, patch);
-          if (next !== current) {
-            await mainRef.write(next);
-            // Seed the cache with what we just wrote rather than refetching:
-            // the backend resyncs the row from this write, and a refetch here
-            // would race that resync.
-            queryClient.setQueryData(docKey, next);
-          }
-        });
-      queueRef.current = operation;
-      return operation;
-    },
-    [mainRef, queryClient, docKey],
-  );
-
-  return {
-    ready: !!mainRef && source !== undefined,
-    isLoading: !!mainRef && isLoading,
-    workerType: source ? readWorkerType(source) : '',
-    list,
-    commit,
-  };
+  return { workerType: source ? readWorkerType(source) : '', isLoading: !!mainRef && isLoading };
 }
