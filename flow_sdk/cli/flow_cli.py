@@ -185,6 +185,18 @@ def upgrade(
 
 def _start_service(port: int) -> None:
     """Start the Flow server and monitor. Shared by `flow start` and `flow start service`."""
+    from flow_sdk.core.connections.service import FlowServiceError, service_lifecycle_mutation
+
+    try:
+        with service_lifecycle_mutation():
+            _start_service_guarded(port)
+    except FlowServiceError as exc:
+        typer.echo(f"{exc.code}: {exc.detail}", err=True)
+        raise typer.Exit(1) from exc
+
+
+def _start_service_guarded(port: int) -> None:
+    """Start while the caller holds the lifecycle mutation guard."""
     # Run any pending migration for the current version BEFORE the server
     # boots. The migration is itself a headless AgenticProcess, so its
     # stdout streams to this same terminal — the user sees progress.
@@ -278,9 +290,14 @@ def stop():
 
     Example: flow stop
     """
+    from flow_sdk.core.connections.service import FlowServiceError
     from flow_sdk.server.launch import stop_all
 
-    monitor_killed, server_killed = stop_all()
+    try:
+        monitor_killed, server_killed = stop_all()
+    except FlowServiceError as exc:
+        typer.echo(f"{exc.code}: {exc.detail}", err=True)
+        raise typer.Exit(1) from exc
     if monitor_killed:
         typer.echo("Monitor stopped")
     if server_killed:
@@ -1031,7 +1048,6 @@ def hooks_report(
     _apply_hook_outcome(last_resp)
 
 
-
 def _apply_hook_outcome(response) -> None:
     """Apply the backend's hook-outcome envelope to THIS process, then exit.
 
@@ -1061,6 +1077,7 @@ def _apply_hook_outcome(response) -> None:
     if outcome.stderr:
         typer.echo(outcome.stderr, err=True)
     raise typer.Exit(outcome.exit_code)
+
 
 def _post_hook_report(url: str, payload: dict):
     """POST a hook report using the command's established request policy.
@@ -1217,6 +1234,10 @@ app.add_typer(app_app, name="app")
 from flow_sdk.cli.commands.context_cmd import context_app
 
 app.add_typer(context_app, name="context")
+
+from flow_sdk.cli.commands.connections_cmd import connections_app
+
+app.add_typer(connections_app, name="connections")
 
 from flow_sdk.cli.commands.schema_cmd import schema_app
 

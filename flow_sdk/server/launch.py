@@ -423,6 +423,14 @@ def start_monitor_detached(port: int) -> int:
 
 def stop_all() -> tuple[bool, bool]:
     """Kill monitor + server from flow_sdk.server.json. Returns (monitor_killed, server_killed)."""
+    from flow_sdk.core.connections.service import service_lifecycle_mutation
+
+    with service_lifecycle_mutation():
+        return _stop_all_guarded()
+
+
+def _stop_all_guarded() -> tuple[bool, bool]:
+    """Stop while the caller holds the lifecycle mutation guard."""
     info = _load_info()
     monitor_killed = False
     server_killed = False

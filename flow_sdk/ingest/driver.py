@@ -201,6 +201,12 @@ class IngestDriver:
     #: this provider serves — the natural key a caller (e.g. ``blocks.Inbox``)
     #: matches on to reuse an existing source instead of minting a twin.
     identity_config_key: str = "inbox"
+    #: OPTIONAL. The machine-level connection (``flow_sdk.connections``) this
+    #: provider reads with, when the credential is NOT in the source's config
+    #: (Slack, Google Drive). ``blocks.Inbox`` and the connect flow check it
+    #: up front and fail with the fix in the message, instead of letting the
+    #: first poll park the source on ``no_credential``.
+    connection: Optional[str] = None
     #: OPTIONAL sub-tick cadence while someone is WATCHING a source of this
     #: provider (a `request_poll` stream is arriving): the attention fast lane
     #: polls every this-many seconds instead of waiting for the heartbeat
@@ -249,10 +255,8 @@ class IngestDriver:
     #: OPTIONAL. The user-facing CHANNEL this source reaches — gmail | slack | jira.
     channel_for: Optional[Callable[["DataSource"], str]] = None
 
-
     #: OPTIONAL. Can this source actually read what it was configured for?
     verify: Optional[Callable[["DataSource"], Any]] = None  # async (source) -> SetupVerdict
-
 
     async def segments(self, source: "DataSource") -> list[SegmentRef]:  # noqa: D102
         """The syncable units of ``source``.

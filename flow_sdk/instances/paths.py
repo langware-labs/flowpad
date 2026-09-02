@@ -126,6 +126,17 @@ def server_pid_path(name: str) -> Path:
     return instance_dir(name) / _SERVER_FILENAMES["pid"]
 
 
+def service_lease_lock_path(name: str) -> Path:
+    """Immediate lifecycle lock for temporary service ownership."""
+    return instance_dir(name) / "connection-service.lock"
+
+
+def connection_provider_lock_path(name: str, provider: str) -> Path:
+    """Serialize one provider's authorization session inside an instance."""
+    safe_provider = validate_name(provider.strip().lower())
+    return instance_dir(name) / f"connection-{safe_provider}.lock"
+
+
 def _server_filenames() -> dict[str, str]:
     from flow_sdk.instance_settings.base_settings import BaseInstanceSettings
 

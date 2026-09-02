@@ -1,0 +1,138 @@
+"""``flow connections`` — the CLI presenter for the shared connection core."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from typing import Annotated
+
+import typer
+
+from flow_sdk.core.connections import Authorization, list_connection_specs
+from flow_sdk.core.connections import connect as connect_provider
+from flow_sdk.core.connections.presentation import open_authorization_in_system_browser
+from flow_sdk.core.connections.types import (
+    BrowserAuthorization,
+    ConnectionCancelled,
+    ConnectionConnectError,
+    ConnectionStage,
+    DeviceAuthorization,
+)
+
+connections_app = typer.Typer(
+    name="connections",
+    help="List and connect this instance's external providers.",
+    add_completion=False,
+    no_args_is_help=True,
+)
+
+EXIT_INVALID_PROVIDER = 2
+EXIT_CANCELLED = 4
+EXIT_SERVICE = 5
+EXIT_AUTH = 6
+EXIT_INTERRUPTED = 130
+
+
+class _CliPresenter:
+    async def present(self, authorization: Authorization) -> None:
+        if isinstance(authorization, BrowserAuthorization):
+            opened = open_authorization_in_system_browser(authorization)
+            if opened:
+                typer.echo(f"Opened a browser to connect {authorization.provider}.", err=True)
+            else:
+                typer.echo(f"Open this URL to connect {authorization.provider}: {authorization.url}", err=True)
+            return
+
+        if isinstance(authorization, DeviceAuthorization):
+            open_authorization_in_system_browser(authorization)
+            typer.echo(f"Open: {authorization.verification_uri}", err=True)
+            typer.echo(f"Code: {authorization.user_code}", err=True)
+
+
+def _run(awaitable):
+    try:
+        return asyncio.run(awaitable)
+    except KeyboardInterrupt:
+        raise typer.Exit(EXIT_INTERRUPTED) from None
+
+
+def _error_exit(error: ConnectionConnectError, *, json_output: bool) -> None:
+    payload = {
+        "ok": False,
+        "provider": error.provider,
+        "stage": error.stage.value,
+        "code": error.code,
+        "detail": error.detail,
+    }
+    if json_output:
+        typer.echo(json.dumps(payload), err=True)
+    else:
+        typer.echo(f"Error [{error.stage.value}/{error.code}]: {error.detail or str(error)}", err=True)
+
+    if isinstance(error, ConnectionCancelled):
+        code = EXIT_CANCELLED
+    elif error.code in {"unknown_provider", "invalid_provider"}:
+        code = EXIT_INVALID_PROVIDER
+    elif error.stage in {ConnectionStage.SERVICE, ConnectionStage.CATALOG}:
+        code = EXIT_SERVICE
+    else:
+        code = EXIT_AUTH
+    raise typer.Exit(code)
+
+
+@connections_app.command("list")
+def list_connections(
+    json_output: Annotated[bool, typer.Option("--json", help="Emit one JSON object.")] = False,
+) -> None:
+    try:
+        specs = _run(list_connection_specs())
+    except ConnectionConnectError as error:
+        _error_exit(error, json_output=json_output)
+        return
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "ok": True,
+                    "connections": [
+                        {
+                            "provider": row.provider,
+                            "display_name": row.display_name,
+                            "connected": row.connected,
+                            "identity": row.identity,
+                            "scopes": list(row.scopes),
+                            "icon": row.icon,
+                        }
+                        for row in specs
+                    ],
+                }
+            )
+        )
+        return
+
+    for row in specs:
+        marker = "connected" if row.connected else "not connected"
+        typer.echo(f"{row.provider}\t{marker}\t{row.display_name}")
+
+
+@connections_app.command("connect")
+def connect_connection(
+    provider: Annotated[str, typer.Argument(help="Canonical provider id from `flow connections list`.")],
+    json_output: Annotated[bool, typer.Option("--json", help="Emit machine-readable errors.")] = False,
+) -> None:
+    try:
+        result = _run(connect_provider(provider, _CliPresenter()))
+    except ConnectionConnectError as error:
+        _error_exit(error, json_output=json_output)
+        return
+
+    typer.echo(
+        json.dumps(
+            {
+                "ok": True,
+                "provider": result.spec.provider,
+                "connected": True,
+                "identity": result.test.identity or result.spec.identity,
+            }
+        )
+    )
