@@ -33,9 +33,19 @@ class EmailInput(DataSpec):
 Subclassing **registers** the class under its kind in the one `SchemaRegistry`
 (`__pydantic_init_subclass__` — the hook that sees `model_fields`). Two rules,
 both enforced: `spec_kind` must stay a `ClassVar` (annotating it makes it a
-field, and the guard raises); and a Pydantic **parametrization** (`ExampleSpec[A, B]`)
-inherits its origin's kind and deliberately does not register — only a *named*
-subclass does.
+field, and the guard — an `assert` in the hook — trips at class creation); and a
+Pydantic **parametrization** (`ExampleSpec[A, B]`) inherits its origin's kind and
+deliberately does not register — only a *named* subclass does.
+
+Registration is import-time, and forgetting it fails silently: a kind whose
+module nobody imported resolves to `Any`. `register_builtin_kinds()`
+(`data_spec/_kinds.py`) is the one place that makes the SDK's own kinds
+reachable — it binds `fs_ref` to `FSRef` and imports `dataset_spec`
+(`file_ref` / `folder` / `text`), `llm_source_spec` (`llm.source`) and
+`mcp_spec` (`mcp.server`); `SchemaRegistry` calls it at registration.
+`ingest.source_item` registers when `flow_sdk/builtin/source_item.py` is
+imported — `register_all()` reaches it through `source_item_type_info`, so it
+is bound before any manifest's `spec` is parsed.
 
 ### Arriving as data — `DataSpec.parse`
 
@@ -67,11 +77,16 @@ compilation is eager, so there is no cycle to detect.
 ### A shape held by a field — `SpecType`
 
 A shape is a *class*, and a class is not a Pydantic value: a field that holds
-one is typed `SpecType` (`Annotated[Optional[type], BeforeValidator(parse),
-PlainSerializer(to_authoring_form)]`). The validator reads the authoring form;
-the serializer emits it back. `Agent.input`/`output`, `CapabilitySpec.value_spec`
-and `DatasetManifestSpec.spec` are `SpecType` fields; the record writer
-(`fs_record._json_default`) encodes a class the same way.
+one is typed `SpecType` (`Annotated[type, BeforeValidator(parse),
+PlainSerializer(to_authoring_form)]`), declared `Optional[SpecType]` when it may
+be absent — Pydantic short-circuits `None` OUTSIDE the `Annotated`, so neither
+hook ever sees it. The validator reads the authoring form; the serializer emits
+it back. `Agent.input`/`output` and `CapabilitySpec.value_spec` are `SpecType`
+fields; `DatasetManifestSpec.spec` / `Dataset.spec` are the sibling
+`DatasetSpecType` (`flow_sdk/builtin/dataset.py`), whose validator is
+`DatasetSpec.parse` — the keyword form — and whose serializer is the same
+`to_authoring_form`. The record writer (`fs_record._json_default`) encodes a
+class the same way.
 
 ### Deliberately not in this cut
 
@@ -109,6 +124,12 @@ class FileRef(DataSpec):    spec_kind = "file_ref"; path: str            # examp
 class FolderSpec(DataSpec): spec_kind = "folder";   path: str; files: dict[str, FileRef | FolderSpec]
 class TextSpec(DataSpec):   spec_kind = "text";     text: str
 ```
+
+`FolderSpec.files` is the precedent for a `dict` field on a spec: the authoring
+form has no map type, so a `dict[...]` field is expressible ONLY on a class that
+carries a `spec_kind` — `to_authoring_form` short-circuits on the kind before it
+would fail with `no authoring form for ...`. The three leaves are the untyped
+default slot (`Artifact = FileRef | FolderSpec | TextSpec`).
 
 The keyword authoring form lives in `dataset.json` (see
 [datasets.md](datasets.md)) and compiles to `DatasetSpec[ExampleSpec[I, O, C]]`.

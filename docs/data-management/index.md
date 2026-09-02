@@ -8,7 +8,7 @@ parent_ref: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
 vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
 generated_at: "2026-08-29T19:09:43.812793+00:00"
 latest_process_ref: ''
-file_count: 22
+file_count: 23
 subfolder_count: 0
 ---
 
@@ -22,6 +22,7 @@ subfolder_count: 0
 - [ComputeNode `fs-records` Action](compute-node-fs-records.md) — The ComputeNode fs-records action: full routing table, type-based CRUD over on-disk records, type-registry lookup on entry, and read-only record handling.
 - [Data source assets](data-source-asset.md) — The data_source.json manifest a source ships as a folder asset: schema, name, auth, reflect modes, config form fields, traits, and runtime discovered from file presence.
 - [Data sources](data-sources.md) — Data-source ingestion: segments, cursors, the poller/sync/ingestor pipeline, driver contract and traits, status versus health, record-or-asset destinations, origin identity, change envelope.
+- [Data sources UI](data-sources-ui.md) — The data-sources frontend: the three components, dataManager queries and actions, URL-first navigation, and status/health rendering.
 - [DataSpec — shape as Pydantic, the spec as the layout](data-spec.md) — DataSpec as the one Pydantic shape system: authoring form compiled to classes, kinds, SpecType, dataset layouts, and TypeInfo.asset_spec whose field types are an asset's on-disk layout.
 - [Database Architecture](database.md) — SQLite architecture: NullPool rationale, each pragma, BEGIN IMMEDIATE, driver session resolution, what stays synchronous, and the scaffolded per-request transaction.
 - [Dataset Layout (Authoring Guide)](datasets.md) — Authoring guide for dataset folders: the dataset.json manifest and spec, csv versus io_folder layouts, slots, sidecars, example metadata, and what the parser produces.

@@ -32,9 +32,14 @@ FSOrigin                         kind · rel_path   (project_id / id: local slot
   ├── GitOrigin   kind="git"     provider · owner · name · branch · head_commit
   └── LocalOrigin kind="local"   base
 
-OriginField = Annotated[Union[GitOrigin|"git", LocalOrigin|"local", CloudOrigin|"cloud"], Discriminator(origin_tag)]
-SoftOrigin  = Annotated[Optional[OriginField], WrapValidator(soft)]   # malformed → None, the ONE tolerance rule
+_ORIGIN_UNION = Annotated[Union[GitOrigin|"git", LocalOrigin|"local", CloudOrigin|"cloud"], Discriminator(origin_tag)]
+OriginField   = Annotated[Optional[_ORIGIN_UNION], WrapValidator(_soft)]   # malformed → None, the ONE tolerance rule
 ```
+
+There is one public alias, `OriginField`, and it already carries the
+tolerance rule (`"" → None`, a `ValidationError` → `None` with a warning).
+The arms are built from `ORIGIN_MODELS.items()` at import — the tuple is not
+hand-written.
 
 `rel_path` is the universal placement contract — the asset **root** relative to
 the origin's root (a folder for folder-layout types, a file for file-layout
@@ -48,7 +53,8 @@ discriminator (`origin_tag`, `fs_store/origin/field.py`) reads **`ORIGIN_MODELS`
 missing kind → git, a git-hosting name folds onto git through the table's aliases,
 any unregistered kind is the `cloud` arm (`CloudOrigin`, whose `kind` is the open
 CHANNEL string). The union's arms are built from that table; the driver registry
-borrows its aliases and asserts drivers ⊂ models. `ORIGIN_ADAPTER` validates a raw value
+borrows its aliases (`ORIGIN_DRIVERS = KindRegistry("FSOrigin",
+aliases=ORIGIN_MODELS.aliases, …)`). `ORIGIN_ADAPTER` validates a raw value
 the same way the entity field does — typed, or `None` when malformed.
 
 Store an origin in a field typed `OriginField`, never bare `FSOrigin` — a
@@ -60,9 +66,9 @@ bare-base field instantiates the base and silently drops the subclass locator.
 
 | Method | Contract |
 |---|---|
-| `materialize(origin, …)` | fetch/reuse bytes; returns `(local_root, project_id)` — **the origin ROOT**, callers join `rel_path` themselves |
+| `materialize(origin, *, preferred_root, preferred_project_id, token)` | fetch/reuse bytes; returns `(local_root, project_id)` — **the origin ROOT**, callers join `rel_path` themselves. A `preferred_root` that does not exist or is empty means *clone here* (a data source's `reflect_into`, a project's reserved slot); otherwise a matching checkout is reused and pulled |
 | `matches(origin, path)` | is this local dir that origin? |
-| `detect(path)` | reverse: what origin is this path? |
+| `detect(path)` | reverse: what origin is this path? (`local` always answers `None` — a bare path carries no discoverable base) |
 | `key(origin)` | deterministic cross-machine dedup handle |
 
 The registry is kind-agnostic and folds git-hosting aliases (`github`, `gitlab`,
@@ -70,18 +76,23 @@ The registry is kind-agnostic and folds git-hosting aliases (`github`, `gitlab`,
 load only when that kind is used.
 
 Two current limits worth knowing before building on it: `materialize` returns a
-directory and one consumer checks `is_dir()`, so there is no single-file path;
-and it takes **no credential argument** — the git driver clones without a token,
-so the `FSOrigin` path is effectively public-repo-only today. The registry
-docstring's claim that drivers resolve credentials from the receiver's store is
-aspirational.
+directory root, so there is no single-file path; and credentials are the
+**caller's** to pass — `token` is optional and the git driver clones
+anonymously by default, never looking one up. Reflection
+(`ingest/reflect.py`) passes none, so the data-source path is effectively
+public-repo-only today. The registry docstring's claim that drivers resolve
+credentials from the receiver's store is aspirational.
 
 ## `key()` is a dedup handle, not an id
 
 ```
-GitOrigin.key()   = uuid5(NAMESPACE_URL, "<canonical-remote-key>:<rel_path>")
-LocalOrigin.key() = canonical path  (== Folder.id_for_path)
+GitOrigin.key()   = uuid5(NAMESPACE_URL, "<canonical-remote-key>:<rel_path>")     # mint_uuid(key=…, namespace=NAMESPACE_URL)
+LocalOrigin.key() = uuid5 over the canonical local path (base/rel_path joined)     # local_origin_key == Folder.id_for_path
 ```
+
+Both go through `mint_uuid` (`api/api_types/identifier.py`); `GitOrigin`
+overrides `key()` with its legacy body for byte-stability, `LocalOrigin`
+inherits the base's delegation to its driver.
 
 Branch-independent and case-folded on owner/name, so the same asset position in
 the same repo yields the same key on every machine — that is what lets
@@ -105,10 +116,13 @@ like drift and is not; each answers a different question.
 
 | Carrier | Type | Sharing | Note |
 |---|---|---|---|
-| `Entity.origin` | `SoftOrigin` | **SHARED**, `hub_name="git_origin"` | **the one origin field.** Folder, Artifact, Skill, Markdown, Project … all carry it here; pydantic types it |
-| `Task.origin`, `MessageAttachment.origin`, `DataSource.origin` | `SoftOrigin` | PRIVATE re-declaration | a project/task origin is **cloned** by the receiver through its own action wire; an attachment's is a bundle pass-through |
+| `Entity.origin` | `OriginField` | **SHARED**, `hub_name="git_origin"` | **the one origin field.** Folder, Artifact, Skill, Markdown, Project … all carry it here; pydantic types it |
+| `Task.origin`, `MessageAttachment.origin`, `DataSource.origin` | `OriginField` | PRIVATE re-declaration | a project/task origin is **cloned** by the receiver through its own action wire; an attachment's is a bundle pass-through; a data source's is re-derived by its driver's `origin_for` on every save (see [data sources](data-sources.md#the-two-destinations)) |
+| `Entity.origin_id` | `str` | PRIVATE | not an origin — the source's own **handle** for the asset (an inode, a `GitOrigin.key()`, a Drive `fileId`), looked up by `fs_store/origin_identity.py` so two placements of one source file converge on one row |
+| `FlowMessage.origin`, `Deployment.origin` | `CloudOrigin` | SHARED / PRIVATE | the sibling family — a record's truth, not bytes; `FlowMessage.origin_local` carries the private row pointers (`CloudOriginLocal`) |
 
-Clone sites narrow with `as_git(entity.origin)` (`builtin/git_origin.py`) —
+Clone sites narrow with `as_git(entity.origin)` (`fs_store/origin/git_origin.py`;
+`builtin/git_origin.py` is a re-export kept for the hub's pinned import) —
 `None` for absent, non-git or malformed — instead of hand-rolling a validate.
 
 ## The wire contract
@@ -140,18 +154,26 @@ failed unpack. The receiver reads `origins_map[key]` (or the entry payload's
 
 1. Subclass `FSOrigin` with a `Literal` `kind` and your locator fields. Do not
    reorder inherited fields.
-2. Add a `Tag` arm to `OriginField`.
-3. Implement and register an `FSOriginDriver`. `key()` must be
-   machine-independent, or shared assets will not reconcile.
+2. Register the model at the bottom of its module —
+   `ORIGIN_MODELS.register(MyOrigin, "mykind")` — and import that module in
+   `origin/field.py` beside the three existing ones. The union's arms are
+   built from the table at import, so there is no `Tag` tuple to edit; a
+   kind that is not registered by the time `field.py` loads falls into the
+   `cloud` arm.
+3. Implement and register an `FSOriginDriver` (`_build_default_registry` in
+   `builtin/fs_origin_driver.py`). `key()` must be machine-independent, or
+   shared assets will not reconcile.
 4. Decide `transportable`. A machine-local origin overrides it to `False`;
    the share path gates on that, not on `kind`.
-5. `detect()` currently hardcodes git, so a new kind is declaration-only until
-   that grows a dispatch loop.
+5. Every driver has a `detect()`, but the one caller (`Folder`,
+   `builtin/folder.py`) asks `get_origin_driver("git")` by name, so a new
+   kind's `detect` is never consulted until that grows a dispatch loop.
 
 **Key source files:** `flow_sdk/fs_store/origin/{fs_origin,git_origin,local_origin,cloud_origin,field}.py`
 (under `fs_store` so `entity_model` can type the field at class-build time),
 `flow_sdk/builtin/fs_origin_driver.py`,
-`flow_sdk/builtin/drivers/` (git/local drivers), `flow_sdk/assets/git_origin.py`
+`flow_sdk/builtin/drivers/{git_driver,local_driver}.py`, `flow_sdk/fs_store/origin_identity.py`
+(`resolve`/`stamp` on `Entity.origin_id`), `flow_sdk/assets/git_origin.py`
 (`PortableGitOrigin`, publish/receipt only), `flow_sdk/builtin/flow_message_bundle.py`
 (`_write_origin_files`, `_read_origin_map`)
 

@@ -98,16 +98,22 @@ Several reserved first segments are dispatched to dedicated handlers ahead of th
 
 | HTTP Method | URL Pattern | Handler |
 |-------------|-------------|---------|
-| `GET` | `/fs-records/history_entry?limit=N` | `_handle_fs_records_history` — unified worker history (computed view) |
-| `GET` | `/fs-records/search?q=...` | `_handle_fs_records_search` — FTS5 / filter browse |
-| `GET` | `/fs-records/scan[?type=X]` | `_handle_fs_records_scan` |
-| `POST` | `/fs-records/index[?type=X&rebuild=…&user=…&projects=…]` | `_handle_fs_records_index` |
-| `DELETE` | `/fs-records/index[?type=X]` | `_handle_fs_records_index_clear` |
+| `GET` | `/fs-records/history_entry?limit=N[&include=claude_session]` | `_handle_fs_records_history` — unified worker history (computed view) |
+| `GET` | `/fs-records/search?q=...&limit=&offset=&record_type=&sort_by=&status=&parent_path=&vault_root=&include_system=&tags=` | `_handle_fs_records_search` — FTS5 / filter browse |
+| `GET` | `/fs-records/mcp-reconcile[?use_cli=true]` | `_handle_fs_records_mcp_reconcile` — MCP server config vs. CLI reconciliation |
+| `GET` | `/fs-records/scan[?type=X&trigger=&limit_types=&limit_per_type=&user=&projects=]` | `_handle_fs_records_scan` |
+| `POST` | `/fs-records/index[?type=X&trigger=&rebuild=&force=&path=&limit_types=&limit_per_type=&orphan_action=&user=&projects=]` | `_handle_fs_records_index` (`project_id` is still accepted as a legacy alias for `projects` when neither `user` nor `projects` is given) |
+| `POST` | `/fs-records/invalidate` (body `{paths: [...], deleted_paths: [...]}`) | `_handle_fs_records_invalidate` — push re-index of a changed-file set (see `invalidation.md`) |
+| `POST` | `/fs-records/index-sessions[?project_id=…]` | `_handle_fs_records_index_sessions` — index worker sessions scoped to a project |
 | `GET` | `/fs-records/index-status` | `_handle_fs_records_index_status` |
+| `GET` | `/fs-records/asset-stats` | `_handle_fs_records_asset_stats` |
 | `GET` | `/fs-records/activity-status` | `_handle_fs_records_activity_status` |
+| `DELETE` | `/fs-records/index[?type=X&user=&projects=]` | `_handle_fs_records_index_clear` |
 | `POST` | `/fs-records/{type}/discover?path=...` | `_handle_fs_records_discover_by_path` — find-or-recover by path |
 
-The `file` segment is matched first, before any other dispatch. If the first path segment equals `"file"`, the request is dispatched to `_handle_path_based_source_file` unconditionally. The reserved segments above (`history_entry`, `search`, `scan`, `index`, `index-status`, `activity-status`) are matched next, then the `{type}/discover` POST, and finally the generic type-based CRUD path.
+The `file` segment is matched first, before any other dispatch. If the first path segment equals `"file"`, the request is dispatched to `_handle_path_based_source_file` unconditionally. The reserved segments are then matched in the order listed above (each is gated on its HTTP method, so e.g. `GET /fs-records/index` falls through to the generic type lookup and fails with "Unknown record type 'index'"). After the reserved segments, a bare `GET /fs-records` lists the registered types, then the `{type}/discover` POST is matched, and finally the generic type-based CRUD path.
+
+> `GET /asset-usage?skill=<name>` is a sibling `@action` on `ComputeNode` (not an `fs-records` sub-path), but it shares the `"scan"` activity slot described under [Conflict detection](#conflict-detection-409).
 
 ---
 
@@ -228,7 +234,7 @@ The request body must be a JSON object. It is passed to `RecordList.create(body)
 
 If a record with the same id already exists, a `ValueError` (`"Record with id <id> already exists"`) is raised and wrapped in a 409 response.
 
-After a successful create, `rec.sync_to_db()` is called on the real saved record (not a reconstruction) to update the Entity + FTS cache. The handler then patches the freshly-created entity's `scope` in place (inferred from the resolved asset path via `classify_path`) when it was born scope-less, so HTTP-created records match indexer-discovered ones. Finally a `DataOp("create", ...)` notification is broadcast via `_broadcast_fs_record_op` with `rec.meta_dict()`.
+After a successful create, `rec.sync_to_db()` is called on the real saved record (not a reconstruction) to update the Entity + FTS cache. The handler then calls `_materialize_main_body(rec, record_type)`, which writes the just-created asset's main body to disk through the type's `DiskSerializer` (e.g. a `SKILL.md`) so a disk-walking scan can rediscover it — `sync_to_db` writes the DB row and the metadata shadow, not the main body. Both steps are best-effort: a failure is logged at debug level and never fails the create. There is **no** post-create scope patch in the handler: `scope` is stamped from the resolved asset path inside `Entity._prepare_for_storage` (the single save chokepoint), so HTTP-created records are born with a scope just like indexer-discovered ones. Finally a `DataOp("create", ...)` notification is broadcast via `_broadcast_fs_record_op` with `rec.meta_dict()`.
 
 **Request body:**
 
@@ -715,7 +721,18 @@ shape, normally with a single relevant row for `X`.
 
 ### Conflict detection (409)
 
-Starting a scan/index/clear while one of the **same job name** is already running (not timed out, not complete) returns **409 Conflict**. The backend uses `InProcessActivity` objects stored in `_COMPUTE_ACTIVITIES` (module-level dict in `compute_node.py`, keyed by `"{typeid}:{job_name}"` where `job_name` is `"scan"`, `"index"`, or `"clear"`). Because the key does **not** include the type filter, a per-type `scan?type=X` and an aggregate scan share the same `"scan"` activity and therefore conflict with each other. Each activity auto-expires after `timeout_seconds`: scan = 600s, index = 600s, clear = 120s (the default in `_start_activity` is 600s).
+Starting a scan/index/clear while one of the **same job name** is already running (not timed out, not complete) returns **409 Conflict**. The backend uses `InProcessActivity` objects stored in `_COMPUTE_ACTIVITIES` (module-level dict in `compute_node.py`, keyed by `"{typeid}:{job_name}"` where `job_name` is `"scan"`, `"index"`, or `"clear"`). Because the key does **not** include the type filter, a per-type `scan?type=X` and an aggregate scan share the same `"scan"` activity and therefore conflict with each other. The `"scan"` slot is also taken by the sibling `/asset-usage` action while it walks sessions.
+
+Each activity auto-expires after `timeout_seconds` (the default in `_start_activity` is 600s):
+
+| Caller | job_name | timeout_seconds |
+|--------|----------|-----------------|
+| `_handle_fs_records_scan`, `_handle_asset_usage` | `scan` | 600 |
+| `_handle_fs_records_index` (via the `_index_activity` context helper), `_auto_index_project`, `_index_system_assets` | `index` | 600 |
+| `_handle_fs_records_index_sessions` | `index` | 300 |
+| `_handle_fs_records_index_clear` | `clear` | 120 |
+
+`is_complete` is true only when the latest table carries `text == PROGRESS_TEXT_COMPLETE` — it is deliberately **not** inferred from `done >= total`, because that already holds during the post-loop orphan sweep and would open the duplicate-start gate to a second concurrent index run.
 
 `GET /fs-records/activity-status` reads `_COMPUTE_ACTIVITIES` to re-seed in-flight progress after a page refresh, returning the latest `IndexProgressTable` plus `started_at`, or `null` when nothing is running.
 
