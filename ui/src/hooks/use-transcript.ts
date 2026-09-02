@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { sdkConfig } from '@sdk/config/index';
+import apiClient from '@sdk/client';
+import { isAxiosError } from 'axios';
 import { parseTranscriptResponse, type ParsedTranscript } from '@sdk/utils/agent-transcript';
 
 /**
@@ -31,6 +32,23 @@ interface UseTranscriptReturn {
  * never took a turn writes no JSONL) apart from a real failure, and sniffing
  * the message string for a prefix is too brittle to base a UI branch on.
  */
+/**
+ * Pull the backend's machine error code out of a failed `apiClient` call.
+ * Routes that fail with the standard envelope put the code under
+ * `data.error_code` (see `transcripts.py:_error`); anything else falls back
+ * to the HTTP status, and a network failure to the axios code.
+ */
+export function describeApiError(e: unknown): { code: string; message: string } {
+  if (isAxiosError(e)) {
+    const body = e.response?.data as { message?: unknown; data?: { error_code?: unknown } } | undefined;
+    const errorCode = body?.data?.error_code;
+    const code = typeof errorCode === 'string' ? errorCode : String(e.response?.status ?? e.code ?? 'UNKNOWN');
+    const message = typeof body?.message === 'string' ? body.message : e.message;
+    return { code, message };
+  }
+  return { code: 'UNKNOWN', message: e instanceof Error ? e.message : String(e) };
+}
+
 export class TranscriptFetchError extends Error {
   constructor(
     message: string,
@@ -71,19 +89,19 @@ export function useTranscript({ workerType, path, sessionId }: UseTranscriptArgs
 
     // Prefer sessionId form (server resolves the JSONL — no client-side path
     // encoding required, fixes the project_encoded_name divergence bug).
-    const url = sessionId
-      ? `${sdkConfig.apiUrl}/api/v1/workers/${encodeURIComponent(workerType)}/${encodeURIComponent(sessionId)}/transcript`
-      : `${sdkConfig.apiUrl}/api/v1/transcripts/${encodeURIComponent(workerType)}?path=${encodeURIComponent(path!)}`;
-    fetch(url, { credentials: 'include' })
-      .then(async (r) => {
-        const json = await r.json();
-        if (!r.ok || json?.ok === false) {
-          const code = String(json?.error_code ?? r.status);
-          const msg = json?.error ?? r.statusText;
-          throw new TranscriptFetchError(`${code}: ${msg}`, code);
-        }
-        return parseTranscriptResponse(json);
-      })
+    const request = sessionId
+      ? apiClient.get<unknown>(
+          `/api/v1/workers/${encodeURIComponent(workerType)}/${encodeURIComponent(sessionId)}/transcript`,
+        )
+      : apiClient.get<unknown>(`/api/v1/transcripts/${encodeURIComponent(workerType)}`, { params: { path } });
+    request
+      .then(
+        (json) => parseTranscriptResponse(json),
+        (e: unknown) => {
+          const { code, message } = describeApiError(e);
+          throw new TranscriptFetchError(`${code}: ${message}`, code);
+        },
+      )
       .then((parsed) => {
         if (cancelRef.current !== myToken) return;
         setData(parsed);

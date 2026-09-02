@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { sdkConfig } from '@sdk/config/index';
+import apiClient from '@sdk/client';
+import { describeApiError } from '@src/hooks/use-transcript';
 import type { AgentTraceDoc } from './trace-types';
 
 interface UseTraceSkeletonReturn {
@@ -16,13 +17,10 @@ interface UseTraceSkeletonReturn {
  * need the skill (and arrive via an AgentTrace entity).
  *
  * Mirrors {@link useTranscript}'s data path for the same `/api/v1/workers/...`
- * route family (raw fetch against the bootstrapped `sdkConfig.apiUrl`, reading
- * the route's `{ok, skeleton}` shape). Re-fetches on workerType/sessionId.
+ * route family (`apiClient`, which unwraps the `{status, data}` envelope to
+ * the route's `{skeleton}` payload). Re-fetches on workerType/sessionId.
  */
-export function useTraceSkeleton(
-  workerType: string | null,
-  sessionId: string | null,
-): UseTraceSkeletonReturn {
+export function useTraceSkeleton(workerType: string | null, sessionId: string | null): UseTraceSkeletonReturn {
   const [skeleton, setSkeleton] = useState<AgentTraceDoc | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -38,19 +36,11 @@ export function useTraceSkeleton(
     setSkeleton(null);
     setError(null);
     setLoading(true);
-    const url =
-      `${sdkConfig.apiUrl}/api/v1/workers/${encodeURIComponent(workerType)}` +
-      `/${encodeURIComponent(sessionId)}/trace-skeleton`;
-    fetch(url, { credentials: 'include' })
-      .then(async (r) => {
-        const json = await r.json();
-        if (!r.ok || json?.ok === false) {
-          const code = json?.error_code ?? r.status;
-          const msg = json?.error ?? r.statusText;
-          throw new Error(`${code}: ${msg}`);
-        }
-        return json.skeleton as AgentTraceDoc;
-      })
+    const path =
+      `/api/v1/workers/${encodeURIComponent(workerType)}` + `/${encodeURIComponent(sessionId)}/trace-skeleton`;
+    apiClient
+      .get<{ skeleton: AgentTraceDoc }>(path)
+      .then((json) => json.skeleton)
       .then((doc) => {
         if (cancelled) return;
         setSkeleton(doc);
@@ -58,7 +48,8 @@ export function useTraceSkeleton(
       })
       .catch((e: unknown) => {
         if (cancelled) return;
-        setError(e instanceof Error ? e.message : String(e));
+        const { code, message } = describeApiError(e);
+        setError(`${code}: ${message}`);
         setLoading(false);
       });
     return () => {
