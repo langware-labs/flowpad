@@ -58,8 +58,12 @@ def build_env_prefix(env: Iterable[Any] | None, *, windows: bool | None = None) 
     closed-escaped-reopened (``'\\''``), which is the only sequence that is
     safe for arbitrary bytes inside single quotes.
 
-    Windows: ``set NAME=value && `` — ``cmd.exe`` has no single-quote literal,
-    so shell metacharacters are caret-escaped instead.
+    Windows: ``set "NAME=value" && `` — the quotes are not cosmetic. ``set`` is a
+    STATEMENT, not an assignment prefix, and it takes the rest of the statement
+    verbatim: the unquoted ``set NAME=value && `` assigns ``"value "``, separator
+    space included. The closing quote is what terminates the value. cmd treats
+    ``& | < > ^`` literally inside it, so they must NOT also be caret-escaped —
+    that would put literal carets in the value.
     """
     pairs = _pairs(env)
     if not pairs:
@@ -67,22 +71,10 @@ def build_env_prefix(env: Iterable[Any] | None, *, windows: bool | None = None) 
 
     on_windows = (sys.platform == PLATFORM_WIN32) if windows is None else windows
     if on_windows:
-        return " && ".join(f"set {name}={_escape_windows(value)}" for name, value in pairs) + " && "
+        return " && ".join(f'set "{name}={value}"' for name, value in pairs) + " && "
     return " ".join(f"{name}={_quote_posix(value)}" for name, value in pairs) + " "
 
 
 def _quote_posix(value: str) -> str:
     """Wrap in single quotes, closing/escaping/reopening around any it contains."""
     return "'" + value.replace("'", "'\\''") + "'"
-
-
-def _escape_windows(value: str) -> str:
-    # ``^`` first — escaping it last would double-escape the carets the other
-    # replacements just introduced.
-    return (
-        value.replace("^", "^^")
-        .replace("&", "^&")
-        .replace("|", "^|")
-        .replace("<", "^<")
-        .replace(">", "^>")
-    )
