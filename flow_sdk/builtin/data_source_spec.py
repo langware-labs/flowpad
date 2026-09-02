@@ -213,11 +213,19 @@ class ManifestSpec(DataSpec):
             raise ValueError("reflect cannot offer 'record' alongside filesystem modes")
         return modes
 
-    @model_validator(mode="after")
-    def _title_defaults_to_name(self) -> "ManifestSpec":
-        if not self.title:
-            self.title = self.name
-        return self
+    @model_validator(mode="before")
+    @classmethod
+    def _title_defaults_to_name(cls, data: Any) -> Any:
+        """A manifest that omits ``title`` is titled by its name.
+
+        Filled BEFORE construction rather than assigned after it: a ``DataSpec`` is
+        frozen, so an after-validator cannot write to the instance it was handed.
+        """
+        if isinstance(data, dict) and not data.get("title"):
+            name = str(data.get("name") or "").strip()
+            if name:
+                return {**data, "title": name}
+        return data
 
     def runtime_for_folder(self, files: set[str]) -> Runtime:
         """The runtime the folder's contents imply, with the two rules that need
