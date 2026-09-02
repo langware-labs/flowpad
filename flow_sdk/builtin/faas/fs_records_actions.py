@@ -1223,17 +1223,34 @@ class FsRecordsActionsMixin:
         )
 
     @asynccontextmanager
-    async def _index_activity(self, job_name: str = "index", timeout_seconds: int = 600):
+    async def _index_activity(self, job_name: str = "index", timeout_seconds: int = 600, *, queue: bool = False):
         """Hold the single-flight activity and yield ``(activity, emit)``.
 
         The acquire + progress-broadcast closure + ``finally: _complete_activity``
         scaffolding, in one place — it was verbatim-identical at three call sites.
         Raises ``RuntimeError`` when the job is already running; each caller decides
-        what that means (409 for HTTP, silent skip for background passes).
+        what that means (silent skip for background passes).
+
+        ``queue=True`` waits for the holder to release instead of raising. A
+        caller that WANTS its own scope indexed cannot be served by the run
+        already going — the boot-time system pass covers the assistant's roots,
+        not the project someone just asked for — so the honest answer is "after
+        you", not a refusal. The wait is the holder's own
+        ``timeout_seconds`` (see ``InProcessActivity.wait_released``), never a
+        budget invented here, and the loop re-claims rather than assuming it
+        won: another waiter may take the slot first.
         """
         from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
 
-        activity = self._start_activity(job_name, timeout_seconds=timeout_seconds)
+        while True:
+            try:
+                activity = self._start_activity(job_name, timeout_seconds=timeout_seconds)
+                break
+            except RuntimeError:
+                holder = self._running_activity(job_name) if queue else None
+                if holder is None:
+                    raise
+                await holder.wait_released()
 
         async def emit(table) -> None:
             activity.latest_table = table
@@ -1263,6 +1280,7 @@ class FsRecordsActionsMixin:
         indexer=None,
         project_record=None,
         on_started=None,
+        queue: bool = False,
     ):
         """Run one index under the single-flight activity guard.
 
@@ -1272,9 +1290,11 @@ class FsRecordsActionsMixin:
         the project's own ``.hash`` sentinel. Returns ``(result, types_out)``.
 
         **Raises ``RuntimeError`` when an index is already running** rather than
-        deciding what that means — the HTTP handler turns it into a 409, the auto
-        path skips silently. This is why the guard lives here and the policy does
-        not.
+        deciding what that means — the auto path skips silently. This is why the
+        guard lives here and the policy does not. ``queue=True`` (what the HTTP
+        handler passes) waits for the holder instead: a caller who asked for a
+        scope of their own is not served by whatever run happens to hold the
+        slot.
 
         The project sentinel stamp is inside this helper on purpose: it is what
         makes the project page's "last indexed / changes pending" correct, and
@@ -1286,7 +1306,7 @@ class FsRecordsActionsMixin:
         )
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-        async with self._index_activity() as (_activity, emit):
+        async with self._index_activity(queue=queue) as (_activity, emit):
             # Only now is the run definitely going ahead. Callers that must record
             # "this ran" (the auto-index marker) hook here rather than up front, so
             # a run skipped for contention leaves their bookkeeping untouched.
@@ -1677,10 +1697,18 @@ class FsRecordsActionsMixin:
                 # temp root (/tmp, /var/folders), which the default walk skips.
                 include_temp=bool(index_path),
                 type_name=filter_type or None,
+                # Queue behind whatever holds the slot rather than refusing.
+                # The backend claims it at boot for the system-asset pass and
+                # reports itself healthy while that runs, so the first client to
+                # ask for an index used to be told 409 for a collision it could
+                # neither see nor influence.
+                queue=True,
             )
         except RuntimeError as e:
-            # An index is already running. HTTP surfaces the conflict; the auto
-            # path silently skips instead (see _auto_index_project).
+            # Only reachable if the holder is gone by the time we look (it
+            # released between the failed claim and the lookup) and the re-claim
+            # still lost. The auto path silently skips instead
+            # (see _auto_index_project).
             return ApiFailResponse(message=str(e), status_code=409)
 
         # For a path-scoped run, resolve the TypeId(s) for the named file so the
