@@ -146,6 +146,7 @@ class ViewType(StrEnum):
     CRON = "cron"  # Alias of EVENTS (scheduled jobs)
     ASSETS = "assets"  # Unified docs/skills/workflows tree
     PROJECT = "project"  # Collaboration on a project
+    AGENT = "agent"  # Agent-owned surfaces — /dock/agent/<agent-id>/inbox
     INBOX = "inbox"  # Received FlowMessages from hub
     CONVERSATION = "conversation"  # Single Conversation viewer
     SPEC = "spec"  # Single Spec viewer
@@ -368,6 +369,8 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.CRON: _m(_NONE),
     ViewType.ASSETS: _m(_REQ, scope_keyed=True),
     ViewType.PROJECT: _m(_REQ),
+    # `<agentId>/inbox` — the id leads, so the pointer is required.
+    ViewType.AGENT: _m(_REQ),
     ViewType.INBOX: _m(_NONE),
     ViewType.CONVERSATION: _m(_REQ),
     ViewType.SPEC: _m(_REQ),

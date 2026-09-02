@@ -170,6 +170,7 @@ def test_view_types_shadowing_a_real_entity_type_are_pinned():
     shadowing = {view.value for view in ViewType} & {entity.value for entity in EntityType}
     assert shadowing == {
         # Entity-backed views: the fallback is exactly what they want.
+        "agent",
         "agentic_process",
         "conversation",
         "graph_context",

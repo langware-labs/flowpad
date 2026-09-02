@@ -202,6 +202,10 @@ EXPECTED = {
     # The inbox projection's thread grouping — additive member, no existing
     # value changed.
     "MESSAGE_THREAD": "message_thread",
+    # The Hub's server-minted mailbox row. Its value deliberately differs from
+    # the Agent action name ("email_inbox") so graph paths stay unambiguous —
+    # additive member, no existing value changed.
+    "EMAIL_INBOX": "agent_mailbox",
 }
 
 
