@@ -55,6 +55,7 @@
     "graph-workflows",
     "signals",
     "data-sources",
+    "rag",
     "process-runs",
     "plan",
     "cron",
@@ -578,6 +579,13 @@
     "agent": {
       "addressable": true,
       "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "chrome": "workspace"
+    },
+    "rag": {
+      "addressable": true,
+      "pointer": "none",
       "folds_pointer": false,
       "scope_keyed": false,
       "chrome": "workspace"
