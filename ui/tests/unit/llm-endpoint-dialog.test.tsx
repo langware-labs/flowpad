@@ -106,6 +106,44 @@ describe('LlmEndpointDialog', () => {
     expect(h.onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it('a new endpoint STARTS with the model globs as a real value, and saves them untouched', async () => {
+    // REGRESSION: the field used to seed the example on focus and erase it on blur unless edited.
+    // Both halves read as helpful; together they meant a reader saw two convincing globs, clicked
+    // away, and saved `models_allow: []` -- an endpoint that allowed EVERYTHING, reported as saved.
+    // The defaults are now a real value: what the field shows is what the save sends.
+    renderDialog(<LlmEndpointDialog open onOpenChange={h.onOpenChange} all={[]} />);
+    await userEvent.type(screen.getByTestId('llm-name'), 'Root test');
+    await userEvent.click(screen.getByTestId('toggle-advanced'));
+
+    const box = screen.getByLabelText('Models allowed (globs)') as HTMLTextAreaElement;
+    expect(box.value).toBe('anthropic/claude-*\nopenai/gpt-4*');
+    // Visiting and leaving changes nothing -- no seeding, no erasing.
+    await userEvent.click(box);
+    await userEvent.click(screen.getByTestId('llm-name'));
+    expect(box.value).toBe('anthropic/claude-*\nopenai/gpt-4*');
+
+    await userEvent.click(screen.getByTestId('llm-submit'));
+    await waitFor(() => expect(h.save).toHaveBeenCalledOnce());
+    const json = h.save.mock.calls[0][2] as Record<string, unknown>;
+    expect((json.filters as { models_allow: string[] }).models_allow).toEqual(['anthropic/claude-*', 'openai/gpt-4*']);
+  });
+
+  it('clearing the globs stays cleared, and "Use defaults" puts them back', async () => {
+    // Empty MEANS something ("everything the sources allow"), so emptying the field must be
+    // honoured rather than quietly refilled -- the restore is a button, not a side effect.
+    renderDialog(<LlmEndpointDialog open onOpenChange={h.onOpenChange} all={[]} />);
+    await userEvent.type(screen.getByTestId('llm-name'), 'Wide open');
+    await userEvent.click(screen.getByTestId('toggle-advanced'));
+
+    const box = screen.getByLabelText('Models allowed (globs)') as HTMLTextAreaElement;
+    await userEvent.clear(box);
+    await userEvent.click(screen.getByTestId('llm-name'));
+    expect(box.value).toBe('');
+
+    await userEvent.click(screen.getByTestId('models-allow-use-default'));
+    expect(box.value).toBe('anthropic/claude-*\nopenai/gpt-4*');
+  });
+
   it('a root without a key saves without touching the credential action', async () => {
     renderDialog(<LlmEndpointDialog open onOpenChange={h.onOpenChange} all={[]} />);
     await userEvent.type(screen.getByTestId('llm-name'), 'Keyless');
