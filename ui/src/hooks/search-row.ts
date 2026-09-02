@@ -36,6 +36,12 @@ export interface SearchRow {
   work_dir?: string;
   project_id?: string;
   project_name?: string;
+  /** Canonical containment pointer, `"<type>-<uuid>"`. Supersedes the legacy
+   *  per-type `parent_id`. Set when this asset is nested inside another entity
+   *  (an Agent's own copy of an Mcp, a project's asset). The asset tree uses it
+   *  to nest a child under its owner instead of listing it as a duplicate
+   *  top-level row of its type. */
+  parent_type_id?: string;
 
   // ── Present on fs-records rows ─────────────────────────────────────────────
   session_id?: string;

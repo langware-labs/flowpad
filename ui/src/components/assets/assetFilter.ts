@@ -21,6 +21,11 @@ export interface AssetFilter {
   /** Folder filter: absolute parent_path. When set, list view narrows to files
    *  directly under that folder. Used by the Obsidian-style Wiki folder tree. */
   parentPath?: string;
+  /** Hide assets nested inside another browseable asset (e.g. an Agent's own
+   *  copy of an Mcp) from a type's listing — they render under that owner's row
+   *  instead. On by default; the filter is server-side so the list's `total`,
+   *  its pagination and the sidebar count badge all stay consistent. */
+  topLevelOnly?: boolean;
 }
 
 export const DEFAULT_ASSET_FILTER: AssetFilter = {
@@ -28,6 +33,7 @@ export const DEFAULT_ASSET_FILTER: AssetFilter = {
   scope: userScope(),
   tags: [],
   filters: {},
+  topLevelOnly: true,
 };
 
 /**
@@ -51,6 +57,9 @@ export function applyFilterToParams(params: URLSearchParams, filter: AssetFilter
   }
   if (filter.parentPath) {
     params.set('parent_path', filter.parentPath);
+  }
+  if (filter.topLevelOnly) {
+    params.set('top_level', 'true');
   }
   for (const [k, v] of Object.entries(filter.filters)) {
     if (v) params.set(k, v);
