@@ -2282,6 +2282,10 @@ msgstr "bash progress"
 msgid "Bash Timeout (ms)"
 msgstr "Bash Timeout (ms)"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Before you can deploy"
+msgstr "Before you can deploy"
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Behaviour"
 msgstr "Behaviour"
@@ -2760,6 +2764,10 @@ msgstr "Changes"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Changes ({0})"
 msgstr "Changes ({0})"
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Changes committed and pushed"
+msgstr "Changes committed and pushed"
 
 #: src/components/data-sources/provider-catalog.ts
 #~ msgid "Channel IDs"
@@ -3668,6 +3676,7 @@ msgstr "Configured in Data sources — no file on disk"
 msgid "Confirm"
 msgstr "Confirm"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/connections-manager.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -4098,6 +4107,8 @@ msgstr "Could not change sign-in method"
 msgid "Could not check sign-in"
 msgstr "Could not check sign-in"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
@@ -4368,6 +4379,8 @@ msgstr "Could not save the key"
 msgid "Could not send report to the Flowpad team"
 msgstr "Could not send report to the Flowpad team"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/hooks/use-git-share-gate.ts
@@ -4378,6 +4391,10 @@ msgstr "Could not set up Git"
 #: src/components/token-plan/TokenPlanView.tsx
 msgid "Could not set up the budget"
 msgstr "Could not set up the budget"
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Could not sign in to the cloud"
+msgstr "Could not sign in to the cloud"
 
 #: src/hooks/use-sandboxes.ts
 msgid "Could not sign the sandbox out"
@@ -4519,6 +4536,10 @@ msgstr "Couldn't reach the server"
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Couldn't read this folder's Git status."
 msgstr "Couldn't read this folder's Git status."
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Couldn't read this project's Git status."
+msgstr "Couldn't read this project's Git status."
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
@@ -5801,6 +5822,7 @@ msgstr "Don't ask again"
 msgid "done"
 msgstr "done"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/filters/taskFilters.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -7218,6 +7240,10 @@ msgstr "Find machine"
 msgid "Finish setup, then press Verify."
 msgstr "Finish setup, then press Verify."
 
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+msgid "Finish the setup above before deploying"
+msgstr "Finish the setup above before deploying"
+
 #: src/components/assets/editor/AssetDiscussButton.tsx
 msgid "Finishing asset load…"
 msgstr "Finishing asset load…"
@@ -7637,6 +7663,7 @@ msgstr "Git changes"
 msgid "Git is required to share files"
 msgstr "Git is required to share files"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 msgid "Git is set up"
 msgstr "Git is set up"
@@ -7655,10 +7682,15 @@ msgstr "Git readiness"
 msgid "Git repository"
 msgstr "Git repository"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Git repository ready"
+msgstr "Git repository ready"
+
 #: src/components/project-home/ProjectPublishButton.tsx
 msgid "Git setup cancelled"
 msgstr "Git setup cancelled"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 msgid "Git setup failed."
 msgstr "Git setup failed."
@@ -7679,12 +7711,15 @@ msgstr "Git tooling installed"
 msgid "Git URL"
 msgstr "Git URL"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 msgid "GitHub authorization did not complete."
 msgstr "GitHub authorization did not complete."
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "GitHub connected"
 msgstr "GitHub connected"
@@ -13147,6 +13182,7 @@ msgstr "Project home"
 msgid "Project is fixed after the first message — start a new session to change it."
 msgstr "Project is fixed after the first message — start a new session to change it."
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 msgid "Project linked to cloud"
 msgstr "Project linked to cloud"
@@ -13412,6 +13448,7 @@ msgid "Pulling…"
 msgstr "Pulling…"
 
 #: src/components/assets/ContextFolderGitBadge.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/status-bar/GitPushButton.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -15520,6 +15557,7 @@ msgstr "Set conversation project"
 msgid "Set project"
 msgstr "Set project"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #: src/components/project-home/SecretsCard.tsx
@@ -15558,6 +15596,10 @@ msgstr "Set up Git"
 #: src/components/project-home/ProjectPublishButton.tsx
 msgid "Set up Git for cloud linking"
 msgstr "Set up Git for cloud linking"
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Set up Git for deploying"
+msgstr "Set up Git for deploying"
 
 #: src/components/project-home/ProjectHome.tsx
 msgid "Set up Git for project sharing"
@@ -15935,6 +15977,7 @@ msgid "Sigma graph view"
 msgstr "Sigma graph view"
 
 #: src/components/account/user-info.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 #: src/notifications/ingest.ts
@@ -16029,6 +16072,10 @@ msgstr "Signed in"
 #: src/pages/hub-home/HubHome.tsx
 msgid "signed in as {loggedInUser}"
 msgstr "signed in as {loggedInUser}"
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Signed in to Flowpad cloud"
+msgstr "Signed in to Flowpad cloud"
 
 #: src/components/project-home/ProjectGitChip.tsx
 msgid "Signed in to the remote"
