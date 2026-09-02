@@ -16,7 +16,6 @@ import base64
 import hashlib
 import json
 import logging
-import os
 import secrets
 import socket
 import time
@@ -323,9 +322,7 @@ async def _start_loopback_flow(provider: LocalOAuthProvider, user_id: str) -> Ap
     if provider.pkce:
         code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("utf-8").rstrip("=")
         code_challenge = (
-            base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode("utf-8")).digest())
-            .decode("utf-8")
-            .rstrip("=")
+            base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode("utf-8")).digest()).decode("utf-8").rstrip("=")
         )
 
     state = secrets.token_urlsafe(32)
@@ -346,9 +343,7 @@ async def _start_loopback_flow(provider: LocalOAuthProvider, user_id: str) -> Ap
     auth_url = _build_authorize_url(provider, client_id, redirect_uri, state, code_challenge)
     logger.info("Desktop OAuth auth URL generated for %s, port=%s", provider.name, callback_port)
 
-    return ApiSuccessResponse(
-        data={"kind": "loopback", "url": auth_url, "port": callback_port, "state": state}
-    )
+    return ApiSuccessResponse(data={"kind": "loopback", "url": auth_url, "port": callback_port, "state": state})
 
 
 async def _start_device_flow(provider: LocalOAuthProvider, user_id: str) -> ApiResponse:
@@ -391,15 +386,13 @@ async def _start_device_flow(provider: LocalOAuthProvider, user_id: str) -> ApiR
     expires_in = _coerce_int(body.get("expires_in"), 900)
     interval = _coerce_int(body.get("interval"), 5)
     if not (device_code and user_code and verification_uri):
-        return ApiFailResponse(
-            message=f"{provider.display_name} returned unexpected device-code body: {body}"
-        )
+        return ApiFailResponse(message=f"{provider.display_name} returned unexpected device-code body: {body}")
 
     state = secrets.token_urlsafe(32)
     session = DesktopOAuthSession(
         state=state,
         code_verifier="",  # n/a for device flow
-        redirect_uri="",   # n/a for device flow
+        redirect_uri="",  # n/a for device flow
         user_id=user_id,
         provider=provider.name,
     )
@@ -504,7 +497,6 @@ async def _resolve_auth_session_user(user_id: str):
     return None
 
 
-
 async def _mirror_credential_row(user, credentials_name: str) -> None:
     """Make the stored credential VISIBLE to the env table.
 
@@ -517,9 +509,7 @@ async def _mirror_credential_row(user, credentials_name: str) -> None:
     from flow_sdk.core.entity.entity_env.env_types import EnvVarType  # noqa: PLC0415
 
     try:
-        await add_env_var_to_entity(
-            user, credentials_name, EnvVarType.OAUTH_TOKEN, skip_if_exists=True
-        )
+        await add_env_var_to_entity(user, credentials_name, EnvVarType.OAUTH_TOKEN, skip_if_exists=True)
     except Exception as e:  # noqa: BLE001
         logger.warning("could not mirror credential row %s: %s", credentials_name, e)
 
@@ -724,8 +714,10 @@ async def _poll_device_until_done(
 
     async def _broadcast_error(message: str) -> ApiResponse:
         await _broadcast_llm_config_msg(
-            is_configured=False, auth_method="github",
-            oauth_request_id=session.state, status=OAuthMessageStatus.ERROR,
+            is_configured=False,
+            auth_method="github",
+            oauth_request_id=session.state,
+            status=OAuthMessageStatus.ERROR,
         )
         _desktop_oauth_sessions.pop(session.state, None)
         return ApiFailResponse(message=message)
@@ -733,10 +725,7 @@ async def _poll_device_until_done(
     while True:
         # http_timeout check — return "polling" WITHOUT popping the session so a
         # re-issued wait-callback can resume against the same device_code.
-        if (
-            http_timeout is not None
-            and time.monotonic() - started_monotonic >= http_timeout
-        ):
+        if http_timeout is not None and time.monotonic() - started_monotonic >= http_timeout:
             return ApiSuccessResponse(
                 data={"status": "polling", "state": session.state},
                 message="GitHub device flow still polling; WebSocket broadcast will fire on completion",
@@ -746,10 +735,7 @@ async def _poll_device_until_done(
             return await _broadcast_error("GitHub device flow cancelled")
 
         # 1. Deadline check before sleeping AND after sleeping, against monotonic.
-        if (
-            session.expires_at_monotonic is not None
-            and time.monotonic() >= session.expires_at_monotonic
-        ):
+        if session.expires_at_monotonic is not None and time.monotonic() >= session.expires_at_monotonic:
             return await _broadcast_error("GitHub device code expired before authorization")
 
         # 2. Sleep capped at remaining lifetime so we don't sleep past expiry.
@@ -765,7 +751,8 @@ async def _poll_device_until_done(
             cancel_wait = asyncio.create_task(session.cancel_event.wait())
             sleep_task = asyncio.create_task(asyncio.sleep(sleep_for))
             done, pending = await asyncio.wait(
-                {cancel_wait, sleep_task}, return_when=asyncio.FIRST_COMPLETED,
+                {cancel_wait, sleep_task},
+                return_when=asyncio.FIRST_COMPLETED,
             )
             for t in pending:
                 t.cancel()
@@ -787,7 +774,8 @@ async def _poll_device_until_done(
             continue
         if kind == "slow_down":
             session.poll_interval = min(
-                session.poll_interval + 5, DEVICE_POLL_INTERVAL_CAP_SECONDS,
+                session.poll_interval + 5,
+                DEVICE_POLL_INTERVAL_CAP_SECONDS,
             )
             continue
         if kind == "denied":
@@ -804,7 +792,8 @@ async def _poll_device_until_done(
             session.pending_access_token = result["access_token"]
             saved = await _save_token_for_session_user(session.user_id, session.provider, result["access_token"])
             await _broadcast_llm_config_msg(
-                is_configured=saved, auth_method="github",
+                is_configured=saved,
+                auth_method="github",
                 oauth_request_id=session.state,
                 status=OAuthMessageStatus.SUCCESS if saved else OAuthMessageStatus.ERROR,
             )
@@ -841,6 +830,25 @@ def cancel_github_device_flow(state: str) -> bool:
     return True
 
 
+async def cancel_desktop_oauth_flow(state: str) -> bool:
+    """Cancel the exact local session, independent of provider name."""
+    session = _desktop_oauth_sessions.get(state)
+    if session is None:
+        return False
+    if session.cancel_event is not None:
+        session.cancel_event.set()
+        return True
+    _desktop_oauth_sessions.pop(state, None)
+    if session.callback_server is not None:
+        session.callback_server.cancel()
+        try:
+            await session.callback_server
+        except asyncio.CancelledError:
+            pass
+        session.callback_server = None
+    return True
+
+
 async def wait_for_desktop_oauth_callback(state: str, timeout: int = OAUTH_CALLBACK_TIMEOUT) -> ApiResponse:
     """Wait for OAuth callback / device-flow polling to complete and save credentials."""
     session = _desktop_oauth_sessions.get(state)
@@ -853,7 +861,8 @@ async def wait_for_desktop_oauth_callback(state: str, timeout: int = OAUTH_CALLB
     # WITHOUT consuming the session — a re-issued wait-callback resumes against
     # the same device_code. The WebSocket broadcast remains the canonical
     # signal whenever polling eventually finishes.
-    if session.provider == "github":
+    descriptor = get_local_provider(session.provider)
+    if descriptor is not None and descriptor.kind is OAuthFlowKind.DEVICE:
         return await _poll_device_until_done(session, http_timeout=timeout)
 
     try:

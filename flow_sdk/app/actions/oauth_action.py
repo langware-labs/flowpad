@@ -9,11 +9,12 @@ Routes:
 """
 
 import logging
+from dataclasses import asdict
 
 from flow_sdk.api.oauth_api import OAuthAction, OauthClientRequestInfo, OAuthProvider
 from flow_sdk.app.actions.desktop_oauth import (
     _desktop_oauth_sessions,
-    cancel_github_device_flow,
+    cancel_desktop_oauth_flow,
     delete_anthropic_token_for_current_user,
     get_anthropic_token_for_current_user,
     get_desktop_oauth_auth_url,
@@ -27,7 +28,6 @@ from flow_sdk.core.oauth.hub_oauth import (
     hub_credential_value,
     hub_credentials_name_for,
     hub_start_auth,
-    poll_hub_credential,
     redirect_unreachable_reason,
 )
 from flow_sdk.core.oauth.provider_registry import OAuthFlowKind, get_local_provider, prefers_hub_flow
@@ -35,6 +35,65 @@ from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
 logger = logging.getLogger(__name__)
+
+
+def _response_data(response: ApiResponse) -> dict:
+    data = response.data
+    if hasattr(data, "model_dump"):
+        data = data.model_dump()
+    return dict(data) if isinstance(data, dict) else {}
+
+
+def _normalize_auth_response(provider: str, response: ApiResponse) -> ApiResponse:
+    """Add the correlated auth contract while preserving legacy fields."""
+    if not isinstance(response, ApiSuccessResponse):
+        return response
+    data = _response_data(response)
+    request_id = data.get("oauth_request_id") or data.get("state")
+    if not request_id:
+        return ApiFailResponse(
+            message="Authorization response did not include oauth_request_id",
+            data={"error_code": "missing_request_id"},
+        )
+    data.update(
+        {
+            "oauth_request_id": str(request_id),
+            "provider": str(data.get("provider") or provider),
+        }
+    )
+    return ApiSuccessResponse(data=data, message=response.message)
+
+
+def _normalize_wait_response(provider: str, oauth_request_id: str, response: ApiResponse) -> ApiResponse:
+    """One terminal/pending shape for Hub, loopback, and device grants."""
+    data = _response_data(response)
+    if isinstance(response, ApiSuccessResponse):
+        status = str(data.get("status") or "success").lower()
+        data.update({"oauth_request_id": oauth_request_id, "provider": provider, "status": status})
+        return ApiSuccessResponse(data=data, message=response.message)
+
+    message = response.message or "Authorization failed"
+    lowered = message.lower()
+    existing_code = str(data.get("error_code") or data.get("code") or "").strip()
+    if "cancel" in lowered or "denied" in lowered:
+        code, status = "cancelled", "cancelled"
+    elif "expired" in lowered:
+        code, status = "expired", "error"
+    elif "timeout" in lowered:
+        code, status = "timeout", "error"
+    else:
+        code, status = "authorization_failed", "error"
+    code = existing_code or code
+    return ApiFailResponse(
+        message=message,
+        data={
+            **data,
+            "oauth_request_id": oauth_request_id,
+            "provider": provider,
+            "status": status,
+            "error_code": code,
+        },
+    )
 
 
 def _parse_oauth_info(request_info):
@@ -95,13 +154,36 @@ async def oauth_main() -> ApiResponse:
 
         logger.info(f"OAuth action: provider={provider}, action={oauth_action_str}")
 
+        if oauth_action_str == OAuthAction.Catalogue:
+            from flow_sdk.core.connections.specs import _list_connection_specs_local  # noqa: PLC0415
+
+            specs = await _list_connection_specs_local()
+            return ApiSuccessResponse(data={"values": [asdict(spec) for spec in specs]})
+
+        if oauth_action_str == OAuthAction.Token:
+            from flow_sdk.core.connections.specs import (  # noqa: PLC0415
+                _list_connection_specs_local,
+                _token_for_spec_local,
+            )
+
+            wanted = provider.strip().lower()
+            spec = next(
+                (item for item in await _list_connection_specs_local() if item.provider.lower() == wanted),
+                None,
+            )
+            if spec is None:
+                return ApiFailResponse(message=unresolved_provider_reason(provider))
+            token = await _token_for_spec_local(spec)
+            status = "available" if token else ("unavailable" if spec.connected else "not_connected")
+            return ApiSuccessResponse(data={"status": status, "token": token})
+
         # Status check - always works, returns desktop status
         if oauth_action_str == OAuthAction.Status:
             return await _handle_status(provider)
 
         # Auth - generate authorization URL
         if oauth_action_str == OAuthAction.Auth:
-            return await _handle_auth(provider, request_info)
+            return _normalize_auth_response(provider, await _handle_auth(provider, request_info))
 
         # Callback - handle OAuth callback
         if oauth_action_str == OAuthAction.Callback:
@@ -112,19 +194,55 @@ async def oauth_main() -> ApiResponse:
             state = request_info.request_parameters.get("state") if request_info.request_parameters else None
             if not state:
                 return ApiFailResponse(message="State parameter required for wait-callback")
-            return await _handle_wait_callback(provider, state)
+            return _normalize_wait_response(provider, state, await _handle_wait_callback(provider, state))
 
         # Test — prove the stored token still works, by calling the provider.
-        if oauth_action_str == "test":
+        if oauth_action_str == OAuthAction.Test:
             return await _handle_test(provider)
 
         # Cancel — explicit teardown for device-flow sessions (used by UI Cancel button).
-        if oauth_action_str == "cancel":
+        if oauth_action_str == OAuthAction.Cancel:
             state = request_info.request_parameters.get("state") if request_info.request_parameters else None
             if not state:
                 return ApiFailResponse(message="State parameter required for cancel")
-            cancelled = cancel_github_device_flow(state) if provider == "github" else False
-            return ApiSuccessResponse(data={"cancelled": cancelled})
+            cancelled = await cancel_desktop_oauth_flow(state)
+            if not cancelled:
+                try:
+                    from flow_sdk.core.oauth.hub_oauth import hub_cancel_auth  # noqa: PLC0415
+
+                    result = await hub_cancel_auth(provider, state)
+                    status = str(result.get("status") or "not_found")
+                    return ApiSuccessResponse(
+                        data={
+                            **result,
+                            "oauth_request_id": state,
+                            "provider": provider,
+                            "status": status,
+                            "cancelled": status == "cancelled",
+                        }
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+
+                    code = exc.code if isinstance(exc, HubError) else "cancel_failed"
+                    status_code = exc.status_code if isinstance(exc, HubError) else 500
+                    return ApiFailResponse(
+                        message=str(getattr(exc, "reason", exc)),
+                        data={
+                            "error_code": code or "cancel_failed",
+                            "oauth_request_id": state,
+                            "provider": provider,
+                        },
+                        status_code=status_code or 503,
+                    )
+            return ApiSuccessResponse(
+                data={
+                    "oauth_request_id": state,
+                    "provider": provider,
+                    "status": "cancelled" if cancelled else "not_found",
+                    "cancelled": cancelled,
+                }
+            )
 
         # Attach — grants the target entity use of the user's credential and
         # mints the reference row on the target. Two-sided; see oauth_attachment.
@@ -257,7 +375,19 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
     # stays local and never needs the hub.
     hub_refusal: str | None = None
     if prefers_hub_flow(provider):
-        hub_payload = await hub_start_auth(provider)
+        try:
+            hub_payload = await hub_start_auth(provider)
+        except Exception as exc:  # noqa: BLE001
+            from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+
+            if not isinstance(exc, HubError):
+                raise
+            code = "cloud_login_required" if exc.status_code == 401 else (exc.code or "hub_unavailable")
+            return ApiFailResponse(
+                message=exc.reason,
+                data={"error_code": code, "hub_status": exc.status_code},
+                status_code=exc.status_code or 503,
+            )
         if hub_payload:
             # Preflight the callback host BEFORE handing the browser a doomed
             # consent screen. Signing in successfully and then landing nowhere is
@@ -287,6 +417,14 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
         logger.info("OAuth: hub cannot run %s (%s)", provider, hub_refusal or "unreachable")
         if hub_refusal and local is None:
             return ApiFailResponse(message=hub_refusal)
+        if local is not None and local.hub_required:
+            from flow_sdk.core.oauth.hub_providers import _hub_reachable  # noqa: PLC0415
+
+            code = "hub_unavailable" if _hub_reachable() else "cloud_login_required"
+            return ApiFailResponse(
+                message=hub_refusal or "Hub login is required for this connection",
+                data={"error_code": code},
+            )
 
     return await get_desktop_oauth_auth_url(provider, user_id)
 
@@ -341,15 +479,29 @@ async def _handle_wait_callback(provider: str, state: str) -> ApiResponse:
     if state in _desktop_oauth_sessions:
         return await wait_for_desktop_oauth_callback(state)
 
-    local_name = await resolve_user_credentials_name(provider)
-    hub_name = hub_credentials_name_for(provider)
-    if not await poll_hub_credential(hub_name):
-        # Not an error: the user may still be at the provider. The client keeps
-        # its popup open and the hub keeps the session.
-        return ApiSuccessResponse(data={"status": "polling"})
+    from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+    from flow_sdk.core.oauth.hub_oauth import (  # noqa: PLC0415
+        hub_credentials_ref,
+        hub_wait_auth,
+    )
 
-    await _adopt_hub_credential(provider, local_name or hub_name, hub_name)
-    return ApiSuccessResponse(data={"status": "success", "provider": provider})
+    try:
+        result = await hub_wait_auth(provider, state)
+    except HubError as exc:
+        return ApiFailResponse(
+            message=exc.reason,
+            data={
+                "oauth_request_id": state,
+                "error_code": exc.code or "hub_wait_failed",
+            },
+            status_code=exc.status_code or 503,
+        )
+    status = str(result.get("status") or "error").lower()
+    if status == "success":
+        local_name = await resolve_user_credentials_name(provider)
+        hub_name = await hub_credentials_ref(provider)
+        await _adopt_hub_credential(provider, local_name or hub_name, hub_name)
+    return ApiSuccessResponse(data={**result, "oauth_request_id": state, "provider": provider})
 
 
 async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -> None:
@@ -378,7 +530,8 @@ async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -
     if user is None:
         return
 
-    if get_local_provider(provider) is not None:
+    descriptor = get_local_provider(provider)
+    if descriptor is not None and descriptor.copy_hub_credential:
         value = await hub_credential_value(hub_name)
         if value:
             # Through the same seam the desktop grants use, so an adopted token
@@ -414,6 +567,7 @@ async def _handle_test(provider: str) -> ApiResponse:
     side ran the flow.
     """
     from flow_sdk.core.oauth.provider_probe import (  # noqa: PLC0415
+        ProbeResult,
         identity_from_credential,
         run_probe,
         token_from_credential,
@@ -430,6 +584,43 @@ async def _handle_test(provider: str) -> ApiResponse:
     user = await get_current_request_user_fresh()
     if user is None:
         return ApiFailResponse(message="No user in request context")
+
+    descriptor = get_local_provider(provider)
+    if descriptor is None or descriptor.hub_required:
+        from flow_sdk.core.oauth.hub_oauth import hub_test_provider  # noqa: PLC0415
+        from flow_sdk.core.oauth.hub_providers import (  # noqa: PLC0415
+            _cloud_user_id,
+            _hub_reachable,
+        )
+
+        if descriptor is not None and descriptor.hub_required and not _hub_reachable():
+            if _cloud_user_id() is None:
+                return ApiSuccessResponse(
+                    data=ProbeResult(
+                        ok=False,
+                        detail="Cloud login is required for this provider",
+                        code="cloud_login_required",
+                    ).as_data()
+                )
+            return ApiSuccessResponse(
+                data=ProbeResult(
+                    ok=None,
+                    detail=f"Could not reach {provider}'s verification service",
+                    code="verification_unreachable",
+                ).as_data()
+            )
+
+        delegated = await hub_test_provider(provider)
+        if delegated is None:
+            result = ProbeResult(
+                ok=None,
+                detail=f"Could not reach {provider}'s verification service",
+                code="verification_unreachable",
+            )
+            return ApiSuccessResponse(data=result.as_data())
+        # The Hub owns the descriptor and its test. Preserve its typed result
+        # instead of inventing a local provider-name branch.
+        return ApiSuccessResponse(data=delegated)
 
     stored: object = None
     try:

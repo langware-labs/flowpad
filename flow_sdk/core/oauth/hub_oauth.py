@@ -19,14 +19,12 @@ What comes back is already the shape the client wants: the hub returns
 exactly what ``oauthService.connect`` opens a popup for.
 
 The one thing the desktop does NOT get for free is the completion signal: the
-hub broadcasts it on its own websocket, which this process is not on. See
-``poll_hub_credential`` — the same long-poll shape the GitHub device flow
-already uses.
+hub broadcasts it on its own websocket, which this process is not on. The
+desktop therefore reads the exact correlated session through ``hub_wait_auth``.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -36,16 +34,6 @@ if TYPE_CHECKING:  # pragma: no cover
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 
 logger = logging.getLogger(__name__)
-
-#: How long to wait for the user to finish at the provider before handing the
-#: wait back to the caller. NOT a retry budget being widened to mask a slow
-#: path — it is how long a human plausibly takes to log in and approve, and it
-#: matches the desktop device flow's own window.
-from flow_sdk.app.actions.desktop_oauth import OAUTH_CALLBACK_TIMEOUT  # noqa: E402
-
-#: Gap between hub polls while waiting. The hub has no push channel to this
-#: process, so this is the resolution of "has the token landed yet".
-POLL_INTERVAL_SECONDS = 3
 
 
 async def _hub_data(
@@ -97,18 +85,83 @@ async def hub_start_auth(provider: str) -> Optional[dict[str, Any]]:
     if not user_id:
         return None
 
-    data = await _hub_data(
+    from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
+
+    data = await hub_get_or_raise(
+        BuiltinEntityType.USER,
         user_id,
         action="oauth",
         sub_path=f"{provider}/auth",
-        on_error=f"[oauth] hub refused to start a flow for {provider!r}",
     )
-    if data is None:
-        return None  # already logged by _hub_data
     if not data.get("auth_url"):
         logger.warning("[oauth] hub returned no auth_url for %r", provider)
         return None
     return data
+
+
+async def hub_test_provider(provider: str) -> Optional[dict[str, Any]]:
+    """Delegate verification for a Hub-defined descriptor to its owner."""
+    from flow_sdk.core.oauth.hub_providers import _cloud_user_id, _hub_reachable  # noqa: PLC0415
+
+    if not _hub_reachable():
+        return None
+    user_id = _cloud_user_id()
+    if not user_id:
+        return None
+    return await _hub_data(
+        user_id,
+        action="oauth",
+        sub_path=f"{provider}/test",
+        on_error=f"[oauth] hub verification failed for {provider!r}",
+    )
+
+
+async def hub_wait_auth(provider: str, oauth_request_id: str) -> dict[str, Any]:
+    """Read the exact Hub OAuth session's correlated state."""
+    from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
+    from flow_sdk.core.oauth.hub_providers import _cloud_user_id  # noqa: PLC0415
+
+    user_id = _cloud_user_id()
+    if not user_id:
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+
+        raise HubError(401, "not logged in", code="cloud_login_required")
+    return await hub_get_or_raise(
+        BuiltinEntityType.USER,
+        user_id,
+        action="oauth",
+        sub_path=f"{provider}/wait-callback",
+        params={"oauth_request_id": oauth_request_id},
+    )
+
+
+async def hub_cancel_auth(provider: str, oauth_request_id: str) -> dict[str, Any]:
+    """Cancel only the exact Hub OAuth session."""
+    from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+    from flow_sdk.core.oauth.hub_providers import _cloud_user_id  # noqa: PLC0415
+
+    user_id = _cloud_user_id()
+    if not user_id:
+        return {"oauth_request_id": oauth_request_id, "status": "not_found"}
+    return await hub_post(
+        BuiltinEntityType.USER,
+        {},
+        user_id,
+        action="oauth",
+        sub_path=f"{provider}/cancel",
+        params={"oauth_request_id": oauth_request_id},
+    ) or {"oauth_request_id": oauth_request_id, "status": "not_found"}
+
+
+async def hub_credentials_ref(provider: str) -> str:
+    """The Hub catalogue's credential ref, including dynamic providers."""
+    from flow_sdk.core.oauth.hub_providers import hub_provider_rows  # noqa: PLC0415
+
+    wanted = (provider or "").strip().lower()
+    for row in (await hub_provider_rows()).values:
+        if row.name.strip().lower() == wanted and row.ref_name:
+            return row.ref_name
+    return hub_credentials_name_for(provider)
 
 
 async def hub_holds_credential(credentials_name: str) -> bool:
@@ -142,27 +195,9 @@ async def hub_holds_credential(credentials_name: str) -> bool:
     # both sides together. A literal here would fail closed exactly like the bug
     # this replaced: the poll would spin its timeout and nothing would say why.
     return any(
-        isinstance(v, dict)
-        and v.get("ref_name") == credentials_name
-        and v.get("var_status") == EnvStatusEnum.AVAILABLE
+        isinstance(v, dict) and v.get("ref_name") == credentials_name and v.get("var_status") == EnvStatusEnum.AVAILABLE
         for v in values
     )
-
-
-async def poll_hub_credential(credentials_name: str, timeout: int = OAUTH_CALLBACK_TIMEOUT) -> bool:
-    """Wait until the hub holds ``credentials_name``, or ``timeout`` elapses.
-
-    The desktop is not on the hub's websocket, so the hub's completion message
-    never reaches this process. Polling the hub's table is the same shape the
-    GitHub device flow already uses for its own wait — bounded, and the caller
-    reports a plain "not yet" rather than hanging.
-    """
-    deadline = asyncio.get_event_loop().time() + timeout
-    while asyncio.get_event_loop().time() < deadline:
-        if await hub_holds_credential(credentials_name):
-            return True
-        await asyncio.sleep(POLL_INTERVAL_SECONDS)
-    return await hub_holds_credential(credentials_name)
 
 
 async def hub_credential_value(credentials_name: str) -> Optional[str]:

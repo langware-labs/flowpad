@@ -33,7 +33,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from flow_sdk.builtin.source_item import SourceItemSpec
-from flow_sdk.ingest.driver import IngestDriver, FetchResult, SegmentCursorView, SegmentRef, SetupVerdict
+from flow_sdk.ingest.driver import FetchResult, IngestDriver, SegmentCursorView, SegmentRef, SendOutcome, SetupVerdict
 from flow_sdk.ingest.health import SourceError
 
 logger = logging.getLogger(__name__)
@@ -74,6 +74,17 @@ class SlackDriver(IngestDriver):
     #: `last_attempted_at`, so every channel is still reached — one per tick.
     segment_budget = 1
 
+    #: ``chat.postMessage`` is the send leg. Slack DOES echo a bot's own post
+    #: back through ``conversations.history``, so unlike Telegram the driver
+    #: records nothing itself — the next poll ingests the sent copy and it
+    #: converges on the ``ts`` this returns.
+    sends = True
+    #: A Slack source is ABOUT its channels; ``blocks.Inbox("C0123…",
+    #: provider="slack")`` reuses the source whose ``channels`` carry that id.
+    identity_config_key = "channels"
+    #: Read with the machine's Slack connection — there is no per-source key.
+    connection = "slack"
+
     def channel_for(self, source) -> str:
         return "slack"
 
@@ -86,6 +97,11 @@ class SlackDriver(IngestDriver):
         """
         config = getattr(source, "config", None) or {}
         channels = config.get("channels") or []
+        # A `lines` field arrives as a bare string from a caller that bypassed
+        # the form (``blocks.Inbox`` names ONE channel); iterating it would
+        # yield its characters as channel ids.
+        if isinstance(channels, str):
+            channels = [line for line in channels.splitlines() if line.strip()]
         refs: list[SegmentRef] = []
         for entry in channels:
             if isinstance(entry, dict):
@@ -162,8 +178,7 @@ class SlackDriver(IngestDriver):
                     name="",
                     body=str(message.get("text") or ""),
                     occurred_at=_iso(ts),
-                    author_external_id=str(message.get("user") or message.get("bot_id") or "")
-                    or None,
+                    author_external_id=str(message.get("user") or message.get("bot_id") or "") or None,
                     author_display=str(message.get("username") or "") or None,
                     permalink=_permalink(cursor.segment_key, ts),
                     # A threaded reply carries its parent's ts; a top-level
@@ -188,15 +203,11 @@ class SlackDriver(IngestDriver):
         """
         channels = await self.segments(source)
         if not channels:
-            return SetupVerdict.waiting(
-                "No channels selected yet — pick at least one for this source to read."
-            )
+            return SetupVerdict.waiting("No channels selected yet — pick at least one for this source to read.")
 
         token = await self._token(source)
         if not token:
-            return SetupVerdict.waiting(
-                "No Slack credential is available on this machine yet. Connect Slack first."
-            )
+            return SetupVerdict.waiting("No Slack credential is available on this machine yet. Connect Slack first.")
 
         pending: list[str] = []
         labels: dict[str, str] = {c.key: c.label for c in channels}
@@ -223,6 +234,10 @@ class SlackDriver(IngestDriver):
         if blocked_reason:
             return SetupVerdict.waiting(f"Slack refused the request: {blocked_reason}")
 
+        # Reading works: now is the cheap moment to learn who "me" is. Not in
+        # ``fetch`` — that runs on a one-request-per-minute budget.
+        await self._ensure_identity(source, token)
+
         if pending:
             names = ", ".join(f"#{labels.get(key, key)}" for key in pending)
             return SetupVerdict.waiting(
@@ -231,7 +246,126 @@ class SlackDriver(IngestDriver):
             )
         return SetupVerdict.ok(f"Reading {len(channels)} channel(s).")
 
+    # ── send ──────────────────────────────────────────────────────────────
+
+    async def send(
+        self,
+        source,
+        *,
+        thread_key: str,
+        to: str,
+        text: str,
+        subject: str = "",
+        conversation_id: str = "",
+        in_reply_to: str = "",
+    ) -> SendOutcome:
+        """Post into a channel, in the thread the inbound message lives in.
+
+        ``to`` is the CHANNEL id (the inbound record's ``segment_key`` — a
+        Slack ``thread_key`` is a bare ``ts`` and does not name the channel).
+        ``thread_key`` becomes ``thread_ts`` so the reply lands in the thread
+        rather than as a new top-level post; a top-level inbound message is its
+        own thread root, so replying "to its thread" is replying to it.
+        ``subject`` has no Slack equivalent and is ignored by design.
+
+        Raises ``ValueError`` (never ``SourceError``) on a bad reply: one
+        failed post must not park the channel's ingestion.
+        """
+        channel = str(to or "").strip()
+        if not channel:
+            raise ValueError("a slack send needs the channel id in `to`")
+        if not (text or "").strip():
+            raise ValueError("a slack send needs text")
+        token = await self._token(source)
+        if not token:
+            from flow_sdk.connections import NotConnected  # noqa: PLC0415
+
+            raise ValueError(str(NotConnected("slack", "Slack")))
+
+        payload: dict[str, Any] = {"channel": channel, "text": text}
+        thread_ts = str(thread_key or "").strip() or str(in_reply_to or "").strip()
+        if thread_ts:
+            payload["thread_ts"] = thread_ts
+        try:
+            body = await self._post(token, "chat.postMessage", payload)
+        except SourceError as exc:
+            # The send contract: a refused post is the caller's problem, not
+            # the source's health.
+            raise ValueError(f"Slack refused the post: {exc}") from exc
+        await self._ensure_identity(source, token)
+        return SendOutcome(external_id=str(body.get("ts") or ""), recorded=False)
+
+    # ── identity ──────────────────────────────────────────────────────────
+
+    async def _ensure_identity(self, source, token: str) -> None:
+        """Stamp the bot's own user id onto the source, once.
+
+        ``self_addresses`` reads ``account_identities``; a bot's post comes
+        back through ``conversations.history`` with ``user`` set to its user
+        id, and without that id stamped here the inbox would attribute our
+        own replies to a foreign sender and a ``blocks.Inbox`` loop would
+        answer itself. Stamped on ``verify`` and after a ``send`` — never on
+        ``fetch``, whose one-request-per-minute budget is not for this.
+        """
+        if getattr(source, "account_key", "") or getattr(source, "account_identities", None):
+            return
+        try:
+            me = await self._call(token, "auth.test", {})
+            user_id = str(me.get("user_id") or "").strip()
+            bot_id = str(me.get("bot_id") or "").strip()
+            handle = str(me.get("user") or "").strip()
+            if not (user_id or bot_id):
+                return
+            source.account_key = f"@{handle}" if handle else user_id
+            source.account_identities = [v for v in (user_id, bot_id, f"@{handle}" if handle else "") if v]
+            await source.save()
+        except Exception:  # noqa: BLE001 — identity is a nicety; fetching must not fail on it
+            logger.debug("[slack] auth.test identity stamp failed", exc_info=True)
+
     # ── internals ─────────────────────────────────────────────────────────
+
+    async def _request(
+        self,
+        token: str,
+        method: str,
+        *,
+        verb: str,
+        payload: dict,
+    ) -> dict:
+        """One Slack Web API call with the provider's shared failure translation."""
+        import httpx  # noqa: PLC0415
+
+        from flow_sdk.ingest.http import REQUEST_TIMEOUT_SECONDS  # noqa: PLC0415
+
+        request_data = {"json": payload} if verb == "POST" else {"params": payload}
+        try:
+            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
+                response = await client.request(
+                    verb,
+                    f"{SLACK_API_BASE}/{method}",
+                    headers={"Authorization": f"Bearer {token}"},
+                    **request_data,
+                )
+        except httpx.HTTPError as exc:
+            raise SourceError.transient("network_error", str(exc)) from exc
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise SourceError.transient("bad_json", str(exc)) from exc
+        if body.get("ok"):
+            return body
+        error = str(body.get("error") or f"http_{response.status_code}")
+        if error in TRANSIENT_ERRORS:
+            raise SourceError.transient(error, f"Slack: {error}")
+        if error in NOT_A_MEMBER:
+            raise SourceError.config(
+                error,
+                f"The bot is not in {payload.get('channel')}. Invite it, then press Verify.",
+            )
+        raise SourceError.config(error, f"Slack refused the request: {error}")
+
+    async def _post(self, token: str, method: str, json_body: dict) -> dict:
+        return await self._request(token, method, verb="POST", payload=json_body)
 
     async def _call(self, token: str, method: str, params: dict) -> dict:
         """A Slack Web API GET, with Slack's failure convention translated.
@@ -241,37 +375,7 @@ class SlackDriver(IngestDriver):
         remember that, and the one that forgets reports a revoked token as a
         successful empty page.
         """
-        import httpx  # noqa: PLC0415
-
-        from flow_sdk.ingest.http import REQUEST_TIMEOUT_SECONDS  # noqa: PLC0415
-
-        try:
-            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
-                response = await client.get(
-                    f"{SLACK_API_BASE}/{method}",
-                    params=params,
-                    headers={"Authorization": f"Bearer {token}"},
-                )
-        except httpx.HTTPError as exc:
-            raise SourceError.transient("network_error", str(exc)) from exc
-
-        try:
-            body = response.json()
-        except ValueError as exc:
-            raise SourceError.transient("bad_json", str(exc)) from exc
-
-        if body.get("ok"):
-            return body
-
-        error = str(body.get("error") or f"http_{response.status_code}")
-        if error in TRANSIENT_ERRORS:
-            raise SourceError.transient(error, f"Slack: {error}")
-        if error in NOT_A_MEMBER:
-            raise SourceError.config(
-                error,
-                f"The bot is not in {params.get('channel')}. Invite it, then press Verify.",
-            )
-        raise SourceError.config(error, f"Slack refused the request: {error}")
+        return await self._request(token, method, verb="GET", payload=params)
 
     async def _token(self, source) -> Optional[str]:
         """This machine's Slack token. The precedence lives in one place."""

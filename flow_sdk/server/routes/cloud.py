@@ -145,6 +145,7 @@ def _render_result_page(
 async def logout_callback():
     """Cloud-redirect logout callback. Clears local credentials."""
     from flow_sdk.cli.auth.cloud_login import clear_cloud_credentials
+
     await clear_cloud_credentials()
     blank_script = '<script>setTimeout(function(){ document.body.innerHTML = ""; }, 10000);</script>'
     return _render_result_page(
@@ -182,17 +183,19 @@ async def status():
 
         connection_payload = hub_ws_manager.connection_payload()
 
-        return ApiSuccessResponse(data={
-            # New nested shape — canonical, drives the UI.
-            "login": login,
-            "connection": connection_payload,
-            "cloud_url": cloud_url,
-            "cloud_app_url": cloud_config.app_base_url,
-            # Deprecated aliases — kept for one release while UI migrates.
-            "logged_in": logged_in,
-            "user": login["user"],
-            **hub_ws_manager.status_payload(),
-        })
+        return ApiSuccessResponse(
+            data={
+                # New nested shape — canonical, drives the UI.
+                "login": login,
+                "connection": connection_payload,
+                "cloud_url": cloud_url,
+                "cloud_app_url": cloud_config.app_base_url,
+                # Deprecated aliases — kept for one release while UI migrates.
+                "logged_in": logged_in,
+                "user": login["user"],
+                **hub_ws_manager.status_payload(),
+            }
+        )
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
@@ -271,11 +274,13 @@ async def connect_ws():
         except Exception:
             pass
         raise
-    return ApiSuccessResponse(data={
-        "connection": hub_ws_manager.connection_payload(),
-        **hub_ws_manager.status_payload(),
-        "verification": verification,
-    })
+    return ApiSuccessResponse(
+        data={
+            "connection": hub_ws_manager.connection_payload(),
+            **hub_ws_manager.status_payload(),
+            "verification": verification,
+        }
+    )
 
 
 @router.post("/ws/disconnect")
@@ -285,10 +290,12 @@ async def disconnect_ws():
     from flow_sdk.cloud_client.ws_client import hub_ws_manager
 
     legacy = await hub_ws_manager.stop()
-    return ApiSuccessResponse(data={
-        "connection": hub_ws_manager.connection_payload(),
-        **legacy,
-    })
+    return ApiSuccessResponse(
+        data={
+            "connection": hub_ws_manager.connection_payload(),
+            **legacy,
+        }
+    )
 
 
 @router.post("/ws/verify")
@@ -305,11 +312,13 @@ async def verify_ws():
         return _cloud_ws_error("Cloud login required before verifying hub WebSocket.", 401)
 
     verification = await hub_ws_manager.verify_current_user()
-    return ApiSuccessResponse(data={
-        "connection": hub_ws_manager.connection_payload(),
-        **hub_ws_manager.status_payload(),
-        "verification": verification,
-    })
+    return ApiSuccessResponse(
+        data={
+            "connection": hub_ws_manager.connection_payload(),
+            **hub_ws_manager.status_payload(),
+            "verification": verification,
+        }
+    )
 
 
 @router.post("/login")
@@ -336,6 +345,95 @@ async def login():
             status_code=400,
         )
     return ApiSuccessResponse(data=result)
+
+
+@router.post("/login/correlated")
+async def correlated_login():
+    """Start or join the one request-id-correlated Hub login."""
+    blocked = _local_mode_login_block()
+    if blocked is not None:
+        return blocked
+    from urllib.parse import urlencode
+
+    from flow_sdk.cli.auth.cloud_login import _classify_hub, cloud_login
+    from flow_sdk.cli.auth.cloud_urls import desktop_login_callback_url, get_login_url
+    from flow_sdk.cloud_client import ApiConfig
+    from flow_sdk.instance_settings import get_instance_settings
+    from flow_sdk.server import state
+
+    hub_kind = _classify_hub(ApiConfig.from_env().api_base_url)
+    if hub_kind == "local":
+        try:
+            result = await cloud_login()
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse(
+                content=ApiFailResponse(message=str(exc), data={"error_code": "cloud_login_failed"}).model_dump(
+                    mode="json"
+                ),
+                status_code=400,
+            )
+        return ApiSuccessResponse(data={**result, "status": "success"})
+    if hub_kind != "cloud":
+        return JSONResponse(
+            content=ApiFailResponse(
+                message="Cloud sign-in isn't supported for the configured Hub URL",
+                data={"error_code": "cloud_login_unsupported"},
+            ).model_dump(mode="json"),
+            status_code=400,
+        )
+
+    def _url(request_id: str) -> str:
+        callback = desktop_login_callback_url()
+        separator = "&" if "?" in callback else "?"
+        callback = f"{callback}{separator}{urlencode({'oauth_request_id': request_id})}"
+        return get_login_url(callback)
+
+    session = state.start_cloud_login_session(_url, get_instance_settings().cloud_login_timeout_seconds)
+    return ApiSuccessResponse(
+        data={
+            "oauth_request_id": session["oauth_request_id"],
+            "status": session["status"],
+            "url": session["url"],
+            "present": session["present"],
+        }
+    )
+
+
+@router.get("/login/wait")
+async def correlated_login_wait(oauth_request_id: str = Query(...)):
+    from flow_sdk.server import state
+
+    result = state.cloud_login_session_result(oauth_request_id)
+    if result is None:
+        return JSONResponse(
+            content=ApiFailResponse(
+                message="Cloud login request not found",
+                data={"error_code": "cloud_login_not_found"},
+            ).model_dump(mode="json"),
+            status_code=404,
+        )
+    return ApiSuccessResponse(
+        data={
+            "oauth_request_id": oauth_request_id,
+            "status": result["status"],
+            "code": result.get("code"),
+            "detail": result.get("detail"),
+        }
+    )
+
+
+@router.post("/login/cancel")
+async def correlated_login_cancel(oauth_request_id: str = Query(...)):
+    from flow_sdk.server import state
+
+    cancelled = state.cancel_cloud_login_session(oauth_request_id)
+    return ApiSuccessResponse(
+        data={
+            "oauth_request_id": oauth_request_id,
+            "status": "cancelled" if cancelled else "not_found",
+            "cancelled": cancelled,
+        }
+    )
 
 
 @router.post("/logout")

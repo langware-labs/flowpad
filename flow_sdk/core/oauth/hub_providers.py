@@ -33,7 +33,6 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 logger = logging.getLogger(__name__)
 
 
-
 def _cloud_user_id() -> str | None:
     try:
         from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
@@ -61,20 +60,31 @@ def _row_from_hub(item: dict[str, Any]) -> EnvVar | None:
 
     name = str(item.get("name") or "").strip()
     ref_name = str(item.get("ref_name") or "").strip()
-    if not name or not ref_name:
+    display_name = str(item.get("oauth_display_name") or "").strip()
+    scopes = item.get("oauth_scopes")
+    if (
+        not name
+        or not ref_name
+        or not display_name
+        or item.get("oauth_verifiable") is not True
+        or item.get("oauth_protocol") != 1
+        or not isinstance(scopes, list)
+    ):
         return None
-    # The hub runs a real authorization-code grant for everything it defines.
-    # Its manifest holds the scope list and the table does not publish it, so the
-    # scopes stay empty rather than being guessed.
+    # The Hub runs a real authorization-code grant for everything it defines;
+    # this is the scope list its validated manifest publishes.
     from flow_sdk.core.oauth.provider_registry import OAuthFlowKind  # noqa: PLC0415
 
     expires_at = item.get("expires_at")
     return provider_env_var(
         name,
-        name,
+        display_name,
         ref_name,
         item.get("icon"),
-        kind=OAuthFlowKind.CODE.value,
+        kind=str(item.get("oauth_kind") or OAuthFlowKind.CODE.value),
+        scopes=[str(scope) for scope in scopes],
+        verifiable=True,
+        protocol=1,
         # The hub carries these onto the provider row from the user's token row.
         # They are the only signal the desktop gets that a hub-held credential
         # has gone stale or been permanently refused.
@@ -182,11 +192,10 @@ def union_providers(local: EntityEnvVars, hub: EntityEnvVars) -> EntityEnvVars:
     `code`, not `device`. A row advertising the grant that lost would be a table
     telling the user something the button then contradicts.
 
-    Its scopes are cleared with it: the local list described the device app, and
-    the hub's live in a manifest the table does not carry, so anything kept here
-    would be stale.
+    Its scopes move with it: the local list described the device app, while the
+    Hub row carries the scopes its code-flow consent screen actually asks.
     """
-    from flow_sdk.core.oauth.provider_registry import OAuthFlowKind, prefers_hub_flow  # noqa: PLC0415
+    from flow_sdk.core.oauth.provider_registry import prefers_hub_flow  # noqa: PLC0415
 
     by_name: dict[str, EnvVar] = {}
     for row in local.values:
@@ -200,12 +209,16 @@ def union_providers(local: EntityEnvVars, hub: EntityEnvVars) -> EntityEnvVars:
         if prefers_hub_flow(existing.name):
             # Same predicate the router uses, so the advertised grant is the one
             # that will run. Scopes go with it: the local list described the
-            # device app, and the hub's live in a manifest the table does not
-            # carry — but the row is rebuilt per call, so nothing is lost for the
-            # hub-unreachable fallback, which reads the registry directly.
+            # device app, while the Hub row describes its code-flow consent.
             logger.debug("[oauth] %r keeps its local credential name but runs the hub's code flow", row.name)
             by_name[key] = existing.model_copy(
-                update={"oauth_kind": OAuthFlowKind.CODE.value, "oauth_scopes": []}
+                update={
+                    "oauth_display_name": row.oauth_display_name,
+                    "oauth_kind": row.oauth_kind,
+                    "oauth_scopes": list(row.oauth_scopes),
+                    "oauth_verifiable": row.oauth_verifiable,
+                    "oauth_protocol": row.oauth_protocol,
+                }
             )
         else:
             logger.debug("[oauth] hub provider %r shadowed by the local one", row.name)
