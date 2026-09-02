@@ -141,6 +141,7 @@ class ViewType(StrEnum):
     GRAPH_WORKFLOWS = "graph-workflows"  # Flow-graph editor/observatory — dev mode
     SIGNALS = "signals"  # Alias of EVENTS
     DATA_SOURCES = "data-sources"  # Configured ingestion sources
+    RAG = "rag"  # Search indexes and the folders they cover
     PROCESS_RUNS = "process-runs"  # AgenticProcess execution history
     PLAN = "plan"  # Plan viewer with Milkdown editor
     CRON = "cron"  # Alias of EVENTS (scheduled jobs)
@@ -364,6 +365,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.GRAPH_WORKFLOWS: _m(_OPT),
     ViewType.SIGNALS: _m(_NONE),
     ViewType.DATA_SOURCES: _m(_NONE),
+    ViewType.RAG: _m(_NONE),
     ViewType.PROCESS_RUNS: _m(_OPT),
     ViewType.PLAN: _m(_REQ),
     ViewType.CRON: _m(_NONE),
