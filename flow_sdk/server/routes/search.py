@@ -11,6 +11,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
 from flow_sdk.server.search_filters import (
+    apply_containment_filter,
     apply_folder_filter,
     apply_scope_filter,
     apply_system_filter,
@@ -65,7 +66,11 @@ async def _entity_to_result(ent) -> dict:
     }
     # Extra fields for per-type column rendering. ``parent_id`` lets the Assets
     # tree hide member tasks (group-task children live in the task editor's
-    # Member tasks section, not the left pane).
+    # Member tasks section, not the left pane). ``parent_type_id`` is the
+    # CANONICAL containment pointer that supersedes it — without it on the wire
+    # an asset nested under another asset (an Agent's own copy of an Mcp, say)
+    # is indistinguishable from a project-level one, and the tree renders both
+    # as top-level siblings of the same name.
     for field in (
         "uname",
         "title",
@@ -78,6 +83,7 @@ async def _entity_to_result(ent) -> dict:
         "parent_path",
         "vault_root",
         "parent_id",
+        "parent_type_id",
     ):
         val = getattr(ent, field, None)
         if val:
@@ -106,6 +112,21 @@ async def search_records(
     vault_root: Optional[str] = Query(
         default=None,
         description="Filter to records whose vault_root is exactly this absolute path (descendants at any depth)",
+    ),
+    top_level: bool = Query(
+        default=False,
+        description=(
+            "Drop records nested inside another entity that has its own asset-tree root "
+            "(e.g. an Agent's own copy of an Mcp). Records parented to a project are kept. "
+            "Default off, so existing callers are unaffected."
+        ),
+    ),
+    parent_type_id: Optional[str] = Query(
+        default=None,
+        description=(
+            "Filter to the direct children of this '<type>-<uuid>'. Combine with no "
+            "record_type to get one entity's children across every type."
+        ),
     ),
     include_system: bool = Query(
         default=False, description="Include entities from SDK-shipped system projects. Default off."
@@ -172,16 +193,37 @@ async def search_records(
         # Browse mode: return all entities matching filters, paginated
         # Must use QueryFilter directly — passing a dict routes through QueryFilter.parse(d, cls.get_type())
         # which overwrites QueryFilter.type with "entity" (base class name), breaking the SQL type filter.
-        qf = QueryFilter(type=record_type or "entity")
+        match_expr = None
         if status:
             from flow_sdk.db.drivers.query import ExpressionNode  # noqa: PLC0415
 
-            qf.match = ExpressionNode(**{"status": status})
-        qf.order_by = {"updated_date": "desc"}
-        all_entities = await Entity.get_all(qf)
+            match_expr = ExpressionNode(**{"status": status})
+
+        def _qf(type_name: str | None) -> QueryFilter:
+            f = QueryFilter(type=type_name or "entity")
+            f.match = match_expr
+            f.order_by = {"updated_date": "desc"}
+            return f
+
+        if parent_type_id and not record_type:
+            # Cross-type containment: every child of one owner, whatever its type
+            # (an Agent holds Mcps today and Skills the moment one is attached).
+            # The driver's type clause is unconditional by design — an indexed
+            # ``type = ?`` on the hottest query path — so "any type" is a loop
+            # over the candidate types, the same shape ``assets_under_dirs`` uses.
+            # The candidates are the REPO families, i.e. exactly the set the
+            # ``repo_assets_fn`` walker can nest under another asset.
+            from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+            all_entities = []
+            for type_name in sorted({i.type_name for i in SchemaRegistry.repo_family_to_info().values()}):
+                all_entities.extend(await Entity.get_all(_qf(type_name)))
+        else:
+            all_entities = await Entity.get_all(_qf(record_type))
 
         all_entities = apply_scope_filter(all_entities, scope_filter)
         all_entities = apply_folder_filter(all_entities, parent_path, vault_root)
+        all_entities = apply_containment_filter(all_entities, top_level, parent_type_id)
         all_entities = apply_system_filter(all_entities, include_system, scoped_pids)
         all_entities = apply_tag_filter(all_entities, tag_list)
 
@@ -232,6 +274,7 @@ async def search_records(
 
     entities = apply_scope_filter(entities, scope_filter)
     entities = apply_folder_filter(entities, parent_path, vault_root)
+    entities = apply_containment_filter(entities, top_level, parent_type_id)
     entities = apply_system_filter(entities, include_system, scoped_pids)
     entities = apply_tag_filter(entities, tag_list)
 

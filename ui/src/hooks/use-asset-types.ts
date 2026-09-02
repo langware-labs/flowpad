@@ -27,6 +27,10 @@ export interface AssetTypeInfo {
    *  sidebar row expands into the on-disk file tree. Sourced synchronously from
    *  the registry (TypeInfo.folder_backed), so it's set on the first render. */
   folder_backed?: boolean;
+  /** `'folder'` when the asset is a directory that can own nested assets, `'file'`
+   *  otherwise. Distinct from `folder_backed`: an Agent is folder-LAYOUT (so it can
+   *  own an Mcp) but not folder-BACKED (its asset_ref is the inner agent.md). */
+  main_layout?: string | null;
   /** Fixed inner filename for folder-backed assets, e.g. SKILL.md. */
   main_file?: string | null;
   vaults?: AssetTypeVault[];
@@ -75,6 +79,7 @@ function staticAssetTypes(mode: ViewMode): AssetTypeInfo[] {
       // Sourced synchronously from the registry like every other static field —
       // available on the first render, so a deep-link auto-expand can't race it.
       folder_backed: t.folder_backed,
+      main_layout: t.main_layout,
       main_file: t.main_file,
     }));
 }
