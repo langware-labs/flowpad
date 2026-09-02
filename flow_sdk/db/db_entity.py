@@ -81,6 +81,11 @@ class DBEntity(DBBaseRecord):
     _generate_key: bool = False
     _db_fields_sync: ClassVar[List[str]] = db_fields_sync
     _api_visible: ClassVar[bool] = False
+    #: This type lives ONLY on the hub -- there is no local row to read, save or push. Generic
+    #: actions that would otherwise resolve a local entity first (see ``share_action``) branch on
+    #: this instead of 404ing. Declared here so it is greppable and type-checked rather than a
+    #: getattr default understood by a single caller.
+    _hub_only: ClassVar[bool] = False
     _observers: List[Callable[[DataOpMessage], None]] = []
     _db: ClassVar[DBDriver] = LazyDBDriver()
     expand: EntityExpansion | None = NoDBAPIField(None, sharing=Sharing.PRIVATE)

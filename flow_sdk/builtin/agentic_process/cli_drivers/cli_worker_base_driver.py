@@ -682,6 +682,10 @@ class AgenticContext(BaseModel):
     model: str | None = None
     max_thinking_tokens: int = 1024
     permission_mode: str = "bypassPermissions"
+    #: ``opencode.json`` ``provider`` fragment for a turn spending a hub LLMEndpoint. It rides the
+    #: CONTEXT because opencode is configured by file and two different prompt paths generate that
+    #: file; putting it anywhere else lets them disagree about what is in it.
+    provider_options: dict[str, dict] = Field(default_factory=dict)
 
     amd_support: bool = False
     stack_frame: dict[str, Any] | None = None
@@ -753,6 +757,9 @@ class AgenticContext(BaseModel):
                 "language",
                 "mcp_config_json",
                 "mcp_config_fragment",
+                # Resolved per turn from the process's endpoint; persisting it would let a
+                # stale baseURL outlive the binding it came from.
+                "provider_options",
             }
         )
         if self.compute_node is not None:

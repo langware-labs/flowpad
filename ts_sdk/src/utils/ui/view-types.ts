@@ -126,6 +126,8 @@ export enum ViewType {
   APP = 'app',
   LLM_ENDPOINTS = 'llm-endpoints', // Hub LLM endpoints (roots + chains) - /dock/hub/llm-endpoints[/<id>[/overview|usage|models]]
   TOKEN_PLAN = 'token-plan', // Hub token plan (me / team / org budgets) - /dock/hub/token-plan[/me|team[/<id>]|org]
+  // DESK page: what funds this machine's harnesses (device logins, stored keys, hub endpoints)
+  LLM_SOURCES = 'llm-sources', // /dock/llm-sources[/<worker>] -- the harness in focus
 }
 
 /**

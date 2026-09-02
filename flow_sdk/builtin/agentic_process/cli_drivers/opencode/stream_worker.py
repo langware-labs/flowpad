@@ -181,6 +181,10 @@ def _config_path_from_context(context: AgenticContext, process_id: str | None = 
     # and silently without it on the headless one.
     mcp = dict(context.mcp_config_fragment or {})
     add_dirs = list(context.add_dirs or [])
+    # A turn spending a hub LLMEndpoint redirects opencode's provider here: it reads no base-URL env
+    # var, so without this the CLI quietly talks to openrouter.ai on its own credentials and the
+    # budget it was told to spend is never touched.
+    provider = dict(getattr(context, "provider_options", None) or {})
 
     if not process_id:
         return None
@@ -189,7 +193,7 @@ def _config_path_from_context(context: AgenticContext, process_id: str | None = 
         # No instruction assets, but attached servers and extra mounted roots
         # still need a config. Whether there is anything worth writing is the
         # generator's call, not ours.
-        generated = config_for_assets_dir(process_id, None, mcp, add_dirs)
+        generated = config_for_assets_dir(process_id, None, mcp, add_dirs, provider=provider)
         return str(generated) if generated else None
     candidate = Path(dirs[0])
     if candidate.is_file():
@@ -197,5 +201,5 @@ def _config_path_from_context(context: AgenticContext, process_id: str | None = 
     if not candidate.is_dir():
         return None
 
-    generated = config_for_assets_dir(process_id, candidate, mcp, add_dirs)
+    generated = config_for_assets_dir(process_id, candidate, mcp, add_dirs, provider=provider)
     return str(generated) if generated else None

@@ -1,16 +1,15 @@
-"""API-key auth binding for agentic worker harnesses.
+"""Turning a chosen ``LLMSource`` into a spawn binding.
 
-When a harness's ``Capability.auth_mode == "api"``, its worker spawns against a
-stored LLM-provider key (see :mod:`flow_sdk.cli.auth.lm_api_keys`) instead of the
-vendor device-login credentials. Each driver declares an :class:`ApiAuthSpec` with
-the exact env / model / config it needs on the provider — the values proven to work
-in the Docker OpenRouter runs.
+WHICH source funds a worker is decided by ``resolve_llm_source`` (``llm_source.py``);
+this module owns the other half — the per-vendor recipe that turns that decision into
+env vars, a model slug and (codex) ``-c`` overrides. Each driver declares an
+:class:`ApiAuthSpec` with the exact values proven to work against the provider in the
+Docker OpenRouter runs.
 
-This module is the single source of truth for that binding, consumed by three
-places:
+Consumed in three places:
   * env injection  — folded into ``apply_worker_secret_env`` at spawn;
   * model / config override — applied to the CLI options before argv is frozen;
-  * auth probe      — reports ``auth_mode="api"`` and the harness's providers.
+  * auth probe      — reports the resolved source's provider.
 
 It intentionally lives outside ``auth_probe.py`` (which is kept flow_sdk-import-free)
 because ``ApiAuthSpec`` references :class:`LMApiProvider`.
@@ -18,6 +17,7 @@ because ``ApiAuthSpec`` references :class:`LMApiProvider`.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable
 
@@ -29,6 +29,8 @@ from flow_sdk.flowpad_types.vendors import vendor_or_none
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class ProviderBinding:
@@ -38,6 +40,11 @@ class ProviderBinding:
     token_env_var: str
     base_env: dict[str, str]
     config_overrides: tuple[tuple[str, str], ...] = ()
+    #: opencode is configured by FILE, not env: its OpenRouter provider is built in and honours no
+    #: base-URL variable (verified against 1.18.25 -- ``OPENROUTER_BASE_URL`` is ignored and the CLI
+    #: still calls openrouter.ai). Its generated ``opencode.json`` is the only way to redirect it, so
+    #: a binding may carry a ``provider`` fragment to merge into that file.
+    provider_options: dict[str, dict] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -86,6 +93,8 @@ class WorkerApiAuth:
     env: dict[str, str] = field(default_factory=dict)
     model_slug: str | None = None
     config_overrides: list[tuple[str, str]] = field(default_factory=list)
+    #: ``opencode.json`` ``provider`` fragment; empty for every env-configured harness.
+    provider_options: dict[str, dict] = field(default_factory=dict)
 
 
 # ── Per-driver specs (proven OpenRouter values) ──────────────────────────────
@@ -170,7 +179,10 @@ CODEX_API_AUTH_SPEC = ApiAuthSpec(
     tier_models={
         "sm": "openai/gpt-5-mini",
         "md": "openai/gpt-5",
-        "lg": "openai/gpt-5",
+        # Was also ``openai/gpt-5``, which made the lg tier a no-op: asking for the
+        # accurate model got the balanced one. Verified against the live OpenRouter
+        # catalog rather than guessed.
+        "lg": "openai/gpt-5-pro",
     },
     supported_providers=(LMApiProvider.OPENROUTER, LMApiProvider.FLOWPAD),
     default_provider=LMApiProvider.OPENROUTER,
@@ -198,13 +210,26 @@ COPILOT_API_AUTH_SPEC = ApiAuthSpec(
     tier_models={
         "sm": "openai/gpt-5-mini",
         "md": "openai/gpt-5",
-        "lg": "openai/gpt-5",
+        "lg": "openai/gpt-5-pro",  # was a duplicate of md -- see the codex spec
     },
     supported_providers=(LMApiProvider.OPENROUTER, LMApiProvider.FLOWPAD),
     default_provider=LMApiProvider.OPENROUTER,
     model_env_vars=("COPILOT_PROVIDER_MODEL_ID", "COPILOT_PROVIDER_WIRE_MODEL", "COPILOT_MODEL"),
     hub_endpoint_binding=_copilot_hub_binding,
 )
+
+def _opencode_hub_binding(url: str) -> ProviderBinding:
+    """opencode keeps its own OpenRouter provider and its bare key; only the base URL moves.
+
+    Nothing goes in ``base_env`` because opencode reads no base-URL variable -- the redirect has to
+    reach it through the generated ``opencode.json``.
+    """
+    return ProviderBinding(
+        token_env_var="OPENROUTER_API_KEY",
+        base_env={},
+        provider_options={"openrouter": {"options": {"baseURL": f"{url}/v1"}}},
+    )
+
 
 OPENCODE_API_AUTH_SPEC = ApiAuthSpec(
     # OpenCode resolves OpenRouter from a bare key in the environment — it is a
@@ -217,10 +242,11 @@ OPENCODE_API_AUTH_SPEC = ApiAuthSpec(
     tier_models={
         "sm": "openrouter/z-ai/glm-4.7-flash",
         "md": "openrouter/z-ai/glm-5.2",
-        "lg": "openrouter/z-ai/glm-5.2",
+        "lg": "openrouter/z-ai/glm-5.3",  # was a duplicate of md -- see the codex spec
     },
-    supported_providers=(LMApiProvider.OPENROUTER,),
+    supported_providers=(LMApiProvider.OPENROUTER, LMApiProvider.FLOWPAD),
     default_provider=LMApiProvider.OPENROUTER,
+    hub_endpoint_binding=_opencode_hub_binding,
 )
 
 
@@ -238,53 +264,108 @@ def driver_api_auth_spec(worker_type: str) -> ApiAuthSpec | None:
     return _SPECS.get(vendor.key) if vendor else None
 
 
-async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | None:
-    """Resolve the API-key binding for *process*, or None when not in api mode.
+def endpoint_invoke_url(typeid) -> str | None:
+    """The absolute invoke URL for a hub endpoint typeid, or ``None`` when it is not one.
 
-    Raises :class:`WorkerSpawnError` when api mode is selected but no key is stored
-    for the provider — better a clear failure than a silent fall-through to the
-    vendor device-login picker (which hangs the turn).
+    Deliberately unvalidated against any local list: the hub authorizes every ``invoke``
+    against the endpoint in the URL, so a stale or forged typeid can only earn a 401/403 --
+    it cannot reach a budget this caller may not spend. That is what lets an override carry
+    no new trust assumptions, and it means a freshly-shared endpoint works before any local
+    cache has heard of it.
+    """
+    if not typeid:
+        return None
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint, hub_invoke_path  # noqa: PLC0415
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+    from flow_sdk.instance_settings.llm_endpoint import hub_origin  # noqa: PLC0415
+
+    try:
+        parsed = TypeId(str(typeid))
+    except (TypeError, ValueError):
+        return None
+    if parsed.type != LLMEndpoint.get_type():
+        # A well-formed typeid of the wrong type would otherwise build a plausible-looking
+        # invoke URL for something that is not a budget at all.
+        return None
+    return f"{hub_origin()}{hub_invoke_path(parsed)}"
+
+
+async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | None:
+    """Materialize the spawn binding for whichever ``LLMSource`` funds *process*.
+
+    Returns ``None`` for a DEVICE source -- the vendor CLI reads its own credentials, so
+    there is nothing to inject, and ``None`` is what "spawn with device auth" has always
+    meant to every caller.
+
+    Which source wins is NOT decided here any more: ``resolve_llm_source`` owns the
+    ladder, so the answer this spawn uses and the answer the picker renders come from one
+    place and cannot disagree. This function owns the other half -- turning a chosen
+    source into env, model slug and config overrides.
+
+    Raises :class:`WorkerSpawnError` when nothing can fund the spawn, carrying every
+    candidate's reason rather than a sentence written here.
     """
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
         WorkerSpawnError,
         worker_capability_kind,
     )
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import (  # noqa: PLC0415
+        LLMSourceError,
+        LLMSourceKind,
+        resolve_llm_source,
+    )
     from flow_sdk.builtin.capability import Capability
+    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key
 
     worker_type = getattr(process.driver, "name", None)
     spec = driver_api_auth_spec(worker_type) if worker_type else None
     if spec is None:
         return None
 
-    cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
-    if cap is None or getattr(cap, "auth_mode", "device") != "api":
+    try:
+        source = await resolve_llm_source(process)
+    except LLMSourceError as exc:
+        raise WorkerSpawnError(worker_type, str(exc)) from exc
+
+    if source.kind is LLMSourceKind.DEVICE:
         return None
 
-    provider_value = cap.api_provider or spec.default_provider.value
     try:
-        provider = LMApiProvider(provider_value)
+        provider = LMApiProvider(source.provider)
     except ValueError as exc:
-        raise WorkerSpawnError(worker_type, f"{worker_type} is bound to unknown provider {provider_value!r}") from exc
+        raise WorkerSpawnError(worker_type, f"{worker_type} is bound to unknown provider {source.provider!r}") from exc
     if provider not in spec.supported_providers:
         raise WorkerSpawnError(worker_type, f"{worker_type} cannot use provider {provider.value!r}")
-    key = get_lm_api(provider)
-    if not key:
-        if provider is LMApiProvider.FLOWPAD:
-            raise WorkerSpawnError(
-                worker_type,
-                f"{worker_type} is bound to the FlowPad hub LLM endpoint but this box is not logged in "
-                f"to the hub or no endpoint is bound (the hub binds one after login).",
-            )
-        raise WorkerSpawnError(
-            worker_type,
-            f"{worker_type} is set to API-key auth but no {provider.value} key is stored "
-            f"(set one via set_lm_api / the harness modal).",
-        )
+
+    # For FLOWPAD the endpoint and the key are one question: the "key" IS the hub login,
+    # and what makes it usable is having an endpoint to point it at.
     hub_invoke_url = None
     if provider is LMApiProvider.FLOWPAD:
+        from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
         from flow_sdk.instance_settings.llm_endpoint import hub_llm_endpoint_invoke_url  # noqa: PLC0415
 
-        hub_invoke_url = hub_llm_endpoint_invoke_url()
+        hub_invoke_url = endpoint_invoke_url(source.endpoint_typeid) or hub_llm_endpoint_invoke_url()
+        key = resolve_hub_api_key() if hub_invoke_url else None
+        # ``tier_models`` are OpenRouter slugs, and the wire quirks around them (claude's
+        # blank ANTHROPIC_API_KEY, codex's ``wire_api = responses``) were proven against
+        # OpenRouter's protocol endpoints. A hub endpoint whose ROOT is a direct vendor is
+        # therefore about to be sent a slug it does not know. We do not refuse -- an
+        # endpoint's own ``filters.model_map`` can legitimately remap it, and refusing
+        # would break a working setup -- but this must not be a silent field-only failure.
+        root_provider = source.root_provider.strip().lower()
+        if root_provider and root_provider != LMApiProvider.OPENROUTER.value:
+            logger.warning(
+                "%s is spending hub endpoint %s whose root provider is %r, not openrouter; the "
+                "tier slugs are OpenRouter names and will only resolve if that endpoint's "
+                "filters.model_map remaps them",
+                worker_type,
+                source.endpoint_typeid or "(box binding)",
+                root_provider,
+            )
+    else:
+        key = get_lm_api(provider)
+    if not key:
+        raise WorkerSpawnError(worker_type, f"{worker_type}: {source.name} is unusable (no credential available)")
     try:
         binding = spec.binding_for(provider, hub_invoke_url=hub_invoke_url)
     except ValueError as exc:
@@ -293,6 +374,7 @@ async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | 
     # Effective tier→slug map = code defaults ⊕ the harness's user overrides for
     # this provider (Capability.model_map). Custom option names resolve here too;
     # an unknown value still passes through as a literal slug.
+    cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
     overrides = (getattr(cap, "model_map", None) or {}).get(provider.value) or {}
     merged = {**spec.tier_models, **overrides}
     tier = (process.cli_config or {}).get("model")
@@ -301,7 +383,12 @@ async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | 
     if slug:
         for var in spec.model_env_vars:
             env[var] = slug
-    return WorkerApiAuth(env=env, model_slug=slug, config_overrides=list(binding.config_overrides))
+    return WorkerApiAuth(
+        env=env,
+        model_slug=slug,
+        config_overrides=list(binding.config_overrides),
+        provider_options=dict(binding.provider_options),
+    )
 
 
 async def apply_api_model_to_options(cmd, process: "AgenticProcess") -> None:
@@ -312,6 +399,9 @@ async def apply_api_model_to_options(cmd, process: "AgenticProcess") -> None:
         return
     if auth.model_slug:
         cmd.model = auth.model_slug
+    if auth.provider_options and hasattr(cmd, "provider_options"):
+        # File-configured harnesses (opencode) reach their endpoint through this, not through env.
+        cmd.provider_options = dict(auth.provider_options)
     if auth.config_overrides and hasattr(cmd, "extra_config_overrides"):
         cmd.extra_config_overrides = [
             *list(getattr(cmd, "extra_config_overrides", []) or []),

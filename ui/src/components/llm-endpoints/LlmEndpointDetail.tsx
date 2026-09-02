@@ -18,7 +18,7 @@ import { LimitsRemaining } from './LimitsRemaining';
 import { CredentialChip, EndpointLink, KindBadge, ProviderBadge } from './LlmEndpointsList';
 import { ModelsList } from './ModelsList';
 import { UsagePanel } from './UsagePanel';
-import { canConfigure, canRemove, endpointTypeId } from './endpoint-catalog';
+import { canConfigure, canRemove, canShare, endpointTypeId } from './endpoint-catalog';
 import { LLM_ENDPOINT_TABS, openLlmEndpoint, type LlmEndpointTab } from './llm-endpoints-pointer';
 import { useLlmEndpointChain } from './use-llm-endpoints';
 
@@ -32,6 +32,7 @@ export interface LlmEndpointDetailProps {
   onTab: (tab: LlmEndpointTab) => void;
   onEdit: (endpoint: LLMEndpoint) => void;
   onDelete: (endpoint: LLMEndpoint) => void;
+  onShare: (endpoint: LLMEndpoint) => void;
 }
 
 function EffectiveFilters({ filters }: { filters: Record<string, unknown> }) {
@@ -75,6 +76,7 @@ export function LlmEndpointDetail({
   onTab,
   onEdit,
   onDelete,
+  onShare,
 }: LlmEndpointDetailProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -107,6 +109,11 @@ export function LlmEndpointDetail({
           <Button variant="outline" size="sm" onClick={() => onEdit(endpoint)} data-testid="llm-detail-edit">
             <Pencil className="me-1 h-3.5 w-3.5" />
             <Trans>Edit</Trans>
+          </Button>
+        )}
+        {endpoint && canShare(endpoint) && (
+          <Button variant="outline" size="sm" onClick={() => onShare(endpoint)} data-testid="llm-detail-share">
+            <Trans>Share</Trans>
           </Button>
         )}
         {endpoint && canRemove(endpoint) && (

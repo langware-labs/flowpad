@@ -78,6 +78,9 @@ const HelpdeskPortalPage = lazy(() =>
 );
 // Lazy like its neighbours: both hub token screens pull recharts, which no
 // user who never opens them should pay for in this chunk.
+const LlmSourcesView = lazy(() =>
+  import('@src/components/llm-sources/LlmSourcesView').then((m) => ({ default: m.LlmSourcesView })),
+);
 const LlmEndpointsView = lazy(() =>
   import('@src/components/llm-endpoints/LlmEndpointsView').then((m) => ({ default: m.LlmEndpointsView })),
 );
@@ -350,6 +353,13 @@ export function ContentPanel({
         return <LiveStatus />;
       case ViewType.CREDENTIALS:
         return <CredentialsView />;
+      // DESK only: every fact it renders is a box fact, and its box action 404s on the hub.
+      case ViewType.LLM_SOURCES:
+        return (
+          <Suspense fallback={null}>
+            <LlmSourcesView pointer={currentDock?.pointer} />
+          </Suspense>
+        );
       case ViewType.AI_CONFIG:
         return <AIConfigView />;
       case ViewType.HOOKS:
