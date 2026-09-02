@@ -8789,10 +8789,6 @@ msgstr "Index of prompts sent in this session"
 msgid "Index project on selection"
 msgstr "Index project on selection"
 
-#: src/components/browseable-tree/adapters/markdownFolderRoot.tsx
-msgid "Index this folder for search"
-msgstr "Index this folder for search"
-
 #: src/i18n/pref-labels.ts
 msgid "Index when"
 msgstr "Index when"
@@ -15362,6 +15358,10 @@ msgstr "Search index is warming up. Run Refresh Index to populate it."
 #: src/types/ViewType.ts
 msgid "Search indexes"
 msgstr "Search indexes"
+
+#: src/components/browseable-tree/adapters/markdownFolderRoot.tsx
+msgid "Search indexing for this folder"
+msgstr "Search indexing for this folder"
 
 #: src/components/assets/editor/translations/DocLanguageSwitcher.tsx
 #: src/components/assets/editor/translations/TranslationsPanel.tsx

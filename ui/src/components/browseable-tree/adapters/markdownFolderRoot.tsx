@@ -334,7 +334,10 @@ function folderBrowseable(args: {
   const ragAction: ToolbarAction = {
     id: `rag:${typeid}:${absPath}`,
     icon: <RagToggleGlyph path={absPath} />,
-    label: t`Index this folder for search`,
+    // Neutral wording on purpose: the label is fixed when the row is BUILT, while the answer
+    // it describes changes at render time. "Index this folder" on a button that is about to
+    // UN-index it is worse than naming what the button is for.
+    label: t`Search indexing for this folder`,
     // The wrapper is load-bearing: `toggleRoot` resolves to the new coverage, and
     // `ToolbarAction.run` is `void | Promise<void>` — returning it directly is a type error.
     run: async () => {
