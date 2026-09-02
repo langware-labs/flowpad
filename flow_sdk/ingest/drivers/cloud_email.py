@@ -68,6 +68,9 @@ class CloudEmailDriver(IngestDriver):
     identity_config_key = "agent_id"
     #: The hub sends and replies for us — see `send`.
     sends = True
+    #: Mailbox-grade while watched. This reuses the poller's attention lease;
+    #: the configured background cadence remains untouched.
+    attention_poll_seconds = 5
 
     def channel_for(self, source) -> str:
         """The medium, not the transport.

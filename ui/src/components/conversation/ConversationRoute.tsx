@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, FolderOpen, Loader2 } from 'lucide-react';
-import { Conversation, Project, type Task, TypeId } from '@sdk';
+import { Agent, Conversation, Project, type Task, TypeId } from '@sdk';
 import { useAuth, useProject } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -15,6 +15,7 @@ import {
 } from '@src/components/project-selector/use-ensure-project';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { notify } from '@src/notifications';
+import { Button } from '@src/components/ui/button';
 import { ConversationPanel, EditableConversationTitle } from './ConversationPanel';
 import { ConversationHeaderSession } from './ConversationHeaderSession';
 import { MembersAvatarStack } from './MembersAvatarStack';
@@ -85,6 +86,7 @@ function ConversationSetProjectButton({
       ensureProject,
       projectItems,
       saving,
+      t,
       task?.id,
       task?.project_id,
     ],
@@ -152,8 +154,36 @@ export function ConversationRoute() {
   // filter is linkable and reload-safe without minting a second tab.
   const threadId =
     currentDock?.viewType === ViewType.CONVERSATION ? (currentDock.threadId ?? null) : null;
+  const agentId = currentDock?.viewType === ViewType.CONVERSATION ? currentDock.agentScopeId : null;
 
-  const { conversation, task, senderName, taskMissing } = useConversation(conversationId);
+  const scopeKey = agentId && conversationId ? `${agentId}:${conversationId}` : null;
+  const [scopeDecision, setScopeDecision] = useState<{ key: string; allowed: boolean | null } | null>(null);
+  const scopeAllowed = !scopeKey ? true : scopeDecision?.key === scopeKey ? scopeDecision.allowed : null;
+  useEffect(() => {
+    let live = true;
+    if (!agentId || !conversationId || !scopeKey) return;
+    setScopeDecision({ key: scopeKey, allowed: null });
+    let scopedAgent: Agent;
+    try {
+      scopedAgent = new Agent({ id: agentId });
+    } catch {
+      setScopeDecision({ key: scopeKey, allowed: false });
+      return;
+    }
+    void scopedAgent
+      .inboxScope()
+      .then((scope) => {
+        if (live) setScopeDecision({ key: scopeKey, allowed: scope.conversation_ids.includes(conversationId) });
+      })
+      .catch(() => {
+        if (live) setScopeDecision({ key: scopeKey, allowed: false });
+      });
+    return () => {
+      live = false;
+    };
+  }, [agentId, conversationId, scopeKey]);
+
+  const { conversation, task, senderName, taskMissing } = useConversation(scopeAllowed ? conversationId : null);
 
   // Stable TypeId for the members stack — useMembers' fetch effect depends on
   // the typeid by reference, so an inline `new TypeId(...)` would re-arm it on
@@ -169,9 +199,9 @@ export function ConversationRoute() {
   const handleMessageNavigate = useCallback(
     (id: string) => {
       if (!conversationId) return;
-      navigation.openDock(DockPointer.forConversation(conversationId, { messageId: id }));
+      navigation.openDock(DockPointer.forConversation(conversationId, { messageId: id, agentId }));
     },
-    [navigation, conversationId],
+    [navigation, conversationId, agentId],
   );
 
   // Opening / closing a thread is a NAVIGATION, like every other selection
@@ -179,17 +209,37 @@ export function ConversationRoute() {
   const handleThreadNavigate = useCallback(
     (id: string | null) => {
       if (!conversationId) return;
-      navigation.openDock(DockPointer.forConversation(conversationId, { thread: id }));
+      navigation.openDock(DockPointer.forConversation(conversationId, { thread: id, agentId }));
     },
-    [navigation, conversationId],
+    [navigation, conversationId, agentId],
   );
 
-  const goBack = () => navigation.openDock(DockPointer.forInbox());
+  const goBack = () => navigation.openDock(agentId ? DockPointer.forAgentInbox(agentId) : DockPointer.forInbox());
 
   if (!conversationId) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
         <Trans>No conversation specified.</Trans>
+      </div>
+    );
+  }
+
+  if (agentId && scopeAllowed === null) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        <Trans>Loading conversation…</Trans>
+      </div>
+    );
+  }
+
+  if (agentId && !scopeAllowed) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+        <Trans>This conversation is not in this Agent inbox.</Trans>
+        <Button variant="outline" size="sm" onClick={goBack}>
+          <ArrowLeft className="me-1.5 h-3.5 w-3.5" />
+          <Trans>Back to inbox</Trans>
+        </Button>
       </div>
     );
   }
@@ -279,6 +329,7 @@ export function ConversationRoute() {
           onMessageNavigate={handleMessageNavigate}
           threadId={threadId}
           onThreadNavigate={handleThreadNavigate}
+          agentId={agentId}
         />
       </div>
     </div>

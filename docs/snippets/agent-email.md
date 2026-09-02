@@ -24,18 +24,20 @@ pirate = Agent(
     email_allowed_senders=[gmail.account_key],
 )
 await pirate.save()
-await pirate.enableEmail()
+assert pirate.inbox is None
+inbox = await pirate.enableEmail()
+assert pirate.inbox is inbox
 
 sent = await gmail.send(
     EmailMessageSpec(
-        to=[pirate.inbox.address],
+        to=[inbox.address],
         subject="Treasure",
         body="Where is the treasure?",
     )
 )
 reply = await gmail.expect_reply(sent)
 
-assert reply.author_external_id == pirate.inbox.address
+assert reply.author_external_id == inbox.address
 assert "arr" in reply.body.lower()
 ```
 

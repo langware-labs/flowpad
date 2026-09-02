@@ -1,7 +1,7 @@
 import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, FSRef } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Sparkles } from 'lucide-react';
+import { Loader2, Mail, Sparkles } from 'lucide-react';
 
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
@@ -24,6 +24,8 @@ import { useProject } from '@sdk/react/hooks';
 import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
 import { AGENT_EFFORTS, AGENT_MODEL_TIERS, AGENT_PERMISSION_MODES, AGENT_WORKER_TYPES } from './agent-vocabularies';
 import { AgentDocumentPatch, patchAgentDocument } from './agent-document';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
 
 interface AgentProfileEditorProps {
   /** Always resolved — AssetEditorRouter renders this inside an
@@ -46,6 +48,7 @@ interface AgentProfileEditorProps {
  */
 export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEditorProps) {
   const { t } = useLingui();
+  const { navigation } = useDockNavigation();
 
   // Keyed on the STABLE typeId so a save() (which hands back a fresh ref)
   // doesn't churn local field state — same reason TaskAssetEditor does it.
@@ -241,6 +244,15 @@ export function AgentProfileEditor({ agent, mainRef, onSaved }: AgentProfileEdit
               aria-label={t`Enabled`}
             />
           </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => navigation.openDock(DockPointer.forAgentInbox(agent.id))}
+            data-testid="agent-inbox-button"
+          >
+            <Mail className="me-1.5 h-3.5 w-3.5" />
+            <Trans>Inbox</Trans>
+          </Button>
           <Button
             size="sm"
             disabled={!agent.enabled || using}

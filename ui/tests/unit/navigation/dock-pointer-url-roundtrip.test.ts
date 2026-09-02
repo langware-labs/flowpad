@@ -135,6 +135,7 @@ function representativePointers(): DockPointer[] {
       .withHost(`agentic_process-${U('h058')}`)
       .withViewMode(ViewMode.Vibe),
     DockPointer.forInbox({ conversationId: conversation, messageId: U('feed') }),
+    DockPointer.forAgentInbox(U('a9e1')),
     DockPointer.forConversation(conversation, { messageId: U('babe') }, Layout.WIN),
     DockPointer.forTasks(U('a1fa'), { conversationId: conversation, layout: Layout.DEV }),
     DockPointer.forSearch('release notes closed', {

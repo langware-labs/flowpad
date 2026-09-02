@@ -204,7 +204,7 @@ async def handle_inbound(item) -> bool:
     # who to answer, and the turn has already run at that point — so dropping
     # the result silently spends a real turn and loses the answer with no trace,
     # which reads downstream as "the agent never replied".
-    outcome = await dispatch_channel_reply(conversation_id, text=reply)
+    outcome = await dispatch_channel_reply(conversation_id, text=reply, source_id=source.id)
     if getattr(outcome, "status", "") == "FAIL":
         logger.warning(
             "[agent-mail] reply for %s could not be dispatched: %s",

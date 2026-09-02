@@ -29,6 +29,10 @@ class EmailInbox(Entity):
     def is_file_backed(self) -> bool:
         return False
 
+    @property
+    def is_active(self) -> bool:
+        return self.status == "active"
+
     @classmethod
     def from_hub_descriptor(
         cls,
