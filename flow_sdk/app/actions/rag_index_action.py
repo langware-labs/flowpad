@@ -1,7 +1,8 @@
 """The REST surface of a ``RagIndex``: choose folders, run a pass, ask a question.
 
-Four verbs and no more. Coverage is edited (``add-root`` / ``remove-root``), a pass is asked
-for (``index``), and the index is questioned (``query``). Everything a card needs to render —
+Five verbs and no more. Coverage is edited (``add-root`` / ``remove-root``, or
+``toggle-root`` for a caller that knows only a folder and not which index owns it), a pass is
+asked for (``index``), and the index is questioned (``query``). Everything a card needs to render —
 status, counts, the last error, the roots themselves — is already on the entity, so there is no
 status action: a GET of the row IS the status.
 
@@ -86,6 +87,27 @@ async def index_action():
         await index.save(notify=False)
         await reconcile.dispatch_due_indexes()
     return ApiSuccessResponse(data={"scheduled": True, "refusal": ""})
+
+
+@action.post(action_name="rag-toggle-root", types=None)
+async def toggle_root_action():
+    """Make a folder searchable, or stop. Addressed by PATH, not by index.
+
+    Entity-less on purpose: the caller is a folder row in the tree, which knows a path and has
+    no reason to know which index owns it — or to pick one before it can answer "should this be
+    searchable". The box's single index is found or created here. When there is a reason to run
+    several, this is where the choice belongs.
+    """
+    from flow_sdk.builtin.rag_index import RagIndex
+
+    path = str((await _body()).get("path") or "")
+    if not path:
+        raise HTTPException(status_code=400, detail="path is required")
+
+    index, covered = await RagIndex.toggle_root(path)
+    return ApiSuccessResponse(
+        data={"covered": covered, "index_id": str(index.id), "roots": index.roots}
+    )
 
 
 @action.post(action_name="query", types=["rag_index"])

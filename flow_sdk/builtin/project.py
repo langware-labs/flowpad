@@ -22,7 +22,7 @@ from pydantic.alias_generators import to_camel
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Persist, Sharing
-from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
@@ -58,6 +58,58 @@ def _generate_session_code() -> str:
     left = "".join(random.choices(alphabet, k=4))
     right = "".join(random.choices(alphabet, k=4))
     return f"{left}-{right}"
+
+
+def mount_key(path: str | None) -> str:
+    """The canonical lookup key for a project mount path.
+
+    One spelling for BOTH sides of the ``index_by_mount`` dictionary — the keys
+    it builds and the paths callers look it up with. They used to differ by a
+    trailing-slash strip applied only on the build side, so a root-ish path
+    could be stored as ``/x`` and looked up as ``/x/``. That miss reads as "no
+    project is mounted here", which is indistinguishable from the real thing at
+    every call site.
+    """
+    return canonical_posix_path(path).rstrip("/") if path else ""
+
+
+def assets_under_roots(entities: list[Any], roots: list[str]) -> list[Any]:
+    """Asset-backed ``entities`` whose ``asset_ref`` lives under one of ``roots``.
+
+    Ordered by canonical asset path, then entity id, so database ROW ORDER can
+    never decide which asset a caller treats as "the first one". That is a
+    correctness property, not tidiness: for ``Helpdesk``, first-wins picks the
+    company a customer's support ticket is delivered to. ``helpdesk_resolver``
+    sorts by this same key and calls this helper rather than restating the rule,
+    so the two places that decide "the first desk" cannot drift apart.
+
+    The sort key is explicitly ``(path, id)`` — sorting the raw tuples would
+    fall through to comparing the entities themselves on a tie, which raises.
+    """
+    return [
+        entity
+        for canonical, _entity_id, entity in scoped_assets(entities)
+        if any(is_path_under(canonical, root) for root in roots)
+    ]
+
+
+def scoped_assets(entities: list[Any]) -> list[tuple[str, str, Any]]:
+    """``(canonical asset path, id, entity)`` for asset-backed ``entities``, in that order.
+
+    The prepared form behind :func:`assets_under_roots`, exposed because
+    canonicalizing is a ``realpath`` syscall per entity: a caller asking about
+    SEVERAL roots prepares the rows once and filters them per root, instead of
+    re-canonicalizing and re-sorting the whole list for every root. Filtering a
+    sorted list preserves order, so the "(path, id) decides first-wins" rule is
+    the same one either way.
+    """
+    scoped: list[tuple[str, str, Any]] = []
+    for entity in entities:
+        asset_ref = getattr(entity, "asset_ref", "")
+        if not asset_ref:
+            continue
+        scoped.append((canonical_posix_path(asset_ref), str(entity.id), entity))
+    return sorted(scoped, key=lambda row: row[:2])
 
 
 def _detach_git_history(repo_root: Path) -> None:
@@ -664,7 +716,7 @@ class Project(Entity):
             mount = proj.fs_storage_mount_path
             if not mount or not is_valid_project_cwd(mount, include_temp=True):
                 continue
-            key = canonical_posix_path(mount).rstrip("/")
+            key = mount_key(mount)
             if key and key not in out:
                 out[key] = proj
         return out
@@ -2159,6 +2211,127 @@ class Project(Entity):
             }
         )
 
+    @action.post(action_name="adopt-helpdesk-from-git")
+    async def adopt_helpdesk_from_git(
+        self,
+        url: str,
+        branch: str = "",
+        scope: str = "private",
+    ) -> "ApiResponse":
+        """Attach a repo as a context folder and report the help desk it carries.
+
+        This does NOT attach differently from ``add_context_dir_from_git`` — it
+        delegates to it verbatim and adds only a REPORT. That distinction is the
+        whole design: a repo becomes a desk by shipping a manifest and being
+        indexed, so forking the attach would create a second way for a folder to
+        arrive and a second thing to keep correct. What the UI actually lacked
+        was an answer to "did I just get a desk, and which one?", which needs
+        path→entity resolution and therefore belongs on this side.
+
+        ``outcome`` is a closed set rather than a handful of booleans, because
+        each value is a different sentence to a person:
+
+        * ``adopted`` — a desk was found and it is the one that will serve this
+          project.
+        * ``already_adopted`` — same, but the folder was already linked.
+        * ``shadowed`` — a desk was found, but ANOTHER desk resolves first and
+          keeps the tickets. See below; this is the dangerous one.
+        * ``no_manifest`` — the repo carries no desk. The folder stays attached
+          (it is still a perfectly good context folder) and the caller is told.
+        * ``invalid_desk_project_id`` — a desk IS here but names no usable queue,
+          so tickets would fall through to somebody else's desk.
+        * ``no_portal_project`` — a desk IS here but its checkout has no Project
+          row, so the portal cannot be opened.
+
+        **Why the shadowing check exists.** ``resolve_adopted_helpdesk`` walks
+        ``direct_context_roots()`` — this project's own mount first, then context
+        roots in declaration order — and stops at the first root holding a desk.
+        "The desk under the root I just attached" is a DIFFERENT question. Report
+        the second one and a project that already had a desk gets a success
+        dialog naming the new vendor while every ticket keeps going to the old
+        one, with nothing anywhere saying so. Routing a customer's support
+        request to a company they did not choose is the worst failure this area
+        has (see ``helpdesk_resolver``), so it is named, not smoothed over.
+        """
+        from flow_sdk.app.helpdesk_resolver import resolve_adopted_helpdesk  # noqa: PLC0415
+        from flow_sdk.builtin.helpdesk import Helpdesk  # noqa: PLC0415
+
+        attached = await self.add_context_dir_from_git(url, branch=branch, scope=scope)
+        if not isinstance(attached, ApiSuccessResponse):
+            # The attach failures are already well-worded and carry their own
+            # status codes — the 409 branch conflict in particular names both
+            # branches. Re-wrapping them here would only blur them.
+            return attached
+
+        data = dict(attached.data or {})
+        root = mount_key(data.get("path"))
+        base = {
+            "folder_id": data.get("folder_id"),
+            "path": root,
+            "scope": data.get("scope", scope),
+            "already_linked": bool(data.get("already_linked")),
+            "scope_changed": bool(data.get("scope_changed")),
+            "helpdesk_id": None,
+            "display_name": None,
+            "welcome_message": None,
+            "avatar_url": None,
+            "desk_project_id": None,
+            "portal_project_id": None,
+            "shadowed_by": None,
+        }
+
+        all_desks = await Helpdesk.get_all({})
+        desks = assets_under_roots(all_desks, [root]) if root else []
+        if not desks:
+            return ApiSuccessResponse(data={**base, "outcome": "no_manifest"})
+        desk = desks[0]
+
+        queue_id = desk.desk_project_id
+        queue_id = queue_id.strip() if isinstance(queue_id, str) else ""
+        found = {
+            **base,
+            "helpdesk_id": str(desk.id),
+            "display_name": desk.display_name,
+            "welcome_message": desk.welcome_message,
+            "avatar_url": desk.avatar_url,
+            "desk_project_id": queue_id or None,
+        }
+        if not is_valid_entity_id(queue_id):
+            return ApiSuccessResponse(data={**found, "outcome": "invalid_desk_project_id"})
+
+        # The portal's Project row is minted as a side effect of the git driver's
+        # materialize; recover_by_path is the same belt-and-braces reconcile_bootstrap
+        # carries, and for the same reason — index_by_mount never mints.
+        projects_by_mount = await Project.index_by_mount()
+        portal = projects_by_mount.get(root) or await Project.recover_by_path(root)
+        if portal is None:
+            # Not cosmetic: without a Project row `helpdesk-ensure` skips its
+            # adopted branch and silently opens the hub's DEFAULT desk instead.
+            return ApiSuccessResponse(data={**found, "outcome": "no_portal_project"})
+        found["portal_project_id"] = str(portal.id)
+
+        serving = await resolve_adopted_helpdesk(str(self.id))
+        if serving is not None and mount_key(serving.mount_path) != root:
+            # Same helper, same first-wins rule the resolver itself used, so the
+            # desk we NAME as the shadow is the desk that actually serves.
+            shadowing = assets_under_roots(all_desks, [mount_key(serving.mount_path)])
+            shadow = shadowing[0] if shadowing else None
+            return ApiSuccessResponse(
+                data={
+                    **found,
+                    "outcome": "shadowed",
+                    "shadowed_by": {
+                        "path": mount_key(serving.mount_path),
+                        "display_name": shadow.display_name if shadow is not None else None,
+                        "desk_project_id": serving.queue_project_id,
+                    },
+                }
+            )
+
+        return ApiSuccessResponse(
+            data={**found, "outcome": "already_adopted" if found["already_linked"] else "adopted"}
+        )
+
     @action.post(action_name="reconcile-bootstrap")
     async def reconcile_bootstrap(self) -> "ApiResponse":
         """Converge this Project to the live dependencies in its manifest.
@@ -2248,7 +2421,7 @@ class Project(Entity):
                 )
                 continue
             data = dict(response.data or {})
-            root = canonical_posix_path(data.get("path") or "")
+            root = mount_key(data.get("path"))
             attached.append((dependency, data, root))
 
         # One Project table read for every attached root. The old per-root
@@ -2293,24 +2466,14 @@ class Project(Entity):
                 status_code=502,
             )
 
-        def assets_in_roots(entities: list[Any]) -> list[Any]:
-            scoped: list[tuple[str, str, Any]] = []
-            for entity in entities:
-                if not entity.asset_ref:
-                    continue
-                asset_ref = canonical_posix_path(entity.asset_ref)
-                if any(is_path_under(asset_ref, root) for root in roots):
-                    scoped.append((asset_ref, str(entity.id), entity))
-            return [entity for _asset_ref, _entity_id, entity in sorted(scoped)]
-
         all_journeys, all_skills, all_desks = await asyncio.gather(
             Journey.get_all({}),
             Skill.get_all({}),
             Helpdesk.get_all({}),
         )
-        journeys = assets_in_roots(all_journeys)
-        skills = assets_in_roots(all_skills)
-        desks = assets_in_roots(all_desks)
+        journeys = assets_under_roots(all_journeys, roots)
+        skills = assets_under_roots(all_skills, roots)
+        desks = assets_under_roots(all_desks, roots)
 
         declared_journeys = [
             (root, preferred) for root in roots if (preferred := read_bootstrap_manifest(Path(root)).autolaunch_journey)

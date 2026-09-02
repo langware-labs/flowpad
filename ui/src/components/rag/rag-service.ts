@@ -16,6 +16,21 @@ export interface RagHit {
   score: number;
 }
 
+/**
+ * Make *path* searchable, or stop — addressed by path, not by index.
+ *
+ * The tree asks this; it knows a folder and has no reason to know which index owns it. The
+ * backend finds the box's single index or creates it, so the first folder anybody marks does
+ * not first require a trip to the Search indexes screen.
+ */
+export async function toggleRoot(path: string): Promise<boolean> {
+  const data = await apiClient.post<{ covered: boolean; index_id: string; roots: string[] }>(
+    '/api/v1/graph/rag-toggle-root',
+    { path },
+  );
+  return !!data?.covered;
+}
+
 export async function addRoot(id: string, path: string): Promise<void> {
   await apiClient.post(`${base(id)}/add-root`, { path });
 }

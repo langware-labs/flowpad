@@ -4,6 +4,8 @@ import { FileText, Folder, FolderPlus, Library, Network, Plus, RefreshCw, User a
 import { lucideByName } from '@src/lib/lucide-by-name';
 import apiClient from '@sdk/client';
 import { RagFolderIcon } from '@src/components/browseable-tree/RagFolderIcon';
+import { RagToggleGlyph } from '@src/components/rag/RagToggleGlyph';
+import { toggleRoot } from '@src/components/rag/rag-service';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import type { AssetTypeInfo, AssetTypeVault } from '@src/hooks/use-asset-types';
@@ -325,6 +327,20 @@ function folderBrowseable(args: {
           },
         ]
       : [];
+  // Every docs folder can be made searchable, so every row carries the toggle — beside the
+  // knowledge browser, which is the same kind of thing: an action ON this folder rather than a
+  // way into it. The backend finds or creates the box's index, so the first folder anybody
+  // marks needs no visit to the Search indexes screen first.
+  const ragAction: ToolbarAction = {
+    id: `rag:${typeid}:${absPath}`,
+    icon: <RagToggleGlyph path={absPath} />,
+    label: t`Index this folder for search`,
+    // The wrapper is load-bearing: `toggleRoot` resolves to the new coverage, and
+    // `ToolbarAction.run` is `void | Promise<void>` — returning it directly is a type error.
+    run: async () => {
+      await toggleRoot(absPath);
+    },
+  };
   return {
     id: markdownFolderNodeId(typeid, absPath),
     kind,
@@ -334,7 +350,7 @@ function folderBrowseable(args: {
     icon: <RagFolderIcon Base={Folder} path={absPath} size={kind === 'vault-root' ? 'h-4 w-4' : 'h-3.5 w-3.5'} />,
     hasChildren: true,
     pointer: DockPointer.forAssetFolder(typeName, typeid, relPath),
-    toolbar: [...(folderToolbar(target, onCreateFolder) ?? []), ...kbAction],
+    toolbar: [...(folderToolbar(target, onCreateFolder) ?? []), ragAction, ...kbAction],
     dragData:
       kind === 'folder'
         ? {

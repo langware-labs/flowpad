@@ -210,8 +210,9 @@ with a dead credential parks every sibling on the next tick, even though the
 cycle that discovered it finished them. `segment_count` is stamped in the same
 roll-up, which is why a source that fails before enumerating reads 0.
 
-`may_poll()` is the ONE gate — `status == active and health != config_error` —
-asked by `is_due`, `request_poll` and the fast lane alike.
+`poll_refusal()` is the ONE gate — an empty reason means the source is active
+and not in `config_error`; otherwise the returned sentence says exactly why it
+cannot run. `is_due`, `request_poll` and the fast lane all ask it.
 
 **Lifecycle.** `NEW` is transient: `DataSource.save` resolves it on the way
 in — to `SETUP` (with a default `setup_detail`) when the driver declares
