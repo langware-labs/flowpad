@@ -135,6 +135,15 @@ worker boot, so attaching to a running process flips `restart_required` rather t
 * **`sent_at` / event time** — ours. A message's EVENT time (when the human sent it on its channel) as opposed to the PROCESSING clocks (`created_date`/`updated_date` — when our row was written). Projection-owned on `FlowMessage`; read everywhere through the one rule `event_time = sent_at or updated_date or created_date`; never render a message's processing clocks directly. See `docs/data-management/inbox-projection.md`.
 * **`MessageSpec`** — ours. The channel-generic OUTBOUND message value (`flow_sdk/builtin/source_item.py`): what a script hands `blocks.Inbox.send`. Subclasses add what their channel needs and own their `reply_to` constructor, because channels disagree on who a reply targets — `EmailMessageSpec` adds `subject` and replies to the AUTHOR's address; `TelegramMessageSpec` replies to the CHAT. Inbound stays `SourceItemSpec`.
 * **`ManifestSpec`** — ours. The shape of a data source's `data_source.json` and the `asset_spec` of the `DataSourceSpec` folder asset; every authoring rule is a validator on it.
+* **`LLMSource`** — ours, and the FOURTH thing this tree calls a "source", so read it precisely.
+  It is *where a worker's tokens come from* (`flow_sdk/schema/data_spec/llm_source_spec.py`): one
+  frozen `DataSpec` covering all three funding paths — a vendor **device login**, a stored
+  **api_key**, or a hub **endpoint**. It is NOT `DataSource` (a system of record we ingest from),
+  NOT `SourceItem` (a record one produces), and — the collision that actually bites — NOT the hub's
+  `source_llmendpoint` relationship, which is the fallback chain an `LLMEndpoint` allocation draws
+  *from*, one layer down and unrelated. An `LLMSource` names a way to pay; a `source_llmendpoint`
+  names a budget upstream of another budget. `resolve_llm_source` picks one per spawn, and its
+  `reason` field is what both the picker and the spawn error render.
 * **`KindRegistry`** — ours. The one register-by-kind table (`flow_sdk/utils/kind_registry.py`) behind the FSOrigin, SecretOrigin, email-inbox, serializer, ingest-provider and reflect-mode registries.
 
 ## Consolidation seams (2026-08-29, Phase 1)

@@ -523,7 +523,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // only fires for live new output, but ``plan_path`` survives persistence.
   useEffect(() => {
     if (!process || process.plan_path) return;
-    void process.getPlan();
+    // Fire-and-forget on mount, so it owns its failure: a backend that is down
+    // (or absent, as under vitest) would otherwise raise an unhandled rejection
+    // with no caller to receive it. No plan simply means the button stays put.
+    void process.getPlan().catch(() => undefined);
     // We intentionally only react to the process identity changing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [process?.id]);

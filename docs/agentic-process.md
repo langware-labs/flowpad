@@ -129,8 +129,20 @@ discovery value — the same source actual spawns use) and
 `unknown`, never `logged_out`). The result also carries an `auth_mode`
 (`device` / `api`) describing how the harness authenticates.
 
-A harness can authenticate two ways, selected by the per-harness `Capability`
-row's persisted `auth_mode` field:
+A worker is funded one of three ways, and which one is decided per spawn by
+`resolve_llm_source` (`cli_drivers/llm_source.py`) rather than read off a field.
+It returns an `LLMSource` — the one value type covering all three — carrying
+`eligible`/`reason`, `auto`, `authority` and `origin`, so the same list the picker
+renders is the list a spawn chooses from, and a spawn failure is a rendering of it.
+
+The ladder, most specific first: `AgenticProcess.llm_endpoint_typeid`, then
+`Project.llm_endpoint_typeid`, then the user's explicit `Capability.auth_mode` /
+`api_provider`, then the default order `device → api key → hub endpoint`. Everything
+explicit is a constraint that fails loudly when it cannot be honoured; only the default
+order yields. Resolution makes no network call.
+
+The three sources, of which the first two are selected by the per-harness `Capability`
+row's `auth_mode` field:
 
 * **Device login** (`auth_mode = "device"`, the default) — the vendor's
   link(+code) sign-in flow, driven through the `Capability` entity's
@@ -145,6 +157,14 @@ row's persisted `auth_mode` field:
   `resolve_worker_api_auth` folds that env into the spawn via
   `apply_worker_secret_env` and overrides the model slug before argv is frozen.
   `auth-status` reports `logged_in` iff a key is stored for the provider.
+* **Hub `LLMEndpoint`** — the box spends a hub-authorized budget, signing with the
+  hub login key it already holds (there is no `lm_api.flowpad` secret; see
+  `flow_sdk/instance_settings/llm_endpoint.py`). The hub pushes the binding over the
+  `llm-endpoint` box action after login. That push is an **offer**, not an order: it
+  no longer rewrites `auth_mode`, so a user's stored choice survives it.
+
+`Capability.auth_mode` is therefore a *preference* — what the user asked for, honoured
+while it is available — not a record of what a given spawn actually did.
 
 ## PTY Mode Runtime
 

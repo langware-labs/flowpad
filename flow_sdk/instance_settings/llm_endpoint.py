@@ -21,12 +21,24 @@ sod. Memoized per instance NAME like ``runtime.py``.
 
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import asdict, dataclass
+from typing import TYPE_CHECKING
 
 from flow_sdk.cli import app_config
 from flow_sdk.instance_settings import get_instance_settings
 
+if TYPE_CHECKING:
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+
+logger = logging.getLogger(__name__)
+
 _CONFIG_KEY = "hub_llm_endpoint"
+#: The listing is a read-through of hub state, and the harness modal polls the status action it
+#: rides on. A short memo keeps that polling off the hub without ever holding a stale answer for
+#: long enough to matter.
+_LIST_TTL_SECONDS = 30.0
 
 
 @dataclass(frozen=True)
@@ -107,8 +119,9 @@ def clear_hub_llm_endpoint() -> bool:
 
 
 def reset_cache() -> None:
-    """Drop the memo. For tests, which move instance dirs under the module's feet."""
+    """Drop the memos. For tests, which move instance dirs under the module's feet."""
     _cache.clear()
+    _list_cache.clear()
 
 
 def hub_origin() -> str:
@@ -126,3 +139,96 @@ def hub_llm_endpoint_invoke_url() -> str | None:
     if bound is None:
         return None
     return f"{hub_origin()}{bound.invoke_path}"
+
+
+# ── what this user may spend ──────────────────────────────────────────────────
+#
+# The binding above is what the hub PUSHED. This is everything the signed-in user could be given
+# instead: their own allocations plus anything shared with them.
+
+#: instance name -> (fetched_at, endpoints)
+_list_cache: dict[str, tuple[float, list["LLMEndpoint"]]] = {}
+
+
+async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndpoint"]:
+    """Every ``LLMEndpoint`` the signed-in hub user may spend, as the hub serializes them.
+
+    The hub scopes a type listing to the caller (the principal is the query's source entity), so this
+    returns exactly what that user holds a role on -- their own allocations and anything shared with
+    them -- and nothing about the pools they merely draw THROUGH.
+
+    Answers ``[]`` when logged out or when the hub is unreachable, rather than raising: a signed-out
+    box is an ordinary state here, the same way ``get_lm_api(FLOWPAD)`` answers ``None``. A picker
+    that cannot reach the hub should show nothing, not fail the screen it sits on -- and a failed
+    refresh keeps the last good list rather than emptying it.
+
+    ``cached_only`` answers from the memo and never calls out. It is for paths the HUB itself
+    initiates -- binding an endpoint, for one -- where reaching back to the hub mid-request buys
+    nothing and makes a hub-side call depend on a second hub-side call completing.
+    """
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint  # noqa: PLC0415
+    from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+
+    name = get_instance_settings().instance_name
+    cached = _list_cache.get(name)
+    stale = cached[1] if cached is not None else []
+    # The memo is consulted before anything else: resolving the hub key is a config read plus a
+    # keychain round-trip, and a cache hit should cost neither.
+    if cached is not None and (time.monotonic() - cached[0]) < _LIST_TTL_SECONDS:
+        return stale
+    if cached_only:
+        return stale
+
+    # ``hub_get`` rather than a hand-built client: it is the one chokepoint that honours Local
+    # privacy mode (nothing may leave the box) and it reuses the pooled client. It answers None on
+    # any failure, including logged-out.
+    # TWO reads, unioned, because the hub answers "what may I spend" in two places and neither is
+    # complete alone. The ordinary type listing is ACCESS-SCOPED: it returns rows this user holds a
+    # role edge on. The seeded global root holds no role edge for anybody -- it is stamped
+    # ``authenticated_role: reader`` -- so it appears only in ``catalog``, the deliberately
+    # un-scoped discovery listing. Reading just the first silently omits the one endpoint EVERY
+    # signed-in user can always spend, which is the difference between a picker that offers a
+    # fallback and one that tells a logged-in user they have nothing. ``use-llm-endpoints.ts``
+    # already unions both; this is the box catching up.
+    def _rows(body) -> list | None:
+        """Rows out of a ``hub_get`` answer, or ``None`` when the CALL failed.
+
+        Three shapes, all real, all observed against a live hub: the type listing answers
+        the envelope dict; the ``catalog`` ACTION answers a bare list; and a successful but
+        EMPTY listing answers ``{}`` with no ``data`` key at all. Only ``hub_get``'s own
+        ``None`` means failure -- an empty answer means zero rows, and conflating the two
+        made the union return early and never read the catalog, which is exactly the row
+        this function exists to add."""
+        if body is None:
+            return None
+        if isinstance(body, list):
+            return body
+        data = body.get("data") if isinstance(body, dict) else None
+        return data if isinstance(data, list) else []
+
+    rows = _rows(await hub_get("llm_endpoint"))
+    if rows is None:
+        return stale
+    # A failed catalog read costs only the fallback: answering with the scoped rows beats
+    # answering with nothing.
+    rows = list(rows) + list(_rows(await hub_get("llm_endpoint", action="catalog")) or [])
+
+    fields = set(LLMEndpoint.model_fields)
+    endpoints: list[LLMEndpoint] = []
+    seen: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row_id = str(row.get("id") or "")
+        if row_id and row_id in seen:
+            continue  # an endpoint this user holds a role on is ALSO in the catalog
+        try:
+            # The hub serializes more than this projection declares (expansions, attribution). Take
+            # only what we mirror, so a hub that grows a field cannot break the picker.
+            endpoints.append(LLMEndpoint(**{k: v for k, v in row.items() if k in fields}))
+            if row_id:
+                seen.add(row_id)
+        except Exception as exc:  # noqa: BLE001 -- one malformed row must not lose the rest
+            logger.warning("fetch_hub_llm_endpoints: skipped a row: %s: %s", type(exc).__name__, exc)
+    _list_cache[name] = (time.monotonic(), endpoints)
+    return endpoints

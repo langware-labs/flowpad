@@ -270,3 +270,68 @@ def test_other_vendors_keep_the_directory_channel(tmp_path):
     cmd.apply_instruction_assets(assets)
     assert str(assets.assets_dir) in list(cmd.add_dirs or [])
     assert cmd.system_prompt_file == str(assets.claude_file)
+
+
+def test_a_provider_block_carries_the_hub_endpoint_and_never_a_credential():
+    """The one reason a provider block exists in this generated file.
+
+    opencode cannot be redirected with environment variables (its OpenRouter provider is built in
+    and ignores ``OPENROUTER_BASE_URL``), so routing it through a hub ``LLMEndpoint`` has to happen
+    here. Only the base URL moves -- the key still rides the spawn env, and must never land on disk.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.opencode.config_gen import build_config
+
+    invoke = "https://hub.test/api/v1/graph/llm_endpoint/ep1/invoke"
+    config = build_config(provider={"openrouter": {"options": {"baseURL": f"{invoke}/v1"}}})
+
+    assert config["provider"]["openrouter"]["options"]["baseURL"] == f"{invoke}/v1"
+    body = json.dumps(config)
+    assert "apiKey" not in body and "api_key" not in body, "no credential may be written to this file"
+
+
+def test_no_provider_block_when_nothing_redirects_it():
+    """A process not spending a hub endpoint gets the file it always got."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.opencode.config_gen import build_config
+
+    assert "provider" not in build_config()
+    assert "provider" not in build_config(skill_paths=["/tmp/skills"])
+
+
+def test_the_pty_config_writer_carries_the_hub_provider_too(tmp_path):
+    """The interactive (PTY) path writes its own config -- and must redirect the same way.
+
+    ``_regenerate_config`` is the writer behind ``apply_instruction_assets`` and the
+    ``_sync_config_env`` fallback, i.e. every non-headless spawn. It was the one config writer
+    that never saw the provider fragment, so an interactive session pointed at a hub
+    ``LLMEndpoint`` silently wrote a config with no redirect and spent opencode's OWN key --
+    the exact leak the endpoint exists to prevent. Headless turns were fine, which is what made
+    it invisible.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.opencode.cli import OpenCodeAgentOptions
+
+    invoke = "https://hub.test/api/v1/graph/llm_endpoint/ep1/invoke"
+    options = OpenCodeAgentOptions(json_stream=False, workdir=str(tmp_path))
+    options.provider_options = {"openrouter": {"options": {"baseURL": f"{invoke}/v1"}}}
+
+    options._regenerate_config("proc-1", tmp_path)
+
+    assert options.config_path, "the PTY path must generate a config to point OPENCODE_CONFIG at"
+    written = json.loads(Path(options.config_path).read_text())
+    assert written["provider"]["openrouter"]["options"]["baseURL"] == f"{invoke}/v1"
+    assert "apiKey" not in json.dumps(written)
+
+
+def test_the_pty_config_writer_is_unchanged_without_an_endpoint(tmp_path):
+    """No endpoint, no provider block -- the file an ordinary interactive session always got.
+
+    An MCP fragment is supplied only so that a config is generated at all: with nothing to
+    configure ``config_for_assets_dir`` correctly writes no file and leaves ``config_path`` unset.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.opencode.cli import OpenCodeAgentOptions
+
+    options = OpenCodeAgentOptions(json_stream=False, workdir=str(tmp_path))
+    options.mcp_config_fragment = {"demo": {"type": "local", "command": ["true"]}}
+    options._regenerate_config("proc-1", tmp_path)
+
+    assert options.config_path, "an MCP fragment alone must still produce a config"
+    assert "provider" not in json.loads(Path(options.config_path).read_text())

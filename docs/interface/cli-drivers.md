@@ -246,7 +246,7 @@ and a `cli_worker.py`/`code_agentic_worker.py` PTY pair; codex adds `session_det
 | Transcript location | `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl` | rollout `~/.codex/sessions/…rollout-*.jsonl`, else process-local stdout tee | session `~/.copilot/session-state/<id>/events.jsonl`, else process-local stdout tee |
 | Transcript format | `CLAUDE_JSONL` | `CODEX_ROLLOUT` (canonical) / `CODEX_STREAM` (tee) | `COPILOT_EVENTS` (canonical) / `COPILOT_STREAM` (tee) |
 | `external_session_dirs` probe | `~/.claude/projects/` entries containing `flow-records-agentic` | `~/.codex/sessions/**/rollout-*.jsonl` names | `~/.copilot/session-state/` dir names |
-| API-key auth (`ApiAuthSpec`) | OpenRouter or Anthropic; env `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN` + blank `ANTHROPIC_API_KEY` + thinking-off, slug via `--model` | OpenRouter; `OPENROUTER_API_KEY` + `-c model_providers.openrouter.*` (`wire_api=responses`), slug via `-m` | OpenRouter; `COPILOT_ENABLE_ALT_PROVIDERS=1` + `COPILOT_PROVIDER_*`, slug in `COPILOT_*MODEL*` env (no GitHub token needed) |
+| API-key auth (`ApiAuthSpec`) | OpenRouter or the FlowPad hub endpoint (NOT a direct Anthropic key: `base_env` is pinned to OpenRouter's URL, so selecting one would post that key to OpenRouter); env `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN` + blank `ANTHROPIC_API_KEY` + thinking-off, slug via `--model` | OpenRouter; `OPENROUTER_API_KEY` + `-c model_providers.openrouter.*` (`wire_api=responses`), slug via `-m` | OpenRouter; `COPILOT_ENABLE_ALT_PROVIDERS=1` + `COPILOT_PROVIDER_*`, slug in `COPILOT_*MODEL*` env (no GitHub token needed) |
 
 When a harness's `Capability.auth_mode == "api"`, `resolve_worker_api_auth`
 (`api_auth.py`) reads the driver's `ApiAuthSpec`, pulls the provider key via
